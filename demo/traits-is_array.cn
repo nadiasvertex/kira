@@ -7,8 +7,8 @@ module main
 #  here (the parser doesn't accept a const-generic length inside a nested
 #  type-argument position) — a local alias sidesteps it.
 #
-#  Run it:      kira demo/traits-is_array.cn
-#  Compile it:  kira --compile -o traits-is_array demo/traits-is_array.cn
+#  Run it:      cinder demo/traits-is_array.cn
+#  Compile it:  cinder --compile -o traits-is_array demo/traits-is_array.cn
 # ==========================================================================
 
 use std.traits.is_array

@@ -8,7 +8,7 @@
 
 Marking a function `async` makes it a suspendable computation. Inside an `async` function, `await` pauses execution until another async operation completes, freeing the current thread for other work.
 
-```kira
+```cinder
 async def fetch_name(id: int32) -> result[str, network_error]:
     let response = await http.get("https://api.example.com/users/{id}")?
     let body     = await response.text()?
@@ -21,7 +21,7 @@ async def fetch_name(id: int32) -> result[str, network_error]:
 
 `async` compiles a function into a suspendable state machine: locals live across `await` points, and the function resumes from wherever it last paused. A `generator` is that exact same transform with a different reason to pause. Where `await` suspends waiting on another computation, `yield` suspends to hand a value back to the caller:
 
-```kira
+```cinder
 generator def fibonacci() -> some iterator[uint64]:
     var a: uint64 = 0
     var b: uint64 = 1
@@ -34,7 +34,7 @@ generator def fibonacci() -> some iterator[uint64]:
 
 `async` and `generator` are two surface names over one coroutine lowering, so they compose the same way other prefixes do:
 
-```kira
+```cinder
 async generator def lines_from(url: str) -> some iterator[str]:
     let conn = await connect(url)?
     loop:

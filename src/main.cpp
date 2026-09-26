@@ -14,7 +14,7 @@
 /// @param argv Argument vector supplied by the host process.
 auto main(int argc, char *argv[]) -> int {
   try {
-    auto result = kira::driver::parse_args(
+    auto result = cinder::driver::parse_args(
         std::span<char *const>(argv, static_cast<size_t>(argc)));
 
     if (!result) {
@@ -25,19 +25,19 @@ auto main(int argc, char *argv[]) -> int {
     auto cfg = *result;
 
     if (cfg.show_version) {
-      std::println("kira {}", kira::k_version_string);
+      std::println("cinder {}", cinder::k_version_string);
       return 0;
     }
 
     if (cfg.show_help) {
-      std::println("{}", kira::driver::render_help(cfg.program_name));
+      std::println("{}", cinder::driver::render_help(cfg.program_name));
       return 0;
     }
 
-    kira::driver::inject_stdlib_prelude(cfg);
+    cinder::driver::inject_stdlib_prelude(cfg);
 
     auto report =
-        kira::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
+        cinder::driver::compile_sources(cfg, ::isatty(fileno(stderr)) != 0);
     if (!report) {
       std::println(stderr, "Error: {}", report.error());
       return 1;
@@ -57,7 +57,7 @@ auto main(int argc, char *argv[]) -> int {
         report->error_count > 0 || run_failed || build_failed;
 
     const auto summary =
-        kira::driver::render_compile_summary(*report, cfg.show_compile_details);
+        cinder::driver::render_compile_summary(*report, cfg.show_compile_details);
     if (!summary.empty()) {
       std::println("{}", summary);
     }

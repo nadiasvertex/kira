@@ -10,10 +10,10 @@
 
 namespace {
 
-namespace query = kira::runtime::platform_query;
+namespace query = cinder::runtime::platform_query;
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_alloc(count * sizeof(uint64_t)));
+  return static_cast<uint64_t *>(cinder_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto ptr_slot(void *raw) -> uint64_t {
@@ -21,7 +21,7 @@ namespace query = kira::runtime::platform_query;
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(kira_heap_alloc(text.size()));
+  auto *bytes = static_cast<char *>(cinder_heap_alloc(text.size()));
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }
@@ -51,7 +51,7 @@ namespace query = kira::runtime::platform_query;
 
 extern "C" {
 
-auto kira_rt_uname() -> uint64_t * {
+auto cinder_rt_uname() -> uint64_t * {
   const auto info = query::query_uname();
   if (!info) {
     return make_result_err(errno);
@@ -65,7 +65,7 @@ auto kira_rt_uname() -> uint64_t * {
   return make_result_ok(ptr_slot(slots));
 }
 
-auto kira_rt_gethostname() -> uint64_t * {
+auto cinder_rt_gethostname() -> uint64_t * {
   const auto name = query::query_hostname();
   if (!name) {
     return make_result_err(errno);
@@ -73,7 +73,7 @@ auto kira_rt_gethostname() -> uint64_t * {
   return make_result_ok(ptr_slot(make_str(*name)));
 }
 
-auto kira_rt_processor_name() -> uint64_t * {
+auto cinder_rt_processor_name() -> uint64_t * {
   const auto name = query::query_processor_name();
   if (!name) {
     return make_result_err(errno);
@@ -81,7 +81,7 @@ auto kira_rt_processor_name() -> uint64_t * {
   return make_result_ok(ptr_slot(make_str(*name)));
 }
 
-auto kira_rt_libc_version() -> uint64_t * {
+auto cinder_rt_libc_version() -> uint64_t * {
   const auto info = query::query_libc_version();
   if (!info) {
     return make_result_err(errno);
@@ -92,7 +92,7 @@ auto kira_rt_libc_version() -> uint64_t * {
   return make_result_ok(ptr_slot(slots));
 }
 
-auto kira_rt_windows_version() -> uint64_t * {
+auto cinder_rt_windows_version() -> uint64_t * {
   const auto info = query::query_windows_version();
   if (!info) {
     return make_result_err(errno);
@@ -106,7 +106,7 @@ auto kira_rt_windows_version() -> uint64_t * {
   return make_result_ok(ptr_slot(slots));
 }
 
-auto kira_rt_macos_version() -> uint64_t * {
+auto cinder_rt_macos_version() -> uint64_t * {
   const auto info = query::query_macos_version();
   if (!info) {
     return make_result_err(errno);

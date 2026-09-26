@@ -8,7 +8,7 @@ module main
 #  `hello-world-main.cn` for the equivalent written with an explicit
 #  `main` function.
 #
-#  Run it: kira demo/hello-world.cn
+#  Run it: cinder demo/hello-world.cn
 # ==========================================================================
 
 println("hello world!")

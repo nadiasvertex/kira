@@ -25,8 +25,8 @@
 
 namespace {
 
-using kira::testing::expect;
-using namespace kira::bytecode_compiler;
+using cinder::testing::expect;
+using namespace cinder::bytecode_compiler;
 
 /// Builds an input whose instruction stream is `count` uniform 4-byte
 /// instructions.
@@ -58,7 +58,7 @@ auto mention(allocation_input &input, uint32_t reg, size_t instruction)
     -> allocation_result {
   auto result = allocate_registers(input);
   if (!result.has_value()) {
-    kira::testing::fail("expected allocation to fit in the register file");
+    cinder::testing::fail("expected allocation to fit in the register file");
   }
   return *std::move(result);
 }

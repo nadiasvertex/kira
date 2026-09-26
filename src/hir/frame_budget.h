@@ -7,7 +7,7 @@
 #include "src/hir/nodes.h"
 #include "src/parser/source_location.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// The most frame-local `uninit[T, N]` storage one function may use, in
 /// bytes. A language rule, not a backend property: both tiers reject exactly
@@ -47,4 +47,4 @@ struct frame_budget_violation {
 [[nodiscard]] auto find_frame_budget_violations(hir_module &module)
     -> std::vector<frame_budget_violation>;
 
-} // namespace kira::hir
+} // namespace cinder::hir

@@ -5,8 +5,8 @@ module main
 #  a predicate is false, over a slice partitioned so every element
 #  satisfying it precedes every element that doesn't.
 #
-#  Run it:      kira demo/algorithm-partition_point.cn
-#  Compile it:  kira --compile -o algorithm-partition_point demo/algorithm-partition_point.cn
+#  Run it:      cinder demo/algorithm-partition_point.cn
+#  Compile it:  cinder --compile -o algorithm-partition_point demo/algorithm-partition_point.cn
 # ==========================================================================
 
 def main() -> int32:

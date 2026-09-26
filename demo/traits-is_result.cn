@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `traits.is_result` — is this type `result[_, _]`?
 #
-#  Run it:      kira demo/traits-is_result.cn
-#  Compile it:  kira --compile -o traits-is_result demo/traits-is_result.cn
+#  Run it:      cinder demo/traits-is_result.cn
+#  Compile it:  cinder --compile -o traits-is_result demo/traits-is_result.cn
 # ==========================================================================
 
 use std.traits.is_result

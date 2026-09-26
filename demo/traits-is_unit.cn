@@ -7,8 +7,8 @@ module main
 #  parser doesn't accept the `unit` keyword in that position) — a local
 #  alias sidesteps it.
 #
-#  Run it:      kira demo/traits-is_unit.cn
-#  Compile it:  kira --compile -o traits-is_unit demo/traits-is_unit.cn
+#  Run it:      cinder demo/traits-is_unit.cn
+#  Compile it:  cinder --compile -o traits-is_unit demo/traits-is_unit.cn
 # ==========================================================================
 
 use std.traits.is_unit

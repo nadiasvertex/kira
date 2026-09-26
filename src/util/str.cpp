@@ -2,7 +2,7 @@
 
 #include <format>
 
-namespace kira::util {
+namespace cinder::util {
 
 auto append_text(std::string &buffer, std::string_view text) -> void {
   if (text.empty()) {
@@ -31,4 +31,4 @@ auto append_error(std::string &buffer, std::string_view message) -> void {
   }
   return out;
 }
-} // namespace kira::util
+} // namespace cinder::util

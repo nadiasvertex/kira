@@ -1,6 +1,6 @@
 // Exercises `emit_object_file` end to end: compile a small program, emit a
 // native object file, link it against a minimal hand-written C stub for
-// `kira_codegen_panic` (standing in for `:aot_runtime.cpp`'s real
+// `cinder_codegen_panic` (standing in for `:aot_runtime.cpp`'s real
 // implementation -- this test is about `emit_object_file` producing a
 // linkable, runnable object, not about `aot_runtime.cpp`'s message text),
 // run the resulting standalone binary as a real child process, and check
@@ -38,14 +38,14 @@
 namespace {
 
 namespace fs = std::filesystem;
-using kira::testing::expect;
-namespace hir = kira::hir;
-namespace lc = kira::llvm_codegen;
+using cinder::testing::expect;
+namespace hir = cinder::hir;
+namespace lc = cinder::llvm_codegen;
 
 auto make_temp_dir() -> fs::path {
   auto base =
       fs::temp_directory_path() /
-      std::format("kira_aot_test_{}", static_cast<unsigned>(::getpid()));
+      std::format("cinder_aot_test_{}", static_cast<unsigned>(::getpid()));
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
   expect(!ec, "expected to create a temporary directory");
@@ -61,26 +61,26 @@ auto write_file(const fs::path &path, std::string_view contents) -> void {
 
 auto compile_to_object(const std::string &text, const fs::path &object_path)
     -> void {
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   const auto file_id = sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
   const auto *file = sources.get(*file_id);
 
-  auto lexer = kira::lexer(file->source(), file->id(), diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), diag);
   auto ast_file = parser.parse_file();
   expect(diag.error_count() == 0, "expected fixture to parse cleanly");
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
+  const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
+      cinder::semantic::parsed_module{.file_id = *file_id,
                                     .ast_file = ast_file.get()},
   };
   auto checked =
-      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
   expect(diag.error_count() == 0, "expected fixture to check cleanly");
 
   auto lowered = hir::lower_module(*ast_file, "sample", checked);
@@ -99,13 +99,13 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
                                                 emitted.error().message));
 }
 
-auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
+auto build_and_run(const fs::path &dir, const std::string &cinder_source) -> int {
   const auto object_path = dir / "program.o";
   const auto stub_path = dir / "panic_stub.c";
   const auto output_path = dir / "program";
 
-  compile_to_object(kira_source, object_path);
-  // `kira_heap_alloc` (`src/runtime/allocator.h`'s real implementation, not
+  compile_to_object(cinder_source, object_path);
+  // `cinder_heap_alloc` (`src/runtime/allocator.h`'s real implementation, not
   // linked into this hand-built test binary) backs
   // every heap allocation a compiled program's struct/array/str/list
   // construction needs — a plain `malloc` stands in here, matching this
@@ -113,10 +113,10 @@ auto build_and_run(const fs::path &dir, const std::string &kira_source) -> int {
   // producing a linkable, runnable object" scope.
   write_file(stub_path, "#include <stdint.h>\n"
                         "#include <stdlib.h>\n"
-                        "void kira_codegen_panic(unsigned char reason) {\n"
+                        "void cinder_codegen_panic(unsigned char reason) {\n"
                         "  exit(100 + reason);\n"
                         "}\n"
-                        "void *kira_heap_alloc(uint64_t bytes) {\n"
+                        "void *cinder_heap_alloc(uint64_t bytes) {\n"
                         "  return calloc(1, bytes);\n"
                         "}\n");
 
@@ -168,7 +168,7 @@ auto test_packed_struct_and_narrow_array_exit_codes() -> void {
   // Closes the gap the byte-precise layout work (`runtime::layout.h`'s
   // `struct_field_offset`/`struct_layout`, the `packed` modifier) left in
   // AOT-specific coverage: everything else exercising it runs through the
-  // bytecode VM or the JIT, never a real linked `kira build` binary.
+  // bytecode VM or the JIT, never a real linked `cinder build` binary.
   auto dir = make_temp_dir();
   const auto status =
       build_and_run(dir, "module sample\n"
@@ -191,7 +191,7 @@ auto test_generator_drives_a_loop_to_the_right_exit_code() -> void {
   // src/bytecode_compiler/compile_test.cpp and this file's own
   // codegen_test.cpp sibling exercise `generator def`/`yield`/`.next()`
   // through the bytecode VM and the in-process JIT respectively, but
-  // neither runs through a real linked `kira build` binary — a generator's
+  // neither runs through a real linked `cinder build` binary — a generator's
   // constructor/step-function split is a codegen-shape change AOT-specific
   // linking could plausibly break even when the JIT agrees.
   auto dir = make_temp_dir();

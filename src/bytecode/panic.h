@@ -4,7 +4,7 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 /// Closed set of reasons the VM (`vm.h`) can panic. There is no
 /// arbitrary/user-supplied message here — `op_panic`'s original design
@@ -38,8 +38,8 @@ enum class panic_reason : uint8_t {
 
 /// Exit status of a program killed by a panic, whichever tier ran it and
 /// whichever panic it was — the compiler-emitted kind (`raise_panic` below,
-/// `kira_codegen_panic` in the AOT runtime) and the Cinder-level kind
-/// (`std.panic.panic` -> `kira_rt_panic`, `src/runtime/io.cpp`).
+/// `cinder_codegen_panic` in the AOT runtime) and the Cinder-level kind
+/// (`std.panic.panic` -> `cinder_rt_panic`, `src/runtime/io.cpp`).
 ///
 /// 101 rather than `abort`'s 134: it is the convention several other
 /// languages already use for "the program itself signaled a panic", it
@@ -92,4 +92,4 @@ private:
   panic_reason reason_;
 };
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

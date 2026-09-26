@@ -8,7 +8,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/semantic/module_index.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// What each name a file's `use` declarations bind locally stands for, as an
 /// absolute module path: `use p.q` binds `q` to `p.q`, and `use p.q.{r as s}`
@@ -94,4 +94,4 @@ auto validate_module_reference(const ast::module_path_expr &path,
                                diagnostic_bag &diag,
                                std::vector<bool> &file_has_errors) -> bool;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

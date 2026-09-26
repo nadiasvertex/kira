@@ -11,7 +11,7 @@ A lambda captures the variables it uses from the surrounding scope. How it captu
 - A closure that does **not** escape — passed to `map`, `filter`, or any function that calls it and returns — captures by **borrow**. Nothing is copied; the borrow is bounded by the call, like any other borrow.
 - A closure that **does** escape — stored somewhere longer-lived, or sent to another task — captures by **move**, taking ownership of what it uses, because a borrow cannot escape. `move` before the lambda forces move-capture explicitly.
 
-```kira
+```cinder
 let factor = 3
 let scaled = numbers.map(x => x * factor)   # borrows factor; does not escape
 ```
@@ -24,7 +24,7 @@ The rule above is the *implicit* capture rule: a lambda with no capture list cap
 
 Because a `crew`'s tasks cannot outlive the `crew`, and the `crew` cannot outlive its enclosing scope, a closure spawned into a `crew` may **borrow** local data — no `'static`-style requirement, no forced `move`. Full `crew` semantics are in [`crew`, `par`, `race`](28-crew-par-race.md); the rule stated here is that spawn sites are an exception to "an escaping closure must move."
 
-```kira
+```cinder
 async def totals() -> result[summary, app_error]:
     let rows = load_rows()
     crew c:
@@ -38,7 +38,7 @@ async def totals() -> result[summary, app_error]:
 
 The capture rules above govern a closure's *environment*. Its *type* is `fn(A) -> B`, the type of any callable with that signature, capturing or not. Wherever `fn(A) -> B` appears as a parameter or return type, the compiler monomorphizes it to the concrete callable — calls stay direct, no vtable:
 
-```kira
+```cinder
 def apply(f: fn(int32) -> int32, x: int32) -> int32:   # accepts any callable, zero cost
     return f(x)
 
@@ -55,7 +55,7 @@ To return *different* behaviors, prefer expressing the variation as data over an
 1. **Chosen at compile time** — a dependent return type resolves to a concrete type from a `static` value. No runtime cost, no erasure.
 2. **Chosen at runtime, from a known set** — return a sum type describing the behavior and interpret it:
 
-```kira
+```cinder
 type op = @inc | @scale(int32) | @clamp(int32, int32)
 
 def apply_op(o: op, x: int32) -> int32:
@@ -69,7 +69,7 @@ A sum type is a static, matchable `variant` — dispatch is a branch on a tag, n
 
 3. **Chosen at runtime, from an open set** — heterogeneous callbacks stored together, plugins loaded at run time — is the one case that cannot be monomorphized. `box[fn(A) -> B]` is an owned, type-erased closure for this case only: it owns its captured environment and is called indirectly, and the cost is explicit in the type:
 
-```kira
+```cinder
 var handlers: list[box[fn(event) -> unit]] = []
 handlers.push(box(e => log(e)))
 handlers.push(box(e => metrics.record(e)))

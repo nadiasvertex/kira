@@ -4,7 +4,7 @@
 
 #include "src/hir/nodes.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// Every local (parameter or `hir_let`/`hir_let_else`/`hir_while_let`/
 /// `hir_match`-subject binding) in `fn.body` whose value must survive at
@@ -31,4 +31,4 @@ namespace kira::hir {
 [[nodiscard]] auto live_across_yield(const hir_function &fn)
     -> std::vector<symbol_id>;
 
-} // namespace kira::hir
+} // namespace cinder::hir

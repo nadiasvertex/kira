@@ -19,10 +19,10 @@
 /// and link (this file backs the compiler's one fixed intrinsic table
 /// regardless of build host) but simply report `io_errno { code: ENOSYS }`.
 extern "C" {
-auto kira_rt_uname() -> uint64_t *;
-auto kira_rt_gethostname() -> uint64_t *;
-auto kira_rt_processor_name() -> uint64_t *;
-auto kira_rt_libc_version() -> uint64_t *;
-auto kira_rt_windows_version() -> uint64_t *;
-auto kira_rt_macos_version() -> uint64_t *;
+auto cinder_rt_uname() -> uint64_t *;
+auto cinder_rt_gethostname() -> uint64_t *;
+auto cinder_rt_processor_name() -> uint64_t *;
+auto cinder_rt_libc_version() -> uint64_t *;
+auto cinder_rt_windows_version() -> uint64_t *;
+auto cinder_rt_macos_version() -> uint64_t *;
 }

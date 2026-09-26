@@ -6,7 +6,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/ids.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Kind of syntactic construct that introduced a `semantic_scope`.
 ///
@@ -52,4 +52,4 @@ struct semantic_scope {
 /// debugging output and diagnostics.
 auto semantic_scope_kind_name(semantic_scope_kind kind) -> std::string_view;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

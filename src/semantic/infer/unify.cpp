@@ -5,7 +5,7 @@
 
 #include "src/semantic/infer/value_solver.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 namespace {
 
@@ -442,4 +442,4 @@ auto unifier::unify_values(type_id expected, type_id found, cause_id why,
   return {};
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

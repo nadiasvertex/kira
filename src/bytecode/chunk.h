@@ -9,7 +9,7 @@
 #include "src/bytecode/opcodes.h"
 #include "src/bytecode/value.h"
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 /// One compiled function: its flat instruction stream plus its own constant
 /// pool (see `chunk_writer`'s doc comment for why constants are kept
@@ -162,4 +162,4 @@ private:
   std::vector<std::string> string_constants_;
 };
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

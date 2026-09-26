@@ -8,7 +8,7 @@
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  The unifier
@@ -138,4 +138,4 @@ private:
   std::vector<deferred_constraint> deferred_;
 };
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

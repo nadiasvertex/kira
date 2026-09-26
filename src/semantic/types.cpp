@@ -8,7 +8,7 @@
 
 #include "src/semantic/module_index.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// Every scalar name recognized as a builtin type (numeric family, `bool`,
@@ -1071,4 +1071,4 @@ auto build_program_index(const std::vector<parsed_module> &inputs)
   return index;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

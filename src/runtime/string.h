@@ -16,13 +16,13 @@
 /// `rt_str_rfind` still return a 2-slot `find_result { found; pos }` struct,
 /// which is not a bare scalar and so is still a heap pointer.
 extern "C" {
-auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t;
-auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t;
-auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
+auto cinder_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t;
+auto cinder_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t;
+auto cinder_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
     -> uint64_t *;
-auto kira_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t *;
-auto kira_rt_str_reverse(uint64_t *s) -> uint64_t *;
-auto kira_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t *;
-auto kira_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
+auto cinder_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t *;
+auto cinder_rt_str_reverse(uint64_t *s) -> uint64_t *;
+auto cinder_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t *;
+auto cinder_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
     -> uint64_t *;
 }

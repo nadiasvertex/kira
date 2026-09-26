@@ -6,8 +6,8 @@ module main
 #  Stops the iterator early after `n` elements; taking more than the
 #  iterator has just yields everything it has.
 #
-#  Run it:      kira demo/iterator-take.cn
-#  Compile it:  kira --compile -o iterator-take demo/iterator-take.cn
+#  Run it:      cinder demo/iterator-take.cn
+#  Compile it:  cinder --compile -o iterator-take demo/iterator-take.cn
 # ==========================================================================
 
 def main() -> int32:

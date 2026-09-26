@@ -28,11 +28,11 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
-namespace hir = kira::hir;
-namespace bc = kira::bytecode;
-namespace bcc = kira::bytecode_compiler;
+using cinder::testing::expect;
+using cinder::testing::fail;
+namespace hir = cinder::hir;
+namespace bc = cinder::bytecode;
+namespace bcc = cinder::bytecode_compiler;
 
 // Shared with src/llvm_codegen/codegen_test.cpp: every fixture here carries
 // both its named helper functions (so this file can still assert on
@@ -40,10 +40,10 @@ namespace bcc = kira::bytecode_compiler;
 // `main()` that drives them with the same fixed inputs the LLVM JIT test
 // uses, so both tiers can be checked against the exact same expected
 // values from the exact same source.
-auto test_data_dir = kira::testing::find_test_data_dir("codegen_test");
+auto test_data_dir = cinder::testing::find_test_data_dir("codegen_test");
 
 auto load_fixture(std::string_view filename) -> std::string {
-  return kira::testing::load_test_data_file(test_data_dir.string(), filename);
+  return cinder::testing::load_test_data_file(test_data_dir.string(), filename);
 }
 
 // Parses and checks one fixture source, mirroring src/hir/lower_test.cpp's
@@ -52,20 +52,20 @@ auto load_fixture(std::string_view filename) -> std::string {
 // rather than hand-assembling HIR, since that's what actually proves the
 // compiler produces bytecode the VM agrees with for real surface syntax.
 struct checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::testing::parsed_stdlib stdlib;
-  kira::ast::ptr<kira::ast::file> ast_file;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::testing::parsed_stdlib stdlib;
+  cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::semantic::checked_types checked;
 };
 
 /// Fails with the rendered diagnostics when a fixture did not check cleanly,
 /// rather than with a bare "expected fixture to check cleanly" that says
 /// nothing about what went wrong.
-auto expect_checked_cleanly(const kira::source_manager &sources,
-                            const kira::diagnostic_bag &diag) -> void {
+auto expect_checked_cleanly(const cinder::source_manager &sources,
+                            const cinder::diagnostic_bag &diag) -> void {
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected fixture to check cleanly");
   }
 }
@@ -77,25 +77,25 @@ auto expect_checked_cleanly(const kira::source_manager &sources,
 // `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
-  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+  fixture.stdlib = cinder::testing::parse_stdlib(fixture.sources, fixture.diag);
   const auto file_id = fixture.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
   const auto *file = fixture.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
 
-  auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
   fixture.ast_file = parser.parse_file();
   expect(fixture.diag.error_count() == 0, "expected fixture to parse cleanly");
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   auto parsed_modules = fixture.stdlib.modules;
-  parsed_modules.push_back(kira::semantic::parsed_module{
+  parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
@@ -115,7 +115,7 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
   auto modules = hir::ptr_vec<hir::hir_module>{};
   modules.push_back(std::move(*entry));
   const auto *entry_module = modules.front().get();
-  kira::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
 
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
   auto compiled = bcc::compile_module(reachable, fixture.checked.types);
@@ -135,12 +135,12 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
 auto compile_fixture_multi(
     const std::vector<std::pair<std::string, std::string>> &files,
     std::string_view entry_module_name) -> bc::bytecode_module {
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
-  const auto stdlib = kira::testing::parse_stdlib(sources, diag);
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
+  const auto stdlib = cinder::testing::parse_stdlib(sources, diag);
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
   auto parsed_modules = stdlib.modules;
-  auto file_ids = std::vector<kira::file_id_type>{};
+  auto file_ids = std::vector<cinder::file_id_type>{};
 
   for (const auto &[path, text] : files) {
     const auto file_id = sources.add_file(path, text);
@@ -148,9 +148,9 @@ auto compile_fixture_multi(
     const auto *file = sources.get(*file_id);
     expect(file != nullptr, "expected registered fixture source");
 
-    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
     expect(diag.error_count() == 0, "expected fixture to parse cleanly");
 
@@ -158,14 +158,14 @@ auto compile_fixture_multi(
     ast_files.push_back(std::move(ast_file));
   }
   for (size_t i = 0; i < ast_files.size(); ++i) {
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = file_ids[i], .ast_file = ast_files[i].get()});
   }
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
   const auto checked =
-      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
   expect_checked_cleanly(sources, diag);
 
   auto modules = hir::ptr_vec<hir::hir_module>{};
@@ -178,7 +178,7 @@ auto compile_fixture_multi(
   // lower them into standalone modules just as `driver::lower_and_emit_
   // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
   // resolve.
-  kira::testing::lower_stdlib_modules(stdlib, checked, modules);
+  cinder::testing::lower_stdlib_modules(stdlib, checked, modules);
 
   auto functor_modules = hir::lower_functor_modules(checked);
   expect(functor_modules.has_value(),
@@ -1595,14 +1595,14 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
 // read of it works, and a bug that let the second reference silently
 // re-evaluate or shift the array would still pass a single-read test.
 auto test_static_array_global_backs_two_independent_reads() -> void {
-  auto module = compile_fixture(R"kira(
+  auto module = compile_fixture(R"cinder(
 module sample
 static TABLE: array[int32, 4] = [10, 20, 30, 40]
 def third(i: usize) -> int32:
     return TABLE[i]
 def main() -> int32:
     return TABLE[3] + third(2)
-)kira");
+)cinder");
   expect(module.static_init_function.has_value(),
          "expected a static-init function to be synthesized for a reified "
          "array global");

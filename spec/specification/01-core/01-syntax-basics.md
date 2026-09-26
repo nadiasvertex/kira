@@ -6,9 +6,9 @@ Covers indentation-delimited blocks, comments and doc comments, and the `module`
 
 ## Indentation and blocks
 
- Cinder has no semicolons and no braces for blocks. A block is introduced by `:` at the end of a line and one level of indentation; it ends when indentation returns to the enclosing level. The lexer synthesizes `INDENT`/`DEDENT`/`NEWLINE` tokens from indentation directly (see `INDENT`, `DEDENT` in `spec/kira-grammar.ebnf`); newlines inside balanced brackets `()`, `[]`, `{}` are suppressed, so an expression may wrap across lines there without a continuation marker.
+ Cinder has no semicolons and no braces for blocks. A block is introduced by `:` at the end of a line and one level of indentation; it ends when indentation returns to the enclosing level. The lexer synthesizes `INDENT`/`DEDENT`/`NEWLINE` tokens from indentation directly (see `INDENT`, `DEDENT` in `spec/cinder-grammar.ebnf`); newlines inside balanced brackets `()`, `[]`, `{}` are suppressed, so an expression may wrap across lines there without a continuation marker.
 
-```kira
+```cinder
 def greet(name: str) -> str:
     let message = "Hello, {name}!"
     return message
@@ -20,7 +20,7 @@ All keywords are lowercase.
 
 An ordinary comment begins with `#` and runs to end of line (`COMMENT` in the grammar). It is discarded by the lexer and carries no semantic meaning.
 
-```kira
+```cinder
 # This is a comment
 let x = 42    # so is this
 ```
@@ -31,7 +31,7 @@ A comment beginning `#:` is a documentation comment. Written alone on one or mor
 
 Doc comments attach to functions, types, traits, `impl`/`extend` methods, struct fields, and the `module` line itself.
 
-```kira
+```cinder
 #: Adds two integers and returns the sum.
 #: Overflow wraps in machine mode.
 def add(a: int32, b: int32) -> int32:
@@ -42,7 +42,7 @@ def add(a: int32, b: int32) -> int32:
 
 Every file's first non-comment line is a `module_decl`: the keyword `module` followed by a dotted `module_path` (`module_path = IDENT { "." IDENT }`).
 
-```kira
+```cinder
 module my_app.utils
 ```
 
@@ -51,4 +51,4 @@ A module is one or more files sharing the same declared path; several files with
 ## See also
 
 - [Modules and Imports](12-modules-and-imports.md) for visibility and `use`.
-- `spec/kira-grammar.ebnf`, productions `file`, `module_decl`, `module_path`.
+- `spec/cinder-grammar.ebnf`, productions `file`, `module_decl`, `module_path`.

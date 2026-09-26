@@ -2,7 +2,7 @@
 
 #include <format>
 
-namespace kira::ast {
+namespace cinder::ast {
 
 namespace {
 
@@ -1622,4 +1622,4 @@ auto clone_trait_decl(const trait_decl &decl)
   return cloned;
 }
 
-} // namespace kira::ast
+} // namespace cinder::ast

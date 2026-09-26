@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <utility>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Classic dynamic-programming Levenshtein with two rolling rows; both
 /// callers only care about small distances so no early-exit bound is needed.
@@ -284,4 +284,4 @@ auto module_symbol_spec(const ast::node &node, file_id_type file_id)
   }
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

@@ -16,7 +16,7 @@
 // been rewritten deliberately and their goldens updated to match, never when
 // they still read the same.
 //
-// Updating a golden: run with `KIRA_BLESS=1` (the target is `no-sandbox`, so
+// Updating a golden: run with `CINDER_BLESS=1` (the target is `no-sandbox`, so
 // it writes back into the source tree), then *read the diff*. A blessed golden
 // nobody read is how a regression becomes the expected output.
 
@@ -62,7 +62,7 @@ struct temp_dir {
 auto make_temp_dir() -> temp_dir {
   auto base =
       fs::temp_directory_path() /
-      std::format("kira_infer_diag_{}",
+      std::format("cinder_infer_diag_{}",
                   std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
@@ -145,16 +145,16 @@ auto normalize(std::string text, const std::string &absolute,
 /// compiled module defines a function named `main`" line would drown the
 /// message actually under test.
 auto diagnose(const fs::path &source, const fs::path &tmp_dir) -> std::string {
-  auto cfg = kira::driver::cli_config{
-      .program_name = "kira",
+  auto cfg = cinder::driver::cli_config{
+      .program_name = "cinder",
       .sources = {source.string()},
       .metadata_dir = (tmp_dir / "meta").string(),
       .show_help = false,
       .run = false,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          std::format("[{}] expected compile_sources to return a report",
                      source.filename().string()));
@@ -172,7 +172,7 @@ auto diagnose(const fs::path &source, const fs::path &tmp_dir) -> std::string {
 }
 
 auto blessing() -> bool {
-  const auto *flag = std::getenv("KIRA_BLESS");
+  const auto *flag = std::getenv("CINDER_BLESS");
   return flag != nullptr && *flag != '\0' && std::string_view(flag) != "0";
 }
 
@@ -214,7 +214,7 @@ auto main(int argc, char *argv[]) -> int {
       expect(fs::exists(golden_path),
              std::format("[{}] has no `.expected` golden. Every wrong program "
                          "in this corpus records the message it produces; add "
-                         "one (KIRA_BLESS=1) and read it before trusting it.",
+                         "one (CINDER_BLESS=1) and read it before trusting it.",
                          name));
 
       const auto expected = read_file(golden_path);
@@ -222,7 +222,7 @@ auto main(int argc, char *argv[]) -> int {
         std::cerr << std::format(
             "inference_diagnostics_test failed: [{}] diagnostics changed.\n"
             "--- expected ({}) ---\n{}\n--- actual ---\n{}\n"
-            "If the new message is better, re-run with KIRA_BLESS=1 and read "
+            "If the new message is better, re-run with CINDER_BLESS=1 and read "
             "the diff before committing it.\n",
             name, golden_path.filename().string(), expected, actual);
         std::exit(1);

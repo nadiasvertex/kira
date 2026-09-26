@@ -8,7 +8,7 @@ Covers the built-in `str` type, string literal interpolation and escape sequence
 
  Cinder strings are UTF-8. `str` literals support interpolation with `{...}`, evaluated and formatted in place:
 
-```kira
+```cinder
 let name = "World"
 let msg  = "Hello, {name}!"          # "Hello, World!"
 let calc = "2 + 2 = {2 + 2}"         # "2 + 2 = 4"
@@ -16,7 +16,7 @@ let calc = "2 + 2 = {2 + 2}"         # "2 + 2 = 4"
 
 An interpolation brace is written literally by doubling it:
 
-```kira
+```cinder
 let literal = "{{x}} stays literal"    # "{x} stays literal" — {{ is {, }} is }
 ```
 
@@ -26,7 +26,7 @@ let literal = "{{x}} stays literal"    # "{x} stays literal" — {{ is {, }} is 
 
 String and char literals use a backslash escape. Supported escapes: `\"`, `\\`, `\n`, `\t`, `\r`, `\0`.
 
-```kira
+```cinder
 let quoted = "She said \"hi\"\n"
 ```
 
@@ -34,7 +34,7 @@ let quoted = "She said \"hi\"\n"
 
 `char` is a single Unicode scalar value, written in single quotes.
 
-```kira
+```cinder
 let ch = 'a'    # a char; also '\n', '♥'
 ```
 

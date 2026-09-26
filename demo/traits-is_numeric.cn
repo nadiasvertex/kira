@@ -4,8 +4,8 @@ module main
 #  `traits.is_numeric` — is this type any builtin integer or floating-point
 #  type? `is_integer[T]() or is_float[T]()`.
 #
-#  Run it:      kira demo/traits-is_numeric.cn
-#  Compile it:  kira --compile -o traits-is_numeric demo/traits-is_numeric.cn
+#  Run it:      cinder demo/traits-is_numeric.cn
+#  Compile it:  cinder --compile -o traits-is_numeric demo/traits-is_numeric.cn
 # ==========================================================================
 
 use std.traits.is_numeric

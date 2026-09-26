@@ -29,7 +29,7 @@
 #include "src/semantic/resolution.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 // ==========================================================================
@@ -3707,7 +3707,7 @@ private:
     // that is what makes it an invariant rather than a precondition. So it
     // enters the environment for any binding of the type, which is what lets
     // a `positive_int` whose `invariant self.value > 0` satisfy a `positive`
-    // with no further proof (`kira-reference.md` §Contracts).
+    // with no further proof (`cinder-reference.md` §Contracts).
     if (entry.decl != nullptr && entry.decl->invariant != nullptr &&
         !entry.decl->invariant->has_error) {
       auto subst = predicate_subst{};
@@ -22448,4 +22448,4 @@ auto check_program(const std::vector<parsed_module> &inputs,
   return session_checker.take_checked_types();
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

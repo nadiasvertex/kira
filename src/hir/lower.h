@@ -9,7 +9,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// Why `lower_function`/`lower_module` refused to produce HIR for some
 /// construct. Lowering fails closed (spec/typed-ir-design.md Decision 1):
@@ -40,7 +40,7 @@ struct lowering_options {
   /// runtime `hir_contract_check`. False is the spec's release elision
   /// ("Release builds may elide runtime contract checks with an explicit
   /// flag — doing so is the programmer's assertion that all contracts hold by
-  /// other means", spec/kira-reference.md), reached via `--no-contract-checks`.
+  /// other means", spec/cinder-reference.md), reached via `--no-contract-checks`.
   /// It is deliberately not the default: a contract that is only *believed*
   /// silently is worth less than one that is checked.
   bool contract_checks = true;
@@ -99,4 +99,4 @@ lower_inline_submodules(const ast::file &file, const std::string &module_name,
                                          const lowering_options &options = {})
     -> std::expected<ptr_vec<hir_module>, lowering_error>;
 
-} // namespace kira::hir
+} // namespace cinder::hir

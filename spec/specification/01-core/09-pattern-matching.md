@@ -6,9 +6,9 @@ Covers `match`, guard clauses, destructuring of tuples and structs, and `if let`
 
 ## `match`
 
-`match_expr`, `pattern` in `spec/kira-grammar.ebnf`. `match` is an expression: it produces a value, and its type is the unified type of all arms. Exhaustiveness is checked for sum types — an unhandled variant is a compile error (`check.cpp`'s exhaustiveness pass over sum-type discriminants).
+`match_expr`, `pattern` in `spec/cinder-grammar.ebnf`. `match` is an expression: it produces a value, and its type is the unified type of all arms. Exhaustiveness is checked for sum types — an unhandled variant is a compile error (`check.cpp`'s exhaustiveness pass over sum-type discriminants).
 
-```kira
+```cinder
 let description = match score:
     100      => "perfect"
     90..=99  => "excellent"
@@ -18,7 +18,7 @@ let description = match score:
 
 `match` is the required way to inspect a sum type (see [Type Declarations](10-type-declarations.md)):
 
-```kira
+```cinder
 type shape =
     | @circle(float64)
     | @rect(float64, float64)
@@ -33,7 +33,7 @@ def area(s: shape) -> float64:
 
 An `if` condition after a pattern further restricts when that arm matches; the pattern must still match, and the guard must also hold. A guarded arm does not count toward exhaustiveness on its own — a following unguarded arm for the same shape is required (as `@circle(r)` is, above).
 
-```kira
+```cinder
 match s:
     @circle(r) if r <= 0.0 => 0.0
     @circle(r)             => 3.14159 * r * r
@@ -44,7 +44,7 @@ match s:
 
 Patterns destructure tuples and structs positionally or by field name.
 
-```kira
+```cinder
 let point = (3.0, 4.0)
 let (x, y) = point
 
@@ -56,14 +56,14 @@ let { name, age } = someone
 
 `if let` matches a single pattern and binds on success, running its block only when the match holds:
 
-```kira
+```cinder
 if let @some(u) = find_user(42):
     println("found {u.name}")
 ```
 
 `while let` repeats as long as the pattern keeps matching — for draining a source that eventually stops matching (e.g. yields `@none`):
 
-```kira
+```cinder
 while let @some(line) = reader.next():
     process(line)
 ```

@@ -8,7 +8,7 @@ Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and t
 
 ## Types
 
-```kira
+```cinder
 pub type raw_fd = { value: int64 }
 pub type io_errno = { code: int32 }
 pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str)
@@ -21,7 +21,7 @@ pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(
 
 ### `io_errno` to `io_error` conversion
 
-```kira
+```cinder
 impl from[io_errno] for io_error:
     def from(e: io_errno) -> io_error
 ```
@@ -30,7 +30,7 @@ Maps raw error codes to variants by numeric code: `2` → `@not_found`, `13` →
 
 ### `open_options`
 
-```kira
+```cinder
 pub type open_options = {
     read: bool,
     write: bool,
@@ -46,7 +46,7 @@ Controls the mode `open` uses when opening a file; all fields are plain booleans
 
 ### `reader`
 
-```kira
+```cinder
 pub trait reader:
     def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]
     def read_to_end(mut self, out: &mut list[byte]) -> result[usize, io_error]
@@ -59,7 +59,7 @@ pub trait reader:
 
 ### `writer`
 
-```kira
+```cinder
 pub trait writer:
     def write(mut self, buf: &slice[byte]) -> result[usize, io_error]
     def flush(mut self) -> result[unit, io_error]
@@ -73,7 +73,7 @@ Both traits take `self` by `mut self` (moved) on every method, including the pro
 
 ## Intrinsics
 
-```kira
+```cinder
 intrinsic def rt_stdin() -> raw_fd
 intrinsic def rt_stdout() -> raw_fd
 intrinsic def rt_stderr() -> raw_fd
@@ -89,13 +89,13 @@ Native entry points, implemented on both backends (`src/runtime/io.cpp`, `src/by
 
 ## The `file_handle` type
 
-```kira
+```cinder
 pub type file_handle = { fd: raw_fd }
 ```
 
 A handle wrapping a `raw_fd`. (Named `file_handle` rather than `file` because `file` is a reserved visibility keyword — see [Modules and Imports](../../01-core/12-modules-and-imports.md).)
 
-```kira
+```cinder
 pub def open(path: str, opts: open_options) -> result[file_handle, io_error]
 pub def stdin_handle() -> file_handle
 pub def stdout_handle() -> file_handle
@@ -113,7 +113,7 @@ pub def stderr_handle() -> file_handle
 
 ### `extend file_handle`
 
-```kira
+```cinder
 pub def close(mut self) -> result[unit, io_error]
 ```
 

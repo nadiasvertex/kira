@@ -152,7 +152,7 @@ intrinsic def rt_processor_name() -> result[str, io_errno]
 #: a `rt_realloc`. Sizes are in *bytes*, not elements.
 #:
 #: The allocator behind them is selectable at run time
-#: (`KIRA_ALLOCATOR=system|arena`); `arena` never reclaims, which makes
+#: (`CINDER_ALLOCATOR=system|arena`); `arena` never reclaims, which makes
 #: `rt_free` a no-op there. Code built on these must therefore be correct
 #: under both -- it must not, for instance, rely on a freed block being
 #: reused.

@@ -39,7 +39,7 @@ struct temp_dir {
 auto make_temp_dir() -> temp_dir {
   auto base =
       fs::temp_directory_path() /
-      std::format("kira_driver_stress_{}",
+      std::format("cinder_driver_stress_{}",
                   std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
@@ -114,8 +114,8 @@ auto main(int argc, char *argv[]) -> int {
                files.size()));
 
     auto dir = make_temp_dir();
-    kira::driver::cli_config cfg{
-        .program_name = "kira",
+    cinder::driver::cli_config cfg{
+        .program_name = "cinder",
         .sources = files,
         .metadata_dir = dir.path.string(),
         .show_help = false,
@@ -124,7 +124,7 @@ auto main(int argc, char *argv[]) -> int {
         .parse_only = true,
     };
 
-    auto result = kira::driver::compile_sources(cfg, false);
+    auto result = cinder::driver::compile_sources(cfg, false);
     expect(result.has_value(), "expected compile_sources to return a report");
     auto &report = result.value();
     expect(report.error_count == 0,

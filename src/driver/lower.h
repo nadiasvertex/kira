@@ -1,6 +1,6 @@
 #pragma once
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Best-effort HIR lowering outcome for one module file (see
 /// `src/hir/lower.h`). Lowering coverage is still partial — generics,
@@ -16,4 +16,4 @@ struct hir_lowering_result {
       false;         ///< Whether `hir::lower_module` succeeded for this module.
   std::string error; ///< Lowering error message; empty when `lowered` is true.
 };
-} // namespace kira::driver
+} // namespace cinder::driver

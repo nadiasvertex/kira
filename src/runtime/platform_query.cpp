@@ -22,7 +22,7 @@
 #endif
 #endif
 
-namespace kira::runtime::platform_query {
+namespace cinder::runtime::platform_query {
 
 #if !defined(_WIN32)
 
@@ -197,4 +197,4 @@ auto query_macos_version() -> std::optional<macos_version_info> {
 #endif
 }
 
-} // namespace kira::runtime::platform_query
+} // namespace cinder::runtime::platform_query

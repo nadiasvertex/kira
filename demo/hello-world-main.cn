@@ -8,8 +8,8 @@ module main
 #  with a return type and (elsewhere) the option of returning an int32
 #  exit code instead of `unit`.
 #
-#  Run it:      kira demo/hello-world-main.cn
-#  Compile it:  kira --compile -o hello-world-main demo/hello-world-main.cn
+#  Run it:      cinder demo/hello-world-main.cn
+#  Compile it:  cinder --compile -o hello-world-main demo/hello-world-main.cn
 # ==========================================================================
 
 def main() -> unit:

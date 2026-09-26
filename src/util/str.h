@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-namespace kira::util {
+namespace cinder::util {
 /// Append text to a diagnostic buffer, inserting a separating newline when
 /// needed.
 ///
@@ -25,4 +25,4 @@ auto append_error(std::string &buffer, std::string_view message) -> void;
 [[nodiscard]] auto join_strings(const std::vector<std::string> &parts,
                                 std::string_view separator) -> std::string;
 
-} // namespace kira::util
+} // namespace cinder::util

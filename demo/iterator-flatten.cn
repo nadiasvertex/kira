@@ -6,8 +6,8 @@ module main
 #  Yields every inner element in sequence, across all outer elements;
 #  empty inner iterators simply contribute nothing.
 #
-#  Run it:      kira demo/iterator-flatten.cn
-#  Compile it:  kira --compile -o iterator-flatten demo/iterator-flatten.cn
+#  Run it:      cinder demo/iterator-flatten.cn
+#  Compile it:  cinder --compile -o iterator-flatten demo/iterator-flatten.cn
 # ==========================================================================
 
 def main() -> int32:

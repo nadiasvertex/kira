@@ -7,7 +7,7 @@
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  Matching a declared pattern against a concrete type
@@ -105,4 +105,4 @@ struct rigid_match_result {
 [[nodiscard]] auto match_pattern(type_table &table, type_id pattern,
                                  type_id concrete) -> rigid_match_result;
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

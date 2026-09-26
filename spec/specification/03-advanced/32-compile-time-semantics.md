@@ -52,7 +52,7 @@ Neither is observable *as data* by other compile-time code — there is no API t
 
 Reflection reads the program's structure — types, fields, names, module members. That structure is immutable, so reflection is referentially transparent, and a `pure` function may use it freely:
 
-```kira
+```cinder
 pure def field_count[T]() -> usize:
     T.field_count()
 ```
@@ -65,7 +65,7 @@ Reflection may invoke only `pure` functions, so it can never cause an effect —
 
 Because there is no mutable global compile-time state, program-wide information is not accumulated by having each definition register itself. Instead, a query states the shape wanted and the compiler answers it against the finished program:
 
-```kira
+```cinder
 # every type that satisfies the `command` concept, gathered at compile time
 static COMMANDS: map[str, command] = map(
     for t in types_implementing[command]() => (t.name(), make_command(t))

@@ -7,14 +7,14 @@
 
 namespace {
 
-using kira::testing::expect;
+using cinder::testing::expect;
 
 /// `resolve_self_executable` locates this very test binary — used by
 /// `find_stdlib_source_file` (`src/driver/driver.cpp`) and
 /// `find_bazel_archive` (`src/driver/aot.cpp`) to find sibling support
 /// files for a `just package` install, independent of cwd or `argv[0]`.
 auto test_resolve_self_executable_finds_running_binary() -> void {
-  const auto resolved = kira::util::resolve_self_executable();
+  const auto resolved = cinder::util::resolve_self_executable();
   expect(resolved.has_value(),
          "expected resolve_self_executable to locate this platform's "
          "running test binary");

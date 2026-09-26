@@ -27,7 +27,7 @@ Three layers:
 
 ## Public API
 
-```kira
+```cinder
 extend str:
     pub def is_empty(self) -> bool
     pub def eq(self, other: str) -> bool
@@ -78,10 +78,10 @@ extend str:
 
 ## Example
 
-```kira
+```cinder
 let s = "  Hello, Cinder  "
 s.trim()                        # "Hello, Cinder"
-s.trim().to_uppercase()         # "HELLO, KIRA"
+s.trim().to_uppercase()         # "HELLO, CINDER"
 s.contains(" Cinder")              # true
 s.find(" Cinder")                  # @some(9), a byte offset into s
 "a::b".split(":")                # ["a", "", "b"]

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <ranges>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// Builds one `module_file_record` per input file that has a valid `module`
@@ -519,4 +519,4 @@ auto collect_use_decl_records(const std::vector<parsed_module> &inputs,
   return imports;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

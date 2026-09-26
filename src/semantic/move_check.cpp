@@ -7,7 +7,7 @@
 
 #include "src/semantic/binding_walk.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// Per-binding move state tracked while walking one function/lambda body.
@@ -833,4 +833,4 @@ auto check_moves(const std::vector<parsed_module> &inputs,
   }
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

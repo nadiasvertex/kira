@@ -3,7 +3,7 @@
 
 #include "src/comptime/eval.h"
 
-namespace kira::comptime {
+namespace cinder::comptime {
 
 namespace {
 
@@ -449,4 +449,4 @@ auto evaluator::try_eval_implements_call(const ast::call_expr &call)
   return value::make_bool(has_trait);
 }
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

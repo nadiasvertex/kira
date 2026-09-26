@@ -5,7 +5,7 @@
 
 #include "driver.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// When `cfg.test_mode` is set, scans the user portion of `cfg.sources`
 /// (everything before `cfg.stdlib_boundary`, or all of it if unset) for
@@ -32,4 +32,4 @@ namespace kira::driver {
 [[nodiscard]] auto discover_and_inject_test_runner(cli_config &cfg)
     -> std::expected<void, std::string>;
 
-} // namespace kira::driver
+} // namespace cinder::driver

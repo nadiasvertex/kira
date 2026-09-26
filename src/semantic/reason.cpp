@@ -5,7 +5,7 @@
 #include <set>
 #include <string>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// The solver's internal form: a conjunction of `poly >= 0`. Everything
@@ -282,4 +282,4 @@ auto solve(std::span<const constraint> facts, const goal_form &goal)
   return proof_result::unknown;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

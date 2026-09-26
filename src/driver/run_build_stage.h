@@ -4,7 +4,7 @@
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Executes `cfg.run_function` via the tier-0 VM when `cfg.run` is set,
 /// recording the outcome in `report.run`. Locates the target module by
@@ -39,4 +39,4 @@ auto build_requested_function(
     const cli_config &cfg, const hir::ptr_vec<hir::hir_module> &lowered_modules,
     const semantic::checked_types &checked, compile_report &report) -> void;
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -8,7 +8,7 @@
 
 #include "src/semantic/types.h"
 
-namespace kira::runtime {
+namespace cinder::runtime {
 
 // ==========================================================================
 //  Heap value layouts shared by `bytecode_compiler`/`bytecode::vm` and
@@ -164,4 +164,4 @@ struct layout_info {
                                         semantic::type_id id, size_t index)
     -> std::optional<size_t>;
 
-} // namespace kira::runtime
+} // namespace cinder::runtime

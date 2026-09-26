@@ -1,6 +1,6 @@
 module semantic_stress.higher_kinded_traits
 
-# The spec's own higher-kinded traits example (kira-reference.md, §Higher-
+# The spec's own higher-kinded traits example (cinder-reference.md, §Higher-
 # Kinded Traits): traits abstracted over a type *constructor* (`F[_]`), an
 # impl naming the bare constructor (`impl monad for option`), and calls
 # dispatched through it — `option.pure` associated-style, `.map`/`.bind`

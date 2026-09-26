@@ -10,14 +10,14 @@ A module is not a single file, and modules do not nest. Any number of files may 
 
 To split a large module across files, give each file the same `module` line:
 
-```kira
+```cinder
 # my_app/geometry/core.cn
 module my_app.geometry
 
 pub type point = { pub x: float64, pub y: float64 }
 ```
 
-```kira
+```cinder
 # my_app/geometry/distance.cn
 module my_app.geometry
 
@@ -29,7 +29,7 @@ pub def distance(a: point, b: point) -> float64:    # sees point directly
 
 A project's root is `project.cn`, ordinary Cinder evaluated at compile time — no separate manifest language. Search paths and dependencies are `static` data:
 
-```kira
+```cinder
 module my_app
 
 static search_path: list[str] = ["src", "vendor"]
@@ -46,7 +46,7 @@ Dependencies are resolved at compile time, and a `project.lock` file records the
 ## Implementation status
 
 - Modules spanning files is implemented: `src/semantic/module_index.cpp` builds the cross-file module graph and `detect_duplicate_module_paths` (invoked from `src/semantic/analysis.cpp`) validates module-path conflicts across files, so multiple files sharing one `module` line joining into one module is real, checked behavior.
-- `project.cn` as an evaluated manifest, `search_path`/`deps` as `static` data read by the build system, and `project.lock` are **not implemented**. No reference to a project manifest, search path, or dependency-resolution mechanism was found in `src/driver/cli.cpp` or elsewhere in the driver — the CLI takes source file paths directly (`bazelisk run //src:kira -- path/to/module.cn`), with no project-root discovery step. This subsection is design-only.
+- `project.cn` as an evaluated manifest, `search_path`/`deps` as `static` data read by the build system, and `project.lock` are **not implemented**. No reference to a project manifest, search path, or dependency-resolution mechanism was found in `src/driver/cli.cpp` or elsewhere in the driver — the CLI takes source file paths directly (`bazelisk run //src:cinder -- path/to/module.cn`), with no project-root discovery step. This subsection is design-only.
 
 ## See also
 

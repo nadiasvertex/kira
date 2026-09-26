@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace kira {
+namespace cinder {
 
 /// @brief One run produced by splitting a string literal's inner content
 /// (the text between the quotes, escapes/braces not yet decoded) into
@@ -70,4 +70,4 @@ struct interp_run {
 [[nodiscard]] auto find_matching_brace(std::string_view text, size_t open_pos)
     -> std::optional<size_t>;
 
-} // namespace kira
+} // namespace cinder

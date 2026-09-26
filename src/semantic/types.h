@@ -15,7 +15,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/linear_poly.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 // ==========================================================================
 //  Type model
@@ -1349,4 +1349,4 @@ struct program_index {
 [[nodiscard]] auto build_program_index(const std::vector<parsed_module> &inputs)
     -> program_index;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

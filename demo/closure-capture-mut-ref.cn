@@ -7,8 +7,8 @@ module main
 #  binding, so a running accumulator can live in the enclosing scope and be
 #  driven purely by calling the closure.
 #
-#  Run it:      kira demo/closure-capture-mut-ref.cn
-#  Compile it:  kira --compile -o closure-capture-mut-ref demo/closure-capture-mut-ref.cn
+#  Run it:      cinder demo/closure-capture-mut-ref.cn
+#  Compile it:  cinder --compile -o closure-capture-mut-ref demo/closure-capture-mut-ref.cn
 # ==========================================================================
 
 def call_twice(f: fn(int32) -> int32, a: int32, b: int32) -> int32:

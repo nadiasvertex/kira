@@ -6,7 +6,7 @@
 
 #include "source_location.h"
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  token_kind — every distinct lexical element in the Cinder language.
@@ -361,7 +361,7 @@ struct token {
   /// @brief Returns whether this token is a `type`-declaration modifier
   /// keyword — currently just `packed`. A dedicated predicate (rather than
   /// checking `kw_packed` directly at the one call site) mirrors
-  /// `is_func_modifier`'s shape so a future addition (`spec/kira-
+  /// `is_func_modifier`'s shape so a future addition (`spec/cinder-
   /// reference.md`'s aspirational `layout`/`align`/`offset`) has one place
   /// to join without another rename.
   [[nodiscard]] constexpr auto is_type_modifier() const noexcept -> bool {
@@ -1135,4 +1135,4 @@ struct token {
   }
 }
 
-} // namespace kira
+} // namespace cinder

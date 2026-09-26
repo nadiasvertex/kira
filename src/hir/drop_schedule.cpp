@@ -2,7 +2,7 @@
 
 #include <ranges>
 
-namespace kira::hir {
+namespace cinder::hir {
 namespace {
 
 using semantic::checked_types;
@@ -667,4 +667,4 @@ auto compute_drop_schedule(const ast::func_decl &decl,
   return walker.take_schedule();
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

@@ -9,8 +9,8 @@ module main
 #  referencing anything else there is an error, the same as referencing an
 #  undeclared name.
 #
-#  Run it:      kira demo/closure-capture-value.cn
-#  Compile it:  kira --compile -o closure-capture-value demo/closure-capture-value.cn
+#  Run it:      cinder demo/closure-capture-value.cn
+#  Compile it:  cinder --compile -o closure-capture-value demo/closure-capture-value.cn
 # ==========================================================================
 
 def main() -> unit:

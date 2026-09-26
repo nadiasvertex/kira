@@ -10,9 +10,9 @@ Covers `if`/`elif`/`else` as an expression, the postfix `if/else` form, `while` 
 
 ## `if`
 
-`if_expr` in `spec/kira-grammar.ebnf`.
+`if_expr` in `spec/cinder-grammar.ebnf`.
 
-```kira
+```cinder
 if score > 90:
     return "A"
 elif score > 80:
@@ -23,7 +23,7 @@ else:
 
 As an expression, `if`'s value is the last expression of the branch taken:
 
-```kira
+```cinder
 let grade =
     if score > 90: "A"
     elif score > 80: "B"
@@ -32,7 +32,7 @@ let grade =
 
 For an inline choice between two values, the postfix form puts the likely value first:
 
-```kira
+```cinder
 let label = "pass" if score > 90 else "fail"
 ```
 
@@ -40,7 +40,7 @@ let label = "pass" if score > 90 else "fail"
 
 `while_stmt`.
 
-```kira
+```cinder
 var n = 1
 while n < 100:
     n = n * 2
@@ -50,7 +50,7 @@ while n < 100:
 
 `while_stmt`'s second form repeats the body as long as a pattern keeps matching a re-evaluated scrutinee, binding the pattern's names inside the body on each successful match:
 
-```kira
+```cinder
 while let @some(line) = reader.next():
     process(line)
 ```
@@ -61,7 +61,7 @@ The loop ends the first time the pattern fails to match (here, when `reader.next
 
 `for_stmt` (statement form, runs for effect) and `for_expr` (expression form, uses `=>` to denote the yield expression — a distinct production from `for_stmt`, per the grammar's own note).
 
-```kira
+```cinder
 for i in 0..10:          # 0, 1, ..., 9
     println(i)
 
@@ -78,14 +78,14 @@ A range with no upper bound (`0..`) is valid and never terminates on its own; pa
 
 `for_vars` accepts any `pattern`, so a `for` head can destructure a tuple or struct the same way a `let` can:
 
-```kira
+```cinder
 for (x, y) in points:
     println("{x}, {y}")
 ```
 
-This pattern must be **irrefutable** — guaranteed to match every element the iterable produces (see the note on irrefutability in `spec/kira-grammar.ebnf`). `for` has no "skip elements that don't match" mode the way `while let` does for a single scrutinee; a `for` head is a destructuring bind repeated per element, not a per-element test. To drop non-matching elements, filter with a guard instead:
+This pattern must be **irrefutable** — guaranteed to match every element the iterable produces (see the note on irrefutability in `spec/cinder-grammar.ebnf`). `for` has no "skip elements that don't match" mode the way `while let` does for a single scrutinee; a `for` head is a destructuring bind repeated per element, not a per-element test. To drop non-matching elements, filter with a guard instead:
 
-```kira
+```cinder
 for x in xs if keep(x):
     ...
 ```
@@ -96,7 +96,7 @@ or, when the source is naturally an iterator that eventually stops matching, dri
 
 `for ... => expr` collects results into a `list`. It supports a filter guard and multiple generators (comma-separated), producing the cross product:
 
-```kira
+```cinder
 let squares = for x in 1..=5 => x * x    # [1, 4, 9, 16, 25]
 let evens   = for x in 0..20 if x % 2 == 0 => x
 let pairs   = for x in 0..3, y in 0..3 => (x, y)
@@ -106,7 +106,7 @@ let pairs   = for x in 0..3, y in 0..3 => (x, y)
 
 Inside a `while` or `for` *statement* loop, `break` exits the innermost enclosing loop and `continue` skips to the next iteration:
 
-```kira
+```cinder
 for line in lines:
     if line.is_empty():
         continue
@@ -125,7 +125,7 @@ Rules:
 
 `scope_stmt`. A bare block, introduced without a condition or subject, that exists only to bound the lifetime of the bindings inside it:
 
-```kira
+```cinder
 scope:
     let f = fs.open("build.log")
     f.write_all(summary)
@@ -142,7 +142,7 @@ process_next_step()
 
 - `if`, `while` (including `while let`), both forms of `for`, and `break`/`continue` are implemented end-to-end.
 - The irrefutability rule for a `for` head (and for `let`/`var`) is not yet enforced: the checker records a for-loop pattern's bindings without checking that it can't fail, and lowering (`hir/lower.cpp`) assumes it never does — passing a refutable pattern (e.g. `for @some(x) in xs:`) currently compiles instead of being rejected, and its runtime behavior on a non-matching element is unspecified. Treat this as a checker gap against the rule stated above, not a supported way to filter a loop.
-- `scope` is design-only: the `scope_stmt` production is in `spec/kira-grammar.ebnf`, but there is no `scope` keyword token and no parser/checker/lowering support, so `scope:` is a parse error today. Everything in the `scope` section above describes the target design — including its drop behavior, which rests on scope-exit `drop` glue that does **not** exist for any kind of scope (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). Implementing `scope` is therefore blocked on destructors, not merely on parsing a keyword.
+- `scope` is design-only: the `scope_stmt` production is in `spec/cinder-grammar.ebnf`, but there is no `scope` keyword token and no parser/checker/lowering support, so `scope:` is a parse error today. Everything in the `scope` section above describes the target design — including its drop behavior, which rests on scope-exit `drop` glue that does **not** exist for any kind of scope (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). Implementing `scope` is therefore blocked on destructors, not merely on parsing a keyword.
 
 ## See also
 

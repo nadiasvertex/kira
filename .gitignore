@@ -1,12 +1,12 @@
 bazel-bin
-bazel-kira
+bazel-cinder
 bazel-out
 bazel-testlogs
 compile_commands.json
 external
 .cache
 dist
-kira-out
+cinder-out
 lint.log
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).

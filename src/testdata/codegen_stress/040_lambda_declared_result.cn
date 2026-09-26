@@ -1,6 +1,6 @@
 module codegen_stress.lambda_declared_result
 
-# Lambda spellings the grammar sanctions (`spec/kira-grammar.ebnf`,
+# Lambda spellings the grammar sanctions (`spec/cinder-grammar.ebnf`,
 # `lambda_expr` / `lambda_params`). Only the `pure`-prefixed form used to
 # parse: `pure` and `move` were routed straight to the lambda parser, while
 # an unprefixed `(` reached the tuple parser and an `ident ->` head was not

@@ -6,9 +6,9 @@
 
 ## Syntax
 
-`machine` is one of the `func_modifier` alternatives (`spec/kira-grammar.ebnf`, `func_prefix`/`func_modifier`), composing with `pure`, `async`, and `static`; canonical order is `static` before `pure` before `async` before `machine`. Raw pointer types use `ptr_type = "*" type_expr | "*" "mut" type_expr`. Inline assembly is a statement, `asm_stmt = "asm" "{" ASM_CONTENT "}" NEWLINE`.
+`machine` is one of the `func_modifier` alternatives (`spec/cinder-grammar.ebnf`, `func_prefix`/`func_modifier`), composing with `pure`, `async`, and `static`; canonical order is `static` before `pure` before `async` before `machine`. Raw pointer types use `ptr_type = "*" type_expr | "*" "mut" type_expr`. Inline assembly is a statement, `asm_stmt = "asm" "{" ASM_CONTENT "}" NEWLINE`.
 
-```kira
+```cinder
 machine def fast_sum(data: slice[float32], len: usize) -> float32:
     let p = data.as_ptr()
     var sum: float32 = 0.0
@@ -19,7 +19,7 @@ machine def fast_sum(data: slice[float32], len: usize) -> float32:
 
 Prefixes compose:
 
-```kira
+```cinder
 async machine def dma_transfer(src: *byte, dst: *mut byte, n: usize) -> result[unit, dma_error]:
     ...
 
@@ -40,7 +40,7 @@ Facilities available inside `machine` functions, per the reference design:
 - Inline assembly (`asm { ... }`).
 - `uninit[T, N]`, a fixed-capacity, alignment-correct buffer for `N` slots of `T` that carries no guarantee any slot holds a valid `T`:
 
-```kira
+```cinder
 pub type uninit[T, N: usize]     # opaque; N slots, sized/aligned for T
 
 machine def slot_ptr[T, N: usize](buf: &uninit[T, N], i: usize) -> *mut T: ...
@@ -74,7 +74,7 @@ As implemented, the buffer needs fewer operations than the sketch above: `buf[i]
   - `size_of[T]()` and `align_of[T]()`, folded at lowering time against `runtime::layout_of` — the same function both backends read every field offset and element stride from, so a `size_of[T]()` cannot disagree with the stride `T` actually occupies. `size_of` previously type-checked to `usize` and then failed to lower at all.
   - `ptr_cast[U](p)` — reinterprets a raw pointer's pointee type. No code: every raw pointer is an address. Mutability follows the operand, so a cast can never *gain* the right to write.
   - `uninit[T, N]` and genuine stack storage for it: an `alloca` in the LLVM tier's entry block, a statically-sized frame-local byte range (`op_stack_alloc`) in the bytecode tier. `buf[i]` is bounds-checked against `N` (a compile-time constant, so the check is free); `.len()` folds to `N`; `.as_mut_ptr()` hands out the buffer. Buffers are zero-filled, which `uninit` does not promise — it only removes the nondeterminism, so a read of an unwritten slot fails the same way every run. A function's `uninit` buffers together may use at most **1 MiB** of frame storage (`hir::k_max_frame_stack_bytes`); a larger frame is a compile error on every backend, naming each contributing buffer. Lambda bodies are frames of their own. A callee holding a buffer is never inlined (which would move the buffer into the caller's budget), and a function owning a buffer makes no tail calls (a callee may still point into it). On the LLVM tier every function carries inline stack probes, so running out of thread stack under the limit faults on the guard page instead of stepping past it.
-  - Raw heap memory: the `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`), wrapped in typed, element-counted form by [`std.mem`](../04-stdlib/collections/43-list.md). The allocator is selectable at run time (`KIRA_ALLOCATOR=system|arena`).
+  - Raw heap memory: the `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`), wrapped in typed, element-counted form by [`std.mem`](../04-stdlib/collections/43-list.md). The allocator is selectable at run time (`CINDER_ALLOCATOR=system|arena`).
 - **Not implemented:**
   - The four named machine functions in the sketch above (`slot_ptr`, `write_slot`, `read_slot`, `drop_first`, `as_slice`) do not exist under those names. `slot_ptr`/`write_slot`/`read_slot` are subsumed by `buf.as_mut_ptr()` and `buf[i]`. `as_slice` has no equivalent: there is no way to form a `slice[T]` over the first `len` slots of a buffer. `drop_first` is blocked on destructors, which do not run anywhere (`../../todo.md` item 6).
   - `small_list[T, N]` ([Small List](../04-stdlib/collections/47-small-list.md)) is now *buildable* on `uninit[T, N]`, but has not been built.

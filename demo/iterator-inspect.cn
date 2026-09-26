@@ -6,8 +6,8 @@ module main
 #  Calls a function on each element purely for its side effects (typically
 #  logging), then passes the element through untouched to the next adapter.
 #
-#  Run it:      kira demo/iterator-inspect.cn
-#  Compile it:  kira --compile -o iterator-inspect demo/iterator-inspect.cn
+#  Run it:      cinder demo/iterator-inspect.cn
+#  Compile it:  cinder --compile -o iterator-inspect demo/iterator-inspect.cn
 # ==========================================================================
 
 def main() -> int32:

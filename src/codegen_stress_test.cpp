@@ -49,10 +49,10 @@
 namespace {
 
 namespace fs = std::filesystem;
-namespace hir = kira::hir;
-namespace bc = kira::bytecode;
-namespace bcc = kira::bytecode_compiler;
-namespace lc = kira::llvm_codegen;
+namespace hir = cinder::hir;
+namespace bc = cinder::bytecode;
+namespace bcc = cinder::bytecode_compiler;
+namespace lc = cinder::llvm_codegen;
 
 [[noreturn]] auto fail(const std::string &message) -> void {
   std::cerr << "codegen_stress_test failed: " << message << '\n';
@@ -119,11 +119,11 @@ auto read_file(const fs::path &path) -> std::string {
 }
 
 struct checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::testing::parsed_stdlib stdlib;
-  kira::ast::ptr<kira::ast::file> ast_file;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::testing::parsed_stdlib stdlib;
+  cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::semantic::checked_types checked;
 };
 
 // The stdlib is injected alongside the corpus file, exactly as the driver
@@ -134,15 +134,15 @@ struct checked_fixture {
 auto check_source(const std::string &text, const fs::path &path)
     -> checked_fixture {
   auto fixture = checked_fixture{};
-  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+  fixture.stdlib = cinder::testing::parse_stdlib(fixture.sources, fixture.diag);
   const auto file_id = fixture.sources.add_file(path.string(), text);
   expect(file_id.has_value(),
          std::format("`{}`: expected source to register", path.string()));
 
   const auto *file = fixture.sources.get(*file_id);
-  auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
   fixture.ast_file = parser.parse_file();
   expect(fixture.diag.error_count() == 0,
          std::format("`{}`: expected corpus file to parse cleanly",
@@ -151,12 +151,12 @@ auto check_source(const std::string &text, const fs::path &path)
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   auto parsed_modules = fixture.stdlib.modules;
-  parsed_modules.push_back(kira::semantic::parsed_module{
+  parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   if (fixture.diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(fixture.sources, false)
+    std::cerr << cinder::diagnostic_renderer(fixture.sources, false)
                      .render_all(fixture.diag);
   }
   expect(fixture.diag.error_count() == 0,
@@ -198,7 +198,7 @@ struct bytecode_run {
 
 auto run_bytecode(const fs::path &path,
                   std::span<const hir::hir_module *const> modules,
-                  const kira::semantic::type_table &types) -> bytecode_run {
+                  const cinder::semantic::type_table &types) -> bytecode_run {
   auto compiled = bcc::compile_module(modules, types);
   expect(compiled.has_value(),
          std::format("`{}`: expected bytecode_compiler to accept this "
@@ -244,7 +244,7 @@ struct llvm_run {
 // `run_one`'s own `is_heap_result` classification.
 auto run_llvm(const fs::path &path,
               std::span<const hir::hir_module *const> modules,
-              const kira::semantic::type_table &types,
+              const cinder::semantic::type_table &types,
               std::optional<bc::numeric_kind> return_kind, bool as_ptr)
     -> llvm_run {
   auto compiled = lc::compile_module(modules, types);
@@ -306,10 +306,10 @@ auto run_llvm(const fs::path &path,
 // `a_bits` (the bytecode VM's result) and `b_bits` (the LLVM JIT's result)
 // at the same computed stride via `read_at`, not `read_slot`'s fixed
 // 8-byte one.
-[[nodiscard]] auto element_stride(const kira::semantic::type_table &types,
-                                  kira::semantic::type_id elem_type)
+[[nodiscard]] auto element_stride(const cinder::semantic::type_table &types,
+                                  cinder::semantic::type_id elem_type)
     -> uint8_t {
-  const auto layout = kira::runtime::layout_of(types, elem_type);
+  const auto layout = cinder::runtime::layout_of(types, elem_type);
   if (!layout.has_value() || layout->size_bytes == 0 ||
       layout->size_bytes > 8) {
     return 8;
@@ -350,15 +350,15 @@ auto run_llvm(const fs::path &path,
 // is now an ordinary stdlib struct (`src/std/list.cn`), so both spellings
 // have to be recognized — the header it lays out, `{ len, cap, data }`, is
 // the same either way, which is what the readers below depend on.
-[[nodiscard]] auto is_list_type(const kira::semantic::type_entry &entry)
+[[nodiscard]] auto is_list_type(const cinder::semantic::type_entry &entry)
     -> bool {
-  return (entry.kind == kira::semantic::type_kind::builtin_generic_kind ||
-          entry.kind == kira::semantic::type_kind::struct_kind) &&
+  return (entry.kind == cinder::semantic::type_kind::builtin_generic_kind ||
+          entry.kind == cinder::semantic::type_kind::struct_kind) &&
          entry.name == "list" && entry.args.size() == 1;
 }
 
-[[nodiscard]] auto is_deep_comparable(const kira::semantic::type_table &types,
-                                      kira::semantic::type_id id) -> bool {
+[[nodiscard]] auto is_deep_comparable(const cinder::semantic::type_table &types,
+                                      cinder::semantic::type_id id) -> bool {
   if (bc::numeric_kind_of(types, id).has_value()) {
     return true;
   }
@@ -367,14 +367,14 @@ auto run_llvm(const fs::path &path,
     return is_deep_comparable(types, entry.args.front());
   }
   switch (entry.kind) {
-  case kira::semantic::type_kind::builtin_kind:
+  case cinder::semantic::type_kind::builtin_kind:
     return entry.name == "str";
-  case kira::semantic::type_kind::tuple_kind:
+  case cinder::semantic::type_kind::tuple_kind:
     return std::ranges::all_of(entry.args,
-                               [&](kira::semantic::type_id arg) -> bool {
+                               [&](cinder::semantic::type_id arg) -> bool {
                                  return is_deep_comparable(types, arg);
                                });
-  case kira::semantic::type_kind::array_kind:
+  case cinder::semantic::type_kind::array_kind:
     return entry.array_size.has_value() &&
            is_deep_comparable(types, entry.result);
   default:
@@ -382,8 +382,8 @@ auto run_llvm(const fs::path &path,
   }
 }
 
-[[nodiscard]] auto values_equal(const kira::semantic::type_table &types,
-                                kira::semantic::type_id id, uint64_t a_bits,
+[[nodiscard]] auto values_equal(const cinder::semantic::type_table &types,
+                                cinder::semantic::type_id id, uint64_t a_bits,
                                 uint64_t b_bits) -> bool {
   if (bc::numeric_kind_of(types, id).has_value()) {
     return a_bits == b_bits;
@@ -410,7 +410,7 @@ auto run_llvm(const fs::path &path,
     return true;
   }
   switch (entry.kind) {
-  case kira::semantic::type_kind::builtin_kind: {
+  case cinder::semantic::type_kind::builtin_kind: {
     // `str`: { u64 len; u8* data; } — compare length, then raw bytes.
     const auto len_a = read_slot(a_bits, 0);
     const auto len_b = read_slot(b_bits, 0);
@@ -423,13 +423,13 @@ auto run_llvm(const fs::path &path,
         static_cast<uintptr_t>(read_slot(b_bits, 1)));
     return std::memcmp(data_a, data_b, len_a) == 0;
   }
-  case kira::semantic::type_kind::tuple_kind:
+  case cinder::semantic::type_kind::tuple_kind:
     // A tuple packs its elements at their own natural width/offset
     // (`runtime::tuple_layout`), not one 8-byte slot per element — read
     // both tiers' tuples at the same computed offset/stride via `read_at`,
     // mirroring the `array_kind` case just below.
     for (size_t i = 0; i < entry.args.size(); ++i) {
-      const auto offset = kira::runtime::tuple_element_offset(types, id, i);
+      const auto offset = cinder::runtime::tuple_element_offset(types, id, i);
       if (!offset.has_value()) {
         return false;
       }
@@ -440,7 +440,7 @@ auto run_llvm(const fs::path &path,
       }
     }
     return true;
-  case kira::semantic::type_kind::array_kind: {
+  case cinder::semantic::type_kind::array_kind: {
     const auto count = entry.array_size.value_or(0);
     const auto stride = element_stride(types, entry.result);
     for (uint64_t i = 0; i < count; ++i) {
@@ -516,8 +516,8 @@ struct tier_runs {
 /// the file's `# expect:` value, if it has one.
 auto run_and_check_tiers(const fs::path &path, std::string_view text,
                          std::span<const hir::hir_module *const> module_set,
-                         const kira::semantic::type_table &types,
-                         kira::semantic::type_id return_type,
+                         const cinder::semantic::type_table &types,
+                         cinder::semantic::type_id return_type,
                          std::optional<bc::numeric_kind> return_kind,
                          bool is_heap_result) -> tier_runs {
   auto runs = tier_runs{
@@ -607,7 +607,7 @@ auto run_one(const fs::path &path) -> void {
   for (auto &submodule : *submodules) {
     owned_modules.push_back(std::move(submodule));
   }
-  kira::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
+  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
                                       owned_modules);
   const auto module_set =
       hir::find_reachable_modules(*entry_module, owned_modules);

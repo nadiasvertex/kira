@@ -5,7 +5,7 @@
 
 #include "src/hir/nodes.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// The free variables `lambda.body` references from an enclosing scope —
 /// every `hir_local_ref` whose symbol isn't itself bound inside the lambda
@@ -58,4 +58,4 @@ namespace kira::hir {
 [[nodiscard]] auto ref_captured_symbols(const hir_block &body)
     -> std::unordered_set<symbol_id>;
 
-} // namespace kira::hir
+} // namespace cinder::hir

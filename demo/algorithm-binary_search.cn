@@ -4,8 +4,8 @@ module main
 #  `algorithm.binary_search` — O(log n) lookup of a value in an
 #  ascending-sorted slice.
 #
-#  Run it:      kira demo/algorithm-binary_search.cn
-#  Compile it:  kira --compile -o algorithm-binary_search demo/algorithm-binary_search.cn
+#  Run it:      cinder demo/algorithm-binary_search.cn
+#  Compile it:  cinder --compile -o algorithm-binary_search demo/algorithm-binary_search.cn
 # ==========================================================================
 
 def main() -> int32:

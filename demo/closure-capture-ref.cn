@@ -7,8 +7,8 @@ module main
 #  rather than a copy, so a change made through one path is visible through
 #  the other.
 #
-#  Run it:      kira demo/closure-capture-ref.cn
-#  Compile it:  kira --compile -o closure-capture-ref demo/closure-capture-ref.cn
+#  Run it:      cinder demo/closure-capture-ref.cn
+#  Compile it:  cinder --compile -o closure-capture-ref demo/closure-capture-ref.cn
 # ==========================================================================
 
 def main() -> unit:

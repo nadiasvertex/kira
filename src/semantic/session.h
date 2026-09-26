@@ -13,7 +13,7 @@
 #include "src/semantic/scopes.h"
 #include "src/semantic/symbols.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// One file that contributes to a module, recorded for module-graph checks
 /// (duplicate paths, parent/child boundary validation).
@@ -117,4 +117,4 @@ auto resolve_symbol(const semantic_session &session, scope_id start_scope,
                     symbol_namespace name_space, std::string_view name)
     -> const semantic_symbol *;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

@@ -4,7 +4,7 @@
 
 #include "src/hir/nodes.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// Every module reachable from `entry`'s own functions, transitively, via a
 /// module- or type-qualified call (`hir_local_ref::owner_module` — see
@@ -29,4 +29,4 @@ find_reachable_modules(const hir_module &entry,
                        const ptr_vec<hir_module> &all_modules)
     -> std::vector<const hir_module *>;
 
-} // namespace kira::hir
+} // namespace cinder::hir

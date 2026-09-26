@@ -10,11 +10,11 @@
 
 namespace {
 
-using kira::testing::expect;
-namespace bc = kira::bytecode;
+using cinder::testing::expect;
+namespace bc = cinder::bytecode;
 
 auto test_numeric_kind_of_maps_every_scalar() -> void {
-  auto types = kira::semantic::type_table{};
+  auto types = cinder::semantic::type_table{};
 
   expect(bc::numeric_kind_of(types, types.builtin("bool")) ==
              bc::numeric_kind::boolean,
@@ -52,7 +52,7 @@ auto test_numeric_kind_of_maps_every_scalar() -> void {
 }
 
 auto test_numeric_kind_of_rejects_unsupported_widths_and_non_scalars() -> void {
-  auto types = kira::semantic::type_table{};
+  auto types = cinder::semantic::type_table{};
 
   expect(!bc::numeric_kind_of(types, types.builtin("int128")).has_value(),
          "expected int128 to be unsupported in this increment");

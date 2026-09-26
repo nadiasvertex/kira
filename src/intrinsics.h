@@ -6,7 +6,7 @@
 #include <optional>
 #include <string_view>
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  Shared intrinsic schema.
@@ -119,7 +119,7 @@ inline constexpr std::array<std::string_view, 36> known_intrinsic_names = {{
   return std::nullopt;
 }
 
-/// Argument count for each intrinsic's native C-ABI symbol (`kira_rt_*`,
+/// Argument count for each intrinsic's native C-ABI symbol (`cinder_rt_*`,
 /// `src/runtime/io.h`), indexed the same as `known_intrinsic_names`. Read
 /// from here rather than duplicated so the two backends' declared arities
 /// can't drift out of sync with each other or with `io.h`'s actual
@@ -177,7 +177,7 @@ inline constexpr std::array<uint8_t, 36> known_intrinsic_arities = {{
 //  `bool`/`uint8` widen to `i32`: not for range, but because a sub-32-bit
 //  integer argument's calling-convention lowering depends on a `zeroext`/
 //  `signext` attribute that this table's caller (`llvm_codegen`, which
-//  builds each `kira_rt_*` declaration and call site by hand) does not
+//  builds each `cinder_rt_*` declaration and call site by hand) does not
 //  attempt to reproduce byte-for-byte against what Clang attaches to the
 //  real definition in `src/runtime/`. `i32`/`i64`/`f32`/`f64` need no such
 //  attribute on any target Cinder builds for, so widening the two sub-32-bit
@@ -289,4 +289,4 @@ inline constexpr std::array<std::array<intrinsic_wire_kind, 3>, 36>
          intrinsic_wire_kind::i64}, // rt_free (ptr, bytes)
     }};
 
-} // namespace kira
+} // namespace cinder

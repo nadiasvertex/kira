@@ -9,8 +9,8 @@ module main
 #  other move. `&name`/`&mut name` entries already state their own mode and
 #  are left untouched by `move`.
 #
-#  Run it:      kira demo/closure-capture-move.cn
-#  Compile it:  kira --compile -o closure-capture-move demo/closure-capture-move.cn
+#  Run it:      cinder demo/closure-capture-move.cn
+#  Compile it:  cinder --compile -o closure-capture-move demo/closure-capture-move.cn
 # ==========================================================================
 
 def main() -> unit:

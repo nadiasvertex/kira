@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace kira::util {
+namespace cinder::util {
 
 /// Convert a filesystem path to the normalized slash-separated form used in
 /// reports.
@@ -30,4 +30,4 @@ namespace kira::util {
 [[nodiscard]] auto read_source_file(const std::filesystem::path &path)
     -> std::expected<std::string, std::string>;
 
-} // namespace kira::util
+} // namespace cinder::util

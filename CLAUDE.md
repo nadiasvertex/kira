@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
  Cinder is an early-stage language and compiler project written in C++26 (Clang 23.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
 
 - Language and standard library specification: spec/specification/ (start at spec/specification/00-overview.md)
-- Language grammar: spec/kira-grammar.ebnf
+- Language grammar: spec/cinder-grammar.ebnf
 
-CRITICAL: When writing kira code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
+CRITICAL: When writing cinder code that doesn't compile but should according to the spec, don't try to work around compiler limitations. Stop and identify the limitations so that we can build a better compiler.
 
 ## Default Response Rule
 
@@ -40,9 +40,9 @@ Communicate clearly, directly, and concisely.
 ## Commands
 
 ```sh
-just build      # bazelisk build //src:kira
+just build      # bazelisk build //src:cinder
 just test       # bazelisk test //...
-just run        # bazelisk run //src:kira
+just run        # bazelisk run //src:cinder
 just package    # release archives (tar.bz2, .deb on Linux) under dist/
 just format     # regenerate compile_commands.json, run clang-tidy --fix over src/
 ```
@@ -58,11 +58,11 @@ bazelisk test //src:cli_test
 Run the compiled binary against a source file:
 
 ```sh
-bazelisk run //src:kira -- path/to/module.cn
-bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.cn
+bazelisk run //src:cinder -- path/to/module.cn
+bazelisk run //src:cinder -- --metadata-dir build/meta path/to/module.cn
 ```
 
-Tests are hand-rolled binaries (no gtest) using `kira::testing::expect`/`fail` from `src/testing/test_assert.h`; a failing `expect()` calls `std::exit(1)` with a message, so add new checks as additional `expect(...)` calls rather than introducing a framework.
+Tests are hand-rolled binaries (no gtest) using `cinder::testing::expect`/`fail` from `src/testing/test_assert.h`; a failing `expect()` calls `std::exit(1)` with a message, so add new checks as additional `expect(...)` calls rather than introducing a framework.
 
 ### A test must be able to fail
 
@@ -86,10 +86,10 @@ The compiler above all is meant to teach the user how to use the language. Frien
   - `scopes.cpp` / `symbols.cpp` / `session.cpp`: builds the scope tree (`semantic_scope`, kinds like `module_scope`, `impl_scope`, `function_body_scope`, `match_arm_scope`, ...) and interned symbol table (`semantic_symbol`, namespaced by `symbol_namespace` — types/traits/submodules, values, type parameters, and associated types are looked up in separate namespaces so a type and value may share a spelling).
   - `types.cpp` / `check.cpp`: interns types into a `type_table` (`type_id` equality is id equality); `k_unknown_type` deliberately unifies with everything so one gap in knowledge doesn't cascade into unrelated errors, and `k_error_type` marks expressions where a diagnostic was already reported. `check_program` resolves names, infers/checks expression types, validates match exhaustiveness for sum types, and checks trait/impl coherence and `requires` obligations.
   - Files already marked failing in a `std::vector<bool> file_has_errors` are skipped by later stages so parse errors don't cascade into low-value semantic noise.
-- `src/driver/cli.cpp` + `src/main.cpp`: the compile driver — loads/parses files, runs the semantic pipeline, renders diagnostics, and writes protobuf module metadata (`src/module_metadata.proto`) under `kira-out/module-metadata/` (overridable via `--metadata-dir`). Do not assume the vendored `third_party/argparse` is on the active CLI path — the real CLI parsing lives in `src/driver/cli.cpp`.
+- `src/driver/cli.cpp` + `src/main.cpp`: the compile driver — loads/parses files, runs the semantic pipeline, renders diagnostics, and writes protobuf module metadata (`src/module_metadata.proto`) under `cinder-out/module-metadata/` (overridable via `--metadata-dir`). Do not assume the vendored `third_party/argparse` is on the active CLI path — the real CLI parsing lives in `src/driver/cli.cpp`.
 - Diagnostics (`diagnostic.h`) are first-class output, not an afterthought: every diagnostic level includes `Help`/`Note` because the compiler's stated philosophy ("compiler is a teacher") requires explaining what was expected, what was found, why, and how to fix it — apply this same standard when adding new diagnostics anywhere in the pipeline.
 - `src/testdata/parser_stress/` and `src/testdata/semantic_stress/`: `.cn` corpora exercised by `driver_stress_test.cpp` and `semantic_stress_test.cpp` respectively (registered as Bazel `filegroup`s and consumed as test `data`).
-- `spec/`: `specification/` (the normative language and standard library specification — Core/Intermediate/Advanced sections plus a stdlib section, one chapter per feature, each with an implementation-status marker; start at `specification/00-overview.md`), `kira-grammar.ebnf` (grammar sketch), `CONVENTIONS.md` (authoritative C++ style rules), `todo.md` (known compiler gaps and bugs).
+- `spec/`: `specification/` (the normative language and standard library specification — Core/Intermediate/Advanced sections plus a stdlib section, one chapter per feature, each with an implementation-status marker; start at `specification/00-overview.md`), `cinder-grammar.ebnf` (grammar sketch), `CONVENTIONS.md` (authoritative C++ style rules), `todo.md` (known compiler gaps and bugs).
 
 ## C++ Conventions
 

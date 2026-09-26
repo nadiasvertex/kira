@@ -6,7 +6,7 @@
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// One name a pattern binds, in the order the pattern would bind it.
 struct pattern_binding {
@@ -27,4 +27,4 @@ struct pattern_binding {
 [[nodiscard]] auto collect_pattern_bindings(const ast::pattern &pattern)
     -> std::vector<pattern_binding>;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

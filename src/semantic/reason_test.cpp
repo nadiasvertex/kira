@@ -8,20 +8,20 @@
 
 namespace {
 
-using kira::semantic::constraint;
-using kira::semantic::fact_set;
-using kira::semantic::goal_form;
-using kira::semantic::linear_poly;
-using kira::semantic::poly_add;
-using kira::semantic::poly_constant;
-using kira::semantic::poly_negate;
-using kira::semantic::poly_scale;
-using kira::semantic::poly_sub;
-using kira::semantic::poly_variable;
-using kira::semantic::proof_result;
-using kira::semantic::relation;
-using kira::semantic::solve;
-using kira::testing::expect;
+using cinder::semantic::constraint;
+using cinder::semantic::fact_set;
+using cinder::semantic::goal_form;
+using cinder::semantic::linear_poly;
+using cinder::semantic::poly_add;
+using cinder::semantic::poly_constant;
+using cinder::semantic::poly_negate;
+using cinder::semantic::poly_scale;
+using cinder::semantic::poly_sub;
+using cinder::semantic::poly_variable;
+using cinder::semantic::proof_result;
+using cinder::semantic::relation;
+using cinder::semantic::solve;
+using cinder::testing::expect;
 
 /// `poly >= 0`.
 auto at_least_zero(linear_poly poly) -> constraint {
@@ -165,7 +165,7 @@ auto test_irrelevant_facts_do_not_count_against_the_limit() -> void {
   // obligation. Facts unconnected to the goal are dropped before the size
   // limit is applied, so a provable goal stays provable in a big scope.
   auto facts = fact_set{at_least_zero(var_minus("i", 0))};
-  for (size_t i = 0; i < kira::semantic::k_atom_limit + 8; ++i) {
+  for (size_t i = 0; i < cinder::semantic::k_atom_limit + 8; ++i) {
     facts.push_back(at_least_zero(var_minus(std::format("unrelated{}", i), 0)));
   }
   expect(solve(facts, single(at_least_zero(var_minus("i", 0)))) ==
@@ -213,7 +213,7 @@ auto test_too_many_atoms_declines_rather_than_blowing_up() -> void {
   // Past the fragment's size limit the solver answers `unknown` — it does not
   // search harder, and it does not hang. Built as a *connected* chain
   // (v0 <= v1 <= ... <= vN) so relevance filtering can't shrink it.
-  constexpr auto k_length = kira::semantic::k_atom_limit + 4;
+  constexpr auto k_length = cinder::semantic::k_atom_limit + 4;
   auto facts = fact_set{};
   for (size_t i = 0; i + 1 < k_length; ++i) {
     facts.push_back(

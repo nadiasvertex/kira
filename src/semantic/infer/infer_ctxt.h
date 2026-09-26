@@ -13,7 +13,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  The metavariable store
@@ -292,4 +292,4 @@ private:
   std::vector<cause> causes_;
 };
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

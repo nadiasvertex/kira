@@ -12,7 +12,7 @@
 #include "source_location.h"
 #include "token.h"
 
-namespace kira::ast {
+namespace cinder::ast {
 
 // ==========================================================================
 //  Forward declarations — every AST node type.
@@ -1042,7 +1042,7 @@ constexpr auto is_reference_capture(capture_mode mode) -> bool {
   return mode == capture_mode::by_ref || mode == capture_mode::by_mut_ref;
 }
 
-/// One entry of a lambda's explicit capture list (`spec/kira-grammar.ebnf`'s
+/// One entry of a lambda's explicit capture list (`spec/cinder-grammar.ebnf`'s
 /// `capture_item`).
 struct lambda_capture {
   source_span span; ///< Full source range of the entry, `&mut` included.
@@ -1986,4 +1986,4 @@ struct aliased_pattern {
   source_span span; ///< Combined source range of pattern and alias.
 };
 
-} // namespace kira::ast
+} // namespace cinder::ast

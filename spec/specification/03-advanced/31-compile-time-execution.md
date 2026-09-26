@@ -8,9 +8,9 @@ There is no separate template or macro language. Compile-time code is ordinary C
 
 ## `static` bindings
 
-Grammar: `static_decl` in `spec/kira-grammar.ebnf`.
+Grammar: `static_decl` in `spec/cinder-grammar.ebnf`.
 
-```kira
+```cinder
 static PI:    float64          = 3.141592653589793
 static LIMIT: int32            = 1_000_000
 static TABLE: array[int32, 256] = build_lookup_table()
@@ -23,7 +23,7 @@ static TABLE: array[int32, 256] = build_lookup_table()
 
 ## `static if`
 
-```kira
+```cinder
 static IS_64BIT: bool = size_of[usize]() == 8
 
 static if IS_64BIT:
@@ -38,7 +38,7 @@ else:
 
 ## `static assert`
 
-```kira
+```cinder
 static assert size_of[T]() <= 64, "T must fit in a cache line"
 ```
 
@@ -50,12 +50,12 @@ static assert size_of[T]() <= 64, "T must fit in a cache line"
 
 Two forms: an inline expression-yielding form and a block-statement form.
 
-```kira
+```cinder
 def field_names[T]() -> list[str]:
     static for field in T.fields() => field.name
 ```
 
-```kira
+```cinder
 static for field in T.fields():
     println(field.name)
 ```
@@ -67,7 +67,7 @@ static for field in T.fields():
 
 ## Compile-time reflection
 
-```kira
+```cinder
 T.fields()          # list of field descriptors
 T.field_count()     # number of fields (compile-time integer)
 T.name()            # name of the type as str
@@ -81,7 +81,7 @@ T.name()            # name of the type as str
 
 `pure` asserts a function is referentially transparent — same inputs, same output, no side effects — and the compiler verifies the claim.
 
-```kira
+```cinder
 pure def clamp(x: float64, lo: float64, hi: float64) -> float64:
     if x < lo: return lo
     if x > hi: return hi
@@ -92,7 +92,7 @@ pure def clamp(x: float64, lo: float64, hi: float64) -> float64:
 - Only calls to `pure` functions are legal inside `pre`/`post`/`invariant` conditions (`check.cpp:4430` rejects a non-pure call `in_contract_`). See [Contracts](34-contracts.md).
 - A `pure` lambda uses `pure` before the arrow: `let square = pure x => x * x`.
 
-```kira
+```cinder
 static pure def align_up(n: usize, align: usize) -> usize:
     (n + align - 1) & ~(align - 1)
 
@@ -103,7 +103,7 @@ type aligned_buf[n: usize] = array[byte, align_up(n, 16)]
 
 A backtick captures syntax as a compile-time value; `~` inserts a compile-time value's syntax at the splice site.
 
-```kira
+```cinder
 static let increment: expr = `(x + 1)`
 
 def apply(x: int32) -> int32:
@@ -123,7 +123,7 @@ All are compile-time only; none has a runtime representation.
 
 Building expressions programmatically, via `expr.lit`, `expr.field`, `expr.ty`, and friends:
 
-```kira
+```cinder
 static def make_adder(n: int32) -> expr:
     `(x + ~(expr.lit(n)))`
 
@@ -135,7 +135,7 @@ def apply(x: int32) -> int32:
 
 Generating definitions — combined with `static for` and reflection, this is how `deriving` works internally:
 
-```kira
+```cinder
 static def derive_show[T]() -> def_expr:
     let fields = T.fields()
     let parts  = for f in fields =>

@@ -5,13 +5,13 @@
 #include <unordered_map>
 #include <vector>
 
-namespace kira::ast {
+namespace cinder::ast {
 struct func_decl;
 struct node;
 struct type_decl;
-} // namespace kira::ast
+} // namespace cinder::ast
 
-namespace kira::comptime {
+namespace cinder::comptime {
 
 /// Which shape a `value` currently holds.
 enum class value_kind : uint8_t {
@@ -209,4 +209,4 @@ struct value {
   }
 };
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

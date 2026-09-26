@@ -7,8 +7,8 @@ module main
 #  (unwrapped), `@none` values are dropped — a combination of `map` and
 #  `filter` without materializing an intermediate sequence.
 #
-#  Run it:      kira demo/iterator-filter_map.cn
-#  Compile it:  kira --compile -o iterator-filter_map demo/iterator-filter_map.cn
+#  Run it:      cinder demo/iterator-filter_map.cn
+#  Compile it:  cinder --compile -o iterator-filter_map demo/iterator-filter_map.cn
 # ==========================================================================
 
 def main() -> int32:

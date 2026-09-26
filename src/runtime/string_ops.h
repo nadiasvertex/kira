@@ -17,7 +17,7 @@
 /// without decoding because UTF-8 is self-synchronizing: a valid UTF-8 needle
 /// can only match a valid UTF-8 haystack on scalar boundaries. Reported
 /// offsets are therefore byte offsets that always land on a scalar boundary.
-namespace kira::runtime {
+namespace cinder::runtime {
 
 /// Byte-for-byte equality (length check + `memcmp`).
 [[nodiscard]] auto str_equal(std::string_view a, std::string_view b) -> bool;
@@ -59,7 +59,7 @@ enum class trim_mode : uint8_t { both = 0, start = 1, end = 2 };
 /// The decoded Unicode scalar at byte offset `pos` in `s`, or U+FFFD if
 /// `pos` doesn't start a valid UTF-8 sequence. Backs `for c in s` scalar
 /// iteration over a `str` (`hir::hir_str_decode_scalar`) — called directly
-/// by the bytecode VM; `kira_rt_str_scalar_at` below is the raw-pointer
+/// by the bytecode VM; `cinder_rt_str_scalar_at` below is the raw-pointer
 /// `extern "C"` wrapper generated IR calls instead.
 [[nodiscard]] auto str_scalar_at(std::string_view s, size_t pos) -> uint32_t;
 
@@ -69,9 +69,9 @@ enum class trim_mode : uint8_t { both = 0, start = 1, end = 2 };
 /// for the same lowering (`hir::hir_str_scalar_width`).
 [[nodiscard]] auto str_scalar_width(std::string_view s, size_t pos) -> uint64_t;
 
-extern "C" auto kira_rt_str_scalar_at(const char *data, uint64_t len,
+extern "C" auto cinder_rt_str_scalar_at(const char *data, uint64_t len,
                                       uint64_t offset) -> uint32_t;
-extern "C" auto kira_rt_str_scalar_width(const char *data, uint64_t len,
+extern "C" auto cinder_rt_str_scalar_width(const char *data, uint64_t len,
                                          uint64_t offset) -> uint64_t;
 
-} // namespace kira::runtime
+} // namespace cinder::runtime

@@ -15,7 +15,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/parser/source_location.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 namespace {
 
 struct discovered_case {
@@ -231,7 +231,7 @@ render_runner_source(const std::vector<discovered_suite> &suites,
     if (!anchor_aliases.contains(anchor)) {
       anchor_aliases.emplace(
           anchor, anchor.contains('.')
-                      ? std::format("kira_suite_root_{}", anchor_aliases.size())
+                      ? std::format("cinder_suite_root_{}", anchor_aliases.size())
                       : anchor);
     }
   }
@@ -251,7 +251,7 @@ render_runner_source(const std::vector<discovered_suite> &suites,
   };
 
   auto source =
-      std::string{"module kira_test_runner\n\n"
+      std::string{"module cinder_test_runner\n\n"
                   "use std.test.{case, skipped, suite, run_suites}\n"};
   for (const auto &[anchor, alias] : anchor_aliases) {
     source += alias == anchor ? std::format("use {}\n", anchor)
@@ -369,4 +369,4 @@ auto discover_and_inject_test_runner(cli_config &cfg)
   return {};
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

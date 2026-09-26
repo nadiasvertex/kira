@@ -6,8 +6,8 @@ module main
 #  Turns an iterator yielding `&T` (such as `.iter()` over a list) into one
 #  yielding `T`, so terminals like `sum` can be called directly.
 #
-#  Run it:      kira demo/iterator-values.cn
-#  Compile it:  kira --compile -o iterator-values demo/iterator-values.cn
+#  Run it:      cinder demo/iterator-values.cn
+#  Compile it:  cinder --compile -o iterator-values demo/iterator-values.cn
 # ==========================================================================
 
 def main() -> int32:

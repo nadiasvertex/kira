@@ -1,6 +1,6 @@
 #include "scopes.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Maps each `semantic_scope_kind` to its stable display label.
 auto semantic_scope_kind_name(semantic_scope_kind kind) -> std::string_view {
@@ -39,4 +39,4 @@ auto semantic_scope_kind_name(semantic_scope_kind kind) -> std::string_view {
   return "scope";
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

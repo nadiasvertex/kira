@@ -8,7 +8,7 @@ Contracts attach preconditions, postconditions, and invariants to functions and 
 
 ## Syntax
 
-```kira
+```cinder
 def sqrt(x: float64) -> float64
     pre  x >= 0.0
     post return >= 0.0:
@@ -19,7 +19,7 @@ def sqrt(x: float64) -> float64
 - In a `post` condition, `return` names the value the function returns. It is deliberately not called `result`, which would collide with the `result` type.
 - Multiple conditions are written one per line, each with an optional message:
 
-```kira
+```cinder
 def reserve(buf: &mut buffer, n: usize) -> unit
     pre  n > 0,         "cannot reserve zero bytes"
     pre  n < max_alloc, "requested size exceeds maximum"
@@ -29,7 +29,7 @@ def reserve(buf: &mut buffer, n: usize) -> unit
 
 - A struct invariant is attached after the type's field list:
 
-```kira
+```cinder
 type positive_int = { value: int32 }
     invariant self.value > 0
 ```
@@ -49,7 +49,7 @@ Only `pure` functions may appear in `pre`/`post`/`invariant` conditions (`check.
 
 ## Example
 
-```kira
+```cinder
 type positive_int = { value: int32 }
     invariant self.value > 0
 

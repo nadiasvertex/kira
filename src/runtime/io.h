@@ -9,7 +9,7 @@
 /// of each intrinsic"), this is a *second*, independent native
 /// implementation of the same eight operations, not a shared call into the
 /// bytecode VM's — the two tiers never share a runtime call path (mirrors
-/// why `kira_rt_alloc` (`arena.h`) is a thin AOT/JIT-only wrapper around
+/// why `cinder_rt_alloc` (`arena.h`) is a thin AOT/JIT-only wrapper around
 /// logic the VM instead calls directly).
 ///
 /// Every argument and return value here is an opaque heap pointer
@@ -24,16 +24,16 @@
 /// `src/runtime/layout.cpp`'s `builtin_generic_variants_of` established for
 /// this backend to share with the bytecode tier.
 extern "C" {
-auto kira_rt_stdin() -> uint64_t *;
-auto kira_rt_stdout() -> uint64_t *;
-auto kira_rt_stderr() -> uint64_t *;
-auto kira_rt_open(uint64_t *path, uint64_t *opts) -> uint64_t *;
-auto kira_rt_close(uint64_t *fd) -> uint64_t *;
-auto kira_rt_read(uint64_t *fd, uint64_t *buf) -> uint64_t *;
-auto kira_rt_write(uint64_t *fd, uint64_t *buf) -> uint64_t *;
-auto kira_rt_flush(uint64_t *fd) -> uint64_t *;
+auto cinder_rt_stdin() -> uint64_t *;
+auto cinder_rt_stdout() -> uint64_t *;
+auto cinder_rt_stderr() -> uint64_t *;
+auto cinder_rt_open(uint64_t *path, uint64_t *opts) -> uint64_t *;
+auto cinder_rt_close(uint64_t *fd) -> uint64_t *;
+auto cinder_rt_read(uint64_t *fd, uint64_t *buf) -> uint64_t *;
+auto cinder_rt_write(uint64_t *fd, uint64_t *buf) -> uint64_t *;
+auto cinder_rt_flush(uint64_t *fd) -> uint64_t *;
 /// Writes `msg` (a `str` header) to stderr and terminates the process. The
 /// only intrinsic that does not return; its `uint64_t *` result exists solely
 /// so it shares the uniform intrinsic ABI the two backends emit calls under.
-[[noreturn]] auto kira_rt_panic(uint64_t *msg) -> uint64_t *;
+[[noreturn]] auto cinder_rt_panic(uint64_t *msg) -> uint64_t *;
 }

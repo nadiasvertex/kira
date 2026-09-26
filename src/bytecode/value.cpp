@@ -4,7 +4,7 @@
 
 #include <unordered_map>
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 using semantic::type_id;
 using semantic::type_kind;
@@ -38,4 +38,4 @@ auto numeric_kind_of(const type_table &types, type_id id)
   return std::nullopt;
 }
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

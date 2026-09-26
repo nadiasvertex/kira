@@ -4,8 +4,8 @@ module main
 #  `algorithm.windows` — every overlapping, contiguous size-element view of
 #  a slice, in order.
 #
-#  Run it:      kira demo/algorithm-windows.cn
-#  Compile it:  kira --compile -o algorithm-windows demo/algorithm-windows.cn
+#  Run it:      cinder demo/algorithm-windows.cn
+#  Compile it:  cinder --compile -o algorithm-windows demo/algorithm-windows.cn
 # ==========================================================================
 
 def main() -> int32:

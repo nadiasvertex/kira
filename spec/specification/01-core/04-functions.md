@@ -6,9 +6,9 @@ Covers `def`, parameter/return-type inference and its limits, named arguments an
 
 ## Syntax
 
-`func_decl` in `spec/kira-grammar.ebnf`.
+`func_decl` in `spec/cinder-grammar.ebnf`.
 
-```kira
+```cinder
 def add(a: int32, b: int32) -> int32:
     return a + b
 ```
@@ -19,14 +19,14 @@ The last expression of the body is the return value when no explicit `return` is
 
 A parameter or return type may be omitted. When omitted, the compiler infers it **from the function's body only** — never from a call site — assigning each unannotated parameter the most general type its uses in the body allow.
 
-```kira
+```cinder
 def double(x):
     return x * 2        # x can be any number; double works for all of them
 ```
 
 An unannotated parameter is not dynamically typed; it is resolved at compile time to the widest type the body permits (an implicit generic — the Intermediate chapter on generic functions formalizes this). Annotating narrows it to one concrete type:
 
-```kira
+```cinder
 def double(x: int32) -> int32:
     return x * 2        # now double is specifically for int32
 ```
@@ -38,9 +38,9 @@ Two rules bound inference:
 
 ## Expression-bodied functions
 
-When the whole body is a single expression, it can follow the `:` directly on the same line instead of an indented block. There is no separate syntax for this — `func_body` in `spec/kira-grammar.ebnf` allows either an inline expression or an indented block after the colon, and the two are interchangeable everywhere a function body is expected.
+When the whole body is a single expression, it can follow the `:` directly on the same line instead of an indented block. There is no separate syntax for this — `func_body` in `spec/cinder-grammar.ebnf` allows either an inline expression or an indented block after the colon, and the two are interchangeable everywhere a function body is expected.
 
-```kira
+```cinder
 def add(a: int32, b: int32) -> int32: a + b
 
 def square(x: int32) -> int32: x * x
@@ -48,7 +48,7 @@ def square(x: int32) -> int32: x * x
 
 This is the same rule that makes `add` from the opening example equivalent to:
 
-```kira
+```cinder
 def add(a: int32, b: int32) -> int32:
     return a + b
 ```
@@ -59,7 +59,7 @@ Both `return a + b` and the bare expression `a + b` produce the same value; the 
 
 A parameter may declare a default value; a call may pass any argument by name (`name: value`) regardless of position.
 
-```kira
+```cinder
 def greet(name: str, loud: bool = false) -> str:
   return "{name}!".to_uppercase() if loud else "Hello, {name}"
 
@@ -73,7 +73,7 @@ A default value is evaluated **at the call site**, once per call that omits the 
 
 A function name used as a value has type `fn(ParamTypes...) -> ReturnType` and may be passed, stored, and called like any other value.
 
-```kira
+```cinder
 def apply(f: fn(int32) -> int32, x: int32) -> int32:
     return f(x)
 

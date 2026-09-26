@@ -2,7 +2,7 @@
 
 #include "src/semantic/ids.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// Identity for a bound HIR-level declaration (parameter, `let`/`var`
 /// binding, or function). Reused rather than reinvented (see
@@ -14,4 +14,4 @@ using symbol_id = semantic::symbol_id;
 /// Sentinel meaning "no symbol" — mirrors `semantic::k_invalid_symbol_id`.
 inline constexpr symbol_id k_invalid_symbol_id = semantic::k_invalid_symbol_id;
 
-} // namespace kira::hir
+} // namespace cinder::hir

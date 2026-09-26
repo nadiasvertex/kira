@@ -19,7 +19,7 @@ The same invariant, enforced at two different times.
 
 **Scoped sharing — free, checked at compile time.** Because a `crew`'s tasks cannot outlive it, spawned tasks may borrow data from the enclosing scope. The ordinary borrow rules apply across the crew: any number of tasks may hold `&data`, but the compiler will not let two tasks hold `&mut data`. Concurrent mutable aliasing is a compile error, no lock involved.
 
-```kira
+```cinder
 let table = build_table()
 crew c:
     c.spawn(lookup(&table, "a"))   # many readers — fine
@@ -32,7 +32,7 @@ crew c:
 - `rwlock[T]` — many readers or one writer, decided at runtime.
 - `atomic[T]` — lock-free operations on primitive values.
 
-```kira
+```cinder
 let counter: shared mutex[int32] = shared mutex(0)
 
 crew c:

@@ -16,8 +16,8 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
+using cinder::testing::expect;
+using cinder::testing::fail;
 
 struct source_fixture {
   std::string path;
@@ -57,14 +57,14 @@ auto expect_diagnostic(
 
 /// Fixtures for the real auto-injected prelude — the same stdlib sources
 /// `inject_stdlib_prelude` (`src/driver/driver.cpp`) prepends to every real
-/// `kira` session, so bound positions like `T: eq` and `impl show for point`,
+/// `cinder` session, so bound positions like `T: eq` and `impl show for point`,
 /// `prelude.cn`'s `use std.console`, and prelude types like `list` and
 /// `option` resolve here exactly as they do for a real compile. The list
 /// itself lives in `src/testing/stdlib_fixtures.h`, shared with the other
 /// harnesses that drive `check_program` directly.
 auto prelude_fixtures() -> std::vector<source_fixture> {
   auto fixtures = std::vector<source_fixture>{};
-  for (auto &source : kira::testing::load_stdlib_sources()) {
+  for (auto &source : cinder::testing::load_stdlib_sources()) {
     fixtures.push_back(source_fixture{.path = std::move(source.path),
                                       .text = std::move(source.text)});
   }
@@ -76,11 +76,11 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
   auto fixtures = prelude_fixtures();
   fixtures.insert(fixtures.end(), extra_fixtures.begin(), extra_fixtures.end());
 
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
   ast_files.reserve(fixtures.size());
   parsed_modules.reserve(fixtures.size());
 
@@ -96,16 +96,16 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     expect(file != nullptr, "expected registered fixture source");
 
     const auto errors_before = diag.error_count();
-    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
 
     if (diag.error_count() > errors_before) {
       file_has_errors[*file_id] = true;
     }
 
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = *file_id,
         .ast_file = ast_file.get(),
     });
@@ -113,38 +113,38 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
   }
 
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected check test fixtures to parse");
   }
   [[maybe_unused]] const auto checked =
-      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
-      .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }
 
 auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
   const auto test_data_dir =
-      kira::testing::find_test_data_dir("semantic_check_test");
+      cinder::testing::find_test_data_dir("semantic_check_test");
   const auto text =
-      kira::testing::load_test_data_file(test_data_dir.string(), filename);
+      cinder::testing::load_test_data_file(test_data_dir.string(), filename);
   return analyze_sources({{.path = std::string(filename), .text = text}});
 }
 
 auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
   const auto test_data_dir =
-      kira::testing::find_test_data_dir("semantic_check_test");
+      cinder::testing::find_test_data_dir("semantic_check_test");
   const auto subdir = test_data_dir / dirname;
   auto fixtures = std::vector<source_fixture>{};
 
-  for (const auto &entry : kira::testing::fs::directory_iterator(subdir)) {
+  for (const auto &entry : cinder::testing::fs::directory_iterator(subdir)) {
     if (entry.is_regular_file() &&
         entry.path().extension().string() == ".cn") {
       const auto filename = entry.path().filename().string();
-      const auto path = kira::testing::fs::path(dirname) / filename;
-      const auto text = kira::testing::load_test_data_file(
+      const auto path = cinder::testing::fs::path(dirname) / filename;
+      const auto text = cinder::testing::load_test_data_file(
           test_data_dir.string(), path.string());
       fixtures.push_back(source_fixture{
           .path = path.string(),
@@ -1918,13 +1918,13 @@ auto test_check_program_persists_expression_types() -> void {
   // the interned `type_table` plus a node -> type_id map — actually carries
   // a real expression's resolved type back to the caller, not just that the
   // API compiles.
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
 
   const auto test_data_dir =
-      kira::testing::find_test_data_dir("semantic_check_test");
-  const auto text = kira::testing::load_test_data_file(
+      cinder::testing::find_test_data_dir("semantic_check_test");
+  const auto text = cinder::testing::load_test_data_file(
       test_data_dir.string(), "check_program_persists_expression_types.cn");
   const auto file_id = sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
@@ -1932,24 +1932,24 @@ auto test_check_program_persists_expression_types() -> void {
 
   const auto *file = sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
-  auto lexer = kira::lexer(file->source(), file->id(), diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), diag);
   auto ast_file = parser.parse_file();
   expect(diag.error_count() == 0, "expected fixture to parse cleanly");
 
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
+  const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
+      cinder::semantic::parsed_module{.file_id = *file_id,
                                     .ast_file = ast_file.get()},
   };
   auto checked =
-      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
   expect(diag.error_count() == 0, "expected fixture to check cleanly");
 
-  const kira::ast::func_decl *add_decl = nullptr;
+  const cinder::ast::func_decl *add_decl = nullptr;
   for (const auto &item : ast_file->items) {
-    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
-      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+    if (item != nullptr && item->kind == cinder::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const cinder::ast::func_decl &>(*item);
       if (decl.name == "add") {
         add_decl = &decl;
         break;
@@ -1960,7 +1960,7 @@ auto test_check_program_persists_expression_types() -> void {
   expect(add_decl->body_stmts.size() == 1,
          "expected `add`'s body to be a single `return` statement");
 
-  const auto &return_stmt = dynamic_cast<const kira::ast::return_stmt &>(
+  const auto &return_stmt = dynamic_cast<const cinder::ast::return_stmt &>(
       *add_decl->body_stmts.front());
   expect(return_stmt.value != nullptr,
          "expected `return x + y` to have a value");
@@ -1977,7 +1977,7 @@ auto test_check_program_persists_expression_types() -> void {
 // ==========================================================================
 
 auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
-  // Per spec/kira-reference.md: "def double(x): return x * 2" must stay
+  // Per spec/cinder-reference.md: "def double(x): return x * 2" must stay
   // callable with every numeric type, chosen at each call — arithmetic
   // against a bare literal must never collapse `x` to whichever type the
   // literal happens to default to (int32). Both an int and a float call
@@ -2509,22 +2509,22 @@ auto test_dispatches_index_mut_borrow() -> void {
   // to contradict it, so the fixture would still check cleanly with zero
   // diagnostics either way. Only inspecting the recorded dispatch and the
   // expression's actual resolved type can tell the two apart.
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
 
   const auto test_data_dir =
-      kira::testing::find_test_data_dir("semantic_check_test");
+      cinder::testing::find_test_data_dir("semantic_check_test");
   auto fixtures = prelude_fixtures();
   fixtures.push_back(source_fixture{
       .path = "accept_index_mut_dispatch.cn",
-      .text = kira::testing::load_test_data_file(
+      .text = cinder::testing::load_test_data_file(
           test_data_dir.string(), "accept_index_mut_dispatch.cn"),
   });
 
-  const kira::ast::file *sample_file = nullptr;
+  const cinder::ast::file *sample_file = nullptr;
   for (const auto &fixture : fixtures) {
     const auto file_id = sources.add_file(fixture.path, fixture.text);
     expect(file_id.has_value(), "expected fixture source to register");
@@ -2532,14 +2532,14 @@ auto test_dispatches_index_mut_borrow() -> void {
 
     const auto *file = sources.get(*file_id);
     expect(file != nullptr, "expected registered fixture source");
-    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
     if (fixture.path == "accept_index_mut_dispatch.cn") {
       sample_file = ast_file.get();
     }
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = *file_id, .ast_file = ast_file.get()});
     ast_files.push_back(std::move(ast_file));
   }
@@ -2548,9 +2548,9 @@ auto test_dispatches_index_mut_borrow() -> void {
   const auto &ast_file = *sample_file;
 
   auto checked =
-      kira::semantic::check_program(parsed_modules, diag, file_has_errors);
+      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
   }
   expect(diag.error_count() == 0,
          "expected `&mut w[i]` against an `index_mut` impl to check cleanly");
@@ -2559,10 +2559,10 @@ auto test_dispatches_index_mut_borrow() -> void {
          "expected `&mut w[0]` to have been recorded as an `index_mut` "
          "dispatch");
 
-  const kira::ast::func_decl *borrow_it = nullptr;
+  const cinder::ast::func_decl *borrow_it = nullptr;
   for (const auto &item : ast_file.items) {
-    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
-      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+    if (item != nullptr && item->kind == cinder::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const cinder::ast::func_decl &>(*item);
       if (decl.name == "borrow_it") {
         borrow_it = &decl;
         break;
@@ -2574,7 +2574,7 @@ auto test_dispatches_index_mut_borrow() -> void {
          "expected `borrow_it`'s body to be a single `let` statement");
 
   const auto &let_stmt =
-      dynamic_cast<const kira::ast::let_stmt &>(*borrow_it->body_stmts.front());
+      dynamic_cast<const cinder::ast::let_stmt &>(*borrow_it->body_stmts.front());
   expect(let_stmt.initializer != nullptr,
          "expected `let c = &mut w[0]` to have an initializer");
 
@@ -2582,7 +2582,7 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(it != checked.node_types.end(),
          "expected `&mut w[0]`'s resolved type to be persisted");
   const auto &entry = checked.types.entry(it->second);
-  expect(entry.kind == kira::semantic::type_kind::builtin_generic_kind &&
+  expect(entry.kind == cinder::semantic::type_kind::builtin_generic_kind &&
              entry.name == "cell_mut",
          "expected `&mut w[0]` to resolve to `cell_mut[T]` via `at_mut`, not "
          "an ordinary `&mut` reference to `at`'s read result");

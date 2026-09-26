@@ -6,7 +6,7 @@
 
 ## Syntax
 
-```kira
+```cinder
 concept sortable[T]:
     T: ord + show
     size_of[T]() <= 64    # compile-time value constraint
@@ -22,7 +22,7 @@ A `concept_decl` (`ast.h:1698`) names a type parameter list (`concept_param`) an
 - A concept is satisfied **structurally**: a type satisfies `sortable` if it already provides everything the concept demands (an `ord` impl, a `show` impl, a size within budget) — there is no `impl sortable for point` to write.
 - Use a concept as a bound, exactly where a trait bound would go:
 
-```kira
+```cinder
 def sort_and_display[T: sortable](items: &mut list[T]) -> unit:
     items.sort()
     for x in items: println(x.show())
@@ -30,7 +30,7 @@ def sort_and_display[T: sortable](items: &mut list[T]) -> unit:
 
 - Concepts compose with `+`, and mix freely with trait bounds in the same list:
 
-```kira
+```cinder
 def process[T: sortable + network_value](val: T): ...
 ```
 
@@ -49,7 +49,7 @@ def process[T: sortable + network_value](val: T): ...
 
 ## Example
 
-```kira
+```cinder
 concept sortable[T]:
     T: ord + show
     size_of[T]() <= 64

@@ -7,8 +7,8 @@ module main
 #  predicate — unlike `filter`, it never resumes for later matches beyond
 #  the stopping point.
 #
-#  Run it:      kira demo/iterator-take_while.cn
-#  Compile it:  kira --compile -o iterator-take_while demo/iterator-take_while.cn
+#  Run it:      cinder demo/iterator-take_while.cn
+#  Compile it:  cinder --compile -o iterator-take_while demo/iterator-take_while.cn
 # ==========================================================================
 
 def main() -> int32:

@@ -1,6 +1,6 @@
 #include "src/utf8/utf8.h"
 
-namespace kira {
+namespace cinder {
 
 auto decode_utf8_scalar(std::string_view text, size_t &pos)
     -> std::optional<uint32_t> {
@@ -56,4 +56,4 @@ auto encode_utf8_scalar(uint32_t scalar, std::string &out) -> void {
   }
 }
 
-} // namespace kira
+} // namespace cinder

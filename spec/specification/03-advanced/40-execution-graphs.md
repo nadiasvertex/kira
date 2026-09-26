@@ -10,7 +10,7 @@ An execution graph is a pipeline of work described as a value — combined with 
 
 Nothing in an execution graph runs until it is connected to a scheduler and started:
 
-```kira
+```cinder
 let graph =
     just(input)
     | then(parse)
@@ -32,7 +32,7 @@ let result = await handle
 
 Graphs are inspectable at compile time, since a graph is a value built up from combinators known at compile time:
 
-```kira
+```cinder
 static STAGES:   usize = count_stages(graph)
 static USES_IO:  bool  = graph.uses_context(io)
 ```

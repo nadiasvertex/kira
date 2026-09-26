@@ -48,32 +48,32 @@ auto make_argv(std::vector<std::string> &args) -> std::vector<char *> {
 
 /// Verify that plain source paths are accepted as positional arguments.
 auto test_parse_args_accepts_sources() -> void {
-  std::vector<std::string> args = {"kira", "main.cn", "lib.cn"};
+  std::vector<std::string> args = {"cinder", "main.cn", "lib.cn"};
   auto argv = make_argv(args);
 
-  auto result = kira::driver::parse_args(argv);
+  auto result = cinder::driver::parse_args(argv);
   expect(result.has_value(), "expected sources to parse successfully");
   expect(!result->show_help, "plain sources should not request help");
   expect(result->sources.size() == 2, "expected two source arguments");
   expect(result->sources[0] == "main.cn", "expected first source path");
   expect(result->sources[1] == "lib.cn", "expected second source path");
-  expect(result->metadata_dir == kira::driver::k_default_metadata_dir,
+  expect(result->metadata_dir == cinder::driver::k_default_metadata_dir,
          "expected default metadata directory");
 }
 
 /// Verify help handling and `--` option termination.
 auto test_parse_args_supports_help_and_double_dash() -> void {
-  std::vector<std::string> help_args = {"kira", "--help"};
+  std::vector<std::string> help_args = {"cinder", "--help"};
   auto help_argv = make_argv(help_args);
 
-  auto help_result = kira::driver::parse_args(help_argv);
+  auto help_result = cinder::driver::parse_args(help_argv);
   expect(help_result.has_value(), "help should parse successfully");
   expect(help_result->show_help, "--help should set show_help");
 
-  std::vector<std::string> dash_args = {"kira", "--", "-literal.cn"};
+  std::vector<std::string> dash_args = {"cinder", "--", "-literal.cn"};
   auto dash_argv = make_argv(dash_args);
 
-  auto dash_result = kira::driver::parse_args(dash_argv);
+  auto dash_result = cinder::driver::parse_args(dash_argv);
   expect(dash_result.has_value(), "-- should stop option parsing");
   expect(dash_result->sources.size() == 1, "expected one source after --");
   expect(dash_result->sources[0] == "-literal.cn",
@@ -82,10 +82,10 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
 
 /// Verify `--version` sets `show_version` without requiring a source file.
 auto test_parse_args_supports_version() -> void {
-  std::vector<std::string> args = {"kira", "--version"};
+  std::vector<std::string> args = {"cinder", "--version"};
   auto argv = make_argv(args);
 
-  auto result = kira::driver::parse_args(argv);
+  auto result = cinder::driver::parse_args(argv);
   expect(result.has_value(), "--version should parse successfully");
   expect(result->show_version, "--version should set show_version");
   expect(result->sources.empty(), "--version should not require sources");
@@ -93,11 +93,11 @@ auto test_parse_args_supports_version() -> void {
 
 /// Verify that the metadata output directory can be overridden.
 auto test_parse_args_accepts_metadata_dir() -> void {
-  std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta",
+  std::vector<std::string> args = {"cinder", "--metadata-dir", "build/meta",
                                    "main.cn"};
   auto argv = make_argv(args);
 
-  auto result = kira::driver::parse_args(argv);
+  auto result = cinder::driver::parse_args(argv);
   expect(result.has_value(), "metadata dir option should parse successfully");
   expect(result->metadata_dir == "build/meta",
          "expected metadata directory override");
@@ -105,10 +105,10 @@ auto test_parse_args_accepts_metadata_dir() -> void {
 
 /// Verify that unknown command-line options are rejected.
 auto test_parse_args_rejects_unknown_options() -> void {
-  std::vector<std::string> args = {"kira", "--bogus"};
+  std::vector<std::string> args = {"cinder", "--bogus"};
   auto argv = make_argv(args);
 
-  auto result = kira::driver::parse_args(argv);
+  auto result = cinder::driver::parse_args(argv);
   expect(!result.has_value(), "unknown options should fail");
   expect(result.error() == "unknown option: --bogus",
          "expected unknown option error message");
@@ -116,19 +116,19 @@ auto test_parse_args_rejects_unknown_options() -> void {
 
 /// Verify that `--show-compile-details` is off by default and settable.
 auto test_parse_args_accepts_show_compile_details() -> void {
-  std::vector<std::string> default_args = {"kira", "main.cn"};
+  std::vector<std::string> default_args = {"cinder", "main.cn"};
   auto default_argv = make_argv(default_args);
 
-  auto default_result = kira::driver::parse_args(default_argv);
+  auto default_result = cinder::driver::parse_args(default_argv);
   expect(default_result.has_value(), "expected sources to parse successfully");
   expect(!default_result->show_compile_details,
          "expected show_compile_details to default to false");
 
-  std::vector<std::string> args = {"kira", "--show-compile-details",
+  std::vector<std::string> args = {"cinder", "--show-compile-details",
                                    "main.cn"};
   auto argv = make_argv(args);
 
-  auto result = kira::driver::parse_args(argv);
+  auto result = cinder::driver::parse_args(argv);
   expect(result.has_value(),
          "--show-compile-details should parse successfully");
   expect(result->show_compile_details,
@@ -138,31 +138,31 @@ auto test_parse_args_accepts_show_compile_details() -> void {
 /// Verify `-O0`/`-O1`/`-O2`/`-O3`/bare `-O` parse into `cli_config::opt_level`,
 /// and that the default (no flag at all) stays `o0`.
 auto test_parse_args_accepts_optimization_level() -> void {
-  std::vector<std::string> default_args = {"kira", "main.cn"};
+  std::vector<std::string> default_args = {"cinder", "main.cn"};
   auto default_argv = make_argv(default_args);
-  auto default_result = kira::driver::parse_args(default_argv);
+  auto default_result = cinder::driver::parse_args(default_argv);
   expect(default_result.has_value(), "expected sources to parse successfully");
-  expect(default_result->opt_level == kira::driver::optimization_level::o0,
+  expect(default_result->opt_level == cinder::driver::optimization_level::o0,
          "expected opt_level to default to o0 with no -O flag");
 
-  std::vector<std::string> bare_args = {"kira", "-O", "main.cn"};
+  std::vector<std::string> bare_args = {"cinder", "-O", "main.cn"};
   auto bare_argv = make_argv(bare_args);
-  auto bare_result = kira::driver::parse_args(bare_argv);
+  auto bare_result = cinder::driver::parse_args(bare_argv);
   expect(bare_result.has_value(), "-O should parse successfully");
-  expect(bare_result->opt_level == kira::driver::optimization_level::o1,
+  expect(bare_result->opt_level == cinder::driver::optimization_level::o1,
          "expected bare -O to mean -O1");
 
   const auto levels =
-      std::array<std::pair<std::string, kira::driver::optimization_level>, 4>{{
-          {"-O0", kira::driver::optimization_level::o0},
-          {"-O1", kira::driver::optimization_level::o1},
-          {"-O2", kira::driver::optimization_level::o2},
-          {"-O3", kira::driver::optimization_level::o3},
+      std::array<std::pair<std::string, cinder::driver::optimization_level>, 4>{{
+          {"-O0", cinder::driver::optimization_level::o0},
+          {"-O1", cinder::driver::optimization_level::o1},
+          {"-O2", cinder::driver::optimization_level::o2},
+          {"-O3", cinder::driver::optimization_level::o3},
       }};
   for (const auto &[flag, expected] : levels) {
-    std::vector<std::string> args = {"kira", flag, "main.cn"};
+    std::vector<std::string> args = {"cinder", flag, "main.cn"};
     auto argv = make_argv(args);
-    auto result = kira::driver::parse_args(argv);
+    auto result = cinder::driver::parse_args(argv);
     expect(result.has_value(),
            std::format("{} should parse successfully", flag));
     expect(result->opt_level == expected,
@@ -172,8 +172,8 @@ auto test_parse_args_accepts_optimization_level() -> void {
 
 /// Verify help and compile-summary rendering helpers.
 auto test_rendering_helpers() -> void {
-  auto help = kira::driver::render_help("kira");
-  expect(help.find("Usage: kira [OPTIONS] SOURCES...") != std::string::npos,
+  auto help = cinder::driver::render_help("cinder");
+  expect(help.find("Usage: cinder [OPTIONS] SOURCES...") != std::string::npos,
          "help should contain usage line");
   expect(help.find(" Cinder - Parse source files and emit module metadata") !=
              std::string::npos,
@@ -181,7 +181,7 @@ auto test_rendering_helpers() -> void {
   expect(help.find("--metadata-dir PATH") != std::string::npos,
          "help should document metadata dir option");
 
-  kira::driver::compile_report report{
+  cinder::driver::compile_report report{
       .modules = {{
           .source_path = "main.cn",
           .module_path = {"sample", "tools"},
@@ -190,11 +190,11 @@ auto test_rendering_helpers() -> void {
       .diagnostics = {},
       .error_count = 0,
   };
-  auto quiet_summary = kira::driver::render_compile_summary(report);
+  auto quiet_summary = cinder::driver::render_compile_summary(report);
   expect(quiet_summary.empty(),
          "summary should be silent by default for a clean compile");
 
-  auto summary = kira::driver::render_compile_summary(report, true);
+  auto summary = cinder::driver::render_compile_summary(report, true);
   expect(summary.find("Compiled 1 module(s):") != std::string::npos,
          "summary should report compiled module count with "
          "--show-compile-details");
@@ -218,7 +218,7 @@ struct temp_dir {
 auto make_temp_dir() -> temp_dir {
   auto base =
       fs::temp_directory_path() /
-      std::format("kira_cli_test_{}",
+      std::format("cinder_cli_test_{}",
                   std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
@@ -258,14 +258,14 @@ auto test_compile_sources_writes_module_metadata() -> void {
                           "  return 1\n"
                           "type person = { name: str }\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->modules.size() == 1, "expected one metadata artifact");
@@ -278,7 +278,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
   auto in = std::ifstream(metadata_path, std::ios::binary);
   expect(static_cast<bool>(in), "expected metadata file to open");
 
-  auto metadata = kira::metadata::v1::ModuleMetadata{};
+  auto metadata = cinder::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
   expect(metadata.schema_version() == 4, "expected metadata schema version");
   expect(metadata.module_path_size() == 2, "expected module path components");
@@ -293,12 +293,12 @@ auto test_compile_sources_writes_module_metadata() -> void {
   expect(metadata.top_level_symbols_size() == 4,
          "expected top-level declarations to be recorded");
   expect(metadata.top_level_symbols(2).kind() ==
-             kira::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
+             cinder::metadata::v1::TOP_LEVEL_SYMBOL_KIND_FUNCTION,
          "expected function symbol kind");
   expect(metadata.top_level_symbols(2).name() == "run",
          "expected function name in metadata");
   expect(metadata.top_level_symbols(2).visibility() ==
-             kira::metadata::v1::MODULE_VISIBILITY_PUBLIC,
+             cinder::metadata::v1::MODULE_VISIBILITY_PUBLIC,
          "expected function visibility in metadata");
   expect(metadata.top_level_symbols(2).documentation() ==
              "Runs the tool.\nReturns an exit code.",
@@ -330,21 +330,21 @@ auto test_compile_sources_writes_functor_instantiation_metadata() -> void {
                           "        return 0\n"
                           "use app.audited[app.postgres] as db\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid functor source to compile");
   expect(report->modules.size() == 1, "expected one metadata artifact");
 
   auto in = std::ifstream(fs::path(report->modules[0].metadata_path),
                           std::ios::binary);
-  auto metadata = kira::metadata::v1::ModuleMetadata{};
+  auto metadata = cinder::metadata::v1::ModuleMetadata{};
   expect(metadata.ParseFromIstream(&in), "expected metadata protobuf to parse");
   expect(metadata.functor_instantiations_size() == 1,
          "expected one functor instantiation in metadata");
@@ -384,14 +384,14 @@ auto test_compile_sources_folds_static_if_import_selection() -> void {
                           "def use_it() -> int32:\n"
                           "    return io.alpha()\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          std::string("expected the `static if true` branch's `use real_io as "
@@ -418,14 +418,14 @@ auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
                           "def run() -> int32:\n"
                           "    return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(
       report->error_count > 0,
@@ -454,14 +454,14 @@ auto test_compile_sources_folds_static_if_top_level_type_selection() -> void {
                           "def use_it() -> word:\n"
                           "    return 9223372036854775807\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          std::string("expected `word` to resolve to the `static if true` "
@@ -487,14 +487,14 @@ auto test_compile_sources_folds_static_if_top_level_type_selection_else()
                           "def use_it() -> word:\n"
                           "    return 9223372036854775807\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count > 0,
          "expected `word` to resolve to the `else` branch's `int32`, "
@@ -515,14 +515,14 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
                           "pub def add(a: int32, b: int32) -> int32:\n"
                           "  return a + b\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->hir_modules.size() == 1, "expected one HIR lowering outcome");
@@ -533,7 +533,7 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
   expect(report->hir_modules[0].error.empty(),
          "expected no error message for a successful lowering");
 
-  auto summary = kira::driver::render_compile_summary(*report, true);
+  auto summary = cinder::driver::render_compile_summary(*report, true);
   expect(summary.find("Lowered 1/1 module(s) to HIR.") != std::string::npos,
          "expected the summary to report the lowering outcome");
 }
@@ -556,14 +556,14 @@ auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
                           "    total = total + x\n"
                           "  return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a for-loop module to still compile cleanly");
@@ -588,15 +588,15 @@ auto test_compile_sources_skips_lowering_when_parse_only() -> void {
                           "pub def add(a: int32, b: int32) -> int32:\n"
                           "  return a + b\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .parse_only = true,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->hir_modules.empty(),
          "expected no HIR lowering outcomes when parse_only skips checking");
@@ -611,14 +611,14 @@ auto test_compile_sources_reports_parser_errors() -> void {
   write_file(source_path, "def broken():\n"
                           "  return 1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected compile driver to report parser failures");
   expect(report->error_count > 0, "expected parser errors for invalid source");
@@ -642,14 +642,14 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
                           "  pub def shared() -> int32:\n"
                           "    return 1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected nested parser failure to return a report");
   expect(report->error_count > 0,
@@ -674,14 +674,14 @@ auto test_compile_sources_handles_multiple_files() -> void {
                        "pub def add() -> int32:\n"
                        "  return 2\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_a.string(), source_b.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected multi-file compile to return a report");
   expect(report->error_count == 0, "expected multi-file compile to succeed");
   expect(report->modules.size() == 2, "expected two metadata artifacts");
@@ -716,15 +716,15 @@ auto test_compile_sources_merges_multi_file_module_declarations() -> void {
                               "  return sample.tools.first() + "
                               "sample.tools.second()\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_a.string(), source_b.string(),
                   consumer_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected multi-file-module compile to return a "
                              "report");
   expect(report->error_count == 0,
@@ -751,14 +751,14 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
                            "pub def rotate() -> int32:\n"
                            "  return 2\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected declared submodule compile to return a report");
   expect(report->error_count == 0,
@@ -785,14 +785,14 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration()
                            "pub def rotate() -> int32:\n"
                            "  return 2\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected missing-parent compile to return a report");
   expect(report->error_count > 0,
@@ -822,14 +822,14 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
                            "pub def area() -> int32:\n"
                            "  return 3\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {parent_source.string(), child_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected inline-conflict compile to return a report");
   expect(report->error_count > 0,
@@ -876,8 +876,8 @@ auto test_compile_sources_resolves_session_imports() -> void {
                          "pub def run() -> int32:\n"
                          "  return 4\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {package_source.string(), tools_source.string(),
                   util_source.string(), parse_source.string(),
                   app_source.string()},
@@ -885,7 +885,7 @@ auto test_compile_sources_resolves_session_imports() -> void {
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected in-session imports to return a report");
   expect(report->error_count == 0,
          "expected in-session imports to resolve cleanly");
@@ -900,8 +900,8 @@ auto test_compile_sources_resolves_session_imports() -> void {
 auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   auto metadata_dir = make_temp_dir().path / "meta";
 
-  auto cfg = kira::driver::cli_config{
-      .program_name = "kira",
+  auto cfg = cinder::driver::cli_config{
+      .program_name = "cinder",
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
@@ -922,9 +922,9 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // file even though they all merge into one module scope
   // (`find_stdlib_source_file`'s resolved path doesn't lexically match a
   // literal `"src/std/io.cn"` under `bazel test`'s runfiles tree).
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected stdlib source to return a report");
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
@@ -948,14 +948,14 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
                           "trait point:\n"
                           "  def show(self) -> str\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate declaration scope compile to return a report");
   expect(
@@ -985,14 +985,14 @@ auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
                           "  concept circle[T]:\n"
                           "    T: show\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected duplicate inline scope compile to return a report");
   expect(report->error_count > 0,
@@ -1021,14 +1021,14 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
              "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
              "  return p\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {geometry_source.string(), transform_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected super-qualified type paths to return a report");
   expect(report->error_count == 0,
@@ -1055,15 +1055,15 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
                          "pub def run(value: package.tools.missing) -> int:\n"
                          "  return 1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected unresolved qualified type path compile to return a report");
   expect(report->error_count > 0,
@@ -1107,16 +1107,16 @@ auto test_local_binding_shadows_same_named_module() -> void {
                        "pub def unused() -> int32:\n"
                        "  return 1\n");
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = {s_source.string(), v_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(run_cfg);
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected user modules `s` and `v` not to break the standard "
@@ -1128,8 +1128,8 @@ auto test_local_binding_shadows_same_named_module() -> void {
          std::format("expected `s.a.value + s.b.value` == 42 on the VM, got {}",
                      run_report->run->exit_code));
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = {s_source.string(), v_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1137,8 +1137,8 @@ auto test_local_binding_shadows_same_named_module() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(build_cfg);
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value() && build_report->build.has_value(),
          "expected a build outcome to be recorded");
   expect(build_report->build->succeeded,
@@ -1211,16 +1211,16 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
   const auto sources =
       std::vector<std::string>{main_source.string(), geo_source.string()};
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = sources,
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(run_cfg);
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected module-value dotted names to compile: " +
@@ -1231,8 +1231,8 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
          std::format("expected {} on the VM, got {}", expected,
                      run_report->run->exit_code));
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = sources,
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1240,8 +1240,8 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(build_cfg);
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value() && build_report->build.has_value() &&
              build_report->build->succeeded,
          "expected `--build` of the module-value program to link: " +
@@ -1299,16 +1299,16 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
   constexpr auto expected = 140;
   const auto sources = std::vector<std::string>{main_source.string()};
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = sources,
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(run_cfg);
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected per-module compile-time names to compile: " +
@@ -1319,8 +1319,8 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
          std::format("expected {} on the VM, got {}", expected,
                      run_report->run->exit_code));
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = sources,
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1328,8 +1328,8 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(build_cfg);
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value() && build_report->build.has_value() &&
              build_report->build->succeeded,
          "expected `--build` of the per-module names program to link: " +
@@ -1362,16 +1362,16 @@ auto test_aliased_import_of_parentless_module_runs() -> void {
                            "pub def seven() -> int32:\n"
                            "  return 7\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {main_source.string(), inner_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
-  auto report = kira::driver::compile_sources(cfg, false);
+  cinder::driver::inject_stdlib_prelude(cfg);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `use outer.inner as renamed` to compile cleanly: " +
@@ -1398,13 +1398,13 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
                           "def main() -> int32:\n"
                           "  return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {main_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
   const auto is_ident_char = [](char c) {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
@@ -1446,7 +1446,7 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
     roots.erase(excluded);
   }
   std::erase_if(roots, [](const std::string &root) {
-    return kira::classify_ident(root) != kira::token_kind::ident;
+    return cinder::classify_ident(root) != cinder::token_kind::ident;
   });
   expect(roots.contains("s") && roots.contains("v"),
          "expected the scan to find the `s`/`v` roots todo item 10 was "
@@ -1458,7 +1458,7 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
     cfg.sources.push_back(path.string());
   }
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          std::format("expected {} user root modules named after stdlib "
@@ -1484,15 +1484,15 @@ auto test_compile_sources_reports_unresolved_module_qualified_reference()
                          "  package.tools.missing\n"
                          "  return 1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected unresolved module-qualified reference "
                              "compile to return a report");
   expect(report->error_count > 0, "expected unresolved module-qualified "
@@ -1524,15 +1524,15 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
                          "pub def run() -> int32:\n"
                          "  return 1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {package_source.string(), tools_source.string(),
                   app_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected unresolved in-session import to return a report");
   expect(report->error_count == 1,
@@ -1569,15 +1569,15 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
                            "pub def run() -> int32:\n"
                            "  return 2\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {package_source.string(), tools_source.string(),
                   secret_source.string(), other_source.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(),
          "expected inaccessible in-session import to return a report");
   expect(report->error_count > 0,
@@ -1601,7 +1601,7 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
 /// arithmetic panic, or intrinsic call) used to fail to link with pages of
 /// undefined `std::__1::*`/`operator new`/`__cxa_*` symbols. Regression
 /// test for switching that invocation to `c++`: builds a struct-returning
-/// program (forces a real `kira_heap_alloc` reference, so this is a
+/// program (forces a real `cinder_heap_alloc` reference, so this is a
 /// meaningful link, not one the linker trivially no-ops because nothing in
 /// the object file needs either archive), then actually runs the produced
 /// executable as a real child process and checks its exit code — proving
@@ -1619,8 +1619,8 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
                           "  let p = point { x: 1, y: 41 }\n"
                           "  return p.x + p.y\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1629,7 +1629,7 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
       .build_output = output_path.string(),
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->build.has_value(), "expected a build outcome to be recorded");
@@ -1654,7 +1654,7 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 /// there is nothing a program can do about having been wrong about a
 /// container's extent, so neither tier unwinds to its host for one — the
 /// bytecode VM and the JIT terminate through `raise_panic`, an AOT binary
-/// through `kira_codegen_panic`/`kira_rt_panic`. A harness embedding either
+/// through `cinder_codegen_panic`/`cinder_rt_panic`. A harness embedding either
 /// tier therefore cannot catch it, which is why
 /// `bytecode_compiler/compile_test.cpp` and `llvm_codegen/codegen_test.cpp`
 /// assert the bounds *decision* through `mutable_cell` instead, and the
@@ -1675,8 +1675,8 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
 
   write_file(source_path, program);
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1686,9 +1686,9 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
   };
   // `xs[i]` on a `list` dispatches into `src/std/list.cn`, so the session
   // needs the stdlib the real driver (`main.cpp`) always injects.
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          std::format("[{}] expected an out-of-range index to be a runtime "
@@ -1716,9 +1716,9 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
          std::format("[{}] expected the panic message on stderr, got: `{}`",
                      label, output));
 #ifdef WEXITSTATUS
-  expect(WEXITSTATUS(close_status) == kira::bytecode::k_panic_exit_code,
+  expect(WEXITSTATUS(close_status) == cinder::bytecode::k_panic_exit_code,
          std::format("[{}] expected a panic to leave exit status {}, got {}",
-                     label, kira::bytecode::k_panic_exit_code,
+                     label, cinder::bytecode::k_panic_exit_code,
                      WEXITSTATUS(close_status)));
 #else
   expect(close_status != 0,
@@ -1735,7 +1735,7 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
 /// bounds violation back to its host: `raise_panic` terminates the process
 /// for a fatal reason, so a harness calling `compile_sources` directly would
 /// die with it. The child absorbs that, and the parent reads the status.
-/// The AOT half above cannot substitute for this — `kira_codegen_panic`'s
+/// The AOT half above cannot substitute for this — `cinder_codegen_panic`'s
 /// AOT copy terminates for every reason, so a built binary would keep
 /// passing even if the in-process tiers went back to unwinding.
 auto run_in_forked_child(const std::string &program) -> int {
@@ -1748,16 +1748,16 @@ auto run_in_forked_child(const std::string &program) -> int {
   const auto child = fork();
   expect(child != -1, "expected to fork a child to run the VM in");
   if (child == 0) {
-    kira::driver::cli_config cfg{
-        .program_name = "kira",
+    cinder::driver::cli_config cfg{
+        .program_name = "cinder",
         .sources = {source_path.string()},
         .metadata_dir = metadata_dir.string(),
         .show_help = false,
         .run = true,
     };
-    kira::driver::inject_stdlib_prelude(cfg);
+    cinder::driver::inject_stdlib_prelude(cfg);
     (void)freopen("/dev/null", "w", stderr);
-    (void)kira::driver::compile_sources(cfg, false);
+    (void)cinder::driver::compile_sources(cfg, false);
     // Reached only if the VM handed the panic back instead of terminating.
     _exit(0);
   }
@@ -1796,10 +1796,10 @@ auto test_out_of_bounds_index_terminates_for_every_container() -> void {
     expect(WIFEXITED(status) != 0,
            std::format("[{}] expected the VM to exit, not to be signalled",
                        label));
-    expect(WEXITSTATUS(status) == kira::bytecode::k_panic_exit_code,
+    expect(WEXITSTATUS(status) == cinder::bytecode::k_panic_exit_code,
            std::format("[{}] expected the VM to terminate with status {} "
                        "rather than hand the panic back to its host; got {}",
-                       label, kira::bytecode::k_panic_exit_code,
+                       label, cinder::bytecode::k_panic_exit_code,
                        WEXITSTATUS(status)));
 #else
     expect(status != 0,
@@ -1843,16 +1843,16 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
              "  c.set(c.get() * 5)\n"
              "  return w.a\n");
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(run_cfg);
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected the index_mut program to compile cleanly");
@@ -1862,8 +1862,8 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
   expect(run_report->run->exit_code == 50,
          "expected the bytecode VM's exit code to be 10 * 5 == 50");
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1871,8 +1871,8 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(build_cfg);
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value(),
          "expected compile driver to return a report");
   expect(build_report->build.has_value(),
@@ -1917,16 +1917,16 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
                           "  let c = &r[0]\n"
                           "  return c.get() * 5\n");
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(run_cfg);
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected the index_ref program to compile cleanly");
@@ -1936,8 +1936,8 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
   expect(run_report->run->exit_code == 35,
          "expected the bytecode VM's exit code to be 7 * 5 == 35");
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -1945,8 +1945,8 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(build_cfg);
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value(),
          "expected compile driver to return a report");
   expect(build_report->build.has_value(),
@@ -2002,8 +2002,8 @@ auto test_cross_module_function_used_as_a_value() -> void {
                         "  let g: fn() -> int32 = target\n"
                         "  apply(twice, g())\n");
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = {main_path.string(), inner_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2011,7 +2011,7 @@ auto test_cross_module_function_used_as_a_value() -> void {
       .run_function = "main",
   };
 
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected a bare cross-module function value to compile cleanly: " +
@@ -2023,8 +2023,8 @@ auto test_cross_module_function_used_as_a_value() -> void {
          "expected the bytecode VM to reach `inner.twice` through a bare "
          "`target`/`twice` value reference and compute twice(target()) == 14");
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = {main_path.string(), inner_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2033,7 +2033,7 @@ auto test_cross_module_function_used_as_a_value() -> void {
       .build_output = output_path.string(),
   };
 
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value(),
          "expected compile driver to return a build report");
   expect(build_report->build.has_value(),
@@ -2089,8 +2089,8 @@ auto test_module_qualified_function_used_as_a_value() -> void {
                         "  let g: fn() -> int32 = inner.target\n"
                         "  apply(inner.twice, g())\n");
 
-  kira::driver::cli_config run_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
       .sources = {main_path.string(), inner_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2098,7 +2098,7 @@ auto test_module_qualified_function_used_as_a_value() -> void {
       .run_function = "main",
   };
 
-  auto run_report = kira::driver::compile_sources(run_cfg, false);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
          "expected a module-qualified function value to compile cleanly: " +
@@ -2110,8 +2110,8 @@ auto test_module_qualified_function_used_as_a_value() -> void {
          "expected the bytecode VM to reach `outer.inner.twice` through a "
          "qualified path value reference and compute twice(target()) == 14");
 
-  kira::driver::cli_config build_cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
       .sources = {main_path.string(), inner_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2120,7 +2120,7 @@ auto test_module_qualified_function_used_as_a_value() -> void {
       .build_output = output_path.string(),
   };
 
-  auto build_report = kira::driver::compile_sources(build_cfg, false);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
   expect(build_report.has_value(),
          "expected compile driver to return a build report");
   expect(build_report->build.has_value(),
@@ -2156,18 +2156,18 @@ auto test_build_at_o2_still_links_and_runs_correctly() -> void {
                           "  let p = point { x: 1, y: 41 }\n"
                           "  return p.x + p.y\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .build = true,
       .build_function = "main",
       .build_output = output_path.string(),
-      .opt_level = kira::driver::optimization_level::o2,
+      .opt_level = cinder::driver::optimization_level::o2,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->build.has_value(), "expected a build outcome to be recorded");
@@ -2205,8 +2205,8 @@ auto test_build_links_and_runs_a_string_interpolation_program() -> void {
                           "  println(\"Hex: {255 :04x}\")\n"
                           "  return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2214,9 +2214,9 @@ auto test_build_links_and_runs_a_string_interpolation_program() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected valid source to compile cleanly: " + report->diagnostics);
@@ -2258,8 +2258,8 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
                           "def main() -> int32:\n"
                           "  return 42\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2267,7 +2267,7 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0, "expected valid source to compile cleanly");
   expect(report->run.has_value(), "expected a run outcome to be recorded");
@@ -2275,11 +2275,11 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
   expect(report->run->exit_code == 42,
          "expected the run's exit code to match main()'s returned value");
 
-  auto quiet_summary = kira::driver::render_compile_summary(*report);
+  auto quiet_summary = cinder::driver::render_compile_summary(*report);
   expect(quiet_summary.empty(),
          "expected a clean run's summary to be silent by default");
 
-  auto detailed_summary = kira::driver::render_compile_summary(*report, true);
+  auto detailed_summary = cinder::driver::render_compile_summary(*report, true);
   expect(detailed_summary.find("main() -> 42") != std::string::npos,
          "expected --show-compile-details to include the run's return value");
 }
@@ -2320,8 +2320,8 @@ auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
                           "    return p.x + p.y\n"
                           "  return -1\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {shape_source.string(), factory_source.string(),
                   main_source.string()},
       .metadata_dir = metadata_dir.string(),
@@ -2330,7 +2330,7 @@ auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected cross-module option-returning call to check cleanly: " +
@@ -2378,17 +2378,17 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
                           "    let nums = [3, 1, 4, 1, 5]\n"
                           "    return *nums.iter().max_by(cmp_int).unwrap()\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `max_by` over a `&int32`-yielding iterator with an "
@@ -2458,17 +2458,17 @@ auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
                           "        score = score + 10000000\n"
                           "    return score\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `<`/`<=`/`>`/`>=` against an `ord`-implementing struct to "
@@ -2488,7 +2488,7 @@ auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
 /// its own: it needs a real `rt_str_cmp` intrinsic, wired through both the
 /// bytecode VM's dispatch table (`src/bytecode/vm.cpp`) and the LLVM tier's
 /// C-ABI wrapper (`src/runtime/string.cpp`), on top of the shared
-/// `kira::runtime::str_compare` algorithm (`string_ops.cpp`). Runs `max()`
+/// `cinder::runtime::str_compare` algorithm (`string_ops.cpp`). Runs `max()`
 /// over `list[str]` — the exact construct `demo/algorithm-max.cn` needed
 /// and previously failed with "type `str` has no scalar bytecode
 /// representation yet" — end to end, checking the actual winning string
@@ -2505,17 +2505,17 @@ auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
              "    let winner = words.into_iter().max().unwrap()\n"
              "    return if winner == \"cherry\": 1 else: 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `max()` over `list[str]` to compile cleanly: " +
@@ -2549,8 +2549,8 @@ auto test_run_enforces_unproven_contract_unless_disabled() -> void {
                           "def main() -> int32:\n"
                           "  return half(opaque(0 - 8))\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2558,7 +2558,7 @@ auto test_run_enforces_unproven_contract_unless_disabled() -> void {
       .run_function = "main",
   };
 
-  auto checked = kira::driver::compile_sources(cfg, false);
+  auto checked = cinder::driver::compile_sources(cfg, false);
   expect(checked.has_value(), "expected compile driver to return a report");
   expect(checked->error_count == 0,
          "expected an unprovable contract to compile cleanly: " +
@@ -2572,7 +2572,7 @@ auto test_run_enforces_unproven_contract_unless_disabled() -> void {
              checked->run->message);
 
   cfg.contract_checks = false;
-  auto elided = kira::driver::compile_sources(cfg, false);
+  auto elided = cinder::driver::compile_sources(cfg, false);
   expect(elided.has_value(), "expected compile driver to return a report");
   expect(elided->run.has_value(), "expected a run outcome to be recorded");
   expect(elided->run->succeeded,
@@ -2599,8 +2599,8 @@ auto test_run_executes_spliced_quoted_expression() -> void {
                           "def main() -> int32:\n"
                           "  return ~doubled\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2608,7 +2608,7 @@ auto test_run_executes_spliced_quoted_expression() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a spliced quoted expression to compile cleanly: " +
@@ -2635,8 +2635,8 @@ auto test_run_executes_spliced_builder_constructed_expression() -> void {
                           "def main() -> int32:\n"
                           "  return ~built\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2644,7 +2644,7 @@ auto test_run_executes_spliced_builder_constructed_expression() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a spliced `expr.lit`-built expression to compile "
@@ -2683,8 +2683,8 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
                           "  let p = point{x: 1}\n"
                           "  return p.show()\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2692,7 +2692,7 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected an item-level splice injecting `impl show for point` to "
@@ -2727,8 +2727,8 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
                           "    let g: fn(int32) -> str = k => \"{prefix}{k}\"\n"
                           "    return apply(g, 42)\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2738,9 +2738,9 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
   // String interpolation desugars against `std.fmt`, so this program needs the
   // auto-imported prelude/stdlib that `main.cpp` injects for real invocations
   // (`compile_sources` compiles exactly the sources it is handed).
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a lambda whose body interpolates a captured local to "
@@ -2784,17 +2784,17 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
                           "        total = total + x\n"
                           "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a for-loop over a user `std.iter.iterator` to compile "
@@ -2829,8 +2829,8 @@ auto test_run_type_generic_free_function() -> void {
                           "    let c = choose(false, 1, 3)\n"
                           "    return a + b + c\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2838,7 +2838,7 @@ auto test_run_type_generic_free_function() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a type-generic free function to compile cleanly: " +
@@ -2876,8 +2876,8 @@ auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
                           "  ~make_temp\n"
                           "  return temp\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2885,7 +2885,7 @@ auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected splicing a quoted `let temp = 99` next to an existing "
@@ -2920,8 +2920,8 @@ auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
                           "def main() -> int32:\n"
                           "  return ~count_expr\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2929,7 +2929,7 @@ auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `expr.lit(point.field_count())` spliced into `main` to "
@@ -2969,8 +2969,8 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
                           "def main() -> int32:\n"
                           "  return count\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -2978,7 +2978,7 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a scalar `static let count: int32 = point.field_count()` "
@@ -3023,8 +3023,8 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
                           "    return 42\n"
                           "  return 7\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3032,7 +3032,7 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
       .run_function = "main",
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected an ordinary generic function's body to call a "
@@ -3091,15 +3091,15 @@ auto test_type_checks_clones_static_constructs_in_generic_function_body()
              "def main() -> int32:\n"
              "    return scale(0) + scale(\"ignored\")\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = false,
   };
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a generic function body with a `static` binding, a "
@@ -3140,8 +3140,8 @@ auto test_build_derives_show_via_deriving_clause() -> void {
                           "  println(p.show())\n"
                           "  return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3149,9 +3149,9 @@ auto test_build_derives_show_via_deriving_clause() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `type point = {...} deriving show` to compile cleanly: " +
@@ -3215,8 +3215,8 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
              "    return 42\n"
              "  return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3224,9 +3224,9 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving show, eq, debug` to compile cleanly: " +
@@ -3327,17 +3327,17 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
       "        total = total + 128\n"
       "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving ord` to compile cleanly: " + report->diagnostics);
@@ -3461,17 +3461,17 @@ auto test_run_derives_for_generic_types() -> void {
 
   write_file(source_path, generic_deriving_source());
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving` on a generic type to compile cleanly: " +
@@ -3503,8 +3503,8 @@ auto test_build_derives_for_generic_types() -> void {
 
   write_file(source_path, generic_deriving_source());
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3512,9 +3512,9 @@ auto test_build_derives_for_generic_types() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving` on a generic type to compile cleanly for AOT: " +
@@ -3583,20 +3583,20 @@ auto test_deriving_reflects_field_concrete_type() -> void {
              "        return 255\n"
              "    return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
   std::erase_if(cfg.sources, [](const std::string &source) -> bool {
     return std::filesystem::path(source).filename() == "deriving.cn";
   });
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected the test's own `derive_show[T]()` to compile cleanly: " +
@@ -3699,17 +3699,17 @@ auto test_run_derives_hash_via_deriving_clause() -> void {
       "                        v3.hash() != v5.hash(), 128)\n"
       "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving hash` to compile cleanly: " + report->diagnostics);
@@ -3796,8 +3796,8 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
       "                        v3.hash() != v5.hash(), 128)\n"
       "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3805,9 +3805,9 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving hash` to build cleanly: " + report->diagnostics);
@@ -3875,8 +3875,8 @@ auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
       "@some(before_each_hook), @some(after_each_hook)),\n"
       "    ])\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3884,9 +3884,9 @@ auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected the std.test suite to build cleanly: " +
@@ -3961,8 +3961,8 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
              "        return assert_true(super.area(-1.0, 5.0) >= 0.0, "
              "\"negative width should not underflow\")\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -3971,9 +3971,9 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
       .build_output = output_path.string(),
       .test_mode = true,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `--test` discovery to build cleanly: " +
@@ -4030,8 +4030,8 @@ auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
                           "    println(\"ordinary program\")\n"
                           "    return 7\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -4040,9 +4040,9 @@ auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
       .build_output = output_path.string(),
       .test_mode = true,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected the existing-`main` program to build cleanly: " +
@@ -4108,8 +4108,8 @@ auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
              "    def test_file_level() -> result[unit, test_failure]:\n"
              "        return assert_eq(app.counter.bump(0), 1)\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -4118,9 +4118,9 @@ auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
       .build_output = output_path.string(),
       .test_mode = true,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected nested `--test` discovery to build cleanly: " +
@@ -4171,16 +4171,16 @@ auto test_test_mode_without_any_tests_is_an_error() -> void {
                           "pub def area(w: float64, h: float64) -> float64:\n"
                           "    return w * h\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .test_mode = true,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(!report.has_value(),
          "expected `--test` with no discoverable tests to fail");
   expect(report.error().contains("`--test` found no tests in"),
@@ -4212,16 +4212,16 @@ auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
              "    def after_each() -> result[unit, test_failure]:\n"
              "        return @ok(unit)\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .test_mode = true,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(!report.has_value(),
          "expected a hooks-only `tests` submodule to contribute no suite");
   expect(report.error().contains("`--test` found no tests in"),
@@ -4270,8 +4270,8 @@ auto test_build_try_applies_from_conversion() -> void {
              "                @err(_) => return -2\n"
              "            @other => return -3\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -4279,9 +4279,9 @@ auto test_build_try_applies_from_conversion() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `?` with a `from`-conversion to build cleanly: " +
@@ -4359,17 +4359,17 @@ auto test_run_derives_hash_for_floats() -> void {
              "    total = total + bit(f.hash() == 2985586345925076451, 8)\n"
              "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected `deriving hash` on float fields to compile cleanly: " +
@@ -4401,15 +4401,15 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
                           "def main() -> int32:\n"
                           "    return 0\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 1,
          "expected exactly one error for `deriving ord` without `eq`: " +
@@ -4484,17 +4484,17 @@ auto test_run_derives_sum_type_via_deriving_clause() -> void {
       "    total = total + bit(rank(c1.cmp(&c3)) == -1, 128)\n"
       "    return total\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected sum-shaped `deriving` to compile cleanly: " +
@@ -4537,8 +4537,8 @@ auto test_build_runs_script_mode_implicit_main() -> void {
                           "    println(\"{i}: {label(i)}\")\n"
                           "println(\"total: {total}\")\n");
 
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {source_path.string()},
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
@@ -4546,9 +4546,9 @@ auto test_build_runs_script_mode_implicit_main() -> void {
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
          "expected a script-mode file with an implicit `main` to compile "
@@ -4597,13 +4597,13 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
     auto temp = make_temp_dir();
     auto source_path = temp.path / std::format("{}.cn", name);
     write_file(source_path, program);
-    kira::driver::cli_config cfg{
-        .program_name = "kira",
+    cinder::driver::cli_config cfg{
+        .program_name = "cinder",
         .sources = {source_path.string()},
         .metadata_dir = (temp.path / "meta").string(),
         .show_help = false,
     };
-    auto report = kira::driver::compile_sources(cfg, false);
+    auto report = cinder::driver::compile_sources(cfg, false);
     expect(report.has_value(), "expected compile driver to return a report");
     return std::move(*report);
   };

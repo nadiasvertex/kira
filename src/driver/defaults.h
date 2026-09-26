@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Default entry-point function name executed by default (or via
 /// `--compile`).
@@ -22,8 +22,8 @@ enum class optimization_level : uint8_t { o0 = 0, o1 = 1, o2 = 2, o3 = 3 };
 
 /// `--run` (the tier-0 bytecode VM) never touches LLVM at all, so `-O` only
 /// affects `--compile`/`-c` output — `o0` is the default there too, matching
-/// every existing `kira build` invocation's behavior before `-O` existed.
+/// every existing `cinder build` invocation's behavior before `-O` existed.
 inline constexpr optimization_level k_default_optimization_level =
     optimization_level::o0;
 
-} // namespace kira::driver
+} // namespace cinder::driver

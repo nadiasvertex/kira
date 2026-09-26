@@ -5,7 +5,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Renders every elaboration decision in `checked` as deterministic text.
 ///
@@ -33,4 +33,4 @@ namespace kira::semantic {
                                    const source_manager &sources)
     -> std::string;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

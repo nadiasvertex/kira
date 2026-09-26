@@ -6,7 +6,7 @@ Generic function bounds (`[T: show]`, `+` for multiple bounds) and the full type
 
 ## Bounds
 
-```kira
+```cinder
 def print_item[T: show](item: T) -> unit:
     println(item.show())
 
@@ -20,7 +20,7 @@ def largest[T: ord](items: &list[T]) -> option[usize]:
 
 `[T: show]` means "`T` is any type that implements `show`." Multiple bounds use `+`:
 
-```kira
+```cinder
 def inspect[T: show + eq](a: T, b: T) -> unit:
     if a == b:
         println("equal: {a.show()}")
@@ -37,7 +37,7 @@ For each type parameter, the checker tries these sources in order and stops at t
 3. **An enclosing instance's fixed bindings**, when checking one generic body from inside another.
 4. **The expected type at the call site**, as a fallback only. A parameter that appears only in the return type has nothing in the arguments to solve it:
 
-```kira
+```cinder
 let names: list[str] = words.iter().collect()   # C is list[str], from the annotation
 return counts.iter().collect()                  # C is the declared result type
 ```
@@ -46,7 +46,7 @@ return counts.iter().collect()                  # C is the declared result type
 
 Arguments always win. An annotation that disagrees with the arguments is reported as a mismatch rather than quietly changing what the call means:
 
-```kira
+```cinder
 let x: int64 = take(5i32)   # error: expected int64, found int32
                             # T was solved to int32 from the argument
 ```
@@ -55,7 +55,7 @@ This is deliberate, not incidental: `k_unknown_type` unifies with everything (se
 
 Where no expected type exists, there is nothing to infer from:
 
-```kira
+```cinder
 let xs = words.iter().collect()   # error: cannot tell which collection to build
                                   # help: annotate the binding, or write
                                   #       .collect[list[str]]()
@@ -69,7 +69,7 @@ The expected type propagates to every position where the checker knows one: anno
 
 Writing type arguments explicitly uses the same square brackets as the declaration, on both free functions and methods:
 
-```kira
+```cinder
 let xs = words.iter().collect[list[str]]()
 let ys = zeros[8]()
 ```
@@ -91,7 +91,7 @@ Types and values are kept in separate namespaces, so rule 1 is a single lookup. 
 
 A trait's `static` member can be called through a type parameter once that parameter is solved:
 
-```kira
+```cinder
 pub trait from_iter[T]:
     static def from_iter[I: iterator[T]](it: I) -> self
 

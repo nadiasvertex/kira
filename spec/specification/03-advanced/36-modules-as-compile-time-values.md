@@ -6,7 +6,7 @@ A module is a compile-time record of the types, functions, and constants it defi
 
 ## Syntax
 
-Grammar: `signature_decl`, the parameterized form of `sub_module_decl`, and the argumented form of `use_path` in `spec/kira-grammar.ebnf`.
+Grammar: `signature_decl`, the parameterized form of `sub_module_decl`, and the argumented form of `use_path` in `spec/cinder-grammar.ebnf`.
 
 ```ebnf
 signature_decl
@@ -36,7 +36,7 @@ use_path
 
 A `signature` lists required members — types, function signatures, constants — without implementing them:
 
-```kira
+```cinder
 signature backend:
     type conn
     def connect(url: str) -> conn
@@ -57,7 +57,7 @@ Deep parameter/return-type equality is checked (not just member existence, visib
 
 ### Parameterized modules (functors)
 
-```kira
+```cinder
 module audited[DB: backend]:
     pub def query(c: &DB.conn, sql: str) -> result[rows, db_error]:
         audit_log(sql)
@@ -68,7 +68,7 @@ A `module` declaration with type parameters registers as a **functor**: visible 
 
 Instantiation, at `use audited[postgres] as db`:
 
-```kira
+```cinder
 use audited[postgres] as db
 
 let rows = db.query(&conn, "select 1")   # audited, backed by postgres
@@ -94,7 +94,7 @@ let rows = db.query(&conn, "select 1")   # audited, backed by postgres
 
 ### Reflecting on a module
 
-```kira
+```cinder
 M.functions()   # list of function descriptors
 M.types()       # list of type descriptors
 M.name()        # the module's name, as str
@@ -106,7 +106,7 @@ Each function/type descriptor is a `{name, is_pub}` value; visibility is exposed
 
 Reflection plus `static for` generates code from a module's members, replacing dynamic dispatch with a table baked into the binary:
 
-```kira
+```cinder
 static COMMANDS: map[str, command] = map(
     for f in cli_commands.functions() => (f.name(), make_command(f))
 )
@@ -116,7 +116,7 @@ static COMMANDS: map[str, command] = map(
 
 `static if` around a `use` gives zero-cost dependency injection:
 
-```kira
+```cinder
 static if BUILD.test:
     use fake_io  as io
 else:
@@ -129,7 +129,7 @@ Both branches must satisfy the same signature for code using `io` to remain unch
 
 ## Example
 
-```kira
+```cinder
 signature backend:
     type conn
     def connect(url: str) -> conn

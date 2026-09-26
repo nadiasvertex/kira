@@ -18,24 +18,24 @@
 
 namespace {
 
-using kira::semantic::type_id;
-using kira::semantic::type_table;
-using kira::semantic::infer::blame_report;
-using kira::semantic::infer::cause;
-using kira::semantic::infer::constraint_graph;
-using kira::semantic::infer::explain_conflict;
-using kira::semantic::infer::explain_stall;
-using kira::semantic::infer::infer_ctxt;
-using kira::semantic::infer::k_no_cause;
-using kira::semantic::infer::stalled_variable;
-using kira::testing::expect;
+using cinder::semantic::type_id;
+using cinder::semantic::type_table;
+using cinder::semantic::infer::blame_report;
+using cinder::semantic::infer::cause;
+using cinder::semantic::infer::constraint_graph;
+using cinder::semantic::infer::explain_conflict;
+using cinder::semantic::infer::explain_stall;
+using cinder::semantic::infer::infer_ctxt;
+using cinder::semantic::infer::k_no_cause;
+using cinder::semantic::infer::stalled_variable;
+using cinder::testing::expect;
 
 /// A distinct location per site. `source_location` is byte offsets, not
 /// line numbers, so the tests use the offset as a stand-in identity: what
 /// matters here is *which* site a report points at, not how it renders.
-auto at_line(uint32_t line) -> kira::source_location {
-  return kira::source_location{
-      .file_id = 0, .span = kira::source_span{.start = line, .end = line + 1}};
+auto at_line(uint32_t line) -> cinder::source_location {
+  return cinder::source_location{
+      .file_id = 0, .span = cinder::source_span{.start = line, .end = line + 1}};
 }
 
 struct fixture {

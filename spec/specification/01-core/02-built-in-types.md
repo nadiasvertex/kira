@@ -27,7 +27,7 @@ never                                           # the uninhabited/bottom type
 
 A numeric literal's type is resolved from context: `let b: int64 = 42` types `42` as `int64`. With no surrounding constraint, an integer literal defaults to `int32` and a decimal literal to `float64`. A literal that cannot fit the type required by context is a compile error, diagnosed at the literal, not deferred to a runtime failure.
 
-```kira
+```cinder
 let a = 42          # int32 by default
 let b: int64 = 42   # int64 from context
 let c: uint8 = 300  # compile error: 300 does not fit in uint8
@@ -37,7 +37,7 @@ let c: uint8 = 300  # compile error: 300 does not fit in uint8
 
 Arithmetic on `+`, `-`, `*` is checked: a result that does not fit its type panics rather than wrapping silently or invoking undefined behavior. This is the same class of fault as an out-of-bounds index. `int32.min / -1`, negating `int32.min`, division by zero, and shifting by more than the type's bit width panic under the same principle.
 
-```kira
+```cinder
 let x: int32 = int32.max
 let y = x + 1        # panics: int32 overflow
 ```
@@ -49,7 +49,7 @@ Three explicit, always-available alternatives to the panicking operators exist a
 - Wrapping (modular): `+%`, `-%`, `*%` — and their compound-assignment forms `+%=`, `-%=`.
 - Saturating: `+|`, `-|`, `*|` — clamp at the type's `.min`/`.max` instead of panicking.
 
-```kira
+```cinder
 let mixed = h *% 31 +% c     # wrapping — hashes, checksums, ring buffers
 let level = volume +| gain   # saturating — clamps at the type's min or max
 ```
@@ -60,7 +60,7 @@ let level = volume +| gain   # saturating — clamps at the type's min or max
 
 Calling the target type like a constructor converts a value to it:
 
-```kira
+```cinder
 let n: int32   = 300
 let x: float64 = float64(n)   # int32 -> float64
 let b: uint8   = uint8(n)     # narrowing — panics: 300 does not fit in uint8
@@ -78,9 +78,9 @@ The same `from` mechanism is invoked implicitly by `?` when propagating an error
 
 ### `as` (unchecked)
 
-A separate `as` cast expression also exists (`cast_expr` in `spec/kira-grammar.ebnf`; `hir_cast` in `src/hir/lower.cpp`; `op_cast` in `src/bytecode/opcodes.h`), and is exercised throughout the test corpus (`src/testdata/codegen_stress/019_cast_int_widen_narrow.cn`, `020_cast_float_conversions.cn`) for ordinary numeric conversions, not only in `packed`/machine-layout code. Unlike constructor-call conversion, `expr as T` never panics: integer-to-integer truncates or sign/zero-extends, integer-to-float and float-to-integer follow C++ conversion semantics, and float-to-float widens or narrows — silently, per the `op_cast` doc comment in `opcodes.h`.
+A separate `as` cast expression also exists (`cast_expr` in `spec/cinder-grammar.ebnf`; `hir_cast` in `src/hir/lower.cpp`; `op_cast` in `src/bytecode/opcodes.h`), and is exercised throughout the test corpus (`src/testdata/codegen_stress/019_cast_int_widen_narrow.cn`, `020_cast_float_conversions.cn`) for ordinary numeric conversions, not only in `packed`/machine-layout code. Unlike constructor-call conversion, `expr as T` never panics: integer-to-integer truncates or sign/zero-extends, integer-to-float and float-to-integer follow C++ conversion semantics, and float-to-float widens or narrows — silently, per the `op_cast` doc comment in `opcodes.h`.
 
-```kira
+```cinder
 var big: int64 = 1000
 var narrow = big as int8     # truncates silently — no panic
 ```

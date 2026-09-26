@@ -6,7 +6,7 @@ Covers the core iterator traits (`iterator[T]`, `double_ended[T]`, `exact_size[T
 
 ## Traits
 
-```kira
+```cinder
 pub trait iterator[T]:
     def next(mut self) -> option[T]
     def size_hint(self) -> usize:
@@ -16,21 +16,21 @@ pub trait iterator[T]:
 - `next(mut self) -> option[T]` — advances the iterator, moving it. Returns `@some(value)` if a value is available, `@none` when exhausted.
 - `size_hint(self) -> usize` — a defaulted method (default `0`), not a separate trait. A lower bound on the number of elements remaining, used only to pre-size a collection in `collect`; an answer that is too small costs a reallocation and nothing else. Adapters that can refine it do (see [Lazy Adapters](49-lazy-adapters.md) for which).
 
-```kira
+```cinder
 pub trait double_ended[T] requires iterator[T]:
     def next_back(mut self) -> option[T]
 ```
 
 - `next_back(mut self) -> option[T]` — removes and returns the last value. This is what makes `rev`, `last`, and (a future) `rfind` linear rather than quadratic: a `rev` over a `double_ended` source draws from its end directly rather than buffering.
 
-```kira
+```cinder
 pub trait exact_size[T] requires iterator[T]:
     def exact_len(self) -> usize
 ```
 
 - `exact_len(self) -> usize` — the exact number of elements remaining. Named `exact_len` rather than `len`, deliberately: under UFCS a trait method named `len` would collide with the free `len` function every container already provides.
 
-```kira
+```cinder
 pub trait into_iterator[T]:
     type iter
     def into_iter(self) -> self.iter
@@ -40,7 +40,7 @@ pub trait into_iterator[T]:
 
 `into_iter(self)` takes `self` by value, so `for x in v` over a type that only implements `into_iterator` moves `v`. Writing the loop's iterable as an explicit borrow instead — `for x in &v` / `for x in &mut v` — dispatches to a UFCS free function named `iter` / `iter_mut` (the same constructors described below for `list[T]`) rather than `into_iter`, so `v` is not moved and is fully usable again once the loop ends. This route is tried before `into_iterator`, so a type offering both never has its `&`/`&mut` iteration silently consume the collection.
 
-```kira
+```cinder
 pub trait from_iter[T]:
     static def from_iter[I](it: I) -> self
 ```
@@ -49,7 +49,7 @@ pub trait from_iter[T]:
 
 ## `collect`
 
-```kira
+```cinder
 pub def collect[I, C](it: I) -> C:
     return C.from_iter(it)
 ```
@@ -60,7 +60,7 @@ A single free function, generic over both the source iterator type `I` and the t
 
 Currently `list[T]` is the only `from_iter` implementor in the standard library:
 
-```kira
+```cinder
 impl[T] from_iter[T] for list[T]:
     static def from_iter[I](it: I) -> list[T] where I: iterator[T]:
         var out = []
@@ -74,7 +74,7 @@ impl[T] from_iter[T] for list[T]:
 
 Each is a plain generic struct holding its source and a cursor:
 
-```kira
+```cinder
 pub type list_iter[T]      = { src: &list[T],     at: usize, end: usize }  # yields &T
 pub type list_iter_mut[T]  = { src: &mut list[T], at: usize, end: usize }  # yields &mut T
 pub type list_into_iter[T] = { src: list[T],       at: usize, end: usize }  # yields T
@@ -84,7 +84,7 @@ Each carries *both* a front cursor (`at`) and a back cursor (`end`) rather than 
 
 Constructors, chainable via UFCS as `xs.iter()` / `xs.iter_mut()` / `xs.into_iter()`:
 
-```kira
+```cinder
 pub def iter[T](xs: &list[T]) -> list_iter[T]
 pub def iter_mut[T](xs: &mut list[T]) -> list_iter_mut[T]
 pub def into_iter[T](xs: list[T]) -> list_into_iter[T]
@@ -104,7 +104,7 @@ Trait coverage of each, exactly as implemented:
 
 ## Example
 
-```kira
+```cinder
 for x in nums.iter():
     ...                       # x: &int32
 

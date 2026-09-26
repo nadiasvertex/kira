@@ -4,8 +4,8 @@ module main
 #  `traits.is_scalar` — is this type any builtin numeric type, `bool`, or
 #  `char`? `is_numeric[T]() or is_bool[T]() or is_char[T]()`.
 #
-#  Run it:      kira demo/traits-is_scalar.cn
-#  Compile it:  kira --compile -o traits-is_scalar demo/traits-is_scalar.cn
+#  Run it:      cinder demo/traits-is_scalar.cn
+#  Compile it:  cinder --compile -o traits-is_scalar demo/traits-is_scalar.cn
 # ==========================================================================
 
 use std.traits.is_scalar

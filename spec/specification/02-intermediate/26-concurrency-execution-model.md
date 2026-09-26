@@ -17,7 +17,7 @@ A program can add contexts (`gpu`, `dma`, a real-time loop) by providing an exec
 
 A task may be awaited only from a context that satisfies its requirement, so running CPU-heavy work on the I/O reactor — or I/O on a real-time loop — is a type error rather than a latency bug found in production. `on` bridges contexts:
 
-```kira
+```cinder
 async def handle_request(req: http_request) -> http_response:   # a task[..., io]
     let result = await on(pool):        # switch to the cpu context for this block
         expensive_computation(req.body)
@@ -35,7 +35,7 @@ An `async def` produces a `task[T, E, C]`: a value describing a computation that
 
 Every task runs inside a *cancellation scope*. A `crew` establishes one, and each task it spawns inherits a cancellation token. Cancellation is *cooperative*: a task observes it only at suspension points (`await`) and at explicit checks, so it is never interrupted at an arbitrary instruction and its invariants stay intact. A task's own token is available as `cancel`:
 
-```kira
+```cinder
 if cancel.is_requested(): return @err(@cancelled)
 await yield        # a suspension point that only yields and checks cancellation
 ```

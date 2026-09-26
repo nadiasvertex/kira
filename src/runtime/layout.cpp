@@ -7,7 +7,7 @@
 #include "src/parser/ast.h"
 #include "src/runtime/allocator.h"
 
-namespace kira::runtime {
+namespace cinder::runtime {
 
 namespace {
 
@@ -534,4 +534,4 @@ auto tuple_element_offset(const type_table &types, semantic::type_id id,
   return found;
 }
 
-} // namespace kira::runtime
+} // namespace cinder::runtime

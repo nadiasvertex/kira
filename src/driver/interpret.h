@@ -8,7 +8,7 @@
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Outcome of executing `cli_config::run_function` when `cli_config::run` is
 /// set. Bytecode compilation only covers `spec/codegen-design.md` increment
@@ -32,9 +32,9 @@ struct run_outcome {
                           ///< execution didn't happen or panicked otherwise.
 };
 
-} // namespace kira::driver
+} // namespace cinder::driver
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Renders a VM return value for `--run`'s output, using the function's
 /// checked return type to pick how `slot_value`'s untagged union should be
@@ -68,4 +68,4 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
                const semantic::type_table &types,
                std::string_view function_name) -> run_outcome;
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -6,7 +6,7 @@
 
 ## Syntax
 
-```kira
+```cinder
 trait account:
     def withdraw(self, amount: int32) -> int32
         pre  amount > 0

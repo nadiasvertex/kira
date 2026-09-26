@@ -4,7 +4,7 @@
 #include <format>
 #include <numeric>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// Re-establishes the canonical form after an arbitrary term list has been
@@ -198,4 +198,4 @@ auto equation_satisfiable(const linear_poly &a, const linear_poly &b,
   return true;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

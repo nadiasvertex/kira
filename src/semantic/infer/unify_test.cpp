@@ -22,19 +22,19 @@
 
 namespace {
 
-using kira::semantic::linear_poly;
-using kira::semantic::poly_add;
-using kira::semantic::poly_constant;
-using kira::semantic::poly_variable;
-using kira::semantic::type_id;
-using kira::semantic::type_table;
-using kira::semantic::infer::infer_ctxt;
-using kira::semantic::infer::k_no_cause;
-using kira::semantic::infer::unifier;
-using kira::semantic::infer::unify_failure;
-using kira::testing::expect;
+using cinder::semantic::linear_poly;
+using cinder::semantic::poly_add;
+using cinder::semantic::poly_constant;
+using cinder::semantic::poly_variable;
+using cinder::semantic::type_id;
+using cinder::semantic::type_table;
+using cinder::semantic::infer::infer_ctxt;
+using cinder::semantic::infer::k_no_cause;
+using cinder::semantic::infer::unifier;
+using cinder::semantic::infer::unify_failure;
+using cinder::testing::expect;
 
-auto nowhere() -> kira::source_location { return {}; }
+auto nowhere() -> cinder::source_location { return {}; }
 
 /// A store, a table and a unifier over both, since every test needs all three.
 struct fixture {
@@ -266,10 +266,10 @@ auto test_deferred_constraints_retry() -> void {
 auto test_absent_types_never_fail() -> void {
   auto f = fixture{};
   const auto int32 = f.table.builtin("int32");
-  expect(f.unify(kira::semantic::k_unknown_type, int32).has_value(),
+  expect(f.unify(cinder::semantic::k_unknown_type, int32).has_value(),
          "expected `unknown` to unify with anything");
   expect(
-      f.unify(f.table.builtin_generic("list", {kira::semantic::k_error_type}),
+      f.unify(f.table.builtin_generic("list", {cinder::semantic::k_error_type}),
               f.table.builtin_generic("list", {int32}))
           .has_value(),
       "expected `error` to unify with anything");

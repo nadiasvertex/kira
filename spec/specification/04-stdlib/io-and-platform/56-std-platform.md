@@ -9,11 +9,11 @@ Compile-time target introspection and runtime host introspection: architecture, 
 - **Target** — architecture, pointer width, endianness, OS family — is knowable when the binary is built, computed once per compile from the toolchain's own preprocessor knowledge (`__x86_64__`, `__APPLE__`, `__linux__`, and similar), and exposed as `pure` accessor functions. Cinder has no `--target` flag or cross-compilation support, so "target" and "the host the compiler itself was built on" are currently identical.
 - **Host** — hostname, detailed OS release, processor name — can only be known by asking the OS at runtime, through thin intrinsics.
 
-Some of this module's declarations are not present in the checked-in `src/std/platform.cn` source: the target/build-info accessor functions (`target_arch`, `target_os`, `target_os_family`, `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`, `kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`) are generated and spliced in by the driver (`generate_platform_target_accessors`/`assemble_platform_module_source`, `src/driver/driver.cpp`) at compile time, each embedding its value as a literal directly in the function body. They cannot be declared in the checked-in file itself — a module path can only be declared by one file — and are generated as functions rather than `pub static` constants because of a bytecode-lowering bug with that alternative (see `generate_platform_target_accessors`'s doc comment). `target_os_family()` in particular is classified in C++ (`detect_target_os`) and baked in directly, rather than computed at runtime from `target_os()`'s string, because neither backend implements `str ==` yet for the general case.
+Some of this module's declarations are not present in the checked-in `src/std/platform.cn` source: the target/build-info accessor functions (`target_arch`, `target_os`, `target_os_family`, `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`, `cinder_version`, `cinder_implementation`, `cinder_compiler`, `cinder_build_date`) are generated and spliced in by the driver (`generate_platform_target_accessors`/`assemble_platform_module_source`, `src/driver/driver.cpp`) at compile time, each embedding its value as a literal directly in the function body. They cannot be declared in the checked-in file itself — a module path can only be declared by one file — and are generated as functions rather than `pub static` constants because of a bytecode-lowering bug with that alternative (see `generate_platform_target_accessors`'s doc comment). `target_os_family()` in particular is classified in C++ (`detect_target_os`) and baked in directly, rather than computed at runtime from `target_os()`'s string, because neither backend implements `str ==` yet for the general case.
 
 ## Types
 
-```kira
+```cinder
 pub type architecture = @x86_64 | @aarch64 | @arm | @riscv32 | @riscv64 | @wasm32 | @wasm64 | @other(str)
 pub type os_family = @unix | @windows | @macos | @other(str)
 pub type endianness = @little | @big
@@ -30,7 +30,7 @@ pub type platform_info = {
     os_family: os_family,
 }
 
-pub type kira_build = {
+pub type cinder_build = {
     version: str,
     implementation: str,
     compiler: str,
@@ -61,7 +61,7 @@ Every field or parameter that would naturally be called `machine` is named `mach
 
 ## Intrinsics
 
-```kira
+```cinder
 type uname_raw = { sysname: str, nodename: str, release: str, version: str, machine_arch: str }
 type winver_raw = { major: uint32, minor: uint32, build: uint32, platform_id: uint32, csd_version: str }
 type macver_raw = { release: str, version: str, dev_stage: str, non_release_version: str, machine_arch: str }
@@ -78,14 +78,14 @@ All six are declared unconditionally rather than gated per platform: a native im
 
 `io_error`/`io_errno` are declared in `std.io`; because a struct literal's type name must be a single identifier (the parser does not accept a qualified path directly before `{`), this module aliases them locally:
 
-```kira
+```cinder
 type io_error = std.io.io_error
 type io_errno = std.io.io_errno
 ```
 
 ## Target queries (compile-time)
 
-```kira
+```cinder
 pub pure def target_arch() -> architecture
 pub pure def target_os() -> str
 pub pure def target_os_family() -> os_family
@@ -103,7 +103,7 @@ All `pure`, since the target never changes at runtime. `is_unix`/`is_windows`/`i
 
 ## Runtime queries
 
-```kira
+```cinder
 pub def node() -> result[str, io_error]
 pub def processor() -> result[str, io_error]
 pub def release() -> result[str, io_error]
@@ -114,7 +114,7 @@ pub def version() -> result[str, io_error]
 
 `release`/`version` genuinely differ per platform but are each a single unconditional definition dispatching internally on the runtime value of `target_os_family()`, rather than one definition per platform selected by `static if`: item-level `static if`/`else` only affects that file's own compile-time checking, it does not splice a definition into the module's ordinary scope for other code to call.
 
-```kira
+```cinder
 pub def release() -> result[str, io_error]:
     match target_os_family():
         @unix    =>: let raw = rt_uname()?; return @ok(raw.release)
@@ -129,19 +129,19 @@ Error propagation throughout this module uses `?`, not `.map`/`.map_err`/`.ok()`
 
 ## Cross-platform convenience
 
-```kira
+```cinder
 pub def uname() -> platform_info
 pub def platform() -> str
-pub def kira_build_info() -> kira_build
+pub def cinder_build_info() -> cinder_build
 ```
 
 - `uname()` assembles a `platform_info`: target fields (`system`, `machine_arch`, `endianness`, `pointer_width`, `os_family`) come from the `pure` target queries directly; host fields (`node`, `release`, `version`, `processor`) come from the runtime queries above, each converted from `result` to `option` by a private helper so a query failure becomes `@none` rather than propagating. `@none` (could not determine) is distinguishable from `@some("")` (genuinely empty from the OS) — there is no sentinel value.
 - `platform()` never fails: it formats `"{target_os()}-{release}-{arch}-{processor}"`, substituting `"unknown"` for any runtime query that returned `@err`.
-- `kira_build_info()` is `pure`: it reads the four driver-generated build accessors (`kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`) and assembles a `kira_build`.
+- `cinder_build_info()` is `pure`: it reads the four driver-generated build accessors (`cinder_version`, `cinder_implementation`, `cinder_compiler`, `cinder_build_date`) and assembles a `cinder_build`.
 
 ## Platform-specific queries
 
-```kira
+```cinder
 pub def libc_ver() -> option[libc_version]
 pub def win32_ver() -> option[windows_version]
 pub def mac_ver() -> option[macos_version]
@@ -153,7 +153,7 @@ Calling a Windows-only query on macOS is not an error — the information simply
 
 ## `show` implementations
 
-`architecture`, `os_family`, `endianness`, `platform_info`, `kira_build`, `libc_version`, `windows_version`, and `macos_version` each have a hand-written `impl show`. These are hand-written rather than `deriving`, because `deriving` only generates real code for struct-shaped types today — a sum type (`architecture`, `os_family`, `endianness`) gains nothing from listing it.
+`architecture`, `os_family`, `endianness`, `platform_info`, `cinder_build`, `libc_version`, `windows_version`, and `macos_version` each have a hand-written `impl show`. These are hand-written rather than `deriving`, because `deriving` only generates real code for struct-shaped types today — a sum type (`architecture`, `os_family`, `endianness`) gains nothing from listing it.
 
 ## Design decisions
 

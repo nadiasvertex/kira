@@ -17,7 +17,7 @@ module std.mem
 #
 # Every block is zero-filled, including the grown tail of a `resize`. That is
 # the allocator's guarantee, not this module's, and it holds under both
-# `KIRA_ALLOCATOR` modes.
+# `CINDER_ALLOCATOR` modes.
 
 use std.intrinsics.{rt_alloc, rt_realloc, rt_free}
 

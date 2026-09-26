@@ -25,7 +25,7 @@
 #include <llvm/TargetParser/Triple.h>
 #pragma clang diagnostic pop
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 namespace {
 
@@ -43,7 +43,7 @@ namespace {
   if (return_ty->isFloatingPointTy()) {
     return std::unexpected(aot_error{
         .message = "the entry function must return an integer, `bool`, or "
-                   "`unit` type to be used as `kira build`'s process exit "
+                   "`unit` type to be used as `cinder build`'s process exit "
                    "code — a floating-point return value is not a sensible "
                    "exit status"});
   }
@@ -53,7 +53,7 @@ namespace {
                    "code mapping"});
   }
 
-  entry_fn.setName("__kira_entry");
+  entry_fn.setName("__cinder_entry");
 
   auto *i32_ty = llvm::Type::getInt32Ty(ctx);
   auto *main_ty = llvm::FunctionType::get(i32_ty, /*isVarArg=*/false);
@@ -92,7 +92,7 @@ auto emit_object_file(compiled_module module,
   }
   if (entry_fn->arg_size() != 0) {
     return std::unexpected(aot_error{
-        .message = std::format("cannot build `{}`: `kira build` only "
+        .message = std::format("cannot build `{}`: `cinder build` only "
                                "supports zero-parameter entry functions",
                                entry_function_name)});
   }
@@ -163,4 +163,4 @@ auto emit_object_file(compiled_module module,
   return {};
 }
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

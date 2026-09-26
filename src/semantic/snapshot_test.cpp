@@ -12,7 +12,7 @@
 // stdlib plus that file), and the entire `checked_types` surface is rendered
 // and compared byte for byte against a checked-in golden. Regenerate with:
 //
-//     KIRA_UPDATE_SNAPSHOTS=1 bazelisk test //src/semantic:snapshot_test
+//     CINDER_UPDATE_SNAPSHOTS=1 bazelisk test //src/semantic:snapshot_test
 //
 // and *read the diff* — a regeneration that was not read is the one way this
 // harness can be worse than nothing.
@@ -43,8 +43,8 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
+using cinder::testing::expect;
+using cinder::testing::fail;
 
 namespace fs = std::filesystem;
 
@@ -121,26 +121,26 @@ constexpr auto k_inputs = std::array{
 constexpr auto k_golden_name = std::string_view("session");
 
 auto update_requested() -> bool {
-  const auto *flag = std::getenv("KIRA_UPDATE_SNAPSHOTS");
+  const auto *flag = std::getenv("CINDER_UPDATE_SNAPSHOTS");
   return flag != nullptr && *flag != '\0' && std::string_view(flag) != "0";
 }
 
 /// Checks every fixture in one stdlib session and renders the result.
 auto render_session() -> std::string {
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
 
   auto texts = std::vector<std::pair<std::string, std::string>>{};
-  for (auto &source : kira::testing::load_stdlib_sources()) {
+  for (auto &source : cinder::testing::load_stdlib_sources()) {
     texts.emplace_back(std::move(source.path), std::move(source.text));
   }
   for (const auto &input : k_inputs) {
-    const auto corpus_dir = kira::testing::find_test_data_dir(input.corpus);
+    const auto corpus_dir = cinder::testing::find_test_data_dir(input.corpus);
     texts.emplace_back(std::string(input.filename),
-                       kira::testing::load_test_data_file(corpus_dir.string(),
+                       cinder::testing::load_test_data_file(corpus_dir.string(),
                                                           input.filename));
   }
 
@@ -153,27 +153,27 @@ auto render_session() -> std::string {
     const auto *file = sources.get(*file_id);
     expect(file != nullptr, "expected registered snapshot source");
 
-    auto lex = kira::lexer(file->source(), file->id(), diag);
-    auto parse = kira::parser(lex.tokenize(), file->id(), diag);
+    auto lex = cinder::lexer(file->source(), file->id(), diag);
+    auto parse = cinder::parser(lex.tokenize(), file->id(), diag);
     auto ast_file = parse.parse_file();
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = *file_id, .ast_file = ast_file.get()});
     ast_files.push_back(std::move(ast_file));
   }
 
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected the snapshot session to parse cleanly");
   }
 
   const auto checked =
-      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected the snapshot session to check cleanly");
   }
 
-  return kira::semantic::render_snapshot(checked, sources);
+  return cinder::semantic::render_snapshot(checked, sources);
 }
 
 /// Where the goldens live in the source tree. `TEST_SRCDIR` points at a
@@ -190,7 +190,7 @@ auto golden_write_path(std::string_view filename) -> fs::path {
 }
 
 auto golden_read_path(std::string_view filename) -> fs::path {
-  const auto dir = kira::testing::find_test_data_dir("inference_snapshot");
+  const auto dir = cinder::testing::find_test_data_dir("inference_snapshot");
   return dir / (std::string(filename) + ".snapshot");
 }
 
@@ -245,7 +245,7 @@ auto test_snapshot_matches() -> void {
   const auto path = golden_read_path(k_golden_name);
   auto in = std::ifstream(path, std::ios::binary);
   expect(in.is_open(), "expected a checked-in golden snapshot; regenerate with "
-                       "KIRA_UPDATE_SNAPSHOTS=1");
+                       "CINDER_UPDATE_SNAPSHOTS=1");
   const auto golden = std::string(std::istreambuf_iterator<char>(in),
                                   std::istreambuf_iterator<char>());
 
@@ -255,7 +255,7 @@ auto test_snapshot_matches() -> void {
               << "golden " << golden.size() << " bytes, snapshot "
               << rendered.size() << " bytes\n";
     fail("an elaboration decision changed; read the diff, then regenerate "
-         "with KIRA_UPDATE_SNAPSHOTS=1 if the change is intended");
+         "with CINDER_UPDATE_SNAPSHOTS=1 if the change is intended");
   }
 }
 

@@ -7,7 +7,7 @@
 
 #include "src/hir/link.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Find the first lowered HIR module that defines a function matching the
 /// given name.  Returns nullptr when no match is found.
@@ -34,7 +34,7 @@ static auto first_source_stem(const cli_config &cfg) -> std::string {
   if (!stem.empty()) {
     return stem;
   }
-  return "kira";
+  return "cinder";
 }
 
 auto run_requested_function(
@@ -90,4 +90,4 @@ auto build_requested_function(
                                   output_path, cfg.program_name, cfg.opt_level);
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

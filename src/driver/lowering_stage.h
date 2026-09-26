@@ -7,7 +7,7 @@
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Emits module metadata and (unless `cfg.parse_only`) lowers to HIR for
 /// every file in `parsed_inputs` that parsed and checked cleanly.
@@ -43,4 +43,4 @@ lower_and_emit_modules(const cli_config &cfg,
                        const diagnostic_renderer &renderer,
                        compile_report &report) -> hir::ptr_vec<hir::hir_module>;
 
-} // namespace kira::driver
+} // namespace cinder::driver

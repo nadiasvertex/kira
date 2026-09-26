@@ -40,7 +40,7 @@ Each predicate is a `static pure def name[T]() -> bool`, evaluated by the compil
 
 ## Type relationships
 
-```kira
+```cinder
 is_same[A, B]() -> bool          # A and B intern to the same type_id
 is_convertible[From, To]() -> bool   # `into[To]` is implemented for From, or From == To
 implements[T, Trait]() -> bool   # T has an impl of Trait (kind-* trait only)
@@ -54,7 +54,7 @@ implements[T, Trait]() -> bool   # T has an impl of Trait (kind-* trait only)
 
 Transformations return a `type_expr` (see [Compile-Time Execution § Quoting and splicing](../../03-advanced/31-compile-time-execution.md#quoting-and-splicing)) rather than a value, and are spliced into type position with `~`:
 
-```kira
+```cinder
 remove_view[T]() -> type_expr    # &T' or &mut T' -> T'; T unchanged otherwise
 add_view[T]() -> type_expr       # T -> &T
 add_mut_view[T]() -> type_expr   # T -> &mut T
@@ -62,7 +62,7 @@ decay[T]() -> type_expr          # remove_view, then array[E, n] -> slice[E]
 element_type[T]() -> type_expr   # array[E, _]/slice[E]/list[E]/option[E] -> E
 ```
 
-```kira
+```cinder
 def first[T](xs: &list[T]) -> option[~element_type[T]()]:
     ...
 ```
@@ -73,7 +73,7 @@ def first[T](xs: &list[T]) -> option[~element_type[T]()]:
 
 Rather than testing every predicate in turn, `type_category[T]() -> type_category` returns one value of a prelude sum type, for use in a `static if`/`match` dispatch:
 
-```kira
+```cinder
 type type_category =
     | @boolean
     | @character

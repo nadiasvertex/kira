@@ -6,8 +6,8 @@ module main
 #  Yields elements back-to-front; requires the underlying iterator to be
 #  double-ended (know both endpoints), not just forward-only.
 #
-#  Run it:      kira demo/iterator-rev.cn
-#  Compile it:  kira --compile -o iterator-rev demo/iterator-rev.cn
+#  Run it:      cinder demo/iterator-rev.cn
+#  Compile it:  cinder --compile -o iterator-rev demo/iterator-rev.cn
 # ==========================================================================
 
 def main() -> int32:

@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 // ==========================================================================
 //  Instruction set — see `spec/codegen-design.md` Decision 1/increment 1.
@@ -108,7 +108,7 @@ namespace kira::bytecode {
 //    instruction happens to be a jump, since the next opcode's handler
 //    address varies instruction to instruction either way. Worse,
 //    predication doesn't compose with this language's checked-arithmetic
-//    semantics (`spec/kira-reference.md`'s "Integer Overflow" — plain
+//    semantics (`spec/cinder-reference.md`'s "Integer Overflow" — plain
 //    `+`/`-`/`*` panic on overflow): suppressing a panic for a false
 //    predicate requires the exact same conditional check predication was
 //    supposed to eliminate, so there's no branchless win available even
@@ -142,7 +142,7 @@ enum class opcode : uint8_t {
                    ///< once before the program's real entry point.
 
   // --- Checked arithmetic (panics on overflow/div-by-zero for integer
-  //     kinds, per spec/kira-reference.md's "Integer Overflow" section;
+  //     kinds, per spec/cinder-reference.md's "Integer Overflow" section;
   //     plain IEEE semantics — no panic, may produce inf/nan — for float
   //     kinds) -----------------------------------------------------------
   op_add, ///< u16 dst, u16 lhs, u16 rhs, u8 numeric_kind — reg[dst] = lhs+rhs.
@@ -242,7 +242,7 @@ enum class opcode : uint8_t {
   op_call_intrinsic, ///< u16 dst, u8 intrinsic_id, u16 first_arg_reg, u8 argc
                      ///< — calls the native implementation of the intrinsic
                      ///< at index `intrinsic_id` into
-                     ///< `kira::known_intrinsic_names` (src/intrinsics.h)
+                     ///< `cinder::known_intrinsic_names` (src/intrinsics.h)
                      ///< with `argc` consecutive registers starting at
                      ///< `first_arg_reg`, writing its result into `dst`. No
                      ///< frame is pushed — an intrinsic is a direct C++
@@ -478,7 +478,7 @@ enum class opcode : uint8_t {
                         ///< start a valid sequence) into dst. Compiled form
                         ///< of `hir_str_decode_scalar`; shares
                         ///< `runtime::str_scalar_at`'s decode with the LLVM
-                        ///< tier's `kira_rt_str_scalar_at`.
+                        ///< tier's `cinder_rt_str_scalar_at`.
   op_str_scalar_width,  ///< u16 dst, u16 str_reg, u16 offset_reg — bytes
                         ///< consumed decoding the scalar at byte offset
                         ///< reg[offset_reg] within the `str` reg[str_reg]
@@ -695,4 +695,4 @@ struct operand_signature {
   return size;
 }
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

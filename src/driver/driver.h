@@ -11,8 +11,8 @@
 #include "lower.h"
 #include "module_metadata.h"
 
-namespace kira::driver {
-/// Parsed command-line inputs for one `kira` invocation.
+namespace cinder::driver {
+/// Parsed command-line inputs for one `cinder` invocation.
 struct cli_config {
   std::string program_name; ///< Executable name shown in usage and diagnostics.
   std::vector<std::string>
@@ -63,7 +63,7 @@ struct cli_config {
                     ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
                     ///< successful compile. `parse_args` defaults this
                     ///< to true whenever `--compile` was not
-                    ///< requested, so plain `kira SOURCE` runs it
+                    ///< requested, so plain `cinder SOURCE` runs it
                     ///< without needing an explicit `--run`.
   std::string run_function =
       std::string(k_default_run_function); ///< Zero-argument function to
@@ -120,7 +120,7 @@ struct compile_report {
 /// prelude files (found next to the running binary via the same
 /// bundled-data search `find_bazel_archive` uses) to `cfg.sources`, unless
 /// a source with the same resolved path is already
-/// present. This is how every real `kira` invocation gets the auto-imported
+/// present. This is how every real `cinder` invocation gets the auto-imported
 /// prelude — `compile_sources` itself takes exactly the sources it's given,
 /// so its own unit tests are unaffected; only `main.cpp`'s real entry point
 /// calls this before compiling. Silently does nothing if the stdlib files
@@ -140,4 +140,4 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void;
                                           bool show_compile_details = false)
     -> std::string;
 
-} // namespace kira::driver
+} // namespace cinder::driver

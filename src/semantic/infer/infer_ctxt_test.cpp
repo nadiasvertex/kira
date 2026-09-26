@@ -18,16 +18,16 @@
 
 namespace {
 
-using kira::semantic::type_id;
-using kira::semantic::type_table;
-using kira::semantic::infer::bind_failure;
-using kira::semantic::infer::cause;
-using kira::semantic::infer::infer_ctxt;
-using kira::semantic::infer::k_no_cause;
-using kira::semantic::infer::meta_sort;
-using kira::testing::expect;
+using cinder::semantic::type_id;
+using cinder::semantic::type_table;
+using cinder::semantic::infer::bind_failure;
+using cinder::semantic::infer::cause;
+using cinder::semantic::infer::infer_ctxt;
+using cinder::semantic::infer::k_no_cause;
+using cinder::semantic::infer::meta_sort;
+using cinder::testing::expect;
 
-auto nowhere() -> kira::source_location { return {}; }
+auto nowhere() -> cinder::source_location { return {}; }
 
 /// Mints two independent variables and merges them; a solution recorded for
 /// either must be visible from both.

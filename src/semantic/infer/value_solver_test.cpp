@@ -13,15 +13,15 @@
 
 namespace {
 
-using kira::semantic::linear_poly;
-using kira::semantic::poly_add;
-using kira::semantic::poly_constant;
-using kira::semantic::poly_scale;
-using kira::semantic::poly_sub;
-using kira::semantic::poly_variable;
-using kira::semantic::infer::solve_value_equation;
-using kira::semantic::infer::value_answer;
-using kira::testing::expect;
+using cinder::semantic::linear_poly;
+using cinder::semantic::poly_add;
+using cinder::semantic::poly_constant;
+using cinder::semantic::poly_scale;
+using cinder::semantic::poly_sub;
+using cinder::semantic::poly_variable;
+using cinder::semantic::infer::solve_value_equation;
+using cinder::semantic::infer::value_answer;
+using cinder::testing::expect;
 
 auto n_plus(int64_t k) -> linear_poly {
   return poly_add(poly_variable("n"), poly_constant(k));

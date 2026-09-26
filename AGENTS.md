@@ -1,7 +1,7 @@
 # Overview 
 
-  - Language grammar: `spec/kira-grammar.md`
-  - Language reference: `spec/kira-reference.md`
+  - Language grammar: `spec/cinder-grammar.md`
+  - Language reference: `spec/cinder-reference.md`
   - Standard library reference: `spec/std-reference.md`
   - Repository guide: `spec/llm-repository-guide.md`
   - Compiler roadmap: `spec/llm-compiler-roadmap.md`

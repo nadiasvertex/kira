@@ -5,8 +5,8 @@ module main
 #
 #  Leaves the source slice unchanged, unlike `sort`.
 #
-#  Run it:      kira demo/algorithm-sorted.cn
-#  Compile it:  kira --compile -o algorithm-sorted demo/algorithm-sorted.cn
+#  Run it:      cinder demo/algorithm-sorted.cn
+#  Compile it:  cinder --compile -o algorithm-sorted demo/algorithm-sorted.cn
 # ==========================================================================
 
 def main() -> int32:

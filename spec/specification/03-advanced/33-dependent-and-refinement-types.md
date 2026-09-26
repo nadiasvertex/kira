@@ -4,7 +4,7 @@
 
 Types that carry values (`vec[T, n]`), refinement types (`type positive = int32 where self > 0`), the reasoning solver's exact fragment, typed runtime proofs, state machines in types, and interaction with contracts.
 
-This chapter is the normative reference for `spec/dependent-types-design.md`, folded in and re-voiced; that document's precision on the reasoning fragment takes priority over the thinner tutorial account previously in `kira-reference.md`. See [Compile-Time Semantics § Two subsystems](32-compile-time-semantics.md#two-subsystems-evaluation-and-reasoning) for how evaluation and reasoning divide the work in general.
+This chapter is the normative reference for `spec/dependent-types-design.md`, folded in and re-voiced; that document's precision on the reasoning fragment takes priority over the thinner tutorial account previously in `cinder-reference.md`. See [Compile-Time Semantics § Two subsystems](32-compile-time-semantics.md#two-subsystems-evaluation-and-reasoning) for how evaluation and reasoning divide the work in general.
 
 ## The two subsystems, concretely
 
@@ -17,7 +17,7 @@ Governing rule: **fold if closed, symbolize otherwise.** A value expression in a
 
 ## Dependent types carrying values
 
-```kira
+```cinder
 # vec[T, n] carries its length in the type
 type vec[T, n: usize] = { data: array[T, n] }
 
@@ -56,7 +56,7 @@ This is what makes `head[T, n: usize](v: vec[T, n + 1])` reject an empty `vec[T,
 
 ## Refinement types
 
-```kira
+```cinder
 type positive        = int32 where self > 0
 type index[n: usize] = usize where self < n
 
@@ -170,13 +170,13 @@ error: cannot prove `i < n` for this argument
 
 Every refinement type has an intrinsic:
 
-```kira
+```cinder
 index[n].try_from(raw: usize) -> option[index[n]]
 ```
 
 It evaluates the predicate on the value and yields `@some(value)` (same representation, refined type) or `@none`. After `if let @some(i) = ...`, `i` *has* the refined type — the unwrap **is** the proof; no flow analysis is required to see it. This is the designed escape hatch for everything the fragment cannot decide.
 
-```kira
+```cinder
 if let @some(i) = index[n].try_from(raw_index):
     v[i]    # i is now index[n] — access is safe, no bounds check needed
 ```
@@ -185,7 +185,7 @@ if let @some(i) = index[n].try_from(raw_index):
 
 Types parameterized over state values enforce valid operation sequences at compile time:
 
-```kira
+```cinder
 type connection[S: conn_state]
 
 def connect(addr: str)              -> connection[closed]: ...

@@ -2,7 +2,7 @@
 
 #include "src/hir/nodes.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 // Generic HIR traversal shared by the passes that rewrite or measure a
 // lowered function body (`inline.cpp`, `frame_budget.cpp`).
@@ -217,4 +217,4 @@ template <typename F> auto walk(hir_node &node, F &&visit) -> void {
   for_each_child(node, [&](auto &slot) -> void { walk(*slot, visit); });
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

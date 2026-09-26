@@ -9,7 +9,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/ids.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Which namespace a symbol's name is looked up in.
 ///
@@ -110,4 +110,4 @@ auto best_suggestion(std::string_view name,
 auto module_symbol_spec(const ast::node &node, file_id_type file_id)
     -> std::optional<semantic_symbol_spec>;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

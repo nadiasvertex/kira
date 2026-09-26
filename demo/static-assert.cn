@@ -9,8 +9,8 @@ module main
 #  interpolation to embed compile-time values (a type parameter's name, a
 #  computed number, ...) right in the diagnostic.
 #
-#  Run it:      kira demo/static-assert.cn
-#  Compile it:  kira --compile -o static-assert demo/static-assert.cn
+#  Run it:      cinder demo/static-assert.cn
+#  Compile it:  cinder --compile -o static-assert demo/static-assert.cn
 # ==========================================================================
 
 static LIMIT: int32 = 100

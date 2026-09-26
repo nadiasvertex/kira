@@ -17,7 +17,7 @@
 
 namespace fs = std::filesystem;
 
-namespace kira::driver {
+namespace cinder::driver {
 
 [[nodiscard]] auto find_bazel_archive(std::string_view program_name,
                                       std::string_view bazel_package,
@@ -41,12 +41,12 @@ namespace kira::driver {
                               filename);
     }
     candidates.emplace_back(fs::path("bazel-bin") / bazel_package / filename);
-    if (const auto exe_path = kira::util::resolve_self_executable()) {
-      // Installed layout: `<prefix>/bin/kira`, link archives flattened
-      // under `<prefix>/lib/kira/` (matching `just package`'s tar/`.deb`
+    if (const auto exe_path = cinder::util::resolve_self_executable()) {
+      // Installed layout: `<prefix>/bin/cinder`, link archives flattened
+      // under `<prefix>/lib/cinder/` (matching `just package`'s tar/`.deb`
       // output), independent of the AOT program's cwd.
       candidates.emplace_back(exe_path->parent_path().parent_path() / "lib" /
-                              "kira" / filename);
+                              "cinder" / filename);
     }
   }
 
@@ -77,7 +77,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
 
   const auto object_path =
       fs::temp_directory_path() /
-      std::format("kira-build-{}.o", static_cast<long>(::getpid()));
+      std::format("cinder-build-{}.o", static_cast<long>(::getpid()));
   // `driver::optimization_level` and `llvm_codegen::optimization_level` are
   // kept numerically identical (see `defaults.h`'s doc comment) specifically
   // so this cast is valid without a switch.
@@ -98,8 +98,8 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
     return build_outcome{
         .succeeded = false,
         .message = "could not locate Cinder's AOT panic runtime support "
-                   "library (libaot_runtime.a) — run `kira` via `bazelisk "
-                   "run //src:kira` or from `bazel-bin/src/kira` inside the "
+                   "library (libaot_runtime.a) — run `cinder` via `bazelisk "
+                   "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
   const auto heap_archive =
@@ -108,8 +108,8 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
     return build_outcome{
         .succeeded = false,
         .message = "could not locate Cinder's heap runtime support library "
-                   "(libruntime.a) — run `kira` via `bazelisk run "
-                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "(libruntime.a) — run `cinder` via `bazelisk run "
+                   "//src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
   // `src/runtime:runtime`'s own `layout.cpp` (`struct_field_slot` and
@@ -129,8 +129,8 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
         .succeeded = false,
         .message = "could not locate Cinder's semantic-analysis support "
                    "library (libsemantic.a, needed by the heap runtime's "
-                   "struct/sum layout helpers) — run `kira` via `bazelisk "
-                   "run //src:kira` or from `bazel-bin/src/kira` inside the "
+                   "struct/sum layout helpers) — run `cinder` via `bazelisk "
+                   "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
   const auto parser_archive =
@@ -140,8 +140,8 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
         .succeeded = false,
         .message = "could not locate Cinder's parser support library "
                    "(libparser.a, needed by the heap runtime's struct/sum "
-                   "layout helpers) — run `kira` via `bazelisk run "
-                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "layout helpers) — run `cinder` via `bazelisk run "
+                   "//src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
   // `src/runtime:fmt.cpp` (string-interpolation formatting intrinsics,
@@ -155,8 +155,8 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
         .succeeded = false,
         .message = "could not locate Cinder's UTF-8 support library "
                    "(libutf8.a, needed by the heap runtime's string-"
-                   "formatting intrinsics) — run `kira` via `bazelisk run "
-                   "//src:kira` or from `bazel-bin/src/kira` inside the "
+                   "formatting intrinsics) — run `cinder` via `bazelisk run "
+                   "//src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
 
@@ -177,4 +177,4 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   return build_outcome{.succeeded = true, .message = output_path.string()};
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

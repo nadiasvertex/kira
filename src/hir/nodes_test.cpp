@@ -11,15 +11,15 @@
 
 namespace {
 
-using kira::source_span;
-using kira::testing::expect;
-namespace hir = kira::hir;
+using cinder::source_span;
+using cinder::testing::expect;
+namespace hir = cinder::hir;
 
 // Hand-builds the HIR for `def add(x: int32, y: int32) -> int32: return x +
 // y`, since lowering (src/hir/lower.cpp) doesn't exist yet — this exercises
 // only the node shapes themselves.
 auto test_builds_add_function_by_hand() -> void {
-  auto types = kira::semantic::type_table{};
+  auto types = cinder::semantic::type_table{};
   const auto int32_type = types.builtin("int32");
 
   const auto span = source_span{.start = 0, .end = 1};
@@ -27,7 +27,7 @@ auto test_builds_add_function_by_hand() -> void {
   auto x_ref = hir::make<hir::hir_local_ref>(span, int32_type, 0, "x");
   auto y_ref = hir::make<hir::hir_local_ref>(span, int32_type, 1, "y");
   auto sum =
-      hir::make<hir::hir_binary>(span, int32_type, kira::ast::binary_op::add,
+      hir::make<hir::hir_binary>(span, int32_type, cinder::ast::binary_op::add,
                                  std::move(x_ref), std::move(y_ref));
 
   auto ret = hir::make<hir::hir_return>(span, std::move(sum));
@@ -69,7 +69,7 @@ auto test_builds_add_function_by_hand() -> void {
 
   const auto &sum_expr =
       dynamic_cast<const hir::hir_binary &>(*return_stmt.value);
-  expect(sum_expr.op == kira::ast::binary_op::add,
+  expect(sum_expr.op == cinder::ast::binary_op::add,
          "expected the operator to be addition");
   expect(sum_expr.lhs->kind == hir::hir_node_kind::hir_local_ref,
          "expected the left operand to be a local reference");

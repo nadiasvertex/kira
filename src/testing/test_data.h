@@ -9,7 +9,7 @@
 
 #include "src/testing/test_assert.h"
 
-namespace kira::testing {
+namespace cinder::testing {
 
 namespace fs = std::filesystem;
 
@@ -62,4 +62,4 @@ auto load_test_data_file(std::string_view test_dir, std::string_view filename)
   return content;
 }
 
-} // namespace kira::testing
+} // namespace cinder::testing

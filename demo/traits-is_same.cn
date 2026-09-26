@@ -6,8 +6,8 @@ module main
 #  Reflexive and symmetric, no bound required on either side. Compares by
 #  rendered name only, like every predicate in this file.
 #
-#  Run it:      kira demo/traits-is_same.cn
-#  Compile it:  kira --compile -o traits-is_same demo/traits-is_same.cn
+#  Run it:      cinder demo/traits-is_same.cn
+#  Compile it:  cinder --compile -o traits-is_same demo/traits-is_same.cn
 # ==========================================================================
 
 use std.traits.is_same

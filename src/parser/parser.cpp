@@ -12,7 +12,7 @@
 #include "src/parser/interp_string.h"
 #include "src/parser/text_escape.h"
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  Helper: make an error expression for recovery.
@@ -1126,7 +1126,7 @@ auto parser::parse_sub_module_decl(ast::visibility vis)
   if (at(token_kind::colon)) {
     const auto colon_span = peek().span;
     advance(); // consume `:`
-    // A module body is a block and only a block (spec/kira-grammar.ebnf's
+    // A module body is a block and only a block (spec/cinder-grammar.ebnf's
     // `sub_module_decl`), unlike a function body, which also has an inline
     // `: expr` form. Both non-block spellings therefore have to be
     // diagnosed here: without this, `module inner: pub type holder = ...`
@@ -3687,7 +3687,7 @@ auto parser::parse_unary_expr() -> ast::ptr<ast::expr> {
 
   case token_kind::tilde: {
     // At expression depth 0, `~(expr)` and `~IDENT` are splices;
-    // `~anything_else` is bitwise complement (kira-grammar.ebnf's
+    // `~anything_else` is bitwise complement (cinder-grammar.ebnf's
     // `splice_expr = "~" "(" expr ")" | "~" IDENT`).
     if (peek_at(1).is(token_kind::lparen)) {
       return parse_splice_expr_inner();
@@ -3997,7 +3997,7 @@ auto parser::parse_postfix_suffix(ast::ptr<ast::expr> base)
 
 auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
   // Inside a postcondition, `return` is not the statement — it *names* the
-  // value the function returns (spec/kira-reference.md, "Contracts": "It is
+  // value the function returns (spec/cinder-reference.md, "Contracts": "It is
   // deliberately not called `result`, which would collide with the `result`
   // type"). It parses as an ordinary identifier spelled `return`, which no
   // other production can produce (`return` is a keyword everywhere else), so
@@ -6414,4 +6414,4 @@ auto parser::token_to_mul_op(token_kind kind) noexcept
   }
 }
 
-} // namespace kira
+} // namespace cinder

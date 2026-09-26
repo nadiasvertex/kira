@@ -5,7 +5,7 @@ module main
 # Reusing the original binding afterward must still check cleanly.
 
 def main() -> int32:
-    let name = "kira"
+    let name = "cinder"
     let greet = [name] (x: int32) -> int32 => x
     greet(1)
     println(name)

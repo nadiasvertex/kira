@@ -19,18 +19,18 @@
 
 namespace {
 
-using kira::testing::expect;
-namespace hir = kira::hir;
+using cinder::testing::expect;
+namespace hir = cinder::hir;
 
 // Parses, checks, and lowers several files together as one session, keyed by
 // module name — mirrors `lower_test.cpp`'s `check_fixture_multi` plus the
 // `hir::lower_module` step, since `find_reachable_modules` operates on
 // already-lowered `hir_module`s.
 struct lowered_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  std::vector<kira::ast::ptr<kira::ast::file>> ast_files;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+  cinder::semantic::checked_types checked;
   hir::ptr_vec<hir::hir_module> modules;
 };
 
@@ -38,8 +38,8 @@ auto lower_fixture(
     const std::vector<std::pair<std::string, std::string>> &files)
     -> lowered_fixture {
   auto fixture = lowered_fixture{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
-  auto file_ids = std::vector<kira::file_id_type>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
+  auto file_ids = std::vector<cinder::file_id_type>{};
 
   for (const auto &[path, text] : files) {
     const auto file_id = fixture.sources.add_file(path, text);
@@ -47,9 +47,9 @@ auto lower_fixture(
     const auto *file = fixture.sources.get(*file_id);
     expect(file != nullptr, "expected registered fixture source");
 
-    auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
     auto ast_file = parser.parse_file();
     expect(fixture.diag.error_count() == 0,
            "expected fixture to parse cleanly");
@@ -59,18 +59,18 @@ auto lower_fixture(
   }
 
   for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
   }
 
   auto file_has_errors = std::vector<bool>(file_ids.size(), false);
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
 
   for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
     auto module_name = fixture.ast_files[i]->module_decl != nullptr
-                           ? kira::util::join_strings(
+                           ? cinder::util::join_strings(
                                  fixture.ast_files[i]->module_decl->path, ".")
                            : files[i].first;
     auto lowered =
@@ -89,7 +89,7 @@ auto find_module(const hir::ptr_vec<hir::hir_module> &modules,
       return *module;
     }
   }
-  kira::testing::fail("expected to find a lowered module by name");
+  cinder::testing::fail("expected to find a lowered module by name");
 }
 
 auto test_finds_only_entry_when_nothing_qualified() -> void {

@@ -62,7 +62,7 @@ def _llvm_repository_impl(repo_ctx):
     version = _run(repo_ctx, llvm_config, ["--version"])
     if not version.startswith("23."):
         fail((
-            "kira's llvm_codegen requires LLVM 23.x, matching CLAUDE.md's " +
+            "cinder's llvm_codegen requires LLVM 23.x, matching CLAUDE.md's " +
             "Clang 23.1+ toolchain pin (spec/codegen-design.md Decision 2 " +
             "explains why this project pins rather than floats across LLVM " +
             "major versions) -- llvm-config at {} reports version {}."
@@ -76,7 +76,7 @@ def _llvm_repository_impl(repo_ctx):
     # pins its own C++ standard (CLAUDE.md) rather than inheriting
     # whatever LLVM itself was built with. `-fno-exceptions` is dropped too
     # -- that describes how LLVM's *own* sources were compiled, not a
-    # constraint on consumers, and kira's codegen code needs exceptions
+    # constraint on consumers, and cinder's codegen code needs exceptions
     # (panic_error, matching the bytecode VM's own panic propagation).
     cxxflags = [
         flag

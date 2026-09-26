@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `limits.min` — The number of min in the numeric type.
 #
-#  Run it:      kira demo/limits-min.cn
-#  Compile it:  kira --compile -o limits-min.cn demo/limits-min.cn
+#  Run it:      cinder demo/limits-min.cn
+#  Compile it:  cinder --compile -o limits-min.cn demo/limits-min.cn
 # ==========================================================================
 
 use std.limits.min

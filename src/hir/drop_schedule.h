@@ -7,7 +7,7 @@
 #include "src/parser/ast.h"
 #include "src/semantic/types.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// One local binding that needs a drop call inserted where it goes out of
 /// scope — by name (not `semantic::symbol_id`: this pass runs over the raw
@@ -61,4 +61,4 @@ struct drop_schedule {
                                          const semantic::checked_types &checked)
     -> drop_schedule;
 
-} // namespace kira::hir
+} // namespace cinder::hir

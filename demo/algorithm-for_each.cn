@@ -6,8 +6,8 @@ module main
 #  Unlike `map`, `for_each` yields nothing back — it exists purely to drive
 #  the iterator for its side effects (here, printing).
 #
-#  Run it:      kira demo/algorithm-for_each.cn
-#  Compile it:  kira --compile -o algorithm-for_each demo/algorithm-for_each.cn
+#  Run it:      cinder demo/algorithm-for_each.cn
+#  Compile it:  cinder --compile -o algorithm-for_each demo/algorithm-for_each.cn
 # ==========================================================================
 
 def main() -> int32:

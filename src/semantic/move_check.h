@@ -6,11 +6,11 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Walks every checked function and lambda body, flagging a binding used
 /// after it has already been moved from — the analysis Cinder's scope-based
-/// `drop` destructors (`spec/kira-reference.md`, "Destructors: drop") need
+/// `drop` destructors (`spec/cinder-reference.md`, "Destructors: drop") need
 /// underneath them, since "a binding that was moved from never drops" and
 /// reverse-declaration-order drop both require knowing which bindings are
 /// still live at a given program point.
@@ -45,4 +45,4 @@ auto check_moves(const std::vector<parsed_module> &inputs,
                  std::vector<bool> &file_has_errors, unsigned skip_from_fileid)
     -> void;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

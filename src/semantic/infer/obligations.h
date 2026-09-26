@@ -11,7 +11,7 @@
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  The obligation queue
@@ -162,4 +162,4 @@ private:
   std::vector<obligation_id> dirty_;
 };
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

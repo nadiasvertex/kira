@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-This is the normative specification of the Cinder language and standard library. It states what is true of the language and its implementation, precisely and without tutorial framing. For a guided introduction, see the (forthcoming) tutorial; for the grammar, see `../kira-grammar.ebnf`; for C++ compiler-implementation conventions, see `../CONVENTIONS.md`.
+This is the normative specification of the Cinder language and standard library. It states what is true of the language and its implementation, precisely and without tutorial framing. For a guided introduction, see the (forthcoming) tutorial; for the grammar, see `../cinder-grammar.ebnf`; for C++ compiler-implementation conventions, see `../CONVENTIONS.md`.
 
 ## Structure
 
@@ -43,4 +43,4 @@ When a feature from a later section would resolve the diagnostic — for example
 ## See also
 
 - [The Prelude](04-stdlib/42-prelude.md) — names available in every module without a `use` declaration.
-- `../kira-grammar.ebnf` — grammar productions referenced by name throughout.
+- `../cinder-grammar.ebnf` — grammar productions referenced by name throughout.

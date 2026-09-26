@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Stable index into a `semantic_session`'s symbol table.
 using symbol_id = uint32_t;
@@ -14,4 +14,4 @@ inline constexpr symbol_id k_invalid_symbol_id = static_cast<symbol_id>(-1);
 /// Sentinel meaning "no scope" (e.g. the parent of a root scope).
 inline constexpr scope_id k_invalid_scope_id = static_cast<scope_id>(-1);
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

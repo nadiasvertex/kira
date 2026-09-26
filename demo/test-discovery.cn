@@ -1,9 +1,9 @@
 module demo.testkit
 
 # ==========================================================================
-#  std.test — automatic test discovery with `kira --test`.
+#  std.test — automatic test discovery with `cinder --test`.
 #
-#  No `main`, no call to `suite`/`case`/`run_suites`. `kira --test` walks
+#  No `main`, no call to `suite`/`case`/`run_suites`. `cinder --test` walks
 #  every reachable module, treats each inline submodule literally named
 #  `tests` as one suite named after the module that encloses it, and
 #  synthesizes the entry point itself.
@@ -25,7 +25,7 @@ module demo.testkit
 #  For hand-registered suites with a user-written `main`, see
 #  demo/test-explicit.cn.
 #
-#  Run it:  kira --test demo/test-discovery.cn
+#  Run it:  cinder --test demo/test-discovery.cn
 #
 #  Exits 1: one case below fails on purpose.
 # ==========================================================================

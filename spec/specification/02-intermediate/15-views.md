@@ -8,7 +8,7 @@
 
 A view is the one kind of borrowing value the language permits to be passed *and* returned — its borrow is tracked without a lifetime annotation.
 
-```kira
+```cinder
 slice[T]       # a read-only view of a contiguous run of elements
 mut slice[T]   # a mutable view
 str            # a read-only view of UTF-8 text
@@ -16,7 +16,7 @@ str            # a read-only view of UTF-8 text
 
 A view is produced by slicing:
 
-```kira
+```cinder
 def first_half[T](xs: &list[T]) -> slice[T]:
     xs[0 .. xs.len() / 2]
 
@@ -29,7 +29,7 @@ Rules:
 1. The compiler infers that a returned view borrows from the argument it was sliced from, and keeps that source borrowed for as long as the view lives.
 2. This inference extends to any struct that *stores* a view in one of its fields, not only to a bare returned view:
 
-```kira
+```cinder
 type window[T] = { s: slice[T], pos: usize }
 
 def make_window[T](xs: &list[T]) -> window[T]:
@@ -44,14 +44,14 @@ def make_window[T](xs: &list[T]) -> window[T]:
 
 `cell[T]` (read-only) and `mut cell[T]` (mutable) are borrowed views of a single element — the result of a hash-map lookup, a tree search, an array access — filling the gap between a whole collection (`slice[T]`) and a temporary borrow in a call (`&T`).
 
-```kira
+```cinder
 cell[T]       # a read-only view of a single element
 mut cell[T]   # a mutable view
 ```
 
 Like `slice[T]`, a `cell` is a first-class value: passed and returned, with its borrow tracked automatically so it cannot outlive the collection it points into, and without lifetime annotations.
 
-```kira
+```cinder
 def find[T](xs: &list[T], pred: fn(&T) -> bool) -> option[cell[T]]:
     for i in 0..xs.len():
         if pred(&xs[i]):

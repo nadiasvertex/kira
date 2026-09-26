@@ -10,11 +10,11 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 
-using kira::util::append_error;
-using kira::util::join_strings;
-using kira::util::normalize_path;
+using cinder::util::append_error;
+using cinder::util::join_strings;
+using cinder::util::normalize_path;
 
-namespace kira::driver {
+namespace cinder::driver {
 
 namespace {
 
@@ -514,4 +514,4 @@ auto add_functor_instantiation_metadata(const ast::use_decl &decl,
 
   return metadata;
 }
-} // namespace kira::driver
+} // namespace cinder::driver

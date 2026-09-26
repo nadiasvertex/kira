@@ -10,8 +10,8 @@ module main
 #  iteration). Here the iterable is `T.fields()`, compile-time reflection
 #  over a struct's field list.
 #
-#  Run it:      kira demo/static-for.cn
-#  Compile it:  kira --compile -o static-for demo/static-for.cn
+#  Run it:      cinder demo/static-for.cn
+#  Compile it:  cinder --compile -o static-for demo/static-for.cn
 # ==========================================================================
 
 type point = { x: int32, y: int32 }

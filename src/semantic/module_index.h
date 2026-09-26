@@ -10,7 +10,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/session.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Alias kept for call sites that predate the shared `semantic_symbol_kind`
 /// naming; identical to `semantic_symbol_kind`.
@@ -155,4 +155,4 @@ auto collect_use_decl_records(const std::vector<parsed_module> &inputs,
                               const std::vector<bool> &file_has_errors)
     -> std::vector<use_decl_record>;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

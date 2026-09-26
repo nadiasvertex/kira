@@ -9,7 +9,7 @@
 #include <queue>
 #include <vector>
 
-namespace kira::bytecode_compiler {
+namespace cinder::bytecode_compiler {
 
 namespace {
 
@@ -378,4 +378,4 @@ auto allocate_registers(const allocation_input &input)
                            .register_count = highest};
 }
 
-} // namespace kira::bytecode_compiler
+} // namespace cinder::bytecode_compiler

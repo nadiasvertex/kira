@@ -7,7 +7,7 @@
 
 #include "src/semantic/infer/infer_ctxt.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 namespace {
 
@@ -112,4 +112,4 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
   return result;
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

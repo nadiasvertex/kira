@@ -8,7 +8,7 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/symbols.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// One name a pattern would bind, collected before the enclosing scope that
@@ -78,13 +78,13 @@ auto record_node_scope(semantic_session &session, const ast::node *node,
 }
 
 /// Collects every name a pattern would bind, in the order the pattern would
-/// bind them, via the shared `kira::semantic::collect_pattern_bindings`
+/// bind them, via the shared `cinder::semantic::collect_pattern_bindings`
 /// (`binding_walk.h`) — appending each as a `pattern_binding_spec` tagged
 /// with `file_id` so callers here don't need to carry it separately.
 auto collect_pattern_bindings(const ast::pattern &pattern, file_id_type file_id,
                               std::vector<pattern_binding_spec> &out) -> void {
   for (const auto &binding :
-       kira::semantic::collect_pattern_bindings(pattern)) {
+       cinder::semantic::collect_pattern_bindings(pattern)) {
     out.push_back(pattern_binding_spec{
         .name = binding.name,
         .location =
@@ -1504,4 +1504,4 @@ auto resolve_symbol(const semantic_session &session, scope_id start_scope,
   return nullptr;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

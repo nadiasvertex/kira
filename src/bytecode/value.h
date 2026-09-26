@@ -5,7 +5,7 @@
 
 #include "src/semantic/types.h"
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 /// Which of the fixed set of scalar runtime representations a bytecode
 /// value holds. This is *not* stored per-value (see `slot_value`) — it's an
@@ -140,4 +140,4 @@ union slot_value {
   constexpr explicit slot_value(double v) noexcept : f(v) {}
 };
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

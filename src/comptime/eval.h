@@ -13,7 +13,7 @@
 #include "src/parser/ast.h"
 #include "src/parser/diagnostic.h"
 
-namespace kira::comptime {
+namespace cinder::comptime {
 
 /// A closed, tree-walking interpreter for the compile-time-evaluable subset
 /// of Cinder used by `static` declarations (`static let`, `static assert`,
@@ -813,4 +813,4 @@ private:
       field_type_contexts_;
 };
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

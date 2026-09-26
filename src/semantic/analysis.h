@@ -6,7 +6,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/parser/source_location.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 // Forward-declared rather than including "src/semantic/types.h": that
 // header already includes this one (for `parsed_module`), so including it
@@ -51,4 +51,4 @@ struct semantic_options {
                                       const semantic_options &options)
     -> checked_types;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

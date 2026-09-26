@@ -4,7 +4,7 @@
 #include <format>
 #include <utility>
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 auto obligation_kind_name(obligation_kind kind) -> std::string_view {
   switch (kind) {
@@ -212,4 +212,4 @@ auto obligation_queue::flush() -> std::expected<void, obligation_failure> {
   }
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

@@ -11,8 +11,8 @@ module main
 #  spelled, so `holder[int32]` alone resolved as one of those, and the `{`
 #  that followed had nowhere to go. See spec/todo.md item 7.
 #
-#  Run it:      kira demo/explicit-generic-struct-literal.cn
-#  Compile it:  kira --compile -o explicit-generic-struct-literal demo/explicit-generic-struct-literal.cn
+#  Run it:      cinder demo/explicit-generic-struct-literal.cn
+#  Compile it:  cinder --compile -o explicit-generic-struct-literal demo/explicit-generic-struct-literal.cn
 # ==========================================================================
 
 type holder[T] = { cur: option[T] }

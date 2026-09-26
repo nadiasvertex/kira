@@ -9,7 +9,7 @@ module main
 # body (see `move_check.h`).
 
 def main() -> int32:
-    let name = "kira"
+    let name = "cinder"
     let greet = move [name] (x: int32) -> int32 => x
     greet(1)
     println(name)

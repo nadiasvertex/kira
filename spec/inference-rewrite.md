@@ -217,7 +217,7 @@ and no integration risk; 6 is the dangerous one; 7-9 are long but mechanical.
 `checked_types` as deterministic text; `snapshot_test` checks it against
 `src/testdata/inference_snapshot/session.snapshot`. Every phase through 7
 must reproduce that golden **byte-identically**; phases 8-9 change it in
-reviewable diffs. Regenerate with `KIRA_UPDATE_SNAPSHOTS=1 bazelisk run
+reviewable diffs. Regenerate with `CINDER_UPDATE_SNAPSHOTS=1 bazelisk run
 //src/semantic:snapshot_test`, and read the diff — a regeneration nobody read
 is the one way this harness is worse than nothing.
 
@@ -764,7 +764,7 @@ Full suite: 36/36.
 this whole document was written to get. An empty `[]` with nothing to read a
 type from is now pinned by a later use:
 
-```kira
+```cinder
 def collect_evens(n: int32) -> list[int32]:
     var out = []            # list[?a]
     ...
@@ -986,7 +986,7 @@ it.
 `yes`/`no` (`src/std/algo.cn`) and `from_iter`'s `out`
 (`src/std/iter.cn`), and the whole suite is green:
 
-```kira
+```cinder
 pub def partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]:
     var yes = []
     var no = []

@@ -2,7 +2,7 @@ module std.platform
 
 # The target/build-info accessor functions (`target_arch`, `target_os`,
 # `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`,
-# `kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`)
+# `cinder_version`, `cinder_implementation`, `cinder_compiler`, `cinder_build_date`)
 # are spliced in right here by the driver
 # (`generate_platform_target_accessors`/`assemble_platform_module_source`,
 # `src/driver/driver.cpp`) — this checked-in file is a fragment, not
@@ -58,7 +58,7 @@ pub type platform_info = {
 }
 
 #: Build information about the Cinder compiler.
-pub type kira_build = {
+pub type cinder_build = {
     version: str,
     implementation: str,
     compiler: str,
@@ -228,19 +228,19 @@ pub def platform() -> str:
         @err(_) => "unknown"
     return "{target_os()}-{rel}-{target_arch().show()}-{proc}"
 
-#: Cinder runtime information — all compile-time constants. kira_version/
-#: kira_implementation/kira_compiler/kira_build_date are generated
+#: Cinder runtime information — all compile-time constants. cinder_version/
+#: cinder_implementation/cinder_compiler/cinder_build_date are generated
 #: above by the driver (see the top-of-file comment).
 
 #: Gets build information about the Cinder compiler.
 #: Returns:
-#:   a kira_build structure with version and compiler information.
-pub pure def kira_build_info() -> kira_build:
-    kira_build {
-        version: kira_version(),
-        implementation: kira_implementation(),
-        compiler: kira_compiler(),
-        build_date: kira_build_date(),
+#:   a cinder_build structure with version and compiler information.
+pub pure def cinder_build_info() -> cinder_build:
+    cinder_build {
+        version: cinder_version(),
+        implementation: cinder_implementation(),
+        compiler: cinder_compiler(),
+        build_date: cinder_build_date(),
     }
 
 #: Platform-specific queries — @none on a platform other than the one they
@@ -345,9 +345,9 @@ impl show for platform_info:
             @none => "unknown"
         "uname(system={self.system}, node={n}, release={r}, version={v}, machine={self.machine_arch.show()}, processor={p})"
 
-impl show for kira_build:
+impl show for cinder_build:
     def show(self) -> str:
-        "kira_build(version={self.version}, compiler={self.compiler}, build_date={self.build_date})"
+        "cinder_build(version={self.version}, compiler={self.compiler}, build_date={self.build_date})"
 
 impl show for libc_version:
     def show(self) -> str:

@@ -8,7 +8,7 @@
 
 `crew` runs multiple async tasks together. A `crew` block waits for all its tasks before continuing. If any task fails, the rest are cancelled and the error propagates.
 
-```kira
+```cinder
 async def fetch_dashboard(user_id: int32) -> result[dashboard, app_error]:
     crew c:
         let user_task   = c.spawn(fetch_user(user_id))
@@ -27,7 +27,7 @@ Tasks in a `crew` cannot outlive the `crew` block — enforced by the compiler, 
 
 `par` runs a fixed set of tasks simultaneously and gives all the results as a tuple:
 
-```kira
+```cinder
 let (user, orders, prefs) = await par:
     fetch_user(id)
     fetch_orders(id)
@@ -40,7 +40,7 @@ If any task fails, the others are cancelled.
 
 `race` runs multiple tasks and returns the first to complete, cancelling the rest:
 
-```kira
+```cinder
 let result = await race:
     fetch_from_primary(key)
     fetch_from_replica(key)
@@ -50,7 +50,7 @@ let result = await race:
 
 `on(target)` runs a block on another context or executor and returns the result to the caller's context (see [The Execution Model](26-concurrency-execution-model.md)):
 
-```kira
+```cinder
 let result = await on(pool):
     expensive_computation(req.body)
 ```
@@ -59,7 +59,7 @@ let result = await on(pool):
 
 Errors from concurrent tasks follow the same `result` model as sequential code. A `crew` that uses `on_error: collect` gathers all errors rather than stopping on the first:
 
-```kira
+```cinder
 crew c(on_error: collect):
     for item in items:
         c.spawn(process(item))

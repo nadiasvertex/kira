@@ -20,7 +20,7 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -706,7 +706,7 @@ private:
           &innermost) -> std::expected<ptr_vec<hir_node>, lowering_error>;
 
   // ------------------------------------------------------------------
-  //  Contracts (spec/kira-reference.md, "Contracts")
+  //  Contracts (spec/cinder-reference.md, "Contracts")
   //
   //  The checker has already had its say by the time these run: a contract
   //  it refuted is a compile error the program never got past, and one it
@@ -2449,7 +2449,7 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       make<hir_struct_init>(literal.span, *type, std::move(fields)));
 
   // "Struct invariants are checked at construction and mutation boundaries"
-  // (spec/kira-reference.md). This is the construction boundary: the value
+  // (spec/cinder-reference.md). This is the construction boundary: the value
   // exists, nothing has looked at it yet, and it must already be true of
   // itself. The check needs a name to talk about it by, so the literal
   // becomes a small block — bind, check, hand the value back — which both
@@ -3207,7 +3207,7 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
   lowered_stmts.reserve(stmts.size());
 
   // A trailing `if`/`match` *statement* is exactly as value-producing as
-  // any other expression per spec/kira-reference.md's "Control Flow" — the
+  // any other expression per spec/cinder-reference.md's "Control Flow" — the
   // same "implicit tail expression is the return value" rule an ordinary
   // `expr_stmt` already gets. Route only the last non-null statement
   // through `lower_tail_control_flow_stmt` so it's typed with this block's
@@ -3541,7 +3541,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    // The mutation boundary (spec/kira-reference.md: "Struct invariants are
+    // The mutation boundary (spec/cinder-reference.md: "Struct invariants are
     // checked at construction and mutation boundaries"): writing `p.value`
     // can only break `p`'s invariant, so the check goes on `p` — the object
     // the field belongs to — right after the write lands. The object is read
@@ -6076,4 +6076,4 @@ auto lower_functor_modules(const semantic::checked_types &checked,
   return modules;
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

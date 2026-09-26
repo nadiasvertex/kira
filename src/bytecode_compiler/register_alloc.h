@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace kira::bytecode_compiler {
+namespace cinder::bytecode_compiler {
 
 // ==========================================================================
 //  Linear scan register allocation (Poletto & Sarkar, TOPLAS 1999).
@@ -180,4 +180,4 @@ struct register_file_exhausted {};
 /// encodes every register operand as a `u16`.
 inline constexpr uint32_t k_physical_register_count = 65536;
 
-} // namespace kira::bytecode_compiler
+} // namespace cinder::bytecode_compiler

@@ -4,7 +4,7 @@ module codegen_stress.static_array_global
 # "static reification" Non-Goal, now implemented): both backends synthesize
 # a one-time init routine that builds the array once into a persistent
 # module-wide slot (`bytecode::vm::globals_` / an `llvm.global_ctors`-run
-# `__kira_static_init`), then every `hir_global_ref` read — from any
+# `__cinder_static_init`), then every `hir_global_ref` read — from any
 # function, at any call depth — must see that same backing data.
 #
 # This is exactly the kind of layout/addressing-sensitive case CLAUDE.md

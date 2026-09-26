@@ -8917,6 +8917,8 @@ std/traits.category.cn:199:9 [ctor_pat] _
 std/traits.category.cn:199:28 [ident] type_category
 std/traits.category.cn:200:9 [wildcard_pat] _
 std/traits.category.cn:200:21 [ident] type_category
+std/traits.cn:10:14 [binding_pat] self
+std/traits.cn:10:27 [named_type] unit
 std/traits.conversion.cn:10:14 [binding_pat] T
 std/traits.conversion.cn:10:27 [named_type] self
 std/traits.conversion.cn:17:14 [binding_pat] self
@@ -9132,8 +9134,6 @@ std/traits.index.cn:113:32 [binding_pat] _
 std/traits.index.cn:113:55 [named_type] unit
 std/traits.index.cn:132:37 [binding_pat] array[T, n]
 std/traits.index.cn:132:60 [named_type] self
-std/traits.cn:10:14 [binding_pat] self
-std/traits.cn:10:27 [named_type] unit
 std/traits.numeric.cn:13:13 [binding_pat] self
 std/traits.numeric.cn:13:19 [binding_pat] self
 std/traits.numeric.cn:13:35 [named_type] _
@@ -27125,24 +27125,24 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1076 len usize
 ?:1108 len usize
 ?:1142 n int32
-?:1718 len usize
-?:1718 len usize
-?:1718 len usize
-?:1718 len usize
-?:1718 len usize
-?:1718 len usize
-?:1726 cap usize
-?:1726 cap usize
-?:1726 cap usize
-?:1726 cap usize
-?:1726 cap usize
-?:1726 cap usize
-?:1734 data *mut T
-?:1734 data *mut int32
-?:1734 data *mut int64
-?:1734 data *mut str
-?:1734 data *mut test_suite
-?:1734 data *mut uint32
+?:1720 len usize
+?:1720 len usize
+?:1720 len usize
+?:1720 len usize
+?:1720 len usize
+?:1720 len usize
+?:1728 cap usize
+?:1728 cap usize
+?:1728 cap usize
+?:1728 cap usize
+?:1728 cap usize
+?:1728 cap usize
+?:1736 data *mut T
+?:1736 data *mut int32
+?:1736 data *mut int64
+?:1736 data *mut str
+?:1736 data *mut test_suite
+?:1736 data *mut uint32
 ?:1739 base int32
 ?:1925 name str
 ?:1937 run fn() -> result[unit, test_failure]
@@ -27225,18 +27225,18 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:5270 at int32
 ?:5277 end int32
 ?:6073 value int64
-?:10875 src list[T]
-?:10875 src list[int32]
-?:10875 src list[test_case]
-?:10875 src list[test_suite]
-?:10886 at usize
-?:10886 at usize
-?:10886 at usize
-?:10886 at usize
-?:10893 end usize
-?:10893 end usize
-?:10893 end usize
-?:10893 end usize
+?:10877 src list[T]
+?:10877 src list[int32]
+?:10877 src list[test_case]
+?:10877 src list[test_suite]
+?:10888 at usize
+?:10888 at usize
+?:10888 at usize
+?:10888 at usize
+?:10895 end usize
+?:10895 end usize
+?:10895 end usize
+?:10895 end usize
 ?:12617 inner I
 ?:12628 left usize
 ?:13105 inner I
@@ -28537,32 +28537,32 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 ## static_if_taken_branch (0)
 
 ## static_global_defs (26)
-?:517 [static_decl] static$SIMPLE_UPPER_KEY$10 : array[uint32, 1505] [1505 element(s)]
-?:12364 [static_decl] static$SIMPLE_UPPER_VAL$11 : array[uint32, 1505] [1505 element(s)]
-?:24259 [static_decl] static$SIMPLE_LOWER_KEY$18 : array[uint32, 1488] [1488 element(s)]
-?:36000 [static_decl] static$SIMPLE_LOWER_VAL$19 : array[uint32, 1488] [1488 element(s)]
-?:47809 [static_decl] static$FOLD_KEY$20 : array[uint32, 1585] [1585 element(s)]
-?:60299 [static_decl] static$FOLD_COUNT$21 : array[uint8, 1585] [1585 element(s)]
-?:65102 [static_decl] static$FOLD_CP0$22 : array[uint32, 1585] [1585 element(s)]
-?:77498 [static_decl] static$FOLD_CP1$23 : array[uint32, 1585] [1585 element(s)]
-?:85668 [static_decl] static$FOLD_CP2$24 : array[uint32, 1585] [1585 element(s)]
-?:93670 [static_decl] static$FOLD_CP3$25 : array[uint32, 1585] [1585 element(s)]
-?:101742 [static_decl] static$UPPER_FULL_KEY$4 : array[uint32, 102] [102 element(s)]
-?:102603 [static_decl] static$UPPER_FULL_COUNT$5 : array[uint8, 102] [102 element(s)]
-?:102962 [static_decl] static$UPPER_FULL_CP0$6 : array[uint32, 102] [102 element(s)]
-?:103765 [static_decl] static$UPPER_FULL_CP1$7 : array[uint32, 102] [102 element(s)]
-?:104522 [static_decl] static$UPPER_FULL_CP2$8 : array[uint32, 102] [102 element(s)]
-?:105114 [static_decl] static$UPPER_FULL_CP3$9 : array[uint32, 102] [102 element(s)]
-?:105710 [static_decl] static$LOWER_FULL_KEY$12 : array[uint32, 1] [1 element(s)]
-?:105767 [static_decl] static$LOWER_FULL_COUNT$13 : array[uint8, 1] [1 element(s)]
-?:105821 [static_decl] static$LOWER_FULL_CP0$14 : array[uint32, 1] [1 element(s)]
-?:105877 [static_decl] static$LOWER_FULL_CP1$15 : array[uint32, 1] [1 element(s)]
-?:105934 [static_decl] static$LOWER_FULL_CP2$16 : array[uint32, 1] [1 element(s)]
-?:105989 [static_decl] static$LOWER_FULL_CP3$17 : array[uint32, 1] [1 element(s)]
-?:106139 [static_decl] static$CASED_LO$0 : array[uint32, 147] [147 element(s)]
-?:107385 [static_decl] static$CASED_HI$1 : array[uint32, 147] [147 element(s)]
-?:108672 [static_decl] static$CASE_IGNORABLE_LO$2 : array[uint32, 376] [376 element(s)]
-?:111784 [static_decl] static$CASE_IGNORABLE_HI$3 : array[uint32, 376] [376 element(s)]
+?:515 [static_decl] static$SIMPLE_UPPER_KEY$10 : array[uint32, 1505] [1505 element(s)]
+?:12362 [static_decl] static$SIMPLE_UPPER_VAL$11 : array[uint32, 1505] [1505 element(s)]
+?:24257 [static_decl] static$SIMPLE_LOWER_KEY$18 : array[uint32, 1488] [1488 element(s)]
+?:35998 [static_decl] static$SIMPLE_LOWER_VAL$19 : array[uint32, 1488] [1488 element(s)]
+?:47807 [static_decl] static$FOLD_KEY$20 : array[uint32, 1585] [1585 element(s)]
+?:60297 [static_decl] static$FOLD_COUNT$21 : array[uint8, 1585] [1585 element(s)]
+?:65100 [static_decl] static$FOLD_CP0$22 : array[uint32, 1585] [1585 element(s)]
+?:77496 [static_decl] static$FOLD_CP1$23 : array[uint32, 1585] [1585 element(s)]
+?:85666 [static_decl] static$FOLD_CP2$24 : array[uint32, 1585] [1585 element(s)]
+?:93668 [static_decl] static$FOLD_CP3$25 : array[uint32, 1585] [1585 element(s)]
+?:101740 [static_decl] static$UPPER_FULL_KEY$4 : array[uint32, 102] [102 element(s)]
+?:102601 [static_decl] static$UPPER_FULL_COUNT$5 : array[uint8, 102] [102 element(s)]
+?:102960 [static_decl] static$UPPER_FULL_CP0$6 : array[uint32, 102] [102 element(s)]
+?:103763 [static_decl] static$UPPER_FULL_CP1$7 : array[uint32, 102] [102 element(s)]
+?:104520 [static_decl] static$UPPER_FULL_CP2$8 : array[uint32, 102] [102 element(s)]
+?:105112 [static_decl] static$UPPER_FULL_CP3$9 : array[uint32, 102] [102 element(s)]
+?:105708 [static_decl] static$LOWER_FULL_KEY$12 : array[uint32, 1] [1 element(s)]
+?:105765 [static_decl] static$LOWER_FULL_COUNT$13 : array[uint8, 1] [1 element(s)]
+?:105819 [static_decl] static$LOWER_FULL_CP0$14 : array[uint32, 1] [1 element(s)]
+?:105875 [static_decl] static$LOWER_FULL_CP1$15 : array[uint32, 1] [1 element(s)]
+?:105932 [static_decl] static$LOWER_FULL_CP2$16 : array[uint32, 1] [1 element(s)]
+?:105987 [static_decl] static$LOWER_FULL_CP3$17 : array[uint32, 1] [1 element(s)]
+?:106137 [static_decl] static$CASED_LO$0 : array[uint32, 147] [147 element(s)]
+?:107383 [static_decl] static$CASED_HI$1 : array[uint32, 147] [147 element(s)]
+?:108670 [static_decl] static$CASE_IGNORABLE_LO$2 : array[uint32, 376] [376 element(s)]
+?:111782 [static_decl] static$CASE_IGNORABLE_HI$3 : array[uint32, 376] [376 element(s)]
 
 ## spliced_fragments (8)
 027_dependent_and_refinement_types.cn:93:11 [call] block

@@ -6,8 +6,8 @@ module main
 #  Like `find`, but returns the index instead of the element; `@none` if no
 #  element matches.
 #
-#  Run it:      kira demo/algorithm-position.cn
-#  Compile it:  kira --compile -o algorithm-position demo/algorithm-position.cn
+#  Run it:      cinder demo/algorithm-position.cn
+#  Compile it:  cinder --compile -o algorithm-position demo/algorithm-position.cn
 # ==========================================================================
 
 def main() -> int32:

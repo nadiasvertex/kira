@@ -7,8 +7,8 @@ module main
 #  the interpolated value — width/alignment, zero-padding, float precision,
 #  and radix (hex/binary) with optional width.
 #
-#  Run it:      kira demo/string-format.cn
-#  Compile it:  kira --compile -o string-format demo/string-format.cn
+#  Run it:      cinder demo/string-format.cn
+#  Compile it:  cinder --compile -o string-format demo/string-format.cn
 # ==========================================================================
 
 def main() -> int32:

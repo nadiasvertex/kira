@@ -14,7 +14,7 @@ Guiding choices:
 
 ## Core type
 
-```kira
+```cinder
 pub type path = { raw: str }
 ```
 
@@ -22,7 +22,7 @@ A single field holding the path exactly as written.
 
 ## API surface
 
-```kira
+```cinder
 impl from[str] for path:
     def from(value: str) -> path
 

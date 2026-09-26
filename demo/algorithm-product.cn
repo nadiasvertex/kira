@@ -6,8 +6,8 @@ module main
 #  Uses the element type's `one` trait for the identity, so an empty
 #  iterator returns 1 rather than 0.
 #
-#  Run it:      kira demo/algorithm-product.cn
-#  Compile it:  kira --compile -o algorithm-product demo/algorithm-product.cn
+#  Run it:      cinder demo/algorithm-product.cn
+#  Compile it:  cinder --compile -o algorithm-product demo/algorithm-product.cn
 # ==========================================================================
 
 def main() -> int32:

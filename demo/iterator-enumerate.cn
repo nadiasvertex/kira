@@ -8,8 +8,8 @@ module main
 #  `enumerate` renumbers the surviving elements rather than keeping their
 #  original positions.
 #
-#  Run it:      kira demo/iterator-enumerate.cn
-#  Compile it:  kira --compile -o iterator-enumerate demo/iterator-enumerate.cn
+#  Run it:      cinder demo/iterator-enumerate.cn
+#  Compile it:  cinder --compile -o iterator-enumerate demo/iterator-enumerate.cn
 # ==========================================================================
 
 def main() -> int32:

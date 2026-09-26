@@ -3,7 +3,7 @@
 #include <functional>
 #include <unordered_set>
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -394,4 +394,4 @@ auto ref_captured_symbols(const hir_block &body)
   return found;
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

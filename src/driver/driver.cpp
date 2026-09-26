@@ -23,11 +23,11 @@
 #include "static_if_stage.h"
 #include "test_discovery.h"
 
-using kira::source_manager;
-using kira::util::append_text;
-using kira::util::normalize_path;
+using cinder::source_manager;
+using cinder::util::append_text;
+using cinder::util::normalize_path;
 
-namespace kira::driver {
+namespace cinder::driver {
 
 namespace {
 
@@ -136,10 +136,10 @@ struct target_os_info {
                      "pub pure def target_endianness() -> endianness: {}\n"
                      "pub pure def target_pointer_width() -> usize: {}\n"
                      "\n"
-                     "pub pure def kira_version() -> str: \"{}\"\n"
-                     "pub pure def kira_implementation() -> str: \"kira\"\n"
-                     "pub pure def kira_compiler() -> str: \"llvm\"\n"
-                     "pub pure def kira_build_date() -> str: \"{}\"\n"
+                     "pub pure def cinder_version() -> str: \"{}\"\n"
+                     "pub pure def cinder_implementation() -> str: \"cinder\"\n"
+                     "pub pure def cinder_compiler() -> str: \"llvm\"\n"
+                     "pub pure def cinder_build_date() -> str: \"{}\"\n"
                      "\n",
                      detect_target_arch(), os.os, os_family_variant, os.vendor,
                      os.env, detect_target_endian(), sizeof(void *),
@@ -206,7 +206,7 @@ constexpr std::string_view k_generated_platform_source_name =
 /// invocation shape the binary might run under (`bazelisk run`'s runfiles
 /// tree, `bazel test`'s `TEST_SRCDIR`, a plain `bazel-bin` invocation from
 /// the workspace root, or — for a binary installed from a `just package`
-/// archive/`.deb`, run from any working directory — `share/kira/std` next
+/// archive/`.deb`, run from any working directory — `share/cinder/std` next
 /// to the running executable's own resolved install prefix) — the same set
 /// of candidates `find_bazel_archive` (`src/driver/aot.cpp`) tries for the
 /// AOT runtime archives.
@@ -230,10 +230,10 @@ constexpr std::string_view k_generated_platform_source_name =
   }
   candidates.emplace_back(std::filesystem::path("src") / "std" / filename);
   if (const auto exe_path = util::resolve_self_executable()) {
-    // Installed layout: `<prefix>/bin/kira`, stdlib sources under
-    // `<prefix>/share/kira/std/`.
+    // Installed layout: `<prefix>/bin/cinder`, stdlib sources under
+    // `<prefix>/share/cinder/std/`.
     candidates.emplace_back(exe_path->parent_path().parent_path() / "share" /
-                            "kira" / "std" / filename);
+                            "cinder" / "std" / filename);
   }
 
   for (const auto &candidate : candidates) {
@@ -304,7 +304,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
 
   // `std.platform` is assembled rather than injected verbatim: its checked-in
   // `platform.cn` body is spliced together with the driver-generated
-  // `TARGET_*`/`KIRA_*` constants block (`assemble_platform_module_source`'s
+  // `TARGET_*`/`CINDER_*` constants block (`assemble_platform_module_source`'s
   // doc comment explains why the two can't be separate modules). The result
   // lives only in memory, under a name no real file can have; it is a pure
   // function of this binary's build host and the checked-in file, so it is
@@ -455,4 +455,4 @@ auto render_compile_summary(const compile_report &report,
   return out;
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

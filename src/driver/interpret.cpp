@@ -10,7 +10,7 @@
 #include "src/bytecode_compiler/compile.h"
 #include "src/hir/lower.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 [[nodiscard]] auto render_run_value(const semantic::type_table &types,
                                     semantic::type_id return_type,
@@ -166,4 +166,4 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
           render_run_value(types, target->return_type, result->value))};
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

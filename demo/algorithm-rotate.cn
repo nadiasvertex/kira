@@ -4,8 +4,8 @@ module main
 #  `algorithm.rotate` — rotate a mutable slice left in place, so the
 #  element at `mid` becomes the first element.
 #
-#  Run it:      kira demo/algorithm-rotate.cn
-#  Compile it:  kira --compile -o algorithm-rotate demo/algorithm-rotate.cn
+#  Run it:      cinder demo/algorithm-rotate.cn
+#  Compile it:  cinder --compile -o algorithm-rotate demo/algorithm-rotate.cn
 # ==========================================================================
 
 def main() -> int32:

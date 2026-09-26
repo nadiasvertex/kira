@@ -19,15 +19,15 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
-namespace hir = kira::hir;
+using cinder::testing::expect;
+using cinder::testing::fail;
+namespace hir = cinder::hir;
 
 struct checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::ast::ptr<kira::ast::file> ast_file;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::semantic::checked_types checked;
 };
 
 auto check_fixture(const std::string &text) -> checked_fixture {
@@ -38,29 +38,29 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   const auto *file = fixture.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
 
-  auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
   fixture.ast_file = parser.parse_file();
   expect(fixture.diag.error_count() == 0, "expected fixture to parse cleanly");
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
+  const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
+      cinder::semantic::parsed_module{.file_id = *file_id,
                                     .ast_file = fixture.ast_file.get()},
   };
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
   return fixture;
 }
 
-auto find_func(const kira::ast::file &file, std::string_view name)
-    -> const kira::ast::func_decl & {
+auto find_func(const cinder::ast::file &file, std::string_view name)
+    -> const cinder::ast::func_decl & {
   for (const auto &item : file.items) {
-    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
-      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+    if (item != nullptr && item->kind == cinder::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const cinder::ast::func_decl &>(*item);
       if (decl.name == name) {
         return decl;
       }

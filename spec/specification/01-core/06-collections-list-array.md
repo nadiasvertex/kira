@@ -8,7 +8,7 @@ Covers the two built-in prelude sequence types, `list[T]` and `array[T, n]`, the
 
 A resizable, heap-allocated sequence, available without any import.
 
-```kira
+```cinder
 let names: list[str] = ["Alice", "Bob", "Carol"]
 let first = names[0]           # "Alice"
 let count = names.len()        # 3
@@ -20,7 +20,7 @@ items.push(2)
 
 Standard operations include `map`, `filter`, `find` (returns `option[T]`), `any`, `all`:
 
-```kira
+```cinder
 names.map(n => n.to_uppercase())      # produces a new list
 names.filter(n => n.len() > 3)        # keeps elements matching predicate
 names.find(n => n.starts_with("A"))   # returns option[str]
@@ -32,7 +32,7 @@ names.all(n => n.len() > 0)           # returns bool
 
 A fixed-size sequence whose length `n` is part of its type and known at compile time. A `[value; n]` literal repeats `value` `n` times.
 
-```kira
+```cinder
 let zeros: array[float64, 4] = [0.0; 4]    # four zeros
 let rgb:   array[uint8,   3] = [255, 0, 0] # red
 ```
@@ -45,7 +45,7 @@ let rgb:   array[uint8,   3] = [255, 0, 0] # red
 
 A sequence literal with no expected type is a **`list`** — for both spellings, including the repeat form:
 
-```kira
+```cinder
 let xs = [1, 2, 3]                        # list[int32]
 let zeros = [0.0; 4]                      # list[float64]
 let rgb: array[uint8, 3] = [255, 0, 0]    # array, because it was asked for

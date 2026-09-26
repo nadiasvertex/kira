@@ -13,8 +13,8 @@ module main
 #  also declare `main` explicitly. See `hello-world-main.cn` for the
 #  explicit form, and `hello-world.cn` for the smallest script of all.
 #
-#  Run it:      kira demo/script-mode.cn
-#  Compile it:  kira --compile -o script-mode demo/script-mode.cn
+#  Run it:      cinder demo/script-mode.cn
+#  Compile it:  cinder --compile -o script-mode demo/script-mode.cn
 # ==========================================================================
 
 def label(n: int32) -> str:

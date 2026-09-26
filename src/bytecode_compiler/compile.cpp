@@ -28,7 +28,7 @@
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
 
-namespace kira::bytecode_compiler {
+namespace cinder::bytecode_compiler {
 
 namespace {
 
@@ -57,8 +57,8 @@ inline constexpr size_t k_max_virtual_registers =
 //  downstream consumers.
 // ==========================================================================
 
-using kira::decode_char_literal;
-using kira::decode_string_literal;
+using cinder::decode_char_literal;
+using cinder::decode_string_literal;
 
 [[nodiscard]] auto parse_uint_literal(std::string_view text)
     -> std::optional<uint64_t> {
@@ -391,7 +391,7 @@ public:
         current_module_name_(std::move(current_module_name)),
         globals_(globals) {}
 
-  /// Compiles the synthesized `__kira_static_init` routine: builds every
+  /// Compiles the synthesized `__cinder_static_init` routine: builds every
   /// reified `static let`'s backing value exactly the way an ordinary
   /// array literal builds one (`compile_static_global_value`, sharing
   /// `compile_array_init`'s own alloc-and-store
@@ -415,7 +415,7 @@ public:
       emit_store_global(index, *dst);
     }
     emit_op(opcode::op_return_unit);
-    return finish_with_allocation("__kira_static_init", 0, source_span{});
+    return finish_with_allocation("__cinder_static_init", 0, source_span{});
   }
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
@@ -1726,7 +1726,7 @@ private:
         // lower_module skips them — there is no body to lower), so a call
         // to a known intrinsic name is recognized here instead and compiled
         // to `op_call_intrinsic` rather than `op_call`.
-        if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
+        if (const auto intrinsic_id = cinder::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
           const auto first_arg = argument_block(call.span, argc);
           if (!first_arg.has_value()) {
@@ -2957,7 +2957,7 @@ private:
           .message =
               std::format("could not decode string literal `{}`", lit.value)});
     }
-    const auto intrinsic_id = kira::intrinsic_index_of("rt_str_eq");
+    const auto intrinsic_id = cinder::intrinsic_index_of("rt_str_eq");
     if (!intrinsic_id.has_value()) {
       return std::unexpected(compile_error{
           .kind = compile_error_kind::unsupported_construct,
@@ -4276,4 +4276,4 @@ auto compile_module(const hir::hir_module &module, const type_table &types)
                         types);
 }
 
-} // namespace kira::bytecode_compiler
+} // namespace cinder::bytecode_compiler

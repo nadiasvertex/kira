@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 namespace {
 
@@ -664,4 +664,4 @@ auto render_snapshot(const checked_types &checked,
   return renderer(checked, sources).run();
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

@@ -14,7 +14,7 @@ No new grammar. A test is an ordinary function; `std.test` types and functions a
 
 A test function is any `def name() -> result[unit, test_failure]` taking no parameters. It returns `@ok(unit)` on success and `@err(test_failure)` on failure.
 
-```kira
+```cinder
 def test_addition() -> result[unit, test_failure]:
     return assert_eq(2 + 2, 4)
 ```
@@ -23,9 +23,9 @@ A test function's name has no special meaning by itself; it becomes part of a te
 
 ### `test_failure`
 
-Sum-type variants carry only positional fields (`sum_variant` in `spec/kira-grammar.ebnf`), so a mismatch's three parts are unnamed and distinguished by position:
+Sum-type variants carry only positional fields (`sum_variant` in `spec/cinder-grammar.ebnf`), so a mismatch's three parts are unnamed and distinguished by position:
 
-```kira
+```cinder
 type test_failure =
     | @message(str)
     | @mismatch(str, str, str)
@@ -36,7 +36,7 @@ type test_failure =
 
 ### Assertions
 
-```kira
+```cinder
 def assert_true(cond: bool, message: str) -> result[unit, test_failure]
 def assert_false(cond: bool, message: str) -> result[unit, test_failure]
 def assert_eq[T: show + eq](actual: T, expected: T) -> result[unit, test_failure]
@@ -50,7 +50,7 @@ def fail(message: str) -> result[unit, test_failure]
 - `fail` always returns `@err(@message(message))`.
 - A test function composes assertions with `?`:
 
-```kira
+```cinder
 def test_parse() -> result[unit, test_failure]:
     let n = parse_int("42")?
     assert_eq(n, 42)?
@@ -59,7 +59,7 @@ def test_parse() -> result[unit, test_failure]:
 
 ### Test cases
 
-```kira
+```cinder
 type test_case = { name: str, run: fn() -> result[unit, test_failure], skip: bool }
 
 def case(name: str, run: fn() -> result[unit, test_failure]) -> test_case
@@ -71,7 +71,7 @@ def skipped(name: str, run: fn() -> result[unit, test_failure]) -> test_case
 
 Parameterized tests are ordinary data-driven code that builds a `list[test_case]`:
 
-```kira
+```cinder
 def cases_for_add() -> list[test_case]:
     let inputs = [(1, 1, 2), (2, 2, 4), (0, 0, 0)]
     return for (a, b, expected) in inputs =>
@@ -84,7 +84,7 @@ Per-test fixtures (setup/teardown scoped to a single test) are ordinary function
 
 A `test_suite` groups `test_case`s with optional hooks: `before_all`/`after_all` run once for the whole group, `before_each`/`after_each` run once per case:
 
-```kira
+```cinder
 type test_suite = {
     name:        str,
     cases:       list[test_case],
@@ -115,11 +115,11 @@ def suite(
 
 ### Discovery
 
-`suite`/`case`/`skipped` register tests explicitly, for use in a hand-written `main`. `kira --test` discovers and runs tests automatically, without any `std.test` call in the tested code.
+`suite`/`case`/`skipped` register tests explicitly, for use in a hand-written `main`. `cinder --test` discovers and runs tests automatically, without any `std.test` call in the tested code.
 
 Discovery is scoped to an inline submodule literally named `tests` (`sub_module_decl`, see [Modules and Imports](../../01-core/12-modules-and-imports.md#use)), not to top-level names in an ordinary module — a name like `before_all` outside a `tests` submodule is an ordinary name and is never treated as a hook:
 
-```kira
+```cinder
 module app.geometry
 
 use std.test.{assert_eq, assert_true, test_failure}
@@ -155,7 +155,7 @@ module tests:
         return assert_true(super.area(-1.0, 5.0) >= 0.0, "negative width should not underflow")
 ```
 
-`kira --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints (`demo/test-discovery.cn` is a runnable version of this, with nested submodules each carrying their own suite):
+`cinder --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints (`demo/test-discovery.cn` is a runnable version of this, with nested submodules each carrying their own suite):
 
 ```
 geometry suite starting
@@ -170,7 +170,7 @@ ok app.geometry.after_all
 6 passed, 0 failed, 1 skipped
 ```
 
-- Invoked as `kira --test <path>`, in place of `kira <path>`.
+- Invoked as `cinder --test <path>`, in place of `cinder <path>`.
 - For every module reachable from `<path>`, the driver looks for a direct inline submodule of it named `tests`. A module without one contributes nothing. An inline submodule is itself a module, so this applies at every nesting depth: a `tests` submodule of a submodule is a suite named after *that* submodule's path, letting each submodule keep its tests next to the code they cover.
 - A `tests` submodule is not searched for a further `tests` submodule of its own.
 - Within a `tests` submodule, every function taking no parameters and returning `result[unit, test_failure]` is classified by name:
@@ -183,12 +183,12 @@ ok app.geometry.after_all
 - A function inside `tests` whose signature does not match (extra parameters, other return type) takes no part in the suite; it is ordinary helper code private to the submodule.
 - A `tests` submodule with two or more functions sharing any one of the four exact hook names is a compile error.
 - Each `tests` submodule with at least one discovered case contributes one `test_suite`, named after its parent module's path; a `tests` submodule with only hooks and no cases contributes no suite.
-- The driver synthesizes a `main` equivalent to calling `run_suites` on every discovered suite, in module-graph order, and exits with its return code. A source file that already declares its own `main` is compiled unchanged; `kira --test` does not override a user-written entry point.
+- The driver synthesizes a `main` equivalent to calling `run_suites` on every discovered suite, in module-graph order, and exits with its return code. A source file that already declares its own `main` is compiled unchanged; `cinder --test` does not override a user-written entry point.
 - Sources that parse cleanly, declare no `main`, and yield no suite are an error naming the scanned sources and showing how a test is declared — `--test` was asked to run tests and there are none.
 
 ### Runner
 
-```kira
+```cinder
 def run(cases: list[test_case]) -> int32
 def run_suites(suites: list[test_suite]) -> int32
 ```
@@ -210,7 +210,7 @@ def run_suites(suites: list[test_suite]) -> int32
 
 ## Example
 
-```kira
+```cinder
 use std.test.{case, skipped, suite, run_suites, assert_eq, assert_true, test_failure}
 
 def before_all_hook() -> result[unit, test_failure]:
@@ -246,5 +246,5 @@ Fully implemented and end-to-end tested — the checker fix, the library, and `-
 - [Lambdas](../../01-core/05-lambdas.md) — closures used as `test_case.run` values.
 - [Traits](../../02-intermediate/18-traits.md) — the `show`/`eq` bounds on `assert_eq`/`assert_ne`.
 - [`std.format`](../strings-and-formatting/53-std-format.md) — string interpolation, used to render mismatch values.
-- [Programs and `main`](../../01-core/13-programs-and-main.md) — the ordinary entry-point rules `kira --test`'s synthesized `main` follows.
-- [Modules and Imports](../../01-core/12-modules-and-imports.md) — module paths and `pub` visibility, which `kira --test` discovery is defined over.
+- [Programs and `main`](../../01-core/13-programs-and-main.md) — the ordinary entry-point rules `cinder --test`'s synthesized `main` follows.
+- [Modules and Imports](../../01-core/12-modules-and-imports.md) — module paths and `pub` visibility, which `cinder --test` discovery is defined over.

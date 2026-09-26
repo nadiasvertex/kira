@@ -6,11 +6,11 @@ Covers `small_list[T, N]`, a small-size-optimized list built on `uninit[T, N]`, 
 
 ## `uninit[T, N]`
 
-`uninit[T, N]` is an opaque builtin type: `N` slots, sized and aligned for `T`, that carries no guarantee any slot holds a valid `T`. It is specced in `spec/kira-reference.md` ("The `machine` Layer") and reiterated unchanged by `spec/collections-algorithms-design.md` §4.3, which additionally fixes that it is **not** made redundant by a general allocator — it is inline, fixed-capacity storage, the thing that lets a small-size-optimized container avoid heap traffic entirely below its inline capacity.
+`uninit[T, N]` is an opaque builtin type: `N` slots, sized and aligned for `T`, that carries no guarantee any slot holds a valid `T`. It is specced in `spec/cinder-reference.md` ("The `machine` Layer") and reiterated unchanged by `spec/collections-algorithms-design.md` §4.3, which additionally fixes that it is **not** made redundant by a general allocator — it is inline, fixed-capacity storage, the thing that lets a small-size-optimized container avoid heap traffic entirely below its inline capacity.
 
 Ordinary code cannot read or write into a `uninit[T, N]` directly. A fixed set of `machine`-prefixed accessor functions can:
 
-```kira
+```cinder
 pub type uninit[T, N: usize]     # opaque; N slots, sized/aligned for T
 
 machine def slot_ptr[T, N: usize](buf: &uninit[T, N], i: usize) -> *mut T
@@ -29,7 +29,7 @@ Ordinary, non-`machine` code is free to *call* these functions; the unsafety is 
 
 ## `small_list[T, N]`
 
-`small_list[T, N]` is referenced, by name, as `uninit[T, N]`'s motivating use case in both `spec/kira-reference.md` and `spec/collections-algorithms-design.md` §4.3: a type that holds a *variable* number of `T` values, up to `N`, inline — no heap allocation for the common small case, falling back to heap storage past `N` elements.
+`small_list[T, N]` is referenced, by name, as `uninit[T, N]`'s motivating use case in both `spec/cinder-reference.md` and `spec/collections-algorithms-design.md` §4.3: a type that holds a *variable* number of `T` values, up to `N`, inline — no heap allocation for the common small case, falling back to heap storage past `N` elements.
 
 Neither source goes further than that one-sentence motivation. No field layout, growth-to-heap transition strategy, or method catalog for `small_list[T, N]` has been written down anywhere in the repository as of this writing.
 

@@ -5,8 +5,8 @@ module main
 #  size-element views, in order. The final chunk holds the remainder and
 #  may be shorter than `size`.
 #
-#  Run it:      kira demo/algorithm-chunks.cn
-#  Compile it:  kira --compile -o algorithm-chunks demo/algorithm-chunks.cn
+#  Run it:      cinder demo/algorithm-chunks.cn
+#  Compile it:  cinder --compile -o algorithm-chunks demo/algorithm-chunks.cn
 # ==========================================================================
 
 def main() -> int32:

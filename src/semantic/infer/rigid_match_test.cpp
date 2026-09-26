@@ -18,10 +18,10 @@
 
 namespace {
 
-using kira::semantic::type_id;
-using kira::semantic::type_table;
-using kira::semantic::infer::match_pattern;
-using kira::testing::expect;
+using cinder::semantic::type_id;
+using cinder::semantic::type_table;
+using cinder::semantic::infer::match_pattern;
+using cinder::testing::expect;
 
 struct fixture {
   type_table table;
@@ -34,10 +34,10 @@ struct fixture {
   }
 };
 
-auto bound(const kira::semantic::infer::rigid_match_result &result,
+auto bound(const cinder::semantic::infer::rigid_match_result &result,
            const std::string &name) -> type_id {
   const auto it = result.bindings.find(name);
-  return it == result.bindings.end() ? kira::semantic::k_unknown_type
+  return it == result.bindings.end() ? cinder::semantic::k_unknown_type
                                      : it->second;
 }
 
@@ -212,7 +212,7 @@ auto test_unpinned_parameters_stay_absent() -> void {
   auto f = fixture{};
   const auto pattern = f.table.fn_of({f.param("T")}, f.param("U"));
   const auto concrete =
-      f.table.fn_of({f.table.builtin("int32")}, kira::semantic::k_unknown_type);
+      f.table.fn_of({f.table.builtin("int32")}, cinder::semantic::k_unknown_type);
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(result.bindings.contains("T"), "expected the pinned one to solve");

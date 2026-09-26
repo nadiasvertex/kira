@@ -8,7 +8,7 @@
 
 When single ownership is too restrictive — a value held by multiple parts of a program at once — use `shared`:
 
-```kira
+```cinder
 let config: shared config_t = shared load_config("app.toml")
 
 # config can now be cloned freely; both copies refer to the same data
@@ -24,7 +24,7 @@ let worker_config = config.clone()
 
 A type that owns a resource — a file handle, a socket, a lock — implements `drop` to release it automatically:
 
-```kira
+```cinder
 trait drop:
     def drop(mut self) -> unit
 
@@ -52,7 +52,7 @@ impl drop for file:
   - The prelude `drop(x)` free function still does not exist. A call to it is accepted by the checker anyway and then fails in lowering with "no concrete checked type is available for this node" — a compiler-gap diagnostic for what is really an undefined name. (The `drop` *trait* is correctly prelude-reachable: `impl drop for T` needs no `use`.)
   - `src/semantic/move_check.h` remains the move-tracking substrate these rules build on; `hir::compute_drop_schedule` is a second, HIR-oriented walker alongside it, not a replacement (see that file's doc comment for why).
 - **`shared[T]` is a name with nothing behind it.** `shared` is registered as a builtin generic (`src/semantic/types.cpp:51`) and that is the entire implementation. The `shared` expression form yields a plain reference — `let a: shared t = shared t{ id: 1 }` fails with ``expected `shared[t]`, found `&t` `` — and `shared[T]` has no methods, so `.clone()` does not resolve. No atomic reference count exists anywhere in the source tree, so neither the read-only-access guarantee nor drop-at-zero is enforced or implemented.
-- **The `scope` block this chapter relies on does not parse.** `scope_stmt` is in `spec/kira-grammar.ebnf`, but there is no `kw_scope` token and no parser support, so the mechanism named above for ending a lifetime early is unavailable.
+- **The `scope` block this chapter relies on does not parse.** `scope_stmt` is in `spec/cinder-grammar.ebnf`, but there is no `kw_scope` token and no parser support, so the mechanism named above for ending a lifetime early is unavailable.
 
 Tracked as items 6–8 in [todo.md](../../todo.md).
 

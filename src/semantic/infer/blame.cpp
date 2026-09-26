@@ -4,7 +4,7 @@
 #include <format>
 #include <utility>
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 namespace {
 
@@ -252,4 +252,4 @@ auto explain_stall(const stalled_variable &stalled) -> blame_report {
   return report;
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

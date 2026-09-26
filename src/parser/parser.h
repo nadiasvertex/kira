@@ -55,7 +55,7 @@
 #include "source_location.h"
 #include "token.h"
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  ParseResult — wraps an AST node pointer with success/failure status.
@@ -688,7 +688,7 @@ private:
   /// to unroll that by hand to a fixed depth of three tokens; sharing one
   /// scan is what lets `trait`, `impl`, and `extend` bodies accept
   /// `static def` on the same terms as module scope, which is what
-  /// `kira-grammar.ebnf` describes (`static` is listed there as an
+  /// `cinder-grammar.ebnf` describes (`static` is listed there as an
   /// unrestricted `func_modifier`).
   [[nodiscard]] auto at_static_func_decl() const noexcept -> bool;
   /// True when the balanced `[...]` group at the cursor is immediately
@@ -1005,4 +1005,4 @@ private:
               ///< compact contexts.
 };
 
-} // namespace kira
+} // namespace cinder

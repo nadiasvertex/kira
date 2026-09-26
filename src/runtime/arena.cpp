@@ -2,7 +2,7 @@
 
 #include <cstring>
 
-namespace kira::runtime {
+namespace cinder::runtime {
 
 auto bump_arena::allocate(size_t bytes) -> void * {
   // Round up to 8-byte alignment — every slot_value-sized field this arena
@@ -28,4 +28,4 @@ auto global_arena() -> bump_arena & {
   return arena;
 }
 
-} // namespace kira::runtime
+} // namespace cinder::runtime

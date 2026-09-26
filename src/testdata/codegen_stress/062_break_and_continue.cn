@@ -2,7 +2,7 @@ module main
 
 # expect: 63
 
-# `break` and `continue`, which are documented in spec/kira-reference.md but
+# `break` and `continue`, which are documented in spec/cinder-reference.md but
 # until now did not exist: the lexer never tokenized them, so they parsed as
 # ordinary identifiers, the checker whitelisted those two spellings as
 # "always resolvable", and lowering then failed with an internal "no

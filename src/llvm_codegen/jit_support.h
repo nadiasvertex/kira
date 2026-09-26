@@ -19,7 +19,7 @@
 #include "src/bytecode/value.h"
 #include "src/llvm_codegen/codegen.h"
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 /// Test/JIT-execution-only helper: enough `llvm::orc::LLJIT` plumbing to
 /// actually run a `compile_module` result's zero-argument entry function, so
@@ -41,7 +41,7 @@ public:
   /// Takes ownership of `module` (its `llvm::LLVMContext`/`llvm::Module`
   /// pair), runs `optimize_module(*module.module, level)` over it (a no-op
   /// at the default `o0`), and adds it to a fresh `LLJIT` instance, with
-  /// process symbols (this executable's own linked-in `kira_codegen_panic`,
+  /// process symbols (this executable's own linked-in `cinder_codegen_panic`,
   /// see runtime.h) visible to it.
   [[nodiscard]] static auto
   create(compiled_module module,
@@ -54,7 +54,7 @@ public:
   /// native ABI signature, unlike the bytecode VM's uniform `slot_value`
   /// calling convention, so the caller must say which typed function
   /// pointer to call through. Converts a propagating `panic_error`
-  /// (`kira_codegen_panic`, thrown across the JIT'd frame and caught here)
+  /// (`cinder_codegen_panic`, thrown across the JIT'd frame and caught here)
   /// into `bytecode::panic_reason`, mirroring `bytecode::vm::run`'s own
   /// `std::expected` shape so both tiers' results are directly comparable.
   [[nodiscard]] auto
@@ -81,4 +81,4 @@ private:
   std::unique_ptr<llvm::orc::LLJIT> jit_;
 };
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

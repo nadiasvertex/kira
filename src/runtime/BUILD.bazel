@@ -1,9 +1,9 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
-# `alwayslink`: `kira_heap_alloc` (allocator.cpp) is only ever called from
+# `alwayslink`: `cinder_heap_alloc` (allocator.cpp) is only ever called from
 # generated IR (JIT or AOT), never directly by this repo's own C++ — the
 # same reason `//src/llvm_codegen:runtime`/`:aot_runtime` need it for
-# `kira_codegen_panic`. Without it, a binary that only reaches this library
+# `cinder_codegen_panic`. Without it, a binary that only reaches this library
 # transitively (jit_support, aot) would have the linker drop the object
 # that defines the symbol, and JIT/AOT symbol resolution would fail.
 cc_library(

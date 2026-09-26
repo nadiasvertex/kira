@@ -6,8 +6,8 @@ module main
 #  Uses the element type's own ordering (numeric comparison for numbers,
 #  lexicographic for strings); `@none` on an empty iterator.
 #
-#  Run it:      kira demo/algorithm-max.cn
-#  Compile it:  kira --compile -o algorithm-max demo/algorithm-max.cn
+#  Run it:      cinder demo/algorithm-max.cn
+#  Compile it:  cinder --compile -o algorithm-max demo/algorithm-max.cn
 # ==========================================================================
 
 def main() -> int32:

@@ -10,11 +10,11 @@
 namespace {
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_alloc(count * sizeof(uint64_t)));
+  return static_cast<uint64_t *>(cinder_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(kira_heap_alloc(text.size()));
+  auto *bytes = static_cast<char *>(cinder_heap_alloc(text.size()));
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }
@@ -42,40 +42,40 @@ namespace {
 
 extern "C" {
 
-auto kira_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t {
-  return kira::runtime::str_equal(view_of(a), view_of(b)) ? 1U : 0U;
+auto cinder_rt_str_eq(uint64_t *a, uint64_t *b) -> uint32_t {
+  return cinder::runtime::str_equal(view_of(a), view_of(b)) ? 1U : 0U;
 }
 
-auto kira_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t {
+auto cinder_rt_str_cmp(uint64_t *a, uint64_t *b) -> int32_t {
   return static_cast<int32_t>(
-      kira::runtime::str_compare(view_of(a), view_of(b)));
+      cinder::runtime::str_compare(view_of(a), view_of(b)));
 }
 
-auto kira_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
+auto cinder_rt_str_find(uint64_t *haystack, uint64_t *needle, uint64_t from)
     -> uint64_t * {
-  return make_find_result(kira::runtime::str_find(
+  return make_find_result(cinder::runtime::str_find(
       view_of(haystack), view_of(needle), static_cast<size_t>(from)));
 }
 
-auto kira_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t * {
+auto cinder_rt_str_rfind(uint64_t *haystack, uint64_t *needle) -> uint64_t * {
   return make_find_result(
-      kira::runtime::str_rfind(view_of(haystack), view_of(needle)));
+      cinder::runtime::str_rfind(view_of(haystack), view_of(needle)));
 }
 
-auto kira_rt_str_reverse(uint64_t *s) -> uint64_t * {
-  return make_str(kira::runtime::str_reverse(view_of(s)));
+auto cinder_rt_str_reverse(uint64_t *s) -> uint64_t * {
+  return make_str(cinder::runtime::str_reverse(view_of(s)));
 }
 
-auto kira_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t * {
+auto cinder_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t * {
   const auto trim =
-      static_cast<kira::runtime::trim_mode>(static_cast<uint8_t>(mode));
-  return make_str(kira::runtime::str_trim(view_of(s), trim));
+      static_cast<cinder::runtime::trim_mode>(static_cast<uint8_t>(mode));
+  return make_str(cinder::runtime::str_trim(view_of(s), trim));
 }
 
-auto kira_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
+auto cinder_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
     -> uint64_t * {
   return make_str(
-      kira::runtime::str_replace(view_of(s), view_of(from), view_of(to)));
+      cinder::runtime::str_replace(view_of(s), view_of(from), view_of(to)));
 }
 
 } // extern "C"

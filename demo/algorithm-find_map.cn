@@ -7,8 +7,8 @@ module main
 #  first `@some` result, short-circuiting like `find` rather than mapping
 #  the whole sequence first.
 #
-#  Run it:      kira demo/algorithm-find_map.cn
-#  Compile it:  kira --compile -o algorithm-find_map demo/algorithm-find_map.cn
+#  Run it:      cinder demo/algorithm-find_map.cn
+#  Compile it:  cinder --compile -o algorithm-find_map demo/algorithm-find_map.cn
 # ==========================================================================
 
 def main() -> int32:

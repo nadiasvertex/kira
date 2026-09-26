@@ -7,7 +7,7 @@
 
 #include "driver.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Parse command-line arguments into driver configuration.
 ///
@@ -24,4 +24,4 @@ namespace kira::driver {
 /// @param program_name Executable name to display in the usage line.
 [[nodiscard]] auto render_help(std::string_view program_name) -> std::string;
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -13,11 +13,11 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
+using cinder::testing::expect;
+using cinder::testing::fail;
 
 template <typename T>
-auto expect_node(kira::ast::node *node, kira::ast::node_kind kind,
+auto expect_node(cinder::ast::node *node, cinder::ast::node_kind kind,
                  std::string_view message) -> T * {
   expect(node != nullptr, message);
   expect(node->kind == kind, message);
@@ -25,7 +25,7 @@ auto expect_node(kira::ast::node *node, kira::ast::node_kind kind,
 }
 
 template <typename T>
-auto expect_expr(kira::ast::expr *expr, kira::ast::node_kind kind,
+auto expect_expr(cinder::ast::expr *expr, cinder::ast::node_kind kind,
                  std::string_view message) -> T * {
   expect(expr != nullptr, message);
   expect(expr->kind == kind, message);
@@ -33,7 +33,7 @@ auto expect_expr(kira::ast::expr *expr, kira::ast::node_kind kind,
 }
 
 template <typename T>
-auto expect_pattern(kira::ast::pattern *pattern, kira::ast::node_kind kind,
+auto expect_pattern(cinder::ast::pattern *pattern, cinder::ast::node_kind kind,
                     std::string_view message) -> T * {
   expect(pattern != nullptr, message);
   expect(pattern->kind == kind, message);
@@ -41,27 +41,27 @@ auto expect_pattern(kira::ast::pattern *pattern, kira::ast::node_kind kind,
 }
 
 struct parsed_source {
-  kira::ast::ptr<kira::ast::file> file;
+  cinder::ast::ptr<cinder::ast::file> file;
   std::string diagnostics;
   uint32_t error_count = 0;
 };
 
 auto parse_source(std::string_view source) -> parsed_source {
-  kira::diagnostic_bag diag;
-  auto sources = kira::source_manager{};
+  cinder::diagnostic_bag diag;
+  auto sources = cinder::source_manager{};
   auto file_id = sources.add_file("test.cn", std::string(source));
   expect(file_id.has_value(), "expected test source to register");
 
   auto *file = sources.get(*file_id);
   expect(file != nullptr, "expected registered test source");
 
-  kira::lexer lexer(file->source(), file->id(), diag);
+  cinder::lexer lexer(file->source(), file->id(), diag);
   auto tokens = lexer.tokenize();
-  kira::parser parser(std::move(tokens), file->id(), diag);
+  cinder::parser parser(std::move(tokens), file->id(), diag);
 
   parsed_source parsed{
       .file = parser.parse_file(),
-      .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
   return parsed;
@@ -85,24 +85,24 @@ auto test_keyword_module_name_is_a_diagnosed_error() -> void {
 }
 
 auto test_lexer_emits_indent_and_dedent() -> void {
-  kira::diagnostic_bag diag;
+  cinder::diagnostic_bag diag;
   std::string source = "module sample\n"
                        "\n"
                        "def run():\n"
                        "  let value = 1\n"
                        "  return value\n";
-  kira::lexer lexer(source, 0, diag);
+  cinder::lexer lexer(source, 0, diag);
   auto tokens = lexer.tokenize();
 
   expect(!diag.has_errors(), "expected lexer test source to tokenize cleanly");
 
   const auto indent_count = std::count_if(
-      tokens.begin(), tokens.end(), [](const kira::token &token) -> bool {
-        return token.kind == kira::token_kind::indent;
+      tokens.begin(), tokens.end(), [](const cinder::token &token) -> bool {
+        return token.kind == cinder::token_kind::indent;
       });
   const auto dedent_count = std::count_if(
-      tokens.begin(), tokens.end(), [](const kira::token &token) -> bool {
-        return token.kind == kira::token_kind::dedent;
+      tokens.begin(), tokens.end(), [](const cinder::token &token) -> bool {
+        return token.kind == cinder::token_kind::dedent;
       });
 
   expect(indent_count == 1, "expected one indent token for function body");
@@ -119,11 +119,11 @@ auto test_parser_builds_type_body_nodes() -> void {
   expect(parsed.file->items.size() == 2,
          "expected two top-level type declarations");
 
-  auto *person_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+  auto *person_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::type_decl,
       "expected first item to be a type declaration");
-  auto *person_def = expect_node<kira::ast::struct_type_def>(
-      person_decl->definition.get(), kira::ast::node_kind::struct_type_def,
+  auto *person_def = expect_node<cinder::ast::struct_type_def>(
+      person_decl->definition.get(), cinder::ast::node_kind::struct_type_def,
       "expected struct type definition node");
   expect(person_def->body.fields.size() == 2,
          "expected struct body to preserve both fields");
@@ -132,11 +132,11 @@ auto test_parser_builds_type_body_nodes() -> void {
   expect(person_def->body.fields[1].name == "age",
          "expected second struct field name");
 
-  auto *shape_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::type_decl,
+  auto *shape_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::type_decl,
       "expected second item to be a type declaration");
-  auto *shape_def = expect_node<kira::ast::sum_type_def>(
-      shape_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *shape_def = expect_node<cinder::ast::sum_type_def>(
+      shape_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected sum type definition node");
   expect(shape_def->body.variants.size() == 2,
          "expected sum body to preserve both variants");
@@ -176,11 +176,11 @@ auto test_parser_accepts_multiline_sum_type() -> void {
   expect(parsed.file->items.size() == 3,
          "expected three top-level type declarations");
 
-  auto *shape_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+  auto *shape_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::type_decl,
       "expected first item to be a type declaration");
-  auto *shape_def = expect_node<kira::ast::sum_type_def>(
-      shape_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *shape_def = expect_node<cinder::ast::sum_type_def>(
+      shape_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected the multi-line form to build a sum type definition");
   expect(shape_def->body.variants.size() == 3,
          "expected all three variant lines to be preserved");
@@ -197,11 +197,11 @@ auto test_parser_accepts_multiline_sum_type() -> void {
   expect(shape_def->body.variants[2].payload_types.empty(),
          "expected no payload types on `@point`");
 
-  auto *error_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::type_decl,
+  auto *error_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::type_decl,
       "expected second item to be a type declaration");
-  auto *error_def = expect_node<kira::ast::sum_type_def>(
-      error_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *error_def = expect_node<cinder::ast::sum_type_def>(
+      error_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected a sum type definition after a leading doc comment");
   expect(error_def->body.variants.size() == 2,
          "expected both variants of the documented sum type");
@@ -212,11 +212,11 @@ auto test_parser_accepts_multiline_sum_type() -> void {
   expect(error_decl->deriving[0] == "eq" && error_decl->deriving[1] == "show",
          "expected both derived trait names");
 
-  auto *step_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::type_decl,
+  auto *step_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::type_decl,
       "expected third item to be a type declaration");
-  auto *step_def = expect_node<kira::ast::sum_type_def>(
-      step_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *step_def = expect_node<cinder::ast::sum_type_def>(
+      step_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected a sum type definition with inline deriving");
   expect(step_def->body.variants.size() == 2,
          "expected both variants when `deriving` rides the last line");
@@ -241,11 +241,11 @@ auto test_parser_reports_missing_sum_variant_pipe() -> void {
              std::string::npos,
          parsed.diagnostics);
 
-  auto *shape_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+  auto *shape_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::type_decl,
       "expected the type declaration to survive the missing `|`");
-  auto *shape_def = expect_node<kira::ast::sum_type_def>(
-      shape_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *shape_def = expect_node<cinder::ast::sum_type_def>(
+      shape_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected a sum type definition despite the missing `|`");
   expect(shape_def->body.variants.size() == 3,
          "expected recovery to keep parsing the remaining variants");
@@ -285,27 +285,27 @@ auto test_parser_captures_doc_comments() -> void {
          "expected module docstring on module_decl");
 
   // Multi-line doc comment concatenates with `\n`.
-  auto *add_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *add_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected first item to be a function");
   expect(add_decl->documentation == "Adds two numbers.\nWraps on overflow.",
          "expected joined multi-line docstring on `add`");
 
   // A plain `#` comment leaves no documentation.
-  auto *plain_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *plain_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected second item to be a function");
   expect(plain_decl->documentation.empty(),
          "expected no docstring from an ordinary `#` comment");
 
   // Type docstring, plus a field docstring inside the `{ ... }` body.
-  auto *person_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::type_decl,
+  auto *person_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::type_decl,
       "expected third item to be a type declaration");
   expect(person_decl->documentation == "A person.",
          "expected docstring on `person` type");
-  auto *person_def = expect_node<kira::ast::struct_type_def>(
-      person_decl->definition.get(), kira::ast::node_kind::struct_type_def,
+  auto *person_def = expect_node<cinder::ast::struct_type_def>(
+      person_decl->definition.get(), cinder::ast::node_kind::struct_type_def,
       "expected struct type definition node");
   expect(person_def->body.fields.size() == 2, "expected two struct fields");
   expect(person_def->body.fields[0].documentation == "The person's name.",
@@ -314,8 +314,8 @@ auto test_parser_captures_doc_comments() -> void {
          "expected no docstring on the undocumented `age` field");
 
   // Trait docstring, plus a docstring on a nested method.
-  auto *shape_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[3].get(), kira::ast::node_kind::trait_decl,
+  auto *shape_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[3].get(), cinder::ast::node_kind::trait_decl,
       "expected fourth item to be a trait declaration");
   expect(shape_decl->documentation == "A shape.",
          "expected docstring on `shape` trait");
@@ -345,59 +345,59 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   expect(parsed.file->items.size() == 3,
          "expected trait, impl, and function items");
 
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::trait_decl,
       "expected first item to be a trait declaration");
   expect(trait_decl->items.size() == 1,
          "expected trait to preserve associated type item");
-  auto *trait_assoc = expect_node<kira::ast::associated_type_decl_node>(
+  auto *trait_assoc = expect_node<cinder::ast::associated_type_decl_node>(
       trait_decl->items[0].get(),
-      kira::ast::node_kind::associated_type_decl_node,
+      cinder::ast::node_kind::associated_type_decl_node,
       "expected trait associated type node");
   expect(trait_assoc->value.name == "item",
          "expected trait associated type name");
   expect(trait_assoc->value.default_type != nullptr,
          "expected trait associated type default type");
 
-  auto *impl_decl = expect_node<kira::ast::impl_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
+  auto *impl_decl = expect_node<cinder::ast::impl_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::impl_decl,
       "expected second item to be an impl declaration");
   expect(impl_decl->items.size() == 1,
          "expected impl to preserve associated type item");
-  auto *impl_assoc = expect_node<kira::ast::associated_type_def_node>(
-      impl_decl->items[0].get(), kira::ast::node_kind::associated_type_def_node,
+  auto *impl_assoc = expect_node<cinder::ast::associated_type_def_node>(
+      impl_decl->items[0].get(), cinder::ast::node_kind::associated_type_def_node,
       "expected impl associated type node");
   expect(impl_assoc->value.name == "item",
          "expected impl associated type name");
   expect(impl_assoc->value.type != nullptr,
          "expected impl associated type definition type");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::func_decl,
       "expected third item to be a function declaration");
   expect(func_decl->body_stmts.size() == 3,
          "expected function block body to preserve statements");
 
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected let statement in function body");
-  auto *where_expr = expect_expr<kira::ast::where_expr>(
-      let_stmt->initializer.get(), kira::ast::node_kind::where_expr,
+  auto *where_expr = expect_expr<cinder::ast::where_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::where_expr,
       "expected let initializer to be a where expression");
   expect(where_expr->bindings.size() == 1, "expected one where binding");
   expect(where_expr->bindings[0].name == "base", "expected where binding name");
 
-  auto *chosen_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  auto *chosen_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected second statement to bind match expression");
-  auto *match_expr = expect_expr<kira::ast::match_expr>(
-      chosen_stmt->initializer.get(), kira::ast::node_kind::match_expr,
+  auto *match_expr = expect_expr<cinder::ast::match_expr>(
+      chosen_stmt->initializer.get(), cinder::ast::node_kind::match_expr,
       "expected bound value to be a match expression");
   expect(match_expr->arms.size() == 2, "expected two match arms");
 
-  auto *aliased_pattern = expect_pattern<kira::ast::group_pattern>(
-      dynamic_cast<kira::ast::pattern *>(match_expr->arms[0].pattern.get()),
-      kira::ast::node_kind::group_pattern,
+  auto *aliased_pattern = expect_pattern<cinder::ast::group_pattern>(
+      dynamic_cast<cinder::ast::pattern *>(match_expr->arms[0].pattern.get()),
+      cinder::ast::node_kind::group_pattern,
       "expected first match arm to preserve aliased pattern");
   expect(aliased_pattern->alias.has_value(),
          "expected aliased pattern name to be preserved");
@@ -406,17 +406,17 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
            "expected aliased pattern alias name");
   }
 
-  auto *option_pattern = expect_pattern<kira::ast::option_pattern>(
-      aliased_pattern->inner.get(), kira::ast::node_kind::option_pattern,
+  auto *option_pattern = expect_pattern<cinder::ast::option_pattern>(
+      aliased_pattern->inner.get(), cinder::ast::node_kind::option_pattern,
       "expected inner pattern to remain the original option pattern");
-  expect(option_pattern->option_kind == kira::ast::option_result_kind::some,
+  expect(option_pattern->option_kind == cinder::ast::option_result_kind::some,
          "expected some-pattern to preserve its kind");
 
-  auto *return_stmt = expect_node<kira::ast::return_stmt>(
-      func_decl->body_stmts[2].get(), kira::ast::node_kind::return_stmt,
+  auto *return_stmt = expect_node<cinder::ast::return_stmt>(
+      func_decl->body_stmts[2].get(), cinder::ast::node_kind::return_stmt,
       "expected return statement in function body");
-  auto *return_ident = expect_expr<kira::ast::ident_expr>(
-      return_stmt->value.get(), kira::ast::node_kind::ident_expr,
+  auto *return_ident = expect_expr<cinder::ast::ident_expr>(
+      return_stmt->value.get(), cinder::ast::node_kind::ident_expr,
       "expected return value to preserve chosen identifier");
   expect(return_ident->name == "chosen", "expected return identifier name");
 }
@@ -445,10 +445,10 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two function declarations");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected top-level signature function declaration");
-  expect(func_decl->visibility == kira::ast::visibility::pub,
+  expect(func_decl->visibility == cinder::ast::visibility::pub,
          "expected function visibility to be preserved");
   expect(func_decl->modifiers.is_async, "expected async modifier");
   expect(func_decl->modifiers.async_context != nullptr,
@@ -464,31 +464,31 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
   expect(func_decl->body_expr != nullptr,
          "expected first function to preserve inline body");
 
-  auto *drive_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *drive_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected second control-flow function declaration");
   expect(drive_decl->body_stmts.size() == 7,
          "expected seven statements in function body");
 
-  auto *branch_stmt = expect_node<kira::ast::let_stmt>(
-      drive_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *branch_stmt = expect_node<cinder::ast::let_stmt>(
+      drive_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected branch binding statement");
-  auto *if_expr = expect_expr<kira::ast::if_expr>(
-      branch_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+  auto *if_expr = expect_expr<cinder::ast::if_expr>(
+      branch_stmt->initializer.get(), cinder::ast::node_kind::if_expr,
       "expected inline if-expression initializer");
   expect(if_expr->branches.size() == 1,
          "expected single branch in inline if-expression");
   expect(if_expr->else_body.size() == 1,
          "expected else body in inline if-expression");
 
-  auto *if_stmt = expect_node<kira::ast::if_stmt>(
-      drive_decl->body_stmts[1].get(), kira::ast::node_kind::if_stmt,
+  auto *if_stmt = expect_node<cinder::ast::if_stmt>(
+      drive_decl->body_stmts[1].get(), cinder::ast::node_kind::if_stmt,
       "expected if statement");
   expect(if_stmt->branches.size() == 2, "expected if and elif branches");
   expect(if_stmt->else_body.size() == 1, "expected else body");
 
-  auto *while_stmt = expect_node<kira::ast::while_stmt>(
-      drive_decl->body_stmts[2].get(), kira::ast::node_kind::while_stmt,
+  auto *while_stmt = expect_node<cinder::ast::while_stmt>(
+      drive_decl->body_stmts[2].get(), cinder::ast::node_kind::while_stmt,
       "expected while statement");
   expect(while_stmt->let_pattern != nullptr,
          "expected while-let pattern to be preserved");
@@ -496,47 +496,47 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
          "expected while-let expression to be preserved");
   expect(while_stmt->body.size() == 1, "expected single while body statement");
 
-  auto *for_stmt = expect_node<kira::ast::for_stmt>(
-      drive_decl->body_stmts[3].get(), kira::ast::node_kind::for_stmt,
+  auto *for_stmt = expect_node<cinder::ast::for_stmt>(
+      drive_decl->body_stmts[3].get(), cinder::ast::node_kind::for_stmt,
       "expected for statement");
   expect(for_stmt->patterns.size() == 2, "expected two for-loop patterns");
   expect(for_stmt->guard != nullptr, "expected for-loop guard");
   expect(for_stmt->body.size() == 1, "expected single for-loop body statement");
 
-  auto *produced_stmt = expect_node<kira::ast::let_stmt>(
-      drive_decl->body_stmts[4].get(), kira::ast::node_kind::let_stmt,
+  auto *produced_stmt = expect_node<cinder::ast::let_stmt>(
+      drive_decl->body_stmts[4].get(), cinder::ast::node_kind::let_stmt,
       "expected produced binding statement");
-  auto *for_expr = expect_expr<kira::ast::for_expr>(
-      produced_stmt->initializer.get(), kira::ast::node_kind::for_expr,
+  auto *for_expr = expect_expr<cinder::ast::for_expr>(
+      produced_stmt->initializer.get(), cinder::ast::node_kind::for_expr,
       "expected guarded for-expression initializer");
   expect(for_expr->clauses.size() == 1, "expected one for-expression clause");
   expect(for_expr->guard != nullptr, "expected guarded for-expression guard");
   expect(for_expr->yield_expr != nullptr,
          "expected guarded for-expression yield value");
 
-  auto *processed_stmt = expect_node<kira::ast::let_stmt>(
-      drive_decl->body_stmts[5].get(), kira::ast::node_kind::let_stmt,
+  auto *processed_stmt = expect_node<cinder::ast::let_stmt>(
+      drive_decl->body_stmts[5].get(), cinder::ast::node_kind::let_stmt,
       "expected processed binding statement");
-  auto *await_expr = expect_expr<kira::ast::await_expr>(
-      processed_stmt->initializer.get(), kira::ast::node_kind::await_expr,
+  auto *await_expr = expect_expr<cinder::ast::await_expr>(
+      processed_stmt->initializer.get(), cinder::ast::node_kind::await_expr,
       "expected await-expression initializer");
-  auto *try_expr = expect_expr<kira::ast::try_expr>(
-      await_expr->operand.get(), kira::ast::node_kind::try_expr,
+  auto *try_expr = expect_expr<cinder::ast::try_expr>(
+      await_expr->operand.get(), cinder::ast::node_kind::try_expr,
       "expected try expression inside await expression");
-  auto *cast_expr = expect_expr<kira::ast::cast_expr>(
-      try_expr->operand.get(), kira::ast::node_kind::cast_expr,
+  auto *cast_expr = expect_expr<cinder::ast::cast_expr>(
+      try_expr->operand.get(), cinder::ast::node_kind::cast_expr,
       "expected cast expression inside try expression");
   expect(cast_expr->target_type != nullptr, "expected cast target type");
 
-  auto *return_stmt = expect_node<kira::ast::return_stmt>(
-      drive_decl->body_stmts[6].get(), kira::ast::node_kind::return_stmt,
+  auto *return_stmt = expect_node<cinder::ast::return_stmt>(
+      drive_decl->body_stmts[6].get(), cinder::ast::node_kind::return_stmt,
       "expected final return statement");
   expect(return_stmt->value != nullptr, "expected final return value");
 }
 
 /// `static def` is a *function* wherever a static binding is also legal.
 ///
-/// `kira-grammar.ebnf` lists `static` as an unrestricted `func_modifier`, but
+/// `cinder-grammar.ebnf` lists `static` as an unrestricted `func_modifier`, but
 /// the parser used to honor it only at module scope — a `trait` body read
 /// `static` as the start of `static NAME: Type` and failed on the `def`.
 /// The disambiguation (`parser::at_static_func_decl`) has to look past a run
@@ -558,36 +558,36 @@ auto test_parser_accepts_static_def_in_member_blocks() -> void {
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::trait_decl,
       "expected trait declaration");
   expect(trait_decl->items.size() == 2, "expected two trait members");
   for (const auto &item : trait_decl->items) {
-    auto *method = expect_node<kira::ast::func_decl>(
-        item.get(), kira::ast::node_kind::func_decl,
+    auto *method = expect_node<cinder::ast::func_decl>(
+        item.get(), cinder::ast::node_kind::func_decl,
         "a `static def` in a trait is a function, not a static binding");
     expect(method->modifiers.is_static,
            "the `static` modifier must survive onto the declaration");
   }
 
-  auto *impl_decl = expect_node<kira::ast::impl_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
+  auto *impl_decl = expect_node<cinder::ast::impl_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::impl_decl,
       "expected impl declaration");
   expect(impl_decl->items.size() == 2, "expected two impl members");
   for (const auto &item : impl_decl->items) {
-    auto *method = expect_node<kira::ast::func_decl>(
-        item.get(), kira::ast::node_kind::func_decl,
+    auto *method = expect_node<cinder::ast::func_decl>(
+        item.get(), cinder::ast::node_kind::func_decl,
         "a `static def` in an impl is a function, not a static binding");
     expect(method->modifiers.is_static,
            "the `static` modifier must survive onto the declaration");
   }
 
-  auto *extend_decl = expect_node<kira::ast::extend_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::extend_decl,
+  auto *extend_decl = expect_node<cinder::ast::extend_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::extend_decl,
       "expected extend declaration");
   expect(extend_decl->items.size() == 1, "expected one extend member");
-  auto *extend_method = expect_node<kira::ast::func_decl>(
-      extend_decl->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *extend_method = expect_node<cinder::ast::func_decl>(
+      extend_decl->items[0].get(), cinder::ast::node_kind::func_decl,
       "a `static def` in an extend block is a function");
   expect(extend_method->modifiers.is_static,
          "the `static` modifier must survive onto the declaration");
@@ -606,15 +606,15 @@ auto test_parser_still_reads_static_bindings_as_bindings() -> void {
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
-  auto *impl_decl = expect_node<kira::ast::impl_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::impl_decl,
+  auto *impl_decl = expect_node<cinder::ast::impl_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::impl_decl,
       "expected impl declaration");
   expect(impl_decl->items.size() == 2, "expected binding and function");
-  expect_node<kira::ast::static_decl>(
-      impl_decl->items[0].get(), kira::ast::node_kind::static_decl,
+  expect_node<cinder::ast::static_decl>(
+      impl_decl->items[0].get(), cinder::ast::node_kind::static_decl,
       "`static counter = 0` is a binding, not a function");
-  expect_node<kira::ast::func_decl>(
-      impl_decl->items[1].get(), kira::ast::node_kind::func_decl,
+  expect_node<cinder::ast::func_decl>(
+      impl_decl->items[1].get(), cinder::ast::node_kind::func_decl,
       "`static def` beside a binding is still a function");
 }
 
@@ -635,31 +635,31 @@ auto test_parser_accepts_statements_in_static_if_branches() -> void {
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected a static function declaration");
   expect(func_decl->body_stmts.size() == 1,
          "expected the `static if` to be the function's only statement");
 
-  auto *static_decl = expect_node<kira::ast::static_decl>(
-      func_decl->body_stmts[0].get(), kira::ast::node_kind::static_decl,
+  auto *static_decl = expect_node<cinder::ast::static_decl>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::static_decl,
       "expected a static declaration");
   expect(static_decl->decl_kind ==
-             kira::ast::static_decl_kind::conditional_compilation,
+             cinder::ast::static_decl_kind::conditional_compilation,
          "expected a `static if` declaration kind");
   expect(static_decl->if_body.size() == 2,
          "expected the `if` branch to keep both statements (`let` and "
          "`return`), not just a declaration");
-  expect_node<kira::ast::let_stmt>(
-      static_decl->if_body[0].get(), kira::ast::node_kind::let_stmt,
+  expect_node<cinder::ast::let_stmt>(
+      static_decl->if_body[0].get(), cinder::ast::node_kind::let_stmt,
       "expected a `let` statement inside the `static if` branch");
-  expect_node<kira::ast::return_stmt>(
-      static_decl->if_body[1].get(), kira::ast::node_kind::return_stmt,
+  expect_node<cinder::ast::return_stmt>(
+      static_decl->if_body[1].get(), cinder::ast::node_kind::return_stmt,
       "expected a `return` statement inside the `static if` branch");
   expect(static_decl->else_body.size() == 1,
          "expected the `else` branch to keep its `return` statement");
-  expect_node<kira::ast::return_stmt>(
-      static_decl->else_body[0].get(), kira::ast::node_kind::return_stmt,
+  expect_node<cinder::ast::return_stmt>(
+      static_decl->else_body[0].get(), cinder::ast::node_kind::return_stmt,
       "expected a `return` statement inside the `static else` branch");
 }
 
@@ -688,73 +688,73 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   expect(parsed.file->items.size() == 3,
          "expected trait, impl, and function declarations");
 
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::trait_decl,
       "expected trait declaration");
   expect(trait_decl->type_params.size() == 1, "expected trait type parameter");
   expect(trait_decl->requires_bound.has_value(),
          "expected trait requires bound");
   expect(trait_decl->items.size() == 2,
          "expected static and function trait items");
-  auto *trait_static = expect_node<kira::ast::static_decl>(
-      trait_decl->items[0].get(), kira::ast::node_kind::static_decl,
+  auto *trait_static = expect_node<cinder::ast::static_decl>(
+      trait_decl->items[0].get(), cinder::ast::node_kind::static_decl,
       "expected trait static item");
-  expect(trait_static->visibility == kira::ast::visibility::pub,
+  expect(trait_static->visibility == cinder::ast::visibility::pub,
          "expected trait static visibility");
-  auto *trait_func = expect_node<kira::ast::func_decl>(
-      trait_decl->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *trait_func = expect_node<cinder::ast::func_decl>(
+      trait_decl->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected trait function item");
   expect(trait_func->return_type != nullptr,
          "expected trait function return type");
 
-  auto *impl_decl = expect_node<kira::ast::impl_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::impl_decl,
+  auto *impl_decl = expect_node<cinder::ast::impl_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::impl_decl,
       "expected impl declaration");
   expect(impl_decl->where_constraints.size() == 1,
          "expected impl where constraint");
   expect(impl_decl->items.size() == 2,
          "expected static and function impl items");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::func_decl,
       "expected orchestrate function declaration");
   expect(func_decl->body_stmts.size() == 4,
          "expected four statements in orchestrate body");
 
-  auto *par_binding = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *par_binding = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected par-binding let statement");
-  auto *par_expr = expect_expr<kira::ast::par_expr>(
-      par_binding->initializer.get(), kira::ast::node_kind::par_expr,
+  auto *par_expr = expect_expr<cinder::ast::par_expr>(
+      par_binding->initializer.get(), cinder::ast::node_kind::par_expr,
       "expected par expression initializer");
   expect(par_expr->branches.size() == 2, "expected two par branches");
 
-  auto *race_binding = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  auto *race_binding = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected race-binding let statement");
-  auto *race_expr = expect_expr<kira::ast::race_expr>(
-      race_binding->initializer.get(), kira::ast::node_kind::race_expr,
+  auto *race_expr = expect_expr<cinder::ast::race_expr>(
+      race_binding->initializer.get(), cinder::ast::node_kind::race_expr,
       "expected race expression initializer");
   expect(race_expr->branches.size() == 2, "expected two race branches");
 
-  auto *on_binding = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+  auto *on_binding = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[2].get(), cinder::ast::node_kind::let_stmt,
       "expected on-binding let statement");
-  auto *on_expr = expect_expr<kira::ast::on_expr>(
-      on_binding->initializer.get(), kira::ast::node_kind::on_expr,
+  auto *on_expr = expect_expr<cinder::ast::on_expr>(
+      on_binding->initializer.get(), cinder::ast::node_kind::on_expr,
       "expected on expression initializer");
   expect(on_expr->context_type != nullptr,
          "expected on-expression context type");
   expect(on_expr->sender != nullptr, "expected on-expression sender");
   expect(on_expr->body.size() == 1, "expected on-expression body statement");
-  auto *on_stmt_expr = expect_node<kira::ast::expr_stmt>(
-      on_expr->body[0].get(), kira::ast::node_kind::expr_stmt,
+  auto *on_stmt_expr = expect_node<cinder::ast::expr_stmt>(
+      on_expr->body[0].get(), cinder::ast::node_kind::expr_stmt,
       "expected inline on-expression body to become an expression statement");
   expect(on_stmt_expr->expr != nullptr,
          "expected preserved inline expression inside on-expression body");
 
-  auto *return_stmt = expect_node<kira::ast::return_stmt>(
-      func_decl->body_stmts[3].get(), kira::ast::node_kind::return_stmt,
+  auto *return_stmt = expect_node<cinder::ast::return_stmt>(
+      func_decl->body_stmts[3].get(), cinder::ast::node_kind::return_stmt,
       "expected final return statement");
   expect(return_stmt->value != nullptr, "expected final return value");
 }
@@ -775,8 +775,8 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
          "expected synthesized module declaration to be marked erroneous");
   expect(parsed.file->items.size() == 1,
          "expected parser to recover and preserve following function");
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected recovered function declaration");
   expect(func_decl->name == "greet", "expected recovered function name");
 }
@@ -800,14 +800,14 @@ auto test_parser_recovers_missing_colon_in_where_clause() -> void {
              std::string::npos,
          "expected recovery help text for malformed where clause");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected function declaration despite malformed where clause");
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected let statement despite malformed where clause");
-  auto *where_expr = expect_expr<kira::ast::where_expr>(
-      let_stmt->initializer.get(), kira::ast::node_kind::where_expr,
+  auto *where_expr = expect_expr<cinder::ast::where_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::where_expr,
       "expected recovered where-expression node");
   expect(where_expr->has_error,
          "expected recovered where-expression to be marked erroneous");
@@ -837,8 +837,8 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
   expect(parsed.file->items.size() == 4,
          "expected use, concept, static, and function items");
 
-  auto *use_decl = expect_node<kira::ast::use_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::use_decl,
+  auto *use_decl = expect_node<cinder::ast::use_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
       "expected first item to be a use declaration");
   expect(use_decl->path.size() == 2,
          "expected aliased import path to keep the module path only");
@@ -848,7 +848,7 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
          "expected aliased import to produce a selector");
   if (use_decl->selector.has_value()) {
     const auto &selector = *use_decl->selector;
-    expect(selector.kind == kira::ast::use_selector_kind::single,
+    expect(selector.kind == cinder::ast::use_selector_kind::single,
            "expected aliased import selector kind");
     expect(selector.items.size() == 1,
            "expected one imported item in aliased import");
@@ -860,75 +860,75 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
     }
   }
 
-  auto *concept_decl = expect_node<kira::ast::concept_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::concept_decl,
+  auto *concept_decl = expect_node<cinder::ast::concept_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::concept_decl,
       "expected second item to be a concept declaration");
   expect(concept_decl->constraints.size() == 1,
          "expected one concept constraint");
   expect(concept_decl->constraints[0].subject == nullptr,
          "expected value constraint to leave type subject empty");
-  auto *concept_expr = expect_node<kira::ast::binary_expr>(
+  auto *concept_expr = expect_node<cinder::ast::binary_expr>(
       concept_decl->constraints[0].bound_or_expr.get(),
-      kira::ast::node_kind::binary_expr,
+      cinder::ast::node_kind::binary_expr,
       "expected concept value constraint expression");
-  expect(concept_expr->op == kira::ast::binary_op::add,
+  expect(concept_expr->op == cinder::ast::binary_op::add,
          "expected concept value constraint to preserve addition");
 
-  auto *static_decl = expect_node<kira::ast::static_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::static_decl,
+  auto *static_decl = expect_node<cinder::ast::static_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::static_decl,
       "expected third item to be a static declaration");
-  expect(static_decl->decl_kind == kira::ast::static_decl_kind::for_inline,
+  expect(static_decl->decl_kind == cinder::ast::static_decl_kind::for_inline,
          "expected static for inline declaration kind");
-  auto *static_iterable = expect_expr<kira::ast::ident_expr>(
-      static_decl->for_iterable.get(), kira::ast::node_kind::ident_expr,
+  auto *static_iterable = expect_expr<cinder::ast::ident_expr>(
+      static_decl->for_iterable.get(), cinder::ast::node_kind::ident_expr,
       "expected bare identifier iterable in static for");
   expect(static_iterable->name == "items",
          "expected static for iterable identifier name");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[3].get(), cinder::ast::node_kind::func_decl,
       "expected final item to be a function declaration");
   expect(func_decl->body_stmts.size() == 4,
          "expected four statements in regression function");
 
-  auto *label_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *label_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected label binding statement");
-  auto *label_if = expect_expr<kira::ast::if_expr>(
-      label_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+  auto *label_if = expect_expr<cinder::ast::if_expr>(
+      label_stmt->initializer.get(), cinder::ast::node_kind::if_expr,
       "expected trailing conditional expression to parse as if-expression");
   expect(label_if->branches.size() == 1,
          "expected one branch in trailing conditional expression");
   expect(label_if->else_body.size() == 1,
          "expected else body in trailing conditional expression");
 
-  auto *point_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  auto *point_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected point binding statement");
-  auto *point_expr = expect_expr<kira::ast::struct_expr>(
-      point_stmt->initializer.get(), kira::ast::node_kind::struct_expr,
+  auto *point_expr = expect_expr<cinder::ast::struct_expr>(
+      point_stmt->initializer.get(), cinder::ast::node_kind::struct_expr,
       "expected typed struct literal initializer");
   expect(point_expr->type_name != nullptr,
          "expected typed struct literal to preserve its type name");
-  auto *point_type = expect_expr<kira::ast::ident_expr>(
-      point_expr->type_name.get(), kira::ast::node_kind::ident_expr,
+  auto *point_type = expect_expr<cinder::ast::ident_expr>(
+      point_expr->type_name.get(), cinder::ast::node_kind::ident_expr,
       "expected typed struct literal type name expression");
   expect(point_type->name == "point",
          "expected typed struct literal type name");
   expect(point_expr->fields.size() == 2,
          "expected both typed struct literal fields");
 
-  auto *produced_stmt = expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+  auto *produced_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[2].get(), cinder::ast::node_kind::let_stmt,
       "expected produced binding statement");
-  auto *produced_expr = expect_expr<kira::ast::for_expr>(
-      produced_stmt->initializer.get(), kira::ast::node_kind::for_expr,
+  auto *produced_expr = expect_expr<cinder::ast::for_expr>(
+      produced_stmt->initializer.get(), cinder::ast::node_kind::for_expr,
       "expected bare iterable for-expression initializer");
   expect(produced_expr->clauses.size() == 1,
          "expected one for-expression clause");
-  auto *produced_iterable = expect_expr<kira::ast::ident_expr>(
+  auto *produced_iterable = expect_expr<cinder::ast::ident_expr>(
       produced_expr->clauses[0].iterable.get(),
-      kira::ast::node_kind::ident_expr,
+      cinder::ast::node_kind::ident_expr,
       "expected bare identifier iterable in for-expression");
   expect(produced_iterable->name == "items",
          "expected for-expression iterable identifier name");
@@ -960,25 +960,25 @@ auto test_parser_disambiguates_if_stmt_after_multiline_match_let() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one function item");
 
-  auto *func_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected classify function declaration");
   expect(func_decl->body_stmts.size() == 4,
          "expected var, let, if, and return statements");
 
-  expect_node<kira::ast::let_stmt>(
-      func_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected multi-line match to still parse as a let binding");
 
-  auto *if_stmt = expect_node<kira::ast::if_stmt>(
-      func_decl->body_stmts[2].get(), kira::ast::node_kind::if_stmt,
+  auto *if_stmt = expect_node<cinder::ast::if_stmt>(
+      func_decl->body_stmts[2].get(), cinder::ast::node_kind::if_stmt,
       "expected the following `if` to parse as its own if-statement, not "
       "get consumed as a trailing conditional on the match expression");
   expect(if_stmt->branches.size() == 1, "expected one if-branch");
   expect(if_stmt->else_body.size() == 1, "expected an else body");
 
-  expect_node<kira::ast::return_stmt>(
-      func_decl->body_stmts[3].get(), kira::ast::node_kind::return_stmt,
+  expect_node<cinder::ast::return_stmt>(
+      func_decl->body_stmts[3].get(), cinder::ast::node_kind::return_stmt,
       "expected trailing return statement to still parse");
 }
 
@@ -1024,54 +1024,54 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
   expect(parsed.file->items.size() == 8,
          "expected full phase 1 regression source to parse cleanly");
 
-  auto *direction_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::type_decl,
+  auto *direction_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::type_decl,
       "expected direction type declaration");
-  auto *direction_sum = expect_node<kira::ast::sum_type_def>(
-      direction_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *direction_sum = expect_node<cinder::ast::sum_type_def>(
+      direction_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected unprefixed sum type to parse as sum body");
   expect(direction_sum->body.variants.size() == 4,
          "expected all direction variants to be preserved");
 
-  auto *option_decl = expect_node<kira::ast::type_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::type_decl,
+  auto *option_decl = expect_node<cinder::ast::type_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::type_decl,
       "expected option type declaration");
-  auto *option_sum = expect_node<kira::ast::sum_type_def>(
-      option_decl->definition.get(), kira::ast::node_kind::sum_type_def,
+  auto *option_sum = expect_node<cinder::ast::sum_type_def>(
+      option_decl->definition.get(), cinder::ast::node_kind::sum_type_def,
       "expected payload sum type to parse as sum body");
   expect(option_sum->body.variants.size() == 2,
          "expected option payload and nullary variants");
 
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::trait_decl,
       "expected higher-kinded trait declaration");
   expect(trait_decl->type_params.size() == 1,
          "expected higher-kinded trait parameter");
   expect(trait_decl->type_params[0].higher_kinded_arity == 1,
          "expected higher-kinded trait parameter arity of 1");
 
-  auto *static_pure_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+  auto *static_pure_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[3].get(), cinder::ast::node_kind::func_decl,
       "expected static pure def to parse as function declaration");
   expect(static_pure_func->modifiers.is_static,
          "expected static function modifier to be preserved");
   expect(static_pure_func->modifiers.is_pure,
          "expected pure function modifier to be preserved");
 
-  auto *static_def = expect_node<kira::ast::func_decl>(
-      parsed.file->items[4].get(), kira::ast::node_kind::func_decl,
+  auto *static_def = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[4].get(), cinder::ast::node_kind::func_decl,
       "expected static def to parse as function declaration");
   expect(static_def->modifiers.is_static,
          "expected static def modifier to be preserved");
 
-  auto *static_let = expect_node<kira::ast::static_decl>(
-      parsed.file->items[5].get(), kira::ast::node_kind::static_decl,
+  auto *static_let = expect_node<cinder::ast::static_decl>(
+      parsed.file->items[5].get(), cinder::ast::node_kind::static_decl,
       "expected static let to parse as static declaration");
-  expect(static_let->decl_kind == kira::ast::static_decl_kind::binding,
+  expect(static_let->decl_kind == cinder::ast::static_decl_kind::binding,
          "expected static let binding kind");
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[6].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[6].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
   expect(run_decl->type_params.size() == 2,
          "expected bounded and value type parameters");
@@ -1080,7 +1080,7 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
   expect(run_decl->return_type != nullptr,
          "expected super-qualified return type");
 
-  expect(parsed.file->items[7]->kind == kira::ast::node_kind::splice_stmt,
+  expect(parsed.file->items[7]->kind == cinder::ast::node_kind::splice_stmt,
          "expected top-level derive splice statement");
 }
 
@@ -1099,52 +1099,52 @@ auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected single function item");
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
   expect(run_decl->body_stmts.size() == 7,
          "expected six let bindings plus a return statement");
 
-  auto initializer_of = [](kira::ast::node *stmt_node) -> kira::ast::expr * {
-    auto *let = expect_node<kira::ast::let_stmt>(
-        stmt_node, kira::ast::node_kind::let_stmt, "expected let statement");
+  auto initializer_of = [](cinder::ast::node *stmt_node) -> cinder::ast::expr * {
+    auto *let = expect_node<cinder::ast::let_stmt>(
+        stmt_node, cinder::ast::node_kind::let_stmt, "expected let statement");
     return let->initializer.get();
   };
 
-  auto *not_five = expect_expr<kira::ast::unary_expr>(
+  auto *not_five = expect_expr<cinder::ast::unary_expr>(
       initializer_of(run_decl->body_stmts[0].get()),
-      kira::ast::node_kind::unary_expr,
+      cinder::ast::node_kind::unary_expr,
       "expected `~5` to parse as bitwise complement, not a splice");
-  expect(not_five->op == kira::ast::unary_op::bit_not,
+  expect(not_five->op == cinder::ast::unary_op::bit_not,
          "expected `~5` unary op to be bit_not");
 
-  expect_expr<kira::ast::unary_expr>(
+  expect_expr<cinder::ast::unary_expr>(
       initializer_of(run_decl->body_stmts[1].get()),
-      kira::ast::node_kind::unary_expr,
+      cinder::ast::node_kind::unary_expr,
       "expected `~true` to parse as bitwise complement, not a splice");
 
-  expect_expr<kira::ast::unary_expr>(
+  expect_expr<cinder::ast::unary_expr>(
       initializer_of(run_decl->body_stmts[2].get()),
-      kira::ast::node_kind::unary_expr,
+      cinder::ast::node_kind::unary_expr,
       "expected `~\"str\"` to parse as bitwise complement, not a splice");
 
-  auto *neg_operand_owner = expect_expr<kira::ast::unary_expr>(
+  auto *neg_operand_owner = expect_expr<cinder::ast::unary_expr>(
       initializer_of(run_decl->body_stmts[3].get()),
-      kira::ast::node_kind::unary_expr,
+      cinder::ast::node_kind::unary_expr,
       "expected `~-x` to parse as bitwise complement, not a splice");
-  expect(neg_operand_owner->op == kira::ast::unary_op::bit_not,
+  expect(neg_operand_owner->op == cinder::ast::unary_op::bit_not,
          "expected `~-x` outer op to be bit_not");
-  expect(neg_operand_owner->operand->kind == kira::ast::node_kind::unary_expr,
+  expect(neg_operand_owner->operand->kind == cinder::ast::node_kind::unary_expr,
          "expected `~-x` operand to itself be a negation");
 
-  expect_expr<kira::ast::splice_expr>(
+  expect_expr<cinder::ast::splice_expr>(
       initializer_of(run_decl->body_stmts[4].get()),
-      kira::ast::node_kind::splice_expr,
+      cinder::ast::node_kind::splice_expr,
       "expected `~foo` to still parse as a splice expression");
 
-  expect_expr<kira::ast::splice_expr>(
+  expect_expr<cinder::ast::splice_expr>(
       initializer_of(run_decl->body_stmts[5].get()),
-      kira::ast::node_kind::splice_expr,
+      cinder::ast::node_kind::splice_expr,
       "expected `~foo[i32]()` to still parse as a splice expression");
 }
 
@@ -1160,17 +1160,17 @@ auto test_parser_accepts_if_let_expression() -> void {
   expect(parsed.file->items.size() == 1,
          "expected a single top-level function declaration");
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
   expect(run_decl->body_stmts.size() == 2,
          "expected two statements in function body");
 
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected let-binding statement");
-  auto *if_expr = expect_expr<kira::ast::if_expr>(
-      let_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+  auto *if_expr = expect_expr<cinder::ast::if_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::if_expr,
       "expected `if let` initializer to parse as an if-expression");
 
   expect(if_expr->branches.size() == 2,
@@ -1207,17 +1207,17 @@ auto test_parser_accepts_multiline_if_expression() -> void {
   expect(parsed.file->items.size() == 1,
          "expected a single top-level function declaration");
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
   expect(run_decl->body_stmts.size() == 2,
          "expected two statements in function body");
 
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected let-binding statement");
-  auto *if_expr = expect_expr<kira::ast::if_expr>(
-      let_stmt->initializer.get(), kira::ast::node_kind::if_expr,
+  auto *if_expr = expect_expr<cinder::ast::if_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::if_expr,
       "expected multi-line `if` initializer to parse as an if-expression");
 
   expect(if_expr->branches.size() == 2,
@@ -1239,8 +1239,8 @@ auto test_parser_accepts_multi_arity_higher_kinded_params() -> void {
                    " g: fn(B) -> D) -> F[C, D]\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::trait_decl,
       "expected bifunctor trait declaration");
   expect(trait_decl->type_params.size() == 1,
          "expected one trait type parameter");
@@ -1274,45 +1274,45 @@ auto test_parser_accepts_phase1_audit_regressions() -> void {
   expect(parsed.file->items.size() == 6,
          "expected audit regression source to parse cleanly");
 
-  auto *module_use = expect_node<kira::ast::use_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::use_decl,
+  auto *module_use = expect_node<cinder::ast::use_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
       "expected module-visible use declaration");
-  expect(module_use->visibility == kira::ast::visibility::module,
+  expect(module_use->visibility == cinder::ast::visibility::module,
          "expected module visibility on use declaration");
 
-  auto *file_module = expect_node<kira::ast::sub_module_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::sub_module_decl,
+  auto *file_module = expect_node<cinder::ast::sub_module_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::sub_module_decl,
       "expected file-visible submodule declaration");
-  expect(file_module->visibility == kira::ast::visibility::file,
+  expect(file_module->visibility == cinder::ast::visibility::file,
          "expected file visibility on module declaration");
 
-  auto *impl_decl = expect_node<kira::ast::impl_decl>(
-      parsed.file->items[4].get(), kira::ast::node_kind::impl_decl,
+  auto *impl_decl = expect_node<cinder::ast::impl_decl>(
+      parsed.file->items[4].get(), cinder::ast::node_kind::impl_decl,
       "expected higher-kinded impl declaration");
   expect(impl_decl->trait_type != nullptr, "expected impl trait type");
   expect(impl_decl->for_type == nullptr,
          "expected impl without explicit `for` type to omit for_type");
 
-  auto *handle_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[5].get(), kira::ast::node_kind::func_decl,
+  auto *handle_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[5].get(), cinder::ast::node_kind::func_decl,
       "expected async handle function");
   expect(handle_decl->body_stmts.size() == 3,
          "expected handle body statements to be preserved");
 
-  auto *on_stmt = expect_node<kira::ast::let_stmt>(
-      handle_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *on_stmt = expect_node<cinder::ast::let_stmt>(
+      handle_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected await on binding");
-  auto *await_expr = expect_expr<kira::ast::await_expr>(
-      on_stmt->initializer.get(), kira::ast::node_kind::await_expr,
+  auto *await_expr = expect_expr<cinder::ast::await_expr>(
+      on_stmt->initializer.get(), cinder::ast::node_kind::await_expr,
       "expected await expression");
-  auto *on_expr = expect_expr<kira::ast::on_expr>(
-      await_expr->operand.get(), kira::ast::node_kind::on_expr,
+  auto *on_expr = expect_expr<cinder::ast::on_expr>(
+      await_expr->operand.get(), cinder::ast::node_kind::on_expr,
       "expected single-argument on expression");
   expect(on_expr->context_type != nullptr, "expected on context type/value");
   expect(on_expr->sender == nullptr, "expected no second on argument");
 
-  auto *crew_stmt = expect_node<kira::ast::crew_stmt>(
-      handle_decl->body_stmts[1].get(), kira::ast::node_kind::crew_stmt,
+  auto *crew_stmt = expect_node<cinder::ast::crew_stmt>(
+      handle_decl->body_stmts[1].get(), cinder::ast::node_kind::crew_stmt,
       "expected plain crew statement");
   expect(crew_stmt->options.empty(), "expected plain crew without options");
 }
@@ -1331,19 +1331,19 @@ auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two submodule declarations");
 
-  auto *bare = expect_node<kira::ast::sub_module_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+  auto *bare = expect_node<cinder::ast::sub_module_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::sub_module_decl,
       "expected bare submodule declaration");
   expect(bare->name == "inner", "expected submodule named `inner`");
-  expect(bare->visibility == kira::ast::visibility::def,
+  expect(bare->visibility == cinder::ast::visibility::def,
          "expected default visibility on bare `module inner:`");
 
-  auto *explicit_module = expect_node<kira::ast::sub_module_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::sub_module_decl,
+  auto *explicit_module = expect_node<cinder::ast::sub_module_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::sub_module_decl,
       "expected explicitly module-visible submodule declaration");
   expect(explicit_module->name == "explicit_inner",
          "expected submodule named `explicit_inner`");
-  expect(explicit_module->visibility == kira::ast::visibility::module,
+  expect(explicit_module->visibility == cinder::ast::visibility::module,
          "expected explicit module visibility on `module module ...:`");
 }
 
@@ -1387,27 +1387,27 @@ auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function");
   expect(run_decl->body_stmts.size() == 3,
          "expected three statements in run's body");
 
   // A single unnamed bracket argument on a bare identifier is real indexing.
-  auto *index_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *index_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected indexing let binding");
-  expect_expr<kira::ast::index_expr>(
-      index_stmt->initializer.get(), kira::ast::node_kind::index_expr,
+  expect_expr<cinder::ast::index_expr>(
+      index_stmt->initializer.get(), cinder::ast::node_kind::index_expr,
       "expected `values[0]` to parse as an index expression");
 
   // Bracket args immediately followed by a parenthesized call remain an
   // (outer) call expression — explicit generic instantiation.
-  auto *call_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  auto *call_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected generic-instantiation let binding");
-  expect_expr<kira::ast::call_expr>(
-      call_stmt->initializer.get(), kira::ast::node_kind::call_expr,
+  expect_expr<cinder::ast::call_expr>(
+      call_stmt->initializer.get(), cinder::ast::node_kind::call_expr,
       "expected `identity[int32](5)` to parse as a call expression");
 }
 
@@ -1428,28 +1428,28 @@ auto test_parser_accepts_generic_struct_literal_type_args() -> void {
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
-  auto *run_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function");
   expect(run_decl->body_stmts.size() == 3,
          "expected three statements in run's body");
 
-  auto *literal_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *literal_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected generic struct literal let binding");
-  auto *literal = expect_expr<kira::ast::struct_expr>(
-      literal_stmt->initializer.get(), kira::ast::node_kind::struct_expr,
+  auto *literal = expect_expr<cinder::ast::struct_expr>(
+      literal_stmt->initializer.get(), cinder::ast::node_kind::struct_expr,
       "expected `box[int32] { cur: 0 }` to parse as a struct literal");
   expect(literal->type_name != nullptr,
          "expected the generic struct literal to preserve its type name");
-  auto *type_name = expect_expr<kira::ast::ident_expr>(
-      literal->type_name.get(), kira::ast::node_kind::ident_expr,
+  auto *type_name = expect_expr<cinder::ast::ident_expr>(
+      literal->type_name.get(), cinder::ast::node_kind::ident_expr,
       "expected a bare identifier type name");
   expect(type_name->name == "box", "expected type name `box`");
   expect(literal->type_args.size() == 1, "expected one explicit type argument");
   expect(literal->type_args[0].value != nullptr &&
              literal->type_args[0].value->kind ==
-                 kira::ast::node_kind::named_type,
+                 cinder::ast::node_kind::named_type,
          "expected the explicit type argument to resolve as a named type");
   expect(literal->fields.size() == 1,
          "expected the one field initializer to survive");
@@ -1457,11 +1457,11 @@ auto test_parser_accepts_generic_struct_literal_type_args() -> void {
   // A single unnamed bracket argument on a bare identifier with no `{`
   // following must still parse as ordinary indexing — the speculative
   // type-argument-list parse must back out cleanly.
-  auto *index_stmt = expect_node<kira::ast::let_stmt>(
-      run_decl->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+  auto *index_stmt = expect_node<cinder::ast::let_stmt>(
+      run_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
       "expected indexing let binding");
-  expect_expr<kira::ast::index_expr>(
-      index_stmt->initializer.get(), kira::ast::node_kind::index_expr,
+  expect_expr<cinder::ast::index_expr>(
+      index_stmt->initializer.get(), cinder::ast::node_kind::index_expr,
       "expected `values[0]` to still parse as an index expression");
 }
 
@@ -1474,15 +1474,15 @@ auto test_parser_accepts_extend_block() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one top-level extend item");
 
-  auto *extend_decl = expect_node<kira::ast::extend_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::extend_decl,
+  auto *extend_decl = expect_node<cinder::ast::extend_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::extend_decl,
       "expected extend declaration");
   expect(extend_decl->for_type != nullptr,
          "expected extend block to carry a target type");
   expect(extend_decl->items.size() == 1,
          "expected one method in the extend block");
-  expect_node<kira::ast::func_decl>(
-      extend_decl->items[0].get(), kira::ast::node_kind::func_decl,
+  expect_node<cinder::ast::func_decl>(
+      extend_decl->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected extend member to be a function declaration");
 }
 
@@ -1498,8 +1498,8 @@ auto test_parser_accepts_parameterized_extend_block() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one top-level extend item");
 
-  auto *extend_decl = expect_node<kira::ast::extend_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::extend_decl,
+  auto *extend_decl = expect_node<cinder::ast::extend_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::extend_decl,
       "expected extend declaration");
   expect(extend_decl->type_params.size() == 2,
          "expected extend block to carry both of its type parameters");
@@ -1523,8 +1523,8 @@ auto test_parser_accepts_intrinsic_def() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two intrinsic decls");
 
-  auto *rt_write = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *rt_write = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected rt_write to parse as a function declaration");
   expect(rt_write->modifiers.is_intrinsic,
          "expected rt_write to carry the intrinsic modifier");
@@ -1534,12 +1534,12 @@ auto test_parser_accepts_intrinsic_def() -> void {
   expect(rt_write->return_type != nullptr,
          "expected rt_write to carry a return type");
 
-  auto *rt_stdout = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *rt_stdout = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected rt_stdout to parse as a function declaration");
   expect(rt_stdout->modifiers.is_intrinsic,
          "expected rt_stdout to carry the intrinsic modifier");
-  expect(rt_stdout->visibility == kira::ast::visibility::pub,
+  expect(rt_stdout->visibility == cinder::ast::visibility::pub,
          "expected pub intrinsic def to preserve visibility");
 }
 
@@ -1568,23 +1568,23 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 4, "expected four function declarations");
 
-  auto *counter = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *counter = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected counter to parse as a function declaration");
   expect(counter->modifiers.is_generator,
          "expected counter to carry the generator modifier");
   expect(counter->return_type != nullptr, "expected counter return type");
-  expect(counter->return_type->kind == kira::ast::node_kind::existential_type,
+  expect(counter->return_type->kind == cinder::ast::node_kind::existential_type,
          "expected `some iterator[int32]` to parse as an existential type");
   auto *ety =
-      dynamic_cast<kira::ast::existential_type *>(counter->return_type.get());
+      dynamic_cast<cinder::ast::existential_type *>(counter->return_type.get());
   expect(ety->value.terms.size() == 1, "expected one bound term");
   expect(ety->value.terms[0].type != nullptr,
          "expected the bound term's type to be present");
-  expect(ety->value.terms[0].type->kind == kira::ast::node_kind::named_type,
+  expect(ety->value.terms[0].type->kind == cinder::ast::node_kind::named_type,
          "expected `iterator[int32]` to parse as a named type");
   auto *iterator_type =
-      dynamic_cast<kira::ast::named_type *>(ety->value.terms[0].type.get());
+      dynamic_cast<cinder::ast::named_type *>(ety->value.terms[0].type.get());
   expect(iterator_type->path.size() == 1 &&
              iterator_type->path[0] == "iterator",
          "expected bound term to name `iterator`");
@@ -1593,22 +1593,22 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
 
   expect(counter->body_stmts.size() == 2,
          "expected two yield statements in counter's body");
-  auto *first_yield_stmt = expect_node<kira::ast::expr_stmt>(
-      counter->body_stmts[0].get(), kira::ast::node_kind::expr_stmt,
+  auto *first_yield_stmt = expect_node<cinder::ast::expr_stmt>(
+      counter->body_stmts[0].get(), cinder::ast::node_kind::expr_stmt,
       "expected first yield to parse as an expression statement");
-  auto *first_yield = expect_expr<kira::ast::yield_expr>(
-      first_yield_stmt->expr.get(), kira::ast::node_kind::yield_expr,
+  auto *first_yield = expect_expr<cinder::ast::yield_expr>(
+      first_yield_stmt->expr.get(), cinder::ast::node_kind::yield_expr,
       "expected `yield 1` to parse as a yield expression");
   expect(first_yield->value != nullptr, "expected yield to carry a value");
 
-  auto *counter2 = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *counter2 = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected counter2 to parse as a function declaration");
   expect(counter2->modifiers.is_pure && counter2->modifiers.is_generator,
          "expected `pure generator def` to set both modifiers");
 
-  auto *counter3 = expect_node<kira::ast::func_decl>(
-      parsed.file->items[2].get(), kira::ast::node_kind::func_decl,
+  auto *counter3 = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[2].get(), cinder::ast::node_kind::func_decl,
       "expected counter3 to parse as a function declaration");
   expect(counter3->modifiers.is_pure && counter3->modifiers.is_generator,
          "expected `generator pure def` to set both modifiers regardless of "
@@ -1617,16 +1617,16 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
   // Regression: `await yield` (the no-value coroutine handoff form) must
   // still parse unchanged now that bare `yield <expr>` is also a primary
   // expression — the two are disambiguated by leading token.
-  auto *check_await = expect_node<kira::ast::func_decl>(
-      parsed.file->items[3].get(), kira::ast::node_kind::func_decl,
+  auto *check_await = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[3].get(), cinder::ast::node_kind::func_decl,
       "expected check_await to parse as a function declaration");
   expect(check_await->body_stmts.size() == 1,
          "expected a single statement in check_await's body");
-  auto *await_stmt = expect_node<kira::ast::expr_stmt>(
-      check_await->body_stmts[0].get(), kira::ast::node_kind::expr_stmt,
+  auto *await_stmt = expect_node<cinder::ast::expr_stmt>(
+      check_await->body_stmts[0].get(), cinder::ast::node_kind::expr_stmt,
       "expected `await yield` to parse as an expression statement");
-  auto *await_yield = expect_expr<kira::ast::await_expr>(
-      await_stmt->expr.get(), kira::ast::node_kind::await_expr,
+  auto *await_yield = expect_expr<cinder::ast::await_expr>(
+      await_stmt->expr.get(), cinder::ast::node_kind::await_expr,
       "expected `await yield` to parse as an await expression");
   expect(await_yield->is_yield,
          "expected `await yield` to set the no-value coroutine handoff flag");
@@ -1646,27 +1646,27 @@ auto test_parser_accepts_mut_binding_pattern() -> void {
   expect(parsed.file->items.size() == 2,
          "expected trait and function declarations");
 
-  auto *trait_decl = expect_node<kira::ast::trait_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::trait_decl,
+  auto *trait_decl = expect_node<cinder::ast::trait_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::trait_decl,
       "expected trait declaration");
-  auto *drop_func = expect_node<kira::ast::func_decl>(
-      trait_decl->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *drop_func = expect_node<cinder::ast::func_decl>(
+      trait_decl->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected drop function item");
   expect(drop_func->params.size() == 1, "expected a single self parameter");
-  auto *self_pattern = expect_pattern<kira::ast::binding_pattern>(
-      drop_func->params[0].pattern.get(), kira::ast::node_kind::binding_pattern,
+  auto *self_pattern = expect_pattern<cinder::ast::binding_pattern>(
+      drop_func->params[0].pattern.get(), cinder::ast::node_kind::binding_pattern,
       "expected self to parse as a binding pattern");
   expect(self_pattern->name == "self", "expected the parameter named self");
   expect(self_pattern->is_mut, "expected `mut self` to mark is_mut");
 
-  auto *run_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *run_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected let mut statement");
-  auto *count_pattern = expect_pattern<kira::ast::binding_pattern>(
-      let_stmt->pattern.get(), kira::ast::node_kind::binding_pattern,
+  auto *count_pattern = expect_pattern<cinder::ast::binding_pattern>(
+      let_stmt->pattern.get(), cinder::ast::node_kind::binding_pattern,
       "expected count to parse as a binding pattern");
   expect(count_pattern->is_mut, "expected `let mut count` to mark is_mut");
 }
@@ -1680,20 +1680,20 @@ auto test_parser_splits_string_interpolation() -> void {
                                "  let a = \"hello\"\n"
                                "  let b = \"{{x}} stays literal\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
-    auto *let_a = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_a = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let a statement");
-    expect_expr<kira::ast::literal_expr>(
-        let_a->initializer.get(), kira::ast::node_kind::literal_expr,
+    expect_expr<cinder::ast::literal_expr>(
+        let_a->initializer.get(), cinder::ast::node_kind::literal_expr,
         "expected plain string literal to stay a literal_expr");
-    auto *let_b = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+    auto *let_b = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
         "expected let b statement");
-    auto *lit_b = expect_expr<kira::ast::literal_expr>(
-        let_b->initializer.get(), kira::ast::node_kind::literal_expr,
+    auto *lit_b = expect_expr<cinder::ast::literal_expr>(
+        let_b->initializer.get(), cinder::ast::node_kind::literal_expr,
         "expected doubled-brace string to stay a literal_expr");
     expect(lit_b->value.find("{{") != std::string::npos,
            "expected the doubled braces to remain in the raw token text "
@@ -1707,15 +1707,15 @@ auto test_parser_splits_string_interpolation() -> void {
                                "def run():\n"
                                "  let msg = \"Hello, {name}!\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
-    auto *let_msg = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_msg = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let msg statement");
-    auto *interp = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp = expect_expr<cinder::ast::interpolated_string_expr>(
         let_msg->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr");
     expect(interp->segments.size() == 3,
            "expected literal/expr/literal segments");
@@ -1724,8 +1724,8 @@ auto test_parser_splits_string_interpolation() -> void {
            "expected the leading literal segment text");
     expect(!interp->segments[1].is_literal,
            "expected the middle segment to be an embedded expression");
-    auto *name_ident = expect_expr<kira::ast::ident_expr>(
-        interp->segments[1].value.get(), kira::ast::node_kind::ident_expr,
+    auto *name_ident = expect_expr<cinder::ast::ident_expr>(
+        interp->segments[1].value.get(), cinder::ast::node_kind::ident_expr,
         "expected the embedded expression to be a bare identifier");
     expect(name_ident->name == "name", "expected identifier name `name`");
     expect(!interp->segments[1].self_doc && !interp->segments[1].has_spec,
@@ -1743,16 +1743,16 @@ auto test_parser_splits_string_interpolation() -> void {
                                "  let b = \"{val :{width}.{prec}f}\"\n"
                                "  let c = \"{total=}\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
 
-    auto *let_a = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_a = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let a statement");
-    auto *interp_a = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_a = expect_expr<cinder::ast::interpolated_string_expr>(
         let_a->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr for `{total :.2f}`");
     expect(interp_a->segments.size() == 1, "expected a single segment");
     expect(interp_a->segments[0].has_spec, "expected a parsed format spec");
@@ -1763,27 +1763,27 @@ auto test_parser_splits_string_interpolation() -> void {
             std::get<size_t>(interp_a->segments[0].spec.precision) == 2,
         "expected literal precision 2");
 
-    auto *let_b = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+    auto *let_b = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
         "expected let b statement");
-    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_b = expect_expr<cinder::ast::interpolated_string_expr>(
         let_b->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr for the dynamic-width case");
     expect(interp_b->segments.size() == 1, "expected a single segment");
-    expect(std::holds_alternative<kira::ast::ptr<kira::ast::expr>>(
+    expect(std::holds_alternative<cinder::ast::ptr<cinder::ast::expr>>(
                interp_b->segments[0].spec.width),
            "expected a dynamic (sub-expression) width");
-    expect(std::holds_alternative<kira::ast::ptr<kira::ast::expr>>(
+    expect(std::holds_alternative<cinder::ast::ptr<cinder::ast::expr>>(
                interp_b->segments[0].spec.precision),
            "expected a dynamic (sub-expression) precision");
 
-    auto *let_c = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[2].get(), kira::ast::node_kind::let_stmt,
+    auto *let_c = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[2].get(), cinder::ast::node_kind::let_stmt,
         "expected let c statement");
-    auto *interp_c = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_c = expect_expr<cinder::ast::interpolated_string_expr>(
         let_c->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr for `{total=}`");
     expect(interp_c->segments.size() == 1, "expected a single segment");
     expect(interp_c->segments[0].self_doc, "expected self_doc to be set");
@@ -1801,36 +1801,36 @@ auto test_parser_splits_string_interpolation() -> void {
                                "  let a = \"{f(x: 1)}\"\n"
                                "  let b = \"{point { x: 1, y: 2 } }\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
-    auto *let_a = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_a = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let a statement");
-    auto *interp_a = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_a = expect_expr<cinder::ast::interpolated_string_expr>(
         let_a->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr for `{f(x: 1)}`");
     expect(interp_a->segments.size() == 1, "expected a single segment");
     expect(!interp_a->segments[0].has_spec,
            "expected the named-arg `:` to not be mistaken for a format spec");
-    expect_expr<kira::ast::call_expr>(
-        interp_a->segments[0].value.get(), kira::ast::node_kind::call_expr,
+    expect_expr<cinder::ast::call_expr>(
+        interp_a->segments[0].value.get(), cinder::ast::node_kind::call_expr,
         "expected the embedded expression to be a call");
 
-    auto *let_b = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+    auto *let_b = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
         "expected let b statement");
-    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_b = expect_expr<cinder::ast::interpolated_string_expr>(
         let_b->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected an interpolated_string_expr for the struct-literal case");
     expect(interp_b->segments.size() == 1, "expected a single segment");
     expect(!interp_b->segments[0].has_spec,
            "expected the struct literal's own fields to not be mistaken for "
            "a format spec");
-    expect_expr<kira::ast::struct_expr>(
-        interp_b->segments[0].value.get(), kira::ast::node_kind::struct_expr,
+    expect_expr<cinder::ast::struct_expr>(
+        interp_b->segments[0].value.get(), cinder::ast::node_kind::struct_expr,
         "expected the embedded expression to be a struct literal");
   }
 
@@ -1845,18 +1845,18 @@ auto test_parser_splits_string_interpolation() -> void {
                                "  let c = \"{x <= y}\"\n"
                                "  let d = \"{x >= y}\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
     const std::array<size_t, 4> stmt_indices = {0, 1, 2, 3};
     const std::array<std::string_view, 4> labels = {"==", "!=", "<=", ">="};
     for (size_t i = 0; i < stmt_indices.size(); ++i) {
-      auto *let_stmt = expect_node<kira::ast::let_stmt>(
+      auto *let_stmt = expect_node<cinder::ast::let_stmt>(
           run_func->body_stmts.at(stmt_indices.at(i)).get(),
-          kira::ast::node_kind::let_stmt, "expected a let statement");
-      auto *interp = expect_expr<kira::ast::interpolated_string_expr>(
+          cinder::ast::node_kind::let_stmt, "expected a let statement");
+      auto *interp = expect_expr<cinder::ast::interpolated_string_expr>(
           let_stmt->initializer.get(),
-          kira::ast::node_kind::interpolated_string_expr,
+          cinder::ast::node_kind::interpolated_string_expr,
           "expected an interpolated_string_expr");
       expect(interp->segments.size() == 1, "expected a single segment");
       expect(!interp->segments[0].self_doc,
@@ -1865,8 +1865,8 @@ auto test_parser_splits_string_interpolation() -> void {
       expect(!interp->segments[0].has_spec,
              std::string("expected no format spec for `") +
                  std::string(labels.at(i)) + "`");
-      expect_expr<kira::ast::binary_expr>(
-          interp->segments[0].value.get(), kira::ast::node_kind::binary_expr,
+      expect_expr<cinder::ast::binary_expr>(
+          interp->segments[0].value.get(), cinder::ast::node_kind::binary_expr,
           std::string("expected the embedded expression to be a `") +
               std::string(labels.at(i)) + "` comparison");
     }
@@ -1881,23 +1881,23 @@ auto test_parser_splits_string_interpolation() -> void {
                                "  let a = \"\\u{1F600}\"\n"
                                "  let b = \"emoji \\u{1F600} and {name}\"\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function declaration");
-    auto *let_a = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_a = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let a statement");
-    expect_expr<kira::ast::literal_expr>(
-        let_a->initializer.get(), kira::ast::node_kind::literal_expr,
+    expect_expr<cinder::ast::literal_expr>(
+        let_a->initializer.get(), cinder::ast::node_kind::literal_expr,
         "expected a `\\u{...}`-only string to stay a literal_expr, not be "
         "mistaken for an interpolation");
 
-    auto *let_b = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[1].get(), kira::ast::node_kind::let_stmt,
+    auto *let_b = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
         "expected let b statement");
-    auto *interp_b = expect_expr<kira::ast::interpolated_string_expr>(
+    auto *interp_b = expect_expr<cinder::ast::interpolated_string_expr>(
         let_b->initializer.get(),
-        kira::ast::node_kind::interpolated_string_expr,
+        cinder::ast::node_kind::interpolated_string_expr,
         "expected the real `{name}` interpolation to still be recognized "
         "past the `\\u{...}` escape");
     expect(interp_b->segments.size() == 2,
@@ -1925,19 +1925,19 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
                                "def run(value):\n"
                                "  let quoted = `value`\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function");
-    auto *let_quoted = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_quoted = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let-quoted statement");
-    auto *quote = expect_expr<kira::ast::quote_expr>(
-        let_quoted->initializer.get(), kira::ast::node_kind::quote_expr,
+    auto *quote = expect_expr<cinder::ast::quote_expr>(
+        let_quoted->initializer.get(), cinder::ast::node_kind::quote_expr,
         "expected a quote_expr initializer");
-    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::expr,
+    expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::expr,
            "expected `value` to classify as an expr fragment");
-    expect_node<kira::ast::ident_expr>(quote->parsed_body.get(),
-                                       kira::ast::node_kind::ident_expr,
+    expect_node<cinder::ast::ident_expr>(quote->parsed_body.get(),
+                                       cinder::ast::node_kind::ident_expr,
                                        "expected the fragment body to be the "
                                        "bare identifier `value`");
   }
@@ -1953,19 +1953,19 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
                                "def run(value):\n"
                                "  let grouped = `(value + 1)`\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function");
-    auto *let_grouped = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_grouped = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let-grouped statement");
-    auto *quote = expect_expr<kira::ast::quote_expr>(
-        let_grouped->initializer.get(), kira::ast::node_kind::quote_expr,
+    auto *quote = expect_expr<cinder::ast::quote_expr>(
+        let_grouped->initializer.get(), cinder::ast::node_kind::quote_expr,
         "expected a quote_expr initializer");
-    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::expr,
+    expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::expr,
            "expected `(value + 1)` to classify as an expr fragment");
-    expect_node<kira::ast::binary_expr>(
-        quote->parsed_body.get(), kira::ast::node_kind::binary_expr,
+    expect_node<cinder::ast::binary_expr>(
+        quote->parsed_body.get(), cinder::ast::node_kind::binary_expr,
         "expected the fragment body to be the binary expression `value + 1`, "
         "with the wrapping parens consumed as quote-grouping syntax rather "
         "than becoming a group_expr node");
@@ -1978,19 +1978,19 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
                                "def run(x):\n"
                                "  let assigned = `x = 5`\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *run_func = expect_node<kira::ast::func_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+    auto *run_func = expect_node<cinder::ast::func_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
         "expected run function");
-    auto *let_assigned = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+    auto *let_assigned = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
         "expected let-assigned statement");
-    auto *quote = expect_expr<kira::ast::quote_expr>(
-        let_assigned->initializer.get(), kira::ast::node_kind::quote_expr,
+    auto *quote = expect_expr<cinder::ast::quote_expr>(
+        let_assigned->initializer.get(), cinder::ast::node_kind::quote_expr,
         "expected a quote_expr initializer");
-    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::stmt,
+    expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::stmt,
            "expected `x = 5` to classify as a stmt fragment");
-    expect_node<kira::ast::assign_stmt>(
-        quote->parsed_body.get(), kira::ast::node_kind::assign_stmt,
+    expect_node<cinder::ast::assign_stmt>(
+        quote->parsed_body.get(), cinder::ast::node_kind::assign_stmt,
         "expected the fragment body to be an assignment statement");
   }
 
@@ -2005,17 +2005,17 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
                                "static let derive_show: def_expr = "
                                "`impl show for point:`\n");
     expect(parsed.error_count == 0, parsed.diagnostics);
-    auto *derive_decl = expect_node<kira::ast::static_decl>(
-        parsed.file->items[0].get(), kira::ast::node_kind::static_decl,
+    auto *derive_decl = expect_node<cinder::ast::static_decl>(
+        parsed.file->items[0].get(), cinder::ast::node_kind::static_decl,
         "expected the derive_show static let");
-    auto *quote = expect_expr<kira::ast::quote_expr>(
-        derive_decl->initializer.get(), kira::ast::node_kind::quote_expr,
+    auto *quote = expect_expr<cinder::ast::quote_expr>(
+        derive_decl->initializer.get(), cinder::ast::node_kind::quote_expr,
         "expected the static binding's initializer to be a quote_expr");
-    expect(quote->fragment_kind == kira::ast::quote_fragment_kind::def_expr,
+    expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::def_expr,
            "expected `impl show for point:` to classify as a def_expr "
            "fragment");
-    expect_node<kira::ast::impl_decl>(
-        quote->parsed_body.get(), kira::ast::node_kind::impl_decl,
+    expect_node<cinder::ast::impl_decl>(
+        quote->parsed_body.get(), cinder::ast::node_kind::impl_decl,
         "expected the fragment body to be an impl declaration");
   }
 }
@@ -2045,26 +2045,26 @@ auto test_parser_parses_multiline_indented_paren_quote() -> void {
                              "        def show(self) -> int32:\n"
                              "            return 42)`\n");
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *fn_decl = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *fn_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected the make_show_impl function");
-  auto *return_stmt = expect_node<kira::ast::return_stmt>(
-      fn_decl->body_stmts[0].get(), kira::ast::node_kind::return_stmt,
+  auto *return_stmt = expect_node<cinder::ast::return_stmt>(
+      fn_decl->body_stmts[0].get(), cinder::ast::node_kind::return_stmt,
       "expected a return statement");
-  auto *quote = expect_expr<kira::ast::quote_expr>(
-      return_stmt->value.get(), kira::ast::node_kind::quote_expr,
+  auto *quote = expect_expr<cinder::ast::quote_expr>(
+      return_stmt->value.get(), cinder::ast::node_kind::quote_expr,
       "expected the returned value to be a quote_expr");
-  expect(quote->fragment_kind == kira::ast::quote_fragment_kind::def_expr,
+  expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::def_expr,
          "expected the quoted `impl` to classify as a def_expr fragment");
-  auto *impl = expect_node<kira::ast::impl_decl>(
-      quote->parsed_body.get(), kira::ast::node_kind::impl_decl,
+  auto *impl = expect_node<cinder::ast::impl_decl>(
+      quote->parsed_body.get(), cinder::ast::node_kind::impl_decl,
       "expected the fragment body to be an impl declaration");
   expect(impl->items.size() == 1,
          "expected the quoted impl to contain exactly one method — if the "
          "lexer failed to preserve indentation inside `` `(...)` ``, this "
          "would be empty instead");
-  auto *method = expect_node<kira::ast::func_decl>(
-      impl->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *method = expect_node<cinder::ast::func_decl>(
+      impl->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected the quoted impl's item to be the `show` method");
   expect(method->name == "show", "expected the method to be named `show`");
   expect(method->body_stmts.size() == 1,
@@ -2079,27 +2079,27 @@ auto test_script_module_synthesizes_main() -> void {
                              "def greet(name: str) -> unit:\n"
                              "    println(\"Hi, {name}\")\n"
                              "\n"
-                             "let who = \"kira\"\n"
+                             "let who = \"cinder\"\n"
                              "greet(who)\n");
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2,
          "expected the greet declaration plus one synthesized `main`");
-  auto *greet = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *greet = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected the greet declaration to stay a top-level item");
   expect(greet->name == "greet", "expected greet to keep its name");
-  auto *synthesized = expect_node<kira::ast::func_decl>(
-      parsed.file->items[1].get(), kira::ast::node_kind::func_decl,
+  auto *synthesized = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[1].get(), cinder::ast::node_kind::func_decl,
       "expected a synthesized function appended after the declarations");
   expect(synthesized->name == "main",
          "expected the synthesized function to be named `main`");
   expect(synthesized->body_stmts.size() == 2,
          "expected both top-level statements to become `main`'s body");
-  expect_node<kira::ast::let_stmt>(synthesized->body_stmts[0].get(),
-                                   kira::ast::node_kind::let_stmt,
+  expect_node<cinder::ast::let_stmt>(synthesized->body_stmts[0].get(),
+                                   cinder::ast::node_kind::let_stmt,
                                    "expected the `let` to run first in `main`");
-  auto *ret = expect_node<kira::ast::named_type>(
-      synthesized->return_type.get(), kira::ast::node_kind::named_type,
+  auto *ret = expect_node<cinder::ast::named_type>(
+      synthesized->return_type.get(), cinder::ast::node_kind::named_type,
       "expected the synthesized `main` to be annotated `-> unit`");
   expect(ret->path.size() == 1 && ret->path[0] == "unit",
          "expected the synthesized return type to name `unit`");
@@ -2152,16 +2152,16 @@ auto test_parser_accepts_signature_decl() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one signature item");
 
-  auto *sig = expect_node<kira::ast::signature_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::signature_decl,
+  auto *sig = expect_node<cinder::ast::signature_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::signature_decl,
       "expected a signature_decl");
   expect(sig->name == "backend", "expected signature name `backend`");
   expect(sig->items.size() == 4, "expected four signature members");
-  expect(sig->items[0]->kind == kira::ast::node_kind::associated_type_decl_node,
+  expect(sig->items[0]->kind == cinder::ast::node_kind::associated_type_decl_node,
          "expected abstract `type conn` member");
-  expect(sig->items[1]->kind == kira::ast::node_kind::func_decl,
+  expect(sig->items[1]->kind == cinder::ast::node_kind::func_decl,
          "expected `def connect` member");
-  expect(sig->items[3]->kind == kira::ast::node_kind::static_decl,
+  expect(sig->items[3]->kind == cinder::ast::node_kind::static_decl,
          "expected `static default_port` member");
 }
 
@@ -2186,8 +2186,8 @@ auto test_parser_accepts_parameterized_module() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one module item");
 
-  auto *mod = expect_node<kira::ast::sub_module_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+  auto *mod = expect_node<cinder::ast::sub_module_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::sub_module_decl,
       "expected a sub_module_decl");
   expect(mod->name == "audited", "expected module name `audited`");
   expect(mod->is_functor(), "expected a parameterized module (functor)");
@@ -2205,8 +2205,8 @@ auto test_parser_plain_submodule_is_not_functor() -> void {
                              "    def f() -> unit:\n"
                              "        unit\n");
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *mod = expect_node<kira::ast::sub_module_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::sub_module_decl,
+  auto *mod = expect_node<cinder::ast::sub_module_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::sub_module_decl,
       "expected a sub_module_decl");
   expect(!mod->is_functor(), "a plain submodule must not be a functor");
   expect(mod->type_params.empty(), "expected no module parameters");
@@ -2219,15 +2219,15 @@ auto test_parser_accepts_functor_instantiation_use() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one use item");
 
-  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
-                                               kira::ast::node_kind::use_decl,
+  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
+                                               cinder::ast::node_kind::use_decl,
                                                "expected a use_decl");
   expect(use->path.size() == 1 && use->path[0] == "audited",
          "expected functor path `audited` to be preserved intact");
   expect(use->instantiation_args.size() == 1,
          "expected one instantiation argument");
   expect(use->selector.has_value(), "expected an `as` alias selector");
-  expect(use->selector->kind == kira::ast::use_selector_kind::single,
+  expect(use->selector->kind == cinder::ast::use_selector_kind::single,
          "expected a single-item selector for the alias");
   expect(use->selector->items[0].alias == "db",
          "expected the instantiation to be aliased `db`");
@@ -2238,8 +2238,8 @@ auto test_parser_accepts_nested_functor_instantiation() -> void {
                              "\n"
                              "use audited[cached[postgres]]\n");
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
-                                               kira::ast::node_kind::use_decl,
+  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
+                                               cinder::ast::node_kind::use_decl,
                                                "expected a use_decl");
   expect(use->instantiation_args.size() == 1,
          "expected one (nested) instantiation argument");
@@ -2262,16 +2262,16 @@ auto test_parser_accepts_lambda_result_and_paren_params() -> void {
                              "  let g = (3 + 4) * 2\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *run_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
 
-  const auto lambda_at = [&](size_t index) -> kira::ast::lambda_expr * {
-    auto *let_stmt = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+  const auto lambda_at = [&](size_t index) -> cinder::ast::lambda_expr * {
+    auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[index].get(), cinder::ast::node_kind::let_stmt,
         "expected a let statement");
-    return expect_node<kira::ast::lambda_expr>(
-        let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+    return expect_node<cinder::ast::lambda_expr>(
+        let_stmt->initializer.get(), cinder::ast::node_kind::lambda_expr,
         "expected the initializer to parse as a lambda");
   };
 
@@ -2286,10 +2286,10 @@ auto test_parser_accepts_lambda_result_and_paren_params() -> void {
          "expected `(x, y) =>` to parse as two params, not a tuple");
 
   // The disambiguation must not swallow ordinary grouping.
-  auto *group_let = expect_node<kira::ast::let_stmt>(
-      run_func->body_stmts[5].get(), kira::ast::node_kind::let_stmt,
+  auto *group_let = expect_node<cinder::ast::let_stmt>(
+      run_func->body_stmts[5].get(), cinder::ast::node_kind::let_stmt,
       "expected a let statement");
-  expect(group_let->initializer->kind != kira::ast::node_kind::lambda_expr,
+  expect(group_let->initializer->kind != cinder::ast::node_kind::lambda_expr,
          "expected `(3 + 4) * 2` to stay a grouped expression");
 }
 
@@ -2305,16 +2305,16 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
                    "  let f = x => x\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *run_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
 
-  const auto lambda_at = [&](size_t index) -> kira::ast::lambda_expr * {
-    auto *let_stmt = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+  const auto lambda_at = [&](size_t index) -> cinder::ast::lambda_expr * {
+    auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[index].get(), cinder::ast::node_kind::let_stmt,
         "expected a let statement");
-    return expect_node<kira::ast::lambda_expr>(
-        let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+    return expect_node<cinder::ast::lambda_expr>(
+        let_stmt->initializer.get(), cinder::ast::node_kind::lambda_expr,
         "expected the initializer to parse as a lambda");
   };
 
@@ -2322,7 +2322,7 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
   expect(single->captures.has_value(), "expected `[n] x =>` to carry a list");
   expect(single->captures->size() == 1, "expected one capture entry");
   expect((*single->captures)[0].name == "n", "expected the entry to name `n`");
-  expect((*single->captures)[0].mode == kira::ast::capture_mode::by_value,
+  expect((*single->captures)[0].mode == cinder::ast::capture_mode::by_value,
          "expected a bare name to capture by value");
 
   // `[]` (capture nothing) and no list at all (capture implicitly) are
@@ -2336,9 +2336,9 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
   auto *modes = lambda_at(2);
   expect(modes->captures.has_value() && modes->captures->size() == 2,
          "expected two entries, the trailing comma tolerated");
-  expect((*modes->captures)[0].mode == kira::ast::capture_mode::by_ref,
+  expect((*modes->captures)[0].mode == cinder::ast::capture_mode::by_ref,
          "expected `&p` to capture by reference");
-  expect((*modes->captures)[1].mode == kira::ast::capture_mode::by_mut_ref,
+  expect((*modes->captures)[1].mode == cinder::ast::capture_mode::by_mut_ref,
          "expected `&mut q` to capture by mutable reference");
 
   auto *prefixed = lambda_at(3);
@@ -2348,7 +2348,7 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
          "expected the list after `pure move` to be recognized");
   expect(prefixed->return_type != nullptr,
          "expected the declared result to survive a capture list");
-  expect((*prefixed->captures)[0].mode == kira::ast::capture_mode::by_move,
+  expect((*prefixed->captures)[0].mode == cinder::ast::capture_mode::by_move,
          "expected a bare entry under `move [...]` to promote to by_move");
 
   expect(lambda_at(4)->params.size() == 2,
@@ -2363,24 +2363,24 @@ auto test_parser_move_prefix_only_promotes_bare_capture_entries() -> void {
                              "  let a = move [&p, q, &mut r] x => x\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *run_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
-  auto *let_stmt = expect_node<kira::ast::let_stmt>(
-      run_func->body_stmts[0].get(), kira::ast::node_kind::let_stmt,
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      run_func->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
       "expected a let statement");
-  auto *lambda = expect_node<kira::ast::lambda_expr>(
-      let_stmt->initializer.get(), kira::ast::node_kind::lambda_expr,
+  auto *lambda = expect_node<cinder::ast::lambda_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::lambda_expr,
       "expected the initializer to parse as a lambda");
 
   expect(lambda->is_move, "expected `move` to be recorded on the lambda");
   expect(lambda->captures.has_value() && lambda->captures->size() == 3,
          "expected all three capture entries to be recognized");
-  expect((*lambda->captures)[0].mode == kira::ast::capture_mode::by_ref,
+  expect((*lambda->captures)[0].mode == cinder::ast::capture_mode::by_ref,
          "expected `&p` to stay by-reference under `move`");
-  expect((*lambda->captures)[1].mode == kira::ast::capture_mode::by_move,
+  expect((*lambda->captures)[1].mode == cinder::ast::capture_mode::by_move,
          "expected bare `q` to promote to by_move under `move`");
-  expect((*lambda->captures)[2].mode == kira::ast::capture_mode::by_mut_ref,
+  expect((*lambda->captures)[2].mode == cinder::ast::capture_mode::by_mut_ref,
          "expected `&mut r` to stay by-mutable-reference under `move`");
 }
 
@@ -2398,23 +2398,23 @@ auto test_parser_keeps_array_literals_out_of_the_capture_path() -> void {
                              "    let q = v\n");
 
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *run_func = expect_node<kira::ast::func_decl>(
-      parsed.file->items[0].get(), kira::ast::node_kind::func_decl,
+  auto *run_func = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected run function declaration");
 
   for (size_t index = 0; index < 3; ++index) {
-    auto *let_stmt = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+    auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[index].get(), cinder::ast::node_kind::let_stmt,
         "expected a let statement");
-    expect(let_stmt->initializer->kind == kira::ast::node_kind::array_expr,
+    expect(let_stmt->initializer->kind == cinder::ast::node_kind::array_expr,
            "expected a bracketed literal to stay an array expression");
   }
 
   for (size_t index = 3; index < 5; ++index) {
-    auto *let_stmt = expect_node<kira::ast::let_stmt>(
-        run_func->body_stmts[index].get(), kira::ast::node_kind::let_stmt,
+    auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+        run_func->body_stmts[index].get(), cinder::ast::node_kind::let_stmt,
         "expected a let statement");
-    expect(let_stmt->initializer->kind == kira::ast::node_kind::index_expr,
+    expect(let_stmt->initializer->kind == cinder::ast::node_kind::index_expr,
            "expected a bracketed index to stay an index expression");
   }
 }
@@ -2434,8 +2434,8 @@ auto test_parser_accepts_root_module_alias() -> void {
                                    "use pkg as p\n");
   expect(parsed.error_count == 0,
          "expected `use pkg as p` to parse cleanly:\n" + parsed.diagnostics);
-  auto *use = expect_node<kira::ast::use_decl>(parsed.file->items[0].get(),
-                                               kira::ast::node_kind::use_decl,
+  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
+                                               cinder::ast::node_kind::use_decl,
                                                "expected a use declaration");
   expect(use->path == std::vector<std::string>{"pkg"},
          "expected the renamed root module to stay the whole path");

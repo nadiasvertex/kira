@@ -5,7 +5,7 @@
 #include "parse_stage.h"
 #include "src/parser/diagnostic.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Folds every module-scope `static if` block whose condition is
 /// early-evaluable — foldable from literals alone, with no name resolution —
@@ -35,4 +35,4 @@ namespace kira::driver {
 auto fold_static_if_imports(std::vector<parsed_input> &inputs,
                             diagnostic_bag &diagnostics) -> void;
 
-} // namespace kira::driver
+} // namespace cinder::driver

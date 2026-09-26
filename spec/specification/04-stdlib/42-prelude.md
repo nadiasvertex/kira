@@ -32,7 +32,7 @@ Each prelude type/trait/function is specified in full in its owning chapter — 
 
 A file that declares `no_prelude` after its `module` line receives none of the above and must `use` everything it needs, including basic operator traits:
 
-```kira
+```cinder
 module my_module
 no_prelude
 ```

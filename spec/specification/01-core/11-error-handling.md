@@ -8,14 +8,14 @@ Covers `option[T]`/`result[T, E]`, the `?` operator, and the distinction between
 
  Cinder has no exceptions. A function that might produce nothing returns `option[T]`; a function that can fail returns `result[T, E]`, `T` the success value and `E` the error. Both are ordinary sum types (`src/std/option.cn`, `src/std/result.cn`):
 
-```kira
+```cinder
 type option[T] = @some(T) | @none
 type result[T, E] = @ok(T) | @err(E)
 ```
 
 Inspect them with `match`:
 
-```kira
+```cinder
 def find_user(id: int32) -> option[user]:
     ...
 
@@ -26,7 +26,7 @@ match find_user(42):
 
 Errors are ordinary user-defined sum types:
 
-```kira
+```cinder
 type app_error =
     | @file_not_found(str)
     | @permission_denied(str)
@@ -37,7 +37,7 @@ type app_error =
 
 Inside a function whose return type is `result`/`option`, `expr?` unwraps `@ok`/`@some` and yields the payload; on `@err`/`@none` it returns that value from the enclosing function immediately.
 
-```kira
+```cinder
 def load_config(path: str) -> result[config, io_error]:
     let text   = read_file(path)?     # read_file's error is io_error
     let parsed = parse_toml(text)?    # parse_toml's error is parse_error
@@ -55,7 +55,7 @@ The checker (`infer_try` in `src/semantic/check.cpp`) requires:
 
 When the operand is `result[_, E1]` and the enclosing function returns `result[_, E2]` with `E1 != E2`, `?` requires `impl from[E1] for E2` (`std.traits.from`, `src/std/traits.conversion.cn`) and applies it automatically: the failure arm reconstructs `@err(E2.from(e))` instead of forwarding `e` unchanged.
 
-```kira
+```cinder
 use std.traits.from
 
 impl from[parse_error] for app_error:
@@ -88,7 +88,7 @@ Method resolution for `from` selects the first `impl from[...] for E2` block fou
 
 A panic means a bug — an out-of-bounds index, `.unwrap()` on a `@none` believed to be `@some`. Panics are not for expected failure; use `result` for those. `panic()` is a recognized prelude intrinsic (`src/semantic/check.cpp`); `.unwrap()` is defined on `option`/`result` in `src/std/option.cn` / `src/std/result.cn`.
 
-```kira
+```cinder
 let v = some_list[999]      # panics if index is out of bounds
 let x = opt.unwrap()        # panics if opt is none
 panic("should never reach here")

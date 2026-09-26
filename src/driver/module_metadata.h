@@ -11,11 +11,11 @@
 
 #include <filesystem>
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Default output directory for serialized module metadata artifacts.
 inline constexpr std::string_view k_default_metadata_dir =
-    "kira-out/module-metadata";
+    "cinder-out/module-metadata";
 
 /// Metadata artifact written for one successfully compiled module file.
 struct compiled_module {
@@ -99,4 +99,4 @@ build_module_metadata(const ast::file &file,
                       const std::filesystem::path &source_path)
     -> metadata::v1::ModuleMetadata;
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -10,7 +10,7 @@ See [Concurrency Execution Model](../02-intermediate/26-concurrency-execution-mo
 
 Every task carries a cancellation token inherited from its parent `crew`. Cancellation is cooperative: nothing preempts a running task, so a task must check for cancellation itself, either explicitly or at a suspension point.
 
-```kira
+```cinder
 async def long_work() -> result[unit, cancelled]:
     for i in 0..1_000_000:
         if cancel.is_requested(): return @err(@cancelled)
@@ -25,7 +25,7 @@ async def long_work() -> result[unit, cancelled]:
 
 Cancelling a `crew` from outside:
 
-```kira
+```cinder
 let handle = crew c:
     c.spawn(long_work())
 

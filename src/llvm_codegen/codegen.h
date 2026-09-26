@@ -22,7 +22,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 /// Why `compile_module` refused to produce an `llvm::Module` for some HIR
 /// construct. Mirrors `bytecode_compiler::compile_error_kind` deliberately
@@ -61,21 +61,21 @@ struct compiled_module {
 /// both tiers raise the same closed `bytecode::panic_reason` set). Defined
 /// as an ordinary C++ function (`runtime.cpp`) the JIT resolves via process
 /// symbols — see `jit_support.h` for the execution side of this contract.
-inline constexpr const char *kPanicSymbolName = "kira_codegen_panic";
+inline constexpr const char *kPanicSymbolName = "cinder_codegen_panic";
 
 /// The exact symbol name generated IR calls to allocate a heap value
 /// (`spec/codegen-design.md` Decision 3/increment 6) — every non-scalar
 /// value (`str`, `list[T]`, tuple/struct/sum-type/closure) is allocated
 /// through this one entry point, defined in `src/runtime/allocator.h` and
 /// resolved the same way `kPanicSymbolName` already is (process-symbol
-/// lookup for the JIT, ordinary static linking for `kira build`).
+/// lookup for the JIT, ordinary static linking for `cinder build`).
 ///
-/// Named `kira_heap_alloc`, not `kira_rt_alloc`: the `kira_rt_*` prefix is
+/// Named `cinder_heap_alloc`, not `cinder_rt_alloc`: the `cinder_rt_*` prefix is
 /// reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
 /// and `rt_alloc` is now one of them — a Cinder-callable intrinsic whose
-/// native symbol `kira_rt_alloc` takes and returns opaque heap pointers,
+/// native symbol `cinder_rt_alloc` takes and returns opaque heap pointers,
 /// unlike this one's `(i64) -> ptr`.
-inline constexpr const char *kAllocSymbolName = "kira_heap_alloc";
+inline constexpr const char *kAllocSymbolName = "cinder_heap_alloc";
 
 /// Lowers every function in `module` into one `llvm::Module` named after
 /// `module.module_name`, resolving direct calls to other functions in the
@@ -135,4 +135,4 @@ enum class optimization_level : uint8_t { o0 = 0, o1 = 1, o2 = 2, o3 = 3 };
 /// `llvm::orc::LLJIT`.
 auto optimize_module(llvm::Module &module, optimization_level level) -> void;
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

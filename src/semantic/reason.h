@@ -7,12 +7,12 @@
 
 #include "src/semantic/linear_poly.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 // ==========================================================================
 //  Reasoning — the constraint solver
 //
-//  The second of compile time's two machineries (`kira-reference.md`
+//  The second of compile time's two machineries (`cinder-reference.md`
 //  §Compile-Time Semantics): *Evaluation* runs Cinder on values it knows,
 //  *Reasoning* proves facts about values it doesn't. This is Reasoning. It
 //  discharges refinement predicates, dependent-type obligations, and static
@@ -95,4 +95,4 @@ inline constexpr size_t k_atom_limit = 16;
 /// The same guard, on the intermediate constraint count elimination produces.
 inline constexpr size_t k_constraint_limit = 512;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

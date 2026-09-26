@@ -1,6 +1,6 @@
 #include "binding_walk.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
@@ -124,4 +124,4 @@ auto collect_pattern_bindings(const ast::pattern &pattern)
   return out;
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 /// Called from generated IR wherever the bytecode VM would `throw
 /// panic_error` (checked-arithmetic overflow, divide-by-zero, an out-of-
@@ -17,6 +17,6 @@ namespace kira::llvm_codegen {
 /// process-symbol lookup once the JIT looks it up (`jit_support.h`) — this
 /// is a test/JIT-execution concern only, not part of the AOT runtime
 /// support library `spec/codegen-design.md` increment 4 will eventually add.
-extern "C" [[noreturn]] void kira_codegen_panic(uint8_t reason);
+extern "C" [[noreturn]] void cinder_codegen_panic(uint8_t reason);
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

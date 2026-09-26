@@ -49,20 +49,20 @@ Every builtin-method entry with no working lowering was removed from the table o
 
 `std.mem` (`src/std/mem.cn`) wraps the raw `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`) in typed, *element-counted* form. Every function is `machine` and a few lines long; a caller that already knows it holds `T`s never multiplies by `size_of[T]()` itself, because that multiplication is where a buffer overflow comes from.
 
-```kira
+```cinder
 machine def alloc[T](count: usize) -> *mut T
 machine def resize[T](p: *mut T, old_count: usize, new_count: usize) -> *mut T
 machine def free[T](p: *mut T, count: usize) -> unit
 machine def copy[T](dst: *mut T, src: *T, count: usize) -> unit
 ```
 
-Every block is zero-filled, including the grown tail of a `resize`. The allocator behind these is selectable at run time — `KIRA_ALLOCATOR=system` (the default: `calloc`/`realloc`/`free`, memory genuinely reclaimed) or `KIRA_ALLOCATOR=arena` (the historical bump arena, where `free` is a no-op). Code written on `std.mem` must be correct under both, which in practice means it must not depend on a freed block being reused.
+Every block is zero-filled, including the grown tail of a `resize`. The allocator behind these is selectable at run time — `CINDER_ALLOCATOR=system` (the default: `calloc`/`realloc`/`free`, memory genuinely reclaimed) or `CINDER_ALLOCATOR=arena` (the historical bump arena, where `free` is a no-op). Code written on `std.mem` must be correct under both, which in practice means it must not depend on a freed block being reused.
 
 ## `vector[T]` — a list owning its own storage
 
 `vector[T]` (`src/std/list.cn`) is the same data structure as `list[T]`, written in Cinder with no compiler support beyond what any user struct gets:
 
-```kira
+```cinder
 pub type vector[T] = { len: usize, cap: usize, data: *mut T }
 ```
 
@@ -81,11 +81,11 @@ It exists because `list[T]`'s missing operations were never a library omission �
 
 Every method that touches memory is `machine` and short; the public API is entirely safe.
 
-**`free` must be called explicitly.** Cinder runs no scope-exit `drop` glue on either backend (`../../../todo.md` item 6), so a `vector` that goes out of scope leaks its buffer under `KIRA_ALLOCATOR=system`, exactly as every heap value already leaks under the arena. Elements are not dropped either, for the same reason. This is the one place `vector[T]` is worse than `list[T]` today — a bump-arena `list` never promised to free anything, so it had nothing to forget to do.
+**`free` must be called explicitly.** Cinder runs no scope-exit `drop` glue on either backend (`../../../todo.md` item 6), so a `vector` that goes out of scope leaks its buffer under `CINDER_ALLOCATOR=system`, exactly as every heap value already leaks under the arena. Elements are not dropped either, for the same reason. This is the one place `vector[T]` is worse than `list[T]` today — a bump-arena `list` never promised to free anything, so it had nothing to forget to do.
 
 ## Example
 
-```kira
+```cinder
 var xs: list[int32] = []
 xs.push(1)
 xs.push(2)
@@ -96,7 +96,7 @@ xs[0]            # 1
 xs.last()        # @some(3)
 ```
 
-```kira
+```cinder
 use std.list.vector
 
 var v = vector[int32].new()
@@ -121,7 +121,7 @@ v.free()
 
 `vector[T]` implements the four traits that used to be `list[T]`'s exclusive privileges, so it is usable with the same syntax:
 
-```kira
+```cinder
 use std.list.vector
 
 var v: vector[int32] = [10, 20, 30]   # from_array[T]

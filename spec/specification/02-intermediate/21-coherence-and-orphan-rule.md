@@ -18,7 +18,7 @@ To keep the guarantee enforceable across separately compiled packages, an `impl`
 
 When you need a trait you don't own on a type you don't own, wrap the type:
 
-```kira
+```cinder
 type my_id = { inner: foreign_id }     # a newtype you own
 impl show for my_id:                    # allowed — my_id is yours
     def show(self) -> str: self.inner.show()

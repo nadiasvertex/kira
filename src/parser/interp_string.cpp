@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace kira {
+namespace cinder {
 
 namespace {
 
@@ -239,4 +239,4 @@ auto find_matching_brace(std::string_view text, size_t open_pos)
   return std::nullopt;
 }
 
-} // namespace kira
+} // namespace cinder

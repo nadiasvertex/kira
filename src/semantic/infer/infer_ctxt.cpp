@@ -3,7 +3,7 @@
 #include <format>
 #include <utility>
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 namespace {
 
@@ -492,4 +492,4 @@ auto infer_ctxt::unsolved() const -> std::vector<type_id> {
   return open;
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

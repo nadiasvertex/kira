@@ -43,7 +43,7 @@
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 namespace {
 
@@ -210,11 +210,11 @@ using semantic::type_table;
 
 // `decode_string_literal` used to be duplicated here (same reasoning as
 // `decode_char_literal`/`encode_utf8_scalar` above) — now reuses the shared
-// `kira::decode_string_literal` (`src/parser/text_escape.h`), the same way
+// `cinder::decode_string_literal` (`src/parser/text_escape.h`), the same way
 // `bytecode_compiler/compile.cpp` already does, so the doubled-brace
 // (`{{`/`}}`) literal-escape handling `spec/string-formatting-design.md`
 // requires only has to exist in one place.
-using kira::decode_string_literal;
+using cinder::decode_string_literal;
 
 /// Whether `id` is one of the heap-backed representations
 /// `src/runtime/layout.h` describes (`str`, `list`/`option`/`result` and
@@ -255,21 +255,21 @@ using kira::decode_string_literal;
 }
 
 /// Maps an intrinsic's wire-level ABI kind (`src/intrinsics.h`'s
-/// `intrinsic_wire_kind`) to the LLVM type its `kira_rt_*` C-ABI symbol
+/// `intrinsic_wire_kind`) to the LLVM type its `cinder_rt_*` C-ABI symbol
 /// actually declares that parameter/return as.
 [[nodiscard]] auto llvm_type_for(llvm::LLVMContext &ctx,
-                                 kira::intrinsic_wire_kind kind)
+                                 cinder::intrinsic_wire_kind kind)
     -> llvm::Type * {
   switch (kind) {
-  case kira::intrinsic_wire_kind::ptr:
+  case cinder::intrinsic_wire_kind::ptr:
     return llvm::PointerType::get(ctx, 0);
-  case kira::intrinsic_wire_kind::i32:
+  case cinder::intrinsic_wire_kind::i32:
     return llvm::Type::getInt32Ty(ctx);
-  case kira::intrinsic_wire_kind::i64:
+  case cinder::intrinsic_wire_kind::i64:
     return llvm::Type::getInt64Ty(ctx);
-  case kira::intrinsic_wire_kind::f32:
+  case cinder::intrinsic_wire_kind::f32:
     return llvm::Type::getFloatTy(ctx);
-  case kira::intrinsic_wire_kind::f64:
+  case cinder::intrinsic_wire_kind::f64:
     return llvm::Type::getDoubleTy(ctx);
   }
   return llvm::PointerType::get(ctx, 0);
@@ -518,7 +518,7 @@ public:
       llvm::LLVMContext &ctx, const type_table &types,
       const std::unordered_map<std::string, llvm::Function *> &functions,
       llvm::Function *panic_fn, llvm::Function *alloc_fn,
-      const std::array<llvm::Function *, kira::known_intrinsic_names.size()>
+      const std::array<llvm::Function *, cinder::known_intrinsic_names.size()>
           &intrinsic_fns,
       std::string entry_module_name, std::string current_module_name,
       const std::unordered_map<std::string, llvm::GlobalVariable *> &globals)
@@ -598,7 +598,7 @@ public:
   /// Compiles a `generator def`'s declared name into a small *constructor*:
   /// builds the generator's state block (populated with the current
   /// parameter values — every other state slot starts zeroed, courtesy of
-  /// `kira_rt_alloc`'s zero-filled arena allocation, populated later by the
+  /// `cinder_rt_alloc`'s zero-filled arena allocation, populated later by the
   /// step function the first time it becomes live), synthesizes and
   /// compiles the step function (an internal-linkage `llvm::Function`
   /// reachable only through the generator object's own slot, never called
@@ -1873,9 +1873,9 @@ private:
         // `bytecode_compiler::compile_call` — `hir::lower_module` skips
         // them, there is no body to lower), so a call to a known intrinsic
         // name is recognized here instead and dispatched straight to its
-        // `kira_rt_*` C-ABI symbol (declared in `compile_module`,
+        // `cinder_rt_*` C-ABI symbol (declared in `compile_module`,
         // implemented in `src/runtime/io.h`).
-        if (const auto intrinsic_id = kira::intrinsic_index_of(ref.name);
+        if (const auto intrinsic_id = cinder::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
           auto *callee = intrinsic_fns_.at(*intrinsic_id);
           auto args = std::vector<llvm::Value *>{};
@@ -2838,7 +2838,7 @@ private:
   /// an `alloca` inside a loop body would allocate once per iteration and
   /// grow the frame without bound.
   ///
-  /// Zero-initialized to match `kira_heap_alloc`'s guarantee, so that a
+  /// Zero-initialized to match `cinder_heap_alloc`'s guarantee, so that a
   /// buffer behaves the same whichever storage a collection is using. That
   /// is a deliberate choice beyond what `uninit` promises: the type's
   /// contract is that a slot may not hold a valid `T`, and zeroed bytes are
@@ -2918,7 +2918,7 @@ private:
   }
 
   /// Compiled form of `hir_str_decode_scalar` — calls the shared
-  /// `kira::runtime::str_scalar_at` decode (`src/runtime/string_ops.h`)
+  /// `cinder::runtime::str_scalar_at` decode (`src/runtime/string_ops.h`)
   /// through its raw-pointer `extern "C"` wrapper, `getOrInsertFunction`-
   /// declared on first use rather than pre-declared alongside `panic_fn_`/
   /// `alloc_fn_`: this call site is the only one
@@ -2944,7 +2944,7 @@ private:
         llvm::Type::getInt32Ty(ctx_),
         {llvm::PointerType::get(ctx_, 0), i64_ty, i64_ty}, /*isVarArg=*/false);
     auto callee = current_fn_->getParent()->getOrInsertFunction(
-        "kira_rt_str_scalar_at", fn_ty);
+        "cinder_rt_str_scalar_at", fn_ty);
     return builder_.CreateCall(callee, {view->data, view->len, *offset},
                                "str.decode_scalar");
   }
@@ -2972,7 +2972,7 @@ private:
         i64_ty, {llvm::PointerType::get(ctx_, 0), i64_ty, i64_ty},
         /*isVarArg=*/false);
     auto callee = current_fn_->getParent()->getOrInsertFunction(
-        "kira_rt_str_scalar_width", fn_ty);
+        "cinder_rt_str_scalar_width", fn_ty);
     return builder_.CreateCall(callee, {view->data, view->len, *offset},
                                "str.scalar_width");
   }
@@ -3191,7 +3191,7 @@ private:
                      "subject — this should have been rejected by the "
                      "type checker"});
     }
-    const auto intrinsic_id = kira::intrinsic_index_of("rt_str_eq");
+    const auto intrinsic_id = cinder::intrinsic_index_of("rt_str_eq");
     if (!intrinsic_id.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
@@ -4342,7 +4342,7 @@ private:
   const std::unordered_map<std::string, llvm::Function *> &functions_;
   llvm::Function *panic_fn_;
   llvm::Function *alloc_fn_;
-  std::array<llvm::Function *, kira::known_intrinsic_names.size()>
+  std::array<llvm::Function *, cinder::known_intrinsic_names.size()>
       intrinsic_fns_;
   std::string entry_module_name_;
   std::string current_module_name_;
@@ -4405,7 +4405,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
 
   // `intrinsic def` declarations (src/intrinsics.h): fixed native entry
   // points, each parameter/return typed at its own wire kind
-  // (`kira::intrinsic_wire_kind` — see src/runtime/io.h's, fmt.h's and
+  // (`cinder::intrinsic_wire_kind` — see src/runtime/io.h's, fmt.h's and
   // string.h's doc comments for the exact layout/type each argument's Cinder
   // type maps to). Declared once here, the same way the three runtime
   // externs just above are, and resolved the same way (JIT: process-symbol
@@ -4414,19 +4414,19 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   // archive).
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
   auto intrinsic_fns =
-      std::array<llvm::Function *, kira::known_intrinsic_names.size()>{};
-  for (size_t i = 0; i < kira::known_intrinsic_names.size(); ++i) {
+      std::array<llvm::Function *, cinder::known_intrinsic_names.size()>{};
+  for (size_t i = 0; i < cinder::known_intrinsic_names.size(); ++i) {
     auto param_types = std::vector<llvm::Type *>{};
-    param_types.reserve(kira::known_intrinsic_arities[i]);
-    for (size_t p = 0; p < kira::known_intrinsic_arities[i]; ++p) {
+    param_types.reserve(cinder::known_intrinsic_arities[i]);
+    for (size_t p = 0; p < cinder::known_intrinsic_arities[i]; ++p) {
       param_types.push_back(
-          llvm_type_for(ctx, kira::known_intrinsic_param_kinds[i][p]));
+          llvm_type_for(ctx, cinder::known_intrinsic_param_kinds[i][p]));
     }
-    auto *ret_ty = llvm_type_for(ctx, kira::known_intrinsic_return_kinds[i]);
+    auto *ret_ty = llvm_type_for(ctx, cinder::known_intrinsic_return_kinds[i]);
     auto *fn_type =
         llvm::FunctionType::get(ret_ty, param_types, /*isVarArg=*/false);
     const auto symbol_name =
-        std::format("kira_{}", kira::known_intrinsic_names[i]);
+        std::format("cinder_{}", cinder::known_intrinsic_names[i]);
     intrinsic_fns[i] = llvm::Function::Create(
         fn_type, llvm::Function::ExternalLinkage, symbol_name, llvm_module);
   }
@@ -4533,7 +4533,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
         llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), /*isVarArg=*/false);
     auto *init_fn =
         llvm::Function::Create(init_fn_type, llvm::Function::InternalLinkage,
-                               "__kira_static_init", llvm_module);
+                               "__cinder_static_init", llvm_module);
     auto init_compiler =
         function_compiler(ctx, types, functions, panic_fn, alloc_fn,
                           intrinsic_fns, entry_name, entry_name, global_vars);
@@ -4658,4 +4658,4 @@ auto optimize_module(llvm::Module &module, optimization_level level) -> void {
   module_pass_manager.run(module, module_analysis_manager);
 }
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

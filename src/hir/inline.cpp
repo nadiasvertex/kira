@@ -14,7 +14,7 @@
 #include "src/hir/traversal.h"
 #include "src/intrinsics.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -766,7 +766,7 @@ private:
     // A local holding a closure, or an intrinsic — both backends check for
     // the intrinsic name first, so a user function can't shadow one.
     if (state.bound.contains(ref.symbol) ||
-        kira::intrinsic_index_of(ref.name).has_value()) {
+        cinder::intrinsic_index_of(ref.name).has_value()) {
       return nullptr;
     }
     const auto found = templates_.find(
@@ -882,4 +882,4 @@ auto inline_small_calls(ptr_vec<hir_module> &modules, const type_table &types)
   return stats;
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

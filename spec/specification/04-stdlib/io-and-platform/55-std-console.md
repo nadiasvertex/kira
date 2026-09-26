@@ -8,7 +8,7 @@ Standard stream handle accessors and the `print`/`println`/`eprint`/`eprintln` f
 
 ## Stream handles
 
-```kira
+```cinder
 pub def stdout() -> std.io.file_handle
 pub def stderr() -> std.io.file_handle
 pub def stdin() -> std.io.file_handle
@@ -18,7 +18,7 @@ Each returns a fresh `std.io.file_handle` wrapping the corresponding standard de
 
 ## Printing
 
-```kira
+```cinder
 pub def print(s: str) -> unit
 pub def println(s: str) -> unit
 pub def eprint(s: str) -> unit

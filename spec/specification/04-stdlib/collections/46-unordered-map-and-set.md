@@ -10,7 +10,7 @@ Neither type exists in `src/std` today. This chapter describes the design fixed 
 
 Open addressing, linear probing, Robin Hood hashing with backward-shift deletion:
 
-```kira
+```cinder
 pub type unordered_map[K, V] = {
     ctrl: *mut uint8,   # 0 = empty, otherwise 1 + probe distance
     keys: *mut K,

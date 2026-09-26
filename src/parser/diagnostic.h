@@ -10,7 +10,7 @@
 
 #include "source_location.h"
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  diagnostic severity levels.
@@ -794,4 +794,4 @@ private:
   bool use_color_; ///< Whether ANSI escape sequences are emitted.
 };
 
-} // namespace kira
+} // namespace cinder

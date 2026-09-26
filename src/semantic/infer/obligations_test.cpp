@@ -20,19 +20,19 @@
 
 namespace {
 
-using kira::semantic::type_id;
-using kira::semantic::type_table;
-using kira::semantic::infer::infer_ctxt;
-using kira::semantic::infer::k_no_cause;
-using kira::semantic::infer::obligation;
-using kira::semantic::infer::obligation_kind;
-using kira::semantic::infer::obligation_outcome;
-using kira::semantic::infer::obligation_queue;
-using kira::semantic::infer::obligation_report;
-using kira::semantic::infer::unifier;
-using kira::testing::expect;
+using cinder::semantic::type_id;
+using cinder::semantic::type_table;
+using cinder::semantic::infer::infer_ctxt;
+using cinder::semantic::infer::k_no_cause;
+using cinder::semantic::infer::obligation;
+using cinder::semantic::infer::obligation_kind;
+using cinder::semantic::infer::obligation_outcome;
+using cinder::semantic::infer::obligation_queue;
+using cinder::semantic::infer::obligation_report;
+using cinder::semantic::infer::unifier;
+using cinder::testing::expect;
 
-auto nowhere() -> kira::source_location { return {}; }
+auto nowhere() -> cinder::source_location { return {}; }
 
 struct fixture {
   type_table table;

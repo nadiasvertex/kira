@@ -5,7 +5,7 @@
 
 #include "src/hir/traversal.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -65,4 +65,4 @@ auto find_frame_budget_violations(hir_module &module)
   return violations;
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

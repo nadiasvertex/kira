@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -383,4 +383,4 @@ auto find_reachable_modules(const hir_module &entry,
   return result;
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

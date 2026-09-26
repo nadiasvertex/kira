@@ -4,7 +4,7 @@
 
 #include "src/parser/ast.h"
 
-namespace kira::comptime {
+namespace cinder::comptime {
 
 /// Renames every plain (non-destructuring) `let`/`var`/`where`-binding/
 /// `crew` name introduced *inside* `fragment` — a quoted `expr`/`stmt`
@@ -49,4 +49,4 @@ namespace kira::comptime {
 /// `eval_quote` guards against renaming the same fragment twice.
 void rename_internal_bindings(ast::node &fragment, std::uint64_t &next_id);
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

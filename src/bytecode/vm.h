@@ -9,7 +9,7 @@
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 /// Result of a completed (non-panicking) call: `op_return_unit`-returning
 /// functions produce `has_value == false`, matching how `op_call`'s doc
@@ -63,4 +63,4 @@ private:
   mutable std::vector<slot_value> globals_;
 };
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

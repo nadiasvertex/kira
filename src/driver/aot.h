@@ -10,7 +10,7 @@
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Outcome of building `cli_config::build_function` into a standalone
 /// executable when `cli_config::build` is set. Like `run_outcome`, this is a
@@ -23,9 +23,9 @@ struct build_outcome {
                           ///< reason the build didn't happen otherwise.
 };
 
-} // namespace kira::driver
+} // namespace cinder::driver
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Locates one `alwayslink = True` cc_library's archive under `bazel_package`
 /// (e.g. `src/llvm_codegen`) named `library_name` (e.g. `aot_runtime`), so
@@ -46,4 +46,4 @@ namespace kira::driver {
     const std::filesystem::path &output_path, std::string_view program_name,
     optimization_level level = k_default_optimization_level) -> build_outcome;
 
-} // namespace kira::driver
+} // namespace cinder::driver

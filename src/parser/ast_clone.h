@@ -6,7 +6,7 @@
 #include "ast.h"
 #include "source_location.h"
 
-namespace kira::ast {
+namespace cinder::ast {
 
 /// The first unsupported construct encountered while cloning — see
 /// `clone_func_decl`'s doc comment for what "unsupported" means here.
@@ -92,4 +92,4 @@ struct clone_error {
 [[nodiscard]] auto clone_trait_decl(const trait_decl &decl)
     -> std::expected<ptr<trait_decl>, clone_error>;
 
-} // namespace kira::ast
+} // namespace cinder::ast

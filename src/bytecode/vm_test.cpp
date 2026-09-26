@@ -19,8 +19,8 @@
 
 namespace {
 
-using kira::testing::expect;
-namespace bc = kira::bytecode;
+using cinder::testing::expect;
+namespace bc = cinder::bytecode;
 
 // ---------------------------------------------------------------------------
 // Hand-assembly helpers mirroring `bytecode_compiler::function_compiler`'s
@@ -725,7 +725,7 @@ auto test_return_unit_produces_no_value() -> void {
 // ---------------------------------------------------------------------------
 
 auto intrinsic_id(std::string_view name) -> uint8_t {
-  const auto id = kira::intrinsic_index_of(name);
+  const auto id = cinder::intrinsic_index_of(name);
   expect(id.has_value(), "expected a recognized intrinsic name");
   return id.value();
 }
@@ -899,7 +899,7 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
   //                    truncate})           // result[raw_fd, io_errno]
   //   return r.tag * 1000000 + r.payload.code
   // }
-  const std::string path = "/definitely/does/not/exist/kira-vm-test.cn";
+  const std::string path = "/definitely/does/not/exist/cinder-vm-test.cn";
 
   auto writer = bc::chunk_writer{};
   // r7 = { len: r0, data_ptr: r1 } — the path string.

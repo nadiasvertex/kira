@@ -8,7 +8,7 @@
 
 Adding a *method* to a type is different from making it implement a trait, and it is not restricted. An `extend` block adds methods to any type — including one you do not own — without claiming any conformance:
 
-```kira
+```cinder
 extend str:
     def is_palindrome(self) -> bool:
         self == self.reversed()

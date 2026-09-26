@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace kira {
+namespace cinder {
 
 /// @brief A byte offset into a source file.
 ///
@@ -357,4 +357,4 @@ private:
   std::vector<source_file> files_; ///< Compilation-session source files by id.
 };
 
-} // namespace kira
+} // namespace cinder

@@ -28,7 +28,7 @@
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
-namespace kira::testing {
+namespace cinder::testing {
 
 /// One injected stdlib source: the path it is registered under, and its text.
 struct stdlib_source {
@@ -69,7 +69,7 @@ inline auto find_std_dir() -> fs::path {
 ///
 /// Two of the driver's files are deliberately absent. `platform.cn` is not
 /// injected verbatim by the driver either: it is spliced together with a
-/// generated `TARGET_*`/`KIRA_*` constants block
+/// generated `TARGET_*`/`CINDER_*` constants block
 /// (`assemble_platform_module_source`), which only the driver can produce,
 /// and reproducing that here would drag `//src/driver` (and LLVM with it)
 /// into every semantic test. `fs/path.cn` is its only consumer in the
@@ -207,4 +207,4 @@ inline auto lower_stdlib_modules(const parsed_stdlib &stdlib,
   }
 }
 
-} // namespace kira::testing
+} // namespace cinder::testing

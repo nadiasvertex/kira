@@ -6,8 +6,8 @@ module main
 #  Stops at the first match and returns `option[T]`; `@none` if nothing in
 #  the iterator satisfies the predicate.
 #
-#  Run it:      kira demo/algorithm-find.cn
-#  Compile it:  kira --compile -o algorithm-find demo/algorithm-find.cn
+#  Run it:      cinder demo/algorithm-find.cn
+#  Compile it:  cinder --compile -o algorithm-find demo/algorithm-find.cn
 # ==========================================================================
 
 def main() -> int32:

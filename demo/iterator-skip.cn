@@ -6,8 +6,8 @@ module main
 #  Consumes and drops the first `n` elements before yielding anything;
 #  skipping more than the iterator has just drains it, without error.
 #
-#  Run it:      kira demo/iterator-skip.cn
-#  Compile it:  kira --compile -o iterator-skip demo/iterator-skip.cn
+#  Run it:      cinder demo/iterator-skip.cn
+#  Compile it:  cinder --compile -o iterator-skip demo/iterator-skip.cn
 # ==========================================================================
 
 def main() -> int32:

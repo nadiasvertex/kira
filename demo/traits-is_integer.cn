@@ -4,8 +4,8 @@ module main
 #  `traits.is_integer` — is this type any builtin integer, signed or
 #  unsigned? `is_signed_integer[T]() or is_unsigned_integer[T]()`.
 #
-#  Run it:      kira demo/traits-is_integer.cn
-#  Compile it:  kira --compile -o traits-is_integer demo/traits-is_integer.cn
+#  Run it:      cinder demo/traits-is_integer.cn
+#  Compile it:  cinder --compile -o traits-is_integer demo/traits-is_integer.cn
 # ==========================================================================
 
 use std.traits.is_integer

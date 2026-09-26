@@ -12,7 +12,7 @@
 #include <iostream>
 #include <string_view>
 
-namespace kira::testing {
+namespace cinder::testing {
 
 [[noreturn]] inline auto fail(std::string_view message) -> void {
   std::cerr << "test failed: " << message << '\n';
@@ -25,4 +25,4 @@ inline auto expect(bool condition, std::string_view message) -> void {
   }
 }
 
-} // namespace kira::testing
+} // namespace cinder::testing

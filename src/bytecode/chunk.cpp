@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 auto read_u16(const std::vector<uint8_t> &code, size_t offset) -> uint16_t {
   return static_cast<uint16_t>(static_cast<uint16_t>(code[offset]) |
@@ -101,4 +101,4 @@ auto chunk_writer::finish(std::string name, uint16_t param_count,
                            .string_constants = std::move(string_constants_)};
 }
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

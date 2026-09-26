@@ -17,17 +17,17 @@
 
 namespace {
 
-using kira::testing::expect;
-namespace runtime = kira::runtime;
-namespace semantic = kira::semantic;
+using cinder::testing::expect;
+namespace runtime = cinder::runtime;
+namespace semantic = cinder::semantic;
 
 // Mirrors src/bytecode_compiler/compile_test.cpp's own fixture helper: lex
 // -> parse -> check one source string, then hand back the checked types so
 // this test can look up the type_id for a declared struct/sum type by name.
 struct checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::ast::ptr<kira::ast::file> ast_file;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::ast::ptr<cinder::ast::file> ast_file;
   semantic::checked_types checked;
 };
 
@@ -39,9 +39,9 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   const auto *file = fixture.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
 
-  auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
   fixture.ast_file = parser.parse_file();
   expect(fixture.diag.error_count() == 0, "expected fixture to parse cleanly");
 
@@ -68,10 +68,10 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 auto struct_or_sum_type_of_main_return(const checked_fixture &fixture)
     -> semantic::type_id {
   for (const auto &item : fixture.ast_file->items) {
-    if (item->kind != kira::ast::node_kind::func_decl) {
+    if (item->kind != cinder::ast::node_kind::func_decl) {
       continue;
     }
-    const auto &fn = dynamic_cast<const kira::ast::func_decl &>(*item);
+    const auto &fn = dynamic_cast<const cinder::ast::func_decl &>(*item);
     if (fn.name != "main" || fn.return_type == nullptr) {
       continue;
     }
@@ -80,7 +80,7 @@ auto struct_or_sum_type_of_main_return(const checked_fixture &fixture)
            "expected main's declared return type to be recorded");
     return found->second;
   }
-  kira::testing::fail("expected fixture to declare def main");
+  cinder::testing::fail("expected fixture to declare def main");
 }
 
 auto test_struct_field_slots_match_declaration_order() -> void {

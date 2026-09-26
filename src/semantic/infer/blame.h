@@ -11,7 +11,7 @@
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  Blame
@@ -163,4 +163,4 @@ struct stalled_variable {
 [[nodiscard]] auto explain_stall(const stalled_variable &stalled)
     -> blame_report;
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

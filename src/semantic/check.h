@@ -7,7 +7,7 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Run name resolution and type checking over every parsed module.
 ///
@@ -39,4 +39,4 @@ check_program(const std::vector<parsed_module> &inputs,
               diagnostic_bag &diag, std::vector<bool> &file_has_errors)
     -> checked_types;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

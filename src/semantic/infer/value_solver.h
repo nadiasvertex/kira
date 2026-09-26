@@ -5,7 +5,7 @@
 
 #include "src/semantic/linear_poly.h"
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 // ==========================================================================
 //  Value solving
@@ -68,4 +68,4 @@ struct value_solution {
                                         const linear_poly &b,
                                         bool unsigned_domain) -> value_solution;
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

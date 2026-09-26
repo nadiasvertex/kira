@@ -14,8 +14,8 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
+using cinder::testing::expect;
+using cinder::testing::fail;
 
 struct source_fixture {
   std::string path;
@@ -43,8 +43,8 @@ auto expect_diagnostic(
 /// test binary is running — mirrors `find_test_data_dir`
 /// (`src/testing/test_data.h`), pointed at `src/std` instead of a
 /// `src/testdata/<test_name>` subdirectory.
-auto find_std_dir() -> kira::testing::fs::path {
-  namespace fs = kira::testing::fs;
+auto find_std_dir() -> cinder::testing::fs::path {
+  namespace fs = cinder::testing::fs;
   auto candidates = std::vector<fs::path>{};
   if (const auto *srcdir = std::getenv("TEST_SRCDIR"); srcdir != nullptr) {
     if (const auto *workspace = std::getenv("TEST_WORKSPACE");
@@ -102,7 +102,7 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "deriving.cn"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
-        .text = kira::testing::load_test_data_file(std_dir.string(), filename),
+        .text = cinder::testing::load_test_data_file(std_dir.string(), filename),
     });
   }
   return fixtures;
@@ -120,11 +120,11 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
   const auto prelude = prelude_fixtures();
   fixtures.insert(fixtures.end(), prelude.begin(), prelude.end());
 
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
   ast_files.reserve(fixtures.size());
   parsed_modules.reserve(fixtures.size());
 
@@ -140,16 +140,16 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     expect(file != nullptr, "expected registered fixture source");
 
     const auto errors_before = diag.error_count();
-    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
 
     if (diag.error_count() > errors_before) {
       file_has_errors[*file_id] = true;
     }
 
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = *file_id,
         .ast_file = ast_file.get(),
     });
@@ -157,31 +157,31 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
   }
 
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected move check test fixtures to parse");
   }
 
   const auto checked =
-      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   // Mirrors `driver.cpp`'s own `validate_semantics` + `check_moves` pairing:
   // move checking is a separate pass over the same checked result, run only
   // over the user's own files (`stdlib_boundary` skips the injected prelude,
   // exactly like the driver's `stdlib_start`).
-  kira::semantic::check_moves(parsed_modules, checked, diag, file_has_errors,
+  cinder::semantic::check_moves(parsed_modules, checked, diag, file_has_errors,
                               static_cast<unsigned>(stdlib_boundary));
 
   return analyzed_session{
-      .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }
 
 auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
   const auto test_data_dir =
-      kira::testing::find_test_data_dir("semantic_move_check_test");
+      cinder::testing::find_test_data_dir("semantic_move_check_test");
   const auto text =
-      kira::testing::load_test_data_file(test_data_dir.string(), filename);
+      cinder::testing::load_test_data_file(test_data_dir.string(), filename);
   return analyze_sources({{.path = std::string(filename), .text = text}});
 }
 

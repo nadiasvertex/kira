@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `algorithm.reverse` — reverse a mutable slice in place.
 #
-#  Run it:      kira demo/algorithm-reverse.cn
-#  Compile it:  kira --compile -o algorithm-reverse demo/algorithm-reverse.cn
+#  Run it:      cinder demo/algorithm-reverse.cn
+#  Compile it:  cinder --compile -o algorithm-reverse demo/algorithm-reverse.cn
 # ==========================================================================
 
 def main() -> int32:

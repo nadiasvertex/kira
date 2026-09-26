@@ -8,7 +8,7 @@
 
 A function that returns a concrete type implementing a trait, but whose exact type is unnameable or unimportant, uses `some trait` as its return type. This is zero-cost static polymorphism: the compiler monomorphizes at each call site.
 
-```kira
+```cinder
 def make_shape() -> some drawable:
     return @circle(10.0)
 
@@ -18,7 +18,7 @@ def make_iter() -> some iterator[int32]:
 
 The caller sees only the trait interface:
 
-```kira
+```cinder
 let s = make_shape()
 s.draw()                    # works — s is known to implement drawable
 # s.radius                  # error — concrete type is hidden
@@ -30,7 +30,7 @@ Because each call site receives a distinct monomorphized type, `some trait` valu
 
 Generic bounds resolve at compile time, so `[T: show]` is monomorphized and costs nothing. But some programs must hold values whose concrete types are not known together at compile time — a `list` of user-defined shapes, handlers registered by plugins loaded at run time. That is open-world polymorphism, and it cannot be monomorphized. For it, `box[trait]` is a **trait object**: an owned, heap-allocated value whose concrete type is erased behind the trait, its methods dispatched through a vtable.
 
-```kira
+```cinder
 trait drawable:
     def area(self) -> float64
 # disk and square are structs that implement drawable

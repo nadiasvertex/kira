@@ -5,8 +5,8 @@ module main
 #
 #  Unlike the name-based predicates above it, this reads `T.kind()`.
 #
-#  Run it:      kira demo/traits-is_struct.cn
-#  Compile it:  kira --compile -o traits-is_struct demo/traits-is_struct.cn
+#  Run it:      cinder demo/traits-is_struct.cn
+#  Compile it:  cinder --compile -o traits-is_struct demo/traits-is_struct.cn
 # ==========================================================================
 
 use std.traits.is_struct

@@ -10,8 +10,8 @@ module main
 #  for the same nested-type-argument parsing reason `traits-is_array.cn`
 #  documents.
 #
-#  Run it:      kira demo/traits-is_slice.cn
-#  Compile it:  kira --compile -o traits-is_slice demo/traits-is_slice.cn
+#  Run it:      cinder demo/traits-is_slice.cn
+#  Compile it:  cinder --compile -o traits-is_slice demo/traits-is_slice.cn
 # ==========================================================================
 
 use std.traits.is_slice

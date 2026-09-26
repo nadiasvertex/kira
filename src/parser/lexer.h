@@ -10,7 +10,7 @@
 #include "source_location.h"
 #include "token.h"
 
-namespace kira {
+namespace cinder {
 
 // ==========================================================================
 //  Lexer — tokenizes Cinder source code.
@@ -1425,4 +1425,4 @@ private:
   std::vector<pending_doc> pending_docs_;
 };
 
-} // namespace kira
+} // namespace cinder

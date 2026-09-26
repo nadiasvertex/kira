@@ -2,7 +2,7 @@
 
 #include "src/hir/nodes.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// Marks every `hir_call` in `fn`'s body that is a tail call, per
 /// spec/specification/03-advanced/39-tail-call-optimization.md: in tail
@@ -30,4 +30,4 @@ namespace kira::hir {
 /// applied to lambda bodies as a followup once that provenance exists.
 auto mark_tail_calls(hir_function &fn) -> void;
 
-} // namespace kira::hir
+} // namespace cinder::hir

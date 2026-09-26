@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace kira::hir {
+namespace cinder::hir {
 
 namespace {
 
@@ -408,4 +408,4 @@ auto live_across_yield(const hir_function &fn) -> std::vector<symbol_id> {
   return std::move(w.live);
 }
 
-} // namespace kira::hir
+} // namespace cinder::hir

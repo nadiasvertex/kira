@@ -11,7 +11,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/types.h"
 
-namespace kira::bytecode_compiler {
+namespace cinder::bytecode_compiler {
 
 /// Why `compile_module`/`compile_function` refused to produce bytecode for
 /// some HIR construct. This compiler targets exactly
@@ -101,4 +101,4 @@ compile_module(std::span<const hir::hir_module *const> modules,
                const semantic::type_table &types)
     -> std::expected<bytecode::bytecode_module, compile_error>;
 
-} // namespace kira::bytecode_compiler
+} // namespace cinder::bytecode_compiler

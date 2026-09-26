@@ -9,12 +9,12 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 
-using kira::lexer;
-using kira::util::append_error;
-using kira::util::normalize_path;
-using kira::util::read_source_file;
+using cinder::lexer;
+using cinder::util::append_error;
+using cinder::util::normalize_path;
+using cinder::util::read_source_file;
 
-namespace kira::driver {
+namespace cinder::driver {
 
 auto parse_sources(const cli_config &cfg, source_manager &sources,
                    diagnostic_bag &session_diagnostics,
@@ -72,4 +72,4 @@ auto parse_sources(const cli_config &cfg, source_manager &sources,
   return parsed_inputs;
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -6,7 +6,7 @@ A trait may be parameterized over a type constructor rather than a concrete type
 
 ## Syntax
 
-Type parameter lists (`type_params`, `type_param` in `spec/kira-grammar.ebnf`) admit a higher-kinded form: `F[_]` (arity 1), `F[_, _]` (arity 2), and so on — one underscore per constructor argument. `is_higher_kinded` and the underscore count are recorded on the AST's `type_param`.
+Type parameter lists (`type_params`, `type_param` in `spec/cinder-grammar.ebnf`) admit a higher-kinded form: `F[_]` (arity 1), `F[_, _]` (arity 2), and so on — one underscore per constructor argument. `is_higher_kinded` and the underscore count are recorded on the AST's `type_param`.
 
 ## Semantics
 
@@ -29,7 +29,7 @@ Substituting a concrete constructor for a parameter normalizes the application t
 
 ### Trait declarations over constructor parameters
 
-```kira
+```cinder
 trait functor[F[_]]:
     def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
 
@@ -42,7 +42,7 @@ Method signatures may apply the trait's constructor parameter; method-local gene
 
 ### Impls for constructors
 
-```kira
+```cinder
 impl monad for option:
     def pure[A](a: A) -> option[A]: @some(a)
     def bind[A, B](ma: option[A], f: fn(A) -> option[B]) -> option[B]:
@@ -63,7 +63,7 @@ Calling `bind(ma, f)` with `ma: option[int32]` against `bind[A, B](ma: M[A], f: 
 
 ## Example
 
-```kira
+```cinder
 trait functor[F[_]]:
     def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
 

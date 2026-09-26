@@ -4,7 +4,7 @@
 #include <format>
 #include <numeric>
 
-namespace kira::semantic::infer {
+namespace cinder::semantic::infer {
 
 auto solve_value_equation(const linear_poly &a, const linear_poly &b,
                           bool unsigned_domain) -> value_solution {
@@ -68,4 +68,4 @@ auto solve_value_equation(const linear_poly &a, const linear_poly &b,
                         .value = poly_constant(solved)};
 }
 
-} // namespace kira::semantic::infer
+} // namespace cinder::semantic::infer

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package kira.metadata.v1;
+package cinder.metadata.v1;
 
 // Serialized summary of one parsed Cinder module file.
 message ModuleMetadata {

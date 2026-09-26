@@ -6,9 +6,9 @@ Covers `use`, visibility, and re-exporting with `pub use`. This is the basic mod
 
 ## `use`
 
-`use_decl`, `use_path`, `use_selector` in `spec/kira-grammar.ebnf`.
+`use_decl`, `use_path`, `use_selector` in `spec/cinder-grammar.ebnf`.
 
-```kira
+```cinder
 use my_app.geometry.point
 use my_app.geometry.{ point, shape }   # multiple at once
 use my_app.geometry.point as pt        # rename
@@ -19,7 +19,7 @@ A `use_selector` may also be `*` for a wildcard import of everything a module ex
 
 ## Visibility
 
-The keyword set is `pub` / `module` / `file` (`ast::visibility` in `src/parser/ast.h`; `spec/kira-grammar.ebnf`'s `visibility` production):
+The keyword set is `pub` / `module` / `file` (`ast::visibility` in `src/parser/ast.h`; `spec/cinder-grammar.ebnf`'s `visibility` production):
 
 ```
 pub     visible to any importer, anywhere
@@ -33,7 +33,7 @@ file    visible only within the immediately enclosing file
 
 `module` visibility reuses the same keyword spelling as the `module` keyword that introduces a submodule declaration (`sub_module_decl = [visibility] "module" IDENT ...`). The parser resolves the two uses with one token of lookahead: a `module` token immediately followed by an identifier is always the submodule-declaration keyword itself (a bare identifier never starts a declaration on its own), so `module module inner:` declares a submodule named `inner` with explicit `module` visibility, while a plain `module inner:` declares it with the (identical) default visibility.
 
-```kira
+```cinder
 module my_app.geometry
 
 pub type point = { pub x: float64, pub y: float64 }
@@ -51,7 +51,7 @@ file def scratch_helper() -> float64:    # file-private
 
 `use_decl` itself takes an optional leading `visibility`; `pub use` brings a name in from another module and re-exports it as part of the current module's own public surface — a facade gathering names from several places into one import point.
 
-```kira
+```cinder
 module my_app
 
 pub use my_app.geometry.{ point, shape }
@@ -78,7 +78,7 @@ No other module is visible. A shared path prefix alone creates no relationship: 
 1. **Local bindings shadow modules.** If the first segment names a binding in an enclosing lexical scope — a `let`/`var`, a parameter, `self`, a pattern binding in a `match` arm, `if let`, `while let`, or `for`, or a `static for` binder — the path is field access on that binding, even when a visible module has the same name. Shadowing is silent: code never has to know which module names exist elsewhere, so a user module named `s` cannot break a library function with a loop variable `s`. The same holds inside compile-time code: a `static def` parameter or a `let` in its body shadows a module exactly as it would at run time.
 2. **Nothing else shares a name with a visible module.** No other name in a module's scope — a `def`, a `static` binding, a `type`, `trait`, `concept`, or `signature`, or a name brought in by `use` — may share its name with a module visible there: one the module *declares* as a child, or one the file *imports*. Two imports may not bind one name if either is a module. This is a compile-time error reported once, where the clash was introduced — at the declaration for a declared child, at the `use` for an import — never at the individual uses:
 
-   ```kira
+   ```cinder
    module a.b
 
    module c              # declares child module a.b.c

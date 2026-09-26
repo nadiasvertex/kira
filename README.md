@@ -14,16 +14,16 @@ The repository currently contains:
 
 ### Run a single-file script
 
-By default, `kira` compiles a source file to bytecode and immediately executes it via the tier-0 VM — no build step needed:
+By default, `cinder` compiles a source file to bytecode and immediately executes it via the tier-0 VM — no build step needed:
 
 ```sh
-kira path/to/module.cn
+cinder path/to/module.cn
 ```
 
 This runs the module's `main` function. Use `--run-function NAME` to execute a different entry point instead:
 
 ```sh
-kira --run-function my_func path/to/module.cn
+cinder --run-function my_func path/to/module.cn
 ```
 
 ### AOT compile a Cinder program
@@ -31,13 +31,13 @@ kira --run-function my_func path/to/module.cn
 Pass `--compile` to compile the module to native code via LLVM and link a standalone executable instead of running it:
 
 ```sh
-kira --compile path/to/module.cn
+cinder --compile path/to/module.cn
 ```
 
 Use `--compile-output PATH` to control where the linked executable is written, and `--compile-function NAME` to choose a different entry point:
 
 ```sh
-kira --compile --compile-output build/my_program --compile-function my_func path/to/module.cn
+cinder --compile --compile-output build/my_program --compile-function my_func path/to/module.cn
 ```
 
 ### Install Cinder
@@ -51,7 +51,7 @@ just install
 This installs to `$HOME/.cn` by default. To install somewhere else, pass a path:
 
 ```sh
-just install /usr/local/kira
+just install /usr/local/cinder
 ```
 
 This works the same way on macOS and Linux.
@@ -81,7 +81,7 @@ fish_add_path $HOME/.cn/bin
 Restart your shell (or source the config file) afterward, then confirm it worked:
 
 ```sh
-kira --help
+cinder --help
 ```
 
 ## How to Build Cinder
@@ -116,12 +116,12 @@ The driver currently:
 
 - Loads and parses each source file
 - Renders lexer/parser diagnostics
-- Writes protobuf-encoded module metadata under `kira-out/module-metadata/` by default
+- Writes protobuf-encoded module metadata under `cinder-out/module-metadata/` by default
 
 Override the metadata output root with:
 
 ```sh
-bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.cn
+bazelisk run //src:cinder -- --metadata-dir build/meta path/to/module.cn
 ```
 
 Current project-owned tests cover:
@@ -147,8 +147,8 @@ Builds release archives (`.tar.bz2`, and `.deb` on Linux) under `dist/`.
 - `src/parser/`: lexer, parser, diagnostics, AST, and parser tests
 - `src/semantic/`: module graph, name resolution, scope and symbol tables, type checking
 - `src/testdata/`: regression test corpora
-- `spec/kira-reference.md`: language reference
-- `spec/kira-grammar.ebnf`: grammar sketch
+- `spec/cinder-reference.md`: language reference
+- `spec/cinder-grammar.ebnf`: grammar sketch
 - `spec/CONVENTIONS.md`: project C++ conventions
 
 ## Status
@@ -158,7 +158,7 @@ The compiler implements a full pipeline from source to execution:
 - Parsing: lexer + recursive-descent parser with error recovery
 - Semantic analysis: module graph construction, name resolution, type checking, and diagnostics
 - Lowering: HIR construction (`src/hir/`)
-- Execution: tier-0 bytecode VM (default `kira` invocation) and LLVM-backed AOT native compilation (`--compile`), both currently limited to increment 1's scalar/control-flow subset of the language
+- Execution: tier-0 bytecode VM (default `cinder` invocation) and LLVM-backed AOT native compilation (`--compile`), both currently limited to increment 1's scalar/control-flow subset of the language
 - Output: protobuf-backed module metadata for each compiled module
 
 Broader language coverage (beyond the scalar/control-flow subset) is still in progress.

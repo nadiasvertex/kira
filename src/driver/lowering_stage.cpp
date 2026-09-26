@@ -8,11 +8,11 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 
-using kira::util::append_text;
-using kira::util::join_strings;
-using kira::util::normalize_path;
+using cinder::util::append_text;
+using cinder::util::join_strings;
+using cinder::util::normalize_path;
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Select a fallback filename stem when the real source has no extension.
 [[nodiscard]] static auto
@@ -250,4 +250,4 @@ auto lower_and_emit_modules(const cli_config &cfg,
   return lowered_modules;
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

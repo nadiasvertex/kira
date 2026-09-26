@@ -10,7 +10,7 @@ A way to ask *what kind of thing* a reflected type or member *is* before decidin
 
 ## `type_kind`
 
-```kira
+```cinder
 type type_kind =
     | @struct_kind
     | @sum_kind
@@ -26,7 +26,7 @@ T.kind() -> type_kind
 
 `T.kind()` never fails — it is the dispatch primitive every conditional query in this chapter and in [`std.traits`](58-std-traits.md) (`is_struct`, `is_sum`, `type_category`) is built from, and it is the fix for the gap above:
 
-```kira
+```cinder
 static def field_names_or_variant_names[T]() -> list[str]:
     match T.kind():
         @struct_kind => for f in T.fields()   => f.name
@@ -38,14 +38,14 @@ static def field_names_or_variant_names[T]() -> list[str]:
 
 Building on the existing per-field/per-variant/per-module-member descriptors ([Compile-Time Execution](../../03-advanced/31-compile-time-execution.md#compile-time-reflection), [Modules as Compile-Time Values](../../03-advanced/36-modules-as-compile-time-values.md#reflecting-on-a-module)):
 
-```kira
+```cinder
 member.is_data_member() -> bool   # true for a struct_field descriptor, false for a function descriptor
 member.type_of() -> type_expr     # the member's declared type, as a splice-ready type_expr
 ```
 
 `member.type_of()` closes a real gap noted in the existing reflection chapter: a struct field descriptor today carries only `type_name: str` (a rendered string, not a usable type — `render_type_expr` collapses generic arguments to `"[..]"` and non-`named_type` shapes to `"<type>"`). `type_of()` instead returns the field's `type_expr` fragment directly from the already-parsed declaration syntax, splice-ready with `~`, sidestepping string rendering (and its precision loss) entirely:
 
-```kira
+```cinder
 static def zero_value[T]() -> expr:
     let parts = for f in T.fields() =>
         `(~(expr.ident(f.name)): zero_value[~(f.type_of())]())`
@@ -54,7 +54,7 @@ static def zero_value[T]() -> expr:
 
 ## Trait/impl queries
 
-```kira
+```cinder
 T.traits() -> list[str]           # names of every trait T has an impl for
 Trait.requires() -> list[str]     # names of traits a trait's own `requires` clause lists
 ```

@@ -15,11 +15,11 @@
 namespace {
 
 [[nodiscard]] auto alloc_slots(size_t count) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_alloc(count * sizeof(uint64_t)));
+  return static_cast<uint64_t *>(cinder_heap_alloc(count * sizeof(uint64_t)));
 }
 
 [[nodiscard]] auto make_str(std::string_view text) -> uint64_t * {
-  auto *bytes = static_cast<char *>(kira_heap_alloc(text.size()));
+  auto *bytes = static_cast<char *>(cinder_heap_alloc(text.size()));
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }
@@ -61,18 +61,18 @@ namespace {
 
 extern "C" {
 
-auto kira_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t * {
+auto cinder_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t * {
   auto out = std::string(view_of(a));
   out += view_of(b);
   return make_str(out);
 }
 
-auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t {
+auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   const auto view = view_of(s);
   size_t count = 0;
   size_t pos = 0;
   while (pos < view.size()) {
-    if (!kira::decode_utf8_scalar(view, pos).has_value()) {
+    if (!cinder::decode_utf8_scalar(view, pos).has_value()) {
       break;
     }
     ++count;
@@ -80,9 +80,9 @@ auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   return count;
 }
 
-auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t * {
+auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t * {
   std::string one;
-  kira::encode_utf8_scalar(codepoint, one);
+  cinder::encode_utf8_scalar(codepoint, one);
   std::string out;
   out.reserve(one.size() * static_cast<size_t>(count));
   for (uint64_t i = 0; i < count; ++i) {
@@ -91,12 +91,12 @@ auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t * {
   return make_str(out);
 }
 
-auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
+auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
   const auto view = view_of(s);
   size_t pos = 0;
   uint64_t seen = 0;
   while (seen < count && pos < view.size()) {
-    if (!kira::decode_utf8_scalar(view, pos).has_value()) {
+    if (!cinder::decode_utf8_scalar(view, pos).has_value()) {
       break;
     }
     ++seen;
@@ -104,7 +104,7 @@ auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
   return make_str(view.substr(0, pos));
 }
 
-auto kira_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
+auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
                               uint32_t uppercase) -> uint64_t * {
   const bool upper = uppercase != 0;
   if (value == 0) {
@@ -123,7 +123,7 @@ auto kira_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
   return make_str(out);
 }
 
-auto kira_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
+auto cinder_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
   const auto prec = static_cast<int>(precision);
   std::array<char, 512> buf{};
   const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
@@ -134,7 +134,7 @@ auto kira_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
   return make_str(std::string_view(buf.data(), result.ptr));
 }
 
-auto kira_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
+auto cinder_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
     -> uint64_t * {
   const auto prec = static_cast<int>(precision);
   const bool upper = uppercase != 0;
@@ -156,7 +156,7 @@ auto kira_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
   return make_str(tidy);
 }
 
-auto kira_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
+auto cinder_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
   const auto prec = static_cast<int>(precision);
   std::array<char, 512> buf{};
   const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
@@ -168,9 +168,9 @@ auto kira_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
       tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
 }
 
-auto kira_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
+auto cinder_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
   std::string out;
-  kira::encode_utf8_scalar(codepoint, out);
+  cinder::encode_utf8_scalar(codepoint, out);
   return make_str(out);
 }
 
@@ -181,11 +181,11 @@ auto kira_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
 // wire kind for a `float32`/`float64` intrinsic parameter is the IEEE-754
 // value itself, not a boxed bit pattern), so the reinterpret is a plain
 // `std::bit_cast`.
-auto kira_rt_bitcast_f64_to_u64(double value) -> uint64_t {
+auto cinder_rt_bitcast_f64_to_u64(double value) -> uint64_t {
   return std::bit_cast<uint64_t>(value);
 }
 
-auto kira_rt_bitcast_f32_to_u32(float value) -> uint32_t {
+auto cinder_rt_bitcast_f32_to_u32(float value) -> uint32_t {
   return std::bit_cast<uint32_t>(value);
 }
 

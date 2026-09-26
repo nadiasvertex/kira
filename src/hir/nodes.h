@@ -13,7 +13,7 @@
 #include "src/parser/token.h"
 #include "src/semantic/types.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 using semantic::k_unknown_type;
 using semantic::type_id;
@@ -1083,4 +1083,4 @@ struct hir_module : hir_item {
         functions(std::move(funcs)) {}
 };
 
-} // namespace kira::hir
+} // namespace cinder::hir

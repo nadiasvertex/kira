@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 namespace {
 
 /// Whether the identifier `name` appears anywhere in `node`'s subtree — the
@@ -1420,4 +1420,4 @@ auto check_borrows(const std::vector<parsed_module> &inputs,
   }
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

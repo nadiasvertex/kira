@@ -17,17 +17,17 @@
 /// (`llvm_codegen/codegen.cpp`) declares each parameter/return at its own
 /// wire kind rather than hardcoding every one as `ptr`.
 extern "C" {
-auto kira_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t *;
-auto kira_rt_str_len_scalars(uint64_t *s) -> uint64_t;
-auto kira_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t *;
-auto kira_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t *;
-auto kira_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
+auto cinder_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t *;
+auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t;
+auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t *;
+auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t *;
+auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
                               uint32_t uppercase) -> uint64_t *;
-auto kira_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t *;
-auto kira_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
+auto cinder_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t *;
+auto cinder_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
     -> uint64_t *;
-auto kira_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t *;
-auto kira_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t *;
-auto kira_rt_bitcast_f64_to_u64(double value) -> uint64_t;
-auto kira_rt_bitcast_f32_to_u32(float value) -> uint32_t;
+auto cinder_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t *;
+auto cinder_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t *;
+auto cinder_rt_bitcast_f64_to_u64(double value) -> uint64_t;
+auto cinder_rt_bitcast_f32_to_u32(float value) -> uint32_t;
 }

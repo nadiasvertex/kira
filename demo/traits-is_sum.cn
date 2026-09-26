@@ -6,8 +6,8 @@ module main
 #
 #  Reads `T.kind()`, same as `is_struct`.
 #
-#  Run it:      kira demo/traits-is_sum.cn
-#  Compile it:  kira --compile -o traits-is_sum demo/traits-is_sum.cn
+#  Run it:      cinder demo/traits-is_sum.cn
+#  Compile it:  cinder --compile -o traits-is_sum demo/traits-is_sum.cn
 # ==========================================================================
 
 use std.traits.is_sum

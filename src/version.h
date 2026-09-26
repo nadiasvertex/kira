@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace kira {
+namespace cinder {
 
 /// Single source of truth for the compiler's version.
 ///
@@ -29,4 +29,4 @@ inline constexpr std::string_view k_version_string = "0.29.0";
 /// build-time macro can't recover a real date at all.
 inline constexpr std::string_view k_release_date = "2026-09-25";
 
-} // namespace kira
+} // namespace cinder

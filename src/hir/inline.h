@@ -5,7 +5,7 @@
 #include "src/hir/nodes.h"
 #include "src/semantic/types.h"
 
-namespace kira::hir {
+namespace cinder::hir {
 
 /// What `inline_small_calls` did, for tests and `--show-compile-details`.
 struct inline_stats {
@@ -51,4 +51,4 @@ struct inline_stats {
 auto inline_small_calls(ptr_vec<hir_module> &modules,
                         const semantic::type_table &types) -> inline_stats;
 
-} // namespace kira::hir
+} // namespace cinder::hir

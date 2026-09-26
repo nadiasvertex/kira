@@ -4,7 +4,7 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/resolution.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Delegates to the options-taking overload with the default options (full
 /// pipeline, including name resolution and type checking).
@@ -45,4 +45,4 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
   return checked_types{};
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

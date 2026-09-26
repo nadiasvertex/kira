@@ -6,7 +6,7 @@
 #include "src/semantic/analysis.h"
 #include "src/semantic/types.h"
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 /// Enforces Cinder's borrow discipline (`spec/specification/02-intermediate/
 /// 14-ownership-and-borrowing.md`) over every checked function and lambda
@@ -97,4 +97,4 @@ auto check_borrows(const std::vector<parsed_module> &inputs,
                    std::vector<bool> &file_has_errors,
                    unsigned skip_from_fileid) -> void;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

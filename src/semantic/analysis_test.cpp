@@ -15,8 +15,8 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
+using cinder::testing::expect;
+using cinder::testing::fail;
 
 namespace fs = std::filesystem;
 
@@ -32,11 +32,11 @@ struct analyzed_session {
 
 auto analyze_sources(const std::vector<source_fixture> &fixtures)
     -> analyzed_session {
-  auto sources = kira::source_manager{};
-  auto diag = kira::diagnostic_bag{};
+  auto sources = cinder::source_manager{};
+  auto diag = cinder::diagnostic_bag{};
   auto file_has_errors = std::vector<bool>{};
-  auto ast_files = std::vector<kira::ast::ptr<kira::ast::file>>{};
-  auto parsed_modules = std::vector<kira::semantic::parsed_module>{};
+  auto ast_files = std::vector<cinder::ast::ptr<cinder::ast::file>>{};
+  auto parsed_modules = std::vector<cinder::semantic::parsed_module>{};
   ast_files.reserve(fixtures.size());
   parsed_modules.reserve(fixtures.size());
 
@@ -52,16 +52,16 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     expect(file != nullptr, "expected registered fixture source");
 
     const auto errors_before = diag.error_count();
-    auto lexer = kira::lexer(file->source(), file->id(), diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
 
     if (diag.error_count() > errors_before) {
       file_has_errors[*file_id] = true;
     }
 
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = *file_id,
         .ast_file = ast_file.get(),
     });
@@ -69,17 +69,17 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
   }
 
   [[maybe_unused]] const auto checked =
-      kira::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
-      .diagnostics = kira::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }
 
 auto load_fixtures(std::string_view test_data_dir)
     -> std::vector<source_fixture> {
-  auto test_dir = kira::testing::find_test_data_dir(test_data_dir);
+  auto test_dir = cinder::testing::find_test_data_dir(test_data_dir);
   auto fixtures = std::vector<source_fixture>{};
 
   for (const auto &entry : fs::directory_iterator(test_dir)) {
@@ -88,7 +88,7 @@ auto load_fixtures(std::string_view test_data_dir)
       fixtures.push_back({
           .path = filename,
           .text =
-              kira::testing::load_test_data_file(test_dir.string(), filename),
+              cinder::testing::load_test_data_file(test_dir.string(), filename),
       });
     }
   }

@@ -8,7 +8,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/parser/source_location.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 /// Parsed source file plus the bookkeeping needed by later driver passes.
 struct parsed_input {
@@ -39,4 +39,4 @@ struct parsed_input {
                                  std::string &diagnostics)
     -> std::vector<parsed_input>;
 
-} // namespace kira::driver
+} // namespace cinder::driver

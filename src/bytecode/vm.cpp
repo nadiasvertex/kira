@@ -23,7 +23,7 @@
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 namespace {
 
@@ -845,7 +845,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   frame f;
   f.function = &fn;
   f.registers.assign(fn.register_count, slot_value{});
-  // Zero-filled, matching `kira_heap_alloc`'s guarantee and the LLVM tier's
+  // Zero-filled, matching `cinder_heap_alloc`'s guarantee and the LLVM tier's
   // `memset` of the same buffer, so a read of an unwritten slot is at least
   // deterministic across tiers rather than exposing whatever the previous
   // frame left behind.
@@ -876,7 +876,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
     -> slot_value {
-  auto *raw = kira_heap_alloc(fields.size() * sizeof(slot_value));
+  auto *raw = cinder_heap_alloc(fields.size() * sizeof(slot_value));
   auto *slots = static_cast<slot_value *>(raw);
   for (size_t i = 0; i < fields.size(); ++i) {
     slots[i] = fields[i];
@@ -1014,7 +1014,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] auto make_runtime_str(std::string_view text) -> slot_value {
-  auto *bytes = kira_heap_alloc(text.size());
+  auto *bytes = cinder_heap_alloc(text.size());
   if (!text.empty()) {
     std::memcpy(bytes, text.data(), text.size());
   }
@@ -1093,38 +1093,38 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
 
 auto intrinsic_rt_str_eq(std::span<const slot_value> args) -> slot_value {
   const auto equal =
-      kira::runtime::str_equal(view_of(args[0]), view_of(args[1]));
+      cinder::runtime::str_equal(view_of(args[0]), view_of(args[1]));
   return slot_value{static_cast<uint64_t>(equal ? 1 : 0)};
 }
 
 auto intrinsic_rt_str_cmp(std::span<const slot_value> args) -> slot_value {
   const auto cmp =
-      kira::runtime::str_compare(view_of(args[0]), view_of(args[1]));
+      cinder::runtime::str_compare(view_of(args[0]), view_of(args[1]));
   return slot_value{static_cast<int64_t>(cmp)};
 }
 
 auto intrinsic_rt_str_find(std::span<const slot_value> args) -> slot_value {
-  return make_find_result(kira::runtime::str_find(
+  return make_find_result(cinder::runtime::str_find(
       view_of(args[0]), view_of(args[1]), static_cast<size_t>(args[2].u)));
 }
 
 auto intrinsic_rt_str_rfind(std::span<const slot_value> args) -> slot_value {
   return make_find_result(
-      kira::runtime::str_rfind(view_of(args[0]), view_of(args[1])));
+      cinder::runtime::str_rfind(view_of(args[0]), view_of(args[1])));
 }
 
 auto intrinsic_rt_str_reverse(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(kira::runtime::str_reverse(view_of(args[0])));
+  return make_runtime_str(cinder::runtime::str_reverse(view_of(args[0])));
 }
 
 auto intrinsic_rt_str_trim(std::span<const slot_value> args) -> slot_value {
   const auto mode =
-      static_cast<kira::runtime::trim_mode>(static_cast<uint8_t>(args[1].u));
-  return make_runtime_str(kira::runtime::str_trim(view_of(args[0]), mode));
+      static_cast<cinder::runtime::trim_mode>(static_cast<uint8_t>(args[1].u));
+  return make_runtime_str(cinder::runtime::str_trim(view_of(args[0]), mode));
 }
 
 auto intrinsic_rt_str_replace(std::span<const slot_value> args) -> slot_value {
-  return make_runtime_str(kira::runtime::str_replace(
+  return make_runtime_str(cinder::runtime::str_replace(
       view_of(args[0]), view_of(args[1]), view_of(args[2])));
 }
 
@@ -1236,18 +1236,18 @@ auto intrinsic_rt_fmt_f64_general(std::span<const slot_value> args)
 /// same allocator, which is what keeps a `list` built on these intrinsics
 /// byte-for-byte identical across them.
 auto intrinsic_rt_alloc(std::span<const slot_value> args) -> slot_value {
-  auto *block = kira_heap_alloc(args[0].u);
+  auto *block = cinder_heap_alloc(args[0].u);
   return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
 }
 
 auto intrinsic_rt_realloc(std::span<const slot_value> args) -> slot_value {
-  auto *block = kira_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
+  auto *block = cinder_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
                                   args[1].u, args[2].u);
   return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
 }
 
 auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
-  kira_heap_free(reinterpret_cast<void *>(args[0].u), args[1].u); // NOLINT
+  cinder_heap_free(reinterpret_cast<void *>(args[0].u), args[1].u); // NOLINT
   return slot_value{};                                            // `unit`
 }
 
@@ -1281,7 +1281,7 @@ auto intrinsic_rt_fmt_char_from_codepoint(std::span<const slot_value> args)
 // this file's existing struct/result conventions.
 // ---------------------------------------------------------------------------
 
-namespace platform_query = kira::runtime::platform_query;
+namespace platform_query = cinder::runtime::platform_query;
 
 [[nodiscard]] auto intrinsic_rt_uname(std::span<const slot_value>)
     -> slot_value {
@@ -1354,7 +1354,7 @@ namespace platform_query = kira::runtime::platform_query;
   return make_result_ok(alloc_struct(fields));
 }
 
-/// Mirrors `kira_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
+/// Mirrors `cinder_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
 /// reports `msg` on stderr and terminates with `k_panic_exit_code`. Both
 /// tiers terminate rather than unwinding, so a panicking program behaves
 /// identically whichever backend ran it — which is what lets
@@ -1371,7 +1371,7 @@ namespace platform_query = kira::runtime::platform_query;
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 
 /// Indexed by `op_call_intrinsic`'s `intrinsic_id` operand — must stay in
-/// the exact order of `kira::known_intrinsic_names` (src/intrinsics.h),
+/// the exact order of `cinder::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
 constexpr std::array<intrinsic_fn, 36> k_intrinsics = {{
@@ -1413,7 +1413,7 @@ constexpr std::array<intrinsic_fn, 36> k_intrinsics = {{
     intrinsic_rt_free,
 }};
 
-static_assert(k_intrinsics.size() == kira::known_intrinsic_names.size(),
+static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
               "every known intrinsic needs exactly one native implementation, "
               "in the same order");
 
@@ -1650,7 +1650,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto byte_size = ops.imm64();
-        auto *raw = kira_heap_alloc(byte_size);
+        auto *raw = cinder_heap_alloc(byte_size);
         f.registers[dst] = ptr_to_slot(raw);
         f.pc = ops.pos();
         break;
@@ -1716,7 +1716,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto idx = ops.imm32();
         const auto &text = f.function->string_constants[idx];
-        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(text.size())};
         slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
@@ -1769,7 +1769,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] =
@@ -1784,7 +1784,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto fn_idx = ops.imm16();
         const auto env_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] = f.registers[env_reg];
@@ -1826,7 +1826,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header = kira_heap_alloc(4 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(4 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(step_fn_idx)};
         slots[1] = f.registers[state_ptr_reg];
@@ -1845,7 +1845,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         // matching `option`'s hardcoded variant order (`some`=0, `none`=1;
         // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
         // 0)` and `sum_variant_tag`'s declaration-index tagging).
-        auto *header = kira_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{int64_t{0}};
         slots[1] = f.registers[value_reg];
@@ -1872,7 +1872,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         if (gen_slots[3].u != 0) {
           // `option::none` — a 2-slot `{ tag=1; payload }` block; the
           // payload slot is never read back for `none`, left zeroed.
-          auto *header = kira_heap_alloc(2 * sizeof(slot_value));
+          auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
           auto *slots = static_cast<slot_value *>(header);
           slots[0] = slot_value{int64_t{1}};
           slots[1] = slot_value{};
@@ -1895,7 +1895,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto view = view_of(f.registers[str_reg]);
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
         f.registers[dst] = slot_value{
-            static_cast<uint64_t>(kira::runtime::str_scalar_at(view, offset))};
+            static_cast<uint64_t>(cinder::runtime::str_scalar_at(view, offset))};
         break;
       }
       case opcode::op_str_scalar_width: {
@@ -1907,7 +1907,7 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto view = view_of(f.registers[str_reg]);
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
         f.registers[dst] =
-            slot_value{kira::runtime::str_scalar_width(view, offset)};
+            slot_value{cinder::runtime::str_scalar_width(view, offset)};
         break;
       }
       }
@@ -1917,4 +1917,4 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
   }
 }
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

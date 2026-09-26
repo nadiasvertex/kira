@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace kira::runtime {
+namespace cinder::runtime {
 
 /// Bump/arena allocator: hands out zeroed, 8-byte-aligned memory from
 /// growable blocks and never frees anything. This is the explicit
@@ -34,18 +34,18 @@ private:
   size_t remaining_ = 0;
 };
 
-/// The single arena every heap allocation in a `kira run`/`kira build`
+/// The single arena every heap allocation in a `cinder run`/`cinder build`
 /// process draws from. A function-local static singleton rather than a
 /// context object threaded through the VM/codegen call paths: both tiers
 /// already assume a single-threaded, single-arena-per-process model (no
 /// concurrency story exists yet, per `spec/llm-compiler-roadmap.md`'s "What
-/// Not To Assume Yet"), and `kira_heap_alloc` (`allocator.h`) needs a plain
+/// Not To Assume Yet"), and `cinder_heap_alloc` (`allocator.h`) needs a plain
 /// C-ABI symbol `llvm_codegen`-compiled IR can call with no context argument.
 ///
 /// This is no longer the only allocation strategy: it is one of the two
-/// `kira::runtime::allocator_mode`s, selected by `KIRA_ALLOCATOR=arena`. The
+/// `cinder::runtime::allocator_mode`s, selected by `CINDER_ALLOCATOR=arena`. The
 /// C-ABI entry points every allocation actually goes through live in
 /// `allocator.h`.
 [[nodiscard]] auto global_arena() -> bump_arena &;
 
-} // namespace kira::runtime
+} // namespace cinder::runtime

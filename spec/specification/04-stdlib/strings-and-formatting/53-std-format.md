@@ -6,14 +6,14 @@ Covers string interpolation's format-specification syntax, the `show`/`debug`/`h
 
 ## Syntax
 
-```kira
+```cinder
 let a = "{name}"              # direct embedding — unchanged base behavior
 let b = "{total :.2f}"        # embedding + format spec
 let c = "{total=}"            # self-documenting: "total=1234.5"
 let d = "{total=:.2f}"        # self-documenting + spec: "total=1234.50"
 ```
 
-Grammar (see `spec/kira-grammar.ebnf`, `INTERP_EXPR`/`FORMAT_SPEC`):
+Grammar (see `spec/cinder-grammar.ebnf`, `INTERP_EXPR`/`FORMAT_SPEC`):
 
 ```
 INTERP_EXPR = "{" expr [ "=" ] [ ":" format_spec ] "}" ;
@@ -70,7 +70,7 @@ fill_char   := any character except { } : = \
 
 Five traits, each a single `def <name>(self) -> str` method — the same shape as `show`, so each is usable as a `box[trait]` object.
 
-```kira
+```cinder
 trait show:                  # existing (src/std/traits.cn)
     def show(self) -> str
 
@@ -95,7 +95,7 @@ There is no single `format(spec)` trait — see "Why per-capability traits" belo
 
 ## `std.fmt`: `format_spec` and the padding helpers
 
-```kira
+```cinder
 module std.fmt
 
 pub type align_mode = @left | @right | @center
@@ -170,7 +170,7 @@ Every interpolation segment is checked at the point it's parsed:
 
 `"{name}: {total :.2f}"` desugars via quoting and splicing into a block expression that builds through `std.fmt.builder`:
 
-```kira
+```cinder
 static def desugar_interpolated_string(segments: list[interp_segment]) -> expr:
     let parts = for seg in segments =>
         match seg:
@@ -189,7 +189,7 @@ Each `@formatted` segment's `~value_expr` is the user's original embedded expres
 
 ## Example
 
-```kira
+```cinder
 let name = "Alice"
 let age  = 30
 let pi   = 3.1415926535
@@ -202,7 +202,7 @@ println("Bin:  {255 :08b}")      # "Bin:  11111111"
 println("Sci:  {1234.0 :.2e}")   # "Sci:  1.23e3"
 ```
 
-```kira
+```cinder
 type flags = { bits: uint16 }
 
 impl show for flags:

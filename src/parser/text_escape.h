@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace kira {
+namespace cinder {
 
 /// Decodes a `char_lit` token's raw text (quotes and all, e.g. `'a'`,
 /// `'\n'`, `'\u{1F600}'`) into the Unicode scalar value it names.
@@ -34,4 +34,4 @@ namespace kira {
 [[nodiscard]] auto decode_string_body(std::string_view unquoted_text)
     -> std::optional<std::string>;
 
-} // namespace kira
+} // namespace cinder

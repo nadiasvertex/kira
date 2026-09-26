@@ -4,7 +4,7 @@
 #include <format>
 #include <utility>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 /// Whether a path rooted at `root` may be read as absolute from
 /// `current_module_name` without any import: the module's own root (which
 /// is how every ancestor, and everything they declare, is reached) or `std`.
@@ -2630,4 +2630,4 @@ auto validate_qualified_paths(const std::vector<parsed_module> &inputs,
   }
 }
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

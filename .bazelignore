@@ -1,11 +1,11 @@
 third_party/argparse
 bazel-bin
-bazel-kira
+bazel-cinder
 bazel-out
 bazel-testlogs
 external
 dist
-kira-out
+cinder-out
 src/parser/bazel-bin
 src/parser/bazel-parser
 src/parser/bazel-out

@@ -54,7 +54,7 @@ the ones that need the representation.
 
 **Was not optional, and was not part of this plan's own scope.** `list[T]`
 before this landed leaked nothing the arena wasn't already leaking.
-`vector[T]` under `KIRA_ALLOCATOR=system` holds a `malloc`ed block that only
+`vector[T]` under `CINDER_ALLOCATOR=system` holds a `malloc`ed block that only
 an explicit `.free()` returns. Flipping `list[T]` onto that storage *before*
 drop glue existed would have turned every `[1, 2, 3]` in every existing
 program into a leak — a strict regression, silently.
@@ -89,7 +89,7 @@ over `resolve_container_view`'s four known shapes and nothing else.
 are genuinely three operations and collapsing them produces the wrong
 diagnostics:
 
-```kira
+```cinder
 pub trait index[I]:
     type output
     def at(self, i: I) -> self.output
@@ -236,7 +236,7 @@ again afterwards, which is most of them.
 
 **Design.** A collection opts into literal syntax by implementing:
 
-```kira
+```cinder
 pub trait from_array[T]:
     static def from_array[n: usize](items: array[T, n]) -> self
 ```
@@ -270,7 +270,7 @@ special case and should be the thing you have to ask for.
 including the fill form: `let zeros = [0.0; 4]` is a `list[float64]` of four
 zeros. An `array` is spelled by saying so:
 
-```kira
+```cinder
 let xs = [1, 2, 3]                        # list[int32]
 let zeros = [0.0; 4]                      # list[float64]
 let rgb: array[uint8, 3] = [255, 0, 0]    # array, because it was asked for
@@ -404,7 +404,7 @@ both built `-c opt`, running `bench/sort_100k_int32.cn` (push-fill,
 | LLVM AOT, `-O0` | 10.8 ms | 14.2 ms | ~1.3x slower |
 | LLVM AOT, `-O2` | 8.6 ms | 8.3 ms | no difference |
 
-`KIRA_ALLOCATOR=system` and `=arena` agree to within noise on every row. The
+`CINDER_ALLOCATOR=system` and `=arena` agree to within noise on every row. The
 VM regression is the one the paragraph above predicted: every `xs[i]` and
 `xs.push(v)` is now a call frame. The pre-flip side also lacks every other
 change between the two commits, so the VM ratio is an upper bound on what

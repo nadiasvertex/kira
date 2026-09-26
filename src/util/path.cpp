@@ -10,7 +10,7 @@
 #include <mach-o/dyld.h>
 #endif
 
-namespace kira::util {
+namespace cinder::util {
 
 /// Convert a filesystem path to the normalized slash-separated form used in
 /// reports.
@@ -83,4 +83,4 @@ namespace kira::util {
   return buffer.str();
 }
 
-} // namespace kira::util
+} // namespace cinder::util

@@ -17,7 +17,7 @@
 #include <llvm/Support/TargetSelect.h>
 #pragma clang diagnostic pop
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 namespace {
 
@@ -98,7 +98,7 @@ auto jit_module::create(compiled_module module, optimization_level level)
     return std::unexpected(llvm::toString(std::move(add_error)));
   }
 
-  // Runs `llvm.global_ctors` (codegen.cpp's `__kira_static_init`, if any
+  // Runs `llvm.global_ctors` (codegen.cpp's `__cinder_static_init`, if any
   // reified `static let` exists) — a real AOT-linked executable gets this
   // for free from its C runtime's normal startup sequence (`.init_array`),
   // but the JIT has no such implicit hook, so it has to be asked for
@@ -187,4 +187,4 @@ auto jit_module::run_ptr_result(std::string_view name) const
   }
 }
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

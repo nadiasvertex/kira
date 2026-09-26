@@ -10,7 +10,7 @@ Every query below is defined only for `T` such that `is_numeric[T]()` holds ([`s
 
 ## Queries common to integers and floats
 
-```kira
+```cinder
 bits[T]() -> usize          # bit width: 8, 16, 32, 64, 128
 is_signed[T]() -> bool      # same predicate as std.traits.is_signed_integer, extended to floats (always true)
 min[T]() -> T               # most negative representable value
@@ -19,19 +19,19 @@ max[T]() -> T               # most positive representable value
 
 `min`/`max` return a `T`, not a `type_expr` — unlike [`std.traits`](58-std-traits.md)'s transformations, these produce ordinary compile-time *values* of the queried type, reified the same way any other `static` binding is (see [Compile-Time Execution § `static` bindings](../../03-advanced/31-compile-time-execution.md#static-bindings)):
 
-```kira
+```cinder
 static INT16_MAX: int16 = max[int16]()   # 32767, baked into the binary
 ```
 
 ## Integer-only queries
 
-```kira
+```cinder
 digits[T]() -> usize    # number of value bits, excluding the sign bit for a signed type: bits[T]() - (1 if is_signed[T]() else 0)
 ```
 
 ## Float-only queries
 
-```kira
+```cinder
 epsilon[T]() -> T          # difference between 1.0 and the next representable value
 infinity[T]() -> T         # +infinity
 neg_infinity[T]() -> T     # -infinity
@@ -43,7 +43,7 @@ digits[T]() -> usize       # mantissa precision in bits (24 for float32, 53 for 
 
 ## Example
 
-```kira
+```cinder
 def clamp_to_range[T](x: T, lo: T, hi: T) -> T:
     if x < lo: return lo
     if x > hi: return hi

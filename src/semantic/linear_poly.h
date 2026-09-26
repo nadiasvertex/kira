@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace kira::semantic {
+namespace cinder::semantic {
 
 // ==========================================================================
 //  Canonical linear polynomials
@@ -128,4 +128,4 @@ poly_substitute(const linear_poly &poly,
                                         const linear_poly &b,
                                         bool vars_non_negative) -> bool;
 
-} // namespace kira::semantic
+} // namespace cinder::semantic

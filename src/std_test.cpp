@@ -44,7 +44,7 @@ struct temp_dir {
 auto make_temp_dir() -> temp_dir {
   auto base =
       fs::temp_directory_path() /
-      std::format("kira_std_test_{}",
+      std::format("cinder_std_test_{}",
                   std::chrono::steady_clock::now().time_since_epoch().count());
   auto ec = std::error_code{};
   fs::create_directories(base, ec);
@@ -134,15 +134,15 @@ auto list_samples(const fs::path &corpus_dir) -> std::vector<sample> {
 auto run_sample_capturing_fd(const sample &sample, const fs::path &tmp_dir,
                              int capture_fd_number, std::string_view suffix)
     -> std::string {
-  kira::driver::cli_config cfg{
-      .program_name = "kira",
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
       .sources = {sample.source_path.string()},
       .metadata_dir = (tmp_dir / "meta").string(),
       .show_help = false,
       .run = true,
       .run_function = "main",
   };
-  kira::driver::inject_stdlib_prelude(cfg);
+  cinder::driver::inject_stdlib_prelude(cfg);
 
   const auto capture_path = tmp_dir / (sample.name + std::string(suffix));
   const auto capture_fd =
@@ -158,7 +158,7 @@ auto run_sample_capturing_fd(const sample &sample, const fs::path &tmp_dir,
          "expected to redirect the target fd to the capture file");
   ::close(capture_fd);
 
-  auto report = kira::driver::compile_sources(cfg, false);
+  auto report = cinder::driver::compile_sources(cfg, false);
 
   ::fflush(nullptr);
   ::dup2(saved_fd, capture_fd_number);

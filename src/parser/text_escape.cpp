@@ -4,7 +4,7 @@
 
 #include "src/utf8/utf8.h"
 
-namespace kira {
+namespace cinder {
 
 auto decode_char_literal(std::string_view text) -> std::optional<uint32_t> {
   if (text.size() < 2 || text.front() != '\'' || text.back() != '\'') {
@@ -158,4 +158,4 @@ auto decode_string_literal(std::string_view text)
   return decode_string_body(text.substr(1, text.size() - 2));
 }
 
-} // namespace kira
+} // namespace cinder

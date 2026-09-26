@@ -2,7 +2,7 @@ module std.derive
 
 #: Real, working deriving show/eq/debug for a concrete, struct-shaped
 #: type — the compile-time evaluation subsystem's own worked example (spec/
-#: kira-reference.md, "Generating definitions") made runnable end to end, and
+#: cinder-reference.md, "Generating definitions") made runnable end to end, and
 #: extended to the other traits that have enough runtime support to back a
 #: real generated method body (ord/hash do not yet — see
 #: semantic::checker::resolve_deriving_traits's doc comment). Each is

@@ -8,7 +8,7 @@ Operators as traits, and the `type output` associated-type mechanism for their r
 
 To make a type work with `+`, implement the `add` trait:
 
-```kira
+```cinder
 trait add:
     type output
     def add(self, other: self) -> self.output

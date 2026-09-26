@@ -20,7 +20,7 @@
 /// host" (with `errno` left set by the underlying OS call where relevant);
 /// each ABI layer is responsible for turning that into its own
 /// `result[T, io_errno]` encoding.
-namespace kira::runtime::platform_query {
+namespace cinder::runtime::platform_query {
 
 /// Mirrors `std.platform`'s `uname_raw` type field-for-field.
 struct uname_info {
@@ -63,4 +63,4 @@ struct macos_version_info {
     -> std::optional<windows_version_info>;
 [[nodiscard]] auto query_macos_version() -> std::optional<macos_version_info>;
 
-} // namespace kira::runtime::platform_query
+} // namespace cinder::runtime::platform_query

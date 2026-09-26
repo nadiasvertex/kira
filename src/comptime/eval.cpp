@@ -15,7 +15,7 @@
 #include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
 
-namespace kira::comptime {
+namespace cinder::comptime {
 namespace {
 
 /// Parses an integer literal spelling (handles `_`, `0x`, `0o`, `0b`) —
@@ -3198,4 +3198,4 @@ auto evaluator::eval_interpolated_string(
   return value::make_string(std::move(result));
 }
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

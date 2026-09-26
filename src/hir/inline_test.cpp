@@ -22,16 +22,16 @@
 
 namespace {
 
-using kira::testing::expect;
-namespace hir = kira::hir;
+using cinder::testing::expect;
+namespace hir = cinder::hir;
 
 /// A checked, lowered, *inlined* single-file program. Owns everything the
 /// HIR borrows from.
 struct inlined_program {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::ast::ptr<kira::ast::file> ast_file;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::semantic::checked_types checked;
   hir::ptr_vec<hir::hir_module> modules;
   hir::inline_stats stats;
 };
@@ -43,18 +43,18 @@ auto inline_program(const std::string &text) -> inlined_program {
   const auto *file = program.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
 
-  auto lexer = kira::lexer(file->source(), file->id(), program.diag);
-  auto parser = kira::parser(lexer.tokenize(), file->id(), program.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), program.diag);
+  auto parser = cinder::parser(lexer.tokenize(), file->id(), program.diag);
   program.ast_file = parser.parse_file();
   expect(program.diag.error_count() == 0, "expected fixture to parse cleanly");
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
-  const auto parsed_modules = std::vector<kira::semantic::parsed_module>{
-      kira::semantic::parsed_module{.file_id = *file_id,
+  const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
+      cinder::semantic::parsed_module{.file_id = *file_id,
                                     .ast_file = program.ast_file.get()},
   };
-  program.checked = kira::semantic::check_program(parsed_modules, program.diag,
+  program.checked = cinder::semantic::check_program(parsed_modules, program.diag,
                                                   file_has_errors);
   expect(program.diag.error_count() == 0, "expected fixture to check cleanly");
 
@@ -74,7 +74,7 @@ auto function_named(const inlined_program &program, std::string_view name)
       return *fn;
     }
   }
-  kira::testing::fail(std::format("expected a function named `{}`", name));
+  cinder::testing::fail(std::format("expected a function named `{}`", name));
 }
 
 /// Pre-order walk over `node`'s subtree, following the child fields the
@@ -170,7 +170,7 @@ auto let_initializer(const hir::hir_function &fn, std::string_view name)
       }
     }
   }
-  kira::testing::fail(std::format("expected a `let {}`", name));
+  cinder::testing::fail(std::format("expected a `let {}`", name));
 }
 
 auto test_guard_clause_becomes_if_else_value() -> void {

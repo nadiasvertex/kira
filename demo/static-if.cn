@@ -8,8 +8,8 @@ module main
 #  not even type-check. Shown here inside a function body, selecting
 #  between statements per generic instantiation.
 #
-#  Run it:      kira demo/static-if.cn
-#  Compile it:  kira --compile -o static-if demo/static-if.cn
+#  Run it:      cinder demo/static-if.cn
+#  Compile it:  cinder --compile -o static-if demo/static-if.cn
 # ==========================================================================
 
 def describe[T]() -> str:

@@ -11,8 +11,8 @@ module main
 #  For automatic discovery instead of hand registration, see
 #  demo/test-discovery.cn.
 #
-#  Run it:      kira demo/test-explicit.cn
-#  Compile it:  kira --compile -o test-explicit demo/test-explicit.cn
+#  Run it:      cinder demo/test-explicit.cn
+#  Compile it:  cinder --compile -o test-explicit demo/test-explicit.cn
 #
 #  Exits 1, because one suite below is meant to fail.
 # ==========================================================================

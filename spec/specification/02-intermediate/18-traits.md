@@ -8,7 +8,7 @@ Trait definition and `impl`, default methods, `requires` trait dependencies, and
 
 A trait defines a set of capabilities a type can have — "this function works for any type that supports X."
 
-```kira
+```cinder
 trait show:
     def show(self) -> str
 
@@ -23,7 +23,7 @@ Any function accepting `T: show` can call `.show()` on a value of type `T`.
 
 Traits can provide default implementations, overridable per `impl`:
 
-```kira
+```cinder
 trait greet:
     def name(self) -> str
 
@@ -35,7 +35,7 @@ trait greet:
 
 A trait can require that implementing types also implement other traits:
 
-```kira
+```cinder
 trait ord requires eq:
     def cmp(self, other: &self) -> ordering
 ```
@@ -46,7 +46,7 @@ Any type implementing `ord` must first implement `eq`. Given a bound `T: ord`, `
 
 Common trait implementations can be generated automatically:
 
-```kira
+```cinder
 type color = @red | @green | @blue
     deriving eq, ord, show, hash
 

@@ -223,7 +223,7 @@ def build_site(output_dir: Path) -> None:
 
     write_site_index(output_dir, files)
 
-    grammar = REPO_ROOT / "spec" / "kira-grammar.ebnf"
+    grammar = REPO_ROOT / "spec" / "cinder-grammar.ebnf"
     if grammar.exists():
         shutil.copy(grammar, output_dir / grammar.name)
     conventions = REPO_ROOT / "spec" / "CONVENTIONS.md"
@@ -289,9 +289,9 @@ def main(argv: list[str]) -> int:
     out_root = Path(argv[2]) if len(argv) > 2 else REPO_ROOT / "dist" / "docs"
 
     if mode in ("epub", "all"):
-        build_epub(out_root / "kira-specification.epub")
+        build_epub(out_root / "cinder-specification.epub")
     if mode in ("pdf", "all"):
-        build_pdf(out_root / "kira-specification.pdf")
+        build_pdf(out_root / "cinder-specification.pdf")
     if mode in ("site", "all"):
         build_site(out_root / "site")
     return 0

@@ -9,7 +9,7 @@
 
 #include "src/runtime/arena.h"
 
-namespace kira::runtime {
+namespace cinder::runtime {
 namespace {
 
 /// Rounds a byte count up to the 8-byte granularity every Cinder heap block is
@@ -27,7 +27,7 @@ namespace {
   // handing generated code a null it has no way to check. Phrased like a
   // compiler diagnostic because it is the user who sees it.
   std::println(stderr,
-               "kira: out of memory\n"
+               "cinder: out of memory\n"
                "  could not allocate {} bytes\n"
                "  note: Cinder's allocator has no failure channel yet, so an "
                "allocation that cannot be satisfied terminates the process",
@@ -36,7 +36,7 @@ namespace {
 }
 
 [[nodiscard]] auto resolve_mode() -> allocator_mode {
-  const char *const requested = std::getenv("KIRA_ALLOCATOR");
+  const char *const requested = std::getenv("CINDER_ALLOCATOR");
   if (requested != nullptr && std::string_view{requested} == "arena") {
     return allocator_mode::arena;
   }
@@ -50,16 +50,16 @@ auto active_allocator_mode() -> allocator_mode {
   return mode;
 }
 
-} // namespace kira::runtime
+} // namespace cinder::runtime
 
-extern "C" auto kira_heap_alloc(uint64_t bytes) -> void * {
-  const auto size = kira::runtime::round_to_slot(bytes);
+extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
+  const auto size = cinder::runtime::round_to_slot(bytes);
   if (size == 0) {
     return nullptr;
   }
-  if (kira::runtime::active_allocator_mode() ==
-      kira::runtime::allocator_mode::arena) {
-    return kira::runtime::global_arena().allocate(size);
+  if (cinder::runtime::active_allocator_mode() ==
+      cinder::runtime::allocator_mode::arena) {
+    return cinder::runtime::global_arena().allocate(size);
   }
   // `calloc` rather than `malloc` + `memset`: both backends materialize an
   // aggregate by allocating its slot block and storing only the fields that
@@ -69,40 +69,40 @@ extern "C" auto kira_heap_alloc(uint64_t bytes) -> void * {
   // which is what the 8-byte slot invariant needs.
   void *const block = std::calloc(size, 1);
   if (block == nullptr) {
-    kira::runtime::out_of_memory(bytes);
+    cinder::runtime::out_of_memory(bytes);
   }
   return block;
 }
 
-extern "C" auto kira_heap_realloc(void *ptr, uint64_t old_bytes,
+extern "C" auto cinder_heap_realloc(void *ptr, uint64_t old_bytes,
                                   uint64_t new_bytes) -> void * {
-  const auto old_size = kira::runtime::round_to_slot(old_bytes);
-  const auto new_size = kira::runtime::round_to_slot(new_bytes);
+  const auto old_size = cinder::runtime::round_to_slot(old_bytes);
+  const auto new_size = cinder::runtime::round_to_slot(new_bytes);
   if (ptr == nullptr) {
-    return kira_heap_alloc(new_bytes);
+    return cinder_heap_alloc(new_bytes);
   }
   if (new_size == 0) {
-    kira_heap_free(ptr, old_bytes);
+    cinder_heap_free(ptr, old_bytes);
     return nullptr;
   }
   if (new_size == old_size) {
     return ptr;
   }
 
-  if (kira::runtime::active_allocator_mode() ==
-      kira::runtime::allocator_mode::arena) {
+  if (cinder::runtime::active_allocator_mode() ==
+      cinder::runtime::allocator_mode::arena) {
     // The arena cannot grow a block in place and cannot reclaim the old one,
     // so every resize is a fresh allocation plus a copy. The new block is
     // already zeroed by `bump_arena::allocate`, so only the surviving prefix
     // needs copying.
-    void *const grown = kira::runtime::global_arena().allocate(new_size);
+    void *const grown = cinder::runtime::global_arena().allocate(new_size);
     std::memcpy(grown, ptr, std::min(old_size, new_size));
     return grown;
   }
 
   void *const grown = std::realloc(ptr, new_size);
   if (grown == nullptr) {
-    kira::runtime::out_of_memory(new_bytes);
+    cinder::runtime::out_of_memory(new_bytes);
   }
   if (new_size > old_size) {
     // `realloc` leaves the growth uninitialized; the zero-fill guarantee
@@ -114,13 +114,13 @@ extern "C" auto kira_heap_realloc(void *ptr, uint64_t old_bytes,
   return grown;
 }
 
-extern "C" void kira_heap_free(void *ptr, uint64_t bytes) {
+extern "C" void cinder_heap_free(void *ptr, uint64_t bytes) {
   (void)bytes;
   if (ptr == nullptr) {
     return;
   }
-  if (kira::runtime::active_allocator_mode() ==
-      kira::runtime::allocator_mode::arena) {
+  if (cinder::runtime::active_allocator_mode() ==
+      cinder::runtime::allocator_mode::arena) {
     return; // The arena never reclaims; see `allocator_mode`.
   }
   std::free(ptr);
@@ -131,16 +131,16 @@ extern "C" void kira_heap_free(void *ptr, uint64_t bytes) {
 //  `new_bytes` cross as plain native `uint64_t`s now, no boxing needed.
 // --------------------------------------------------------------------------
 
-extern "C" auto kira_rt_alloc(uint64_t bytes) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_alloc(bytes));
+extern "C" auto cinder_rt_alloc(uint64_t bytes) -> uint64_t * {
+  return static_cast<uint64_t *>(cinder_heap_alloc(bytes));
 }
 
-extern "C" auto kira_rt_realloc(uint64_t *ptr, uint64_t old_bytes,
+extern "C" auto cinder_rt_realloc(uint64_t *ptr, uint64_t old_bytes,
                                 uint64_t new_bytes) -> uint64_t * {
-  return static_cast<uint64_t *>(kira_heap_realloc(ptr, old_bytes, new_bytes));
+  return static_cast<uint64_t *>(cinder_heap_realloc(ptr, old_bytes, new_bytes));
 }
 
-extern "C" auto kira_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t * {
-  kira_heap_free(ptr, bytes);
+extern "C" auto cinder_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t * {
+  cinder_heap_free(ptr, bytes);
   return nullptr; // Cinder `unit`; see allocator.h.
 }

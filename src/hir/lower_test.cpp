@@ -21,28 +21,28 @@
 
 namespace {
 
-using kira::testing::expect;
-using kira::testing::fail;
-namespace hir = kira::hir;
+using cinder::testing::expect;
+using cinder::testing::fail;
+namespace hir = cinder::hir;
 
 // Parses and checks one fixture source, returning the AST root, the checked
 // types, and the requested function's declaration for the caller to feed
 // into `hir::lower_function`/`hir::lower_module`.
 struct checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::testing::parsed_stdlib stdlib;
-  kira::ast::ptr<kira::ast::file> ast_file;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::testing::parsed_stdlib stdlib;
+  cinder::ast::ptr<cinder::ast::file> ast_file;
+  cinder::semantic::checked_types checked;
 };
 
 /// Fails with the rendered diagnostics when a fixture did not check cleanly.
 /// Without the dump the failure reads only as "expected fixture to check
 /// cleanly", which says nothing about what went wrong.
-auto expect_checked_cleanly(const kira::source_manager &sources,
-                            const kira::diagnostic_bag &diag) -> void {
+auto expect_checked_cleanly(const cinder::source_manager &sources,
+                            const cinder::diagnostic_bag &diag) -> void {
   if (diag.error_count() != 0) {
-    std::cerr << kira::diagnostic_renderer(sources, false).render_all(diag);
+    std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected fixture to check cleanly");
   }
 }
@@ -58,7 +58,7 @@ auto expect_checked_cleanly(const kira::source_manager &sources,
 // `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
-  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+  fixture.stdlib = cinder::testing::parse_stdlib(fixture.sources, fixture.diag);
 
   const auto file_id = fixture.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
@@ -66,18 +66,18 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   const auto *file = fixture.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");
 
-  auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+  auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
   auto tokens = lexer.tokenize();
-  auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+  auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
   fixture.ast_file = parser.parse_file();
   expect(fixture.diag.error_count() == 0, "expected fixture to parse cleanly");
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   auto parsed_modules = fixture.stdlib.modules;
-  parsed_modules.push_back(kira::semantic::parsed_module{
+  parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
@@ -87,20 +87,20 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 // session — needed to exercise cross-module call resolution, where the
 // callee lives in a different file than the call site.
 struct multi_checked_fixture {
-  kira::source_manager sources;
-  kira::diagnostic_bag diag{};
-  kira::testing::parsed_stdlib stdlib;
-  std::vector<kira::ast::ptr<kira::ast::file>> ast_files;
-  kira::semantic::checked_types checked;
+  cinder::source_manager sources;
+  cinder::diagnostic_bag diag{};
+  cinder::testing::parsed_stdlib stdlib;
+  std::vector<cinder::ast::ptr<cinder::ast::file>> ast_files;
+  cinder::semantic::checked_types checked;
 };
 
 auto check_fixture_multi(
     const std::vector<std::pair<std::string, std::string>> &files)
     -> multi_checked_fixture {
   auto fixture = multi_checked_fixture{};
-  fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
+  fixture.stdlib = cinder::testing::parse_stdlib(fixture.sources, fixture.diag);
   auto parsed_modules = fixture.stdlib.modules;
-  auto file_ids = std::vector<kira::file_id_type>{};
+  auto file_ids = std::vector<cinder::file_id_type>{};
 
   for (const auto &[path, text] : files) {
     const auto file_id = fixture.sources.add_file(path, text);
@@ -108,9 +108,9 @@ auto check_fixture_multi(
     const auto *file = fixture.sources.get(*file_id);
     expect(file != nullptr, "expected registered fixture source");
 
-    auto lexer = kira::lexer(file->source(), file->id(), fixture.diag);
+    auto lexer = cinder::lexer(file->source(), file->id(), fixture.diag);
     auto tokens = lexer.tokenize();
-    auto parser = kira::parser(std::move(tokens), file->id(), fixture.diag);
+    auto parser = cinder::parser(std::move(tokens), file->id(), fixture.diag);
     auto ast_file = parser.parse_file();
     expect(fixture.diag.error_count() == 0,
            "expected fixture to parse cleanly");
@@ -120,23 +120,23 @@ auto check_fixture_multi(
   }
 
   for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
-    parsed_modules.push_back(kira::semantic::parsed_module{
+    parsed_modules.push_back(cinder::semantic::parsed_module{
         .file_id = file_ids[i], .ast_file = fixture.ast_files[i].get()});
   }
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
-  fixture.checked = kira::semantic::check_program(parsed_modules, fixture.diag,
+  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
                                                   file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
 
-auto find_func(const kira::ast::file &file, std::string_view name)
-    -> const kira::ast::func_decl & {
+auto find_func(const cinder::ast::file &file, std::string_view name)
+    -> const cinder::ast::func_decl & {
   for (const auto &item : file.items) {
-    if (item != nullptr && item->kind == kira::ast::node_kind::func_decl) {
-      const auto &decl = dynamic_cast<const kira::ast::func_decl &>(*item);
+    if (item != nullptr && item->kind == cinder::ast::node_kind::func_decl) {
+      const auto &decl = dynamic_cast<const cinder::ast::func_decl &>(*item);
       if (decl.name == name) {
         return decl;
       }
@@ -273,7 +273,7 @@ auto test_preserves_source_spans() -> void {
   const auto &ret =
       dynamic_cast<const hir::hir_return &>(*function.body->stmts.front());
   const auto &return_stmt =
-      dynamic_cast<const kira::ast::return_stmt &>(*decl.body_stmts.front());
+      dynamic_cast<const cinder::ast::return_stmt &>(*decl.body_stmts.front());
   expect(
       ret.span.start == return_stmt.span.start &&
           ret.span.end == return_stmt.span.end,
@@ -1002,7 +1002,7 @@ auto test_lowers_var_and_plain_assignment() -> void {
          "expected the second statement to be a hir_assign");
   const auto &assign =
       dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
-  expect(assign.op == kira::ast::assign_op::assign,
+  expect(assign.op == cinder::ast::assign_op::assign,
          "expected a plain `=` to lower to assign_op::Assign");
   expect(assign.target->kind == hir::hir_node_kind::hir_local_ref,
          "expected the assignment target to be a local reference");
@@ -1027,7 +1027,7 @@ auto test_lowers_compound_assignment() -> void {
   const auto &function = **result;
   const auto &assign =
       dynamic_cast<const hir::hir_assign &>(*function.body->stmts[1]);
-  expect(assign.op == kira::ast::assign_op::add_assign,
+  expect(assign.op == cinder::ast::assign_op::add_assign,
          "expected `+=` to lower to assign_op::AddAssign");
 }
 
@@ -1915,7 +1915,7 @@ auto test_lowers_range_for_loop() -> void {
          "expected the loop condition to be a comparison");
   const auto &condition =
       dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::lt,
+  expect(condition.op == cinder::ast::binary_op::lt,
          "expected `..` to lower to a `<` bound check");
   expect(condition.type == fixture.checked.types.bool_type(),
          "expected the condition's type to be bool");
@@ -1937,7 +1937,7 @@ auto test_lowers_range_for_loop() -> void {
          "expected the step to hold exactly the index increment");
   const auto &increment =
       dynamic_cast<const hir::hir_assign &>(*loop.step->stmts[0]);
-  expect(increment.op == kira::ast::assign_op::add_assign,
+  expect(increment.op == cinder::ast::assign_op::add_assign,
          "expected the index increment to be a compound `+=`");
 }
 
@@ -1959,7 +1959,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
       dynamic_cast<const hir::hir_while &>(*function.body->stmts[4]);
   const auto &condition =
       dynamic_cast<const hir::hir_binary &>(*loop.condition);
-  expect(condition.op == kira::ast::binary_op::lt_eq,
+  expect(condition.op == cinder::ast::binary_op::lt_eq,
          "expected `..=` to lower to a `<=` bound check");
 
   expect(loop.body->stmts.size() == 2,
@@ -2416,7 +2416,7 @@ auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
          "expected the existential-returning function to lower");
   const auto &counter_entry =
       fixture.checked.types.entry((*producer)->return_type);
-  expect(counter_entry.kind == kira::semantic::type_kind::struct_kind &&
+  expect(counter_entry.kind == cinder::semantic::type_kind::struct_kind &&
              counter_entry.name == "counter",
          "expected the lowered function's return type to be the concrete "
          "`counter` struct, not the existential wrapper");

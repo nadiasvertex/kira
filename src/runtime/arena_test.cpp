@@ -11,10 +11,10 @@
 
 namespace {
 
-using kira::testing::expect;
+using cinder::testing::expect;
 
 auto test_allocations_are_distinct_and_zeroed() -> void {
-  auto arena = kira::runtime::bump_arena{};
+  auto arena = cinder::runtime::bump_arena{};
   auto *a = arena.allocate(16);
   auto *b = arena.allocate(16);
   expect(a != nullptr && b != nullptr, "expected non-null allocations");
@@ -24,7 +24,7 @@ auto test_allocations_are_distinct_and_zeroed() -> void {
 }
 
 auto test_allocation_across_block_boundary() -> void {
-  auto arena = kira::runtime::bump_arena{};
+  auto arena = cinder::runtime::bump_arena{};
   // Force more than one 1 MiB block to be carved.
   for (auto i = 0; i < 3; ++i) {
     auto *p = arena.allocate(1 << 20);
@@ -33,8 +33,8 @@ auto test_allocation_across_block_boundary() -> void {
 }
 
 auto test_c_abi_entry_point_allocates() -> void {
-  auto *p = kira_heap_alloc(64);
-  expect(p != nullptr, "expected kira_heap_alloc to return non-null memory");
+  auto *p = cinder_heap_alloc(64);
+  expect(p != nullptr, "expected cinder_heap_alloc to return non-null memory");
 }
 
 } // namespace

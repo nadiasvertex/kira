@@ -2,13 +2,13 @@
 
 **Status:** Implemented
 
-Covers anonymous inline function syntax (`lambda_expr` in `spec/kira-grammar.ebnf`), its multi-line form, explicit capture lists, and typical use.
+Covers anonymous inline function syntax (`lambda_expr` in `spec/cinder-grammar.ebnf`), its multi-line form, explicit capture lists, and typical use.
 
 ## Syntax
 
 A lambda is `params => expr` or `params -> ReturnType => expr`. A single untyped parameter needs no parentheses; multiple parameters, or an explicit type, require them.
 
-```kira
+```cinder
 let double = x => x * 2
 let add    = (x, y) => x + y
 
@@ -27,7 +27,7 @@ By default a lambda captures every outer-scope name its body uses (`capture` in 
 
 Referencing an outer-scope name that is not in the capture list is an error, the same as referencing an undeclared name.
 
-```kira
+```cinder
 let factor = 3
 let offset = 10
 let scaled = numbers.map([factor] x => x * factor)   # `offset` is not in scope here
@@ -43,7 +43,7 @@ let pure_double = [] x => x * 2   # no outer state reachable
 
 `params =>:` introduces an indented block whose last expression is the lambda's result, the same rule as a `def` body.
 
-```kira
+```cinder
 let process = x =>:
     let y = transform(x)
     y * 2
@@ -53,7 +53,7 @@ let process = x =>:
 
 Lambdas are most commonly passed as arguments to collection methods such as `map` and `filter`:
 
-```kira
+```cinder
 let numbers = [1, 2, 3, 4, 5]
 let doubled = numbers.map(x => x * 2)
 let evens   = numbers.filter(x => x % 2 == 0)

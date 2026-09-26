@@ -8,7 +8,7 @@
 
 Channels pass ownership of values between tasks:
 
-```kira
+```cinder
 let (sender, receiver) = channel[str](capacity: 32)
 
 crew c:
@@ -29,7 +29,7 @@ Sending on a full channel suspends the sender (backpressure). Receiving on an em
 
 For a value that changes over time with multiple readers, `watch[T]`:
 
-```kira
+```cinder
 let (writer, reader) = watch[config](initial: default_config())
 
 # in one task:

@@ -14,7 +14,7 @@
 #include "src/util/path.h"
 #include "src/util/str.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 struct cli_converter {
   std::string_view name;
@@ -370,4 +370,4 @@ auto render_help(std::string_view program_name) -> std::string {
       k_default_run_function, k_default_run_function);
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

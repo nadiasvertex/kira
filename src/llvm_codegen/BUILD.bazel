@@ -1,7 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 
 # `alwayslink`: nothing in this repo's own C++ *calls*
-# `kira_codegen_panic` (only JIT-compiled IR does, via `codegen.h`'s
+# `cinder_codegen_panic` (only JIT-compiled IR does, via `codegen.h`'s
 # `kPanicSymbolName`, resolved at JIT time through process-symbol lookup —
 # see jit_support.h). Without `alwayslink`, the linker would never pull this
 # object out of the archive, since nothing appears to reference it, and the
@@ -31,11 +31,11 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-# `kira build`'s panic runtime: prints and exits instead of `runtime.cc`'s
+# `cinder build`'s panic runtime: prints and exits instead of `runtime.cc`'s
 # throwing implementation, since a standalone AOT binary has no exception
 # handler waiting at the top of the process the way JIT execution does.
 # Never link this in the same binary as `:runtime` — both define the same
-# `kira_codegen_panic` C symbol; exactly one belongs in any given binary.
+# `cinder_codegen_panic` C symbol; exactly one belongs in any given binary.
 cc_library(
     name = "aot_runtime",
     srcs = ["aot_runtime.cpp"],

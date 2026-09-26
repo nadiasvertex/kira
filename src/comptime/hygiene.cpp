@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace kira::comptime {
+namespace cinder::comptime {
 
 namespace {
 
@@ -475,4 +475,4 @@ void rename_internal_bindings(ast::node &fragment, std::uint64_t &next_id) {
   hygiene_renamer(next_id).run(fragment);
 }
 
-} // namespace kira::comptime
+} // namespace cinder::comptime

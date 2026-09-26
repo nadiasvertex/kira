@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <string>
 
-namespace kira::bytecode {
+namespace cinder::bytecode {
 
 auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
   switch (reason) {
@@ -30,7 +30,7 @@ auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
 
 auto raise_panic(panic_reason reason) -> void {
   if (is_fatal(reason)) {
-    // Matches `kira_rt_panic`'s output (`src/runtime/io.cpp`) so a bounds
+    // Matches `cinder_rt_panic`'s output (`src/runtime/io.cpp`) so a bounds
     // violation reads the same whichever container raised it and whichever
     // tier ran the program.
     const auto message = panic_reason_message(reason);
@@ -46,4 +46,4 @@ panic_error::panic_error(panic_reason reason)
     : std::runtime_error(std::string(panic_reason_message(reason))),
       reason_(reason) {}
 
-} // namespace kira::bytecode
+} // namespace cinder::bytecode

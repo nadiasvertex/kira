@@ -9,7 +9,7 @@ Ownership transfer on assignment and call, `&`/`&mut` borrowing, and the invaria
 1. Assigning a value or passing it to a function transfers ownership by default. The source binding is no longer accessible afterward.
 2. When the owner of a value goes out of scope, the value is freed (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)). This rule is not yet realized: the compiler emits no scope-exit `drop` glue, and every heap-backed value is allocated from a bump arena (`src/runtime/arena.h`) that never reclaims anything. The move checking that *would* drive rule 2 is implemented; the freeing is not.
 
-```kira
+```cinder
 def process(data: list[int32]) -> int32:    # takes ownership of data
     ...
 
@@ -26,7 +26,7 @@ A borrow lends a value to a function for the duration of one call. The owner kee
 
 Syntax: `&` marks an immutable-borrow parameter type and, at the call site, lends the value; `&mut` does the same for a mutable borrow. Writing `&mut` at the call site is the idiomatic form and keeps mutation-through-a-call visible where it happens. Two borrows are also created implicitly: a bare argument passed to a `&`/`&mut` parameter is borrowed rather than moved (implicit autoref), and a method receiver `x` in `x.m(...)` is borrowed for the call. These implicit borrows obey exactly the same rules below as an explicit `&`/`&mut`.
 
-```kira
+```cinder
 def sum(data: &list[int32]) -> int32:
     var total = 0
     for x in data: total += x

@@ -5,7 +5,7 @@
 #include "src/comptime/eval.h"
 #include "src/comptime/value.h"
 
-namespace kira::driver {
+namespace cinder::driver {
 
 namespace {
 
@@ -117,4 +117,4 @@ auto fold_static_if_imports(std::vector<parsed_input> &inputs,
   }
 }
 
-} // namespace kira::driver
+} // namespace cinder::driver

@@ -6,7 +6,7 @@
 
 #include "src/llvm_codegen/codegen.h"
 
-namespace kira::llvm_codegen {
+namespace cinder::llvm_codegen {
 
 /// Why `emit_object_file` refused to produce an object file.
 struct aot_error {
@@ -38,4 +38,4 @@ emit_object_file(compiled_module module, std::string_view entry_function_name,
                  optimization_level level = optimization_level::o0)
     -> std::expected<void, aot_error>;
 
-} // namespace kira::llvm_codegen
+} // namespace cinder::llvm_codegen

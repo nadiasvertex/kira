@@ -2,7 +2,7 @@ module codegen_stress.static_trait_method
 
 # `static def` inside a `trait` body, an `impl` body, and an `extend` block.
 #
-# `kira-grammar.ebnf` lists `static` among the unrestricted `func_modifier`s,
+# `cinder-grammar.ebnf` lists `static` among the unrestricted `func_modifier`s,
 # but the parser only honored it at module scope: inside a `trait` it read
 # `static` as the start of a static *constant* (`static NAME: Type`) and
 # reported ``expected a name but found `def` ``, and inside an `extend` block

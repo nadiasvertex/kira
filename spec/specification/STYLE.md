@@ -4,7 +4,7 @@ Internal guide for writing chapters in this directory. This file is not part of 
 
 ## Voice
 
-Write like the ISO C++ standard or the C++ standard library reference (cppreference's terse mode), not like a tutorial. This is Layer/Section material for people (and LLMs) who already know the language exists and need the precise rule. `spec/kira-reference.md` and `spec/std-reference.md` were tutorials; this replaces them with something else. A tutorial explains *why* and *how to learn*; this states *what is true*.
+Write like the ISO C++ standard or the C++ standard library reference (cppreference's terse mode), not like a tutorial. This is Layer/Section material for people (and LLMs) who already know the language exists and need the precise rule. `spec/cinder-reference.md` and `spec/std-reference.md` were tutorials; this replaces them with something else. A tutorial explains *why* and *how to learn*; this states *what is true*.
 
 - Declarative sentences. "A `let` binding is immutable." not "You use `let` to create an immutable binding."
 - No motivating preamble ("Sometimes you want to..."). State the construct, its syntax, its semantics, its rules.
@@ -36,7 +36,7 @@ A chapter that mixes implemented and planned material must not hide that in pros
 Typical shape (omit sections that don't apply):
 
 1. Header (above)
-2. Syntax — grammar sketch or production reference (point to `spec/kira-grammar.ebnf` by production name rather than re-deriving EBNF, unless the chapter's whole point is grammar)
+2. Syntax — grammar sketch or production reference (point to `spec/cinder-grammar.ebnf` by production name rather than re-deriving EBNF, unless the chapter's whole point is grammar)
 3. Semantics — the rules, stated as numbered or bulleted normative statements
 4. One example
 5. Edge cases / errors — what's diagnosed and how, only if noteworthy
@@ -48,14 +48,14 @@ Typical shape (omit sections that don't apply):
 Chapters are assembled from, in priority order when they conflict:
 1. Actual source code in `src/` (ground truth for behavior)
 2. Design docs in `spec/*.md` (the ones being folded in and deleted)
-3. The old `spec/kira-reference.md` / `spec/std-reference.md` (tutorial prose — mine for facts, discard the tutorial voice)
+3. The old `spec/cinder-reference.md` / `spec/std-reference.md` (tutorial prose — mine for facts, discard the tutorial voice)
 
 When a design doc describes something not yet built, keep the content (mark Planned/Partial) rather than deleting it — this reorg must not lose information, only restructure and re-voice it.
 
 ## Cross-linking
 
 - Each chapter links forward/backward to adjacent chapters in its section only where genuinely relevant (a "borrowing" chapter linking to "views" because views are a consequence of borrowing) — not a mechanical prev/next footer.
-- Link to `spec/kira-grammar.ebnf` for grammar, `spec/CONVENTIONS.md` never (that's C++ style, unrelated).
+- Link to `spec/cinder-grammar.ebnf` for grammar, `spec/CONVENTIONS.md` never (that's C++ style, unrelated).
 
 ## What NOT to do
 

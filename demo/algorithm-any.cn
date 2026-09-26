@@ -6,8 +6,8 @@ module main
 #  Short-circuits on the first element that passes the predicate; an empty
 #  iterator can never satisfy anything, so `any` is `false`.
 #
-#  Run it:      kira demo/algorithm-any.cn
-#  Compile it:  kira --compile -o algorithm-any demo/algorithm-any.cn
+#  Run it:      cinder demo/algorithm-any.cn
+#  Compile it:  cinder --compile -o algorithm-any demo/algorithm-any.cn
 # ==========================================================================
 
 def main() -> int32:
