@@ -281,33 +281,6 @@
     border-bottom: 1px solid var(--border);
   }
 
-  .example-tabs {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 20px;
-  }
-  .example-tab {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text-dim);
-    padding: 8px 16px;
-    border-radius: 7px;
-    font-size: 0.88rem;
-    cursor: pointer;
-    font-family: inherit;
-  }
-  .example-tab:hover { color: var(--text); border-color: var(--text-faint); }
-  .example-tab.active {
-    color: #0a0a0b;
-    background: var(--flame-bright);
-    border-color: var(--flame-bright);
-    font-weight: 600;
-  }
-
-  .example-panel { display: none; }
-  .example-panel.active { display: block; }
-
   .code-block {
     background: #0e0c0d;
     border: 1px solid var(--border);
@@ -350,6 +323,63 @@
   .tok-fn { color: #7fc8e0; }
   .tok-type { color: #c9a4ff; }
   .tok-num { color: var(--gold); }
+
+  /* -------------------------------------------------- complexity ladder */
+
+  .ladder { display: flex; flex-direction: column; gap: 28px; }
+
+  .rung {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .rung { grid-template-columns: 1fr; gap: 14px; }
+  }
+
+  .rung-info .level {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--flame-bright);
+    margin-bottom: 8px;
+  }
+  .meter { display: inline-flex; gap: 3px; }
+  .meter span {
+    width: 14px; height: 6px; border-radius: 2px;
+    background: var(--border);
+  }
+  .meter span.on { background: linear-gradient(90deg, var(--gold), var(--flame)); }
+
+  .rung-info h3 { margin: 0 0 8px; font-size: 1.15rem; }
+  .rung-info p { margin: 0 0 10px; color: var(--text-dim); font-size: 0.93rem; }
+  .rung-info ul {
+    margin: 0; padding: 0; list-style: none;
+    font-size: 0.85rem; color: var(--text-faint);
+  }
+  .rung-info li::before { content: "+ "; color: var(--flame-bright); }
+
+  .code-block .output {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.82rem;
+    color: var(--text-faint);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .code-block .output b { color: var(--text-dim); font-weight: 400; }
+
+  .ladder-foot {
+    margin-top: 40px;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+    text-align: center;
+  }
 
   /* -------------------------------------------------- diagnostics showcase */
 
@@ -452,6 +482,7 @@
       CINDER
     </a>
     <nav class="nav-links">
+      <a href="#scale">Scale</a>
       <a href="#language">Language</a>
       <a href="#diagnostics">Diagnostics</a>
       <a href="#status">Status</a>
@@ -470,11 +501,11 @@
       <p class="lede">
         Cinder is an early-stage systems language built around one idea: the compiler
         is a teacher first. Every diagnostic explains what was expected, what was found,
-        and how to fix it — and the type system proves what it can, so you pay for
-        checks only where the compiler can't already tell you're safe.
+        and how to fix it. Start with a five-line script; add types, compile-time code,
+        and proofs only as your program needs them.
       </p>
       <div class="hero-actions">
-        <a class="btn btn-primary" href="#language">See the language</a>
+        <a class="btn btn-primary" href="#scale">See the language</a>
         <a class="btn btn-secondary" href="spec/index.html">Read the spec</a>
       </div>
       <p class="hero-note">
@@ -493,6 +524,144 @@
       <span><span class="dot dim"></span>Playground — planned</span>
     </div>
   </div>
+
+  <section class="examples" id="scale">
+    <div class="wrap">
+      <h2 class="section-title">Start simple. Reach for power when you need it.</h2>
+      <p class="section-sub">
+        A Cinder script can be a few lines with no <code>main</code> and no type annotations.
+        The same language, with the same compiler, also runs code at compile time and proves
+        properties of your program. You only take on each idea when your program needs it.
+      </p>
+
+      <div class="ladder">
+      <div class="rung">
+        <div class="rung-info">
+          <div class="level"><span class="meter"><span class="on"></span><span></span><span></span><span></span></span> Script</div>
+          <h3>Just write it</h3>
+          <p>Top-level statements run in order. Types are inferred, and there is no <code>main</code> to write.</p>
+          <ul><li>no <code>main</code></li><li>no type annotations</li></ul>
+        </div>
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>warm.cn</span></div>
+<pre><span class="tok-kw">module</span> main
+
+<span class="tok-kw">let</span> temps = [18, 21, 25, 19, 30]
+<span class="tok-kw">let</span> warm = temps.iter().values().filter(t =&gt; t &gt; 20).count()
+
+<span class="tok-kw">for</span> t <span class="tok-kw">in</span> temps:
+    println(<span class="tok-str">"{t}°C"</span>)
+
+println(<span class="tok-str">"{warm} warm days"</span>)</pre>
+          <div class="output"><b>$ cinder warm.cn</b>
+18°C
+21°C
+25°C
+19°C
+30°C
+3 warm days</div>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="rung-info">
+          <div class="level"><span class="meter"><span class="on"></span><span class="on"></span><span></span><span></span></span> Structure</div>
+          <h3>Add types where they help</h3>
+          <p>Name your data and your functions. The compiler checks every <code>match</code> covers every case.</p>
+          <ul><li>sum types</li><li>functions with signatures</li><li>exhaustive <code>match</code></li></ul>
+        </div>
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>shapes.cn</span></div>
+<pre><span class="tok-kw">module</span> main
+
+<span class="tok-kw">type</span> <span class="tok-type">shape</span> = @circle(<span class="tok-type">float64</span>) | @rect(<span class="tok-type">float64</span>, <span class="tok-type">float64</span>)
+
+<span class="tok-kw">def</span> <span class="tok-fn">area</span>(s: <span class="tok-type">shape</span>) -&gt; <span class="tok-type">float64</span>:
+    <span class="tok-kw">match</span> s:
+        @circle(r)  =&gt; 3.14159 * r * r
+        @rect(w, h) =&gt; w * h
+
+<span class="tok-kw">for</span> s <span class="tok-kw">in</span> [@circle(1.0), @rect(2.0, 3.0)]:
+    println(<span class="tok-str">"area = {area(s)}"</span>)</pre>
+          <div class="output"><b>$ cinder shapes.cn</b>
+area = 3.14159
+area = 6</div>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="rung-info">
+          <div class="level"><span class="meter"><span class="on"></span><span class="on"></span><span class="on"></span><span></span></span> Compile time</div>
+          <h3>Run code in the compiler</h3>
+          <p>Any <code>pure</code> function can run at compile time. There is no separate macro or template language.</p>
+          <ul><li><code>static</code> values</li><li><code>static assert</code></li><li><code>static if</code> per type</li></ul>
+        </div>
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>fib.cn</span></div>
+<pre><span class="tok-kw">module</span> main
+
+<span class="tok-com"># An ordinary function. Nothing marks it compile-time only.</span>
+<span class="tok-kw">pure def</span> <span class="tok-fn">fib</span>(n: <span class="tok-type">int64</span>) -&gt; <span class="tok-type">int64</span>:
+    <span class="tok-kw">if</span> n &lt; 2:
+        <span class="tok-kw">return</span> n
+    fib(n - 1) + fib(n - 2)
+
+<span class="tok-com"># The compiler runs fib(30); the binary just holds 832040.</span>
+<span class="tok-kw">static</span> FIB_30: <span class="tok-type">int64</span> = fib(30)
+<span class="tok-kw">static assert</span> FIB_30 == 832040, <span class="tok-str">"fib is wrong"</span>
+
+<span class="tok-com"># Picked per type at compile time; the other branch is never compiled.</span>
+<span class="tok-kw">def</span> <span class="tok-fn">width</span>[T]() -&gt; <span class="tok-type">str</span>:
+    <span class="tok-kw">static if</span> T.name() == <span class="tok-str">"int64"</span>:
+        <span class="tok-kw">return</span> <span class="tok-str">"64-bit"</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">return</span> <span class="tok-str">"not 64-bit"</span>
+
+<span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">unit</span>:
+    println(<span class="tok-str">"fib(30) = {FIB_30}"</span>)
+    println(<span class="tok-str">"int64 is {width[int64]()}, int32 is {width[int32]()}"</span>)</pre>
+          <div class="output"><b>$ cinder fib.cn</b>
+fib(30) = 832040
+int64 is 64-bit, int32 is not 64-bit</div>
+        </div>
+      </div>
+      <div class="rung">
+        <div class="rung-info">
+          <div class="level"><span class="meter"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span></span> Proof</div>
+          <h3>Let the compiler prove it</h3>
+          <p>Refinement types and contracts are checked by a solver. What it proves has no runtime check. What it can't prove, you check explicitly with <code>try_from</code>. What it proves false, like <code>show(250)</code>, is a compile error.</p>
+          <ul><li>refinement types</li><li><code>pre</code> / <code>post</code> contracts</li><li>checks removed when proved</li></ul>
+        </div>
+        <div class="code-block">
+          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>percent.cn</span></div>
+<pre><span class="tok-kw">module</span> main
+
+<span class="tok-kw">type</span> <span class="tok-type">percent</span> = <span class="tok-type">int32</span> <span class="tok-kw">where</span> self &gt;= 0 <span class="tok-kw">and</span> self &lt;= 100
+
+<span class="tok-kw">def</span> <span class="tok-fn">show</span>(p: <span class="tok-type">percent</span>) -&gt; <span class="tok-type">unit</span>:
+    println(<span class="tok-str">"{p}%"</span>)
+
+<span class="tok-com"># `pre` is an obligation for every caller and a fact inside the body,</span>
+<span class="tok-com"># so returning `done` as a `percent` needs no check.</span>
+<span class="tok-kw">def</span> <span class="tok-fn">progress</span>(done: <span class="tok-type">int32</span>) -&gt; <span class="tok-type">percent</span>
+<span class="tok-kw">pre</span> done &gt;= 0 <span class="tok-kw">and</span> done &lt;= 100
+: done
+
+<span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">unit</span>:
+    show(42)               <span class="tok-com"># proved from the literal</span>
+    show(progress(75))     <span class="tok-com"># proved from the precondition</span>
+    <span class="tok-kw">match</span> <span class="tok-type">percent</span>.try_from(250):   <span class="tok-com"># checked at runtime, explicitly</span>
+        @some(p) =&gt; show(p)
+        @none    =&gt; println(<span class="tok-str">"250 is not a percent"</span>)</pre>
+          <div class="output"><b>$ cinder percent.cn</b>
+42%
+75%
+250 is not a percent</div>
+        </div>
+      </div>
+      </div>
+
+      <p class="ladder-foot">Every example on this page runs today, on the bytecode VM and as a native binary via <code>cinder --compile</code>.</p>
+    </div>
+  </section>
 
   <section id="language">
     <div class="wrap">
@@ -538,81 +707,6 @@
           <h3>Modules as values</h3>
           <p>Modules can be parameterized and passed around like any other compile-time
           value — functors, not just namespaces.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section class="examples">
-    <div class="wrap">
-      <h2 class="section-title">Cinder, in practice</h2>
-      <p class="section-sub">There's no playground yet — these run today, exactly as shown, via <code>cinder path/to/file.cn</code>.</p>
-
-      <div class="example-tabs" role="tablist">
-        <button class="example-tab active" data-target="ex-fold">Iterators</button>
-        <button class="example-tab" data-target="ex-refine">Refinement types</button>
-        <button class="example-tab" data-target="ex-static">Compile-time <code>if</code></button>
-      </div>
-
-      <div class="example-panel active" id="ex-fold">
-        <div class="code-block">
-          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/algorithm-fold.cn</span></div>
-<pre><span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">int32</span>:
-    <span class="tok-kw">let</span> nums = [1, 2, 3, 4, 5]
-    <span class="tok-kw">let</span> nv = nums.iter().values()
-
-    <span class="tok-com"># Sum: start at 0, add each element</span>
-    println(<span class="tok-str">"sum={nv.fold(0, (acc, x) =&gt; acc + x)}"</span>)
-    <span class="tok-com"># Product: start at 1, multiply each element</span>
-    println(<span class="tok-str">"product={nv.fold(1, (acc, x) =&gt; acc * x)}"</span>)
-
-    <span class="tok-com"># Empty iterator returns the initial value, unlike reduce</span>
-    <span class="tok-kw">let</span> empty: list[<span class="tok-type">int32</span>] = []
-    println(<span class="tok-str">"empty_fold={empty.iter().values().fold(42, (acc, x) =&gt; acc + x)}"</span>)
-    <span class="tok-kw">return</span> 0</pre>
-          <div class="caption">Combinators over <code>iter()</code> are ordinary methods — no separate "iterator trait" ceremony to opt into.</div>
-        </div>
-      </div>
-
-      <div class="example-panel" id="ex-refine">
-        <div class="code-block">
-          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/dependent-types.cn</span></div>
-<pre><span class="tok-com"># A refinement constrains a type with a predicate over `self`.</span>
-<span class="tok-kw">type</span> positive = <span class="tok-type">int32</span> <span class="tok-kw">where</span> self &gt; 0
-
-<span class="tok-com"># `index4` is a `usize` provably a valid index into a 4-element array.</span>
-<span class="tok-kw">type</span> index4 = <span class="tok-type">usize</span> <span class="tok-kw">where</span> self &lt; 4
-
-<span class="tok-com"># `i &lt; 4` and `len(v) == 4` are both known here, so `i &lt; len(v)` is</span>
-<span class="tok-com"># *proved* — this compiles to a bare load, no bounds check emitted.</span>
-<span class="tok-kw">def</span> <span class="tok-fn">safe_get</span>(v: array[<span class="tok-type">int32</span>, 4], i: index4) -&gt; <span class="tok-type">int32</span>:
-    v[i]
-
-<span class="tok-com"># The escape hatch: what the solver can't prove, a runtime check can.</span>
-<span class="tok-kw">def</span> <span class="tok-fn">classify</span>(raw: <span class="tok-type">int32</span>) -&gt; <span class="tok-type">int32</span>:
-    <span class="tok-kw">match</span> positive.try_from(raw):
-        @some(p) =&gt; needs_positive(p)
-        @none    =&gt; 0</pre>
-          <div class="caption">The unwrap <em>is</em> the proof — inside the <code>@some(p)</code> arm, <code>p</code> already has type <code>positive</code>.</div>
-        </div>
-      </div>
-
-      <div class="example-panel" id="ex-static">
-        <div class="code-block">
-          <div class="code-head"><span class="dots"><span></span><span></span><span></span></span><span>demo/static-if.cn</span></div>
-<pre><span class="tok-com"># The condition runs in the compile-time interpreter; the branch not</span>
-<span class="tok-com"># taken is discarded before name resolution ever sees it.</span>
-<span class="tok-kw">def</span> <span class="tok-fn">describe</span>[T]() -&gt; <span class="tok-type">str</span>:
-    <span class="tok-kw">static if</span> T.name() == <span class="tok-str">"int64"</span>:
-        <span class="tok-kw">return</span> <span class="tok-str">"wide"</span>
-    <span class="tok-kw">else</span>:
-        <span class="tok-kw">return</span> <span class="tok-str">"narrow"</span>
-
-<span class="tok-kw">def</span> <span class="tok-fn">main</span>() -&gt; <span class="tok-type">int32</span>:
-    println(<span class="tok-str">"describe[int64]={describe[int64]()}"</span>)
-    println(<span class="tok-str">"describe[int32]={describe[int32]()}"</span>)
-    <span class="tok-kw">return</span> 0</pre>
-          <div class="caption">One <code>describe</code> per instantiation, each branch resolved once, statically, per type.</div>
         </div>
       </div>
     </div>
@@ -703,16 +797,6 @@ just test</pre>
   </div>
 </footer>
 
-<script>
-  document.querySelectorAll('.example-tab').forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      document.querySelectorAll('.example-tab').forEach(function (t) { t.classList.remove('active'); });
-      document.querySelectorAll('.example-panel').forEach(function (p) { p.classList.remove('active'); });
-      tab.classList.add('active');
-      document.getElementById(tab.dataset.target).classList.add('active');
-    });
-  });
-</script>
 
 </body>
 </html>
