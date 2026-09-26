@@ -9,6 +9,7 @@
 #include <functional>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -1437,6 +1438,70 @@ private:
     return entry.result == id || type_params_in_scope_impl(entry.result, seen);
   }
 
+  /// Runs the obligation queue, spending the last resort only on what
+  /// `roots` depend on.
+  ///
+  /// A point of demand owes a default to the leaves it is about to decide
+  /// on, not to every literal in the program: a global flush here answered
+  /// `a` in `let a = 1; println("{b}"); let c: int64 = a` before the
+  /// annotation that pins it (spec/inference-rewrite.md phase 11, defect 1).
+  ///
+  /// "Depends on" is the leaves `roots` mention, plus two kinds of leaf a
+  /// root may be waiting on without mentioning it:
+  ///
+  /// - whatever a stalled decision watches — a pending method call on `?a`
+  ///   may be the only thing that can solve the `?b` being asked about, and
+  ///   it cannot run until `?a` is known. Which leaves a decision will
+  ///   *bind* is not recorded, so its watches are included whole:
+  ///   conservative, and still far narrower than every literal.
+  /// - the arguments of a pending call to an implicit generic whose result
+  ///   leaf is in scope, transitively: `add_one(5)`'s result is only known
+  ///   once the instance for the `5` is chosen, which that call records
+  ///   outside the queue (`pending_open_param_calls_`).
+  ///
+  /// Recomputed each time a default is considered, since the previous one
+  /// may have solved or merged what this one is asking about.
+  auto flush_for(std::span<const type_id> roots) -> void {
+    const auto in_scope = [&](type_id leaf) -> bool {
+      auto vars = std::vector<type_id>{};
+      auto seen = std::unordered_set<type_id>{};
+      for (const auto root : roots) {
+        collect_type_vars(leaf_ctxt_.zonk(root), vars, seen);
+      }
+      for (const auto id : leaf_queue_.stalled()) {
+        const auto &goal = leaf_queue_.at(id);
+        if (goal.kind != infer::obligation_kind::defaulting) {
+          for (const auto watch : goal.watches) {
+            collect_type_vars(leaf_ctxt_.zonk(watch), vars, seen);
+          }
+        }
+      }
+      auto reps = std::unordered_set<type_id>{};
+      for (const auto var : vars) {
+        reps.insert(leaf_ctxt_.find(var));
+      }
+      auto grew = true;
+      while (grew) {
+        grew = false;
+        for (const auto &call : pending_open_param_calls_) {
+          if (call.result_leaf == k_unknown_type ||
+              !reps.contains(leaf_ctxt_.find(call.result_leaf))) {
+            continue;
+          }
+          auto args = std::vector<type_id>{};
+          for (const auto param : call.call_params) {
+            collect_type_vars(leaf_ctxt_.zonk(param), args, seen);
+          }
+          for (const auto arg : args) {
+            grew = reps.insert(leaf_ctxt_.find(arg)).second || grew;
+          }
+        }
+      }
+      return reps.contains(leaf_ctxt_.find(leaf));
+    };
+    (void)leaf_queue_.flush(in_scope);
+  }
+
   /// The type `id` has, at a point where it has to be a type.
   ///
   /// Zonk first, so a leaf a real constraint already solved reads as that
@@ -1475,7 +1540,7 @@ private:
     // rejected the never-instantiated template as "no declared return type,
     // and none could be inferred from its body" (spec/todo.md item 19).
     classify_param_decls();
-    (void)leaf_queue_.flush();
+    flush_for(std::span{&settled, 1});
     auto zonked = leaf_ctxt_.zonk(settled);
     seen.clear();
     if (!mentions_type_var(zonked, seen)) {
@@ -6654,7 +6719,11 @@ private:
     if (!still_open) {
       return;
     }
-    (void)leaf_queue_.flush();
+    auto roots = std::vector<type_id>{};
+    for (const auto &[name, bound] : bindings) {
+      roots.push_back(bound);
+    }
+    flush_for(roots);
     for (auto &[name, bound] : bindings) {
       bound = leaf_ctxt_.zonk(bound);
     }

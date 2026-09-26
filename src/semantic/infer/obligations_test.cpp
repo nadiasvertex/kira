@@ -288,6 +288,40 @@ auto test_deferred_constraints_are_part_of_the_fixpoint() -> void {
          "expected both sides to have become the same type");
 }
 
+/// A scoped flush spends a default only on a leaf the caller asked about.
+/// The resolver binds whatever leaf it is handed, so the predicate is the
+/// only thing keeping `b` open — a flush that ignored it would pin both.
+auto test_scoped_flush_defaults_only_what_is_asked() -> void {
+  auto f = fixture{};
+  const auto a = f.var("a");
+  const auto b = f.var("b");
+  const auto int32 = f.table.builtin("int32");
+  f.queue.set_resolver(obligation_kind::defaulting,
+                       [&](const obligation &goal) -> obligation_report {
+                         (void)f.ctx.bind(goal.watches.front(), int32,
+                                          k_no_cause);
+                         return {.outcome = obligation_outcome::discharged};
+                       });
+  for (const auto leaf : {a, b}) {
+    f.queue.add(obligation{.kind = obligation_kind::defaulting,
+                           .watches = {leaf},
+                           .goal = "an integer literal defaults to `int32`"});
+  }
+  expect(f.queue
+             .flush([&](type_id leaf) -> bool {
+               return f.ctx.find(leaf) == f.ctx.find(a);
+             })
+             .has_value(),
+         "expected the scoped flush to settle");
+  expect(f.ctx.zonk(a) == int32, "expected the asked-for leaf to default");
+  expect(f.ctx.is_meta(f.ctx.zonk(b)),
+         "expected the leaf nobody asked about to stay open");
+
+  // It is not lost: a later unscoped flush still owes it the default.
+  expect(f.queue.flush().has_value(), "expected the full flush to settle");
+  expect(f.ctx.zonk(b) == int32, "expected the deferred default to apply");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -295,6 +329,7 @@ auto main() -> int {
   test_merge_does_not_strand_a_watcher();
   test_chained_obligations_settle_in_one_flush();
   test_defaulting_is_last_resort();
+  test_scoped_flush_defaults_only_what_is_asked();
   test_failure_is_reported();
   test_missing_resolver_stalls();
   test_deferred_constraints_are_part_of_the_fixpoint();

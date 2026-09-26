@@ -21,6 +21,8 @@ anywhere.
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
 | 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
+| 10 | `method_call` as an obligation | **In progress** — see below |
+| 11 | Demand discipline: default only what a decision needs | **In progress** — audit and step 1 (scoped `demand`) done; steps 2–3 open |
 
 ## Why
 
@@ -1260,6 +1262,116 @@ instance name *and* with no instance at all: the value it computes is right
 either way. Only the golden records which function the call resolved to,
 which is the thing `snapshot_test.cpp`'s own header says nothing else in the
 suite can see.
+
+### Phase 11 — demand discipline *(audit done; step 1 done)*
+
+`spec/todo.md` item 14 looked like one more literal one-off. It is not; it is
+one instance of a pattern the audit below found at almost every `demand`
+site. The engine is right — a literal is a leaf with a `defaulting`
+obligation, spent only where a decision needs a type. What is wrong is
+*where* and *how much* the checker spends.
+
+The baseline that makes these bugs rather than a spec question: with no
+demand site in between, a later use already types a literal —
+
+```cinder
+let a = 1
+let c: int64 = a     # compiles; `a` is `int64`
+```
+
+so every probe below, which differs only by a use in between, is an
+inconsistency. All eight fail on master (2026-09-26).
+
+#### Defect 1: `demand` is global
+
+`demand(id)` runs `leaf_queue_.flush()`, which defaults *every* pending
+literal in the program, not the ones `id` mentions. So every site below also
+defaults unrelated literals:
+
+```cinder
+let a = 1
+let b = 2
+println("{b}")       # demanding `b` defaults `a` too
+let c: int64 = a     # error: expected `int64`, found `int32`
+```
+
+This is also why `demand` has grown guards against itself (items 19, 20, the
+reentrancy flag). `settle_bindings` is the same global flush under another
+name.
+
+#### Defect 2: demand where the type only flows
+
+| Site | Line (at audit) | Failing probe |
+|---|---|---|
+| lambda expected types (`preliminary_type_bindings`, `has_lambda`) | 5284 | item 14: `fold(0, (n, w) => n + w.len())` |
+| arithmetic operands | 8723 | `let b = a + 2` then `let c: int64 = b` |
+| interpolated value | 17475 | `println("{a}")` then `let c: int64 = a` |
+
+None of these decides anything irrevocable. The lambda can be checked
+against the open leaf (the body's `n + usize` then solves it — arithmetic
+already ties operands before it demands). The operator and the `format`
+capability can be obligations checked once the leaf settles.
+
+#### Defect 3: demand the whole type where only the shape is needed
+
+| Site | Line (at audit) | Failing probe |
+|---|---|---|
+| indexing | 15522, 18701 | `let xs = [1, 2]` then `let y: int64 = xs[0]` |
+| `for` iterable | 16440 | `for x in [1, 2]: t = t + x` with `t: int64` |
+| `for` tuple split | 18067 | `for (a, b) in [(1, 2)]: t = t + a` |
+| structural pattern | 18124 | `let (a, b) = p` then `let c: int64 = a` |
+
+Each selects on the head constructor (`list`, a tuple) and never on the
+element. A `demand_shape` that defaults only when the head itself is a
+variable fixes all four.
+
+#### Legitimate decisions (keep, once scoped)
+
+| Site | Line (at audit) | Why it must decide |
+|---|---|---|
+| authoritative generic solve (`may_default`) | 6937 | names an instance |
+| method on a receiver with no such method | 12237 | selects a method; `let a = 5; a.abs()` reports "no method `abs` on `int32`" — confidently wrong, candidate for phase 10's `method_call` deferral |
+| splice operand | 8958 | the compile-time evaluator needs the value now |
+| inferred return type | 19931 | the function's signature is final |
+| literal against a non-number (`refuses_number`) | 1592 | diagnostic only |
+
+#### Plan
+
+1. **Scope `demand`** to the leaves its argument mentions, plus the watches of
+   stalled non-defaulting obligations (a leaf that some pending decision is
+   waiting on may be what solves `id`). Same for `settle_bindings`.
+2. **`demand_shape`** for the four defect-3 sites.
+3. **Remove** demand at the three defect-2 sites (item 14 falls out).
+
+Each step lands with its probes as `codegen_stress` fixtures carrying
+`# expect:`, each observed failing first.
+
+#### Step 1 landed
+
+`obligation_queue::flush(may_default)` rations the last resort; every other
+obligation still runs to fixpoint. The checker's `flush_for(roots)` supplies
+the scope, used by `demand` and `settle_bindings`. The rest of the global
+flushes (`flush_deferred`, `flush_leaf_literals`) stay global: they are the
+end of the walk, where every remaining default is owed.
+
+The scope needed one more edge than the plan named. `add_one(5)` (for an
+unannotated `def add_one(x)`) gives the call a result leaf that only settles
+once an instance is chosen for the `5` — a dependency recorded in
+`pending_open_param_calls_`, outside the queue. Without following it,
+`println("{add_one(5)}")` left the `5` open and lowering failed
+(`std_test/deferred_leaf_interpolation`). `flush_for` now follows a pending
+call's result leaf to its argument leaves, transitively.
+
+| Broken | What caught it |
+|---|---|
+| `flush_for` ignores its scope (the old global flush) | `codegen_stress/107` (`# expect: 45`) — `a` defaults to `int32` at `b + 1` and `3000000000` no longer fits |
+| predicate not consulted in `flush(may_default)` | `obligations_test` (`test_scoped_flush_defaults_only_what_is_asked`) |
+| scope without the open-call edge | `std_test` (`deferred_leaf_interpolation`) |
+
+Found while probing, pre-existing, not yet catalogued elsewhere: the result
+of an implicit generic is not typed by a later use —
+`let r = add_one(5); let c: int64 = r` reports `expected int64, found
+int32`. The instance for `5` is chosen before the annotation is read.
 
 ## Definition of done
 

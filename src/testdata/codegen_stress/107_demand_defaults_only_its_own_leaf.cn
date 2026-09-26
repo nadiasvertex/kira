@@ -1,0 +1,23 @@
+module codegen_stress.demand_defaults_only_its_own_leaf
+
+# expect: 45
+
+# `b + 1` is a point of demand: the operator is chosen from the operand type,
+# so `b`'s literal is owed its `int32` default there. `a`'s is not — nothing
+# about `b + 1` depends on it, and `let wide: int64 = a` two lines later is
+# what says what `a` is.
+#
+# `demand` used to flush the whole obligation queue, defaulting *every*
+# pending literal: `a` became `int32` at `b + 1`, and 3000000000 does not fit
+# (spec/inference-rewrite.md phase 11, defect 1).
+#
+# `# expect:` rather than cross-tier agreement: a literal typed too early is
+# typed identically by both tiers. The answer is only right if `a` really is
+# an `int64`.
+
+def main() -> int32:
+    let a = 3000000000
+    let b = 2
+    let d = b + 1
+    let wide: int64 = a
+    return int32(wide - 2999999958) + d

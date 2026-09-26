@@ -174,6 +174,11 @@ auto obligation_queue::run_fixpoint()
 }
 
 auto obligation_queue::flush() -> std::expected<void, obligation_failure> {
+  return flush([](type_id) -> bool { return true; });
+}
+
+auto obligation_queue::flush(const std::function<bool(type_id)> &may_default)
+    -> std::expected<void, obligation_failure> {
   auto settled = run_fixpoint();
   if (!settled.has_value()) {
     return settled;
@@ -188,7 +193,9 @@ auto obligation_queue::flush() -> std::expected<void, obligation_failure> {
     for (size_t i = 0; i < records_.size(); ++i) {
       const auto id = static_cast<obligation_id>(i);
       if (records_[i].discharged ||
-          records_[i].goal.kind != obligation_kind::defaulting) {
+          records_[i].goal.kind != obligation_kind::defaulting ||
+          records_[i].goal.watches.empty() ||
+          !may_default(records_[i].goal.watches.front())) {
         continue;
       }
       auto attempted = attempt(id);

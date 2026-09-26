@@ -127,6 +127,19 @@ public:
   /// win a race against a real constraint that had not yet arrived.
   auto flush() -> std::expected<void, obligation_failure>;
 
+  /// `flush`, but a default is spent only on a leaf `may_default` accepts.
+  ///
+  /// A default is owed at a point of demand, and only to what that point
+  /// needs: defaulting every pending literal because one of them was asked
+  /// for answers the others before the constraints that were about to pin
+  /// them (`let a = 1; println("{b}"); let c: int64 = a`). Every other
+  /// obligation still runs to fixpoint as usual — only the last resort is
+  /// rationed. `may_default` is asked about the leaf a defaulting obligation
+  /// watches, and is asked afresh each round, since a default applied in one
+  /// round can merge or solve what the next is asking about.
+  auto flush(const std::function<bool(type_id)> &may_default)
+      -> std::expected<void, obligation_failure>;
+
   /// The obligations still undischarged after a `flush` — the ones a
   /// "cannot infer" diagnostic reports.
   [[nodiscard]] auto stalled() const -> std::vector<obligation_id>;
