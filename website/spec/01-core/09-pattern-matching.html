@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>09-pattern-matching</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">09-pattern-matching</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#pattern-matching" id="toc-pattern-matching">9. Pattern
+Matching</a>
+<ul>
+<li><a href="#match" id="toc-match"><code>match</code></a></li>
+<li><a href="#guard-clauses" id="toc-guard-clauses">Guard
+clauses</a></li>
+<li><a href="#destructuring"
+id="toc-destructuring">Destructuring</a></li>
+<li><a href="#if-let-and-while-let"
+id="toc-if-let-and-while-let"><code>if let</code> and
+<code>while let</code></a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="pattern-matching">9. Pattern Matching</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>match</code>, guard clauses, destructuring of tuples and
+structs, and <code>if let</code>/<code>while let</code>.</p>
+<h2 id="match"><code>match</code></h2>
+<p><code>match_expr</code>, <code>pattern</code> in
+<code>spec/cinder-grammar.ebnf</code>. <code>match</code> is an
+expression: it produces a value, and its type is the unified type of all
+arms. Exhaustiveness is checked for sum types — an unhandled variant is
+a compile error (<code>check.cpp</code>’s exhaustiveness pass over
+sum-type discriminants).</p>
+<pre class="cinder"><code>let description = match score:
+    100      =&gt; &quot;perfect&quot;
+    90..=99  =&gt; &quot;excellent&quot;
+    70..=89  =&gt; &quot;good&quot;
+    _        =&gt; &quot;needs work&quot;</code></pre>
+<p><code>match</code> is the required way to inspect a sum type (see <a
+href="10-type-declarations.html">Type Declarations</a>):</p>
+<pre class="cinder"><code>type shape =
+    | @circle(float64)
+    | @rect(float64, float64)
+
+def area(s: shape) -&gt; float64:
+    match s:
+        @circle(r)    =&gt; 3.14159 * r * r
+        @rect(w, h)   =&gt; w * h</code></pre>
+<h2 id="guard-clauses">Guard clauses</h2>
+<p>An <code>if</code> condition after a pattern further restricts when
+that arm matches; the pattern must still match, and the guard must also
+hold. A guarded arm does not count toward exhaustiveness on its own — a
+following unguarded arm for the same shape is required (as
+<code>@circle(r)</code> is, above).</p>
+<pre class="cinder"><code>match s:
+    @circle(r) if r &lt;= 0.0 =&gt; 0.0
+    @circle(r)             =&gt; 3.14159 * r * r
+    @rect(w, h)            =&gt; w * h</code></pre>
+<h2 id="destructuring">Destructuring</h2>
+<p>Patterns destructure tuples and structs positionally or by field
+name.</p>
+<pre class="cinder"><code>let point = (3.0, 4.0)
+let (x, y) = point
+
+type person = { name: str, age: int32 }
+let { name, age } = someone</code></pre>
+<h2 id="if-let-and-while-let"><code>if let</code> and
+<code>while let</code></h2>
+<p><code>if let</code> matches a single pattern and binds on success,
+running its block only when the match holds:</p>
+<pre class="cinder"><code>if let @some(u) = find_user(42):
+    println(&quot;found {u.name}&quot;)</code></pre>
+<p><code>while let</code> repeats as long as the pattern keeps matching
+— for draining a source that eventually stops matching (e.g. yields
+<code>@none</code>):</p>
+<pre class="cinder"><code>while let @some(line) = reader.next():
+    process(line)</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="10-type-declarations.html">Type Declarations</a> — sum
+types and structs, <code>match</code>’s primary subjects.</li>
+<li><a href="11-error-handling.html">Error Handling</a> —
+<code>option</code>/<code>result</code>, the sum types
+<code>if let</code>/<code>while let</code> are most often used
+with.</li>
+</ul>
+</body>
+</html>

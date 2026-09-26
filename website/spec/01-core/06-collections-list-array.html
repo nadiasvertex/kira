@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>06-collections-list-array</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">06-collections-list-array</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#collections-list-and-array"
+id="toc-collections-list-and-array">6. Collections: <code>list</code>
+and <code>array</code></a>
+<ul>
+<li><a href="#listt" id="toc-listt"><code>list[T]</code></a></li>
+<li><a href="#arrayt-n"
+id="toc-arrayt-n"><code>array[T, n]</code></a></li>
+<li><a href="#list-vs.-array" id="toc-list-vs.-array"><code>list</code>
+vs. <code>array</code></a>
+<ul>
+<li><a href="#what-an-unannotated-literal-is"
+id="toc-what-an-unannotated-literal-is">What an unannotated literal
+is</a></li>
+<li><a href="#indexing-and-iteration-are-traits"
+id="toc-indexing-and-iteration-are-traits">Indexing and iteration are
+traits</a></li>
+</ul></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="collections-list-and-array">6. Collections: <code>list</code>
+and <code>array</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers the two built-in prelude sequence types, <code>list[T]</code>
+and <code>array[T, n]</code>, their literal syntax and core operations,
+and the distinction between them. Other collections
+(<code>map[K, V]</code>, <code>set[T]</code>, etc.) are standard library
+types, not prelude built-ins — see <a
+href="../04-stdlib/collections/">Collections</a> in the standard library
+section.</p>
+<h2 id="listt"><code>list[T]</code></h2>
+<p>A resizable, heap-allocated sequence, available without any
+import.</p>
+<pre class="cinder"><code>let names: list[str] = [&quot;Alice&quot;, &quot;Bob&quot;, &quot;Carol&quot;]
+let first = names[0]           # &quot;Alice&quot;
+let count = names.len()        # 3
+
+var items: list[int32] = []
+items.push(1)
+items.push(2)</code></pre>
+<p>Standard operations include <code>map</code>, <code>filter</code>,
+<code>find</code> (returns <code>option[T]</code>), <code>any</code>,
+<code>all</code>:</p>
+<pre class="cinder"><code>names.map(n =&gt; n.to_uppercase())      # produces a new list
+names.filter(n =&gt; n.len() &gt; 3)        # keeps elements matching predicate
+names.find(n =&gt; n.starts_with(&quot;A&quot;))   # returns option[str]
+names.any(n =&gt; n == &quot;Bob&quot;)            # returns bool
+names.all(n =&gt; n.len() &gt; 0)           # returns bool</code></pre>
+<h2 id="arrayt-n"><code>array[T, n]</code></h2>
+<p>A fixed-size sequence whose length <code>n</code> is part of its type
+and known at compile time. A <code>[value; n]</code> literal repeats
+<code>value</code> <code>n</code> times.</p>
+<pre class="cinder"><code>let zeros: array[float64, 4] = [0.0; 4]    # four zeros
+let rgb:   array[uint8,   3] = [255, 0, 0] # red</code></pre>
+<h2 id="list-vs.-array"><code>list</code> vs. <code>array</code></h2>
+<p><code>list</code> is heap-allocated and growable; its length is a
+runtime property. <code>array</code> is fixed-size; its length is part
+of the type (<code>array[T, n]</code> is a distinct type per
+<code>n</code>) and requires no heap allocation. For general-purpose
+code, <code>list</code> is the default choice; <code>array</code> is for
+when the size is fixed and known at compile time.</p>
+<h3 id="what-an-unannotated-literal-is">What an unannotated literal
+is</h3>
+<p>A sequence literal with no expected type is a
+<strong><code>list</code></strong> — for both spellings, including the
+repeat form:</p>
+<pre class="cinder"><code>let xs = [1, 2, 3]                        # list[int32]
+let zeros = [0.0; 4]                      # list[float64]
+let rgb: array[uint8, 3] = [255, 0, 0]    # array, because it was asked for</code></pre>
+<p>One rule covers both forms deliberately. “A literal with a constant
+repeat count is an array, otherwise a list” would make
+<code>[0; 4]</code> and <code>[0, 0, 0, 0]</code> different types — a
+distinction nothing else in the language draws, and one a reader would
+have to memorize rather than derive. An <code>array</code> is what you
+ask for, matching the default this section states.</p>
+<h3 id="indexing-and-iteration-are-traits">Indexing and iteration are
+traits</h3>
+<p><code>v[i]</code>, <code>v[i] = x</code> and <code>for x in v</code>
+are not reserved for the built-in sequences. A user type provides them
+by implementing <code>std.traits.index</code>,
+<code>std.traits.index_set</code>, and
+<code>std.iter.into_iterator</code>; a literal builds one through
+<code>std.traits.from_array</code>. See <a
+href="../03-advanced/38-machine-layer.html">The <code>machine</code>
+Layer</a> and <code>spec/list-migration-design.md</code> —
+<code>std.list</code>’s <code>vector[T]</code> is a growable sequence
+written entirely in Cinder over exactly those traits.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="07-strings.html">Strings</a> — <code>str</code> is a view
+type with its own method surface, not a <code>list</code>.</li>
+<li>Collections (Standard Library) — <code>map[K, V]</code>,
+<code>set[T]</code>, and the rest of the collection types outside the
+prelude.</li>
+</ul>
+</body>
+</html>

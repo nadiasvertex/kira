@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>08-control-flow</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">08-control-flow</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#control-flow" id="toc-control-flow">8. Control Flow</a>
+<ul>
+<li><a href="#every-construct-is-an-expression"
+id="toc-every-construct-is-an-expression">Every construct is an
+expression</a></li>
+<li><a href="#if" id="toc-if"><code>if</code></a></li>
+<li><a href="#while" id="toc-while"><code>while</code></a>
+<ul>
+<li><a href="#while-let"
+id="toc-while-let"><code>while let</code></a></li>
+</ul></li>
+<li><a href="#for" id="toc-for"><code>for</code></a>
+<ul>
+<li><a href="#the-loop-head-destructures-it-does-not-match"
+id="toc-the-loop-head-destructures-it-does-not-match">The loop head
+destructures, it does not match</a></li>
+<li><a href="#for-as-an-expression-comprehension"
+id="toc-for-as-an-expression-comprehension"><code>for</code> as an
+expression (comprehension)</a></li>
+</ul></li>
+<li><a href="#break-and-continue"
+id="toc-break-and-continue"><code>break</code> and
+<code>continue</code></a></li>
+<li><a href="#scope" id="toc-scope"><code>scope</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="control-flow">8. Control Flow</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Covers <code>if</code>/<code>elif</code>/<code>else</code> as an
+expression, the postfix <code>if/else</code> form, <code>while</code>
+(including <code>while let</code>), both forms of <code>for</code>
+(statement and comprehension), <code>break</code>/<code>continue</code>,
+and the <code>scope</code> block.</p>
+<h2 id="every-construct-is-an-expression">Every construct is an
+expression</h2>
+<p><code>if</code>, <code>match</code>, and block bodies all have a
+value and a type. <code>if</code>/<code>match</code> yield the value of
+the branch taken; a <code>for ... =&gt;</code> comprehension yields a
+<code>list</code>; constructs that run only for effect —
+<code>while</code>, a plain <code>for</code> statement, an assignment —
+have type <code>unit</code>.</p>
+<h2 id="if"><code>if</code></h2>
+<p><code>if_expr</code> in <code>spec/cinder-grammar.ebnf</code>.</p>
+<pre class="cinder"><code>if score &gt; 90:
+    return &quot;A&quot;
+elif score &gt; 80:
+    return &quot;B&quot;
+else:
+    return &quot;C&quot;</code></pre>
+<p>As an expression, <code>if</code>’s value is the last expression of
+the branch taken:</p>
+<pre class="cinder"><code>let grade =
+    if score &gt; 90: &quot;A&quot;
+    elif score &gt; 80: &quot;B&quot;
+    else: &quot;C&quot;</code></pre>
+<p>For an inline choice between two values, the postfix form puts the
+likely value first:</p>
+<pre class="cinder"><code>let label = &quot;pass&quot; if score &gt; 90 else &quot;fail&quot;</code></pre>
+<h2 id="while"><code>while</code></h2>
+<p><code>while_stmt</code>.</p>
+<pre class="cinder"><code>var n = 1
+while n &lt; 100:
+    n = n * 2</code></pre>
+<h3 id="while-let"><code>while let</code></h3>
+<p><code>while_stmt</code>’s second form repeats the body as long as a
+pattern keeps matching a re-evaluated scrutinee, binding the pattern’s
+names inside the body on each successful match:</p>
+<pre class="cinder"><code>while let @some(line) = reader.next():
+    process(line)</code></pre>
+<p>The loop ends the first time the pattern fails to match (here, when
+<code>reader.next()</code> yields <code>@none</code>) without running
+the body for that iteration. See <a
+href="09-pattern-matching.html#if-let-and-while-let">Pattern
+Matching</a> for the full rules shared with <code>if let</code>.</p>
+<h2 id="for"><code>for</code></h2>
+<p><code>for_stmt</code> (statement form, runs for effect) and
+<code>for_expr</code> (expression form, uses <code>=&gt;</code> to
+denote the yield expression — a distinct production from
+<code>for_stmt</code>, per the grammar’s own note).</p>
+<pre class="cinder"><code>for i in 0..10:          # 0, 1, ..., 9
+    println(i)
+
+for i in 0..=10:         # 0, 1, ..., 10
+    println(i)
+
+for name in names:
+    println(&quot;Hello, {name}&quot;)</code></pre>
+<p>A range with no upper bound (<code>0..</code>) is valid and never
+terminates on its own; pair it with <code>break</code>, or with an
+adapter like <code>take</code>/<code>take_while</code> when it feeds an
+iterator chain (<code>std.iter</code>), rather than driving a bare
+<code>for</code> to completion.</p>
+<h3 id="the-loop-head-destructures-it-does-not-match">The loop head
+destructures, it does not match</h3>
+<p><code>for_vars</code> accepts any <code>pattern</code>, so a
+<code>for</code> head can destructure a tuple or struct the same way a
+<code>let</code> can:</p>
+<pre class="cinder"><code>for (x, y) in points:
+    println(&quot;{x}, {y}&quot;)</code></pre>
+<p>This pattern must be <strong>irrefutable</strong> — guaranteed to
+match every element the iterable produces (see the note on
+irrefutability in <code>spec/cinder-grammar.ebnf</code>).
+<code>for</code> has no “skip elements that don’t match” mode the way
+<code>while let</code> does for a single scrutinee; a <code>for</code>
+head is a destructuring bind repeated per element, not a per-element
+test. To drop non-matching elements, filter with a guard instead:</p>
+<pre class="cinder"><code>for x in xs if keep(x):
+    ...</code></pre>
+<p>or, when the source is naturally an iterator that eventually stops
+matching, drive it with <code>while let</code> against
+<code>.next()</code> directly rather than a <code>for</code> loop.</p>
+<h3 id="for-as-an-expression-comprehension"><code>for</code> as an
+expression (comprehension)</h3>
+<p><code>for ... =&gt; expr</code> collects results into a
+<code>list</code>. It supports a filter guard and multiple generators
+(comma-separated), producing the cross product:</p>
+<pre class="cinder"><code>let squares = for x in 1..=5 =&gt; x * x    # [1, 4, 9, 16, 25]
+let evens   = for x in 0..20 if x % 2 == 0 =&gt; x
+let pairs   = for x in 0..3, y in 0..3 =&gt; (x, y)</code></pre>
+<h2 id="break-and-continue"><code>break</code> and
+<code>continue</code></h2>
+<p>Inside a <code>while</code> or <code>for</code> <em>statement</em>
+loop, <code>break</code> exits the innermost enclosing loop and
+<code>continue</code> skips to the next iteration:</p>
+<pre class="cinder"><code>for line in lines:
+    if line.is_empty():
+        continue
+    if line == &quot;stop&quot;:
+        break
+    process(line)</code></pre>
+<p>Rules:</p>
+<ul>
+<li>Both require an indented block body to appear in. The single-line
+<code>if cond: expr</code> form takes an <em>expression</em>, and
+<code>break</code>/<code>continue</code> are statements —
+<code>if line.is_empty(): continue</code> does not parse.</li>
+<li>Neither carries a value, and neither takes a loop label:
+<code>break</code> inside a nested loop exits only the innermost
+one.</li>
+<li>A <code>for</code> <em>expression</em> (the
+<code>for x in xs =&gt; expr</code> comprehension) has no block body, so
+there is nowhere to put a <code>break</code>/<code>continue</code>; use
+a guard (<code>for x in xs if keep(x) =&gt; f(x)</code>) to drop
+elements instead.</li>
+</ul>
+<h2 id="scope"><code>scope</code></h2>
+<p><code>scope_stmt</code>. A bare block, introduced without a condition
+or subject, that exists only to bound the lifetime of the bindings
+inside it:</p>
+<pre class="cinder"><code>scope:
+    let f = fs.open(&quot;build.log&quot;)
+    f.write_all(summary)
+# f is out of scope, and already dropped, by the time execution reaches here
+process_next_step()</code></pre>
+<ul>
+<li>A name bound with <code>let</code>/<code>var</code> inside a
+<code>scope</code> block is not visible past its <code>DEDENT</code> —
+the same rule that already applies to an
+<code>if</code>/<code>while</code>/<code>for</code>/<code>match</code>
+body, just without a loop or branch attached to it.</li>
+<li>Every live local declared directly in the block is dropped, in
+reverse declaration order, no later than the block’s end — the same drop
+rule as any other scope (see <a
+href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a>). This is what distinguishes <code>scope</code>
+from simply indenting code: it forces those drops to happen at that
+point rather than waiting for the enclosing function or loop body to
+end.</li>
+<li><code>scope</code> is not a loop: <code>break</code> and
+<code>continue</code> pass through it and still target the nearest
+enclosing <code>while</code>/<code>for</code>. A <code>return</code>
+inside a <code>scope</code> block exits the function, unwinding through
+the block’s drops on the way out, same as any other early return.</li>
+<li>Unlike Python’s <code>with</code>, there is no separate enter/exit
+protocol to implement — <code>scope</code> is a plain block; whatever
+drop behavior its contents have is exactly the same <code>drop</code> a
+type already runs when any other scope ends. There’s nothing to opt a
+type into beyond implementing <code>drop</code> itself.</li>
+</ul>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><code>if</code>, <code>while</code> (including
+<code>while let</code>), both forms of <code>for</code>, and
+<code>break</code>/<code>continue</code> are implemented
+end-to-end.</li>
+<li>The irrefutability rule for a <code>for</code> head (and for
+<code>let</code>/<code>var</code>) is not yet enforced: the checker
+records a for-loop pattern’s bindings without checking that it can’t
+fail, and lowering (<code>hir/lower.cpp</code>) assumes it never does —
+passing a refutable pattern (e.g. <code>for @some(x) in xs:</code>)
+currently compiles instead of being rejected, and its runtime behavior
+on a non-matching element is unspecified. Treat this as a checker gap
+against the rule stated above, not a supported way to filter a
+loop.</li>
+<li><code>scope</code> is design-only: the <code>scope_stmt</code>
+production is in <code>spec/cinder-grammar.ebnf</code>, but there is no
+<code>scope</code> keyword token and no parser/checker/lowering support,
+so <code>scope:</code> is a parse error today. Everything in the
+<code>scope</code> section above describes the target design — including
+its drop behavior, which rests on scope-exit <code>drop</code> glue that
+does <strong>not</strong> exist for any kind of scope (see <a
+href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a>, Implementation status). Implementing
+<code>scope</code> is therefore blocked on destructors, not merely on
+parsing a keyword.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="09-pattern-matching.html">Pattern Matching</a> —
+<code>match</code>, the other primary expression-valued control
+construct.</li>
+<li><a href="03-bindings.html">Bindings</a> — <code>var</code>,
+typically the loop counter in a <code>while</code>.</li>
+<li><a
+href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a> — the drop rules <code>scope</code> relies on to
+end a resource’s lifetime early.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>43-list</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">43-list</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#listt" id="toc-listt">43. <code>list[T]</code></a>
+<ul>
+<li><a href="#representation"
+id="toc-representation">Representation</a></li>
+<li><a href="#operations" id="toc-operations">Operations</a>
+<ul>
+<li><a href="#builtin-inherent-methods"
+id="toc-builtin-inherent-methods">Builtin inherent methods</a></li>
+<li><a href="#std.list-extensions"
+id="toc-std.list-extensions"><code>std.list</code> extensions</a></li>
+<li><a href="#deliberately-absent"
+id="toc-deliberately-absent">Deliberately absent</a></li>
+</ul></li>
+<li><a href="#std.mem-typed-allocation"
+id="toc-std.mem-typed-allocation"><code>std.mem</code> — typed
+allocation</a></li>
+<li><a href="#vectort-a-list-owning-its-own-storage"
+id="toc-vectort-a-list-owning-its-own-storage"><code>vector[T]</code> —
+a list owning its own storage</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+<li><a href="#vectort-as-an-ordinary-collection"
+id="toc-vectort-as-an-ordinary-collection"><code>vector[T]</code> as an
+ordinary collection</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="listt">43. <code>list[T]</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>list[T]</code>’s representation, growth strategy, and
+the operations available on it today, split across a compiler builtin
+core and the ordinary- Cinder extensions in <code>std.list</code>.</p>
+<h2 id="representation">Representation</h2>
+<p><code>list[T]</code> is a compiler builtin generic
+(<code>type_kind::builtin_generic_kind</code>), not (yet) an ordinary
+Cinder struct — <code>list</code> still appears in the compiler’s
+<code>k_builtin_generic_arities</code> table rather than being defined
+as <code>pub type list[T] = { ... }</code> over the <code>machine</code>
+primitive substrate. The runtime layout, shared by both backends, is a
+3-slot heap header:</p>
+<pre><code>{ u64 len; u64 cap; T* data; }</code></pre>
+<p>(<code>src/runtime/layout.h</code>.)</p>
+<ul>
+<li><strong>Growth.</strong> <code>push</code> reserves a slot via
+<code>list_reserve_slot</code>, which grows <code>data</code> when
+<code>len == cap</code>: starting capacity 4, doubling thereafter.
+Growing allocates a fresh, larger block from the shared bump arena and
+copies the existing <code>len * elem_size</code> bytes across; there is
+no in-place realloc.</li>
+<li><strong>Element width.</strong> The reserved slot’s address is
+computed from <code>layout_of(T).size_bytes</code> (1/2/4/8 bytes), so
+<code>list[bool]</code> and <code>list[int16]</code> do not pay 8 bytes
+per element the way the header’s own slots do.</li>
+<li>The denaturalization to
+<code>pub type list[T] = { data: *mut T, len: usize, cap: usize }</code>
+over the <code>machine</code> substrate
+(<code>spec/collections-algorithms-design.md</code> §6.2) is
+<strong>half done</strong>: the destination type exists and works — see
+<code>vector[T]</code> below — but <code>list[T]</code> itself has not
+moved to it. What still stands in the way is the <em>sugar</em>, not the
+data structure: array-literal lowering through a
+<code>list_from_array</code> constructor, <code>for</code> routed
+through <code>into_iterator</code>, and an <code>index</code> trait with
+an operator hook for <code>v[i]</code> (indexing is still a builtin
+operator, not a user-overridable trait method). <strong>Those three
+language changes have since landed</strong> — indexing is the
+<code>std.traits.index</code>/<code>index_set</code> traits,
+<code>for</code> routes through <code>std.iter.into_iterator</code>, and
+literals construct through <code>std.traits.from_array</code> — and
+<code>vector[T]</code> implements all four, so it is now usable as
+<code>let v: vector[int32] = [1, 2, 3]</code>, <code>v[0]</code>,
+<code>v[1] = x</code>, <code>for x in v</code>. What still blocks
+<code>list[T]</code> itself moving is scope-exit <code>drop</code>
+(<code>../../../todo.md</code> item 6) and a <em>borrowing</em>
+iteration route, since <code>into_iter(self)</code> consumes the
+collection (item 20). See <a
+href="../../../list-migration-design.html">list-migration-design.md</a>.</li>
+</ul>
+<h2 id="operations">Operations</h2>
+<h3 id="builtin-inherent-methods">Builtin inherent methods</h3>
+<p>Only two names have real lowering as builtin methods, from the
+compiler’s <code>k_builtin_methods</code> table:</p>
+<ul>
+<li><code>len(self) -&gt; usize</code></li>
+<li><code>push(mut self, x: T) -&gt; unit</code> — amortized O(1).</li>
+</ul>
+<p>Indexing (<code>xs[i]</code>, <code>&amp;xs[i]</code>,
+<code>&amp;mut xs[i]</code>) is a builtin operator on
+<code>list[T]</code>, O(1), and is not expressed through any trait
+yet.</p>
+<h3 id="std.list-extensions"><code>std.list</code> extensions</h3>
+<p><code>src/std/list.cn</code> adds, as an ordinary
+<code>extend[T] list[T]</code> block over <code>len</code> and
+indexing:</p>
+<ul>
+<li><code>is_empty(self) -&gt; bool</code></li>
+<li><code>first(self) -&gt; option[T]</code> — <code>@some</code> of the
+first element, <code>@none</code> if empty.</li>
+<li><code>last(self) -&gt; option[T]</code> — <code>@some</code> of the
+last element, <code>@none</code> if empty.</li>
+</ul>
+<h3 id="deliberately-absent">Deliberately absent</h3>
+<ul>
+<li><strong><code>pop</code>, <code>clear</code>, <code>insert</code>,
+<code>remove</code>.</strong> These need to <em>shrink</em> a list,
+which no primitive currently exposes; they return once <code>list</code>
+is rebuilt over <code>alloc</code>/pointer primitives.</li>
+<li><strong><code>contains</code>, <code>any</code>, <code>all</code>,
+<code>find</code>, <code>filter</code>.</strong> These were builtin
+methods historically but are not reimplemented as <code>list</code>
+methods: they are iterator operations (<code>xs.iter().any(...)</code>),
+so they compose and stay lazy. An eager <code>list.filter</code> would
+have shadowed <code>std.algo</code>’s lazy <code>filter</code> with a
+different meaning for the same name under UFCS.</li>
+<li><strong><code>sort</code>.</strong> Belongs with the slice
+algorithms, over a range rather than a whole list — see <a
+href="../algorithms/51-sorting-and-searching.html">Sorting and
+Searching</a> (planned).</li>
+</ul>
+<p>Every builtin-method entry with no working lowering was removed from
+the table outright: an entry that type-checks and then fails inside the
+compiler is worse than an honest “no method” diagnostic with a
+suggestion.</p>
+<h2 id="std.mem-typed-allocation"><code>std.mem</code> — typed
+allocation</h2>
+<p><code>std.mem</code> (<code>src/std/mem.cn</code>) wraps the raw
+<code>rt_alloc</code>/<code>rt_realloc</code>/<code>rt_free</code>
+intrinsics (<code>src/runtime/allocator.h</code>) in typed,
+<em>element-counted</em> form. Every function is <code>machine</code>
+and a few lines long; a caller that already knows it holds
+<code>T</code>s never multiplies by <code>size_of[T]()</code> itself,
+because that multiplication is where a buffer overflow comes from.</p>
+<pre class="cinder"><code>machine def alloc[T](count: usize) -&gt; *mut T
+machine def resize[T](p: *mut T, old_count: usize, new_count: usize) -&gt; *mut T
+machine def free[T](p: *mut T, count: usize) -&gt; unit
+machine def copy[T](dst: *mut T, src: *T, count: usize) -&gt; unit</code></pre>
+<p>Every block is zero-filled, including the grown tail of a
+<code>resize</code>. The allocator behind these is selectable at run
+time — <code>CINDER_ALLOCATOR=system</code> (the default:
+<code>calloc</code>/<code>realloc</code>/<code>free</code>, memory
+genuinely reclaimed) or <code>CINDER_ALLOCATOR=arena</code> (the
+historical bump arena, where <code>free</code> is a no-op). Code written
+on <code>std.mem</code> must be correct under both, which in practice
+means it must not depend on a freed block being reused.</p>
+<h2 id="vectort-a-list-owning-its-own-storage"><code>vector[T]</code> —
+a list owning its own storage</h2>
+<p><code>vector[T]</code> (<code>src/std/list.cn</code>) is the same
+data structure as <code>list[T]</code>, written in Cinder with no
+compiler support beyond what any user struct gets:</p>
+<pre class="cinder"><code>pub type vector[T] = { len: usize, cap: usize, data: *mut T }</code></pre>
+<p>It exists because <code>list[T]</code>’s missing operations were
+never a library omission — <code>pop</code>, <code>clear</code> and
+<code>reserve</code> all need to <em>shrink</em> or <em>re-home</em>
+storage, and until <code>rt_realloc</code>/<code>rt_free</code> existed
+no primitive could. <code>vector[T]</code> has all of them:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Method</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>new() -&gt; vector[T]</code></td>
+<td>empty, allocates nothing</td>
+</tr>
+<tr>
+<td><code>len</code>, <code>capacity</code>, <code>is_empty</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>push(mut self, value: T)</code></td>
+<td>amortized O(1); capacity 4 then doubling</td>
+</tr>
+<tr>
+<td><code>pop(mut self) -&gt; option[T]</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>get(self, i) -&gt; option[T]</code>,
+<code>set(mut self, i, value) -&gt; bool</code></td>
+<td>bounds-checked, no panic</td>
+</tr>
+<tr>
+<td><code>reserve(mut self, n)</code></td>
+<td>never shrinks</td>
+</tr>
+<tr>
+<td><code>clear(mut self)</code></td>
+<td>O(1); keeps capacity</td>
+</tr>
+<tr>
+<td><code>free(mut self)</code></td>
+<td>releases the storage</td>
+</tr>
+</tbody>
+</table>
+<p>Every method that touches memory is <code>machine</code> and short;
+the public API is entirely safe.</p>
+<p><strong><code>free</code> must be called explicitly.</strong> Cinder
+runs no scope-exit <code>drop</code> glue on either backend
+(<code>../../../todo.md</code> item 6), so a <code>vector</code> that
+goes out of scope leaks its buffer under
+<code>CINDER_ALLOCATOR=system</code>, exactly as every heap value
+already leaks under the arena. Elements are not dropped either, for the
+same reason. This is the one place <code>vector[T]</code> is worse than
+<code>list[T]</code> today — a bump-arena <code>list</code> never
+promised to free anything, so it had nothing to forget to do.</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>var xs: list[int32] = []
+xs.push(1)
+xs.push(2)
+xs.push(3)
+xs.is_empty()    # false
+xs.len()         # 3
+xs[0]            # 1
+xs.last()        # @some(3)</code></pre>
+<pre class="cinder"><code>use std.list.vector
+
+var v = vector[int32].new()
+v.push(1)
+v.push(2)
+v.len()          # 2
+v.pop()          # @some(2)
+v.reserve(64)
+v.clear()
+v.free()</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../../03-advanced/38-machine-layer.html">The
+<code>machine</code> Layer</a> — the raw-pointer and allocation
+substrate <code>std.mem</code> and <code>vector[T]</code> are built
+on.</li>
+<li><a href="../algorithms/48-iterator-protocol.html">The Iterator
+Protocol</a> — <code>iter</code>, <code>iter_mut</code>,
+<code>into_iter</code> over <code>list[T]</code>.</li>
+<li><a href="../algorithms/49-lazy-adapters.html">Lazy Adapters</a> and
+<a href="../algorithms/50-aggregation.html">Aggregation</a> — where
+<code>filter</code>, <code>contains</code>-equivalents
+(<code>any</code>/<code>find</code>), and friends now live.</li>
+<li><a href="../algorithms/51-sorting-and-searching.html">Sorting and
+Searching</a> — planned home of <code>sort</code> and the other slice
+algorithms.</li>
+</ul>
+<h2 id="vectort-as-an-ordinary-collection"><code>vector[T]</code> as an
+ordinary collection</h2>
+<p><code>vector[T]</code> implements the four traits that used to be
+<code>list[T]</code>’s exclusive privileges, so it is usable with the
+same syntax:</p>
+<pre class="cinder"><code>use std.list.vector
+
+var v: vector[int32] = [10, 20, 30]   # from_array[T]
+let first = v[0]                      # index[usize]
+v[1] = 99                             # index_set[usize]
+for x in v:                           # into_iterator[T]
+    println(&quot;{x}&quot;)</code></pre>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Trait</th>
+<th>Gives</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>std.traits.index[usize]</code></td>
+<td><code>v[i]</code></td>
+<td>bounds-checked; out of range terminates the program with
+<code>index out of bounds</code>, exactly as it does for
+<code>array</code>/<code>slice</code>/<code>str</code></td>
+</tr>
+<tr>
+<td><code>std.traits.index_set[usize]</code></td>
+<td><code>v[i] = x</code></td>
+<td>same check</td>
+</tr>
+<tr>
+<td><code>std.iter.into_iterator[T]</code></td>
+<td><code>for x in v</code></td>
+<td><strong>consumes <code>v</code></strong> — see below</td>
+</tr>
+<tr>
+<td><code>std.traits.from_array[T]</code></td>
+<td><code>let v: vector[int32] = [...]</code></td>
+<td>allocates exactly the literal’s length</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Iterating consumes the vector.</strong>
+<code>into_iter(self)</code> takes the collection by value, so
+<code>for x in v</code> moves it and the move checker refuses every
+later use, <code>v.free()</code> included. That is correct for
+<code>into_iterator</code> and is not what a collection wants; a
+borrowing route (<code>for x in &amp;v</code>) is <a
+href="../../../todo.html"><code>todo.md</code></a> item 20, and a
+prerequisite for <code>list[T]</code> itself moving onto this
+storage.</p>
+<p><code>&amp;mut v[i]</code> is not available:
+<code>std.traits.index_mut</code> is declared but not wired (item
+19).</p>
+</body>
+</html>

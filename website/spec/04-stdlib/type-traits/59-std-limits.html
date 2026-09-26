@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>59-std-limits</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">59-std-limits</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.limits-numeric-limits"
+id="toc-std.limits-numeric-limits">59. <code>std.limits</code> — Numeric
+Limits</a>
+<ul>
+<li><a href="#rationale" id="toc-rationale">Rationale</a></li>
+<li><a href="#queries-common-to-integers-and-floats"
+id="toc-queries-common-to-integers-and-floats">Queries common to
+integers and floats</a></li>
+<li><a href="#integer-only-queries"
+id="toc-integer-only-queries">Integer-only queries</a></li>
+<li><a href="#float-only-queries" id="toc-float-only-queries">Float-only
+queries</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.limits-numeric-limits">59. <code>std.limits</code> — Numeric
+Limits</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Per-type compile-time numeric bounds and properties
+(<code>min[T]()</code>, <code>max[T]()</code>, <code>bits[T]()</code>,
+<code>epsilon[T]()</code>, …), reinterpreting
+<code>std::numeric_limits</code> as a set of <code>static pure</code>
+queries over Cinder’s builtin numeric types.</p>
+<h2 id="rationale">Rationale</h2>
+<p>Every query below is defined only for <code>T</code> such that
+<code>is_numeric[T]()</code> holds (<a
+href="58-std-traits.html"><code>std.traits</code></a>); calling one with
+<code>T = point</code>, say, is a compile error at the call site —
+<code>static assert is_numeric[T](), "..."</code>.</p>
+<h2 id="queries-common-to-integers-and-floats">Queries common to
+integers and floats</h2>
+<pre class="cinder"><code>bits[T]() -&gt; usize          # bit width: 8, 16, 32, 64, 128
+is_signed[T]() -&gt; bool      # same predicate as std.traits.is_signed_integer, extended to floats (always true)
+min[T]() -&gt; T               # most negative representable value
+max[T]() -&gt; T               # most positive representable value</code></pre>
+<p><code>min</code>/<code>max</code> return a <code>T</code>, not a
+<code>type_expr</code> — unlike <a
+href="58-std-traits.html"><code>std.traits</code></a>’s transformations,
+these produce ordinary compile-time <em>values</em> of the queried type,
+reified the same way any other <code>static</code> binding is (see <a
+href="../../03-advanced/31-compile-time-execution.html#static-bindings">Compile-Time
+Execution § <code>static</code> bindings</a>):</p>
+<pre class="cinder"><code>static INT16_MAX: int16 = max[int16]()   # 32767, baked into the binary</code></pre>
+<h2 id="integer-only-queries">Integer-only queries</h2>
+<pre class="cinder"><code>digits[T]() -&gt; usize    # number of value bits, excluding the sign bit for a signed type: bits[T]() - (1 if is_signed[T]() else 0)</code></pre>
+<h2 id="float-only-queries">Float-only queries</h2>
+<pre class="cinder"><code>epsilon[T]() -&gt; T          # difference between 1.0 and the next representable value
+infinity[T]() -&gt; T         # +infinity
+neg_infinity[T]() -&gt; T     # -infinity
+nan[T]() -&gt; T              # a quiet NaN
+digits[T]() -&gt; usize       # mantissa precision in bits (24 for float32, 53 for float64, 113 for float128)</code></pre>
+<p><code>epsilon</code>/<code>infinity</code>/<code>neg_infinity</code>/<code>nan</code>
+are diagnosed at the call site when <code>T</code> is an integer type.
+It does not define a value for a query that has no meaning for the type,
+per <a href="../../00-overview.html#diagnostics">Diagnostics</a>’s
+“state what was expected, and why.”</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>def clamp_to_range[T](x: T, lo: T, hi: T) -&gt; T:
+    if x &lt; lo: return lo
+    if x &gt; hi: return hi
+    return x
+
+def saturating_cast[From, To](x: From) -&gt; To:
+    static assert is_numeric[From]() and is_numeric[To]()
+    if x as float64 &gt; max[To]() as float64: return max[To]()
+    if x as float64 &lt; min[To]() as float64: return min[To]()
+    return x as To</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="58-std-traits.html"><code>std.traits</code></a> —
+<code>is_numeric</code>, <code>is_signed_integer</code>,
+<code>is_float</code>, which gate every query in this chapter.</li>
+<li><a href="../../01-core/02-built-in-types.html">Built-in Types</a> —
+the numeric type list and their literal/conversion rules.</li>
+<li><a
+href="../../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a> — the <code>static</code>/<code>static if</code> machinery
+every query dispatches through.</li>
+</ul>
+</body>
+</html>

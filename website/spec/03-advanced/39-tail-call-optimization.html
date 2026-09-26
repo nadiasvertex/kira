@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>39-tail-call-optimization</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">39-tail-call-optimization</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#tail-call-optimization"
+id="toc-tail-call-optimization">39. Tail-Call Optimization</a>
+<ul>
+<li><a href="#design" id="toc-design">Design</a>
+<ul>
+<li><a href="#scope-fixed-by-four-decisions"
+id="toc-scope-fixed-by-four-decisions">Scope, fixed by four
+decisions</a></li>
+<li><a href="#tail-position-detection"
+id="toc-tail-position-detection">Tail-position detection</a></li>
+<li><a href="#vm-frame-reuse" id="toc-vm-frame-reuse">VM frame
+reuse</a></li>
+<li><a href="#llvm-musttail" id="toc-llvm-musttail">LLVM
+<code>musttail</code></a></li>
+<li><a href="#diagnostics" id="toc-diagnostics">Diagnostics</a></li>
+</ul></li>
+<li><a href="#future-extensions-explicitly-out-of-scope-for-v1"
+id="toc-future-extensions-explicitly-out-of-scope-for-v1">Future
+extensions (explicitly out of scope for v1)</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="tail-call-optimization">39. Tail-Call Optimization</h1>
+<p><strong>Status:</strong> Implemented (v1 scope — see Implementation
+status)</p>
+<p>A call in tail position reuses its caller’s frame — guaranteed
+constant-space on the bytecode VM, and on LLVM/AOT wherever the ABI
+provably permits — so recursion is a safe looping idiom rather than a
+latent stack overflow.</p>
+<h2 id="design">Design</h2>
+<p>Before this landed, every call pushed a frame: the VM’s
+<code>frames</code> vector is capped (<code>k_max_call_depth</code>),
+and deep or mutually recursive calls exhausted it or the native stack
+well before an equivalent <code>while</code> loop would. This chapter
+describes the design as built.</p>
+<h3 id="scope-fixed-by-four-decisions">Scope, fixed by four
+decisions</h3>
+<ol type="1">
+<li><strong>Implicit and detected, not annotated.</strong> A call is
+optimized iff a backend-agnostic analysis proves it is in tail position
+and eligible; there is no <code>become</code> keyword (see Future
+extensions). The optimization is silent: an eligible tail call produces
+no diagnostic when optimized, and a syntactically tail-looking but
+ineligible call (e.g. postcondition-guarded) simply runs as an ordinary
+call. The guarantee is “a call the analysis marks is O(1) stack on the
+VM, and on AOT where the ABI permits” — not “every call that looks
+tail-recursive is O(1) stack.”</li>
+<li><strong>Direct, statically-resolved calls only.</strong> Only a call
+whose callee resolves to a known function at compile time. Self- and
+mutual recursion across named functions both qualify. Excluded:
+indirect/closure calls, intrinsic calls, and calls inside generator step
+functions (which have their own suspend/resume return protocol) — each a
+natural future extension, not a design wall.</li>
+<li><strong>The VM guarantees TCO; AOT guarantees it where the ABI
+provably permits.</strong> VM frame reuse is unconditional and always
+correct — an absolute constant-space guarantee. On LLVM,
+<code>musttail</code> is verify-or-die, so it is emitted only when its
+preconditions provably hold (matching return type, same calling
+convention, no <code>sret</code> — Cinder has no by-value struct return,
+which simplifies this); otherwise an ordinary call is emitted with the
+non-binding <code>Tail</code> hint. Correctness never depends on whether
+<code>musttail</code> was used, only the stack-space guarantee.</li>
+<li><strong>One analysis, both backends.</strong> Tail-position
+eligibility is computed once as a backend-agnostic HIR pass and recorded
+on the call node; the backends consume the flag and never re-derive it,
+so the two tiers cannot disagree about which calls are eligible.</li>
+</ol>
+<h3 id="tail-position-detection">Tail-position detection</h3>
+<p>A dedicated HIR pass walks a function body carrying a single
+tail-position context and marks each <code>hir_call</code> that is (a)
+in tail position, (b) a direct call to a statically-known function, and
+(c) not inside a generator step:</p>
+<ul>
+<li>The function body block is in tail position. Within a block, only
+the <em>last</em> statement inherits tail position; a trailing
+expression statement or an explicit <code>return</code> at that position
+is tail; every earlier statement is non-tail.</li>
+<li><code>return value</code> — <code>value</code> inherits tail
+position.</li>
+<li><code>if</code>/<code>match</code>/a nested block in tail position —
+each branch body, arm body, or the block’s own tail inherits tail
+position.</li>
+<li>Everything else is non-tail: a call under a <code>let</code>, nested
+inside a larger expression (only the outermost call of
+<code>f(g(x))</code> could be tail, and it is not, since its result
+feeds another operation), a binary operand, an argument, or a loop
+body.</li>
+</ul>
+<p>A postcondition-guarded <code>return f(x)</code> is automatically
+excluded: lowering rewrites it into a <code>let</code>-bound result
+followed by the postcondition checks and a final <code>return</code>, so
+the call sits in a <code>let</code> initializer — never in tail position
+— by the time this analysis runs, with no special case required.</p>
+<h3 id="vm-frame-reuse">VM frame reuse</h3>
+<p>A dedicated tail-call opcode carries the same operand layout as an
+ordinary call, minus a destination register (a tail call’s result flows
+to the <em>current</em> frame’s caller, not to a register in the current
+frame). Executing it reuses the top frame instead of pushing a new one:
+the callee’s function pointer and register file replace the current
+frame’s, <code>has_caller</code>/<code>result_reg</code> are preserved
+unchanged, and the instruction pointer resets to the callee’s entry —
+call depth (<code>frames.size()</code>) does not grow. An eventual
+return hands its result to the original caller exactly as if the whole
+tail chain had been one call. The bytecode compiler emits the tail-call
+opcode, with no following return opcode, at exactly the sites the HIR
+pass marked, in place of an ordinary call followed by a return.</p>
+<h3 id="llvm-musttail">LLVM <code>musttail</code></h3>
+<p>At a return site whose value is a marked tail call:</p>
+<ol type="1">
+<li>Compute the callee <code>llvm::Function*</code> as for an ordinary
+call.</li>
+<li>Check preconditions: callee return type equals the current
+function’s return type (scalar, pointer, or both <code>void</code>);
+same calling convention; the call is immediately followed by the
+matching <code>ret</code> with nothing between.</li>
+<li>If they hold: mark the call <code>musttail</code>, then emit the
+matching <code>ret</code> directly after — <code>musttail</code>
+requires the <code>ret</code> to immediately consume the call’s
+result.</li>
+<li>If they do not hold: emit an ordinary call with the non-binding
+<code>Tail</code> hint and a normal return. Correctness is unaffected;
+only the stack-space guarantee weakens for that call.</li>
+</ol>
+<p><code>musttail</code> is never emitted for a generator step, an
+indirect/closure call, or an intrinsic call. A unit-returning tail call
+that feeds a match arm’s value (rather than being the function’s own
+tail) is not in function-tail position and is excluded even though it
+superficially resembles one.</p>
+<h3 id="diagnostics">Diagnostics</h3>
+<p>None planned for v1 — the optimization is silent, matching decision
+1. If a future explicit <code>become</code> keyword lands (see below),
+that construct would get a teacher-quality diagnostic explaining
+precisely why a given call is not a tail call.</p>
+<h2 id="future-extensions-explicitly-out-of-scope-for-v1">Future
+extensions (explicitly out of scope for v1)</h2>
+<ol type="1">
+<li><strong><code>become f(x)</code></strong> — a keyword requiring a
+tail call, diagnosing when the call site is not eligible.</li>
+<li>Tail calls through closures (indirect calls, both backends).</li>
+<li>Self-recursion lowered to a loop as an AOT alternative to
+<code>musttail</code>, sidestepping the LLVM verifier for the common
+self-recursive case.</li>
+<li>Tail calls inside generator step functions.</li>
+</ol>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented as designed above, with two scope limitations beyond
+what’s listed under “Future extensions”:</p>
+<ul>
+<li><strong>Tail position inside an <code>if</code>/<code>match</code>
+used as a value-producing expression is marked but not lowered by either
+backend.</strong> <code>hir::mark_tail_calls</code>
+(<code>src/hir/tail_calls.h</code>) correctly marks a call in this
+position eligible (e.g. <code>return if cond: a else: f(x)</code>, or
+the same shape as a block’s trailing implicit-return expression) — but
+both backends only actually emit
+<code>op_tail_call</code>/<code>musttail</code> at the two sites where a
+compiled expression is immediately followed by a return: an explicit
+<code>return call(...)</code> statement (which already covers the common
+self-recursive accumulator style, since each
+<code>if</code>/<code>match</code> branch there is compiled as an
+ordinary statement list ending in its own <code>return</code>), and a
+function body’s own implicit trailing-expression return. A tail-eligible
+call sitting inside an <code>if</code>/<code>match</code>
+<em>expression</em>’s branch (feeding a shared merge register rather
+than returning directly) still compiles to an ordinary call — correct,
+just without the O(1)-stack guarantee for that specific call.</li>
+<li><strong>Lowering never descends into a nested
+<code>hir_lambda</code>’s body.</strong> A lambda compiles to its own
+separate function, and a name it calls that resolves to a
+<em>captured</em> local is indistinguishable, from inside the lambda
+alone, from a genuine top-level function reference without tracking
+capture provenance — so lambda bodies are left entirely unmarked rather
+than risk mismarking that case. A named function’s own body (the common
+case, including self- and mutual recursion) is unaffected.</li>
+</ul>
+<p>Otherwise: the HIR pass, <code>op_tail_call</code> (bytecode VM), and
+LLVM <code>musttail</code> all match the design above, including LLVM’s
+own additional <code>musttail</code>-verifier preconditions beyond what
+this chapter originally anticipated (matching argument count/types
+against the <em>caller’s</em> own parameter list, positionally — found
+via real corpus failures, see
+<code>function_compiler::compile_tail_call</code>’s comment in
+<code>src/llvm_codegen/codegen.cpp</code>).</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="40-execution-graphs.html">Advanced Concurrency: Execution
+Graphs</a> and <a href="41-advanced-cancellation.html">Advanced
+Cancellation</a> — other advanced-layer chapters built on the same
+coroutine transform whose generator step functions are excluded from
+tail-call eligibility here.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>18-traits</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">18-traits</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#traits" id="toc-traits">18. Traits</a>
+<ul>
+<li><a href="#defining-and-implementing-a-trait"
+id="toc-defining-and-implementing-a-trait">Defining and Implementing a
+Trait</a></li>
+<li><a href="#requires-trait-dependencies"
+id="toc-requires-trait-dependencies"><code>requires</code> — Trait
+Dependencies</a></li>
+<li><a href="#deriving-common-traits"
+id="toc-deriving-common-traits">Deriving Common Traits</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="traits">18. Traits</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Trait definition and <code>impl</code>, default methods,
+<code>requires</code> trait dependencies, and <code>deriving</code>.</p>
+<h2 id="defining-and-implementing-a-trait">Defining and Implementing a
+Trait</h2>
+<p>A trait defines a set of capabilities a type can have — “this
+function works for any type that supports X.”</p>
+<pre class="cinder"><code>trait show:
+    def show(self) -&gt; str
+
+type point = { x: float64, y: float64 }
+
+impl show for point:
+    def show(self) -&gt; str:
+        &quot;({self.x}, {self.y})&quot;</code></pre>
+<p>Any function accepting <code>T: show</code> can call
+<code>.show()</code> on a value of type <code>T</code>.</p>
+<p>Traits can provide default implementations, overridable per
+<code>impl</code>:</p>
+<pre class="cinder"><code>trait greet:
+    def name(self) -&gt; str
+
+    def greeting(self) -&gt; str:           # default — may be overridden
+        &quot;Hello, {self.name()}!&quot;</code></pre>
+<h2 id="requires-trait-dependencies"><code>requires</code> — Trait
+Dependencies</h2>
+<p>A trait can require that implementing types also implement other
+traits:</p>
+<pre class="cinder"><code>trait ord requires eq:
+    def cmp(self, other: &amp;self) -&gt; ordering</code></pre>
+<p>Any type implementing <code>ord</code> must first implement
+<code>eq</code>. Given a bound <code>T: ord</code>, <code>eq</code>
+methods on <code>T</code> are callable without adding <code>T: eq</code>
+— <code>ord</code> implies it.</p>
+<h2 id="deriving-common-traits">Deriving Common Traits</h2>
+<p>Common trait implementations can be generated automatically:</p>
+<pre class="cinder"><code>type color = @red | @green | @blue
+    deriving eq, ord, show, hash
+
+type point = { x: float64, y: float64 }
+    deriving eq, show</code></pre>
+<p><code>deriving</code> generates the implementation the same way it
+would be written by hand. Specific methods may be overridden while the
+rest stay derived.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Trait declarations, <code>impl</code>, default methods,
+<code>requires</code> (checked as
+<code>trait_decl::requires_bound</code> in
+<code>src/semantic/check.cpp</code>, which both validates that an
+implementing type satisfies the required trait and lets bound code use
+the required trait’s methods without a separate bound), and
+<code>deriving</code> (validated against unknown derive names,
+e.g. <code>test_reports_unknown_deriving</code> in
+<code>src/semantic/check_test.cpp</code>) are all implemented and
+exercised by the semantic test suite.</p>
+<p><code>deriving</code> produces a real, runnable method body — not
+merely a type-check-only rule — for <code>show</code>, <code>eq</code>,
+<code>debug</code>, and <code>ord</code>, on a concrete (non-generic),
+struct-shaped type. <code>checker::resolve_deriving_traits</code>
+splices in the corresponding <code>derive_&lt;trait&gt;[T]()</code> from
+<code>std.derive</code> (<code>src/std/deriving.cn</code>), which
+reflects over the type’s own field list at compile time; the derived
+<code>ord</code> is a lexicographic, declaration-order, field-by-field
+comparison. Two gaps remain:</p>
+<ul>
+<li><code>hash</code> still has no real derivation — no builtin scalar
+implements <code>.hash()</code> and there is no hash-combining primitive
+to fold field hashes with — so <code>deriving hash</code> types the call
+and does not lower.</li>
+<li>A generic type or a sum-shaped type falls back to the same
+type-check-only path for <em>every</em> derived trait, because the
+derivation is written against <code>T.fields()</code>.
+<code>deriving</code> on such a type still records the conformance, but
+calling the derived method fails at lowering.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="19-generics-and-inference.html">Generics and Inference</a>
+— bounds (<code>[T: show]</code>) built on traits.</li>
+<li><a href="21-coherence-and-orphan-rule.html">Coherence and the Orphan
+Rule</a> — the at-most-one-impl guarantee <code>T: show</code> relies
+on.</li>
+<li><a href="22-extension-methods.html">Extension Methods</a> — adding
+methods without claiming trait conformance.</li>
+<li><a href="24-trait-objects.html">Trait Objects</a> —
+<code>box[trait]</code>, the dynamic counterpart to a generic
+bound.</li>
+</ul>
+</body>
+</html>

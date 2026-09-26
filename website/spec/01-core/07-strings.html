@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>07-strings</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">07-strings</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#strings" id="toc-strings">7. Strings</a>
+<ul>
+<li><a href="#str" id="toc-str"><code>str</code></a></li>
+<li><a href="#escape-sequences" id="toc-escape-sequences">Escape
+sequences</a></li>
+<li><a href="#char" id="toc-char"><code>char</code></a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="strings">7. Strings</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers the built-in <code>str</code> type, string literal
+interpolation and escape sequences, and <code>char</code>. This chapter
+covers only the built-in type and its literal syntax; the method surface
+(<code>.contains</code>, <code>.split</code>, <code>.replace</code>,
+etc.) is specified in <a
+href="../04-stdlib/strings-and-formatting/52-std-string.html">std.string</a>
+— not duplicated here.</p>
+<h2 id="str"><code>str</code></h2>
+<p>Cinder strings are UTF-8. <code>str</code> literals support
+interpolation with <code>{...}</code>, evaluated and formatted in
+place:</p>
+<pre class="cinder"><code>let name = &quot;World&quot;
+let msg  = &quot;Hello, {name}!&quot;          # &quot;Hello, World!&quot;
+let calc = &quot;2 + 2 = {2 + 2}&quot;         # &quot;2 + 2 = 4&quot;</code></pre>
+<p>An interpolation brace is written literally by doubling it:</p>
+<pre class="cinder"><code>let literal = &quot;{{x}} stays literal&quot;    # &quot;{x} stays literal&quot; — {{ is {, }} is }</code></pre>
+<p><code>str</code> methods (<code>.len()</code>,
+<code>.to_uppercase()</code>, <code>.contains()</code>,
+<code>.split()</code>, …) are specified in <a
+href="../04-stdlib/strings-and-formatting/52-std-string.html">std.string</a>,
+including the byte-vs-character-count distinction for
+<code>.len()</code>.</p>
+<h2 id="escape-sequences">Escape sequences</h2>
+<p>String and char literals use a backslash escape. Supported escapes:
+<code>\"</code>, <code>\\</code>, <code>\n</code>, <code>\t</code>,
+<code>\r</code>, <code>\0</code>.</p>
+<pre class="cinder"><code>let quoted = &quot;She said \&quot;hi\&quot;\n&quot;</code></pre>
+<h2 id="char"><code>char</code></h2>
+<p><code>char</code> is a single Unicode scalar value, written in single
+quotes.</p>
+<pre class="cinder"><code>let ch = &#39;a&#39;    # a char; also &#39;\n&#39;, &#39;♥&#39;</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a
+href="../04-stdlib/strings-and-formatting/52-std-string.html">std.string</a>
+— the <code>str</code> method surface.</li>
+<li><a href="06-collections-list-array.html">Collections</a> —
+<code>list</code>/<code>array</code>, the other built-in sequence
+types.</li>
+</ul>
+</body>
+</html>

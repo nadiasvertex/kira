@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>35-concepts</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">35-concepts</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#concepts" id="toc-concepts">35. Concepts</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a></li>
+<li><a href="#traits-vs.-concepts" id="toc-traits-vs.-concepts">Traits
+vs. concepts</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="concepts">35. Concepts</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p><code>concept</code> declarations, structural satisfaction (no
+<code>impl</code> required), composition with <code>+</code>, and the
+concepts-vs-traits distinction.</p>
+<h2 id="syntax">Syntax</h2>
+<pre class="cinder"><code>concept sortable[T]:
+    T: ord + show
+    size_of[T]() &lt;= 64    # compile-time value constraint
+
+concept network_value[T]:
+    T: show + eq + hash + into[bytes] + from[bytes]</code></pre>
+<p>A <code>concept_decl</code> (<code>ast.h:1698</code>) names a type
+parameter list (<code>concept_param</code>) and a list of constraint
+clauses (<code>concept_constraint</code>). Each clause is either a
+trait/concept bound on a subject type, or a compile-time boolean
+expression.</p>
+<h2 id="semantics">Semantics</h2>
+<ul>
+<li>A concept is satisfied <strong>structurally</strong>: a type
+satisfies <code>sortable</code> if it already provides everything the
+concept demands (an <code>ord</code> impl, a <code>show</code> impl, a
+size within budget) — there is no <code>impl sortable for point</code>
+to write.</li>
+<li>Use a concept as a bound, exactly where a trait bound would go:</li>
+</ul>
+<pre class="cinder"><code>def sort_and_display[T: sortable](items: &amp;mut list[T]) -&gt; unit:
+    items.sort()
+    for x in items: println(x.show())</code></pre>
+<ul>
+<li>Concepts compose with <code>+</code>, and mix freely with trait
+bounds in the same list:</li>
+</ul>
+<pre class="cinder"><code>def process[T: sortable + network_value](val: T): ...</code></pre>
+<ul>
+<li><code>concept</code> is a distinct symbol kind
+(<code>semantic_symbol_kind::concept_symbol</code>,
+<code>symbols.cpp:58</code>) that competes with types, traits, and
+submodules for a unique name in scope, and resolves through the same
+trait/concept bound-list machinery as trait bounds
+(<code>resolution.cpp:719</code>, “Validates each <code>+</code>-joined
+term of a trait/concept bound list”).</li>
+<li>A compile-time value constraint inside a concept body
+(<code>size_of[T]() &lt;= 64</code>) is checked the same way any other
+<code>static</code> boolean expression is — see <a
+href="31-compile-time-execution.html">Compile-Time Execution</a> — and,
+where it involves an unknown quantity rather than a closed one, is a
+candidate for the reasoning solver described in <a
+href="33-dependent-and-refinement-types.html">Dependent and Refinement
+Types</a>.</li>
+</ul>
+<h2 id="traits-vs.-concepts">Traits vs. concepts</h2>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th></th>
+<th>Trait</th>
+<th>Concept</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Opt-in</td>
+<td>Yes — a type must write <code>impl trait for type</code></td>
+<td>No — satisfaction is automatic if the type already qualifies</td>
+</tr>
+<tr>
+<td>Defines</td>
+<td>Behavior a type <em>can do</em> (method bodies, associated
+types)</td>
+<td>A constraint a generic function <em>requires</em> (bounds, value
+facts)</td>
+</tr>
+<tr>
+<td>Written on a type</td>
+<td><code>impl show for point: ...</code></td>
+<td>never — no <code>impl concept for type</code> form exists</td>
+</tr>
+<tr>
+<td>Written on a generic parameter</td>
+<td><code>def f[T: show](...)</code></td>
+<td><code>def f[T: sortable](...)</code> — same bound-list syntax</td>
+</tr>
+<tr>
+<td>Composes with <code>+</code></td>
+<td>Yes</td>
+<td>Yes, and freely with trait bounds in the same list</td>
+</tr>
+</tbody>
+</table>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>concept sortable[T]:
+    T: ord + show
+    size_of[T]() &lt;= 64
+
+def sort_and_display[T: sortable](items: &amp;mut list[T]) -&gt; unit:
+    items.sort()
+    for x in items: println(x.show())</code></pre>
+<p>Any type already implementing <code>ord</code> and <code>show</code>,
+and no larger than the size budget, satisfies <code>sortable[T]</code>
+at the call site — no declaration is required from that type’s own
+module.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented: parsing (<code>parse_concept_decl</code>,
+<code>parser.h:655</code>, exercised by
+<code>src/testdata/parser_stress/032_concept_basic.cn</code>,
+<code>033_concept_higher_kinded.cn</code>,
+<code>085_concept_value_expr.cn</code>), symbol registration
+(<code>symbols.cpp:223</code>, <code>types.cpp:847</code>), module-level
+duplicate/name resolution alongside types and traits
+(<code>resolution.cpp:1561</code>), and constraint checking
+(<code>check_concept_decl</code>, <code>check.cpp:14229</code>), which
+resolves each constraint’s subject type and, for a boolean-expression
+clause, infers it as an ordinary compile-time expression. Exercised by
+<code>check_test.cpp</code>’s <code>test_accepts_concept_bound</code>,
+backed by
+<code>src/testdata/semantic_check_test/accept_concept_bound.cn</code>
+(the <code>sortable[T]</code>/<code>size_of[T]() &lt;= 64</code> example
+above, verbatim).</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="31-compile-time-execution.html">Compile-Time Execution</a>
+— <code>static</code> value constraints inside a concept body.</li>
+<li><a href="33-dependent-and-refinement-types.html">Dependent and
+Refinement Types</a> — the solver that a concept’s value constraints are
+intended to route through for non-closed cases.</li>
+</ul>
+</body>
+</html>

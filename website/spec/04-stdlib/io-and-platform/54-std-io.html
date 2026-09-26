@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>54-std-io</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">54-std-io</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.io" id="toc-std.io">54. <code>std.io</code></a>
+<ul>
+<li><a href="#types" id="toc-types">Types</a>
+<ul>
+<li><a href="#io_errno-to-io_error-conversion"
+id="toc-io_errno-to-io_error-conversion"><code>io_errno</code> to
+<code>io_error</code> conversion</a></li>
+<li><a href="#open_options"
+id="toc-open_options"><code>open_options</code></a></li>
+</ul></li>
+<li><a href="#traits" id="toc-traits">Traits</a>
+<ul>
+<li><a href="#reader" id="toc-reader"><code>reader</code></a></li>
+<li><a href="#writer" id="toc-writer"><code>writer</code></a></li>
+</ul></li>
+<li><a href="#intrinsics" id="toc-intrinsics">Intrinsics</a></li>
+<li><a href="#the-file_handle-type" id="toc-the-file_handle-type">The
+<code>file_handle</code> type</a>
+<ul>
+<li><a href="#trait-implementations"
+id="toc-trait-implementations">Trait implementations</a></li>
+<li><a href="#extend-file_handle"
+id="toc-extend-file_handle"><code>extend file_handle</code></a></li>
+</ul></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.io">54. <code>std.io</code></h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Byte-level I/O: error types, the
+<code>reader</code>/<code>writer</code> traits,
+<code>open_options</code>, and the <code>file_handle</code> type.</p>
+<p><code>std.io</code> (<code>src/std/io.cn</code>) is the foundation
+<code>std.console</code> and <code>std.fs.path</code> build on:
+<code>std.console</code> implements printing in terms of
+<code>file_handle</code>’s <code>writer</code> impl, and
+<code>std.string</code> builds on <code>std.io</code>’s
+<code>writer</code> trait for its own formatting entry points.</p>
+<h2 id="types">Types</h2>
+<pre class="cinder"><code>pub type raw_fd = { value: int64 }
+pub type io_errno = { code: int32 }
+pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str)
+                   | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)</code></pre>
+<ul>
+<li><code>raw_fd</code> is an opaque wrapper around a native file
+descriptor, for internal use.</li>
+<li><code>io_errno</code> carries a raw system error code as returned by
+an intrinsic.</li>
+<li><code>io_error</code> is the public error type: a closed sum of the
+operationally relevant POSIX errno cases, plus
+<code>@other(io_errno)</code> as a catch-all.</li>
+</ul>
+<h3 id="io_errno-to-io_error-conversion"><code>io_errno</code> to
+<code>io_error</code> conversion</h3>
+<pre class="cinder"><code>impl from[io_errno] for io_error:
+    def from(e: io_errno) -&gt; io_error</code></pre>
+<p>Maps raw error codes to variants by numeric code: <code>2</code> →
+<code>@not_found</code>, <code>13</code> →
+<code>@permission_denied</code>, <code>17</code> →
+<code>@already_exists</code>, <code>4</code> →
+<code>@interrupted</code>, <code>11</code> → <code>@would_block</code>,
+<code>32</code> → <code>@broken_pipe</code>; every other code becomes
+<code>@other(e)</code>. Every intrinsic in this module returns
+<code>result[T, io_errno]</code>; every public wrapper function converts
+that to <code>result[T, io_error]</code> through this <code>from</code>
+impl at the boundary — the pattern used throughout the standard library
+for propagating raw OS errors (see <a
+href="56-std-platform.html"><code>std.platform</code></a>).</p>
+<h3 id="open_options"><code>open_options</code></h3>
+<pre class="cinder"><code>pub type open_options = {
+    read: bool,
+    write: bool,
+    append: bool,
+    create: bool,
+    truncate: bool
+}</code></pre>
+<p>Controls the mode <code>open</code> uses when opening a file; all
+fields are plain booleans, combined by the underlying
+<code>rt_open</code> intrinsic.</p>
+<h2 id="traits">Traits</h2>
+<h3 id="reader"><code>reader</code></h3>
+<pre class="cinder"><code>pub trait reader:
+    def read(mut self, buf: &amp;mut slice_mut[byte]) -&gt; result[usize, io_error]
+    def read_to_end(mut self, out: &amp;mut list[byte]) -&gt; result[usize, io_error]
+    def read_exact(mut self, buf: &amp;mut slice_mut[byte]) -&gt; result[unit, io_error]</code></pre>
+<ul>
+<li><code>read</code> is the sole required method: reads up to
+<code>buf.len()</code> bytes, returns the count actually read.</li>
+<li><code>read_to_end</code> is a provided default: loops
+<code>read</code> into a 4096-byte stack buffer, appending each chunk to
+<code>out</code>, until a zero-length read signals end of file. Returns
+the total byte count.</li>
+<li><code>read_exact</code> is a provided default: loops
+<code>read</code> until <code>buf</code> is completely filled. A
+zero-length read before the buffer fills is reported as
+<code>@err(@unexpected_eof)</code>.</li>
+</ul>
+<h3 id="writer"><code>writer</code></h3>
+<pre class="cinder"><code>pub trait writer:
+    def write(mut self, buf: &amp;slice[byte]) -&gt; result[usize, io_error]
+    def flush(mut self) -&gt; result[unit, io_error]
+    def write_all(mut self, buf: &amp;slice[byte]) -&gt; result[unit, io_error]</code></pre>
+<ul>
+<li><code>write</code> and <code>flush</code> are required.
+<code>write</code> writes up to <code>buf.len()</code> bytes and returns
+the count written; <code>flush</code> forces any buffered data to the
+destination.</li>
+<li><code>write_all</code> is a provided default: loops
+<code>write</code> until every byte of <code>buf</code> is written. A
+zero-length write is reported as <code>@err(@broken_pipe)</code>.</li>
+</ul>
+<p>Both traits take <code>self</code> by <code>mut self</code> (moved)
+on every method, including the provided defaults — a reader or writer is
+consumed and re-threaded through calls, not shared by reference.</p>
+<h2 id="intrinsics">Intrinsics</h2>
+<pre class="cinder"><code>intrinsic def rt_stdin() -&gt; raw_fd
+intrinsic def rt_stdout() -&gt; raw_fd
+intrinsic def rt_stderr() -&gt; raw_fd
+
+intrinsic def rt_open(path: str, opts: open_options) -&gt; result[raw_fd, io_errno]
+intrinsic def rt_close(fd: raw_fd) -&gt; result[unit, io_errno]
+intrinsic def rt_read(fd: raw_fd, buf: &amp;mut slice_mut[byte]) -&gt; result[usize, io_errno]
+intrinsic def rt_write(fd: raw_fd, buf: &amp;slice[byte]) -&gt; result[usize, io_errno]
+intrinsic def rt_flush(fd: raw_fd) -&gt; result[unit, io_errno]</code></pre>
+<p>Native entry points, implemented on both backends
+(<code>src/runtime/io.cpp</code>, <code>src/bytecode/vm.cpp</code>,
+<code>src/llvm_codegen/codegen.cpp</code>) via the shared
+intrinsic-dispatch table (<code>src/intrinsics.h</code>). None of these
+is called directly by ordinary code; <code>file_handle</code> and the
+module-level
+<code>open</code>/<code>stdin_handle</code>/<code>stdout_handle</code>/<code>stderr_handle</code>
+functions wrap them.</p>
+<h2 id="the-file_handle-type">The <code>file_handle</code> type</h2>
+<pre class="cinder"><code>pub type file_handle = { fd: raw_fd }</code></pre>
+<p>A handle wrapping a <code>raw_fd</code>. (Named
+<code>file_handle</code> rather than <code>file</code> because
+<code>file</code> is a reserved visibility keyword — see <a
+href="../../01-core/12-modules-and-imports.html">Modules and
+Imports</a>.)</p>
+<pre class="cinder"><code>pub def open(path: str, opts: open_options) -&gt; result[file_handle, io_error]
+pub def stdin_handle() -&gt; file_handle
+pub def stdout_handle() -&gt; file_handle
+pub def stderr_handle() -&gt; file_handle</code></pre>
+<ul>
+<li><code>open</code> calls <code>rt_open</code> and wraps the resulting
+descriptor in a <code>file_handle</code>, converting any
+<code>io_errno</code> to <code>io_error</code>.</li>
+<li><code>stdin_handle</code>/<code>stdout_handle</code>/<code>stderr_handle</code>
+wrap the corresponding niladic intrinsic; these never fail.</li>
+</ul>
+<h3 id="trait-implementations">Trait implementations</h3>
+<ul>
+<li><code>impl reader for file_handle</code>: <code>read</code>
+delegates to <code>rt_read</code>, converting the error.</li>
+<li><code>impl writer for file_handle</code>: <code>write</code>
+delegates to <code>rt_write</code>; <code>flush</code> delegates to
+<code>rt_flush</code>; both convert the error. <code>write_all</code> is
+inherited from the trait default.</li>
+<li><code>impl drop for file_handle</code>: calls <code>rt_close</code>
+on drop, discarding the result — a <code>file_handle</code> going out of
+scope is <em>intended</em> to close its descriptor unconditionally.
+<strong>This does not happen today:</strong> the compiler emits no
+scope-exit <code>drop</code> glue on either backend (see <a
+href="../../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a>, Implementation status), so this impl never runs.
+Until destructors land, every <code>file_handle</code> not explicitly
+<code>.close()</code>d leaks its descriptor — call <code>close</code>
+explicitly.</li>
+</ul>
+<h3 id="extend-file_handle"><code>extend file_handle</code></h3>
+<pre class="cinder"><code>pub def close(mut self) -&gt; result[unit, io_error]</code></pre>
+<p>Explicitly closes the handle via <code>rt_close</code>, sets
+<code>self.fd</code> to the sentinel <code>raw_fd { value: -1 }</code>,
+and returns the result (unlike <code>drop</code>, which discards it).
+Intended for callers that need to observe a close failure. A
+<code>file_handle</code> not explicitly closed is meant to be closed by
+<code>drop</code> — but destructors do not run yet (see above), so
+<code>close</code> is currently the <em>only</em> way a descriptor is
+released.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Everything in this chapter is implemented in
+<code>src/std/io.cn</code> over the <code>rt_*</code> intrinsics, with
+one exception: <strong><code>impl drop for file_handle</code> never
+runs.</strong> The impl is written and compiles, but the compiler emits
+no scope-exit destructor glue on either backend, so a descriptor is
+released only by an explicit <code>close()</code>. See <a
+href="../../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a>, Implementation status, and item 6 in <a
+href="../../../todo.html">todo.md</a>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="55-std-console.html"><code>std.console</code></a> —
+<code>print</code>/<code>println</code>/<code>eprint</code>/<code>eprintln</code>,
+built on <code>file_handle</code>’s <code>writer</code> impl.</li>
+<li><a href="56-std-platform.html"><code>std.platform</code></a> —
+reuses the same <code>io_errno</code>-to-<code>io_error</code>
+conversion pattern for OS-level queries.</li>
+</ul>
+</body>
+</html>

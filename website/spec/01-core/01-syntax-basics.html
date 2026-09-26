@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>01-syntax-basics</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">01-syntax-basics</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#syntax-basics" id="toc-syntax-basics">1. Syntax Basics</a>
+<ul>
+<li><a href="#indentation-and-blocks"
+id="toc-indentation-and-blocks">Indentation and blocks</a></li>
+<li><a href="#comments" id="toc-comments">Comments</a></li>
+<li><a href="#doc-comments" id="toc-doc-comments">Doc comments</a></li>
+<li><a href="#the-module-declaration"
+id="toc-the-module-declaration">The <code>module</code>
+declaration</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="syntax-basics">1. Syntax Basics</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers indentation-delimited blocks, comments and doc comments, and
+the <code>module</code> declaration line.</p>
+<h2 id="indentation-and-blocks">Indentation and blocks</h2>
+<p>Cinder has no semicolons and no braces for blocks. A block is
+introduced by <code>:</code> at the end of a line and one level of
+indentation; it ends when indentation returns to the enclosing level.
+The lexer synthesizes
+<code>INDENT</code>/<code>DEDENT</code>/<code>NEWLINE</code> tokens from
+indentation directly (see <code>INDENT</code>, <code>DEDENT</code> in
+<code>spec/cinder-grammar.ebnf</code>); newlines inside balanced
+brackets <code>()</code>, <code>[]</code>, <code>{}</code> are
+suppressed, so an expression may wrap across lines there without a
+continuation marker.</p>
+<pre class="cinder"><code>def greet(name: str) -&gt; str:
+    let message = &quot;Hello, {name}!&quot;
+    return message</code></pre>
+<p>All keywords are lowercase.</p>
+<h2 id="comments">Comments</h2>
+<p>An ordinary comment begins with <code>#</code> and runs to end of
+line (<code>COMMENT</code> in the grammar). It is discarded by the lexer
+and carries no semantic meaning.</p>
+<pre class="cinder"><code># This is a comment
+let x = 42    # so is this</code></pre>
+<h2 id="doc-comments">Doc comments</h2>
+<p>A comment beginning <code>#:</code> is a documentation comment.
+Written alone on one or more consecutive lines immediately above a
+declaration, it attaches to that declaration; the compiler retains the
+text for tooling to surface. Consecutive <code>#:</code> lines join into
+a single docstring. <code>#:</code> following code on the same line is
+an ordinary comment, not a doc comment.</p>
+<p>Doc comments attach to functions, types, traits,
+<code>impl</code>/<code>extend</code> methods, struct fields, and the
+<code>module</code> line itself.</p>
+<pre class="cinder"><code>#: Adds two integers and returns the sum.
+#: Overflow wraps in machine mode.
+def add(a: int32, b: int32) -&gt; int32:
+    a + b</code></pre>
+<h2 id="the-module-declaration">The <code>module</code> declaration</h2>
+<p>Every file’s first non-comment line is a <code>module_decl</code>:
+the keyword <code>module</code> followed by a dotted
+<code>module_path</code>
+(<code>module_path = IDENT { "." IDENT }</code>).</p>
+<pre class="cinder"><code>module my_app.utils</code></pre>
+<p>A module is one or more files sharing the same declared path; several
+files with the same <code>module</code> line together form one module.
+In a module path, every segment but the last names a folder; the final
+segment is the module’s own name. <code>my_app.utils</code> is the
+module <code>utils</code>, found in folder <code>my_app/</code>. The
+file’s own filename is not part of the module path and does not need to
+match it.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="12-modules-and-imports.html">Modules and Imports</a> for
+visibility and <code>use</code>.</li>
+<li><code>spec/cinder-grammar.ebnf</code>, productions
+<code>file</code>, <code>module_decl</code>,
+<code>module_path</code>.</li>
+</ul>
+</body>
+</html>

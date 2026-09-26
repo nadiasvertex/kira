@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>20-operator-overloading</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">20-operator-overloading</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#operator-overloading" id="toc-operator-overloading">20.
+Operator Overloading</a>
+<ul>
+<li><a href="#operators-are-traits"
+id="toc-operators-are-traits">Operators Are Traits</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="operator-overloading">20. Operator Overloading</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Operators as traits, and the <code>type output</code> associated-type
+mechanism for their result type.</p>
+<h2 id="operators-are-traits">Operators Are Traits</h2>
+<p>To make a type work with <code>+</code>, implement the
+<code>add</code> trait:</p>
+<pre class="cinder"><code>trait add:
+    type output
+    def add(self, other: self) -&gt; self.output
+
+type vec2 = { x: float64, y: float64 }
+    deriving show, eq
+
+impl add for vec2:
+    type output = vec2
+    def add(self, other: vec2) -&gt; vec2:
+        { x: self.x + other.x, y: self.y + other.y }
+
+let a = vec2 { x: 1.0, y: 2.0 }
+let b = vec2 { x: 3.0, y: 4.0 }
+let c = a + b    # vec2 { x: 4.0, y: 6.0 }</code></pre>
+<p><code>type output</code> is an associated type: each
+<code>impl</code> fixes what <code>self.output</code> means for that
+type, so <code>add</code>’s signature can describe “the result type of
+adding two <code>self</code>s” once, generically, without a type
+parameter on the trait itself.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — trait/<code>impl</code>
+mechanics this builds on.</li>
+<li><a href="21-coherence-and-orphan-rule.html">Coherence and the Orphan
+Rule</a> — why <code>a + b</code> has exactly one meaning for a given
+type.</li>
+</ul>
+</body>
+</html>

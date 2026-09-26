@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>29-channels-and-sync-primitives</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">29-channels-and-sync-primitives</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#channels-and-sync-primitives"
+id="toc-channels-and-sync-primitives">29. Channels and Sync
+Primitives</a>
+<ul>
+<li><a href="#channelt"
+id="toc-channelt"><code>channel[T]</code></a></li>
+<li><a href="#watcht" id="toc-watcht"><code>watch[T]</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="channels-and-sync-primitives">29. Channels and Sync
+Primitives</h1>
+<p><strong>Status:</strong> Planned</p>
+<p><code>channel[T]</code> and <code>watch[T]</code>.</p>
+<h2 id="channelt"><code>channel[T]</code></h2>
+<p>Channels pass ownership of values between tasks:</p>
+<pre class="cinder"><code>let (sender, receiver) = channel[str](capacity: 32)
+
+crew c:
+    c.spawn(async:
+        for line in read_lines(&quot;file.txt&quot;):
+            await sender.send(line)
+        sender.close()
+    )
+    c.spawn(async:
+        while let @some(line) = await receiver.recv():
+            process(line)
+    )</code></pre>
+<p>Sending on a full channel suspends the sender (backpressure).
+Receiving on an empty, closed channel returns <code>none</code>.</p>
+<h2 id="watcht"><code>watch[T]</code></h2>
+<p>For a value that changes over time with multiple readers,
+<code>watch[T]</code>:</p>
+<pre class="cinder"><code>let (writer, reader) = watch[config](initial: default_config())
+
+# in one task:
+writer.set(new_config)
+
+# in another task:
+await reader.changed()    # suspends until the value changes
+let current = reader.get()</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Design only; no implementation of any kind. No <code>channel</code>
+or <code>watch</code> type, function, or method exists anywhere in
+<code>src/std/</code>, and neither runtime backend has any channel or
+synchronization machinery. This chapter depends on <a
+href="28-crew-par-race.html"><code>crew</code>, <code>par</code>,
+<code>race</code></a> and <a
+href="26-concurrency-execution-model.html">The Execution Model</a>,
+neither of which is implemented beyond parsing, so nothing here can be
+written and compiled today.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="26-concurrency-execution-model.html">The Execution
+Model</a> — the task/context model channels move values between.</li>
+<li><a href="28-crew-par-race.html"><code>crew</code>, <code>par</code>,
+<code>race</code></a> — the structured-concurrency scope channels are
+typically used within.</li>
+<li><a href="30-data-race-freedom.html">Data-Race Freedom</a> —
+<code>mutex</code>/<code>rwlock</code>/<code>atomic</code>, the other
+unimplemented synchronization primitives.</li>
+</ul>
+</body>
+</html>

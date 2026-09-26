@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>34-contracts</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">34-contracts</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#contracts" id="toc-contracts">34. Contracts</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a>
+<ul>
+<li><a href="#purity-requirement" id="toc-purity-requirement">Purity
+requirement</a></li>
+</ul></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#lowering" id="toc-lowering">Lowering</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="contracts">34. Contracts</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p><code>pre</code>/<code>post</code>/<code>invariant</code> conditions
+on functions and types: static-vs-runtime enforcement,
+<code>return</code> in postconditions,
+<code>--no-contract-checks</code>, and the <code>pure</code>-only
+requirement on contract predicates.</p>
+<p>Contracts attach preconditions, postconditions, and invariants to
+functions and types. The compiler proves them statically when it can
+(routing through the reasoning solver, see <a
+href="33-dependent-and-refinement-types.html#the-reasoning-fragment">Dependent
+and Refinement Types § The reasoning fragment</a>) and enforces the rest
+at runtime.</p>
+<h2 id="syntax">Syntax</h2>
+<pre class="cinder"><code>def sqrt(x: float64) -&gt; float64
+    pre  x &gt;= 0.0
+    post return &gt;= 0.0:
+    ...</code></pre>
+<ul>
+<li><code>pre</code> introduces a precondition; <code>post</code> a
+postcondition; <code>invariant</code> (on a <code>type</code>) a struct
+invariant.</li>
+<li>In a <code>post</code> condition, <code>return</code> names the
+value the function returns. It is deliberately not called
+<code>result</code>, which would collide with the <code>result</code>
+type.</li>
+<li>Multiple conditions are written one per line, each with an optional
+message:</li>
+</ul>
+<pre class="cinder"><code>def reserve(buf: &amp;mut buffer, n: usize) -&gt; unit
+    pre  n &gt; 0,         &quot;cannot reserve zero bytes&quot;
+    pre  n &lt; max_alloc, &quot;requested size exceeds maximum&quot;
+    post buf.capacity &gt;= n:
+    ...</code></pre>
+<ul>
+<li>A struct invariant is attached after the type’s field list:</li>
+</ul>
+<pre class="cinder"><code>type positive_int = { value: int32 }
+    invariant self.value &gt; 0</code></pre>
+<h2 id="semantics">Semantics</h2>
+<ul>
+<li><strong>Checked once, at the right boundary.</strong> A
+<code>pre</code> is checked once on entry to the function, so it answers
+for every caller, including ones the compiler never sees. A
+<code>post</code> is checked at each of the function’s exits. An
+<code>invariant</code> is checked wherever a value of the type is
+constructed or one of its fields is written.</li>
+<li><strong>Static proof elides the check entirely.</strong> A condition
+the compiler can already prove from the signature alone —
+<code>pre p &gt; 0</code> on a parameter whose type is
+<code>positive</code> — is not checked at runtime at all, because it
+cannot fail. This is the same reasoning-solver machinery as refinement
+narrowing; see <a
+href="33-dependent-and-refinement-types.html#interaction-with-contracts">Dependent
+and Refinement Types § Interaction with contracts</a>.</li>
+<li><strong>Static refutation is a compile error.</strong> When a
+condition is statically knowable and false, violation is diagnosed at
+compile time, not deferred to a runtime panic.</li>
+<li><strong>Otherwise, a runtime check.</strong> A condition that
+depends on runtime values and is neither proven nor refuted lowers to a
+runtime check that panics with the contract’s message in debug
+builds.</li>
+<li><strong>Preconditions are facts inside their own callee.</strong> A
+function’s <code>pre</code> is an <em>obligation</em> at each call site
+and a <em>fact</em> inside the function’s own body — this duality is the
+whole of contract reasoning (see <a
+href="33-dependent-and-refinement-types.html#what-enters-the-facts-environment">Dependent
+and Refinement Types § What enters the facts environment</a>).</li>
+<li><strong><code>--no-contract-checks</code></strong> elides runtime
+contract checks in release builds. Passing it is the programmer’s
+explicit assertion that all contracts hold by other means; it is not the
+default (<code>src/driver/cli.cpp</code>, <code>src/hir/lower.h</code>’s
+<code>contract_checks</code> flag).</li>
+</ul>
+<h3 id="purity-requirement">Purity requirement</h3>
+<p>Only <code>pure</code> functions may appear in
+<code>pre</code>/<code>post</code>/<code>invariant</code> conditions
+(<code>check.cpp:4430</code>; see <a
+href="31-compile-time-execution.html#pure-functions">Compile-Time
+Execution § <code>pure</code> functions</a>). This guarantees contract
+evaluation has no side effects, which is what lets reflection (also
+<code>pure</code>-only) and reasoning treat a contract condition as a
+pure fact rather than an arbitrary effectful call.</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>type positive_int = { value: int32 }
+    invariant self.value &gt; 0
+
+def needs_positive(x: positive) -&gt; int32:
+    x
+
+def precondition_is_a_fact(x: int32) -&gt; int32
+pre x &gt; 0
+: needs_positive(x)</code></pre>
+<p>The <code>pre x &gt; 0</code> on <code>precondition_is_a_fact</code>
+is a fact inside its own body, which is what lets the unconditional call
+to <code>needs_positive</code> (which demands <code>positive</code>)
+discharge statically with no runtime check.</p>
+<h2 id="lowering">Lowering</h2>
+<p>An unproven condition survives past type checking as an
+<code>hir_contract_check</code> node (<code>src/hir/nodes.h</code>),
+tagged with which face of the contract it enforces
+(<code>contract_kind</code>:
+<code>pre</code>/<code>post</code>/<code>invariant</code>). Both
+backends lower it to a runtime check: the bytecode compiler
+(<code>src/bytecode_compiler/compile.cpp</code>) and the LLVM backend
+(<code>src/llvm_codegen/codegen.cpp</code>). A condition the checker
+discharged statically is recorded in
+<code>semantic::checked_types::elided_contracts</code> and never reaches
+HIR as a check at all.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented end to end: parsing
+(<code>pre</code>/<code>post</code>/<code>invariant</code> clauses),
+type checking (predicate bool-ness, <code>pure</code>-only calls —
+<code>check_test.cpp:1003</code>), static discharge/refutation through
+the reasoning solver, runtime lowering in both backends, and the
+<code>--no-contract-checks</code> release-elision flag. Exercised
+together with refinement types in
+<code>src/testdata/semantic_stress/027_dependent_and_refinement_types.cn</code>
+(<code>reserve</code>, <code>reserves</code>,
+<code>precondition_is_a_fact</code>, <code>positive_int</code>) and by
+<code>src/testdata/semantic_stress/007_contract_purity.cn</code>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a
+href="../02-intermediate/23-contracts-on-trait-methods.html">Contracts
+on Trait Methods</a> — behavioral-subtyping rules for contracts on trait
+method implementations (strengthening/weakening across
+<code>impl</code>).</li>
+<li><a href="33-dependent-and-refinement-types.html">Dependent and
+Refinement Types</a> — the solver contracts share, and the
+facts/obligations model.</li>
+<li><a href="31-compile-time-execution.html">Compile-Time Execution</a>
+— <code>pure</code>, the requirement contract predicates must
+satisfy.</li>
+</ul>
+</body>
+</html>

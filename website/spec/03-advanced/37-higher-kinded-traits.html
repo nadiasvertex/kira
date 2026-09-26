@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>37-higher-kinded-traits</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">37-higher-kinded-traits</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#higher-kinded-traits" id="toc-higher-kinded-traits">37.
+Higher-Kinded Traits</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a>
+<ul>
+<li><a href="#kinds-are-arities" id="toc-kinds-are-arities">Kinds are
+arities</a></li>
+<li><a href="#type-constructors-and-applications"
+id="toc-type-constructors-and-applications">Type constructors and
+applications</a></li>
+<li><a href="#trait-declarations-over-constructor-parameters"
+id="toc-trait-declarations-over-constructor-parameters">Trait
+declarations over constructor parameters</a></li>
+<li><a href="#impls-for-constructors"
+id="toc-impls-for-constructors">Impls for constructors</a></li>
+<li><a href="#inference-and-monomorphization"
+id="toc-inference-and-monomorphization">Inference and
+monomorphization</a></li>
+</ul></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="higher-kinded-traits">37. Higher-Kinded Traits</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>A trait may be parameterized over a type constructor rather than a
+concrete type — <code>trait functor[F[_]]</code> — enabling abstractions
+like <code>functor</code>/<code>monad</code> written once over any
+matching constructor.</p>
+<h2 id="syntax">Syntax</h2>
+<p>Type parameter lists (<code>type_params</code>,
+<code>type_param</code> in <code>spec/cinder-grammar.ebnf</code>) admit
+a higher-kinded form: <code>F[_]</code> (arity 1), <code>F[_, _]</code>
+(arity 2), and so on — one underscore per constructor argument.
+<code>is_higher_kinded</code> and the underscore count are recorded on
+the AST’s <code>type_param</code>.</p>
+<h2 id="semantics">Semantics</h2>
+<h3 id="kinds-are-arities">Kinds are arities</h3>
+<p>A type parameter’s kind is <code>*</code> (ordinary, ground type) or
+an n-ary constructor. There is no currying, no kind polymorphism, and no
+kind inference across declarations — the kind is exactly what the
+declaration syntax states. Builtin generics carry their true arities
+(<code>option</code> 1, <code>result</code> 2, <code>list</code> 1,
+<code>array</code> 2, …).</p>
+<h3 id="type-constructors-and-applications">Type constructors and
+applications</h3>
+<p>Two additional shapes exist in the type table alongside ordinary
+types:</p>
+<ul>
+<li>an unapplied nominal constructor — what <code>option</code> denotes
+as an argument to <code>monad[option]</code> or in
+<code>impl monad for option</code>;</li>
+<li>an application whose head is a type parameter — <code>F[A]</code>,
+<code>M[B]</code> — holding the head parameter and argument type
+ids.</li>
+</ul>
+<p>Substituting a concrete constructor for a parameter normalizes the
+application to the same interned type as if it had been written
+concretely: substituting <code>F := option</code> into <code>F[A]</code>
+produces <em>the</em> <code>option[A]</code> id, identical to one
+written directly in source, preserving the id-equality invariant that
+comparisons downstream rely on.</p>
+<p><strong>Kind checking.</strong> Applying a kind-<code>*</code> name,
+applying an n-ary constructor to the wrong number of arguments, or using
+a higher-kinded parameter bare in type position are all diagnosed. A
+bare generic name is accepted as a constructor argument only where the
+target parameter is itself higher-kinded (kind-directed resolution).</p>
+<p><strong>Only nominal constructors inhabit higher kinds.</strong> The
+argument for <code>F[_]</code> must be a named declaration of matching
+arity — a user struct/sum/opaque generic or a prelude generic. No
+lambdas at the type level, no partially-applied constructors, no generic
+aliases as constructor arguments.</p>
+<h3 id="trait-declarations-over-constructor-parameters">Trait
+declarations over constructor parameters</h3>
+<pre class="cinder"><code>trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -&gt; B) -&gt; F[B]
+
+trait monad[M[_]] requires functor[M]:
+    def pure[A](a: A) -&gt; M[A]
+    def bind[A, B](ma: M[A], f: fn(A) -&gt; M[B]) -&gt; M[B]</code></pre>
+<p>Method signatures may apply the trait’s constructor parameter;
+method-local generic parameters (<code>[A, B]</code>) interact with it
+normally. Trait-default bodies type-check under an abstract
+<code>F</code>, using only operations the trait’s own surface and
+<code>requires</code> bounds justify. <code>requires functor[M]</code>
+where <code>M</code> is higher-kinded makes <code>functor[M]</code>’s
+methods available wherever <code>monad[M]</code> is in scope, via the
+same implied-bounds mechanism kind-<code>*</code> traits use. Associated
+types inside a higher-kinded trait are not supported.</p>
+<h3 id="impls-for-constructors">Impls for constructors</h3>
+<pre class="cinder"><code>impl monad for option:
+    def pure[A](a: A) -&gt; option[A]: @some(a)
+    def bind[A, B](ma: option[A], f: fn(A) -&gt; option[B]) -&gt; option[B]:
+        match ma:
+            @some(a) =&gt; f(a)
+            @none    =&gt; @none</code></pre>
+<p>The impl target resolves to an unapplied constructor; its arity must
+match the trait parameter’s kind (<code>impl functor for result</code>
+is diagnosed — <code>result</code> is 2-ary, <code>functor</code>
+requires 1-ary). Coherence uses the same string-keyed,
+one-impl-per-(trait, declaration) scheme as kind-<code>*</code> impls,
+keyed on the constructor’s declaration; the orphan rule is unchanged
+(own the trait or the constructor). Each impl method is checked against
+the trait signature under the constructor substitution —
+<code>F[A]</code> becomes <code>option[A]</code> and must equal the
+impl’s written <code>option[A]</code> by id. Trait defaults clone per
+impl, as for ordinary traits.</p>
+<h3 id="inference-and-monomorphization">Inference and
+monomorphization</h3>
+<p>Unification for a higher-kinded parameter is <strong>rigid
+pattern-matching only</strong>: <code>F[A] ~ option[int32]</code> solves
+<code>F = option, A = int32</code> by matching the outermost nominal
+constructor; <code>F[A] ~ int32</code> fails; two flexible constructors
+never unify with each other’s applications. This is a deliberate
+restriction — full higher-order unification is undecidable in general
+and unnecessary for the traits this feature targets.</p>
+<p>Calling <code>bind(ma, f)</code> with <code>ma: option[int32]</code>
+against <code>bind[A, B](ma: M[A], f: fn(A) -&gt; M[B])</code> solves
+<code>M = option, A = int32</code> from the outermost constructor of
+<code>ma</code>’s type, then <code>B</code> flows from <code>f</code> as
+usual. Method syntax (<code>ma.bind(f)</code>) resolves through the
+constructor’s impl the same way ordinary method lookup works. A generic
+function may itself take a higher-kinded, bound-checked parameter
+(<code>def lift[F[_]: functor, A](...)</code>).</p>
+<p><strong>Erasure.</strong> By HIR, every constructor parameter is
+resolved to a concrete constructor and every application to a concrete
+type — an HK trait method call monomorphizes per call site
+(e.g. <code>option::pure$int32</code>), and backends, layout, and both
+runtimes are unaffected. This is a semantic-analysis-only feature (plus
+module-metadata plumbing for separate compilation).</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -&gt; B) -&gt; F[B]
+
+trait monad[M[_]] requires functor[M]:
+    def pure[A](a: A) -&gt; M[A]
+    def bind[A, B](ma: M[A], f: fn(A) -&gt; M[B]) -&gt; M[B]
+
+impl monad for option:
+    def pure[A](a: A) -&gt; option[A]: @some(a)
+    def bind[A, B](ma: option[A], f: fn(A) -&gt; option[B]) -&gt; option[B]:
+        match ma:
+            @some(a) =&gt; f(a)
+            @none    =&gt; @none</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented end to end: kind-as-arity checking,
+constructor/application type-table representation with substitution
+normalization, trait and impl checking over constructors, rigid
+inference, and per-call monomorphization all land, and both the bytecode
+VM and LLVM/AOT backends run the example above unchanged. Regression
+coverage includes <code>check_test</code> acceptance and five kind-error
+cases,
+<code>src/testdata/semantic_stress/028_higher_kinded_traits.cn</code>,
+<code>src/testdata/codegen_stress/034_higher_kinded_trait_dispatch.cn</code>
+(VM/JIT parity), and parser tests for <code>F[_, _]</code>.</p>
+<p>Deferred, not v1: higher-kinded parameters in <code>concept</code>
+definitions, <code>some Trait</code> existentials over higher-kinded
+traits, and <code>box[trait]</code> objects for higher-kinded traits
+(object safety for HKTs is out of scope).</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="36-modules-as-compile-time-values.html">Modules as
+Compile-Time Values</a> — a sibling compile-time-only abstraction; both
+erase before code generation.</li>
+</ul>
+</body>
+</html>

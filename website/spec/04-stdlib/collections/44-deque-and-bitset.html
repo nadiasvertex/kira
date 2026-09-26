@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>44-deque-and-bitset</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">44-deque-and-bitset</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#dequet-and-bitset" id="toc-dequet-and-bitset">44.
+<code>deque[T]</code> and <code>bitset</code></a>
+<ul>
+<li><a href="#dequet" id="toc-dequet"><code>deque[T]</code></a></li>
+<li><a href="#bitset" id="toc-bitset"><code>bitset</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="dequet-and-bitset">44. <code>deque[T]</code> and
+<code>bitset</code></h1>
+<p><strong>Status:</strong> Planned</p>
+<p>Covers the designed-but-unimplemented <code>deque[T]</code>
+(double-ended ring buffer) and <code>bitset</code> (word-packed bit set)
+containers.</p>
+<p>Neither type exists in <code>src/std</code> today; there is no
+<code>deque.cn</code>, <code>bitset.cn</code>, or equivalent. This
+chapter describes the design fixed in
+<code>spec/collections-algorithms-design.md</code> §6.3, normatively, as
+the target shape.</p>
+<h2 id="dequet"><code>deque[T]</code></h2>
+<p>A ring buffer over a power-of-two-capacity allocation:</p>
+<pre><code>{ data: *mut T, head: usize, len: usize, cap: usize }</code></pre>
+<ul>
+<li>Indexing into logical position <code>i</code> masks rather than
+takes a modulo: <code>(head + i) &amp; (cap - 1)</code>, which is why
+<code>cap</code> is constrained to a power of two.</li>
+<li><code>push_front</code>, <code>push_back</code>,
+<code>pop_front</code>, <code>pop_back</code> — amortized O(1).</li>
+<li>Indexing — O(1).</li>
+<li>Not contiguous in general (the live range can wrap around the end of
+<code>data</code>), so it does not offer <code>as_slice</code>. A
+<code>make_contiguous</code> operation rotates the storage so the live
+range is contiguous, in place, and is the escape hatch for algorithms
+that need a slice.</li>
+</ul>
+<h2 id="bitset"><code>bitset</code></h2>
+<pre><code>{ words: list[uint64], nbits: usize }</code></pre>
+<ul>
+<li><code>set</code>, <code>clear</code>, <code>flip</code>,
+<code>test</code> — per-bit operations.</li>
+<li><code>count_ones</code> — population count, implemented as SWAR
+(bit-twiddling over the packed words) rather than an intrinsic; no
+popcount intrinsic exists in the primitive substrate (see the
+<code>machine</code> layer’s fourteen intrinsics — no SIMD, no popcount,
+on the grounds that both are expressible or unnecessary in portable
+Cinder).</li>
+<li><code>union</code>, <code>intersect</code>, <code>difference</code>
+— set algebra over the packed words.</li>
+<li><code>iter()</code> — yields the indices of set bits, produced by
+trailing-zero scanning of each word in turn.</li>
+</ul>
+<p>The set operations depend on bit-operator traits
+(<code>bit_and</code>, <code>bit_or</code>, <code>bit_xor</code>,
+<code>shl</code>, <code>shr</code>) that do not exist yet in
+<code>std.traits</code>. Adding them follows the existing
+<code>add</code>/<code>type output</code> operator-trait pattern and is
+mechanical, but it is a prerequisite this chapter’s operations have not
+cleared.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Nothing in this chapter is implemented. Confirmed by absence: no file
+under <code>src/std</code> matches <code>*deque*</code> or
+<code>*bitset*</code>. Blocking work:</p>
+<ul>
+<li>The bit-operator traits
+(<code>bit_and</code>/<code>bit_or</code>/<code>bit_xor</code>/<code>shl</code>/<code>shr</code>)
+<code>bitset</code> needs do not exist in <code>std.traits</code>.</li>
+<li>Both containers are specified over raw-pointer fields
+(<code>*mut T</code>), which in turn depend on the
+<code>machine</code>-gated pointer/intrinsic substrate
+(<code>std.machine</code>) and, on the bytecode VM specifically, a
+reference/pointer model that does not exist yet (R2 in
+<code>spec/collections-algorithms-design.md</code> §8) — reading through
+<code>&amp;mut T</code>/<code>*T</code> fails on both backends
+today.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="43-list.md"><code>list[T]</code></a> —
+<code>bitset</code>’s backing storage.</li>
+<li><a href="../algorithms/51-sorting-and-searching.html">Sorting and
+Searching</a> — another planned chapter blocked on the same
+slice/pointer substrate.</li>
+</ul>
+</body>
+</html>

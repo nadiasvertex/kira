@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>13-programs-and-main</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">13-programs-and-main</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#programs-and-main" id="toc-programs-and-main">13. Programs
+and <code>main</code></a>
+<ul>
+<li><a href="#main" id="toc-main"><code>main</code></a></li>
+<li><a href="#args-and-env" id="toc-args-and-env"><code>args()</code>
+and <code>env()</code></a></li>
+<li><a href="#scripts" id="toc-scripts">Scripts</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="programs-and-main">13. Programs and <code>main</code></h1>
+<p><strong>Status:</strong> Partial — see Implementation status</p>
+<p>Covers <code>main</code>, <code>result</code> return for
+<code>?</code> inside <code>main</code>,
+<code>args()</code>/<code>env()</code>, and the script form (implicit
+<code>main</code> from top-level statements).</p>
+<h2 id="main"><code>main</code></h2>
+<p>An executable program has one entry point: a function named
+<code>main</code>. The simplest form takes no arguments and returns
+<code>unit</code>.</p>
+<pre class="cinder"><code>def main() -&gt; unit:
+    println(&quot;Hello, world!&quot;)</code></pre>
+<p>To use <code>?</code> inside <code>main</code>, give it a
+<code>result</code> return type; a returned <code>@err</code> ends the
+program with a non-zero exit status and reports the error.</p>
+<pre class="cinder"><code>def main() -&gt; result[unit, app_error]:
+    let cfg = load_config(&quot;app.toml&quot;)?
+    run(cfg)
+    return @ok(unit)</code></pre>
+<h2 id="args-and-env"><code>args()</code> and <code>env()</code></h2>
+<p>Command-line arguments and environment variables come from prelude
+intrinsic functions rather than <code>main</code> parameters, so
+<code>main</code>’s signature stays uniform. Both are recognized prelude
+names in <code>src/semantic/check.cpp</code>
+(<code>name == "args"</code>, <code>name == "env"</code>).</p>
+<pre class="cinder"><code>let arguments = args()        # list[str]
+let home      = env(&quot;HOME&quot;)   # option[str]</code></pre>
+<h2 id="scripts">Scripts</h2>
+<p>A file may skip the <code>main</code> declaration; top-level
+statements in that file are then treated as the body of an implicit
+<code>main</code>, run in order. A file may declare <code>main</code>
+explicitly or use top-level statements, but not both — mixing the two is
+a compile error
+(<code>a file may declare `main` explicitly or use top-level statements, but not both</code>,
+checked in <code>src/semantic/check.cpp</code>).</p>
+<pre class="cinder"><code>module hello
+
+for name in args():
+    println(&quot;Hi, {name}&quot;)</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>The explicit/implicit-<code>main</code> mutual-exclusion check is
+implemented and diagnosed (<code>src/semantic/check.cpp</code>, the
+“top-level statement in a file that declares <code>main</code>”
+check).</li>
+<li>No test corpus file under <code>src/testdata/</code> (parser_stress,
+semantic_stress, codegen_test, codegen_stress, driver_stress) exercises
+the <em>script</em> form end to end — every sample program in those
+corpora declares <code>main</code> explicitly. Whether top-level
+statements actually lower and run as an implicit <code>main</code> (as
+opposed to only being parsed and checked for the mutual-exclusion rule)
+is unverified against the compiled pipeline.</li>
+<li>The old tutorial’s claim that entry-module selection is driven by a
+<code>project.cn</code> file is not implemented: no
+<code>project.cn</code> file, parser, or reference to one exists
+anywhere in <code>src/</code>. The current CLI
+(<code>src/driver/cli.cpp</code>) instead takes a source file path
+directly as a positional argument
+(<code>bazelisk run //src:cinder -- path/to/module.cn</code>), with
+<code>--compile-function NAME</code> to select a non-<code>main</code>
+entry point for <code>--compile</code>. A library-vs-program distinction
+driven by project configuration is design-only at this point.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="11-error-handling.html">Error Handling</a> — <code>?</code>
+and <code>result</code>, used by <code>main</code>’s <code>result</code>
+return form.</li>
+<li><a href="12-modules-and-imports.html">Modules and Imports</a> — the
+module a file belongs to.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>58-std-traits</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">58-std-traits</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.traits-type-predicates-and-transformations"
+id="toc-std.traits-type-predicates-and-transformations">58.
+<code>std.traits</code> — Type Predicates and Transformations</a>
+<ul>
+<li><a href="#rationale" id="toc-rationale">Rationale</a></li>
+<li><a href="#type-predicates" id="toc-type-predicates">Type
+predicates</a></li>
+<li><a href="#type-relationships" id="toc-type-relationships">Type
+relationships</a></li>
+<li><a href="#type-transformations" id="toc-type-transformations">Type
+transformations</a></li>
+<li><a href="#type_category-a-single-dispatch-point"
+id="toc-type_category-a-single-dispatch-point"><code>type_category</code>
+— a single dispatch point</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.traits-type-predicates-and-transformations">58.
+<code>std.traits</code> — Type Predicates and Transformations</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Compile-time type predicates (<code>is_integer[T]</code>,
+<code>is_same[A, B]</code>, …) and type transformations
+(<code>remove_view[T]</code>, …), reinterpreting C++’s
+<code>&lt;type_traits&gt;</code> over Cinder’s reflection and
+monomorphization model.</p>
+<h2 id="rationale">Rationale</h2>
+<p>Cinder monomorphizes every generic instantiation, so a “type trait”
+is not a runtime tag test — it is an ordinary compile-time boolean or
+type computed once per instantiation, exactly like the values <a
+href="../../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a> already produces. <code>std.traits</code> gives that
+computation a stable, named vocabulary instead of leaving each library
+to hand-roll it.</p>
+<p>The need is not hypothetical: <code>src/std/algo.cn</code>’s
+<code>is_radix_integer[T]</code>/<code>is_signed_integer[T]</code>
+(backing <code>sort[T]</code>’s integer fast path) already compare
+<code>T.name()</code> against a hand-written list of string literals.
+<code>std.traits</code> generalizes that pattern into a reusable
+predicate library and gives <code>algo.cn</code> a single call
+(<code>is_integer[T]() and bit_width[T]() &lt;= 64</code>) in place of
+the string list — see <a href="#implementation-status">Implementation
+status</a>.</p>
+<h2 id="type-predicates">Type predicates</h2>
+<p>Each predicate is a
+<code>static pure def name[T]() -&gt; bool</code>, evaluated by the
+compile-time interpreter and usable anywhere a compile-time
+<code>bool</code> is (<code>static if</code>,
+<code>static assert</code>, a <code>concept</code> value-constraint
+clause, an ordinary generic body per <a
+href="../../03-advanced/31-compile-time-execution.html#compile-time-reflection">Compile-Time
+Execution § reflection</a>).</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Predicate</th>
+<th>True for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>is_bool[T]</code></td>
+<td><code>bool</code></td>
+</tr>
+<tr>
+<td><code>is_char[T]</code></td>
+<td><code>char</code></td>
+</tr>
+<tr>
+<td><code>is_signed_integer[T]</code></td>
+<td><code>int8</code>..<code>int128</code>, <code>isize</code></td>
+</tr>
+<tr>
+<td><code>is_unsigned_integer[T]</code></td>
+<td><code>uint8</code>..<code>uint128</code>, <code>usize</code>,
+<code>byte</code></td>
+</tr>
+<tr>
+<td><code>is_integer[T]</code></td>
+<td>either of the above</td>
+</tr>
+<tr>
+<td><code>is_float[T]</code></td>
+<td><code>float32</code>, <code>float64</code>,
+<code>float128</code></td>
+</tr>
+<tr>
+<td><code>is_numeric[T]</code></td>
+<td><code>is_integer[T]</code> or <code>is_float[T]</code></td>
+</tr>
+<tr>
+<td><code>is_scalar[T]</code></td>
+<td><code>is_numeric[T]</code>, <code>is_bool[T]</code>, or
+<code>is_char[T]</code></td>
+</tr>
+<tr>
+<td><code>is_str[T]</code></td>
+<td><code>str</code></td>
+</tr>
+<tr>
+<td><code>is_unit[T]</code></td>
+<td><code>unit</code></td>
+</tr>
+<tr>
+<td><code>is_array[T]</code></td>
+<td><code>array[_, _]</code></td>
+</tr>
+<tr>
+<td><code>is_slice[T]</code></td>
+<td><code>slice[_]</code> or <code>mut slice[_]</code></td>
+</tr>
+<tr>
+<td><code>is_view[T]</code></td>
+<td><code>&amp;T'</code> or <code>&amp;mut T'</code> for some
+<code>T'</code> (see <a
+href="../../02-intermediate/15-views.html">Views</a>)</td>
+</tr>
+<tr>
+<td><code>is_box[T]</code></td>
+<td><code>box[_]</code> or <code>box[trait]</code></td>
+</tr>
+<tr>
+<td><code>is_option[T]</code></td>
+<td><code>option[_]</code></td>
+</tr>
+<tr>
+<td><code>is_result[T]</code></td>
+<td><code>result[_, _]</code></td>
+</tr>
+<tr>
+<td><code>is_fn[T]</code></td>
+<td>a function type <code>fn(...) -&gt; _</code></td>
+</tr>
+<tr>
+<td><code>is_struct[T]</code></td>
+<td>a user <code>type ... = { ... }</code> declaration</td>
+</tr>
+<tr>
+<td><code>is_sum[T]</code></td>
+<td>a user <code>type ... = @a | @b(...) | ...</code> declaration</td>
+</tr>
+</tbody>
+</table>
+<p><code>is_struct</code>/<code>is_sum</code> are the only two that read
+a user declaration rather than matching a builtin name; both are thin
+wrappers over the <code>T.kind()</code> primitive introduced in <a
+href="60-meta-queries.html#type_kind">Meta Queries § type_kind</a>.</p>
+<h2 id="type-relationships">Type relationships</h2>
+<pre class="cinder"><code>is_same[A, B]() -&gt; bool          # A and B intern to the same type_id
+is_convertible[From, To]() -&gt; bool   # `into[To]` is implemented for From, or From == To
+implements[T, Trait]() -&gt; bool   # T has an impl of Trait (kind-* trait only)</code></pre>
+<ul>
+<li><code>is_same[A, B]</code> is <code>type_table</code> id equality —
+the same notion of sameness <a
+href="../../03-advanced/37-higher-kinded-traits.html">Higher-Kinded
+Traits</a> relies on for substitution normalization. It is reflexive,
+symmetric, and requires no bound on <code>A</code>/<code>B</code>.</li>
+<li><code>is_convertible[From, To]</code> is
+<code>is_same[From, To] or implements[From, into[To]]()</code>; it does
+not attempt an actual conversion.</li>
+<li><code>implements[T, Trait]</code> answers a coherence-table lookup
+at compile time — the same lookup <code>check.cpp</code>’s
+impl-coherence pass performs, exposed as a queryable boolean rather than
+only a pass/fail obligation on a bound list. It accepts only a
+kind-<code>*</code> trait name; a higher-kinded trait or a
+<code>concept</code> is diagnosed (concepts are structural by
+construction — see <a
+href="../../03-advanced/35-concepts.html">Concepts</a> — so “does
+<code>T</code> implement concept <code>C</code>” is written as the bound
+<code>T: C</code> directly, never through <code>implements</code>).</li>
+</ul>
+<h2 id="type-transformations">Type transformations</h2>
+<p>Transformations return a <code>type_expr</code> (see <a
+href="../../03-advanced/31-compile-time-execution.html#quoting-and-splicing">Compile-Time
+Execution § Quoting and splicing</a>) rather than a value, and are
+spliced into type position with <code>~</code>:</p>
+<pre class="cinder"><code>remove_view[T]() -&gt; type_expr    # &amp;T&#39; or &amp;mut T&#39; -&gt; T&#39;; T unchanged otherwise
+add_view[T]() -&gt; type_expr       # T -&gt; &amp;T
+add_mut_view[T]() -&gt; type_expr   # T -&gt; &amp;mut T
+decay[T]() -&gt; type_expr          # remove_view, then array[E, n] -&gt; slice[E]
+element_type[T]() -&gt; type_expr   # array[E, _]/slice[E]/list[E]/option[E] -&gt; E</code></pre>
+<pre class="cinder"><code>def first[T](xs: &amp;list[T]) -&gt; option[~element_type[T]()]:
+    ...</code></pre>
+<p><code>decay[T]</code> composes <code>remove_view</code> and the
+array-to-slice step in one call because that pair is exactly what a
+generic function taking <code>items: &amp;array[T, n]</code> and wanting
+to treat it uniformly with a <code>slice[T]</code> parameter needs — the
+two steps have no independent use case that would justify keeping them
+as separate calls.</p>
+<h2
+id="type_category-a-single-dispatch-point"><code>type_category</code> —
+a single dispatch point</h2>
+<p>Rather than testing every predicate in turn,
+<code>type_category[T]() -&gt; type_category</code> returns one value of
+a prelude sum type, for use in a
+<code>static if</code>/<code>match</code> dispatch:</p>
+<pre class="cinder"><code>type type_category =
+    | @boolean
+    | @character
+    | @signed_integer
+    | @unsigned_integer
+    | @floating_point
+    | @string
+    | @array_like
+    | @view
+    | @struct_like
+    | @sum_like
+    | @function
+    | @other
+
+static pure def describe[T]() -&gt; str:
+    match type_category[T]():
+        @boolean          =&gt; &quot;bool&quot;
+        @signed_integer | @unsigned_integer =&gt; &quot;integer&quot;
+        @floating_point   =&gt; &quot;float&quot;
+        _                 =&gt; &quot;other&quot;</code></pre>
+<p>This mirrors <code>T.kind()</code> from <a
+href="60-meta-queries.html">Meta Queries</a> but resolves the
+builtin/user-declaration split into one flat enumeration, so a consumer
+that only cares about “what broad shape is this” does not need to call
+both a builtin-name predicate and <code>T.kind()</code> and merge the
+results itself.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a
+href="../../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a> — the <code>static</code>/reflection substrate every
+predicate here is built from.</li>
+<li><a href="59-std-limits.html">Numeric Limits</a> — the
+numeric-specific counterpart (<code>min[T]()</code>,
+<code>bits[T]()</code>, …) to this chapter’s
+<code>is_integer</code>/<code>is_float</code>.</li>
+<li><a href="60-meta-queries.html">Meta Queries</a> —
+<code>T.kind()</code>, the declaration-shape primitive
+<code>is_struct</code>/<code>is_sum</code>/<code>type_category</code>
+are defined over.</li>
+<li><a
+href="../../03-advanced/37-higher-kinded-traits.html">Higher-Kinded
+Traits</a> — the substitution/id-equality model <code>is_same</code>
+reuses.</li>
+</ul>
+</body>
+</html>

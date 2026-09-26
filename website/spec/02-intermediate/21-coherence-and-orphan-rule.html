@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>21-coherence-and-orphan-rule</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">21-coherence-and-orphan-rule</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#coherence-and-the-orphan-rule"
+id="toc-coherence-and-the-orphan-rule">21. Coherence and the Orphan
+Rule</a>
+<ul>
+<li><a href="#coherence" id="toc-coherence">Coherence</a></li>
+<li><a href="#the-orphan-rule" id="toc-the-orphan-rule">The Orphan
+Rule</a></li>
+<li><a href="#newtype-workaround" id="toc-newtype-workaround">Newtype
+Workaround</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="coherence-and-the-orphan-rule">21. Coherence and the Orphan
+Rule</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>The at-most-one-implementation guarantee, the orphan rule that keeps
+it enforceable across separately compiled packages, and the newtype
+workaround.</p>
+<h2 id="coherence">Coherence</h2>
+<p>For any pair of a trait and a type, a program contains <strong>at
+most one</strong> implementation, and implementations may not overlap —
+no two can apply to the same concrete type. A specific
+<code>impl show for point</code> and a blanket
+<code>impl[T: show] show for list[T]</code> coexist because they never
+apply to the same type; two impls of <code>show</code> for
+<code>point</code> do not.</p>
+<p>This single-implementation guarantee is what lets
+<code>T: show</code> mean one unambiguous thing, and the standard
+library depends on it: <code>map[K, V]</code> relies on there being one
+canonical <code>hash</code> and <code>ord</code> for <code>K</code>, or
+two modules could corrupt the same map by hashing its keys
+differently.</p>
+<h2 id="the-orphan-rule">The Orphan Rule</h2>
+<p>To keep the guarantee enforceable across separately compiled
+packages, an <code>impl</code> is allowed only where you own one of the
+two sides: <strong><code>impl Trait for Type</code> is allowed only if
+the trait or the type is defined in your package</strong>. Because every
+impl is anchored to a package that owns one side, two packages can never
+implement the same trait for the same type, so a conflict can only arise
+inside one package, where the compiler sees it. <code>deriving</code> is
+always allowed — it implements a trait for your own type.</p>
+<h2 id="newtype-workaround">Newtype Workaround</h2>
+<p>When you need a trait you don’t own on a type you don’t own, wrap the
+type:</p>
+<pre class="cinder"><code>type my_id = { inner: foreign_id }     # a newtype you own
+impl show for my_id:                    # allowed — my_id is yours
+    def show(self) -&gt; str: self.inner.show()</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — trait/<code>impl</code>
+mechanics.</li>
+<li><a href="22-extension-methods.html">Extension Methods</a> — the
+unrestricted counterpart for adding methods without claiming
+conformance.</li>
+</ul>
+</body>
+</html>

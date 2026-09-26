@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>61-std-test</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">61-std-test</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#unit-testing-std.test" id="toc-unit-testing-std.test">61.
+Unit Testing (<code>std.test</code>)</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a>
+<ul>
+<li><a href="#test-functions" id="toc-test-functions">Test
+functions</a></li>
+<li><a href="#test_failure"
+id="toc-test_failure"><code>test_failure</code></a></li>
+<li><a href="#assertions" id="toc-assertions">Assertions</a></li>
+<li><a href="#test-cases" id="toc-test-cases">Test cases</a></li>
+<li><a href="#suites" id="toc-suites">Suites</a></li>
+<li><a href="#discovery" id="toc-discovery">Discovery</a></li>
+<li><a href="#runner" id="toc-runner">Runner</a></li>
+</ul></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="unit-testing-std.test">61. Unit Testing
+(<code>std.test</code>)</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Defines <code>std.test</code>: the <code>test_failure</code> type,
+assertion functions, test-case registration, and the runner that
+executes a set of test cases and reports results.</p>
+<h2 id="syntax">Syntax</h2>
+<p>No new grammar. A test is an ordinary function; <code>std.test</code>
+types and functions are used like any other stdlib module.</p>
+<h2 id="semantics">Semantics</h2>
+<h3 id="test-functions">Test functions</h3>
+<p>A test function is any
+<code>def name() -&gt; result[unit, test_failure]</code> taking no
+parameters. It returns <code>@ok(unit)</code> on success and
+<code>@err(test_failure)</code> on failure.</p>
+<pre class="cinder"><code>def test_addition() -&gt; result[unit, test_failure]:
+    return assert_eq(2 + 2, 4)</code></pre>
+<p>A test function’s name has no special meaning by itself; it becomes
+part of a test run only when passed to
+<code>case</code>/<code>skipped</code> (<a href="#test-cases">Test
+cases</a>) or matched by name during <a href="#discovery">discovery</a>.
+Naming a function <code>test_*</code> is convention, not a
+compiler-recognized marker, except where discovery is used.</p>
+<h3 id="test_failure"><code>test_failure</code></h3>
+<p>Sum-type variants carry only positional fields
+(<code>sum_variant</code> in <code>spec/cinder-grammar.ebnf</code>), so
+a mismatch’s three parts are unnamed and distinguished by position:</p>
+<pre class="cinder"><code>type test_failure =
+    | @message(str)
+    | @mismatch(str, str, str)</code></pre>
+<ul>
+<li><code>@message(text)</code> — a failure described only by
+<code>text</code>.</li>
+<li><code>@mismatch(expected, actual, message)</code> — in that
+positional order: an expected value and an actual value, each already
+rendered to <code>str</code>, plus a description.</li>
+</ul>
+<h3 id="assertions">Assertions</h3>
+<pre class="cinder"><code>def assert_true(cond: bool, message: str) -&gt; result[unit, test_failure]
+def assert_false(cond: bool, message: str) -&gt; result[unit, test_failure]
+def assert_eq[T: show + eq](actual: T, expected: T) -&gt; result[unit, test_failure]
+def assert_ne[T: show + eq](actual: T, expected: T) -&gt; result[unit, test_failure]
+def fail(message: str) -&gt; result[unit, test_failure]</code></pre>
+<ul>
+<li><code>assert_true</code>/<code>assert_false</code> return
+<code>@ok(unit)</code> iff <code>cond</code> matches; otherwise
+<code>@err(@message(message))</code>.</li>
+<li><code>assert_eq</code> returns <code>@ok(unit)</code> iff
+<code>actual == expected</code>; otherwise
+<code>@err(@mismatch(rendered_expected, rendered_actual, "values not equal"))</code>.
+Each value is rendered via string interpolation
+(<code>"{value}"</code>), not a direct <code>.show()</code> call — a
+built-in scalar type (<code>int32</code>, <code>float64</code>, …) has
+no callable <code>show</code> method of its own, only the compiler’s
+built-in interpolation path for it, so rendering must go through
+interpolation to work uniformly across both built-in and user-defined
+<code>show</code> types.</li>
+<li><code>assert_ne</code> returns <code>@ok(unit)</code> iff
+<code>actual != expected</code>; otherwise
+<code>@err(@mismatch(rendered_expected, rendered_actual, "values unexpectedly equal"))</code>,
+rendered the same way.</li>
+<li><code>fail</code> always returns
+<code>@err(@message(message))</code>.</li>
+<li>A test function composes assertions with <code>?</code>:</li>
+</ul>
+<pre class="cinder"><code>def test_parse() -&gt; result[unit, test_failure]:
+    let n = parse_int(&quot;42&quot;)?
+    assert_eq(n, 42)?
+    return assert_true(n &gt; 0, &quot;parsed value must be positive&quot;)</code></pre>
+<h3 id="test-cases">Test cases</h3>
+<pre class="cinder"><code>type test_case = { name: str, run: fn() -&gt; result[unit, test_failure], skip: bool }
+
+def case(name: str, run: fn() -&gt; result[unit, test_failure]) -&gt; test_case
+def skipped(name: str, run: fn() -&gt; result[unit, test_failure]) -&gt; test_case</code></pre>
+<ul>
+<li><code>case(name, run)</code> builds a <code>test_case</code> with
+<code>skip = false</code>.</li>
+<li><code>skipped(name, run)</code> builds a <code>test_case</code> with
+<code>skip = true</code>.</li>
+</ul>
+<p>Parameterized tests are ordinary data-driven code that builds a
+<code>list[test_case]</code>:</p>
+<pre class="cinder"><code>def cases_for_add() -&gt; list[test_case]:
+    let inputs = [(1, 1, 2), (2, 2, 4), (0, 0, 0)]
+    return for (a, b, expected) in inputs =&gt;
+        case(&quot;add({a}, {b})&quot;, () =&gt; assert_eq(a + b, expected))</code></pre>
+<p>Per-test fixtures (setup/teardown scoped to a single test) are
+ordinary function calls made at the start and end of a test function’s
+body; no dedicated syntax exists for them.</p>
+<h3 id="suites">Suites</h3>
+<p>A <code>test_suite</code> groups <code>test_case</code>s with
+optional hooks: <code>before_all</code>/<code>after_all</code> run once
+for the whole group, <code>before_each</code>/<code>after_each</code>
+run once per case:</p>
+<pre class="cinder"><code>type test_suite = {
+    name:        str,
+    cases:       list[test_case],
+    before_all:  option[fn() -&gt; result[unit, test_failure]],
+    after_all:   option[fn() -&gt; result[unit, test_failure]],
+    before_each: option[fn() -&gt; result[unit, test_failure]],
+    after_each:  option[fn() -&gt; result[unit, test_failure]],
+}
+
+def suite(
+    name:        str,
+    cases:       list[test_case],
+    before_all:  option[fn() -&gt; result[unit, test_failure]] = @none,
+    after_all:   option[fn() -&gt; result[unit, test_failure]] = @none,
+    before_each: option[fn() -&gt; result[unit, test_failure]] = @none,
+    after_each:  option[fn() -&gt; result[unit, test_failure]] = @none,
+) -&gt; test_suite</code></pre>
+<ul>
+<li><code>before_all</code>, when <code>@some</code>, is called once
+before any case in <code>cases</code> runs.</li>
+<li><code>after_all</code>, when <code>@some</code>, is called once
+after every case in <code>cases</code> has run (or been skipped),
+whether or not any case or hook failed.</li>
+<li>If <code>before_all</code> returns <code>@err</code>, no case in
+<code>cases</code> runs (nor do
+<code>before_each</code>/<code>after_each</code> for any of them); each
+case is recorded as failed with that same <code>test_failure</code>.
+<code>after_all</code> still runs.</li>
+<li><code>before_all</code>/<code>after_all</code> failures are reported
+as their own named entries (<code>&lt;suite name&gt;.before_all</code>,
+<code>&lt;suite name&gt;.after_all</code>) in the runner’s output,
+distinct from any case.</li>
+<li><code>before_each</code>, when <code>@some</code>, is called
+immediately before each non-skipped case’s <code>run</code>.</li>
+<li><code>after_each</code>, when <code>@some</code>, is called
+immediately after each non-skipped case, and is itself reported as its
+own named entry (<code>&lt;case name&gt;.after_each</code>) whether it
+passes or fails — separate from the case’s own pass/fail entry.</li>
+<li>If <code>before_each</code> returns <code>@err</code>, the case’s
+<code>run</code> is not called; the case is recorded as failed with that
+<code>test_failure</code>. <code>after_each</code> still runs for that
+case.</li>
+<li><code>before_each</code>/<code>after_each</code> are not called for
+a skipped case.</li>
+</ul>
+<h3 id="discovery">Discovery</h3>
+<p><code>suite</code>/<code>case</code>/<code>skipped</code> register
+tests explicitly, for use in a hand-written <code>main</code>.
+<code>cinder --test</code> discovers and runs tests automatically,
+without any <code>std.test</code> call in the tested code.</p>
+<p>Discovery is scoped to an inline submodule literally named
+<code>tests</code> (<code>sub_module_decl</code>, see <a
+href="../../01-core/12-modules-and-imports.html#use">Modules and
+Imports</a>), not to top-level names in an ordinary module — a name like
+<code>before_all</code> outside a <code>tests</code> submodule is an
+ordinary name and is never treated as a hook:</p>
+<pre class="cinder"><code>module app.geometry
+
+use std.test.{assert_eq, assert_true, test_failure}
+
+def before_all() -&gt; unit:        # ordinary function; not a test hook
+    println(&quot;not a test hook&quot;)
+
+pub def area(w: float64, h: float64) -&gt; float64:
+    return w * h
+
+module tests:
+    def before_all() -&gt; result[unit, test_failure]:
+        println(&quot;geometry suite starting&quot;)
+        return @ok(unit)
+
+    def after_all() -&gt; result[unit, test_failure]:
+        println(&quot;geometry suite done&quot;)
+        return @ok(unit)
+
+    def before_each() -&gt; result[unit, test_failure]:
+        return @ok(unit)
+
+    def after_each() -&gt; result[unit, test_failure]:
+        return @ok(unit)
+
+    def test_area() -&gt; result[unit, test_failure]:
+        return assert_eq(super.area(2.0, 3.0), 6.0)
+
+    def test_zero_area() -&gt; result[unit, test_failure]:
+        return assert_eq(super.area(0.0, 5.0), 0.0)
+
+    def skip_negative() -&gt; result[unit, test_failure]:
+        return assert_true(super.area(-1.0, 5.0) &gt;= 0.0, &quot;negative width should not underflow&quot;)</code></pre>
+<p><code>cinder --test</code> compiles this module, discovers the
+<code>tests</code> submodule as a suite named <code>app.geometry</code>,
+and prints (<code>demo/test-discovery.cn</code> is a runnable version of
+this, with nested submodules each carrying their own suite):</p>
+<pre><code>geometry suite starting
+ok app.geometry.before_all
+ok app.geometry.test_area
+ok app.geometry.test_area.after_each
+ok app.geometry.test_zero_area
+ok app.geometry.test_zero_area.after_each
+skip app.geometry.skip_negative
+geometry suite done
+ok app.geometry.after_all
+6 passed, 0 failed, 1 skipped</code></pre>
+<ul>
+<li>Invoked as <code>cinder --test &lt;path&gt;</code>, in place of
+<code>cinder &lt;path&gt;</code>.</li>
+<li>For every module reachable from <code>&lt;path&gt;</code>, the
+driver looks for a direct inline submodule of it named
+<code>tests</code>. A module without one contributes nothing. An inline
+submodule is itself a module, so this applies at every nesting depth: a
+<code>tests</code> submodule of a submodule is a suite named after
+<em>that</em> submodule’s path, letting each submodule keep its tests
+next to the code they cover.</li>
+<li>A <code>tests</code> submodule is not searched for a further
+<code>tests</code> submodule of its own.</li>
+<li>Within a <code>tests</code> submodule, every function taking no
+parameters and returning <code>result[unit, test_failure]</code> is
+classified by name:
+<ul>
+<li>exactly <code>before_all</code> — the suite’s
+<code>before_all</code> hook.</li>
+<li>exactly <code>after_all</code> — the suite’s <code>after_all</code>
+hook.</li>
+<li>exactly <code>before_each</code> — the suite’s
+<code>before_each</code> hook.</li>
+<li>exactly <code>after_each</code> — the suite’s
+<code>after_each</code> hook.</li>
+<li>prefix <code>skip_</code> — a case built with <code>skipped</code>,
+named after the function (with the <code>skip_</code> prefix kept in the
+reported name).</li>
+<li>anything else — a case built with <code>case</code>, named after the
+function.</li>
+</ul></li>
+<li>A function inside <code>tests</code> whose signature does not match
+(extra parameters, other return type) takes no part in the suite; it is
+ordinary helper code private to the submodule.</li>
+<li>A <code>tests</code> submodule with two or more functions sharing
+any one of the four exact hook names is a compile error.</li>
+<li>Each <code>tests</code> submodule with at least one discovered case
+contributes one <code>test_suite</code>, named after its parent module’s
+path; a <code>tests</code> submodule with only hooks and no cases
+contributes no suite.</li>
+<li>The driver synthesizes a <code>main</code> equivalent to calling
+<code>run_suites</code> on every discovered suite, in module-graph
+order, and exits with its return code. A source file that already
+declares its own <code>main</code> is compiled unchanged;
+<code>cinder --test</code> does not override a user-written entry
+point.</li>
+<li>Sources that parse cleanly, declare no <code>main</code>, and yield
+no suite are an error naming the scanned sources and showing how a test
+is declared — <code>--test</code> was asked to run tests and there are
+none.</li>
+</ul>
+<h3 id="runner">Runner</h3>
+<pre class="cinder"><code>def run(cases: list[test_case]) -&gt; int32
+def run_suites(suites: list[test_suite]) -&gt; int32</code></pre>
+<ul>
+<li><code>run</code> executes every <code>test_case</code> in
+<code>cases</code> in order, except those with <code>skip = true</code>;
+equivalent to <code>run_suites([suite("", cases)])</code> with no
+per-suite name printed.</li>
+<li><code>run_suites</code> executes each <code>test_suite</code> in
+order:
+<ol type="1">
+<li>its <code>before_all</code>, if any;</li>
+<li>for each case in <code>cases</code>, in order: if
+<code>skip = true</code>, record it skipped and move on; otherwise call
+<code>before_each</code> (if any), then — only if
+<code>before_each</code> did not fail — the case’s <code>run</code>,
+then <code>after_each</code> (if any);</li>
+<li>its <code>after_all</code>, if any.</li>
+</ol></li>
+<li>For each executed case or hook, calls it and records
+<code>@ok(unit)</code> as passed or <code>@err(test_failure)</code> as
+failed.</li>
+<li>For each skipped case, records it as skipped without calling it or
+its <code>before_each</code>/<code>after_each</code>.</li>
+<li>Prints one line per case or hook:
+<ul>
+<li>passed: <code>ok &lt;name&gt;</code></li>
+<li>failed:
+<code>FAILED &lt;name&gt;: &lt;rendered test_failure&gt;</code></li>
+<li>skipped: <code>skip &lt;name&gt;</code></li>
+</ul></li>
+<li><code>@message(text)</code> renders as <code>text</code>.
+<code>@mismatch(expected, actual, message)</code> renders as
+<code>message (expected: &lt;expected&gt;, actual: &lt;actual&gt;)</code>.</li>
+<li>Prints a summary line:
+<code>&lt;passed&gt; passed, &lt;failed&gt; failed, &lt;skipped&gt; skipped</code>.</li>
+<li>Returns <code>0</code> if <code>failed == 0</code> across all cases
+and hooks, otherwise <code>1</code>.</li>
+</ul>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>use std.test.{case, skipped, suite, run_suites, assert_eq, assert_true, test_failure}
+
+def before_all_hook() -&gt; result[unit, test_failure]:
+    println(&quot;counter suite starting&quot;)
+    return @ok(unit)
+
+def test_addition() -&gt; result[unit, test_failure]:
+    return assert_eq(2 + 2, 4)
+
+def test_flaky() -&gt; result[unit, test_failure]:
+    return assert_true(false, &quot;not ready&quot;)
+
+def test_increment() -&gt; result[unit, test_failure]:
+    return assert_eq(1 + 1, 2)
+
+def main() -&gt; int32:
+    return run_suites([
+        suite(&quot;arithmetic&quot;, [case(&quot;addition&quot;, test_addition), skipped(&quot;flaky&quot;, test_flaky)]),
+        suite(&quot;counter&quot;, [case(&quot;increment&quot;, test_increment)],
+              before_all: @some(before_all_hook)),
+    ])</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Fully implemented and end-to-end tested — the checker fix, the
+library, and <code>--test</code> discovery all landed together
+(<code>src/semantic/check.cpp</code>’s <code>infer_method_call</code>,
+<code>src/llvm_codegen/codegen.cpp</code>’s
+<code>compile_function_value</code>, <code>src/std/test.cn</code>,
+<code>src/driver/test_discovery.cpp</code>,
+<code>src/cli_test.cpp</code>’s
+<code>test_build_runs_std_test_suite_via_llvm_tier</code>/<code>test_build_discovers_and_runs_tests_submodule_via_llvm_tier</code>/<code>test_build_discovers_nested_tests_submodules_via_llvm_tier</code>/<code>test_build_test_mode_leaves_existing_main_unchanged</code>/<code>test_test_mode_without_any_tests_is_an_error</code>/<code>test_test_mode_hooks_without_cases_find_no_tests</code>,
+and
+<code>src/testdata/codegen_stress/080_fn_typed_struct_field_call.cn</code>/<code>081_fn_typed_struct_field_list_heterogeneous.cn</code>)
+— and <code>suite</code>’s hook defaults now work as documented (default
+parameter values are lowered at the call site; see
+<code>spec/todo.md</code> item 6), so a suite names only the hooks it
+uses.</p>
+<ul>
+<li>The synthesized <code>--test</code> runner never needs a bare
+cross-module function reference as a value (a separate, broader gap than
+the one this chapter’s own fix addresses — a bare
+<code>use</code>-imported or qualified function name used as a plain
+value, outside call position, is not reliably lowered in every position
+yet); it always wraps each discovered function in a zero-arg lambda
+calling it by qualified path
+(<code>() =&gt; app.geometry.tests.test_area()</code>), which is
+unaffected.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../../01-core/11-error-handling.html">Error Handling</a> —
+<code>result[T, E]</code> and <code>?</code>, used throughout test
+bodies and assertions.</li>
+<li><a href="../../01-core/05-lambdas.html">Lambdas</a> — closures used
+as <code>test_case.run</code> values.</li>
+<li><a href="../../02-intermediate/18-traits.html">Traits</a> — the
+<code>show</code>/<code>eq</code> bounds on
+<code>assert_eq</code>/<code>assert_ne</code>.</li>
+<li><a
+href="../strings-and-formatting/53-std-format.html"><code>std.format</code></a>
+— string interpolation, used to render mismatch values.</li>
+<li><a href="../../01-core/13-programs-and-main.html">Programs and
+<code>main</code></a> — the ordinary entry-point rules
+<code>cinder --test</code>’s synthesized <code>main</code> follows.</li>
+<li><a href="../../01-core/12-modules-and-imports.html">Modules and
+Imports</a> — module paths and <code>pub</code> visibility, which
+<code>cinder --test</code> discovery is defined over.</li>
+</ul>
+</body>
+</html>

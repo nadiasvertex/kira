@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>46-unordered-map-and-set</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">46-unordered-map-and-set</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#unordered_mapk-v-and-unordered_setk"
+id="toc-unordered_mapk-v-and-unordered_setk">46.
+<code>unordered_map[K, V]</code> and <code>unordered_set[K]</code></a>
+<ul>
+<li><a href="#design" id="toc-design">Design</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="unordered_mapk-v-and-unordered_setk">46.
+<code>unordered_map[K, V]</code> and <code>unordered_set[K]</code></h1>
+<p><strong>Status:</strong> Planned</p>
+<p>Covers the designed-but-unimplemented
+<code>unordered_map[K, V]</code> (and its named companion
+<code>unordered_set[K]</code>), a hash-based associative container.</p>
+<p>Neither type exists in <code>src/std</code> today. This chapter
+describes the design fixed in
+<code>spec/collections-algorithms-design.md</code> §6.5, normatively, as
+the target shape.</p>
+<h2 id="design">Design</h2>
+<p>Open addressing, linear probing, Robin Hood hashing with
+backward-shift deletion:</p>
+<pre class="cinder"><code>pub type unordered_map[K, V] = {
+    ctrl: *mut uint8,   # 0 = empty, otherwise 1 + probe distance
+    keys: *mut K,
+    vals: *mut V,
+    len: usize,
+    cap: usize,         # power of two
+}</code></pre>
+<ul>
+<li><strong>Backward-shift deletion</strong>, not tombstones. Tombstone
+degradation under repeated insert/remove is the failure mode users
+actually hit; backward-shift avoids it at the cost of a shifting pass on
+removal.</li>
+<li><strong>Power-of-two capacity</strong> with mask indexing (no
+modulo). Growth is triggered at 7/8 load factor.</li>
+<li><strong>Complexity</strong> — average O(1) per operation, worst case
+O(n).</li>
+<li><strong>Hashing.</strong> Comes from <code>K: hash</code> (returning
+<code>uint64</code>), but a fibonacci-multiply finalizer is applied to
+the hash before masking it down to a bucket index: user
+<code>hash</code> implementations will generally be low-quality, and
+linear probing is unforgiving of clustered hashes.</li>
+<li><strong>No SIMD group-scan.</strong> A Swiss-table-style vectorized
+control-byte scan would require SIMD intrinsics that do not exist in the
+primitive substrate, and would be the one part of the standard library
+not writable in portable Cinder — deliberately not pursued.</li>
+</ul>
+<p><code>unordered_set[K]</code> is named alongside
+<code>unordered_map[K, V]</code> in the design catalog but has no
+representation or API of its own written down beyond that; expect it to
+follow once <code>unordered_map</code> lands.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Nothing in this chapter is implemented. Confirmed by absence: no file
+under <code>src/std</code> matches <code>*unordered*</code>. This
+container is specified entirely over raw-pointer fields
+(<code>*mut uint8</code>, <code>*mut K</code>, <code>*mut V</code>), so
+— like <a href="44-deque-and-bitset.md"><code>deque[T]</code> and
+<code>bitset</code></a> — it is blocked on the
+<code>machine</code>-gated pointer substrate (<code>std.machine</code>)
+and, on the bytecode VM, a reference/pointer model that does not exist
+yet.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="45-ordered-map-and-set.html">Ordered Map and Set</a> — the
+comparison-based alternative.</li>
+<li><a href="43-list.md"><code>list[T]</code></a> — the container this
+design contrasts with for representation strategy.</li>
+</ul>
+</body>
+</html>

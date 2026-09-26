@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>48-iterator-protocol</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">48-iterator-protocol</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-iterator-protocol" id="toc-the-iterator-protocol">48.
+The Iterator Protocol</a>
+<ul>
+<li><a href="#traits" id="toc-traits">Traits</a></li>
+<li><a href="#collect" id="toc-collect"><code>collect</code></a></li>
+<li><a href="#the-three-iteration-families-over-listt"
+id="toc-the-three-iteration-families-over-listt">The three iteration
+families over <code>list[T]</code></a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="the-iterator-protocol">48. The Iterator Protocol</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers the core iterator traits (<code>iterator[T]</code>,
+<code>double_ended[T]</code>, <code>exact_size[T]</code>,
+<code>into_iterator[T]</code>, <code>from_iter[T]</code>),
+<code>collect</code>, and the three concrete iterator types
+<code>list[T]</code> provides, all from
+<code>src/std/iter.cn</code>.</p>
+<h2 id="traits">Traits</h2>
+<pre class="cinder"><code>pub trait iterator[T]:
+    def next(mut self) -&gt; option[T]
+    def size_hint(self) -&gt; usize:
+        return 0</code></pre>
+<ul>
+<li><code>next(mut self) -&gt; option[T]</code> — advances the iterator,
+moving it. Returns <code>@some(value)</code> if a value is available,
+<code>@none</code> when exhausted.</li>
+<li><code>size_hint(self) -&gt; usize</code> — a defaulted method
+(default <code>0</code>), not a separate trait. A lower bound on the
+number of elements remaining, used only to pre-size a collection in
+<code>collect</code>; an answer that is too small costs a reallocation
+and nothing else. Adapters that can refine it do (see <a
+href="49-lazy-adapters.html">Lazy Adapters</a> for which).</li>
+</ul>
+<pre class="cinder"><code>pub trait double_ended[T] requires iterator[T]:
+    def next_back(mut self) -&gt; option[T]</code></pre>
+<ul>
+<li><code>next_back(mut self) -&gt; option[T]</code> — removes and
+returns the last value. This is what makes <code>rev</code>,
+<code>last</code>, and (a future) <code>rfind</code> linear rather than
+quadratic: a <code>rev</code> over a <code>double_ended</code> source
+draws from its end directly rather than buffering.</li>
+</ul>
+<pre class="cinder"><code>pub trait exact_size[T] requires iterator[T]:
+    def exact_len(self) -&gt; usize</code></pre>
+<ul>
+<li><code>exact_len(self) -&gt; usize</code> — the exact number of
+elements remaining. Named <code>exact_len</code> rather than
+<code>len</code>, deliberately: under UFCS a trait method named
+<code>len</code> would collide with the free <code>len</code> function
+every container already provides.</li>
+</ul>
+<pre class="cinder"><code>pub trait into_iterator[T]:
+    type iter
+    def into_iter(self) -&gt; self.iter</code></pre>
+<ul>
+<li>For types where iterating means handing back something
+<em>else</em>. <code>for</code> does not require this trait — it
+resolves iterators structurally, so a type with a suitable
+<code>next</code> is already usable in a <code>for</code> loop without
+implementing <code>into_iterator</code>.</li>
+</ul>
+<p><code>into_iter(self)</code> takes <code>self</code> by value, so
+<code>for x in v</code> over a type that only implements
+<code>into_iterator</code> moves <code>v</code>. Writing the loop’s
+iterable as an explicit borrow instead — <code>for x in &amp;v</code> /
+<code>for x in &amp;mut v</code> — dispatches to a UFCS free function
+named <code>iter</code> / <code>iter_mut</code> (the same constructors
+described below for <code>list[T]</code>) rather than
+<code>into_iter</code>, so <code>v</code> is not moved and is fully
+usable again once the loop ends. This route is tried before
+<code>into_iterator</code>, so a type offering both never has its
+<code>&amp;</code>/<code>&amp;mut</code> iteration silently consume the
+collection.</p>
+<pre class="cinder"><code>pub trait from_iter[T]:
+    static def from_iter[I](it: I) -&gt; self</code></pre>
+<ul>
+<li>Implement this to make a type a valid target of
+<code>collect</code>. <code>it: I</code> is drained (moved) to build
+<code>self</code>.</li>
+</ul>
+<h2 id="collect"><code>collect</code></h2>
+<pre class="cinder"><code>pub def collect[I, C](it: I) -&gt; C:
+    return C.from_iter(it)</code></pre>
+<p>A single free function, generic over both the source iterator type
+<code>I</code> and the target collection type <code>C</code>.
+<code>C</code> is resolved from the expected type at the call site
+(<code>let names: list[str] = words.collect()</code>) or supplied
+explicitly where no expected type exists
+(<code>words.collect[list[str]]()</code>).</p>
+<p><code>collect</code> is <strong>inferred, not
+bounds-checked</strong>: a <code>C</code> that is not a valid collection
+is still a compile-time error, but it surfaces indirectly, as a missing
+<code>from_iter</code> on <code>C</code> rather than a direct complaint
+about the <code>collect</code> call.</p>
+<p>Currently <code>list[T]</code> is the only <code>from_iter</code>
+implementor in the standard library:</p>
+<pre class="cinder"><code>impl[T] from_iter[T] for list[T]:
+    static def from_iter[I](it: I) -&gt; list[T] where I: iterator[T]:
+        var out = []
+        var cursor = it
+        while let @some(x) = cursor.next():
+            out.push(x)
+        return out</code></pre>
+<h2 id="the-three-iteration-families-over-listt">The three iteration
+families over <code>list[T]</code></h2>
+<p>Each is a plain generic struct holding its source and a cursor:</p>
+<pre class="cinder"><code>pub type list_iter[T]      = { src: &amp;list[T],     at: usize, end: usize }  # yields &amp;T
+pub type list_iter_mut[T]  = { src: &amp;mut list[T], at: usize, end: usize }  # yields &amp;mut T
+pub type list_into_iter[T] = { src: list[T],       at: usize, end: usize }  # yields T</code></pre>
+<p>Each carries <em>both</em> a front cursor (<code>at</code>) and a
+back cursor (<code>end</code>) rather than only <code>at</code> with the
+length read from the source: a <code>next_back</code> computed as
+<code>src[src.len() - 1]</code> would hand back the same element forever
+and never meet <code>next</code> in the middle. The two cursors close on
+each other; the iterator is exhausted once
+<code>at &gt;= end</code>.</p>
+<p>Constructors, chainable via UFCS as <code>xs.iter()</code> /
+<code>xs.iter_mut()</code> / <code>xs.into_iter()</code>:</p>
+<pre class="cinder"><code>pub def iter[T](xs: &amp;list[T]) -&gt; list_iter[T]
+pub def iter_mut[T](xs: &amp;mut list[T]) -&gt; list_iter_mut[T]
+pub def into_iter[T](xs: list[T]) -&gt; list_into_iter[T]</code></pre>
+<p><code>iter</code> borrows, <code>iter_mut</code> borrows mutably (so
+elements can be mutated in place through the yielded
+<code>&amp;mut T</code>), <code>into_iter</code> consumes the list and
+yields owned values.</p>
+<p>Trait coverage of each, exactly as implemented:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th><code>iterator[T]</code></th>
+<th><code>double_ended[T]</code></th>
+<th><code>exact_size[T]</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_iter[T]</code></td>
+<td>yes (yields <code>&amp;T</code>)</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+<tr>
+<td><code>list_iter_mut[T]</code></td>
+<td>yes (yields <code>&amp;mut T</code>)</td>
+<td>no</td>
+<td>no</td>
+</tr>
+<tr>
+<td><code>list_into_iter[T]</code></td>
+<td>yes (yields <code>T</code>)</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<p><code>list_iter_mut[T]</code> implements only <code>iterator</code> —
+it does not currently implement <code>double_ended</code> or
+<code>exact_size</code>, unlike the other two families.</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>for x in nums.iter():
+    ...                       # x: &amp;int32
+
+let doubled: list[int32] = nums.iter().values().map(x =&gt; x * 2).collect()</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="49-lazy-adapters.html">Lazy Adapters</a> — adapters built
+as generic <code>iterator[T]</code> impls over these types.</li>
+<li><a href="50-aggregation.html">Aggregation</a> — the terminals that
+drain an <code>iterator[T]</code>.</li>
+<li><a href="../collections/43-list.md"><code>list[T]</code></a> — the
+container these three families iterate over.</li>
+</ul>
+</body>
+</html>

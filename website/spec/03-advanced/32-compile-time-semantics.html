@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>32-compile-time-semantics</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">32-compile-time-semantics</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#compile-time-semantics"
+id="toc-compile-time-semantics">32. Compile-Time Semantics</a>
+<ul>
+<li><a href="#two-axes-phase-and-effect"
+id="toc-two-axes-phase-and-effect">Two axes: phase and effect</a></li>
+<li><a href="#two-subsystems-evaluation-and-reasoning"
+id="toc-two-subsystems-evaluation-and-reasoning">Two subsystems:
+evaluation and reasoning</a></li>
+<li><a href="#compile-time-memory"
+id="toc-compile-time-memory">Compile-time memory</a></li>
+<li><a href="#effects-at-compile-time"
+id="toc-effects-at-compile-time">Effects at compile time</a></li>
+<li><a href="#reflection" id="toc-reflection">Reflection</a></li>
+<li><a href="#declarative-queries-not-registries"
+id="toc-declarative-queries-not-registries">Declarative queries, not
+registries</a></li>
+<li><a href="#how-the-pieces-interact"
+id="toc-how-the-pieces-interact">How the pieces interact</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="compile-time-semantics">32. Compile-Time Semantics</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>The execution model shared by <code>static</code> evaluation,
+reflection, contracts, and dependent types: the phase/effect
+classification, the evaluation/reasoning split, compile-time memory, and
+the effects compile-time code may cause.</p>
+<p><code>static</code> evaluation, reflection, contracts, and dependent
+types (see <a href="31-compile-time-execution.html">Compile-Time
+Execution</a>, <a href="34-contracts.html">Contracts</a>, <a
+href="33-dependent-and-refinement-types.html">Dependent and Refinement
+Types</a>) each have their own syntax; this chapter describes the
+environment they share — what runs at compile time, what it may do, and
+how the features interact.</p>
+<h2 id="two-axes-phase-and-effect">Two axes: phase and effect</h2>
+<p>Two independent properties classify every function.</p>
+<ul>
+<li><strong>Phase</strong> — when it runs. Runtime code runs in the
+finished program. Compile-time code runs in the compiler;
+<code>static</code> forces it. Ordinary code is runtime code the
+compiler <em>may</em> also evaluate at compile time when its inputs are
+known.</li>
+<li><strong>Effect</strong> — whether the function is <code>pure</code>
+(referentially transparent) or may cause effects. This is independent of
+phase.</li>
+</ul>
+<p>A function may be:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th></th>
+<th>pure</th>
+<th>not pure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>runtime-only</td>
+<td>effect-free at runtime</td>
+<td>ordinary effectful runtime code</td>
+</tr>
+<tr>
+<td><code>static</code></td>
+<td>evaluated at compile time, effect-free</td>
+<td>evaluated at compile time, may emit diagnostics/code</td>
+</tr>
+</tbody>
+</table>
+<p><code>pure</code> is about <em>effects</em>; <code>static</code> is
+about <em>phase</em>. They do not collapse into one axis.</p>
+<h2 id="two-subsystems-evaluation-and-reasoning">Two subsystems:
+evaluation and reasoning</h2>
+<p>Compile time has two distinct machineries.</p>
+<ul>
+<li><strong>Evaluation</strong> (<code>src/comptime/eval.*</code>) is an
+interpreter that runs ordinary Cinder — loops, functions, pattern
+matching — on <strong>known</strong> values to produce compile-time
+values. <code>build_lookup_table()</code>, <code>deriving</code>, and
+quote/splice construction are all evaluation.</li>
+<li><strong>Reasoning</strong> (<code>src/semantic/reason.*</code>) is
+the constraint solver that discharges refinement predicates, contract
+conditions, and dependent-type obligations over <strong>unknown</strong>
+values. It proves; it does not run arbitrary code.</li>
+</ul>
+<p>They never substitute for one another. <code>vec[T, 2 + 3]</code> is
+evaluation — the expression is closed, so it folds to the constant
+<code>5</code>. <code>vec[T, m + n]</code> is reasoning — <code>m</code>
+and <code>n</code> are unknown, so the length is a symbolic term and any
+question about it is a proof, not a computation. The governing rule:
+<strong>fold if closed, symbolize otherwise.</strong> See <a
+href="33-dependent-and-refinement-types.html#the-two-subsystems-concretely">Dependent
+and Refinement Types § The two subsystems, concretely</a>.</p>
+<p>Contracts sit on the seam: a contract <em>condition</em> is produced
+by evaluation, but whether it <em>holds</em> is settled by reasoning
+when possible, and by a runtime check otherwise.</p>
+<h2 id="compile-time-memory">Compile-time memory</h2>
+<p>Compile-time evaluation may allocate freely, on a heap that exists
+only during compilation. Nothing on that heap reaches the binary unless
+it is <em>reified</em> into a <code>static</code> constant, at which
+point it becomes frozen, immutable data baked into the program.</p>
+<p>There is no persistent, program-global, mutable compile-time state.
+Compile-time evaluation is <strong>confluent</strong>: its results never
+depend on the order in which the compiler elaborates the program. This
+is what keeps compilation deterministic, parallel, and incremental — a
+module’s meaning cannot depend on side effects left behind by another
+module.</p>
+<h2 id="effects-at-compile-time">Effects at compile time</h2>
+<p>Compile-time code may cause exactly two effects:</p>
+<ol type="1">
+<li><strong>Emitting diagnostics</strong> (as <code>static assert</code>
+does).</li>
+<li><strong>Emitting code</strong> (as quoting and splicing do).</li>
+</ol>
+<p>Neither is observable <em>as data</em> by other compile-time code —
+there is no API to read back which diagnostics or definitions have
+already been emitted. So even effectful <code>static</code> code stays
+confluent: the order the compiler happens to run it in cannot change the
+program’s meaning.</p>
+<h2 id="reflection">Reflection</h2>
+<p>Reflection reads the program’s structure — types, fields, names,
+module members. That structure is immutable, so reflection is
+referentially transparent, and a <code>pure</code> function may use it
+freely:</p>
+<pre class="cinder"><code>pure def field_count[T]() -&gt; usize:
+    T.field_count()</code></pre>
+<p>Reflection resolves at compile time. Because Cinder monomorphizes
+generic code, the type a reflection queries is known statically at each
+instantiation, so it is computed once per instantiation and its result —
+an ordinary constant — flows into runtime like any other value. There is
+no <em>runtime</em> reflection: a value carries no type tag to
+interrogate.</p>
+<p>Reflection may invoke only <code>pure</code> functions, so it can
+never cause an effect — which is exactly what makes it safe to use from
+inside a contract condition (see <a
+href="34-contracts.html">Contracts</a>).</p>
+<h2 id="declarative-queries-not-registries">Declarative queries, not
+registries</h2>
+<p>Because there is no mutable global compile-time state, program-wide
+information is not accumulated by having each definition register
+itself. Instead, a query states the shape wanted and the compiler
+answers it against the finished program:</p>
+<pre class="cinder"><code># every type that satisfies the `command` concept, gathered at compile time
+static COMMANDS: map[str, command] = map(
+    for t in types_implementing[command]() =&gt; (t.name(), make_command(t))
+)</code></pre>
+<p>A query observes the complete, elaborated program and returns the
+same result regardless of elaboration order — “this is the state I
+want,” not “make the state this.” A whole-program query naturally
+depends on the whole program, so it resolves in a late, post-elaboration
+phase; its result is still a pure function of the final program.</p>
+<h2 id="how-the-pieces-interact">How the pieces interact</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Question</th>
+<th>Answer</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Can a contract use reflection?</td>
+<td>Yes. Reflected data is immutable and resolves to a compile-time
+constant, usable by the static verifier and, when reified, by a runtime
+check.</td>
+</tr>
+<tr>
+<td>Can reflection call pure functions?</td>
+<td>Yes — and only pure functions, so no effect can leak through
+it.</td>
+</tr>
+<tr>
+<td>Can a pure function inspect types?</td>
+<td>Yes. Type reflection is referentially transparent; it resolves at
+compile time and its result flows into runtime as a constant.</td>
+</tr>
+<tr>
+<td>Can reflection allocate?</td>
+<td>Yes, on the compile-time heap. Nothing survives compilation except
+values reified into <code>static</code> constants.</td>
+</tr>
+<tr>
+<td>Can compile-time code mutate global state?</td>
+<td>No. Compile-time evaluation is confluent; program-wide information
+comes from declarative queries, never mutation.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="implementation-status">Implementation status</h2>
+<p>The evaluation subsystem (<code>src/comptime/eval.*</code>),
+reflection (<code>src/comptime/reflect.cpp</code>), and the reasoning
+subsystem (<code>src/semantic/reason.{h,cpp}</code>,
+<code>src/semantic/linear_poly.{h,cpp}</code>) all exist and are
+exercised by <code>src/comptime/eval_test.cpp</code>,
+<code>src/semantic/reason_test.cpp</code>, and the
+<code>check_test.cpp</code>/semantic-stress corpora referenced
+throughout <a href="31-compile-time-execution.html">Compile-Time
+Execution</a> and <a
+href="33-dependent-and-refinement-types.html">Dependent and Refinement
+Types</a>. This chapter describes the model those implementations
+follow; there is no separate “semantics-only” surface to check
+independently of the constructs in the other chapters.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="31-compile-time-execution.html">Compile-Time Execution</a>
+— the constructs (<code>static</code>, quoting/splicing, reflection call
+sites) that run inside this model.</li>
+<li><a href="33-dependent-and-refinement-types.html">Dependent and
+Refinement Types</a> — the reasoning subsystem’s fragment, in full.</li>
+<li><a href="34-contracts.html">Contracts</a> — where evaluation
+(producing a condition) and reasoning (discharging it) meet.</li>
+</ul>
+</body>
+</html>

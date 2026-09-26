@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>42-prelude</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">42-prelude</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-prelude" id="toc-the-prelude">42. The Prelude</a>
+<ul>
+<li><a href="#contents" id="toc-contents">Contents</a></li>
+<li><a href="#opting-out" id="toc-opting-out">Opting out</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="the-prelude">42. The Prelude</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>The prelude is the set of names available in every module without a
+<code>use</code> declaration. It is injected by the driver for every
+file unless the file opts out.</p>
+<h2 id="contents">Contents</h2>
+<p><strong>Types:</strong> <code>bool</code>, <code>char</code>,
+<code>str</code>, <code>unit</code>, <code>byte</code>, all numeric
+types (<code>int8</code>..<code>int128</code>,
+<code>uint8</code>..<code>uint128</code>,
+<code>float32</code>/<code>float64</code>/<code>float128</code>,
+<code>isize</code>, <code>usize</code>), <code>array</code>,
+<code>slice</code>, <code>mut slice</code>, <code>option</code>,
+<code>result</code>, <code>list</code>, <code>box</code>,
+<code>cell</code>, <code>cell_mut</code>.</p>
+<p><strong>Traits:</strong> <code>eq</code>, <code>ord</code>,
+<code>hash</code>, <code>show</code>, <code>from</code>,
+<code>into</code>, <code>add</code>, <code>sub</code>, <code>mul</code>,
+<code>div</code>, <code>rem</code>, <code>neg</code>, <code>drop</code>,
+<code>index</code>, <code>index_mut</code>, <code>index_set</code>,
+<code>from_array</code>, and the remaining arithmetic operator
+traits.</p>
+<p><code>index</code>/<code>index_set</code> are what make
+<code>v[i]</code> and <code>v[i] = x</code> work on a user type, and
+<code>from_array</code> is what makes
+<code>let v: my_type = [1, 2, 3]</code> work — the operators that used
+to be reserved for the built-in sequences. <code>index_mut</code> is
+declared but not yet wired (<code>../../todo.md</code> item 19).</p>
+<p><strong>Concepts:</strong> <code>send</code>, <code>share</code>.</p>
+<p><strong>Functions:</strong> <code>println</code>, <code>print</code>,
+<code>panic</code>, <code>assert</code>, <code>size_of</code>,
+<code>align_of</code>, <code>ptr_cast</code>, <code>uninit</code>,
+<code>args</code>, <code>env</code>, <code>drop</code>.</p>
+<p><code>drop</code> is the one entry here that does not exist: no
+<code>def drop</code> is defined outside the <code>drop</code> trait
+itself, and a call to <code>drop(x)</code> type-checks but then fails to
+lower (see <a
+href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a>, Implementation status). The <code>drop</code>
+<em>trait</em> listed above is genuinely prelude-reachable.</p>
+<p>Four of these are not ordinary functions but compiler-answered forms,
+each taking its argument in brackets:</p>
+<ul>
+<li><code>size_of[T]()</code> and <code>align_of[T]()</code> fold at
+lowering time to the bytes a <code>T</code> occupies and the boundary it
+must start on, answered from <code>runtime::layout_of</code> — the one
+function both backends read every field offset and element stride from.
+Note that a struct, sum, <code>list</code> or other heap-referenced type
+answers 8: what such a value occupies <em>as a binding, field or
+element</em> is a pointer. That is the number a collection needs to
+stride its storage by. <code>size_of(expr)</code> is also accepted,
+asking about the expression’s type; the expression is type-checked but
+never evaluated.</li>
+<li><code>ptr_cast[U](p)</code> reinterprets a raw pointer as pointing
+at a <code>U</code>. Mutability follows the operand, so a cast can never
+gain the right to write.</li>
+<li><code>uninit[T, N]()</code> is a fixed-capacity, alignment-correct
+buffer of <code>N</code> slots sized for <code>T</code>, allocated in
+the enclosing frame rather than on the heap.</li>
+</ul>
+<p>The last three are raw-memory operations and are refused outside a
+<code>machine</code> function — see <a
+href="../03-advanced/38-machine-layer.html">The <code>machine</code>
+Layer</a>. <code>size_of</code>/<code>align_of</code> are not gated:
+they only ask about a type.</p>
+<p>Each prelude type/trait/function is specified in full in its owning
+chapter — this list is an index, not the normative definition of any of
+them. See <a href="../01-core/02-built-in-types.html">Built-in
+Types</a>, <a href="../02-intermediate/18-traits.html">Traits</a>, <a
+href="../01-core/11-error-handling.html">Error Handling</a>
+(<code>option</code>/<code>result</code>), <a
+href="../02-intermediate/15-views.html">Views</a> (<code>slice</code>,
+<code>cell</code>), <a
+href="../02-intermediate/24-trait-objects.html">Trait Objects</a>
+(<code>box</code>), and <a
+href="../02-intermediate/30-data-race-freedom.html">Data-Race
+Freedom</a> (<code>send</code>/<code>share</code>).</p>
+<h2 id="opting-out">Opting out</h2>
+<p>A file that declares <code>no_prelude</code> after its
+<code>module</code> line receives none of the above and must
+<code>use</code> everything it needs, including basic operator
+traits:</p>
+<pre class="cinder"><code>module my_module
+no_prelude</code></pre>
+<p>This is intended for low-level or embedded code that wants full
+control over what’s in scope.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../00-overview.html">Overview</a></li>
+</ul>
+</body>
+</html>

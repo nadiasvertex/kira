@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>03-bindings</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">03-bindings</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#bindings" id="toc-bindings">3. Bindings</a>
+<ul>
+<li><a href="#let-and-var" id="toc-let-and-var"><code>let</code> and
+<code>var</code></a></li>
+<li><a href="#shadowing" id="toc-shadowing">Shadowing</a></li>
+<li><a href="#compound-assignment" id="toc-compound-assignment">Compound
+assignment</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="bindings">3. Bindings</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>let</code> and <code>var</code> bindings, shadowing, and
+compound assignment.</p>
+<h2 id="let-and-var"><code>let</code> and <code>var</code></h2>
+<p><code>let</code> introduces an immutable binding; <code>var</code>
+introduces a mutable one (<code>let_stmt</code>, <code>var_stmt</code>
+in <code>spec/cinder-grammar.ebnf</code>). Both infer their type from
+the initializer expression when no annotation is given, and accept an
+explicit <code>: type_expr</code> annotation.</p>
+<pre class="cinder"><code>let name = &quot;Alice&quot;      # immutable — name cannot be reassigned
+var count = 0           # mutable — count can change
+count = count + 1
+
+let score: float64 = 0.0
+var remaining: int32 = 10</code></pre>
+<p>Reassigning a <code>let</code> binding (<code>name = ...</code> after
+its declaration) is a compile error; only <code>var</code> may be the
+target of <code>assign_stmt</code>.</p>
+<h2 id="shadowing">Shadowing</h2>
+<p>A second <code>let</code> with the same name in the same scope
+replaces the first: the name now refers to the new binding, and the old
+value is no longer reachable under that name (its lifetime otherwise
+ends normally).</p>
+<pre class="cinder"><code>let x = 1
+let x = x + 1    # x is now 2; original x is gone</code></pre>
+<p>A local binding also shadows a module of the same name: if
+<code>s</code> is a local, <code>s.name</code> is always field access on
+it, never a path into a module <code>s</code>. Module-scope values
+follow a stricter rule — see <a
+href="12-modules-and-imports.html#dotted-names">Dotted Names</a>.</p>
+<h2 id="compound-assignment">Compound assignment</h2>
+<p>A <code>var</code> may be updated with a compound assignment operator
+— <code>+=</code>, <code>-=</code>, <code>*=</code>, <code>/=</code>,
+and the rest of <code>assign_op</code> — as shorthand for
+<code>target = target &lt;op&gt; value</code>.</p>
+<pre class="cinder"><code>var total = 0
+total += 5       # same as total = total + 5</code></pre>
+<p>The wrapping (<code>+%=</code>) and saturating compound forms exist
+for the same operators as their non-assigning counterparts; see <a
+href="02-built-in-types.html#integer-overflow">Built-in Types</a>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="02-built-in-types.html">Built-in Types</a> — literal type
+defaulting under an annotation.</li>
+<li><a href="08-control-flow.html">Control Flow</a> —
+<code>while</code>’s typical use of a <code>var</code> loop
+variable.</li>
+</ul>
+</body>
+</html>

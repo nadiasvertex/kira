@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>14-ownership-and-borrowing</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">14-ownership-and-borrowing</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#ownership-and-borrowing"
+id="toc-ownership-and-borrowing">14. Ownership and Borrowing</a>
+<ul>
+<li><a href="#ownership" id="toc-ownership">Ownership</a></li>
+<li><a href="#borrowing" id="toc-borrowing">Borrowing</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="ownership-and-borrowing">14. Ownership and Borrowing</h1>
+<p><strong>Status:</strong> Complete</p>
+<p>Ownership transfer on assignment and call,
+<code>&amp;</code>/<code>&amp;mut</code> borrowing, and the invariant
+that a borrow cannot escape the call it was made for.</p>
+<h2 id="ownership">Ownership</h2>
+<ol type="1">
+<li>Assigning a value or passing it to a function transfers ownership by
+default. The source binding is no longer accessible afterward.</li>
+<li>When the owner of a value goes out of scope, the value is freed (see
+<a href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>). This rule is not yet realized: the compiler emits no
+scope-exit <code>drop</code> glue, and every heap-backed value is
+allocated from a bump arena (<code>src/runtime/arena.h</code>) that
+never reclaims anything. The move checking that <em>would</em> drive
+rule 2 is implemented; the freeing is not.</li>
+</ol>
+<pre class="cinder"><code>def process(data: list[int32]) -&gt; int32:    # takes ownership of data
+    ...
+
+let numbers = [1, 2, 3]
+let result = process(numbers)
+# numbers is no longer accessible here — process owns it now</code></pre>
+<p>To use a value again after a call, copy it or lend it.</p>
+<h2 id="borrowing">Borrowing</h2>
+<p>A borrow lends a value to a function for the duration of one call.
+The owner keeps ownership; the callee may use the value but not move it.
+A borrow is a way of <em>passing</em> a value, not a value in its own
+right — it cannot be stored in a variable that outlives the call,
+returned, or placed in a struct field or collection. Because every
+borrow is bounded by the call that created it, there are no lifetime
+annotations.</p>
+<p>Syntax: <code>&amp;</code> marks an immutable-borrow parameter type
+and, at the call site, lends the value; <code>&amp;mut</code> does the
+same for a mutable borrow. Writing <code>&amp;mut</code> at the call
+site is the idiomatic form and keeps mutation-through-a-call visible
+where it happens. Two borrows are also created implicitly: a bare
+argument passed to a <code>&amp;</code>/<code>&amp;mut</code> parameter
+is borrowed rather than moved (implicit autoref), and a method receiver
+<code>x</code> in <code>x.m(...)</code> is borrowed for the call. These
+implicit borrows obey exactly the same rules below as an explicit
+<code>&amp;</code>/<code>&amp;mut</code>.</p>
+<pre class="cinder"><code>def sum(data: &amp;list[int32]) -&gt; int32:
+    var total = 0
+    for x in data: total += x
+    return total
+
+let numbers = [1, 2, 3, 4, 5]
+let total = sum(&amp;numbers)                # lend it; numbers is still accessible
+
+def double_all(data: &amp;mut list[int32]) -&gt; unit:
+    for i in 0..data.len():
+        data[i] = data[i] * 2
+
+var ns = [1, 2, 3]
+double_all(&amp;mut ns)    # ns is now [2, 4, 6]</code></pre>
+<p>The declared rules:</p>
+<ul>
+<li>Any number of immutable borrows (<code>&amp;</code>) may exist
+simultaneously.</li>
+<li>At most one mutable borrow (<code>&amp;mut</code>) may exist at a
+time.</li>
+<li>A mutable borrow cannot coexist with any immutable borrows.</li>
+<li>A borrow cannot escape the call it was made for — it cannot be
+returned, stored in a field, or placed in a collection.</li>
+</ul>
+<p>A construct that needs to hand back a window into a collection
+instead uses a view type, the one kind of borrowing value the language
+allows to outlive a single call; see <a
+href="15-views.html">Views</a>.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Ownership transfer and use-after-move detection are implemented in
+<code>src/semantic/move_check.cpp</code> (<code>move_checker</code>),
+which tracks per-binding move state across a function/lambda body and
+rejects use of a moved-from binding.</li>
+<li><code>&amp;T</code>/<code>&amp;mut T</code> are real parameter and
+argument types (<code>type_kind::ref_kind</code>, resolved in
+<code>src/semantic/resolution.cpp</code> and
+<code>src/semantic/check.cpp</code>); a call through a
+<code>&amp;</code>/<code>&amp;mut</code>-typed parameter is recognized
+by the move checker as non-consuming (a UFCS call resolving to a
+<code>&amp;</code>/<code>&amp;mut</code> first parameter does not move
+the receiver, so calling it more than once is accepted — see
+<code>src/testdata/semantic_move_check_test/accept_repeated_borrowing_ufcs_calls.cn</code>).</li>
+<li>The four bullet rules are enforced by a dedicated pass,
+<code>src/semantic/borrow_check.cpp</code>
+(<code>borrow_checker</code>), run after the move checker over the same
+checked result and gated to user files (<code>check_borrows</code>,
+called from <code>src/driver/driver.cpp</code>). It checks two things:
+<ul>
+<li><strong>No escape.</strong> A plain-reference borrow
+(<code>&amp;</code>/<code>&amp;mut</code> typed <code>ref_kind</code>)
+is legal only in a <em>passing</em> position — a direct call argument,
+the callee, or the base of a field/index projection. Stored anywhere
+else (a <code>let</code>/<code>var</code> initializer, a
+<code>return</code> value, an assignment right-hand side, or an element
+of a tuple, array, struct literal, or collection) it is reported as
+escaping the call it was made for. A
+<code>&amp;</code>/<code>&amp;mut container[a..b]</code> borrows a
+<em>view</em> (its referent is a
+<code>slice</code>/<code>mut slice</code>, see <a
+href="15-views.html">Views</a>) and is exempt, since views are allowed
+to outlive a call.</li>
+<li><strong>Exclusivity.</strong> A borrow made as an argument of a call
+stays live for the whole of that call — including while the call’s
+<em>other</em> arguments, and anything nested inside them, are
+evaluated. So two borrows are simultaneously live whenever one call is
+nested in the argument evaluation of another, not merely when they sit
+side by side in one argument list:
+<code>observe(&amp;mut n, read(&amp;n))</code> aliases <code>n</code>
+even though the <code>&amp;mut n</code> and the <code>&amp;n</code> are
+in different calls. The checker enforces this by threading the set of
+borrows made by the enclosing (still-running) calls down through each
+sub-expression and testing every new borrow against it. Because the
+escape rule forbids storing a borrow, no borrow outlives the statement
+that made it, so this per-statement live set is all the dataflow the
+check needs — there is still no whole-function borrow graph. Within the
+live set: any number of <code>&amp;</code> borrows may coexist, but at
+most one <code>&amp;mut</code>, and a <code>&amp;mut</code> may not
+coexist with any <code>&amp;</code>. The participating borrows are
+explicit <code>&amp;</code>/<code>&amp;mut</code> arguments, implicit
+autoref of a bare argument to a <code>&amp;</code>/<code>&amp;mut</code>
+parameter, and the method/UFCS receiver. A receiver borrow is two-phase
+(as in Rust): active when the call runs, but only <em>reserved</em>
+while that call’s own arguments are evaluated, so
+<code>xs.set(i, xs.get(j))</code> — a <code>mut self</code> receiver
+over a nested shared borrow of the same value — is accepted, while
+<code>xs.set(i, take(&amp;mut xs))</code> is rejected. Borrows are
+compared at whole-variable (root-binding) granularity — matching the
+move checker — so two borrows of different fields of the same variable
+are conservatively rejected.</li>
+</ul></li>
+<li><strong>View-borrow exclusivity.</strong> A view
+(<code>slice</code>/<code>mut slice</code>) is the one borrow the
+language lets outlive a call, so — unlike a plain borrow — it survives
+past the statement that made it and keeps its source collection borrowed
+for as long as the binding is live. The same pass tracks this. A
+statement that binds a view-bearing value (whether from a direct slice
+<code>xs[a..b]</code>, a slice-returning call, or a struct/aggregate
+that <em>stores</em> a slice) registers a <em>live view</em> recording
+which collection roots the value was traced back to and the extent over
+which the binding is live — from its declaration through its
+<strong>last use</strong>, not merely the end of its lexical scope, so a
+view consumed early frees its source again. Those live-view borrows
+participate in the exclusivity check of every following statement, so
+mutating (or re-borrowing) a collection while a view of it is still in
+use is rejected with the same rule as any aliasing borrow. Because the
+language has no lifetime annotations to say <em>which</em> argument a
+returned view borrows from, a call whose result carries a view
+conservatively keeps every reference argument and receiver borrowed for
+the result’s lifetime: an over-approximation (it never misses an alias,
+but can flag one that does not actually occur), which is the price of
+soundness without that inference.</li>
+<li>Not yet enforced, left as follow-up — all <em>precision</em> limits,
+not soundness gaps: field/index-precise places (distinguishing
+<code>&amp;mut p.a</code> from <code>&amp;mut p.b</code>, and different
+sub-ranges of one collection, currently all rejected conservatively at
+whole-variable granularity); pinning a returned view to the
+<em>exact</em> argument it borrows from rather than all of them (the
+view-provenance inference the <a href="15-views.html">Views</a> chapter
+still lists as partial); views produced by exotic expression forms; and
+closure borrow-capture, which the <a
+href="16-closures-and-capture.html">Closures and Capture</a> chapter
+covers. <code>str</code>, though modelled as a view, is treated as an
+owned value by the implementation and is not tracked as a borrow. The
+source material’s <code>E0013</code> example is illustrative only — this
+compiler attaches no numeric error codes to diagnostics.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="15-views.html">Views</a> — the one first-class way for a
+borrow to outlive a call.</li>
+<li><a href="16-closures-and-capture.html">Closures and Capture</a> —
+borrow vs. move capture follows the same rules.</li>
+</ul>
+</body>
+</html>

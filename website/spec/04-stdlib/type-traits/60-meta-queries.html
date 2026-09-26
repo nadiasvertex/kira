@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>60-meta-queries</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">60-meta-queries</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#meta-queries" id="toc-meta-queries">60. Meta Queries</a>
+<ul>
+<li><a href="#scope" id="toc-scope">Scope</a></li>
+<li><a href="#type_kind"
+id="toc-type_kind"><code>type_kind</code></a></li>
+<li><a href="#member-queries" id="toc-member-queries">Member
+queries</a></li>
+<li><a href="#traitimpl-queries" id="toc-traitimpl-queries">Trait/impl
+queries</a></li>
+<li><a href="#whats-deliberately-out-of-scope"
+id="toc-whats-deliberately-out-of-scope">What’s deliberately out of
+scope</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="meta-queries">60. Meta Queries</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>A single <code>type_kind</code> classification primitive and a small
+set of member-enumeration queries over Cinder’s existing reflection
+surface.</p>
+<h2 id="scope">Scope</h2>
+<p>A way to ask <em>what kind of thing</em> a reflected type or member
+<em>is</em> before deciding which of those existing queries applies. A
+generic function both structs and enums, for example, has to ask first.
+This chapter adds utilities that make it easy to see what the intent of
+the user query is, without having to write the same code over and over
+again.</p>
+<h2 id="type_kind"><code>type_kind</code></h2>
+<pre class="cinder"><code>type type_kind =
+    | @struct_kind
+    | @sum_kind
+    | @scalar_kind
+    | @view_kind
+    | @array_kind
+    | @fn_kind
+    | @trait_kind
+    | @module_kind
+
+T.kind() -&gt; type_kind</code></pre>
+<p><code>T.kind()</code> never fails — it is the dispatch primitive
+every conditional query in this chapter and in <a
+href="58-std-traits.html"><code>std.traits</code></a>
+(<code>is_struct</code>, <code>is_sum</code>,
+<code>type_category</code>) is built from, and it is the fix for the gap
+above:</p>
+<pre class="cinder"><code>static def field_names_or_variant_names[T]() -&gt; list[str]:
+    match T.kind():
+        @struct_kind =&gt; for f in T.fields()   =&gt; f.name
+        @sum_kind    =&gt; for v in T.variants() =&gt; v.name
+        _            =&gt; panic(&quot;field_names_or_variant_names: T has no members&quot;)</code></pre>
+<h2 id="member-queries">Member queries</h2>
+<p>Building on the existing per-field/per-variant/per-module-member
+descriptors (<a
+href="../../03-advanced/31-compile-time-execution.html#compile-time-reflection">Compile-Time
+Execution</a>, <a
+href="../../03-advanced/36-modules-as-compile-time-values.html#reflecting-on-a-module">Modules
+as Compile-Time Values</a>):</p>
+<pre class="cinder"><code>member.is_data_member() -&gt; bool   # true for a struct_field descriptor, false for a function descriptor
+member.type_of() -&gt; type_expr     # the member&#39;s declared type, as a splice-ready type_expr</code></pre>
+<p><code>member.type_of()</code> closes a real gap noted in the existing
+reflection chapter: a struct field descriptor today carries only
+<code>type_name: str</code> (a rendered string, not a usable type —
+<code>render_type_expr</code> collapses generic arguments to
+<code>"[..]"</code> and non-<code>named_type</code> shapes to
+<code>"&lt;type&gt;"</code>). <code>type_of()</code> instead returns the
+field’s <code>type_expr</code> fragment directly from the already-parsed
+declaration syntax, splice-ready with <code>~</code>, sidestepping
+string rendering (and its precision loss) entirely:</p>
+<pre class="cinder"><code>static def zero_value[T]() -&gt; expr:
+    let parts = for f in T.fields() =&gt;
+        `(~(expr.ident(f.name)): zero_value[~(f.type_of())]())`
+    `(~(expr.ty[T]()) { ~(expr.list(parts)) })`</code></pre>
+<h2 id="traitimpl-queries">Trait/impl queries</h2>
+<pre class="cinder"><code>T.traits() -&gt; list[str]           # names of every trait T has an impl for
+Trait.requires() -&gt; list[str]     # names of traits a trait&#39;s own `requires` clause lists</code></pre>
+<p><code>T.traits()</code> is the read-side counterpart to <a
+href="58-std-traits.html"><code>std.traits</code></a>’s
+<code>implements[T, Trait]</code> — <code>implements</code> answers one
+yes/no question against a coherence-table lookup;
+<code>T.traits()</code> enumerates the whole set, for code that wants to
+print or fold over it (a generic <code>describe[T]()</code> that lists
+every capability a type has) rather than test one trait at a time.</p>
+<h2 id="whats-deliberately-out-of-scope">What’s deliberately out of
+scope</h2>
+<ul>
+<li><strong>Splicers and <code>std::meta::info</code> handles.</strong>
+Cinder’s quote/splice fragments (<code>expr</code>,
+<code>type_expr</code>, <code>def_expr</code>, <code>stmt</code>)
+already play this role; introducing a second, more general
+reflection-handle type alongside them would be two mechanisms doing one
+job.</li>
+<li><strong><code>define_aggregate</code> / synthesizing a struct’s
+field list from reflected data.</strong> No Cinder construct emits a new
+type declaration at compile time today (only new <code>impl</code>s and
+functions, via <code>def_expr</code>); adding one is a much larger
+feature than this chapter’s scope and belongs, if ever built, in <a
+href="../../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a>.</li>
+<li><strong>Annotations.</strong> C++26 attaches arbitrary compile-time
+values to a declaration for later reflection; Cinder has no attribute
+syntax to attach them through, and no forcing use case in the existing
+stdlib.</li>
+<li><strong>Namespace/access-specifier reflection.</strong> Cinder’s
+only visibility axis is <code>pub</code>/private, already exposed on
+function and type descriptors as <code>is_pub</code> (<a
+href="../../03-advanced/36-modules-as-compile-time-values.html#reflecting-on-a-module">Modules
+as Compile-Time Values</a>); there is no separate namespace concept to
+reflect over.</li>
+</ul>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Nothing in this chapter exists yet.</p>
+<ul>
+<li><code>T.kind()</code> requires one addition to
+<code>src/comptime/reflect.cpp</code>: given a resolved type
+declaration, return <code>@struct_kind</code>/<code>@sum_kind</code> for
+a user <code>type</code> (already distinguished internally by
+<code>decl.definition-&gt;kind</code>, the same check
+<code>T.fields()</code>/<code>T.variants()</code> use to gate
+themselves), <code>@scalar_kind</code> for a builtin name, and so on for
+the remaining variants — no new subsystem, just a new query alongside
+the four that already exist there.</li>
+<li><code>member.type_of()</code> requires extending
+<code>make_field_descriptor</code> to carry the field’s
+<code>type_expr</code> node (not just its rendered
+<code>type_name</code> string) into the returned descriptor, and
+extending the <code>struct_instance</code> value representation to hold
+an AST-fragment field the way a <code>type_expr</code> quote value
+already does.</li>
+<li><code>T.traits()</code>/<code>Trait.requires()</code> require
+exposing <code>check.cpp</code>’s coherence table and trait-declaration
+<code>requires</code> list to the comptime evaluator, which today has no
+view into semantic-analysis-phase data structures at all — this is the
+same missing linkage <a
+href="58-std-traits.html"><code>std.traits</code></a>’s
+<code>implements[T, Trait]</code> needs, and should land once, shared by
+both.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a
+href="../../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a> — <code>T.fields()</code>, <code>T.variants()</code>,
+quoting/splicing, all of which this chapter extends rather than
+replaces.</li>
+<li><a
+href="../../03-advanced/36-modules-as-compile-time-values.html">Modules
+as Compile-Time Values</a> — the module-level reflection
+(<code>M.functions()</code>, <code>M.types()</code>) this chapter’s
+member queries are symmetric with.</li>
+<li><a href="58-std-traits.html"><code>std.traits</code></a> —
+<code>is_struct</code>, <code>is_sum</code>, <code>type_category</code>,
+and <code>implements[T, Trait]</code>, all defined in terms of
+<code>T.kind()</code>/<code>T.traits()</code>.</li>
+</ul>
+</body>
+</html>

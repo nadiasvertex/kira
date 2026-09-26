@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>19-generics-and-inference</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">19-generics-and-inference</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#generics-and-inference"
+id="toc-generics-and-inference">19. Generics and Inference</a>
+<ul>
+<li><a href="#bounds" id="toc-bounds">Bounds</a></li>
+<li><a href="#inference-order" id="toc-inference-order">Inference
+Order</a>
+<ul>
+<li><a href="#the-expected-type-is-a-fallback-never-an-override"
+id="toc-the-expected-type-is-a-fallback-never-an-override">The expected
+type is a fallback, never an override</a></li>
+<li><a href="#where-the-expected-type-reaches"
+id="toc-where-the-expected-type-reaches">Where the expected type
+reaches</a></li>
+</ul></li>
+<li><a href="#explicit-type-arguments"
+id="toc-explicit-type-arguments">Explicit Type Arguments</a></li>
+<li><a href="#bracket-disambiguation"
+id="toc-bracket-disambiguation">Bracket Disambiguation</a></li>
+<li><a href="#static-dispatch-through-a-type-parameter"
+id="toc-static-dispatch-through-a-type-parameter">Static Dispatch
+Through a Type Parameter</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="generics-and-inference">19. Generics and Inference</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Generic function bounds (<code>[T: show]</code>, <code>+</code> for
+multiple bounds) and the full type-argument inference order: sources,
+propagation, explicit arguments, bracket disambiguation, and static
+dispatch through a solved type parameter.</p>
+<h2 id="bounds">Bounds</h2>
+<pre class="cinder"><code>def print_item[T: show](item: T) -&gt; unit:
+    println(item.show())
+
+def largest[T: ord](items: &amp;list[T]) -&gt; option[usize]:
+    if items.is_empty(): return @none
+    var best = 0
+    for i in 1..items.len():
+        if items[i] &gt; items[best]: best = i
+    return @some(best)    # return the index — a borrow could not escape this call</code></pre>
+<p><code>[T: show]</code> means “<code>T</code> is any type that
+implements <code>show</code>.” Multiple bounds use <code>+</code>:</p>
+<pre class="cinder"><code>def inspect[T: show + eq](a: T, b: T) -&gt; unit:
+    if a == b:
+        println(&quot;equal: {a.show()}&quot;)
+    else:
+        println(&quot;{a.show()} != {b.show()}&quot;)</code></pre>
+<h2 id="inference-order">Inference Order</h2>
+<p>For each type parameter, the checker tries these sources in order and
+stops at the first that answers. A parameter already bound by an earlier
+source is never revisited by a later one.</p>
+<ol type="1">
+<li><strong>An explicit type argument.</strong> <code>zeros[8]()</code>
+says <code>n</code> is 8, and that settles it. <code>f[T](x: T)</code>
+called as <code>f[int64](5i32)</code> uses <code>int64</code> even
+though the argument alone would have suggested <code>int32</code>, and a
+genuine conflict (argument incompatible with the explicit argument) is
+reported as a type mismatch.</li>
+<li><strong><code>unify_rigid</code> against the argument
+types.</strong> <code>print_item(3)</code> solves
+<code>T := int32</code> because <code>item: T</code> was given an
+<code>int32</code>.</li>
+<li><strong>An enclosing instance’s fixed bindings</strong>, when
+checking one generic body from inside another.</li>
+<li><strong>The expected type at the call site</strong>, as a fallback
+only. A parameter that appears only in the return type has nothing in
+the arguments to solve it:</li>
+</ol>
+<pre class="cinder"><code>let names: list[str] = words.iter().collect()   # C is list[str], from the annotation
+return counts.iter().collect()                  # C is the declared result type</code></pre>
+<h3 id="the-expected-type-is-a-fallback-never-an-override">The expected
+type is a fallback, never an override</h3>
+<p>Arguments always win. An annotation that disagrees with the arguments
+is reported as a mismatch rather than quietly changing what the call
+means:</p>
+<pre class="cinder"><code>let x: int64 = take(5i32)   # error: expected int64, found int32
+                            # T was solved to int32 from the argument</code></pre>
+<p>This is deliberate, not incidental: <code>k_unknown_type</code>
+unifies with everything (see <a href="18-traits.html">Traits</a> and the
+type-checking overview), so the checker has no way to distinguish a hint
+it is confident in from a hint standing in for “not known yet.” If a
+hint could override an argument-derived binding,
+<code>let x: int64 = take(5i32)</code> would silently re-solve
+<code>T := int64</code> instead of reporting the mismatch, and any
+unknown-typed context could quietly rewrite a well-understood call.
+Fallback-only means adding the expected-type source can only turn errors
+into successes, never successes into different successes — annotations
+are still checked against what inference found, because inference runs
+first and independently.</p>
+<p>Where no expected type exists, there is nothing to infer from:</p>
+<pre class="cinder"><code>let xs = words.iter().collect()   # error: cannot tell which collection to build
+                                  # help: annotate the binding, or write
+                                  #       .collect[list[str]]()</code></pre>
+<h3 id="where-the-expected-type-reaches">Where the expected type
+reaches</h3>
+<p>The expected type propagates to every position where the checker
+knows one: annotated <code>let</code>/<code>var</code> initializers,
+call arguments, <code>return</code> expressions, assignment right-hand
+sides, struct literal fields, collection elements, match arm results
+(joined against the other arms), and a lambda body with a declared
+result type. An unannotated <code>let</code> has no expected type and
+inference fails there, correctly.</p>
+<h2 id="explicit-type-arguments">Explicit Type Arguments</h2>
+<p>Writing type arguments explicitly uses the same square brackets as
+the declaration, on both free functions and methods:</p>
+<pre class="cinder"><code>let xs = words.iter().collect[list[str]]()
+let ys = zeros[8]()</code></pre>
+<p>A type argument may itself be a generic type — <code>list[str]</code>
+above is a single argument, not two.</p>
+<h2 id="bracket-disambiguation">Bracket Disambiguation</h2>
+<p>Brackets carry three meanings: indexing, a const-generic value
+argument, and a type argument. The rule, in order:</p>
+<ol type="1">
+<li>If the base resolves in the value namespace to a local binding,
+parameter, or static, the brackets are <strong>indexing</strong>. A
+value shadowing a generic name means the user meant the value.</li>
+<li>Otherwise, if the base resolves in the type namespace or names a
+generic callable, the brackets are a <strong>compile-time argument
+list</strong>.</li>
+<li>Within a compile-time argument list, each argument’s meaning is
+fixed by the <em>declaration’s</em> parameter at that position, never by
+the argument’s own syntax: a <code>[n: usize]</code> parameter takes a
+value argument, a bare <code>[T]</code> parameter takes a type argument.
+<code>f[list[int32]]</code> and <code>f[3]</code> are not distinguished
+by inspecting the brackets — the declaration of <code>f</code> says
+which is expected, and a mismatch is a diagnosable error, not an
+ambiguity.</li>
+<li>Anything else is an error, not a fallback to indexing.</li>
+</ol>
+<p>Types and values are kept in separate namespaces, so rule 1 is a
+single lookup. This is why type arguments use <code>[]</code> rather
+than <code>&lt;&gt;</code>: the <code>[]</code>/indexing collision is
+decidable by name lookup in one step, while <code>&lt;&gt;</code>
+collides with the comparison operators
+(<code>a &lt; b, c &gt; (d)</code> is simultaneously a valid expression
+and a valid instantiation) in a way no namespace lookup resolves,
+requiring unbounded lookahead or a disambiguating token
+(<code>::&lt;&gt;</code> in one language, the <code>template</code>
+keyword in another).</p>
+<h2 id="static-dispatch-through-a-type-parameter">Static Dispatch
+Through a Type Parameter</h2>
+<p>A trait’s <code>static</code> member can be called through a type
+parameter once that parameter is solved:</p>
+<pre class="cinder"><code>pub trait from_iter[T]:
+    static def from_iter[I: iterator[T]](it: I) -&gt; self
+
+pub def collect[I, C](self: I) -&gt; C:
+    return C.from_iter(self)</code></pre>
+<p><code>C</code> is solved first (by the ordinary inference order
+above), and <code>C.from_iter</code> then resolves to the static member
+of the <code>impl</code> for the type <code>C</code> was solved to.
+Resolution substitutes the active binding for the type parameter and
+resolves the member against the resulting concrete type; inside an
+uninstantiated generic template, no binding exists yet, so the path
+resolves to <code>k_unknown_type</code> and is checked only once
+instantiated. <code>from_iter</code> needs no object safety — dispatch
+through a type parameter is always static and monomorphic, never
+boxed.</p>
+<p>A bound like <code>C: from_iter</code> on such a function is not
+itself enforced at the call site: an unsuitable <code>C</code> fails
+where its body calls the missing static member, inside the instantiated
+generic, rather than at the point where <code>C</code> was chosen. The
+checker attaches an instantiation-site note pointing back at the call
+that solved <code>C</code>, and at what solved it, so the failure is
+still actionable even though it surfaces one level removed from the
+user’s code.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>All of the above is implemented in
+<code>src/semantic/check.cpp</code>, sharing the
+<code>solve_generic_params</code> /
+<code>find_or_check_generic_instance</code> substrate:</p>
+<ul>
+<li>Expected-type solving: <code>solve_from_expected_type</code>
+(<code>check.cpp:5182</code>), invoked from both the free-function and
+receiver-call paths (<code>check.cpp:5248</code>,
+<code>check.cpp:5445</code>).</li>
+<li>Explicit type arguments on method calls:
+<code>method_explicit_generic_args</code> (<code>check.cpp:8516</code>),
+consumed at <code>check.cpp:9036</code> — brackets on a method call are
+honored, not discarded.</li>
+<li>Static dispatch through a type parameter:
+<code>type_param_slots_</code> (<code>check.cpp:1107</code> and its use
+sites) holds the active per-instantiation binding used to resolve a
+qualified path whose base names a type parameter.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — the bounds generic parameters
+are checked against.</li>
+<li><a href="24-trait-objects.html">Trait Objects</a> — the dynamic
+alternative when a type set is open rather than solved at compile
+time.</li>
+</ul>
+</body>
+</html>

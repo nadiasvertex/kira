@@ -38,7 +38,9 @@ H1_RE = re.compile(r"^(#\s+.*)$", re.MULTILINE)
 
 def chapter_files() -> list[Path]:
     """Every chapter file under SPEC_ROOT, in reading order (numeric prefix)."""
-    files = [p for p in SPEC_ROOT.rglob("*.md") if p.name != "STYLE.md"]
+    files = [
+        p for p in SPEC_ROOT.rglob("*.md") if p.name not in ("STYLE.md", "README.md")
+    ]
 
     def key(p: Path) -> int:
         m = re.match(r"(\d+)-", p.name)

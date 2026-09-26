@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>40-execution-graphs</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">40-execution-graphs</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#advanced-concurrency-execution-graphs"
+id="toc-advanced-concurrency-execution-graphs">40. Advanced Concurrency:
+Execution Graphs</a>
+<ul>
+<li><a href="#design" id="toc-design">Design</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="advanced-concurrency-execution-graphs">40. Advanced Concurrency:
+Execution Graphs</h1>
+<p><strong>Status:</strong> Planned</p>
+<p>An execution graph is a pipeline of work described as a value —
+combined with <code>|</code> from stage combinators, inspected at
+compile time, and run only once connected to a scheduler.</p>
+<p><code>async</code>/<code>await</code> plus <code>crew</code> (see <a
+href="41-advanced-cancellation.html">Advanced Cancellation</a> and the
+concurrency execution model) covers the vast majority of concurrency
+needs. Execution graphs are for handing a computation pipeline to an
+external scheduler, instrumenting across pipeline stages, or running
+stages on heterogeneous hardware (GPU, DMA engine, DSP).</p>
+<h2 id="design">Design</h2>
+<p>Nothing in an execution graph runs until it is connected to a
+scheduler and started:</p>
+<pre class="cinder"><code>let graph =
+    just(input)
+    | then(parse)
+    | on(pool, then(transform))
+    | on(io, then(write_result))
+    | with_timeout(seconds(30))
+    | retry(max: 3, backoff: exponential)
+
+let handle = graph.connect(my_scheduler).start()
+let result = await handle</code></pre>
+<ul>
+<li><code>just(value)</code> starts a graph with a value already in
+hand.</li>
+<li><code>then(f)</code> appends a stage that applies <code>f</code> to
+the previous stage’s output.</li>
+<li><code>on(context, stage)</code> runs <code>stage</code> under a
+specific execution context (a thread pool, an I/O context, or other
+custom context).</li>
+<li><code>with_timeout(duration)</code> bounds a graph’s total run
+time.</li>
+<li><code>retry(max:, backoff:)</code> re-runs a failed stage up to
+<code>max</code> times under the given backoff policy.</li>
+<li><code>graph.connect(scheduler)</code> binds the graph to a
+scheduler; <code>.start()</code> begins execution and returns a handle;
+<code>await handle</code> suspends until the graph completes.</li>
+</ul>
+<p>Graphs are inspectable at compile time, since a graph is a value
+built up from combinators known at compile time:</p>
+<pre class="cinder"><code>static STAGES:   usize = count_stages(graph)
+static USES_IO:  bool  = graph.uses_context(io)</code></pre>
+<p>A custom scheduler receives the graph as a value and may reorder
+stages, add instrumentation, or dispatch stages to specialized hardware
+— the extension point for game engines, real-time systems, and GPU
+pipelines.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Not implemented. Execution graphs depend on the concurrency runtime —
+a scheduler, an execution-context abstraction (<code>pool</code>,
+<code>io</code>), and task/handle machinery — none of which exists yet:
+<code>src/hir/nodes.h</code> lists concurrency forms as unsupported for
+lowering, and neither the bytecode VM nor the AOT runtime has a
+scheduler, event loop, threads, channels, or synchronization primitives.
+<code>spec/concurrency-implementation-plan.md</code> explicitly defers
+execution graphs to its last phase (Phase 11, “not scheduled”), to be
+picked up once the ordinary <code>async</code>/<code>crew</code> runtime
+(Phases 1–10) is stable and a motivating use case exists. No grammar,
+AST, or semantic support for
+<code>just</code>/<code>then</code>/<code>on</code>/<code>with_timeout</code>/<code>retry</code>/<code>connect</code>/<code>start</code>/<code>count_stages</code>/<code>uses_context</code>
+exists in <code>src/</code>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="41-advanced-cancellation.html">Advanced Cancellation</a> —
+cancellation mechanics for the ordinary
+<code>async</code>/<code>crew</code> model this feature extends.</li>
+</ul>
+</body>
+</html>

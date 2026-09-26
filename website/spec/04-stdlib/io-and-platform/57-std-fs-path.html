@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>57-std-fs-path</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">57-std-fs-path</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.fs.path" id="toc-std.fs.path">57.
+<code>std.fs.path</code></a>
+<ul>
+<li><a href="#core-type" id="toc-core-type">Core type</a></li>
+<li><a href="#api-surface" id="toc-api-surface">API surface</a></li>
+<li><a href="#method-semantics" id="toc-method-semantics">Method
+semantics</a></li>
+<li><a href="#implementation-shape"
+id="toc-implementation-shape">Implementation shape</a></li>
+<li><a href="#guarantees-and-limitations"
+id="toc-guarantees-and-limitations">Guarantees and limitations</a></li>
+<li><a href="#dependencies" id="toc-dependencies">Dependencies</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.fs.path">57. <code>std.fs.path</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>The <code>path</code> value type: string-based construction, joining,
+and decomposition of filesystem paths.</p>
+<p><code>std.fs.path</code> (<code>src/std/fs/path.cn</code>) is modeled
+after C++’s <code>std::filesystem::path</code>, but is deliberately
+<strong>purely a string-manipulation library</strong> — no syscalls, no
+filesystem access. Checking existence or querying whether a path names a
+directory or symlink belongs to a future <code>std.fs</code> module
+layered on top of this one, not here: separating “what does this path
+string mean” from “what does the filesystem say about it” keeps this
+module usable without I/O permissions and its behavior fully
+deterministic and host-independent.</p>
+<p>Guiding choices:</p>
+<ul>
+<li><strong>String-backed, lazily parsed.</strong> A path is a plain
+string (<code>raw: str</code>), never eagerly split into components;
+every operation performs a linear byte scan as needed, so a caller who
+only calls <code>is_absolute()</code> never pays for component-splitting
+they didn’t ask for.</li>
+<li><strong>Platform-aware, host-independent.</strong> Separator
+conventions (<code>/</code> vs. <code>\</code>, drive-letter
+absoluteness) are decided at runtime by consulting <a
+href="56-std-platform.html"><code>std.platform</code></a>’s
+<code>is_windows()</code>, not hardcoded to one OS.</li>
+<li><strong>Built on <code>std.string</code>.</strong> Equality and
+substring search back <code>eq</code>, <code>starts_with</code>,
+<code>ends_with</code>, and the scanning helpers; new path strings are
+assembled with string interpolation rather than an explicit
+concatenation call.</li>
+</ul>
+<h2 id="core-type">Core type</h2>
+<pre class="cinder"><code>pub type path = { raw: str }</code></pre>
+<p>A single field holding the path exactly as written.</p>
+<h2 id="api-surface">API surface</h2>
+<pre class="cinder"><code>impl from[str] for path:
+    def from(value: str) -&gt; path
+
+pub def path_of(s: str) -&gt; path
+
+impl show for path:
+    def show(self) -&gt; str
+
+extend path:
+    pub def as_str(self) -&gt; str
+    pub def is_absolute(self) -&gt; bool
+    pub def is_relative(self) -&gt; bool
+    pub def join(self, component: str) -&gt; path
+    pub def parent(self) -&gt; option[path]
+    pub def filename(self) -&gt; option[str]
+    pub def stem(self) -&gt; option[str]
+    pub def extension(self) -&gt; option[str]
+    pub def with_extension(self, ext: str) -&gt; path
+    pub def with_filename(self, name: str) -&gt; path
+    pub def components(self) -&gt; list[str]
+    pub def starts_with(self, prefix: path) -&gt; bool
+    pub def ends_with(self, suffix: path) -&gt; bool
+
+impl div for path:
+    type output = path
+    def div(self, other: path) -&gt; path
+
+impl eq for path:
+    def eq(self, other: &amp;self) -&gt; bool</code></pre>
+<p>This matches <code>src/std/fs/path.cn</code> exactly; there is no
+drift between the design doc and the implementation.</p>
+<h2 id="method-semantics">Method semantics</h2>
+<ul>
+<li><strong><code>from(value)</code> / <code>path_of(s)</code></strong>
+— construct a <code>path</code> from a string; <code>path_of</code> is
+the ergonomic free-function spelling, mirroring
+<code>path.from(...)</code>.</li>
+<li><strong><code>show(self)</code> / <code>as_str(self)</code></strong>
+— the path’s string representation (<code>self.raw</code>).</li>
+<li><strong><code>is_absolute(self)</code> /
+<code>is_relative(self)</code></strong> — on Unix, absolute means
+starting with <code>/</code>. On Windows, absolute additionally includes
+paths starting with <code>\</code>, or a drive-letter prefix
+(<code>[A-Za-z]:</code> followed by a separator) — <code>C:foo</code>
+(colon with no following separator) is relative, not absolute.</li>
+<li><strong><code>join(component)</code></strong> — appends a path
+component, returning a new path. If <code>component</code> is itself
+absolute, it replaces the entire base
+(<code>path_of("/a").join("/b")</code> → <code>path_of("/b")</code>),
+matching <code>std::filesystem::path</code>’s behavior. Otherwise the
+two are concatenated with a single native separator between them, with
+trailing separators stripped from <code>self</code> and leading
+separators stripped from <code>component</code> to avoid doubling.</li>
+<li><strong><code>parent(self)</code></strong> — the parent directory. A
+bare filename or root-only path yields <code>@none</code>; a top-level
+entry (<code>"/etc"</code>) yields <code>@some(path_of("/"))</code>;
+otherwise the path up to (but not including) the last separator.</li>
+<li><strong><code>filename(self)</code></strong> — the final component.
+<code>@none</code> if the path ends in a separator; the whole raw string
+if there is no separator; otherwise the substring after the last
+separator.</li>
+<li><strong><code>stem(self)</code> /
+<code>extension(self)</code></strong> — derived from
+<code>filename()</code>, splitting on the last <code>.</code>. Dotfile
+rule: if there is no <code>.</code>, or the only <code>.</code> is the
+first byte (<code>.gitignore</code>), the entire filename is the stem
+and there is no extension. <code>extension</code> may be the empty
+string when the filename ends in a dot (<code>"file."</code> →
+<code>@some("")</code>). Example: <code>"archive.tar.gz"</code> → stem
+<code>"archive.tar"</code>, extension <code>"gz"</code>.</li>
+<li><strong><code>with_extension(ext)</code></strong> — a new path with
+the extension replaced: if the path has a stem, built as
+<code>with_filename("{stem}.{ext}")</code>; otherwise <code>ext</code>
+becomes the filename outright. Tolerates (and strips) a leading
+<code>.</code> on <code>ext</code>.</li>
+<li><strong><code>with_filename(name)</code></strong> — a new path with
+the filename replaced: <code>parent().join(name)</code> if a parent
+exists, else <code>path_of(name)</code>.</li>
+<li><strong><code>components(self)</code></strong> — the path split on
+runs of one-or-more separators, discarding empty components; a leading
+separator produces no empty leading component
+(<code>is_absolute()</code> is the way to test root-ness). Example:
+<code>"/usr/local/bin"</code> →
+<code>["usr", "local", "bin"]</code>.</li>
+<li><strong><code>starts_with(prefix)</code> /
+<code>ends_with(suffix)</code></strong> — component-wise comparison
+(splits both into components first), not a raw string prefix/suffix
+check. Example:
+<code>"/usr/local/bin".starts_with(path_of("/usr"))</code> →
+<code>true</code>.</li>
+<li><strong><code>a / b</code> (div operator)</strong> — shorthand for
+<code>a.join(b.as_str())</code>, meant for chaining:
+<code>path_of("dir") / path_of("subdir") / path_of("file.txt")</code>.
+The right-hand side must be a <code>path</code>; <code>.join(str)</code>
+is the entry point for appending a plain string component.</li>
+<li><strong><code>eq(self, other)</code></strong> — <code>true</code>
+iff both paths have identical raw string content, byte-for-byte.
+Deliberately does <strong>not</strong> normalize: <code>"a/b"</code> ≠
+<code>"a/b/"</code>. Normalization is a distinct, separately-scoped
+concern (see Limitations below).</li>
+</ul>
+<h2 id="implementation-shape">Implementation shape</h2>
+<ul>
+<li><strong>Separator predicate</strong> (<code>is_sep</code>) — a byte
+is a separator when it is <code>/</code> (always), or — when
+<code>std.platform.is_windows()</code> — also when it is
+<code>\</code>.</li>
+<li><strong>Native separator</strong> (<code>native_sep</code>) — any
+operation that constructs a new path (<code>join</code>,
+<code>with_filename</code>, <code>with_extension</code>) always emits
+the native separator for the target: <code>/</code> on Unix-like
+systems, <code>\</code> on Windows.</li>
+<li><strong>Scanning helpers</strong> —
+<code>last_sep_index</code>/<code>last_dot_index</code> do a reverse
+byte-index scan; <code>strip_trailing_seps</code> strips trailing
+separators; <code>strip_leading_dot</code> strips a leading
+<code>.</code> from an extension argument; byte-slice equality (via
+<code>std.string</code>’s <code>eq</code>) backs <code>eq</code>,
+<code>starts_with</code>, and <code>ends_with</code>.</li>
+<li><strong>Parsing filename/stem/extension</strong> — strip trailing
+separators, find the last separator in what remains (if any), then slice
+the portion after it (or the whole string, if there is no
+separator).</li>
+<li><strong>Splitting into components</strong> — strip trailing
+separators, then walk with two cursors: on hitting a separator, push the
+non-empty range collected so far as a component, and advance past the
+entire run of consecutive separators before resuming.</li>
+</ul>
+<h2 id="guarantees-and-limitations">Guarantees and limitations</h2>
+<ul>
+<li><strong>String-based, not filesystem-based.</strong> A
+<code>path</code> value is just a string; it never checks whether the
+path exists or names an actual file or directory. This is the deliberate
+boundary with the future <code>std.fs</code> module, not an
+oversight.</li>
+<li><strong>No path normalization.</strong> <code>..</code> and
+<code>.</code> components are not collapsed and symlinks are not
+resolved — <code>path_of("a/../b")</code> treats <code>..</code> as an
+ordinary component, never as a “go up one level” directive.</li>
+<li><strong>No UNC path support.</strong> Windows UNC paths
+(<code>\\server\share\...</code>) are not recognized; only simple
+drive-letter (<code>C:\...</code>) and Unix-style (<code>/...</code>)
+absolute paths are.</li>
+<li><strong>Byte-level operations.</strong> All component/extension/stem
+logic works at the byte level with no understanding of UTF-8 grapheme
+boundaries; slicing a multi-byte UTF-8 sequence in the wrong place
+produces a syntactically invalid <code>str</code>. The scans themselves
+are safe by construction, since they only ever cut at ASCII
+separator/dot bytes, which UTF-8’s self-synchronization guarantees can’t
+appear inside a multi-byte sequence.</li>
+<li><strong>Platform conventions from a runtime check, not a
+compile-time one.</strong> Separator handling is decided by consulting
+<code>std.platform</code> at runtime rather than compiling two separate
+variants, so one binary adapts its behavior across targets it was built
+for.</li>
+</ul>
+<p>These limitations are permanent design boundaries, not outstanding
+work — normalization, UNC support, and filesystem access are explicitly
+out of scope for this module.</p>
+<h2 id="dependencies">Dependencies</h2>
+<ul>
+<li><code>std.string</code> (see the strings-and-formatting section) —
+equality and substring search back <code>eq</code>,
+<code>starts_with</code>, <code>ends_with</code>, and the scanning
+helpers.</li>
+<li><a href="56-std-platform.html"><code>std.platform</code></a> —
+<code>is_windows()</code> decides separator conventions and
+absolute-path rules.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="56-std-platform.html"><code>std.platform</code></a> — the
+target/host classification this module consults for separator
+conventions.</li>
+</ul>
+</body>
+</html>

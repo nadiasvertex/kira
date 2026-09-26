@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>33-dependent-and-refinement-types</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">33-dependent-and-refinement-types</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#dependent-and-refinement-types"
+id="toc-dependent-and-refinement-types">33. Dependent and Refinement
+Types</a>
+<ul>
+<li><a href="#the-two-subsystems-concretely"
+id="toc-the-two-subsystems-concretely">The two subsystems,
+concretely</a></li>
+<li><a href="#dependent-types-carrying-values"
+id="toc-dependent-types-carrying-values">Dependent types carrying
+values</a>
+<ul>
+<li><a href="#canonical-value-terms"
+id="toc-canonical-value-terms">Canonical value terms</a></li>
+</ul></li>
+<li><a href="#refinement-types" id="toc-refinement-types">Refinement
+types</a>
+<ul>
+<li><a href="#widening-and-narrowing"
+id="toc-widening-and-narrowing">Widening and narrowing</a></li>
+</ul></li>
+<li><a href="#the-reasoning-fragment"
+id="toc-the-reasoning-fragment">The reasoning fragment</a>
+<ul>
+<li><a href="#atoms" id="toc-atoms">Atoms</a></li>
+<li><a href="#constraints" id="toc-constraints">Constraints</a></li>
+<li><a href="#the-decision-procedure"
+id="toc-the-decision-procedure">The decision procedure</a></li>
+<li><a href="#explicitly-out-of-scope"
+id="toc-explicitly-out-of-scope">Explicitly out of scope</a></li>
+</ul></li>
+<li><a href="#facts-and-obligations"
+id="toc-facts-and-obligations">Facts and obligations</a>
+<ul>
+<li><a href="#what-enters-the-facts-environment"
+id="toc-what-enters-the-facts-environment">What enters the facts
+environment</a></li>
+<li><a href="#obligation-sites" id="toc-obligation-sites">Obligation
+sites</a></li>
+</ul></li>
+<li><a href="#the-graceful-path-failure-ux"
+id="toc-the-graceful-path-failure-ux">The graceful path — failure
+UX</a></li>
+<li><a href="#typed-runtime-proofs" id="toc-typed-runtime-proofs">Typed
+runtime proofs</a></li>
+<li><a href="#state-machines-in-types"
+id="toc-state-machines-in-types">State machines in types</a></li>
+<li><a href="#interaction-with-contracts"
+id="toc-interaction-with-contracts">Interaction with contracts</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="dependent-and-refinement-types">33. Dependent and Refinement
+Types</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Types that carry values (<code>vec[T, n]</code>), refinement types
+(<code>type positive = int32 where self &gt; 0</code>), the reasoning
+solver’s exact fragment, typed runtime proofs, state machines in types,
+and interaction with contracts.</p>
+<p>This chapter is the normative reference for
+<code>spec/dependent-types-design.md</code>, folded in and re-voiced;
+that document’s precision on the reasoning fragment takes priority over
+the thinner tutorial account previously in
+<code>cinder-reference.md</code>. See <a
+href="32-compile-time-semantics.html#two-subsystems-evaluation-and-reasoning">Compile-Time
+Semantics § Two subsystems</a> for how evaluation and reasoning divide
+the work in general.</p>
+<h2 id="the-two-subsystems-concretely">The two subsystems,
+concretely</h2>
+<p><em>Evaluation</em> (<code>src/comptime/eval.*</code>) runs ordinary
+Cinder on <strong>known</strong> values. <em>Reasoning</em>
+(<code>src/semantic/reason.*</code>) proves facts about
+<strong>unknown</strong> values. They never substitute for one
+another:</p>
+<ul>
+<li><code>vec[T, 2 + 3]</code> is evaluation: the expression is closed,
+so it folds to the constant <code>5</code> and the type is
+<code>vec[T, 5]</code>.</li>
+<li><code>vec[T, m + n]</code> is reasoning: <code>m</code> and
+<code>n</code> are unknown, so the length is a <em>symbolic</em> value,
+and any question about it (is <code>m + n</code> the same length as
+<code>n + m</code>?) is a proof, not a computation.</li>
+</ul>
+<p>Governing rule: <strong>fold if closed, symbolize otherwise.</strong>
+A value expression in a type position is evaluated when every name in it
+is a compile-time constant, and otherwise becomes a canonical symbolic
+term.</p>
+<h2 id="dependent-types-carrying-values">Dependent types carrying
+values</h2>
+<pre class="cinder"><code># vec[T, n] carries its length in the type
+type vec[T, n: usize] = { data: array[T, n] }
+
+def concat[T, m: usize, n: usize](a: vec[T, m], b: vec[T, n]) -&gt; vec[T, m + n]:
+    ...
+
+# head requires length &gt;= 1 — calling head on an empty vec is a compile error
+def head[T, n: usize](v: vec[T, n + 1]) -&gt; T:
+    ...</code></pre>
+<h3 id="canonical-value-terms">Canonical value terms</h3>
+<p>Every compile-time value that appears in a type — an array length, a
+const generic argument, a refinement’s parameter — is one of:</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Form</th>
+<th>Interned as</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A closed integer</td>
+<td><code>const_value_kind</code></td>
+<td><code>3</code> in <code>vec[T, 3]</code></td>
+</tr>
+<tr>
+<td>A linear polynomial over value params</td>
+<td><code>symbolic_value_kind</code></td>
+<td><code>n + 1</code> in <code>vec[T, n + 1]</code></td>
+</tr>
+<tr>
+<td>A sum-type variant</td>
+<td><code>const_variant_kind</code></td>
+<td><code>open</code> in <code>connection[open]</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>The linear polynomial.</strong> A
+<code>symbolic_value_kind</code> entry carries a canonical linear
+polynomial <code>c0 + c1*v1 + ... + ck*vk</code>, with non-zero
+<code>int64_t</code> coefficients and distinct value-parameter names
+sorted lexicographically. Canonicalization folds constants, combines
+like terms, and drops zero coefficients; a polynomial with no terms
+degrades to <code>const_value_kind</code>, so every value has exactly
+one representation (<code>src/semantic/linear_poly.h</code>).</p>
+<p>This is what makes type identity work: <code>m + n</code> and
+<code>n + m</code> canonicalize to the same polynomial, intern to the
+same key, and are therefore the same <code>type_id</code> — id-equality
+remains the whole of type equality.</p>
+<p>Only <code>+</code>, <code>-</code>, unary <code>-</code>, and
+multiplication <strong>by a literal</strong> build a polynomial.
+<code>m * n</code>, <code>n / 2</code>, <code>n % 4</code>, and any
+function call in a type argument are <strong>outside the
+fragment</strong>: they resolve to <code>unknown</code>, which unifies
+with everything and diagnoses nothing — the compiler’s standing policy
+for “I don’t know” (<code>k_unknown_type</code>). These are not errors;
+they are simply not reasoned about.</p>
+<p><strong>Value-slot compatibility.</strong> Two value slots are
+compatible when the equation <code>P = Q</code> between their
+polynomials is satisfiable over the parameters’ domain
+(<code>usize</code> and the unsigned family: <code>v &gt;= 0</code>; the
+signed family: unconstrained). A single linear equation is decided
+exactly and cheaply:</p>
+<ul>
+<li>No variables on either side: compatible iff the constants are equal
+(the plain-<code>const_value</code> case).</li>
+<li>Variables present: let <code>t</code> be the constant difference and
+<code>g</code> the gcd of the coefficients. Unsatisfiable when
+<code>g</code> does not divide <code>t</code>, or when every variable is
+non-negative-domained, every coefficient shares a sign, and
+<code>t</code> lies on the wrong side of zero.</li>
+</ul>
+<p>This is what makes <code>head[T, n: usize](v: vec[T, n + 1])</code>
+reject an empty <code>vec[T, 0]</code>: matching <code>n + 1</code>
+against <code>0</code> needs <code>n = -1</code>, and
+<code>n: usize</code> cannot be negative, so the call is rejected with
+the arithmetic explained. Anything satisfiable is accepted; the compiler
+does not <em>solve for</em> <code>n</code> and propagate it — an
+unresolved-but-satisfiable value slot behaves like any other unresolved
+generic parameter, exactly as <code>T</code> does.</p>
+<p><strong>Variant values.</strong> A value parameter typed as a user
+sum type (<code>S: conn_state</code>) takes a bare variant as its
+argument (<code>connection[open]</code>), interning as
+<code>const_variant_kind</code> and comparing by variant identity only —
+no arithmetic, no ordering. This is all that state machines in types
+(below) need, and it is total.</p>
+<h2 id="refinement-types">Refinement types</h2>
+<pre class="cinder"><code>type positive        = int32 where self &gt; 0
+type index[n: usize] = usize where self &lt; n
+
+def safe_get[T, n: usize](v: array[T, n], i: index[n]) -&gt; T:
+    ...</code></pre>
+<p>A refinement declaration mints a <code>refinement_kind</code> type
+table entry: a base type, the declaration’s resolved value/type
+arguments, and a predicate — the <code>where</code> expression, in which
+<code>self</code> names the constrained value.</p>
+<ul>
+<li><strong>Identity is declaration-nominal.</strong>
+<code>type a = int32 where self &gt; 0</code> and
+<code>type b = int32 where self &gt; 0</code> are different types,
+spelled differently in diagnostics, exactly like two structs with
+identical fields. Two instantiations of the same declaration with the
+same arguments are the same type (<code>index[n]</code> interns once per
+<code>n</code>). The solver, however, sees straight through the name to
+<code>(base, predicate)</code> — nominal to the user, structural to the
+prover.</li>
+<li>An <em>anonymous</em> refinement written inline
+(<code>def f(x: int32 where self &gt; 0)</code>) mints a refinement
+keyed on its predicate AST node, one type per written occurrence.</li>
+</ul>
+<h3 id="widening-and-narrowing">Widening and narrowing</h3>
+<ul>
+<li><strong>Widening is free.</strong> A <code>positive</code> is usable
+wherever its base <code>int32</code> is: the refinement is a
+compile-time fact about the value, not a different representation.
+Arithmetic on a <code>positive</code> operates on <code>int32</code> and
+produces <code>int32</code> — refinements do not propagate through
+operators.</li>
+<li><strong>Narrowing is an obligation.</strong> Using an
+<code>int32</code> (or a differently-refined <code>int32</code>) where a
+<code>positive</code> is expected raises a proof obligation:
+<code>predicate[self := &lt;the expression&gt;]</code> must follow from
+the facts in scope. Provable ⇒ silently accepted. Unprovable ⇒ a
+diagnostic naming the goal, the available facts, and both ways out
+(below).</li>
+</ul>
+<p>Layout never sees a refinement: HIR resolves
+<code>refinement_kind</code> to its base before lowering, so a
+<code>positive</code> is an <code>int32</code> in every backend. The
+single exception is <code>try_from</code> (below), whose predicate
+compiles to an ordinary runtime expression.</p>
+<h2 id="the-reasoning-fragment">The reasoning fragment</h2>
+<p><strong>Quantifier-free linear integer arithmetic over uninterpreted
+atoms.</strong> This is the whole of it, and it is a hard boundary —
+extending it is a revision of the design document, not a patch to
+<code>src/semantic/reason.cpp</code>.</p>
+<h3 id="atoms">Atoms</h3>
+<p>An atom is an opaque, canonically-keyed term the solver treats as a
+single unknown integer:</p>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Atom key</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A local / parameter / value param</td>
+<td>the name</td>
+</tr>
+<tr>
+<td>A field access <code>x.len</code></td>
+<td><code>x.len</code></td>
+</tr>
+<tr>
+<td>A call to a <code>pure</code> function <code>f(a, b)</code></td>
+<td><code>f(&lt;a&gt;,&lt;b&gt;)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Calls are <strong>uninterpreted</strong>: <code>f(x)</code> equals
+<code>f(x)</code>, and nothing else is known about it — equal arguments
+imply equal results, the only law. A call to a non-<code>pure</code>
+function is not an atom at all; the containing constraint is dropped as
+a fact, or unprovable as a goal, since an effectful call has no stable
+value to reason about.</p>
+<h3 id="constraints">Constraints</h3>
+<p>A constraint is <code>poly RELOP 0</code> over atoms,
+<code>RELOP ∈ {=, ≠, ≥, &gt;}</code> (<code>&lt;</code>, <code>≤</code>
+normalize by negating the polynomial). A boolean term that is not a
+comparison (a call returning <code>bool</code>,
+e.g. <code>is_sorted(v)</code>) enters as the constraint
+<code>atom = 1</code> — deliberately the weakest thing still useful: an
+identical fact discharges an identical goal and nothing more.</p>
+<p><code>and</code> is conjunction; <code>not</code> negates.
+<code>or</code> in a <strong>goal</strong> is discharged by proving
+either disjunct; <code>or</code> in a <strong>fact</strong> is dropped
+(weakening a fact set is always sound — it can only make the compiler
+prove less).</p>
+<h3 id="the-decision-procedure">The decision procedure</h3>
+<p>To discharge goal <code>G</code> from facts <code>F</code>: decide
+whether <code>F ∧ ¬G</code> is unsatisfiable. <code>¬G</code> is a
+conjunction, or (for a negated equality) a two-way case split; each case
+is a conjunction of linear constraints, decided by Fourier–Motzkin
+elimination with integer tightening — bounds are rounded inward
+(<code>x ≥ 3/2</code> becomes <code>x ≥ 2</code>) before comparison.</p>
+<p>Real-relaxation unsatisfiability implies integer unsatisfiability, so
+a “proved” answer is always sound. The converse does not hold: an
+integer-unsatisfiable system can look satisfiable over the rationals, in
+which case the compiler answers “cannot prove” and takes the graceful
+path. This asymmetry is deliberate: the solver is <strong>total</strong>
+— it always terminates, no timeout, no search — at the cost of being
+incomplete. Cinder never silently accepts an unproven obligation, and
+never hangs trying to prove one.</p>
+<p>Elimination is bounded: obligations with more than a small number of
+distinct atoms (<code>k_atom_limit</code>) are answered “cannot prove”
+rather than risking Fourier–Motzkin’s exponential blowup. A bound the
+user can hit is preferred over a compiler that stops responding.</p>
+<h3 id="explicitly-out-of-scope">Explicitly out of scope</h3>
+<p>Not in the fragment, now or by patch:</p>
+<ul>
+<li>Nonlinear arithmetic (<code>m * n</code>, <code>n * n</code>,
+division, modulo).</li>
+<li>Quantified predicates (<code>forall i, v[i] &gt; 0</code>).</li>
+<li>Reasoning about the <em>contents</em> of aggregates (lists, maps,
+strings) beyond uninterpreted-atom equality.</li>
+<li>Reasoning about floats. A refinement on a float base
+(<code>type prob = float64 where self &gt;= 0.0</code>) is legal and
+enforced by <code>try_from</code> and by runtime contract checks, but
+never <em>proved</em> statically.</li>
+<li>Bit-level reasoning, overflow semantics of the underlying machine
+word beyond the declared range of the type.</li>
+<li>Narrowing through a function call, a closure, or an
+<code>&amp;mut</code> alias.</li>
+</ul>
+<h2 id="facts-and-obligations">Facts and obligations</h2>
+<h3 id="what-enters-the-facts-environment">What enters the facts
+environment</h3>
+<p>Per function being checked, in this order:</p>
+<ol type="1">
+<li><strong>Value-parameter domains.</strong> <code>n: usize</code>
+contributes <code>n ≥ 0</code>.</li>
+<li><strong>Refined parameter types.</strong> A parameter
+<code>i: index[n]</code> contributes its predicate with
+<code>self := i</code>, i.e. <code>i &lt; n</code>.</li>
+<li><strong>Refined local bindings.</strong> Same rule, at the point of
+binding.</li>
+<li><strong>Array lengths.</strong> A parameter
+<code>v: array[T, n]</code> contributes <code>len(v) = n</code>, which
+is what lets <code>v[i]</code> with <code>i: index[n]</code> prove its
+bound.</li>
+<li><strong>Preconditions.</strong> Each <code>pre</code> of the
+function under check is a fact inside its body (an <em>obligation</em>
+at each call site, a <em>fact</em> within the callee — this duality is
+the whole of contract reasoning; see <a
+href="34-contracts.html">Contracts</a>).</li>
+<li><strong>Path conditions.</strong> Inside <code>if c:</code>,
+<code>c</code> holds; in the <code>else</code>, <code>¬c</code> holds.
+Inside a <code>match</code> arm, the arm’s guard holds. Facts are scoped
+exactly to the dominated region.</li>
+</ol>
+<p>A fact is <strong>invalidated</strong> by any assignment to a name it
+mentions, or by passing that name as <code>&amp;mut</code>. There is no
+narrowing through a call.</p>
+<h3 id="obligation-sites">Obligation sites</h3>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Site</th>
+<th>Goal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Base → refined coercion (assignment, argument, return, field
+init)</td>
+<td>the refinement’s predicate at the value</td>
+</tr>
+<tr>
+<td>Indexing <code>v[i]</code></td>
+<td><code>i &lt; len(v)</code> — provable ⇒ the bounds check is
+elided</td>
+</tr>
+<tr>
+<td><code>pre</code> at a call site</td>
+<td>the precondition, with parameters substituted by the arguments</td>
+</tr>
+<tr>
+<td><code>post</code> / <code>invariant</code> at a definition</td>
+<td>the condition, against the body’s facts</td>
+</tr>
+<tr>
+<td>Checked arithmetic</td>
+<td>“the result fits” — an ordinary precondition on the operation</td>
+</tr>
+</tbody>
+</table>
+<p>A <em>refuted</em> obligation (the negation is provable) is always a
+compile error: the code is definitely wrong. An obligation that is
+merely <em>unproven</em> takes the graceful path.</p>
+<h2 id="the-graceful-path-failure-ux">The graceful path — failure
+UX</h2>
+<p>An unprovable obligation is not a solver failure to apologize for; it
+is the normal, designed state of a conservative prover, and the
+diagnostic is the product. It always says three things:</p>
+<ol type="1">
+<li><strong>The goal</strong> — the exact fact needed, in source terms
+(<code>i &lt; len(v)</code>), not solver terms.</li>
+<li><strong>The facts</strong> — what was actually known about the
+values involved, so the gap is visible rather than guessed at.</li>
+<li><strong>Both ways out</strong> — strengthen a type or contract
+<em>upstream</em> (make the parameter an <code>index[n]</code>, add a
+<code>pre</code>), or prove it <em>here</em> with a runtime check
+(<code>index[n].try_from(i)</code>).</li>
+</ol>
+<pre><code>error: cannot prove `i &lt; n` for this argument
+  --&gt; src/grid.cn:12:15
+   |
+12 |     safe_get(v, i)
+   |                 ^ expected `index[n]`, found `usize`
+   |
+ note: known here: `n &gt;= 0`, `i &gt;= 0`
+ help: either constrain `i` upstream — take it as `index[n]` — or prove it
+       here:
+           if let @some(idx) = index[n].try_from(i):
+               safe_get(v, idx)</code></pre>
+<h2 id="typed-runtime-proofs">Typed runtime proofs</h2>
+<p>Every refinement type has an intrinsic:</p>
+<pre class="cinder"><code>index[n].try_from(raw: usize) -&gt; option[index[n]]</code></pre>
+<p>It evaluates the predicate on the value and yields
+<code>@some(value)</code> (same representation, refined type) or
+<code>@none</code>. After <code>if let @some(i) = ...</code>,
+<code>i</code> <em>has</em> the refined type — the unwrap
+<strong>is</strong> the proof; no flow analysis is required to see it.
+This is the designed escape hatch for everything the fragment cannot
+decide.</p>
+<pre class="cinder"><code>if let @some(i) = index[n].try_from(raw_index):
+    v[i]    # i is now index[n] — access is safe, no bounds check needed</code></pre>
+<h2 id="state-machines-in-types">State machines in types</h2>
+<p>Types parameterized over state values enforce valid operation
+sequences at compile time:</p>
+<pre class="cinder"><code>type connection[S: conn_state]
+
+def connect(addr: str)              -&gt; connection[closed]: ...
+def open(c: connection[closed])     -&gt; connection[open]:   ...
+def send(c: connection[open], data: bytes) -&gt; unit:        ...
+def close(c: connection[open])      -&gt; connection[closed]: ...</code></pre>
+<p>Calling <code>send</code> on a closed connection is a compile error,
+diagnosed by variant-value-slot incompatibility (above). No runtime
+state field is needed — the state is erased after compilation.</p>
+<h2 id="interaction-with-contracts">Interaction with contracts</h2>
+<p>Contracts and refinements share one enforcement story:</p>
+<blockquote>
+<p>Prove it statically; check it at runtime when you cannot; refuse it
+when you can prove it false.</p>
+</blockquote>
+<p>A <code>pre</code> proven at a call site is compiled away entirely. A
+<code>pre</code> refuted at a call site is a compile error. A
+<code>pre</code> neither proven nor refuted lowers to a runtime check
+that panics with the contract’s message — elidable in release with
+<code>--no-contract-checks</code>, which is the programmer’s assertion
+that it holds by other means.</p>
+<p>A struct <code>invariant</code> is checked at construction and at
+mutation boundaries, and enters the facts environment for every value of
+that type — an <code>invariant self.value &gt; 0</code> means a
+<code>positive_int</code>’s field needs no further proof to be used
+where a <code>positive</code> is expected. See <a
+href="34-contracts.html">Contracts</a> for the full
+<code>pre</code>/<code>post</code>/<code>invariant</code> surface.</p>
+<h2 id="example">Example</h2>
+<p>The stress corpus
+<code>src/testdata/semantic_stress/027_dependent_and_refinement_types.cn</code>
+exercises this chapter end to end: symbolic const generics
+(<code>commutes</code>, <code>reassociates</code>), refinements proven
+from a literal and from an already-refined value, widening across an
+operator, provable and unprovable indexing, flow-sensitive narrowing
+(<code>if y &gt; 0: needs_positive(y)</code>), <code>try_from</code>
+runtime proofs, contract facts, struct invariants, and the
+explicitly-out-of-scope nonlinear case
+(<code>matrix[rows, cols]</code>), all in one file that is expected to
+check with <strong>no</strong> diagnostics.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Substantially implemented, ahead of
+<code>spec/dependent-types-implementation-plan.md</code>’s “Where the
+compiler stands today” section (dated 2026-07-12) — that document’s “not
+done” list (refinements as no-ops, no symbolic value arithmetic, no
+reasoning subsystem, no typed proofs, contracts never lowered) no longer
+reflects the tree:</p>
+<ul>
+<li><strong>Symbolic const generics</strong> —
+<code>symbolic_value_kind</code>, the canonical linear polynomial, and
+value-slot compatibility are implemented in
+<code>src/semantic/linear_poly.{h,cpp}</code> and
+<code>src/semantic/types.{h,cpp}</code>, unification over value slots in
+<code>check.cpp</code>.</li>
+<li><strong>Refinement types as real types</strong> —
+<code>refinement_kind</code> type entries, <code>resolve_type</code>’s
+<code>ast::node_kind::refinement_type</code> case
+(<code>check.cpp:1847</code>), widening/narrowing, and predicate
+substitution (<code>refinement_subst</code>,
+<code>check.cpp:2862</code>) are implemented, not the erase-to-base
+no-op the implementation plan describes.</li>
+<li><strong>The reasoning solver</strong> —
+<code>src/semantic/reason.{h,cpp}</code> implements the fragment
+described above (<code>relation</code>, <code>constraint</code>,
+<code>proof_result</code> in <code>reason.h</code>), exercised by
+<code>src/semantic/reason_test.cpp</code>.</li>
+<li><strong>Typed runtime proofs</strong> —
+<code>&lt;refinement&gt;.try_from(value)</code> is recognized and
+lowered (<code>check.cpp:9783</code>,
+<code>infer_refinement_try_from</code>,
+<code>build_try_from_fragment</code>,
+<code>~check.cpp:10288</code>–<code>10394</code>).</li>
+<li><strong>Flow-sensitive narrowing</strong> (design doc’s Phase 5) and
+<strong>contracts on the same solver plus runtime lowering</strong>
+(Phase 6) — both are exercised by the stress corpus’s
+<code>narrowed</code>/<code>narrowed_by_conjunction</code> cases and by
+<code>hir_contract_check</code> lowering in both backends
+(<code>src/hir/lower.cpp</code>,
+<code>src/bytecode_compiler/compile.cpp</code>,
+<code>src/llvm_codegen/codegen.cpp</code>).</li>
+</ul>
+<p>Still matching the design doc’s stated scope exactly (i.e., not gaps,
+but the deliberate boundary of the fragment): nonlinear arithmetic,
+quantified predicates, aggregate-content reasoning, float reasoning, and
+narrowing through calls/closures/<code>&amp;mut</code> are all
+unimplemented <strong>by design</strong> — see “Explicitly out of scope”
+above, not a to-do list.</p>
+<p>Not verified by this chapter’s evidence gathering (design-doc Phase 7
+“polish” territory — value-parameterized types through
+<code>some Trait</code> returns, concept value constraints routed
+through the solver, module-metadata survival of refined signatures
+across separate compilation): treat as unconfirmed rather than either
+implemented or missing.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="32-compile-time-semantics.html">Compile-Time Semantics</a>
+— the evaluation/reasoning split in general.</li>
+<li><a href="34-contracts.html">Contracts</a> —
+<code>pre</code>/<code>post</code>/<code>invariant</code>, the same
+solver, runtime lowering, <code>--no-contract-checks</code>.</li>
+<li><a href="35-concepts.html">Concepts</a> — value constraints like
+<code>size_of[T]() &lt;= 64</code> are intended to route through this
+same solver.</li>
+</ul>
+</body>
+</html>

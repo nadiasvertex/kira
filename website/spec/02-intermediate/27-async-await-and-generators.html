@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>27-async-await-and-generators</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">27-async-await-and-generators</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#asyncawait-and-generators"
+id="toc-asyncawait-and-generators">27.
+<code>async</code>/<code>await</code> and Generators</a>
+<ul>
+<li><a href="#async-and-await"
+id="toc-async-and-await"><code>async</code> and
+<code>await</code></a></li>
+<li><a href="#generators-generator-and-yield"
+id="toc-generators-generator-and-yield">Generators:
+<code>generator</code> and <code>yield</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="asyncawait-and-generators">27.
+<code>async</code>/<code>await</code> and Generators</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>async</code>/<code>await</code> basics,
+<code>generator</code>/<code>yield</code>, the shared coroutine-lowering
+explanation, and async+generator composing into a stream.</p>
+<h2 id="async-and-await"><code>async</code> and <code>await</code></h2>
+<p>Marking a function <code>async</code> makes it a suspendable
+computation. Inside an <code>async</code> function, <code>await</code>
+pauses execution until another async operation completes, freeing the
+current thread for other work.</p>
+<pre class="cinder"><code>async def fetch_name(id: int32) -&gt; result[str, network_error]:
+    let response = await http.get(&quot;https://api.example.com/users/{id}&quot;)?
+    let body     = await response.text()?
+    return @ok(body)</code></pre>
+<p><code>async</code> functions return <code>task[T, E, C]</code> (see
+<a href="26-concurrency-execution-model.html">The Execution Model</a>) —
+nothing runs until something awaits or runs the task.</p>
+<h2 id="generators-generator-and-yield">Generators:
+<code>generator</code> and <code>yield</code></h2>
+<p><code>async</code> compiles a function into a suspendable state
+machine: locals live across <code>await</code> points, and the function
+resumes from wherever it last paused. A <code>generator</code> is that
+exact same transform with a different reason to pause. Where
+<code>await</code> suspends waiting on another computation,
+<code>yield</code> suspends to hand a value back to the caller:</p>
+<pre class="cinder"><code>generator def fibonacci() -&gt; some iterator[uint64]:
+    var a: uint64 = 0
+    var b: uint64 = 1
+    loop:
+        yield a
+        (a, b) = (b, a + b)</code></pre>
+<p><code>generator def</code> produces <code>some iterator[T]</code> —
+the same trait an ordinary hand-written <code>next()</code>
+implementation satisfies (see <a href="18-traits.html">Traits</a>).
+Nothing about calling a generator differs from calling any other
+iterator; <code>for x in fibonacci().take(10)</code> works whether
+<code>fibonacci</code>’s <code>next()</code> was written by hand or
+generated from a <code>yield</code>-based body. <code>generator</code>
+only changes how a body is <em>written</em>, never how the result is
+<em>used</em>.</p>
+<p><code>async</code> and <code>generator</code> are two surface names
+over one coroutine lowering, so they compose the same way other prefixes
+do:</p>
+<pre class="cinder"><code>async generator def lines_from(url: str) -&gt; some iterator[str]:
+    let conn = await connect(url)?
+    loop:
+        let chunk = await conn.read_chunk()?
+        if chunk.is_empty(): break
+        for line in chunk.split(&quot;\n&quot;):
+            yield line</code></pre>
+<p>A function that is both <code>async</code> and <code>generator</code>
+produces a <em>stream</em> — a value that suspends on <code>await</code>
+while producing values with <code>yield</code>. There is no third
+lowering to write or maintain for this case; it falls out of the two
+suspension protocols sharing one state-machine transform.</p>
+<p><code>yield</code> inside a generator suspended mid-body can be
+holding locals with live destructors, the same as <code>await</code> can
+— a generator abandoned before it runs to completion must still run
+<code>drop</code> on anything it was holding, exactly as an early
+<code>return</code> would. This is the same “every path out of a scope
+runs drops” rule that applies to functions in general (see <a
+href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>).</p>
+<p>A generator that calls itself recursively does not automatically
+compose into one flat state machine — each recursive call is its own
+coroutine, resumed by the one that called it. This is fine for shallow,
+bounded recursion, but a deeply recursive generator (walking a tree
+structure and <code>yield</code>ing each node, for example) pays a
+per-level cost on every element it produces. Prefer an explicit stack
+over recursion in a generator when depth may be large.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>This chapter is split down the middle.</p>
+<ul>
+<li><strong><code>generator</code>/<code>yield</code> is implemented
+end-to-end</strong>, both backends: <code>hir_yield</code> plus
+<code>hir::live_across_yield</code> liveness analysis, VM
+<code>op_make_generator</code>/<code>op_yield</code>/resume-index
+machinery (<code>src/bytecode/opcodes.h</code>), and LLVM lowering. This
+is real, working compiler surface — write and run generator code
+today.</li>
+<li><strong><code>async</code>/<code>await</code> is not implemented
+beyond parsing.</strong> Surface syntax parses (<code>async_expr</code>,
+<code>await_expr</code>, the <code>async</code> function modifier
+composing with <code>generator</code>), but <code>task[T, E, C]</code>
+has no checking semantics, <code>check.cpp</code> types
+<code>await</code> as a pass-through of its operand rather than
+unwrapping a task’s result, and no lowering exists for
+<code>async</code> — <code>src/hir/nodes.h</code> lists it as
+unsupported. The plan is to extend the existing generator coroutine
+transform to cover <code>async</code> (a task object is designed as a
+generator object plus status/result slot/cancellation token/waker), but
+that extension has not been built. The <code>async generator</code>
+stream form and the <code>async</code>+<code>await</code> half of every
+example above are design only.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="26-concurrency-execution-model.html">The Execution
+Model</a> — <code>task[T, E, C]</code>, contexts, cancellation.</li>
+<li><a href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a> — the drop-on-abandonment rule generators follow.</li>
+<li><a href="18-traits.html">Traits</a> — the <code>iterator</code>
+trait a generator’s result satisfies.</li>
+</ul>
+</body>
+</html>

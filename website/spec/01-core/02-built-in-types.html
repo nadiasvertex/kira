@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>02-built-in-types</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">02-built-in-types</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#built-in-types" id="toc-built-in-types">2. Built-in
+Types</a>
+<ul>
+<li><a href="#type-list" id="toc-type-list">Type list</a></li>
+<li><a href="#numeric-literal-defaulting"
+id="toc-numeric-literal-defaulting">Numeric literal defaulting</a></li>
+<li><a href="#integer-overflow" id="toc-integer-overflow">Integer
+overflow</a></li>
+<li><a href="#converting-between-types"
+id="toc-converting-between-types">Converting between types</a>
+<ul>
+<li><a href="#constructor-call-conversion-checked"
+id="toc-constructor-call-conversion-checked">Constructor-call conversion
+(checked)</a></li>
+<li><a href="#as-unchecked" id="toc-as-unchecked"><code>as</code>
+(unchecked)</a></li>
+</ul></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="built-in-types">2. Built-in Types</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers the built-in scalar type set, numeric literal defaulting,
+integer overflow behavior, and conversion between types via
+constructor-call syntax.</p>
+<h2 id="type-list">Type list</h2>
+<p>All built-in type names are lowercase identifiers, interned by
+<code>type_table</code> (<code>src/semantic/types.cpp</code>):</p>
+<pre><code>bool                                            # true or false
+int8  int16  int32  int64  int128               # signed integers
+uint8 uint16 uint32 uint64 uint128              # unsigned integers
+float32  float64  float128                      # floating point
+byte                                            # alias for uint8
+str                                             # UTF-8 text (view type; see Strings)
+char                                            # one Unicode scalar value
+unit                                            # the &quot;no value&quot; type; its one value is also written `unit`
+isize  usize                                    # pointer-sized signed/unsigned integers
+never                                           # the uninhabited/bottom type</code></pre>
+<p><code>int32</code> is the default integer type and
+<code>float64</code> the default floating-point type when no other
+context is available.</p>
+<h2 id="numeric-literal-defaulting">Numeric literal defaulting</h2>
+<p>A numeric literal’s type is resolved from context:
+<code>let b: int64 = 42</code> types <code>42</code> as
+<code>int64</code>. With no surrounding constraint, an integer literal
+defaults to <code>int32</code> and a decimal literal to
+<code>float64</code>. A literal that cannot fit the type required by
+context is a compile error, diagnosed at the literal, not deferred to a
+runtime failure.</p>
+<pre class="cinder"><code>let a = 42          # int32 by default
+let b: int64 = 42   # int64 from context
+let c: uint8 = 300  # compile error: 300 does not fit in uint8</code></pre>
+<h2 id="integer-overflow">Integer overflow</h2>
+<p>Arithmetic on <code>+</code>, <code>-</code>, <code>*</code> is
+checked: a result that does not fit its type panics rather than wrapping
+silently or invoking undefined behavior. This is the same class of fault
+as an out-of-bounds index. <code>int32.min / -1</code>, negating
+<code>int32.min</code>, division by zero, and shifting by more than the
+type’s bit width panic under the same principle.</p>
+<pre class="cinder"><code>let x: int32 = int32.max
+let y = x + 1        # panics: int32 overflow</code></pre>
+<p>Every numeric type exposes <code>.min</code> and <code>.max</code>
+associated constants (<code>src/semantic/check.cpp</code>, handling of
+the <code>min</code>/<code>max</code> member names on numeric
+types).</p>
+<p>Three explicit, always-available alternatives to the panicking
+operators exist as ordinary operator tokens (<code>plus_percent</code>,
+<code>minus_percent</code>, <code>plus_pipe</code>, … in
+<code>src/parser/token.h</code>; lowered to
+<code>op_add_wrap</code>/<code>op_sub_wrap</code>/<code>op_mul_wrap</code>
+and the saturating opcodes in <code>src/bytecode/opcodes.h</code>), not
+gated behind <code>machine</code> code:</p>
+<ul>
+<li>Wrapping (modular): <code>+%</code>, <code>-%</code>,
+<code>*%</code> — and their compound-assignment forms <code>+%=</code>,
+<code>-%=</code>.</li>
+<li>Saturating: <code>+|</code>, <code>-|</code>, <code>*|</code> —
+clamp at the type’s <code>.min</code>/<code>.max</code> instead of
+panicking.</li>
+</ul>
+<pre class="cinder"><code>let mixed = h *% 31 +% c     # wrapping — hashes, checksums, ring buffers
+let level = volume +| gain   # saturating — clamps at the type&#39;s min or max</code></pre>
+<h2 id="converting-between-types">Converting between types</h2>
+<h3 id="constructor-call-conversion-checked">Constructor-call conversion
+(checked)</h3>
+<p>Calling the target type like a constructor converts a value to
+it:</p>
+<pre class="cinder"><code>let n: int32   = 300
+let x: float64 = float64(n)   # int32 -&gt; float64
+let b: uint8   = uint8(n)     # narrowing — panics: 300 does not fit in uint8</code></pre>
+<p>A conversion exists when the target type provides a <code>from</code>
+implementation for the source type; the built-in numeric types provide
+these for one another (<code>check_conversion_call</code> in
+<code>src/semantic/check.cpp</code>). Narrowing is checked the same way
+arithmetic is: a value that does not fit its destination panics rather
+than truncating silently. Attempting a conversion with no
+<code>from</code> available is diagnosed at the call site, naming both
+types:</p>
+<pre><code>no conversion from `str` to `float64`
+  = A conversion exists when `float64` provides a `from` for the source
+    type; the numeric types convert between one another.</code></pre>
+<p>The same <code>from</code> mechanism is invoked implicitly by
+<code>?</code> when propagating an error of a different type; see <a
+href="11-error-handling.html">Error Handling</a>.</p>
+<h3 id="as-unchecked"><code>as</code> (unchecked)</h3>
+<p>A separate <code>as</code> cast expression also exists
+(<code>cast_expr</code> in <code>spec/cinder-grammar.ebnf</code>;
+<code>hir_cast</code> in <code>src/hir/lower.cpp</code>;
+<code>op_cast</code> in <code>src/bytecode/opcodes.h</code>), and is
+exercised throughout the test corpus
+(<code>src/testdata/codegen_stress/019_cast_int_widen_narrow.cn</code>,
+<code>020_cast_float_conversions.cn</code>) for ordinary numeric
+conversions, not only in <code>packed</code>/machine-layout code. Unlike
+constructor-call conversion, <code>expr as T</code> never panics:
+integer-to-integer truncates or sign/zero-extends, integer-to-float and
+float-to-integer follow C++ conversion semantics, and float-to-float
+widens or narrows — silently, per the <code>op_cast</code> doc comment
+in <code>opcodes.h</code>.</p>
+<pre class="cinder"><code>var big: int64 = 1000
+var narrow = big as int8     # truncates silently — no panic</code></pre>
+<p>Prefer <code>T(x)</code> when a bad value should be a caught bug
+(panics on narrowing loss), and <code>as</code> when
+truncation/reinterpretation is the intended, silent behavior.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="11-error-handling.html">Error Handling</a> —
+<code>?</code>’s use of <code>from</code> for error conversion.</li>
+<li><a href="03-bindings.html">Bindings</a> — type annotations that
+establish literal context.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>55-std-console</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">55-std-console</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.console" id="toc-std.console">55.
+<code>std.console</code></a>
+<ul>
+<li><a href="#stream-handles" id="toc-stream-handles">Stream
+handles</a></li>
+<li><a href="#printing" id="toc-printing">Printing</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.console">55. <code>std.console</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Standard stream handle accessors and the
+<code>print</code>/<code>println</code>/<code>eprint</code>/<code>eprintln</code>
+functions.</p>
+<p><code>std.console</code> (<code>src/std/console.cn</code>) is a thin
+layer over <a href="54-std-io.html"><code>std.io</code></a>: every
+function here is a direct call into <code>std.io</code>’s handle
+constructors and <code>writer</code> trait.</p>
+<h2 id="stream-handles">Stream handles</h2>
+<pre class="cinder"><code>pub def stdout() -&gt; std.io.file_handle
+pub def stderr() -&gt; std.io.file_handle
+pub def stdin() -&gt; std.io.file_handle</code></pre>
+<p>Each returns a fresh <code>std.io.file_handle</code> wrapping the
+corresponding standard descriptor, via
+<code>std.io.stdout_handle</code>/<code>stderr_handle</code>/<code>stdin_handle</code>.</p>
+<h2 id="printing">Printing</h2>
+<pre class="cinder"><code>pub def print(s: str) -&gt; unit
+pub def println(s: str) -&gt; unit
+pub def eprint(s: str) -&gt; unit
+pub def eprintln(s: str) -&gt; unit</code></pre>
+<ul>
+<li><code>print(s)</code> writes <code>s</code>’s UTF-8 bytes to
+<code>stdout()</code> via <code>write_all</code>, discarding the
+result.</li>
+<li><code>println(s)</code> calls <code>print(s)</code> then
+<code>print("\n")</code> — two separate writes, not one.</li>
+<li><code>eprint</code>/<code>eprintln</code> are the same pair against
+<code>stderr()</code>.</li>
+</ul>
+<p>None of these four functions can report a write failure to the
+caller; a failing <code>write_all</code> is silently discarded. There is
+no error-propagating counterpart in this module — a caller that must
+observe I/O errors writes directly against a
+<code>std.io.file_handle</code> and its <code>writer</code> trait.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="54-std-io.html"><code>std.io</code></a> —
+<code>file_handle</code>, <code>writer</code>, <code>write_all</code>,
+the traits these functions are built on.</li>
+</ul>
+</body>
+</html>

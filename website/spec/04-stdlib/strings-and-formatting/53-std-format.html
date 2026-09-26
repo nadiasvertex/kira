@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>53-std-format</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">53-std-format</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.format" id="toc-std.format">53.
+<code>std.format</code></a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#format-specification-grammar"
+id="toc-format-specification-grammar">Format specification
+grammar</a></li>
+<li><a href="#format-spec-reference"
+id="toc-format-spec-reference">Format spec reference</a></li>
+<li><a href="#traits" id="toc-traits">Traits</a></li>
+<li><a href="#std.fmt-format_spec-and-the-padding-helpers"
+id="toc-std.fmt-format_spec-and-the-padding-helpers"><code>std.fmt</code>:
+<code>format_spec</code> and the padding helpers</a>
+<ul>
+<li><a href="#padding-alignment-and-zero-padding"
+id="toc-padding-alignment-and-zero-padding">Padding, alignment, and
+zero-padding</a></li>
+<li><a href="#fixed-signature-entry-points"
+id="toc-fixed-signature-entry-points">Fixed-signature entry
+points</a></li>
+</ul></li>
+<li><a href="#compile-time-checking"
+id="toc-compile-time-checking">Compile-time checking</a></li>
+<li><a href="#desugaring" id="toc-desugaring">Desugaring</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#errors" id="toc-errors">Errors</a></li>
+<li><a href="#why-per-capability-traits-not-a-single-formatspec"
+id="toc-why-per-capability-traits-not-a-single-formatspec">Why
+per-capability traits, not a single <code>format(spec)</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.format">53. <code>std.format</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers string interpolation’s format-specification syntax, the
+<code>show</code>/<code>debug</code>/<code>hex</code>/<code>octal</code>/<code>binary</code>
+formatting traits, and <code>std.fmt</code>’s <code>format_spec</code>
+type and padding helpers.</p>
+<h2 id="syntax">Syntax</h2>
+<pre class="cinder"><code>let a = &quot;{name}&quot;              # direct embedding — unchanged base behavior
+let b = &quot;{total :.2f}&quot;        # embedding + format spec
+let c = &quot;{total=}&quot;            # self-documenting: &quot;total=1234.5&quot;
+let d = &quot;{total=:.2f}&quot;        # self-documenting + spec: &quot;total=1234.50&quot;</code></pre>
+<p>Grammar (see <code>spec/cinder-grammar.ebnf</code>,
+<code>INTERP_EXPR</code>/<code>FORMAT_SPEC</code>):</p>
+<pre><code>INTERP_EXPR = &quot;{&quot; expr [ &quot;=&quot; ] [ &quot;:&quot; format_spec ] &quot;}&quot; ;</code></pre>
+<ul>
+<li><code>expr</code> is any expression — the same direct-embedding
+model interpolation already uses; there is no separate positional/named
+argument list to keep in sync with the template.</li>
+<li>A trailing <code>=</code> (before the optional <code>:</code>)
+requests the self-documenting form: the compiler captures
+<code>expr</code>’s exact source span as a string literal and renders
+<code>"&lt;source-text&gt;=&lt;formatted-value&gt;"</code>.</li>
+<li><code>:</code> introduces the format spec. It is a
+<strong>compile-time constant</strong>, parsed by the compiler into a
+typed <code>format_spec</code> value — never an expression itself,
+though <code>width</code>/<code>precision</code> inside it may each be a
+dynamic <code>{expr}</code>.</li>
+<li>An empty spec (<code>"{name :}"</code>) is equivalent to no spec
+(<code>"{name}"</code>): both mean “use <code>show()</code>”.</li>
+</ul>
+<h2 id="format-specification-grammar">Format specification grammar</h2>
+<pre><code>format_spec := [fill_align] [sign] [#] [0] [width] [.precision] [type]
+fill_align  := [fill_char] (&lt; | &gt; | ^)
+sign        := + | - | &#39; &#39;
+width       := decimal_integer | {expr}
+precision   := decimal_integer | {expr}
+type        := s | ? | d | x | X | o | b | e | E | f | g | G | c
+fill_char   := any character except { } : = \</code></pre>
+<h2 id="format-spec-reference">Format spec reference</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr>
+<th>Component</th>
+<th>Meaning</th>
+<th>Example</th>
+<th>Output</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><em>(none)</em></td>
+<td>Default <code>show()</code> representation</td>
+<td><code>{"hello"}</code></td>
+<td><code>hello</code></td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>String (same as default)</td>
+<td><code>{"hello" :s}</code></td>
+<td><code>hello</code></td>
+</tr>
+<tr>
+<td><code>?</code></td>
+<td>Debug representation (<code>debug</code> trait)</td>
+<td><code>{p :?}</code></td>
+<td><code>point { x: 1.0, y: 2.0 }</code></td>
+</tr>
+<tr>
+<td><code>&lt;</code></td>
+<td>Left-align</td>
+<td><code>{"hi" :&lt;5}</code></td>
+<td><code>"hi   "</code></td>
+</tr>
+<tr>
+<td><code>&gt;</code></td>
+<td>Right-align</td>
+<td><code>{"hi" :&gt;5}</code></td>
+<td><code>"   hi"</code></td>
+</tr>
+<tr>
+<td><code>^</code></td>
+<td>Center-align</td>
+<td><code>{"hi" :^5}</code></td>
+<td><code>" hi  "</code></td>
+</tr>
+<tr>
+<td><code>+</code></td>
+<td>Always show sign</td>
+<td><code>{-5 :+}</code> → <code>-5</code>; <code>{5 :+}</code></td>
+<td><code>+5</code></td>
+</tr>
+<tr>
+<td><code>-</code></td>
+<td>Sign only if negative (default)</td>
+<td><code>{-5 :-}</code> → <code>-5</code>; <code>{5 :-}</code></td>
+<td><code>5</code></td>
+</tr>
+<tr>
+<td><code>' '</code></td>
+<td>Reserve column for sign</td>
+<td><code>{5 : }</code></td>
+<td><code>" 5"</code></td>
+</tr>
+<tr>
+<td><code>#</code></td>
+<td>Alternate form</td>
+<td><code>{255 :#x}</code></td>
+<td><code>0xff</code></td>
+</tr>
+<tr>
+<td><code>0</code></td>
+<td>Zero-pad (sign/prefix-aware)</td>
+<td><code>{-42 :06}</code></td>
+<td><code>-00042</code></td>
+</tr>
+<tr>
+<td><code>width</code></td>
+<td>Minimum field width</td>
+<td><code>{42 :6}</code></td>
+<td><code>"    42"</code></td>
+</tr>
+<tr>
+<td><code>.prec</code> (str)</td>
+<td>Truncate to N scalar values</td>
+<td><code>{"hello" :.3}</code></td>
+<td><code>hel</code></td>
+</tr>
+<tr>
+<td><code>.prec</code> (float)</td>
+<td>Digits after the decimal point</td>
+<td><code>{3.14159 :.2f}</code></td>
+<td><code>3.14</code></td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>Decimal integer <em>(builtin only)</em></td>
+<td><code>{255 :d}</code></td>
+<td><code>255</code></td>
+</tr>
+<tr>
+<td><code>x</code></td>
+<td>Hex, lowercase (<code>hex</code> trait)</td>
+<td><code>{255 :x}</code></td>
+<td><code>ff</code></td>
+</tr>
+<tr>
+<td><code>X</code></td>
+<td>Hex, uppercase (<code>hex</code> trait, case-flipped)</td>
+<td><code>{255 :X}</code></td>
+<td><code>FF</code></td>
+</tr>
+<tr>
+<td><code>o</code></td>
+<td>Octal (<code>octal</code> trait)</td>
+<td><code>{255 :o}</code></td>
+<td><code>377</code></td>
+</tr>
+<tr>
+<td><code>b</code></td>
+<td>Binary (<code>binary</code> trait)</td>
+<td><code>{255 :b}</code></td>
+<td><code>11111111</code></td>
+</tr>
+<tr>
+<td><code>e</code> / <code>E</code></td>
+<td>Scientific <em>(builtin only)</em></td>
+<td><code>{1234.0 :.2e}</code></td>
+<td><code>1.23e3</code></td>
+</tr>
+<tr>
+<td><code>f</code></td>
+<td>Fixed-point <em>(builtin only)</em></td>
+<td><code>{3.14159 :.2f}</code></td>
+<td><code>3.14</code></td>
+</tr>
+<tr>
+<td><code>g</code> / <code>G</code></td>
+<td>General, shorter of <code>f</code>/<code>e</code> <em>(builtin
+only)</em></td>
+<td><code>{1234.0 :g}</code></td>
+<td><code>1234</code></td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td>Character from codepoint <em>(builtin only)</em></td>
+<td><code>{65 :c}</code></td>
+<td><code>A</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>d | e | E | f | g | G | c</code> are <strong>builtin
+only</strong>: satisfied exclusively by intrinsic formatting for the
+built-in numeric and <code>char</code> types, never by a user trait
+impl. <code>X</code> is not a separate trait from <code>x</code> — the
+compiler uppercases the ASCII result of <code>hex()</code> for the
+<code>X</code> style.</p>
+<h2 id="traits">Traits</h2>
+<p>Five traits, each a single
+<code>def &lt;name&gt;(self) -&gt; str</code> method — the same shape as
+<code>show</code>, so each is usable as a <code>box[trait]</code>
+object.</p>
+<pre class="cinder"><code>trait show:                  # existing (src/std/traits.cn)
+    def show(self) -&gt; str
+
+trait debug:                 # used for `?`; derivable via `deriving show, debug`
+    def debug(self) -&gt; str
+
+trait hex:                   # used for `x`/`X`
+    def hex(self) -&gt; str      # lowercase digit string, no &quot;0x&quot; prefix, no sign
+
+trait octal:                 # used for `o`
+    def octal(self) -&gt; str    # digit string, no &quot;0o&quot; prefix, no sign
+
+trait binary:                 # used for `b`
+    def binary(self) -&gt; str   # digit string, no &quot;0b&quot; prefix, no sign</code></pre>
+<p>All five are declared <code>pub</code> in
+<code>src/std/traits.cn</code>. Each of
+<code>hex</code>/<code>octal</code>/<code>binary</code> returns the
+unsigned digit string only — no sign, no <code>#</code>-prefix, no
+padding; the compiler-generated glue supplies sign, prefix, and padding
+uniformly via <code>pad_integral</code> (below), so an implementation
+never handles the spec itself.</p>
+<p>A derived <code>debug</code> renders
+<code>type_name { field1: value1.debug(), field2: value2.debug(), ... }</code>,
+recursively, the same shape a derived <code>show</code> builds.</p>
+<p>There is no single <code>format(spec)</code> trait — see “Why
+per-capability traits” below.</p>
+<h2
+id="std.fmt-format_spec-and-the-padding-helpers"><code>std.fmt</code>:
+<code>format_spec</code> and the padding helpers</h2>
+<pre class="cinder"><code>module std.fmt
+
+pub type align_mode = @left | @right | @center
+
+pub type sign_mode = @always | @negative_only | @space
+
+pub type format_spec = {
+    fill:      char,               # default &#39; &#39;
+    align:     option[align_mode], # none = type&#39;s default (left for str/show/debug, right for numeric)
+    sign:      sign_mode,          # default @negative_only
+    alternate: bool,                # &#39;#&#39; flag
+    zero_pad:  bool,                # &#39;0&#39; flag — see pad_integral
+    width:     option[usize],
+    precision: option[usize],
+}
+
+pub def pad_str(s: str, spec: format_spec) -&gt; str
+pub def pad_integral(negative: bool, prefix: str, digits: str, spec: format_spec) -&gt; str</code></pre>
+<p><code>src/std/fmt.cn</code>’s <code>format_spec</code> matches this
+exactly, field for field.</p>
+<h3 id="padding-alignment-and-zero-padding">Padding, alignment, and
+zero-padding</h3>
+<p>Every formatting call site — builtin or user-trait-backed — goes
+through exactly one of the two padding functions:</p>
+<ul>
+<li><p><strong><code>pad_str(s, spec)</code></strong> — for
+<code>show</code>/<code>debug</code>/<code>hex</code>/<code>octal</code>/<code>binary</code>
+output and for <code>str</code> itself. Pads <code>s</code> with
+<code>spec.fill</code> on the side(s) <code>spec.align</code> (or the
+type’s default) selects, truncating first to <code>spec.precision</code>
+scalar values if the source is <code>str</code> and precision is
+set.</p></li>
+<li><p><strong><code>pad_integral(negative, prefix, digits, spec)</code></strong>
+— for every numeric style (<code>d</code>,
+<code>x</code>/<code>X</code>, <code>o</code>, <code>b</code>,
+<code>e</code>/<code>E</code>, <code>f</code>,
+<code>g</code>/<code>G</code>), builtin or via a
+<code>hex</code>/<code>octal</code>/<code>binary</code> impl.
+Composition order:</p>
+<ol type="1">
+<li>Sign character: <code>-</code> if <code>negative</code>; else
+<code>+</code> if <code>spec.sign == @always</code>; else
+<code>' '</code> if <code>spec.sign == @space</code>; else nothing.</li>
+<li>Prefix: <code>prefix</code> (e.g. <code>"0x"</code>) if
+<code>spec.alternate</code>, else empty.</li>
+<li>If <code>spec.zero_pad</code> and no explicit
+<code>fill_align</code> was written: zeros go <em>between</em> the
+prefix and the digits — <code>sign + prefix + zeros + digits</code> — so
+<code>{-42 :06}</code> → <code>-00042</code> (not <code>000-42</code>)
+and <code>{255 :#010x}</code> → <code>0x000000ff</code> (not
+<code>000x000ff</code>). An explicit align always wins over
+<code>0</code>.</li>
+<li>Otherwise: the whole <code>sign + prefix + digits</code> string is
+padded as a unit via <code>spec.fill</code>/<code>spec.align</code>,
+exactly like <code>pad_str</code>.</li>
+</ol></li>
+</ul>
+<p>A <code>hex</code>/<code>octal</code>/<code>binary</code>
+implementation never sees a <code>format_spec</code> — it returns digits
+only, and <code>pad_integral</code> (called once, by compiler-generated
+code) composes sign/prefix/zero-padding for every numeric style
+uniformly.</p>
+<h3 id="fixed-signature-entry-points">Fixed-signature entry points</h3>
+<p><code>src/std/fmt.cn</code> exposes one function per builtin
+type/style combination that <code>hir::lower_interpolated_string</code>
+calls directly, so lowering never constructs control flow (bool →
+<code>"true"</code>/<code>"false"</code>, sign/magnitude splitting) by
+hand — it only lowers the embedded value, builds a
+<code>format_spec</code> literal, and calls one of these:</p>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Function</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fmt_show_str(s, spec)</code></td>
+<td><code>str</code>, default/<code>s</code> style</td>
+</tr>
+<tr>
+<td><code>fmt_debug_str(s, spec)</code></td>
+<td><code>str</code>, <code>?</code> style (quoted and escaped)</td>
+</tr>
+<tr>
+<td><code>fmt_show_bool(b, spec)</code></td>
+<td><code>bool</code>, default style
+(<code>"true"</code>/<code>"false"</code>)</td>
+</tr>
+<tr>
+<td><code>fmt_show_char(c, spec)</code> /
+<code>fmt_char_codepoint(cp, spec)</code></td>
+<td><code>char</code> / codepoint, <code>c</code> style</td>
+</tr>
+<tr>
+<td><code>fmt_show_i64(v, spec)</code> /
+<code>fmt_show_u64(v, spec)</code></td>
+<td>signed/unsigned 64-bit, decimal</td>
+</tr>
+<tr>
+<td><code>fmt_radix_i64(v, radix, uppercase, prefix, spec)</code> /
+<code>fmt_radix_u64(...)</code></td>
+<td>signed/unsigned 64-bit, arbitrary radix (backs
+<code>x</code>/<code>X</code>/<code>o</code>/<code>b</code>)</td>
+</tr>
+<tr>
+<td><code>fmt_float_fixed(v, precision, spec)</code></td>
+<td><code>f</code> style</td>
+</tr>
+<tr>
+<td><code>fmt_float_sci(v, precision, uppercase, spec)</code></td>
+<td><code>e</code>/<code>E</code> style</td>
+</tr>
+<tr>
+<td><code>fmt_float_general(v, precision, spec)</code></td>
+<td><code>g</code>/<code>G</code> style</td>
+</tr>
+</tbody>
+</table>
+<p>These sit on five <code>rt_fmt_*</code>/<code>rt_str_*</code>
+intrinsics (<code>rt_fmt_radix_digits</code>,
+<code>rt_fmt_f64_fixed</code>, <code>rt_fmt_f64_sci</code>,
+<code>rt_fmt_f64_general</code>,
+<code>rt_fmt_char_from_codepoint</code>, plus
+<code>rt_str_len_scalars</code>/<code>rt_str_repeat_char</code>/<code>rt_str_truncate_scalars</code>/<code>rt_str_concat</code>
+for the padding helpers), listed in the single shared intrinsic table
+<code>src/intrinsics.h</code>.</p>
+<h2 id="compile-time-checking">Compile-time checking</h2>
+<p>Every interpolation segment is checked at the point it’s parsed:</p>
+<ol type="1">
+<li><code>expr</code> type-checks normally, giving a static type
+<code>T</code>.</li>
+<li>The format spec’s type char selects a required capability:
+<ul>
+<li><em>(none)</em> / <code>s</code> → <code>T: show</code></li>
+<li><code>?</code> → <code>T: debug</code></li>
+<li><code>x</code> / <code>X</code> → <code>T</code> is a builtin
+integer, <strong>or</strong> <code>T: hex</code></li>
+<li><code>o</code> → <code>T</code> is a builtin integer,
+<strong>or</strong> <code>T: octal</code></li>
+<li><code>b</code> → <code>T</code> is a builtin integer,
+<strong>or</strong> <code>T: binary</code></li>
+<li><code>d</code> / <code>e</code> / <code>E</code> / <code>f</code> /
+<code>g</code> / <code>G</code> / <code>c</code> → <code>T</code> must
+be the matching builtin primitive category (no trait dispatch)</li>
+</ul></li>
+<li>An unsatisfied requirement is an ordinary unsatisfied-trait-bound
+diagnostic, the same machinery a <code>T: show + eq</code> bound check
+uses.</li>
+<li><code>.precision</code> is rejected on integer-flavored styles
+(<code>d</code>, <code>x</code>/<code>X</code>, <code>o</code>,
+<code>b</code>) syntactically, independent of whether the precision is a
+literal or a dynamic <code>{expr}</code>.</li>
+<li>A dynamic <code>{expr}</code> in
+<code>width</code>/<code>precision</code> must type-check as
+<code>usize</code>.</li>
+</ol>
+<h2 id="desugaring">Desugaring</h2>
+<p><code>"{name}: {total :.2f}"</code> desugars via quoting and splicing
+into a block expression that builds through
+<code>std.fmt.builder</code>:</p>
+<pre class="cinder"><code>static def desugar_interpolated_string(segments: list[interp_segment]) -&gt; expr:
+    let parts = for seg in segments =&gt;
+        match seg:
+            @literal(text) =&gt;
+                `(std.fmt.builder.append_literal(~(expr.lit(text))))`
+            @formatted(value_expr, spec) =&gt;
+                `(std.fmt.builder.append(~value_expr, ~(expr.lit(spec))))`
+    `{
+        let mut __b = std.fmt.builder.new()
+        ~(stmt.seq(parts))
+        __b.build()
+    }`</code></pre>
+<p>Each <code>@formatted</code> segment’s <code>~value_expr</code> is
+the user’s original embedded expression (hygienic — it does not capture
+names from the macro’s own scope). <code>std.fmt.builder.append</code>
+is generic over the trait the resolved format style needs, calling
+<code>.show()</code>/<code>.debug()</code>/<code>.hex()</code>/etc. as
+chosen during compile-time checking, then routing the result through
+<code>pad_str</code>/<code>pad_integral</code>. For a literal,
+fully-static format spec, the call chain monomorphizes and inlines — no
+runtime spec parsing.</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>let name = &quot;Alice&quot;
+let age  = 30
+let pi   = 3.1415926535
+
+println(&quot;Name: {name :&gt;10}&quot;)     # &quot;Name:      Alice&quot;
+println(&quot;Age:  {age :03}&quot;)       # &quot;Age:  030&quot;
+println(&quot;Pi:   {pi :.2f}&quot;)       # &quot;Pi:   3.14&quot;
+println(&quot;Hex:  {255 :04x}&quot;)      # &quot;Hex:  00ff&quot;
+println(&quot;Bin:  {255 :08b}&quot;)      # &quot;Bin:  11111111&quot;
+println(&quot;Sci:  {1234.0 :.2e}&quot;)   # &quot;Sci:  1.23e3&quot;</code></pre>
+<pre class="cinder"><code>type flags = { bits: uint16 }
+
+impl show for flags:
+    def show(self) -&gt; str: &quot;flags({self.bits})&quot;
+
+impl hex for flags:
+    def hex(self) -&gt; str: to_hex_digits(self.bits)
+
+let f = flags { bits: 0xBEEF }
+println(&quot;{f}&quot;)            # &quot;flags(48879)&quot;
+println(&quot;{f :#06x}&quot;)      # &quot;0xbeef&quot;</code></pre>
+<h2 id="errors">Errors</h2>
+<p>Diagnostics use the project’s nested
+<code>error:</code>/<code>help:</code>/<code>note:</code> shape:</p>
+<pre><code>error[E0090]: `str` does not implement `hex`
+  --&gt; src/main.cn:14:16
+   |
+14 |     let bad = &quot;{s :x}&quot;
+   |                   ^ `str` does not support hexadecimal formatting
+   |
+   help: `str` supports the default/`s` style (`show`) and `?` (`debug`)
+   note: implement `hex for str` yourself if you want `s :x` to mean
+         something specific — Cinder does not derive it, since there&#39;s no
+         single obvious hex rendering of arbitrary text</code></pre>
+<pre><code>error[E0091]: `.precision` is not allowed with `x`
+  --&gt; src/main.cn:16:16
+   |
+16 |     let bad = &quot;{42 :.2x}&quot;
+   |                    ^^ precision is only meaningful for `s`, `?`, `f`, `e`/`E`, `g`/`G`
+   |
+   help: for integer styles, use width and zero-padding instead: &quot;{42 :04x}&quot;</code></pre>
+<pre><code>error[E0092]: format width must be `usize`, found `str`
+  --&gt; src/main.cn:15:20
+   |
+15 |     let bad = &quot;{42 :{w}}&quot;
+   |                       ^ expected usize, found str
+   |
+   note: the expression inside `{...}` in a dynamic width must evaluate to `usize`</code></pre>
+<h2 id="why-per-capability-traits-not-a-single-formatspec">Why
+per-capability traits, not a single <code>format(spec)</code></h2>
+<p>An earlier design used a single <code>format</code> trait taking a
+runtime <code>format_spec</code> and matching on <code>spec.style</code>
+inside the body. Two structural problems ruled it out: (1) there is no
+static contract the compiler can check (“this type supports style A but
+not style B”) without either analyzing the method body or hardcoding the
+check for built-ins only — so the promised compile error degraded to a
+runtime <code>panic</code> for unsupported styles. (2) alignment became
+something each <code>format</code> impl had to remember to apply itself,
+with no enforcement. Splitting into
+<code>show</code>/<code>debug</code>/<code>hex</code>/<code>octal</code>/<code>binary</code>
+turns “does <code>T</code> support this style” into an ordinary
+<code>T: hex</code>-shaped trait-bound check at the call site, and moves
+padding entirely into the two centralized
+<code>pad_str</code>/<code>pad_integral</code> helpers. No runtime panic
+path exists for an unsupported style — it is a compile error.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Both backends share the <code>rt_fmt_*</code>/<code>rt_str_*</code>
+intrinsics that back this chapter, via the single dispatch table
+<code>src/intrinsics.h</code>; confirmed present in
+<code>src/runtime/fmt.{h,cpp}</code> and
+<code>src/bytecode/vm.cpp</code>, and reachable from
+<code>src/llvm_codegen/codegen.cpp</code> through the same generic
+intrinsic-declaration path every intrinsic uses (unlike
+<code>rt_str_eq</code>, <code>rt_fmt_*</code> needs no LLVM-side
+special-casing).
+<code>println</code>/<code>print</code>/<code>eprintln</code>/<code>eprint</code>
+and the interpolation/format-spec surface described here run end-to-end
+on both the bytecode VM and LLVM/AOT tiers. <code>format_spec</code> and
+the padding helpers in <code>src/std/fmt.cn</code> match this chapter’s
+reference exactly, field for field and function for function.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="52-std-string.html"><code>std.string</code></a> —
+<code>str</code>’s scalar-length/truncation/concatenation intrinsics
+used by <code>pad_str</code>.</li>
+</ul>
+</body>
+</html>

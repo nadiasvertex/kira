@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>17-shared-ownership-and-drop</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">17-shared-ownership-and-drop</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#shared-ownership-and-drop"
+id="toc-shared-ownership-and-drop">17. Shared Ownership and Drop</a>
+<ul>
+<li><a href="#shared-ownership" id="toc-shared-ownership">Shared
+Ownership</a></li>
+<li><a href="#destructors-drop" id="toc-destructors-drop">Destructors:
+<code>drop</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="shared-ownership-and-drop">17. Shared Ownership and Drop</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>shared[T]</code> reference-counted values, and the
+<code>drop</code> trait’s rules for destructor execution.</p>
+<h2 id="shared-ownership">Shared Ownership</h2>
+<p>When single ownership is too restrictive — a value held by multiple
+parts of a program at once — use <code>shared</code>:</p>
+<pre class="cinder"><code>let config: shared config_t = shared load_config(&quot;app.toml&quot;)
+
+# config can now be cloned freely; both copies refer to the same data
+let worker_config = config.clone()</code></pre>
+<ul>
+<li><code>shared</code> values are <em>atomically</em>
+reference-counted, so a single <code>shared</code> value is always safe
+to hand to another task.</li>
+<li>A <code>shared</code> handle gives <strong>read-only</strong> access
+— it never yields <code>&amp;mut</code> — so any number of tasks may
+hold and read the same <code>shared</code> value at once without a data
+race.</li>
+<li>To <em>mutate</em> data behind a <code>shared</code>, wrap it in a
+synchronized cell such as <code>mutex[T]</code> (see <a
+href="30-data-race-freedom.html">Data-Race Freedom</a>).</li>
+<li><code>shared</code> carries a small runtime cost; prefer single
+ownership, and prefer scoped borrowing (free) whenever possible.</li>
+</ul>
+<h2 id="destructors-drop">Destructors: <code>drop</code></h2>
+<p>A type that owns a resource — a file handle, a socket, a lock —
+implements <code>drop</code> to release it automatically:</p>
+<pre class="cinder"><code>trait drop:
+    def drop(mut self) -&gt; unit
+
+type file = { fd: raw_fd }
+
+impl drop for file:
+    def drop(mut self) -&gt; unit:
+        close_fd(self.fd)</code></pre>
+<p><code>drop()</code> runs when a value’s single owner goes out of
+scope, and nothing is added to types that do not implement
+<code>drop</code> (zero cost when unused). There is no Python-style
+<code>with</code>/context-manager protocol to opt into — a type just
+implements <code>drop</code>, and it runs at the end of <em>any</em>
+scope the value’s owner is declared in, including a bare <a
+href="../01-core/08-control-flow.html#scope"><code>scope</code></a>
+block written solely to end that lifetime early. Rules:</p>
+<ul>
+<li>A binding that was <strong>moved from</strong> never drops —
+ownership already transferred, nothing left to release.</li>
+<li>Within one scope, values drop in <strong>reverse declaration
+order</strong>.</li>
+<li>A struct or sum type made of fields that implement <code>drop</code>
+gets an implicit field-wise drop for free: the type’s own
+<code>drop()</code> (if any) runs first, then each field drops in
+declaration order. A type writes <code>drop()</code> only for the
+resource it directly owns, never to manually recurse into its
+fields.</li>
+<li><code>shared[T]</code> drops the pointee when the atomic reference
+count reaches zero, not when any single handle goes out of scope.</li>
+<li>There is no direct <code>x.drop()</code> call — calling it
+explicitly and then letting scope exit call it again would double-drop.
+To release a value early, use the prelude function <code>drop(x)</code>,
+which moves <code>x</code> in and drops it.</li>
+<li>A panic <strong>unwinds through drops</strong>: every live
+destructor on the panicking path still runs, the same as on an ordinary
+early return.</li>
+</ul>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><strong><code>drop</code> runs at scope exit for the common
+case.</strong> <code>checker::resolve_drop_plans</code>
+(<code>src/semantic/check.cpp</code>) resolves each droppable type’s own
+<code>impl drop</code> plus its droppable fields;
+<code>hir::compute_drop_schedule</code>
+(<code>src/hir/drop_schedule.{h,cpp}</code>) and
+<code>hir::lowerer</code> (<code>src/hir/lower.cpp</code>) synthesize
+the calls. Verified end-to-end, both backends, exact output:
+reverse-declaration-order drop, a moved-from binding never dropping,
+implicit field-wise drop for a struct with no own
+<code>impl drop</code>, and drop firing correctly on early
+<code>return</code>/<code>break</code>/<code>continue</code>
+(<code>src/testdata/std_test/scope_exit_drop.cn</code>). Direct
+<code>x.drop()</code> is rejected, as this chapter requires
+(<code>src/testdata/semantic_check_test/reject_direct_drop_call.cn</code>).
+<ul>
+<li>Not yet covered: a block or function whose tail is a real
+(non-<code>unit</code>) value skips scope-exit drop for that scope
+entirely, rather than corrupting the returned value (a documented leak,
+never a double-drop); a value-returning <code>return expr</code> does
+not drop a local <code>expr</code> only <em>borrows</em> from (a
+directly-returned local, like <code>return h</code>, is unaffected);
+match-arm/<code>for</code>-loop/destructuring-pattern bindings are not
+tracked, only a plain <code>let</code>/<code>var</code>/simple
+parameter; and a sum type’s field-wise drop (payload recursion) is not
+implemented — only its own <code>impl drop</code> runs.</li>
+<li>Unwinding through drops on panic is moot: this compiler has no stack
+unwinding at all (<code>panic</code> traps/aborts).</li>
+<li>The prelude <code>drop(x)</code> free function still does not exist.
+A call to it is accepted by the checker anyway and then fails in
+lowering with “no concrete checked type is available for this node” — a
+compiler-gap diagnostic for what is really an undefined name. (The
+<code>drop</code> <em>trait</em> is correctly prelude-reachable:
+<code>impl drop for T</code> needs no <code>use</code>.)</li>
+<li><code>src/semantic/move_check.h</code> remains the move-tracking
+substrate these rules build on; <code>hir::compute_drop_schedule</code>
+is a second, HIR-oriented walker alongside it, not a replacement (see
+that file’s doc comment for why).</li>
+</ul></li>
+<li><strong><code>shared[T]</code> is a name with nothing behind
+it.</strong> <code>shared</code> is registered as a builtin generic
+(<code>src/semantic/types.cpp:51</code>) and that is the entire
+implementation. The <code>shared</code> expression form yields a plain
+reference — <code>let a: shared t = shared t{ id: 1 }</code> fails with
+<code>expected `shared[t]`, found `&amp;t`</code> — and
+<code>shared[T]</code> has no methods, so <code>.clone()</code> does not
+resolve. No atomic reference count exists anywhere in the source tree,
+so neither the read-only-access guarantee nor drop-at-zero is enforced
+or implemented.</li>
+<li><strong>The <code>scope</code> block this chapter relies on does not
+parse.</strong> <code>scope_stmt</code> is in
+<code>spec/cinder-grammar.ebnf</code>, but there is no
+<code>kw_scope</code> token and no parser support, so the mechanism
+named above for ending a lifetime early is unavailable.</li>
+</ul>
+<p>Tracked as items 6–8 in <a href="../../todo.html">todo.md</a>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="14-ownership-and-borrowing.html">Ownership and
+Borrowing</a> — ownership and moves that <code>drop</code> runs
+against.</li>
+<li><a href="../01-core/08-control-flow.html#scope">Control Flow</a> —
+the <code>scope</code> block, for ending a value’s lifetime (and its
+drop) before the enclosing scope would.</li>
+<li><a href="30-data-race-freedom.html">Data-Race Freedom</a> —
+<code>mutex[T]</code>/<code>rwlock[T]</code>/<code>atomic[T]</code> for
+mutating behind <code>shared</code>.</li>
+</ul>
+</body>
+</html>

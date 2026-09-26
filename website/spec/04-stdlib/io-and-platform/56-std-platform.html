@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>56-std-platform</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">56-std-platform</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.platform" id="toc-std.platform">56.
+<code>std.platform</code></a>
+<ul>
+<li><a href="#types" id="toc-types">Types</a></li>
+<li><a href="#intrinsics" id="toc-intrinsics">Intrinsics</a></li>
+<li><a href="#target-queries-compile-time"
+id="toc-target-queries-compile-time">Target queries
+(compile-time)</a></li>
+<li><a href="#runtime-queries" id="toc-runtime-queries">Runtime
+queries</a></li>
+<li><a href="#cross-platform-convenience"
+id="toc-cross-platform-convenience">Cross-platform convenience</a></li>
+<li><a href="#platform-specific-queries"
+id="toc-platform-specific-queries">Platform-specific queries</a></li>
+<li><a href="#show-implementations"
+id="toc-show-implementations"><code>show</code> implementations</a></li>
+<li><a href="#design-decisions" id="toc-design-decisions">Design
+decisions</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.platform">56. <code>std.platform</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Compile-time target introspection and runtime host introspection:
+architecture, OS family, endianness, and Cinder toolchain build
+metadata.</p>
+<p><code>std.platform</code> (<code>src/std/platform.cn</code>) resolves
+a tension between two kinds of question a program can ask about “the
+platform”:</p>
+<ul>
+<li><strong>Target</strong> — architecture, pointer width, endianness,
+OS family — is knowable when the binary is built, computed once per
+compile from the toolchain’s own preprocessor knowledge
+(<code>__x86_64__</code>, <code>__APPLE__</code>,
+<code>__linux__</code>, and similar), and exposed as <code>pure</code>
+accessor functions. Cinder has no <code>--target</code> flag or
+cross-compilation support, so “target” and “the host the compiler itself
+was built on” are currently identical.</li>
+<li><strong>Host</strong> — hostname, detailed OS release, processor
+name — can only be known by asking the OS at runtime, through thin
+intrinsics.</li>
+</ul>
+<p>Some of this module’s declarations are not present in the checked-in
+<code>src/std/platform.cn</code> source: the target/build-info accessor
+functions (<code>target_arch</code>, <code>target_os</code>,
+<code>target_os_family</code>, <code>target_vendor</code>,
+<code>target_env</code>, <code>target_endianness</code>,
+<code>target_pointer_width</code>, <code>cinder_version</code>,
+<code>cinder_implementation</code>, <code>cinder_compiler</code>,
+<code>cinder_build_date</code>) are generated and spliced in by the
+driver
+(<code>generate_platform_target_accessors</code>/<code>assemble_platform_module_source</code>,
+<code>src/driver/driver.cpp</code>) at compile time, each embedding its
+value as a literal directly in the function body. They cannot be
+declared in the checked-in file itself — a module path can only be
+declared by one file — and are generated as functions rather than
+<code>pub static</code> constants because of a bytecode-lowering bug
+with that alternative (see
+<code>generate_platform_target_accessors</code>’s doc comment).
+<code>target_os_family()</code> in particular is classified in C++
+(<code>detect_target_os</code>) and baked in directly, rather than
+computed at runtime from <code>target_os()</code>’s string, because
+neither backend implements <code>str ==</code> yet for the general
+case.</p>
+<h2 id="types">Types</h2>
+<pre class="cinder"><code>pub type architecture = @x86_64 | @aarch64 | @arm | @riscv32 | @riscv64 | @wasm32 | @wasm64 | @other(str)
+pub type os_family = @unix | @windows | @macos | @other(str)
+pub type endianness = @little | @big
+
+pub type platform_info = {
+    system: str,
+    node: option[str],
+    release: option[str],
+    version: option[str],
+    machine_arch: architecture,
+    processor: option[str],
+    endianness: endianness,
+    pointer_width: usize,
+    os_family: os_family,
+}
+
+pub type cinder_build = {
+    version: str,
+    implementation: str,
+    compiler: str,
+    build_date: str,
+}
+
+pub type libc_version = { name: str, version: str }
+
+pub type windows_version = {
+    release: str,
+    version: str,
+    csd_version: str,
+    platform_type: str,
+}
+
+pub type macos_version = {
+    release: str,
+    version: str,
+    dev_stage: str,
+    non_release_version: str,
+    machine_arch: str,
+}</code></pre>
+<p><code>architecture</code> and <code>os_family</code> are extensible
+sum types (<code>@other(str)</code>), so an unsupported port stays
+representable without a stdlib change.</p>
+<p>Every field or parameter that would naturally be called
+<code>machine</code> is named <code>machine_arch</code> instead, because
+<code>machine</code> is a reserved keyword — the function modifier
+opting a function body into machine-level arithmetic.</p>
+<h2 id="intrinsics">Intrinsics</h2>
+<pre class="cinder"><code>type uname_raw = { sysname: str, nodename: str, release: str, version: str, machine_arch: str }
+type winver_raw = { major: uint32, minor: uint32, build: uint32, platform_id: uint32, csd_version: str }
+type macver_raw = { release: str, version: str, dev_stage: str, non_release_version: str, machine_arch: str }
+
+intrinsic def rt_uname() -&gt; result[uname_raw, io_errno]
+intrinsic def rt_libc_version() -&gt; result[libc_version, io_errno]
+intrinsic def rt_windows_version() -&gt; result[winver_raw, io_errno]
+intrinsic def rt_macos_version() -&gt; result[macver_raw, io_errno]
+intrinsic def rt_gethostname() -&gt; result[str, io_errno]
+intrinsic def rt_processor_name() -&gt; result[str, io_errno]</code></pre>
+<p>All six are declared unconditionally rather than gated per platform:
+a native implementation (<code>src/runtime/platform.cpp</code>,
+<code>src/bytecode/vm.cpp</code>) reports
+<code>io_errno { code: ENOSYS }</code> when queried on a host it doesn’t
+describe, so an inapplicable platform costs code size, not correctness.
+<code>rt_libc_version</code> returns the <code>libc_version</code>
+struct directly rather than a raw string the caller would have to split,
+so <code>std.platform</code> never needs string splitting for its own
+purposes.</p>
+<p><code>io_error</code>/<code>io_errno</code> are declared in
+<code>std.io</code>; because a struct literal’s type name must be a
+single identifier (the parser does not accept a qualified path directly
+before <code>{</code>), this module aliases them locally:</p>
+<pre class="cinder"><code>type io_error = std.io.io_error
+type io_errno = std.io.io_errno</code></pre>
+<h2 id="target-queries-compile-time">Target queries (compile-time)</h2>
+<pre class="cinder"><code>pub pure def target_arch() -&gt; architecture
+pub pure def target_os() -&gt; str
+pub pure def target_os_family() -&gt; os_family
+pub pure def target_vendor() -&gt; str
+pub pure def target_env() -&gt; str
+pub pure def target_endianness() -&gt; endianness
+pub pure def target_pointer_width() -&gt; usize
+
+pub pure def is_unix() -&gt; bool
+pub pure def is_windows() -&gt; bool
+pub pure def is_macos() -&gt; bool</code></pre>
+<p>All <code>pure</code>, since the target never changes at runtime.
+<code>is_unix</code>/<code>is_windows</code>/<code>is_macos</code>
+<code>match</code> on <code>target_os_family()</code> rather than
+comparing with <code>==</code>, since sum-type <code>==</code> has no
+runtime codegen on either backend (only the compile-time evaluator
+understands it).</p>
+<h2 id="runtime-queries">Runtime queries</h2>
+<pre class="cinder"><code>pub def node() -&gt; result[str, io_error]
+pub def processor() -&gt; result[str, io_error]
+pub def release() -&gt; result[str, io_error]
+pub def version() -&gt; result[str, io_error]</code></pre>
+<p><code>node</code>/<code>processor</code> propagate
+<code>rt_gethostname</code>/<code>rt_processor_name</code> directly via
+<code>?</code>.</p>
+<p><code>release</code>/<code>version</code> genuinely differ per
+platform but are each a single unconditional definition dispatching
+internally on the runtime value of <code>target_os_family()</code>,
+rather than one definition per platform selected by
+<code>static if</code>: item-level
+<code>static if</code>/<code>else</code> only affects that file’s own
+compile-time checking, it does not splice a definition into the module’s
+ordinary scope for other code to call.</p>
+<pre class="cinder"><code>pub def release() -&gt; result[str, io_error]:
+    match target_os_family():
+        @unix    =&gt;: let raw = rt_uname()?; return @ok(raw.release)
+        @windows =&gt;: let raw = rt_windows_version()?; return @ok(&quot;{raw.major}.{raw.minor}&quot;)
+        @macos   =&gt;: let raw = rt_macos_version()?; return @ok(raw.release)
+        @other(_) =&gt; @err(io_error.from(io_errno { code: 0 }))</code></pre>
+<p><code>version()</code> follows the same shape, formatting
+<code>"{major}.{minor}.{build}"</code> on the Windows arm.</p>
+<p>Error propagation throughout this module uses <code>?</code>, not
+<code>.map</code>/<code>.map_err</code>/<code>.ok()</code>:
+<code>?</code> is Cinder’s one propagation primitive, and converts a
+failing intrinsic’s <code>io_errno</code> to <code>io_error</code>
+implicitly via <code>impl from[io_errno] for io_error</code> (see <a
+href="54-std-io.html"><code>std.io</code></a>). Swallowing an error into
+<code>option</code> instead of propagating it is spelled with an
+explicit <code>match</code> (see <code>result_to_option</code>
+below).</p>
+<h2 id="cross-platform-convenience">Cross-platform convenience</h2>
+<pre class="cinder"><code>pub def uname() -&gt; platform_info
+pub def platform() -&gt; str
+pub def cinder_build_info() -&gt; cinder_build</code></pre>
+<ul>
+<li><code>uname()</code> assembles a <code>platform_info</code>: target
+fields (<code>system</code>, <code>machine_arch</code>,
+<code>endianness</code>, <code>pointer_width</code>,
+<code>os_family</code>) come from the <code>pure</code> target queries
+directly; host fields (<code>node</code>, <code>release</code>,
+<code>version</code>, <code>processor</code>) come from the runtime
+queries above, each converted from <code>result</code> to
+<code>option</code> by a private helper so a query failure becomes
+<code>@none</code> rather than propagating. <code>@none</code> (could
+not determine) is distinguishable from <code>@some("")</code> (genuinely
+empty from the OS) — there is no sentinel value.</li>
+<li><code>platform()</code> never fails: it formats
+<code>"{target_os()}-{release}-{arch}-{processor}"</code>, substituting
+<code>"unknown"</code> for any runtime query that returned
+<code>@err</code>.</li>
+<li><code>cinder_build_info()</code> is <code>pure</code>: it reads the
+four driver-generated build accessors (<code>cinder_version</code>,
+<code>cinder_implementation</code>, <code>cinder_compiler</code>,
+<code>cinder_build_date</code>) and assembles a
+<code>cinder_build</code>.</li>
+</ul>
+<h2 id="platform-specific-queries">Platform-specific queries</h2>
+<pre class="cinder"><code>pub def libc_ver() -&gt; option[libc_version]
+pub def win32_ver() -&gt; option[windows_version]
+pub def mac_ver() -&gt; option[macos_version]</code></pre>
+<p>Each first checks the corresponding
+<code>is_unix</code>/<code>is_windows</code>/<code>is_macos</code>
+target predicate and returns <code>@none</code> immediately if it does
+not match; otherwise it calls the corresponding intrinsic and returns
+<code>@none</code> on <code>@err</code>, <code>@some(...)</code> on
+<code>@ok</code>. <code>win32_ver</code>/<code>mac_ver</code>
+additionally reshape the raw intrinsic struct
+(<code>winver_raw</code>/<code>macver_raw</code>) into the public
+<code>windows_version</code>/<code>macos_version</code> type via private
+helpers
+<code>parse_windows_version</code>/<code>parse_macos_version</code>.</p>
+<p>Calling a Windows-only query on macOS is not an error — the
+information simply does not apply — so these return <code>option</code>,
+not <code>result</code>, letting <code>if let</code> be the natural way
+to consume platform-specific data, distinct from genuine I/O
+failure.</p>
+<h2 id="show-implementations"><code>show</code> implementations</h2>
+<p><code>architecture</code>, <code>os_family</code>,
+<code>endianness</code>, <code>platform_info</code>,
+<code>cinder_build</code>, <code>libc_version</code>,
+<code>windows_version</code>, and <code>macos_version</code> each have a
+hand-written <code>impl show</code>. These are hand-written rather than
+<code>deriving</code>, because <code>deriving</code> only generates real
+code for struct-shaped types today — a sum type
+(<code>architecture</code>, <code>os_family</code>,
+<code>endianness</code>) gains nothing from listing it.</p>
+<h2 id="design-decisions">Design decisions</h2>
+<table>
+<colgroup>
+<col style="width: 50%" />
+<col style="width: 50%" />
+</colgroup>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Target/build info are <code>pure def</code>s, not
+<code>pub static</code> constants</td>
+<td>Every target property is a function of the compile, not stored
+state</td>
+</tr>
+<tr>
+<td>Host info is <code>result[T, io_error]</code></td>
+<td>OS calls can genuinely fail; the type forces the caller to decide
+what to do</td>
+</tr>
+<tr>
+<td>Error propagation uses <code>?</code>, not
+<code>.map</code>/<code>.map_err</code>/<code>.ok()</code></td>
+<td><code>?</code> is the language’s one propagation primitive, with
+implicit <code>from</code>-based conversion</td>
+</tr>
+<tr>
+<td>All intrinsics/raw structs are declared unconditionally</td>
+<td>One code path; an inapplicable platform reports “not supported,” it
+doesn’t need to not exist</td>
+</tr>
+<tr>
+<td><code>release()</code>/<code>version()</code> are single definitions
+matching runtime <code>target_os_family()</code></td>
+<td>One function per concept, dispatching internally, rather than one
+function per platform</td>
+</tr>
+<tr>
+<td><code>uname()</code> uses <code>option[str]</code> for runtime
+fields</td>
+<td><code>@none</code> (could not query) and <code>@some("")</code>
+(genuinely empty) are distinguishable</td>
+</tr>
+<tr>
+<td><code>platform()</code> never fails</td>
+<td>It is a formatting convenience; <code>"unknown"</code> is an
+acceptable fallback</td>
+</tr>
+<tr>
+<td>Platform-specific functions return <code>option</code></td>
+<td>Calling <code>libc_ver()</code> on Windows is not an error — the
+information simply does not apply</td>
+</tr>
+<tr>
+<td><code>architecture</code>/<code>os_family</code> are sum types with
+<code>@other</code></td>
+<td>Invalid states unrepresentable for known platforms, while remaining
+extensible</td>
+</tr>
+<tr>
+<td>Fields that would be named <code>machine</code> are
+<code>machine_arch</code></td>
+<td><code>machine</code> is a reserved function-modifier keyword</td>
+</tr>
+</tbody>
+</table>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="54-std-io.html"><code>std.io</code></a> — the
+<code>io_errno</code>-to-<code>io_error</code> conversion this module
+reuses.</li>
+<li><a href="57-std-fs-path.html"><code>std.fs.path</code></a> —
+consults <code>is_windows()</code> at runtime for separator and
+absolute-path conventions.</li>
+</ul>
+</body>
+</html>

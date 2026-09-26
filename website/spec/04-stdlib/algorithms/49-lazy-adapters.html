@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>49-lazy-adapters</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">49-lazy-adapters</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#lazy-adapters" id="toc-lazy-adapters">49. Lazy
+Adapters</a>
+<ul>
+<li><a href="#known-gap-unique" id="toc-known-gap-unique">Known gap:
+<code>unique</code></a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="lazy-adapters">49. Lazy Adapters</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers every lazy iterator adapter in <code>src/std/algo.cn</code>: a
+free generic function returning a generic struct implementing
+<code>iterator[T]</code> (see <a href="48-iterator-protocol.html">The
+Iterator Protocol</a>). Nothing is evaluated until the resulting chain
+is drained by a terminal (see <a
+href="50-aggregation.html">Aggregation</a>); building an adapter costs
+no allocation and does no work.</p>
+<p>Each entry gives the constructor’s signature and its exact semantics.
+<code>it</code> is always taken by value (moved) and drives the
+adapter’s <code>next</code>.</p>
+<ul>
+<li><strong><code>map[I, T, U](it: I, f: fn(T) -&gt; U) -&gt; map_iter[I, T, U] where I: iterator[T]</code></strong>
+— applies <code>f</code> to each element. One-to-one, so
+<code>size_hint</code> passes through unchanged from the source.</li>
+<li><strong><code>filter[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; filter_iter[I, T] where I: iterator[T]</code></strong>
+— yields only elements satisfying <code>pred</code>.
+<code>size_hint</code> is not refined from the source (stays at the
+default <code>0</code>): <code>filter</code> may drop every element, so
+<code>0</code> is the only honest lower bound.</li>
+<li><strong><code>filter_map[I, T, U](it: I, f: fn(T) -&gt; option[U]) -&gt; filter_map_iter[I, T, U] where I: iterator[T]</code></strong>
+— applies <code>f</code> and keeps the <code>@some</code> results.
+<code>map</code> and <code>filter</code> in one pass; the spelling to
+reach for when the test for keeping an element is the same work as
+producing it.</li>
+<li><strong><code>take[I, T](it: I, n: usize) -&gt; take_iter[I, T] where I: iterator[T]</code></strong>
+— yields at most the first <code>n</code> elements.
+<code>size_hint</code> is the lesser of <code>n</code> and the
+source’s.</li>
+<li><strong><code>skip[I, T](it: I, n: usize) -&gt; skip_iter[I, T] where I: iterator[T]</code></strong>
+— discards the first <code>n</code> elements, lazily (the skip happens
+on the first <code>next</code> call, not in the constructor).
+<code>size_hint</code> is <code>max(0, source_hint - n)</code>.</li>
+<li><strong><code>take_while[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; take_while_iter[I, T] where I: iterator[T]</code></strong>
+— yields elements until <code>pred</code> first fails, then stops for
+good (the stopping condition latches; a later element satisfying
+<code>pred</code> again is not resumed).</li>
+<li><strong><code>skip_while[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; skip_while_iter[I, T] where I: iterator[T]</code></strong>
+— discards a leading run of elements satisfying <code>pred</code>, then
+yields everything after, including later elements that would satisfy
+<code>pred</code> again (only a <em>prefix</em> is dropped).</li>
+<li><strong><code>step_by[I, T](it: I, n: usize) -&gt; step_by_iter[I, T] where I: iterator[T]</code></strong>
+— yields every <code>n</code>th element, starting with the first
+(elements <code>0, n, 2n, ...</code> of the source).</li>
+<li><strong><code>chain[I, J, T](it: I, rest: J) -&gt; chain_iter[I, J, T] where I: iterator[T], J: iterator[T]</code></strong>
+— yields all of <code>it</code>’s elements, then all of
+<code>rest</code>’s. Concatenates two streams; does not interleave them.
+<code>size_hint</code> sums both sources.</li>
+<li><strong><code>rev[I, T](it: I) -&gt; rev_iter[I, T] where I: double_ended[T]</code></strong>
+— yields the source’s elements back to front, by calling
+<code>next_back</code> on the source. Requires
+<code>double_ended[T]</code>, which is what keeps this lazy rather than
+buffering.</li>
+<li><strong><code>peekable[I, T](it: I) -&gt; peekable_iter[I, T] where I: iterator[T]</code></strong>
+— adapts an iterator so its next element can be examined without
+consuming it. Paired with a free function, not a trait method:
+<ul>
+<li><strong><code>peek[I, T](it: &amp;mut peekable_iter[I, T]) -&gt; option[T] where I: iterator[T]</code></strong>
+— returns the next element without consuming it; repeated calls return
+the same element, and that element is what the following
+<code>next</code> yields.</li>
+</ul></li>
+<li><strong><code>scan[I, T, S](it: I, init: S, f: fn(S, T) -&gt; S) -&gt; scan_iter[I, T, S] where I: iterator[T]</code></strong>
+— yields a running accumulation: <code>fold</code> with its intermediate
+results kept. The initial state is not itself yielded; the first element
+out is the state after folding in the first element.</li>
+<li><strong><code>inspect[I, T](it: I, f: fn(T) -&gt; unit) -&gt; inspect_iter[I, T] where I: iterator[T]</code></strong>
+— runs <code>f</code> on each element as it passes through, yielding the
+element unchanged. For observing a pipeline (logging, counting) without
+altering it; because the chain is lazy, <code>f</code> runs only for
+elements actually drawn.</li>
+<li><strong><code>zip[I, J, T, U](it: I, other: J) -&gt; zip_iter[I, J, T, U] where I: iterator[T], J: iterator[U]</code></strong>
+— pairs elements of two iterators into <code>(T, U)</code> tuples. Stops
+as soon as either source does, so the result is as long as the shorter
+one. <code>size_hint</code> is the lesser of the two.</li>
+<li><strong><code>enumerate[I, T](it: I) -&gt; enumerate_iter[I, T] where I: iterator[T]</code></strong>
+— pairs each element with its zero-based position, counting from the
+point <code>enumerate</code> is applied (placing it after a
+<code>filter</code> numbers the <em>kept</em> elements
+consecutively).</li>
+<li><strong><code>flatten[I, J, T](it: I) -&gt; flatten_iter[I, J, T] where I: iterator[J], J: iterator[T]</code></strong>
+— yields the elements of each of an iterator-of-iterators’ inner
+iterators, in order, flattening exactly one level. Empty inner iterators
+contribute nothing and are skipped without yielding.
+<code>size_hint</code> is not refined (stays at the default
+<code>0</code>): an outer count says nothing about the number of
+elements the inners will actually yield.</li>
+<li><strong><code>flat_map[I, T, J, U](it: I, f: fn(T) -&gt; J) -&gt; flat_map_iter[I, T, J, U] where I: iterator[T], J: iterator[U]</code></strong>
+— <code>it.map(f).flatten()</code> in one adapter. <code>f</code> maps
+each element to an iterator; <code>f</code> is not called on an element
+until its predecessor’s elements have been fully drained.</li>
+<li><strong><code>values[I, T](it: I) -&gt; map_iter[I, &amp;T, T] where I: iterator[&amp;T]</code></strong>
+— dereferences a <code>&amp;T</code>-yielding iterator into a
+<code>T</code>-yielding one (<code>it.map(x =&gt; *x)</code>, packaged
+so a reference-iteration chain does not need to spell it out). Typically
+opens a chain: <code>xs.iter().values().sum()</code>.</li>
+</ul>
+<h2 id="known-gap-unique">Known gap: <code>unique</code></h2>
+<p><code>spec/collections-algorithms-design.md</code> §6.1 lists
+<code>unique</code> (bound <code>T: hash + eq</code>) as a lazy adapter
+alongside the ones above. It is <strong>not implemented</strong> — there
+is no <code>unique</code>/<code>unique_iter</code> in
+<code>src/std/algo.cn</code>. Treat it as planned; the <code>hash</code>
+trait it would depend on is itself part of the not-yet-built <a
+href="../collections/46-unordered-map-and-set.html">unordered
+map/set</a> work.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="48-iterator-protocol.html">The Iterator Protocol</a> — the
+<code>iterator[T]</code> trait every adapter here implements.</li>
+<li><a href="50-aggregation.html">Aggregation</a> — the terminals that
+drain an adapter chain.</li>
+</ul>
+</body>
+</html>

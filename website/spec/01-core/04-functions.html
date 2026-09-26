@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>04-functions</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">04-functions</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#functions" id="toc-functions">4. Functions</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#type-inference" id="toc-type-inference">Type
+inference</a></li>
+<li><a href="#expression-bodied-functions"
+id="toc-expression-bodied-functions">Expression-bodied
+functions</a></li>
+<li><a href="#named-arguments-and-defaults"
+id="toc-named-arguments-and-defaults">Named arguments and
+defaults</a></li>
+<li><a href="#functions-as-values"
+id="toc-functions-as-values">Functions as values</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="functions">4. Functions</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>def</code>, parameter/return-type inference and its
+limits, named arguments and defaults, and functions as values.</p>
+<h2 id="syntax">Syntax</h2>
+<p><code>func_decl</code> in <code>spec/cinder-grammar.ebnf</code>.</p>
+<pre class="cinder"><code>def add(a: int32, b: int32) -&gt; int32:
+    return a + b</code></pre>
+<p>The last expression of the body is the return value when no explicit
+<code>return</code> is reached (functions are expression-bodied like
+blocks generally are).</p>
+<h2 id="type-inference">Type inference</h2>
+<p>A parameter or return type may be omitted. When omitted, the compiler
+infers it <strong>from the function’s body only</strong> — never from a
+call site — assigning each unannotated parameter the most general type
+its uses in the body allow.</p>
+<pre class="cinder"><code>def double(x):
+    return x * 2        # x can be any number; double works for all of them</code></pre>
+<p>An unannotated parameter is not dynamically typed; it is resolved at
+compile time to the widest type the body permits (an implicit generic —
+the Intermediate chapter on generic functions formalizes this).
+Annotating narrows it to one concrete type:</p>
+<pre class="cinder"><code>def double(x: int32) -&gt; int32:
+    return x * 2        # now double is specifically for int32</code></pre>
+<p>Two rules bound inference:</p>
+<ol type="1">
+<li><strong><code>pub</code> functions must annotate every parameter and
+the return type.</strong> Diagnosed at the declaration
+(<code>public function \</code>{name}` must annotate its parameters
+…<code>,</code>src/semantic/check.cpp`). An exported function’s
+signature is a contract for external callers, so it is written down
+rather than inferred.</li>
+<li><strong>Inference never crosses a call.</strong> A function’s types
+are determined by its own body alone. When the body underdetermines a
+type, the compiler reports it and asks for an annotation rather than
+inferring from callers.</li>
+</ol>
+<h2 id="expression-bodied-functions">Expression-bodied functions</h2>
+<p>When the whole body is a single expression, it can follow the
+<code>:</code> directly on the same line instead of an indented block.
+There is no separate syntax for this — <code>func_body</code> in
+<code>spec/cinder-grammar.ebnf</code> allows either an inline expression
+or an indented block after the colon, and the two are interchangeable
+everywhere a function body is expected.</p>
+<pre class="cinder"><code>def add(a: int32, b: int32) -&gt; int32: a + b
+
+def square(x: int32) -&gt; int32: x * x</code></pre>
+<p>This is the same rule that makes <code>add</code> from the opening
+example equivalent to:</p>
+<pre class="cinder"><code>def add(a: int32, b: int32) -&gt; int32:
+    return a + b</code></pre>
+<p>Both <code>return a + b</code> and the bare expression
+<code>a + b</code> produce the same value; the inline form just skips
+the <code>return</code> and the indented block when the body is one
+expression. If the expression needs more than one line, use the block
+form instead.</p>
+<h2 id="named-arguments-and-defaults">Named arguments and defaults</h2>
+<p>A parameter may declare a default value; a call may pass any argument
+by name (<code>name: value</code>) regardless of position.</p>
+<pre class="cinder"><code>def greet(name: str, loud: bool = false) -&gt; str:
+  return &quot;{name}!&quot;.to_uppercase() if loud else &quot;Hello, {name}&quot;
+
+greet(&quot;Alice&quot;)                  # uses default: loud = false
+greet(&quot;Bob&quot;, loud: true)        # named argument</code></pre>
+<p>A default value is evaluated <strong>at the call site</strong>, once
+per call that omits the argument —
+<code>def push(xs: list[int32] = [])</code> hands each such call its own
+fresh list, never one shared between them. It follows that a default may
+only name things the call site can also see (a literal, a
+<code>static let</code>, a function to call); it may not refer to
+another of the function’s parameters, since those are values of a call
+that has not happened yet.</p>
+<h2 id="functions-as-values">Functions as values</h2>
+<p>A function name used as a value has type
+<code>fn(ParamTypes...) -&gt; ReturnType</code> and may be passed,
+stored, and called like any other value.</p>
+<pre class="cinder"><code>def apply(f: fn(int32) -&gt; int32, x: int32) -&gt; int32:
+    return f(x)
+
+let result = apply(double, 5)   # result = 10</code></pre>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="05-lambdas.html">Lambdas</a> — anonymous functions, usable
+anywhere a <code>fn(...)-&gt;...</code> value is expected.</li>
+<li>Generic Functions (Intermediate) — the Layer 2 formalization of
+unannotated-parameter inference as implicit generics.</li>
+</ul>
+</body>
+</html>

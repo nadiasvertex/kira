@@ -1,0 +1,100 @@
+<!doctype html><html><head><meta charset='utf-8'>
+<title>The Cinder Language and Standard Library Specification</title>
+<link rel='stylesheet' href='style.css'>
+</head><body>
+<h1>The Cinder Language and Standard Library Specification</h1>
+<h2>Overview</h2><ul>
+<li><a href='00-overview.html'>0. Overview</a></li>
+</ul>
+<h2>01-core</h2><ul>
+<li><a href='01-core/README.html'>Core</a></li>
+<li><a href='01-core/01-syntax-basics.html'>1. Syntax Basics</a></li>
+<li><a href='01-core/02-built-in-types.html'>2. Built-in Types</a></li>
+<li><a href='01-core/03-bindings.html'>3. Bindings</a></li>
+<li><a href='01-core/04-functions.html'>4. Functions</a></li>
+<li><a href='01-core/05-lambdas.html'>5. Lambdas</a></li>
+<li><a href='01-core/06-collections-list-array.html'>6. Collections: `list` and `array`</a></li>
+<li><a href='01-core/07-strings.html'>7. Strings</a></li>
+<li><a href='01-core/08-control-flow.html'>8. Control Flow</a></li>
+<li><a href='01-core/09-pattern-matching.html'>9. Pattern Matching</a></li>
+<li><a href='01-core/10-type-declarations.html'>10. Type Declarations</a></li>
+<li><a href='01-core/11-error-handling.html'>11. Error Handling</a></li>
+<li><a href='01-core/12-modules-and-imports.html'>12. Modules and Imports</a></li>
+<li><a href='01-core/13-programs-and-main.html'>13. Programs and `main`</a></li>
+</ul>
+<h2>02-intermediate</h2><ul>
+<li><a href='02-intermediate/README.html'>Intermediate</a></li>
+<li><a href='02-intermediate/14-ownership-and-borrowing.html'>14. Ownership and Borrowing</a></li>
+<li><a href='02-intermediate/15-views.html'>15. Views</a></li>
+<li><a href='02-intermediate/16-closures-and-capture.html'>16. Closures and Capture</a></li>
+<li><a href='02-intermediate/17-shared-ownership-and-drop.html'>17. Shared Ownership and Drop</a></li>
+<li><a href='02-intermediate/18-traits.html'>18. Traits</a></li>
+<li><a href='02-intermediate/19-generics-and-inference.html'>19. Generics and Inference</a></li>
+<li><a href='02-intermediate/20-operator-overloading.html'>20. Operator Overloading</a></li>
+<li><a href='02-intermediate/21-coherence-and-orphan-rule.html'>21. Coherence and the Orphan Rule</a></li>
+<li><a href='02-intermediate/22-extension-methods.html'>22. Extension Methods</a></li>
+<li><a href='02-intermediate/23-contracts-on-trait-methods.html'>23. Contracts on Trait Methods</a></li>
+<li><a href='02-intermediate/24-trait-objects.html'>24. Trait Objects</a></li>
+<li><a href='02-intermediate/25-module-system-in-depth.html'>25. The Module System in Depth</a></li>
+<li><a href='02-intermediate/26-concurrency-execution-model.html'>26. Concurrency: The Execution Model</a></li>
+<li><a href='02-intermediate/27-async-await-and-generators.html'>27. `async`/`await` and Generators</a></li>
+<li><a href='02-intermediate/28-crew-par-race.html'>28. `crew`, `par`, `race`</a></li>
+<li><a href='02-intermediate/29-channels-and-sync-primitives.html'>29. Channels and Sync Primitives</a></li>
+<li><a href='02-intermediate/30-data-race-freedom.html'>30. Data-Race Freedom</a></li>
+</ul>
+<h2>03-advanced</h2><ul>
+<li><a href='03-advanced/README.html'>Advanced</a></li>
+<li><a href='03-advanced/31-compile-time-execution.html'>31. Compile-Time Execution</a></li>
+<li><a href='03-advanced/32-compile-time-semantics.html'>32. Compile-Time Semantics</a></li>
+<li><a href='03-advanced/33-dependent-and-refinement-types.html'>33. Dependent and Refinement Types</a></li>
+<li><a href='03-advanced/34-contracts.html'>34. Contracts</a></li>
+<li><a href='03-advanced/35-concepts.html'>35. Concepts</a></li>
+<li><a href='03-advanced/36-modules-as-compile-time-values.html'>36. Modules as Compile-Time Values</a></li>
+<li><a href='03-advanced/37-higher-kinded-traits.html'>37. Higher-Kinded Traits</a></li>
+<li><a href='03-advanced/38-machine-layer.html'>38. The `machine` Layer</a></li>
+<li><a href='03-advanced/39-tail-call-optimization.html'>39. Tail-Call Optimization</a></li>
+<li><a href='03-advanced/40-execution-graphs.html'>40. Advanced Concurrency: Execution Graphs</a></li>
+<li><a href='03-advanced/41-advanced-cancellation.html'>41. Advanced Cancellation</a></li>
+</ul>
+<h2>04-stdlib</h2><ul>
+<li><a href='04-stdlib/README.html'>Standard Library</a></li>
+<li><a href='04-stdlib/42-prelude.html'>42. The Prelude</a></li>
+</ul>
+<h2>04-stdlib/algorithms</h2><ul>
+<li><a href='04-stdlib/algorithms/README.html'>Algorithms</a></li>
+<li><a href='04-stdlib/algorithms/48-iterator-protocol.html'>48. The Iterator Protocol</a></li>
+<li><a href='04-stdlib/algorithms/49-lazy-adapters.html'>49. Lazy Adapters</a></li>
+<li><a href='04-stdlib/algorithms/50-aggregation.html'>50. Aggregation</a></li>
+<li><a href='04-stdlib/algorithms/51-sorting-and-searching.html'>51. Sorting and Searching</a></li>
+</ul>
+<h2>04-stdlib/collections</h2><ul>
+<li><a href='04-stdlib/collections/README.html'>Collections</a></li>
+<li><a href='04-stdlib/collections/43-list.html'>43. `list[T]`</a></li>
+<li><a href='04-stdlib/collections/44-deque-and-bitset.html'>44. `deque[T]` and `bitset`</a></li>
+<li><a href='04-stdlib/collections/45-ordered-map-and-set.html'>45. `ordered_map[K, V]` and `ordered_set[K]`</a></li>
+<li><a href='04-stdlib/collections/46-unordered-map-and-set.html'>46. `unordered_map[K, V]` and `unordered_set[K]`</a></li>
+<li><a href='04-stdlib/collections/47-small-list.html'>47. `small_list[T, N]`</a></li>
+</ul>
+<h2>04-stdlib/io-and-platform</h2><ul>
+<li><a href='04-stdlib/io-and-platform/README.html'>I/O and Platform</a></li>
+<li><a href='04-stdlib/io-and-platform/54-std-io.html'>54. `std.io`</a></li>
+<li><a href='04-stdlib/io-and-platform/55-std-console.html'>55. `std.console`</a></li>
+<li><a href='04-stdlib/io-and-platform/56-std-platform.html'>56. `std.platform`</a></li>
+<li><a href='04-stdlib/io-and-platform/57-std-fs-path.html'>57. `std.fs.path`</a></li>
+</ul>
+<h2>04-stdlib/strings-and-formatting</h2><ul>
+<li><a href='04-stdlib/strings-and-formatting/README.html'>Strings and Formatting</a></li>
+<li><a href='04-stdlib/strings-and-formatting/52-std-string.html'>52. `std.string`</a></li>
+<li><a href='04-stdlib/strings-and-formatting/53-std-format.html'>53. `std.format`</a></li>
+</ul>
+<h2>04-stdlib/testing</h2><ul>
+<li><a href='04-stdlib/testing/README.html'>Testing</a></li>
+<li><a href='04-stdlib/testing/61-std-test.html'>61. Unit Testing (`std.test`)</a></li>
+</ul>
+<h2>04-stdlib/type-traits</h2><ul>
+<li><a href='04-stdlib/type-traits/README.html'>Type Traits</a></li>
+<li><a href='04-stdlib/type-traits/58-std-traits.html'>58. `std.traits` — Type Predicates and Transformations</a></li>
+<li><a href='04-stdlib/type-traits/59-std-limits.html'>59. `std.limits` — Numeric Limits</a></li>
+<li><a href='04-stdlib/type-traits/60-meta-queries.html'>60. Meta Queries</a></li>
+</ul>
+</body></html>

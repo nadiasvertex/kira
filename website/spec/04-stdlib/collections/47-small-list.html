@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>47-small-list</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">47-small-list</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#small_listt-n" id="toc-small_listt-n">47.
+<code>small_list[T, N]</code></a>
+<ul>
+<li><a href="#uninitt-n"
+id="toc-uninitt-n"><code>uninit[T, N]</code></a></li>
+<li><a href="#small_listt-n-1"
+id="toc-small_listt-n-1"><code>small_list[T, N]</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="small_listt-n">47. <code>small_list[T, N]</code></h1>
+<p><strong>Status:</strong> Planned</p>
+<p>Covers <code>small_list[T, N]</code>, a small-size-optimized list
+built on <code>uninit[T, N]</code>, and the <code>uninit[T, N]</code>
+primitive it is designed over.</p>
+<h2 id="uninitt-n"><code>uninit[T, N]</code></h2>
+<p><code>uninit[T, N]</code> is an opaque builtin type: <code>N</code>
+slots, sized and aligned for <code>T</code>, that carries no guarantee
+any slot holds a valid <code>T</code>. It is specced in
+<code>spec/cinder-reference.md</code> (“The <code>machine</code> Layer”)
+and reiterated unchanged by
+<code>spec/collections-algorithms-design.md</code> §4.3, which
+additionally fixes that it is <strong>not</strong> made redundant by a
+general allocator — it is inline, fixed-capacity storage, the thing that
+lets a small-size-optimized container avoid heap traffic entirely below
+its inline capacity.</p>
+<p>Ordinary code cannot read or write into a <code>uninit[T, N]</code>
+directly. A fixed set of <code>machine</code>-prefixed accessor
+functions can:</p>
+<pre class="cinder"><code>pub type uninit[T, N: usize]     # opaque; N slots, sized/aligned for T
+
+machine def slot_ptr[T, N: usize](buf: &amp;uninit[T, N], i: usize) -&gt; *mut T
+machine def write_slot[T, N: usize](buf: &amp;mut uninit[T, N], i: usize, value: T) -&gt; unit
+machine def read_slot[T, N: usize](buf: &amp;mut uninit[T, N], i: usize) -&gt; T
+    # moves the value out of slot i — the caller must not treat it as initialized afterward
+machine def drop_first[T, N: usize](buf: &amp;mut uninit[T, N], len: usize) -&gt; unit
+    # runs T&#39;s drop over slots 0..len only; slots len..N are assumed never initialized
+machine def as_slice[T, N: usize](buf: &amp;uninit[T, N], len: usize) -&gt; slice[T]
+    # claims slots 0..len are initialized and hands back an ordinary view over them</code></pre>
+<p><code>spec/collections-algorithms-design.md</code> §4.3 additionally
+specifies these as <em>derivable</em> from the <code>std.machine</code>
+primitive substrate rather than intrinsics in their own right:
+<code>drop_first</code> is a loop over the substrate’s
+<code>drop_in_place</code>, and the rest reduce similarly. Only the
+opaque <code>uninit[T, N]</code> type itself is compiler-intrinsic work;
+its accessors are ordinary (if <code>machine</code>-gated) Cinder.</p>
+<p>Ordinary, non-<code>machine</code> code is free to <em>call</em>
+these functions; the unsafety is contained entirely inside them. A type
+built on <code>uninit[T, N]</code> calls them once, internally, and
+exposes a fully safe public API to everyone else —
+<code>small_list[T, N]</code> is the motivating example both documents
+name for this pattern.</p>
+<h2 id="small_listt-n-1"><code>small_list[T, N]</code></h2>
+<p><code>small_list[T, N]</code> is referenced, by name, as
+<code>uninit[T, N]</code>’s motivating use case in both
+<code>spec/cinder-reference.md</code> and
+<code>spec/collections-algorithms-design.md</code> §4.3: a type that
+holds a <em>variable</em> number of <code>T</code> values, up to
+<code>N</code>, inline — no heap allocation for the common small case,
+falling back to heap storage past <code>N</code> elements.</p>
+<p>Neither source goes further than that one-sentence motivation. No
+field layout, growth-to-heap transition strategy, or method catalog for
+<code>small_list[T, N]</code> has been written down anywhere in the
+repository as of this writing.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Nothing in this chapter is implemented. <code>uninit[T, N]</code>
+itself has no entry in the compiler’s builtin generic table today, and
+there is no <code>small_list.cn</code> or equivalent under
+<code>src/std</code>. Beyond the representation and accessor signatures
+reproduced above (which are real, specced content), this chapter’s
+coverage of <code>small_list[T, N]</code> proper is limited to what the
+two source documents state: that it exists as a design goal and that it
+is what <code>uninit[T, N]</code> is <em>for</em>. Its own structure and
+API remain open design work.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="43-list.md"><code>list[T]</code></a> — the heap-only
+container <code>small_list[T, N]</code> complements.</li>
+<li><a href="../algorithms/51-sorting-and-searching.html">Sorting and
+Searching</a> — another chapter dependent on the same
+<code>machine</code>/pointer substrate.</li>
+</ul>
+</body>
+</html>

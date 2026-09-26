@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>22-extension-methods</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">22-extension-methods</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#extension-methods" id="toc-extension-methods">22.
+Extension Methods</a>
+<ul>
+<li><a href="#extend" id="toc-extend"><code>extend</code></a></li>
+<li><a href="#rules" id="toc-rules">Rules</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="extension-methods">22. Extension Methods</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p><code>extend</code> blocks, how they differ from <code>impl</code>,
+and method resolution priority.</p>
+<h2 id="extend"><code>extend</code></h2>
+<p>Adding a <em>method</em> to a type is different from making it
+implement a trait, and it is not restricted. An <code>extend</code>
+block adds methods to any type — including one you do not own — without
+claiming any conformance:</p>
+<pre class="cinder"><code>extend str:
+    def is_palindrome(self) -&gt; bool:
+        self == self.reversed()
+
+&quot;racecar&quot;.is_palindrome()      # true</code></pre>
+<h2 id="rules">Rules</h2>
+<ul>
+<li>An <code>extend</code> method is not an <code>impl</code>: it does
+not make the type satisfy any trait, so generic code bounded by
+<code>T: some_trait</code> still requires a real <code>impl</code>.</li>
+<li>Because it makes no global claim, <code>extend</code> needs neither
+coherence nor the orphan rule — foreign types may be extended
+freely.</li>
+<li>Extensions are visible only where their module is
+<code>use</code>d.</li>
+<li>A call like <code>s.is_palindrome()</code> compiles to a direct
+static call, never a virtual one.</li>
+<li>Resolution priority: inherent and trait methods take priority;
+extensions fill in only when no method matches. Two conflicting in-scope
+extensions are an ordinary call-site ambiguity, resolved by
+imports.</li>
+</ul>
+<p>Use <code>impl</code> to say a type <em>is</em> something (coherent,
+orphan-restricted); use <code>extend</code> to <em>add convenience</em>
+to a type (unrestricted, import-scoped).</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in <code>src/semantic/check.cpp</code>: an inherent/trait
+method table is consulted first, and
+<code>find_extend_method_for_builtin</code>-style lookup runs only when
+it answers nothing — <code>str</code>’s <code>contains</code>,
+<code>starts_with</code>, <code>split</code>, and similar are genuine
+<code>extend str</code> methods in <code>std.string</code> resolved this
+way.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — the <code>impl</code>
+mechanism <code>extend</code> is deliberately not.</li>
+<li><a href="21-coherence-and-orphan-rule.html">Coherence and the Orphan
+Rule</a> — the restriction <code>extend</code> sidesteps.</li>
+</ul>
+</body>
+</html>

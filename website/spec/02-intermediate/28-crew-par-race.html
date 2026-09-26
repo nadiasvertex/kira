@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>28-crew-par-race</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">28-crew-par-race</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#crew-par-race" id="toc-crew-par-race">28.
+<code>crew</code>, <code>par</code>, <code>race</code></a>
+<ul>
+<li><a href="#crew-structured-concurrency"
+id="toc-crew-structured-concurrency"><code>crew</code> — Structured
+Concurrency</a></li>
+<li><a href="#par-parallel-composition"
+id="toc-par-parallel-composition"><code>par</code> — Parallel
+Composition</a></li>
+<li><a href="#race" id="toc-race"><code>race</code></a></li>
+<li><a href="#moving-work-to-a-different-context-ontarget"
+id="toc-moving-work-to-a-different-context-ontarget">Moving Work to a
+Different Context: <code>on(target)</code></a></li>
+<li><a href="#error-handling-in-concurrent-code"
+id="toc-error-handling-in-concurrent-code">Error Handling in Concurrent
+Code</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="crew-par-race">28. <code>crew</code>, <code>par</code>,
+<code>race</code></h1>
+<p><strong>Status:</strong> Planned</p>
+<p><code>crew</code> structured concurrency, <code>par</code>,
+<code>race</code>, <code>on(target)</code>, and error handling in
+concurrent code (<code>on_error: collect</code>).</p>
+<h2 id="crew-structured-concurrency"><code>crew</code> — Structured
+Concurrency</h2>
+<p><code>crew</code> runs multiple async tasks together. A
+<code>crew</code> block waits for all its tasks before continuing. If
+any task fails, the rest are cancelled and the error propagates.</p>
+<pre class="cinder"><code>async def fetch_dashboard(user_id: int32) -&gt; result[dashboard, app_error]:
+    crew c:
+        let user_task   = c.spawn(fetch_user(user_id))
+        let orders_task = c.spawn(fetch_orders(user_id))
+        let prefs_task  = c.spawn(fetch_preferences(user_id))
+
+    let user   = user_task.get()?
+    let orders = orders_task.get()?
+    let prefs  = prefs_task.get()?
+    return @ok(build_dashboard(user, orders, prefs))</code></pre>
+<p>Tasks in a <code>crew</code> cannot outlive the <code>crew</code>
+block — enforced by the compiler, so there are no dangling background
+tasks. This is what lets a closure spawned into a <code>crew</code>
+borrow local data instead of moving it; see <a
+href="16-closures-and-capture.html#crew-scoped-borrowing">Closures and
+Capture</a>.</p>
+<h2 id="par-parallel-composition"><code>par</code> — Parallel
+Composition</h2>
+<p><code>par</code> runs a fixed set of tasks simultaneously and gives
+all the results as a tuple:</p>
+<pre class="cinder"><code>let (user, orders, prefs) = await par:
+    fetch_user(id)
+    fetch_orders(id)
+    fetch_preferences(id)</code></pre>
+<p>If any task fails, the others are cancelled.</p>
+<h2 id="race"><code>race</code></h2>
+<p><code>race</code> runs multiple tasks and returns the first to
+complete, cancelling the rest:</p>
+<pre class="cinder"><code>let result = await race:
+    fetch_from_primary(key)
+    fetch_from_replica(key)</code></pre>
+<h2 id="moving-work-to-a-different-context-ontarget">Moving Work to a
+Different Context: <code>on(target)</code></h2>
+<p><code>on(target)</code> runs a block on another context or executor
+and returns the result to the caller’s context (see <a
+href="26-concurrency-execution-model.html">The Execution Model</a>):</p>
+<pre class="cinder"><code>let result = await on(pool):
+    expensive_computation(req.body)</code></pre>
+<h2 id="error-handling-in-concurrent-code">Error Handling in Concurrent
+Code</h2>
+<p>Errors from concurrent tasks follow the same <code>result</code>
+model as sequential code. A <code>crew</code> that uses
+<code>on_error: collect</code> gathers all errors rather than stopping
+on the first:</p>
+<pre class="cinder"><code>crew c(on_error: collect):
+    for item in items:
+        c.spawn(process(item))
+
+for err in c.errors():
+    log(&quot;failed: {err.message()}&quot;)</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Parse-only. <code>crew_stmt</code>/<code>crew_expr</code> (with
+<code>on_error:</code>-style options), <code>par_expr</code>,
+<code>race_expr</code>, and <code>on_expr</code> all lex and parse.
+<code>check.cpp</code> types a <code>crew</code> body’s contents against
+<code>k_unknown_type</code> with no borrow-scoping, no
+cancellation-scope construction, and no
+<code>spawn</code>/<code>get</code>/<code>errors</code> method
+semantics. No lowering exists — <code>src/hir/nodes.h</code> lists these
+forms as unsupported — and neither runtime backend has a scheduler
+capable of running tasks concurrently at all. None of the code in this
+chapter compiles past type-checking today.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="26-concurrency-execution-model.html">The Execution
+Model</a> — contexts, tasks, cancellation tokens.</li>
+<li><a href="16-closures-and-capture.html">Closures and Capture</a> —
+the crew-scoped borrowing exception to move-on-escape.</li>
+<li><a href="30-data-race-freedom.html">Data-Race Freedom</a> — scoped
+sharing across a crew’s tasks.</li>
+</ul>
+</body>
+</html>

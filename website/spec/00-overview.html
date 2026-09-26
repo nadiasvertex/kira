@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>00-overview</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">00-overview</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#overview" id="toc-overview">0. Overview</a>
+<ul>
+<li><a href="#structure" id="toc-structure">Structure</a></li>
+<li><a href="#table-of-contents" id="toc-table-of-contents">Table of
+contents</a>
+<ul>
+<li><a href="#core-01-core" id="toc-core-01-core">Core
+(<code>01-core/</code>)</a></li>
+<li><a href="#intermediate-02-intermediate"
+id="toc-intermediate-02-intermediate">Intermediate
+(<code>02-intermediate/</code>)</a></li>
+<li><a href="#advanced-03-advanced"
+id="toc-advanced-03-advanced">Advanced
+(<code>03-advanced/</code>)</a></li>
+<li><a href="#standard-library-04-stdlib"
+id="toc-standard-library-04-stdlib">Standard Library
+(<code>04-stdlib/</code>)</a></li>
+</ul></li>
+<li><a href="#diagnostics" id="toc-diagnostics">Diagnostics</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="overview">0. Overview</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>This is the normative specification of the Cinder language and
+standard library. It states what is true of the language and its
+implementation, precisely and without tutorial framing. For a guided
+introduction, see the (forthcoming) tutorial; for the grammar, see
+<code>../cinder-grammar.ebnf</code>; for C++ compiler-implementation
+conventions, see <code>../CONVENTIONS.md</code>.</p>
+<h2 id="structure">Structure</h2>
+<p>The specification is organized in three layered sections, followed by
+a standard library section:</p>
+<ul>
+<li><strong>Core</strong> (<code>01-core/</code>) — values, functions,
+types, pattern matching, built-in collections, and error handling. Most
+programs are written using only Core material.</li>
+<li><strong>Intermediate</strong> (<code>02-intermediate/</code>) —
+ownership and borrowing, traits and generics, and async concurrency.
+Needed for library code and concurrent programs.</li>
+<li><strong>Advanced</strong> (<code>03-advanced/</code>) — compile-time
+execution, dependent and refinement types, contracts, concepts, modules
+as compile-time values, and the low-level <code>machine</code>
+layer.</li>
+<li><strong>Standard Library</strong> (<code>04-stdlib/</code>) — the
+modules that ship with the compiler: collections, algorithms,
+string/formatting, I/O/platform, type traits/limits/meta queries, and
+unit testing.</li>
+</ul>
+<p>A later section never needs to be understood to use an earlier one.
+Within a section, each chapter is a single language or library feature,
+keeping the specification’s chapters small and independently addressable
+— the goal, per the project’s structuring intent, is that both a human
+and an LLM can find a specific rule without loading unrelated
+context.</p>
+<p>Each chapter opens with a status line:</p>
+<ul>
+<li><strong>Implemented</strong> — works today, end to end.</li>
+<li><strong>Partial</strong> — part of the chapter’s surface works; the
+chapter’s “Implementation status” subsection says exactly which
+part.</li>
+<li><strong>Planned</strong> — designed but not yet implemented; the
+chapter is still written normatively, as the target design, with a note
+on what’s missing.</li>
+</ul>
+<h2 id="table-of-contents">Table of contents</h2>
+<h3 id="core-01-core">Core (<code>01-core/</code>)</h3>
+<ol type="1">
+<li><a href="01-core/01-syntax-basics.html">Syntax Basics</a></li>
+<li><a href="01-core/02-built-in-types.html">Built-in Types</a></li>
+<li><a href="01-core/03-bindings.html">Bindings</a></li>
+<li><a href="01-core/04-functions.html">Functions</a></li>
+<li><a href="01-core/05-lambdas.html">Lambdas</a></li>
+<li><a href="01-core/06-collections-list-array.html">Collections:
+<code>list</code> and <code>array</code></a></li>
+<li><a href="01-core/07-strings.html">Strings</a></li>
+<li><a href="01-core/08-control-flow.html">Control Flow</a> —
+Partial</li>
+<li><a href="01-core/09-pattern-matching.html">Pattern Matching</a></li>
+<li><a href="01-core/10-type-declarations.html">Type
+Declarations</a></li>
+<li><a href="01-core/11-error-handling.html">Error Handling</a></li>
+<li><a href="01-core/12-modules-and-imports.html">Modules and
+Imports</a></li>
+<li><a href="01-core/13-programs-and-main.html">Programs and
+<code>main</code></a> — Partial</li>
+</ol>
+<h3 id="intermediate-02-intermediate">Intermediate
+(<code>02-intermediate/</code>)</h3>
+<ol start="14" type="1">
+<li><a href="02-intermediate/14-ownership-and-borrowing.html">Ownership
+and Borrowing</a></li>
+<li><a href="02-intermediate/15-views.html">Views</a> — Partial</li>
+<li><a href="02-intermediate/16-closures-and-capture.html">Closures and
+Capture</a> — Partial</li>
+<li><a href="02-intermediate/17-shared-ownership-and-drop.html">Shared
+Ownership and Drop</a> — Partial</li>
+<li><a href="02-intermediate/18-traits.html">Traits</a></li>
+<li><a href="02-intermediate/19-generics-and-inference.html">Generics
+and Inference</a></li>
+<li><a href="02-intermediate/20-operator-overloading.html">Operator
+Overloading</a></li>
+<li><a
+href="02-intermediate/21-coherence-and-orphan-rule.html">Coherence and
+the Orphan Rule</a></li>
+<li><a href="02-intermediate/22-extension-methods.html">Extension
+Methods</a></li>
+<li><a
+href="02-intermediate/23-contracts-on-trait-methods.html">Contracts on
+Trait Methods</a> — Partial</li>
+<li><a href="02-intermediate/24-trait-objects.html">Trait Objects</a> —
+Partial</li>
+<li><a href="02-intermediate/25-module-system-in-depth.html">The Module
+System in Depth</a> — Partial</li>
+<li><a
+href="02-intermediate/26-concurrency-execution-model.html">Concurrency:
+The Execution Model</a> — Planned</li>
+<li><a
+href="02-intermediate/27-async-await-and-generators.html"><code>async</code>/<code>await</code>
+and Generators</a> — Partial</li>
+<li><a href="02-intermediate/28-crew-par-race.html"><code>crew</code>,
+<code>par</code>, <code>race</code></a> — Planned</li>
+<li><a
+href="02-intermediate/29-channels-and-sync-primitives.html">Channels and
+Sync Primitives</a> — Planned</li>
+<li><a href="02-intermediate/30-data-race-freedom.html">Data-Race
+Freedom</a> — Planned</li>
+</ol>
+<h3 id="advanced-03-advanced">Advanced (<code>03-advanced/</code>)</h3>
+<ol start="31" type="1">
+<li><a href="03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a></li>
+<li><a href="03-advanced/32-compile-time-semantics.html">Compile-Time
+Semantics</a></li>
+<li><a
+href="03-advanced/33-dependent-and-refinement-types.html">Dependent and
+Refinement Types</a> — Partial</li>
+<li><a href="03-advanced/34-contracts.html">Contracts</a></li>
+<li><a href="03-advanced/35-concepts.html">Concepts</a></li>
+<li><a href="03-advanced/36-modules-as-compile-time-values.html">Modules
+as Compile-Time Values</a></li>
+<li><a href="03-advanced/37-higher-kinded-traits.html">Higher-Kinded
+Traits</a></li>
+<li><a href="03-advanced/38-machine-layer.html">The <code>machine</code>
+Layer</a> — Partial</li>
+<li><a href="03-advanced/39-tail-call-optimization.html">Tail-Call
+Optimization</a></li>
+<li><a href="03-advanced/40-execution-graphs.html">Advanced Concurrency:
+Execution Graphs</a> — Planned</li>
+<li><a href="03-advanced/41-advanced-cancellation.html">Advanced
+Cancellation</a> — Planned</li>
+</ol>
+<h3 id="standard-library-04-stdlib">Standard Library
+(<code>04-stdlib/</code>)</h3>
+<ol start="42" type="1">
+<li><a href="04-stdlib/42-prelude.html">The Prelude</a></li>
+</ol>
+<p><strong>Collections</strong>
+(<code>04-stdlib/collections/</code>)</p>
+<ol start="43" type="1">
+<li><a
+href="04-stdlib/collections/43-list.md"><code>list[T]</code></a></li>
+<li><a
+href="04-stdlib/collections/44-deque-and-bitset.md"><code>deque[T]</code>
+and <code>bitset</code></a> — Planned</li>
+<li><a
+href="04-stdlib/collections/45-ordered-map-and-set.md"><code>ordered_map[K, V]</code>
+and <code>ordered_set[K]</code></a> — Planned</li>
+<li><a
+href="04-stdlib/collections/46-unordered-map-and-set.md"><code>unordered_map[K, V]</code>
+and <code>unordered_set[K]</code></a> — Planned</li>
+<li><a
+href="04-stdlib/collections/47-small-list.md"><code>small_list[T, N]</code></a>
+— Planned</li>
+</ol>
+<p><strong>Algorithms</strong> (<code>04-stdlib/algorithms/</code>)</p>
+<ol start="48" type="1">
+<li><a href="04-stdlib/algorithms/48-iterator-protocol.html">The
+Iterator Protocol</a></li>
+<li><a href="04-stdlib/algorithms/49-lazy-adapters.html">Lazy
+Adapters</a></li>
+<li><a
+href="04-stdlib/algorithms/50-aggregation.html">Aggregation</a></li>
+<li><a href="04-stdlib/algorithms/51-sorting-and-searching.html">Sorting
+and Searching</a></li>
+</ol>
+<p><strong>Strings and Formatting</strong>
+(<code>04-stdlib/strings-and-formatting/</code>)</p>
+<ol start="52" type="1">
+<li><a
+href="04-stdlib/strings-and-formatting/52-std-string.html"><code>std.string</code></a></li>
+<li><a
+href="04-stdlib/strings-and-formatting/53-std-format.html"><code>std.format</code></a></li>
+</ol>
+<p><strong>I/O and Platform</strong>
+(<code>04-stdlib/io-and-platform/</code>)</p>
+<ol start="54" type="1">
+<li><a
+href="04-stdlib/io-and-platform/54-std-io.html"><code>std.io</code></a>
+— Partial</li>
+<li><a
+href="04-stdlib/io-and-platform/55-std-console.html"><code>std.console</code></a></li>
+<li><a
+href="04-stdlib/io-and-platform/56-std-platform.html"><code>std.platform</code></a></li>
+<li><a
+href="04-stdlib/io-and-platform/57-std-fs-path.html"><code>std.fs.path</code></a></li>
+</ol>
+<p><strong>Type Traits</strong>
+(<code>04-stdlib/type-traits/</code>)</p>
+<ol start="58" type="1">
+<li><a
+href="04-stdlib/type-traits/58-std-traits.html"><code>std.traits</code>
+— Type Predicates and Transformations</a></li>
+<li><a
+href="04-stdlib/type-traits/59-std-limits.html"><code>std.limits</code>
+— Numeric Limits</a></li>
+<li><a href="04-stdlib/type-traits/60-meta-queries.html">Meta
+Queries</a></li>
+</ol>
+<p><strong>Testing</strong> (<code>04-stdlib/testing/</code>)</p>
+<ol start="61" type="1">
+<li><a href="04-stdlib/testing/61-std-test.html">Unit Testing
+(<code>std.test</code>)</a> — Partial</li>
+</ol>
+<h2 id="diagnostics">Diagnostics</h2>
+<p>Cinder’s compiler treats diagnostics as part of the language’s
+interface, not an afterthought. A diagnostic states what was expected,
+what was found, why the constraint exists, and — where applicable — how
+to satisfy it:</p>
+<pre><code>error[E0012]: type mismatch
+  --&gt; src/main.cn:14:5
+   |
+13 |     let x: int32 = compute()
+14 |     process(x)
+   |             ^ expected float64, found int32
+   |
+   = compute() returns int32
+   = process() expects float64
+   = hint: use float64(x), or change compute()&#39;s return type</code></pre>
+<p>When a feature from a later section would resolve the diagnostic —
+for example, an ownership rule firing on code that has no annotations to
+explain it — the diagnostic names the concept and points at the section
+that documents it. This specification is the target those pointers
+resolve to.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="04-stdlib/42-prelude.html">The Prelude</a> — names
+available in every module without a <code>use</code> declaration.</li>
+<li><code>../cinder-grammar.ebnf</code> — grammar productions referenced
+by name throughout.</li>
+</ul>
+</body>
+</html>

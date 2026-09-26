@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>05-lambdas</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">05-lambdas</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#lambdas" id="toc-lambdas">5. Lambdas</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#explicit-capture-lists"
+id="toc-explicit-capture-lists">Explicit capture lists</a></li>
+<li><a href="#multi-line-form" id="toc-multi-line-form">Multi-line
+form</a></li>
+<li><a href="#typical-use" id="toc-typical-use">Typical use</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="lambdas">5. Lambdas</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers anonymous inline function syntax (<code>lambda_expr</code> in
+<code>spec/cinder-grammar.ebnf</code>), its multi-line form, explicit
+capture lists, and typical use.</p>
+<h2 id="syntax">Syntax</h2>
+<p>A lambda is <code>params =&gt; expr</code> or
+<code>params -&gt; ReturnType =&gt; expr</code>. A single untyped
+parameter needs no parentheses; multiple parameters, or an explicit
+type, require them.</p>
+<pre class="cinder"><code>let double = x =&gt; x * 2
+let add    = (x, y) =&gt; x + y
+
+# With type annotations
+let add = (x: int32, y: int32) -&gt; int32 =&gt; x + y</code></pre>
+<h2 id="explicit-capture-lists">Explicit capture lists</h2>
+<p>By default a lambda captures every outer-scope name its body uses
+(<code>capture</code> in <a
+href="../02-intermediate/16-closures-and-capture.html">Closures and
+Capture</a>). A capture list, written <code>[...]</code> immediately
+before the parameters, overrides this: only the listed names may be used
+from the enclosing scope, and each name’s capture mode is stated
+explicitly rather than inferred.</p>
+<ul>
+<li><code>name</code> — capture by the default rule (borrow, or move if
+the closure escapes; <code>move</code> forces move for every bare name
+in the list).</li>
+<li><code>&amp;name</code> — capture by borrow, regardless of
+escape.</li>
+<li><code>&amp;mut name</code> — capture by mutable borrow.</li>
+<li><code>[]</code> — capture nothing; the body may reference only its
+own parameters and globals.</li>
+</ul>
+<p>Referencing an outer-scope name that is not in the capture list is an
+error, the same as referencing an undeclared name.</p>
+<pre class="cinder"><code>let factor = 3
+let offset = 10
+let scaled = numbers.map([factor] x =&gt; x * factor)   # `offset` is not in scope here
+
+var total = 0
+let accumulate = [&amp;mut total] x =&gt;:
+    total = total + x
+
+let pure_double = [] x =&gt; x * 2   # no outer state reachable</code></pre>
+<h2 id="multi-line-form">Multi-line form</h2>
+<p><code>params =&gt;:</code> introduces an indented block whose last
+expression is the lambda’s result, the same rule as a <code>def</code>
+body.</p>
+<pre class="cinder"><code>let process = x =&gt;:
+    let y = transform(x)
+    y * 2</code></pre>
+<h2 id="typical-use">Typical use</h2>
+<p>Lambdas are most commonly passed as arguments to collection methods
+such as <code>map</code> and <code>filter</code>:</p>
+<pre class="cinder"><code>let numbers = [1, 2, 3, 4, 5]
+let doubled = numbers.map(x =&gt; x * 2)
+let evens   = numbers.filter(x =&gt; x % 2 == 0)</code></pre>
+<p>A parameter’s type, when omitted, is inferred the same way an
+unannotated function parameter is — see <a
+href="04-functions.html">Functions</a>.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="04-functions.html">Functions</a> — parameter/return
+inference rules, <code>fn(...) -&gt; ...</code> values.</li>
+<li><a href="06-collections-list-array.html">Collections</a> —
+<code>map</code>/<code>filter</code>/<code>find</code> and the other
+methods lambdas are commonly passed to.</li>
+<li><a href="../02-intermediate/16-closures-and-capture.html">Closures
+and Capture</a> — the borrow-vs-move capture rule that governs bare
+names in a capture list.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>15-views</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">15-views</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#views" id="toc-views">15. Views</a>
+<ul>
+<li><a href="#slices-and-strings" id="toc-slices-and-strings">Slices and
+Strings</a></li>
+<li><a href="#single-element-views-cellt-and-mut-cellt"
+id="toc-single-element-views-cellt-and-mut-cellt">Single-Element Views:
+<code>cell[T]</code> and <code>mut cell[T]</code></a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="views">15. Views</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>slice[T]</code>/<code>mut slice[T]</code> as first-class
+borrowing values, view inference through returned values and struct
+fields, and single-element views
+(<code>cell[T]</code>/<code>mut cell[T]</code>).</p>
+<h2 id="slices-and-strings">Slices and Strings</h2>
+<p>A view is the one kind of borrowing value the language permits to be
+passed <em>and</em> returned — its borrow is tracked without a lifetime
+annotation.</p>
+<pre class="cinder"><code>slice[T]       # a read-only view of a contiguous run of elements
+mut slice[T]   # a mutable view
+str            # a read-only view of UTF-8 text</code></pre>
+<p>A view is produced by slicing:</p>
+<pre class="cinder"><code>def first_half[T](xs: &amp;list[T]) -&gt; slice[T]:
+    xs[0 .. xs.len() / 2]
+
+let data  = [1, 2, 3, 4, 5, 6]
+let front = first_half(&amp;data)    # a view; data stays borrowed while front is alive</code></pre>
+<p>Rules:</p>
+<ol type="1">
+<li>The compiler infers that a returned view borrows from the argument
+it was sliced from, and keeps that source borrowed for as long as the
+view lives.</li>
+<li>This inference extends to any struct that <em>stores</em> a view in
+one of its fields, not only to a bare returned view:</li>
+</ol>
+<pre class="cinder"><code>type window[T] = { s: slice[T], pos: usize }
+
+def make_window[T](xs: &amp;list[T]) -&gt; window[T]:
+    window{ s: xs.as_slice(), pos: 0 }</code></pre>
+<p><code>make_window</code> returns an ordinary struct, but the compiler
+traces the view stored in its <code>s</code> field back to
+<code>xs</code>: the returned <code>window[T]</code> keeps
+<code>xs</code> borrowed for as long as it lives, exactly as if
+<code>make_window</code> had returned the slice directly. This is what
+lets a hand-written iterator type carry a <code>slice[T]</code> cursor
+over a collection without a lifetime annotation.</p>
+<ol start="3" type="1">
+<li>When a result needs to escape and stand on its own, return an owned
+value or a handle (an index) rather than a view.</li>
+</ol>
+<h2 id="single-element-views-cellt-and-mut-cellt">Single-Element Views:
+<code>cell[T]</code> and <code>mut cell[T]</code></h2>
+<p><code>cell[T]</code> (read-only) and <code>mut cell[T]</code>
+(mutable) are borrowed views of a single element — the result of a
+hash-map lookup, a tree search, an array access — filling the gap
+between a whole collection (<code>slice[T]</code>) and a temporary
+borrow in a call (<code>&amp;T</code>).</p>
+<pre class="cinder"><code>cell[T]       # a read-only view of a single element
+mut cell[T]   # a mutable view</code></pre>
+<p>Like <code>slice[T]</code>, a <code>cell</code> is a first-class
+value: passed and returned, with its borrow tracked automatically so it
+cannot outlive the collection it points into, and without lifetime
+annotations.</p>
+<pre class="cinder"><code>def find[T](xs: &amp;list[T], pred: fn(&amp;T) -&gt; bool) -&gt; option[cell[T]]:
+    for i in 0..xs.len():
+        if pred(&amp;xs[i]):
+            return @some(xs.cell(i))
+    return @none
+
+def find_and_double(xs: &amp;mut list[int32]) -&gt; unit:
+    if let @some(c) = xs.mutable_cell(2):
+        c.set(c.get() * 2)         # mutates the element in place</code></pre>
+<p><code>c.get()</code> yields the element value; a
+<code>mut cell</code> enforces exclusive access.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><code>slice[T]</code> is a real builtin type constructor
+(<code>src/semantic/types.cpp</code>, registered as
+<code>"slice"</code>, one type argument), with dedicated resolution and
+checking paths throughout <code>src/semantic/resolution.cpp</code> and
+<code>src/semantic/check.cpp</code> (index expressions with a range key
+produce a <code>slice</code>, <code>slice</code>/<code>slice_mut</code>
+are distinguished, <code>.len()</code> and other builtin methods are
+wired up). It is genuinely usable today.</li>
+<li>The tracking claim here — a view keeping its source collection
+borrowed for as long as the view lives — <strong>is</strong> enforced,
+by the borrow checker’s view-borrow exclusivity (see <a
+href="14-ownership-and-borrowing.html#implementation-status">Ownership
+and Borrowing</a>). A binding that holds a view is followed across
+statements to its last use, and a conflicting borrow of the sliced
+collection while the view is live is rejected. This covers a view
+returned from a call and the view-through-struct-field case above
+(<code>make_window</code> keeps <code>xs</code> borrowed for the
+returned <code>window</code>’s lifetime), because a call whose result
+carries a view is conservatively treated as borrowing all of its
+reference arguments. What remains target design is <em>precision</em>:
+the source is currently tracked at whole-variable granularity and, for a
+returned view, attributed to every reference argument rather than the
+exact one it was sliced from — an over-approximation that is sound
+(never misses an alias) but can reject a program that does not actually
+alias.</li>
+<li><code>cell[T]</code> / <code>mut cell[T]</code> are implemented,
+both directly (<code>xs.cell(i)</code>/<code>xs.mutable_cell(i)</code>,
+<code>.get()</code>/<code>.set()</code>) and as the return shape of a
+user <code>std.traits.index_mut</code> impl’s <code>at_mut</code>
+(<code>&amp;mut v[i]</code> on a type that implements it). Runtime
+representation is a bare pointer, identical to
+<code>&amp;T</code>/<code>&amp;mut T</code> — see
+<code>spec/todo.md</code> item 19 for the full implementation
+account.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="14-ownership-and-borrowing.html">Ownership and
+Borrowing</a> — views are the escape hatch from “a borrow cannot escape
+a call.”</li>
+</ul>
+</body>
+</html>

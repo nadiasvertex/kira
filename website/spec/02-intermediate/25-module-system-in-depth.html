@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>25-module-system-in-depth</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">25-module-system-in-depth</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-module-system-in-depth"
+id="toc-the-module-system-in-depth">25. The Module System in Depth</a>
+<ul>
+<li><a href="#modules-span-files" id="toc-modules-span-files">Modules
+Span Files</a></li>
+<li><a href="#project-structure" id="toc-project-structure">Project
+Structure</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="the-module-system-in-depth">25. The Module System in Depth</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Modules spanning files, and project structure
+(<code>project.cn</code>, search paths, dependencies as
+<code>static</code> data).</p>
+<h2 id="modules-span-files">Modules Span Files</h2>
+<p>A module is not a single file, and modules do not nest. Any number of
+files may declare the same module; together they form it, and
+<code>module</code>-visible names are shared across all of them. Two
+modules whose paths share a prefix — <code>my_app.geometry</code> and
+<code>my_app.geometry.shapes</code> — are unrelated: the shared prefix
+is a shared folder, not a parent–child relationship. Neither can see the
+other’s non-<code>pub</code> names, and neither is visible from the
+other unless it is declared as a child (<code>module shapes</code>
+inside <code>my_app.geometry</code>) or imported — see <a
+href="../01-core/12-modules-and-imports.html#visible-modules">Visible
+Modules</a>.</p>
+<p>To split a large module across files, give each file the same
+<code>module</code> line:</p>
+<pre class="cinder"><code># my_app/geometry/core.cn
+module my_app.geometry
+
+pub type point = { pub x: float64, pub y: float64 }</code></pre>
+<pre class="cinder"><code># my_app/geometry/distance.cn
+module my_app.geometry
+
+pub def distance(a: point, b: point) -&gt; float64:    # sees point directly
+    ...</code></pre>
+<h2 id="project-structure">Project Structure</h2>
+<p>A project’s root is <code>project.cn</code>, ordinary Cinder
+evaluated at compile time — no separate manifest language. Search paths
+and dependencies are <code>static</code> data:</p>
+<pre class="cinder"><code>module my_app
+
+static search_path: list[str] = [&quot;src&quot;, &quot;vendor&quot;]
+
+static deps: list[dependency] = [
+    dependency { name: &quot;geometry&quot;, path: &quot;vendor/geometry&quot;, version: &quot;1.2.0&quot; },
+]</code></pre>
+<p><code>dependency</code> is a type the build system provides. Because
+the manifest is Cinder, dependency lists can be computed — assembled
+with <code>for</code>, branched on with <code>static if</code>, or
+factored into helper functions — in the same language as the rest of the
+program.</p>
+<p>Dependencies are resolved at compile time, and a
+<code>project.lock</code> file records the resolved versions. What a
+package exposes to its dependents is determined by the <code>pub</code>
+surface of its modules, discovered through compile-time reflection — no
+separate list of exported modules to maintain.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Modules spanning files is implemented:
+<code>src/semantic/module_index.cpp</code> builds the cross-file module
+graph and <code>detect_duplicate_module_paths</code> (invoked from
+<code>src/semantic/analysis.cpp</code>) validates module-path conflicts
+across files, so multiple files sharing one <code>module</code> line
+joining into one module is real, checked behavior.</li>
+<li><code>project.cn</code> as an evaluated manifest,
+<code>search_path</code>/<code>deps</code> as <code>static</code> data
+read by the build system, and <code>project.lock</code> are <strong>not
+implemented</strong>. No reference to a project manifest, search path,
+or dependency-resolution mechanism was found in
+<code>src/driver/cli.cpp</code> or elsewhere in the driver — the CLI
+takes source file paths directly
+(<code>bazelisk run //src:cinder -- path/to/module.cn</code>), with no
+project-root discovery step. This subsection is design-only.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — <code>pub</code> surface and
+visibility referenced above follow the same rules used for trait/type
+visibility.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>24-trait-objects</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">24-trait-objects</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#trait-objects" id="toc-trait-objects">24. Trait
+Objects</a>
+<ul>
+<li><a href="#opaque-return-types-some-trait"
+id="toc-opaque-return-types-some-trait">Opaque Return Types:
+<code>some trait</code></a></li>
+<li><a href="#trait-objects-boxtrait"
+id="toc-trait-objects-boxtrait">Trait Objects:
+<code>box[trait]</code></a>
+<ul>
+<li><a href="#object-safety" id="toc-object-safety">Object
+Safety</a></li>
+<li><a href="#some-trait-vs.-boxtrait"
+id="toc-some-trait-vs.-boxtrait"><code>some trait</code>
+vs. <code>box[trait]</code></a></li>
+</ul></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="trait-objects">24. Trait Objects</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>box[trait]</code>, object-safety rules, and the
+<code>some trait</code> opaque-return-type comparison.</p>
+<h2 id="opaque-return-types-some-trait">Opaque Return Types:
+<code>some trait</code></h2>
+<p>A function that returns a concrete type implementing a trait, but
+whose exact type is unnameable or unimportant, uses
+<code>some trait</code> as its return type. This is zero-cost static
+polymorphism: the compiler monomorphizes at each call site.</p>
+<pre class="cinder"><code>def make_shape() -&gt; some drawable:
+    return @circle(10.0)
+
+def make_iter() -&gt; some iterator[int32]:
+    return range(0, 100).filter(x =&gt; x % 2 == 0).map(x =&gt; x * x)</code></pre>
+<p>The caller sees only the trait interface:</p>
+<pre class="cinder"><code>let s = make_shape()
+s.draw()                    # works — s is known to implement drawable
+# s.radius                  # error — concrete type is hidden</code></pre>
+<p>Because each call site receives a distinct monomorphized type,
+<code>some trait</code> values cannot be placed in a homogeneous
+collection without erasing them. Use a sum type
+(<code>@circle | @square</code>) for a closed, inspectable set of
+variants; use <code>box[trait]</code> when the set is open; use
+<code>some trait</code> when the concrete type is static but
+inconvenient to name.</p>
+<h2 id="trait-objects-boxtrait">Trait Objects:
+<code>box[trait]</code></h2>
+<p>Generic bounds resolve at compile time, so <code>[T: show]</code> is
+monomorphized and costs nothing. But some programs must hold values
+whose concrete types are not known together at compile time — a
+<code>list</code> of user-defined shapes, handlers registered by plugins
+loaded at run time. That is open-world polymorphism, and it cannot be
+monomorphized. For it, <code>box[trait]</code> is a <strong>trait
+object</strong>: an owned, heap-allocated value whose concrete type is
+erased behind the trait, its methods dispatched through a vtable.</p>
+<pre class="cinder"><code>trait drawable:
+    def area(self) -&gt; float64
+# disk and square are structs that implement drawable
+
+var shapes: list[box[drawable]] = []
+shapes.push(box(disk { radius: 1.0 }))
+shapes.push(box(square { side: 2.0 }))
+
+let total = shapes.map(s =&gt; s.area()).sum()   # each call dispatches through the vtable</code></pre>
+<p><code>box[fn(A) -&gt; B]</code> is the special case where the trait
+is a callable (see <a href="16-closures-and-capture.html">Closures and
+Capture</a>). Because coherence guarantees one implementation per type,
+a trait object’s vtable is never ambiguous.</p>
+<h3 id="object-safety">Object Safety</h3>
+<p>A trait can be used as <code>box[...]</code> only when it is
+<em>object-safe</em>:</p>
+<ul>
+<li>Every method dispatches on <code>&amp;self</code> or
+<code>&amp;mut self</code>.</li>
+<li>No method takes type parameters of its own.</li>
+<li>No method takes or returns <code>self</code> by value (the concrete
+size is erased).</li>
+</ul>
+<p><code>box[drawable]</code> and <code>box[show]</code> work;
+<code>box[add]</code>, whose method takes <code>other: self</code> and
+returns <code>self.output</code>, does not. Add
+<code>send</code>/<code>share</code> as extra bounds
+(<code>box[drawable + send]</code>) to move a trait object across
+tasks.</p>
+<h3 id="some-trait-vs.-boxtrait"><code>some trait</code>
+vs. <code>box[trait]</code></h3>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Feature</th>
+<th><code>some trait</code></th>
+<th><code>box[trait]</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cost</td>
+<td>Zero — monomorphized</td>
+<td>Heap allocation + vtable</td>
+</tr>
+<tr>
+<td>Use case</td>
+<td>One concrete type, just unnameable</td>
+<td>Open set of types, runtime choice</td>
+</tr>
+<tr>
+<td>Can store in <code>list</code></td>
+<td>No — each call site has a different type</td>
+<td>Yes — uniform type</td>
+</tr>
+<tr>
+<td>Escapes a function</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p>Reach for <code>box</code> only at a genuinely open boundary. To
+merely <em>accept</em> any type implementing a trait, use a generic
+bound — monomorphized and free; <code>box</code> is for <em>storing or
+returning</em> values whose types are not known together.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><code>some trait</code> (general existential return types)
+<strong>is implemented</strong>:
+<code>semantic::type_kind::existential_kind</code>
+(<code>src/semantic/types.h</code>/<code>.cpp</code>), minted via
+<code>type_table::fresh_existential</code> and resolved by
+<code>resolve_existential_type</code>; method calls on an opaque-typed
+receiver are checked against the bound traits’ declared methods and
+dispatched statically against the underlying concrete type
+(<code>infer_method_call</code>’s <code>existential_kind</code> case in
+<code>check.cpp</code>). This works for any function, not only
+<code>generator def</code>.</li>
+<li><code>box[trait]</code> <strong>is not implemented</strong>.
+<code>box</code> exists only as a bare unary type constructor
+(<code>{.name = "box", .min_args = 1, .max_args = 1}</code> in
+<code>src/semantic/types.cpp</code>) with no object-safety checking, no
+vtable construction, and no lowering: no reference to <code>"box"</code>
+was found in <code>src/hir/</code>, <code>src/bytecode/</code>, or
+<code>src/llvm_codegen/</code>. No trait-object/vtable dynamic dispatch
+exists anywhere in the compiler. Neither the object-safety rules nor the
+<code>some trait</code>/<code>box[trait]</code> comparison table above
+can currently be exercised end-to-end — <code>box[trait]</code> is
+design-only content, same as <code>box[fn(A) -&gt; B]</code> in <a
+href="16-closures-and-capture.html">Closures and Capture</a>.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — the trait mechanism this
+builds on.</li>
+<li><a href="16-closures-and-capture.html">Closures and Capture</a> —
+<code>box[fn(A) -&gt; B]</code> as the callable special case.</li>
+<li><a href="19-generics-and-inference.html">Generics and Inference</a>
+— the monomorphized alternative when the type set is closed/known.</li>
+</ul>
+</body>
+</html>

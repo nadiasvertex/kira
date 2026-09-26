@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>11-error-handling</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">11-error-handling</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#error-handling" id="toc-error-handling">11. Error
+Handling</a>
+<ul>
+<li><a href="#option-and-result"
+id="toc-option-and-result"><code>option</code> and
+<code>result</code></a></li>
+<li><a href="#section" id="toc-section"><code>?</code></a>
+<ul>
+<li><a href="#error-type-conversion-via-from"
+id="toc-error-type-conversion-via-from">Error-type conversion via
+<code>from</code></a></li>
+</ul></li>
+<li><a href="#limitations" id="toc-limitations">Limitations</a></li>
+<li><a href="#panics-vs.-errors" id="toc-panics-vs.-errors">Panics
+vs. errors</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="error-handling">11. Error Handling</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>option[T]</code>/<code>result[T, E]</code>, the
+<code>?</code> operator, and the distinction between panics and
+errors.</p>
+<h2 id="option-and-result"><code>option</code> and
+<code>result</code></h2>
+<p>Cinder has no exceptions. A function that might produce nothing
+returns <code>option[T]</code>; a function that can fail returns
+<code>result[T, E]</code>, <code>T</code> the success value and
+<code>E</code> the error. Both are ordinary sum types
+(<code>src/std/option.cn</code>, <code>src/std/result.cn</code>):</p>
+<pre class="cinder"><code>type option[T] = @some(T) | @none
+type result[T, E] = @ok(T) | @err(E)</code></pre>
+<p>Inspect them with <code>match</code>:</p>
+<pre class="cinder"><code>def find_user(id: int32) -&gt; option[user]:
+    ...
+
+match find_user(42):
+    @some(u) =&gt; println(&quot;Found: {u.name}&quot;)
+    @none    =&gt; println(&quot;Not found&quot;)</code></pre>
+<p>Errors are ordinary user-defined sum types:</p>
+<pre class="cinder"><code>type app_error =
+    | @file_not_found(str)
+    | @permission_denied(str)
+    | @parse_failed(str)</code></pre>
+<h2 id="section"><code>?</code></h2>
+<p>Inside a function whose return type is
+<code>result</code>/<code>option</code>, <code>expr?</code> unwraps
+<code>@ok</code>/<code>@some</code> and yields the payload; on
+<code>@err</code>/<code>@none</code> it returns that value from the
+enclosing function immediately.</p>
+<pre class="cinder"><code>def load_config(path: str) -&gt; result[config, io_error]:
+    let text   = read_file(path)?     # read_file&#39;s error is io_error
+    let parsed = parse_toml(text)?    # parse_toml&#39;s error is parse_error
+    return @ok(parsed)</code></pre>
+<p>The checker (<code>infer_try</code> in
+<code>src/semantic/check.cpp</code>) requires:</p>
+<ol type="1">
+<li>The operand’s type is <code>result[_, _]</code> or
+<code>option[_]</code> — otherwise:
+<code>`?` requires a `result` or `option` value, found `{type}`</code>.</li>
+<li>The enclosing function’s return type (when known) is also
+<code>result</code>/<code>option</code> — otherwise:
+<code>cannot use `?` in a function that returns `{type}`</code>.</li>
+</ol>
+<p><code>?</code> on <code>option</code> behaves the same way:
+<code>e?</code> yields the inner value on <code>@some</code>, and
+returns <code>@none</code> from the function on <code>@none</code>.</p>
+<h3 id="error-type-conversion-via-from">Error-type conversion via
+<code>from</code></h3>
+<p>When the operand is <code>result[_, E1]</code> and the enclosing
+function returns <code>result[_, E2]</code> with <code>E1 != E2</code>,
+<code>?</code> requires <code>impl from[E1] for E2</code>
+(<code>std.traits.from</code>,
+<code>src/std/traits.conversion.cn</code>) and applies it automatically:
+the failure arm reconstructs <code>@err(E2.from(e))</code> instead of
+forwarding <code>e</code> unchanged.</p>
+<pre class="cinder"><code>use std.traits.from
+
+impl from[parse_error] for app_error:
+    def from(e: parse_error) -&gt; app_error:
+        match e:
+            @bad_digit(s) =&gt; @parse(s)
+            @empty        =&gt; @parse(&quot;empty&quot;)
+
+def load_config(path: str) -&gt; result[config, app_error]:
+    let text = read_file(path)?      # io_error propagates unchanged if app_error == io_error
+    let n    = parse_num(text)?      # parse_error converts to app_error via the impl above
+    return @ok(n)</code></pre>
+<p>No conversion is attempted (or needed) when the two error types
+already match, including when either is <code>unknown</code> (an
+unannotated context). When they differ and no matching
+<code>impl from[E1] for E2</code> exists, the checker reports:</p>
+<pre><code>error: cannot propagate `{E1}` with `?` in a function that returns `result[_, {E2}]`
+  help: no conversion from this error type exists
+  help: Add `impl from[{E1}] for {E2}` with a `from` method to convert between error types.</code></pre>
+<p><code>option</code>’s <code>?</code> never triggers a conversion —
+<code>@none</code> carries no error payload to convert.</p>
+<h2 id="limitations">Limitations</h2>
+<p>Method resolution for <code>from</code> selects the first
+<code>impl from[...] for E2</code> block found for <code>E2</code>,
+regardless of its trait argument — a type with two
+<code>impl from[...]</code> blocks for different source error types does
+not reliably disambiguate between them.</p>
+<h2 id="panics-vs.-errors">Panics vs. errors</h2>
+<p>A panic means a bug — an out-of-bounds index, <code>.unwrap()</code>
+on a <code>@none</code> believed to be <code>@some</code>. Panics are
+not for expected failure; use <code>result</code> for those.
+<code>panic()</code> is a recognized prelude intrinsic
+(<code>src/semantic/check.cpp</code>); <code>.unwrap()</code> is defined
+on <code>option</code>/<code>result</code> in
+<code>src/std/option.cn</code> / <code>src/std/result.cn</code>.</p>
+<pre class="cinder"><code>let v = some_list[999]      # panics if index is out of bounds
+let x = opt.unwrap()        # panics if opt is none
+panic(&quot;should never reach here&quot;)</code></pre>
+<p>A panic terminates the program. It prints
+<code>panic: &lt;message&gt;</code> on stderr and exits with status 101
+— the same message and the same status whichever backend ran the
+program, and whether the panic came from <code>panic()</code> in Cinder
+or from a check the compiler emitted.</p>
+<p>An out-of-range index is the same event on every container.
+<code>array[T, N]</code>, <code>slice[T]</code> and <code>str</code> are
+bounds-checked by the compiler; <code>list[T]</code> checks itself, in
+ordinary Cinder (<code>src/std/list.cn</code>). Both report
+<code>index out of bounds</code> and terminate: there is nothing a
+program can do about having been wrong about a container’s extent, so a
+bounds violation is never handed back to anything — not to the program,
+and not to a host embedding a Cinder tier.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="02-built-in-types.html">Built-in Types</a> — the
+<code>from</code>/<code>into</code> traits <code>?</code> uses for
+error-type conversion.</li>
+<li><a href="09-pattern-matching.html">Pattern Matching</a> —
+<code>if let</code>/<code>while let</code>, the common way to inspect a
+single <code>option</code>/<code>result</code> case.</li>
+</ul>
+</body>
+</html>

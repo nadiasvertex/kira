@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>51-sorting-and-searching</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">51-sorting-and-searching</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#sorting-and-searching" id="toc-sorting-and-searching">51.
+Sorting and Searching</a>
+<ul>
+<li><a href="#design" id="toc-design">Design</a></li>
+<li><a href="#design-1" id="toc-design-1">Design</a>
+<ul>
+<li><a href="#ska-sort" id="toc-ska-sort">Ska sort</a></li>
+</ul></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="sorting-and-searching">51. Sorting and Searching</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers the slice algorithms <code>sort</code>, <code>sort_by</code>,
+<code>sort_by_key</code>, <code>sorted</code>, <code>stable_sort</code>,
+<code>binary_search</code>, <code>binary_search_by</code>,
+<code>reverse</code>, <code>rotate</code>, <code>dedup</code>,
+<code>partition_point</code>, <code>lower_bound</code>,
+<code>upper_bound</code>, <code>windows</code>, <code>chunks</code> —
+all implemented in <code>src/std/algo.cn</code> as free functions over
+<code>slice[T]</code>/<code>slice_mut[T]</code>, reachable by UFCS
+(<code>s.sort()</code>).</p>
+<h2 id="design">Design</h2>
+<p>These are <strong>slice algorithms, not iterator adapters</strong> —
+in-place (where applicable) and operating over a contiguous range rather
+than draining a lazily-pulled <code>iterator[T]</code>:</p>
+<ul>
+<li><code>sort</code> (<code>T: ord</code>), <code>sort_by</code>,
+<code>sort_by_key</code> — in-place sort of a mutable slice.</li>
+<li><code>sorted</code> — the non-mutating counterpart, producing a new
+sorted collection.</li>
+<li><code>stable_sort</code> — sort preserving the relative order of
+equal elements.</li>
+<li><code>binary_search</code>, <code>binary_search_by</code> — O(log n)
+lookup over an already-sorted slice.</li>
+<li><code>reverse</code> — in-place reversal.</li>
+<li><code>rotate</code> — in-place rotation.</li>
+<li><code>dedup</code> — in-place removal of consecutive duplicate
+elements.</li>
+<li><code>partition_point</code>, <code>lower_bound</code>,
+<code>upper_bound</code> — binary-search-based boundary queries over a
+sorted slice.</li>
+</ul>
+<p>This is also where <code>sort</code> acquires a comparator and a
+connection to <code>ord</code> at all; today <code>sort</code> has
+neither (indeed, <code>sort</code> does not exist yet as anything
+callable).</p>
+<p><code>windows</code> and <code>chunks</code> live here too, as
+<strong>slice</strong> operations rather than iterator adapters: a
+general iterator cannot produce overlapping views without buffering, and
+the buffering version has a materially different cost profile. Putting
+them on slices keeps the complexity honest — <code>windows</code> and
+<code>chunks</code> yield views into existing storage rather than
+allocating a copy per window/chunk.</p>
+<h2 id="design-1">Design</h2>
+<ul>
+<li><code>sort</code> (<code>T: ord</code>), <code>sort_by</code>,
+<code>sort_by_key</code> — in-place, not guaranteed stable.
+<code>sort</code> uses <code>ska_sort</code> (a byte-radix LSD integer
+sort — see “Ska sort” below) when <code>T</code> is one of the builtin
+integer types small enough for a 64-bit key to represent losslessly
+(every integer type except <code>int128</code>/<code>uint128</code>),
+and introsort (quicksort with a heapsort worst-case fallback, insertion
+sort below a small-range cutoff) otherwise.
+<code>sort_by</code>/<code>sort_by_key</code> always use introsort,
+since a caller-supplied comparator isn’t known to correspond to integer
+ordering.</li>
+<li><code>sorted</code> — the non-mutating counterpart: copies into a
+<code>list[T]</code>, sorts the copy, and returns it.</li>
+<li><code>stable_sort</code> — a simplified timsort: natural runs
+(ascending, or descending and reversed) are detected and extended to a
+fixed minimum length via insertion sort, then merged bottom-up in pairs
+until one run remains. Real timsort’s exact stack-balancing merge order
+and galloping mode are not implemented — both are performance
+refinements over an already-<code>O(n log n)</code> merge, not
+correctness requirements.</li>
+<li><code>binary_search</code>, <code>binary_search_by</code> —
+<code>O(log n)</code> lookup over an already-sorted slice, built on
+<code>lower_bound</code>/a direct binary search respectively.</li>
+<li><code>reverse</code>, <code>rotate</code> — in-place, via a small
+number of <code>[lo, hi)</code> sub-range reversals.</li>
+<li><code>dedup</code> — in-place removal of <em>consecutive</em>
+duplicates; returns the new length, since a slice cannot shrink
+itself.</li>
+<li><code>partition_point</code>, <code>lower_bound</code>,
+<code>upper_bound</code> — binary-search-based boundary queries over a
+sorted (or predicate-partitioned) slice.</li>
+<li><code>windows</code>, <code>chunks</code> — return
+<code>list[slice[T]]</code>: views into the existing storage, not
+copies.</li>
+</ul>
+<h3 id="ska-sort">Ska sort</h3>
+<p><code>sort[T]</code>’s integer fast path is named for Malte
+Skarupke’s byte-radix integer sort. It is realized here as a classic
+double-buffered LSD (least-significant-digit) radix pass over an
+order-preserving 64-bit key — <code>x as usize</code>, sign-flipped at
+bit 63 for a signed source — rather than his fully in-place
+American-flag variant, which needs pointer-level bucket bookkeeping this
+module has no primitive for yet. Still <code>O(n)</code>, and correct
+for every integer width up to 64 bits;
+<code>int128</code>/<code>uint128</code> are excluded (truncating to a
+64-bit key could make two distinct values collide) and fall back to
+introsort.</p>
+<p>Selecting <code>ska_sort</code> for exactly the integer types
+requires knowing, from inside a single generic <code>sort[T]</code>,
+which concrete type <code>T</code> was monomorphized with —
+<code>T.name()</code> compile-time reflection, called from ordinary
+(non-<code>static</code>) code. This did not work before this chapter
+was implemented: see <a
+href="../../03-advanced/31-compile-time-execution.html#implementation-status">Compile-Time
+Execution</a>.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in <code>src/std/algo.cn</code>, both backends (bytecode
+VM and LLVM AOT), verified via
+<code>src/testdata/std_test/algo_sort.cn</code>. This chapter was
+blocked on two real compiler gaps, both found and fixed in the course of
+implementing it:</p>
+<ul>
+<li>Range-indexing (<code>arr[a..b]</code>, which <em>forms</em> the
+<code>slice</code>/<code>slice_mut</code> view every algorithm here
+operates through) only scaled its resulting view’s data pointer
+correctly for 1-byte-stride sources — silently wrong for
+<code>array[int32, N]</code>/<code>list[int32]</code>/etc. Fixed; see
+<code>general-stride-range-indexing-implemented</code> project
+memory.</li>
+<li><code>T.name()</code> reflection, needed for <code>sort</code>’s
+integer/non-integer dispatch, type-checked but never lowered outside
+<code>static</code> constructs. Fixed; see <a
+href="../../03-advanced/31-compile-time-execution.html#implementation-status">Compile-Time
+Execution § Implementation status</a>.</li>
+</ul>
+<p><code>T: ord</code> bounds, needed for
+<code>sort</code>/<code>binary_search</code>/<code>lower_bound</code>/<code>upper_bound</code>,
+remain advisory only — unenforced at the call site (a pre-existing,
+unrelated gap) — so a misuse would surface as an error inside the
+standard library’s own source rather than at the caller’s line.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../collections/43-list.md"><code>list[T]</code></a> —
+<code>list.cn</code>’s note on how <code>xs.sort()</code> reaches this
+chapter’s <code>sort</code> via UFCS.</li>
+<li><a
+href="../collections/44-deque-and-bitset.md"><code>deque[T]</code> and
+<code>bitset</code></a> — still blocked on <code>machine</code>-based
+containers’ own, separate pointer-model gap.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>23-contracts-on-trait-methods</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">23-contracts-on-trait-methods</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#contracts-on-trait-methods"
+id="toc-contracts-on-trait-methods">23. Contracts on Trait Methods</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#behavioral-subtyping"
+id="toc-behavioral-subtyping">Behavioral Subtyping</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="contracts-on-trait-methods">23. Contracts on Trait Methods</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>pre</code>/<code>post</code> conditions as part of a trait
+method’s interface, and the behavioral-subtyping rule implementations
+are checked against. General contract syntax (contracts on any function,
+not just trait methods) is specified in <a
+href="../03-advanced/34-contracts.html">Contracts</a>; this chapter
+covers only the trait-method interaction.</p>
+<h2 id="syntax">Syntax</h2>
+<pre class="cinder"><code>trait account:
+    def withdraw(self, amount: int32) -&gt; int32
+        pre  amount &gt; 0
+        post return &lt;= self.balance()</code></pre>
+<h2 id="behavioral-subtyping">Behavioral Subtyping</h2>
+<p>Every implementation is checked against the trait’s declared contract
+under behavioral subtyping: an implementation may
+<strong>weaken</strong> a precondition (accept more) and
+<strong>strengthen</strong> a postcondition (promise more), never the
+reverse. This guarantees a caller relying on the trait’s contract stays
+correct no matter which implementation runs. A default method’s contract
+binds every override as well.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p><code>pre</code>/<code>post</code> contracts on ordinary function and
+method declarations are implemented and enforced:
+<code>src/semantic/check.cpp</code> checks each contract’s condition as
+boolean (<code>in_contract_</code>/<code>in_postcondition_</code> state,
+<code>check.cpp:3350</code> and <code>check.cpp:13462</code>), assumes
+preconditions as facts available to the body, and proves postconditions
+before return (<code>collect_function_facts</code> and the
+predicate-reasoning machinery around
+<code>check.cpp:3300</code>–<code>3360</code>). See <a
+href="../03-advanced/34-contracts.html">Contracts</a> for the general
+mechanism.</p>
+<p>No evidence was found of a dedicated cross-check comparing an
+<code>impl</code>’s contract against the trait declaration’s contract
+under the weaken-pre/strengthen-post rule specifically — no
+<code>check.cpp</code> code path was found that reads a trait method’s
+contract and an implementing method’s contract together and validates
+one implies the other. Each declaration’s own contract is checked
+against its own body independently. Treat the behavioral-subtyping rule
+stated above as the target design; whether the compiler currently
+rejects an override that violates it (e.g. a <code>withdraw</code>
+override that tightens the precondition) is unconfirmed.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="18-traits.html">Traits</a> — trait/<code>impl</code>
+mechanics.</li>
+<li><a href="../03-advanced/34-contracts.html">Contracts</a> — the
+general <code>pre</code>/<code>post</code> mechanism this chapter
+specializes.</li>
+</ul>
+</body>
+</html>

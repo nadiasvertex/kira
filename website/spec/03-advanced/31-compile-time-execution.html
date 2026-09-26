@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>31-compile-time-execution</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">31-compile-time-execution</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#compile-time-execution"
+id="toc-compile-time-execution">31. Compile-Time Execution</a>
+<ul>
+<li><a href="#static-bindings"
+id="toc-static-bindings"><code>static</code> bindings</a></li>
+<li><a href="#static-if"
+id="toc-static-if"><code>static if</code></a></li>
+<li><a href="#static-assert"
+id="toc-static-assert"><code>static assert</code></a></li>
+<li><a href="#static-for"
+id="toc-static-for"><code>static for</code></a></li>
+<li><a href="#compile-time-reflection"
+id="toc-compile-time-reflection">Compile-time reflection</a></li>
+<li><a href="#pure-functions" id="toc-pure-functions"><code>pure</code>
+functions</a></li>
+<li><a href="#quoting-and-splicing"
+id="toc-quoting-and-splicing">Quoting and splicing</a>
+<ul>
+<li><a href="#hygiene" id="toc-hygiene">Hygiene</a></li>
+</ul></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="compile-time-execution">31. Compile-Time Execution</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Compile-time evaluation of <code>static</code> declarations,
+<code>static if</code>/<code>static assert</code>/<code>static for</code>,
+compile-time reflection, <code>pure</code> functions, and
+quoting/splicing.</p>
+<p>There is no separate template or macro language. Compile-time code is
+ordinary Cinder — the same functions, loops, and pattern matching —
+evaluated by an interpreter (<code>src/comptime/eval.*</code>) rather
+than compiled to machine code. See <a
+href="32-compile-time-semantics.html">Compile-Time Semantics</a> for the
+execution model this section’s constructs run inside.</p>
+<h2 id="static-bindings"><code>static</code> bindings</h2>
+<p>Grammar: <code>static_decl</code> in
+<code>spec/cinder-grammar.ebnf</code>.</p>
+<pre class="cinder"><code>static PI:    float64          = 3.141592653589793
+static LIMIT: int32            = 1_000_000
+static TABLE: array[int32, 256] = build_lookup_table()</code></pre>
+<ul>
+<li>A <code>static</code> binding’s initializer is evaluated by the
+compile-time interpreter. Evaluation failure (an expression that is not
+closed, or that depends on runtime input) is a compile error.</li>
+<li><code>build_lookup_table</code> above is an ordinary function;
+nothing marks it <code>static</code> — the binding forces evaluation of
+whatever it calls.</li>
+<li>The result is reified: frozen, immutable data baked into the binary.
+See <a
+href="32-compile-time-semantics.html#compile-time-memory">Compile-Time
+Semantics § Compile-Time Memory</a>.</li>
+<li>A <code>static</code> item may also appear inside a
+<code>trait</code>/<code>impl</code> body as a required or provided
+constant (<code>check.cpp</code>’s trait-item handling for
+<code>static_decl</code>).</li>
+</ul>
+<h2 id="static-if"><code>static if</code></h2>
+<pre class="cinder"><code>static IS_64BIT: bool = size_of[usize]() == 8
+
+static if IS_64BIT:
+    type word = uint64
+else:
+    type word = uint32</code></pre>
+<ul>
+<li>The condition is evaluated at compile time; it must be closed.</li>
+<li>The branch not taken is <strong>not compiled or
+type-checked</strong> — it is discarded before name resolution sees it
+(<code>static_decl_kind::conditional_compilation</code>,
+<code>check.cpp</code>’s <code>check_static_decl</code>).</li>
+<li><code>static if</code> is valid at module scope, selecting between
+top-level items, and inside a function body, where each branch’s body
+may hold ordinary statements (<code>return</code>, <code>let</code>, an
+assignment, …) as well as declarations —
+<code>parser::parse_static_branch_node</code> dispatches each line to
+whichever parses. Inside a generic <code>static def[T]</code>, a
+condition that depends on <code>T</code>
+(e.g. <code>T.name() == "int64"</code>) cannot be evaluated while the
+template itself is being checked (<code>T</code> is not yet bound to a
+concrete type); the checker falls back to type-checking both branches in
+that case, and real branch selection happens per call, once
+<code>T</code> is concretely bound, via the same evaluator that runs the
+rest of the <code>static def</code>’s body.</li>
+</ul>
+<h2 id="static-assert"><code>static assert</code></h2>
+<pre class="cinder"><code>static assert size_of[T]() &lt;= 64, &quot;T must fit in a cache line&quot;</code></pre>
+<ul>
+<li>If the condition is closed and false, this is a compile error at the
+assertion’s location, with the optional message attached.</li>
+<li>If the condition depends on runtime input, it lowers to a runtime
+panic instead (<code>static_decl_kind::assertion</code>,
+<code>check.cpp:15100</code>).</li>
+<li>The optional <code>, "message"</code> form matches contract
+condition messages; see <a href="34-contracts.html">Contracts</a>.</li>
+</ul>
+<h2 id="static-for"><code>static for</code></h2>
+<p>Two forms: an inline expression-yielding form and a block-statement
+form.</p>
+<pre class="cinder"><code>def field_names[T]() -&gt; list[str]:
+    static for field in T.fields() =&gt; field.name</code></pre>
+<pre class="cinder"><code>static for field in T.fields():
+    println(field.name)</code></pre>
+<ul>
+<li>The iterable must be a compile-time value (typically the result of
+reflection, see below). <code>static for</code> unrolls: one code path
+is generated per iteration, each with <code>field</code> bound to that
+iteration’s concrete value.</li>
+<li>An optional guard filters iterations:
+<code>static for x in xs if pred(x) =&gt; ...</code>.</li>
+<li><code>static_decl_kind::for_inline</code> and
+<code>static_decl_kind::for_block</code> are the two AST forms
+(<code>ast.h:1836</code>); both are handled in
+<code>check.cpp:15145</code>–<code>15211</code>.</li>
+<li>This is the mechanism <code>deriving</code> is built from: reflect
+over a type’s fields, unroll, and (typically combined with quoting) emit
+one code fragment per field.</li>
+</ul>
+<h2 id="compile-time-reflection">Compile-time reflection</h2>
+<pre class="cinder"><code>T.fields()          # list of field descriptors
+T.field_count()     # number of fields (compile-time integer)
+T.name()            # name of the type as str</code></pre>
+<ul>
+<li>Reflection is implemented in <code>src/comptime/reflect.cpp</code>
+as a read-only traversal of the type’s already-parsed declaration syntax
+— it does not consult the type checker’s <code>type_table</code>.</li>
+<li>Because Cinder monomorphizes generics, the type <code>T</code> a
+reflective call queries is always concrete by the time it is evaluated,
+so the result is an ordinary compile-time constant.</li>
+<li>Reflection may only invoke <code>pure</code> functions and is itself
+referentially transparent — see <a
+href="32-compile-time-semantics.html#reflection">Compile-Time Semantics
+§ Reflection</a> for why this matters for contracts.</li>
+</ul>
+<h2 id="pure-functions"><code>pure</code> functions</h2>
+<p><code>pure</code> asserts a function is referentially transparent —
+same inputs, same output, no side effects — and the compiler verifies
+the claim.</p>
+<pre class="cinder"><code>pure def clamp(x: float64, lo: float64, hi: float64) -&gt; float64:
+    if x &lt; lo: return lo
+    if x &gt; hi: return hi
+    return x</code></pre>
+<ul>
+<li><code>pure</code> and <code>static</code> are independent modifiers
+(two separate axes — see <a
+href="32-compile-time-semantics.html#two-axes-phase-and-effect">Compile-Time
+Semantics</a>). A function may be <code>pure</code> only,
+<code>static</code> only, or <code>static pure</code>.</li>
+<li>Only calls to <code>pure</code> functions are legal inside
+<code>pre</code>/<code>post</code>/<code>invariant</code> conditions
+(<code>check.cpp:4430</code> rejects a non-pure call
+<code>in_contract_</code>). See <a
+href="34-contracts.html">Contracts</a>.</li>
+<li>A <code>pure</code> lambda uses <code>pure</code> before the arrow:
+<code>let square = pure x =&gt; x * x</code>.</li>
+</ul>
+<pre class="cinder"><code>static pure def align_up(n: usize, align: usize) -&gt; usize:
+    (n + align - 1) &amp; ~(align - 1)
+
+type aligned_buf[n: usize] = array[byte, align_up(n, 16)]</code></pre>
+<h2 id="quoting-and-splicing">Quoting and splicing</h2>
+<p>A backtick captures syntax as a compile-time value; <code>~</code>
+inserts a compile-time value’s syntax at the splice site.</p>
+<pre class="cinder"><code>static let increment: expr = `(x + 1)`
+
+def apply(x: int32) -&gt; int32:
+    return ~increment    # equivalent to: return x + 1</code></pre>
+<p>Quote value types (<code>ast::quote_fragment_kind</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Captures</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expr</code></td>
+<td>a single expression</td>
+</tr>
+<tr>
+<td><code>stmt</code></td>
+<td>a single statement</td>
+</tr>
+<tr>
+<td><code>def_expr</code></td>
+<td>a definition (function, type, impl, etc.)</td>
+</tr>
+<tr>
+<td><code>type_expr</code></td>
+<td>a type expression</td>
+</tr>
+</tbody>
+</table>
+<p>All are compile-time only; none has a runtime representation.</p>
+<p>Building expressions programmatically, via <code>expr.lit</code>,
+<code>expr.field</code>, <code>expr.ty</code>, and friends:</p>
+<pre class="cinder"><code>static def make_adder(n: int32) -&gt; expr:
+    `(x + ~(expr.lit(n)))`
+
+static let add5 = make_adder(5)
+
+def apply(x: int32) -&gt; int32:
+    return ~add5    # equivalent to: return x + 5</code></pre>
+<p>Generating definitions — combined with <code>static for</code> and
+reflection, this is how <code>deriving</code> works internally:</p>
+<pre class="cinder"><code>static def derive_show[T]() -&gt; def_expr:
+    let fields = T.fields()
+    let parts  = for f in fields =&gt;
+        `(~(expr.lit(f.name)) + &quot;: &quot; + self.(~(expr.field(f))).show())`
+    let body   = parts.join(` + &quot;, &quot;`)
+    `impl show for ~(expr.ty[T]()):
+        def show(self) -&gt; str:
+            ~body`
+
+~derive_show[point]()    # emits the impl at this point in the module</code></pre>
+<h3 id="hygiene">Hygiene</h3>
+<p>Quotes are hygienic by default: a plain (non-destructuring)
+<code>let</code>/<code>var</code> binding introduced <em>inside</em> a
+quoted fragment is renamed to a fresh, globally-unique synthetic name
+before splicing, so it cannot capture or be captured by a same-named
+binding at the splice site (<code>src/comptime/hygiene.{h,cpp}</code>,
+<code>rename_internal_bindings</code>).</p>
+<ul>
+<li>Deliberately narrow: only plain-name
+<code>let</code>/<code>var</code> bindings are renamed. Destructuring
+patterns, <code>for</code>/<code>while let</code>/<code>match</code>
+pattern bindings, lambda parameters, and struct-literal shorthand fields
+are left unrenamed — a free reference to such a name resolves against
+the splice site, not the quote’s own definition site.</li>
+<li>A nested quote or splice found inside a fragment is left untouched;
+hygiene does not recurse into nested quotes.</li>
+<li>Use <code>expr.capture("name")</code> to deliberately capture a name
+from the surrounding context, opting out of hygiene for that one
+reference.</li>
+</ul>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented end to end:</p>
+<ul>
+<li><code>static</code> bindings, <code>static if</code>,
+<code>static assert</code>, <code>static for</code> (both forms) —
+<code>static_decl</code> and its four <code>static_decl_kind</code>
+variants, handled in <code>check.cpp</code>
+(<code>check_static_decl</code>, <code>~15074</code>–<code>15230</code>)
+and by the evaluator (<code>src/comptime/eval.cpp</code>).</li>
+<li>Compile-time reflection (<code>T.fields()</code>,
+<code>T.field_count()</code>, <code>T.name()</code>) —
+<code>src/comptime/reflect.cpp</code> for <code>static</code> contexts.
+<code>T.name()</code> called on a generic function’s own type parameter
+from <em>ordinary</em> (non-<code>static</code>) code also lowers, via
+<code>semantic::type_param_reflection</code>/<code>hir::lower_call</code>
+(<code>checker::infer_call</code> records the concrete name once inside
+a monomorphized instance; <code>comptime::evaluator</code> itself has no
+notion of that binding, being a wholly separate subsystem used only for
+<code>static if</code>/<code>static for</code>/<code>static assert</code>/<code>static let</code>).
+<code>T.field_count()</code>/<code>T.fields()</code> on a type parameter
+remain <code>static</code>-only.</li>
+<li><code>pure</code> verification for functions and lambdas — enforced
+in <code>check.cpp</code> and required inside contract conditions.</li>
+<li>Quoting/splicing with all four fragment kinds (<code>expr</code>,
+<code>stmt</code>, <code>def_expr</code>, <code>type_expr</code>),
+reification at splice sites, and hygienic renaming of internal bindings
+— <code>src/comptime/hygiene.{h,cpp}</code>,
+<code>src/comptime/eval.cpp</code>, and the
+<code>quote_expr</code>/<code>splice_expr</code>/<code>splice_stmt</code>/<code>splice_type</code>
+node kinds in <code>check.cpp</code>.</li>
+<li>The AST-builder intrinsics, as <code>expr.lit(value)</code>,
+<code>expr.ident(name)</code>, <code>expr.field(object, name)</code>,
+<code>expr.interp_concat(a, b)</code>, <code>expr.debug(value)</code>,
+<code>expr.binary(op, lhs, rhs)</code> (<code>==</code>,
+<code>!=</code>, <code>and</code>, <code>or</code>) and
+<code>expr.call(callee, args...)</code> —
+<code>evaluator::try_eval_expr_builder_call</code>
+(<code>src/comptime/eval.cpp</code>), with the same list mirrored in
+<code>checker::infer_method_call</code> so an unrecognized one is a
+type-check error rather than an evaluation-time surprise.
+<code>expr.call</code> is what lets a generated body be a <em>fold</em>
+rather than one flat expression, which is how <code>derive_ord</code>
+(<code>src/std/deriving.cn</code>) builds a lexicographic comparison.
+The builders construct only expressions: there is no statement or
+match-arm builder, so a generated body that needs branching calls a
+helper function instead.</li>
+</ul>
+<p>Documented gap: resolving a quote’s free references against its own
+definition site (the other half of full hygiene, as opposed to the
+splice site) is explicitly not implemented — <code>hygiene.h</code>’s
+own comment notes this is “still-unimplemented.”</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="32-compile-time-semantics.html">Compile-Time Semantics</a>
+— the phase/effect model and evaluation/reasoning split these constructs
+run inside.</li>
+<li><a href="33-dependent-and-refinement-types.html">Dependent and
+Refinement Types</a> — uses <code>pure</code> functions as uninterpreted
+atoms in the reasoning solver.</li>
+<li><a href="34-contracts.html">Contracts</a> — <code>pure</code>
+requirement on
+<code>pre</code>/<code>post</code>/<code>invariant</code>.</li>
+</ul>
+</body>
+</html>

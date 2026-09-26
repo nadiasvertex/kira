@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>36-modules-as-compile-time-values</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">36-modules-as-compile-time-values</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#modules-as-compile-time-values"
+id="toc-modules-as-compile-time-values">36. Modules as Compile-Time
+Values</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a>
+<ul>
+<li><a href="#signatures" id="toc-signatures">Signatures</a></li>
+<li><a href="#parameterized-modules-functors"
+id="toc-parameterized-modules-functors">Parameterized modules
+(functors)</a></li>
+<li><a href="#reflecting-on-a-module"
+id="toc-reflecting-on-a-module">Reflecting on a module</a></li>
+<li><a href="#selecting-a-module-at-compile-time"
+id="toc-selecting-a-module-at-compile-time">Selecting a module at
+compile time</a></li>
+</ul></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="modules-as-compile-time-values">36. Modules as Compile-Time
+Values</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>A module is a compile-time record of the types, functions, and
+constants it defines: it can be described by a <code>signature</code>,
+parameterized as a <em>functor</em>, and reflected on — all before code
+generation, with no runtime representation.</p>
+<h2 id="syntax">Syntax</h2>
+<p>Grammar: <code>signature_decl</code>, the parameterized form of
+<code>sub_module_decl</code>, and the argumented form of
+<code>use_path</code> in <code>spec/cinder-grammar.ebnf</code>.</p>
+<pre class="ebnf"><code>signature_decl
+    = [ visibility ] &quot;signature&quot; IDENT &quot;:&quot; NEWLINE
+          INDENT { signature_item } DEDENT ;
+
+signature_item
+    = &quot;type&quot; IDENT [ &quot;:&quot; bound ] NEWLINE
+    | [ visibility ] func_signature NEWLINE
+    | [ visibility ] &quot;static&quot; IDENT &quot;:&quot; type_expr NEWLINE ;
+
+sub_module_decl
+    = [ visibility ] &quot;module&quot; IDENT [ type_params ] NEWLINE
+    | [ visibility ] &quot;module&quot; IDENT [ type_params ] &quot;:&quot; NEWLINE
+          INDENT { top_level_item } DEDENT ;
+
+use_path
+    = module_path [ &quot;[&quot; type_arg_list &quot;]&quot; ] &quot;.&quot; use_selector
+    | module_path [ &quot;[&quot; type_arg_list &quot;]&quot; ] ;</code></pre>
+<p><code>signature</code> is a reserved keyword. A module parameter’s
+signature bound uses the ordinary <code>type_param</code>
+<code>: bound</code> syntax (<code>module audited[DB: backend]</code>);
+<code>backend</code> resolves in the module/type namespace, where
+signatures, traits, and concepts all live.
+<code>use audited[postgres] as db</code> combines an argument list with
+the existing <code>as</code> alias; nested instantiation
+(<code>audited[cached[postgres]]</code>) parses because the argument
+list reuses <code>type_arg_list</code>.</p>
+<h2 id="semantics">Semantics</h2>
+<h3 id="signatures">Signatures</h3>
+<p>A <code>signature</code> lists required members — types, function
+signatures, constants — without implementing them:</p>
+<pre class="cinder"><code>signature backend:
+    type conn
+    def connect(url: str) -&gt; conn
+    def query(c: &amp;conn, sql: str) -&gt; result[rows, db_error]
+    def close(c: conn) -&gt; unit</code></pre>
+<ul>
+<li>A signature name is a new symbol kind
+(<code>signature_symbol</code>) in the module/type namespace. It
+resolves as a bound target but is never interned as a type.</li>
+<li>A signature body is checked once. An abstract <code>type conn</code>
+is an opaque type local to the signature (modeled on a type parameter)
+usable by later members.</li>
+</ul>
+<p><strong>Structural satisfaction.</strong> A module satisfies a
+signature — concept-style, with no <code>impl</code> — iff, after
+binding each abstract signature type to the module’s same-named
+<code>pub</code> type:</p>
+<ul>
+<li>each required <code>type T</code> has a corresponding
+<code>pub type T</code>;</li>
+<li>each required <code>def f(params) -&gt; ret</code> has a
+<code>pub def f</code> whose interned signature equals the required one
+after substituting each abstract type with its bound concrete type;</li>
+<li>each required <code>static C: T</code> has a
+<code>pub static C</code> of type <code>T</code> under the binding.</li>
+</ul>
+<p>Deep parameter/return-type equality is checked (not just member
+existence, visibility, and arity) — the signature’s types are resolved
+in the argument module’s own resolve context, and each pair compared by
+interned <code>type_id</code>; an unknown/error type on either side
+never manufactures a false mismatch. The diagnostic on failure lists
+every missing or mismatched member, not just the first, each with
+expected-vs-found.</p>
+<h3 id="parameterized-modules-functors">Parameterized modules
+(functors)</h3>
+<pre class="cinder"><code>module audited[DB: backend]:
+    pub def query(c: &amp;DB.conn, sql: str) -&gt; result[rows, db_error]:
+        audit_log(sql)
+        DB.query(c, sql)</code></pre>
+<p>A <code>module</code> declaration with type parameters registers as a
+<strong>functor</strong>: visible by name (symbol kind
+<code>submodule_symbol</code>, flagged as a functor), its body not
+elaborated by ordinary per-module checking, and skipped by the module
+graph.</p>
+<p>Instantiation, at <code>use audited[postgres] as db</code>:</p>
+<pre class="cinder"><code>use audited[postgres] as db
+
+let rows = db.query(&amp;conn, &quot;select 1&quot;)   # audited, backed by postgres</code></pre>
+<ol type="1">
+<li>Resolve the functor and each argument; check each module argument
+<code>satisfies</code> its signature bound.</li>
+<li><strong>Applicative, memoized instantiation.</strong>
+<code>audited[postgres]</code> names the same module everywhere it
+appears. Instantiation is a pure function of
+<code>(functor, canonical-arg-key)</code> — built from the functor’s
+fully-qualified name plus each argument’s canonical form — cached
+session-wide. Two files that both <code>use audited[postgres]</code> see
+one instantiated module and one <code>conn</code>.</li>
+<li>If the key is already memoized, reuse the instantiated module.
+Otherwise, clone the functor body (distinct node identity per
+instantiation; no AST substitution of parameter references) and check
+it, with each module parameter bound as an <strong>import alias</strong>
+to its argument module in the clone’s synthetic file:
+<ul>
+<li>value projections (<code>DB.query(...)</code>) resolve through the
+alias the same way an ordinary <code>use ... as</code> alias
+resolves;</li>
+<li>type projections (<code>DB.conn</code>) resolve through an extension
+to <code>resolve_named_type</code>: a multi-segment type path whose head
+is an import alias to a session module rewrites to that module’s
+absolute path and resolves there.</li>
+</ul></li>
+<li><code>def</code>, <code>type</code>, <code>static</code> (binding
+form), <code>impl</code>, <code>extend</code>, and <code>trait</code>
+members are all cloned. A non-binding <code>static</code> or an inline
+submodule falls back with a diagnostic. Types, traits, and statics
+register into the synthetic module before its functions, so return
+types, <code>bump</code> references, and trait bounds resolve.</li>
+<li>Alias the result into the importing scope (<code>db</code>).</li>
+</ol>
+<p><strong>Type identity.</strong> A <code>DB.conn</code> projection
+substitutes to the <em>same interned <code>type_id</code></em> as the
+argument module’s <code>conn</code>; memoization guarantees one module
+identity per instantiation key, so two
+<code>use audited[postgres]</code> imports share one
+<code>conn</code>.</p>
+<p><strong>Ordering for
+<code>impl</code>/<code>extend</code>/coherence.</strong>
+<code>build_method_table</code> and <code>validate_impl_coherence</code>
+run once, before per-file checking, so functor-body
+<code>impl</code>/<code>extend</code> members must be registered before
+them. A pre-pass walks every file’s <code>use m[args]</code>, registers
+each instantiation’s cloned members (including
+<code>impls</code>/<code>extends</code>) into the program index; the
+method-table and coherence build then see them; the cloned bodies are
+checked afterward, against the complete table. Each impl’s target type
+is projected per instantiation, so two instantiations implementing a
+trait for their own local type never collide; the coherence key
+incorporates the instantiation.</p>
+<p><strong>Cycle detection.</strong> A functor whose instantiation
+(directly or transitively) requires instantiating itself is
+diagnosed.</p>
+<p><strong>Codegen.</strong> Each cloned <code>def</code> is recorded as
+a <code>functor_instance</code> (<code>{decl, owner_module}</code>).
+After the driver lowers the real source files, cloned members owning the
+same synthetic module are grouped into one standalone
+<code>hir_module</code>, appended to the module set — a materialized
+functor instantiation is an in-memory module with no source file, and
+ordinary cross-module dispatch links call sites to it on both the
+bytecode VM and LLVM/AOT backends. <code>type</code> members are
+compile-time only; a scalar <code>static</code> is inlined at each
+reference.</p>
+<p><strong>Modules are never values at runtime, nor in the checker’s
+expression language.</strong> <code>let m = audited[postgres]</code> is
+out of scope; the only binding forms are <code>use ... as</code> and
+module parameters. Modules never enter <code>type_table</code>.</p>
+<h3 id="reflecting-on-a-module">Reflecting on a module</h3>
+<pre class="cinder"><code>M.functions()   # list of function descriptors
+M.types()       # list of type descriptors
+M.name()        # the module&#39;s name, as str
+M.function_count()
+M.type_count()</code></pre>
+<p>Each function/type descriptor is a <code>{name, is_pub}</code> value;
+visibility is exposed as a field rather than pre-filtered (the evaluator
+has no caller-module context to apply “pub from outside, all from
+inside” itself), so callers filter on <code>is_pub</code> for
+outside-the-module use. Reflection calls evaluate only in the
+compile-time evaluator. A synthetic functor-instantiation module is
+reflected exactly like a hand-written one, by its synthetic name.</p>
+<p>Reflection plus <code>static for</code> generates code from a
+module’s members, replacing dynamic dispatch with a table baked into the
+binary:</p>
+<pre class="cinder"><code>static COMMANDS: map[str, command] = map(
+    for f in cli_commands.functions() =&gt; (f.name(), make_command(f))
+)</code></pre>
+<h3 id="selecting-a-module-at-compile-time">Selecting a module at
+compile time</h3>
+<p><code>static if</code> around a <code>use</code> gives zero-cost
+dependency injection:</p>
+<pre class="cinder"><code>static if BUILD.test:
+    use fake_io  as io
+else:
+    use real_io  as io</code></pre>
+<p>Both branches must satisfy the same signature for code using
+<code>io</code> to remain unchanged across the swap.</p>
+<p><strong>Pipeline-ordering rule.</strong> The module graph and
+<code>use</code> resolution run before type checking and compile-time
+evaluation; a <code>static if</code> condition gating a <code>use</code>
+would otherwise make the module graph depend on evaluation. The
+condition is folded in a dedicated pre-resolution pass that evaluates
+the taken branch and drops the untaken one before the module graph is
+built, so the graph’s evaluation-dependence stays a bounded pre-pass
+rather than general interleaving. The pass touches only a
+<code>static if</code> whose branch contains a <code>use</code>; every
+other <code>static if</code> keeps its ordinary check-time branch
+selection. The condition is evaluated with a standalone, resolution-free
+evaluator (no globals registered), so only literal expressions fold
+(<code>static if true:</code>) — the taken branch is folded recursively,
+so a nested import-gating <code>static if</code> inside it is handled
+too. <code>BUILD.*</code> build flags and resolution-dependent statics
+are named by the rule but have no evaluator support yet; referencing one
+in an import-gating condition produces a diagnostic explaining the
+restriction rather than being evaluated.</p>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>signature backend:
+    type conn
+    def connect(url: str) -&gt; conn
+    def query(c: &amp;conn, sql: str) -&gt; result[rows, db_error]
+    def close(c: conn) -&gt; unit
+
+module audited[DB: backend]:
+    pub def query(c: &amp;DB.conn, sql: str) -&gt; result[rows, db_error]:
+        audit_log(sql)
+        DB.query(c, sql)
+
+use audited[postgres] as db
+
+let rows = db.query(&amp;conn, &quot;select 1&quot;)   # audited, backed by postgres</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Fully landed. Two v1 limits remain, worth noting for anyone hitting
+them:</p>
+<ul>
+<li>Reflecting an instantiated functor through its
+<code>use ... as</code> alias (<code>db.functions()</code>) is not wired
+— reflect the functor’s own name instead.</li>
+<li>Two submodules that share a leaf name collide in the reflection
+registry (last one registered wins); fully-qualified names are
+unaffected.</li>
+<li>Abstract pre-checking of a functor body against its signature bounds
+(producing errors with zero instantiations) is not implemented — errors
+surface per-instantiation, pointing at the functor body with a note
+chaining to the instantiation site.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="37-higher-kinded-traits.html">Higher-Kinded Traits</a> — a
+related compile-time-only abstraction over constructors rather than
+modules; both share the “erased before codegen” property.</li>
+</ul>
+</body>
+</html>

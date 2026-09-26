@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Conventions</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Conventions</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#c-conventions-clang-22-c26-mode"
+id="toc-c-conventions-clang-22-c26-mode">C++ Conventions (Clang 22,
+C++26 mode)</a>
+<ul>
+<li><a href="#toolchain-dialect" id="toc-toolchain-dialect">0) Toolchain
+&amp; Dialect</a></li>
+<li><a href="#naming-layout-structure"
+id="toc-naming-layout-structure">1) Naming, Layout &amp;
+Structure</a></li>
+<li><a href="#functionalfirst-design" id="toc-functionalfirst-design">2)
+Functional‑first design</a></li>
+<li><a href="#error-handling" id="toc-error-handling">3) Error
+handling</a></li>
+<li><a href="#value-categories-moves-forwarding"
+id="toc-value-categories-moves-forwarding">4) Value categories, moves
+&amp; forwarding</a></li>
+<li><a href="#modern-features-when-supported-by-our-clang"
+id="toc-modern-features-when-supported-by-our-clang">5) Modern features
+(when supported by our Clang)</a></li>
+<li><a href="#api-surface-readability"
+id="toc-api-surface-readability">6) API surface &amp;
+readability</a></li>
+<li><a href="#memory-lifetime" id="toc-memory-lifetime">7) Memory &amp;
+lifetime</a></li>
+<li><a href="#concurrency" id="toc-concurrency">8) Concurrency</a></li>
+<li><a href="#diagnostics-build-flags"
+id="toc-diagnostics-build-flags">9) Diagnostics &amp; build
+flags</a></li>
+<li><a href="#performance-after-safety-clarity"
+id="toc-performance-after-safety-clarity">10) Performance (after safety
+&amp; clarity)</a></li>
+<li><a href="#examples" id="toc-examples">11) Examples</a>
+<ul>
+<li><a href="#forwarding-factory" id="toc-forwarding-factory">Forwarding
+factory</a></li>
+<li><a href="#return-by-value-let-nrvoprvalue-elision-work"
+id="toc-return-by-value-let-nrvoprvalue-elision-work">Return by value
+(let NRVO/prvalue elision work)</a></li>
+<li><a href="#code-comments" id="toc-code-comments">Code
+Comments</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="c-conventions-clang-22-c26-mode">C++ Conventions (Clang 22,
+C++26 mode)</h1>
+<blockquote>
+<p><strong>Safety first, then readability, then performance.</strong>
+Prefer functional style and value semantics. All names are
+<strong>snake_case</strong>.</p>
+</blockquote>
+<h2 id="toolchain-dialect">0) Toolchain &amp; Dialect</h2>
+<ul>
+<li>Target <strong>Clang 22.1+</strong> with
+<strong><code>-std=c++2c</code></strong>.</li>
+<li>You may use C++26 features implemented in Clang ≤ 22 (gate anything
+uncertain with feature‑test macros).</li>
+</ul>
+<h2 id="naming-layout-structure">1) Naming, Layout &amp; Structure</h2>
+<ul>
+<li>All names use <strong>snake_case</strong>. Namespaces are
+lower_snake_case.</li>
+<li>One logical public entity per header; keep headers minimal; prefer
+forward declares.</li>
+<li>Limit lines to ~100 cols; 2‑space indent; trailing commas in
+multi‑line init‑lists.</li>
+<li>Use #pragma once at the top of files instead of header guards</li>
+</ul>
+<h2 id="functionalfirst-design">2) Functional‑first design</h2>
+<ul>
+<li>Prefer pure free functions with explicit inputs/outputs.</li>
+<li>Prefer value semantics and immutability; use
+<code>const</code>/<code>constexpr</code> aggressively.</li>
+<li>Use <code>[[nodiscard]]</code> where ignoring a return would be a
+bug.</li>
+</ul>
+<h2 id="error-handling">3) Error handling</h2>
+<ul>
+<li>Use <code>std::expected&lt;T, E&gt;</code> for recoverable errors;
+<code>std::optional&lt;T&gt;</code> for “maybe” values.</li>
+<li>Reserve exceptions for truly exceptional, non‑local failures.
+Document them.</li>
+</ul>
+<h2 id="value-categories-moves-forwarding">4) Value categories, moves
+&amp; forwarding</h2>
+<ul>
+<li>Use <code>std::move(x)</code> <strong>only</strong> when consuming a
+<strong>named</strong> object in the current scope.</li>
+<li>Use <code>std::forward&lt;T&gt;(x)</code> <strong>only</strong> in
+functions taking <code>T&amp;&amp;</code> where <code>T</code> is
+<strong>deduced</strong> (a forwarding reference).</li>
+<li>Prefer plain <code>return obj;</code> and let copy elision/NRVO do
+the work; never <code>return std::move(obj);</code> for local
+<code>obj</code>.</li>
+</ul>
+<h2 id="modern-features-when-supported-by-our-clang">5) Modern features
+(when supported by our Clang)</h2>
+<ul>
+<li>Ranges &amp; algorithms; <code>[[no_unique_address]]</code> for
+EBO/layout wins (only when measured).</li>
+<li>Template QoL: variadic friends, pack indexing, structured‑binding in
+conditions, etc. (feature‑test gate).</li>
+<li>Use concepts, constexpr, consteval, static if, static assert, etc.
+when valuable</li>
+</ul>
+<h2 id="api-surface-readability">6) API surface &amp; readability</h2>
+<ul>
+<li>Use <code>auto f(args) -&gt; return_type</code> form; make ownership
+&amp; mutability explicit.</li>
+<li>Pass cheap scalars by value; large read‑only by
+<code>const&amp;</code>; sink parameters by forwarding refs + perfect
+forwarding.</li>
+<li>Return values (not output params). Use tuples or small records for
+multi‑values.</li>
+</ul>
+<h2 id="memory-lifetime">7) Memory &amp; lifetime</h2>
+<ul>
+<li>No raw owning pointers. Prefer RAII (<code>std::unique_ptr</code>,
+<code>std::shared_ptr</code> when required).</li>
+<li>Prefer <code>std::span</code>/views for non‑owning access. No naked
+<code>new</code>/<code>delete</code> in user code.</li>
+</ul>
+<h2 id="concurrency">8) Concurrency</h2>
+<ul>
+<li>Prefer <code>std::jthread</code> + <code>std::stop_token</code>.
+Avoid data races by defaulting to immutability.</li>
+</ul>
+<h2 id="diagnostics-build-flags">9) Diagnostics &amp; build flags</h2>
+<ul>
+<li><p>Build warning‑free with at least:</p>
+<pre><code>-std=c++2c -Wall -Wextra -Wconversion -Wsign-conversion -Wshadow -Wdeprecated -Wold-style-cast -Werror</code></pre></li>
+<li><p>Use sanitizers (<code>-fsanitize=address,undefined</code>) in
+CI.</p></li>
+</ul>
+<h2 id="performance-after-safety-clarity">10) Performance (after safety
+&amp; clarity)</h2>
+<ul>
+<li>Prefer clear, idiomatic code; then measure.</li>
+<li>Use <code>reserve</code>, <code>shrink_to_fit</code>,
+string_view/span, and rely on copy elision for return‑by‑value.</li>
+</ul>
+<h2 id="examples">11) Examples</h2>
+<h3 id="forwarding-factory">Forwarding factory</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="kw">template</span> <span class="op">&lt;</span><span class="kw">class</span> T<span class="op">&gt;</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> make_resource<span class="op">(</span>T<span class="op">&amp;&amp;</span> t<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="bu">std::</span>make_unique<span class="op">&lt;</span><span class="bu">std::</span>decay_t<span class="op">&lt;</span>T<span class="op">&gt;&gt;(</span><span class="bu">std::</span>forward<span class="op">&lt;</span>T<span class="op">&gt;(</span>t<span class="op">));</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="return-by-value-let-nrvoprvalue-elision-work">Return by value
+(let NRVO/prvalue elision work)</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> compute_stats<span class="op">(</span><span class="bu">std::</span>string_view path<span class="op">)</span> <span class="op">-&gt;</span> file_stats <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  file_stats s<span class="op">{</span><span class="co">/*...*/</span><span class="op">};</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> s<span class="op">;</span> <span class="co">// not std::move(s)</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="code-comments">Code Comments</h3>
+<p>Write comments to explain <strong>why the code exists or why it is
+implemented in a non-obvious way</strong>, not to document the history
+of the conversation.</p>
+<ul>
+<li>Comments should describe the current code and its rationale.</li>
+<li>Do not mention previous designs, previous implementations, earlier
+attempts, discussions, prompts, or decisions made during the
+session.</li>
+<li>Do not write comments such as “We originally…” or “Previously we…”
+unless the historical detail is essential to understanding the current
+code.</li>
+<li>Do not use comments to preserve a narrative of how the code
+evolved.</li>
+<li>Prefer a short explanation of the invariant, constraint, tradeoff,
+or reason for the implementation.</li>
+<li>If the code is self-explanatory, do not add a comment merely to
+describe what it does.</li>
+</ul>
+<p><strong>Good:</strong></p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Keep this allocation outside the loop because the buffer is reused for</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="co">// every frame.</span></span></code></pre></div>
+<p><strong>Bad:</strong></p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">// We originally allocated this inside the loop, but during an earlier</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="co">// discussion we decided to move it here because we discovered that...</span></span></code></pre></div>
+<p>The code should explain itself where possible. Comments should add
+information that cannot be readily inferred from the code.</p>
+<hr />
+<p><strong>One‑liner for code‑gen</strong>: target Clang 22.1 with
+<code>-std=c++2c</code>; functional‑first; type &amp; function names
+snake_case; prefer values/immutability/RAII; <code>std::move</code> only
+when consuming; <code>std::forward</code> only for forwarding refs; rely
+on copy elision; feature‑test‑gate C++26; compile warning‑free; optimize
+last.</p>
+</body>
+</html>

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>16-closures-and-capture</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">16-closures-and-capture</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#closures-and-capture" id="toc-closures-and-capture">16.
+Closures and Capture</a>
+<ul>
+<li><a href="#capture" id="toc-capture">Capture</a>
+<ul>
+<li><a href="#explicit-capture-lists"
+id="toc-explicit-capture-lists">Explicit capture lists</a></li>
+</ul></li>
+<li><a href="#crew-scoped-borrowing"
+id="toc-crew-scoped-borrowing"><code>crew</code>-Scoped
+Borrowing</a></li>
+<li><a href="#closure-types-and-returning-closures"
+id="toc-closure-types-and-returning-closures">Closure Types and
+Returning Closures</a></li>
+<li><a href="#three-ways-to-vary-returned-behavior"
+id="toc-three-ways-to-vary-returned-behavior">Three Ways to Vary
+Returned Behavior</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="closures-and-capture">16. Closures and Capture</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>Capture-by-borrow vs. capture-by-move, the <code>move</code> keyword,
+the <code>crew</code>-scoped borrowing rule, closure types
+(<code>fn(A) -&gt; B</code>) and monomorphization, and the three ways to
+vary returned behavior.</p>
+<h2 id="capture">Capture</h2>
+<p>A lambda captures the variables it uses from the surrounding scope.
+How it captures depends on whether the closure escapes:</p>
+<ul>
+<li>A closure that does <strong>not</strong> escape — passed to
+<code>map</code>, <code>filter</code>, or any function that calls it and
+returns — captures by <strong>borrow</strong>. Nothing is copied; the
+borrow is bounded by the call, like any other borrow.</li>
+<li>A closure that <strong>does</strong> escape — stored somewhere
+longer-lived, or sent to another task — captures by
+<strong>move</strong>, taking ownership of what it uses, because a
+borrow cannot escape. <code>move</code> before the lambda forces
+move-capture explicitly.</li>
+</ul>
+<pre class="cinder"><code>let factor = 3
+let scaled = numbers.map(x =&gt; x * factor)   # borrows factor; does not escape</code></pre>
+<h3 id="explicit-capture-lists">Explicit capture lists</h3>
+<p>The rule above is the <em>implicit</em> capture rule: a lambda with
+no capture list captures every outer-scope name its body uses. A capture
+list — <code>[...]</code> before the parameters, see <a
+href="../01-core/05-lambdas.html">Lambdas</a> — replaces this with an
+explicit, closed set: only listed names are reachable from the enclosing
+scope, and each one names its own capture mode (<code>name</code> for
+the default borrow-or-move rule, <code>&amp;name</code> to force borrow,
+<code>&amp;mut name</code> for mutable borrow) instead of inheriting it
+from escape analysis. <code>move</code> still applies to the whole
+lambda, and when combined with a capture list forces move on every bare
+<code>name</code> entry —
+<code>&amp;name</code>/<code>&amp;mut name</code> entries are
+unaffected, since they already state their mode explicitly.</p>
+<h2 id="crew-scoped-borrowing"><code>crew</code>-Scoped Borrowing</h2>
+<p>Because a <code>crew</code>’s tasks cannot outlive the
+<code>crew</code>, and the <code>crew</code> cannot outlive its
+enclosing scope, a closure spawned into a <code>crew</code> may
+<strong>borrow</strong> local data — no <code>'static</code>-style
+requirement, no forced <code>move</code>. Full <code>crew</code>
+semantics are in <a href="28-crew-par-race.html"><code>crew</code>,
+<code>par</code>, <code>race</code></a>; the rule stated here is that
+spawn sites are an exception to “an escaping closure must move.”</p>
+<pre class="cinder"><code>async def totals() -&gt; result[summary, app_error]:
+    let rows = load_rows()
+    crew c:
+        let a = c.spawn(sum_column(&amp;rows, 0))   # borrows rows across the crew
+        let b = c.spawn(sum_column(&amp;rows, 1))
+    let total = a.get()? + b.get()?
+    return @ok(total)</code></pre>
+<h2 id="closure-types-and-returning-closures">Closure Types and
+Returning Closures</h2>
+<p>The capture rules above govern a closure’s <em>environment</em>. Its
+<em>type</em> is <code>fn(A) -&gt; B</code>, the type of any callable
+with that signature, capturing or not. Wherever
+<code>fn(A) -&gt; B</code> appears as a parameter or return type, the
+compiler monomorphizes it to the concrete callable — calls stay direct,
+no vtable:</p>
+<pre class="cinder"><code>def apply(f: fn(int32) -&gt; int32, x: int32) -&gt; int32:   # accepts any callable, zero cost
+    return f(x)
+
+def adder(n: int32) -&gt; fn(int32) -&gt; int32:
+    return x =&gt; x + n        # returns one concrete closure, hidden behind fn(int32) -&gt; int32</code></pre>
+<p><code>adder</code> returns a single closure <em>shape</em>, so
+<code>fn(int32) -&gt; int32</code> names it opaquely: the caller calls
+it and the compiler inlines through it — nothing is boxed.</p>
+<h2 id="three-ways-to-vary-returned-behavior">Three Ways to Vary
+Returned Behavior</h2>
+<p>To return <em>different</em> behaviors, prefer expressing the
+variation as data over an opaque closure — it stays static, is
+inspectable, and fits the rest of the language:</p>
+<ol type="1">
+<li><strong>Chosen at compile time</strong> — a dependent return type
+resolves to a concrete type from a <code>static</code> value. No runtime
+cost, no erasure.</li>
+<li><strong>Chosen at runtime, from a known set</strong> — return a sum
+type describing the behavior and interpret it:</li>
+</ol>
+<pre class="cinder"><code>type op = @inc | @scale(int32) | @clamp(int32, int32)
+
+def apply_op(o: op, x: int32) -&gt; int32:
+    match o:
+        @inc           =&gt; x + 1
+        @scale(k)      =&gt; x * k
+        @clamp(lo, hi) =&gt; min(max(x, lo), hi)</code></pre>
+<p>A sum type is a static, matchable <code>variant</code> — dispatch is
+a branch on a tag, not a hidden call. Closures have anonymous types, so
+two different closures cannot be named to place them in a sum; modelling
+the behavior as data avoids the problem.</p>
+<ol start="3" type="1">
+<li><strong>Chosen at runtime, from an open set</strong> — heterogeneous
+callbacks stored together, plugins loaded at run time — is the one case
+that cannot be monomorphized. <code>box[fn(A) -&gt; B]</code> is an
+owned, type-erased closure for this case only: it owns its captured
+environment and is called indirectly, and the cost is explicit in the
+type:</li>
+</ol>
+<pre class="cinder"><code>var handlers: list[box[fn(event) -&gt; unit]] = []
+handlers.push(box(e =&gt; log(e)))
+handlers.push(box(e =&gt; metrics.record(e)))</code></pre>
+<p><code>box</code> generalizes beyond closures to any object-safe
+trait; see <a href="24-trait-objects.html">Trait Objects</a>.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><code>fn(A) -&gt; B</code> closure types, lambda expressions, and
+monomorphized inlining at call sites are implemented and exercised
+throughout the semantic and codegen stress corpora.</li>
+<li>The <code>move</code> keyword parses (<code>parser.cpp</code> sets
+<code>lambda_expr::is_move</code> on <code>kw_move</code>) and survives
+AST cloning. Combined with an explicit capture list, <code>move</code>
+now has real effect: <code>parse_lambda_expr</code> promotes every bare
+<code>name</code> entry in the list to
+<code>ast::capture_mode::by_move</code>
+(<code>&amp;name</code>/<code>&amp;mut name</code> entries are
+untouched, since they already state their own mode);
+<code>src/semantic/move_check.cpp</code>’s <code>check_lambda</code>
+consumes each <code>by_move</code> entry against the enclosing scope at
+the point the lambda is created, so reusing the original binding
+afterward is a use-after-move error, the same as any other move.
+Codegen-wise a move capture is indistinguishable from a by-value capture
+— both backends branch on <code>ast::is_reference_capture</code> rather
+than on <code>by_value</code> specifically, so <code>by_move</code>
+takes the existing value-capture path (a genuine copy at the bit level;
+only the move-checker enforces that the <em>source</em> is no longer
+usable). What remains unimplemented is the
+<strong>implicit</strong>-capture half of this chapter’s rule: an
+escaping closure without an explicit <code>move [...]</code> list is not
+rejected or forced to move — implicit capture is unconditionally by
+value in every lowering, and no escape analysis exists yet to drive the
+default borrow-or-move choice.</li>
+<li>Explicit capture lists
+(<code>[name, &amp;name, &amp;mut name]</code>, and <code>[]</code>) are
+implemented end to end:
+<ul>
+<li><strong>Parsing</strong> — <code>parse_capture_list</code>
+(<code>src/parser/parser.cpp</code>), reached from a leading
+<code>[</code> in expression position by the
+<code>at_capture_list</code> lookahead, which distinguishes a capture
+list from an array literal by what follows the <code>]</code>. The list
+is stored as
+<code>std::optional&lt;std::vector&lt;lambda_capture&gt;&gt;</code> on
+<code>lambda_expr</code>, so <code>[]</code> (capture nothing) stays
+distinct from no list at all (capture implicitly).</li>
+<li><strong>Restriction</strong> — the checker keeps a stack of capture
+barriers alongside its lexical scopes (<code>capture_barrier</code> in
+<code>src/semantic/check.cpp</code>). A name resolved across a lambda
+boundary whose list omits it is rejected, with a diagnostic that points
+at both the reference and the list. The list itself is validated too:
+duplicate entries, names that do not resolve to an enclosing local,
+module-level names that never needed capturing, <code>&amp;mut</code> of
+a non-<code>var</code> binding, and a by-reference entry reaching
+through an enclosing <em>by-value</em> capture are each their own error;
+a listed name the body never reads is a warning.</li>
+<li><strong>Modes</strong> — <code>capture_plan</code>
+(<code>src/hir/captures.h</code>) is the single ordered environment plan
+both backends build from: the explicit list in source order when there
+is one, <code>free_variables</code> otherwise. A <code>by_value</code>
+entry copies into the environment block as before. A
+<code>&amp;</code>/<code>&amp;mut</code> entry stores the
+<em>address</em> of the enclosing frame’s storage instead, so reads and
+writes inside the body reach the original binding. In
+<code>llvm_codegen</code> that address is the local’s
+<code>alloca</code>; the bytecode VM has no addressable registers, so
+<code>ref_captured_symbols</code> drives a pre-pass that boxes each
+by-reference-captured local into a one-slot heap cell which both frames
+then read and write through.</li>
+<li><strong>Borrows</strong> — a
+<code>&amp;</code>/<code>&amp;mut</code> entry registers a real borrow
+of the named local, live for as long as the closure is, through the same
+<code>live_view</code> machinery that tracks
+<code>slice</code>/<code>cell</code> views
+(<code>src/semantic/borrow_check.cpp</code>). Two closures holding
+<code>&amp;mut x</code> at once is the same error as two
+<code>mut slice</code> views of one collection.</li>
+<li>Exercised by <code>063</code>–<code>066</code> in
+<code>src/testdata/codegen_stress/</code> (each with a stated
+<code># expect:</code> value, since a by-reference capture silently
+degrading to a copy would degrade <em>identically</em> on both backends
+and satisfy a cross-backend agreement check), plus fixtures in
+<code>src/testdata/semantic_check_test/</code> and
+<code>src/testdata/semantic_borrow_check_test/</code>.</li>
+</ul></li>
+<li>The three ways to vary returned behavior: the dependent-type and
+sum-type forms rely on ordinary generics and sum types, both implemented
+(see <a href="19-generics-and-inference.html">Generics and
+Inference</a>). <code>box[fn(A) -&gt; B]</code> does
+<strong>not</strong> work today — no trait-object/vtable dynamic
+dispatch exists anywhere in the compiler (no lowering for
+<code>box</code> was found in <code>src/hir/</code>,
+<code>src/bytecode/</code>, or <code>src/llvm_codegen/</code>;
+<code>box</code> is registered only as a bare type constructor in
+<code>src/semantic/types.cpp</code>). See <a
+href="24-trait-objects.html">Trait Objects</a> for the equivalent
+finding on <code>box[trait]</code> generally.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="14-ownership-and-borrowing.html">Ownership and
+Borrowing</a> — the borrow/move distinction closures follow.</li>
+<li><a href="28-crew-par-race.html"><code>crew</code>, <code>par</code>,
+<code>race</code></a> — full structured-concurrency semantics for
+spawn-site borrowing.</li>
+<li><a href="24-trait-objects.html">Trait Objects</a> —
+<code>box[trait]</code> as the general form of
+<code>box[fn(A) -&gt; B]</code>.</li>
+</ul>
+</body>
+</html>

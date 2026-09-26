@@ -1,0 +1,7 @@
+body { max-width: 46em; margin: 2em auto; padding: 0 1em;
+       font-family: -apple-system, Helvetica, Arial, sans-serif; line-height: 1.5; }
+pre, code { background: #f4f4f4; }
+pre { padding: 0.75em; overflow-x: auto; }
+nav.toc { margin-bottom: 2em; }
+h1, h2, h3 { line-height: 1.25; }
+a { color: #0645ad; }

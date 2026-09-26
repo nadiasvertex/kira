@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>52-std-string</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">52-std-string</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.string" id="toc-std.string">52.
+<code>std.string</code></a>
+<ul>
+<li><a href="#model" id="toc-model">Model</a></li>
+<li><a href="#architecture" id="toc-architecture">Architecture</a></li>
+<li><a href="#public-api" id="toc-public-api">Public API</a></li>
+<li><a href="#method-semantics" id="toc-method-semantics">Method
+semantics</a></li>
+<li><a href="#algorithms-and-complexity"
+id="toc-algorithms-and-complexity">Algorithms and complexity</a></li>
+<li><a href="#example" id="toc-example">Example</a></li>
+<li><a href="#limitations" id="toc-limitations">Limitations</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.string">52. <code>std.string</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Covers <code>std.string</code>, the UTF-8 method surface
+<code>extend</code>ed onto the built-in <code>str</code> view type.</p>
+<h2 id="model">Model</h2>
+<ul>
+<li><code>str</code> is a byte sequence behind a
+<code>{ len; data_ptr }</code> header; <code>len</code> is a
+<strong>byte</strong> length. See <a
+href="../../01-core/02-built-in-types.html">Built-in Types</a>.</li>
+<li>Byte indices are the currency:
+<code>find</code>/<code>rfind</code>/<code>split</code> report byte
+offsets, and <code>s[a..b]</code> slices by byte offset. Slicing is O(1)
+and copy-free — pointer arithmetic over the shared buffer.</li>
+<li>Iteration yields <code>char</code> (Unicode scalar values), decoded
+from UTF-8 as the string is walked. Byte length and scalar length are
+distinct.</li>
+<li>Every offset these methods report lands on a scalar boundary. This
+follows from UTF-8’s self-synchronization property: a valid UTF-8 needle
+can only match a valid UTF-8 haystack at scalar boundaries, so
+byte-level substring search is automatically scalar-correct — search
+runs at raw-byte speed with no decoding on the hot path.</li>
+<li>Case mapping is Unicode <strong>full</strong> default case mapping
+(<code>to_uppercase</code>/<code>to_lowercase</code>), including default
+multi-code-point expansions and the Final_Sigma context rule; case
+<em>folding</em> (<code>fold_case</code>/<code>eq_ignore_case</code>) is
+also full, not simple. See Limitations for what’s still out of scope
+(locale-tailored casing, normalization, grapheme segmentation).</li>
+<li><code>reversed</code> reverses by scalar, not by grapheme
+cluster.</li>
+</ul>
+<h2 id="architecture">Architecture</h2>
+<p>Three layers:</p>
+<ul>
+<li><p><strong>Layer 1 — runtime intrinsics</strong>
+(<code>rt_str_*</code>, <code>src/runtime/string_ops.h</code>). Native,
+UTF-8-aware primitives with no Unicode-table dependency: equality,
+forward/reverse find, reverse, trim, replace. Search uses Two-Way string
+matching (Crochemore–Perrin). Shared verbatim by both backends.</p>
+<p>Not-found is signaled by
+<code>find_result = { found: bool, pos: usize }</code>, not a sentinel
+value and not a native-side <code>option</code> construction.</p></li>
+<li><p><strong>Layer 2 —
+<code>std.unicode</code>/<code>std.unicode_tables</code>, pure
+Cinder</strong> (<code>src/std/unicode.cn</code>,
+<code>src/std/unicode_tables.cn</code>). Case mapping and folding are
+<em>not</em> a native intrinsic — they’re ordinary Cinder over generated
+Unicode Character Database (UCD) lookup tables.
+<code>tools/unicode/gen_case_tables.py</code> parses
+<code>UnicodeData.txt</code>/<code>CaseFolding.txt</code>/<code>SpecialCasing.txt</code>
+and emits <code>unicode_tables.cn</code>’s <code>static</code> arrays
+(simple 1:1 mappings, full multi-code-point mappings, full case-folding
+mappings, and the <code>cased</code>/<code>case-ignorable</code>
+code-point ranges Final_Sigma needs); <code>unicode.cn</code> decodes a
+<code>str</code>’s UTF-8 bytes by hand (<code>str.as_bytes()</code> plus
+a byte-cursor scalar decoder — see Implementation status for why not
+<code>for c in s</code>), binary-searches those tables (reusing
+<code>std.algo</code>’s
+<code>binary_search</code>/<code>partition_point</code>), and re-encodes
+results.</p></li>
+<li><p><strong>Layer 3 — <code>extend str</code> composition</strong>
+(<code>src/std/string.cn</code>, Cinder source). Expresses the public
+API as composition over Layers 1 and 2:
+<code>starts_with</code>/<code>ends_with</code> are one anchored
+comparison each, <code>contains</code> is
+<code>find(...).is_some()</code>, <code>split</code> loops over
+<code>find</code> yielding zero-copy sub-slices,
+<code>to_uppercase</code>/<code>to_lowercase</code>/<code>fold_case</code>
+forward to <code>std.unicode</code>, <code>eq_ignore_case</code> folds
+both sides and compares.</p></li>
+</ul>
+<h2 id="public-api">Public API</h2>
+<pre class="cinder"><code>extend str:
+    pub def is_empty(self) -&gt; bool
+    pub def eq(self, other: str) -&gt; bool
+    pub def starts_with(self, prefix: str) -&gt; bool
+    pub def ends_with(self, suffix: str) -&gt; bool
+    pub def contains(self, needle: str) -&gt; bool
+    pub def find(self, needle: str) -&gt; option[usize]
+    pub def rfind(self, needle: str) -&gt; option[usize]
+    pub def trim(self) -&gt; str
+    pub def trim_start(self) -&gt; str
+    pub def trim_end(self) -&gt; str
+    pub def reversed(self) -&gt; str
+    pub def to_uppercase(self) -&gt; str
+    pub def to_lowercase(self) -&gt; str
+    pub def fold_case(self) -&gt; str
+    pub def eq_ignore_case(self, other: str) -&gt; bool
+    pub def replace(self, from: str, to: str) -&gt; str
+    pub def split(self, sep: str) -&gt; list[str]</code></pre>
+<p><code>impl add for str</code> (<code>src/std/string.cn</code>) also
+gives <code>str</code> a <code>+</code> operator backed by
+<code>rt_str_concat</code>, distinct from the <code>extend str</code>
+method table above. <code>eq</code> is a named method distinct from
+<code>==</code>; <code>==</code>/<code>!=</code> for <code>str</code>
+dispatch to it.</p>
+<h2 id="method-semantics">Method semantics</h2>
+<ul>
+<li><strong><code>is_empty()</code></strong> — <code>true</code> iff
+byte length is 0.</li>
+<li><strong><code>eq(other)</code></strong> — <code>true</code> iff
+identical byte length and content.</li>
+<li><strong><code>starts_with(prefix)</code> /
+<code>ends_with(suffix)</code></strong> — substring anchored at
+start/end. Empty affix returns <code>true</code>; affix longer than
+<code>self</code> returns <code>false</code>.</li>
+<li><strong><code>contains(needle)</code></strong> — <code>true</code>
+iff <code>needle</code> occurs anywhere. Empty needle returns
+<code>true</code>.</li>
+<li><strong><code>find(needle)</code></strong> —
+<code>@some(byte_offset)</code> of the first occurrence, else
+<code>@none</code>. Empty needle yields <code>@some(0)</code>. Offset is
+a scalar boundary.</li>
+<li><strong><code>rfind(needle)</code></strong> —
+<code>@some(byte_offset)</code> of the last occurrence, else
+<code>@none</code>. Empty needle yields
+<code>@some(self.len())</code>.</li>
+<li><strong><code>trim</code> / <code>trim_start</code> /
+<code>trim_end</code></strong> — remove leading/trailing scalars with
+the Unicode <code>White_Space</code> property (not just ASCII). Returns
+a zero-copy sub-slice; returns <code>self</code> unchanged when nothing
+trims.</li>
+<li><strong><code>reversed()</code></strong> — scalars emitted in
+reverse order (valid UTF-8 out).</li>
+<li><strong><code>to_uppercase()</code> /
+<code>to_lowercase()</code></strong> — Unicode full default case
+mapping: a scalar with a default multi-code-point expansion
+(e.g. <code>ß</code> → <code>SS</code>, <code>İ</code> → <code>i</code>
++ combining dot above) produces all of them; otherwise the simple 1:1
+mapping applies; an unmapped scalar passes through.
+<code>to_lowercase</code> additionally applies the Final_Sigma rule: a
+Greek capital sigma (<code>Σ</code>) at the end of a word lowercases to
+<code>ς</code> rather than <code>σ</code>.</li>
+<li><strong><code>fold_case()</code></strong> — Unicode full case
+folding (potentially multi-code-point, e.g. <code>ß</code> folds to
+<code>ss</code>), for building a caseless comparison rather than for
+display.</li>
+<li><strong><code>eq_ignore_case(other)</code></strong> —
+<code>true</code> iff
+<code>self.fold_case() == other.fold_case()</code>.</li>
+<li><strong><code>replace(from, to)</code></strong> — all
+non-overlapping occurrences of <code>from</code> replaced with
+<code>to</code>. Empty <code>from</code> leaves <code>self</code>
+unchanged (no zero-width matches).</li>
+<li><strong><code>split(sep)</code></strong> — pieces between
+occurrences of <code>sep</code>. Consecutive separators yield empty
+pieces (<code>"a::b".split(":")</code> → <code>["a", "", "b"]</code>).
+Empty <code>sep</code> yields <code>[self]</code>; no occurrence yields
+<code>[self]</code>.</li>
+</ul>
+<h2 id="algorithms-and-complexity">Algorithms and complexity</h2>
+<ul>
+<li><strong>Search</strong>
+(<code>find</code>/<code>rfind</code>/<code>contains</code>/<code>split</code>/<code>replace</code>):
+Two-Way string matching. O(n + m) worst case, O(1) extra space, no table
+proportional to alphabet size. Byte-level and UTF-8-correct by
+self-synchronization.</li>
+<li><strong><code>eq</code>/<code>starts_with</code>/<code>ends_with</code></strong>:
+O(min length) after an O(1) length check; no allocation.</li>
+<li><strong><code>split</code></strong>: O(n) total search; pieces are
+O(1) zero-copy sub-slices.</li>
+<li><strong><code>reversed</code>/<code>replace</code></strong>: single
+decode/encode pass into one length-reserved buffer — O(n), one
+allocation.</li>
+<li><strong><code>to_uppercase</code>/<code>to_lowercase</code>/<code>fold_case</code></strong>:
+O(n) decode into a scalar list, O(m log k) table lookups (<code>m</code>
+output scalars, <code>k</code> table size, binary search), O(n)
+re-encode; one or two allocations. <code>to_lowercase</code>
+additionally scans up to a handful of neighboring scalars per
+Final_Sigma-eligible <code>Σ</code>, not the whole string.</li>
+<li><strong><code>eq_ignore_case</code></strong>: two
+<code>fold_case</code> passes plus an O(min length) comparison.</li>
+<li><strong><code>trim*</code></strong>: O(leading + trailing) scalar
+scan; result is a zero-copy sub-slice.</li>
+</ul>
+<h2 id="example">Example</h2>
+<pre class="cinder"><code>let s = &quot;  Hello, Cinder  &quot;
+s.trim()                        # &quot;Hello, Cinder&quot;
+s.trim().to_uppercase()         # &quot;HELLO, CINDER&quot;
+s.contains(&quot; Cinder&quot;)              # true
+s.find(&quot; Cinder&quot;)                  # @some(9), a byte offset into s
+&quot;a::b&quot;.split(&quot;:&quot;)                # [&quot;a&quot;, &quot;&quot;, &quot;b&quot;]
+&quot;abc&quot;.replace(&quot;b&quot;, &quot;XY&quot;)         # &quot;aXYc&quot;
+&quot;straße&quot;.to_uppercase()           # &quot;STRASSE&quot;
+&quot;STRASSE&quot;.eq_ignore_case(&quot;straße&quot;) # true</code></pre>
+<h2 id="limitations">Limitations</h2>
+<p>These are permanent v1 scope limits, not pending work
+(<code>spec/todo.md</code> tracks them explicitly):</p>
+<ul>
+<li><strong>Locale-tailored casing is out of scope.</strong>
+<code>to_uppercase</code>/<code>to_lowercase</code>/<code>fold_case</code>
+apply Unicode’s <em>default</em> casing algorithm only. The
+Turkish/Azeri dotted/dotless-I rules and Lithuanian dot-retention
+(<code>SpecialCasing.txt</code>’s locale-conditioned rows) are excluded
+— they’d need a locale parameter threaded through every casing call, a
+materially bigger feature than the default algorithm implemented here.
+<code>eq</code>/search remain code-point exact (not case-insensitive) —
+use <code>eq_ignore_case</code> for caseless comparison.</li>
+<li><strong>No normalization.</strong> Canonically-equivalent but
+differently-composed strings (e.g. <code>é</code> as U+00E9
+vs. <code>e</code> + U+0301) compare unequal and search
+independently.</li>
+<li><strong>Scalar-level, not grapheme-level.</strong>
+<code>reversed</code> reverses scalars; <code>find</code> offsets are
+scalar boundaries, not grapheme boundaries. A combining mark can be
+separated from its base by <code>reversed</code>, or land mid-grapheme
+in a <code>split</code> piece. Grapheme segmentation (UAX #29) is out of
+scope.</li>
+<li><strong><code>str</code> methods only.</strong> No
+<code>char</code>-classification API (<code>is_alphabetic</code>, etc.)
+lives here.</li>
+<li><strong>No regex.</strong> <code>split</code>/<code>replace</code>
+take literal substrings only.</li>
+</ul>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Both compiler backends (bytecode VM and LLVM/AOT) share the
+<code>rt_str_*</code> intrinsics from a single dispatch table
+(<code>src/intrinsics.h</code>), confirmed present in
+<code>src/runtime/string.{h,cpp}</code> and
+<code>src/bytecode/vm.cpp</code>.
+<code>to_uppercase</code>/<code>to_lowercase</code>/<code>fold_case</code>/<code>eq_ignore_case</code>
+are <em>not</em> in that dispatch table — they compile as ordinary
+Cinder (<code>src/std/unicode.cn</code>/<code>unicode.cn</code>’s
+tables), so both backends get them automatically, with no C++
+counterpart to keep in sync.
+<code>rt_str_to_upper</code>/<code>rt_str_to_lower</code>, the
+hand-rolled ASCII/Latin-1/Greek/Cyrillic-only C++ intrinsics this
+chapter previously ran on, have been removed entirely. The
+<code>extend str</code> layer (<code>src/std/string.cn</code>) matches
+the public API above exactly, plus the additional
+<code>impl add for str</code> operator overload noted above, which is
+not part of <code>std-reference.md</code>’s original API table.</p>
+<p>This chapter’s case-mapping/folding rewrite needed one real compiler
+fix along the way: <code>std.unicode_tables</code>’s generated
+<code>static</code> lookup tables are reached only through
+<code>std.unicode</code>’s functions reading a global, never through a
+function call into <code>std.unicode_tables</code> itself (it declares
+no functions) — <code>hir::find_reachable_modules</code>’s dependency
+walker had no case for <code>hir_global_ref</code> at all, so a module
+reached <em>only</em> through a global reference silently never made it
+into the compiled program, and every reference to one of its globals
+failed at bytecode/AOT compile time despite type-checking cleanly. Fixed
+by giving <code>hir_global_ref</code> an <code>owner_module</code> field
+(mirroring <code>hir_local_ref</code>’s) and adding the missing walker
+case; regression test: <code>src/hir/link_test.cpp</code>’s
+<code>test_discovers_dependency_reached_only_through_a_global</code>.</p>
+<p>Two further gaps were found but deliberately <em>not</em> fixed here,
+as out of scope for this chapter:</p>
+<ul>
+<li><strong><code>for c in s</code> does not actually decode
+UTF-8.</strong> Despite this chapter’s own “Model” section (and
+<code>std.unicode</code>’s original design) assuming a
+<code>for</code>-loop over a <code>str</code> yields decoded Unicode
+scalars, <code>str</code> has no <code>next(mut self)</code> method for
+the general user-iterator desugaring to dispatch to, so it falls through
+to <code>hir::lowerer::lower_indexed_loop</code> — the same byte-indexed
+loop shape used for
+<code>array</code>/<code>list</code>/<code>slice</code> — which indexes
+raw bytes, not scalars. Confirmed by probing
+<code>for c in "straße": println(c as uint32)</code>, which prints
+<code>ß</code>’s two raw continuation bytes (195, 159) instead of its
+scalar value (223). <code>std.unicode</code> works around this by
+decoding UTF-8 by hand over <code>str.as_bytes()</code> instead of using
+<code>for</code>. Fixing the <code>for</code>-loop desugaring itself
+needs new HIR-lowering machinery and is tracked separately
+(<code>spec/todo.md</code>).</li>
+<li><strong><code>\u{XXXX}</code> string escapes mis-trigger the
+interpolation scanner.</strong>
+<code>has_interpolation</code>/<code>scan_interpolated_content</code>
+(<code>src/parser/interp_string.cpp</code>) skip exactly one character
+past a backslash for every escape, which is correct for
+<code>\n</code>/<code>\"</code>/etc. but wrong for the variable-width
+<code>\u{...}</code> escape: the <code>{</code> right after
+<code>\u</code> gets mistaken for the start of a real interpolation
+hole. A string literal containing <code>\u{...}</code> therefore fails
+to parse at all (reported as an “invalid escape sequence”, or an
+unterminated interpolation, depending on what follows). Worked around in
+this chapter’s own tests by typing non-ASCII characters directly into
+the <code>.cn</code> source files as UTF-8 rather than via the escape.
+Tracked separately (<code>spec/todo.md</code>).</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="53-std-format.html"><code>std.format</code></a> — uses
+<code>std.string</code>’s scalar-length and truncation intrinsics for
+<code>str</code> padding.</li>
+</ul>
+</body>
+</html>

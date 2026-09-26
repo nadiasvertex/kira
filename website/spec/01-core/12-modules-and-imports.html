@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>12-modules-and-imports</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">12-modules-and-imports</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#modules-and-imports" id="toc-modules-and-imports">12.
+Modules and Imports</a>
+<ul>
+<li><a href="#use" id="toc-use"><code>use</code></a></li>
+<li><a href="#visibility" id="toc-visibility">Visibility</a></li>
+<li><a href="#re-exporting" id="toc-re-exporting">Re-exporting</a></li>
+<li><a href="#visible-modules" id="toc-visible-modules">Visible
+Modules</a></li>
+<li><a href="#dotted-names" id="toc-dotted-names">Dotted Names</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="modules-and-imports">12. Modules and Imports</h1>
+<p><strong>Status:</strong> Implemented — see Implementation status</p>
+<p>Covers <code>use</code>, visibility, and re-exporting with
+<code>pub use</code>. This is the basic module chapter;
+module-spanning-files and project structure are covered in the
+Intermediate module-system chapter.</p>
+<h2 id="use"><code>use</code></h2>
+<p><code>use_decl</code>, <code>use_path</code>,
+<code>use_selector</code> in <code>spec/cinder-grammar.ebnf</code>.</p>
+<pre class="cinder"><code>use my_app.geometry.point
+use my_app.geometry.{ point, shape }   # multiple at once
+use my_app.geometry.point as pt        # rename
+use my_app as app                      # rename a root module</code></pre>
+<p>A <code>use_selector</code> may also be <code>*</code> for a wildcard
+import of everything a module exports.</p>
+<h2 id="visibility">Visibility</h2>
+<p>The keyword set is <code>pub</code> / <code>module</code> /
+<code>file</code> (<code>ast::visibility</code> in
+<code>src/parser/ast.h</code>; <code>spec/cinder-grammar.ebnf</code>’s
+<code>visibility</code> production):</p>
+<pre><code>pub     visible to any importer, anywhere
+module  visible anywhere within the current module (declaring module and
+        its descendants) — this is the default when no visibility modifier
+        is written
+file    visible only within the immediately enclosing file</code></pre>
+<p><code>token_to_visibility</code> maps an absent modifier to
+<code>visibility::def</code>, which <code>module_index.cpp</code>’s
+<code>visibility_name</code> reports as <code>"module"</code> —
+confirming <code>module</code> is the true default, not a separate case
+from writing <code>module</code> explicitly.</p>
+<p><code>module</code> visibility reuses the same keyword spelling as
+the <code>module</code> keyword that introduces a submodule declaration
+(<code>sub_module_decl = [visibility] "module" IDENT ...</code>). The
+parser resolves the two uses with one token of lookahead: a
+<code>module</code> token immediately followed by an identifier is
+always the submodule-declaration keyword itself (a bare identifier never
+starts a declaration on its own), so <code>module module inner:</code>
+declares a submodule named <code>inner</code> with explicit
+<code>module</code> visibility, while a plain <code>module inner:</code>
+declares it with the (identical) default visibility.</p>
+<pre class="cinder"><code>module my_app.geometry
+
+pub type point = { pub x: float64, pub y: float64 }
+
+pub def distance(a: point, b: point) -&gt; float64:
+    let dx = a.x - b.x
+    let dy = a.y - b.y
+    sqrt(dx*dx + dy*dy)
+
+file def scratch_helper() -&gt; float64:    # file-private
+    ...</code></pre>
+<h2 id="re-exporting">Re-exporting</h2>
+<p><code>use_decl</code> itself takes an optional leading
+<code>visibility</code>; <code>pub use</code> brings a name in from
+another module and re-exports it as part of the current module’s own
+public surface — a facade gathering names from several places into one
+import point.</p>
+<pre class="cinder"><code>module my_app
+
+pub use my_app.geometry.{ point, shape }
+pub use my_app.transform.rotate</code></pre>
+<p>Importers of <code>my_app</code> now see <code>point</code>,
+<code>shape</code>, and <code>rotate</code> directly. The standard
+library prelude itself is built this way: several <code>std.*</code>
+modules are re-exported into every file implicitly
+(<code>k_prelude_reexport_modules</code> in
+<code>src/semantic/check.cpp</code>).</p>
+<h2 id="visible-modules">Visible Modules</h2>
+<p>A module path is only ever resolved against the modules
+<strong>visible</strong> in the current scope. From inside module
+<code>a.b</code>, the visible modules are:</p>
+<ul>
+<li><code>a.b</code>’s declared child modules — each
+<code>sub_module_decl</code> in <code>a.b</code>, either bodiless
+(<code>module c</code>) or inline (<code>module c:</code> with a
+block);</li>
+<li><code>a.b</code>’s ancestors, reached through its own root
+(<code>a.x</code>) or <code>super</code>;</li>
+<li>every module brought in by a <code>use</code> in the file, under its
+imported (or <code>as</code>-renamed) name;</li>
+<li><code>std</code>, which every file sees as if it began with an
+implicit <code>use std</code>.</li>
+</ul>
+<p>No other module is visible. A shared path prefix alone creates no
+relationship: a module <code>a.b.c</code> that <code>a.b</code> never
+declares or imports is not visible from <code>a.b</code>, and neither is
+another root module the file does not <code>use</code>. Naming one is an
+unresolved path, with help pointing at the missing <code>use</code>.</p>
+<h2 id="dotted-names">Dotted Names</h2>
+<p><code>a.b</code> is written the same way whether <code>a</code> is a
+value (field access) or a module (a qualified path). The meaning is
+decided by resolving the first segment:</p>
+<ol type="1">
+<li><p><strong>Local bindings shadow modules.</strong> If the first
+segment names a binding in an enclosing lexical scope — a
+<code>let</code>/<code>var</code>, a parameter, <code>self</code>, a
+pattern binding in a <code>match</code> arm, <code>if let</code>,
+<code>while let</code>, or <code>for</code>, or a
+<code>static for</code> binder — the path is field access on that
+binding, even when a visible module has the same name. Shadowing is
+silent: code never has to know which module names exist elsewhere, so a
+user module named <code>s</code> cannot break a library function with a
+loop variable <code>s</code>. The same holds inside compile-time code: a
+<code>static def</code> parameter or a <code>let</code> in its body
+shadows a module exactly as it would at run time.</p></li>
+<li><p><strong>Nothing else shares a name with a visible
+module.</strong> No other name in a module’s scope — a <code>def</code>,
+a <code>static</code> binding, a <code>type</code>, <code>trait</code>,
+<code>concept</code>, or <code>signature</code>, or a name brought in by
+<code>use</code> — may share its name with a module visible there: one
+the module <em>declares</em> as a child, or one the file
+<em>imports</em>. Two imports may not bind one name if either is a
+module. This is a compile-time error reported once, where the clash was
+introduced — at the declaration for a declared child, at the
+<code>use</code> for an import — never at the individual uses:</p>
+<pre class="cinder"><code>module a.b
+
+module c              # declares child module a.b.c
+
+static c: int32 = 3   # error: `c` names both a static binding and the
+                      #        module `a.b.c` visible in `a.b`</code></pre>
+<p>The fix is to rename one of the two, or to import the module under
+another name (<code>use x.c as c_mod</code>, or
+<code>use x as x_mod</code> for a root module). A module that exists in
+the program but that this module neither declares nor imports is no
+conflict. The module’s own root and <code>std</code> are not checked: a
+path starting with either always means the module, so
+<code>module main</code> may declare <code>def main</code>.</p></li>
+<li><p><strong>Module-level values.</strong> If the first segment is not
+the module’s own root or <code>std</code> and names a <code>def</code>
+or <code>static</code> of the module, or one the file imports, the path
+is field access on that value: <code>origin.x</code> reads a field of
+<code>static let origin</code>. Rule 2 guarantees such a name is never
+also a visible module.</p></li>
+<li><p><strong>Otherwise</strong> the first segment is looked up among
+the visible modules, and the rest of the path is resolved inside that
+module. When the path reaches a <code>static</code> binding before it
+ends, the remaining segments are field access on the static’s value:
+<code>geo.origin.x</code>.</p></li>
+</ol>
+<p>Because every rule is evaluated against a finite, locally-declared
+set — the enclosing lexical scopes, the module’s own declarations, and
+the file’s imports — whether a dotted name is ambiguous is decided
+entirely by the file it appears in.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><code>use</code>, visibility, and re-exporting are implemented.</li>
+<li><strong>Visible Modules</strong> and <strong>Dotted Names</strong>
+are implemented. The checker alone decides what a dotted name means
+(<code>checker::classify_dotted_root</code>,
+<code>src/semantic/check.cpp</code>) and records value-rooted paths for
+lowering (<code>checked_types::value_path_types</code>); module-rooted
+ones are validated through <code>validate_module_reference</code>
+(<code>src/semantic/resolution.cpp</code>), and both path validation and
+the checker’s own lookups apply the one visibility rule,
+<code>root_visible_without_import</code>. The compile-time evaluator
+asks the checker through
+<code>comptime::evaluator::set_path_resolver</code>, supplying only
+whether the root is one of its own frame locals. Rule 2 is
+<code>validate_module_name_conflicts</code>.</li>
+<li>A field read through a module-level <code>static</code> (rules 3 and
+4) lowers when the value read is a scalar, which is embedded as a
+constant. A non-scalar part of a struct-valued <code>static</code>
+(<code>origin</code> itself, or <code>seg.a</code> where <code>a</code>
+is a struct) has no runtime storage yet; only arrays and lists of
+scalars are reified as globals.</li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li>Module System In Depth (Intermediate) — files spanning a module,
+project structure, <code>project.cn</code>.</li>
+<li><a href="13-programs-and-main.html">Programs and
+<code>main</code></a> — the entry module the compiler starts from.</li>
+</ul>
+</body>
+</html>

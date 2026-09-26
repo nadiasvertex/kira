@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>45-ordered-map-and-set</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">45-ordered-map-and-set</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#ordered_mapk-v-and-ordered_setk"
+id="toc-ordered_mapk-v-and-ordered_setk">45.
+<code>ordered_map[K, V]</code> and <code>ordered_set[K]</code></a>
+<ul>
+<li><a href="#design-sorted-vector-then-b-tree"
+id="toc-design-sorted-vector-then-b-tree">Design: sorted vector, then
+B-tree</a></li>
+<li><a href="#api" id="toc-api">API</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="ordered_mapk-v-and-ordered_setk">45.
+<code>ordered_map[K, V]</code> and <code>ordered_set[K]</code></h1>
+<p><strong>Status:</strong> Planned</p>
+<p>Covers the designed-but-unimplemented <code>ordered_map[K, V]</code>
+(and its named companion <code>ordered_set[K]</code>), a key-ordered
+associative container.</p>
+<p>Neither type exists in <code>src/std</code> today. This chapter
+describes the two-phase design fixed in
+<code>spec/collections-algorithms-design.md</code> §6.4, normatively, as
+the target shape.</p>
+<h2 id="design-sorted-vector-then-b-tree">Design: sorted vector, then
+B-tree</h2>
+<p><strong>Phase one</strong> — sorted vector:</p>
+<pre><code>{ keys: list[K], vals: list[V] }</code></pre>
+<ul>
+<li>Lookup — O(log n), by binary search over <code>keys</code>.</li>
+<li>Insert/remove — O(n), by <code>memmove</code>-style shifting of both
+parallel lists.</li>
+</ul>
+<p>Roughly 150 lines of Cinder; it exercises <code>K: ord</code> end to
+end, and below about a thousand elements it outperforms a B-tree
+regardless. It ships the complete API immediately, before phase two
+lands.</p>
+<p><strong>Phase two</strong> replaces the internals behind an unchanged
+public API with a <strong>B-tree</strong>, order B = 6 (five to eleven
+keys per node). Chosen over a red-black tree because a B-tree node’s
+payload is <code>array[K, 11]</code> plus a length — which the existing
+const-generic support already handles — whereas a red-black tree needs
+option-of-node-pointer chasing and colour invariants that are
+considerably harder to get right without a borrow checker.</p>
+<h2 id="api">API</h2>
+<p>Bound <code>K: ord</code> throughout.</p>
+<ul>
+<li><code>insert</code>, <code>get</code>, <code>get_mut</code>,
+<code>remove</code>, <code>contains</code>, <code>len</code></li>
+<li><code>first</code>, <code>last</code></li>
+<li><code>range(lo, hi)</code></li>
+<li><code>keys()</code>, <code>values()</code>,
+<code>values_mut()</code></li>
+<li>The three iterator families (<code>iter</code>,
+<code>iter_mut</code>, <code>into_iter</code>), yielding
+<code>(&amp;K, &amp;V)</code> / <code>(&amp;K, &amp;mut V)</code> /
+<code>(K, V)</code> tuples in key order.</li>
+</ul>
+<p><code>ordered_set[K]</code> is named alongside
+<code>ordered_map[K, V]</code> in the design catalog but has no
+representation or API of its own written down beyond that; expect it to
+follow once <code>ordered_map</code> lands.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Nothing in this chapter is implemented. Confirmed by absence: no file
+under <code>src/std</code> matches <code>*ordered*</code>.
+<code>for (k, v) in it:</code> — needed to consume this container’s
+tuple-yielding iterators directly in a <code>for</code> loop — is itself
+an open gap (<code>for</code> binding and destructuring a whole tuple
+works; destructuring a tuple pattern directly in the <code>for</code>
+clause does not), tracked as R3a in
+<code>spec/collections-algorithms-implementation-plan.md</code>. Verify
+current status against the compiler before relying on it, since the
+plan’s measurement predates later fixes.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="43-list.md"><code>list[T]</code></a> — the phase-one
+backing storage.</li>
+<li><a href="46-unordered-map-and-set.html">Unordered Map and Set</a> —
+the hash-based alternative.</li>
+<li><a href="../algorithms/48-iterator-protocol.html">The Iterator
+Protocol</a> — the three iterator families this container will
+expose.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>38-machine-layer</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">38-machine-layer</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-machine-layer" id="toc-the-machine-layer">38. The
+<code>machine</code> Layer</a>
+<ul>
+<li><a href="#syntax" id="toc-syntax">Syntax</a></li>
+<li><a href="#semantics" id="toc-semantics">Semantics</a>
+<ul>
+<li><a href="#packed-struct-layout"
+id="toc-packed-struct-layout"><code>packed</code> struct layout</a></li>
+</ul></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="the-machine-layer">38. The <code>machine</code> Layer</h1>
+<p><strong>Status:</strong> Partial</p>
+<p><code>machine</code> is a function-modifier prefix granting access to
+low-level machine details — raw pointers, pointer arithmetic, explicit
+layout, SIMD, unsafe casts, and inline assembly — inside which the
+compiler makes none of its usual safety guarantees.</p>
+<h2 id="syntax">Syntax</h2>
+<p><code>machine</code> is one of the <code>func_modifier</code>
+alternatives (<code>spec/cinder-grammar.ebnf</code>,
+<code>func_prefix</code>/<code>func_modifier</code>), composing with
+<code>pure</code>, <code>async</code>, and <code>static</code>;
+canonical order is <code>static</code> before <code>pure</code> before
+<code>async</code> before <code>machine</code>. Raw pointer types use
+<code>ptr_type = "*" type_expr | "*" "mut" type_expr</code>. Inline
+assembly is a statement,
+<code>asm_stmt = "asm" "{" ASM_CONTENT "}" NEWLINE</code>.</p>
+<pre class="cinder"><code>machine def fast_sum(data: slice[float32], len: usize) -&gt; float32:
+    let p = data.as_ptr()
+    var sum: float32 = 0.0
+    for i in 0..len:
+        sum += *(p + i)
+    return sum</code></pre>
+<p>Prefixes compose:</p>
+<pre class="cinder"><code>async machine def dma_transfer(src: *byte, dst: *mut byte, n: usize) -&gt; result[unit, dma_error]:
+    ...
+
+pure machine def read_le_u32(p: *uint32) -&gt; uint32:
+    *p</code></pre>
+<h2 id="semantics">Semantics</h2>
+<p>Outside a <code>machine</code> function the compiler assumes no
+pointer aliasing and no invalid memory; <code>machine</code> is where
+that assumption is lifted. Contracts
+(<code>pre</code>/<code>post</code>) are permitted on
+<code>machine</code> functions; all checks within a <code>machine</code>
+body are runtime-only, not statically verified.</p>
+<p>Facilities available inside <code>machine</code> functions, per the
+reference design:</p>
+<ul>
+<li>Raw pointer types <code>*T</code> and <code>*mut T</code>, and
+pointer arithmetic.</li>
+<li>Explicit memory layout via <code>packed</code> (see below — not
+<code>machine</code>-gated).</li>
+<li>SIMD intrinsics.</li>
+<li>Unsafe casts (<code>transmute</code>).</li>
+<li>Inline assembly (<code>asm { ... }</code>).</li>
+<li><code>uninit[T, N]</code>, a fixed-capacity, alignment-correct
+buffer for <code>N</code> slots of <code>T</code> that carries no
+guarantee any slot holds a valid <code>T</code>:</li>
+</ul>
+<pre class="cinder"><code>pub type uninit[T, N: usize]     # opaque; N slots, sized/aligned for T
+
+machine def slot_ptr[T, N: usize](buf: &amp;uninit[T, N], i: usize) -&gt; *mut T: ...
+machine def write_slot[T, N: usize](buf: &amp;mut uninit[T, N], i: usize, value: T) -&gt; unit: ...
+machine def read_slot[T, N: usize](buf: &amp;mut uninit[T, N], i: usize) -&gt; T: ...
+    # moves the value out of slot i — the caller must not treat it as initialized afterward
+machine def drop_first[T, N: usize](buf: &amp;mut uninit[T, N], len: usize) -&gt; unit: ...
+    # runs T&#39;s drop over slots 0..len only; slots len..N are assumed never initialized
+machine def as_slice[T, N: usize](buf: &amp;uninit[T, N], len: usize) -&gt; slice[T]: ...
+    # claims slots 0..len are initialized and hands back an ordinary view over them</code></pre>
+<p>Only these functions need the <code>machine</code> prefix — the
+unsafety is contained inside them. Ordinary, non-<code>machine</code>
+code is free to call them; a type built on <code>uninit[T, N]</code>
+calls them once, internally, and exposes a fully safe API to everyone
+else (<code>small_list[T, N]</code>, see <a
+href="../04-stdlib/collections/47-small-list.html">Small List</a>, is
+the motivating use). <code>uninit[T, N]</code>’s alignment tracks
+<code>T</code>’s natural alignment automatically — narrower than general
+per-field layout control, but sufficient to size and align a buffer to
+match a type the compiler already lays out.</p>
+<p>As implemented, the buffer needs fewer operations than the sketch
+above: <code>buf[i]</code> and <code>buf[i] = v</code> cover
+<code>read_slot</code>/<code>write_slot</code>,
+<code>buf.as_mut_ptr()</code> covers <code>slot_ptr</code>, and
+<code>buf.len()</code> is <code>N</code>. See the implementation status
+below for what is and is not built.</p>
+<p><code>std.mem</code> is the worked example of this containment: every
+function in it is <code>machine</code> and a handful of lines long, and
+<code>std.list</code>’s <code>vector[T]</code> — a growable list owning
+its own heap storage — is written entirely against it with a fully safe
+public API.</p>
+<h3 id="packed-struct-layout"><code>packed</code> struct layout</h3>
+<p><code>packed</code> is a struct-only modifier — fields laid
+back-to-back with no padding, final size rounded up to the widest
+field’s alignment (or not rounded at all when packed) — and is available
+on any struct declaration, <strong>not</strong> gated by
+<code>machine</code>; see <a
+href="../01-core/10-type-declarations.html">Type Declarations</a> for
+the full field-layout rules. Finer-grained per-field
+<code>layout</code>/<code>align</code>/<code>offset</code> control
+beyond <code>packed</code> remains aspirational.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li><strong>Implemented:</strong>
+<ul>
+<li><code>machine</code> parses and composes with the other function
+modifiers (<code>is_machine</code> on <code>ast::type_modifiers</code>,
+<code>token_kind::kw_machine</code>), and now <strong>grants a real
+capability</strong>: every raw-memory operation below is refused outside
+a <code>machine</code> function
+(<code>checker::require_machine_context</code>,
+<code>src/semantic/check.cpp</code>). Until this landed the modifier was
+syntax with nothing behind it.</li>
+<li><code>packed</code> on struct declarations, fully implemented and
+tested end-to-end (layout computed by
+<code>src/runtime/layout.{h,cpp}</code>, exercised by
+<code>src/testdata/codegen_test/packed_struct_layout.cn</code> and
+<code>src/testdata/semantic_check_test/accept_packed_struct.cn</code>/<code>report_packed_on_sum_type.cn</code>).</li>
+<li>Raw pointer types <code>*T</code>/<code>*mut T</code> parse, intern
+(<code>type_kind::ptr_kind</code>), and lower on both backends.</li>
+<li><code>.as_ptr()</code> / <code>.as_mut_ptr()</code> on a
+<code>list[T]</code>, <code>slice</code>/<code>slice_mut[T]</code>,
+<code>str</code>, fixed <code>array[T, N]</code>, and
+<code>uninit[T, N]</code> — the address of element 0 of the receiver’s
+data block (<code>hir_container_data</code>, read through the same
+<code>resolve_container_view</code> indexing uses, so the two cannot
+disagree about where elements start). A <code>*T</code> never permits a
+write through it; that is refused on the type rather than on the
+binding’s <code>let</code>/<code>var</code>.</li>
+<li><strong>Pointer arithmetic and raw read/write, spelled as
+indexing:</strong> <code>p[i]</code> reads and <code>p[i] = v</code>
+writes at <code>p + i * size_of[T]()</code>, and <code>&amp;p[i]</code>
+is the offset address. Unchecked — a raw pointer carries no length,
+which is the whole distinction from a <code>slice</code>.
+<code>*p</code> is <code>p[0]</code>.</li>
+<li><code>size_of[T]()</code> and <code>align_of[T]()</code>, folded at
+lowering time against <code>runtime::layout_of</code> — the same
+function both backends read every field offset and element stride from,
+so a <code>size_of[T]()</code> cannot disagree with the stride
+<code>T</code> actually occupies. <code>size_of</code> previously
+type-checked to <code>usize</code> and then failed to lower at all.</li>
+<li><code>ptr_cast[U](p)</code> — reinterprets a raw pointer’s pointee
+type. No code: every raw pointer is an address. Mutability follows the
+operand, so a cast can never <em>gain</em> the right to write.</li>
+<li><code>uninit[T, N]</code> and genuine stack storage for it: an
+<code>alloca</code> in the LLVM tier’s entry block, a statically-sized
+frame-local byte range (<code>op_stack_alloc</code>) in the bytecode
+tier. <code>buf[i]</code> is bounds-checked against <code>N</code> (a
+compile-time constant, so the check is free); <code>.len()</code> folds
+to <code>N</code>; <code>.as_mut_ptr()</code> hands out the buffer.
+Buffers are zero-filled, which <code>uninit</code> does not promise — it
+only removes the nondeterminism, so a read of an unwritten slot fails
+the same way every run. A function’s <code>uninit</code> buffers
+together may use at most <strong>1 MiB</strong> of frame storage
+(<code>hir::k_max_frame_stack_bytes</code>); a larger frame is a compile
+error on every backend, naming each contributing buffer. Lambda bodies
+are frames of their own. A callee holding a buffer is never inlined
+(which would move the buffer into the caller’s budget), and a function
+owning a buffer makes no tail calls (a callee may still point into it).
+On the LLVM tier every function carries inline stack probes, so running
+out of thread stack under the limit faults on the guard page instead of
+stepping past it.</li>
+<li>Raw heap memory: the
+<code>rt_alloc</code>/<code>rt_realloc</code>/<code>rt_free</code>
+intrinsics (<code>src/runtime/allocator.h</code>), wrapped in typed,
+element-counted form by <a
+href="../04-stdlib/collections/43-list.html"><code>std.mem</code></a>.
+The allocator is selectable at run time
+(<code>CINDER_ALLOCATOR=system|arena</code>).</li>
+</ul></li>
+<li><strong>Not implemented:</strong>
+<ul>
+<li>The four named machine functions in the sketch above
+(<code>slot_ptr</code>, <code>write_slot</code>, <code>read_slot</code>,
+<code>drop_first</code>, <code>as_slice</code>) do not exist under those
+names.
+<code>slot_ptr</code>/<code>write_slot</code>/<code>read_slot</code> are
+subsumed by <code>buf.as_mut_ptr()</code> and <code>buf[i]</code>.
+<code>as_slice</code> has no equivalent: there is no way to form a
+<code>slice[T]</code> over the first <code>len</code> slots of a buffer.
+<code>drop_first</code> is blocked on destructors, which do not run
+anywhere (<code>../../todo.md</code> item 6).</li>
+<li><code>small_list[T, N]</code> (<a
+href="../04-stdlib/collections/47-small-list.html">Small List</a>) is
+now <em>buildable</em> on <code>uninit[T, N]</code>, but has not been
+built.</li>
+<li><code>transmute</code> does not exist anywhere in the source
+tree.</li>
+<li>SIMD intrinsics do not exist.</li>
+<li><code>asm_stmt</code> parses to an AST node and type-checks to
+<code>unit</code>, but has no HIR lowering on either backend — an
+<code>asm { ... }</code> block is accepted and silently does
+nothing.</li>
+<li><code>machine</code> does not relax any <em>other</em> rule:
+arithmetic overflow still traps, and the borrow/move checkers still run.
+It gates raw-memory access and nothing more.</li>
+<li>Contracts (<code>pre</code>/<code>post</code>) on
+<code>machine</code> functions are not special-cased in any way.</li>
+</ul></li>
+</ul>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../01-core/10-type-declarations.html">Type Declarations</a>
+— <code>packed</code> and general struct layout.</li>
+<li><a href="../04-stdlib/collections/47-small-list.html">Small List</a>
+— the motivating consumer of <code>uninit[T, N]</code>, now buildable on
+it.</li>
+<li><a href="../04-stdlib/collections/43-list.html">List</a> —
+<code>std.mem</code> and <code>vector[T]</code>, the first things built
+on this layer.</li>
+</ul>
+</body>
+</html>
