@@ -1581,8 +1581,8 @@
 054_static_dispatch_on_generic_types.cn:110:30 [named_type] example_type[int32]
 054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] example_type[T]
 054_static_dispatch_on_generic_types.cn:111:16 [struct_literal] example_type[int32]
-054_static_dispatch_on_generic_types.cn:111:27 [ident] T
-054_static_dispatch_on_generic_types.cn:111:27 [ident] int32
+054_static_dispatch_on_generic_types.cn:111:34 [ident] T
+054_static_dispatch_on_generic_types.cn:111:34 [ident] int32
 054_static_dispatch_on_generic_types.cn:113:15 [named_type] int32
 054_static_dispatch_on_generic_types.cn:116:9 [binding_pat] list[int32]
 054_static_dispatch_on_generic_types.cn:116:27 [ident] fn(upto) -> list[int32]
@@ -1619,7 +1619,7 @@
 054_static_dispatch_on_generic_types.cn:128:9 [binding_pat] example_type[int32]
 054_static_dispatch_on_generic_types.cn:128:16 [field] fn(_) -> example_type[_]
 054_static_dispatch_on_generic_types.cn:128:16 [call] example_type[int32]
-054_static_dispatch_on_generic_types.cn:128:34 [literal] int32
+054_static_dispatch_on_generic_types.cn:128:41 [literal] int32
 054_static_dispatch_on_generic_types.cn:130:12 [ident] int32
 054_static_dispatch_on_generic_types.cn:130:12 [binary] int32
 054_static_dispatch_on_generic_types.cn:130:12 [binary] int32
@@ -27188,11 +27188,11 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4010 grams int32
 ?:4042 inner I
 ?:4053 f fn(T) -> U
-?:4064 seen int32
-?:4064 seen int32
+?:4085 seen int32
+?:4085 seen int32
 ?:4337 fd int32
-?:4358 total int32
-?:4358 total int32
+?:4379 total int32
+?:4379 total int32
 ?:4419 fd int32
 ?:4459 src &list[T]
 ?:4465 fd raw_fd
@@ -27211,19 +27211,19 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4797 src &mut list[T]
 ?:4806 at usize
 ?:4813 end usize
-?:4824 v T
-?:4824 v int32
 ?:4841 fd raw_fd
+?:4873 v T
+?:4873 v int32
 ?:5013 fd raw_fd
-?:5049 at int32
-?:5056 end int32
 ?:5085 src list[T]
 ?:5094 at usize
+?:5098 at int32
 ?:5101 end usize
-?:5211 at int32
-?:5218 end int32
-?:5270 at int32
-?:5277 end int32
+?:5105 end int32
+?:5260 at int32
+?:5267 end int32
+?:5319 at int32
+?:5326 end int32
 ?:6073 value int64
 ?:10877 src list[T]
 ?:10877 src list[int32]
@@ -28346,7 +28346,7 @@ std/test.cn:181:49 [ident] show spec=' ' value=int32
 ?:3345 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:4426 [for_stmt] next=::list_into_iter::next$list_into_iter_test_suite_ elem=test_suite owner=std.iter adapter=::list::into_iter$list_test_suite_ -> list_into_iter[test_suite]
 ?:4935 [for_stmt] next=::list_into_iter::next$list_into_iter_test_case_ elem=test_case owner=std.iter adapter=::list::into_iter$list_test_case_ -> list_into_iter[test_case]
-?:5105 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:5154 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 
 ## comprehension_iterator_dispatches (1)
 089_elaboration_snapshot_gaps.cn:88:28 [struct_literal] next=countdown::next elem=int32 owner=codegen_stress.elaboration_snapshot_gaps
@@ -28880,8 +28880,8 @@ codegen_stress.static_dispatch_on_generic_types::collect$upto$counter
 codegen_stress.static_dispatch_on_generic_types::collect$upto$doubler
 codegen_stress.static_dispatch_on_generic_types::collect$upto$list_int32_
 codegen_stress.static_dispatch_on_generic_types::counter::from_iter$upto
-codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_
 codegen_stress.static_dispatch_on_generic_types::doubler::from_iter$upto
+codegen_stress.static_dispatch_on_generic_types::example_type::make$example_type_int32_
 codegen_stress.static_dispatch_on_generic_types::list[int32]::from_iter$upto
 codegen_stress.ufcs::identity$int32
 codegen_stress.unannotated_accumulator_in_generic::doubled$int32
@@ -28990,11 +28990,11 @@ collect$upto$counter
 collect$upto$doubler
 collect$upto$list_int32_
 counter::from_iter$upto
-example_type::make$example_type_int32_
 doubled$int32
 doubled$int64
 doubler::from_iter$upto
 doubler::next$doubler_map_iter_counter__int32__int32__
+example_type::make$example_type_int32_
 filled$4$int32
 filter$counter$int32
 filter_iter::next$filter_iter_counter__int32_

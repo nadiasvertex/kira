@@ -12,6 +12,14 @@ build:
 test:
     bazelisk test --config=debug //...
 
+# Regenerate the inference snapshot goldens, then show what changed. Read the
+# diff before committing: an unread regeneration hides real drift.
+golden:
+    # `bazel run` (not `test`) so BUILD_WORKSPACE_DIRECTORY points the write
+    # at the source tree instead of the read-only runfiles tree.
+    CINDER_UPDATE_SNAPSHOTS=1 bazelisk run --config=debug //src/semantic:snapshot_test
+    git diff --stat -- src/testdata/inference_snapshot
+
 # Wipe all Bazel state (cache + external repos) and rebuild from scratch
 clean:
     # Run this after a toolchain change (e.g. an Xcode update) leaves stale
