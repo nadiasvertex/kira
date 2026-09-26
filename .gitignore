@@ -13,3 +13,4 @@ lint.log
 /graft/
 src/kira-out/module-metadata/
 src/testdata/codegen_stress/kira-out/module-metadata/
+bazel-kira
