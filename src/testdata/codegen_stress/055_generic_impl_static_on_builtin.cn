@@ -74,7 +74,7 @@ impl[T] from_iter[T] for holder[T]:
             cur = cursor.next()
         return holder { last: final, count: seen }
 
-def collect[I, C](it: I) -> C:
+def collect[I, C, T](it: I) -> C where I: iterator[T], C: from_iter[T]:
     return C.from_iter(it)
 
 type upto = { at: int32, end: int32 }

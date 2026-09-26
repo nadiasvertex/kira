@@ -1,8 +1,9 @@
-# bar: BELOW BAR TODAY. A failed trait obligation must name the goal
-# (`point: ordering`), the facts in scope (none), and both ways out
-# (implement `ordering` for `point`, or drop the bound). Today the failure
-# surfaces as a missing *method* inside the generic body, which names
-# neither the goal nor the bound that required it.
+# bar: AT BAR since phase 9 (bounded generics). A failed trait obligation
+# names the goal (`T: ordering`, with `T` = `point`), points at the bound
+# that required it, and gives the way out (implement `ordering` for
+# `point`) — at the user's call, not inside the generic body. Before phase 9
+# the failure surfaced as a missing *method* inside `biggest`'s instance,
+# which named neither the goal nor the bound.
 module infer_diag.unmet_trait_bound
 
 type point = { x: int32 }

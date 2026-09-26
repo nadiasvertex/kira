@@ -20,7 +20,7 @@ module sample
 #     ordinary sibling statement in the same list, reached unconditionally
 #     unless the checker also knows that preceding return already accounted
 #     for every path.
-def max_of[T]() -> T:
+def max_of[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return 127 as T

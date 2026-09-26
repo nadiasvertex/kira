@@ -534,11 +534,14 @@ auto type_table::refinement_base_named(std::string_view name) const
 /// See the header for semantics.
 auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
-  // `param_app_kind` counts as unknown for the same reason a bare type
-  // parameter does: `F[A]` under an abstract `F` can become anything at
-  // instantiation time, so complaining about it would be a false positive.
+  // A type parameter is *not* unknown: inside the body that declares it, `T`
+  // is one fixed type whose facts are its bounds, and `T` against `int32` is
+  // a mismatch (`spec/inference-rewrite.md` phase 9). It used to count, which
+  // is what let a generic body type-check almost nothing it did with a `T`.
+  //
+  // `param_app_kind` still counts: `F[A]` under an abstract higher-kinded
+  // `F` has no facts of its own to be checked against yet.
   return kind == type_kind::unknown_kind || kind == type_kind::error_kind ||
-         kind == type_kind::type_param_kind ||
          kind == type_kind::param_app_kind || kind == type_kind::type_var_kind;
 }
 

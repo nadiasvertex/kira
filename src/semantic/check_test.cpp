@@ -711,7 +711,7 @@ auto test_finds_static_on_primitive_through_extend() -> void {
               "trait unit_of:\n"
               "    static def unit_of() -> self\n"
               "\n"
-              "extend int32:\n"
+              "impl unit_of for int32:\n"
               "    static def unit_of() -> int32:\n"
               "        return 1\n"
               "\n"
@@ -723,8 +723,8 @@ auto test_finds_static_on_primitive_through_extend() -> void {
               "    return start(xs.into_iter())\n",
   }});
   expect_clean(analyzed,
-               "expected `extend int32:` to provide a reachable static, as the "
-               "missing-static diagnostic's help text promises");
+               "expected `impl unit_of for int32:` to satisfy `T: unit_of` and "
+               "provide the static `T.unit_of()` reaches");
 }
 
 auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
@@ -1573,13 +1573,15 @@ auto test_accepts_wide_literal_in_generic_return() -> void {
 auto test_reports_generic_return_literal_overflow() -> void {
   const auto analyzed =
       analyze_test_data_file("report_generic_return_literal_overflow.cn");
-  expect(analyzed.error_count > 0,
-         "expected `-9223372036854775808 as T` instantiated at `T=int32` to "
-         "still fail");
+  expect(analyzed.error_count == 1,
+         "expected `-9223372036854775808 as T` under `T: numeric` to be one "
+         "error, at the definition");
   expect_diagnostic(
-      analyzed, "integer literal `-9223372036854775808` does not fit in",
-      "expected the per-instantiation recheck to still catch a genuine "
-      "overflow once `T` is bound to a concrete, too-narrow type");
+      analyzed,
+      "the literal `-9223372036854775808` cannot be a `T` when `T` is `int8`",
+      "expected the literal to be checked against every type `T: numeric` "
+      "admits, and the first it does not fit to be named — at the "
+      "definition, not from an instance");
 }
 
 auto test_reports_mixed_numeric_types() -> void {
@@ -2314,12 +2316,14 @@ auto test_reports_type_param_static_not_found() -> void {
   expect(analyzed.error_count > 0,
          "expected a type parameter solved to a type without the needed "
          "static to fail");
-  expect_diagnostic(analyzed, "no static `make` on type `int32`",
-                    "expected the diagnostic to name the solved type rather "
-                    "than report `C` as an undefined name");
-  expect_diagnostic(analyzed, "instantiated from here",
-                    "expected an instantiation-site note pointing back at the "
-                    "call that asked for this instance");
+  expect_diagnostic(analyzed,
+                    "`build` needs `C: maker`, and `int32` does not satisfy it",
+                    "expected the bound to be checked at the call, naming the "
+                    "solved type");
+  expect(analyzed.diagnostics.find("instantiated from here") ==
+             std::string::npos,
+         "a failed bound is reported at the call and makes no instance, so "
+         "nothing is reported from inside one");
   expect_diagnostic(analyzed,
                     "`C` was solved to `int32` from the type expected here",
                     "expected a note saying where the solution came from, "
@@ -3547,15 +3551,14 @@ auto test_builtin_method_suggestion_includes_extend_methods() -> void {
                     "suggestion for a near-miss on a builtin receiver");
 }
 
-/// ...but a receiver whose type is still a type *parameter* must stay silent,
-/// and be reported once against the concrete type instead.
+/// A method call on a value whose type is a type parameter is justified by a
+/// bound or rejected at the line that makes it (`spec/inference-rewrite.md`
+/// phase 9, rule 2) — once, against `T`, and never again from the instance.
 ///
-/// A generic body is checked as a template and again per instantiation. Only
-/// the instantiation knows what `T` actually is and therefore what methods it
-/// has, so reporting from the template too would produce two errors for one
-/// mistake — the second of them against `T`, a type whose method set is not
-/// knowable there. The restriction to builtin receiver kinds is what prevents
-/// that; this pins the single-error outcome it buys.
+/// The instance knows `T` is `int32`, but repeating the mistake there would
+/// report it twice, the second time against a type the reader never wrote
+/// and one level removed from their line. A template whose own check failed
+/// is therefore never instantiated.
 auto test_unknown_method_on_generic_receiver_reports_once() -> void {
   const auto analyzed = analyze_sources({{
       .path = "generic_receiver.cn",
@@ -3569,13 +3572,339 @@ auto test_unknown_method_on_generic_receiver_reports_once() -> void {
               "    return call_it(5)\n",
   }});
   expect(analyzed.error_count == 1,
-         "an unknown method in a generic body should be reported once, from "
-         "the instantiation that knows the concrete type");
-  expect_diagnostic(analyzed, "no method `whatever` on type `int32`",
-                    "expected the error to name the instantiated type");
-  expect(analyzed.diagnostics.find("on type `T`") == std::string::npos,
-         "a type parameter's method set is not knowable in the template, so "
-         "no error may be reported against `T` itself");
+         "an unknown method in a generic body should be reported exactly "
+         "once, at the definition");
+  expect_diagnostic(analyzed, "no method `whatever` on `T`",
+                    "expected the error to name the type parameter the body "
+                    "is written against");
+  expect(analyzed.diagnostics.find("on type `int32`") == std::string::npos,
+         "the instance must not repeat the template's mistake against the "
+         "instantiated type");
+}
+
+/// A bound is what makes a method callable on `T`, and the help says which
+/// bound: the one trait that declares the method, spelled with its
+/// parameters so it can be written as-is.
+auto test_method_on_type_param_needs_its_bound() -> void {
+  const auto rejected = analyze_sources({{
+      .path = "needs_bound.cn",
+      .text = "module main\n"
+              "\n"
+              "def describe[T](x: T) -> str:\n"
+              "    return x.show()\n",
+  }});
+  expect(rejected.error_count == 1,
+         "calling `show` on an unbounded `T` should be one error");
+  expect_diagnostic(rejected, "no method `show` on `T`",
+                    "expected the unbounded call to be named");
+  expect_diagnostic(rejected, "nothing is known about it",
+                    "expected the note to say `T` has no bounds");
+  expect_diagnostic(rejected, "`where T: show`",
+                    "expected the help to name the bound that would fix it");
+
+  const auto generic_trait = analyze_sources({{
+      .path = "needs_generic_bound.cn",
+      .text = "module main\n"
+              "\n"
+              "def first_of[I](it: I) -> int32:\n"
+              "    var source = it\n"
+              "    let x = source.next()\n"
+              "    return 0\n",
+  }});
+  expect_diagnostic(generic_trait, "`where I: iterator[T]`",
+                    "expected a generic trait to be suggested with its "
+                    "parameters, in a form that can be written as-is");
+
+  const auto accepted = analyze_sources({{
+      .path = "has_bound.cn",
+      .text = "module main\n"
+              "\n"
+              "type point = { x: int32 }\n"
+              "\n"
+              "impl show for point:\n"
+              "    def show(self) -> str:\n"
+              "        return \"point\"\n"
+              "\n"
+              "def describe[T](x: T) -> str where T: show:\n"
+              "    return x.show()\n"
+              "\n"
+              "def inline_bound[T: show](x: T) -> str:\n"
+              "    return x.show()\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let a = describe(point { x: 1 })\n"
+              "    return 0\n",
+  }});
+  expect_clean(accepted, "expected `where T: show` and `[T: show]` to make "
+                         "`x.show()` legal");
+}
+
+/// A bound brings in everything its trait `requires`: `T: ord` lets a body
+/// call `eq`'s methods, because every `ord` type is an `eq` one.
+auto test_bound_includes_required_traits() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "requires_closure.cn",
+      .text = "module main\n"
+              "\n"
+              "def same[T](a: T, b: T) -> bool where T: ord:\n"
+              "    return a.eq(b)\n",
+  }});
+  expect_clean(analyzed, "expected `ord`'s required `eq` to be callable "
+                         "through an `ord` bound");
+}
+
+/// An operator on `T` is its trait's method (phase 9, rule 2): it needs the
+/// trait, or a category bound whose every member has the builtin operator.
+auto test_operator_on_type_param_needs_a_bound() -> void {
+  const auto rejected = analyze_sources({{
+      .path = "operator_unbounded.cn",
+      .text = "module main\n"
+              "\n"
+              "def twice[T](x: T) -> T:\n"
+              "    return x + x\n"
+              "\n"
+              "def smaller[T](a: T, b: T) -> bool:\n"
+              "    return a < b\n",
+  }});
+  expect(rejected.error_count == 2, "expected one error per unbounded operator");
+  expect_diagnostic(rejected, "`+` on `T` needs `T` to implement `add`",
+                    "expected `+` to name the trait it needs");
+  expect_diagnostic(rejected, "`<` on `T` needs `T` to implement `ord`",
+                    "expected `<` to name the trait it needs");
+
+  const auto accepted = analyze_sources({{
+      .path = "operator_bounded.cn",
+      .text = "module main\n"
+              "\n"
+              "def twice[T](x: T) -> T where T: add:\n"
+              "    return x + x\n"
+              "\n"
+              "def smaller[T](a: T, b: T) -> bool where T: ord:\n"
+              "    return a < b\n"
+              "\n"
+              "def triple[T](x: T) -> T where T: numeric:\n"
+              "    return x * 3\n",
+  }});
+  expect_clean(accepted, "expected `T: add`, `T: ord`, and `T: numeric` to "
+                         "justify their operators");
+}
+
+/// A literal written as a `T` has to fit every type `T` can be (phase 9,
+/// rule 4): nothing when `T` is unbounded, every member of its category
+/// otherwise — and inside a `static if` on `T`, only the narrowed members.
+auto test_literal_as_type_param_follows_its_domain() -> void {
+  const auto unbounded = analyze_sources({{
+      .path = "literal_unbounded.cn",
+      .text = "module main\n"
+              "\n"
+              "def zero[T]() -> T:\n"
+              "    return 0\n",
+  }});
+  expect_diagnostic(unbounded, "the literal `0` cannot be a `T`",
+                    "expected a literal to need a bound on `T`");
+  expect_diagnostic(unbounded, "`where T: numeric`",
+                    "expected the help to name the category bound");
+
+  const auto too_wide = analyze_sources({{
+      .path = "literal_too_wide.cn",
+      .text = "module main\n"
+              "\n"
+              "def big[T]() -> T where T: numeric:\n"
+              "    return 300\n",
+  }});
+  expect_diagnostic(too_wide,
+                    "the literal `300` cannot be a `T` when `T` is `int8`",
+                    "expected the literal to be checked against every "
+                    "member, naming the one it does not fit");
+
+  const auto narrowed = analyze_sources({{
+      .path = "literal_narrowed.cn",
+      .text = "module main\n"
+              "\n"
+              "def big[T]() -> T where T: numeric:\n"
+              "    static if T.name() == \"int64\" or T.name() == \"uint64\":\n"
+              "        return 5000000000\n"
+              "    return 0\n",
+  }});
+  expect_clean(narrowed, "expected `static if T.name() == ...` to narrow `T` "
+                         "so a 64-bit literal is legal in its branch");
+
+  const auto flow = analyze_sources({{
+      .path = "literal_flow_narrowed.cn",
+      .text = "module main\n"
+              "\n"
+              "def tiny[T]() -> T where T: signed_integer:\n"
+              "    let n = T.name()\n"
+              "    static if n == \"int8\":\n"
+              "        return 1\n"
+              "    return 300\n",
+  }});
+  expect_clean(flow, "expected the code past a returning `static if` on a "
+                     "`let` alias of `T.name()` to know `T` is not `int8`");
+
+  const auto partial_and = analyze_sources({{
+      .path = "literal_and_narrowed.cn",
+      .text = "module main\n"
+              "\n"
+              "use std.traits.is_float\n"
+              "use std.limits.bits\n"
+              "\n"
+              "def wide[T]() -> T where T: numeric:\n"
+              "    static if is_float[T]() and bits[T]() <= 64:\n"
+              "        return 1.5\n"
+              "    return 0\n",
+  }});
+  expect_clean(partial_and, "expected `is_float[T]() and <anything>` to "
+                            "narrow `T` to floats in the branch, even when "
+                            "the other side says nothing about `T`");
+}
+
+/// `as` on `T` needs every type `T` can be to be a number.
+auto test_cast_with_type_param_needs_numeric() -> void {
+  const auto rejected = analyze_sources({{
+      .path = "cast_unbounded.cn",
+      .text = "module main\n"
+              "\n"
+              "def key[T](x: T) -> usize:\n"
+              "    return x as usize\n",
+  }});
+  expect(rejected.error_count == 1, "expected one error for the cast");
+  expect_diagnostic(rejected, "`as` needs `T` to be a number",
+                    "expected the cast to name what `T` lacks");
+
+  const auto accepted = analyze_sources({{
+      .path = "cast_bounded.cn",
+      .text = "module main\n"
+              "\n"
+              "def key[T](x: T) -> usize where T: integer:\n"
+              "    return x as usize\n",
+  }});
+  expect_clean(accepted, "expected `T: integer` to make `x as usize` legal");
+}
+
+/// A call checks the callee's bounds against what it solved (phase 9, rule
+/// 3): a concrete type by its impls, the caller's own parameter by *its*
+/// bounds, a category by membership — reported at the call, and no instance
+/// is made of a function whose bounds fail.
+auto test_bounds_are_checked_at_the_call() -> void {
+  const auto concrete = analyze_sources({{
+      .path = "bound_concrete.cn",
+      .text = "module main\n"
+              "\n"
+              "type point = { x: int32 }\n"
+              "\n"
+              "def describe[T](x: T) -> str where T: show:\n"
+              "    return x.show()\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let s = describe(point { x: 1 })\n"
+              "    return 0\n",
+  }});
+  expect(concrete.error_count == 1, "expected exactly one error, at the call");
+  expect_diagnostic(concrete,
+                    "`describe` needs `T: show`, and `point` does not satisfy "
+                    "it",
+                    "expected the unmet bound to name the callee, the bound, "
+                    "and the type that fails it");
+  expect(concrete.diagnostics.find("instantiated from here") ==
+             std::string::npos,
+         "a failed bound makes no instance, so nothing is reported from one");
+
+  const auto entailed = analyze_sources({{
+      .path = "bound_entailed.cn",
+      .text = "module main\n"
+              "\n"
+              "def describe[T](x: T) -> str where T: show:\n"
+              "    return x.show()\n"
+              "\n"
+              "def outer[T](x: T) -> str:\n"
+              "    return describe(x)\n"
+              "\n"
+              "def outer_ok[T](x: T) -> str where T: show:\n"
+              "    return describe(x)\n",
+  }});
+  expect(entailed.error_count == 1,
+         "expected only the unbounded caller to be rejected");
+  expect_diagnostic(entailed,
+                    "`describe` needs `T: show`, and nothing says this "
+                    "function's `T` is one",
+                    "expected a generic caller to need the callee's bound "
+                    "among its own");
+  expect_diagnostic(entailed, "Add the same bound",
+                    "expected the help to say to pass the bound on");
+
+  const auto category = analyze_sources({{
+      .path = "bound_category.cn",
+      .text = "module main\n"
+              "\n"
+              "use std.limits.max\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let a: int32 = max[int32]()\n"
+              "    let b: str = max[str]()\n"
+              "    return 0\n",
+  }});
+  expect(category.error_count == 1, "expected only `max[str]` to be rejected");
+  expect_diagnostic(category,
+                    "`max` needs `T: numeric`, and `str` does not satisfy it",
+                    "expected a category bound to be checked by membership");
+}
+
+/// A type parameter is one fixed type in the body that declares it: `T`
+/// against `int32` is a mismatch, and a call to another generic reads its
+/// result through the solution, so `identity(x)` is the caller's `T`.
+auto test_type_param_is_rigid_in_its_body() -> void {
+  const auto rejected = analyze_sources({{
+      .path = "rigid_mismatch.cn",
+      .text = "module main\n"
+              "\n"
+              "def leak[T](x: T) -> int32:\n"
+              "    return x\n",
+  }});
+  expect(rejected.error_count == 1, "expected `T` returned as `int32` to fail");
+  expect_diagnostic(rejected, "expected `int32`, found `T`",
+                    "expected the mismatch to name `T`");
+
+  const auto accepted = analyze_sources({{
+      .path = "rigid_through_call.cn",
+      .text = "module main\n"
+              "\n"
+              "def identity[T](x: T) -> T:\n"
+              "    return x\n"
+              "\n"
+              "def twice_identity[T](x: T) -> T:\n"
+              "    return identity(identity(x))\n"
+              "\n"
+              "def pick[T](a: T, b: T, first: bool) -> T:\n"
+              "    if first:\n"
+              "        return identity(a)\n"
+              "    return b\n",
+  }});
+  expect_clean(accepted, "expected a generic call inside a generic body to "
+                         "yield the caller's own `T`");
+}
+
+/// Two bounds that each declare the method leave the call ambiguous, and
+/// the message names both.
+auto test_method_ambiguous_between_bounds() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "ambiguous.cn",
+      .text = "module main\n"
+              "\n"
+              "trait loud:\n"
+              "    def speak(self) -> str\n"
+              "\n"
+              "trait quiet:\n"
+              "    def speak(self) -> str\n"
+              "\n"
+              "def talk[T](x: T) -> str where T: loud + quiet:\n"
+              "    return x.speak()\n",
+  }});
+  expect(analyzed.error_count == 1, "expected one ambiguity error");
+  expect_diagnostic(analyzed, "`speak` is ambiguous on `T`",
+                    "expected the ambiguity to be named");
+  expect_diagnostic(analyzed, "`loud` and `quiet`",
+                    "expected both providing bounds to be listed");
 }
 
 auto test_ufcs_reports_receiver_mismatch() -> void {
@@ -3964,6 +4293,14 @@ auto main() -> int {
     test_unknown_method_on_builtin_receiver_is_reported();
     test_builtin_method_suggestion_includes_extend_methods();
     test_unknown_method_on_generic_receiver_reports_once();
+    test_method_on_type_param_needs_its_bound();
+    test_bound_includes_required_traits();
+    test_method_ambiguous_between_bounds();
+    test_operator_on_type_param_needs_a_bound();
+    test_literal_as_type_param_follows_its_domain();
+    test_cast_with_type_param_needs_numeric();
+    test_bounds_are_checked_at_the_call();
+    test_type_param_is_rigid_in_its_body();
     test_ufcs_reports_receiver_mismatch();
     test_ufcs_skips_private_functions_in_other_modules();
     test_nested_def_resolves_as_a_value();

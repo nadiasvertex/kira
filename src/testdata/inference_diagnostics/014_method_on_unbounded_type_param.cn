@@ -1,0 +1,13 @@
+# bar: AT BAR. Phase 9 (bounded generics). The mistake is the body calling a
+# method nothing promises `T` has, so the message is on that line, names `T`
+# rather than whatever type some caller happened to pass, and names the bound
+# that makes the call legal. Before phase 9 this program was reported from
+# the instance — "no method `show` on type `int32`" under an "instantiated
+# from here" note — which blamed a type the reader never wrote in this body.
+module infer_diag.method_on_unbounded_type_param
+
+def describe[T](x: T) -> str:
+    return x.show()
+
+def caller() -> str:
+    return describe(5)

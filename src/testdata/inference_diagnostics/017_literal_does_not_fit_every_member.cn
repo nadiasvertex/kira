@@ -1,0 +1,7 @@
+# bar: AT BAR. Phase 9. A literal written as a `T` must fit every type `T`
+# can be here, so the message names the first one it does not fit and points
+# at narrowing (`static if` on `T`) as the way to write a wider literal.
+module infer_diag.literal_does_not_fit_every_member
+
+def big[T]() -> T where T: numeric:
+    return 300

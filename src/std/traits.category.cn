@@ -76,6 +76,45 @@ pub static pure def is_float[T]() -> bool:
 pub static pure def is_numeric[T]() -> bool:
     return is_integer[T]() or is_float[T]()
 
+# Category concepts: the builtin scalar families, as bounds.
+#
+# A generic body may only do with a `T` what its bounds promise
+# (`spec/inference-rewrite.md` phase 9). Traits cover methods and the
+# operators user types overload; these cover what only the builtin numbers
+# have — a literal written as a `T`, an `as` conversion, the builtin
+# operators — and every core trait all their members implement (`eq`, `ord`,
+# `show`, `add`, ... from `traits.scalar.cn`). Each is satisfied by the types
+# the predicate it is named after answers `true` for, except the 128-bit
+# ones: those have no representation on the bytecode VM, so they have none
+# of those impls to promise. The checker knows the same membership
+# (`checker::category_members`).
+
+#: A builtin signed integer: `int8`..`int64`, `isize`.
+pub concept signed_integer[T]:
+    is_signed_integer[T]() and T.name() != "int128"
+
+#: A builtin unsigned integer: `uint8`..`uint64`, `usize`, `byte`.
+pub concept unsigned_integer[T]:
+    is_unsigned_integer[T]() and T.name() != "uint128"
+
+#: Any builtin integer, signed or unsigned, but not a 128-bit one.
+pub concept integer[T]:
+    is_integer_below_128[T]()
+
+#: True for a builtin integer that is not 128 bits wide — the members of the
+#: `integer` concept.
+pub static pure def is_integer_below_128[T]() -> bool:
+    let n = T.name()
+    return is_integer[T]() and n != "int128" and n != "uint128"
+
+#: A builtin floating-point type: `float32`, `float64`.
+pub concept float[T]:
+    is_float[T]() and T.name() != "float128"
+
+#: Any builtin integer or floating-point type, but not a 128-bit one.
+pub concept numeric[T]:
+    is_integer_below_128[T]() or (is_float[T]() and T.name() != "float128")
+
 #: True for any builtin numeric type, `bool`, or `char`.
 pub static pure def is_scalar[T]() -> bool:
     return is_numeric[T]() or is_bool[T]() or is_char[T]()

@@ -1,0 +1,13 @@
+# bar: AT BAR. Phase 9 (bounded generics), rule 3. A generic body calling
+# another generic must have the callee's bounds among its own: `outer`'s `T`
+# is unbounded, so nothing says it is a `show`. Reported at the call inside
+# `outer`, naming the bound and where it is declared, with the fix — pass the
+# bound on. Before phase 9 this compiled and failed only for a caller of
+# `outer` whose `T` happened not to be a `show`, from inside `describe`.
+module infer_diag.generic_caller_lacks_callee_bound
+
+def describe[T](x: T) -> str where T: show:
+    return x.show()
+
+def outer[T](x: T) -> str:
+    return describe(x)

@@ -151,9 +151,9 @@ auto solve_for_unknown(const linear_poly &pattern, const linear_poly &value)
   if (term.coeff == -1) {
     solved = poly_negate(solved);
   }
-  if (solved.coefficient_of(term.var) != 0) {
-    return std::nullopt; // self-referential; nothing determined
-  }
+  // No self-reference check: the pattern's variable is the callee's and the
+  // value's are the caller's, so `n = n + 1` at a call inside a body generic
+  // over its own `n` is two variables that share a spelling, and it solves.
   return std::pair{term.var, solved};
 }
 

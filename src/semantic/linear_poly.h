@@ -106,6 +106,10 @@ poly_substitute(const linear_poly &poly,
 /// guess. `vec[T, m + n]` matched against `vec[T, 5]` determines neither `m`
 /// nor `n`, and the compiler says nothing about them rather than inventing a
 /// split.
+///
+/// The pattern's variables and the value's are in different namespaces — a
+/// callee's parameters against a caller's — so a variable appearing on both
+/// sides is two variables with one spelling, not a self-reference.
 [[nodiscard]] auto solve_for_unknown(const linear_poly &pattern,
                                      const linear_poly &value)
     -> std::optional<std::pair<std::string, linear_poly>>;

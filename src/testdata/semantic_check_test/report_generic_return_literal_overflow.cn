@@ -1,6 +1,6 @@
 module sample
 
-def bad[T]() -> T:
+def bad[T]() -> T where T: numeric:
     return -9223372036854775808 as T
 
 def run() -> unit:

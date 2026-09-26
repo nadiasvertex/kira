@@ -46,7 +46,7 @@ impl iterator[int32] for counter:
 # so the loop's `x` is only concrete after substitution.
 type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
 
-impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+impl[I, T, U] iterator[U] for map_iter[I, T, U] where I: iterator[T]:
     def next(mut self) -> option[U]:
         match self.inner.next():
             @some(x) => return @some((self.f)(x))
@@ -59,7 +59,7 @@ def map[I, T, U](it: I, f: fn(T) -> U) -> map_iter[I, T, U]:
 # checking was already correct and only the missing instance bit.
 type doubler[I] = { inner: I }
 
-impl[I] iterator[int32] for doubler[I]:
+impl[I] iterator[int32] for doubler[I] where I: iterator[int32]:
     def next(mut self) -> option[int32]:
         match self.inner.next():
             @some(x) => return @some(x * 2)

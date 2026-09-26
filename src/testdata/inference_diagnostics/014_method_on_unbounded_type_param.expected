@@ -1,0 +1,7 @@
+error: no method `show` on `T`
+  --> 014_method_on_unbounded_type_param.cn:10:12
+   10 |     return x.show()
+      |            ^^^^^^ not provided by any bound
+  note: `T` is a type parameter with no bounds, so nothing is known about it: a body can only call methods its bounds promise
+  help: `show` is a method of the trait `show`. Add the bound — `where T: show` — and every caller must then pass a type that implements it.
+

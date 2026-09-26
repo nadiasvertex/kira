@@ -1,18 +1,21 @@
 module sample
 
-# §5.4/§6: `C` carries no enforced bound, so an unsuitable one is not caught
-# at the call site — it fails inside the instance body, at a line the user
-# never wrote. The diagnostic therefore has to name the solved type, point
-# back at the call that asked for this instance, and say where the solution
-# came from.
+# Bounded generics (`spec/inference-rewrite.md` phase 9, rule 3): `C`'s
+# bound is checked at the call that solves it, so an unsuitable `C` is
+# reported on the user's own line. The diagnostic names the bound, the type
+# that fails it, and — since the user never wrote `int32` as a type argument
+# — where that type came from.
+
+trait maker:
+    static def make(v: int32) -> self
 
 type counter = { n: int32 }
 
-extend counter:
-    def make(v: int32) -> counter:
+impl maker for counter:
+    static def make(v: int32) -> counter:
         return counter { n: v }
 
-def build[C](v: int32) -> C:
+def build[C](v: int32) -> C where C: maker:
     return C.make(v)
 
 def run() -> int32:

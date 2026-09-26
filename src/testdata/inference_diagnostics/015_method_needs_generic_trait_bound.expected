@@ -1,0 +1,7 @@
+error: no method `next` on `I`
+  --> 015_method_needs_generic_trait_bound.cn:9:11
+    9 |     match source.next():
+      |           ^^^^^^^^^^^ not provided by any bound
+  note: `I` is a type parameter with no bounds, so nothing is known about it: a body can only call methods its bounds promise
+  help: `next` is a method of the trait `iterator[T]`. Add the bound — `where I: iterator[T]`, with `T` replaced by the type this code means — and every caller must then pass a type that implements it.
+

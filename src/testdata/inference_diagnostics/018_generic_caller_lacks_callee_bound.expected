@@ -1,0 +1,10 @@
+error: `describe` needs `T: show`, and nothing says this function's `T` is one
+  --> 018_generic_caller_lacks_callee_bound.cn:13:12
+   13 |     return describe(x)
+      |            ^^^^^^^^^^^ `describe`'s `T` is this function's `T` here
+  note: `describe`'s bound on `T` is declared here
+    --> 018_generic_caller_lacks_callee_bound.cn:9:39
+      9 | def describe[T](x: T) -> str where T: show:
+        |                                       ^^^^ the bound
+  help: `T` is a type parameter here, so it only has the bounds written on it. Add the same bound — `where T: show` — and pass the requirement on to this function's own callers.
+

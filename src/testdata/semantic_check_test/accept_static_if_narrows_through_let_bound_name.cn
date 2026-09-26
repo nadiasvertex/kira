@@ -9,7 +9,7 @@ module sample
 # unbound-generic pass falls back to "couldn't decide", and `min_of[int8]`'s
 # recheck would spuriously bounds-check the `int16`-sized literal below
 # against the bound `T = int8`.
-def min_of[T]() -> T:
+def min_of[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return -128 as T

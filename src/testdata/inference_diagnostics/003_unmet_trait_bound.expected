@@ -1,10 +1,10 @@
-error: no method `less` on type `point`
-  --> 003_unmet_trait_bound.cn:14:8
-   14 |     if a.less(b):
-      |        ^^^^^^ method not found
-  help: Add the method in an `impl point:` block, or implement a trait that provides it.
-  note: instantiated from here, as `biggest$point`
-    --> 003_unmet_trait_bound.cn:20:5
-     20 |     biggest(p, q)
-        |     ^^^^^^^^^^^^^ this call needs that copy
+error: `biggest` needs `T: ordering`, and `point` does not satisfy it
+  --> 003_unmet_trait_bound.cn:21:5
+   21 |     biggest(p, q)
+      |     ^^^^^^^^^^^^^ `T` is `point` in this call
+  note: `biggest`'s bound on `T` is declared here
+    --> 003_unmet_trait_bound.cn:14:42
+     14 | def biggest[T](a: T, b: T) -> T where T: ordering:
+        |                                          ^^^^^^^^ the bound
+  help: Pass a type that implements `ordering`, or implement it for `point` — `impl ordering for point:`.
 

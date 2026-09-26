@@ -20,7 +20,7 @@ anywhere.
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.cn` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
-| 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
+| 9 | Generic bodies checked once, abstractly | **Replanned 2026-09-26 as bounded generics** — the template/instance boundary is fixed and phase 8's acceptance test passes; the abstract pass turned out not to check `T`-typed values at all, so the remaining work is steps 9.1-9.8 below |
 | 10 | `method_call` as an obligation | **In progress** — see below |
 | 11 | Demand discipline: default only what a decision needs | **Done** — scoped `demand`, `demand_shape`, and no demand where a type only flows; `spec/todo.md` item 14 fixed (and removed) |
 
@@ -1067,6 +1067,99 @@ and that is the remaining work of this phase:
 
 Those two together are also what unblocks phase 8's other two leaves.
 
+#### Replanned: bounded generics (2026-09-26)
+
+**Why the plan changed.** "Checked once, abstractly" assumed the abstract
+pass was a real check that the instance pass merely repeated. It is not. A
+probe on master accepts all of these with no bounds at all:
+
+```cinder
+def a1[T](x: T) -> T:      return x + x
+def a2[T](x: T) -> usize:  return x as usize
+def a3[T](x: T) -> str:    return x.show()
+def a5[T](x: T) -> int32:  return x.frobnicate(3)   # no such method anywhere
+def a6[T](x: T) -> T:      return -128 as T
+```
+
+`where` clauses are resolved and then ignored (`check_function` only calls
+`resolve_type` on them). The per-instance pass is the type check; the
+template pass is a walk that records. Deleting the second pass therefore
+means deciding what the first one may rely on.
+
+**Decision.** Kira's generics become *bounded*: a generic body is checked
+once, against the facts its signature declares, and a type argument is
+checked against those facts at the call that supplies it. Chosen over
+two-phase (C++-style) checking — which accepts strictly more programs — for
+diagnostic quality, the compiler's first priority: a mistake in a generic
+body is reported once at its own line, and a wrong type argument at the
+user's call, instead of inside library code under an "instantiated from
+here" chain.
+
+**The rules.**
+
+1. *Facts.* A type parameter's facts are its inline bounds (`[T: ord]`), its
+   `where` bounds, everything those `require`, the bounds of an enclosing
+   generic `impl`/`extend` block, and the narrowing facts of an enclosing
+   `static if` (rule 5). Nothing else — in particular, nothing about which
+   instances happen to exist.
+2. *Operations on a value of type `T`* are justified by a fact or rejected at
+   the line that performs them:
+   - a method call — a method of a trait among `T`'s facts, or a free
+     function whose own signature accepts the receiver by UFCS;
+   - an operator — its trait (`add`/`sub`/`mul`/`div`/`rem`/`neg`; `==`/`!=`
+     by `eq`; ordering by `ord`);
+   - a numeric literal, or `as` to or from `T` — a *category* bound
+     (rule 4);
+   - indexing, iteration — `index`, `into_iterator`/`iterator`;
+   - a call to another generic — the callee's bounds must follow from the
+     caller's facts (entailment, not instantiation).
+3. *Call sites.* When a call solves `T := X`, every bound on `T` is checked
+   against `X` there, and a failure names the bound and where it was
+   declared. No instance of a function whose bounds do not hold is ever
+   made.
+4. *Category bounds* are builtin concepts — `integer`, `signed_integer`,
+   `unsigned_integer`, `float`, `numeric` — satisfied by exactly the builtin
+   scalar types their names say. They are what a literal or a numeric cast
+   on `T` needs, and each implies the operator traits its members implement.
+5. *`static if` narrows.* A condition that mentions a type parameter is
+   checked for the facts it establishes, and its taken branch is checked
+   under them:
+   - `T.name() == "int8"`, `is_same[T, int8]()` (and a `let` alias of
+     `T.name()`) — *equality*: the branch is checked with `T := int8`
+     substituted, once per disjunct of an `or`;
+   - `is_integer[T]()` and the other category predicates — the matching
+     category bound is added;
+   - `implements[T, Tr]()` — `Tr` is added;
+   - anything else — no facts; the branch is checked with the enclosing
+     facts only.
+
+   Both branches of a type-dependent `static if` are always checked, each
+   under its own facts; the `else` branch and the code after a returning
+   branch gain nothing. This replaces ch. 31's "the branch not taken is not
+   type-checked" for conditions that mention a type parameter; a closed
+   condition keeps that rule.
+
+**Steps.** Each lands green, with its diagnostics in
+`inference_diagnostics/` and the snapshot moved only where the step says.
+
+| Step | What | Status |
+|---|---|---|
+| 9.1 | Fact environment: rule 1 materialized per type parameter | **Done** — `declared_facts_`/`scoped_facts_`, `record_declared_facts`; facts carry the resolved trait declaration, expand concepts, and close over `requires` |
+| 9.2 | Method calls on `T` require a fact (rule 2, first bullet); stdlib and corpora gain the bounds they were relying on | **Done** — `check_bound_method_call`; 16 `std.algo` adapters and 2 corpus files gained `where I: iterator[T]`; a template whose own check fails is never instantiated (`failed_templates_`); `inference_diagnostics/014`, `015` |
+| 9.3 | Operators on `T` require their trait | **Done** — `check_bound_arithmetic`, comparisons, unary `-`; a bound fixes a defaulted associated type to its default (`type output = self` on the six operator traits); `inference_diagnostics/016` |
+| 9.4 | Category bounds; literals and casts on `T` require one (rules 2 and 4) | **Done** — `std.traits`'s `signed_integer`/`unsigned_integer`/`integer`/`float`/`numeric` concepts (prelude-visible), domains (`domain_of`), `check_literal_as_param`, `check_cast_with_param`; `inference_diagnostics/017` |
+| 9.5 | `static if` narrowing (rule 5); `std.limits`, `std.traits` rewritten to rely on it | **Done** — `narrowing_of` (`T.name() ==`/`!=` directly or via a `let` alias, `or`, `and`, `not`, `is_<category>[T]()`), `check_narrowed_static_if`, flow narrowing past a returning branch (`narrowing_past`); narrowing restricts the *domain* rather than substituting, so records stay written in `T` for 9.7 |
+| 9.6 | Generic-to-generic calls by entailment; call-site bound checking (rule 3) | **Done** — `solve_generic_call` (shared by instances and templates) checks every bound against the solution (`check_call_bounds`, `satisfies_trait`/`satisfies_concept`, builtin scalars by `builtin_has_trait`); a template's call is solved with its own parameters as answers and its result read through the solution (`check_generic_call_in_template`); a solution written in the body's own parameters is never instantiated (`solution_mentions_rigid`); `T.zero()`-style static calls go through the bounds; `[T: ord]` is settled as a bounded type parameter once, before checking (`settle_bounded_params`); `inference_diagnostics/003` (now at bar), `018` |
+| 9.6b | A type parameter is rigid: `type_table::is_unknown` stops counting `type_param_kind`, so `T` against `int32` is a mismatch | **Done** — a call opens the callee's own unsolved parameters (`open_foreign_params`) instead of relying on them being "unknown"; value parameters solve symbolically across the call (`n := n`, `solve_for_unknown` no longer refuses a shared spelling); the move checker keeps not tracking `T` (see `spec/todo.md`); `inference_diagnostics/019` |
+| 9.7 | Instance types by substitution: the instance walk is replaced by substituting the template's records | |
+| 9.8 | Both `in_*_template_` gates and the template leniencies deleted | **Not started.** Tried turning both modes off at once (2026-09-26): every stdlib `list` instance failed to lower (`list::push$list_byte_` never compiled). The gates must be replaced one site at a time by a fact about that site's own inputs (`mentions_rigid_param`); about 20 sites remain |
+
+Also landed with 9.6: builtin scalars have real `eq`/`ord`/`show`/`debug`/`add`/`sub`/`mul`/`div`/`rem`/`neg` impls (`src/std/traits.scalar.cn`, generated by `tools/std/gen_scalar_impls.py`); builtin operators stay primitive and never dispatch to them. Category bounds exclude the 128-bit types and imply every `std.traits` trait all their members implement. Open follow-ups: `std.algo`'s `filter` passes a `T` by value to `pred` and then returns it (a double move for non-copy `T`, hidden because the move checker does not track `T`); `x.add(y)` on a builtin now finds the trait method before a user's UFCS `add`.
+
+Ordering: the checks (9.2-9.6) come before the substitution (9.7) because
+substitution is only sound once the template's check is — an instance built
+by substituting an unchecked record compiles whatever the record says.
+
 #### Integer-literal defaulting, attempted again — and what it taught
 
 Parked on `wip/literal-defaulting-demand-points`, six of thirty-six targets
@@ -1453,14 +1546,14 @@ bool` is not diagnosed (item 17).
 
 ## Definition of done
 
-A ledger, not a feeling:
+A ledger, not a feeling (the "Now" column was re-measured against the code on 2026-09-26):
 
 | Metric | Now | Done |
 |---|---|---|
-| `unify_rigid` call sites | 28 | 0 |
-| Ad-hoc `string -> type_id` binding maps | 67 | 0 |
-| `in_*_template_` gates | 6 | 0 |
-| Distinct inference solvers | 4 | 1 |
+| `unify_rigid` call sites | 22, all in `check.cpp` | 0 |
+| Ad-hoc `string -> type_id` binding maps | 78 (75 in `check.cpp`, 1 each in `infer_ctxt.h`, `rigid_match.h`, `types.h`) | 0 |
+| `in_*_template_` gates | 2 (`in_type_generic_template_`, `in_const_generic_template_`) | 0 |
+| Distinct inference solvers | 3: `unify_rigid`, `solve_generic_params`, `solve_from_expected_type` | 1 |
 | `param_usage_inferrer` | deleted; unannotated params are leaves, open ones monomorphized per call (phase 8b) | deleted |
 | Value slots solved rather than checked | no | yes |
 

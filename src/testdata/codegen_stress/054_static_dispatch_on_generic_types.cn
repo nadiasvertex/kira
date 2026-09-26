@@ -97,7 +97,7 @@ impl from_iter[int32] for doubler:
 
 # §5.1's `collect`, verbatim: one function, the collector chosen entirely by
 # the type expected at the call site (R1 return-position inference).
-def collect[I, C](it: I) -> C:
+def collect[I, C, T](it: I) -> C where I: iterator[T], C: from_iter[T]:
     return C.from_iter(it)
 
 type example_type[T] = { v: T }

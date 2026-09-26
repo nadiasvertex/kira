@@ -1,0 +1,6 @@
+error: the literal `300` cannot be a `T` when `T` is `int8`
+  --> 017_literal_does_not_fit_every_member.cn:7:12
+    7 |     return 300
+      |            ^^^ `T` can be `int8` here
+  help: A literal written as a `T` has to fit every type `T` can be at this point. Narrow `T` first (a `static if` on it), or tighten its bound.
+

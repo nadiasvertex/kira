@@ -9,26 +9,31 @@ module codegen_stress.type_param_static_dispatch
 # member on a concrete type, exactly as it does for any other monomorphized
 # instance (`semantic::checker::resolve_type_param_static`).
 
+# The static member is a trait's, which is what lets a generic body call it
+# through `C` at all: a body may only use what its bounds promise.
+trait maker:
+    static def make(v: int32) -> self
+
 type counter = { n: int32 }
 
-extend counter:
-    def make(v: int32) -> counter:
+impl maker for counter:
+    static def make(v: int32) -> counter:
         return counter { n: v * 10 }
 
 type doubler = { n: int32 }
 
-extend doubler:
-    def make(v: int32) -> doubler:
+impl maker for doubler:
+    static def make(v: int32) -> doubler:
         return doubler { n: v + 100 }
 
 # `C` appears nowhere but the return type, so nothing about the arguments
 # says what it is. Each call's annotation does.
-def build[C](v: int32) -> C:
+def build[C](v: int32) -> C where C: maker:
     return C.make(v)
 
 # A second template over the same ground, to pin that the instance cache
 # keys on the solution and not on the template alone.
-def build_twice[C](v: int32) -> C:
+def build_twice[C](v: int32) -> C where C: maker:
     return C.make(v + 1)
 
 def main() -> int32:

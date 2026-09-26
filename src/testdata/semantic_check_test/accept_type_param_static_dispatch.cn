@@ -5,19 +5,22 @@ module sample
 # `C.make` resolves against the impl for whatever `C` turned out to be —
 # dispatch is static and monomorphic, so nothing here needs object safety.
 
+trait maker:
+    static def make(v: int32) -> self
+
 type counter = { n: int32 }
 
-extend counter:
-    def make(v: int32) -> counter:
+impl maker for counter:
+    static def make(v: int32) -> counter:
         return counter { n: v * 10 }
 
 type doubler = { n: int32 }
 
-extend doubler:
-    def make(v: int32) -> doubler:
+impl maker for doubler:
+    static def make(v: int32) -> doubler:
         return doubler { n: v + 100 }
 
-def build[C](v: int32) -> C:
+def build[C](v: int32) -> C where C: maker:
     return C.make(v)
 
 # Two different `C`s, so two instances of one template, each naming the

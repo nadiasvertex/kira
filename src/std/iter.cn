@@ -75,14 +75,18 @@ pub trait from_iter[T]:
 #:
 #:     words.collect[list[str]]()
 #:
-#: Note that `collect` is *inferred, not bounds-checked*. A `C` that is not a
-#: collection is still a compile-time error, but it is phrased indirectly — it
-#: surfaces as a missing `from_iter`, with a note pointing back at the call.
+#: A `C` that is not a collection of the iterator's elements is rejected at
+#: the call, by the `C: from_iter[T]` bound. `C` comes before `T` so that the
+#: one bracket argument of `words.collect[list[str]]()` names the collection.
+#: Type Params:
+#:   I: the iterator's type; must implement `iterator[T]`.
+#:   C: the collection to build; must implement `from_iter[T]`.
+#:   T: the element type.
 #: Args:
 #:   it: the iterator to drain (moved).
 #: Returns:
 #:   the collected collection.
-pub def collect[I, C](it: I) -> C:
+pub def collect[I, C, T](it: I) -> C where I: iterator[T], C: from_iter[T]:
     return C.from_iter(it)
 
 # ---------------------------------------------------------------------------

@@ -32,7 +32,7 @@ pub static pure def is_signed[T]() -> bool:
         _               => false
 
 #: The most negative representable value of `T`.
-pub static pure def min[T]() -> T:
+pub static pure def min[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return -128 as T
@@ -50,7 +50,7 @@ pub static pure def min[T]() -> T:
     return 0
 
 #: The most positive representable value of `T`.
-pub static pure def max[T]() -> T:
+pub static pure def max[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return 127 as T

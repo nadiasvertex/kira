@@ -911,7 +911,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   // `main.cpp` does for every real invocation (this alone now pulls in
   // `intrinsics.cn`, `traits.cn`, `traits.ord.cn`, `traits.show.cn`,
   // `traits.numeric.cn`, `traits.conversion.cn`, `traits.category.cn`,
-  // `traits.hash.cn`, `limits.cn`, `iter.cn`, `prelude.cn`,
+  // `traits.hash.cn`, `traits.scalar.cn`, `limits.cn`, `iter.cn`,
+  // `prelude.cn`,
   // `io.cn`, `console.cn`, `fmt.cn`, `algo.cn`, `unicode_tables.cn`,
   // `unicode.cn`, `derive.cn`, `fs/path.cn`, `test.cn`, and the
   // assembled `std.platform`) rather than
@@ -929,8 +930,8 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 28,
-         "expected std.io, std.console, std.traits (across its 8 files), "
+  expect(report->modules.size() == 29,
+         "expected std.io, std.console, std.traits (across its 9 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "

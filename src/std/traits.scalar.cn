@@ -1,0 +1,585 @@
+module std.traits
+
+# GENERATED FILE -- do not hand-edit.
+# Produced by tools/std/gen_scalar_impls.py; see its doc comment for
+# why these impls exist and why each body cannot recurse.
+
+impl eq for bool:
+    def eq(self, other: &bool) -> bool:
+        return self == *other
+
+impl eq for char:
+    def eq(self, other: &char) -> bool:
+        return self == *other
+
+impl eq for int8:
+    def eq(self, other: &int8) -> bool:
+        return self == *other
+
+impl eq for int16:
+    def eq(self, other: &int16) -> bool:
+        return self == *other
+
+impl eq for int32:
+    def eq(self, other: &int32) -> bool:
+        return self == *other
+
+impl eq for int64:
+    def eq(self, other: &int64) -> bool:
+        return self == *other
+
+impl eq for isize:
+    def eq(self, other: &isize) -> bool:
+        return self == *other
+
+impl eq for uint8:
+    def eq(self, other: &uint8) -> bool:
+        return self == *other
+
+impl eq for uint16:
+    def eq(self, other: &uint16) -> bool:
+        return self == *other
+
+impl eq for uint32:
+    def eq(self, other: &uint32) -> bool:
+        return self == *other
+
+impl eq for uint64:
+    def eq(self, other: &uint64) -> bool:
+        return self == *other
+
+impl eq for usize:
+    def eq(self, other: &usize) -> bool:
+        return self == *other
+
+impl eq for byte:
+    def eq(self, other: &byte) -> bool:
+        return self == *other
+
+impl eq for float32:
+    def eq(self, other: &float32) -> bool:
+        return self == *other
+
+impl eq for float64:
+    def eq(self, other: &float64) -> bool:
+        return self == *other
+
+impl ord for int8:
+    def cmp(self, other: &int8) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for int16:
+    def cmp(self, other: &int16) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for int32:
+    def cmp(self, other: &int32) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for int64:
+    def cmp(self, other: &int64) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for isize:
+    def cmp(self, other: &isize) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for uint8:
+    def cmp(self, other: &uint8) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for uint16:
+    def cmp(self, other: &uint16) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for uint32:
+    def cmp(self, other: &uint32) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for uint64:
+    def cmp(self, other: &uint64) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for usize:
+    def cmp(self, other: &usize) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for byte:
+    def cmp(self, other: &byte) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for float32:
+    def cmp(self, other: &float32) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for float64:
+    def cmp(self, other: &float64) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for char:
+    def cmp(self, other: &char) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl show for bool:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for bool:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for char:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for char:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for int8:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for int8:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for int16:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for int16:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for int32:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for int32:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for int64:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for int64:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for isize:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for isize:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for uint8:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for uint8:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for uint16:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for uint16:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for uint32:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for uint32:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for uint64:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for uint64:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for usize:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for usize:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for byte:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for byte:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for float32:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for float32:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for float64:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for float64:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl add for int8:
+    def add(self, other: int8) -> int8:
+        return self + other
+
+impl add for int16:
+    def add(self, other: int16) -> int16:
+        return self + other
+
+impl add for int32:
+    def add(self, other: int32) -> int32:
+        return self + other
+
+impl add for int64:
+    def add(self, other: int64) -> int64:
+        return self + other
+
+impl add for isize:
+    def add(self, other: isize) -> isize:
+        return self + other
+
+impl add for uint8:
+    def add(self, other: uint8) -> uint8:
+        return self + other
+
+impl add for uint16:
+    def add(self, other: uint16) -> uint16:
+        return self + other
+
+impl add for uint32:
+    def add(self, other: uint32) -> uint32:
+        return self + other
+
+impl add for uint64:
+    def add(self, other: uint64) -> uint64:
+        return self + other
+
+impl add for usize:
+    def add(self, other: usize) -> usize:
+        return self + other
+
+impl add for byte:
+    def add(self, other: byte) -> byte:
+        return self + other
+
+impl add for float32:
+    def add(self, other: float32) -> float32:
+        return self + other
+
+impl add for float64:
+    def add(self, other: float64) -> float64:
+        return self + other
+
+impl sub for int8:
+    def sub(self, other: int8) -> int8:
+        return self - other
+
+impl sub for int16:
+    def sub(self, other: int16) -> int16:
+        return self - other
+
+impl sub for int32:
+    def sub(self, other: int32) -> int32:
+        return self - other
+
+impl sub for int64:
+    def sub(self, other: int64) -> int64:
+        return self - other
+
+impl sub for isize:
+    def sub(self, other: isize) -> isize:
+        return self - other
+
+impl sub for uint8:
+    def sub(self, other: uint8) -> uint8:
+        return self - other
+
+impl sub for uint16:
+    def sub(self, other: uint16) -> uint16:
+        return self - other
+
+impl sub for uint32:
+    def sub(self, other: uint32) -> uint32:
+        return self - other
+
+impl sub for uint64:
+    def sub(self, other: uint64) -> uint64:
+        return self - other
+
+impl sub for usize:
+    def sub(self, other: usize) -> usize:
+        return self - other
+
+impl sub for byte:
+    def sub(self, other: byte) -> byte:
+        return self - other
+
+impl sub for float32:
+    def sub(self, other: float32) -> float32:
+        return self - other
+
+impl sub for float64:
+    def sub(self, other: float64) -> float64:
+        return self - other
+
+impl mul for int8:
+    def mul(self, other: int8) -> int8:
+        return self * other
+
+impl mul for int16:
+    def mul(self, other: int16) -> int16:
+        return self * other
+
+impl mul for int32:
+    def mul(self, other: int32) -> int32:
+        return self * other
+
+impl mul for int64:
+    def mul(self, other: int64) -> int64:
+        return self * other
+
+impl mul for isize:
+    def mul(self, other: isize) -> isize:
+        return self * other
+
+impl mul for uint8:
+    def mul(self, other: uint8) -> uint8:
+        return self * other
+
+impl mul for uint16:
+    def mul(self, other: uint16) -> uint16:
+        return self * other
+
+impl mul for uint32:
+    def mul(self, other: uint32) -> uint32:
+        return self * other
+
+impl mul for uint64:
+    def mul(self, other: uint64) -> uint64:
+        return self * other
+
+impl mul for usize:
+    def mul(self, other: usize) -> usize:
+        return self * other
+
+impl mul for byte:
+    def mul(self, other: byte) -> byte:
+        return self * other
+
+impl mul for float32:
+    def mul(self, other: float32) -> float32:
+        return self * other
+
+impl mul for float64:
+    def mul(self, other: float64) -> float64:
+        return self * other
+
+impl div for int8:
+    def div(self, other: int8) -> int8:
+        return self / other
+
+impl div for int16:
+    def div(self, other: int16) -> int16:
+        return self / other
+
+impl div for int32:
+    def div(self, other: int32) -> int32:
+        return self / other
+
+impl div for int64:
+    def div(self, other: int64) -> int64:
+        return self / other
+
+impl div for isize:
+    def div(self, other: isize) -> isize:
+        return self / other
+
+impl div for uint8:
+    def div(self, other: uint8) -> uint8:
+        return self / other
+
+impl div for uint16:
+    def div(self, other: uint16) -> uint16:
+        return self / other
+
+impl div for uint32:
+    def div(self, other: uint32) -> uint32:
+        return self / other
+
+impl div for uint64:
+    def div(self, other: uint64) -> uint64:
+        return self / other
+
+impl div for usize:
+    def div(self, other: usize) -> usize:
+        return self / other
+
+impl div for byte:
+    def div(self, other: byte) -> byte:
+        return self / other
+
+impl div for float32:
+    def div(self, other: float32) -> float32:
+        return self / other
+
+impl div for float64:
+    def div(self, other: float64) -> float64:
+        return self / other
+
+impl rem for int8:
+    def rem(self, other: int8) -> int8:
+        return self % other
+
+impl rem for int16:
+    def rem(self, other: int16) -> int16:
+        return self % other
+
+impl rem for int32:
+    def rem(self, other: int32) -> int32:
+        return self % other
+
+impl rem for int64:
+    def rem(self, other: int64) -> int64:
+        return self % other
+
+impl rem for isize:
+    def rem(self, other: isize) -> isize:
+        return self % other
+
+impl rem for uint8:
+    def rem(self, other: uint8) -> uint8:
+        return self % other
+
+impl rem for uint16:
+    def rem(self, other: uint16) -> uint16:
+        return self % other
+
+impl rem for uint32:
+    def rem(self, other: uint32) -> uint32:
+        return self % other
+
+impl rem for uint64:
+    def rem(self, other: uint64) -> uint64:
+        return self % other
+
+impl rem for usize:
+    def rem(self, other: usize) -> usize:
+        return self % other
+
+impl rem for byte:
+    def rem(self, other: byte) -> byte:
+        return self % other
+
+impl rem for float32:
+    def rem(self, other: float32) -> float32:
+        return self % other
+
+impl rem for float64:
+    def rem(self, other: float64) -> float64:
+        return self % other
+
+impl neg for int8:
+    def neg(self) -> int8:
+        return -self
+
+impl neg for int16:
+    def neg(self) -> int16:
+        return -self
+
+impl neg for int32:
+    def neg(self) -> int32:
+        return -self
+
+impl neg for int64:
+    def neg(self) -> int64:
+        return -self
+
+impl neg for isize:
+    def neg(self) -> isize:
+        return -self
+
+impl neg for float32:
+    def neg(self) -> float32:
+        return -self
+
+impl neg for float64:
+    def neg(self) -> float64:
+        return -self

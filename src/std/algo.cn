@@ -31,7 +31,7 @@ use std.limits.bits
 #:   f: the function applied to each element.
 pub type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
 
-impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+impl[I, T, U] iterator[U] for map_iter[I, T, U] where I: iterator[T]:
     #: Advances the source and maps its next element through `f`.
     #: Args:
     #:   self: the map iterator, advanced by one element.
@@ -62,7 +62,7 @@ impl[I, T, U] iterator[U] for map_iter[I, T, U]:
 #:   pred: the predicate an element must satisfy to be yielded.
 pub type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
 
-impl[I, T] iterator[T] for filter_iter[I, T]:
+impl[I, T] iterator[T] for filter_iter[I, T] where I: iterator[T]:
     #: Advances the source until an element satisfies `pred`.
     #: Args:
     #:   self: the filter iterator, advanced past every element it discards
@@ -121,7 +121,7 @@ pub def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: i
 #:   left: the number of elements still to be yielded.
 pub type take_iter[I, T] = { inner: I, left: usize }
 
-impl[I, T] iterator[T] for take_iter[I, T]:
+impl[I, T] iterator[T] for take_iter[I, T] where I: iterator[T]:
     #: Yields the source's next element while the `n`-element budget remains.
     #: Args:
     #:   self: the take iterator; `left` is decremented by one on a yield.
@@ -156,7 +156,7 @@ impl[I, T] iterator[T] for take_iter[I, T]:
 #:   left: the number of leading elements still to be discarded.
 pub type skip_iter[I, T] = { inner: I, left: usize }
 
-impl[I, T] iterator[T] for skip_iter[I, T]:
+impl[I, T] iterator[T] for skip_iter[I, T] where I: iterator[T]:
     #: Discards the first `left` elements on the first call, then yields
     #: the source's remaining elements one at a time.
     #: Args:
@@ -194,7 +194,7 @@ impl[I, T] iterator[T] for skip_iter[I, T]:
 #:   done: whether the predicate has already failed once.
 pub type take_while_iter[I, T] = { inner: I, pred: fn(T) -> bool, done: bool }
 
-impl[I, T] iterator[T] for take_while_iter[I, T]:
+impl[I, T] iterator[T] for take_while_iter[I, T] where I: iterator[T]:
     # `done` latches once the predicate first fails, so a source whose
     # elements alternate around the predicate still stops for good rather than
     # resuming (that would be `filter`'s behaviour, not `take_while`'s).
@@ -231,7 +231,7 @@ impl[I, T] iterator[T] for take_while_iter[I, T]:
 #:     discarded.
 pub type skip_while_iter[I, T] = { inner: I, pred: fn(T) -> bool, skipping: bool }
 
-impl[I, T] iterator[T] for skip_while_iter[I, T]:
+impl[I, T] iterator[T] for skip_while_iter[I, T] where I: iterator[T]:
     # Once the predicate fails the flag clears for good: `skip_while` drops a
     # *prefix*, so later elements satisfying the predicate are still yielded.
     #: Discards the source's leading `pred`-satisfying elements, then yields
@@ -263,7 +263,7 @@ impl[I, T] iterator[T] for skip_while_iter[I, T]:
 #:   first: whether the first (unconditionally yielded) element is still ahead.
 pub type step_by_iter[I, T] = { inner: I, step: usize, first: bool }
 
-impl[I, T] iterator[T] for step_by_iter[I, T]:
+impl[I, T] iterator[T] for step_by_iter[I, T] where I: iterator[T]:
     #: Yields the source's first element, then every `step`th element after.
     #: Args:
     #:   self: the step_by iterator; clears `first` after the first yield and
@@ -293,7 +293,7 @@ impl[I, T] iterator[T] for step_by_iter[I, T]:
 #:   f: the function mapping each source element to a kept or dropped result.
 pub type filter_map_iter[I, T, U] = { inner: I, f: fn(T) -> option[U] }
 
-impl[I, T, U] iterator[U] for filter_map_iter[I, T, U]:
+impl[I, T, U] iterator[U] for filter_map_iter[I, T, U] where I: iterator[T]:
     #: Advances the source until `f` yields `@some` for an element.
     #: Args:
     #:   self: the filter_map iterator, advanced past every element it drops
@@ -397,7 +397,7 @@ pub def filter_map[I, T, U](it: I, f: fn(T) -> option[U]) -> filter_map_iter[I, 
 #:   on_first: whether `first` is still being drawn from.
 pub type chain_iter[I, J, T] = { first: I, second: J, on_first: bool }
 
-impl[I, J, T] iterator[T] for chain_iter[I, J, T]:
+impl[I, J, T] iterator[T] for chain_iter[I, J, T] where I: iterator[T], J: iterator[T]:
     # The `while let` runs at most one iteration: the body returns on the
     # first element. It is a loop rather than a match because reaching the
     # second source requires *latching* `on_first` first, and a match arm's
@@ -461,7 +461,7 @@ impl[I, T] iterator[T] for rev_iter[I, T] where I: double_ended[T]:
 #:   filled: whether `held` currently holds a peeked element.
 pub type peekable_iter[I, T] = { inner: I, held: option[T], filled: bool }
 
-impl[I, T] iterator[T] for peekable_iter[I, T]:
+impl[I, T] iterator[T] for peekable_iter[I, T] where I: iterator[T]:
     #: Returns a held, peeked element if there is one, otherwise draws from
     #: the source.
     #: Args:
@@ -496,7 +496,7 @@ impl[I, T] iterator[T] for peekable_iter[I, T]:
 #:   f: combines the current accumulator with an element to give the next one.
 pub type scan_iter[I, T, S] = { inner: I, state: S, f: fn(S, T) -> S }
 
-impl[I, T, S] iterator[S] for scan_iter[I, T, S]:
+impl[I, T, S] iterator[S] for scan_iter[I, T, S] where I: iterator[T]:
     # One-iteration `while let`: the state update is a statement, so it
     # cannot live in a match arm's single-expression result.
     #: Advances the source by one element and folds it into `state`.
@@ -521,7 +521,7 @@ impl[I, T, S] iterator[S] for scan_iter[I, T, S]:
 #:   f: the function run on each element for its effects.
 pub type inspect_iter[I, T] = { inner: I, f: fn(T) -> unit }
 
-impl[I, T] iterator[T] for inspect_iter[I, T]:
+impl[I, T] iterator[T] for inspect_iter[I, T] where I: iterator[T]:
     #: Draws the source's next element, runs `f` on it, and yields it
     #: unchanged.
     #: Args:
@@ -651,7 +651,7 @@ pub def inspect[I, T](it: I, f: fn(T) -> unit) -> inspect_iter[I, T] where I: it
 #:   second: the iterator supplying each pair's second element.
 pub type zip_iter[I, J, T, U] = { first: I, second: J }
 
-impl[I, J, T, U] iterator[(T, U)] for zip_iter[I, J, T, U]:
+impl[I, J, T, U] iterator[(T, U)] for zip_iter[I, J, T, U] where I: iterator[T], J: iterator[U]:
     # Stops as soon as *either* source does, so the result is as long as the
     # shorter one. The nested `while let`s each run at most one iteration.
     #: Draws one element from each source and pairs them.
@@ -689,7 +689,7 @@ impl[I, J, T, U] iterator[(T, U)] for zip_iter[I, J, T, U]:
 #:   at: the zero-based index of the next element to be yielded.
 pub type enumerate_iter[I, T] = { inner: I, at: usize }
 
-impl[I, T] iterator[(usize, T)] for enumerate_iter[I, T]:
+impl[I, T] iterator[(usize, T)] for enumerate_iter[I, T] where I: iterator[T]:
     #: Draws the source's next element and pairs it with its index.
     #: Args:
     #:   self: the enumerate iterator; `at` is incremented on a yield.
@@ -776,7 +776,7 @@ pub def enumerate[I, T](it: I) -> enumerate_iter[I, T] where I: iterator[T]:
 #:     inners.
 pub type flatten_iter[I, J, T] = { outer: I, cur: option[J] }
 
-impl[I, J, T] iterator[T] for flatten_iter[I, J, T]:
+impl[I, J, T] iterator[T] for flatten_iter[I, J, T] where I: iterator[J], J: iterator[T]:
     #: Draws from the current inner iterator, advancing to the next inner
     #: (possibly several, if some are empty) as each is exhausted.
     #: Args:
@@ -813,7 +813,7 @@ impl[I, J, T] iterator[T] for flatten_iter[I, J, T]:
 #:     inners.
 pub type flat_map_iter[I, T, J, U] = { outer: I, f: fn(T) -> J, cur: option[J] }
 
-impl[I, T, J, U] iterator[U] for flat_map_iter[I, T, J, U]:
+impl[I, T, J, U] iterator[U] for flat_map_iter[I, T, J, U] where I: iterator[T], J: iterator[U]:
     #: Draws from the current inner iterator, calling `f` on the next outer
     #: element to produce a new inner one whenever the current inner (or none
     #: yet exists) is exhausted.
@@ -1706,7 +1706,7 @@ def is_radix_integer[T]() -> bool:
 #:   is_signed: whether `T` is a signed integer type.
 #: Returns:
 #:   a `usize` key that orders the same as `x` does under `T`'s own ordering.
-def radix_key[T](x: T, is_signed: bool) -> usize:
+def radix_key[T](x: T, is_signed: bool) -> usize where T: integer:
     let bits = x as usize
     if is_signed:
         return bits ^ 0x8000000000000000
@@ -1723,7 +1723,7 @@ def radix_key[T](x: T, is_signed: bool) -> usize:
 #:   is_signed: whether `T` is a signed integer type.
 #: Returns:
 #:   unit (nothing).
-def ska_sort[T](s: &mut slice_mut[T], is_signed: bool) -> unit:
+def ska_sort[T](s: &mut slice_mut[T], is_signed: bool) -> unit where T: integer:
     let n = s.len()
     if n < 2:
         return
@@ -1782,7 +1782,10 @@ def ska_sort[T](s: &mut slice_mut[T], is_signed: bool) -> unit:
 #: Returns:
 #:   unit (nothing).
 pub def sort[T](s: &mut slice_mut[T]) -> unit where T: ord:
-    if is_radix_integer[T]():
+    # A `static if`, not a runtime `if`: only a compile-time test on `T`
+    # narrows it, and `ska_sort` needs `T: integer` to be *known* here, not
+    # merely true at run time.
+    static if is_integer[T]() and bits[T]() <= 64:
         ska_sort(s, is_signed_integer[T]())
         return
     let n = s.len()

@@ -18,7 +18,7 @@ module codegen_stress.static_if_statement_in_function_body
 
 # expect: 32894
 
-def max_of[T]() -> T:
+def max_of[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return 127 as T

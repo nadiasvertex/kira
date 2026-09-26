@@ -8,7 +8,7 @@ module sample
 # the unbound template pass and every bound instance recheck) instead of "is
 # `T` still unbound here", so the `if` branch's int64-only literal was
 # spuriously bounds-checked against the bound `T = int32`.
-def min_of[T]() -> T:
+def min_of[T]() -> T where T: numeric:
     static if T.name() == "int64":
         return -9223372036854775807 - 1
     else:

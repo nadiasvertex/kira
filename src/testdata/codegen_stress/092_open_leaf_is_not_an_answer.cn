@@ -20,7 +20,7 @@ module codegen_stress.open_leaf_is_not_an_answer
 # agreement: an element type inferred wrongly is inferred wrongly for both
 # tiers, and they would agree on the wrong answer.
 
-def sum_from[T](xs: list[T], zero: T) -> T:
+def sum_from[T](xs: list[T], zero: T) -> T where T: numeric:
     var total = zero
     var i: usize = 0
     while i < xs.len():

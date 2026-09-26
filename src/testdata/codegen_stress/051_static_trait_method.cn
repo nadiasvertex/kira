@@ -67,7 +67,7 @@ impl from_iter[int32] for count_box:
 
 # §5.1's `collect`, verbatim in shape: one function, the collector chosen by
 # the type expected at the call site.
-def collect[I, C](it: I) -> C:
+def collect[I, C, T](it: I) -> C where I: iterator[T], C: from_iter[T]:
     return C.from_iter(it)
 
 type point = { x: int32 }

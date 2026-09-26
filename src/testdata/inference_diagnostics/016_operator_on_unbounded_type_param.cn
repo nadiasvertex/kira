@@ -1,0 +1,9 @@
+# bar: AT BAR. Phase 9 (bounded generics). `+` on a type parameter is a call
+# to `add`'s method, so the body needs `T: add` — or a category bound such as
+# `T: numeric`, whose every member has the builtin operator. Reported at the
+# operator, against `T`. Before phase 9 this compiled for `int32` and failed
+# for a struct with "no method" from inside the instance.
+module infer_diag.operator_on_unbounded_type_param
+
+def twice[T](x: T) -> T:
+    return x + x

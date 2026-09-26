@@ -9,6 +9,8 @@
 #include <functional>
 #include <optional>
 #include <ranges>
+#include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -1271,8 +1273,21 @@ private:
     if (!emitted_diagnostics_.insert(std::move(key)).second) {
       return;
     }
+    if (diag.level == diagnostic_level::error) {
+      ++errors_emitted_;
+    }
     diag_.emit(with_instantiation_notes(diag));
   }
+
+  /// Every error `emit_diag` has let through, so a pass can tell whether it
+  /// reported anything.
+  size_t errors_emitted_ = 0;
+  /// Generic templates whose own check reported an error. Their instances are
+  /// never checked: under bounded generics a template is checked once, for
+  /// every type its signature admits, so an instance can only repeat what the
+  /// template already said — the same mistake again, now against `int32`
+  /// rather than `T`, and one level removed from the line that made it.
+  std::unordered_set<const ast::func_decl *> failed_templates_;
 
   /// Appends the §5.4 instantiation-site notes to an error raised while
   /// checking a monomorphized body.
@@ -2344,6 +2359,776 @@ private:
                        .use_type_param_stack = true,
                        .quiet = false};
   }
+
+  // ==========================================================================
+  //  Facts about type parameters (`spec/inference-rewrite.md` phase 9,
+  //  rule 1)
+  //
+  //  What a generic body may rely on about `T` is exactly what its
+  //  declaration says: `T`'s own bounds, its `where` bounds, everything those
+  //  `require`, and the bounds of an enclosing generic block. An operation on
+  //  a value of type `T` that no fact justifies is a mistake at the line that
+  //  performs it — reported once, there, rather than once per instance from
+  //  inside whatever called it.
+  // ==========================================================================
+
+  /// One fact: the parameter implements `trait[args]`. The declaration is
+  /// resolved where the bound was written, not looked up again by name where
+  /// it is used — two modules may each declare an `iterator`, and the one a
+  /// bound means is the one its own module sees.
+  struct type_fact {
+    const ast::trait_decl *trait = nullptr;
+    std::vector<type_id> args;
+  };
+
+  /// Declared facts, keyed by the parameter's own `type_id`.
+  ///
+  /// Not scoped: a parameter is keyed on the declaration that introduced it
+  /// (`type_table::type_param`), so its facts are the same wherever it
+  /// appears — including in a nested generic that reads its enclosing
+  /// block's `T`.
+  std::unordered_map<type_id, std::vector<type_fact>> declared_facts_;
+  /// Facts that hold only in part of a program, innermost last. `self` inside
+  /// a trait body is the case that needs it today: it is one by-name
+  /// `type_param` shared by every trait, so what it implements depends on
+  /// which trait is being checked.
+  std::vector<std::pair<type_id, std::vector<type_fact>>> scoped_facts_;
+
+  /// The `+`-joined terms of a bound; a bare `Trait[Args]` is the one-term
+  /// case of the same thing.
+  static auto bound_terms(const ast::type_expr &bound)
+      -> std::vector<const ast::type_expr *> {
+    auto terms = std::vector<const ast::type_expr *>{};
+    if (bound.kind == ast::node_kind::bound_type) {
+      for (const auto &term :
+           dynamic_cast<const ast::bound_type &>(bound).value.terms) {
+        if (term.type != nullptr) {
+          terms.push_back(term.type.get());
+        }
+      }
+    } else {
+      terms.push_back(&bound);
+    }
+    return terms;
+  }
+
+  /// The module and file that declare `trait`, so its `requires` clause and
+  /// its method signatures resolve in their own scope rather than the
+  /// caller's, and a diagnostic can point at it.
+  auto trait_home(const ast::trait_decl &trait)
+      -> std::pair<const module_members *, file_id_type> {
+    for (const auto &[module_name, members] : index_.modules) {
+      if (const auto it = members.traits.find(trait.name);
+          it != members.traits.end() && it->second.decl == &trait) {
+        return {&members, it->second.file_id};
+      }
+    }
+    return {module_, file_id_};
+  }
+
+  /// The concept `name` names from the current module and file, if any —
+  /// the same scope rules `find_trait_decl_by_name` applies to traits.
+  auto find_concept_decl_by_name(std::string_view name)
+      -> std::optional<concept_decl_ref> {
+    const auto key = std::string(name);
+    if (module_ != nullptr) {
+      if (const auto it = module_->concepts.find(key);
+          it != module_->concepts.end()) {
+        return it->second;
+      }
+    }
+    if (const auto *binding = find_import(name)) {
+      if (const auto *source = import_source_module(*binding)) {
+        if (const auto it =
+                source->concepts.find(imported_member_name(*binding));
+            it != source->concepts.end()) {
+          return it->second;
+        }
+      }
+    }
+    for (const auto *source : wildcard_import_sources()) {
+      if (const auto it = source->concepts.find(key);
+          it != source->concepts.end()) {
+        return it->second;
+      }
+    }
+    return find_prelude_concept(name);
+  }
+
+  /// Runs `body` as if checking code in `module` and `file`, so name lookup
+  /// sees that file's imports.
+  template <typename Body>
+  auto in_scope_of(const module_members *module, file_id_type file, Body body)
+      -> decltype(body()) {
+    const auto *saved_module = module_;
+    const auto saved_file = file_id_;
+    module_ = module;
+    file_id_ = file;
+    struct restore {
+      checker *self;
+      const module_members *module;
+      file_id_type file;
+      ~restore() {
+        self->module_ = module;
+        self->file_id_ = file;
+      }
+    } guard{this, saved_module, saved_file};
+    return body();
+  }
+
+  /// Adds `trait[args]` to `out`, and everything it `requires`, once each. A
+  /// trait's requirements are facts about the same subject: `T: ord` lets a
+  /// body call `eq`'s methods too.
+  auto add_fact_closure(const ast::trait_decl &trait, std::vector<type_id> args,
+                        std::vector<type_fact> &out) -> void {
+    const auto already =
+        std::ranges::any_of(out, [&](const type_fact &known) -> bool {
+          return known.trait == &trait && known.args == args;
+        });
+    if (already) {
+      return;
+    }
+    out.push_back(type_fact{.trait = &trait, .args = args});
+    if (!trait.requires_bound.has_value()) {
+      return;
+    }
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    for (size_t i = 0; i < trait.type_params.size() && i < args.size(); ++i) {
+      bindings.emplace(trait.type_params[i].name, args[i]);
+    }
+    const auto [home, file] = trait_home(trait);
+    const auto ctx = resolve_ctx{.module = home,
+                                 .param_bindings = &bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    for (const auto &term : trait.requires_bound->terms) {
+      if (term.type == nullptr ||
+          term.type->kind != ast::node_kind::named_type) {
+        continue;
+      }
+      const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+      if (named.path.empty()) {
+        continue;
+      }
+      const auto required = in_scope_of(home, file, [&] {
+        return find_trait_decl_by_name(named.path.back());
+      });
+      if (required.has_value() && *required != nullptr) {
+        add_fact_closure(**required, resolve_type_args(named.type_args, ctx),
+                         out);
+      }
+    }
+  }
+
+  /// Records what `bound`, written in `ctx` and the current module, says
+  /// about `subject`. A concept contributes the trait bounds in its body, read
+  /// with its own parameter standing for `subject`.
+  auto add_bound_facts(type_id subject, const ast::type_expr &bound,
+                       const resolve_ctx &ctx) -> void {
+    for (const auto *term : bound_terms(bound)) {
+      if (term->kind != ast::node_kind::named_type) {
+        continue;
+      }
+      const auto &named = dynamic_cast<const ast::named_type &>(*term);
+      if (named.path.empty()) {
+        continue;
+      }
+      if (const auto trait = find_trait_decl_by_name(named.path.back());
+          trait.has_value() && *trait != nullptr) {
+        add_fact_closure(**trait, resolve_type_args(named.type_args, ctx),
+                         declared_facts_[subject]);
+        continue;
+      }
+      const auto concept_ref = find_concept_decl_by_name(named.path.back());
+      if (!concept_ref.has_value() || concept_ref->decl == nullptr) {
+        continue;
+      }
+      const auto &concept_decl = *concept_ref->decl;
+      if (const auto members = concept_category(concept_decl)) {
+        const auto found = declared_domains_.find(subject);
+        declared_domains_[subject] =
+            found != declared_domains_.end()
+                ? intersect_domains(found->second, *members)
+                : *members;
+      }
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      const auto args = resolve_type_args(named.type_args, ctx);
+      for (size_t i = 0; i < concept_decl.params.size(); ++i) {
+        const auto bound_to =
+            i == 0 ? subject : (i - 1 < args.size() ? args[i - 1]
+                                                    : k_unknown_type);
+        bindings.emplace(concept_decl.params[i].name, bound_to);
+      }
+      auto home = module_;
+      for (const auto &[module_name, members] : index_.modules) {
+        if (const auto it = members.concepts.find(concept_decl.name);
+            it != members.concepts.end() &&
+            it->second.decl == &concept_decl) {
+          home = &members;
+        }
+      }
+      const auto concept_ctx = resolve_ctx{.module = home,
+                                           .param_bindings = &bindings,
+                                           .use_type_param_stack = false,
+                                           .quiet = true};
+      in_scope_of(home, concept_ref->file_id, [&] {
+        for (const auto &constraint : concept_decl.constraints) {
+          const auto *constraint_bound =
+              dynamic_cast<const ast::type_expr *>(
+                  constraint.bound_or_expr.get());
+          if (constraint.subject == nullptr || constraint_bound == nullptr) {
+            continue;
+          }
+          const auto constrained =
+              resolve_type(*constraint.subject, concept_ctx);
+          if (types_.entry(constrained).kind == type_kind::type_param_kind) {
+            add_bound_facts(constrained, *constraint_bound, concept_ctx);
+          }
+        }
+      });
+    }
+  }
+
+  /// Whether every term of `bound` names a trait or a concept — what makes
+  /// `[T: ord]` a bounded type parameter rather than a value parameter.
+  auto names_trait_or_concept(const ast::type_expr &bound) -> bool {
+    const auto terms = bound_terms(bound);
+    return !terms.empty() &&
+           std::ranges::all_of(terms, [&](const ast::type_expr *term) -> bool {
+             if (term->kind != ast::node_kind::named_type) {
+               return false;
+             }
+             const auto &named = dynamic_cast<const ast::named_type &>(*term);
+             return !named.path.empty() &&
+                    (find_trait_decl_by_name(named.path.back()).has_value() ||
+                     find_concept_decl_by_name(named.path.back()).has_value());
+           });
+  }
+
+  /// Records the facts a declaration states about its own parameters: their
+  /// inline bounds, and its `where` clause. Called once the parameters are on
+  /// the stack. In an instance the parameters are concrete and have nothing
+  /// to record; a bound there is a fact about a type, not an assumption.
+  auto record_declared_facts(
+      const std::vector<ast::type_param> &params,
+      const std::vector<ast::where_constraint> *where_constraints) -> void {
+    auto ctx = current_resolve_ctx();
+    ctx.quiet = true;
+    const auto rigid = [&](type_id id) -> bool {
+      return types_.entry(id).kind == type_kind::type_param_kind;
+    };
+    for (const auto &param : params) {
+      // `[T: ord]` parses as a value parameter, since `[n: usize]` has the
+      // same shape; which one it is depends on what the name after the colon
+      // resolves to (see the same rule for signature bounds in
+      // `instantiate_functor`).
+      if (param.bound_or_type == nullptr ||
+          (param.is_value_param && !names_trait_or_concept(*param.bound_or_type))) {
+        continue;
+      }
+      if (const auto id = lookup_type_param(param.name); id && rigid(*id)) {
+        add_bound_facts(*id, *param.bound_or_type, ctx);
+      }
+    }
+    if (where_constraints == nullptr) {
+      return;
+    }
+    for (const auto &constraint : *where_constraints) {
+      if (constraint.subject == nullptr ||
+          constraint.bound_or_type == nullptr) {
+        continue;
+      }
+      const auto subject = resolve_type(*constraint.subject, ctx);
+      if (rigid(subject)) {
+        add_bound_facts(subject, *constraint.bound_or_type, ctx);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  //  Domains (`spec/inference-rewrite.md` phase 9, rules 4 and 5)
+  //
+  //  A type parameter's domain is the finite set of builtin types it can
+  //  still be, or no restriction at all. A category bound (`T: numeric`)
+  //  gives it one; a `static if` on `T` narrows it inside the branch and past
+  //  a branch that returns. What a body may do with a `T` beyond its trait
+  //  facts is exactly what every member of the domain allows: a literal, a
+  //  numeric cast, a builtin operator. An empty domain is code no `T` reaches,
+  //  and every such rule holds of it vacuously.
+  // ------------------------------------------------------------------------
+
+  /// Sorted, duplicate-free.
+  using type_domain = std::vector<type_id>;
+  /// From category bounds, keyed like `declared_facts_`.
+  std::unordered_map<type_id, type_domain> declared_domains_;
+  /// From `static if` narrowing, innermost last.
+  std::vector<std::pair<type_id, type_domain>> scoped_domains_;
+
+  /// The builtin types a category names — the membership `std.traits`'s
+  /// `is_integer`/`is_float`/... predicates test, minus the 128-bit types.
+  /// Those have no representation on the bytecode VM, so they have none of
+  /// the core-trait impls every other member has (`traits.scalar.cn`), and a
+  /// category bound promises those traits.
+  auto category_members(std::string_view category)
+      -> std::optional<type_domain> {
+    static constexpr auto k_signed = std::array<std::string_view, 5>{
+        "int8", "int16", "int32", "int64", "isize"};
+    static constexpr auto k_unsigned = std::array<std::string_view, 6>{
+        "uint8", "uint16", "uint32", "uint64", "usize", "byte"};
+    static constexpr auto k_float =
+        std::array<std::string_view, 2>{"float32", "float64"};
+    auto out = type_domain{};
+    const auto add = [&](const auto &names) {
+      for (const auto name : names) {
+        out.push_back(types_.builtin(name));
+      }
+    };
+    if (category == "signed_integer" || category == "integer" ||
+        category == "numeric") {
+      add(k_signed);
+    }
+    if (category == "unsigned_integer" || category == "integer" ||
+        category == "numeric") {
+      add(k_unsigned);
+    }
+    if (category == "float" || category == "numeric") {
+      add(k_float);
+    }
+    if (category == "bool") {
+      out.push_back(types_.builtin("bool"));
+    }
+    if (category == "char") {
+      out.push_back(types_.builtin("char"));
+    }
+    if (category == "str") {
+      out.push_back(types_.builtin("str"));
+    }
+    if (out.empty()) {
+      return std::nullopt;
+    }
+    std::ranges::sort(out);
+    return out;
+  }
+
+  /// The category a concept stands for, when it is one of the builtin
+  /// category concepts `std.traits` declares.
+  auto concept_category(const ast::concept_decl &concept_decl)
+      -> std::optional<type_domain> {
+    const auto *traits_module = index_.find_module("std.traits");
+    if (traits_module == nullptr) {
+      return std::nullopt;
+    }
+    const auto it = traits_module->concepts.find(concept_decl.name);
+    if (it == traits_module->concepts.end() ||
+        it->second.decl != &concept_decl) {
+      return std::nullopt;
+    }
+    return category_members(concept_decl.name);
+  }
+
+  static auto intersect_domains(const type_domain &a, const type_domain &b)
+      -> type_domain {
+    auto out = type_domain{};
+    std::ranges::set_intersection(a, b, std::back_inserter(out));
+    return out;
+  }
+
+  static auto subtract_domains(const type_domain &a, const type_domain &b)
+      -> type_domain {
+    auto out = type_domain{};
+    std::ranges::set_difference(a, b, std::back_inserter(out));
+    return out;
+  }
+
+  static auto unite_domains(const type_domain &a, const type_domain &b)
+      -> type_domain {
+    auto out = type_domain{};
+    std::ranges::set_union(a, b, std::back_inserter(out));
+    return out;
+  }
+
+  /// What `param` can still be here, or `nullopt` if nothing restricts it.
+  auto domain_of(type_id param) -> std::optional<type_domain> {
+    auto domain = std::optional<type_domain>{};
+    if (const auto it = declared_domains_.find(param);
+        it != declared_domains_.end()) {
+      domain = it->second;
+    }
+    for (const auto &[subject, narrowed] : scoped_domains_) {
+      if (subject == param) {
+        domain = domain.has_value() ? intersect_domains(*domain, narrowed)
+                                    : narrowed;
+      }
+    }
+    return domain;
+  }
+
+  /// Whether `id` is a type parameter of the code being checked, as opposed
+  /// to a callee's parameter showing through its signature — only the former
+  /// has facts and a domain here.
+  auto is_rigid_param(type_id id) -> bool {
+    if (types_.entry(id).kind != type_kind::type_param_kind) {
+      return false;
+    }
+    return std::ranges::any_of(type_params_, [&](const auto &scope) -> bool {
+      return std::ranges::any_of(scope, [&](const auto &entry) -> bool {
+        return entry.second == id;
+      });
+    }) || id == self_type_;
+  }
+
+  /// Whether every member of `param`'s domain satisfies `pred` — false when
+  /// the domain is unrestricted, since then nothing says any of it does.
+  template <typename Pred>
+  auto domain_all(type_id param, Pred pred) -> bool {
+    const auto domain = domain_of(param);
+    return domain.has_value() && std::ranges::all_of(*domain, pred);
+  }
+
+  /// A literal written where a `T` is expected (phase 9, rule 4). Legal when
+  /// every type `T` can be here could hold it; reported otherwise, with the
+  /// bound that would make it legal.
+  auto check_literal_as_param(const ast::literal_expr &lit, type_id param,
+                              bool negated) -> type_id {
+    const auto is_int = lit.lit_kind == token_kind::int_lit;
+    const auto domain = domain_of(param);
+    const auto name = types_.display(param);
+    const auto spelled = std::format("{}{}", negated ? "-" : "", lit.value);
+    if (!domain.has_value()) {
+      error_with_help(
+          lit.span,
+          std::format("the literal `{}` cannot be a `{}`", spelled, name),
+          std::format("`{}` could be any type here", name),
+          std::format("A number is only a `{}` if `{}` is known to be a "
+                      "number. Bound it by a category — `where {}: {}` — "
+                      "or convert explicitly.",
+                      name, name, name, is_int ? "numeric" : "float"));
+      return k_error_type;
+    }
+    for (const auto member : *domain) {
+      const auto &entry = types_.entry(member);
+      const auto accepts = is_int ? types_.is_numeric(member)
+                                  : types_.is_float(member);
+      auto fits = accepts;
+      if (accepts && is_int && types_.is_integer(member)) {
+        auto max_value = integer_max_value(entry.name);
+        if (max_value.has_value()) {
+          if (negated && is_signed_integer_name(entry.name)) {
+            *max_value += 1;
+          }
+          const auto value = parse_integer_literal(lit.value);
+          fits = value.has_value() && *value <= *max_value;
+        }
+      }
+      if (!fits) {
+        error_with_help(
+            lit.span,
+            std::format("the literal `{}` cannot be a `{}` when `{}` is `{}`",
+                        spelled, name, name, entry.name),
+            std::format("`{}` can be `{}` here", name, entry.name),
+            std::format("A literal written as a `{}` has to fit every type "
+                        "`{}` can be at this point. Narrow `{}` first (a "
+                        "`static if` on it), or tighten its bound.",
+                        name, name, name));
+        return k_error_type;
+      }
+    }
+    return param;
+  }
+
+  /// `x as U` or `x as T` where a side is a type parameter (phase 9, rule 4):
+  /// legal when every type the parameter can be here is a number, and the
+  /// other side is a number too.
+  auto check_cast_with_param(const ast::cast_expr &cast, type_id operand,
+                             type_id target) -> void {
+    const auto numeric_side = [&](type_id side) -> bool {
+      if (is_rigid_param(side)) {
+        return domain_all(side,
+                          [&](type_id m) { return types_.is_numeric(m); });
+      }
+      return types_.is_unknown(side) || types_.is_numeric(side);
+    };
+    for (const auto side : {operand, target}) {
+      if (!is_rigid_param(side) || numeric_side(side)) {
+        continue;
+      }
+      const auto name = types_.display(side);
+      error_with_help(
+          cast.span,
+          std::format("`as` needs `{}` to be a number", name),
+          std::format("`{}` is not known to be numeric", name),
+          std::format("`as` converts between numeric types. Bound `{}` by a "
+                      "category — `where {}: numeric` — so every type it can "
+                      "be is one.",
+                      name, name));
+      return;
+    }
+    if (!numeric_side(operand) || !numeric_side(target)) {
+      error(cast.span,
+            std::format("`as` cannot convert `{}` to `{}`",
+                        types_.display(operand), types_.display(target)),
+            "not a numeric conversion");
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  //  `static if` narrowing (phase 9, rule 5)
+  // ------------------------------------------------------------------------
+
+  /// Locals bound to `T.name()`, so `let n = T.name()` followed by
+  /// `static if n == "int8"` narrows `T` the same way the direct form does.
+  /// Per function: saved and cleared in `check_function`.
+  std::unordered_map<std::string, type_id> type_name_aliases_;
+
+  /// What a `static if` condition says about one type parameter: the domain
+  /// in its branch, and — when the parameter's domain was already finite, so
+  /// that "everything but these" is a set — the domain in its `else`.
+  struct narrowing {
+    type_id param = k_unknown_type;
+    type_domain then_domain;
+    std::optional<type_domain> else_domain;
+  };
+
+  /// The type parameter `expr` reflects on by name — `T.name()`, or a local
+  /// bound to it — if any.
+  auto reflected_name_of(const ast::expr &expr) -> std::optional<type_id> {
+    if (expr.kind == ast::node_kind::ident_expr) {
+      const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+      if (const auto it = type_name_aliases_.find(ident.name);
+          it != type_name_aliases_.end()) {
+        return it->second;
+      }
+      return std::nullopt;
+    }
+    if (expr.kind != ast::node_kind::call_expr) {
+      return std::nullopt;
+    }
+    const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+    if (!call.args.empty() || call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::field_expr) {
+      return std::nullopt;
+    }
+    const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+    if (field.field_name != "name" || field.object == nullptr ||
+        field.object->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    const auto param = lookup_type_param(
+        dynamic_cast<const ast::ident_expr &>(*field.object).name);
+    if (!param.has_value() || !is_rigid_param(*param)) {
+      return std::nullopt;
+    }
+    return *param;
+  }
+
+  /// The builtin type a string literal names, for `n == "int8"`.
+  auto builtin_named_by(const ast::expr &expr) -> std::optional<type_id> {
+    const auto *lit = dynamic_cast<const ast::literal_expr *>(&expr);
+    if (lit == nullptr || lit->lit_kind != token_kind::string_lit) {
+      return std::nullopt;
+    }
+    auto text = std::string_view(lit->value);
+    if (text.size() >= 2 && text.front() == '"' && text.back() == '"') {
+      text = text.substr(1, text.size() - 2);
+    }
+    if (!is_builtin_scalar_name(text)) {
+      return std::nullopt;
+    }
+    return types_.builtin(text);
+  }
+
+  /// Completes a narrowing with its `else` domain, when one can be stated.
+  auto with_else(type_id param, type_domain then_domain) -> narrowing {
+    auto out = narrowing{.param = param,
+                         .then_domain = then_domain,
+                         .else_domain = std::nullopt};
+    if (const auto current = domain_of(param)) {
+      out.then_domain = intersect_domains(*current, then_domain);
+      out.else_domain = subtract_domains(*current, then_domain);
+    }
+    return out;
+  }
+
+  /// What `condition` establishes about a single type parameter, or
+  /// `nullopt` when it is not a condition this compiler reads facts from.
+  /// The forms read are the ones `std.limits` and `std.traits` are written
+  /// in: `T.name() == "lit"` (directly or through a `let` alias), `or`,
+  /// `not`, and the category predicates `is_integer[T]()` and friends.
+  auto narrowing_of(const ast::expr &condition) -> std::optional<narrowing> {
+    if (condition.kind == ast::node_kind::group_expr) {
+      const auto &group = dynamic_cast<const ast::group_expr &>(condition);
+      return group.inner != nullptr ? narrowing_of(*group.inner)
+                                    : std::nullopt;
+    }
+    if (condition.kind == ast::node_kind::unary_expr) {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(condition);
+      if (unary.op != ast::unary_op::logical_not || unary.operand == nullptr) {
+        return std::nullopt;
+      }
+      auto inner = narrowing_of(*unary.operand);
+      if (!inner.has_value() || !inner->else_domain.has_value()) {
+        return std::nullopt;
+      }
+      return narrowing{.param = inner->param,
+                       .then_domain = *inner->else_domain,
+                       .else_domain = inner->then_domain};
+    }
+    if (condition.kind == ast::node_kind::binary_expr) {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(condition);
+      if (binary.lhs == nullptr || binary.rhs == nullptr) {
+        return std::nullopt;
+      }
+      if (binary.op == ast::binary_op::logical_or ||
+          binary.op == ast::binary_op::logical_and) {
+        const auto lhs = narrowing_of(*binary.lhs);
+        const auto rhs = narrowing_of(*binary.rhs);
+        // `is_integer[T]() and bits[T]() <= 64`: the branch runs only when
+        // both hold, so it has at least what the side that narrows says. Its
+        // `else` gets nothing — the other side failing says nothing about
+        // `T`.
+        if (binary.op == ast::binary_op::logical_and && (lhs || rhs) &&
+            !(lhs && rhs && lhs->param == rhs->param)) {
+          const auto &known = lhs ? *lhs : *rhs;
+          if (lhs && rhs) {
+            return std::nullopt;
+          }
+          return narrowing{.param = known.param,
+                           .then_domain = known.then_domain,
+                           .else_domain = std::nullopt};
+        }
+        if (!lhs || !rhs || lhs->param != rhs->param) {
+          return std::nullopt;
+        }
+        const auto either = binary.op == ast::binary_op::logical_or;
+        auto out = narrowing{
+            .param = lhs->param,
+            .then_domain = either
+                               ? unite_domains(lhs->then_domain,
+                                               rhs->then_domain)
+                               : intersect_domains(lhs->then_domain,
+                                                   rhs->then_domain),
+            .else_domain = std::nullopt};
+        if (lhs->else_domain && rhs->else_domain) {
+          out.else_domain =
+              either ? intersect_domains(*lhs->else_domain, *rhs->else_domain)
+                     : unite_domains(*lhs->else_domain, *rhs->else_domain);
+        }
+        return out;
+      }
+      if (binary.op == ast::binary_op::eq_eq ||
+          binary.op == ast::binary_op::bang_eq) {
+        auto param = reflected_name_of(*binary.lhs);
+        auto named = builtin_named_by(*binary.rhs);
+        if (!param || !named) {
+          param = reflected_name_of(*binary.rhs);
+          named = builtin_named_by(*binary.lhs);
+        }
+        if (!param || !named) {
+          return std::nullopt;
+        }
+        auto out = with_else(*param, type_domain{*named});
+        if (binary.op == ast::binary_op::bang_eq) {
+          if (!out.else_domain.has_value()) {
+            return std::nullopt;
+          }
+          std::swap(out.then_domain, *out.else_domain);
+        }
+        return out;
+      }
+      return std::nullopt;
+    }
+    if (condition.kind == ast::node_kind::call_expr) {
+      // `is_integer[T]()`: a generic call whose one bracket argument names
+      // an in-scope parameter.
+      const auto &call = dynamic_cast<const ast::call_expr &>(condition);
+      if (!call.args.empty() || call.callee == nullptr ||
+          call.callee->kind != ast::node_kind::index_expr) {
+        return std::nullopt;
+      }
+      const auto &applied = dynamic_cast<const ast::index_expr &>(*call.callee);
+      if (applied.object == nullptr || applied.index == nullptr ||
+          applied.object->kind != ast::node_kind::ident_expr ||
+          applied.index->kind != ast::node_kind::ident_expr) {
+        return std::nullopt;
+      }
+      const auto &predicate =
+          dynamic_cast<const ast::ident_expr &>(*applied.object).name;
+      const auto param = lookup_type_param(
+          dynamic_cast<const ast::ident_expr &>(*applied.index).name);
+      if (!param.has_value() || !is_rigid_param(*param) ||
+          !predicate.starts_with("is_")) {
+        return std::nullopt;
+      }
+      const auto members = category_members(predicate.substr(3));
+      if (!members.has_value()) {
+        return std::nullopt;
+      }
+      return with_else(*param, *members);
+    }
+    return std::nullopt;
+  }
+
+  /// The `std.traits` traits every member of `domain` implements — what a
+  /// category bound promises beyond its literals and builtin operators.
+  /// `T: numeric` lets a body call `x.show()` and pass `T` where `T: add` is
+  /// needed, because every builtin number is both. Cached: a domain is a
+  /// small sorted set, and the answer never changes within a session.
+  std::map<type_domain, std::vector<type_fact>> domain_facts_cache_;
+  auto domain_facts(const type_domain &domain) -> std::vector<type_fact> {
+    if (domain.empty()) {
+      return {};
+    }
+    if (const auto it = domain_facts_cache_.find(domain);
+        it != domain_facts_cache_.end()) {
+      return it->second;
+    }
+    auto facts = std::vector<type_fact>{};
+    if (const auto *traits_module = index_.find_module("std.traits")) {
+      for (const auto &[name, trait] : traits_module->traits) {
+        if (trait.decl == nullptr || !trait.decl->type_params.empty()) {
+          continue;
+        }
+        const auto all = std::ranges::all_of(domain, [&](type_id member) {
+          return satisfies_trait(member, *trait.decl, {});
+        });
+        if (all) {
+          facts.push_back(type_fact{.trait = trait.decl, .args = {}});
+        }
+      }
+    }
+    std::ranges::sort(facts, {}, [](const type_fact &fact) {
+      return fact.trait->name;
+    });
+    domain_facts_cache_.emplace(domain, facts);
+    return facts;
+  }
+
+  /// Everything known about the type parameter `param`.
+  auto facts_of(type_id param) -> std::vector<type_fact> {
+    auto facts = std::vector<type_fact>{};
+    if (const auto it = declared_facts_.find(param);
+        it != declared_facts_.end()) {
+      facts = it->second;
+    }
+    for (const auto &[subject, scoped] : scoped_facts_) {
+      if (subject == param) {
+        facts.insert(facts.end(), scoped.begin(), scoped.end());
+      }
+    }
+    if (const auto domain = domain_of(param)) {
+      for (const auto &fact : domain_facts(*domain)) {
+        const auto known =
+            std::ranges::any_of(facts, [&](const type_fact &have) {
+              return have.trait == fact.trait && have.args == fact.args;
+            });
+        if (!known) {
+          facts.push_back(fact);
+        }
+      }
+    }
+    return facts;
+  }
+
 
   /// Recursively resolves a type-position AST node to an interned `type_id`,
   /// dispatching on its concrete kind. `named_type` is the only case with
@@ -3683,10 +4468,20 @@ private:
   /// exactly how `safe_get(v, i)` ties the index to the array.
   auto solve_value_params(type_id param, type_id argument, value_bindings &out)
       -> void {
-    // Identical types determine nothing new, and stopping here is also what
-    // keeps a recursive type (whose argument list can point back at itself)
-    // from walking forever.
-    if (param == argument) {
+    auto visited = std::set<std::pair<type_id, type_id>>{};
+    solve_value_params(param, argument, out, visited);
+  }
+
+  auto solve_value_params(type_id param, type_id argument, value_bindings &out,
+                          std::set<std::pair<type_id, type_id>> &visited)
+      -> void {
+    // Identical types still have to be walked: the callee's `array[T, n]` and
+    // a caller's own `array[T, n]` intern as one type (a value's polynomial is
+    // keyed by its spelling), and matching them is exactly how the callee's
+    // `n` solves to the caller's. The visited set is what keeps a recursive
+    // type (whose argument list can point back at itself) from walking
+    // forever.
+    if (!visited.emplace(param, argument).second) {
       return;
     }
     const auto &param_entry = types_.entry(param);
@@ -3712,20 +4507,22 @@ private:
       // A `&T` parameter taking a lent `T` (and the reverse) is the one shape
       // difference that still carries the same structure underneath.
       if (param_entry.kind == type_kind::ref_kind) {
-        solve_value_params(param_entry.result, argument, out);
+        solve_value_params(param_entry.result, argument, out, visited);
       } else if (argument_entry.kind == type_kind::ref_kind) {
-        solve_value_params(param, argument_entry.result, out);
+        solve_value_params(param, argument_entry.result, out, visited);
       }
       return;
     }
 
     for (size_t i = 0;
          i < param_entry.args.size() && i < argument_entry.args.size(); ++i) {
-      solve_value_params(param_entry.args[i], argument_entry.args[i], out);
+      solve_value_params(param_entry.args[i], argument_entry.args[i], out,
+                         visited);
     }
     if (param_entry.result != k_unknown_type &&
         argument_entry.result != k_unknown_type) {
-      solve_value_params(param_entry.result, argument_entry.result, out);
+      solve_value_params(param_entry.result, argument_entry.result, out,
+                         visited);
     }
   }
 
@@ -4443,8 +5240,10 @@ private:
       }
     }
 
-    // Prelude traits used in bound positions (`T: show`, `T: drop`).
-    if (find_prelude_trait(name).has_value() || name == "send" ||
+    // Prelude traits and concepts used in bound positions (`T: show`,
+    // `T: numeric`).
+    if (find_prelude_trait(name).has_value() ||
+        find_prelude_concept(name).has_value() || name == "send" ||
         name == "share" || name == "pool") {
       return k_unknown_type;
     }
@@ -5303,16 +6102,46 @@ private:
                               .defaults_by_param = std::move(defaults_by_param),
                               .param_names = std::move(param_names)};
 
+    // A call instantiates the callee's own type parameters afresh, so while
+    // they are unsolved they stand for nothing yet — not for the parameter of
+    // the same name the caller may itself have, and not for the callee's
+    // own `T` inside a recursive call. Opened to `unknown` for the check
+    // below; the solution re-check (`check_args_against_solution`) compares
+    // against what they solved to.
+    auto opened = std::unordered_map<type_id, type_id>{};
+    if (generic != nullptr && generic->decl != nullptr) {
+      for (const auto &param : generic->decl->type_params) {
+        // Value parameters are solved *from* this check
+        // (`solve_value_params`), so they stay as they are.
+        const auto is_type = !param.is_value_param ||
+                             (param.bound_or_type != nullptr &&
+                              names_trait_or_concept(*param.bound_or_type));
+        if (!param.name.empty() && is_type) {
+          opened.emplace(types_.type_param(param.name,
+                                           param.higher_kinded_arity, &param),
+                         k_unknown_type);
+        }
+      }
+    }
     const auto check_argument =
         [&](const pending_argument &item,
             const std::unordered_map<std::string, type_id> &bindings) -> void {
-      const auto expected = item.target != nullptr
+      const auto declared = item.target != nullptr
                                 ? substitute_solved(item.target->type, bindings)
                                 : k_unknown_type;
+      const auto expected =
+          open_foreign_params(substitute_params(declared, opened));
       const auto found = infer_expr(*item.value, expected);
       if (item.target == nullptr) {
         return;
       }
+      // Checked against the opened type; reported, if it fails even so,
+      // against the callee's own spelling (`vec[T, n + 1]`, not `vec[_, ...]`),
+      // which is what the reader can find in its signature.
+      const auto shown = !types_.compatible(settle(expected), settle(found)) &&
+                                 declared != expected
+                             ? declared
+                             : expected;
       // Structure is decided now; a *proof* has to wait. A refined
       // parameter's predicate is written in the callee's value parameters
       // (`index[n]`'s `n`), and which arguments pin those down isn't known
@@ -5320,7 +6149,7 @@ private:
       // from `v`, which for a differently-ordered signature could just as
       // easily come after `i`. So the shape check runs in place and the
       // obligation is collected for the second pass below.
-      type_mismatch(item.value->span, expected, found, "for this argument");
+      type_mismatch(item.value->span, shown, found, "for this argument");
       solve_value_params(expected, found, solved_values);
       if (types_.entry(expected).kind == type_kind::refinement_kind) {
         deferred.push_back(deferred_narrowing{
@@ -5475,11 +6304,15 @@ private:
     // compiled module" — a codegen failure for correct code. A static method
     // takes no receiver, so its instance is named and dispatched exactly
     // like a free function's.
-    if (!in_const_generic_template_ && !in_type_generic_template_ &&
-        is_generic_template(decl) &&
+    if (is_generic_template(decl) &&
         (is_free_function(decl, owner) || decl.modifiers.is_static)) {
-      if (const auto result = instantiate_generic_function(
-              call, decl, owner, decl_file, solved, params, explicit_args)) {
+      const auto result =
+          in_const_generic_template_ || in_type_generic_template_
+              ? check_generic_call_in_template(call, decl, owner, decl_file,
+                                               solved, params, explicit_args)
+              : instantiate_generic_function(call, decl, owner, decl_file,
+                                             solved, params, explicit_args);
+      if (result.has_value()) {
         return *result;
       }
     }
@@ -5490,7 +6323,10 @@ private:
     // own imports, and the call then reaches lowering with no concrete type.
     const auto saved_signature_file = file_id_;
     file_id_ = decl_file;
-    const auto result = signature_return_type(decl, owner);
+    // A generic callee reaching here was not solved (and said why): its own
+    // parameters in the result stand for nothing, and must not surface in
+    // the caller as a second, confusing mismatch against `T`.
+    const auto result = open_foreign_params(signature_return_type(decl, owner));
     file_id_ = saved_signature_file;
     return open_call_result(call, result);
   }
@@ -5572,6 +6408,12 @@ private:
     /// Every parameter's answer, in declaration order, as a symbol-safe
     /// suffix — `$3`, `$int32`, `$3$int32` for a mixed template.
     std::string suffix;
+    /// Whether every bound the callee declares holds for this solution
+    /// (phase 9, rule 3). When one does not, the call still has a result —
+    /// the solution says what it is, and reading it keeps one wrong type
+    /// argument from becoming a second error at the caller's `return` — but
+    /// no instance is made.
+    bool bounds_hold = true;
   };
 
   /// One parameter's answer, appended to `solution` in declaration order.
@@ -6458,6 +7300,9 @@ private:
 
   /// Checks one instance body under the context captured at its request.
   auto check_instance(pending_instance &item) -> void {
+    if (failed_templates_.contains(item.tmpl)) {
+      return;
+    }
     {
       const auto saved_module = module_;
       const auto saved_file_id = file_id_;
@@ -6816,6 +7661,21 @@ private:
               explicit_arg->value != nullptr
                   ? explicit_value_argument(*explicit_arg->value)
                   : std::optional<int64_t>{};
+          // `climb[n + 1]` inside a body generic over `n`: the argument is
+          // written in the caller's own value parameters, a symbolic answer
+          // like any other a generic body's call has.
+          if (!constant.has_value() && explicit_arg->value != nullptr &&
+              in_abstract_type_param_scope()) {
+            const auto symbolic =
+                resolve_length_arg(*explicit_arg->value, current_resolve_ctx());
+            if (types_.entry(symbolic).kind ==
+                    type_kind::symbolic_value_kind ||
+                is_rigid_param(symbolic)) {
+              solution.const_slots.emplace(param.name, symbolic);
+              solution.suffix += "$?";
+              continue;
+            }
+          }
           if (!constant.has_value()) {
             error_with_help(
                 explicit_arg->span,
@@ -6843,11 +7703,30 @@ private:
                                   entry.value.constant);
             continue;
           }
+          // The caller's own value parameter, or arithmetic over it
+          // (`concat(v, w)` inside a body generic over `n` and `m`): an answer
+          // written in symbols, which is what a generic body's call has. It
+          // names no instance — `solution_mentions_rigid` keeps it from
+          // being compiled — but it solves the call.
+          if (mentions_rigid_param(found->second)) {
+            solution.const_slots.emplace(param.name, found->second);
+            solution.suffix += "$?";
+            continue;
+          }
         }
         if (const auto found = solved.find(param.name);
             found != solved.end() && found->second.is_constant()) {
           bind_generic_constant(solution, param, *underlying,
                                 found->second.constant);
+          continue;
+        }
+        // Solved to a polynomial over the caller's own value parameters —
+        // the same symbolic answer as above, arrived at by value solving.
+        if (const auto found = solved.find(param.name);
+            found != solved.end() && in_abstract_type_param_scope()) {
+          solution.const_slots.emplace(
+              param.name, types_.symbolic_value(*underlying, found->second));
+          solution.suffix += "$?";
           continue;
         }
         report_unsolved_value_param(call, decl, param);
@@ -7150,9 +8029,15 @@ private:
       const auto declared = settle(params[i].type);
       const auto expected = settle(substitute_solved(declared, bindings));
       const auto found = settle(recorded->second);
-      if (expected == declared || mentions_type_param(expected) ||
+      // Skipped: a parameter the solution did not touch; one still written in
+      // the callee's own unsolved parameters (nothing to compare yet); and
+      // one whose *shape* already failed against the argument, which the
+      // argument check reported. The caller's own parameters are answers,
+      // not gaps, so they are compared like any other type.
+      if (expected == declared || open_foreign_params(expected) != expected ||
           types_.is_unknown(found) || found == k_error_type ||
-          !types_.compatible(declared, found) || agrees(expected, found)) {
+          !types_.compatible(open_foreign_params(declared), found) ||
+          agrees(expected, found)) {
         continue;
       }
       const auto &declared_entry = types_.entry(declared);
@@ -7245,12 +8130,18 @@ private:
   ///
   /// The instance is registered as this call's `resolved_callee`, so lowering
   /// emits a call to `get$3` with no idea that a template was ever involved.
-  auto instantiate_generic_function(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner, file_id_type decl_file,
-      const value_bindings &solved, const std::vector<fn_param_info> &params,
-      const explicit_generic_args &explicit_args,
-      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
+  /// Solves a call to a generic function and checks it against the solution:
+  /// every argument, and every bound the callee declares (phase 9, rule 3).
+  /// Shared by the instance path and a template's own calls, which solve the
+  /// same way and differ only in whether an instance is made.
+  auto solve_generic_call(const ast::call_expr &call,
+                          const ast::func_decl &decl,
+                          const module_members *owner, file_id_type decl_file,
+                          const value_bindings &solved,
+                          const std::vector<fn_param_info> &params,
+                          const explicit_generic_args &explicit_args,
+                          const ast::expr *ufcs_receiver)
+      -> std::optional<generic_solution> {
     auto type_bindings = std::unordered_map<std::string, type_id>{};
     solve_from_argument_types(call, params, type_bindings, ufcs_receiver,
                               /*may_default=*/true);
@@ -7263,13 +8154,440 @@ private:
     solve_from_bounds(decl, owner, type_bindings);
     solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
 
-    const auto solution = solve_generic_params(call, decl, owner, solved,
-                                               type_bindings, explicit_args);
+    auto solution = solve_generic_params(call, decl, owner, solved,
+                                         type_bindings, explicit_args);
     if (!solution.has_value()) {
       return std::nullopt;
     }
     check_args_against_solution(call, params, solution->type_slots,
                                 decl.name, ufcs_receiver);
+    solution->bounds_hold =
+        check_call_bounds(call, decl, owner, decl_file, *solution);
+    return solution;
+  }
+
+  /// The callee's parameter and result types under `solution`, read in the
+  /// file that declared them. The result is `k_unknown_type` when the callee
+  /// leaves its return type to inference.
+  auto solved_signature(const ast::func_decl &decl, const module_members *owner,
+                        file_id_type decl_file,
+                        const generic_solution &solution)
+      -> std::pair<std::vector<type_id>, type_id> {
+    auto bindings = solution.const_slots;
+    bindings.insert(solution.type_slots.begin(), solution.type_slots.end());
+    const auto ctx = resolve_ctx{.module = owner,
+                                 .param_bindings = &bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true,
+                                 .existential_allowed = true};
+    const auto saved_signature_file = file_id_;
+    file_id_ = decl_file;
+    auto param_types = std::vector<type_id>{};
+    for (const auto &param : decl.params) {
+      param_types.push_back(param.type_annotation != nullptr
+                                ? resolve_type(*param.type_annotation, ctx)
+                                : k_unknown_type);
+    }
+    const auto result = decl.return_type != nullptr
+                            ? resolve_type(*decl.return_type, ctx)
+                            : k_unknown_type;
+    file_id_ = saved_signature_file;
+    return {std::move(param_types), result};
+  }
+
+  /// Whether `id` mentions a type parameter of the body being checked.
+  auto mentions_rigid_param(type_id id) -> bool {
+    if (is_rigid_param(id)) {
+      return true;
+    }
+    const auto entry = types_.entry(id); // copy: callers may intern after
+    for (const auto arg : entry.args) {
+      if (mentions_rigid_param(arg)) {
+        return true;
+      }
+    }
+    if (entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+        entry.kind == type_kind::ptr_kind ||
+        entry.kind == type_kind::array_kind) {
+      return entry.result != k_unknown_type &&
+             mentions_rigid_param(entry.result);
+    }
+    return false;
+  }
+
+  /// `id` with every type parameter that is *not* the body's own replaced by
+  /// `unknown`. At a call, such a parameter can only be the callee's, showing
+  /// through its signature before the call has solved it; it stands for
+  /// nothing yet, so it matches anything until the solution says otherwise.
+  auto open_foreign_params(type_id id) -> type_id {
+    auto foreign = std::unordered_map<type_id, type_id>{};
+    const auto collect = [&](auto &self, type_id at) -> void {
+      const auto entry = types_.entry(at); // copy: collecting never interns
+      if (entry.kind == type_kind::type_param_kind) {
+        if (!is_rigid_param(at)) {
+          foreign.emplace(at, k_unknown_type);
+        }
+        return;
+      }
+      for (const auto arg : entry.args) {
+        self(self, arg);
+      }
+      if ((entry.kind == type_kind::fn_kind ||
+           entry.kind == type_kind::ref_kind ||
+           entry.kind == type_kind::ptr_kind ||
+           entry.kind == type_kind::array_kind) &&
+          entry.result != k_unknown_type) {
+        self(self, entry.result);
+      }
+    };
+    collect(collect, id);
+    return substitute_params(id, foreign);
+  }
+
+  /// Whether any type a call solved to is written in the body's own
+  /// parameters.
+  auto solution_mentions_rigid(const generic_solution &solution) -> bool {
+    const auto rigid = [&](const auto &slot) {
+      return mentions_rigid_param(slot.second) ||
+             types_.entry(slot.second).kind == type_kind::symbolic_value_kind;
+    };
+    return std::ranges::any_of(solution.type_slots, rigid) ||
+           std::ranges::any_of(solution.const_slots, rigid);
+  }
+
+  /// A template's call to another generic function (phase 9, 9.6): solved and
+  /// checked exactly as an instance's would be, with the caller's own type
+  /// parameters as legitimate answers, and the result read through the
+  /// solution — so `identity(x)` with `x: T` is a `T`, the caller's, rather
+  /// than the callee's `T` showing through its signature. No instance is
+  /// made: nothing here is concrete yet.
+  auto check_generic_call_in_template(
+      const ast::call_expr &call, const ast::func_decl &decl,
+      const module_members *owner, file_id_type decl_file,
+      const value_bindings &solved, const std::vector<fn_param_info> &params,
+      const explicit_generic_args &explicit_args,
+      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
+    const auto solution =
+        solve_generic_call(call, decl, owner, decl_file, solved, params,
+                           explicit_args, ufcs_receiver);
+    if (!solution.has_value()) {
+      return std::nullopt;
+    }
+    auto [param_types, result] =
+        solved_signature(decl, owner, decl_file, *solution);
+    if (call.callee != nullptr) {
+      record_expr_type(*call.callee, types_.fn_of(param_types, result));
+    }
+    if (result == k_unknown_type) {
+      return std::nullopt;
+    }
+    return record_expr_type(call, result);
+  }
+
+  // ------------------------------------------------------------------------
+  //  Bounds at the call site (phase 9, rule 3)
+  // ------------------------------------------------------------------------
+
+  /// Whether `str` has a trait from `std.traits` without an `impl` of it:
+  /// `std.string` gives it `eq` and `cmp` as `extend` methods with their own
+  /// signatures, and it formats without one. Every other builtin scalar has
+  /// real impls (`traits.scalar.cn`), found the ordinary way.
+  auto builtin_has_trait(type_id member, const ast::trait_decl &trait)
+      -> bool {
+    const auto *traits_module = index_.find_module("std.traits");
+    if (traits_module == nullptr) {
+      return false;
+    }
+    const auto it = traits_module->traits.find(trait.name);
+    if (it == traits_module->traits.end() || it->second.decl != &trait) {
+      return false;
+    }
+    const auto &entry = types_.entry(member);
+    if (entry.kind != type_kind::builtin_kind || entry.name != "str") {
+      return false;
+    }
+    return trait.name == "eq" || trait.name == "ord" ||
+           trait.name == "show" || trait.name == "debug";
+  }
+
+  /// Whether `subject` implements `trait[args]` where a call needs it to:
+  /// through its own bounds if it is the caller's type parameter, through an
+  /// `impl` (or being a builtin number) if it is concrete.
+  auto satisfies_trait(type_id subject, const ast::trait_decl &trait,
+                       const std::vector<type_id> &args) -> bool {
+    const auto stripped = strip_refs(subject);
+    if (types_.is_unknown(stripped) && !is_rigid_param(stripped)) {
+      return true;
+    }
+    if (stripped == k_error_type) {
+      return true;
+    }
+    const auto args_agree = [&](const std::vector<type_id> &have) -> bool {
+      if (args.size() != have.size()) {
+        return args.empty();
+      }
+      for (size_t i = 0; i < args.size(); ++i) {
+        if (args[i] != have[i] && !types_.is_unknown(args[i]) &&
+            !types_.is_unknown(have[i])) {
+          return false;
+        }
+      }
+      return true;
+    };
+    if (is_rigid_param(stripped)) {
+      for (const auto &fact : facts_of(stripped)) {
+        if (fact.trait == &trait && args_agree(fact.args)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (builtin_has_trait(stripped, trait)) {
+      return true;
+    }
+    const auto entry = types_.entry(stripped);
+    if (!type_has_trait(entry, trait.name)) {
+      return false;
+    }
+    if (args.empty()) {
+      return true;
+    }
+    const auto impl_args = trait_args_of_impl_for(stripped, trait.name);
+    return !impl_args.has_value() || args_agree(*impl_args);
+  }
+
+  /// Whether `subject` satisfies the concept `concept_decl`: a category by
+  /// membership, any other concept by each of its trait constraints.
+  auto satisfies_concept(type_id subject,
+                         const ast::concept_decl &concept_decl) -> bool {
+    const auto stripped = strip_refs(subject);
+    if ((types_.is_unknown(stripped) && !is_rigid_param(stripped)) ||
+        stripped == k_error_type) {
+      return true;
+    }
+    if (const auto members = concept_category(concept_decl)) {
+      if (is_rigid_param(stripped)) {
+        const auto domain = domain_of(stripped);
+        return domain.has_value() &&
+               std::ranges::includes(*members, *domain);
+      }
+      return std::ranges::binary_search(*members, stripped);
+    }
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    if (!concept_decl.params.empty()) {
+      bindings.emplace(concept_decl.params.front().name, subject);
+    }
+    auto home = module_;
+    auto home_file = file_id_;
+    for (const auto &[module_name, members] : index_.modules) {
+      if (const auto it = members.concepts.find(concept_decl.name);
+          it != members.concepts.end() && it->second.decl == &concept_decl) {
+        home = &members;
+        home_file = it->second.file_id;
+      }
+    }
+    const auto ctx = resolve_ctx{.module = home,
+                                 .param_bindings = &bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    return in_scope_of(home, home_file, [&] {
+      for (const auto &constraint : concept_decl.constraints) {
+        const auto *bound =
+            dynamic_cast<const ast::type_expr *>(constraint.bound_or_expr.get());
+        if (constraint.subject == nullptr || bound == nullptr) {
+          continue;
+        }
+        const auto constrained = resolve_type(*constraint.subject, ctx);
+        if (!bound_holds(constrained, *bound, ctx).empty()) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }
+
+  /// The terms of `bound` (written in `ctx` and the current module) that
+  /// `subject` does not satisfy, spelled for a diagnostic. Empty when every
+  /// term holds, or names nothing this compiler can check.
+  auto bound_holds(type_id subject, const ast::type_expr &bound,
+                   const resolve_ctx &ctx) -> std::vector<std::string> {
+    auto missing = std::vector<std::string>{};
+    for (const auto *term : bound_terms(bound)) {
+      if (term->kind != ast::node_kind::named_type) {
+        continue;
+      }
+      const auto &named = dynamic_cast<const ast::named_type &>(*term);
+      if (named.path.empty()) {
+        continue;
+      }
+      if (const auto trait = find_trait_decl_by_name(named.path.back());
+          trait.has_value() && *trait != nullptr) {
+        const auto args = resolve_type_args(named.type_args, ctx);
+        if (!satisfies_trait(subject, **trait, args)) {
+          missing.push_back(display_fact(type_fact{.trait = *trait,
+                                                   .args = args}));
+        }
+        continue;
+      }
+      if (const auto concept_ref = find_concept_decl_by_name(named.path.back());
+          concept_ref.has_value() && concept_ref->decl != nullptr &&
+          !satisfies_concept(subject, *concept_ref->decl)) {
+        missing.push_back(concept_ref->decl->name);
+      }
+    }
+    return missing;
+  }
+
+  /// Checks every bound `decl` declares against the types a call solved its
+  /// parameters to (phase 9, rule 3), and reports the first that does not
+  /// hold — at the call, which is the line that chose the type. False when
+  /// one failed: no instance of a function whose bounds do not hold is made.
+  auto check_call_bounds(const ast::call_expr &call, const ast::func_decl &decl,
+                         const module_members *owner, file_id_type decl_file,
+                         const generic_solution &solution) -> bool {
+    auto bindings = solution.const_slots;
+    bindings.insert(solution.type_slots.begin(), solution.type_slots.end());
+    const auto ctx = resolve_ctx{.module = owner,
+                                 .param_bindings = &bindings,
+                                 .use_type_param_stack = false,
+                                 .quiet = true};
+    struct failure {
+      std::string param;
+      type_id subject = k_unknown_type;
+      std::vector<std::string> missing;
+      source_span bound_span;
+    };
+    auto failed = std::optional<failure>{};
+    in_scope_of(owner, decl_file, [&] {
+      const auto check = [&](const std::string &param_name, type_id subject,
+                             const ast::type_expr &bound) {
+        if (failed.has_value()) {
+          return;
+        }
+        auto missing = bound_holds(subject, bound, ctx);
+        if (!missing.empty()) {
+          failed = failure{.param = param_name,
+                           .subject = subject,
+                           .missing = std::move(missing),
+                           .bound_span = bound.span};
+        }
+      };
+      for (const auto &param : decl.type_params) {
+        if (param.bound_or_type == nullptr ||
+            (param.is_value_param &&
+             !names_trait_or_concept(*param.bound_or_type))) {
+          continue;
+        }
+        const auto solved_to = solution.type_slots.find(param.name);
+        if (solved_to != solution.type_slots.end()) {
+          check(param.name, solved_to->second, *param.bound_or_type);
+        }
+      }
+      for (const auto &constraint : decl.where_constraints) {
+        if (constraint.subject == nullptr ||
+            constraint.bound_or_type == nullptr) {
+          continue;
+        }
+        const auto subject = resolve_type(*constraint.subject, ctx);
+        auto spelled = std::string{};
+        if (constraint.subject->kind == ast::node_kind::named_type) {
+          const auto &named =
+              dynamic_cast<const ast::named_type &>(*constraint.subject);
+          spelled = named.path.empty() ? "" : named.path.back();
+        }
+        check(spelled, subject, *constraint.bound_or_type);
+      }
+    });
+    if (!failed.has_value()) {
+      return true;
+    }
+    const auto subject_name = types_.display(failed->subject);
+    auto listed = std::string{};
+    auto joined = std::string{};
+    for (const auto &name : failed->missing) {
+      listed += std::format("{}`{}`", listed.empty() ? "" : " and ", name);
+      joined += (joined.empty() ? "" : " + ") + name;
+    }
+    // The caller's own parameter often shares the callee's spelling (`T` for
+    // `T`), so it is named as *this function's* `T` to keep the two apart.
+    const auto rigid_subject = is_rigid_param(strip_refs(failed->subject));
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        rigid_subject
+            ? std::format("`{}` needs `{}: {}`, and nothing says this "
+                          "function's `{}` is one",
+                          decl.name, failed->param, joined, subject_name)
+            : std::format("`{}` needs `{}: {}`, and `{}` does not satisfy it",
+                          decl.name, failed->param, joined, subject_name),
+        file_id_);
+    diag.with_label(call.span,
+                    rigid_subject
+                        ? std::format("`{}`'s `{}` is this function's `{}` here",
+                                      decl.name, failed->param, subject_name)
+                        : std::format("`{}` is `{}` in this call",
+                                      failed->param, subject_name));
+    // When the reader never wrote `int32` as a type argument, say where it
+    // came from: the annotation the call's result was checked against.
+    if (const auto solved = expected_solved_params_.find(&call);
+        solved != expected_solved_params_.end()) {
+      const auto prefix = std::format("`{}` was solved to", failed->param);
+      for (const auto &note : solved->second) {
+        if (note.starts_with(prefix)) {
+          diag.with_note(note);
+        }
+      }
+    }
+    diag.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("`{}`'s bound on `{}` is declared here",
+                               decl.name, failed->param),
+                   decl_file)
+            .with_label(failed->bound_span, "the bound"));
+    if (is_rigid_param(strip_refs(failed->subject))) {
+      diag.with_help(std::format(
+          "`{}` is a type parameter here, so it only has the bounds written "
+          "on it. Add the same bound — `where {}: {}` — and pass the "
+          "requirement on to this function's own callers.",
+          subject_name, subject_name, failed->missing.front()));
+    } else {
+      diag.with_help(std::format(
+          "Pass a type that implements {}, or implement it for `{}` — `impl "
+          "{} for {}:`.",
+          listed, subject_name, failed->missing.front(), subject_name));
+    }
+    emit_diag(diag);
+    mark_error();
+    return false;
+  }
+
+  auto instantiate_generic_function(
+      const ast::call_expr &call, const ast::func_decl &decl,
+      const module_members *owner, file_id_type decl_file,
+      const value_bindings &solved, const std::vector<fn_param_info> &params,
+      const explicit_generic_args &explicit_args,
+      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
+    const auto solution =
+        solve_generic_call(call, decl, owner, decl_file, solved, params,
+                           explicit_args, ufcs_receiver);
+    if (!solution.has_value()) {
+      return std::nullopt;
+    }
+    // A solution written in this body's own type parameters is not a type an
+    // instance can be compiled at — the body is itself generic (a method of
+    // `extend[T] list[T]` calling `alloc[T]`), and its instances make this
+    // call again with `T` concrete. It is checked like a template's call. A
+    // solution whose bounds failed is reported already and compiles nothing.
+    if (solution_mentions_rigid(*solution) || !solution->bounds_hold) {
+      auto [param_types, result] =
+          solved_signature(decl, owner, decl_file, *solution);
+      if (call.callee != nullptr) {
+        record_expr_type(*call.callee, types_.fn_of(param_types, result));
+      }
+      if (result == k_unknown_type) {
+        return std::nullopt;
+      }
+      return record_expr_type(call, result);
+    }
 
     const auto *instance = find_or_check_generic_instance(
         call, decl, owner, decl_file, *solution, decl.name + solution->suffix,
@@ -8574,9 +9892,8 @@ private:
       // literal's *concrete* type (`int32`) is exactly what the call solves
       // `T` from. Deferring there instead of defaulting would make
       // unification see `T` against itself and leave `T` unsolved.
-      if (in_type_generic_template_ &&
-          types_.entry(stripped).kind == type_kind::type_param_kind) {
-        return stripped;
+      if (is_rigid_param(stripped)) {
+        return check_literal_as_param(lit, stripped, negated);
       }
       return open_integer_literal(lit, stripped, negated);
     }
@@ -8584,6 +9901,9 @@ private:
       const auto stripped = strip_refs(expected);
       if (types_.is_float(stripped)) {
         return stripped;
+      }
+      if (is_rigid_param(stripped)) {
+        return check_literal_as_param(lit, stripped, negated);
       }
       return types_.builtin("float64");
     }
@@ -8739,6 +10059,13 @@ private:
       return k_error_type;
     }
     if (entry.kind == type_kind::builtin_kind) {
+      // A builtin number, `bool`, or `char` has the operator primitively. Its
+      // `impl eq`/`impl add`/... (`traits.scalar.cn`) is written *with* that
+      // operator, so dispatching to the impl would call itself forever.
+      if (types_.is_numeric(target) || types_.is_boolean(target) ||
+          entry.name == "char") {
+        return k_unknown_type;
+      }
       if (wire_dispatch && binary.lhs != nullptr) {
         // Look for an extension method on the builtin type.
         if (const auto *method =
@@ -8843,7 +10170,11 @@ private:
                              ? infer_expr(*binary.lhs, numeric_expected)
                              : k_unknown_type;
     const auto lhs = base_shape(raw_lhs);
-    const auto rhs_expected = types_.is_numeric(lhs) ? lhs : numeric_expected;
+    const auto rhs_expected =
+        types_.is_numeric(lhs) ||
+                types_.entry(lhs).kind == type_kind::type_param_kind
+            ? lhs
+            : numeric_expected;
     const auto raw_rhs = binary.rhs != nullptr
                              ? infer_expr(*binary.rhs, rhs_expected)
                              : k_unknown_type;
@@ -8883,22 +10214,16 @@ private:
       }
     }
 
-    const auto is_deferred_type_param = [this](type_id id) -> bool {
-      return in_type_generic_template_ &&
-             types_.entry(id).kind == type_kind::type_param_kind;
-    };
-    if (types_.is_unknown(lhs_final) || types_.is_unknown(rhs) ||
-        is_deferred_type_param(lhs_final) || is_deferred_type_param(rhs)) {
-      // Same deferral as `infer_literal`'s type-param guard: an operand
-      // still an unresolved type parameter (the generic template pass, `T`
-      // unbound) isn't proven non-numeric — checking whether it implements
-      // an operator-overload trait has to wait for a concrete instantiation
-      // the same way the literal bounds-check does.
-      return types_.is_numeric(lhs_final)        ? lhs_final
-             : types_.is_numeric(rhs)            ? rhs
-             : is_deferred_type_param(lhs_final) ? lhs_final
-             : is_deferred_type_param(rhs)       ? rhs
-                                                 : k_unknown_type;
+    // An operand whose type is a type parameter is justified by its bounds,
+    // here, rather than waiting for an instance to find out (phase 9).
+    if (types_.entry(lhs_final).kind == type_kind::type_param_kind ||
+        types_.entry(rhs).kind == type_kind::type_param_kind) {
+      return check_bound_arithmetic(binary, lhs_final, rhs);
+    }
+    if (types_.is_unknown(lhs_final) || types_.is_unknown(rhs)) {
+      return types_.is_numeric(lhs_final) ? lhs_final
+             : types_.is_numeric(rhs)     ? rhs
+                                          : k_unknown_type;
     }
 
     const auto trait_name = operator_trait_for(binary.op);
@@ -8959,6 +10284,29 @@ private:
                          ? base_shape(infer_expr(*binary.rhs, lhs))
                          : k_unknown_type;
     const auto bool_type = types_.builtin("bool");
+    const auto rigid_lhs = types_.entry(lhs).kind == type_kind::type_param_kind;
+    if (rigid_lhs || types_.entry(rhs).kind == type_kind::type_param_kind) {
+      const auto subject = rigid_lhs ? lhs : rhs;
+      const auto other = rigid_lhs ? rhs : lhs;
+      const auto op_name = ast::binary_op_name(binary.op);
+      const auto builtin_comparable = domain_all(subject, [&](type_id m) {
+        return is_equality ? types_.entry(m).kind == type_kind::builtin_kind
+                           : types_.is_numeric(m) ||
+                                 types_.entry(m).name == "char";
+      });
+      if (!builtin_comparable &&
+          !require_bound_operator(binary.span, subject,
+                                  is_equality ? "eq" : "ord", op_name)) {
+        return bool_type;
+      }
+      if (!types_.is_unknown(other) && other != subject) {
+        error(binary.span,
+              std::format("cannot compare `{}` with `{}`",
+                          types_.display(lhs), types_.display(rhs)),
+              "operands have different types");
+      }
+      return bool_type;
+    }
     if (types_.is_unknown(lhs) || types_.is_unknown(rhs)) {
       return bool_type;
     }
@@ -9003,6 +10351,13 @@ private:
              param_name_of(method->decl->params.front()) == "self";
     };
     const method_entry *method = nullptr;
+    // A builtin number or `char` orders primitively. Its `impl ord`
+    // (`traits.scalar.cn`) is written *with* `<`, so dispatching `<` to it
+    // would call itself forever.
+    if (types_.is_numeric(target) || types_.is_boolean(target) ||
+        (entry.kind == type_kind::builtin_kind && entry.name == "char")) {
+      return;
+    }
     if (entry.kind == type_kind::struct_kind ||
         entry.kind == type_kind::sum_kind ||
         entry.kind == type_kind::opaque_kind) {
@@ -9173,6 +10528,11 @@ private:
                            ? strip_refs(infer_expr(*binary.rhs, lhs))
                            : k_unknown_type;
       for (const auto operand : {lhs, rhs}) {
+        if (is_rigid_param(operand) &&
+            domain_all(operand,
+                       [&](type_id m) { return types_.is_integer(m); })) {
+          continue;
+        }
         if (!types_.is_unknown(operand) && !types_.is_integer(operand)) {
           error(binary.span,
                 std::format("operator `{}` requires integer operands, found "
@@ -9343,6 +10703,21 @@ private:
 
     switch (unary.op) {
     case ast::unary_op::neg:
+      if (types_.entry(stripped).kind == type_kind::type_param_kind) {
+        if (domain_all(stripped, [&](type_id m) {
+              return types_.is_float(m) ||
+                     is_signed_integer_name(types_.entry(m).name);
+            })) {
+          return stripped;
+        }
+        const auto fact =
+            require_bound_operator(unary.span, stripped, "neg", "-");
+        if (!fact.has_value()) {
+          return k_error_type;
+        }
+        const auto output = bound_assoc_type(*fact, stripped, "output");
+        return output == k_unknown_type ? stripped : output;
+      }
       if (!types_.is_unknown(stripped) && !types_.is_numeric(stripped)) {
         error(unary.span,
               std::format("unary `-` requires a numeric operand, found `{}`",
@@ -9765,6 +11140,26 @@ private:
       if (const auto *source = index_.find_module(module_name)) {
         if (const auto it = source->traits.find(std::string(name));
             it != source->traits.end()) {
+          return it->second;
+        }
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Finds a `concept` declaration named `name` in the auto-imported
+  /// prelude — `std.traits`'s category concepts (`numeric`, `integer`, ...)
+  /// are bounds a body needs as routinely as `ord`, so they are reachable the
+  /// same way. Mirrors `find_prelude_trait`.
+  auto find_prelude_concept(std::string_view name)
+      -> std::optional<concept_decl_ref> {
+    if (file_no_prelude_) {
+      return std::nullopt;
+    }
+    for (const auto module_name : k_prelude_reexport_modules) {
+      if (const auto *source = index_.find_module(module_name)) {
+        if (const auto it = source->concepts.find(std::string(name));
+            it != source->concepts.end()) {
           return it->second;
         }
       }
@@ -11918,7 +13313,8 @@ private:
     if (types_.entry(bare_param).kind == type_kind::type_param_kind) {
       return receiver_fit::fits;
     }
-    if (!types_.compatible(bare_param, bare_receiver)) {
+    // The candidate's own parameters (`&list[T]`'s `T`) are not solved yet.
+    if (!types_.compatible(open_foreign_params(bare_param), bare_receiver)) {
       return receiver_fit::does_not_fit;
     }
     if (param_entry.kind == type_kind::ref_kind && param_entry.is_mut) {
@@ -12562,6 +13958,8 @@ private:
       infer_call_args_loosely(call);
       return k_error_type;
     }
+    case type_kind::type_param_kind:
+      return check_bound_method_call(call, field, object, explicit_args);
     default: {
       // Builtin inherent methods take priority; an impl on the builtin's
       // constructor (`impl monad for option`) or an `extend` block fills in
@@ -13194,11 +14592,13 @@ private:
       // monomorphic, so nothing here needs the trait to be object-safe
       // (§5.2).
       if (const auto bound = lookup_type_param(root.front())) {
-        // Still a template: `C` is an abstract parameter, nothing is bound,
-        // and there is no type to look a member up on. The call types as
-        // `unknown` and is checked for real in each instance — the same
-        // discipline `find_or_check_generic_instance` applies to the rest of
-        // a generic body.
+        // Still a template: `C` is the body's own parameter, and its static
+        // members are what its bounds promise (phase 9, rule 2).
+        if (is_rigid_param(*bound)) {
+          return check_bound_method_call(call, field, *bound,
+                                         method_explicit_generic_args(field),
+                                         /*static_call=*/true);
+        }
         if (mentions_abstract_type(*bound) || types_.is_unknown(*bound)) {
           infer_call_args_loosely(call);
           return k_unknown_type;
@@ -16165,6 +17565,9 @@ private:
     // reached only past one of those must not be judged reachable.
     const auto saved_unreachable = in_known_unreachable_code_;
     in_known_unreachable_code_ = false;
+    // Narrowings past a returning `static if` hold for the rest of this block
+    // and no further (phase 9, rule 5).
+    auto narrowed_past = size_t{0};
     for (size_t i = 0; i < items.size(); ++i) {
       if (items[i] == nullptr) {
         continue;
@@ -16178,8 +17581,16 @@ private:
         if (stmt_definitely_returns(*items[i])) {
           in_known_unreachable_code_ = true;
         }
+        if (const auto past = narrowing_past(*items[i])) {
+          scoped_domains_.emplace_back(past->param, *past->else_domain);
+          ++narrowed_past;
+          if (past->else_domain->empty()) {
+            in_known_unreachable_code_ = true;
+          }
+        }
       }
     }
+    scoped_domains_.resize(scoped_domains_.size() - narrowed_past);
     in_known_unreachable_code_ = saved_unreachable;
     pop_scope();
     return last;
@@ -16925,7 +18336,8 @@ private:
         continue;
       }
       const auto bare_param = strip_refs(params.front().type);
-      if (!types_.compatible(bare_param, operand)) {
+      // The candidate's own parameters (`container[T]`'s `T`) are unsolved.
+      if (!types_.compatible(open_foreign_params(bare_param), operand)) {
         continue;
       }
 
@@ -17226,8 +18638,11 @@ private:
         // narrowing obligation on an already-typed expression.
         const auto *operand_lit =
             dynamic_cast<const ast::literal_expr *>(cast.operand.get());
-        infer_expr(*cast.operand,
-                   operand_lit != nullptr ? target : k_unknown_type);
+        const auto operand = strip_refs(infer_expr(
+            *cast.operand, operand_lit != nullptr ? target : k_unknown_type));
+        if (is_rigid_param(operand) || is_rigid_param(target)) {
+          check_cast_with_param(cast, operand, target);
+        }
       }
       return target;
     }
@@ -17484,6 +18899,28 @@ private:
       if (builtin_allowed) {
         dispatch.kind = builtin_kind_fallback;
         return true;
+      }
+      // A value whose type is the body's own parameter formats as its bounds
+      // allow (phase 9): through the trait if `T` has it, or the builtin way
+      // if every type `T` can be here is a builtin that formats so.
+      if (is_rigid_param(value_type)) {
+        const auto facts = facts_of(value_type);
+        if (std::ranges::any_of(facts, [&](const type_fact &fact) -> bool {
+              return fact.trait->name == trait_name;
+            })) {
+          dispatch.kind = interp_dispatch::kind_t::trait_method;
+          return true;
+        }
+        const auto radix = builtin_kind_fallback ==
+                           interp_dispatch::kind_t::builtin_radix;
+        if (domain_all(value_type, [&](type_id m) -> bool {
+              return radix ? types_.is_integer(m)
+                           : types_.entry(m).kind == type_kind::builtin_kind;
+            })) {
+          dispatch.kind = builtin_kind_fallback;
+          return true;
+        }
+        return false;
       }
       if (!type_has_trait(value_entry, trait_name)) {
         return false;
@@ -19138,6 +20575,18 @@ private:
           // invalidate what assignment breaks.)
           if (!binding.is_mut) {
             assume_binding(binding.name, binding_type);
+            // `let n = T.name()`: a later `static if n == "int8"` narrows
+            // `T` exactly as `static if T.name() == "int8"` would.
+            if (stmt.initializer != nullptr) {
+              if (const auto reflected =
+                      reflected_name_of(*stmt.initializer);
+                  reflected.has_value() &&
+                  stmt.initializer->kind == ast::node_kind::call_expr) {
+                type_name_aliases_.insert_or_assign(binding.name, *reflected);
+              } else {
+                type_name_aliases_.erase(binding.name);
+              }
+            }
             // Also make the binding available to `resolve_static_if_branch`
             // for any `static if` later in this same function body: a
             // pattern like `std.limits.min`'s `let n = T.name()` followed
@@ -19490,6 +20939,18 @@ private:
             *taken_branch ? decl.if_body : decl.else_body, expected_tail);
         return branch_type != k_unknown_type ? branch_type : unit;
       }
+      if (const auto narrowed = check_narrowed_static_if(decl, expected_tail)) {
+        auto joined = join_branch_type(expected_tail, narrowed->first,
+                                       decl.span, "`static if`");
+        if (!decl.else_body.empty()) {
+          joined = join_branch_type(joined, narrowed->second, decl.span,
+                                    "`static if`");
+        }
+        if (decl.else_body.empty() && types_.entry(joined).name == "never") {
+          joined = unit;
+        }
+        return joined != k_unknown_type ? joined : unit;
+      }
       auto result = expected_tail;
       ++in_speculative_static_branch_;
       const auto if_type = check_body_nodes(decl.if_body, expected_tail);
@@ -19777,6 +21238,7 @@ private:
     }
 
     push_type_params(decl.type_params);
+    record_declared_facts(decl.type_params, &decl.where_constraints);
     // Every call inside a comptime-only `static def`'s own body (template or
     // instantiated clone alike — see `comptime_only_functions_`'s doc
     // comment) is already reachable through direct evaluator execution
@@ -19808,6 +21270,9 @@ private:
           return !param.is_value_param && !param.name.empty() &&
                  !type_param_slots_.contains(param.name);
         });
+    const auto errors_before_body = errors_emitted_;
+    const auto checking_template =
+        in_type_generic_template_ || in_const_generic_template_;
     // Bind each of this instantiation's own type parameters into the
     // compile-time evaluator's locals as a `type_value` (`comptime::value`),
     // so a `static if`/`static assert` condition *inside this function's own
@@ -19835,6 +21300,8 @@ private:
     // locals are.
     auto saved_facts = std::move(facts_);
     facts_.clear();
+    auto saved_name_aliases = std::move(type_name_aliases_);
+    type_name_aliases_.clear();
 
     bind_value_params(decl.type_params);
     if (enclosing_block_type_params_ != nullptr) {
@@ -20187,8 +21654,12 @@ private:
     return_annotated_ = saved_annotated;
     reported_undefined_ = std::move(saved_reported);
     facts_ = std::move(saved_facts);
+    type_name_aliases_ = std::move(saved_name_aliases);
     scopes_ = std::move(saved_scopes);
     capture_barriers_ = std::move(saved_barriers);
+    if (checking_template && errors_emitted_ != errors_before_body) {
+      failed_templates_.insert(&decl);
+    }
     in_const_generic_template_ = saved_template;
     in_type_generic_template_ = saved_type_template;
     in_comptime_only_function_ = saved_in_comptime_only_function;
@@ -20366,6 +21837,451 @@ private:
     return std::nullopt;
   }
 
+  /// Rewrites `id` with each type parameter in `subst` replaced, keyed by the
+  /// parameter's own id rather than its spelling — two parameters that share
+  /// a name are two parameters (`type_table::type_param`). Re-interns
+  /// bottom-up, so the result is the same id as the type written out.
+  auto substitute_params(type_id id,
+                         const std::unordered_map<type_id, type_id> &subst)
+      -> type_id {
+    if (subst.empty()) {
+      return id;
+    }
+    if (const auto it = subst.find(id); it != subst.end()) {
+      return it->second;
+    }
+    const auto item = types_.entry(id); // copy: interning below can push
+    auto args = std::vector<type_id>{};
+    args.reserve(item.args.size());
+    auto changed = false;
+    for (const auto arg : item.args) {
+      const auto rewritten = substitute_params(arg, subst);
+      changed = changed || rewritten != arg;
+      args.push_back(rewritten);
+    }
+    const auto result = item.result != k_unknown_type
+                            ? substitute_params(item.result, subst)
+                            : item.result;
+    changed = changed || result != item.result;
+    if (!changed) {
+      return id;
+    }
+    switch (item.kind) {
+    case type_kind::builtin_generic_kind:
+      return types_.builtin_generic(item.name, std::move(args));
+    case type_kind::tuple_kind:
+      return types_.tuple_of(std::move(args));
+    case type_kind::fn_kind:
+      return types_.fn_of(std::move(args), result);
+    case type_kind::ref_kind:
+      return types_.ref_to(result, item.is_mut);
+    case type_kind::ptr_kind:
+      return types_.ptr_to(result, item.is_mut);
+    case type_kind::array_kind:
+      return types_.array_of(result, item.array_size,
+                             args.empty() ? k_unknown_type : args.front());
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+      return item.decl != nullptr
+                 ? types_.user_type(*item.decl, item.module_name,
+                                    std::move(args))
+                 : id;
+    default:
+      return id;
+    }
+  }
+
+  /// `trait[args]` as a reader would write it.
+  auto display_fact(const type_fact &fact) -> std::string {
+    auto out = fact.trait->name;
+    if (!fact.args.empty()) {
+      out += "[";
+      for (size_t i = 0; i < fact.args.size(); ++i) {
+        if (i != 0) {
+          out += ", ";
+        }
+        out += types_.display(fact.args[i]);
+      }
+      out += "]";
+    }
+    return out;
+  }
+
+  /// A method call on a value whose type is a type parameter
+  /// (`spec/inference-rewrite.md` phase 9, rule 2).
+  ///
+  /// The method must belong to a trait among the parameter's facts, and the
+  /// call is checked against that trait's signature with `self` standing for
+  /// the receiver and the trait's parameters for the fact's arguments. What
+  /// the parameter will be in some instance is not consulted: the body has
+  /// to be right for every type the signature admits, and saying so here is
+  /// the only place the message can point at the line that is wrong.
+  ///
+  /// `static_call` is `T.zero()`: a static member reached through the
+  /// parameter itself, which the bound supplies the same way — only a method
+  /// without `self` qualifies, and every argument is written.
+  auto check_bound_method_call(const ast::call_expr &call,
+                               const ast::field_expr &field, type_id receiver,
+                               const explicit_generic_args &explicit_args,
+                               bool static_call = false) -> type_id {
+    struct provider {
+      type_fact fact;
+      const ast::trait_decl *trait = nullptr;
+      const ast::func_decl *method = nullptr;
+    };
+    const auto facts = facts_of(receiver);
+    auto providers = std::vector<provider>{};
+    for (const auto &fact : facts) {
+      const auto *trait = fact.trait;
+      for (const auto &item : trait->items) {
+        if (item == nullptr || item->kind != ast::node_kind::func_decl) {
+          continue;
+        }
+        const auto &member = dynamic_cast<const ast::func_decl &>(*item);
+        const auto takes_self =
+            !member.params.empty() &&
+            param_name_of(member.params.front()) == "self";
+        if (member.name == field.field_name && takes_self != static_call) {
+          providers.push_back(provider{
+              .fact = fact,
+              .trait = trait,
+              .method = &dynamic_cast<const ast::func_decl &>(*item)});
+        }
+      }
+    }
+
+    const auto receiver_name = types_.display(receiver);
+    if (providers.empty()) {
+      report_unbound_method(field, receiver_name, facts, static_call);
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+    if (providers.size() > 1) {
+      auto listed = std::string{};
+      for (const auto &candidate : providers) {
+        if (!listed.empty()) {
+          listed += " and ";
+        }
+        listed += std::format("`{}`", display_fact(candidate.fact));
+      }
+      error_with_help(
+          field.span,
+          std::format("`{}` is ambiguous on `{}`", field.field_name,
+                      receiver_name),
+          "more than one bound provides this method",
+          std::format("Both {} declare a method `{}`, and `{}` is bound by "
+                      "each, so this call could mean either. Rename one of "
+                      "the methods, or drop the bound this call does not "
+                      "need.",
+                      listed, field.field_name, receiver_name));
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
+    const auto &chosen = providers.front();
+    const auto [owner, owner_file] = trait_home(*chosen.trait);
+    const auto saved_self = self_type_;
+    const auto saved_assoc = self_assoc_types_;
+    self_type_ = receiver;
+    self_assoc_types_.clear();
+    auto params = signature_params(*chosen.method, owner,
+                                   /*skip_self=*/!static_call,
+                                   &chosen.trait->type_params);
+    auto result = signature_return_type(*chosen.method, owner,
+                                        &chosen.trait->type_params);
+    self_type_ = saved_self;
+    self_assoc_types_ = saved_assoc;
+
+    auto subst = std::unordered_map<type_id, type_id>{};
+    for (size_t i = 0;
+         i < chosen.trait->type_params.size() && i < chosen.fact.args.size();
+         ++i) {
+      const auto &param = chosen.trait->type_params[i];
+      subst.emplace(
+          types_.type_param(param.name, param.higher_kinded_arity, &param),
+          chosen.fact.args[i]);
+    }
+    auto param_types = std::vector<type_id>{};
+    for (auto &param : params) {
+      param.type = substitute_params(param.type, subst);
+      param_types.push_back(param.type);
+    }
+    result = substitute_params(result, subst);
+    record_expr_type(field, types_.fn_of(std::move(param_types), result));
+    if (!check_method_accepts_generic_args(field, *chosen.method,
+                                           explicit_args)) {
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+    auto solved = value_bindings{};
+    const auto generic =
+        generic_call_context{.decl = chosen.method,
+                             .owner = owner,
+                             .explicit_args = &explicit_args,
+                             .ufcs_receiver = nullptr};
+    check_call_args_against(
+        call, params, chosen.method->name,
+        source_location{.file_id = owner_file, .span = chosen.method->span},
+        &solved, is_generic_template(*chosen.method) ? &generic : nullptr);
+    return result;
+  }
+
+  /// "no method `m` on `T`", with what *is* known about `T` and — when some
+  /// trait in reach declares `m` — the bound that would make the call legal.
+  auto report_unbound_method(const ast::field_expr &field,
+                             const std::string &receiver_name,
+                             const std::vector<type_fact> &facts,
+                             bool static_call = false) -> void {
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("no {} `{}` on `{}`",
+                    static_call ? "static member" : "method", field.field_name,
+                    receiver_name),
+        file_id_);
+    diag.with_label(field.span, "not provided by any bound");
+    if (facts.empty()) {
+      diag.with_note(std::format(
+          "`{}` is a type parameter with no bounds, so nothing is known about "
+          "it: a body can only call methods its bounds promise",
+          receiver_name));
+    } else {
+      auto listed = std::string{};
+      for (const auto &fact : facts) {
+        if (!listed.empty()) {
+          listed += ", ";
+        }
+        listed += std::format("`{}`", display_fact(fact));
+      }
+      diag.with_note(std::format("`{}` is only known to implement {}",
+                                 receiver_name, listed));
+    }
+    // Spelled with the trait's own parameter names, so a generic trait is
+    // suggested in a form that can be written — `iterator[T]`, not the
+    // `iterator` that would then fail for missing its argument — and with a
+    // word on what those names stand for, since they are the trait's, not
+    // this body's.
+    struct offer {
+      std::string spelled;
+      std::string params;
+    };
+    auto offering = std::vector<offer>{};
+    for (const auto &[module_name, members] : index_.modules) {
+      for (const auto &[trait_name, trait] : members.traits) {
+        if (trait.decl == nullptr ||
+            !trait_declares_method(*trait.decl, field.field_name)) {
+          continue;
+        }
+        auto candidate = offer{.spelled = trait_name, .params = {}};
+        if (!trait.decl->type_params.empty()) {
+          candidate.spelled += "[";
+          for (size_t i = 0; i < trait.decl->type_params.size(); ++i) {
+            const auto sep = i == 0 ? "" : ", ";
+            candidate.spelled += sep + trait.decl->type_params[i].name;
+            candidate.params +=
+                std::format("{}`{}`", sep, trait.decl->type_params[i].name);
+          }
+          candidate.spelled += "]";
+        }
+        if (std::ranges::none_of(offering, [&](const offer &known) -> bool {
+              return known.spelled == candidate.spelled;
+            })) {
+          offering.push_back(std::move(candidate));
+        }
+      }
+    }
+    std::ranges::sort(offering, {}, &offer::spelled);
+    if (offering.size() == 1) {
+      const auto &only = offering.front();
+      const auto replace =
+          only.params.empty()
+              ? std::string{}
+              : std::format(", with {} replaced by the type this code means",
+                            only.params);
+      diag.with_help(std::format(
+          "`{}` is a method of the trait `{}`. Add the bound — `where {}: "
+          "{}`{} — and every caller must then pass a type that implements it.",
+          field.field_name, only.spelled, receiver_name, only.spelled,
+          replace));
+    } else if (!offering.empty()) {
+      auto listed = std::string{};
+      for (const auto &candidate : offering) {
+        if (!listed.empty()) {
+          listed += ", ";
+        }
+        listed += std::format("`{}`", candidate.spelled);
+      }
+      diag.with_help(std::format(
+          "`{}` is declared by the traits {}. Bound `{}` by the one this code "
+          "means, as in `where {}: {}`.",
+          field.field_name, listed, receiver_name, receiver_name,
+          offering.front().spelled));
+    } else {
+      diag.with_help(std::format(
+          "No trait declares a method `{}`. Declare one that does, bound "
+          "`{}` by it, and implement it for the types you pass.",
+          field.field_name, receiver_name));
+    }
+    emit_diag(diag);
+    mark_error();
+  }
+
+  /// What is known about `subject`, as a note: its bounds, or that it has
+  /// none.
+  auto facts_note(const std::string &subject_name,
+                  const std::vector<type_fact> &facts) -> std::string {
+    if (facts.empty()) {
+      return std::format("`{}` is a type parameter with no bounds, so nothing "
+                         "is known about it: a body can only use what its "
+                         "bounds promise",
+                         subject_name);
+    }
+    auto listed = std::string{};
+    for (const auto &fact : facts) {
+      if (!listed.empty()) {
+        listed += ", ";
+      }
+      listed += std::format("`{}`", display_fact(fact));
+    }
+    return std::format("`{}` is only known to implement {}", subject_name,
+                       listed);
+  }
+
+  /// An operator on a value of type `T` needs the operator's trait among
+  /// `T`'s facts (`spec/inference-rewrite.md` phase 9, rule 2). Returns the
+  /// fact that allows it, or reports at the operator and returns `nullopt`.
+  auto require_bound_operator(source_span span, type_id subject,
+                              std::string_view trait_name,
+                              std::string_view op_name)
+      -> std::optional<type_fact> {
+    const auto facts = facts_of(subject);
+    for (const auto &fact : facts) {
+      if (fact.trait->name == trait_name) {
+        return fact;
+      }
+    }
+    const auto subject_name = types_.display(subject);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("`{}` on `{}` needs `{}` to implement `{}`", op_name,
+                    subject_name, subject_name, trait_name),
+        file_id_);
+    diag.with_label(span, "not provided by any bound");
+    diag.with_note(facts_note(subject_name, facts));
+    const auto builtin_has_it = trait_name != "eq";
+    diag.with_help(std::format(
+        "An operator on a type parameter is a call to its trait's method, so "
+        "the trait has to be among the parameter's bounds. Add `where {}: "
+        "{}`, and every caller must then pass a type that implements it{}.",
+        subject_name, trait_name,
+        builtin_has_it
+            ? std::format(" — or, if `{}` is only ever a builtin number, "
+                          "`where {}: numeric`",
+                          subject_name, subject_name)
+            : std::string{}));
+    emit_diag(diag);
+    mark_error();
+    return std::nullopt;
+  }
+
+  /// What a bound's associated type `name` stands for on `subject`.
+  ///
+  /// A bound fixes an associated type that has a default to that default:
+  /// `T: add` means `T + T` is a `T`, because `add` declares `type output =
+  /// self`. That is the reading almost every generic body wants, and the
+  /// alternative — an opaque `T.output` that nothing can be done with — makes
+  /// the common case unwritable. The call site holds up its end by checking
+  /// the same default against the type it passes. `k_unknown_type` when the
+  /// trait gives no default, which the caller reports.
+  auto bound_assoc_type(const type_fact &fact, type_id subject,
+                        std::string_view name) -> type_id {
+    for (const auto &item : fact.trait->items) {
+      if (item == nullptr ||
+          item->kind != ast::node_kind::associated_type_decl_node) {
+        continue;
+      }
+      const auto &assoc =
+          dynamic_cast<const ast::associated_type_decl_node &>(*item).value;
+      if (assoc.name != name || assoc.default_type == nullptr) {
+        continue;
+      }
+      auto bindings = std::unordered_map<std::string, type_id>{};
+      for (size_t i = 0;
+           i < fact.trait->type_params.size() && i < fact.args.size(); ++i) {
+        bindings.emplace(fact.trait->type_params[i].name, fact.args[i]);
+      }
+      const auto [home, file] = trait_home(*fact.trait);
+      const auto ctx = resolve_ctx{.module = home,
+                                   .param_bindings = &bindings,
+                                   .use_type_param_stack = false,
+                                   .quiet = true};
+      const auto saved_self = self_type_;
+      self_type_ = subject;
+      const auto resolved = resolve_type(*assoc.default_type, ctx);
+      self_type_ = saved_self;
+      return resolved;
+    }
+    return k_unknown_type;
+  }
+
+  /// `a + b` (and the other arithmetic operators) where an operand's type is
+  /// a type parameter. The operator is its trait's method, `def add(self,
+  /// other: self) -> self.output`, so the parameter needs the trait, the two
+  /// operands must be the same type, and the result is the bound's `output`.
+  auto check_bound_arithmetic(const ast::binary_expr &binary, type_id lhs,
+                              type_id rhs) -> type_id {
+    const auto rigid_lhs =
+        types_.entry(lhs).kind == type_kind::type_param_kind;
+    const auto subject = rigid_lhs ? lhs : rhs;
+    const auto other = rigid_lhs ? rhs : lhs;
+    const auto op_name = ast::binary_op_name(binary.op);
+    const auto trait_name = operator_trait_for(binary.op);
+    const auto subject_name = types_.display(subject);
+    // Every type a numeric domain allows has the builtin operator, and its
+    // result is the operand type — no trait needed.
+    if (domain_all(subject, [&](type_id m) { return types_.is_numeric(m); })) {
+      if (!types_.is_unknown(other) && other != subject) {
+        error(binary.span,
+              std::format("`{}` on `{}` needs another `{}`, found `{}`",
+                          op_name, subject_name, subject_name,
+                          types_.display(other)),
+              "operands have different types");
+        return k_error_type;
+      }
+      return subject;
+    }
+    const auto fact =
+        require_bound_operator(binary.span, subject, trait_name, op_name);
+    if (!fact.has_value()) {
+      return k_error_type;
+    }
+    if (!types_.is_unknown(other) && other != subject) {
+      error_with_help(
+          binary.span,
+          std::format("`{}` on `{}` needs another `{}`, found `{}`", op_name,
+                      subject_name, subject_name, types_.display(other)),
+          "operands have different types",
+          std::format("`{}` is `{}`'s method `{}(self, other: self)`, so both "
+                      "operands have to be the same type.",
+                      op_name, trait_name, trait_name));
+      return k_error_type;
+    }
+    const auto output = bound_assoc_type(*fact, subject, "output");
+    if (output == k_unknown_type) {
+      error_with_help(
+          binary.span,
+          std::format("the bound `{}: {}` does not say what `{}` produces",
+                      subject_name, display_fact(*fact), op_name),
+          "result type unknown",
+          std::format("`{}` declares `type output` without a default, so "
+                      "nothing fixes the result of `{}` on `{}`. Give the "
+                      "trait a default (`type output = self`).",
+                      trait_name, op_name, subject_name));
+      return k_error_type;
+    }
+    return output;
+  }
+
   /// Whether `trait` declares a method item named `name` — used to check
   /// whether a method call on an existential-typed receiver is within its
   /// bound (`infer_method_call`'s `existential_kind` case). Supertrait
@@ -20403,6 +22319,7 @@ private:
   /// bound to the impl's target.
   auto check_impl_decl(const ast::impl_decl &decl) -> void {
     push_type_params(decl.type_params);
+    record_declared_facts(decl.type_params, &decl.where_constraints);
 
     // The trait resolves first: its parameter's *kind* directs how the
     // `for` target is read — `impl monad for option` names the constructor
@@ -20569,6 +22486,7 @@ private:
     // member, so they go on the stack before the target resolves — otherwise
     // `extend[T] holder[T]` cannot even name `T` in its own `extend` clause.
     push_type_params(decl.type_params);
+    record_declared_facts(decl.type_params, nullptr);
     const auto target =
         decl.for_type != nullptr
             ? strip_refs(resolve_type(*decl.for_type, current_resolve_ctx()))
@@ -20781,6 +22699,20 @@ private:
     const auto saved_assoc = self_assoc_types_;
     self_type_ = types_.type_param("self");
     self_assoc_types_.clear();
+    record_declared_facts(decl.type_params, nullptr);
+    // Inside its own body a trait's `self` implements the trait itself, at
+    // its own parameters — which is what lets a default method call its
+    // siblings — and everything the trait `requires`.
+    {
+      auto self_args = std::vector<type_id>{};
+      for (const auto &param : decl.type_params) {
+        self_args.push_back(
+            types_.type_param(param.name, param.higher_kinded_arity, &param));
+      }
+      auto self_facts = std::vector<type_fact>{};
+      add_fact_closure(decl, std::move(self_args), self_facts);
+      scoped_facts_.emplace_back(self_type_, std::move(self_facts));
+    }
 
     if (decl.requires_bound.has_value()) {
       for (const auto &term : decl.requires_bound->terms) {
@@ -20820,6 +22752,7 @@ private:
     }
     enclosing_block_type_params_ = saved_block_type_params;
 
+    scoped_facts_.pop_back();
     self_type_ = saved_self;
     self_assoc_types_ = saved_assoc;
     pop_type_params();
@@ -21787,6 +23720,77 @@ private:
     }
   }
 
+  /// Checks a `static if` whose condition cannot be decided yet — it depends
+  /// on a type parameter of the body being checked — each branch under what
+  /// its condition establishes (phase 9, rule 5). A branch no permitted type
+  /// can take is not checked at all: there is no `T` for which it would run.
+  /// Returns `nullopt` when the condition says nothing this compiler reads,
+  /// leaving the caller's ordinary both-branches check to run.
+  auto check_narrowed_static_if(const ast::static_decl &decl,
+                                type_id expected_tail)
+      -> std::optional<std::pair<type_id, type_id>> {
+    if (decl.if_condition == nullptr || decl.if_condition->has_error) {
+      return std::nullopt;
+    }
+    const auto narrowed = narrowing_of(*decl.if_condition);
+    if (!narrowed.has_value()) {
+      return std::nullopt;
+    }
+    const auto unit = types_.builtin("unit");
+    const auto check_under = [&](const std::vector<ast::ptr<ast::node>> &body,
+                                 const std::optional<type_domain> &domain)
+        -> type_id {
+      if (domain.has_value() && domain->empty()) {
+        return types_.builtin("never");
+      }
+      if (domain.has_value()) {
+        scoped_domains_.emplace_back(narrowed->param, *domain);
+      }
+      ++in_speculative_static_branch_;
+      const auto result = check_body_nodes(body, expected_tail);
+      --in_speculative_static_branch_;
+      if (domain.has_value()) {
+        scoped_domains_.pop_back();
+      }
+      return result;
+    };
+    const auto if_type = check_under(decl.if_body, narrowed->then_domain);
+    const auto else_type = decl.else_body.empty()
+                               ? unit
+                               : check_under(decl.else_body,
+                                             narrowed->else_domain);
+    return std::pair{if_type, else_type};
+  }
+
+  /// What the code *after* a `static if` may assume: when the branch always
+  /// returns and there is no `else`, reaching the next statement means the
+  /// condition was false. `nullopt` when that says nothing usable.
+  auto narrowing_past(const ast::node &node) -> std::optional<narrowing> {
+    if (node.kind != ast::node_kind::static_decl) {
+      return std::nullopt;
+    }
+    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    if (decl.decl_kind != ast::static_decl_kind::conditional_compilation ||
+        decl.if_condition == nullptr || !decl.else_body.empty() ||
+        !inside_unbound_generic_scope()) {
+      return std::nullopt;
+    }
+    const ast::node *last = nullptr;
+    for (const auto &item : decl.if_body) {
+      if (item != nullptr) {
+        last = item.get();
+      }
+    }
+    if (last == nullptr || !stmt_definitely_returns(*last)) {
+      return std::nullopt;
+    }
+    auto narrowed = narrowing_of(*decl.if_condition);
+    if (!narrowed.has_value() || !narrowed->else_domain.has_value()) {
+      return std::nullopt;
+    }
+    return narrowed;
+  }
+
   auto check_static_decl(const ast::static_decl &decl) -> void {
     comptime_eval_.set_file(file_id_);
     switch (decl.decl_kind) {
@@ -21856,6 +23860,8 @@ private:
         static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
         check_body_nodes(*taken_branch ? decl.if_body : decl.else_body,
                          k_unknown_type);
+      } else if (check_narrowed_static_if(decl, k_unknown_type).has_value()) {
+        // Checked under each branch's narrowing.
       } else {
         ++in_speculative_static_branch_;
         check_body_nodes(decl.if_body, k_unknown_type);
@@ -22798,6 +24804,60 @@ public:
   /// Runs impl coherence once for the whole session, then checks every
   /// input file that has a valid module declaration and no already-recorded
   /// error, setting up the current-file/current-module context before each.
+  /// Clears the parser's value-parameter mark on every `[T: Bound]` whose
+  /// bound names a trait or a concept, in `items` and everything nested in
+  /// them. The AST is the driver's, owned mutably; this is the one place the
+  /// checker writes to it, and only this flag, which parsing could not decide.
+  auto settle_bounded_params(const std::vector<ast::ptr<ast::node>> &items)
+      -> void {
+    const auto settle = [&](const std::vector<ast::type_param> &params) {
+      for (const auto &param : params) {
+        if (param.is_value_param && param.bound_or_type != nullptr &&
+            names_trait_or_concept(*param.bound_or_type)) {
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+          const_cast<ast::type_param &>(param).is_value_param = false;
+        }
+      }
+    };
+    for (const auto &item : items) {
+      if (item == nullptr) {
+        continue;
+      }
+      switch (item->kind) {
+      case ast::node_kind::func_decl:
+        settle(dynamic_cast<const ast::func_decl &>(*item).type_params);
+        break;
+      case ast::node_kind::impl_decl: {
+        const auto &impl = dynamic_cast<const ast::impl_decl &>(*item);
+        settle(impl.type_params);
+        settle_bounded_params(impl.items);
+        break;
+      }
+      case ast::node_kind::extend_decl: {
+        const auto &extend = dynamic_cast<const ast::extend_decl &>(*item);
+        settle(extend.type_params);
+        settle_bounded_params(extend.items);
+        break;
+      }
+      case ast::node_kind::trait_decl: {
+        const auto &trait = dynamic_cast<const ast::trait_decl &>(*item);
+        settle(trait.type_params);
+        settle_bounded_params(trait.items);
+        break;
+      }
+      case ast::node_kind::type_decl:
+        settle(dynamic_cast<const ast::type_decl &>(*item).type_params);
+        break;
+      case ast::node_kind::sub_module_decl:
+        settle_bounded_params(
+            dynamic_cast<const ast::sub_module_decl &>(*item).items);
+        break;
+      default:
+        break;
+      }
+    }
+  }
+
   auto run_impl(const std::vector<parsed_module> &inputs) -> void {
     for (const auto &input : inputs) {
       if (input.ast_file != nullptr) {
@@ -22850,6 +24910,25 @@ public:
       push_scope();
       resolve_item_splices(input.ast_file->items, input.file_id);
       pop_scope();
+    }
+
+    // `[T: ord]` and `[n: usize]` parse alike, so the parser marks both as
+    // value parameters. What the name after the colon resolves to decides —
+    // a trait or a concept makes it a bounded type parameter — and it is
+    // decided once, here, before anything reads the flag: a caller can reach
+    // a callee's parameters long before the callee itself is checked.
+    for (const auto &input : inputs) {
+      if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+          input.ast_file->module_decl->has_error ||
+          input.ast_file->module_decl->path.empty()) {
+        continue;
+      }
+      file_id_ = input.file_id;
+      module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+      module_ = index_.find_module(module_name_);
+      file_no_prelude_ = input.ast_file->no_prelude;
+      compute_external_wildcard();
+      settle_bounded_params(input.ast_file->items);
     }
 
     // Materialize every functor instantiation (`use m[args]`) before the

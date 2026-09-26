@@ -84,6 +84,7 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "traits.category.cn",
                                "traits.index.cn",
                                "traits.hash.cn",
+                               "traits.scalar.cn",
                                "limits.cn",
                                "iter.cn",
                                "prelude.cn",

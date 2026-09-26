@@ -45,7 +45,7 @@ impl iterator[int32] for counter:
 
 type map_iter[I, T, U] = { inner: I, f: fn(T) -> U }
 
-impl[I, T, U] iterator[U] for map_iter[I, T, U]:
+impl[I, T, U] iterator[U] for map_iter[I, T, U] where I: iterator[T]:
     def next(mut self) -> option[U]:
         match self.inner.next():
             @some(x) => return @some((self.f)(x))
@@ -53,7 +53,7 @@ impl[I, T, U] iterator[U] for map_iter[I, T, U]:
 
 type filter_iter[I, T] = { inner: I, pred: fn(T) -> bool }
 
-impl[I, T] iterator[T] for filter_iter[I, T]:
+impl[I, T] iterator[T] for filter_iter[I, T] where I: iterator[T]:
     def next(mut self) -> option[T]:
         while let @some(x) = self.inner.next():
             if (self.pred)(x):
@@ -68,17 +68,17 @@ def filter[I, T](it: I, pred: fn(T) -> bool) -> filter_iter[I, T] where I: itera
 
 # No argument mentions `T`, and there is no argument beyond the receiver at
 # all — the bound is the only thing that can answer it.
-def sum[I, T](it: I) -> int32 where I: iterator[T]:
+def sum[I, T](it: I) -> T where I: iterator[T], T: numeric:
     var cursor = it
-    var total = 0
+    var total: T = 0
     while let @some(x) = cursor.next():
         total = total + x
     return total
 
 # Same bound, reached by an ordinary call rather than by UFCS.
-def tally[I, T](it: I) -> int32 where I: iterator[T]:
+def tally[I, T](it: I) -> T where I: iterator[T], T: numeric:
     var cursor = it
-    var total = 0
+    var total: T = 0
     while let @some(x) = cursor.next():
         total = total + x
     return total

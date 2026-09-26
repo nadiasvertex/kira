@@ -75,7 +75,7 @@ impl iterator[int64] for wide_counter:
 
 # Both halves of `T: identified + scalable` are used: `T.identity()` comes
 # from the first term, `x.scaled()` from the second.
-def total[I, T](it: I) -> T where I: iterator[T], T: identified + scalable:
+def total[I, T](it: I) -> T where I: iterator[T], T: identified + scalable + numeric:
     var cursor = it
     var acc = T.identity()
     while let @some(x) = cursor.next():
@@ -84,7 +84,7 @@ def total[I, T](it: I) -> T where I: iterator[T], T: identified + scalable:
 
 # A compound bound written on the type *parameter* rather than in a `where`
 # clause reaches the same cloner path, through `type_param::bound_or_type`.
-def doubled[T: identified + scalable](value: T) -> T:
+def doubled[T: identified + scalable + numeric](value: T) -> T:
     return value + T.identity()
 
 def main() -> int32:

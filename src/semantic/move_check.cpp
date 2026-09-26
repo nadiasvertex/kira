@@ -111,6 +111,17 @@ private:
     if (types.is_unknown(id)) {
       return false;
     }
+    // A type parameter is not tracked. It used to be excluded by `is_unknown`,
+    // which stopped counting type parameters when generic bodies became
+    // checked against their bounds (`spec/inference-rewrite.md` phase 9);
+    // this keeps the move checker exactly where it was. Tracking one needs a
+    // notion of which `T`s copy — a body generic over `T` passing `x` to
+    // `pred(x)` and then returning it is a double move for a struct and fine
+    // for an `int32` — and `std.algo`'s `filter` is written that way. See
+    // `spec/todo.md`.
+    if (types.entry(id).kind == type_kind::type_param_kind) {
+      return false;
+    }
     // A raw `*T`/`*mut T` is an address and nothing more: copying one
     // duplicates a machine word, and the language makes no claim about who
     // owns the memory behind it — that is precisely what distinguishes it

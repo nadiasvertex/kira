@@ -1,6 +1,6 @@
 module sample
 
-static pure def clamp_low[T]() -> T:
+static pure def clamp_low[T]() -> T where T: numeric:
     let n = T.name()
     var v: int64 = 0
     if n == "int8":

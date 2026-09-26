@@ -59,7 +59,7 @@ impl get_it[int64] for boxed[int64]:
 trait scalable[T]:
     def scale(self, factor: T) -> T
 
-impl[T] scalable[T] for holder[T]:
+impl[T] scalable[T] for holder[T] where T: numeric:
     def scale(self, factor: T) -> T:
         return self.value * factor
 

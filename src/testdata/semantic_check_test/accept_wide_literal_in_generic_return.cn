@@ -5,7 +5,7 @@ module sample
 # pass (`in_type_generic_template_`), with `T` still unbound. That pass must
 # not bounds-check a literal against a hardcoded `int32` fallback just
 # because `T` isn't resolved yet.
-def min_of[T]() -> T:
+def min_of[T]() -> T where T: numeric:
     static if T.name() == "int64":
         return -9223372036854775807 - 1
     return 0

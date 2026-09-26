@@ -1,0 +1,11 @@
+# bar: AT BAR. Phase 9. `next` belongs to a trait with a parameter, so the
+# suggested bound is spelled with it — `iterator[T]` — in a form that can be
+# written as-is, rather than the bare `iterator` that would then fail for
+# missing its argument.
+module infer_diag.method_needs_generic_trait_bound
+
+def first_or_zero[I](it: I) -> int32:
+    var source = it
+    match source.next():
+        @some(x) => return 1
+        @none => return 0

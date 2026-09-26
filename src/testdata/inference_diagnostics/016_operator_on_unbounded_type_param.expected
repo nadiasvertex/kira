@@ -1,0 +1,7 @@
+error: `+` on `T` needs `T` to implement `add`
+  --> 016_operator_on_unbounded_type_param.cn:9:12
+    9 |     return x + x
+      |            ^^^^^ not provided by any bound
+  note: `T` is a type parameter with no bounds, so nothing is known about it: a body can only use what its bounds promise
+  help: An operator on a type parameter is a call to its trait's method, so the trait has to be among the parameter's bounds. Add `where T: add`, and every caller must then pass a type that implements it — or, if `T` is only ever a builtin number, `where T: numeric`.
+

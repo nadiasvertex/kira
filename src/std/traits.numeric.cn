@@ -2,8 +2,9 @@ module std.traits
 
 #: Addition operator. The associated type output specifies the return type.
 pub trait add:
-    #: The type returned by the addition operation.
-    type output
+    #: The type returned by the addition operation. Defaults to the operand
+    #: type, which is what a bound `T: add` fixes it to.
+    type output = self
     #: Adds another value to this value.
     #: Args:
     #:   self: the first operand.
@@ -14,8 +15,9 @@ pub trait add:
 
 #: Subtraction operator. The associated type output specifies the return type.
 pub trait sub:
-    #: The type returned by the subtraction operation.
-    type output
+    #: The type returned by the subtraction operation. Defaults to the operand
+    #: type, which is what a bound on this trait fixes it to.
+    type output = self
     #: Subtracts another value from this value.
     #: Args:
     #:   self: the first operand.
@@ -26,8 +28,9 @@ pub trait sub:
 
 #: Multiplication operator. The associated type output specifies the return type.
 pub trait mul:
-    #: The type returned by the multiplication operation.
-    type output
+    #: The type returned by the multiplication operation. Defaults to the operand
+    #: type, which is what a bound on this trait fixes it to.
+    type output = self
     #: Multiplies this value by another value.
     #: Args:
     #:   self: the first operand.
@@ -38,8 +41,9 @@ pub trait mul:
 
 #: Division operator. The associated type output specifies the return type.
 pub trait div:
-    #: The type returned by the division operation.
-    type output
+    #: The type returned by the division operation. Defaults to the operand
+    #: type, which is what a bound on this trait fixes it to.
+    type output = self
     #: Divides this value by another value.
     #: Args:
     #:   self: the first operand (dividend).
@@ -50,8 +54,9 @@ pub trait div:
 
 #: Remainder operator. The associated type output specifies the return type.
 pub trait rem:
-    #: The type returned by the remainder operation.
-    type output
+    #: The type returned by the remainder operation. Defaults to the operand
+    #: type, which is what a bound on this trait fixes it to.
+    type output = self
     #: Computes the remainder of dividing this value by another value.
     #: Args:
     #:   self: the first operand (dividend).
@@ -62,8 +67,9 @@ pub trait rem:
 
 #: Unary negation operator. The associated type output specifies the return type.
 pub trait neg:
-    #: The type returned by the negation operation.
-    type output
+    #: The type returned by the negation operation. Defaults to the operand
+    #: type, which is what a bound on this trait fixes it to.
+    type output = self
     #: Negates this value (typically returns its additive inverse).
     #: Returns:
     #:   the negated value.
