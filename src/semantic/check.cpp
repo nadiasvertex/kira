@@ -4287,24 +4287,12 @@ private:
               : resolve_length_arg(*named.type_args[1].value, ctx);
       return array_with_length(element, length);
     }
-    // `cell` predates this compiler's own `cell[T]`/`mut cell[T]` view type
-    // in existing user code and test fixtures (`type cell = {...}`,
-    // `type cell[T] = {...}`) — unlike the other prelude generics, whose
-    // names were never legal user type names in practice, a user's own
-    // `cell` declaration has to keep winning over the builtin so those
-    // programs don't silently start resolving to a different type.
-    const auto shadowed_by_user_cell = [&] -> bool {
-      if (name != "cell") {
-        return false;
-      }
-      const auto *members =
-          ctx.module != nullptr ? ctx.module : index_.find_module(module_name_);
-      if (members != nullptr && members->types.contains(name)) {
-        return true;
-      }
-      return find_import(name) != nullptr;
-    }();
-    if (!shadowed_by_user_cell) {
+    // A module's own type declaration (or an explicit import) shadows a
+    // prelude generic of the same name, exactly as a local value shadows a
+    // prelude value: `type box = {...}` makes `box` in type position mean
+    // the user's struct, not the builtin `box[T]`.
+    const auto shadowed_by_user_type = user_type_shadows_builtin(name, ctx);
+    if (!shadowed_by_user_type) {
       if (const auto arity = builtin_generic_arity(name)) {
         // Kind-directed: where a higher-kinded slot is being filled, a bare
         // prelude generic names the *constructor* itself (`monad[option]`,
@@ -4391,6 +4379,19 @@ private:
 
     emit_undefined_type(named, name);
     return k_error_type;
+  }
+
+  /// Whether the current module declares (or explicitly imports) a type
+  /// named `name`, which then takes precedence over a prelude builtin
+  /// generic of the same spelling.
+  auto user_type_shadows_builtin(std::string_view name,
+                                 const resolve_ctx &ctx) -> bool {
+    const auto *members =
+        ctx.module != nullptr ? ctx.module : index_.find_module(module_name_);
+    if (members != nullptr && members->types.contains(std::string(name))) {
+      return true;
+    }
+    return find_import(name) != nullptr;
   }
 
   /// Resolves a bare `mut` prefix in type position (`mut slice[T]`,
