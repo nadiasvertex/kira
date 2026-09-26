@@ -1,0 +1,40 @@
+module codegen_stress.shape_demand_leaves_elements_open
+
+# expect: 9
+
+# Indexing, iterating and destructuring choose their route from the head of
+# a type — `list`, a tuple — and never from its elements. So none of them is
+# owed the elements' default: in each block below the literal's type is said
+# by a *later* statement, and every literal is `3000000000`, which only fits
+# if that later statement was heard (spec/inference-rewrite.md phase 11,
+# defect 3).
+#
+# Before, each site demanded the whole type, so the elements became `int32`
+# at the `[0]`, the `for`, the `let (c, d)` — and the `int64` that followed
+# was a mismatch (or, for the loops, an `int64 + int32`).
+#
+# The index and the loops name instances (`list::at$list_int64_$usize`,
+# `list::into_iter$list_int64_`) after the *whole* type, so they wait until
+# the elements are known rather than name one after a variable; the
+# snapshot golden is what shows those names are right.
+#
+# `# expect:` rather than cross-tier agreement: an element typed too early is
+# typed identically by both tiers.
+
+def main() -> int32:
+    let xs = [3000000000, 5]
+    let y: int64 = xs[0]
+
+    var t: int64 = 0
+    for x in [3000000000, 7]:
+        t = t + x
+
+    var u: int64 = 0
+    for (a, _) in [(3000000000, 1)]:
+        u = u + a
+
+    let p = (3000000000, 2)
+    let (c, d) = p
+    let w: int64 = c
+
+    return int32(y + t + u + w - 12000000000) + d

@@ -1,0 +1,25 @@
+module main
+
+# spec/todo.md item 14 and spec/inference-rewrite.md phase 11, defect 2: a
+# point where a literal's type only *flows* is not a point of demand.
+#
+# `fold(0, (n, w) => n + w.len())` checks its lambda against `fn(A, T)`.
+# `A` used to be defaulted to `int32` from the `0` before the body was read,
+# and the body's `n + usize` was then a mismatch. `A` is now answered with
+# the `0`'s own leaf, so the body is what says it is a `usize`.
+#
+# `println("{a}")` used to default `a` to `int32` because formatting needs a
+# type; it can wait for one, and `let c: int64 = a` is what gives it one.
+# `3000000000` does not fit an `int32`, so the sample only compiles if the
+# later statement was heard.
+
+def main() -> int32:
+    let words = ["ab", "cde"]
+    let total = words.iter().values().fold(0, (n, w) => n + w.len())
+    println("{total}")
+
+    let a = 3000000000
+    println("{a}")
+    let c: int64 = a
+    println("{c + 1}")
+    return 0

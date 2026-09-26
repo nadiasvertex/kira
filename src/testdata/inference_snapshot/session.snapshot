@@ -1,7 +1,7 @@
 # inference snapshot
-# 1743 interned types
+# 1805 interned types
 
-## node_types (27113)
+## node_types (27358)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -2384,6 +2384,60 @@
 093_index_settles_its_receiver.cn:44:13 [binary] usize
 093_index_settles_its_receiver.cn:44:17 [literal] usize
 093_index_settles_its_receiver.cn:45:12 [ident] int32
+108_shape_demand_leaves_elements_open.cn:24:15 [named_type] int32
+108_shape_demand_leaves_elements_open.cn:25:9 [binding_pat] list[int64]
+108_shape_demand_leaves_elements_open.cn:25:14 [array] list[int64]
+108_shape_demand_leaves_elements_open.cn:25:15 [literal] int64
+108_shape_demand_leaves_elements_open.cn:25:27 [literal] int64
+108_shape_demand_leaves_elements_open.cn:26:9 [binding_pat] int64
+108_shape_demand_leaves_elements_open.cn:26:20 [ident] list[int64]
+108_shape_demand_leaves_elements_open.cn:26:20 [index] int64
+108_shape_demand_leaves_elements_open.cn:26:23 [literal] usize
+108_shape_demand_leaves_elements_open.cn:28:5 [var_stmt] int64
+108_shape_demand_leaves_elements_open.cn:28:20 [literal] int64
+108_shape_demand_leaves_elements_open.cn:29:9 [binding_pat] int64
+108_shape_demand_leaves_elements_open.cn:29:14 [array] list[int64]
+108_shape_demand_leaves_elements_open.cn:29:15 [literal] int64
+108_shape_demand_leaves_elements_open.cn:29:27 [literal] int64
+108_shape_demand_leaves_elements_open.cn:30:9 [ident] int64
+108_shape_demand_leaves_elements_open.cn:30:13 [ident] int64
+108_shape_demand_leaves_elements_open.cn:30:13 [binary] int64
+108_shape_demand_leaves_elements_open.cn:30:17 [ident] int64
+108_shape_demand_leaves_elements_open.cn:32:5 [var_stmt] int64
+108_shape_demand_leaves_elements_open.cn:32:20 [literal] int64
+108_shape_demand_leaves_elements_open.cn:33:9 [tuple_pat] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:33:10 [binding_pat] int64
+108_shape_demand_leaves_elements_open.cn:33:13 [wildcard_pat] int32
+108_shape_demand_leaves_elements_open.cn:33:19 [array] list[(int64, int32)]
+108_shape_demand_leaves_elements_open.cn:33:20 [tuple] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:33:21 [literal] int64
+108_shape_demand_leaves_elements_open.cn:33:33 [literal] int32
+108_shape_demand_leaves_elements_open.cn:34:9 [ident] int64
+108_shape_demand_leaves_elements_open.cn:34:13 [ident] int64
+108_shape_demand_leaves_elements_open.cn:34:13 [binary] int64
+108_shape_demand_leaves_elements_open.cn:34:17 [ident] int64
+108_shape_demand_leaves_elements_open.cn:36:9 [binding_pat] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:36:13 [tuple] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:36:14 [literal] int64
+108_shape_demand_leaves_elements_open.cn:36:26 [literal] int32
+108_shape_demand_leaves_elements_open.cn:37:9 [tuple_pat] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:37:10 [binding_pat] int64
+108_shape_demand_leaves_elements_open.cn:37:13 [binding_pat] int32
+108_shape_demand_leaves_elements_open.cn:37:18 [ident] (int64, int32)
+108_shape_demand_leaves_elements_open.cn:38:9 [binding_pat] int64
+108_shape_demand_leaves_elements_open.cn:38:20 [ident] int64
+108_shape_demand_leaves_elements_open.cn:40:12 [call] int32
+108_shape_demand_leaves_elements_open.cn:40:12 [binary] int32
+108_shape_demand_leaves_elements_open.cn:40:18 [ident] int64
+108_shape_demand_leaves_elements_open.cn:40:18 [binary] int64
+108_shape_demand_leaves_elements_open.cn:40:18 [binary] int64
+108_shape_demand_leaves_elements_open.cn:40:18 [binary] int64
+108_shape_demand_leaves_elements_open.cn:40:18 [binary] int64
+108_shape_demand_leaves_elements_open.cn:40:22 [ident] int64
+108_shape_demand_leaves_elements_open.cn:40:26 [ident] int64
+108_shape_demand_leaves_elements_open.cn:40:30 [ident] int64
+108_shape_demand_leaves_elements_open.cn:40:34 [literal] int64
+108_shape_demand_leaves_elements_open.cn:40:49 [ident] int32
 std/algo.cn:41:14 [binding_pat] map_iter[I, T, U]
 std/algo.cn:41:27 [named_type] option[U]
 std/algo.cn:42:15 [module_path] I
@@ -6277,18 +6331,26 @@ std/iter.cn:157:28 [named_type] usize
 std/iter.cn:158:16 [module_path] usize
 std/iter.cn:158:16 [binary] usize
 std/iter.cn:158:27 [module_path] usize
+std/iter.cn:161:14 [binding_pat] list_into_iter[(int64, int32)]
 std/iter.cn:161:14 [binding_pat] list_into_iter[T]
 std/iter.cn:161:14 [binding_pat] list_into_iter[int32]
+std/iter.cn:161:14 [binding_pat] list_into_iter[int64]
 std/iter.cn:161:14 [binding_pat] list_into_iter[test_case]
 std/iter.cn:161:14 [binding_pat] list_into_iter[test_suite]
+std/iter.cn:161:27 [named_type] option[(int64, int32)]
 std/iter.cn:161:27 [named_type] option[T]
 std/iter.cn:161:27 [named_type] option[int32]
+std/iter.cn:161:27 [named_type] option[int64]
 std/iter.cn:161:27 [named_type] option[test_case]
 std/iter.cn:161:27 [named_type] option[test_suite]
 std/iter.cn:162:12 [module_path] usize
 std/iter.cn:162:12 [module_path] usize
 std/iter.cn:162:12 [module_path] usize
 std/iter.cn:162:12 [module_path] usize
+std/iter.cn:162:12 [module_path] usize
+std/iter.cn:162:12 [module_path] usize
+std/iter.cn:162:12 [binary] bool
+std/iter.cn:162:12 [binary] bool
 std/iter.cn:162:12 [binary] bool
 std/iter.cn:162:12 [binary] bool
 std/iter.cn:162:12 [binary] bool
@@ -6297,30 +6359,46 @@ std/iter.cn:162:23 [module_path] usize
 std/iter.cn:162:23 [module_path] usize
 std/iter.cn:162:23 [module_path] usize
 std/iter.cn:162:23 [module_path] usize
+std/iter.cn:162:23 [module_path] usize
+std/iter.cn:162:23 [module_path] usize
+std/iter.cn:163:20 [ident] option[(int64, int32)]
 std/iter.cn:163:20 [ident] option[T]
 std/iter.cn:163:20 [ident] option[int32]
+std/iter.cn:163:20 [ident] option[int64]
 std/iter.cn:163:20 [ident] option[test_case]
 std/iter.cn:163:20 [ident] option[test_suite]
+std/iter.cn:164:13 [binding_pat] (int64, int32)
 std/iter.cn:164:13 [binding_pat] _
 std/iter.cn:164:13 [binding_pat] int32
+std/iter.cn:164:13 [binding_pat] int64
 std/iter.cn:164:13 [binding_pat] test_case
 std/iter.cn:164:13 [binding_pat] test_suite
+std/iter.cn:164:17 [ident] list_into_iter[(int64, int32)]
 std/iter.cn:164:17 [ident] list_into_iter[T]
 std/iter.cn:164:17 [ident] list_into_iter[int32]
+std/iter.cn:164:17 [ident] list_into_iter[int64]
 std/iter.cn:164:17 [ident] list_into_iter[test_case]
 std/iter.cn:164:17 [ident] list_into_iter[test_suite]
+std/iter.cn:164:17 [field] list[(int64, int32)]
 std/iter.cn:164:17 [field] list[T]
 std/iter.cn:164:17 [field] list[int32]
+std/iter.cn:164:17 [field] list[int64]
 std/iter.cn:164:17 [field] list[test_case]
 std/iter.cn:164:17 [field] list[test_suite]
+std/iter.cn:164:17 [index] (int64, int32)
 std/iter.cn:164:17 [index] _
 std/iter.cn:164:17 [index] int32
+std/iter.cn:164:17 [index] int64
 std/iter.cn:164:17 [index] test_case
 std/iter.cn:164:17 [index] test_suite
 std/iter.cn:164:26 [module_path] usize
 std/iter.cn:164:26 [module_path] usize
 std/iter.cn:164:26 [module_path] usize
 std/iter.cn:164:26 [module_path] usize
+std/iter.cn:164:26 [module_path] usize
+std/iter.cn:164:26 [module_path] usize
+std/iter.cn:165:9 [module_path] usize
+std/iter.cn:165:9 [module_path] usize
 std/iter.cn:165:9 [module_path] usize
 std/iter.cn:165:9 [module_path] usize
 std/iter.cn:165:9 [module_path] usize
@@ -6329,6 +6407,10 @@ std/iter.cn:165:19 [module_path] usize
 std/iter.cn:165:19 [module_path] usize
 std/iter.cn:165:19 [module_path] usize
 std/iter.cn:165:19 [module_path] usize
+std/iter.cn:165:19 [module_path] usize
+std/iter.cn:165:19 [module_path] usize
+std/iter.cn:165:19 [binary] usize
+std/iter.cn:165:19 [binary] usize
 std/iter.cn:165:19 [binary] usize
 std/iter.cn:165:19 [binary] usize
 std/iter.cn:165:19 [binary] usize
@@ -6337,12 +6419,18 @@ std/iter.cn:165:29 [literal] usize
 std/iter.cn:165:29 [literal] usize
 std/iter.cn:165:29 [literal] usize
 std/iter.cn:165:29 [literal] usize
+std/iter.cn:165:29 [literal] usize
+std/iter.cn:165:29 [literal] usize
+std/iter.cn:166:16 [call] option[(int64, int32)]
 std/iter.cn:166:16 [call] option[T]
 std/iter.cn:166:16 [call] option[int32]
+std/iter.cn:166:16 [call] option[int64]
 std/iter.cn:166:16 [call] option[test_case]
 std/iter.cn:166:16 [call] option[test_suite]
+std/iter.cn:166:22 [ident] (int64, int32)
 std/iter.cn:166:22 [ident] _
 std/iter.cn:166:22 [ident] int32
+std/iter.cn:166:22 [ident] int64
 std/iter.cn:166:22 [ident] test_case
 std/iter.cn:166:22 [ident] test_suite
 std/iter.cn:168:19 [binding_pat] list_into_iter[T]
@@ -6565,6 +6653,7 @@ std/limits.cn:94:16 [call] usize
 std/limits.cn:94:16 [binary] usize
 std/limits.cn:94:28 [literal] usize
 std/limits.cn:95:12 [call] usize
+std/list.cn:39:30 [named_type] list[(int64, int32)]
 std/list.cn:39:30 [named_type] list[T]
 std/list.cn:39:30 [named_type] list[int32]
 std/list.cn:39:30 [named_type] list[int64]
@@ -6577,6 +6666,8 @@ std/list.cn:40:16 [struct_literal] list[_]
 std/list.cn:40:16 [struct_literal] list[_]
 std/list.cn:40:16 [struct_literal] list[_]
 std/list.cn:40:16 [struct_literal] list[_]
+std/list.cn:40:16 [struct_literal] list[_]
+std/list.cn:40:31 [literal] usize
 std/list.cn:40:31 [literal] usize
 std/list.cn:40:31 [literal] usize
 std/list.cn:40:31 [literal] usize
@@ -6589,23 +6680,28 @@ std/list.cn:40:39 [literal] usize
 std/list.cn:40:39 [literal] usize
 std/list.cn:40:39 [literal] usize
 std/list.cn:40:39 [literal] usize
+std/list.cn:40:39 [literal] usize
 std/list.cn:40:48 [ident] _
 std/list.cn:40:48 [ident] _
 std/list.cn:40:48 [ident] _
 std/list.cn:40:48 [ident] _
 std/list.cn:40:48 [ident] _
 std/list.cn:40:48 [ident] _
+std/list.cn:40:48 [ident] _
+std/list.cn:40:48 [index] fn(usize) -> *mut (int64, int32)
 std/list.cn:40:48 [index] fn(usize) -> *mut int32
 std/list.cn:40:48 [index] fn(usize) -> *mut int64
 std/list.cn:40:48 [index] fn(usize) -> *mut str
 std/list.cn:40:48 [index] fn(usize) -> *mut test_suite
 std/list.cn:40:48 [index] fn(usize) -> *mut uint32
+std/list.cn:40:48 [call] *mut (int64, int32)
 std/list.cn:40:48 [call] *mut T
 std/list.cn:40:48 [call] *mut int32
 std/list.cn:40:48 [call] *mut int64
 std/list.cn:40:48 [call] *mut str
 std/list.cn:40:48 [call] *mut test_suite
 std/list.cn:40:48 [call] *mut uint32
+std/list.cn:40:57 [literal] usize
 std/list.cn:40:57 [literal] usize
 std/list.cn:40:57 [literal] usize
 std/list.cn:40:57 [literal] usize
@@ -6708,6 +6804,7 @@ std/list.cn:85:27 [index] T
 std/list.cn:85:27 [index] int32
 std/list.cn:85:37 [ident] usize
 std/list.cn:85:37 [ident] usize
+std/list.cn:90:29 [binding_pat] list[(int64, int32)]
 std/list.cn:90:29 [binding_pat] list[T]
 std/list.cn:90:29 [binding_pat] list[byte]
 std/list.cn:90:29 [binding_pat] list[int32]
@@ -6722,6 +6819,8 @@ std/list.cn:90:39 [binding_pat] usize
 std/list.cn:90:39 [binding_pat] usize
 std/list.cn:90:39 [binding_pat] usize
 std/list.cn:90:39 [binding_pat] usize
+std/list.cn:90:39 [binding_pat] usize
+std/list.cn:90:52 [named_type] unit
 std/list.cn:90:52 [named_type] unit
 std/list.cn:90:52 [named_type] unit
 std/list.cn:90:52 [named_type] unit
@@ -6736,6 +6835,8 @@ std/list.cn:91:12 [ident] usize
 std/list.cn:91:12 [ident] usize
 std/list.cn:91:12 [ident] usize
 std/list.cn:91:12 [ident] usize
+std/list.cn:91:12 [ident] usize
+std/list.cn:91:12 [binary] bool
 std/list.cn:91:12 [binary] bool
 std/list.cn:91:12 [binary] bool
 std/list.cn:91:12 [binary] bool
@@ -6750,6 +6851,8 @@ std/list.cn:91:17 [module_path] usize
 std/list.cn:91:17 [module_path] usize
 std/list.cn:91:17 [module_path] usize
 std/list.cn:91:17 [module_path] usize
+std/list.cn:91:17 [module_path] usize
+std/list.cn:93:9 [module_path] *mut (int64, int32)
 std/list.cn:93:9 [module_path] *mut T
 std/list.cn:93:9 [module_path] *mut byte
 std/list.cn:93:9 [module_path] *mut int32
@@ -6757,6 +6860,7 @@ std/list.cn:93:9 [module_path] *mut int64
 std/list.cn:93:9 [module_path] *mut str
 std/list.cn:93:9 [module_path] *mut test_suite
 std/list.cn:93:9 [module_path] *mut uint32
+std/list.cn:93:21 [ident] fn(*mut (int64, int32), usize, usize) -> *mut (int64, int32)
 std/list.cn:93:21 [ident] fn(*mut T, usize, usize) -> *mut T
 std/list.cn:93:21 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/list.cn:93:21 [ident] fn(*mut int32, usize, usize) -> *mut int32
@@ -6764,6 +6868,7 @@ std/list.cn:93:21 [ident] fn(*mut int64, usize, usize) -> *mut int64
 std/list.cn:93:21 [ident] fn(*mut str, usize, usize) -> *mut str
 std/list.cn:93:21 [ident] fn(*mut test_suite, usize, usize) -> *mut test_suite
 std/list.cn:93:21 [ident] fn(*mut uint32, usize, usize) -> *mut uint32
+std/list.cn:93:21 [call] *mut (int64, int32)
 std/list.cn:93:21 [call] *mut T
 std/list.cn:93:21 [call] *mut byte
 std/list.cn:93:21 [call] *mut int32
@@ -6771,6 +6876,7 @@ std/list.cn:93:21 [call] *mut int64
 std/list.cn:93:21 [call] *mut str
 std/list.cn:93:21 [call] *mut test_suite
 std/list.cn:93:21 [call] *mut uint32
+std/list.cn:93:28 [module_path] *mut (int64, int32)
 std/list.cn:93:28 [module_path] *mut T
 std/list.cn:93:28 [module_path] *mut byte
 std/list.cn:93:28 [module_path] *mut int32
@@ -6785,6 +6891,8 @@ std/list.cn:93:39 [module_path] usize
 std/list.cn:93:39 [module_path] usize
 std/list.cn:93:39 [module_path] usize
 std/list.cn:93:39 [module_path] usize
+std/list.cn:93:39 [module_path] usize
+std/list.cn:93:49 [ident] usize
 std/list.cn:93:49 [ident] usize
 std/list.cn:93:49 [ident] usize
 std/list.cn:93:49 [ident] usize
@@ -6799,6 +6907,7 @@ std/list.cn:94:9 [module_path] usize
 std/list.cn:94:9 [module_path] usize
 std/list.cn:94:9 [module_path] usize
 std/list.cn:94:9 [module_path] usize
+std/list.cn:94:9 [module_path] usize
 std/list.cn:94:20 [ident] usize
 std/list.cn:94:20 [ident] usize
 std/list.cn:94:20 [ident] usize
@@ -6806,6 +6915,8 @@ std/list.cn:94:20 [ident] usize
 std/list.cn:94:20 [ident] usize
 std/list.cn:94:20 [ident] usize
 std/list.cn:94:20 [ident] usize
+std/list.cn:94:20 [ident] usize
+std/list.cn:101:26 [binding_pat] list[(int64, int32)]
 std/list.cn:101:26 [binding_pat] list[T]
 std/list.cn:101:26 [binding_pat] list[byte]
 std/list.cn:101:26 [binding_pat] list[int32]
@@ -6813,6 +6924,7 @@ std/list.cn:101:26 [binding_pat] list[int64]
 std/list.cn:101:26 [binding_pat] list[str]
 std/list.cn:101:26 [binding_pat] list[test_suite]
 std/list.cn:101:26 [binding_pat] list[uint32]
+std/list.cn:101:36 [binding_pat] (int64, int32)
 std/list.cn:101:36 [binding_pat] T
 std/list.cn:101:36 [binding_pat] byte
 std/list.cn:101:36 [binding_pat] int32
@@ -6827,6 +6939,8 @@ std/list.cn:101:49 [named_type] unit
 std/list.cn:101:49 [named_type] unit
 std/list.cn:101:49 [named_type] unit
 std/list.cn:101:49 [named_type] unit
+std/list.cn:101:49 [named_type] unit
+std/list.cn:102:12 [module_path] usize
 std/list.cn:102:12 [module_path] usize
 std/list.cn:102:12 [module_path] usize
 std/list.cn:102:12 [module_path] usize
@@ -6841,6 +6955,8 @@ std/list.cn:102:12 [binary] bool
 std/list.cn:102:12 [binary] bool
 std/list.cn:102:12 [binary] bool
 std/list.cn:102:12 [binary] bool
+std/list.cn:102:12 [binary] bool
+std/list.cn:102:24 [module_path] usize
 std/list.cn:102:24 [module_path] usize
 std/list.cn:102:24 [module_path] usize
 std/list.cn:102:24 [module_path] usize
@@ -6855,6 +6971,8 @@ std/list.cn:103:13 [var_stmt] usize
 std/list.cn:103:13 [var_stmt] usize
 std/list.cn:103:13 [var_stmt] usize
 std/list.cn:103:13 [var_stmt] usize
+std/list.cn:103:13 [var_stmt] usize
+std/list.cn:103:25 [module_path] usize
 std/list.cn:103:25 [module_path] usize
 std/list.cn:103:25 [module_path] usize
 std/list.cn:103:25 [module_path] usize
@@ -6869,6 +6987,8 @@ std/list.cn:103:25 [binary] usize
 std/list.cn:103:25 [binary] usize
 std/list.cn:103:25 [binary] usize
 std/list.cn:103:25 [binary] usize
+std/list.cn:103:25 [binary] usize
+std/list.cn:103:36 [literal] usize
 std/list.cn:103:36 [literal] usize
 std/list.cn:103:36 [literal] usize
 std/list.cn:103:36 [literal] usize
@@ -6883,6 +7003,8 @@ std/list.cn:104:16 [ident] usize
 std/list.cn:104:16 [ident] usize
 std/list.cn:104:16 [ident] usize
 std/list.cn:104:16 [ident] usize
+std/list.cn:104:16 [ident] usize
+std/list.cn:104:16 [binary] bool
 std/list.cn:104:16 [binary] bool
 std/list.cn:104:16 [binary] bool
 std/list.cn:104:16 [binary] bool
@@ -6897,6 +7019,8 @@ std/list.cn:104:25 [literal] usize
 std/list.cn:104:25 [literal] usize
 std/list.cn:104:25 [literal] usize
 std/list.cn:104:25 [literal] usize
+std/list.cn:104:25 [literal] usize
+std/list.cn:105:17 [ident] usize
 std/list.cn:105:17 [ident] usize
 std/list.cn:105:17 [ident] usize
 std/list.cn:105:17 [ident] usize
@@ -6911,6 +7035,8 @@ std/list.cn:105:25 [literal] usize
 std/list.cn:105:25 [literal] usize
 std/list.cn:105:25 [literal] usize
 std/list.cn:105:25 [literal] usize
+std/list.cn:105:25 [literal] usize
+std/list.cn:106:13 [ident] list[(int64, int32)]
 std/list.cn:106:13 [ident] list[T]
 std/list.cn:106:13 [ident] list[byte]
 std/list.cn:106:13 [ident] list[int32]
@@ -6925,6 +7051,8 @@ std/list.cn:106:13 [field] fn(_, usize) -> unit
 std/list.cn:106:13 [field] fn(_, usize) -> unit
 std/list.cn:106:13 [field] fn(_, usize) -> unit
 std/list.cn:106:13 [field] fn(_, usize) -> unit
+std/list.cn:106:13 [field] fn(_, usize) -> unit
+std/list.cn:106:13 [call] unit
 std/list.cn:106:13 [call] unit
 std/list.cn:106:13 [call] unit
 std/list.cn:106:13 [call] unit
@@ -6939,6 +7067,8 @@ std/list.cn:106:26 [ident] usize
 std/list.cn:106:26 [ident] usize
 std/list.cn:106:26 [ident] usize
 std/list.cn:106:26 [ident] usize
+std/list.cn:106:26 [ident] usize
+std/list.cn:107:9 [ident] list[(int64, int32)]
 std/list.cn:107:9 [ident] list[T]
 std/list.cn:107:9 [ident] list[byte]
 std/list.cn:107:9 [ident] list[int32]
@@ -6946,6 +7076,7 @@ std/list.cn:107:9 [ident] list[int64]
 std/list.cn:107:9 [ident] list[str]
 std/list.cn:107:9 [ident] list[test_suite]
 std/list.cn:107:9 [ident] list[uint32]
+std/list.cn:107:9 [field] *mut (int64, int32)
 std/list.cn:107:9 [field] *mut T
 std/list.cn:107:9 [field] *mut byte
 std/list.cn:107:9 [field] *mut int32
@@ -6953,6 +7084,7 @@ std/list.cn:107:9 [field] *mut int64
 std/list.cn:107:9 [field] *mut str
 std/list.cn:107:9 [field] *mut test_suite
 std/list.cn:107:9 [field] *mut uint32
+std/list.cn:107:9 [index] (int64, int32)
 std/list.cn:107:9 [index] T
 std/list.cn:107:9 [index] byte
 std/list.cn:107:9 [index] int32
@@ -6967,6 +7099,8 @@ std/list.cn:107:19 [module_path] usize
 std/list.cn:107:19 [module_path] usize
 std/list.cn:107:19 [module_path] usize
 std/list.cn:107:19 [module_path] usize
+std/list.cn:107:19 [module_path] usize
+std/list.cn:107:31 [ident] (int64, int32)
 std/list.cn:107:31 [ident] T
 std/list.cn:107:31 [ident] byte
 std/list.cn:107:31 [ident] int32
@@ -6981,6 +7115,8 @@ std/list.cn:108:9 [module_path] usize
 std/list.cn:108:9 [module_path] usize
 std/list.cn:108:9 [module_path] usize
 std/list.cn:108:9 [module_path] usize
+std/list.cn:108:9 [module_path] usize
+std/list.cn:108:20 [module_path] usize
 std/list.cn:108:20 [module_path] usize
 std/list.cn:108:20 [module_path] usize
 std/list.cn:108:20 [module_path] usize
@@ -6995,6 +7131,8 @@ std/list.cn:108:20 [binary] usize
 std/list.cn:108:20 [binary] usize
 std/list.cn:108:20 [binary] usize
 std/list.cn:108:20 [binary] usize
+std/list.cn:108:20 [binary] usize
+std/list.cn:108:31 [literal] usize
 std/list.cn:108:31 [literal] usize
 std/list.cn:108:31 [literal] usize
 std/list.cn:108:31 [literal] usize
@@ -7079,6 +7217,7 @@ std/list.cn:177:16 [ident] _
 std/list.cn:177:16 [call] slice_mut[T]
 std/list.cn:177:41 [module_path] *mut T
 std/list.cn:177:52 [module_path] usize
+std/list.cn:186:22 [binding_pat] list[(int64, int32)]
 std/list.cn:186:22 [binding_pat] list[(usize, usize)]
 std/list.cn:186:22 [binding_pat] list[T]
 std/list.cn:186:22 [binding_pat] list[byte]
@@ -7099,6 +7238,8 @@ std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
+std/list.cn:186:35 [named_type] unit
+std/list.cn:187:9 [ident] fn(*mut (int64, int32), usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut (usize, usize), usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut T, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut byte, usize) -> unit
@@ -7119,6 +7260,8 @@ std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
+std/list.cn:187:9 [call] unit
+std/list.cn:187:18 [module_path] *mut (int64, int32)
 std/list.cn:187:18 [module_path] *mut (usize, usize)
 std/list.cn:187:18 [module_path] *mut T
 std/list.cn:187:18 [module_path] *mut byte
@@ -7139,6 +7282,8 @@ std/list.cn:187:29 [module_path] usize
 std/list.cn:187:29 [module_path] usize
 std/list.cn:187:29 [module_path] usize
 std/list.cn:187:29 [module_path] usize
+std/list.cn:187:29 [module_path] usize
+std/list.cn:193:20 [binding_pat] list[(int64, int32)]
 std/list.cn:193:20 [binding_pat] list[T]
 std/list.cn:193:20 [binding_pat] list[int32]
 std/list.cn:193:20 [binding_pat] list[int64]
@@ -7151,6 +7296,8 @@ std/list.cn:193:26 [binding_pat] usize
 std/list.cn:193:26 [binding_pat] usize
 std/list.cn:193:26 [binding_pat] usize
 std/list.cn:193:26 [binding_pat] usize
+std/list.cn:193:26 [binding_pat] usize
+std/list.cn:193:39 [named_type] (int64, int32)
 std/list.cn:193:39 [named_type] T
 std/list.cn:193:39 [named_type] int32
 std/list.cn:193:39 [named_type] int64
@@ -7163,6 +7310,8 @@ std/list.cn:194:12 [ident] usize
 std/list.cn:194:12 [ident] usize
 std/list.cn:194:12 [ident] usize
 std/list.cn:194:12 [ident] usize
+std/list.cn:194:12 [ident] usize
+std/list.cn:194:12 [binary] bool
 std/list.cn:194:12 [binary] bool
 std/list.cn:194:12 [binary] bool
 std/list.cn:194:12 [binary] bool
@@ -7175,6 +7324,8 @@ std/list.cn:194:17 [module_path] usize
 std/list.cn:194:17 [module_path] usize
 std/list.cn:194:17 [module_path] usize
 std/list.cn:194:17 [module_path] usize
+std/list.cn:194:17 [module_path] usize
+std/list.cn:195:13 [ident] fn(str) -> never
 std/list.cn:195:13 [ident] fn(str) -> never
 std/list.cn:195:13 [ident] fn(str) -> never
 std/list.cn:195:13 [ident] fn(str) -> never
@@ -7187,30 +7338,36 @@ std/list.cn:195:13 [call] never
 std/list.cn:195:13 [call] never
 std/list.cn:195:13 [call] never
 std/list.cn:195:13 [call] never
+std/list.cn:195:13 [call] never
 std/list.cn:195:19 [literal] str
 std/list.cn:195:19 [literal] str
 std/list.cn:195:19 [literal] str
 std/list.cn:195:19 [literal] str
 std/list.cn:195:19 [literal] str
 std/list.cn:195:19 [literal] str
+std/list.cn:195:19 [literal] str
+std/list.cn:196:16 [ident] list[(int64, int32)]
 std/list.cn:196:16 [ident] list[T]
 std/list.cn:196:16 [ident] list[int32]
 std/list.cn:196:16 [ident] list[int64]
 std/list.cn:196:16 [ident] list[test_case]
 std/list.cn:196:16 [ident] list[test_suite]
 std/list.cn:196:16 [ident] list[uint32]
+std/list.cn:196:16 [field] *mut (int64, int32)
 std/list.cn:196:16 [field] *mut T
 std/list.cn:196:16 [field] *mut int32
 std/list.cn:196:16 [field] *mut int64
 std/list.cn:196:16 [field] *mut test_case
 std/list.cn:196:16 [field] *mut test_suite
 std/list.cn:196:16 [field] *mut uint32
+std/list.cn:196:16 [index] (int64, int32)
 std/list.cn:196:16 [index] T
 std/list.cn:196:16 [index] int32
 std/list.cn:196:16 [index] int64
 std/list.cn:196:16 [index] test_case
 std/list.cn:196:16 [index] test_suite
 std/list.cn:196:16 [index] uint32
+std/list.cn:196:26 [ident] usize
 std/list.cn:196:26 [ident] usize
 std/list.cn:196:26 [ident] usize
 std/list.cn:196:26 [ident] usize
@@ -7367,18 +7524,26 @@ std/list.cn:246:19 [ident] usize
 std/list.cn:246:19 [ident] usize
 std/list.cn:246:24 [ident] T
 std/list.cn:246:24 [ident] int32
+std/list.cn:257:19 [binding_pat] list[(int64, int32)]
 std/list.cn:257:19 [binding_pat] list[T]
 std/list.cn:257:19 [binding_pat] list[int32]
+std/list.cn:257:19 [binding_pat] list[int64]
 std/list.cn:257:19 [binding_pat] list[test_case]
 std/list.cn:257:19 [binding_pat] list[test_suite]
+std/list.cn:257:28 [named_type] list_into_iter[(int64, int32)]
 std/list.cn:257:28 [named_type] list_into_iter[T]
 std/list.cn:257:28 [named_type] list_into_iter[int32]
+std/list.cn:257:28 [named_type] list_into_iter[int64]
 std/list.cn:257:28 [named_type] list_into_iter[test_case]
 std/list.cn:257:28 [named_type] list_into_iter[test_suite]
 std/list.cn:258:13 [binding_pat] usize
 std/list.cn:258:13 [binding_pat] usize
 std/list.cn:258:13 [binding_pat] usize
 std/list.cn:258:13 [binding_pat] usize
+std/list.cn:258:13 [binding_pat] usize
+std/list.cn:258:13 [binding_pat] usize
+std/list.cn:258:17 [module_path] usize
+std/list.cn:258:17 [module_path] usize
 std/list.cn:258:17 [module_path] usize
 std/list.cn:258:17 [module_path] usize
 std/list.cn:258:17 [module_path] usize
@@ -7387,18 +7552,27 @@ std/list.cn:259:16 [struct_literal] list_into_iter[T]
 std/list.cn:259:16 [struct_literal] list_into_iter[_]
 std/list.cn:259:16 [struct_literal] list_into_iter[_]
 std/list.cn:259:16 [struct_literal] list_into_iter[_]
+std/list.cn:259:16 [struct_literal] list_into_iter[_]
+std/list.cn:259:16 [struct_literal] list_into_iter[_]
+std/list.cn:259:41 [ident] list[(int64, int32)]
 std/list.cn:259:41 [ident] list[T]
 std/list.cn:259:41 [ident] list[int32]
+std/list.cn:259:41 [ident] list[int64]
 std/list.cn:259:41 [ident] list[test_case]
 std/list.cn:259:41 [ident] list[test_suite]
 std/list.cn:259:51 [literal] usize
 std/list.cn:259:51 [literal] usize
 std/list.cn:259:51 [literal] usize
 std/list.cn:259:51 [literal] usize
+std/list.cn:259:51 [literal] usize
+std/list.cn:259:51 [literal] usize
 std/list.cn:259:59 [ident] usize
 std/list.cn:259:59 [ident] usize
 std/list.cn:259:59 [ident] usize
 std/list.cn:259:59 [ident] usize
+std/list.cn:259:59 [ident] usize
+std/list.cn:259:59 [ident] usize
+std/list.cn:266:45 [binding_pat] array[(int64, int32), 1]
 std/list.cn:266:45 [binding_pat] array[T, n]
 std/list.cn:266:45 [binding_pat] array[int32, 0]
 std/list.cn:266:45 [binding_pat] array[int32, 3]
@@ -7409,6 +7583,7 @@ std/list.cn:266:45 [binding_pat] array[int64, 2]
 std/list.cn:266:45 [binding_pat] array[str, 0]
 std/list.cn:266:45 [binding_pat] array[test_suite, 1]
 std/list.cn:266:45 [binding_pat] array[uint32, 0]
+std/list.cn:266:68 [named_type] list[(int64, int32)]
 std/list.cn:266:68 [named_type] list[T]
 std/list.cn:266:68 [named_type] list[int32]
 std/list.cn:266:68 [named_type] list[int32]
@@ -7419,6 +7594,7 @@ std/list.cn:266:68 [named_type] list[int64]
 std/list.cn:266:68 [named_type] list[str]
 std/list.cn:266:68 [named_type] list[test_suite]
 std/list.cn:266:68 [named_type] list[uint32]
+std/list.cn:267:9 [var_stmt] list[(int64, int32)]
 std/list.cn:267:9 [var_stmt] list[_]
 std/list.cn:267:9 [var_stmt] list[int32]
 std/list.cn:267:9 [var_stmt] list[int32]
@@ -7439,6 +7615,8 @@ std/list.cn:267:19 [field] fn() -> list[_]
 std/list.cn:267:19 [field] fn() -> list[_]
 std/list.cn:267:19 [field] fn() -> list[_]
 std/list.cn:267:19 [field] fn() -> list[_]
+std/list.cn:267:19 [field] fn() -> list[_]
+std/list.cn:267:19 [call] list[(int64, int32)]
 std/list.cn:267:19 [call] list[_]
 std/list.cn:267:19 [call] list[int32]
 std/list.cn:267:19 [call] list[int32]
@@ -7449,6 +7627,7 @@ std/list.cn:267:19 [call] list[int64]
 std/list.cn:267:19 [call] list[str]
 std/list.cn:267:19 [call] list[test_suite]
 std/list.cn:267:19 [call] list[uint32]
+std/list.cn:268:9 [ident] list[(int64, int32)]
 std/list.cn:268:9 [ident] list[_]
 std/list.cn:268:9 [ident] list[int32]
 std/list.cn:268:9 [ident] list[int32]
@@ -7469,6 +7648,7 @@ std/list.cn:268:9 [field] fn(_, usize) -> unit
 std/list.cn:268:9 [field] fn(_, usize) -> unit
 std/list.cn:268:9 [field] fn(_, usize) -> unit
 std/list.cn:268:9 [field] fn(_, usize) -> unit
+std/list.cn:268:9 [field] fn(_, usize) -> unit
 std/list.cn:268:9 [call] unit
 std/list.cn:268:9 [call] unit
 std/list.cn:268:9 [call] unit
@@ -7479,6 +7659,8 @@ std/list.cn:268:9 [call] unit
 std/list.cn:268:9 [call] unit
 std/list.cn:268:9 [call] unit
 std/list.cn:268:9 [call] unit
+std/list.cn:268:9 [call] unit
+std/list.cn:268:21 [ident] usize
 std/list.cn:268:21 [ident] usize
 std/list.cn:268:21 [ident] usize
 std/list.cn:268:21 [ident] usize
@@ -7498,6 +7680,8 @@ std/list.cn:268:21 [literal] usize
 std/list.cn:268:21 [literal] usize
 std/list.cn:268:21 [literal] usize
 std/list.cn:268:21 [literal] usize
+std/list.cn:268:21 [literal] usize
+std/list.cn:269:9 [var_stmt] usize
 std/list.cn:269:9 [var_stmt] usize
 std/list.cn:269:9 [var_stmt] usize
 std/list.cn:269:9 [var_stmt] usize
@@ -7518,6 +7702,8 @@ std/list.cn:269:24 [literal] usize
 std/list.cn:269:24 [literal] usize
 std/list.cn:269:24 [literal] usize
 std/list.cn:269:24 [literal] usize
+std/list.cn:269:24 [literal] usize
+std/list.cn:270:15 [ident] usize
 std/list.cn:270:15 [ident] usize
 std/list.cn:270:15 [ident] usize
 std/list.cn:270:15 [ident] usize
@@ -7538,6 +7724,8 @@ std/list.cn:270:15 [binary] bool
 std/list.cn:270:15 [binary] bool
 std/list.cn:270:15 [binary] bool
 std/list.cn:270:15 [binary] bool
+std/list.cn:270:15 [binary] bool
+std/list.cn:270:19 [ident] usize
 std/list.cn:270:19 [ident] usize
 std/list.cn:270:19 [ident] usize
 std/list.cn:270:19 [ident] usize
@@ -7557,6 +7745,8 @@ std/list.cn:270:19 [literal] usize
 std/list.cn:270:19 [literal] usize
 std/list.cn:270:19 [literal] usize
 std/list.cn:270:19 [literal] usize
+std/list.cn:270:19 [literal] usize
+std/list.cn:271:13 [ident] list[(int64, int32)]
 std/list.cn:271:13 [ident] list[_]
 std/list.cn:271:13 [ident] list[int32]
 std/list.cn:271:13 [ident] list[int32]
@@ -7577,6 +7767,7 @@ std/list.cn:271:13 [field] fn(_, _) -> unit
 std/list.cn:271:13 [field] fn(_, _) -> unit
 std/list.cn:271:13 [field] fn(_, _) -> unit
 std/list.cn:271:13 [field] fn(_, _) -> unit
+std/list.cn:271:13 [field] fn(_, _) -> unit
 std/list.cn:271:13 [call] unit
 std/list.cn:271:13 [call] unit
 std/list.cn:271:13 [call] unit
@@ -7587,6 +7778,8 @@ std/list.cn:271:13 [call] unit
 std/list.cn:271:13 [call] unit
 std/list.cn:271:13 [call] unit
 std/list.cn:271:13 [call] unit
+std/list.cn:271:13 [call] unit
+std/list.cn:271:22 [ident] array[(int64, int32), 1]
 std/list.cn:271:22 [ident] array[T, n]
 std/list.cn:271:22 [ident] array[int32, 0]
 std/list.cn:271:22 [ident] array[int32, 3]
@@ -7597,6 +7790,7 @@ std/list.cn:271:22 [ident] array[int64, 2]
 std/list.cn:271:22 [ident] array[str, 0]
 std/list.cn:271:22 [ident] array[test_suite, 1]
 std/list.cn:271:22 [ident] array[uint32, 0]
+std/list.cn:271:22 [index] (int64, int32)
 std/list.cn:271:22 [index] T
 std/list.cn:271:22 [index] int32
 std/list.cn:271:22 [index] int32
@@ -7617,6 +7811,8 @@ std/list.cn:271:28 [ident] usize
 std/list.cn:271:28 [ident] usize
 std/list.cn:271:28 [ident] usize
 std/list.cn:271:28 [ident] usize
+std/list.cn:271:28 [ident] usize
+std/list.cn:272:13 [ident] usize
 std/list.cn:272:13 [ident] usize
 std/list.cn:272:13 [ident] usize
 std/list.cn:272:13 [ident] usize
@@ -7637,6 +7833,8 @@ std/list.cn:272:17 [ident] usize
 std/list.cn:272:17 [ident] usize
 std/list.cn:272:17 [ident] usize
 std/list.cn:272:17 [ident] usize
+std/list.cn:272:17 [ident] usize
+std/list.cn:272:17 [binary] usize
 std/list.cn:272:17 [binary] usize
 std/list.cn:272:17 [binary] usize
 std/list.cn:272:17 [binary] usize
@@ -7657,6 +7855,8 @@ std/list.cn:272:21 [literal] usize
 std/list.cn:272:21 [literal] usize
 std/list.cn:272:21 [literal] usize
 std/list.cn:272:21 [literal] usize
+std/list.cn:272:21 [literal] usize
+std/list.cn:273:16 [ident] list[(int64, int32)]
 std/list.cn:273:16 [ident] list[_]
 std/list.cn:273:16 [ident] list[int32]
 std/list.cn:273:16 [ident] list[int32]
@@ -7673,6 +7873,8 @@ std/mem.cn:29:26 [binding_pat] usize
 std/mem.cn:29:26 [binding_pat] usize
 std/mem.cn:29:26 [binding_pat] usize
 std/mem.cn:29:26 [binding_pat] usize
+std/mem.cn:29:26 [binding_pat] usize
+std/mem.cn:29:43 [ptr_type] *mut (int64, int32)
 std/mem.cn:29:43 [ptr_type] *mut T
 std/mem.cn:29:43 [ptr_type] *mut int32
 std/mem.cn:29:43 [ptr_type] *mut int64
@@ -7685,6 +7887,8 @@ std/mem.cn:30:9 [binding_pat] *mut byte
 std/mem.cn:30:9 [binding_pat] *mut byte
 std/mem.cn:30:9 [binding_pat] *mut byte
 std/mem.cn:30:9 [binding_pat] *mut byte
+std/mem.cn:30:9 [binding_pat] *mut byte
+std/mem.cn:30:15 [ident] fn(usize) -> *mut byte
 std/mem.cn:30:15 [ident] fn(usize) -> *mut byte
 std/mem.cn:30:15 [ident] fn(usize) -> *mut byte
 std/mem.cn:30:15 [ident] fn(usize) -> *mut byte
@@ -7697,6 +7901,8 @@ std/mem.cn:30:15 [call] *mut byte
 std/mem.cn:30:15 [call] *mut byte
 std/mem.cn:30:15 [call] *mut byte
 std/mem.cn:30:15 [call] *mut byte
+std/mem.cn:30:15 [call] *mut byte
+std/mem.cn:30:24 [ident] usize
 std/mem.cn:30:24 [ident] usize
 std/mem.cn:30:24 [ident] usize
 std/mem.cn:30:24 [ident] usize
@@ -7709,6 +7915,8 @@ std/mem.cn:30:24 [binary] usize
 std/mem.cn:30:24 [binary] usize
 std/mem.cn:30:24 [binary] usize
 std/mem.cn:30:24 [binary] usize
+std/mem.cn:30:24 [binary] usize
+std/mem.cn:30:32 [ident] _
 std/mem.cn:30:32 [ident] _
 std/mem.cn:30:32 [ident] _
 std/mem.cn:30:32 [ident] _
@@ -7721,12 +7929,15 @@ std/mem.cn:30:32 [call] usize
 std/mem.cn:30:32 [call] usize
 std/mem.cn:30:32 [call] usize
 std/mem.cn:30:32 [call] usize
+std/mem.cn:30:32 [call] usize
 std/mem.cn:31:12 [ident] _
 std/mem.cn:31:12 [ident] _
 std/mem.cn:31:12 [ident] _
 std/mem.cn:31:12 [ident] _
 std/mem.cn:31:12 [ident] _
 std/mem.cn:31:12 [ident] _
+std/mem.cn:31:12 [ident] _
+std/mem.cn:31:12 [call] *mut (int64, int32)
 std/mem.cn:31:12 [call] *mut _
 std/mem.cn:31:12 [call] *mut int32
 std/mem.cn:31:12 [call] *mut int64
@@ -7739,6 +7950,8 @@ std/mem.cn:31:24 [ident] *mut byte
 std/mem.cn:31:24 [ident] *mut byte
 std/mem.cn:31:24 [ident] *mut byte
 std/mem.cn:31:24 [ident] *mut byte
+std/mem.cn:31:24 [ident] *mut byte
+std/mem.cn:41:27 [binding_pat] *mut (int64, int32)
 std/mem.cn:41:27 [binding_pat] *mut T
 std/mem.cn:41:27 [binding_pat] *mut byte
 std/mem.cn:41:27 [binding_pat] *mut int32
@@ -7753,6 +7966,7 @@ std/mem.cn:41:38 [binding_pat] usize
 std/mem.cn:41:38 [binding_pat] usize
 std/mem.cn:41:38 [binding_pat] usize
 std/mem.cn:41:38 [binding_pat] usize
+std/mem.cn:41:38 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
@@ -7760,6 +7974,8 @@ std/mem.cn:41:56 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
 std/mem.cn:41:56 [binding_pat] usize
+std/mem.cn:41:56 [binding_pat] usize
+std/mem.cn:41:77 [ptr_type] *mut (int64, int32)
 std/mem.cn:41:77 [ptr_type] *mut T
 std/mem.cn:41:77 [ptr_type] *mut byte
 std/mem.cn:41:77 [ptr_type] *mut int32
@@ -7774,6 +7990,8 @@ std/mem.cn:42:9 [binding_pat] *mut byte
 std/mem.cn:42:9 [binding_pat] *mut byte
 std/mem.cn:42:9 [binding_pat] *mut byte
 std/mem.cn:42:9 [binding_pat] *mut byte
+std/mem.cn:42:9 [binding_pat] *mut byte
+std/mem.cn:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/mem.cn:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/mem.cn:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
 std/mem.cn:42:15 [ident] fn(*mut byte, usize, usize) -> *mut byte
@@ -7788,6 +8006,8 @@ std/mem.cn:42:15 [call] *mut byte
 std/mem.cn:42:15 [call] *mut byte
 std/mem.cn:42:15 [call] *mut byte
 std/mem.cn:42:15 [call] *mut byte
+std/mem.cn:42:15 [call] *mut byte
+std/mem.cn:42:26 [ident] _
 std/mem.cn:42:26 [ident] _
 std/mem.cn:42:26 [ident] _
 std/mem.cn:42:26 [ident] _
@@ -7802,6 +8022,8 @@ std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
+std/mem.cn:42:26 [call] *mut byte
+std/mem.cn:42:41 [ident] *mut (int64, int32)
 std/mem.cn:42:41 [ident] *mut T
 std/mem.cn:42:41 [ident] *mut byte
 std/mem.cn:42:41 [ident] *mut int32
@@ -7816,6 +8038,8 @@ std/mem.cn:43:26 [ident] usize
 std/mem.cn:43:26 [ident] usize
 std/mem.cn:43:26 [ident] usize
 std/mem.cn:43:26 [ident] usize
+std/mem.cn:43:26 [ident] usize
+std/mem.cn:43:26 [binary] usize
 std/mem.cn:43:26 [binary] usize
 std/mem.cn:43:26 [binary] usize
 std/mem.cn:43:26 [binary] usize
@@ -7830,6 +8054,8 @@ std/mem.cn:43:38 [ident] _
 std/mem.cn:43:38 [ident] _
 std/mem.cn:43:38 [ident] _
 std/mem.cn:43:38 [ident] _
+std/mem.cn:43:38 [ident] _
+std/mem.cn:43:38 [call] usize
 std/mem.cn:43:38 [call] usize
 std/mem.cn:43:38 [call] usize
 std/mem.cn:43:38 [call] usize
@@ -7844,6 +8070,8 @@ std/mem.cn:44:26 [ident] usize
 std/mem.cn:44:26 [ident] usize
 std/mem.cn:44:26 [ident] usize
 std/mem.cn:44:26 [ident] usize
+std/mem.cn:44:26 [ident] usize
+std/mem.cn:44:26 [binary] usize
 std/mem.cn:44:26 [binary] usize
 std/mem.cn:44:26 [binary] usize
 std/mem.cn:44:26 [binary] usize
@@ -7858,6 +8086,8 @@ std/mem.cn:44:38 [ident] _
 std/mem.cn:44:38 [ident] _
 std/mem.cn:44:38 [ident] _
 std/mem.cn:44:38 [ident] _
+std/mem.cn:44:38 [ident] _
+std/mem.cn:44:38 [call] usize
 std/mem.cn:44:38 [call] usize
 std/mem.cn:44:38 [call] usize
 std/mem.cn:44:38 [call] usize
@@ -7872,6 +8102,8 @@ std/mem.cn:45:12 [ident] _
 std/mem.cn:45:12 [ident] _
 std/mem.cn:45:12 [ident] _
 std/mem.cn:45:12 [ident] _
+std/mem.cn:45:12 [ident] _
+std/mem.cn:45:12 [call] *mut (int64, int32)
 std/mem.cn:45:12 [call] *mut _
 std/mem.cn:45:12 [call] *mut byte
 std/mem.cn:45:12 [call] *mut int32
@@ -7886,6 +8118,8 @@ std/mem.cn:45:24 [ident] *mut byte
 std/mem.cn:45:24 [ident] *mut byte
 std/mem.cn:45:24 [ident] *mut byte
 std/mem.cn:45:24 [ident] *mut byte
+std/mem.cn:45:24 [ident] *mut byte
+std/mem.cn:54:25 [binding_pat] *mut (int64, int32)
 std/mem.cn:54:25 [binding_pat] *mut (usize, usize)
 std/mem.cn:54:25 [binding_pat] *mut T
 std/mem.cn:54:25 [binding_pat] *mut byte
@@ -7906,6 +8140,8 @@ std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
+std/mem.cn:54:36 [binding_pat] usize
+std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
@@ -7926,6 +8162,8 @@ std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
@@ -7946,6 +8184,7 @@ std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
+std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
@@ -7956,6 +8195,8 @@ std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
+std/mem.cn:55:13 [call] *mut byte
+std/mem.cn:55:28 [ident] *mut (int64, int32)
 std/mem.cn:55:28 [ident] *mut (usize, usize)
 std/mem.cn:55:28 [ident] *mut T
 std/mem.cn:55:28 [ident] *mut byte
@@ -7976,6 +8217,8 @@ std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
+std/mem.cn:55:32 [ident] usize
+std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
@@ -7996,6 +8239,8 @@ std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
+std/mem.cn:55:40 [ident] _
+std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
@@ -27118,7 +27363,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (156)
+## struct_literal_field_types (165)
 ?:750 data array[T, m]
 ?:882 current int32
 ?:894 limit int32
@@ -27131,12 +27376,15 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1720 len usize
 ?:1720 len usize
 ?:1720 len usize
+?:1720 len usize
 ?:1728 cap usize
 ?:1728 cap usize
 ?:1728 cap usize
 ?:1728 cap usize
 ?:1728 cap usize
 ?:1728 cap usize
+?:1728 cap usize
+?:1736 data *mut (int64, int32)
 ?:1736 data *mut T
 ?:1736 data *mut int32
 ?:1736 data *mut int64
@@ -27225,14 +27473,20 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:5319 at int32
 ?:5326 end int32
 ?:6073 value int64
+?:10877 src list[(int64, int32)]
 ?:10877 src list[T]
 ?:10877 src list[int32]
+?:10877 src list[int64]
 ?:10877 src list[test_case]
 ?:10877 src list[test_suite]
 ?:10888 at usize
 ?:10888 at usize
 ?:10888 at usize
 ?:10888 at usize
+?:10888 at usize
+?:10888 at usize
+?:10895 end usize
+?:10895 end usize
 ?:10895 end usize
 ?:10895 end usize
 ?:10895 end usize
@@ -27276,7 +27530,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:55974 inner I
 ?:55985 f fn(&T) -> T
 
-## call_argument_mappings (535)
+## call_argument_mappings (546)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -27594,6 +27848,7 @@ std/list.cn:40:48 [call] (count=arg)
 std/list.cn:40:48 [call] (count=arg)
 std/list.cn:40:48 [call] (count=arg)
 std/list.cn:40:48 [call] (count=arg)
+std/list.cn:40:48 [call] (count=arg)
 std/list.cn:74:13 [call] (message=arg)
 std/list.cn:74:13 [call] (message=arg)
 std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
@@ -27603,6 +27858,8 @@ std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
 std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
+std/list.cn:93:21 [call] (p=arg, old_count=arg, new_count=arg)
+std/list.cn:106:13 [call] (n=arg)
 std/list.cn:106:13 [call] (n=arg)
 std/list.cn:106:13 [call] (n=arg)
 std/list.cn:106:13 [call] (n=arg)
@@ -27622,6 +27879,8 @@ std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
+std/list.cn:187:9 [call] (p=arg, count=arg)
+std/list.cn:195:13 [call] (message=arg)
 std/list.cn:195:13 [call] (message=arg)
 std/list.cn:195:13 [call] (message=arg)
 std/list.cn:195:13 [call] (message=arg)
@@ -27646,6 +27905,7 @@ std/list.cn:267:19 [call] ()
 std/list.cn:267:19 [call] ()
 std/list.cn:267:19 [call] ()
 std/list.cn:267:19 [call] ()
+std/list.cn:267:19 [call] ()
 std/list.cn:268:9 [call] (n=arg)
 std/list.cn:268:9 [call] (n=arg)
 std/list.cn:268:9 [call] (n=arg)
@@ -27656,6 +27916,8 @@ std/list.cn:268:9 [call] (n=arg)
 std/list.cn:268:9 [call] (n=arg)
 std/list.cn:268:9 [call] (n=arg)
 std/list.cn:268:9 [call] (n=arg)
+std/list.cn:268:9 [call] (n=arg)
+std/list.cn:271:13 [call] (value=arg)
 std/list.cn:271:13 [call] (value=arg)
 std/list.cn:271:13 [call] (value=arg)
 std/list.cn:271:13 [call] (value=arg)
@@ -27672,6 +27934,7 @@ std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:30:15 [call] (bytes=arg)
+std/mem.cn:30:15 [call] (bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
@@ -27679,6 +27942,8 @@ std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
 std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
+std/mem.cn:42:15 [call] (p=arg, old_bytes=arg, new_bytes=arg)
+std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
@@ -27813,7 +28078,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (284)
+## resolved_callees (295)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -27973,6 +28238,7 @@ std/iter.cn:118:45 [call] std.list::list::len recv
 std/iter.cn:127:49 [call] std.list::list::len recv
 std/iter.cn:135:13 [call] std.list::list::len recv
 std/iter.cn:200:13 [call] std.list::list::push recv
+std/list.cn:40:48 [call] std.mem::alloc$_int64__int32_
 std/list.cn:40:48 [call] std.mem::alloc$int32
 std/list.cn:40:48 [call] std.mem::alloc$int64
 std/list.cn:40:48 [call] std.mem::alloc$str
@@ -27981,6 +28247,7 @@ std/list.cn:40:48 [call] std.mem::alloc$uint32
 std/list.cn:74:13 [call] std.panic::panic
 std/list.cn:74:13 [call] std.panic::panic
 std/list.cn:93:21 [call] std.mem::resize
+std/list.cn:93:21 [call] std.mem::resize$_int64__int32_
 std/list.cn:93:21 [call] std.mem::resize$byte
 std/list.cn:93:21 [call] std.mem::resize$int32
 std/list.cn:93:21 [call] std.mem::resize$int64
@@ -27988,6 +28255,7 @@ std/list.cn:93:21 [call] std.mem::resize$str
 std/list.cn:93:21 [call] std.mem::resize$test_suite
 std/list.cn:93:21 [call] std.mem::resize$uint32
 std/list.cn:106:13 [call] std.list::list::reserve recv
+std/list.cn:106:13 [call] std.list::list::reserve$list__int64__int32__ recv
 std/list.cn:106:13 [call] std.list::list::reserve$list_byte_ recv
 std/list.cn:106:13 [call] std.list::list::reserve$list_int32_ recv
 std/list.cn:106:13 [call] std.list::list::reserve$list_int64_ recv
@@ -27996,6 +28264,7 @@ std/list.cn:106:13 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.cn:106:13 [call] std.list::list::reserve$list_uint32_ recv
 std/list.cn:151:9 [call] std.mem::free
 std/list.cn:187:9 [call] std.mem::free
+std/list.cn:187:9 [call] std.mem::free$_int64__int32_
 std/list.cn:187:9 [call] std.mem::free$_usize__usize_
 std/list.cn:187:9 [call] std.mem::free$byte
 std/list.cn:187:9 [call] std.mem::free$int32
@@ -28011,6 +28280,7 @@ std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:195:13 [call] std.panic::panic
+std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:203:13 [call] std.panic::panic
 std/list.cn:212:13 [call] std.panic::panic
 std/list.cn:226:13 [call] std.panic::panic
@@ -28019,6 +28289,7 @@ std/list.cn:226:13 [call] std.panic::panic
 std/list.cn:236:13 [call] std.panic::panic
 std/list.cn:245:13 [call] std.panic::panic
 std/list.cn:245:13 [call] std.panic::panic
+std/list.cn:267:19 [call] std.list::list::new$list__int64__int32__
 std/list.cn:267:19 [call] std.list::list::new$list_int32_
 std/list.cn:267:19 [call] std.list::list::new$list_int32_
 std/list.cn:267:19 [call] std.list::list::new$list_int32_
@@ -28030,6 +28301,7 @@ std/list.cn:267:19 [call] std.list::list::new$list_test_suite_
 std/list.cn:267:19 [call] std.list::list::new$list_uint32_
 std/list.cn:267:19 [call] std.list::list[T]::new
 std/list.cn:268:9 [call] std.list::list::reserve recv
+std/list.cn:268:9 [call] std.list::list::reserve$list__int64__int32__ recv
 std/list.cn:268:9 [call] std.list::list::reserve$list_int32_ recv
 std/list.cn:268:9 [call] std.list::list::reserve$list_int32_ recv
 std/list.cn:268:9 [call] std.list::list::reserve$list_int32_ recv
@@ -28040,6 +28312,7 @@ std/list.cn:268:9 [call] std.list::list::reserve$list_str_ recv
 std/list.cn:268:9 [call] std.list::list::reserve$list_test_suite_ recv
 std/list.cn:268:9 [call] std.list::list::reserve$list_uint32_ recv
 std/list.cn:271:13 [call] std.list::list::push recv
+std/list.cn:271:13 [call] std.list::list::push$list__int64__int32__ recv
 std/list.cn:271:13 [call] std.list::list::push$list_int32_ recv
 std/list.cn:271:13 [call] std.list::list::push$list_int32_ recv
 std/list.cn:271:13 [call] std.list::list::push$list_int32_ recv
@@ -28055,6 +28328,7 @@ std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
+std/mem.cn:30:15 [call] std.intrinsics::rt_alloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
@@ -28062,6 +28336,8 @@ std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
 std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
+std/mem.cn:42:15 [call] std.intrinsics::rt_realloc
+std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
@@ -28193,7 +28469,7 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 ## ord_dispatch_result_types (1)
 089_elaboration_snapshot_gaps.cn:72:8 [binary] ordering
 
-## index_dispatches (59)
+## index_dispatches (62)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:42:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:58:19 [index] std.list::list::at$list_int32_$usize recv
@@ -28221,6 +28497,7 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 091_unannotated_accumulator_in_generic.cn:48:25 [index] std.list::list::at$list_int32_$usize recv
 091_unannotated_accumulator_in_generic.cn:53:31 [index] std.list::list::at$list_int64_$usize recv
 093_index_settles_its_receiver.cn:43:25 [index] std.list::list::at$list_int32_$usize recv
+108_shape_demand_leaves_elements_open.cn:26:20 [index] std.list::list::at$list_int64_$usize recv
 std/algo.cn:1747:37 [index] std.list::list::at recv
 std/algo.cn:1748:30 [index] std.list::list::at recv
 std/algo.cn:1753:21 [index] std.list::list::at recv
@@ -28242,7 +28519,9 @@ std/algo.cn:1958:32 [index] std.list::list::at recv
 std/iter.cn:142:21 [index] std.list::list::at recv
 std/iter.cn:153:25 [index] std.list::list::at recv
 std/iter.cn:164:17 [index] std.list::list::at recv
+std/iter.cn:164:17 [index] std.list::list::at$list__int64__int32__$usize recv
 std/iter.cn:164:17 [index] std.list::list::at$list_int32_$usize recv
+std/iter.cn:164:17 [index] std.list::list::at$list_int64_$usize recv
 std/iter.cn:164:17 [index] std.list::list::at$list_test_case_$usize recv
 std/iter.cn:164:17 [index] std.list::list::at$list_test_suite_$usize recv
 std/iter.cn:176:21 [index] std.list::list::at recv
@@ -28277,7 +28556,7 @@ std/iter.cn:176:21 [index] std.list::list::at_ref recv
 ## try_conversion_types (1)
 089_elaboration_snapshot_gaps.cn:52:13 [try] result[int32, app_error]
 
-## array_literal_conversions (31)
+## array_literal_conversions (34)
 003_collections_lambdas.cn:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 045_ufcs.cn:104:16 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 045_ufcs.cn:106:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -28293,6 +28572,9 @@ std/iter.cn:176:21 [index] std.list::list::at_ref recv
 091_unannotated_accumulator_in_generic.cn:39:30 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 091_unannotated_accumulator_in_generic.cn:40:29 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 093_index_settles_its_receiver.cn:33:14 [array] std.list::list::from_array$0$list_int32_ from array[int32, 0]
+108_shape_demand_leaves_elements_open.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+108_shape_demand_leaves_elements_open.cn:29:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+108_shape_demand_leaves_elements_open.cn:33:19 [array] std.list::list::from_array$1$list__int64__int32__ from array[(int64, int32), 1]
 std/algo.cn:1218:15 [array] std.list::list::from_array from array[T, 0]
 std/algo.cn:1219:14 [array] std.list::list::from_array from array[T, 0]
 std/algo.cn:1730:24 [array] std.list::list::from_array from array[T, 0]
@@ -28335,9 +28617,11 @@ std/test.cn:181:49 [ident] show spec=' ' value=int32
 
 ## type_param_reflections (0)
 
-## for_iterator_dispatches (11)
+## for_iterator_dispatches (13)
 ?:517 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:927 [for_stmt] next=counter::next elem=int32 owner=codegen_stress.user_iterator_for_loop
+?:1171 [for_stmt] next=::list_into_iter::next$list_into_iter_int64_ elem=int64 owner=std.iter adapter=::list::into_iter$list_int64_ -> list_into_iter[int64]
+?:1241 [for_stmt] next=::list_into_iter::next$list_into_iter__int64__int32__ elem=(int64, int32) owner=std.iter adapter=::list::into_iter$list__int64__int32__ -> list_into_iter[(int64, int32)]
 ?:2391 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:2940 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3122 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
@@ -28358,13 +28642,15 @@ std/test.cn:181:49 [ident] show spec=' ' value=int32
 ## runtime_fill_dispatches (1)
 089_elaboration_snapshot_gaps.cn:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
-## layout_queries (30)
+## layout_queries (34)
+std/mem.cn:30:32 [call] size of (int64, int32)
 std/mem.cn:30:32 [call] size of _
 std/mem.cn:30:32 [call] size of int32
 std/mem.cn:30:32 [call] size of int64
 std/mem.cn:30:32 [call] size of str
 std/mem.cn:30:32 [call] size of test_suite
 std/mem.cn:30:32 [call] size of uint32
+std/mem.cn:43:38 [call] size of (int64, int32)
 std/mem.cn:43:38 [call] size of _
 std/mem.cn:43:38 [call] size of byte
 std/mem.cn:43:38 [call] size of int32
@@ -28372,6 +28658,7 @@ std/mem.cn:43:38 [call] size of int64
 std/mem.cn:43:38 [call] size of str
 std/mem.cn:43:38 [call] size of test_suite
 std/mem.cn:43:38 [call] size of uint32
+std/mem.cn:44:38 [call] size of (int64, int32)
 std/mem.cn:44:38 [call] size of _
 std/mem.cn:44:38 [call] size of byte
 std/mem.cn:44:38 [call] size of int32
@@ -28379,6 +28666,7 @@ std/mem.cn:44:38 [call] size of int64
 std/mem.cn:44:38 [call] size of str
 std/mem.cn:44:38 [call] size of test_suite
 std/mem.cn:44:38 [call] size of uint32
+std/mem.cn:55:40 [call] size of (int64, int32)
 std/mem.cn:55:40 [call] size of (usize, usize)
 std/mem.cn:55:40 [call] size of _
 std/mem.cn:55:40 [call] size of byte
@@ -28390,7 +28678,8 @@ std/mem.cn:55:40 [call] size of test_suite
 std/mem.cn:55:40 [call] size of uint32
 std/mem.cn:55:40 [call] size of usize
 
-## ptr_casts (28)
+## ptr_casts (32)
+std/mem.cn:31:12 [call] *mut (int64, int32)
 std/mem.cn:31:12 [call] *mut int32
 std/mem.cn:31:12 [call] *mut int64
 std/mem.cn:31:12 [call] *mut str
@@ -28403,12 +28692,15 @@ std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
 std/mem.cn:42:26 [call] *mut byte
+std/mem.cn:42:26 [call] *mut byte
+std/mem.cn:45:12 [call] *mut (int64, int32)
 std/mem.cn:45:12 [call] *mut byte
 std/mem.cn:45:12 [call] *mut int32
 std/mem.cn:45:12 [call] *mut int64
 std/mem.cn:45:12 [call] *mut str
 std/mem.cn:45:12 [call] *mut test_suite
 std/mem.cn:45:12 [call] *mut uint32
+std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
@@ -28448,7 +28740,7 @@ std/list.cn:237:16 [call]
 074_range_index_general_stride.cn:50:31 [index] 
 074_range_index_general_stride.cn:50:40 [index] 
 
-## static_const_values (54)
+## static_const_values (56)
 033_const_generic_monomorphization.cn:18:13 [ident] 5
 033_const_generic_monomorphization.cn:23:13 [ident] 3
 033_const_generic_monomorphization.cn:23:13 [ident] 5
@@ -28462,6 +28754,7 @@ std/list.cn:268:21 [ident] 0
 std/list.cn:268:21 [ident] 0
 std/list.cn:268:21 [ident] 0
 std/list.cn:268:21 [ident] 1
+std/list.cn:268:21 [ident] 1
 std/list.cn:268:21 [ident] 2
 std/list.cn:268:21 [ident] 3
 std/list.cn:268:21 [ident] 4
@@ -28470,6 +28763,7 @@ std/list.cn:270:19 [ident] 0
 std/list.cn:270:19 [ident] 0
 std/list.cn:270:19 [ident] 0
 std/list.cn:270:19 [ident] 0
+std/list.cn:270:19 [ident] 1
 std/list.cn:270:19 [ident] 1
 std/list.cn:270:19 [ident] 2
 std/list.cn:270:19 [ident] 3
@@ -28574,8 +28868,9 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (54)
+## drop_plans (57)
 file_handle own=std.io::file_handle::drop fields=[]
+list[(int64, int32)] own=std.list::list::drop$list__int64__int32__ fields=[]
 list[(usize, usize)] own=std.list::list::drop$list__usize__usize__ fields=[]
 list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
@@ -28619,6 +28914,7 @@ list[test_suite] own=std.list::list::drop$list_test_suite_ fields=[]
 list[uint32] own=std.list::list::drop$list_uint32_ fields=[]
 list[usize] own=std.list::list::drop$list_usize_ fields=[]
 list_into_iter own=- fields=[src: list[_]]
+list_into_iter[(int64, int32)] own=- fields=[src: list[(int64, int32)]]
 list_into_iter[T] own=- fields=[src: list[T]]
 list_into_iter[T] own=- fields=[src: list[T]]
 list_into_iter[T] own=- fields=[src: list[T]]
@@ -28626,6 +28922,7 @@ list_into_iter[T] own=- fields=[src: list[T]]
 list_into_iter[T] own=- fields=[src: list[T]]
 list_into_iter[_] own=- fields=[src: list[_]]
 list_into_iter[int32] own=- fields=[src: list[int32]]
+list_into_iter[int64] own=- fields=[src: list[int64]]
 list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
@@ -28843,7 +29140,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (122)
+## const_generic_instances (135)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -28890,9 +29187,12 @@ main::apply$int32$int32
 std.algo::binary_search$uint32
 std.algo::lower_bound$uint32
 std.algo::partition_point$uint32
+std.iter::list_into_iter::next$list_into_iter__int64__int32__
 std.iter::list_into_iter::next$list_into_iter_int32_
+std.iter::list_into_iter::next$list_into_iter_int64_
 std.iter::list_into_iter::next$list_into_iter_test_case_
 std.iter::list_into_iter::next$list_into_iter_test_suite_
+std.list::list::at$list__int64__int32__$usize
 std.list::list::at$list_int32_$range_usize_
 std.list::list::at$list_int32_$usize
 std.list::list::at$list_int64_$usize
@@ -28901,6 +29201,7 @@ std.list::list::at$list_test_suite_$usize
 std.list::list::at$list_uint32_$range_usize_
 std.list::list::at$list_uint32_$usize
 std.list::list::cell$list_int32_
+std.list::list::drop$list__int64__int32__
 std.list::list::drop$list__usize__usize__
 std.list::list::drop$list_byte_
 std.list::list::drop$list_int32_
@@ -28914,29 +29215,35 @@ std.list::list::from_array$0$list_int32_
 std.list::list::from_array$0$list_int64_
 std.list::list::from_array$0$list_str_
 std.list::list::from_array$0$list_uint32_
+std.list::list::from_array$1$list__int64__int32__
 std.list::list::from_array$1$list_test_suite_
 std.list::list::from_array$2$list_int64_
 std.list::list::from_array$3$list_int32_
 std.list::list::from_array$4$list_int32_
 std.list::list::from_array$5$list_int32_
+std.list::list::into_iter$list__int64__int32__
 std.list::list::into_iter$list_int32_
+std.list::list::into_iter$list_int64_
 std.list::list::into_iter$list_test_case_
 std.list::list::into_iter$list_test_suite_
 std.list::list::len$list_int32_
 std.list::list::len$list_int64_
 std.list::list::len$list_uint32_
 std.list::list::mutable_cell$list_int32_
+std.list::list::new$list__int64__int32__
 std.list::list::new$list_int32_
 std.list::list::new$list_int64_
 std.list::list::new$list_str_
 std.list::list::new$list_test_suite_
 std.list::list::new$list_uint32_
+std.list::list::push$list__int64__int32__
 std.list::list::push$list_byte_
 std.list::list::push$list_int32_
 std.list::list::push$list_int64_
 std.list::list::push$list_str_
 std.list::list::push$list_test_suite_
 std.list::list::push$list_uint32_
+std.list::list::reserve$list__int64__int32__
 std.list::list::reserve$list_byte_
 std.list::list::reserve$list_int32_
 std.list::list::reserve$list_int64_
@@ -28944,11 +29251,13 @@ std.list::list::reserve$list_str_
 std.list::list::reserve$list_test_suite_
 std.list::list::reserve$list_uint32_
 std.list::list::set_at$list_int32_$usize
+std.mem::alloc$_int64__int32_
 std.mem::alloc$int32
 std.mem::alloc$int64
 std.mem::alloc$str
 std.mem::alloc$test_suite
 std.mem::alloc$uint32
+std.mem::free$_int64__int32_
 std.mem::free$_usize__usize_
 std.mem::free$byte
 std.mem::free$int32
@@ -28958,6 +29267,7 @@ std.mem::free$test_case
 std.mem::free$test_suite
 std.mem::free$uint32
 std.mem::free$usize
+std.mem::resize$_int64__int32_
 std.mem::resize$byte
 std.mem::resize$int32
 std.mem::resize$int64
@@ -28971,7 +29281,8 @@ stress.dependent_types::safe_get$int32$8
 
 ## synthesized_item_splices (0)
 
-## synthesized_decls (125)
+## synthesized_decls (138)
+alloc$_int64__int32_
 alloc$int32
 alloc$int64
 alloc$str
@@ -28999,6 +29310,7 @@ filled$4$int32
 filter$counter$int32
 filter_iter::next$filter_iter_counter__int32_
 first$4$int32
+free$_int64__int32_
 free$_usize__usize_
 free$byte
 free$int32
@@ -29018,6 +29330,7 @@ holder::pick$4$int32
 holder::scale$holder_int32_
 holder::scale$holder_int64_
 identity$int32
+list::at$list__int64__int32__$usize
 list::at$list_int32_$range_usize_
 list::at$list_int32_$usize
 list::at$list_int64_$usize
@@ -29026,6 +29339,7 @@ list::at$list_test_suite_$usize
 list::at$list_uint32_$range_usize_
 list::at$list_uint32_$usize
 list::cell$list_int32_
+list::drop$list__int64__int32__
 list::drop$list__usize__usize__
 list::drop$list_byte_
 list::drop$list_int32_
@@ -29039,29 +29353,35 @@ list::from_array$0$list_int32_
 list::from_array$0$list_int64_
 list::from_array$0$list_str_
 list::from_array$0$list_uint32_
+list::from_array$1$list__int64__int32__
 list::from_array$1$list_test_suite_
 list::from_array$2$list_int64_
 list::from_array$3$list_int32_
 list::from_array$4$list_int32_
 list::from_array$5$list_int32_
+list::into_iter$list__int64__int32__
 list::into_iter$list_int32_
+list::into_iter$list_int64_
 list::into_iter$list_test_case_
 list::into_iter$list_test_suite_
 list::len$list_int32_
 list::len$list_int64_
 list::len$list_uint32_
 list::mutable_cell$list_int32_
+list::new$list__int64__int32__
 list::new$list_int32_
 list::new$list_int64_
 list::new$list_str_
 list::new$list_test_suite_
 list::new$list_uint32_
+list::push$list__int64__int32__
 list::push$list_byte_
 list::push$list_int32_
 list::push$list_int64_
 list::push$list_str_
 list::push$list_test_suite_
 list::push$list_uint32_
+list::reserve$list__int64__int32__
 list::reserve$list_byte_
 list::reserve$list_int32_
 list::reserve$list_int64_
@@ -29070,7 +29390,9 @@ list::reserve$list_test_suite_
 list::reserve$list_uint32_
 list::set_at$list_int32_$usize
 list[int32]::from_iter$upto
+list_into_iter::next$list_into_iter__int64__int32__
 list_into_iter::next$list_into_iter_int32_
+list_into_iter::next$list_into_iter_int64_
 list_into_iter::next$list_into_iter_test_case_
 list_into_iter::next$list_into_iter_test_suite_
 lower_bound$uint32
@@ -29084,6 +29406,7 @@ option::pure$int32
 partition_point$uint32
 read_exact
 read_to_end
+resize$_int64__int32_
 resize$byte
 resize$int32
 resize$int64
@@ -29100,9 +29423,9 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 116
+synthesized_types 127
 synthesized_fragments 8
-synthesized_const_literals 54
+synthesized_const_literals 56
 elided_contracts 0
 
 ## fmt_runtime_types

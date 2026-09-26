@@ -1,0 +1,32 @@
+module codegen_stress.flowing_type_is_not_a_demand
+
+# expect: 42
+
+# Arithmetic and a lambda's expected type are places a literal's type only
+# flows through, so neither may spend its `int32` default
+# (spec/inference-rewrite.md phase 11, defect 2). Every literal is
+# `3000000000`, which only fits if the statement that types it was heard.
+#
+# `a + 2`: the operands are tied together and the result is their leaf; the
+# operator is chosen once it settles, and `let c: int64 = b` settles it.
+#
+# `apply(3000000000, n => n + big)`: the lambda is checked against
+# `fn(T) -> T` with `T` answered by the literal's leaf, so the body's
+# `n + int64` is what types the literal. Defaulting `T` first made the
+# literal an `int32` that cannot hold it.
+#
+# `# expect:` rather than cross-tier agreement: a literal typed too early is
+# typed identically by both tiers.
+
+def apply[T](x: T, f: fn(T) -> T) -> T:
+    return f(x)
+
+def main() -> int32:
+    let a = 3000000000
+    let b = a + 2
+    let c: int64 = b
+
+    let big: int64 = 1000000000
+    let r = apply(3000000000, n => n + big)
+
+    return int32(c + r - 6999999960)

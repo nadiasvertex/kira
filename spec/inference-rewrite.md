@@ -22,7 +22,7 @@ anywhere.
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
 | 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
 | 10 | `method_call` as an obligation | **In progress** — see below |
-| 11 | Demand discipline: default only what a decision needs | **In progress** — audit and step 1 (scoped `demand`) done; steps 2–3 open |
+| 11 | Demand discipline: default only what a decision needs | **Done** — scoped `demand`, `demand_shape`, and no demand where a type only flows; `spec/todo.md` item 14 fixed (and removed) |
 
 ## Why
 
@@ -1263,7 +1263,7 @@ either way. Only the golden records which function the call resolved to,
 which is the thing `snapshot_test.cpp`'s own header says nothing else in the
 suite can see.
 
-### Phase 11 — demand discipline *(audit done; step 1 done)*
+### Phase 11 — demand discipline *(done)*
 
 `spec/todo.md` item 14 looked like one more literal one-off. It is not; it is
 one instance of a pattern the audit below found at almost every `demand`
@@ -1368,10 +1368,88 @@ call's result leaf to its argument leaves, transitively.
 | predicate not consulted in `flush(may_default)` | `obligations_test` (`test_scoped_flush_defaults_only_what_is_asked`) |
 | scope without the open-call edge | `std_test` (`deferred_leaf_interpolation`) |
 
-Found while probing, pre-existing, not yet catalogued elsewhere: the result
-of an implicit generic is not typed by a later use —
-`let r = add_one(5); let c: int64 = r` reports `expected int64, found
-int32`. The instance for `5` is chosen before the annotation is read.
+#### Step 2 landed
+
+`demand_shape` defaults only a head that is itself a variable. Switched:
+indexing (read path), the `for` iterable, the `for` tuple split, and
+structural patterns.
+
+"Only the head" turned out to be true of the *route* but not of what the
+route names. `xs[0]` on a `list` and `for x in xs` both choose an impl from
+the head and then request an instance named after the whole type — and a
+`list[?a]` names `into_iter$list___`, a function nothing compiles. Phase 10
+met this for method calls; both sites now take the same deferral:
+
+- `require_index_trait` records the template dispatch and hands the
+  instance naming to `defer_method_call`.
+- `resolve_loop_iterable` routes an open iterable in the resolvers' probe
+  mode (`site == nullptr`, which names nothing) and re-routes against the
+  settled type in a deferred call. The routing half is now
+  `resolve_loop_route`.
+
+Also needed: `resolve_index_output` discarded a leaf result because
+`is_unknown` counts a variable as unknown, so `xs[0]` was typed `unknown` and
+cut off from its list — the annotation after it pinned nothing.
+
+Not deferred yet, so they still demand the whole receiver: the `&xs[i]`
+(`index_ref`), `&mut xs[i]` (`index_mut`) and `xs[i] = v` (`index_set`)
+paths.
+
+| Broken | What caught it |
+|---|---|
+| `demand_shape` demands the whole type | `codegen_stress/108` (`# expect: 9`), all four sites |
+| `for` routes an open iterable immediately | `snapshot_test` only — `into_iter$list___` in the golden; codegen passes because `into_iter` never touches the element |
+| index names its instance immediately | `snapshot_test` only |
+
+`108` is in the snapshot corpus for that reason.
+
+A consequence to watch: `flush_for` counts every stalled obligation's
+watches as in scope, and these deferrals make stalled `method_call`s common.
+A `demand` anywhere now also defaults the elements of a list that some
+pending loop or index is waiting on. Correct, but broader than it needs to
+be; narrowing it needs obligations to say which leaves they *bind*, not
+only which they watch.
+
+#### Step 3 landed
+
+All eight audit probes now compile and compute the right value.
+
+- **Lambda expected types.** `preliminary_type_bindings` no longer demands;
+  `solve_from_argument_types(bind_open)` answers a parameter from an open
+  argument with the leaf itself, after settled arguments have answered, so a
+  leaf never displaces a real type. `fold(0, (n, w) => n + w.len())` types
+  its `0` as `usize` (item 14).
+- **Arithmetic.** Operands are tied, then a still-open pair returns the
+  leaf and `defer_open_arithmetic` re-checks once it settles — nothing for a
+  number, `require_operand_trait` (which wires the dispatch) otherwise.
+  `var xs = []; xs.push("a"); xs[0] + xs[0]` reaches `str::add`.
+- **Interpolation.** Uses `settle` instead of `demand`; its existing retry
+  queue (`pending_interp_segments_`) already waited for a leaf.
+
+Two things each had to learn that a leaf is an answer, not a gap — the same
+lesson as `resolve_index_output` in step 2:
+
+- `infer_lambda` let an abstract expectation (`option[U]`) win over a body
+  of `option[?a]`, because `mentions_abstract_type` counts a leaf as
+  abstract. It now takes `leaves_are_answers` for that comparison.
+  `codegen_stress/057` caught it.
+- A comprehension (`for x in 0..5 => x * x`) names `list::new`/`push` after
+  its element, which is now often a leaf; `record_new_push_dispatch` defers
+  that the way the index and `for` sites do (also the runtime `[v; n]` fill).
+  `check_test` and `codegen_stress/044` caught it.
+
+| Broken | What caught it |
+|---|---|
+| lambda preliminary solve demands again | `std_test/literal_typed_by_later_use` (item 14), `codegen_stress/109` |
+| arithmetic demands again | `codegen_stress/109` (`# expect: 42`) |
+| interpolation demands again | `std_test/literal_typed_by_later_use` |
+
+No snapshot decision changed between step 2 and step 3 (only the interned
+type count), so none of the snapshot corpus exercises these three sites.
+
+Found while probing, pre-existing, catalogued in `spec/todo.md`: the result
+of an implicit generic is not typed by a later use (item 16), and `bool +
+bool` is not diagnosed (item 17).
 
 ## Definition of done
 

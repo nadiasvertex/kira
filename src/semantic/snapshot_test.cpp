@@ -111,6 +111,10 @@ constexpr auto k_inputs = std::array{
     // receiver unsettled, so the `index` impl was chosen against a variable.
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "093_index_settles_its_receiver.cn"},
+    // Indexing and `for` over a list whose elements a *later* statement
+    // types: the instances must be named after the answer, not the leaf.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "108_shape_demand_leaves_elements_open.cn"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.cn"},
     snapshot_input{.corpus = "semantic_stress",

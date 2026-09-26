@@ -1589,6 +1589,24 @@ private:
     }
     return zonked;
   }
+  /// `demand`, for a point that selects on the head constructor alone.
+  ///
+  /// Indexing, iterating and destructuring choose a route from *what kind*
+  /// of value this is — a `list`, a tuple — and never from its elements, so
+  /// `[1, 2]`'s element leaves are not owed their default here: a later
+  /// `let y: int64 = xs[0]` is what says what they are (phase 11, defect 3).
+  /// Only a head that is itself still a variable has no route to choose, and
+  /// that is owed the last resort as before.
+  auto demand_shape(type_id id) -> type_id {
+    if (leaf_ctxt_.meta_count() == 0) {
+      return id;
+    }
+    const auto settled = leaf_ctxt_.zonk(id);
+    if (types_.entry(base_shape(settled)).kind == type_kind::type_var_kind) {
+      return demand(settled);
+    }
+    return settled;
+  }
   /// Reentrancy guard for the `resolve_open_param_calls`/
   /// `finish_open_results` retry inside `demand()`; see the comment there.
   bool in_demand_open_resolve_ = false;
@@ -5339,14 +5357,10 @@ private:
     }
     auto bindings = std::unordered_map<std::string, type_id>{};
     if (generic != nullptr) {
-      // The lambda is about to be checked against these, so a parameter its
-      // type hangs on is a point of demand — but only if there *is* a lambda
-      // waiting, or a default would be spent for nothing.
-      const auto has_lambda =
-          std::ranges::any_of(pending, [](const auto &item) -> bool {
-            return item.value->kind == ast::node_kind::lambda_expr;
-          });
-      bindings = preliminary_type_bindings(call, params, *generic, has_lambda);
+      // Not a point of demand: the lambda is checked against these, and a
+      // parameter still answered by a literal's leaf is exactly what its
+      // body may be about to say (phase 11, defect 2).
+      bindings = preliminary_type_bindings(call, params, *generic);
     }
     for (const auto &item : pending) {
       if (item.value->kind == ast::node_kind::lambda_expr) {
@@ -6943,7 +6957,8 @@ private:
                             const std::vector<fn_param_info> &params,
                             std::unordered_map<std::string, type_id> &bindings,
                             const ast::expr *ufcs_receiver = nullptr,
-                            bool may_default = false) -> void {
+                            bool may_default = false,
+                            bool bind_open = false) -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
       return;
@@ -7014,6 +7029,28 @@ private:
       }
       unify_rigid(params[i].type, arg_types[i], bindings);
     }
+    // An argument still open answers too, with the leaf itself — only for a
+    // caller that wants a *provisional* solution and will re-solve later.
+    // `fold(0, (n, w) => n + w.len())` checks its lambda against `fn(A, T)`,
+    // and `A` answered with the `0`'s leaf lets the body's `n + usize` say
+    // what the `0` is; answered with nothing, `A` stays abstract; answered
+    // with the default, the `0` is an `int32` before the body is read
+    // (spec/todo.md item 14). Settled arguments answered first, so a leaf
+    // never displaces a real type.
+    if (bind_open) {
+      for (size_t i = 0; i < params.size(); ++i) {
+        auto seen = std::unordered_set<type_id>{};
+        if (arg_types[i] == k_unknown_type ||
+            !mentions_type_var(arg_types[i], seen)) {
+          continue;
+        }
+        const auto matched =
+            infer::match_pattern(types_, params[i].type, arg_types[i]);
+        for (const auto &[name, solved] : matched.bindings) {
+          bindings.try_emplace(name, solved);
+        }
+      }
+    }
   }
 
   /// The bindings available *partway* through checking a call's arguments —
@@ -7029,8 +7066,7 @@ private:
   /// existed.
   auto preliminary_type_bindings(const ast::call_expr &call,
                                  const std::vector<fn_param_info> &params,
-                                 const generic_call_context &generic,
-                                 bool may_default)
+                                 const generic_call_context &generic)
       -> std::unordered_map<std::string, type_id> {
     auto bindings = generic.seed != nullptr
                         ? *generic.seed
@@ -7051,7 +7087,7 @@ private:
       }
     }
     solve_from_argument_types(call, params, bindings, generic.ufcs_receiver,
-                              may_default);
+                              /*may_default=*/false, /*bind_open=*/true);
     solve_from_bounds(decl, generic.owner, bindings);
     return bindings;
   }
@@ -8739,6 +8775,39 @@ private:
   /// type, or (for non-numeric operands) must implement the operator's
   /// overload trait. Reports a mismatched-numeric-types error rather than
   /// converting either side, since Cinder never converts numbers implicitly.
+  /// Arithmetic whose operands are both still the leaf `open`: the result is
+  /// that leaf, and the operator is chosen once it settles.
+  ///
+  /// Checked again then exactly as it would have been now — a number needs
+  /// nothing further; anything else must implement the operator's trait,
+  /// which also wires the dispatch (`str + str` reaches `str::add`). A
+  /// literal's leaf never reaches the second case: its default is a number,
+  /// and a non-number meeting it is refused where they meet.
+  auto defer_open_arithmetic(const ast::binary_expr &binary, type_id open)
+      -> type_id {
+    defer_method_call(
+        std::format("the `{}` operator", ast::binary_op_name(binary.op)), open,
+        [this, &binary](type_id settled) -> void {
+          const auto operand = base_shape(settled);
+          if (types_.is_numeric(operand) || types_.is_unknown(operand)) {
+            return;
+          }
+          const auto op_name = ast::binary_op_name(binary.op);
+          const auto trait_name = operator_trait_for(binary.op);
+          if (!trait_name.empty()) {
+            (void)require_operand_trait(binary, operand, trait_name, op_name,
+                                        /*wire_dispatch=*/true);
+            return;
+          }
+          error(binary.span,
+                std::format(
+                    "operator `{}` requires numeric operands, found `{}`",
+                    op_name, types_.display(operand)),
+                "not a numeric value");
+        });
+    return open;
+  }
+
   auto infer_arithmetic(const ast::binary_expr &binary, type_id expected)
       -> type_id {
     // Operands participate as their *base* type: a `positive` is an `int32`
@@ -8779,22 +8848,16 @@ private:
                              ? infer_expr(*binary.rhs, rhs_expected)
                              : k_unknown_type;
     auto rhs = base_shape(raw_rhs);
-    // Arithmetic is a point of demand: the operator is selected from the
-    // operand type. The operands are tied together first (`a / b` says they
-    // agree), and only then is the last resort spent on what is left open.
+    // The operands are tied together first (`a / b` says they agree). What
+    // is still open after that is *not* defaulted here: `let b = a + 2`
+    // followed by `let c: int64 = b` says what `a` is, one statement later
+    // (phase 11, defect 2). The operator is chosen from the operand type,
+    // so that choice waits — see `defer_open_arithmetic` below.
     auto lhs_settled = lhs;
     if (leaf_ctxt_.meta_count() != 0) {
       solve_leaves(lhs_settled, rhs);
-      // An operand tied to an unannotated parameter is not defaulted here:
-      // `x * 2` says `x` is numeric, not that it is `int32`, and each call
-      // chooses. Whatever is still open is settled with the rest.
-      if (!is_param_leaf(lhs_settled) && !is_param_leaf(rhs)) {
-        lhs_settled = demand(lhs_settled);
-        rhs = demand(rhs);
-      } else {
-        lhs_settled = leaf_ctxt_.zonk(lhs_settled);
-        rhs = leaf_ctxt_.zonk(rhs);
-      }
+      lhs_settled = leaf_ctxt_.zonk(lhs_settled);
+      rhs = leaf_ctxt_.zonk(rhs);
     }
     const auto lhs_final = lhs_settled;
     const auto op_name = ast::binary_op_name(binary.op);
@@ -8805,6 +8868,19 @@ private:
     if (binary.rhs != nullptr && needs_explicit_deref(raw_rhs)) {
       report_missing_deref(*binary.rhs, raw_rhs);
       return k_error_type;
+    }
+
+    // An operand tied to an unannotated parameter keeps the old answer
+    // (`unknown`): `x * 2` says `x` is numeric, not that it is `int32`, and
+    // each instance checks its own body.
+    if (leaf_ctxt_.meta_count() != 0 && !is_param_leaf(lhs_final) &&
+        !is_param_leaf(rhs)) {
+      if (mentions_type_var(lhs_final)) {
+        return defer_open_arithmetic(binary, lhs_final);
+      }
+      if (mentions_type_var(rhs)) {
+        return defer_open_arithmetic(binary, rhs);
+      }
     }
 
     const auto is_deferred_type_param = [this](type_id id) -> bool {
@@ -9332,8 +9408,11 @@ private:
         const auto &index =
             dynamic_cast<const ast::index_expr &>(*unary.operand);
         if (index.object != nullptr) {
+          // A borrow through `index_ref`/`index_mut` names its instance
+          // here and has no deferred form yet, so it still demands the whole
+          // receiver (phase 11: only the read path defers).
           const auto object_type =
-              base_shape(infer_expr(*index.object, k_unknown_type));
+              demand(base_shape(infer_expr(*index.object, k_unknown_type)));
           const auto &object_entry = types_.entry(strip_refs(object_type));
           if (object_entry.kind == type_kind::struct_kind ||
               object_entry.kind == type_kind::sum_kind ||
@@ -9434,8 +9513,11 @@ private:
         const auto &index =
             dynamic_cast<const ast::index_expr &>(*unary.operand);
         if (index.object != nullptr) {
+          // A borrow through `index_ref`/`index_mut` names its instance
+          // here and has no deferred form yet, so it still demands the whole
+          // receiver (phase 11: only the read path defers).
           const auto object_type =
-              base_shape(infer_expr(*index.object, k_unknown_type));
+              demand(base_shape(infer_expr(*index.object, k_unknown_type)));
           const auto &object_entry = types_.entry(strip_refs(object_type));
           if (object_entry.kind == type_kind::struct_kind ||
               object_entry.kind == type_kind::sum_kind ||
@@ -10483,13 +10565,22 @@ private:
   /// parameter, a parameter application — anywhere in its structure.
   /// `is_unknown` answers the same question shallowly; this recurses, so
   /// `option[B]` and `fn(int32) -> option[B]` count as abstract too.
-  auto mentions_abstract_type(type_id id) -> bool {
+  ///
+  /// `leaves_are_answers`: a metavariable counts as concrete. For a caller
+  /// comparing two candidate answers, `option[?a]` (the `?a` a later
+  /// statement will say) is an answer and `option[U]` is not.
+  auto mentions_abstract_type(type_id id, bool leaves_are_answers = false)
+      -> bool {
+    if (leaves_are_answers &&
+        types_.entry(id).kind == type_kind::type_var_kind) {
+      return false;
+    }
     if (types_.is_unknown(id)) {
       return true;
     }
     const auto entry = types_.entry(id); // copy: callers may intern after
     for (const auto arg : entry.args) {
-      if (mentions_abstract_type(arg)) {
+      if (mentions_abstract_type(arg, leaves_are_answers)) {
         return true;
       }
     }
@@ -10498,7 +10589,7 @@ private:
     if (entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
         entry.kind == type_kind::ptr_kind ||
         entry.kind == type_kind::array_kind) {
-      return mentions_abstract_type(entry.result);
+      return mentions_abstract_type(entry.result, leaves_are_answers);
     }
     return false;
   }
@@ -15128,7 +15219,12 @@ private:
       const auto declared = signature_return_type(*method.decl, method.owner,
                                                   method.block_type_params);
       const auto substituted = substitute_solved(declared, bindings);
-      if (!types_.is_unknown(substituted)) {
+      // A leaf is an answer here, not a gap: `[1, 2][0]` is `?a`, the same
+      // variable as the list's elements, so a later `let y: int64 = ...`
+      // pins both. `is_unknown` counts a variable as unknown, and reading it
+      // that way typed the element as `unknown` and cut it off from its list.
+      if (!types_.is_unknown(substituted) ||
+          types_.entry(substituted).kind == type_kind::type_var_kind) {
         return substituted;
       }
     }
@@ -15291,14 +15387,33 @@ private:
       check_index_key(index, target, "index", *any, key);
       return k_error_type;
     }
-    const auto *callee = instantiate_impl_method_for(
-        index, *method, entry, target,
-        index_instance_discriminator(target, "index", *method));
-    index_dispatches_[&index] =
-        resolved_callee{.decl = callee != nullptr ? callee : method->decl,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = callee != nullptr ? "" : entry.name,
-                        .receiver = index.object.get()};
+    // The impl is chosen from the head alone, but its instance is named
+    // after the whole receiver: `list[?a]::at` is a function nothing ever
+    // compiles. So a receiver whose elements are still open (`[1, 2][0]`
+    // before `let y: int64 = ...` has said what they are) records the
+    // template now and names the instance once the leaves settle — the same
+    // deferral an ordinary method call on an open receiver gets.
+    const auto dispatch = [this, &index, method](type_id receiver) -> void {
+      const auto &receiver_entry = types_.entry(receiver);
+      const auto *callee = instantiate_impl_method_for(
+          index, *method, receiver_entry, receiver,
+          index_instance_discriminator(receiver, "index", *method));
+      index_dispatches_[&index] = resolved_callee{
+          .decl = callee != nullptr ? callee : method->decl,
+          .owner_module = method->owner->module_name,
+          .impl_target_type = callee != nullptr ? "" : receiver_entry.name,
+          .receiver = index.object.get()};
+    };
+    if (mentions_type_var(target)) {
+      index_dispatches_[&index] =
+          resolved_callee{.decl = method->decl,
+                          .owner_module = method->owner->module_name,
+                          .impl_target_type = entry.name,
+                          .receiver = index.object.get()};
+      defer_method_call("at", target, dispatch);
+    } else {
+      dispatch(target);
+    }
     // Resolved against *this* impl's bindings: a type with both
     // `index[usize]` and `index[range[usize]]` has two `output`s, and the
     // bare trait name names whichever was checked last.
@@ -15588,7 +15703,7 @@ private:
     // variable, the program type-checks, and lowering is handed a node with
     // no concrete type (`codegen_stress/093`).
     const auto object =
-        demand(base_shape(infer_expr(*index.object, k_unknown_type)));
+        demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     const auto key =
         index.index != nullptr
@@ -16389,7 +16504,7 @@ private:
     // at a call site that plainly determines `B`.
     if (result != body_result && body_result != k_unknown_type &&
         mentions_abstract_type(result) &&
-        !mentions_abstract_type(body_result)) {
+        !mentions_abstract_type(body_result, /*leaves_are_answers=*/true)) {
       result = body_result;
     }
     return types_.fn_of(std::move(param_types), result);
@@ -16504,9 +16619,41 @@ private:
   auto resolve_loop_iterable(const ast::expr &iterable_expr,
                              const ast::node &site, iterator_loop_dispatch &out)
       -> type_id {
-    // Choosing the iteration route selects an impl and names an instance
-    // from the iterable's type, so this is a point of demand.
-    const auto iterable = demand(infer_expr(iterable_expr, k_unknown_type));
+    // The route (`into_iter`, `iter`, `next`) is chosen from the iterable's
+    // head alone, so only the head is owed a default here. The *instances*
+    // it names are another matter: they are named after the whole type, and
+    // `list::into_iter$list___` is a function nothing ever compiles. So a
+    // loop over `[1, 2]` — elements still open until the body's `t + x` with
+    // `t: int64` says what they are — is routed now without naming anything
+    // (a `site` of null is the resolvers' probe mode), and re-routed against
+    // the settled type once the leaves are known: the deferral an ordinary
+    // method call on an open receiver gets.
+    const auto iterable =
+        demand_shape(infer_expr(iterable_expr, k_unknown_type));
+    if (!mentions_type_var(iterable)) {
+      return resolve_loop_route(iterable_expr, iterable, &site, out);
+    }
+    const auto element =
+        resolve_loop_route(iterable_expr, iterable, nullptr, out);
+    if (out.decl != nullptr) {
+      defer_method_call(
+          "a `for` loop's iterator", iterable,
+          [this, &iterable_expr, &site, &out](type_id settled) -> void {
+            auto routed = iterator_loop_dispatch{};
+            (void)resolve_loop_route(iterable_expr, settled, &site, routed);
+            if (routed.decl != nullptr) {
+              out = std::move(routed);
+            }
+          });
+    }
+    return element;
+  }
+
+  /// `resolve_loop_iterable`'s routing half, for an iterable already typed.
+  /// `site` null routes without requesting any instance.
+  auto resolve_loop_route(const ast::expr &iterable_expr, type_id iterable,
+                          const ast::node *site, iterator_loop_dispatch &out)
+      -> type_id {
     auto element = element_type_of(iterable, iterable_expr.span);
 
     // A bare `&`/`&mut` as the *whole* iterable (`for x in &v`) asks for
@@ -16522,7 +16669,7 @@ private:
     auto borrowed = is_top_level_borrow
                         ? try_resolve_iter_borrow(
                               strip_refs(iterable),
-                              borrow->op == ast::unary_op::addr_of_mut, &site)
+                              borrow->op == ast::unary_op::addr_of_mut, site)
                         : std::nullopt;
 
     // `into_iterator` next: a type that both *is* an iterator and can
@@ -16533,10 +16680,10 @@ private:
     if (borrowed) {
       element = borrowed->element_type;
       out = std::move(*borrowed);
-    } else if (auto into = try_resolve_into_iterator(iterable, &site)) {
+    } else if (auto into = try_resolve_into_iterator(iterable, site)) {
       element = into->element_type;
       out = std::move(*into);
-    } else if (auto iter = try_resolve_iterator(iterable, &site)) {
+    } else if (auto iter = try_resolve_iterator(iterable, site)) {
       out = std::move(*iter);
     }
     return element;
@@ -17538,10 +17685,12 @@ private:
       if (seg.is_literal || seg.value == nullptr) {
         continue;
       }
-      // An interpolated value is a point of demand: its capability check
-      // needs a type, so an unconstrained literal defaults here.
+      // Not a point of demand. The capability check needs a type, but it
+      // can wait for one: an open segment is queued below and retried once
+      // the leaves settle, so `println("{a}")` followed by
+      // `let c: int64 = a` formats an `int64` (phase 11, defect 2).
       const auto value_type =
-          strip_refs(demand(infer_expr(*seg.value, k_unknown_type)));
+          strip_refs(settle(infer_expr(*seg.value, k_unknown_type)));
 
       if (seg.has_spec) {
         check_dynamic_size(seg.spec.width);
@@ -17786,9 +17935,31 @@ private:
   /// not (the static `new`).
   auto resolve_comprehension_dispatch(const ast::for_expr &expr,
                                       type_id list_type) -> void {
-    if (const auto dispatch = resolve_new_push_dispatch(expr, list_type)) {
-      comprehension_dispatches_[&expr] = *dispatch;
+    record_new_push_dispatch(expr, list_type, comprehension_dispatches_);
+  }
+
+  /// `resolve_new_push_dispatch` into `table[&site]` — now, or, for a list
+  /// whose element is still a leaf (`for x in 0..5 => x * x` before anything
+  /// has said what `x` is), once it settles: the instances are named after
+  /// the element, and `list::new$list___` is a function nothing compiles.
+  template <typename Site>
+  auto record_new_push_dispatch(
+      const Site &site, type_id list_type,
+      std::unordered_map<const Site *, comprehension_dispatch> &table)
+      -> void {
+    if (!mentions_type_var(list_type)) {
+      if (const auto dispatch = resolve_new_push_dispatch(site, list_type)) {
+        table[&site] = *dispatch;
+      }
+      return;
     }
+    defer_method_call("`new`/`push` for this list", list_type,
+                      [this, &site, &table](type_id settled) -> void {
+                        if (const auto dispatch =
+                                resolve_new_push_dispatch(site, settled)) {
+                          table[&site] = *dispatch;
+                        }
+                      });
   }
 
   /// Resolves (and instantiates) the `new`/`push` pair for `list_type`,
@@ -17838,9 +18009,7 @@ private:
     // this compiled module"). Fill it the way a comprehension builds its
     // result instead: `new()`, then `push(v)` `n` times.
     if (array.fill_value != nullptr && !count.has_value()) {
-      if (const auto dispatch = resolve_new_push_dispatch(array, target)) {
-        runtime_fill_dispatches_[&array] = *dispatch;
-      }
+      record_new_push_dispatch(array, target, runtime_fill_dispatches_);
       return target;
     }
     if (!resolve_array_literal_conversion(array, target).has_value()) {
@@ -18133,7 +18302,7 @@ private:
 
     // Splitting an element is a point of demand: whether it *is* a tuple has
     // to be known to say so.
-    const auto element = demand(raw_element);
+    const auto element = demand_shape(raw_element);
     const auto element_entry = types_.entry(element);
     const auto is_tuple = element_entry.kind == type_kind::tuple_kind;
     // Point at the loop variables. The enclosing statement's span runs to
@@ -18190,7 +18359,7 @@ private:
         pattern.kind == ast::node_kind::binding_pattern ||
                 pattern.kind == ast::node_kind::wildcard_pattern
             ? raw_subject
-            : demand(raw_subject);
+            : demand_shape(raw_subject);
     const auto stripped = strip_refs(subject);
     const auto &entry = types_.entry(stripped);
     // Every pattern kind below matches against `stripped` — recording it
@@ -18764,8 +18933,9 @@ private:
     if (index.object == nullptr) {
       return std::nullopt;
     }
-    // Indexing selects an impl from the container's type, so it is a point
-    // of demand for the same reason a method call is.
+    // An `index_set` write names its instance here and has no deferred
+    // form yet, so it still demands the whole receiver (phase 11: only the
+    // read path defers).
     const auto object =
         demand(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
