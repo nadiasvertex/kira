@@ -12471,6 +12471,68 @@ private:
     }
   }
 
+  /// Whether `expr` is built only from numeric literals, unary `-`/`~`, and
+  /// arithmetic/bitwise operators, such that every literal in it can take
+  /// `target` as its type. A float literal never can under an integer
+  /// target (`int32(2.5)` is a real conversion), and bitwise operators need
+  /// an integer target.
+  [[nodiscard]] auto is_literal_tree(const ast::expr &expr, type_id target)
+      -> bool {
+    const auto integer_target = types_.is_integer(target);
+    switch (expr.kind) {
+    case ast::node_kind::literal_expr: {
+      const auto kind = dynamic_cast<const ast::literal_expr &>(expr).lit_kind;
+      return kind == token_kind::int_lit ||
+             (kind == token_kind::float_lit && !integer_target);
+    }
+    case ast::node_kind::group_expr: {
+      const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+      return group.inner != nullptr && is_literal_tree(*group.inner, target);
+    }
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      const auto op_fits = unary.op == ast::unary_op::neg ||
+                           (unary.op == ast::unary_op::bit_not &&
+                            integer_target);
+      return op_fits && unary.operand != nullptr &&
+             is_literal_tree(*unary.operand, target);
+    }
+    case ast::node_kind::binary_expr: {
+      const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+      auto op_fits = false;
+      switch (binary.op) {
+      case ast::binary_op::add:
+      case ast::binary_op::sub:
+      case ast::binary_op::mul:
+      case ast::binary_op::div:
+      case ast::binary_op::mod:
+      case ast::binary_op::add_wrap:
+      case ast::binary_op::sub_wrap:
+      case ast::binary_op::mul_wrap:
+      case ast::binary_op::add_sat:
+      case ast::binary_op::sub_sat:
+      case ast::binary_op::mul_sat:
+        op_fits = true;
+        break;
+      case ast::binary_op::shl:
+      case ast::binary_op::shr:
+      case ast::binary_op::bit_and:
+      case ast::binary_op::bit_or:
+      case ast::binary_op::bit_xor:
+        op_fits = integer_target;
+        break;
+      default:
+        break;
+      }
+      return op_fits && binary.lhs != nullptr && binary.rhs != nullptr &&
+             is_literal_tree(*binary.lhs, target) &&
+             is_literal_tree(*binary.rhs, target);
+    }
+    default:
+      return false;
+    }
+  }
+
   /// Types a constructor-style conversion call `target_name(value)` (e.g.
   /// `float64(n)`), Cinder's replacement for a cast operator. Reports a
   /// no-conversion-exists error when the source is a known non-numeric,
@@ -12490,15 +12552,16 @@ private:
     if (arg.value == nullptr) {
       return target;
     }
-    const auto inferred = infer_expr(*arg.value, k_unknown_type);
-    // An integer literal nothing else has typed takes the conversion's
-    // target, not the `int32` default: `int64(4294967296)` is a wide
-    // literal, not an `int32` that overflowed before being widened.
-    if (types_.is_numeric(target) &&
-        integer_literal_leaves_.contains(leaf_ctxt_.find(inferred))) {
-      solve_leaves(target, inferred);
-    }
-    const auto found = strip_refs(inferred);
+    // A value built only from literals is typed at the conversion's target,
+    // exactly as under `let v: T = ...`, not at the `int32` default and then
+    // converted: `int64(4294967296 * 2)` is a wide constant, `float64(7 / 2)`
+    // is `3.5`, and `uint8(300 - 100)` is rejected because `300` does not
+    // fit in `uint8`.
+    const auto arg_expected =
+        types_.is_numeric(target) && is_literal_tree(*arg.value, target)
+            ? target
+            : k_unknown_type;
+    const auto found = strip_refs(infer_expr(*arg.value, arg_expected));
     if (types_.is_numeric(target) && !types_.is_unknown(found) &&
         !types_.is_numeric(found) && !types_.is_boolean(found)) {
       error_with_help(

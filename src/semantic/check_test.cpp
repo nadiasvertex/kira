@@ -1509,6 +1509,9 @@ auto test_reports_conversion_literal_overflow() -> void {
   expect_diagnostic(analyzed, "integer literal `256` does not fit in `uint8`",
                     "expected the literal to be range-checked against the "
                     "conversion's target, not the `int32` default");
+  expect_diagnostic(analyzed, "integer literal `300` does not fit in `uint8`",
+                    "expected a literal inside conversion arithmetic to be "
+                    "range-checked against the conversion's target");
 }
 
 auto test_accepts_negative_min_integer_literals() -> void {

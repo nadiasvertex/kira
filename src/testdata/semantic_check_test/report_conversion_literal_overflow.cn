@@ -1,3 +1,4 @@
 module sample
 def run() -> unit:
     let c = uint8(256)
+    let d = uint8(300 - 100)
