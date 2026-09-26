@@ -7,8 +7,8 @@ module main
 #  the call takes no value arguments, it folds to a literal at the call
 #  site even from ordinary code, not just `static if`/`static assert`.
 #
-#  Run it:      kira demo/traits-is_bool.kira
-#  Compile it:  kira --compile -o traits-is_bool demo/traits-is_bool.kira
+#  Run it:      kira demo/traits-is_bool.cn
+#  Compile it:  kira --compile -o traits-is_bool demo/traits-is_bool.cn
 # ==========================================================================
 
 use std.traits.is_bool

@@ -23,7 +23,7 @@ auto eval_source(std::string_view expr_text) -> kira::comptime::value {
 
   kira::diagnostic_bag parse_diag;
   auto sources = kira::source_manager{};
-  const auto file_id = sources.add_file("eval_test.kira", source);
+  const auto file_id = sources.add_file("eval_test.cn", source);
   expect(file_id.has_value(), "expected eval test source to register");
   const auto *file = sources.get(*file_id);
   expect(file != nullptr, "expected registered eval test source");
@@ -197,7 +197,7 @@ auto test_eval_global_binding_reference() -> void {
   kira::diagnostic_bag parse_diag;
   auto sources = kira::source_manager{};
   const auto file_id = sources.add_file(
-      "global.kira", "module sample\n\ndef run():\n  let result = limit + 1\n");
+      "global.cn", "module sample\n\ndef run():\n  let result = limit + 1\n");
   const auto *file = sources.get(*file_id);
   auto lexer = kira::lexer(file->source(), file->id(), parse_diag);
   auto tokens = lexer.tokenize();
@@ -265,7 +265,7 @@ auto test_eval_cast_through_bound_generic_type_param() -> void {
   kira::diagnostic_bag parse_diag;
   auto sources = kira::source_manager{};
   const auto file_id = sources.add_file(
-      "cast_generic.kira",
+      "cast_generic.cn",
       "module sample\n\ndef run():\n  let result = 300 as T\n");
   const auto *file = sources.get(*file_id);
   auto lexer = kira::lexer(file->source(), file->id(), parse_diag);

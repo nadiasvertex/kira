@@ -4,8 +4,8 @@ module main
 #  `limits.digits` — The number of digits in the base radix that can be
 #  represented by some type.
 #
-#  Run it:      kira demo/limits-digits.kira
-#  Compile it:  kira --compile -o limits-digits.kira demo/limits-digits.kira
+#  Run it:      kira demo/limits-digits.cn
+#  Compile it:  kira --compile -o limits-digits.cn demo/limits-digits.cn
 # ==========================================================================
 
 use std.limits.digits

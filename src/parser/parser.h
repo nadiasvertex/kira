@@ -1,7 +1,7 @@
 #pragma once
 
 // ==========================================================================
-//  Kira Language — Recursive Descent Parser
+//  Cinder Language — Recursive Descent Parser
 //
 //  Design philosophy:
 //    The compiler is a teacher, not an enemy. Every error message should
@@ -125,10 +125,10 @@ template <typename T> struct parse_result {
 };
 
 // ==========================================================================
-//  Parser — recursive descent parser for the Kira language.
+//  Parser — recursive descent parser for the Cinder language.
 //
 //  Usage:
-//    source_file file(0, "example.kira", source_text);
+//    source_file file(0, "example.cn", source_text);
 //    diagnostic_bag diag;
 //    Lexer lexer(source_text, 0, diag);
 //    auto tokens = lexer.tokenize();
@@ -157,7 +157,7 @@ public:
   //  Top-level entry point
   // ========================================================================
 
-  /// @brief Parses a complete Kira source file into the root AST node.
+  /// @brief Parses a complete Cinder source file into the root AST node.
   ///
   /// This is the only public entry point for syntax analysis. It consumes the
   /// pre-tokenized stream, accumulates diagnostics into `diag_`, and returns a
@@ -292,7 +292,7 @@ private:
   // ========================================================================
   //  Newline handling
   //
-  //  Kira uses newlines as statement terminators, but they can often be
+  //  Cinder uses newlines as statement terminators, but they can often be
   //  inferred or skipped in certain contexts. These helpers manage that.
   // ========================================================================
 
@@ -434,7 +434,7 @@ private:
   // ========================================================================
   //  Block parsing helpers
   //
-  //  Many Kira constructs use the same pattern:
+  //  Many Cinder constructs use the same pattern:
   //    `:` NEWLINE INDENT body DEDENT
   //  or the inline form:
   //    `:` expr NEWLINE
@@ -467,7 +467,7 @@ private:
 
   /// @brief Normalized representation of either inline or block bodies.
   ///
-  /// Many constructs in Kira allow both `: expr` and `:` followed by an
+  /// Many constructs in Cinder allow both `: expr` and `:` followed by an
   /// indented block. This record preserves which form the user wrote so later
   /// phases can keep the distinction when it matters.
   struct body_result {

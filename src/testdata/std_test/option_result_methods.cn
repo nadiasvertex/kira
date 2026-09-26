@@ -3,7 +3,7 @@ module main
 # `option` and `result`'s inherent methods (spec/todo.md item 10). These were
 # entries in the compiler's `k_builtin_methods` table, which answered their
 # types without any backend compiling them — every one below type-checked and
-# then failed to lower. They are ordinary Kira now, in `std.option` and
+# then failed to lower. They are ordinary Cinder now, in `std.option` and
 # `std.result`, reached through a parameterized `extend` block.
 #
 # Values rather than "it compiled" are asserted throughout: the whole failure

@@ -3,7 +3,7 @@ module main
 use std.console
 
 def main() -> unit:
-    println("Kira version: {std.platform.kira_version()}")
-    println("Kira implementation: {std.platform.kira_implementation()}")
-    println("Kira compiler: {std.platform.kira_compiler()}")
-    println("Kira build date: {std.platform.kira_build_date()}")
+    println("Cinder version: {std.platform.cinder_version()}")
+    println("Cinder implementation: {std.platform.cinder_implementation()}")
+    println("Cinder compiler: {std.platform.cinder_compiler()}")
+    println("Cinder build date: {std.platform.cinder_build_date()}")

@@ -25,7 +25,7 @@ namespace {
 }
 
 /// A 2-slot `find_result { found: bool; pos: usize }` (see
-/// `src/std/string.kira`): slot 0 is the found flag, slot 1 the byte offset.
+/// `src/std/string.cn`): slot 0 is the found flag, slot 1 the byte offset.
 [[nodiscard]] auto make_find_result(std::optional<size_t> hit) -> uint64_t * {
   auto *slots = alloc_slots(2);
   slots[0] = hit.has_value() ? 1U : 0U;

@@ -1,134 +1,134 @@
 error: `climb` instantiates itself endlessly
-  --> 011_instantiation_depth.kira:16:5
+  --> 011_instantiation_depth.cn:16:5
    16 |     climb[n + 1]()
       |     ^^^^^^^^^^^^^^ generic instantiation is too deep
   help: Each call with a new compile-time argument compiles a new copy of `climb`, so a body that calls itself at a *different* argument every time (`climb[n]` calling `climb[n + 1]`, say) never bottoms out. Recurse at an argument that eventually repeats, or make the recursion an ordinary runtime one over a parameter you don't change.
   note: instantiated from here, as `climb$31`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$30`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$29`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$28`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$27`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$26`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$25`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$24`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$23`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$22`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$21`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$20`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$19`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$18`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$17`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$16`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$15`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$14`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$13`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$12`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$11`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$10`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$9`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$8`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$7`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$6`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$5`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$4`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$3`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$2`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$1`
-    --> 011_instantiation_depth.kira:16:5
+    --> 011_instantiation_depth.cn:16:5
      16 |     climb[n + 1]()
         |     ^^^^^^^^^^^^^^ this call needs that copy
   note: instantiated from here, as `climb$0`
-    --> 011_instantiation_depth.kira:19:5
+    --> 011_instantiation_depth.cn:19:5
      19 |     climb[0]()
         |     ^^^^^^^^^^ this call needs that copy
 

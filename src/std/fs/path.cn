@@ -6,7 +6,7 @@ module std.fs.path
 #: needed; nothing is eagerly split into components.
 #:
 #: Separator handling is gated on std.platform.is_windows() at runtime (not
-#: static if), matching the pattern std.platform.kira already uses for
+#: static if), matching the pattern std.platform.cn already uses for
 #: its own platform-dependent bodies.
 
 #: A filesystem path that can be manipulated and analyzed.

@@ -9,7 +9,7 @@
 namespace kira::semantic {
 
 /// Walks every checked function and lambda body, flagging a binding used
-/// after it has already been moved from — the analysis Kira's scope-based
+/// after it has already been moved from — the analysis Cinder's scope-based
 /// `drop` destructors (`spec/kira-reference.md`, "Destructors: drop") need
 /// underneath them, since "a binding that was moved from never drops" and
 /// reverse-declaration-order drop both require knowing which bindings are

@@ -70,31 +70,31 @@ auto find_std_dir() -> kira::testing::fs::path {
 auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   auto fixtures = std::vector<source_fixture>{};
-  for (const auto *filename : {"intrinsics.kira",
-                               "traits.kira",
-                               "traits.ord.kira",
-                               "traits.show.kira",
-                               "traits.numeric.kira",
-                               "traits.conversion.kira",
-                               "traits.category.kira",
-                               "traits.index.kira",
-                               "traits.hash.kira",
-                               "limits.kira",
-                               "iter.kira",
-                               "prelude.kira",
-                               "panic.kira",
-                               "option.kira",
-                               "result.kira",
-                               "mem.kira",
-                               "list.kira",
-                               "io.kira",
-                               "console.kira",
-                               "algo.kira",
-                               "fmt.kira",
-                               "unicode_tables.kira",
-                               "unicode.kira",
-                               "string.kira",
-                               "deriving.kira"}) {
+  for (const auto *filename : {"intrinsics.cn",
+                               "traits.cn",
+                               "traits.ord.cn",
+                               "traits.show.cn",
+                               "traits.numeric.cn",
+                               "traits.conversion.cn",
+                               "traits.category.cn",
+                               "traits.index.cn",
+                               "traits.hash.cn",
+                               "limits.cn",
+                               "iter.cn",
+                               "prelude.cn",
+                               "panic.cn",
+                               "option.cn",
+                               "result.cn",
+                               "mem.cn",
+                               "list.cn",
+                               "io.cn",
+                               "console.cn",
+                               "algo.cn",
+                               "fmt.cn",
+                               "unicode_tables.cn",
+                               "unicode.cn",
+                               "string.cn",
+                               "deriving.cn"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
         .text = kira::testing::load_test_data_file(std_dir.string(), filename),
@@ -188,7 +188,7 @@ auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
 
 auto test_storing_a_borrow_in_a_let_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_store_borrow_in_let.kira");
+      analyze_test_data_file("reject_store_borrow_in_let.cn");
   expect(analyzed.error_count > 0,
          "expected storing a borrow in a `let` to be rejected");
   expect_diagnostic(analyzed, "cannot escape the call it was made for",
@@ -196,7 +196,7 @@ auto test_storing_a_borrow_in_a_let_is_rejected() -> void {
 }
 
 auto test_returning_a_borrow_is_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_return_borrow.kira");
+  const auto analyzed = analyze_test_data_file("reject_return_borrow.cn");
   expect(analyzed.error_count > 0,
          "expected returning a freshly made borrow to be rejected");
   expect_diagnostic(analyzed, "cannot escape the call it was made for",
@@ -205,7 +205,7 @@ auto test_returning_a_borrow_is_rejected() -> void {
 
 auto test_borrow_in_an_aggregate_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_borrow_in_aggregate.kira");
+      analyze_test_data_file("reject_borrow_in_aggregate.cn");
   expect(analyzed.error_count > 0,
          "expected placing a borrow into a tuple to be rejected");
   expect_diagnostic(analyzed, "cannot escape the call it was made for",
@@ -219,7 +219,7 @@ auto test_borrow_in_an_aggregate_is_rejected() -> void {
 
 auto test_two_mutable_borrows_in_one_call_are_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_two_mut_borrows_one_call.kira");
+      analyze_test_data_file("reject_two_mut_borrows_one_call.cn");
   expect(analyzed.error_count > 0,
          "expected two `&mut` borrows of the same value in one call to be "
          "rejected");
@@ -231,7 +231,7 @@ auto test_two_mutable_borrows_in_one_call_are_rejected() -> void {
 
 auto test_mutable_and_shared_borrow_in_one_call_are_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_mut_and_shared_one_call.kira");
+      analyze_test_data_file("reject_mut_and_shared_one_call.cn");
   expect(analyzed.error_count > 0,
          "expected a `&mut` and a `&` borrow of the same value in one call to "
          "be rejected");
@@ -245,21 +245,21 @@ auto test_mutable_and_shared_borrow_in_one_call_are_rejected() -> void {
 // ==========================================================================
 
 auto test_borrowing_as_a_call_argument_is_accepted() -> void {
-  const auto analyzed = analyze_test_data_file("accept_borrow_as_arg.kira");
+  const auto analyzed = analyze_test_data_file("accept_borrow_as_arg.cn");
   expect(analyzed.error_count == 0,
          "expected lending values to calls with `&`/`&mut` to check cleanly");
 }
 
 auto test_many_shared_borrows_in_one_call_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_many_shared_borrows.kira");
+      analyze_test_data_file("accept_many_shared_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected any number of `&` borrows in one call to check cleanly");
 }
 
 auto test_sequential_borrows_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_sequential_borrows.kira");
+      analyze_test_data_file("accept_sequential_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected a `&mut` and a later `&` borrow in separate statements to "
          "check cleanly");
@@ -267,14 +267,14 @@ auto test_sequential_borrows_are_accepted() -> void {
 
 auto test_borrows_in_different_nested_calls_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_nested_call_borrows.kira");
+      analyze_test_data_file("accept_nested_call_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected borrows in two different nested calls, not simultaneously "
          "live, to check cleanly");
 }
 
 auto test_mutable_slice_view_is_not_an_escape() -> void {
-  const auto analyzed = analyze_test_data_file("accept_mut_slice_view.kira");
+  const auto analyzed = analyze_test_data_file("accept_mut_slice_view.cn");
   expect(analyzed.error_count == 0,
          "expected storing a `&mut xs[a..b]` view in a binding to check "
          "cleanly — a view is not a plain borrow");
@@ -289,7 +289,7 @@ auto test_mutable_slice_view_is_not_an_escape() -> void {
 
 auto test_mut_borrow_across_nested_call_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_mut_borrow_across_nested_call.kira");
+      analyze_test_data_file("reject_mut_borrow_across_nested_call.cn");
   expect(analyzed.error_count > 0,
          "expected a `&mut` direct argument aliasing a nested `&` argument to "
          "be rejected");
@@ -300,7 +300,7 @@ auto test_mut_borrow_across_nested_call_is_rejected() -> void {
 
 auto test_two_mut_borrows_across_nested_call_are_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_two_mut_across_nested_call.kira");
+      analyze_test_data_file("reject_two_mut_across_nested_call.cn");
   expect(analyzed.error_count > 0,
          "expected two `&mut` borrows live across a nested call to be "
          "rejected");
@@ -311,7 +311,7 @@ auto test_two_mut_borrows_across_nested_call_are_rejected() -> void {
 
 auto test_shared_borrows_across_nested_call_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_shared_across_nested_call.kira");
+      analyze_test_data_file("accept_shared_across_nested_call.cn");
   expect(analyzed.error_count == 0,
          "expected a direct `&` and a nested `&` of the same value to check "
          "cleanly — two shared borrows never conflict");
@@ -326,7 +326,7 @@ auto test_shared_borrows_across_nested_call_are_accepted() -> void {
 
 auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_receiver_mut_with_shared_arg.kira");
+      analyze_test_data_file("reject_receiver_mut_with_shared_arg.cn");
   expect(analyzed.error_count > 0,
          "expected a `mut self` receiver aliasing an explicit `&` argument of "
          "the same call to be rejected");
@@ -337,7 +337,7 @@ auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
 
 auto test_two_phase_receiver_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_two_phase_receiver.kira");
+      analyze_test_data_file("accept_two_phase_receiver.cn");
   expect(analyzed.error_count == 0,
          "expected `b.scale(b.val())` to check cleanly — the `mut self` "
          "reservation is compatible with a nested shared borrow");
@@ -345,7 +345,7 @@ auto test_two_phase_receiver_is_accepted() -> void {
 
 auto test_two_phase_receiver_with_nested_mut_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_two_phase_receiver_nested_mut.kira");
+      analyze_test_data_file("reject_two_phase_receiver_nested_mut.cn");
   expect(analyzed.error_count > 0,
          "expected a nested `&mut` of the receiver to conflict with the "
          "`mut self` reservation");
@@ -365,7 +365,7 @@ auto test_two_phase_receiver_with_nested_mut_is_rejected() -> void {
 
 auto test_mut_view_across_mutation_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_mut_view_across_mutation.kira");
+      analyze_test_data_file("reject_mut_view_across_mutation.cn");
   expect(analyzed.error_count > 0,
          "expected mutating `xs` while a `mut slice` view of it is live to be "
          "rejected");
@@ -376,7 +376,7 @@ auto test_mut_view_across_mutation_is_rejected() -> void {
 }
 
 auto test_two_mut_views_are_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_two_mut_views.kira");
+  const auto analyzed = analyze_test_data_file("reject_two_mut_views.cn");
   expect(analyzed.error_count > 0,
          "expected two simultaneously live `mut slice` views of `xs` to be "
          "rejected");
@@ -386,7 +386,7 @@ auto test_two_mut_views_are_rejected() -> void {
 
 auto test_mut_view_with_shared_borrow_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_mut_view_with_shared_borrow.kira");
+      analyze_test_data_file("reject_mut_view_with_shared_borrow.cn");
   expect(analyzed.error_count > 0,
          "expected a shared `&xs` borrow taken while a `mut slice` view of "
          "`xs` is live to be rejected");
@@ -395,7 +395,7 @@ auto test_mut_view_with_shared_borrow_is_rejected() -> void {
 }
 
 auto test_returned_view_is_tracked() -> void {
-  const auto analyzed = analyze_test_data_file("reject_returned_view.kira");
+  const auto analyzed = analyze_test_data_file("reject_returned_view.cn");
   expect(analyzed.error_count > 0,
          "expected a view returned from a call to keep its source collection "
          "borrowed, so a later mutation of that collection is rejected");
@@ -404,7 +404,7 @@ auto test_returned_view_is_tracked() -> void {
 }
 
 auto test_view_stored_in_struct_is_tracked() -> void {
-  const auto analyzed = analyze_test_data_file("reject_view_in_struct.kira");
+  const auto analyzed = analyze_test_data_file("reject_view_in_struct.cn");
   expect(analyzed.error_count > 0,
          "expected a struct that stores a view to keep the sliced collection "
          "borrowed, so a later mutation of it is rejected");
@@ -414,7 +414,7 @@ auto test_view_stored_in_struct_is_tracked() -> void {
 }
 
 auto test_two_shared_views_are_accepted() -> void {
-  const auto analyzed = analyze_test_data_file("accept_two_shared_views.kira");
+  const auto analyzed = analyze_test_data_file("accept_two_shared_views.cn");
   expect(analyzed.error_count == 0,
          "expected any number of shared `slice` views of `xs` to check "
          "cleanly — two shared borrows never conflict");
@@ -422,7 +422,7 @@ auto test_two_shared_views_are_accepted() -> void {
 
 auto test_view_dead_at_last_use_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_view_last_use_ends.kira");
+      analyze_test_data_file("accept_view_last_use_ends.cn");
   expect(analyzed.error_count == 0,
          "expected re-borrowing `xs` after a view's last use to check cleanly "
          "— liveness ends at the last use, not the end of scope");
@@ -430,7 +430,7 @@ auto test_view_dead_at_last_use_is_accepted() -> void {
 
 auto test_view_of_other_variable_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_view_of_other_variable.kira");
+      analyze_test_data_file("accept_view_of_other_variable.cn");
   expect(analyzed.error_count == 0,
          "expected a live view of `xs` to place no constraint on a borrow of a "
          "different collection `ys`");
@@ -438,7 +438,7 @@ auto test_view_of_other_variable_is_accepted() -> void {
 
 auto test_two_mut_capture_closures_are_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_two_mut_capture_closures.kira");
+      analyze_test_data_file("reject_two_mut_capture_closures.cn");
   expect(analyzed.error_count != 0,
          "expected two closures holding `&mut total` at once to be rejected");
   expect_diagnostic(analyzed,
@@ -452,7 +452,7 @@ auto test_two_mut_capture_closures_are_rejected() -> void {
 
 auto test_by_value_capture_is_not_a_borrow() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_by_value_capture_is_not_a_borrow.kira");
+      analyze_test_data_file("accept_by_value_capture_is_not_a_borrow.cn");
   expect(analyzed.error_count == 0,
          std::string("expected bare by-value captures to borrow nothing:\n") +
              analyzed.diagnostics);
@@ -460,7 +460,7 @@ auto test_by_value_capture_is_not_a_borrow() -> void {
 
 auto test_shared_capture_closures_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_shared_capture_closures.kira");
+      analyze_test_data_file("accept_shared_capture_closures.cn");
   expect(analyzed.error_count == 0,
          std::string("expected any number of `&` captures to coexist:\n") +
              analyzed.diagnostics);
@@ -468,7 +468,7 @@ auto test_shared_capture_closures_are_accepted() -> void {
 
 auto test_owned_return_keeps_args_free_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_owned_return_keeps_args_free.kira");
+      analyze_test_data_file("accept_owned_return_keeps_args_free.cn");
   expect(analyzed.error_count == 0,
          "expected a call returning an owned (non-view) value to keep none of "
          "its reference arguments borrowed past the call");
@@ -482,7 +482,7 @@ auto test_owned_return_keeps_args_free_is_accepted() -> void {
 
 auto test_for_over_ref_borrow_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_for_over_ref_borrow.kira");
+      analyze_test_data_file("accept_for_over_ref_borrow.cn");
   expect(analyzed.error_count == 0,
          std::string("expected `for x in &xs` to check cleanly without "
                      "hitting the escape rule:\n") +
@@ -491,7 +491,7 @@ auto test_for_over_ref_borrow_is_accepted() -> void {
 
 auto test_mutation_during_ref_for_loop_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_mutation_during_ref_for_loop.kira");
+      analyze_test_data_file("reject_mutation_during_ref_for_loop.cn");
   expect(analyzed.error_count > 0,
          "expected freeing `xs` while `for x in &xs` is still iterating it "
          "to be rejected");

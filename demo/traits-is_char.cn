@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `traits.is_char` — is this type `char`?
 #
-#  Run it:      kira demo/traits-is_char.kira
-#  Compile it:  kira --compile -o traits-is_char demo/traits-is_char.kira
+#  Run it:      kira demo/traits-is_char.cn
+#  Compile it:  kira --compile -o traits-is_char demo/traits-is_char.cn
 # ==========================================================================
 
 use std.traits.is_char

@@ -88,7 +88,7 @@ auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<std::string> {
     if (!entry.is_regular_file()) {
       continue;
     }
-    if (entry.path().extension() != ".kira") {
+    if (entry.path().extension() != ".cn") {
       continue;
     }
     files.push_back(entry.path().string());
@@ -107,7 +107,7 @@ auto main(int argc, char *argv[]) -> int {
     auto files = list_corpus_files(corpus_dir);
 
     expect(!files.empty(),
-           "expected parser stress corpus to contain .kira files");
+           "expected parser stress corpus to contain .cn files");
     expect(files.size() >= 60,
            std::format(
                "expected a broad parser stress corpus, found only {} files",

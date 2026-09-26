@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the Kira language specification (spec/specification/) into an
+"""Builds the Cinder language specification (spec/specification/) into an
 epub, a pdf, and a static multi-page website, via pandoc.
 
 Usage:
@@ -29,8 +29,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_ROOT = REPO_ROOT / "spec" / "specification"
-TITLE = "The Kira Language and Standard Library Specification"
-AUTHOR = "Kira Contributors"
+TITLE = "The Cinder Language and Standard Library Specification"
+AUTHOR = " Cinder Contributors"
 
 LINK_RE = re.compile(r"(\[[^\]]*\]\()([^)\s]+)(\))")
 H1_RE = re.compile(r"^(#\s+.*)$", re.MULTILINE)

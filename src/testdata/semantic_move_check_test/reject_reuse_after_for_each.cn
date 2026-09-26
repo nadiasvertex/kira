@@ -1,6 +1,6 @@
 module main
 
-# Regression for the `demo/algorithm-for_each.kira` bug: `for_each`
+# Regression for the `demo/algorithm-for_each.cn` bug: `for_each`
 # (`std.algo`) takes its iterator by value (`it: I`), so calling it moves
 # `nv`. Reusing `nv` afterward must be a compile error, not a silent
 # no-op over an already-drained iterator.

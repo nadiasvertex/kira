@@ -13,7 +13,7 @@ namespace kira::semantic {
 //  Reasoning — the constraint solver
 //
 //  The second of compile time's two machineries (`kira-reference.md`
-//  §Compile-Time Semantics): *Evaluation* runs Kira on values it knows,
+//  §Compile-Time Semantics): *Evaluation* runs Cinder on values it knows,
 //  *Reasoning* proves facts about values it doesn't. This is Reasoning. It
 //  discharges refinement predicates, dependent-type obligations, and static
 //  contract conditions, and it does exactly one thing: decide whether a set

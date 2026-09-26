@@ -7,8 +7,8 @@ module main
 #  argument here (the parser doesn't accept `fn(...)` syntax inside a
 #  nested type-argument position) — a local alias sidesteps it.
 #
-#  Run it:      kira demo/traits-is_fn.kira
-#  Compile it:  kira --compile -o traits-is_fn demo/traits-is_fn.kira
+#  Run it:      kira demo/traits-is_fn.cn
+#  Compile it:  kira --compile -o traits-is_fn demo/traits-is_fn.cn
 # ==========================================================================
 
 use std.traits.is_fn

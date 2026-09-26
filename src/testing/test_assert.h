@@ -1,7 +1,7 @@
 #pragma once
 
 // ==========================================================================
-//  Kira Language — Shared Test Assertion Helpers
+//  Cinder Language — Shared Test Assertion Helpers
 //
 //  Small fail()/expect() primitives shared by the hand-rolled test binaries
 //  under src/parser and src/semantic, so each one doesn't reimplement its

@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `traits.is_signed_integer` — is this type one of `int8`..`int128`, `isize`?
 #
-#  Run it:      kira demo/traits-is_signed_integer.kira
-#  Compile it:  kira --compile -o traits-is_signed_integer demo/traits-is_signed_integer.kira
+#  Run it:      kira demo/traits-is_signed_integer.cn
+#  Compile it:  kira --compile -o traits-is_signed_integer demo/traits-is_signed_integer.cn
 # ==========================================================================
 
 use std.traits.is_signed_integer

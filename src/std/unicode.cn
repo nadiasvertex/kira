@@ -1,10 +1,10 @@
 module std.unicode
 
-# Full Unicode case mapping and case folding, in pure Kira over generated
+# Full Unicode case mapping and case folding, in pure Cinder over generated
 # UCD lookup tables (`std.unicode_tables`, produced by
 # `tools/unicode/gen_case_tables.py` from the Unicode Character Database).
 # This is the algorithmic core behind `str.to_uppercase`/`to_lowercase`/
-# `fold_case`/`eq_ignore_case` (`src/std/string.kira`'s `extend str` layer),
+# `fold_case`/`eq_ignore_case` (`src/std/string.cn`'s `extend str` layer),
 # split into its own module because it has no `str`-shaped surface of its
 # own -- everything here operates on individual scalars (`char`/`uint32`)
 # or lists of them.

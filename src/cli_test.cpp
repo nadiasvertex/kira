@@ -48,15 +48,15 @@ auto make_argv(std::vector<std::string> &args) -> std::vector<char *> {
 
 /// Verify that plain source paths are accepted as positional arguments.
 auto test_parse_args_accepts_sources() -> void {
-  std::vector<std::string> args = {"kira", "main.kira", "lib.kira"};
+  std::vector<std::string> args = {"kira", "main.cn", "lib.cn"};
   auto argv = make_argv(args);
 
   auto result = kira::driver::parse_args(argv);
   expect(result.has_value(), "expected sources to parse successfully");
   expect(!result->show_help, "plain sources should not request help");
   expect(result->sources.size() == 2, "expected two source arguments");
-  expect(result->sources[0] == "main.kira", "expected first source path");
-  expect(result->sources[1] == "lib.kira", "expected second source path");
+  expect(result->sources[0] == "main.cn", "expected first source path");
+  expect(result->sources[1] == "lib.cn", "expected second source path");
   expect(result->metadata_dir == kira::driver::k_default_metadata_dir,
          "expected default metadata directory");
 }
@@ -70,13 +70,13 @@ auto test_parse_args_supports_help_and_double_dash() -> void {
   expect(help_result.has_value(), "help should parse successfully");
   expect(help_result->show_help, "--help should set show_help");
 
-  std::vector<std::string> dash_args = {"kira", "--", "-literal.kira"};
+  std::vector<std::string> dash_args = {"kira", "--", "-literal.cn"};
   auto dash_argv = make_argv(dash_args);
 
   auto dash_result = kira::driver::parse_args(dash_argv);
   expect(dash_result.has_value(), "-- should stop option parsing");
   expect(dash_result->sources.size() == 1, "expected one source after --");
-  expect(dash_result->sources[0] == "-literal.kira",
+  expect(dash_result->sources[0] == "-literal.cn",
          "expected source after -- to be preserved");
 }
 
@@ -94,7 +94,7 @@ auto test_parse_args_supports_version() -> void {
 /// Verify that the metadata output directory can be overridden.
 auto test_parse_args_accepts_metadata_dir() -> void {
   std::vector<std::string> args = {"kira", "--metadata-dir", "build/meta",
-                                   "main.kira"};
+                                   "main.cn"};
   auto argv = make_argv(args);
 
   auto result = kira::driver::parse_args(argv);
@@ -116,7 +116,7 @@ auto test_parse_args_rejects_unknown_options() -> void {
 
 /// Verify that `--show-compile-details` is off by default and settable.
 auto test_parse_args_accepts_show_compile_details() -> void {
-  std::vector<std::string> default_args = {"kira", "main.kira"};
+  std::vector<std::string> default_args = {"kira", "main.cn"};
   auto default_argv = make_argv(default_args);
 
   auto default_result = kira::driver::parse_args(default_argv);
@@ -125,7 +125,7 @@ auto test_parse_args_accepts_show_compile_details() -> void {
          "expected show_compile_details to default to false");
 
   std::vector<std::string> args = {"kira", "--show-compile-details",
-                                   "main.kira"};
+                                   "main.cn"};
   auto argv = make_argv(args);
 
   auto result = kira::driver::parse_args(argv);
@@ -138,14 +138,14 @@ auto test_parse_args_accepts_show_compile_details() -> void {
 /// Verify `-O0`/`-O1`/`-O2`/`-O3`/bare `-O` parse into `cli_config::opt_level`,
 /// and that the default (no flag at all) stays `o0`.
 auto test_parse_args_accepts_optimization_level() -> void {
-  std::vector<std::string> default_args = {"kira", "main.kira"};
+  std::vector<std::string> default_args = {"kira", "main.cn"};
   auto default_argv = make_argv(default_args);
   auto default_result = kira::driver::parse_args(default_argv);
   expect(default_result.has_value(), "expected sources to parse successfully");
   expect(default_result->opt_level == kira::driver::optimization_level::o0,
          "expected opt_level to default to o0 with no -O flag");
 
-  std::vector<std::string> bare_args = {"kira", "-O", "main.kira"};
+  std::vector<std::string> bare_args = {"kira", "-O", "main.cn"};
   auto bare_argv = make_argv(bare_args);
   auto bare_result = kira::driver::parse_args(bare_argv);
   expect(bare_result.has_value(), "-O should parse successfully");
@@ -160,7 +160,7 @@ auto test_parse_args_accepts_optimization_level() -> void {
           {"-O3", kira::driver::optimization_level::o3},
       }};
   for (const auto &[flag, expected] : levels) {
-    std::vector<std::string> args = {"kira", flag, "main.kira"};
+    std::vector<std::string> args = {"kira", flag, "main.cn"};
     auto argv = make_argv(args);
     auto result = kira::driver::parse_args(argv);
     expect(result.has_value(),
@@ -175,7 +175,7 @@ auto test_rendering_helpers() -> void {
   auto help = kira::driver::render_help("kira");
   expect(help.find("Usage: kira [OPTIONS] SOURCES...") != std::string::npos,
          "help should contain usage line");
-  expect(help.find("Kira - Parse source files and emit module metadata") !=
+  expect(help.find(" Cinder - Parse source files and emit module metadata") !=
              std::string::npos,
          "help should contain description");
   expect(help.find("--metadata-dir PATH") != std::string::npos,
@@ -183,7 +183,7 @@ auto test_rendering_helpers() -> void {
 
   kira::driver::compile_report report{
       .modules = {{
-          .source_path = "main.kira",
+          .source_path = "main.cn",
           .module_path = {"sample", "tools"},
           .metadata_path = "build/meta/sample/tools.kmeta.pb",
       }},
@@ -244,7 +244,7 @@ auto write_file(const fs::path &path, std::string_view contents) -> void {
 /// Verify that successful compilation writes parse metadata for one file.
 auto test_compile_sources_writes_module_metadata() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_tools.kira";
+  auto source_path = temp.path / "sample_tools.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.tools\n"
@@ -314,7 +314,7 @@ auto test_compile_sources_writes_module_metadata() -> void {
 /// canonical-ish instantiation key.
 auto test_compile_sources_writes_functor_instantiation_metadata() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "app.kira";
+  auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module app\n"
@@ -364,7 +364,7 @@ auto test_compile_sources_writes_functor_instantiation_metadata() -> void {
 /// is active (its API resolves) and the untaken branch's is not.
 auto test_compile_sources_folds_static_if_import_selection() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "app.kira";
+  auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
   // `real_io` exposes `alpha`, `fake_io` exposes `beta`. The `static if true`
@@ -405,7 +405,7 @@ auto test_compile_sources_folds_static_if_import_selection() -> void {
 /// import from the module graph.
 auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "app.kira";
+  auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module app\n"
@@ -443,7 +443,7 @@ auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
 /// that name resolution stopped failing).
 auto test_compile_sources_folds_static_if_top_level_type_selection() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "app.kira";
+  auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module app\n"
@@ -476,7 +476,7 @@ auto test_compile_sources_folds_static_if_top_level_type_selection() -> void {
 auto test_compile_sources_folds_static_if_top_level_type_selection_else()
     -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "app.kira";
+  auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module app\n"
@@ -508,7 +508,7 @@ auto test_compile_sources_folds_static_if_top_level_type_selection_else()
 /// metadata, and that the outcome is recorded on the report.
 auto test_compile_sources_lowers_module_to_hir() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_math.kira";
+  auto source_path = temp.path / "sample_math.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.math\n"
@@ -545,7 +545,7 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
 auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
     -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_loop.kira";
+  auto source_path = temp.path / "sample_loop.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.loop\n"
@@ -581,7 +581,7 @@ auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
 /// result.
 auto test_compile_sources_skips_lowering_when_parse_only() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_parse_only.kira";
+  auto source_path = temp.path / "sample_parse_only.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.parse_only\n"
@@ -605,7 +605,7 @@ auto test_compile_sources_skips_lowering_when_parse_only() -> void {
 /// Verify that parser failures are reported and block metadata output.
 auto test_compile_sources_reports_parser_errors() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "broken.kira";
+  auto source_path = temp.path / "broken.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "def broken():\n"
@@ -624,7 +624,7 @@ auto test_compile_sources_reports_parser_errors() -> void {
   expect(report->error_count > 0, "expected parser errors for invalid source");
   expect(report->modules.empty(), "expected no metadata artifacts on failure");
   expect(report->diagnostics.find(
-             "every Kira source file must start with a `module` declaration") !=
+             "every Cinder source file must start with a `module` declaration") !=
              std::string::npos,
          "expected missing-module diagnostic");
   expect(!fs::exists(metadata_dir),
@@ -634,7 +634,7 @@ auto test_compile_sources_reports_parser_errors() -> void {
 /// Verify that malformed nested blocks still terminate instead of looping.
 auto test_compile_sources_reports_nested_parser_errors() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "nested_broken.kira";
+  auto source_path = temp.path / "nested_broken.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -663,8 +663,8 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
 /// Verify that multiple valid source files compile in one session.
 auto test_compile_sources_handles_multiple_files() -> void {
   auto temp = make_temp_dir();
-  auto source_a = temp.path / "sample_tools.kira";
-  auto source_b = temp.path / "sample_math.kira";
+  auto source_a = temp.path / "sample_tools.cn";
+  auto source_b = temp.path / "sample_math.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_a, "module sample.tools\n"
@@ -699,9 +699,9 @@ auto test_compile_sources_handles_multiple_files() -> void {
 /// several C++ translation units may reopen the same namespace.
 auto test_compile_sources_merges_multi_file_module_declarations() -> void {
   auto temp = make_temp_dir();
-  auto source_a = temp.path / "first.kira";
-  auto source_b = temp.path / "second.kira";
-  auto consumer_source = temp.path / "consumer.kira";
+  auto source_a = temp.path / "first.cn";
+  auto source_b = temp.path / "second.cn";
+  auto consumer_source = temp.path / "consumer.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_a, "module sample.tools\n"
@@ -733,14 +733,14 @@ auto test_compile_sources_merges_multi_file_module_declarations() -> void {
              report->diagnostics);
   expect(report->modules.size() == 3,
          "expected one metadata artifact per source file, even though "
-         "`first.kira`/`second.kira` share one module scope");
+         "`first.cn`/`second.cn` share one module scope");
 }
 
 /// Verify that declared child modules may be compiled in separate files.
 auto test_compile_sources_accepts_declared_external_submodule() -> void {
   auto temp = make_temp_dir();
-  auto parent_source = temp.path / "geometry.kira";
-  auto child_source = temp.path / "geometry_transform.kira";
+  auto parent_source = temp.path / "geometry.cn";
+  auto child_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(parent_source, "module geometry\n"
@@ -774,8 +774,8 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
 auto test_compile_sources_reports_missing_parent_submodule_declaration()
     -> void {
   auto temp = make_temp_dir();
-  auto parent_source = temp.path / "geometry.kira";
-  auto child_source = temp.path / "geometry_transform.kira";
+  auto parent_source = temp.path / "geometry.cn";
+  auto child_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(parent_source, "module geometry\n"
@@ -811,8 +811,8 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration()
 /// conflict.
 auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
   auto temp = make_temp_dir();
-  auto parent_source = temp.path / "geometry.kira";
-  auto child_source = temp.path / "geometry_shapes.kira";
+  auto parent_source = temp.path / "geometry.cn";
+  auto child_source = temp.path / "geometry_shapes.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(parent_source, "module geometry\n"
@@ -849,11 +849,11 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
 /// and child imports.
 auto test_compile_sources_resolves_session_imports() -> void {
   auto temp = make_temp_dir();
-  auto package_source = temp.path / "package.kira";
-  auto tools_source = temp.path / "package_tools.kira";
-  auto util_source = temp.path / "package_tools_util.kira";
-  auto parse_source = temp.path / "package_tools_parse.kira";
-  auto app_source = temp.path / "package_tools_app.kira";
+  auto package_source = temp.path / "package.cn";
+  auto tools_source = temp.path / "package_tools.cn";
+  auto util_source = temp.path / "package_tools_util.cn";
+  auto parse_source = temp.path / "package_tools_parse.cn";
+  auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(package_source, "module package\n"
@@ -905,23 +905,23 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
       .metadata_dir = metadata_dir.string(),
       .show_help = false,
   };
-  // `io.kira`'s `impl from[...]`/`impl drop for file` rely on the real
+  // `io.cn`'s `impl from[...]`/`impl drop for file` rely on the real
   // `from`/`drop` traits the auto-injected prelude provides, and
-  // `prelude.kira` itself now `use`s `std.console`/`std.iter` — mirror what
+  // `prelude.cn` itself now `use`s `std.console`/`std.iter` — mirror what
   // `main.cpp` does for every real invocation (this alone now pulls in
-  // `intrinsics.kira`, `traits.kira`, `traits.ord.kira`, `traits.show.kira`,
-  // `traits.numeric.kira`, `traits.conversion.kira`, `traits.category.kira`,
-  // `traits.hash.kira`, `limits.kira`, `iter.kira`, `prelude.kira`,
-  // `io.kira`, `console.kira`, `fmt.kira`, `algo.kira`, `unicode_tables.kira`,
-  // `unicode.kira`, `derive.kira`, `fs/path.kira`, `test.kira`, and the
+  // `intrinsics.cn`, `traits.cn`, `traits.ord.cn`, `traits.show.cn`,
+  // `traits.numeric.cn`, `traits.conversion.cn`, `traits.category.cn`,
+  // `traits.hash.cn`, `limits.cn`, `iter.cn`, `prelude.cn`,
+  // `io.cn`, `console.cn`, `fmt.cn`, `algo.cn`, `unicode_tables.cn`,
+  // `unicode.cn`, `derive.cn`, `fs/path.cn`, `test.cn`, and the
   // assembled `std.platform`) rather than
-  // hand-listing sources, which would double-add `io.kira`/`console.kira`
+  // hand-listing sources, which would double-add `io.cn`/`console.cn`
   // under a different path string and trip a duplicate-symbol diagnostic —
   // metadata is emitted per source *file*, so a module split across several
   // files (like `std.traits`) legitimately emits one metadata artifact per
   // file even though they all merge into one module scope
   // (`find_stdlib_source_file`'s resolved path doesn't lexically match a
-  // literal `"src/std/io.kira"` under `bazel test`'s runfiles tree).
+  // literal `"src/std/io.cn"` under `bazel test`'s runfiles tree).
   kira::driver::inject_stdlib_prelude(cfg);
 
   auto report = kira::driver::compile_sources(cfg, false);
@@ -940,7 +940,7 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
 /// Verify that module-local semantic scopes reject duplicate declaration names.
 auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "duplicate_scope.kira";
+  auto source_path = temp.path / "duplicate_scope.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample.tools\n"
@@ -976,7 +976,7 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
 auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
     -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "inline_duplicate_scope.kira";
+  auto source_path = temp.path / "inline_duplicate_scope.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -1008,8 +1008,8 @@ auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
 /// Verify that child modules may use `super` to name parent-owned types.
 auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
   auto temp = make_temp_dir();
-  auto geometry_source = temp.path / "geometry.kira";
-  auto transform_source = temp.path / "geometry_transform.kira";
+  auto geometry_source = temp.path / "geometry.cn";
+  auto transform_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(geometry_source, "module geometry\n"
@@ -1042,9 +1042,9 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
 /// Verify that unresolved qualified type paths fail semantic resolution.
 auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
   auto temp = make_temp_dir();
-  auto package_source = temp.path / "package.kira";
-  auto tools_source = temp.path / "package_tools.kira";
-  auto app_source = temp.path / "package_tools_app.kira";
+  auto package_source = temp.path / "package.cn";
+  auto tools_source = temp.path / "package_tools.cn";
+  auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(package_source, "module package\n"
@@ -1087,8 +1087,8 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
 /// diagnostics.
 auto test_local_binding_shadows_same_named_module() -> void {
   auto temp = make_temp_dir();
-  auto s_source = temp.path / "s.kira";
-  auto v_source = temp.path / "v.kira";
+  auto s_source = temp.path / "s.cn";
+  auto v_source = temp.path / "v.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "shadow_bin";
 
@@ -1177,8 +1177,8 @@ auto test_local_binding_shadows_same_named_module() -> void {
 ///   module alias `g` inside the `static def`.
 auto test_dotted_names_through_module_values_and_root_alias() -> void {
   auto temp = make_temp_dir();
-  auto geo_source = temp.path / "geo.kira";
-  auto main_source = temp.path / "main.kira";
+  auto geo_source = temp.path / "geo.cn";
+  auto main_source = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "dotted_bin";
 
@@ -1267,7 +1267,7 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
 /// Checked by value on both backends: the flat table gave 229, not 140.
 auto test_comptime_bare_names_resolve_per_module() -> void {
   auto temp = make_temp_dir();
-  auto main_source = temp.path / "main.kira";
+  auto main_source = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "bare_names_bin";
 
@@ -1351,8 +1351,8 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
 /// Asserted by the value computed through the alias.
 auto test_aliased_import_of_parentless_module_runs() -> void {
   auto temp = make_temp_dir();
-  auto main_source = temp.path / "main.kira";
-  auto inner_source = temp.path / "outer_inner.kira";
+  auto main_source = temp.path / "main.cn";
+  auto inner_source = temp.path / "outer_inner.cn";
   auto metadata_dir = temp.path / "meta";
   write_file(main_source, "module main\n"
                           "use outer.inner as renamed\n"
@@ -1392,7 +1392,7 @@ auto test_aliased_import_of_parentless_module_runs() -> void {
 /// too — which only adds harmless extra modules.
 auto test_stdlib_immune_to_user_root_module_names() -> void {
   auto temp = make_temp_dir();
-  auto main_source = temp.path / "main.kira";
+  auto main_source = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
   write_file(main_source, "module main\n"
                           "def main() -> int32:\n"
@@ -1441,7 +1441,7 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
   expect(stdlib_files > 0, "expected the stdlib sources to be injected");
   // Not module names a user could declare as a root: the stdlib's own root,
   // this program's root, path keywords, and keywords generally (a comment
-  // mentioning `deriving.kira` is not a module a user could declare).
+  // mentioning `deriving.cn` is not a module a user could declare).
   for (const auto *excluded : {"std", "main", "self", "super"}) {
     roots.erase(excluded);
   }
@@ -1453,7 +1453,7 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
          "reported against");
 
   for (const auto &root : roots) {
-    const auto path = temp.path / std::format("user_root_{}.kira", root);
+    const auto path = temp.path / std::format("user_root_{}.cn", root);
     write_file(path, std::format("module {}\n", root));
     cfg.sources.push_back(path.string());
   }
@@ -1470,9 +1470,9 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
 auto test_compile_sources_reports_unresolved_module_qualified_reference()
     -> void {
   auto temp = make_temp_dir();
-  auto package_source = temp.path / "package.kira";
-  auto tools_source = temp.path / "package_tools.kira";
-  auto app_source = temp.path / "package_tools_app.kira";
+  auto package_source = temp.path / "package.cn";
+  auto tools_source = temp.path / "package_tools.cn";
+  auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(package_source, "module package\n"
@@ -1509,9 +1509,9 @@ auto test_compile_sources_reports_unresolved_module_qualified_reference()
 /// session.
 auto test_compile_sources_reports_unresolved_session_import() -> void {
   auto temp = make_temp_dir();
-  auto package_source = temp.path / "package.kira";
-  auto tools_source = temp.path / "package_tools.kira";
-  auto app_source = temp.path / "package_tools_app.kira";
+  auto package_source = temp.path / "package.cn";
+  auto tools_source = temp.path / "package_tools.cn";
+  auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(package_source, "module package\n"
@@ -1550,10 +1550,10 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
 /// Verify that in-session imports honor child-module visibility across files.
 auto test_compile_sources_reports_inaccessible_session_import() -> void {
   auto temp = make_temp_dir();
-  auto package_source = temp.path / "package.kira";
-  auto tools_source = temp.path / "package_tools.kira";
-  auto secret_source = temp.path / "package_secret.kira";
-  auto other_source = temp.path / "package_other.kira";
+  auto package_source = temp.path / "package.cn";
+  auto tools_source = temp.path / "package_tools.cn";
+  auto secret_source = temp.path / "package_secret.cn";
+  auto other_source = temp.path / "package_other.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(package_source, "module package\n"
@@ -1609,7 +1609,7 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
 /// `--build` reported success.
 auto test_build_links_and_runs_a_heap_using_program() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_struct.kira";
+  auto source_path = temp.path / "sample_struct.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_struct_bin";
 
@@ -1662,14 +1662,14 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
 ///
 /// Both containers are covered because they reach it by different routes:
 /// `array[T, N]` through a compiler-emitted bounds check, `list[T]` through
-/// ordinary Kira calling `std.panic.panic` (`src/std/list.kira`). They used
+/// ordinary Cinder calling `std.panic.panic` (`src/std/list.cn`). They used
 /// to disagree — the array unwound with a catchable
 /// `panic_reason::index_out_of_bounds` while the list aborted — so asserting
 /// them together is the point, not duplication.
 auto check_out_of_bounds_index_terminates(std::string_view label,
                                           const std::string &program) -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "oob.kira";
+  auto source_path = temp.path / "oob.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "oob_bin";
 
@@ -1684,7 +1684,7 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
       .build_function = "main",
       .build_output = output_path.string(),
   };
-  // `xs[i]` on a `list` dispatches into `src/std/list.kira`, so the session
+  // `xs[i]` on a `list` dispatches into `src/std/list.cn`, so the session
   // needs the stdlib the real driver (`main.cpp`) always injects.
   kira::driver::inject_stdlib_prelude(cfg);
 
@@ -1740,7 +1740,7 @@ auto check_out_of_bounds_index_terminates(std::string_view label,
 /// passing even if the in-process tiers went back to unwinding.
 auto run_in_forked_child(const std::string &program) -> int {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "oob_run.kira";
+  auto source_path = temp.path / "oob_run.cn";
   auto metadata_dir = temp.path / "meta";
   write_file(source_path, program);
 
@@ -1822,7 +1822,7 @@ auto test_out_of_bounds_index_terminates_for_every_container() -> void {
 /// constraint on a different trait).
 auto test_run_index_mut_dispatches_to_cell_mut() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_index_mut.kira";
+  auto source_path = temp.path / "sample_index_mut.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_mut_bin";
 
@@ -1899,7 +1899,7 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
 /// injected, so no `index`/`index_ref` traits to dispatch against.
 auto test_run_index_ref_dispatches_to_cell() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_index_ref.kira";
+  auto source_path = temp.path / "sample_index_ref.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_ref_bin";
 
@@ -1983,8 +1983,8 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
 /// silently resolved to the wrong function would still be caught.
 auto test_cross_module_function_used_as_a_value() -> void {
   auto temp = make_temp_dir();
-  auto inner_path = temp.path / "inner.kira";
-  auto main_path = temp.path / "main.kira";
+  auto inner_path = temp.path / "inner.cn";
+  auto main_path = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "fn_value_bin";
 
@@ -2071,8 +2071,8 @@ auto test_cross_module_function_used_as_a_value() -> void {
 /// would still fail.
 auto test_module_qualified_function_used_as_a_value() -> void {
   auto temp = make_temp_dir();
-  auto inner_path = temp.path / "qualified_inner.kira";
-  auto main_path = temp.path / "qualified_main.kira";
+  auto inner_path = temp.path / "qualified_inner.cn";
+  auto main_path = temp.path / "qualified_main.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "qualified_fn_value_bin";
 
@@ -2146,7 +2146,7 @@ auto test_module_qualified_function_used_as_a_value() -> void {
 /// program (struct construction/field access), not just a scalar one.
 auto test_build_at_o2_still_links_and_runs_correctly() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_struct_o2.kira";
+  auto source_path = temp.path / "sample_struct_o2.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_struct_o2_bin";
 
@@ -2186,7 +2186,7 @@ auto test_build_at_o2_still_links_and_runs_correctly() -> void {
 
 /// Regression test for `spec/string-formatting-design.md` on the AOT/LLVM
 /// backend specifically (the bytecode VM path is covered by
-/// `src/testdata/std_test/string_interpolation.kira`): builds and actually
+/// `src/testdata/std_test/string_interpolation.cn`): builds and actually
 /// runs a program using several format styles, and checks its real stdout —
 /// this is what caught two real bugs during development (an `if`/`else`
 /// *expression* yielding `str` failing LLVM codegen, and a `usize` literal
@@ -2194,7 +2194,7 @@ auto test_build_at_o2_still_links_and_runs_correctly() -> void {
 /// neither of which a VM-only or exit-code-only test would have surfaced.
 auto test_build_links_and_runs_a_string_interpolation_program() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_interp.kira";
+  auto source_path = temp.path / "sample_interp.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_interp_bin";
 
@@ -2251,7 +2251,7 @@ auto test_build_links_and_runs_a_string_interpolation_program() -> void {
 /// that contract directly.
 auto test_run_reports_exit_code_and_silent_summary() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_exit.kira";
+  auto source_path = temp.path / "sample_exit.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2299,9 +2299,9 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
 auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
     -> void {
   auto temp = make_temp_dir();
-  auto shape_source = temp.path / "shapes.kira";
-  auto factory_source = temp.path / "factory.kira";
-  auto main_source = temp.path / "sample_main.kira";
+  auto shape_source = temp.path / "shapes.cn";
+  auto factory_source = temp.path / "factory.cn";
+  auto main_source = temp.path / "sample_main.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(shape_source, "module shapes\n"
@@ -2364,7 +2364,7 @@ auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
 /// compile without error too.
 auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_max_by.kira";
+  auto source_path = temp.path / "sample_max_by.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2423,7 +2423,7 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
 /// is what makes that distinction actually testable, not just "compiles".
 auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_ord.kira";
+  auto source_path = temp.path / "sample_ord.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2489,13 +2489,13 @@ auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
 /// bytecode VM's dispatch table (`src/bytecode/vm.cpp`) and the LLVM tier's
 /// C-ABI wrapper (`src/runtime/string.cpp`), on top of the shared
 /// `kira::runtime::str_compare` algorithm (`string_ops.cpp`). Runs `max()`
-/// over `list[str]` — the exact construct `demo/algorithm-max.kira` needed
+/// over `list[str]` — the exact construct `demo/algorithm-max.cn` needed
 /// and previously failed with "type `str` has no scalar bytecode
 /// representation yet" — end to end, checking the actual winning string
 /// rather than just a clean compile.
 auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_str_max.kira";
+  auto source_path = temp.path / "sample_str_max.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
@@ -2535,7 +2535,7 @@ auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
 /// programmer's assertion that the contract holds by other means.
 auto test_run_enforces_unproven_contract_unless_disabled() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_contract.kira";
+  auto source_path = temp.path / "sample_contract.cn";
   auto metadata_dir = temp.path / "meta";
 
   // `opaque` hides the argument from the reasoning solver, so the call is
@@ -2591,7 +2591,7 @@ auto test_run_enforces_unproven_contract_unless_disabled() -> void {
 /// `hir::lower`'s new `splice_expr` case following `spliced_fragments`).
 auto test_run_executes_spliced_quoted_expression() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_splice.kira";
+  auto source_path = temp.path / "sample_splice.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2627,7 +2627,7 @@ auto test_run_executes_spliced_quoted_expression() -> void {
 /// expression` for M4's backtick-quote case.
 auto test_run_executes_spliced_builder_constructed_expression() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_builder_splice.kira";
+  auto source_path = temp.path / "sample_builder_splice.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2667,7 +2667,7 @@ auto test_run_executes_spliced_builder_constructed_expression() -> void {
 /// source) and `hir::lower_module`'s new `synthesized_item_splices` walk.
 auto test_run_executes_item_level_splice_injected_impl() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_item_splice.kira";
+  auto source_path = temp.path / "sample_item_splice.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2712,11 +2712,11 @@ auto test_run_executes_item_level_splice_injected_impl() -> void {
 /// filter the globals out of the closure environment (otherwise lowering fails
 /// with "a captured variable could not be found"). Needs the full `std`
 /// session (unlike the std-free corpus sibling `036_lambda_captures_local_not_
-/// global.kira`), so it runs here through `compile_sources`. `g(42)` yields
+/// global.cn`), so it runs here through `compile_sources`. `g(42)` yields
 /// "n=42", whose length is 4.
 auto test_run_lambda_body_string_interpolation_captures() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_lambda_interp.kira";
+  auto source_path = temp.path / "sample_lambda_interp.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2760,11 +2760,11 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
 /// iterator_loop` desugars `for x in it: ...` into `while let @some(x) =
 /// it.next(): ...`; `next(mut self)` mutates the handle each pass. Needs the
 /// full `std` session for `std.iter`, so it runs here (unlike the std-free
-/// corpus sibling `037_user_iterator_for_loop.kira`, which defines its own
+/// corpus sibling `037_user_iterator_for_loop.cn`, which defines its own
 /// `iterator` trait). Sum of 0..5 == 10.
 auto test_run_for_loop_over_user_std_iterator() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_user_iterator.kira";
+  auto source_path = temp.path / "sample_user_iterator.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2813,7 +2813,7 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
 /// backend through its instances (`instantiate_generic_function`).
 auto test_run_type_generic_free_function() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_type_generic.kira";
+  auto source_path = temp.path / "sample_type_generic.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2865,7 +2865,7 @@ auto test_run_type_generic_free_function() -> void {
 auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
     -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_hygiene.kira";
+  auto source_path = temp.path / "sample_hygiene.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2910,7 +2910,7 @@ auto test_run_hygiene_prevents_spliced_let_from_clobbering_splice_site()
 /// separate path — see `test_run_scalar_static_let_referenced_by_name`.)
 auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_reflect.kira";
+  auto source_path = temp.path / "sample_reflect.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -2960,7 +2960,7 @@ auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
 /// natural path (no explicit `expr.lit`/`~splice` needed at all).
 auto test_run_scalar_static_let_referenced_by_name() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_scalar_static_let.kira";
+  auto source_path = temp.path / "sample_scalar_static_let.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -3008,7 +3008,7 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
 /// answer `true`.
 auto test_run_static_def_call_from_ordinary_generic_body() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_static_def_call.kira";
+  auto source_path = temp.path / "sample_static_def_call.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -3078,7 +3078,7 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
 auto test_type_checks_clones_static_constructs_in_generic_function_body()
     -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_static_in_generic.kira";
+  auto source_path = temp.path / "sample_static_in_generic.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
@@ -3119,7 +3119,7 @@ auto test_type_checks_clones_static_constructs_in_generic_function_body()
 /// dispatch — explicitly refused to lower it: "this type's capability comes
 /// only from `deriving`, which has no runtime body yet"). `checker::
 /// resolve_deriving_traits` now splices `~derive_show[point]()`
-/// (`src/std/deriving.kira`, module `std.derive`) in behind the scenes for
+/// (`src/std/deriving.cn`, module `std.derive`) in behind the scenes for
 /// every concrete, struct-shaped `deriving show`, so `p.show()` here calls
 /// a method built at
 /// compile time from `point`'s own real field list via reflection
@@ -3129,7 +3129,7 @@ auto test_type_checks_clones_static_constructs_in_generic_function_body()
 /// derivation from a lucky compile.
 auto test_build_derives_show_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_show.kira";
+  auto source_path = temp.path / "sample_derive_show.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_show_bin";
 
@@ -3180,7 +3180,7 @@ auto test_build_derives_show_via_deriving_clause() -> void {
 /// M7 follow-up ("make everything use the new style"): `eq` and `debug`
 /// re-derived for real too, the same way `show` was — `checker::
 /// resolve_deriving_traits` now splices in `derive_eq`/`derive_debug`
-/// (`src/std/deriving.kira`) alongside `derive_show` for every trait named
+/// (`src/std/deriving.cn`) alongside `derive_show` for every trait named
 /// in `deriving` that has one. `derive_eq`'s generated `def eq(self, other:
 /// &self) -> bool` is what caught a real, independent, pre-existing bug in
 /// *both* backends: field access through a `&self`-typed reference operand
@@ -3199,7 +3199,7 @@ auto test_build_derives_show_via_deriving_clause() -> void {
 /// the old type-check-only `derived_method_result` path.
 auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_eq_debug.kira";
+  auto source_path = temp.path / "sample_derive_eq_debug.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_eq_debug_bin";
 
@@ -3261,8 +3261,8 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
 /// checked type is available for this node", because `ord` was excluded from
 /// `k_real_derive_traits` and stayed on the type-check-only
 /// `derived_method_result` path, which supplies a result *type* and no body.
-/// `derive_ord` (`src/std/deriving.kira`) now folds the type's fields into a
-/// lexicographic chain of `ord_cmp`/`ord_then` calls (`src/std/traits.kira`),
+/// `derive_ord` (`src/std/deriving.cn`) now folds the type's fields into a
+/// lexicographic chain of `ord_cmp`/`ord_then` calls (`src/std/traits.cn`),
 /// spliced in by `resolve_deriving_traits` like `show`/`eq`/`debug`.
 ///
 /// The derived `cmp` is checked against computed answers rather than "it
@@ -3285,7 +3285,7 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
 /// broke rather than only that something did. All eight is 255.
 auto test_run_derives_ord_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_ord.kira";
+  auto source_path = temp.path / "sample_derive_ord.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(
@@ -3352,7 +3352,7 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
 /// spec/todo.md item 5, generic half: `deriving` on a *generic* type produced
 /// no runnable method body for any of its traits. `resolve_deriving_traits`
 /// (`src/semantic/check.cpp`) bailed on `!decl.type_params.empty()`, because
-/// every `derive_<trait>[T]()` in `src/std/deriving.kira` needs a single
+/// every `derive_<trait>[T]()` in `src/std/deriving.cn` needs a single
 /// concrete `T` to reflect over via `T.fields()`/`T.variants()` — so
 /// `type wrap[T] = { value: T } deriving show` stayed on the type-check-only
 /// `derived_method_result` path: `w.show()` type-checked and then failed
@@ -3456,7 +3456,7 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
 
 auto test_run_derives_for_generic_types() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_generic.kira";
+  auto source_path = temp.path / "sample_derive_generic.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, generic_deriving_source());
@@ -3497,7 +3497,7 @@ auto test_run_derives_for_generic_types() -> void {
 /// source.
 auto test_build_derives_for_generic_types() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_generic_aot.kira";
+  auto source_path = temp.path / "sample_derive_generic_aot.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_generic_bin";
 
@@ -3548,9 +3548,9 @@ auto test_build_derives_for_generic_types() -> void {
 /// `type_table::display`) and hands it to the evaluator for the duration of
 /// that one call (`comptime::evaluator::push_field_type_context`).
 ///
-/// None of the five real derivations (`src/std/deriving.kira`) read
+/// None of the five real derivations (`src/std/deriving.cn`) read
 /// `type_name` today, so this test supplies its own minimal `derive_show`
-/// (in place of the real one — `deriving.kira` is dropped from the injected
+/// (in place of the real one — `deriving.cn` is dropped from the injected
 /// prelude below to avoid a duplicate top-level `static def derive_show`
 /// registration, since `comptime::evaluator`'s `pending_functions_` table is
 /// keyed by bare name, session-wide, independent of module) whose generated
@@ -3564,7 +3564,7 @@ auto test_build_derives_for_generic_types() -> void {
 /// the resolved `"int32"`.
 auto test_deriving_reflects_field_concrete_type() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_field_type_name.kira";
+  auto source_path = temp.path / "sample_field_type_name.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
@@ -3593,7 +3593,7 @@ auto test_deriving_reflects_field_concrete_type() -> void {
   };
   kira::driver::inject_stdlib_prelude(cfg);
   std::erase_if(cfg.sources, [](const std::string &source) -> bool {
-    return std::filesystem::path(source).filename() == "deriving.kira";
+    return std::filesystem::path(source).filename() == "deriving.cn";
   });
 
   auto report = kira::driver::compile_sources(cfg, false);
@@ -3619,7 +3619,7 @@ auto test_deriving_reflects_field_concrete_type() -> void {
 /// fold needs — plain `*`/`+` are overflow-checked and would panic on the
 /// second field. So `std.traits` now carries real `impl hash` blocks for the
 /// scalars plus `hash_seed`/`hash_combine`/`hash_value`/`hash_tag`, and
-/// `derive_hash`/`derive_hash_sum` (`src/std/deriving.kira`) fold with them.
+/// `derive_hash`/`derive_hash_sum` (`src/std/deriving.cn`) fold with them.
 ///
 /// As with the `ord` tests, every case is a computed answer, not "it
 /// compiles" — and for hashing the weak-but-plausible derivation is the real
@@ -3652,7 +3652,7 @@ auto test_deriving_reflects_field_concrete_type() -> void {
 /// broke rather than only that something did. All eight is 255.
 auto test_run_derives_hash_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_hash.kira";
+  auto source_path = temp.path / "sample_derive_hash.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(
@@ -3748,7 +3748,7 @@ auto test_run_derives_hash_via_deriving_clause() -> void {
 /// directly comparable.
 auto test_build_derives_hash_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_hash_build.kira";
+  auto source_path = temp.path / "sample_derive_hash_build.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_hash_build_bin";
 
@@ -3841,7 +3841,7 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
 /// the process exit code, not just "compiles cleanly".
 auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_std_test_build.kira";
+  auto source_path = temp.path / "sample_std_test_build.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_std_test_build_bin";
 
@@ -3940,7 +3940,7 @@ auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
 /// instead of hand-written calls.
 auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_discovery_build.kira";
+  auto source_path = temp.path / "sample_discovery_build.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_discovery_build_bin";
 
@@ -4017,7 +4017,7 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
 /// `file_declares_main` bail-out).
 auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_discovery_existing_main.kira";
+  auto source_path = temp.path / "sample_discovery_existing_main.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_discovery_existing_main_bin";
 
@@ -4083,7 +4083,7 @@ auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
 /// tests.
 auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_nested_discovery_build.kira";
+  auto source_path = temp.path / "sample_nested_discovery_build.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_nested_discovery_build_bin";
 
@@ -4164,7 +4164,7 @@ auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
 /// its own `main` is the separate, already-covered case and stays legal.
 auto test_test_mode_without_any_tests_is_an_error() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_no_tests.kira";
+  auto source_path = temp.path / "sample_no_tests.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module app.geometry\n"
@@ -4200,7 +4200,7 @@ auto test_test_mode_without_any_tests_is_an_error() -> void {
 /// rather than running an empty suite.
 auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_hooks_only.kira";
+  auto source_path = temp.path / "sample_hooks_only.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
@@ -4240,7 +4240,7 @@ auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
 /// by actually running the conversion.
 auto test_build_try_applies_from_conversion() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_try_from_conversion_build.kira";
+  auto source_path = temp.path / "sample_try_from_conversion_build.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_try_from_conversion_build_bin";
 
@@ -4333,7 +4333,7 @@ auto test_build_try_applies_from_conversion() -> void {
 ///     case here.
 auto test_run_derives_hash_for_floats() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_hash_float.kira";
+  auto source_path = temp.path / "sample_derive_hash_float.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
@@ -4386,14 +4386,14 @@ auto test_run_derives_hash_for_floats() -> void {
 /// eq`), which makes `type ... deriving ord` alone the first way a user can
 /// get an impl-level diagnostic about an impl they never wrote. A derived
 /// impl's own span points into the quote it was built from in
-/// `src/std/deriving.kira`, so reporting at it against the user's file id
+/// `src/std/deriving.cn`, so reporting at it against the user's file id
 /// lands on an arbitrary byte offset in the user's source — here, a column
 /// past the end of a two-line file. `impl_report_span` redirects it to the
 /// `deriving` clause instead, and the help names the fix in terms of what
 /// the user wrote (add `eq` to the clause) rather than the synthesized impl.
 auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_ord_no_eq.kira";
+  auto source_path = temp.path / "sample_derive_ord_no_eq.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
@@ -4421,7 +4421,7 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
   expect(report->diagnostics.find("type point = { x: int32 } deriving ord") !=
              std::string::npos,
          "expected the diagnostic to quote the `deriving` clause's own line, "
-         "not an arbitrary offset from the quote in `std/deriving.kira`: " +
+         "not an arbitrary offset from the quote in `std/deriving.cn`: " +
              report->diagnostics);
   expect(report->diagnostics.find("Add `eq` to this `deriving` clause") !=
              std::string::npos,
@@ -4435,7 +4435,7 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
 /// available for this node", because `resolve_deriving_traits`
 /// (`src/semantic/check.cpp`) only spliced a real body for a struct-shaped
 /// type. `derive_show_sum`/`derive_eq_sum`/`derive_ord_sum`
-/// (`src/std/deriving.kira`) now build one over `T.variants()` (`src/
+/// (`src/std/deriving.cn`) now build one over `T.variants()` (`src/
 /// comptime/reflect.cpp`) via the `expr.match_on`/`expr.arm`/
 /// `expr.ctor_pattern` AST builders (`src/comptime/eval.cpp`), for both a
 /// payload-less sum (`color`) and a sum with payloads (`shape`).
@@ -4448,7 +4448,7 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
 /// 255.
 auto test_run_derives_sum_type_via_deriving_clause() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_derive_sum.kira";
+  auto source_path = temp.path / "sample_derive_sum.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(
@@ -4516,12 +4516,12 @@ auto test_run_derives_sum_type_via_deriving_clause() -> void {
 /// and it asserts the program's real stdout rather than a clean compile,
 /// because the failure mode worth catching is a `main` that is accepted and
 /// then never executes its statements (or executes them out of source
-/// order). The shape mirrors `demo/script-mode.kira`: statements interleaved
+/// order). The shape mirrors `demo/script-mode.cn`: statements interleaved
 /// with a `def` declaration, which must stay a declaration rather than being
 /// swept into `main`'s body.
 auto test_build_runs_script_mode_implicit_main() -> void {
   auto temp = make_temp_dir();
-  auto source_path = temp.path / "sample_script_mode.kira";
+  auto source_path = temp.path / "sample_script_mode.cn";
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_script_mode_bin";
 
@@ -4595,7 +4595,7 @@ auto test_build_runs_script_mode_implicit_main() -> void {
 auto test_compile_sources_enforces_frame_stack_budget() -> void {
   const auto compile = [](std::string_view name, const std::string &program) {
     auto temp = make_temp_dir();
-    auto source_path = temp.path / std::format("{}.kira", name);
+    auto source_path = temp.path / std::format("{}.cn", name);
     write_file(source_path, program);
     kira::driver::cli_config cfg{
         .program_name = "kira",

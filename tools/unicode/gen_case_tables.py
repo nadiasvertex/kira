@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates src/std/unicode_tables.kira from the Unicode Character Database.
+"""Generates src/std/unicode_tables.cn from the Unicode Character Database.
 
 Offline, one-time generation tool -- not part of the Bazel build. Regenerate
 when the UCD updates:
@@ -9,9 +9,9 @@ when the UCD updates:
     curl -O https://www.unicode.org/Public/UCD/latest/ucd/SpecialCasing.txt
     python3 tools/unicode/gen_case_tables.py \
         UnicodeData.txt CaseFolding.txt SpecialCasing.txt \
-        src/std/unicode_tables.kira
+        src/std/unicode_tables.cn
 
-Emits, as parallel-array `static` globals consumed by src/std/unicode.kira:
+Emits, as parallel-array `static` globals consumed by src/std/unicode.cn:
   - SIMPLE_UPPER_KEY/VAL, SIMPLE_LOWER_KEY/VAL: 1:1 simple case mappings
     (every code point whose simple upper/lower differs from itself), sorted
     by key for binary search.
@@ -22,7 +22,7 @@ Emits, as parallel-array `static` globals consumed by src/std/unicode.kira:
     SpecialCasing.txt. Locale-tailored entries (tr/az/lt) are excluded --
     real, deliberately out of scope; see 52-std-string.md's Limitations.
     The one non-locale conditional entry, Final_Sigma (0x03A3), is excluded
-    from this table and handled directly in unicode.kira, since it depends
+    from this table and handled directly in unicode.cn, since it depends
     on surrounding context rather than the code point alone.
   - CASED_LO/HI, CASE_IGNORABLE_LO/HI: sorted, non-overlapping code point
     ranges used only to evaluate the Final_Sigma condition. A code point is
@@ -144,7 +144,7 @@ def parse_special_casing(path):
             if conditions:
                 # Any condition present at all marks a locale-tailored or
                 # context-dependent (Final_Sigma) row -- both out of scope
-                # here (Final_Sigma is handled directly in unicode.kira).
+                # here (Final_Sigma is handled directly in unicode.cn).
                 continue
             if len(lower) > 1:
                 lower_full[cp] = lower
@@ -156,7 +156,7 @@ def parse_special_casing(path):
 def emit_kv_table(out, name, mapping):
     # `array[T, N]` has no `.len()` (only `slice`/`list`/`str` do; an
     # array's length is already a compile-time constant on its type) -- a
-    # `_LEN` constant lets unicode.kira form `&NAME_KEY[0..NAME_LEN]`
+    # `_LEN` constant lets unicode.cn form `&NAME_KEY[0..NAME_LEN]`
     # directly instead.
     keys = sorted(mapping.keys())
     out.write(f"static {name}_LEN: usize = {len(keys)}\n\n")
@@ -171,7 +171,7 @@ def emit_kv_table(out, name, mapping):
 def emit_multi_table_4(out, name, mapping):
     # Every multi-code-point table uses the same 4-slot shape (the widest
     # real mapping, FOLD's 3-code-point entries plus one spare, needs no
-    # more) so src/std/unicode.kira has one lookup routine for all of them.
+    # more) so src/std/unicode.cn has one lookup routine for all of them.
     keys = sorted(mapping.keys())
     for k in keys:
         assert len(mapping[k]) <= 4, (k, mapping[k])
@@ -202,7 +202,7 @@ def emit_range_table(out, name, ranges):
 def main():
     if len(sys.argv) != 5:
         print(f"usage: {sys.argv[0]} UnicodeData.txt CaseFolding.txt "
-              "SpecialCasing.txt OUT.kira", file=sys.stderr)
+              "SpecialCasing.txt OUT.cn", file=sys.stderr)
         return 1
     unicode_data_path, case_folding_path, special_casing_path, out_path = sys.argv[1:]
 
@@ -219,7 +219,7 @@ def main():
         out.write("# SpecialCasing.txt). See that script's module doc comment for\n")
         out.write("# the exact table shapes and the regeneration command.\n")
         out.write("#\n")
-        out.write("# Every KEY array is sorted ascending -- src/std/unicode.kira's\n")
+        out.write("# Every KEY array is sorted ascending -- src/std/unicode.cn's\n")
         out.write("# lookups depend on this for binary search.\n\n")
 
         out.write("# --- Simple (1:1) case mapping ------------------------------\n\n")

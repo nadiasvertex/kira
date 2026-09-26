@@ -2,11 +2,11 @@
 
 **Status:** Implemented
 
-Covers `list[T]`'s representation, growth strategy, and the operations available on it today, split across a compiler builtin core and the ordinary-Kira extensions in `std.list`.
+Covers `list[T]`'s representation, growth strategy, and the operations available on it today, split across a compiler builtin core and the ordinary- Cinder extensions in `std.list`.
 
 ## Representation
 
-`list[T]` is a compiler builtin generic (`type_kind::builtin_generic_kind`), not (yet) an ordinary Kira struct — `list` still appears in the compiler's `k_builtin_generic_arities` table rather than being defined as `pub type list[T] = { ... }` over the `machine` primitive substrate. The runtime layout, shared by both backends, is a 3-slot heap header:
+`list[T]` is a compiler builtin generic (`type_kind::builtin_generic_kind`), not (yet) an ordinary Cinder struct — `list` still appears in the compiler's `k_builtin_generic_arities` table rather than being defined as `pub type list[T] = { ... }` over the `machine` primitive substrate. The runtime layout, shared by both backends, is a 3-slot heap header:
 
 ```
 { u64 len; u64 cap; T* data; }
@@ -31,7 +31,7 @@ Indexing (`xs[i]`, `&xs[i]`, `&mut xs[i]`) is a builtin operator on `list[T]`, O
 
 ### `std.list` extensions
 
-`src/std/list.kira` adds, as an ordinary `extend[T] list[T]` block over `len` and indexing:
+`src/std/list.cn` adds, as an ordinary `extend[T] list[T]` block over `len` and indexing:
 
 - `is_empty(self) -> bool`
 - `first(self) -> option[T]` — `@some` of the first element, `@none` if empty.
@@ -47,7 +47,7 @@ Every builtin-method entry with no working lowering was removed from the table o
 
 ## `std.mem` — typed allocation
 
-`std.mem` (`src/std/mem.kira`) wraps the raw `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`) in typed, *element-counted* form. Every function is `machine` and a few lines long; a caller that already knows it holds `T`s never multiplies by `size_of[T]()` itself, because that multiplication is where a buffer overflow comes from.
+`std.mem` (`src/std/mem.cn`) wraps the raw `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`) in typed, *element-counted* form. Every function is `machine` and a few lines long; a caller that already knows it holds `T`s never multiplies by `size_of[T]()` itself, because that multiplication is where a buffer overflow comes from.
 
 ```kira
 machine def alloc[T](count: usize) -> *mut T
@@ -60,7 +60,7 @@ Every block is zero-filled, including the grown tail of a `resize`. The allocato
 
 ## `vector[T]` — a list owning its own storage
 
-`vector[T]` (`src/std/list.kira`) is the same data structure as `list[T]`, written in Kira with no compiler support beyond what any user struct gets:
+`vector[T]` (`src/std/list.cn`) is the same data structure as `list[T]`, written in Cinder with no compiler support beyond what any user struct gets:
 
 ```kira
 pub type vector[T] = { len: usize, cap: usize, data: *mut T }
@@ -81,7 +81,7 @@ It exists because `list[T]`'s missing operations were never a library omission �
 
 Every method that touches memory is `machine` and short; the public API is entirely safe.
 
-**`free` must be called explicitly.** Kira runs no scope-exit `drop` glue on either backend (`../../../todo.md` item 6), so a `vector` that goes out of scope leaks its buffer under `KIRA_ALLOCATOR=system`, exactly as every heap value already leaks under the arena. Elements are not dropped either, for the same reason. This is the one place `vector[T]` is worse than `list[T]` today — a bump-arena `list` never promised to free anything, so it had nothing to forget to do.
+**`free` must be called explicitly.** Cinder runs no scope-exit `drop` glue on either backend (`../../../todo.md` item 6), so a `vector` that goes out of scope leaks its buffer under `KIRA_ALLOCATOR=system`, exactly as every heap value already leaks under the arena. Elements are not dropped either, for the same reason. This is the one place `vector[T]` is worse than `list[T]` today — a bump-arena `list` never promised to free anything, so it had nothing to forget to do.
 
 ## Example
 

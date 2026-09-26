@@ -7,7 +7,7 @@ use std.panic.panic
 # These used to be entries in the compiler's `k_builtin_methods` table
 # (`src/semantic/check.cpp`), which answered their *types* without any backend
 # ever compiling them: `o.unwrap()` type-checked and then failed to lower. They
-# are ordinary Kira now, which is both the fix and the arrangement
+# are ordinary Cinder now, which is both the fix and the arrangement
 # `spec/collections-algorithms-design.md` asks for — the table shrinks toward
 # nothing rather than growing a matching interception per method.
 #

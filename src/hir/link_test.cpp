@@ -94,7 +94,7 @@ auto find_module(const hir::ptr_vec<hir::hir_module> &modules,
 
 auto test_finds_only_entry_when_nothing_qualified() -> void {
   auto fixture = lower_fixture({
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "pub def run() -> int32:\n"
                    "    return 1\n"},
   });
@@ -107,10 +107,10 @@ auto test_finds_only_entry_when_nothing_qualified() -> void {
 
 auto test_discovers_direct_dependency() -> void {
   auto fixture = lower_fixture({
-      {"tools.kira", "module tools\n"
+      {"tools.cn", "module tools\n"
                      "pub def double(x: int32) -> int32:\n"
                      "    return x * 2\n"},
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "use tools\n"
                    "pub def run() -> int32:\n"
                    "    return tools.double(21)\n"},
@@ -126,14 +126,14 @@ auto test_discovers_direct_dependency() -> void {
 
 auto test_discovers_transitive_dependency() -> void {
   auto fixture = lower_fixture({
-      {"leaf.kira", "module leaf\n"
+      {"leaf.cn", "module leaf\n"
                     "pub def value() -> int32:\n"
                     "    return 7\n"},
-      {"mid.kira", "module mid\n"
+      {"mid.cn", "module mid\n"
                    "use leaf\n"
                    "pub def relay() -> int32:\n"
                    "    return leaf.value()\n"},
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "use mid\n"
                    "pub def run() -> int32:\n"
                    "    return mid.relay()\n"},
@@ -166,9 +166,9 @@ auto test_discovers_transitive_dependency() -> void {
 /// tables and no functions of its own, into `std.unicode`).
 auto test_discovers_dependency_reached_only_through_a_global() -> void {
   auto fixture = lower_fixture({
-      {"tables.kira", "module tables\n"
+      {"tables.cn", "module tables\n"
                       "pub static VALUES: array[int32, 3] = [10, 20, 30]\n"},
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "use tables.*\n"
                    "pub def run() -> int32:\n"
                    "    return VALUES[1]\n"},

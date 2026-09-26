@@ -32,7 +32,7 @@ struct checked_fixture {
 
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
-  const auto file_id = fixture.sources.add_file("sample.kira", text);
+  const auto file_id = fixture.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
   const auto *file = fixture.sources.get(*file_id);

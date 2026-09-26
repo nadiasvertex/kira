@@ -57,7 +57,7 @@ pub type platform_info = {
     os_family: os_family,
 }
 
-#: Build information about the Kira compiler.
+#: Build information about the Cinder compiler.
 pub type kira_build = {
     version: str,
     implementation: str,
@@ -228,11 +228,11 @@ pub def platform() -> str:
         @err(_) => "unknown"
     return "{target_os()}-{rel}-{target_arch().show()}-{proc}"
 
-#: Kira runtime information — all compile-time constants. kira_version/
+#: Cinder runtime information — all compile-time constants. kira_version/
 #: kira_implementation/kira_compiler/kira_build_date are generated
 #: above by the driver (see the top-of-file comment).
 
-#: Gets build information about the Kira compiler.
+#: Gets build information about the Cinder compiler.
 #: Returns:
 #:   a kira_build structure with version and compiler information.
 pub pure def kira_build_info() -> kira_build:

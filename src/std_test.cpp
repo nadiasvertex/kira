@@ -87,7 +87,7 @@ auto find_corpus_dir(std::string_view argv0) -> fs::path {
   std::abort();
 }
 
-/// One `<name>.kira` sample paired with the `<name>.expected` stdout text
+/// One `<name>.cn` sample paired with the `<name>.expected` stdout text
 /// `println`/`print` are expected to produce when `main` runs to completion.
 struct sample {
   std::string name;
@@ -98,7 +98,7 @@ struct sample {
 auto list_samples(const fs::path &corpus_dir) -> std::vector<sample> {
   auto samples = std::vector<sample>{};
   for (const auto &entry : fs::directory_iterator(corpus_dir)) {
-    if (!entry.is_regular_file() || entry.path().extension() != ".kira") {
+    if (!entry.is_regular_file() || entry.path().extension() != ".cn") {
       continue;
     }
     const auto expected_path = entry.path().parent_path() /

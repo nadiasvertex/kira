@@ -38,7 +38,7 @@ struct inlined_program {
 
 auto inline_program(const std::string &text) -> inlined_program {
   auto program = inlined_program{};
-  const auto file_id = program.sources.add_file("sample.kira", text);
+  const auto file_id = program.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
   const auto *file = program.sources.get(*file_id);
   expect(file != nullptr, "expected registered fixture source");

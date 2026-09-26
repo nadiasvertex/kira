@@ -6,7 +6,7 @@ module codegen_stress.for_over_ref_borrow
 # afterward. No stdlib here (this harness injects none — see
 # `todo-item-6-deriving-hash-stale`), so the collection, its cursor, and the
 # `iterator[T]` trait are all hand-rolled, mirroring
-# `037_user_iterator_for_loop.kira`. The cursor holds its own `end` (copied
+# `037_user_iterator_for_loop.cn`. The cursor holds its own `end` (copied
 # once, at `iter()` time) rather than re-reading `src.len` per `next()` — a
 # 3-segment `self.src.len` field chain hits an unrelated, pre-existing
 # lowering gap ("only a two-segment `value.field` path is lowered"),

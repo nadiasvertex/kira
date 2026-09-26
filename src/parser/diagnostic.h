@@ -16,7 +16,7 @@ namespace kira {
 //  diagnostic severity levels.
 //
 //  We deliberately include "Help" and "Note" as first-class levels because
-//  Kira's philosophy is that the compiler is a teacher. Errors should always
+//  Cinder's philosophy is that the compiler is a teacher. Errors should always
 //  be accompanied by context that helps the user understand *why* something
 //  is wrong and *how* to fix it.
 // ==========================================================================
@@ -566,7 +566,7 @@ private:
         file->resolve(label.span.end > label.span.start ? label.span.end - 1
                                                         : label.span.start);
 
-    // Location line: "  --> file.kira:10:5"
+    // Location line: "  --> file.cn:10:5"
     out += prefix;
     out += "  ";
     out += arrow_color;

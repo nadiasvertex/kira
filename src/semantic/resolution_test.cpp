@@ -166,7 +166,7 @@ auto find_recorded_node(const kira::semantic::semantic_session &session,
 /// the loop's body.
 auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
   const auto parsed = parse_sources({source_fixture{
-      .path = "walk.kira",
+      .path = "walk.cn",
       .text = "module sample\n"
               "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
               "  return f(x)\n"
@@ -219,7 +219,7 @@ auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
 auto test_build_semantic_session_indexes_module_symbols() -> void {
   const auto parsed = parse_sources({
       load_test_data_fixture(
-          "build_semantic_session_indexes_module_symbols.kira"),
+          "build_semantic_session_indexes_module_symbols.cn"),
   });
 
   const auto session =
@@ -259,7 +259,7 @@ auto test_build_semantic_session_indexes_module_symbols() -> void {
 auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
   const auto parsed = parse_sources({
       load_test_data_fixture(
-          "resolve_value_name_shadowing_in_nested_blocks.kira"),
+          "resolve_value_name_shadowing_in_nested_blocks.cn"),
   });
 
   const auto session =
@@ -290,7 +290,7 @@ auto test_resolve_value_name_shadowing_in_nested_blocks() -> void {
 
 auto test_resolve_function_parameters_and_locals() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture("resolve_function_parameters_and_locals.kira"),
+      load_test_data_fixture("resolve_function_parameters_and_locals.cn"),
   });
 
   const auto session =
@@ -325,7 +325,7 @@ auto test_resolve_function_parameters_and_locals() -> void {
 
 auto test_match_arm_pattern_bindings_are_arm_local() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture("match_arm_pattern_bindings_are_arm_local.kira"),
+      load_test_data_fixture("match_arm_pattern_bindings_are_arm_local.cn"),
   });
 
   const auto session =
@@ -359,7 +359,7 @@ auto test_match_arm_pattern_bindings_are_arm_local() -> void {
 
 auto test_lambda_parameters_shadow_outer_bindings() -> void {
   const auto parsed = parse_sources({
-      load_test_data_fixture("lambda_parameters_shadow_outer_bindings.kira"),
+      load_test_data_fixture("lambda_parameters_shadow_outer_bindings.cn"),
   });
 
   const auto session =

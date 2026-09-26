@@ -1,6 +1,6 @@
 module main
 
-# `std.list`'s `list[T]` — a growable list written in Kira, owning its own
+# `std.list`'s `list[T]` — a growable list written in Cinder, owning its own
 # heap storage through `std.mem` over the `rt_alloc`/`rt_realloc`/`rt_free`
 # intrinsics, with no compiler support for the type beyond what any user
 # struct gets.

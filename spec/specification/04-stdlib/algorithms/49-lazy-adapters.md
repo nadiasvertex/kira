@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers every lazy iterator adapter in `src/std/algo.kira`: a free generic function returning a generic struct implementing `iterator[T]` (see [The Iterator Protocol](48-iterator-protocol.md)). Nothing is evaluated until the resulting chain is drained by a terminal (see [Aggregation](50-aggregation.md)); building an adapter costs no allocation and does no work.
+Covers every lazy iterator adapter in `src/std/algo.cn`: a free generic function returning a generic struct implementing `iterator[T]` (see [The Iterator Protocol](48-iterator-protocol.md)). Nothing is evaluated until the resulting chain is drained by a terminal (see [Aggregation](50-aggregation.md)); building an adapter costs no allocation and does no work.
 
 Each entry gives the constructor's signature and its exact semantics. `it` is always taken by value (moved) and drives the adapter's `next`.
 
@@ -28,7 +28,7 @@ Each entry gives the constructor's signature and its exact semantics. `it` is al
 
 ## Known gap: `unique`
 
-`spec/collections-algorithms-design.md` §6.1 lists `unique` (bound `T: hash + eq`) as a lazy adapter alongside the ones above. It is **not implemented** — there is no `unique`/`unique_iter` in `src/std/algo.kira`. Treat it as planned; the `hash` trait it would depend on is itself part of the not-yet-built [unordered map/set](../collections/46-unordered-map-and-set.md) work.
+`spec/collections-algorithms-design.md` §6.1 lists `unique` (bound `T: hash + eq`) as a lazy adapter alongside the ones above. It is **not implemented** — there is no `unique`/`unique_iter` in `src/std/algo.cn`. Treat it as planned; the `hash` trait it would depend on is itself part of the not-yet-built [unordered map/set](../collections/46-unordered-map-and-set.md) work.
 
 ## See also
 

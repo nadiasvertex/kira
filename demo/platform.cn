@@ -7,8 +7,8 @@ module main
 #  runtime host facts (hostname, libc, `uname`), plus the compiler's own
 #  version/build info. See spec/specification for the stdlib platform module.
 #
-#  Run it:      kira demo/platform.kira
-#  Compile it:  kira --compile -o platform demo/platform.kira
+#  Run it:      kira demo/platform.cn
+#  Compile it:  kira --compile -o platform demo/platform.cn
 # ==========================================================================
 
 use std.platform
@@ -28,7 +28,7 @@ def main() -> int32:
   if let @some(libc) = platform.libc_ver():
       println("libc: {libc.name} {libc.version}")
 
-  println("Kira version: {platform.kira_version()}")
-  println("Kira build: {platform.kira_build_info().show()}")
+  println(" Cinder version: {platform.cn_version()}")
+  println(" Cinder build: {platform.cn_build_info().show()}")
 
   return 0

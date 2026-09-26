@@ -40,7 +40,7 @@ namespace {
 /// Builds a `struct_instance` value describing one field: `{name: "x",
 /// type_name: "int32", type_of: <type_expr>, is_data_member: true}` — the
 /// shape `static for field in T.fields():` code is expected to destructure.
-/// Named `type_name`, not `type`: `type` is a reserved keyword in Kira, so a
+/// Named `type_name`, not `type`: `type` is a reserved keyword in Cinder, so a
 /// quoted `field.type` access could never parse. `type_of` carries the
 /// field's declared `type_expr` fragment directly (splice-ready with `~`),
 /// which sidesteps `type_name`'s string-rendering precision loss for code
@@ -59,7 +59,7 @@ namespace {
 /// `render_type_expr` when null (reflection outside a derive call, or a
 /// field whose type failed to resolve).
 ///
-/// `type_name` stays for existing consumers (`src/std/deriving.kira`) that
+/// `type_name` stays for existing consumers (`src/std/deriving.cn`) that
 /// only ever read it for display. `is_data_member` is always `true` here —
 /// see `make_module_member_descriptor`'s doc comment for the `false` case.
 [[nodiscard]] auto make_field_descriptor(const ast::struct_field &field,
@@ -97,7 +97,7 @@ namespace {
 /// Builds the `type_kind` value `T.kind()` returns
 /// (`spec/specification/04-stdlib/type-traits/60-meta-queries.md`) — a
 /// `variant_instance` of the prelude sum type `type_kind`
-/// (`src/std/type_traits.kira`). `T.kind()` never fails, so this always
+/// (`src/std/type_traits.cn`). `T.kind()` never fails, so this always
 /// returns something, picking the closest kind when the narrower
 /// classifications below don't apply:
 ///

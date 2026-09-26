@@ -4,7 +4,7 @@ module sample
 # can pin it down — the diagnostic todo #8 describes should still fire for
 # this genuinely unsolvable case even after `n` correctly resolves for a
 # target that *does* mention it (`buf[n]`, see
-# testdata/codegen_stress/078_impl_const_generic_value_param.kira).
+# testdata/codegen_stress/078_impl_const_generic_value_param.cn).
 type holder = { value: int32 }
 
 trait sized:

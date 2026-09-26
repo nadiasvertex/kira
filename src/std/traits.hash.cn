@@ -14,7 +14,7 @@ pub trait hash:
 # for the builtin scalars they bottom out in. A derived `hash` is a fold over
 # the type's fields, and a fold needs a seed, a per-field hash, and a way to
 # join two results -- none of which can be written as the single flat
-# expression the AST builders in `src/std/deriving.kira` can splice into a
+# expression the AST builders in `src/std/deriving.cn` can splice into a
 # quoted method body. They live here for the same reason `ord_cmp`/`ord_then`
 # do: `find_prelude_function` (`src/semantic/check.cpp`) lists `std.traits`,
 # so a body spliced into the user's own module resolves them without an
@@ -66,7 +66,7 @@ pub def hash_value[T](x: T) -> uint64 where T: hash:
     return x.hash()
 
 #: The contribution a sum type's variant tag makes to its hash --
-#: `derive_hash_sum`'s (`src/std/deriving.kira`) primary input, folded in
+#: `derive_hash_sum`'s (`src/std/deriving.cn`) primary input, folded in
 #: before any payload so that two distinct payload-less variants do not hash
 #: alike. A function for the same reason `ord_less`/`ord_greater` are: the
 #: builders splice a call, and the index has to arrive already widened to

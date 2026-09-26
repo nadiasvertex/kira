@@ -4,12 +4,12 @@ module main
 
 # Constructor-style numeric conversions: `int32(x)`, `float64(x)`.
 #
-# Kira has no cast operator in expression position, so a width change is
+# Cinder has no cast operator in expression position, so a width change is
 # spelled as a call on the target type's name. `check_conversion_call` types
 # these off that name alone and never resolves a declaration, so the callee
 # ident carries no type — and lowering, which reached it through the ordinary
 # call path, failed with "no concrete checked type is available for this node"
-# pointing at the conversion itself. Since Kira never converts implicitly,
+# pointing at the conversion itself. Since Cinder never converts implicitly,
 # that left mixed-width arithmetic (anything combining `usize` from `.len()`
 # with a sized integer) with no expressible form at all.
 #

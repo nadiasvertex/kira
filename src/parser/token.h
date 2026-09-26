@@ -9,7 +9,7 @@
 namespace kira {
 
 // ==========================================================================
-//  token_kind — every distinct lexical element in the Kira language.
+//  token_kind — every distinct lexical element in the Cinder language.
 //
 //  Naming conventions:
 //    Kw*      — keywords
@@ -555,7 +555,7 @@ struct token {
   // avoids pulling in a hash map dependency. The compiler will likely
   // optimize this into a switch on the first character anyway.
 
-  // Sort by frequency of occurrence in typical Kira code to get early-out
+  // Sort by frequency of occurrence in typical Cinder code to get early-out
   // on the most common identifiers, which are NOT keywords.
   if (text.empty()) {
     return token_kind::ident;
@@ -805,7 +805,7 @@ struct token {
 //  token_kind_name — returns a human-readable name for a token_kind.
 //
 //  This is used in diagnostic messages. The names are chosen to be
-//  understandable to someone learning Kira — not compiler-internals jargon.
+//  understandable to someone learning Cinder — not compiler-internals jargon.
 // ==========================================================================
 [[nodiscard]] constexpr auto token_kind_name(token_kind kind) noexcept
     -> std::string_view {

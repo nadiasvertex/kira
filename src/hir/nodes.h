@@ -686,7 +686,7 @@ struct hir_match : hir_expr {
         subject_symbol(subj_sym), arms(std::move(a)) {}
 };
 
-/// Lambda/closure `x => x + 1` or `(a, b) -> int => a + b`. Kira
+/// Lambda/closure `x => x + 1` or `(a, b) -> int => a + b`. Cinder
 /// monomorphizes closures (there is no separate closure type distinct from
 /// the function-value type it's assigned/passed as — see
 /// `infer_lambda`'s doc comment in check.cpp), so this is shaped exactly

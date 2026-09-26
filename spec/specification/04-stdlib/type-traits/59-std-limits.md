@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Per-type compile-time numeric bounds and properties (`min[T]()`, `max[T]()`, `bits[T]()`, `epsilon[T]()`, ...), reinterpreting `std::numeric_limits` as a set of `static pure` queries over Kira's builtin numeric types.
+Per-type compile-time numeric bounds and properties (`min[T]()`, `max[T]()`, `bits[T]()`, `epsilon[T]()`, ...), reinterpreting `std::numeric_limits` as a set of `static pure` queries over Cinder's builtin numeric types.
 
 ## Rationale
 

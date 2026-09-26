@@ -1,7 +1,7 @@
 module codegen_stress.for_over_ref_borrow_generic_adapter
 
 # `for x in &xs` (spec/todo.md #21) dispatches to a non-consuming `iter`
-# free function (see `086_for_over_ref_borrow.kira`), but that fixture's
+# free function (see `086_for_over_ref_borrow.cn`), but that fixture's
 # `iter` is not itself generic, so it never exercised the instance the
 # checker builds for a generic `iter[T]`. `try_resolve_iter_borrow`
 # (src/semantic/check.cpp) instantiated that template through the wrong

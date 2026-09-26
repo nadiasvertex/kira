@@ -369,7 +369,7 @@ auto type_table::char_type() const -> type_id {
   return it != interned_.end() ? it->second : k_unknown_type;
 }
 
-/// Recursively renders `id` into Kira's own type syntax, matching the
+/// Recursively renders `id` into Cinder's own type syntax, matching the
 /// spellings used in error messages (`_` for `unknown`, `list[int32]`,
 /// `fn(int32) -> str`, `&mut T`, ...).
 auto type_table::display(type_id id) const -> std::string {

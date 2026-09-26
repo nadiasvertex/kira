@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `limits.bits` — The number of bits in the numeric type.
 #
-#  Run it:      kira demo/limits-bits.kira
-#  Compile it:  kira --compile -o limits-bits.kira demo/limits-bits.kira
+#  Run it:      kira demo/limits-bits.cn
+#  Compile it:  kira --compile -o limits-bits.cn demo/limits-bits.cn
 # ==========================================================================
 
 use std.limits.bits

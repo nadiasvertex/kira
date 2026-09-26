@@ -1521,12 +1521,12 @@ private:
   }
 
   /// Whether `id` (stripped of `&`/`&mut`) is a raw `*T`/`*mut T` —
-  /// the signal that distinguishes a *raw pointer* from an *ordinary Kira
+  /// the signal that distinguishes a *raw pointer* from an *ordinary Cinder
   /// reference* to the same compound type, which `is_heap_pointer_value`'s
   /// `&`/`&mut`/`*` shortcuts must tell apart and previously didn't.
   ///
   /// The shortcuts are correct for an ordinary place of compound type: a
-  /// `&`/`&mut` Kira reference to something already heap-boxed is
+  /// `&`/`&mut` Cinder reference to something already heap-boxed is
   /// bit-identical to the boxed value itself, so `&x`/`*r` is a no-op
   /// either way. A *raw* pointer means something different by the machine
   /// layer's own contract (`spec/specification/03-advanced/
@@ -1543,7 +1543,7 @@ private:
   /// Found via `list[T]`'s `index[range[usize]]` impl (`&mut
   /// self.data[i.start]`) once `T` was a tuple — `std.algo`'s `sort_by`/
   /// `stable_sort` over `list[(int32, int32)]` reliably crashed the VM
-  /// (`src/testdata/std_test/algo_sort.kira`'s `sort_by` case).
+  /// (`src/testdata/std_test/algo_sort.cn`'s `sort_by` case).
   [[nodiscard]] auto is_raw_pointer_type(type_id id) const -> bool {
     return types_.entry(strip_refs(id)).kind == semantic::type_kind::ptr_kind;
   }

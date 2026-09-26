@@ -7,8 +7,8 @@ module main
 #  predicate first fails, every remaining element is yielded, even if some
 #  of them would have satisfied the predicate too.
 #
-#  Run it:      kira demo/iterator-skip_while.kira
-#  Compile it:  kira --compile -o iterator-skip_while demo/iterator-skip_while.kira
+#  Run it:      kira demo/iterator-skip_while.cn
+#  Compile it:  kira --compile -o iterator-skip_while demo/iterator-skip_while.cn
 # ==========================================================================
 
 def main() -> int32:

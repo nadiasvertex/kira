@@ -11,7 +11,7 @@ cc_library(
 
 # Separate from `:testing` because it needs the front end: a harness that
 # drives `check_program` directly has to inject the stdlib (`list`, `option`
-# and friends are ordinary Kira types, not builtins), and injecting it means
+# and friends are ordinary Cinder types, not builtins), and injecting it means
 # parsing it. Harnesses that only need `expect`/`fail` keep depending on the
 # dependency-free `:testing` above.
 cc_library(

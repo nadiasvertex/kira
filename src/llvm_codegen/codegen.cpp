@@ -340,8 +340,8 @@ using kira::decode_string_literal;
     // A `never`-returning function does not return, so nothing ever reads
     // this and any representation would do. It is a pointer to match the
     // `rt_panic` intrinsic's own C-ABI signature exactly: `std.panic`'s
-    // `panic` is a thin Kira wrapper around it, and the two must agree at
-    // the boundary. Without a case here a Kira `-> never` function has no
+    // `panic` is a thin Cinder wrapper around it, and the two must agree at
+    // the boundary. Without a case here a Cinder `-> never` function has no
     // signature at all, so only the intrinsic could be called directly.
     return llvm::PointerType::get(ctx, 0);
   }
@@ -1694,7 +1694,7 @@ private:
   /// (`is_raw_pointer_type`), which this mirrors: `is_heap_pointer_value`'s
   /// `&`/`&mut`/`*` passthroughs are correct for an ordinary place of
   /// compound type, but mean something different for a *raw* pointer
-  /// (machine-layer address arithmetic vs. an ordinary Kira reference),
+  /// (machine-layer address arithmetic vs. an ordinary Cinder reference),
   /// and reusing them there conflated "the value at a slot" with "the
   /// slot's own address".
   [[nodiscard]] auto is_raw_pointer_type(type_id id) const -> bool {
@@ -1887,7 +1887,7 @@ private:
             }
             // Every intrinsic parameter already crosses at its own wire
             // kind (`src/intrinsics.h`'s `intrinsic_wire_kind`), matching
-            // what `compile_expr` produces for that Kira type — except
+            // what `compile_expr` produces for that Cinder type — except
             // `bool`/`uint8`, which widen to the wire type's `i32` (see
             // that enum's doc comment). `getParamType` is the source of
             // truth for what's actually expected here.
@@ -1902,7 +1902,7 @@ private:
           auto *raw_result = builder_.CreateCall(callee, args);
           // Symmetric narrowing on the way back out: a `bool`-returning
           // intrinsic's wire return is `i32`, which needs a `trunc` down
-          // to Kira's own `i1` bool representation before this value can
+          // to Cinder's own `i1` bool representation before this value can
           // flow into ordinary bool-typed code (a branch condition, a
           // stored `bool` local, ...).
           if (raw_result->getType()->isIntegerTy(32)) {
@@ -2003,7 +2003,7 @@ private:
   /// `musttail` is verify-or-die, so it is only ever emitted once its own
   /// preconditions provably hold here too: matching return type (covers
   /// "both void" as well as "both the same scalar/pointer type") and same
-  /// calling convention. Kira has no by-value struct return, so there is no
+  /// calling convention. Cinder has no by-value struct return, so there is no
   /// `sret` case to guard against. When a precondition doesn't hold —
   /// nothing in this compiler currently causes that, since a tail call's
   /// callee always shares the enclosing function's own return type and
@@ -2046,7 +2046,7 @@ private:
     // outgoing arguments, a mismatched count or a same-position type
     // mismatch can't be guaranteed tail-callable. Two real corpus cases hit
     // this before these checks existed: `main() -> sum_to_n(100)`
-    // (src/testdata/codegen_stress/015_while_loop_accumulate.kira, 0 caller
+    // (src/testdata/codegen_stress/015_while_loop_accumulate.cn, 0 caller
     // params vs. 1 call argument — "mismatched parameter counts"), and
     // `std.fmt`'s internal helpers tail-calling each other with same-arity
     // but differently-typed parameter lists ("mismatched parameter types").
@@ -3205,7 +3205,7 @@ private:
     }
     // `rt_str_eq` returns its `bool` result directly now, widened to `i32`
     // on the wire (`src/intrinsics.h`'s `intrinsic_wire_kind`) rather than
-    // boxed in a 1-slot struct — narrow it back to Kira's `i1` bool.
+    // boxed in a 1-slot struct — narrow it back to Cinder's `i1` bool.
     auto *flag = builder_.CreateCall(intrinsic_fns_.at(*intrinsic_id),
                                      {value, *literal}, "pat.str.eq");
     return builder_.CreateICmpNE(
@@ -4109,7 +4109,7 @@ private:
     return compile_binary_op(synthetic, kind, current, rhs);
   }
 
-  /// Whether `expr` is the literal `true` — `while true: ...` is Kira's
+  /// Whether `expr` is the literal `true` — `while true: ...` is Cinder's
   /// only spelling for an unconditional loop, since the language has no
   /// `break`/`continue` (no `hir_break`/`hir_continue` node kind exists at
   /// all: see `src/hir/nodes.h`'s doc comment on this). That means such a
@@ -4406,7 +4406,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   // `intrinsic def` declarations (src/intrinsics.h): fixed native entry
   // points, each parameter/return typed at its own wire kind
   // (`kira::intrinsic_wire_kind` — see src/runtime/io.h's, fmt.h's and
-  // string.h's doc comments for the exact layout/type each argument's Kira
+  // string.h's doc comments for the exact layout/type each argument's Cinder
   // type maps to). Declared once here, the same way the three runtime
   // externs just above are, and resolved the same way (JIT: process-symbol
   // lookup against `//src/runtime:runtime`, which now also builds

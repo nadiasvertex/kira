@@ -6,8 +6,8 @@ module main
 #  Consumes (and discards) the first `n` elements, then returns the next
 #  one; `@none` if the iterator runs out first.
 #
-#  Run it:      kira demo/algorithm-nth.kira
-#  Compile it:  kira --compile -o algorithm-nth demo/algorithm-nth.kira
+#  Run it:      kira demo/algorithm-nth.cn
+#  Compile it:  kira --compile -o algorithm-nth demo/algorithm-nth.cn
 # ==========================================================================
 
 def main() -> int32:

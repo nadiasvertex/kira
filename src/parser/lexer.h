@@ -13,7 +13,7 @@
 namespace kira {
 
 // ==========================================================================
-//  Lexer — tokenizes Kira source code.
+//  Lexer — tokenizes Cinder source code.
 //
 //  Key responsibilities:
 //    - Produce a flat stream of tokens from UTF-8 source text.
@@ -481,9 +481,9 @@ private:
       if (match('=')) {
         emit(token_kind::bang_eq, start);
       } else {
-        // Bare '!' is not a Kira operator. Give a helpful message.
+        // Bare '!' is not a Cinder operator. Give a helpful message.
         emit_error(start,
-                   "unexpected `!` — Kira uses `not` for logical negation, "
+                   "unexpected `!` — Cinder uses `not` for logical negation, "
                    "not `!`");
       }
       return;
@@ -657,13 +657,13 @@ private:
       // Give a helpful error based on what it looks like.
       if (static_cast<unsigned char>(c) > 127) {
         emit_error(start,
-                   "unexpected non-ASCII character — Kira source files must "
+                   "unexpected non-ASCII character — Cinder source files must "
                    "be UTF-8, and this byte doesn't appear to be the start "
                    "of a valid token");
       } else {
         std::string msg = "unexpected character `";
         msg += c;
-        msg += "` — this isn't recognized as part of Kira's syntax";
+        msg += "` — this isn't recognized as part of Cinder's syntax";
         emit_error(start, msg);
       }
       return;
@@ -778,7 +778,7 @@ private:
                        file_id_)
                 .with_label(sp, "this line has unexpected indentation")
                 .with_help(
-                    "Kira uses consistent indentation to define code blocks. "
+                    " Cinder uses consistent indentation to define code blocks. "
                     "Make sure each line is indented by the same amount as "
                     "other lines at the same nesting level. Using spaces "
                     "(not tabs) is recommended."));
@@ -1232,11 +1232,11 @@ private:
       // Suggest common mistakes.
       if (c == '0') {
         diag.with_help(
-            "Kira doesn't have a `\\0` escape for null. If you need a "
+            " Cinder doesn't have a `\\0` escape for null. If you need a "
             "null byte, use `\\u{0}` instead.");
       } else if (c == 'x') {
         diag.with_help(
-            "Kira doesn't have `\\xNN` hex escapes. Use `\\u{NN}` for "
+            " Cinder doesn't have `\\xNN` hex escapes. Use `\\u{NN}` for "
             "Unicode code points instead.");
       } else if (c == 'a' || c == 'b' || c == 'f' || c == 'v') {
         diag.with_help(

@@ -1,5 +1,5 @@
 error: type mismatch: expected `int32`, found `str`
-  --> 004_argument_type_mismatch.kira:9:13
+  --> 004_argument_type_mismatch.cn:9:13
     9 |     add_one("hello")
       |             ^^^^^^^ expected `int32` for this argument
 

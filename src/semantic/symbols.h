@@ -13,7 +13,7 @@ namespace kira::semantic {
 
 /// Which namespace a symbol's name is looked up in.
 ///
-/// Kira keeps a few names disjoint (a type and a value may share a spelling)
+/// Cinder keeps a few names disjoint (a type and a value may share a spelling)
 /// so lookups must be namespace-qualified rather than name-only.
 enum class symbol_namespace : uint8_t {
   module_type_namespace,     ///< Types, traits, concepts, and submodules.
@@ -77,7 +77,7 @@ auto semantic_symbol_kind_name(semantic_symbol_kind kind) -> std::string_view;
 
 /// Whether a symbol of `kind` participates in the "duplicate name in this
 /// module scope" check (types, traits, concepts, and submodules only —
-/// functions and value bindings are excluded because Kira allows a value and
+/// functions and value bindings are excluded because Cinder allows a value and
 /// a type to share a spelling).
 auto participates_in_duplicate_module_scope_check(semantic_symbol_kind kind)
     -> bool;

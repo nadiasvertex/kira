@@ -73,7 +73,7 @@ auto parser::expect_newline() -> bool {
   emit(diagnostic(diagnostic_level::error, "expected end of line after this",
                   file_id_)
            .with_label(span, "this should be followed by a new line")
-           .with_help("Each statement in Kira goes on its own line. "
+           .with_help("Each statement in Cinder goes on its own line. "
                       "If you need to continue a long expression across "
                       "lines, wrap it in parentheses."));
 
@@ -118,7 +118,7 @@ auto parser::expect(token_kind expected) -> token {
   } else if (expected == token_kind::rbrace && found.is(token_kind::newline)) {
     diag.with_help("It looks like a closing `}` is missing.");
   } else if (expected == token_kind::colon) {
-    diag.with_help("In Kira, a `:` introduces the body of a block. "
+    diag.with_help("In Cinder, a `:` introduces the body of a block. "
                    "For example: `if condition:` or `def name():` — "
                    "the `:` goes right before the body.");
     diag.with_fix("add `:`", found.span, ": ");
@@ -126,7 +126,7 @@ auto parser::expect(token_kind expected) -> token {
     diag.with_help("An `=` is needed here to assign a value.");
   } else if (expected == token_kind::ident && found.is_keyword()) {
     diag.with_help(std::format(
-        "`{0}` is a Kira keyword, so it can't be used as a name. Choose a "
+        "`{0}` is a Cinder keyword, so it can't be used as a name. Choose a "
         "different name, such as `{0}_`.",
         found.text));
   }
@@ -286,7 +286,7 @@ auto parser::expect_block_start(std::string_view construct_name) -> bool {
                     file_id_)
              .with_label(span, "expected `:` after this")
              .with_help(std::format(
-                 "In Kira, the body of a {} starts with `:` followed by "
+                 "In Cinder, the body of a {} starts with `:` followed by "
                  "either an expression on the same line, or a new line with "
                  "an indented block.",
                  construct_name))
@@ -372,7 +372,7 @@ auto parser::parse_body(std::string_view construct_name)
                     file_id_)
              .with_label(span, "expected `:` after this")
              .with_help(
-                 std::format("In Kira, the body of a {} is introduced by `:`. "
+                 std::format("In Cinder, the body of a {} is introduced by `:`. "
                              "For a single expression: `{}: expr`. "
                              "For a block of statements: `{}:` followed by an "
                              "indented block on the next line.",
@@ -621,7 +621,7 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
   } else {
     emit(diagnostic(
              diagnostic_level::error,
-             "every Kira source file must start with a `module` declaration",
+             "every Cinder source file must start with a `module` declaration",
              file_id_)
              .with_label(peek().span, "expected `module` here")
              .with_help(
@@ -2667,7 +2667,7 @@ auto parser::parse_func_decl(ast::visibility vis, ast::func_modifiers mods,
                          "unexpected body — intrinsic functions are "
                          "implemented natively, per backend")
              .with_help("remove the body, or drop the `intrinsic` modifier "
-                        "if this function has real Kira code"));
+                        "if this function has real Cinder code"));
   }
 
   // Function body.

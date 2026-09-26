@@ -17,7 +17,7 @@ anywhere.
 | 3 | Value slots genuinely *solved*, not merely checked satisfiable | **Done** — `src/semantic/infer/value_solver.{h,cpp}`, `value_solver_test.cpp` |
 | 4 | An obligation queue: methods, trait bounds, refinements, defaulting | **Done** — `src/semantic/infer/obligations.{h,cpp}`, `obligations_test.cpp` |
 | 5 | Blame over a retained constraint graph, and the diagnostics it enables | **Done** — `src/semantic/infer/blame.{h,cpp}`, `blame_test.cpp`, golden corpus at `src/testdata/inference_diagnostics/` |
-| 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.kira` |
+| 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.cn` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
 | 9 | Generic bodies checked once, abstractly | **Partly done** — the template/instance boundary is fixed and phase 8's acceptance test passes; the `in_*_template_` gates cannot come out until the second pass does (experiment recorded below) |
@@ -99,7 +99,7 @@ fixes the restriction:
 That restriction *is* Miller's pattern fragment — a flex head applied to
 distinct rigid arguments. Naming it as such is worth doing, because the
 pattern fragment is decidable, **unitary** (one most-general solution, hence
-no backtracking and no ambiguity errors), and has a textbook algorithm. Kira
+no backtracking and no ambiguity errors), and has a textbook algorithm. Cinder
 picked the right restriction by instinct; adopting the name buys the theory
 and the implementation instead of a bespoke matcher per call site. It is also
 why Idris 2 is a live reference for this work rather than a curiosity — same
@@ -133,12 +133,12 @@ it replaces, and it subsumes all of them.
 
 ### What does *not* become harder
 
-Kira's dependent fragment is **canonical by construction**: fold if closed,
+ Cinder's dependent fragment is **canonical by construction**: fold if closed,
 symbolize otherwise; polynomials normalized, sorted, and interned to
 id-equality (ch. 33). So unification never needs general definitional
 equality or a conversion check — the thing that makes dependent-type
 unification genuinely hard. Idris 2 must normalize terms while unifying;
-Kira must not, because two equal value terms are already the same `type_id`.
+ Cinder must not, because two equal value terms are already the same `type_id`.
 
 That property is load-bearing and must be defended explicitly:
 
@@ -227,7 +227,7 @@ every call site resolves to. With that change in the tree, **all 28
 pre-existing test targets passed** and `snapshot_test` was the only failure:
 
 ```
-043_impl_on_generic_target.kira:72:29 [call]
+043_impl_on_generic_target.cn:72:29 [call]
   golden:   ...::holder::get$holder_int32_ trait=get_it recv
   snapshot: ...::holder::get$holderXint32X trait=get_it recv
 ```
@@ -503,7 +503,7 @@ old one:
 
 Two entries already meet their bar and must not regress:
 `001_empty_list_literal` keeps the hand-written text that avoids pointing
-into `src/std/list.kira`, and `002_dependent_length_unsatisfiable` already
+into `src/std/list.cn`, and `002_dependent_length_unsatisfiable` already
 explains that `n + 1` can never equal `0` for `n: usize` — ch. 33's own
 standard.
 
@@ -608,7 +608,7 @@ told to compile and nothing ever compiled. That is precisely the defect phase
 
 Phase 0 recorded which `checked_types` maps its fixtures left empty. Four of
 them are written by the sites this phase moves, so
-`src/testdata/codegen_stress/089_elaboration_snapshot_gaps.kira` was added
+`src/testdata/codegen_stress/089_elaboration_snapshot_gaps.cn` was added
 before any code moved, covering `try_conversions`/`try_conversion_types`,
 `ord_dispatch_result_types`, `runtime_fill_dispatches`,
 `comprehension_iterator_dispatches` and `resolved_fn_values`. Moving code whose
@@ -624,7 +624,7 @@ answer. Cross-tier agreement could not have found it; only one tier was ever
 wrong. The checker now requires the count to be a `usize`, phrased to match the
 diagnostic a non-`usize` *subscript* already got, since a repeat count and a
 subscript are the same requirement wearing different syntax
-(`src/testdata/inference_diagnostics/010_fill_count_not_usize.kira`).
+(`src/testdata/inference_diagnostics/010_fill_count_not_usize.cn`).
 
 #### Failability, verified
 
@@ -774,7 +774,7 @@ def collect_evens(n: int32) -> list[int32]:
 
 Both tiers agree on the answer, asserted as a computed value rather than as a
 clean compile
-(`src/testdata/codegen_stress/090_empty_literal_inferred_from_use.kira`).
+(`src/testdata/codegen_stress/090_empty_literal_inferred_from_use.cn`).
 
 It closed **as a consequence, not as a feature**. Nothing here re-solves
 anything: the literal mints one leaf unknown, and the solving happens in the
@@ -940,7 +940,7 @@ if the function turned out pinned; the deferred literal wiring and method
 calls it queued are dropped if it turned out open. Each instance is checked
 against concrete types and reports for real.
 
-Tests: `codegen_stress/096_unannotated_param_is_a_leaf.kira`
+Tests: `codegen_stress/096_unannotated_param_is_a_leaf.cn`
 (`# expect: 12800000017`), `check_test`'s
 `test_pinned_param_rejects_wrong_argument`, `lower_test`'s two unannotated
 cases. Verified failing without: the instance-name suffix, the literal skip,
@@ -970,7 +970,7 @@ the end (a bare literal) is defaulted then, since the body compiles once.
 A call to an open callee answers with a per-call leaf, solved once the
 instance's body has been checked (`finish_open_results`).
 
-Tests: `codegen_stress/097_unannotated_return_is_inferred.kira`
+Tests: `codegen_stress/097_unannotated_return_is_inferred.cn`
 (`# expect: 11000000332`), `check_test`'s
 `test_inferred_return_type_is_held_against_the_caller`, `lower_test`'s two
 return-type cases. Verified failing without: the on-demand check, the
@@ -983,8 +983,8 @@ it.
 ### Phase 9 — abstract generic bodies *(the boundary is fixed; the gates are not)*
 
 **Phase 8's acceptance test passes.** The annotations are off `partition`'s
-`yes`/`no` (`src/std/algo.kira`) and `from_iter`'s `out`
-(`src/std/iter.kira`), and the whole suite is green:
+`yes`/`no` (`src/std/algo.cn`) and `from_iter`'s `out`
+(`src/std/iter.cn`), and the whole suite is green:
 
 ```kira
 pub def partition[I, T](it: I, pred: fn(T) -> bool) -> (list[T], list[T]) where I: iterator[T]:
@@ -1110,7 +1110,7 @@ covered:
   type-checks and then asks lowering for `list::from_array$0$list_T_`, an
   instance of a type no value has.
 
-`codegen_stress/092_open_leaf_is_not_an_answer.kira` (`# expect: 46`) holds
+`codegen_stress/092_open_leaf_is_not_an_answer.cn` (`# expect: 46`) holds
 the positive case; `inference_diagnostics/013_open_leaf_at_a_generic_call`
 holds the refusal, where declining to answer produces a message on the
 reader's own `var out = []` instead of a capture that reaches the backend.
@@ -1149,7 +1149,7 @@ flush points follow it. It stays a loop because it is the correct invariant
 nothing behind it — but this is an assertion the suite does not yet test, and
 it is recorded as such rather than claimed.
 
-`src/testdata/codegen_stress/091_unannotated_accumulator_in_generic.kira`
+`src/testdata/codegen_stress/091_unannotated_accumulator_in_generic.cn`
 (`# expect: 116`) is the local reproduction: an unannotated `[]` accumulator
 in a generic body, instantiated at `int32` and at `int64`. Two
 instantiations at different widths, so an element type leaking from the first

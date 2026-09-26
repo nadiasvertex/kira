@@ -1,10 +1,10 @@
 error: no method `less` on type `point`
-  --> 003_unmet_trait_bound.kira:14:8
+  --> 003_unmet_trait_bound.cn:14:8
    14 |     if a.less(b):
       |        ^^^^^^ method not found
   help: Add the method in an `impl point:` block, or implement a trait that provides it.
   note: instantiated from here, as `biggest$point`
-    --> 003_unmet_trait_bound.kira:20:5
+    --> 003_unmet_trait_bound.cn:20:5
      20 |     biggest(p, q)
         |     ^^^^^^^^^^^^^ this call needs that copy
 

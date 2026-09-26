@@ -55,7 +55,7 @@ One rule covers both forms deliberately. "A literal with a constant repeat count
 
 ### Indexing and iteration are traits
 
-`v[i]`, `v[i] = x` and `for x in v` are not reserved for the built-in sequences. A user type provides them by implementing `std.traits.index`, `std.traits.index_set`, and `std.iter.into_iterator`; a literal builds one through `std.traits.from_array`. See [The `machine` Layer](../03-advanced/38-machine-layer.md) and `spec/list-migration-design.md` — `std.list`'s `vector[T]` is a growable sequence written entirely in Kira over exactly those traits.
+`v[i]`, `v[i] = x` and `for x in v` are not reserved for the built-in sequences. A user type provides them by implementing `std.traits.index`, `std.traits.index_set`, and `std.iter.into_iterator`; a literal builds one through `std.traits.from_array`. See [The `machine` Layer](../03-advanced/38-machine-layer.md) and `spec/list-migration-design.md` — `std.list`'s `vector[T]` is a growable sequence written entirely in Cinder over exactly those traits.
 
 ## See also
 

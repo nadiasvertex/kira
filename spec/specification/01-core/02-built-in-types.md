@@ -78,7 +78,7 @@ The same `from` mechanism is invoked implicitly by `?` when propagating an error
 
 ### `as` (unchecked)
 
-A separate `as` cast expression also exists (`cast_expr` in `spec/kira-grammar.ebnf`; `hir_cast` in `src/hir/lower.cpp`; `op_cast` in `src/bytecode/opcodes.h`), and is exercised throughout the test corpus (`src/testdata/codegen_stress/019_cast_int_widen_narrow.kira`, `020_cast_float_conversions.kira`) for ordinary numeric conversions, not only in `packed`/machine-layout code. Unlike constructor-call conversion, `expr as T` never panics: integer-to-integer truncates or sign/zero-extends, integer-to-float and float-to-integer follow C++ conversion semantics, and float-to-float widens or narrows — silently, per the `op_cast` doc comment in `opcodes.h`.
+A separate `as` cast expression also exists (`cast_expr` in `spec/kira-grammar.ebnf`; `hir_cast` in `src/hir/lower.cpp`; `op_cast` in `src/bytecode/opcodes.h`), and is exercised throughout the test corpus (`src/testdata/codegen_stress/019_cast_int_widen_narrow.cn`, `020_cast_float_conversions.cn`) for ordinary numeric conversions, not only in `packed`/machine-layout code. Unlike constructor-call conversion, `expr as T` never panics: integer-to-integer truncates or sign/zero-extends, integer-to-float and float-to-integer follow C++ conversion semantics, and float-to-float widens or narrows — silently, per the `op_cast` doc comment in `opcodes.h`.
 
 ```kira
 var big: int64 = 1000

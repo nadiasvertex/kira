@@ -158,7 +158,7 @@ namespace {
 }
 
 // -------------------------------------------------------------------------
-//  Case mapping/folding lives in `std.unicode` (pure Kira over generated UCD
+//  Case mapping/folding lives in `std.unicode` (pure Cinder over generated UCD
 //  tables) now, not here — see 52-std-string.md's Architecture section. This
 //  runtime module keeps only the algorithms that have no Unicode-table
 //  dependency: search, equality, reversal, trimming, replacement.

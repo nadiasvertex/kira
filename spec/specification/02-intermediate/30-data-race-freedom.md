@@ -6,7 +6,7 @@
 
 ## `send` and `share`
 
-Kira's memory-safety rule — many readers or one writer, never both — is also its data-race rule; the compiler is meant to extend that one invariant across tasks. Two concepts, both satisfied automatically (no `impl` written for them, invisible until violated), decide what may cross a task boundary:
+ Cinder's memory-safety rule — many readers or one writer, never both — is also its data-race rule; the compiler is meant to extend that one invariant across tasks. Two concepts, both satisfied automatically (no `impl` written for them, invisible until violated), decide what may cross a task boundary:
 
 - **`send`** — a type whose ownership may move to another task.
 - **`share`** — a type that several tasks may read through `&` at the same time.

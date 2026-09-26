@@ -9,7 +9,7 @@ module main
 # `compile_tuple_index` branch on `object`'s type kind to pick the array
 # path (`node.index * elem_size`) instead of the tuple path (packed
 # per-field offsets). That array branch had no codegen-level test coverage
-# before this file -- 070_tuple_mixed_width_layout.kira exercises only the
+# before this file -- 070_tuple_mixed_width_layout.cn exercises only the
 # tuple side.
 #
 # `int8` is used as the narrow element type `T`: any regression that widens

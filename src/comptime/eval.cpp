@@ -3147,7 +3147,7 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
 
 /// Compile-time evaluation of a `"...{expr}..."` interpolated string literal
 /// — needed so a derive body (e.g. `derive_show_sum`/`derive_eq_sum`,
-/// `src/std/deriving.kira`) can compute a name like `"p{i}"` at comptime to
+/// `src/std/deriving.cn`) can compute a name like `"p{i}"` at comptime to
 /// pass to `expr.ident(...)`; ordinary runtime string interpolation (e.g. a
 /// user's `println("{x}")`) never reaches here — it lowers straight to
 /// runtime formatting code instead. Deliberately narrow: no format-spec

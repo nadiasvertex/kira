@@ -4,7 +4,7 @@
 
 Covers the designed-but-unimplemented `deque[T]` (double-ended ring buffer) and `bitset` (word-packed bit set) containers.
 
-Neither type exists in `src/std` today; there is no `deque.kira`, `bitset.kira`, or equivalent. This chapter describes the design fixed in `spec/collections-algorithms-design.md` §6.3, normatively, as the target shape.
+Neither type exists in `src/std` today; there is no `deque.cn`, `bitset.cn`, or equivalent. This chapter describes the design fixed in `spec/collections-algorithms-design.md` §6.3, normatively, as the target shape.
 
 ## `deque[T]`
 
@@ -26,7 +26,7 @@ A ring buffer over a power-of-two-capacity allocation:
 ```
 
 - `set`, `clear`, `flip`, `test` — per-bit operations.
-- `count_ones` — population count, implemented as SWAR (bit-twiddling over the packed words) rather than an intrinsic; no popcount intrinsic exists in the primitive substrate (see the `machine` layer's fourteen intrinsics — no SIMD, no popcount, on the grounds that both are expressible or unnecessary in portable Kira).
+- `count_ones` — population count, implemented as SWAR (bit-twiddling over the packed words) rather than an intrinsic; no popcount intrinsic exists in the primitive substrate (see the `machine` layer's fourteen intrinsics — no SIMD, no popcount, on the grounds that both are expressible or unnecessary in portable Cinder).
 - `union`, `intersect`, `difference` — set algebra over the packed words.
 - `iter()` — yields the indices of set bits, produced by trailing-zero scanning of each word in turn.
 

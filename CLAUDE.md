@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Kira is an early-stage language and compiler project written in C++26 (Clang 23.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
+ Cinder is an early-stage language and compiler project written in C++26 (Clang 23.1+), built with Bazel/bzlmod. The implemented surface is: a hand-written lexer + recursive-descent parser, a semantic analysis pipeline (module graph, name resolution, type checking), and a CLI compile driver that emits protobuf-backed module metadata. There is no typed IR, LLVM lowering, or executable linker yet.
 
 - Language and standard library specification: spec/specification/ (start at spec/specification/00-overview.md)
 - Language grammar: spec/kira-grammar.ebnf
@@ -58,8 +58,8 @@ bazelisk test //src:cli_test
 Run the compiled binary against a source file:
 
 ```sh
-bazelisk run //src:kira -- path/to/module.kira
-bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.kira
+bazelisk run //src:kira -- path/to/module.cn
+bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.cn
 ```
 
 Tests are hand-rolled binaries (no gtest) using `kira::testing::expect`/`fail` from `src/testing/test_assert.h`; a failing `expect()` calls `std::exit(1)` with a message, so add new checks as additional `expect(...)` calls rather than introducing a framework.
@@ -88,7 +88,7 @@ The compiler above all is meant to teach the user how to use the language. Frien
   - Files already marked failing in a `std::vector<bool> file_has_errors` are skipped by later stages so parse errors don't cascade into low-value semantic noise.
 - `src/driver/cli.cpp` + `src/main.cpp`: the compile driver — loads/parses files, runs the semantic pipeline, renders diagnostics, and writes protobuf module metadata (`src/module_metadata.proto`) under `kira-out/module-metadata/` (overridable via `--metadata-dir`). Do not assume the vendored `third_party/argparse` is on the active CLI path — the real CLI parsing lives in `src/driver/cli.cpp`.
 - Diagnostics (`diagnostic.h`) are first-class output, not an afterthought: every diagnostic level includes `Help`/`Note` because the compiler's stated philosophy ("compiler is a teacher") requires explaining what was expected, what was found, why, and how to fix it — apply this same standard when adding new diagnostics anywhere in the pipeline.
-- `src/testdata/parser_stress/` and `src/testdata/semantic_stress/`: `.kira` corpora exercised by `driver_stress_test.cpp` and `semantic_stress_test.cpp` respectively (registered as Bazel `filegroup`s and consumed as test `data`).
+- `src/testdata/parser_stress/` and `src/testdata/semantic_stress/`: `.cn` corpora exercised by `driver_stress_test.cpp` and `semantic_stress_test.cpp` respectively (registered as Bazel `filegroup`s and consumed as test `data`).
 - `spec/`: `specification/` (the normative language and standard library specification — Core/Intermediate/Advanced sections plus a stdlib section, one chapter per feature, each with an implementation-status marker; start at `specification/00-overview.md`), `kira-grammar.ebnf` (grammar sketch), `CONVENTIONS.md` (authoritative C++ style rules), `todo.md` (known compiler gaps and bugs).
 
 ## C++ Conventions

@@ -201,7 +201,7 @@ collect_suites(const std::vector<std::unique_ptr<ast::node>> &items,
 /// A hook a suite doesn't declare is simply left out of the call: `suite`
 /// defaults every hook to `@none`, so only the hooks that exist are named.
 ///
-/// The runner is ordinary Kira and gets no special access, so it must be
+/// The runner is ordinary Cinder and gets no special access, so it must be
 /// able to *see* every suite: a path may only start at a module the file
 /// imports (spec "Visible Modules"). Each suite is reached through an
 /// import of its *anchor* — the topmost prefix of its path that some file
@@ -355,7 +355,7 @@ auto discover_and_inject_test_runner(cli_config &cfg)
   // Kept in memory rather than written to a fixed temp file: the runner
   // differs per project, so concurrent `--test` runs sharing one file could
   // compile each other's runner.
-  const auto runner_name = std::string("<generated>/test-runner.kira");
+  const auto runner_name = std::string("<generated>/test-runner.cn");
   cfg.generated_sources.insert_or_assign(runner_name, source);
 
   if (cfg.stdlib_boundary.has_value()) {

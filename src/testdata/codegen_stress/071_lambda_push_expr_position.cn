@@ -4,7 +4,7 @@ module codegen_stress.lambda_push_expr_position
 # expression-bodied lambda whose entire body is a push. An expression-bodied
 # lambda's tail always lowers through `lower_expr` (`hir::lowerer::
 # lower_lambda` wraps it in a `hir_return`), so the `unit`-returning
-# `list.push` method (`src/std/list.kira`) must work as a value there too.
+# `list.push` method (`src/std/list.cn`) must work as a value there too.
 
 def main() -> int64:
     var seen: list[int32] = []

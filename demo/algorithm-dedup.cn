@@ -7,8 +7,8 @@ module main
 #  Only *consecutive* duplicates collapse; a value reappearing later, after
 #  a different value, is not removed.
 #
-#  Run it:      kira demo/algorithm-dedup.kira
-#  Compile it:  kira --compile -o algorithm-dedup demo/algorithm-dedup.kira
+#  Run it:      kira demo/algorithm-dedup.cn
+#  Compile it:  kira --compile -o algorithm-dedup demo/algorithm-dedup.cn
 # ==========================================================================
 
 def main() -> int32:

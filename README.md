@@ -1,6 +1,6 @@
-# Kira
+# Cinder
 
-Kira is an early-stage language and compiler project.
+ Cinder is an early-stage language and compiler project.
 
 The repository currently contains:
 
@@ -10,45 +10,45 @@ The repository currently contains:
 - A CLI compile driver under `src/` that emits protobuf-backed module metadata
 - Regression test corpora under `src/testdata/`
 
-## How to Use Kira
+## How to Use Cinder
 
 ### Run a single-file script
 
 By default, `kira` compiles a source file to bytecode and immediately executes it via the tier-0 VM — no build step needed:
 
 ```sh
-kira path/to/module.kira
+kira path/to/module.cn
 ```
 
 This runs the module's `main` function. Use `--run-function NAME` to execute a different entry point instead:
 
 ```sh
-kira --run-function my_func path/to/module.kira
+kira --run-function my_func path/to/module.cn
 ```
 
-### AOT compile a Kira program
+### AOT compile a Cinder program
 
 Pass `--compile` to compile the module to native code via LLVM and link a standalone executable instead of running it:
 
 ```sh
-kira --compile path/to/module.kira
+kira --compile path/to/module.cn
 ```
 
 Use `--compile-output PATH` to control where the linked executable is written, and `--compile-function NAME` to choose a different entry point:
 
 ```sh
-kira --compile --compile-output build/my_program --compile-function my_func path/to/module.kira
+kira --compile --compile-output build/my_program --compile-function my_func path/to/module.cn
 ```
 
-### Install Kira
+### Install Cinder
 
-Kira ships a `just install` recipe that builds a release binary and installs it, together with its runtime archives and standard library sources, into a self-contained prefix.
+ Cinder ships a `just install` recipe that builds a release binary and installs it, together with its runtime archives and standard library sources, into a self-contained prefix.
 
 ```sh
 just install
 ```
 
-This installs to `$HOME/.kira` by default. To install somewhere else, pass a path:
+This installs to `$HOME/.cn` by default. To install somewhere else, pass a path:
 
 ```sh
 just install /usr/local/kira
@@ -56,26 +56,26 @@ just install /usr/local/kira
 
 This works the same way on macOS and Linux.
 
-### Add Kira to your PATH
+### Add Cinder to your PATH
 
-After installing, add the install prefix's `bin` directory to your shell's `PATH`. Assuming the default `$HOME/.kira` prefix:
+After installing, add the install prefix's `bin` directory to your shell's `PATH`. Assuming the default `$HOME/.cn` prefix:
 
 **bash** (`~/.bashrc` or `~/.bash_profile`):
 
 ```sh
-export PATH="$HOME/.kira/bin:$PATH"
+export PATH="$HOME/.cn/bin:$PATH"
 ```
 
 **zsh** (`~/.zshrc`):
 
 ```sh
-export PATH="$HOME/.kira/bin:$PATH"
+export PATH="$HOME/.cn/bin:$PATH"
 ```
 
 **fish** (`~/.config/fish/config.fish`):
 
 ```fish
-fish_add_path $HOME/.kira/bin
+fish_add_path $HOME/.cn/bin
 ```
 
 Restart your shell (or source the config file) afterward, then confirm it worked:
@@ -84,7 +84,7 @@ Restart your shell (or source the config file) afterward, then confirm it worked
 kira --help
 ```
 
-## How to Build Kira
+## How to Build Cinder
 
 ### Build
 
@@ -109,7 +109,7 @@ bazelisk test //src:cli_test
 ### Run
 
 ```sh
-just run path/to/module.kira
+just run path/to/module.cn
 ```
 
 The driver currently:
@@ -121,7 +121,7 @@ The driver currently:
 Override the metadata output root with:
 
 ```sh
-bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.kira
+bazelisk run //src:kira -- --metadata-dir build/meta path/to/module.cn
 ```
 
 Current project-owned tests cover:

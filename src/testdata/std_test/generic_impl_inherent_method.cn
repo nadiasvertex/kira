@@ -13,7 +13,7 @@ module main
 #
 # This lives here rather than in codegen_stress because that harness checks
 # each corpus file on its own, without the standard library, and `is_none`
-# and `is_some` are written in Kira in std.
+# and `is_some` are written in Cinder in std.
 #
 # Every check pairs a true case with a false one. That matters more than
 # usual here: the failure this replaced was a *rejection*, so a test that

@@ -2281,7 +2281,7 @@ auto emit_module_name_conflict(const scope_name &name,
       name.imported ? std::format("the imported `{}`", name.imported_path)
                     : std::format("the {} `{}`", name.kind_name, name.name);
   conflict.with_help(std::format(
-      "`{0}.x` could reach into the module `{1}` or into {2}, so Kira "
+      "`{0}.x` could reach into the module `{1}` or into {2}, so Cinder "
       "rejects the pair rather than guess. {3}",
       name.name, visible.module_name, other, remedy));
   diag.emit(conflict);
@@ -2313,7 +2313,7 @@ auto emit_module_module_conflict(std::string_view local_name,
                  other.location.file_id)
           .with_label(other.location.span, "same name"));
   conflict.with_help(std::format(
-      "`{0}.x` could reach into either module, so Kira rejects the pair "
+      "`{0}.x` could reach into either module, so Cinder rejects the pair "
       "rather than guess. Import `{1}` under another name: `use {1} as "
       "{0}_mod`.",
       local_name, imported.module_name));

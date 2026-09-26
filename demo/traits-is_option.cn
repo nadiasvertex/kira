@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `traits.is_option` — is this type `option[_]`?
 #
-#  Run it:      kira demo/traits-is_option.kira
-#  Compile it:  kira --compile -o traits-is_option demo/traits-is_option.kira
+#  Run it:      kira demo/traits-is_option.cn
+#  Compile it:  kira --compile -o traits-is_option demo/traits-is_option.cn
 # ==========================================================================
 
 use std.traits.is_option

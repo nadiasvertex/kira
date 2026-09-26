@@ -83,7 +83,7 @@ auto load_fixtures(std::string_view test_data_dir)
   auto fixtures = std::vector<source_fixture>{};
 
   for (const auto &entry : fs::directory_iterator(test_dir)) {
-    if (entry.is_regular_file() && entry.path().extension() == ".kira") {
+    if (entry.is_regular_file() && entry.path().extension() == ".cn") {
       auto filename = entry.path().filename().string();
       fixtures.push_back({
           .path = filename,
@@ -106,8 +106,8 @@ auto test_validate_semantics_accepts_clean_session() -> void {
 }
 
 /// Two files declaring the same `module sample.tools` path merge into one
-/// module scope: `second.kira`'s `build()` calls `run()`, declared only in
-/// `first.kira`, unqualified — proving the two files' top-level declarations
+/// module scope: `second.cn`'s `build()` calls `run()`, declared only in
+/// `first.cn`, unqualified — proving the two files' top-level declarations
 /// resolve against each other the way declarations in one file would.
 auto test_validate_semantics_merges_multi_file_module_declarations() -> void {
   const auto analyzed = analyze_sources(

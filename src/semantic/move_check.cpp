@@ -149,7 +149,7 @@ private:
   /// method, or any other trait's method, e.g. `iterator`'s `next(mut self)`
   /// called repeatedly on the same binding throughout `std.algo` — always
   /// takes its receiver by reference regardless of `mut`, matching this
-  /// pass's guardrail (`accept_repeated_self_method_calls.kira`): the
+  /// pass's guardrail (`accept_repeated_self_method_calls.cn`): the
   /// checker gives `self` and `mut self` the identical unwrapped type
   /// (`check_function`, `check.cpp`), so nothing short of a method's known
   /// identity distinguishes a genuinely consuming `self` from an ordinary
@@ -243,7 +243,7 @@ private:
                            std::format("`{}` moved here", name));
     d.with_note(
         "a value's owner may use it once more before it goes out of scope; "
-        "moving it transfers that ownership away, and Kira does not "
+        "moving it transfers that ownership away, and Cinder does not "
         "implicitly copy non-scalar values");
     d.with_help(std::format(
         "borrow it instead with `&{0}` (or `&mut {0}`) if the callee only "

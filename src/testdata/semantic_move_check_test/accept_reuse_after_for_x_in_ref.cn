@@ -5,7 +5,7 @@ use std.list.vector
 # `for x in &xs` (spec/todo.md #20) dispatches through the non-consuming
 # `iter` route, not `into_iter`, so `xs` is never moved and `xs.free()`
 # afterward must check cleanly — unlike `for x in xs` (see
-# `reject_reuse_after_into_iter.kira`), which does move it.
+# `reject_reuse_after_into_iter.cn`), which does move it.
 
 def demo() -> unit:
     var xs: vector[int32] = [1, 2, 3]

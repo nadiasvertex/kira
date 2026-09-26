@@ -52,15 +52,15 @@ auto expect_checked_cleanly(const kira::source_manager &sources,
 // into `hir::lower_function`/`hir::lower_module`.
 //
 // The stdlib is injected alongside the fixture, exactly as the driver
-// injects it: `list`, `option` and friends are ordinary Kira types declared
-// in `src/std/*.kira`, so a fixture as plain as `-> list[int32]` does not
+// injects it: `list`, `option` and friends are ordinary Cinder types declared
+// in `src/std/*.cn`, so a fixture as plain as `-> list[int32]` does not
 // resolve without them. `stdlib` is held in the fixture because
 // `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
   fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
 
-  const auto file_id = fixture.sources.add_file("sample.kira", text);
+  const auto file_id = fixture.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
   const auto *file = fixture.sources.get(*file_id);
@@ -1482,10 +1482,10 @@ auto test_lowers_call_to_named_function() -> void {
 
 auto test_lowers_module_qualified_call() -> void {
   auto fixture = check_fixture_multi({
-      {"tools.kira", "module tools\n"
+      {"tools.cn", "module tools\n"
                      "pub def double(x: int32) -> int32:\n"
                      "    return x * 2\n"},
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "use tools\n"
                    "pub def run() -> int32:\n"
                    "    return tools.double(21)\n"},
@@ -1516,15 +1516,15 @@ auto test_lowers_module_qualified_call() -> void {
 /// so the call reached lowering carrying no concrete type and failed there.
 auto test_lowers_cross_module_generic_return_type() -> void {
   auto fixture = check_fixture_multi({
-      {"types.kira", "module types\n"
+      {"types.cn", "module types\n"
                      "pub type holder[T] = { pub value: T }\n"},
       // The `use` below is the only thing that brings `holder` into scope for
       // `wrap`'s signature — the caller never names it.
-      {"wrap.kira", "module wrap\n"
+      {"wrap.cn", "module wrap\n"
                     "use types.holder\n"
                     "pub def wrap[T](v: T) -> holder[T]:\n"
                     "    return holder { value: v }\n"},
-      {"app.kira", "module app\n"
+      {"app.cn", "module app\n"
                    "use wrap.wrap\n"
                    "pub def run() -> int32:\n"
                    "    let h = wrap(7)\n"
@@ -1981,7 +1981,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
 ///
 /// This used to lower to `<for container>`/`<for index>` lets around a
 /// `while i < len(xs)`, because `list` was a compiler builtin and `for` knew
-/// its shape. It is an ordinary stdlib type now (`src/std/list.kira`), with
+/// its shape. It is an ordinary stdlib type now (`src/std/list.cn`), with
 /// `impl[T] into_iterator[T] for list[T]`, so `for` reaches it the same way
 /// it reaches any user collection: bind the iterator once, then
 /// `while let @some(x) = it.next()`. Asserting the node kinds is what keeps
@@ -2220,7 +2220,7 @@ auto test_lowers_simple_comprehension() -> void {
   // A call, not a `hir_array_init`: `[]` is no longer a primitive literal
   // the backends know how to build. `list` is a stdlib type, and an empty
   // list literal lowers to a call to its constructor
-  // (`impl[T] from_array[T] for list[T]`, `src/std/list.kira`).
+  // (`impl[T] from_array[T] for list[T]`, `src/std/list.cn`).
   expect(acc_let.initializer->kind == hir::hir_node_kind::hir_call,
          "expected the accumulator to start from a call building an empty "
          "list");
@@ -2239,7 +2239,7 @@ auto test_lowers_simple_comprehension() -> void {
   expect(loop.body->stmts.size() == 2,
          "expected the loop-var let and the push (the increment is the step)");
   expect(loop.step != nullptr, "expected a desugared `for` to carry a step");
-  // A real call to `list.push` (`src/std/list.kira`): the comprehension
+  // A real call to `list.push` (`src/std/list.cn`): the comprehension
   // appends through the same method any hand-written `xs.push(v)` would.
   expect(loop.body->stmts[1]->kind == hir::hir_node_kind::hir_expr_stmt,
          "expected the yielded value to be appended by a `push` call");

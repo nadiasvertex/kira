@@ -36,7 +36,7 @@ namespace kira::driver {
     -> std::optional<std::filesystem::path>;
 
 /// Compiles `modules` to a native object file via `src/llvm_codegen`, then
-/// links it against Kira's AOT runtime support library into a standalone
+/// links it against Cinder's AOT runtime support library into a standalone
 /// executable at `output_path`. `modules.front()` is the entry module (which
 /// owns `function_name`); see `run_hir_module`'s doc comment
 /// (`interpret.h`) for the full contract, shared with this function.

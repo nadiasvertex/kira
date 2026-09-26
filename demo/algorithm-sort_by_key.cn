@@ -6,8 +6,8 @@ module main
 #  `key` is called twice per comparison rather than once per element, so
 #  prefer a cheap key function.
 #
-#  Run it:      kira demo/algorithm-sort_by_key.kira
-#  Compile it:  kira --compile -o algorithm-sort_by_key demo/algorithm-sort_by_key.kira
+#  Run it:      kira demo/algorithm-sort_by_key.cn
+#  Compile it:  kira --compile -o algorithm-sort_by_key demo/algorithm-sort_by_key.cn
 # ==========================================================================
 
 def main() -> int32:

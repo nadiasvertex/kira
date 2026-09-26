@@ -8,7 +8,7 @@
 
 namespace kira::semantic {
 
-/// Enforces Kira's borrow discipline (`spec/specification/02-intermediate/
+/// Enforces Cinder's borrow discipline (`spec/specification/02-intermediate/
 /// 14-ownership-and-borrowing.md`) over every checked function and lambda
 /// body — the rules the move checker (`check_moves`) deliberately leaves to a
 /// separate pass. Two things are checked:

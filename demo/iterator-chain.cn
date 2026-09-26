@@ -6,8 +6,8 @@ module main
 #  Yields every element of the first iterator, then every element of the
 #  second, as one continuous sequence.
 #
-#  Run it:      kira demo/iterator-chain.kira
-#  Compile it:  kira --compile -o iterator-chain demo/iterator-chain.kira
+#  Run it:      kira demo/iterator-chain.cn
+#  Compile it:  kira --compile -o iterator-chain demo/iterator-chain.cn
 # ==========================================================================
 
 def main() -> int32:

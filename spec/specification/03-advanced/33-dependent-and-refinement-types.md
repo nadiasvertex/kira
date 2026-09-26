@@ -8,7 +8,7 @@ This chapter is the normative reference for `spec/dependent-types-design.md`, fo
 
 ## The two subsystems, concretely
 
-*Evaluation* (`src/comptime/eval.*`) runs ordinary Kira on **known** values. *Reasoning* (`src/semantic/reason.*`) proves facts about **unknown** values. They never substitute for one another:
+*Evaluation* (`src/comptime/eval.*`) runs ordinary Cinder on **known** values. *Reasoning* (`src/semantic/reason.*`) proves facts about **unknown** values. They never substitute for one another:
 
 - `vec[T, 2 + 3]` is evaluation: the expression is closed, so it folds to the constant `5` and the type is `vec[T, 5]`.
 - `vec[T, m + n]` is reasoning: `m` and `n` are unknown, so the length is a *symbolic* value, and any question about it (is `m + n` the same length as `n + m`?) is a proof, not a computation.
@@ -102,7 +102,7 @@ A constraint is `poly RELOP 0` over atoms, `RELOP ∈ {=, ≠, ≥, >}` (`<`, `�
 
 To discharge goal `G` from facts `F`: decide whether `F ∧ ¬G` is unsatisfiable. `¬G` is a conjunction, or (for a negated equality) a two-way case split; each case is a conjunction of linear constraints, decided by Fourier–Motzkin elimination with integer tightening — bounds are rounded inward (`x ≥ 3/2` becomes `x ≥ 2`) before comparison.
 
-Real-relaxation unsatisfiability implies integer unsatisfiability, so a "proved" answer is always sound. The converse does not hold: an integer-unsatisfiable system can look satisfiable over the rationals, in which case the compiler answers "cannot prove" and takes the graceful path. This asymmetry is deliberate: the solver is **total** — it always terminates, no timeout, no search — at the cost of being incomplete. Kira never silently accepts an unproven obligation, and never hangs trying to prove one.
+Real-relaxation unsatisfiability implies integer unsatisfiability, so a "proved" answer is always sound. The converse does not hold: an integer-unsatisfiable system can look satisfiable over the rationals, in which case the compiler answers "cannot prove" and takes the graceful path. This asymmetry is deliberate: the solver is **total** — it always terminates, no timeout, no search — at the cost of being incomplete. Cinder never silently accepts an unproven obligation, and never hangs trying to prove one.
 
 Elimination is bounded: obligations with more than a small number of distinct atoms (`k_atom_limit`) are answered "cannot prove" rather than risking Fourier–Motzkin's exponential blowup. A bound the user can hit is preferred over a compiler that stops responding.
 
@@ -154,7 +154,7 @@ An unprovable obligation is not a solver failure to apologize for; it is the nor
 
 ```
 error: cannot prove `i < n` for this argument
-  --> src/grid.kira:12:15
+  --> src/grid.cn:12:15
    |
 12 |     safe_get(v, i)
    |                 ^ expected `index[n]`, found `usize`
@@ -208,7 +208,7 @@ A struct `invariant` is checked at construction and at mutation boundaries, and 
 
 ## Example
 
-The stress corpus `src/testdata/semantic_stress/027_dependent_and_refinement_types.kira` exercises this chapter end to end: symbolic const generics (`commutes`, `reassociates`), refinements proven from a literal and from an already-refined value, widening across an operator, provable and unprovable indexing, flow-sensitive narrowing (`if y > 0: needs_positive(y)`), `try_from` runtime proofs, contract facts, struct invariants, and the explicitly-out-of-scope nonlinear case (`matrix[rows, cols]`), all in one file that is expected to check with **no** diagnostics.
+The stress corpus `src/testdata/semantic_stress/027_dependent_and_refinement_types.cn` exercises this chapter end to end: symbolic const generics (`commutes`, `reassociates`), refinements proven from a literal and from an already-refined value, widening across an operator, provable and unprovable indexing, flow-sensitive narrowing (`if y > 0: needs_positive(y)`), `try_from` runtime proofs, contract facts, struct invariants, and the explicitly-out-of-scope nonlinear case (`matrix[rows, cols]`), all in one file that is expected to check with **no** diagnostics.
 
 ## Implementation status
 

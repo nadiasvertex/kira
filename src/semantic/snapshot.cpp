@@ -207,7 +207,7 @@ auto node_kind_name(ast::node_kind kind) -> std::string_view {
 /// One rendered decision: the line itself, plus the key it sorts under.
 ///
 /// The key is separate from the text because the text reads best with
-/// ordinary numbers (`list.kira:118:9`) and sorts correctly only with padded
+/// ordinary numbers (`list.cn:118:9`) and sorts correctly only with padded
 /// ones — sorting on the text alone would put line 100 before line 12.
 struct entry {
   std::string key;
@@ -244,7 +244,7 @@ private:
     return sources_.get(found->second);
   }
 
-  /// `std/list.kira:118:9`, or `?:<offset>` when the site has no known file.
+  /// `std/list.cn:118:9`, or `?:<offset>` when the site has no known file.
   [[nodiscard]] auto site_text(source_span span, const source_file *file) const
       -> std::string {
     if (file == nullptr) {

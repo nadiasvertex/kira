@@ -6,8 +6,8 @@ module main
 #  Lazily skips elements that fail the predicate; chaining multiple
 #  `filter` calls composes the conditions with logical AND.
 #
-#  Run it:      kira demo/iterator-filter.kira
-#  Compile it:  kira --compile -o iterator-filter demo/iterator-filter.kira
+#  Run it:      kira demo/iterator-filter.cn
+#  Compile it:  kira --compile -o iterator-filter demo/iterator-filter.cn
 # ==========================================================================
 
 def main() -> int32:

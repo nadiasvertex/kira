@@ -49,7 +49,7 @@ struct parsed_source {
 auto parse_source(std::string_view source) -> parsed_source {
   kira::diagnostic_bag diag;
   auto sources = kira::source_manager{};
-  auto file_id = sources.add_file("test.kira", std::string(source));
+  auto file_id = sources.add_file("test.cn", std::string(source));
   expect(file_id.has_value(), "expected test source to register");
 
   auto *file = sources.get(*file_id);
@@ -75,7 +75,7 @@ auto test_keyword_module_name_is_a_diagnosed_error() -> void {
   const auto parsed = parse_source("module deriving\n");
   expect(parsed.error_count == 1,
          "expected exactly one error for a keyword module name");
-  expect(parsed.diagnostics.find("`deriving` is a Kira keyword") !=
+  expect(parsed.diagnostics.find("`deriving` is a Cinder keyword") !=
              std::string::npos,
          "expected the diagnostic to say the name is a keyword: " +
              parsed.diagnostics);
@@ -766,7 +766,7 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
   expect(parsed.error_count > 0,
          "expected parser to diagnose missing module declaration");
   expect(parsed.diagnostics.find(
-             "every Kira source file must start with a `module` declaration") !=
+             "every Cinder source file must start with a `module` declaration") !=
              std::string::npos,
          "expected missing-module diagnostic message");
   expect(parsed.file->module_decl != nullptr,

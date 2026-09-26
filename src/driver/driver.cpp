@@ -32,7 +32,7 @@ namespace kira::driver {
 namespace {
 
 /// The `@architecture` variant constant matching this compiler binary's own
-/// build host CPU. Kira has no `--target` flag yet (no cross-compilation),
+/// build host CPU. Cinder has no `--target` flag yet (no cross-compilation),
 /// so "target" and "build host" are the same thing for now — `TARGET_ARCH`
 /// et al. (spec/std-reference.md) describe whatever this binary was itself
 /// compiled for.
@@ -94,12 +94,12 @@ struct target_os_info {
 }
 
 /// Generates `module std.platform`'s target/build-info accessor functions
-/// (spec/std-reference.md "Compile-Time Target Constants") as Kira source
+/// (spec/std-reference.md "Compile-Time Target Constants") as Cinder source
 /// text, with no `module` line of its own. This is the one piece of
-/// `std.platform` that cannot be a checked-in `.kira` file: the values
+/// `std.platform` that cannot be a checked-in `.cn` file: the values
 /// describe the compiler binary's own build host, so they are computed here
 /// from C++ preprocessor macros each time the driver runs and spliced into
-/// the checked-in `platform.kira` body (see `assemble_platform_module_source`).
+/// the checked-in `platform.cn` body (see `assemble_platform_module_source`).
 ///
 /// Each value is embedded directly as the accessor function's own return
 /// literal (`pub pure def target_os() -> str: "macos"`) rather than routed
@@ -146,7 +146,7 @@ struct target_os_info {
                      k_version_string, k_release_date);
 }
 
-/// Reads the checked-in `platform_source_path` (`src/std/platform.kira`),
+/// Reads the checked-in `platform_source_path` (`src/std/platform.cn`),
 /// strips its leading `module std.platform` line, and splices the
 /// driver-generated target/build-info accessors (see
 /// `generate_platform_target_accessors`'s doc comment for why they can't be
@@ -198,7 +198,7 @@ cached_platform_module_source(const std::filesystem::path &platform_source_path)
 /// The name the assembled `std.platform` source is compiled under — shown in
 /// diagnostics, and never a path that exists on disk.
 constexpr std::string_view k_generated_platform_source_name =
-    "<generated>/std/platform.kira";
+    "<generated>/std/platform.cn";
 
 } // namespace
 
@@ -258,44 +258,44 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
     });
   };
 
-  // `traits.kira` first: it declares the traits `prelude.kira` depends on;
-  // `io.kira` before `console.kira`, matching `console.kira`'s own
+  // `traits.cn` first: it declares the traits `prelude.cn` depends on;
+  // `io.cn` before `console.cn`, matching `console.cn`'s own
   // `use std.io` — though declaration order across session files has no
   // effect on resolution — the whole session's module index is built
-  // before any file is checked. `fmt.kira` backs string-interpolation
+  // before any file is checked. `fmt.cn` backs string-interpolation
   // formatting (`spec/string-formatting-design.md`) and is always needed
-  // once any source file contains a `"{expr}"` interpolation. `deriving.kira`
+  // once any source file contains a `"{expr}"` interpolation. `deriving.cn`
   // provides the real `static def derive_show[T]()` that `deriving show`
   // sugar splices in (`semantic::checker::resolve_deriving_show`) — always
   // injected, exactly like the others, so it's available to every session
   // even though most sessions never actually reference it by name.
-  for (const auto *filename : {"intrinsics.kira",
-                               "traits.kira",
-                               "traits.ord.kira",
-                               "traits.show.kira",
-                               "traits.numeric.kira",
-                               "traits.conversion.kira",
-                               "traits.category.kira",
-                               "traits.index.kira",
-                               "traits.hash.kira",
-                               "limits.kira",
-                               "iter.kira",
-                               "prelude.kira",
-                               "panic.kira",
-                               "option.kira",
-                               "result.kira",
-                               "mem.kira",
-                               "list.kira",
-                               "io.kira",
-                               "console.kira",
-                               "algo.kira",
-                               "fmt.kira",
-                               "unicode_tables.kira",
-                               "unicode.kira",
-                               "string.kira",
-                               "deriving.kira",
-                               "fs/path.kira",
-                               "test.kira"}) {
+  for (const auto *filename : {"intrinsics.cn",
+                               "traits.cn",
+                               "traits.ord.cn",
+                               "traits.show.cn",
+                               "traits.numeric.cn",
+                               "traits.conversion.cn",
+                               "traits.category.cn",
+                               "traits.index.cn",
+                               "traits.hash.cn",
+                               "limits.cn",
+                               "iter.cn",
+                               "prelude.cn",
+                               "panic.cn",
+                               "option.cn",
+                               "result.cn",
+                               "mem.cn",
+                               "list.cn",
+                               "io.cn",
+                               "console.cn",
+                               "algo.cn",
+                               "fmt.cn",
+                               "unicode_tables.cn",
+                               "unicode.cn",
+                               "string.cn",
+                               "deriving.cn",
+                               "fs/path.cn",
+                               "test.cn"}) {
     const auto found = find_stdlib_source_file(cfg.program_name, filename);
     if (found && !already_present(*found)) {
       cfg.sources.push_back(found->string());
@@ -303,14 +303,14 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
   }
 
   // `std.platform` is assembled rather than injected verbatim: its checked-in
-  // `platform.kira` body is spliced together with the driver-generated
+  // `platform.cn` body is spliced together with the driver-generated
   // `TARGET_*`/`KIRA_*` constants block (`assemble_platform_module_source`'s
   // doc comment explains why the two can't be separate modules). The result
   // lives only in memory, under a name no real file can have; it is a pure
   // function of this binary's build host and the checked-in file, so it is
   // assembled once per process and reused by every later compile.
   if (const auto platform_source =
-          find_stdlib_source_file(cfg.program_name, "platform.kira")) {
+          find_stdlib_source_file(cfg.program_name, "platform.cn")) {
     const auto name = std::string(k_generated_platform_source_name);
     if (!already_present(name)) {
       if (const auto *assembled =

@@ -81,7 +81,7 @@ impl monad for option:
 
 ## Implementation status
 
-Implemented end to end: kind-as-arity checking, constructor/application type-table representation with substitution normalization, trait and impl checking over constructors, rigid inference, and per-call monomorphization all land, and both the bytecode VM and LLVM/AOT backends run the example above unchanged. Regression coverage includes `check_test` acceptance and five kind-error cases, `src/testdata/semantic_stress/028_higher_kinded_traits.kira`, `src/testdata/codegen_stress/034_higher_kinded_trait_dispatch.kira` (VM/JIT parity), and parser tests for `F[_, _]`.
+Implemented end to end: kind-as-arity checking, constructor/application type-table representation with substitution normalization, trait and impl checking over constructors, rigid inference, and per-call monomorphization all land, and both the bytecode VM and LLVM/AOT backends run the example above unchanged. Regression coverage includes `check_test` acceptance and five kind-error cases, `src/testdata/semantic_stress/028_higher_kinded_traits.cn`, `src/testdata/codegen_stress/034_higher_kinded_trait_dispatch.cn` (VM/JIT parity), and parser tests for `F[_, _]`.
 
 Deferred, not v1: higher-kinded parameters in `concept` definitions, `some Trait` existentials over higher-kinded traits, and `box[trait]` objects for higher-kinded traits (object safety for HKTs is out of scope).
 

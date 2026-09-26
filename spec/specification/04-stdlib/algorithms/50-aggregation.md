@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers every terminal (draining) algorithm in `src/std/algo.kira`: functions that consume an `iterator[T]` and return a final answer rather than another lazy iterator. Each takes its iterator by value and moves it into a local `var`, since `next` needs a mutable receiver and a parameter is not one.
+Covers every terminal (draining) algorithm in `src/std/algo.cn`: functions that consume an `iterator[T]` and return a final answer rather than another lazy iterator. Each takes its iterator by value and moves it into a local `var`, since `next` needs a mutable receiver and a parameter is not one.
 
 The short-circuiting terminals — `any`, `all`, `find`, `find_map`, `position` — return from inside their loop rather than setting a flag and draining to the end; that is what makes `any` over an infinite iterator able to terminate.
 
@@ -40,7 +40,7 @@ These take a three-way comparator `fn(T, T) -> ordering` rather than a `less` pr
 
 ## Known gap: `group_by`
 
-`spec/collections-algorithms-design.md` §6.1 lists `group_by` among the terminals. It is **not implemented** — there is no `group_by` in `src/std/algo.kira`. Treat it as planned.
+`spec/collections-algorithms-design.md` §6.1 lists `group_by` among the terminals. It is **not implemented** — there is no `group_by` in `src/std/algo.cn`. Treat it as planned.
 
 ## Notes
 

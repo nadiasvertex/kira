@@ -2,9 +2,9 @@ module sample
 
 # A `list` index out of range refuses rather than reading past the end.
 #
-# The refusal itself is `src/std/list.kira`'s `panic("index out of range")`,
+# The refusal itself is `src/std/list.cn`'s `panic("index out of range")`,
 # which aborts the process — `list` is an ordinary stdlib type now, so its
-# bounds check is Kira code calling `panic`, not a bounds-checked VM opcode
+# bounds check is Cinder code calling `panic`, not a bounds-checked VM opcode
 # raising a catchable `panic_reason`. That makes the panicking path
 # observable only by running a built binary as a child process; it is
 # covered there, by `src/cli_test.cpp`'s

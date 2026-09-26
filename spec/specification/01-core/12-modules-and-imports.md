@@ -101,5 +101,5 @@ Because every rule is evaluated against a finite, locally-declared set — the e
 
 ## See also
 
-- Module System In Depth (Intermediate) — files spanning a module, project structure, `project.kira`.
+- Module System In Depth (Intermediate) — files spanning a module, project structure, `project.cn`.
 - [Programs and `main`](13-programs-and-main.md) — the entry module the compiler starts from.

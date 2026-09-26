@@ -1,5 +1,5 @@
 error: no method `frobnicate` on type `int32`
-  --> 006_unknown_method.kira:6:5
+  --> 006_unknown_method.cn:6:5
     6 |     x.frobnicate()
       |     ^^^^^^^^^^^^ method not found
   help: `int32` has no methods. A free function whose first parameter is `int32` is callable as a method on one.

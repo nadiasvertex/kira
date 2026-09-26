@@ -63,7 +63,7 @@ Any type already implementing `ord` and `show`, and no larger than the size budg
 
 ## Implementation status
 
-Implemented: parsing (`parse_concept_decl`, `parser.h:655`, exercised by `src/testdata/parser_stress/032_concept_basic.kira`, `033_concept_higher_kinded.kira`, `085_concept_value_expr.kira`), symbol registration (`symbols.cpp:223`, `types.cpp:847`), module-level duplicate/name resolution alongside types and traits (`resolution.cpp:1561`), and constraint checking (`check_concept_decl`, `check.cpp:14229`), which resolves each constraint's subject type and, for a boolean-expression clause, infers it as an ordinary compile-time expression. Exercised by `check_test.cpp`'s `test_accepts_concept_bound`, backed by `src/testdata/semantic_check_test/accept_concept_bound.kira` (the `sortable[T]`/`size_of[T]() <= 64` example above, verbatim).
+Implemented: parsing (`parse_concept_decl`, `parser.h:655`, exercised by `src/testdata/parser_stress/032_concept_basic.cn`, `033_concept_higher_kinded.cn`, `085_concept_value_expr.cn`), symbol registration (`symbols.cpp:223`, `types.cpp:847`), module-level duplicate/name resolution alongside types and traits (`resolution.cpp:1561`), and constraint checking (`check_concept_decl`, `check.cpp:14229`), which resolves each constraint's subject type and, for a boolean-expression clause, infers it as an ordinary compile-time expression. Exercised by `check_test.cpp`'s `test_accepts_concept_bound`, backed by `src/testdata/semantic_check_test/accept_concept_bound.cn` (the `sortable[T]`/`size_of[T]() <= 64` example above, verbatim).
 
 ## See also
 

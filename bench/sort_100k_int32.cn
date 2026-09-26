@@ -4,8 +4,8 @@
 # `v[a..b]`, and `v[i]`, each a real `list` method call since the flip.
 #
 # From the repo root (the stdlib is found relative to cwd):
-#   KIRA_ALLOCATOR=system|arena ./bazel-bin/src/kira bench/sort_100k_int32.kira
-#   ./bazel-bin/src/kira -c -O2 -o /tmp/sort bench/sort_100k_int32.kira
+#   KIRA_ALLOCATOR=system|arena ./bazel-bin/src/kira bench/sort_100k_int32.cn
+#   ./bazel-bin/src/kira -c -O2 -o /tmp/sort bench/sort_100k_int32.cn
 module sort_100k_int32
 
 use std.algo

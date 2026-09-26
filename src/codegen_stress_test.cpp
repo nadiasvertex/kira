@@ -101,7 +101,7 @@ auto find_corpus_dir(std::string_view argv0) -> fs::path {
 auto list_corpus_files(const fs::path &corpus_dir) -> std::vector<fs::path> {
   auto files = std::vector<fs::path>{};
   for (const auto &entry : fs::directory_iterator(corpus_dir)) {
-    if (entry.is_regular_file() && entry.path().extension() == ".kira") {
+    if (entry.is_regular_file() && entry.path().extension() == ".cn") {
       files.push_back(entry.path());
     }
   }
@@ -127,8 +127,8 @@ struct checked_fixture {
 };
 
 // The stdlib is injected alongside the corpus file, exactly as the driver
-// injects it: `list`, `option` and friends are ordinary Kira types declared
-// in `src/std/*.kira`, so a corpus file as plain as `-> list[int32]` does
+// injects it: `list`, `option` and friends are ordinary Cinder types declared
+// in `src/std/*.cn`, so a corpus file as plain as `-> list[int32]` does
 // not resolve without them. `stdlib` is held in the fixture because
 // `parsed_module` borrows the ASTs it points at.
 auto check_source(const std::string &text, const fs::path &path)
@@ -347,7 +347,7 @@ auto run_llvm(const fs::path &path,
 }
 
 // `list[T]`. It used to be a compiler builtin (`builtin_generic_kind`) and
-// is now an ordinary stdlib struct (`src/std/list.kira`), so both spellings
+// is now an ordinary stdlib struct (`src/std/list.cn`), so both spellings
 // have to be recognized — the header it lays out, `{ len, cap, data }`, is
 // the same either way, which is what the readers below depend on.
 [[nodiscard]] auto is_list_type(const kira::semantic::type_entry &entry)
@@ -481,7 +481,7 @@ auto run_llvm(const fs::path &path,
   //
   // The first version stopped at the first match and gave up if it didn't
   // parse. That made a file's own prose able to disable its check silently:
-  // `048_wide_simultaneous_liveness.kira` explains in a comment why it
+  // `048_wide_simultaneous_liveness.cn` explains in a comment why it
   // declares a `# expect:` value, that sentence contains the marker, and it
   // sits above the real one — so the check was skipped entirely and the file
   // passed with a deliberately wrong expected value. A test that cannot fail
@@ -674,7 +674,7 @@ auto main(int argc, char *argv[]) -> int {
     auto files = list_corpus_files(corpus_dir);
 
     expect(!files.empty(),
-           "expected codegen stress corpus to contain .kira files");
+           "expected codegen stress corpus to contain .cn files");
     expect(files.size() >= 20,
            std::format(
                "expected a broad codegen stress corpus, found only {} files",

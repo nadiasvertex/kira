@@ -58,7 +58,7 @@ auto expect_diagnostic(
 /// Fixtures for the real auto-injected prelude — the same stdlib sources
 /// `inject_stdlib_prelude` (`src/driver/driver.cpp`) prepends to every real
 /// `kira` session, so bound positions like `T: eq` and `impl show for point`,
-/// `prelude.kira`'s `use std.console`, and prelude types like `list` and
+/// `prelude.cn`'s `use std.console`, and prelude types like `list` and
 /// `option` resolve here exactly as they do for a real compile. The list
 /// itself lives in `src/testing/stdlib_fixtures.h`, shared with the other
 /// harnesses that drive `check_program` directly.
@@ -141,7 +141,7 @@ auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
 
   for (const auto &entry : kira::testing::fs::directory_iterator(subdir)) {
     if (entry.is_regular_file() &&
-        entry.path().extension().string() == ".kira") {
+        entry.path().extension().string() == ".cn") {
       const auto filename = entry.path().filename().string();
       const auto path = kira::testing::fs::path(dirname) / filename;
       const auto text = kira::testing::load_test_data_file(
@@ -162,13 +162,13 @@ auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
 
 auto test_accepts_typed_core_program() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_typed_core_program.kira");
+      analyze_test_data_file("accept_typed_core_program.cn");
   expect_clean(analyzed, "expected typed core program to check cleanly");
 }
 
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_try_from_conversion.kira");
+      analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
       analyzed,
       "expected `?` with a matching `impl from[...]` to check cleanly");
@@ -176,18 +176,18 @@ auto test_accepts_try_from_conversion() -> void {
 
 auto test_accepts_structs_and_methods() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_structs_and_methods.kira");
+      analyze_test_data_file("accept_structs_and_methods.cn");
   expect_clean(analyzed, "expected struct/impl program to check cleanly");
 }
 
 auto test_accepts_packed_struct() -> void {
-  const auto analyzed = analyze_test_data_file("accept_packed_struct.kira");
+  const auto analyzed = analyze_test_data_file("accept_packed_struct.cn");
   expect_clean(analyzed,
                "expected a packed struct declaration to check cleanly");
 }
 
 auto test_accepts_capture_lists() -> void {
-  const auto analyzed = analyze_test_data_file("accept_capture_lists.kira");
+  const auto analyzed = analyze_test_data_file("accept_capture_lists.cn");
   expect_clean(analyzed,
                std::string("expected capture lists to check cleanly:\n") +
                    analyzed.diagnostics);
@@ -202,7 +202,7 @@ auto test_accepts_capture_lists() -> void {
 
 auto test_reports_capture_list_omits_name() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_list_omits_name.kira");
+      analyze_test_data_file("reject_capture_list_omits_name.cn");
   expect(analyzed.error_count != 0,
          "expected an out-of-list reference to be rejected");
   expect_diagnostic(analyzed, "`offset` is not in this lambda's capture list",
@@ -213,7 +213,7 @@ auto test_reports_capture_list_omits_name() -> void {
 
 auto test_reports_empty_capture_list_blocks_everything() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_list_empty_blocks_all.kira");
+      analyze_test_data_file("reject_capture_list_empty_blocks_all.cn");
   expect(analyzed.error_count != 0,
          "expected `[]` to put every outer name out of reach");
   expect_diagnostic(analyzed, "this lambda captures nothing",
@@ -222,7 +222,7 @@ auto test_reports_empty_capture_list_blocks_everything() -> void {
 
 auto test_reports_capture_list_unknown_name() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_list_unknown_name.kira");
+      analyze_test_data_file("reject_capture_list_unknown_name.cn");
   expect(analyzed.error_count != 0,
          "expected capturing an undeclared name to be rejected");
   expect_diagnostic(analyzed, "cannot capture `nope`",
@@ -231,7 +231,7 @@ auto test_reports_capture_list_unknown_name() -> void {
 
 auto test_reports_capture_list_module_level_name() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_list_module_level.kira");
+      analyze_test_data_file("reject_capture_list_module_level.cn");
   expect(analyzed.error_count != 0,
          "expected capturing a module-level item to be rejected");
   expect_diagnostic(analyzed, "`bump` does not need to be captured",
@@ -240,7 +240,7 @@ auto test_reports_capture_list_module_level_name() -> void {
 
 auto test_reports_duplicate_capture() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_list_duplicate.kira");
+      analyze_test_data_file("reject_capture_list_duplicate.cn");
   expect(analyzed.error_count != 0,
          "expected a duplicated capture entry to be rejected");
   expect_diagnostic(analyzed, "is captured twice in this list",
@@ -249,7 +249,7 @@ auto test_reports_duplicate_capture() -> void {
 
 auto test_reports_mut_ref_capture_of_immutable() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_mut_ref_of_let.kira");
+      analyze_test_data_file("reject_capture_mut_ref_of_let.cn");
   expect(analyzed.error_count != 0,
          "expected `&mut` of a `let` binding to be rejected");
   expect_diagnostic(analyzed, "cannot capture `factor` by mutable reference",
@@ -260,7 +260,7 @@ auto test_reports_mut_ref_capture_of_immutable() -> void {
 
 auto test_reports_ref_capture_through_by_value_capture() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_capture_ref_through_by_value.kira");
+      analyze_test_data_file("reject_capture_ref_through_by_value.cn");
   expect(analyzed.error_count != 0,
          "expected a `&mut` reaching through a by-value capture to be "
          "rejected rather than silently writing into the copy");
@@ -270,13 +270,13 @@ auto test_reports_ref_capture_through_by_value_capture() -> void {
 
 auto test_accepts_collections_and_lambdas() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_collections_and_lambdas.kira");
+      analyze_test_data_file("accept_collections_and_lambdas.cn");
   expect_clean(analyzed, "expected collection/lambda program to check cleanly");
 }
 
 auto test_accepts_option_result_flow() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_option_result_flow.kira");
+      analyze_test_data_file("accept_option_result_flow.cn");
   expect_clean(analyzed, "expected option/result program to check cleanly");
 }
 
@@ -361,7 +361,7 @@ auto test_value_module_name_conflicts() -> void {
 /// Each is reported once.
 auto test_module_name_conflicts_are_general() -> void {
   const auto pkg = source_fixture{
-      .path = "pkg.kira",
+      .path = "pkg.cn",
       .text = "module pkg\n"
               "\n"
               "pub def seven() -> int32:\n"
@@ -370,7 +370,7 @@ auto test_module_name_conflicts_are_general() -> void {
   const auto expect_one = [&](std::string_view main_text,
                               std::string_view needle, std::string_view what) {
     const auto analyzed =
-        analyze_sources({pkg, source_fixture{.path = "main.kira",
+        analyze_sources({pkg, source_fixture{.path = "main.cn",
                                              .text = std::string(main_text)}});
     expect_diagnostic(analyzed, needle,
                       std::format("expected {} to be rejected", what));
@@ -426,13 +426,13 @@ auto test_module_name_conflicts_are_general() -> void {
   // Across the files of one module: the per-file duplicate-declaration
   // check can't see a `type` in one file and the `module` in another.
   const auto split = analyze_sources({
-      source_fixture{.path = "split_a.kira",
+      source_fixture{.path = "split_a.cn",
                      .text = "module split\n"
                              "\n"
                              "module part:\n"
                              "    pub def one() -> int32:\n"
                              "        return 1\n"},
-      source_fixture{.path = "split_b.kira",
+      source_fixture{.path = "split_b.cn",
                      .text = "module split\n"
                              "\n"
                              "type part = { x: int32 }\n"},
@@ -449,7 +449,7 @@ auto test_module_name_conflicts_are_general() -> void {
 /// original name is no longer visible — with a diagnostic that says so.
 auto test_root_module_alias() -> void {
   const auto pkg = source_fixture{
-      .path = "pkg.kira",
+      .path = "pkg.cn",
       .text = "module pkg\n"
               "\n"
               "pub type holder = { value: int32 }\n"
@@ -459,7 +459,7 @@ auto test_root_module_alias() -> void {
   };
   expect_clean(analyze_sources({pkg,
                                 source_fixture{
-                                    .path = "main.kira",
+                                    .path = "main.cn",
                                     .text = "module main\n"
                                             "\n"
                                             "use pkg as p\n"
@@ -472,7 +472,7 @@ auto test_root_module_alias() -> void {
                "expected `use pkg as p` to make `p.seven()` and `p.holder` "
                "resolve");
   const auto hidden = analyze_sources(
-      {pkg, source_fixture{.path = "main.kira",
+      {pkg, source_fixture{.path = "main.cn",
                            .text = "module main\n"
                                    "\n"
                                    "use pkg as p\n"
@@ -490,7 +490,7 @@ auto test_root_module_alias() -> void {
 /// is reported as a function having no fields rather than as a module.
 auto test_dotted_name_rooted_at_module_value() -> void {
   const auto geo = source_fixture{
-      .path = "geo.kira",
+      .path = "geo.cn",
       .text = "module geo\n"
               "\n"
               "pub type point = { x: int32, y: int32 }\n"
@@ -499,7 +499,7 @@ auto test_dotted_name_rooted_at_module_value() -> void {
   };
   expect_clean(analyze_sources({geo,
                                 source_fixture{
-                                    .path = "main.kira",
+                                    .path = "main.cn",
                                     .text = "module main\n"
                                             "\n"
                                             "use geo\n"
@@ -516,7 +516,7 @@ auto test_dotted_name_rooted_at_module_value() -> void {
                                 }}),
                "expected field access on module-level statics to type-check");
   const auto wrong = analyze_sources(
-      {geo, source_fixture{.path = "main.kira",
+      {geo, source_fixture{.path = "main.cn",
                            .text = "module main\n"
                                    "\n"
                                    "use geo.{origin}\n"
@@ -527,7 +527,7 @@ auto test_dotted_name_rooted_at_module_value() -> void {
   expect_diagnostic(wrong, "expected `bool`, found `int32`",
                     "expected `origin.x` to be typed as the field's type");
   const auto fn_root =
-      analyze_sources({source_fixture{.path = "main.kira",
+      analyze_sources({source_fixture{.path = "main.cn",
                                       .text = "module main\n"
                                               "\n"
                                               "def helper() -> int32:\n"
@@ -569,34 +569,34 @@ auto test_accepts_fully_qualified_call() -> void {
 
 auto test_accepts_type_qualified_associated_call() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_type_qualified_associated_call.kira");
+      analyze_test_data_file("accept_type_qualified_associated_call.cn");
   expect_clean(analyzed,
                "expected a type-qualified associated-function call to resolve");
 }
 
 auto test_accepts_indexing_local_bindings() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_indexing_local_bindings.kira");
+      analyze_test_data_file("accept_indexing_local_bindings.cn");
   expect_clean(analyzed,
                "expected indexing a local list binding to check cleanly");
 }
 
 auto test_accepts_str_byte_index() -> void {
-  const auto analyzed = analyze_test_data_file("accept_str_byte_index.kira");
+  const auto analyzed = analyze_test_data_file("accept_str_byte_index.cn");
   expect_clean(analyzed,
                "expected a scalar `str` index to check cleanly as a `byte`");
 }
 
 auto test_reports_str_index_non_integer() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_str_index_non_integer.kira");
+      analyze_test_data_file("report_str_index_non_integer.cn");
   expect_diagnostic(analyzed, "index must be an integer type",
                     "expected a non-integer `str` index to be rejected");
 }
 
 auto test_accepts_for_over_user_iterator() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_for_over_user_iterator.kira");
+      analyze_test_data_file("accept_for_over_user_iterator.cn");
   expect_clean(
       analyzed,
       "expected a `for` loop over a user type implementing "
@@ -606,7 +606,7 @@ auto test_accepts_for_over_user_iterator() -> void {
 
 auto test_accepts_type_generic_free_function() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_type_generic_free_function.kira");
+      analyze_test_data_file("accept_type_generic_free_function.cn");
   expect_clean(
       analyzed,
       "expected a type-generic free function to check cleanly, each call "
@@ -615,7 +615,7 @@ auto test_accepts_type_generic_free_function() -> void {
 
 auto test_reports_type_generic_unsolved() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_type_generic_unsolved.kira");
+      analyze_test_data_file("report_type_generic_unsolved.cn");
   expect_diagnostic(analyzed, "cannot tell what `T` is",
                     "expected a call that leaves a type parameter unsolved to "
                     "be rejected");
@@ -623,7 +623,7 @@ auto test_reports_type_generic_unsolved() -> void {
 
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_associated_type_self_output.kira");
+      analyze_test_data_file("accept_associated_type_self_output.cn");
   expect_clean(
       analyzed,
       "expected `self.output` associated-type return to check cleanly");
@@ -631,21 +631,21 @@ auto test_accepts_associated_type_self_output() -> void {
 
 auto test_accepts_extend_on_builtin_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_extend_on_builtin_type.kira");
+      analyze_test_data_file("accept_extend_on_builtin_type.cn");
   expect_clean(analyzed,
                "expected an extend block on a builtin type to check cleanly");
 }
 
 auto test_accepts_extend_on_user_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_extend_on_user_type.kira");
+      analyze_test_data_file("accept_extend_on_user_type.cn");
   expect_clean(analyzed,
                "expected an extend block on a user type to check cleanly");
 }
 
 auto test_reports_extend_method_arity_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_extend_method_arity_mismatch.kira");
+      analyze_test_data_file("report_extend_method_arity_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected an extend method call to be checked like a real function");
   expect_diagnostic(analyzed, "missing argument `factor`",
@@ -677,7 +677,7 @@ auto test_reports_extend_method_arity_mismatch() -> void {
 /// lookup deleted.
 auto test_finds_static_on_primitive_through_impl() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "primitive_static_impl.kira",
+      .path = "primitive_static_impl.cn",
       .text = "module main\n"
               "\n"
               "use std.iter.iterator\n"
@@ -703,7 +703,7 @@ auto test_finds_static_on_primitive_through_impl() -> void {
 
 auto test_finds_static_on_primitive_through_extend() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "primitive_static_extend.kira",
+      .path = "primitive_static_extend.cn",
       .text = "module main\n"
               "\n"
               "use std.iter.iterator\n"
@@ -729,7 +729,7 @@ auto test_finds_static_on_primitive_through_extend() -> void {
 
 auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "derived_cmp.kira",
+      .path = "derived_cmp.cn",
       .text = "module main\n"
               "\n"
               "type point = { x: int32 } deriving ord\n"
@@ -758,7 +758,7 @@ auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
 /// without the bare binding passes with that lookup deleted.
 auto test_ordering_variants_are_prelude_reachable() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "ordering_variants.kira",
+      .path = "ordering_variants.cn",
       .text = "module main\n"
               "\n"
               "def sign(n: int32) -> ordering:\n"
@@ -786,7 +786,7 @@ auto test_ordering_variants_are_prelude_reachable() -> void {
 
 auto test_reports_extend_on_unapplied_generic() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "extend_unapplied.kira",
+      .path = "extend_unapplied.cn",
       .text = "module main\n"
               "\n"
               "type gen[T] = { v: T }\n"
@@ -822,14 +822,14 @@ auto test_reports_extend_on_unapplied_generic() -> void {
 auto test_generic_method_body_sees_its_own_imports() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "xmod_helper.kira",
+          .path = "xmod_helper.cn",
           .text = "module xmod.helper\n"
                   "\n"
                   "pub def twice(n: int32) -> int32:\n"
                   "    return n * 2\n",
       },
       {
-          .path = "xmod_methods.kira",
+          .path = "xmod_methods.cn",
           .text = "module xmod.methods\n"
                   "\n"
                   "use xmod.helper.twice\n"
@@ -839,7 +839,7 @@ auto test_generic_method_body_sees_its_own_imports() -> void {
                   "        return twice(5)\n",
       },
       {
-          .path = "xmod_caller.kira",
+          .path = "xmod_caller.cn",
           .text = "module main\n"
                   "\n"
                   "def main() -> int32:\n"
@@ -858,13 +858,13 @@ auto test_generic_method_body_sees_its_own_imports() -> void {
 auto test_qualified_type_path_through_import() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "qpath_inner.kira",
+          .path = "qpath_inner.cn",
           .text = "module qpath.inner\n"
                   "\n"
                   "pub type holder[T] = { value: T }\n",
       },
       {
-          .path = "qpath_app.kira",
+          .path = "qpath_app.cn",
           .text = "module main\n"
                   "\n"
                   "use qpath.inner\n"
@@ -884,13 +884,13 @@ auto test_qualified_type_path_through_import() -> void {
   // the check.
   const auto missing = analyze_sources({
       {
-          .path = "qpath_inner_missing.kira",
+          .path = "qpath_inner_missing.cn",
           .text = "module qpath.inner\n"
                   "\n"
                   "pub type holder[T] = { value: T }\n",
       },
       {
-          .path = "qpath_app_missing.kira",
+          .path = "qpath_app_missing.cn",
           .text = "module main\n"
                   "\n"
                   "use qpath.inner\n"
@@ -914,7 +914,7 @@ auto test_qualified_type_path_through_import() -> void {
 auto test_inline_submodule_paths_resolve() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "submod_app.kira",
+          .path = "submod_app.cn",
           .text =
               "module main\n"
               "\n"
@@ -948,7 +948,7 @@ auto test_inline_submodule_paths_resolve() -> void {
   // `holder` (which is what a longest-prefix lookup would do).
   const auto missing = analyze_sources({
       {
-          .path = "submod_missing.kira",
+          .path = "submod_missing.cn",
           .text = "module main\n"
                   "\n"
                   "type holder = { cur: int32 }\n"
@@ -970,7 +970,7 @@ auto test_inline_submodule_paths_resolve() -> void {
   // later stages, so this case has to be the only one in its program.
   const auto undeclared = analyze_sources({
       {
-          .path = "submod_undeclared.kira",
+          .path = "submod_undeclared.cn",
           .text = "module main\n"
                   "\n"
                   "type holder = { cur: int32 }\n"
@@ -997,13 +997,13 @@ auto test_inline_submodule_paths_resolve() -> void {
 auto test_import_conflicts_with_inline_submodule() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "subprec_inner.kira",
+          .path = "subprec_inner.cn",
           .text = "module subprec.inner\n"
                   "\n"
                   "pub type holder = { imported: int32 }\n",
       },
       {
-          .path = "subprec_app.kira",
+          .path = "subprec_app.cn",
           .text = "module main\n"
                   "\n"
                   "use subprec.inner\n"
@@ -1027,7 +1027,7 @@ auto test_import_conflicts_with_inline_submodule() -> void {
 
 auto test_accepts_parameterized_extend() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "extend_parameterized.kira",
+      .path = "extend_parameterized.cn",
       .text = "module main\n"
               "\n"
               "type gen[T] = { v: T }\n"
@@ -1050,7 +1050,7 @@ auto test_accepts_parameterized_extend() -> void {
   // wrong annotation tells the two apart — it errors when `T` really became
   // `int32`, and passes silently when it did not.
   const auto mismatched = analyze_sources({{
-      .path = "extend_parameterized_mismatch.kira",
+      .path = "extend_parameterized_mismatch.cn",
       .text = "module main\n"
               "\n"
               "type gen[T] = { v: T }\n"
@@ -1071,7 +1071,7 @@ auto test_accepts_parameterized_extend() -> void {
 
 auto test_reports_missing_return_value() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_missing_return_value.kira");
+      analyze_test_data_file("report_missing_return_value.cn");
   expect(analyzed.error_count > 0,
          "expected a value-returning function whose body never returns to "
          "be rejected");
@@ -1082,7 +1082,7 @@ auto test_reports_missing_return_value() -> void {
 
 auto test_reports_missing_return_on_if_without_else() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_missing_return_if_without_else.kira");
+      analyze_test_data_file("report_missing_return_if_without_else.cn");
   expect(analyzed.error_count >= 2,
          "expected both fall-through `if` shapes to be rejected");
   expect_diagnostic(analyzed, "not every path through its body returns",
@@ -1091,7 +1091,7 @@ auto test_reports_missing_return_on_if_without_else() -> void {
 }
 
 auto test_accepts_all_paths_returning() -> void {
-  const auto analyzed = analyze_test_data_file("accept_all_paths_return.kira");
+  const auto analyzed = analyze_test_data_file("accept_all_paths_return.cn");
   expect_clean(analyzed,
                "expected functions returning on every path (tail expressions, "
                "if/else, match arms, `while true`) to check cleanly: " +
@@ -1100,7 +1100,7 @@ auto test_accepts_all_paths_returning() -> void {
 
 auto test_impl_method_takes_priority_over_extend() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_impl_method_priority_over_extend.kira");
+      analyze_test_data_file("accept_impl_method_priority_over_extend.cn");
   expect_clean(analyzed,
                "expected impl/extend method name collision to check cleanly, "
                "with the impl method winning");
@@ -1108,7 +1108,7 @@ auto test_impl_method_takes_priority_over_extend() -> void {
 
 auto test_reports_associated_type_output_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_associated_type_output_mismatch.kira");
+      analyze_test_data_file("report_associated_type_output_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected `self.output` to resolve to the impl's concrete type");
   expect_diagnostic(analyzed, "expected `str`, found `vec2`",
@@ -1117,7 +1117,7 @@ auto test_reports_associated_type_output_mismatch() -> void {
 
 auto test_accepts_string_interpolation() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_string_interpolation.kira");
+      analyze_test_data_file("accept_string_interpolation.cn");
   expect_clean(analyzed,
                "expected string interpolation program to check cleanly: " +
                    analyzed.diagnostics);
@@ -1129,7 +1129,7 @@ auto test_accepts_string_interpolation() -> void {
 
 auto test_reports_undefined_name_with_suggestion() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_undefined_name_with_suggestion.kira");
+      analyze_test_data_file("report_undefined_name_with_suggestion.cn");
   expect(analyzed.error_count > 0, "expected undefined name to fail");
   expect_diagnostic(analyzed, "undefined name `totl`",
                     "expected undefined-name diagnostic");
@@ -1138,7 +1138,7 @@ auto test_reports_undefined_name_with_suggestion() -> void {
 }
 
 auto test_reports_undefined_type() -> void {
-  const auto analyzed = analyze_test_data_file("report_undefined_type.kira");
+  const auto analyzed = analyze_test_data_file("report_undefined_type.cn");
   expect(analyzed.error_count > 0, "expected undefined type to fail");
   expect_diagnostic(analyzed, "undefined type `pont`",
                     "expected undefined-type diagnostic");
@@ -1146,7 +1146,7 @@ auto test_reports_undefined_type() -> void {
 
 auto test_reports_packed_on_sum_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_packed_on_sum_type.kira");
+      analyze_test_data_file("report_packed_on_sum_type.cn");
   expect(analyzed.error_count > 0, "expected `packed` on a sum type to fail");
   expect_diagnostic(analyzed, "`packed` only applies to struct types",
                     "expected a packed-on-non-struct diagnostic");
@@ -1156,7 +1156,7 @@ auto test_reports_packed_on_sum_type() -> void {
 
 auto test_reports_annotation_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_annotation_mismatch.kira");
+      analyze_test_data_file("report_annotation_mismatch.cn");
   expect(analyzed.error_count > 0, "expected annotation mismatch to fail");
   expect_diagnostic(analyzed, "expected `int32`, found `str`",
                     "expected annotation type-mismatch diagnostic");
@@ -1164,7 +1164,7 @@ auto test_reports_annotation_mismatch() -> void {
 
 auto test_reports_quote_type_annotation_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_quote_type_annotation_mismatch.kira");
+      analyze_test_data_file("report_quote_type_annotation_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected a quote-type (`expr`) annotation mismatch to fail");
   expect_diagnostic(analyzed, "expected `expr`, found `str`",
@@ -1176,7 +1176,7 @@ auto test_reports_quote_type_annotation_mismatch() -> void {
 
 auto test_accepts_quote_expr_typed_by_fragment_kind() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_quote_expr_typed_by_fragment_kind.kira");
+      analyze_test_data_file("accept_quote_expr_typed_by_fragment_kind.cn");
   expect_clean(analyzed,
                std::string("expected each quote to type-check against the "
                            "quote-value type matching its own classified "
@@ -1187,7 +1187,7 @@ auto test_accepts_quote_expr_typed_by_fragment_kind() -> void {
 
 auto test_accepts_splice_expr_reifies_quoted_value() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_splice_expr_reifies_quoted_value.kira");
+      analyze_test_data_file("accept_splice_expr_reifies_quoted_value.cn");
   expect_clean(analyzed,
                std::string("expected `~doubled` to graft the quoted `21 + 21` "
                            "fragment in as `run`'s real return expression:\n") +
@@ -1196,7 +1196,7 @@ auto test_accepts_splice_expr_reifies_quoted_value() -> void {
 
 auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_splice_stmt_reifies_quoted_statement.kira");
+      "accept_splice_stmt_reifies_quoted_statement.cn");
   expect_clean(analyzed,
                std::string("expected `~make_binding` to graft the quoted `if "
                            "true: let y = 10 return y` statement into `run`'s "
@@ -1208,7 +1208,7 @@ auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
 
 auto test_accepts_expr_builder_constructs_fragment() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_expr_builder_constructs_fragment.kira");
+      analyze_test_data_file("accept_expr_builder_constructs_fragment.cn");
   expect_clean(analyzed,
                std::string("expected `expr.lit(42)` to construct a real `expr` "
                            "quote value, spliceable via `~built`:\n") +
@@ -1217,7 +1217,7 @@ auto test_accepts_expr_builder_constructs_fragment() -> void {
 
 auto test_accepts_item_splice_injects_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_item_splice_injects_impl.kira");
+      analyze_test_data_file("accept_item_splice_injects_impl.cn");
   expect_clean(
       analyzed,
       std::string("expected `~make_show_impl()` at module top level to "
@@ -1228,7 +1228,7 @@ auto test_accepts_item_splice_injects_impl() -> void {
 
 auto test_accepts_type_reflection_primitives() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_type_reflection_primitives.kira");
+      analyze_test_data_file("accept_type_reflection_primitives.cn");
   expect_clean(
       analyzed,
       std::string("expected `point.field_count()`/`.name()`/`.fields()` "
@@ -1238,7 +1238,7 @@ auto test_accepts_type_reflection_primitives() -> void {
 }
 
 auto test_accepts_module_reflection() -> void {
-  const auto analyzed = analyze_test_data_file("accept_module_reflection.kira");
+  const auto analyzed = analyze_test_data_file("accept_module_reflection.cn");
   expect_clean(
       analyzed,
       std::string("expected `sample.name()`/`.type_count()`/"
@@ -1249,7 +1249,7 @@ auto test_accepts_module_reflection() -> void {
 
 auto test_accepts_expr_keyword_usable_as_identifier() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_expr_keyword_usable_as_identifier.kira");
+      analyze_test_data_file("accept_expr_keyword_usable_as_identifier.cn");
   expect_clean(analyzed,
                std::string("expected `expr`/`stmt` to be usable as ordinary "
                            "identifiers outside type position (contextual "
@@ -1259,7 +1259,7 @@ auto test_accepts_expr_keyword_usable_as_identifier() -> void {
 
 auto test_accepts_splice_type_reifies_quoted_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_splice_type_reifies_quoted_type.kira");
+      analyze_test_data_file("accept_splice_type_reifies_quoted_type.cn");
   expect_clean(analyzed,
                std::string("expected `~(int_type)` in return-type position to "
                            "resolve to the quoted `int32` type:\n") +
@@ -1268,7 +1268,7 @@ auto test_accepts_splice_type_reifies_quoted_type() -> void {
 
 auto test_reports_splice_expr_wrong_fragment_kind() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_splice_expr_wrong_fragment_kind.kira");
+      analyze_test_data_file("report_splice_expr_wrong_fragment_kind.cn");
   expect(analyzed.error_count > 0,
          "expected splicing a `stmt` fragment in expression position to "
          "fail: only a quoted expression can be spliced there");
@@ -1279,7 +1279,7 @@ auto test_reports_splice_expr_wrong_fragment_kind() -> void {
 
 auto test_reports_hygiene_prevents_spliced_binding_leak() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_hygiene_prevents_spliced_binding_leak.kira");
+      "report_hygiene_prevents_spliced_binding_leak.cn");
   expect(analyzed.error_count > 0,
          "expected `y` (declared only inside the spliced `` `let y: int32 = "
          "10` `` fragment) to be undefined once referenced by hand-written "
@@ -1293,7 +1293,7 @@ auto test_reports_hygiene_prevents_spliced_binding_leak() -> void {
 
 auto test_reports_splice_requires_quote_value() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_splice_requires_quote_value.kira");
+      analyze_test_data_file("report_splice_requires_quote_value.cn");
   expect(analyzed.error_count > 0,
          "expected `~(42)` to fail: a splice operand must be a quoted "
          "fragment, not an arbitrary value");
@@ -1304,7 +1304,7 @@ auto test_reports_splice_requires_quote_value() -> void {
 
 auto test_accepts_static_let_evaluates() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_static_let_evaluates.kira");
+      analyze_test_data_file("accept_static_let_evaluates.cn");
   expect_clean(
       analyzed,
       std::string("expected `static limit: int32 = 2 + 3 * 4` to check "
@@ -1314,7 +1314,7 @@ auto test_accepts_static_let_evaluates() -> void {
 
 auto test_reports_static_assert_evaluates_false() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_static_assert_evaluates_false.kira");
+      analyze_test_data_file("report_static_assert_evaluates_false.cn");
   expect(analyzed.error_count > 0,
          "expected `static assert 1 == 2` to actually be evaluated and fail "
          "compilation, not just type-checked for `bool`-ness");
@@ -1325,7 +1325,7 @@ auto test_reports_static_assert_evaluates_false() -> void {
 
 auto test_accepts_static_def_call_evaluates() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_static_def_call_evaluates.kira");
+      analyze_test_data_file("accept_static_def_call_evaluates.cn");
   expect_clean(analyzed,
                std::string("expected `static def square` to be callable from "
                            "`static let nine: int32 = square(3)`:\n") +
@@ -1339,7 +1339,7 @@ auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
   // every call with "this expression form is not yet supported in
   // compile-time evaluation".
   const auto analyzed = analyze_test_data_file(
-      "accept_static_generic_call_casts_to_bound_type_param.kira");
+      "accept_static_generic_call_casts_to_bound_type_param.cn");
   expect_clean(
       analyzed,
       std::string("expected `v as T` to cast a compile-time value down "
@@ -1349,7 +1349,7 @@ auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
 
 auto test_reports_static_for_evaluates_each_iteration() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_static_for_evaluates_each_iteration.kira");
+      analyze_test_data_file("report_static_for_evaluates_each_iteration.cn");
   expect(analyzed.error_count > 0,
          "expected `static for` to actually iterate and evaluate its body "
          "per element, catching the third-element assertion failure");
@@ -1365,7 +1365,7 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
   // `static_decl` case hard-coded the tail type of every non-`static if`
   // kind to `unit`, discarding the inline form's yielded expression type.
   const auto analyzed =
-      analyze_test_data_file("accept_static_for_inline_as_function_tail.kira");
+      analyze_test_data_file("accept_static_for_inline_as_function_tail.cn");
   expect_clean(analyzed,
                std::string("expected an inline `static for ... => ...` as a "
                            "function's tail statement to be recognized as "
@@ -1375,7 +1375,7 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
 
 auto test_accepts_static_struct_value_evaluates() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_static_struct_value_evaluates.kira");
+      analyze_test_data_file("accept_static_struct_value_evaluates.cn");
   expect_clean(analyzed,
                std::string("expected a compile-time struct literal and field "
                            "access to evaluate:\n") +
@@ -1384,7 +1384,7 @@ auto test_accepts_static_struct_value_evaluates() -> void {
 
 auto test_accepts_static_let_forward_reference() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_static_let_forward_reference.kira");
+      analyze_test_data_file("accept_static_let_forward_reference.cn");
   expect_clean(analyzed,
                std::string("expected `static let doubled` to forward-reference "
                            "`static let base` declared later in the file:\n") +
@@ -1393,7 +1393,7 @@ auto test_accepts_static_let_forward_reference() -> void {
 
 auto test_accepts_static_if_selects_taken_branch() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_static_if_selects_taken_branch.kira");
+      analyze_test_data_file("accept_static_if_selects_taken_branch.cn");
   expect_clean(
       analyzed,
       std::string("expected only the `else` branch (condition `false`) "
@@ -1404,7 +1404,7 @@ auto test_accepts_static_if_selects_taken_branch() -> void {
 
 auto test_accepts_static_if_selects_branch_by_sum_type_equality() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_selects_branch_by_sum_type_equality.kira");
+      "accept_static_if_selects_branch_by_sum_type_equality.cn");
   expect_clean(
       analyzed,
       std::string("expected `static if CURRENT == @unix` to evaluate the "
@@ -1416,7 +1416,7 @@ auto test_accepts_static_if_selects_branch_by_sum_type_equality() -> void {
 
 auto test_accepts_static_if_variant_equality_selects_else_branch() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_variant_equality_selects_else_branch.kira");
+      "accept_static_if_variant_equality_selects_else_branch.cn");
   expect_clean(
       analyzed,
       std::string("expected `static if CURRENT == @unix` (CURRENT bound "
@@ -1428,7 +1428,7 @@ auto test_accepts_static_if_variant_equality_selects_else_branch() -> void {
 
 auto test_accepts_static_if_statement_body_in_generic_static_def() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_statement_body_in_generic_static_def.kira");
+      "accept_static_if_statement_body_in_generic_static_def.cn");
   expect_clean(
       analyzed,
       std::string("expected a `static if`/`else` branch inside a generic "
@@ -1441,7 +1441,7 @@ auto test_accepts_static_if_statement_body_in_generic_static_def() -> void {
 
 auto test_accepts_static_if_narrows_in_bound_generic_instance() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_narrows_in_bound_generic_instance.kira");
+      "accept_static_if_narrows_in_bound_generic_instance.cn");
   expect_clean(
       analyzed,
       std::string("expected `min_of[int32]()`'s recheck (with `T` bound "
@@ -1454,7 +1454,7 @@ auto test_accepts_static_if_narrows_in_bound_generic_instance() -> void {
 
 auto test_accepts_static_if_narrows_through_let_bound_name() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_narrows_through_let_bound_name.kira");
+      "accept_static_if_narrows_through_let_bound_name.cn");
   expect_clean(
       analyzed,
       std::string("expected `min_of[int8]()`'s recheck to narrow `static "
@@ -1467,7 +1467,7 @@ auto test_accepts_static_if_narrows_through_let_bound_name() -> void {
 
 auto test_accepts_static_if_chain_with_trailing_static_assert() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_if_chain_with_trailing_static_assert.kira");
+      "accept_static_if_chain_with_trailing_static_assert.cn");
   expect_clean(
       analyzed,
       std::string("expected a trailing `static assert false` after a "
@@ -1484,7 +1484,7 @@ auto test_accepts_static_if_chain_with_trailing_static_assert() -> void {
 
 auto test_accepts_static_assert_compares_variant_payloads() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_static_assert_compares_variant_payloads.kira");
+      "accept_static_assert_compares_variant_payloads.cn");
   expect_clean(analyzed,
                std::string("expected `@other(\"bsd\") == @other(\"bsd\")` to "
                            "compare equal, differing payloads/tags to compare "
@@ -1494,7 +1494,7 @@ auto test_accepts_static_assert_compares_variant_payloads() -> void {
 
 auto test_reports_integer_literal_overflow() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_integer_literal_overflow.kira");
+      analyze_test_data_file("report_integer_literal_overflow.cn");
   expect(analyzed.error_count > 0, "expected literal overflow to fail");
   expect_diagnostic(analyzed, "integer literal `300` does not fit in `uint8`",
                     "expected literal-fit diagnostic");
@@ -1502,7 +1502,7 @@ auto test_reports_integer_literal_overflow() -> void {
 
 auto test_accepts_negative_min_integer_literals() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_negative_min_integer_literals.kira");
+      analyze_test_data_file("accept_negative_min_integer_literals.cn");
   expect_clean(analyzed,
                std::string("expected `-128`/`-32768`/`-2147483648`/"
                            "`-9223372036854775808` to type-check directly as "
@@ -1512,7 +1512,7 @@ auto test_accepts_negative_min_integer_literals() -> void {
 
 auto test_reports_negated_integer_literal_still_too_large() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_negated_integer_literal_still_too_large.kira");
+      "report_negated_integer_literal_still_too_large.cn");
   expect(analyzed.error_count > 0, "expected `-129` as `int8` to still fail");
   expect_diagnostic(analyzed, "integer literal `-129` does not fit in `int8`",
                     "expected literal-fit diagnostic for a negated literal");
@@ -1520,7 +1520,7 @@ auto test_reports_negated_integer_literal_still_too_large() -> void {
 
 auto test_reports_int64_positive_literal_still_too_large() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_int64_positive_literal_still_too_large.kira");
+      "report_int64_positive_literal_still_too_large.cn");
   expect(analyzed.error_count > 0,
          "expected `9223372036854775808` as `int64` (no leading `-`) to "
          "still fail");
@@ -1533,7 +1533,7 @@ auto test_reports_int64_positive_literal_still_too_large() -> void {
 
 auto test_accepts_negative_min_literal_through_cast() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_negative_min_literal_through_cast.kira");
+      analyze_test_data_file("accept_negative_min_literal_through_cast.cn");
   expect_clean(
       analyzed,
       std::string("expected `-2147483648 as int32` and "
@@ -1545,7 +1545,7 @@ auto test_accepts_negative_min_literal_through_cast() -> void {
 
 auto test_accepts_wide_literal_in_generic_return() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_wide_literal_in_generic_return.kira");
+      analyze_test_data_file("accept_wide_literal_in_generic_return.cn");
   expect_clean(
       analyzed,
       std::string("expected a wide literal return (`int64::min`) inside a "
@@ -1558,7 +1558,7 @@ auto test_accepts_wide_literal_in_generic_return() -> void {
 
 auto test_reports_generic_return_literal_overflow() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_generic_return_literal_overflow.kira");
+      analyze_test_data_file("report_generic_return_literal_overflow.cn");
   expect(analyzed.error_count > 0,
          "expected `-9223372036854775808 as T` instantiated at `T=int32` to "
          "still fail");
@@ -1570,7 +1570,7 @@ auto test_reports_generic_return_literal_overflow() -> void {
 
 auto test_reports_mixed_numeric_types() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_mixed_numeric_types.kira");
+      analyze_test_data_file("report_mixed_numeric_types.cn");
   expect(analyzed.error_count > 0, "expected mixed numerics to fail");
   expect_diagnostic(analyzed, "mismatched numeric types `int32` and `float64`",
                     "expected mixed-numeric diagnostic");
@@ -1578,7 +1578,7 @@ auto test_reports_mixed_numeric_types() -> void {
 
 auto test_reports_non_bool_condition() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_non_bool_condition.kira");
+      analyze_test_data_file("report_non_bool_condition.cn");
   expect(analyzed.error_count > 0, "expected non-bool condition to fail");
   expect_diagnostic(analyzed, "must be `bool`, found `int32`",
                     "expected bool-condition diagnostic");
@@ -1586,7 +1586,7 @@ auto test_reports_non_bool_condition() -> void {
 
 auto test_reports_assignment_to_immutable() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_assignment_to_immutable.kira");
+      analyze_test_data_file("report_assignment_to_immutable.cn");
   expect(analyzed.error_count > 0, "expected immutable assignment to fail");
   expect_diagnostic(analyzed, "cannot assign to immutable binding `count`",
                     "expected immutable-assignment diagnostic");
@@ -1594,13 +1594,13 @@ auto test_reports_assignment_to_immutable() -> void {
 
 auto test_accepts_let_mut_reassignment() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_let_mut_reassignment.kira");
+      analyze_test_data_file("accept_let_mut_reassignment.cn");
   expect_clean(analyzed, "expected `let mut` to allow reassignment");
 }
 
 auto test_reports_return_type_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_return_type_mismatch.kira");
+      analyze_test_data_file("report_return_type_mismatch.cn");
   expect(analyzed.error_count > 0, "expected return mismatch to fail");
   expect_diagnostic(analyzed, "return type mismatch: expected `str`",
                     "expected return-mismatch diagnostic");
@@ -1608,7 +1608,7 @@ auto test_reports_return_type_mismatch() -> void {
 
 auto test_reports_call_argument_problems() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_call_argument_problems.kira");
+      analyze_test_data_file("report_call_argument_problems.cn");
   expect(analyzed.error_count > 0, "expected call problems to fail");
   expect_diagnostic(analyzed, "too many arguments to `greet`",
                     "expected arity diagnostic");
@@ -1622,7 +1622,7 @@ auto test_reports_call_argument_problems() -> void {
 
 auto test_reports_struct_literal_problems() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_struct_literal_problems.kira");
+      analyze_test_data_file("report_struct_literal_problems.cn");
   expect(analyzed.error_count > 0, "expected struct literal problems to fail");
   expect_diagnostic(analyzed, "unknown field `z` in struct literal for `point`",
                     "expected unknown-field diagnostic");
@@ -1632,7 +1632,7 @@ auto test_reports_struct_literal_problems() -> void {
 
 auto test_reports_unknown_field_and_method() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unknown_field_and_method.kira");
+      analyze_test_data_file("report_unknown_field_and_method.cn");
   expect(analyzed.error_count > 0, "expected member problems to fail");
   expect_diagnostic(analyzed, "no field `z` on struct `point`",
                     "expected unknown-field diagnostic");
@@ -1642,7 +1642,7 @@ auto test_reports_unknown_field_and_method() -> void {
 
 auto test_reports_unknown_field_on_builtin_generic() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unknown_field_on_builtin_generic.kira");
+      analyze_test_data_file("report_unknown_field_on_builtin_generic.cn");
   expect(analyzed.error_count > 0,
          "expected unknown field on option[T] to fail");
   expect_diagnostic(analyzed, "no field `nonsense` on type `option[int32]`",
@@ -1651,7 +1651,7 @@ auto test_reports_unknown_field_on_builtin_generic() -> void {
 
 auto test_reports_non_exhaustive_match() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_non_exhaustive_match.kira");
+      analyze_test_data_file("report_non_exhaustive_match.cn");
   expect(analyzed.error_count > 0, "expected non-exhaustive match to fail");
   expect_diagnostic(analyzed,
                     "non-exhaustive match on `shape`: `@rect`, `@point` not "
@@ -1661,7 +1661,7 @@ auto test_reports_non_exhaustive_match() -> void {
 
 auto test_reports_unknown_variant_in_pattern() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unknown_variant_in_pattern.kira");
+      analyze_test_data_file("report_unknown_variant_in_pattern.cn");
   expect(analyzed.error_count > 0, "expected unknown variant to fail");
   expect_diagnostic(analyzed, "unknown variant `@square` for sum type `shape`",
                     "expected unknown-variant diagnostic");
@@ -1669,7 +1669,7 @@ auto test_reports_unknown_variant_in_pattern() -> void {
 
 auto test_reports_try_in_plain_function() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_try_in_plain_function.kira");
+      analyze_test_data_file("report_try_in_plain_function.cn");
   expect(analyzed.error_count > 0, "expected `?` misuse to fail");
   expect_diagnostic(analyzed,
                     "cannot use `?` in a function that returns `int32`",
@@ -1678,7 +1678,7 @@ auto test_reports_try_in_plain_function() -> void {
 
 auto test_reports_try_with_no_from_conversion() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_try_no_from_conversion.kira");
+      analyze_test_data_file("report_try_no_from_conversion.cn");
   expect(analyzed.error_count > 0,
          "expected `?` with no `impl from[...]` to fail");
   expect_diagnostic(analyzed,
@@ -1689,7 +1689,7 @@ auto test_reports_try_with_no_from_conversion() -> void {
 
 auto test_reports_unannotated_pub_function() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unannotated_pub_function.kira");
+      analyze_test_data_file("report_unannotated_pub_function.cn");
   expect(analyzed.error_count > 0, "expected unannotated pub fn to fail");
   expect_diagnostic(analyzed,
                     "public function `run` must annotate its parameters and "
@@ -1699,7 +1699,7 @@ auto test_reports_unannotated_pub_function() -> void {
 
 auto test_reports_duplicate_trait_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_duplicate_trait_impl.kira");
+      analyze_test_data_file("report_duplicate_trait_impl.cn");
   expect(analyzed.error_count > 0, "expected duplicate impl to fail");
   expect_diagnostic(analyzed,
                     "duplicate implementation of trait `show2` for `point`",
@@ -1708,7 +1708,7 @@ auto test_reports_duplicate_trait_impl() -> void {
 
 auto test_reports_incomplete_trait_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_incomplete_trait_impl.kira");
+      analyze_test_data_file("report_incomplete_trait_impl.cn");
   expect(analyzed.error_count > 0, "expected incomplete impl to fail");
   expect_diagnostic(analyzed,
                     "implementation of trait `shape2` for `point` is missing "
@@ -1719,14 +1719,14 @@ auto test_reports_incomplete_trait_impl() -> void {
 }
 
 auto test_accepts_drop_impl() -> void {
-  const auto analyzed = analyze_test_data_file("accept_drop_impl.kira");
+  const auto analyzed = analyze_test_data_file("accept_drop_impl.cn");
   expect_clean(analyzed,
                "expected a well-formed `impl drop for T` to typecheck");
 }
 
 auto test_reports_duplicate_drop_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_duplicate_drop_impl.kira");
+      analyze_test_data_file("report_duplicate_drop_impl.cn");
   expect(analyzed.error_count > 0, "expected duplicate drop impl to fail");
   expect_diagnostic(analyzed,
                     "duplicate implementation of trait `drop` for `resource`",
@@ -1735,7 +1735,7 @@ auto test_reports_duplicate_drop_impl() -> void {
 
 auto test_reports_incomplete_drop_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_incomplete_drop_impl.kira");
+      analyze_test_data_file("report_incomplete_drop_impl.cn");
   expect(analyzed.error_count > 0, "expected incomplete drop impl to fail");
   expect_diagnostic(analyzed,
                     "implementation of trait `drop` for `resource` is "
@@ -1747,7 +1747,7 @@ auto test_reports_incomplete_drop_impl() -> void {
 
 auto test_reports_unsatisfied_trait_requirement() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unsatisfied_trait_requirement.kira");
+      analyze_test_data_file("report_unsatisfied_trait_requirement.cn");
   expect(analyzed.error_count > 0, "expected unsatisfied requires to fail");
   expect_diagnostic(analyzed,
                     "trait `basic_ord` requires `basic_eq`, but `point` does "
@@ -1756,7 +1756,7 @@ auto test_reports_unsatisfied_trait_requirement() -> void {
 }
 
 auto test_reports_unknown_deriving() -> void {
-  const auto analyzed = analyze_test_data_file("report_unknown_deriving.kira");
+  const auto analyzed = analyze_test_data_file("report_unknown_deriving.cn");
   expect(analyzed.error_count > 0, "expected unknown deriving to fail");
   expect_diagnostic(analyzed, "cannot derive `serialize` for `color`",
                     "expected deriving diagnostic");
@@ -1764,7 +1764,7 @@ auto test_reports_unknown_deriving() -> void {
 
 auto test_reports_impure_contract_call() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_impure_contract_call.kira");
+      analyze_test_data_file("report_impure_contract_call.cn");
   expect(analyzed.error_count > 0, "expected impure contract call to fail");
   expect_diagnostic(analyzed,
                     "contract conditions may only call pure functions",
@@ -1773,7 +1773,7 @@ auto test_reports_impure_contract_call() -> void {
 
 auto test_reports_string_interpolation_unsupported_style() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_string_interpolation_unsupported_style.kira");
+      "report_string_interpolation_unsupported_style.cn");
   expect(analyzed.error_count > 0,
          "expected `str` with `:x` to fail — `str` has no `hex` capability");
   expect_diagnostic(analyzed, "does not support x formatting",
@@ -1782,7 +1782,7 @@ auto test_reports_string_interpolation_unsupported_style() -> void {
 
 auto test_reports_string_interpolation_precision_on_integer_style() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_string_interpolation_precision_on_integer_style.kira");
+      "report_string_interpolation_precision_on_integer_style.cn");
   expect(analyzed.error_count > 0, "expected `.precision` on `x` to fail");
   expect_diagnostic(analyzed, "`.precision` is not allowed with `x`",
                     "expected a precision-on-integer-style diagnostic");
@@ -1790,7 +1790,7 @@ auto test_reports_string_interpolation_precision_on_integer_style() -> void {
 
 auto test_reports_string_interpolation_bad_dynamic_width() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_string_interpolation_bad_dynamic_width.kira");
+      "report_string_interpolation_bad_dynamic_width.cn");
   expect(analyzed.error_count > 0,
          "expected a non-usize dynamic width to fail");
   expect_diagnostic(analyzed, "format width must be `usize`, found `str`",
@@ -1807,14 +1807,14 @@ auto test_reports_string_interpolation_bad_dynamic_width() -> void {
 
 auto test_accepts_dependent_length_arithmetic() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_dependent_length_arithmetic.kira");
+      analyze_test_data_file("accept_dependent_length_arithmetic.cn");
   expect_clean(analyzed,
                "expected symbolic const-generic arithmetic to check cleanly");
 }
 
 auto test_reports_dependent_length_refuted() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_dependent_length_refuted.kira");
+      analyze_test_data_file("report_dependent_length_refuted.cn");
   expect(analyzed.error_count > 0,
          "expected `head` on an empty vec to be rejected");
   // The diagnostic must explain the *arithmetic*, not just report a mismatch:
@@ -1824,14 +1824,14 @@ auto test_reports_dependent_length_refuted() -> void {
 }
 
 auto test_accepts_proved_refinements() -> void {
-  const auto analyzed = analyze_test_data_file("accept_refinement_proved.kira");
+  const auto analyzed = analyze_test_data_file("accept_refinement_proved.cn");
   expect_clean(analyzed,
                "expected provable refinement obligations to check cleanly");
 }
 
 auto test_reports_unproven_refinement() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_refinement_unproven.kira");
+      analyze_test_data_file("report_refinement_unproven.cn");
   expect(analyzed.error_count > 0,
          "expected an unprovable refinement obligation to be reported");
   // The failure UX *is* the feature (design doc section 6): name the goal, and
@@ -1845,7 +1845,7 @@ auto test_reports_unproven_refinement() -> void {
 
 auto test_reports_refuted_refinement() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_refinement_refuted.kira");
+      analyze_test_data_file("report_refinement_refuted.cn");
   expect(analyzed.error_count > 0,
          "expected refuted refinement obligations to be reported");
   expect_diagnostic(analyzed, "`0 - 3 > 0` is never true here",
@@ -1858,14 +1858,14 @@ auto test_reports_refuted_refinement() -> void {
 }
 
 auto test_accepts_flow_narrowed_refinement() -> void {
-  const auto analyzed = analyze_test_data_file("accept_refinement_flow.kira");
+  const auto analyzed = analyze_test_data_file("accept_refinement_flow.cn");
   expect_clean(
       analyzed,
       "expected a path condition to discharge a refinement obligation");
 }
 
 auto test_reports_refinement_outside_narrowed_path() -> void {
-  const auto analyzed = analyze_test_data_file("report_refinement_flow.kira");
+  const auto analyzed = analyze_test_data_file("report_refinement_flow.cn");
   expect(analyzed.error_count > 0,
          "expected narrowing to be scoped to the region it dominates");
   // In the `else`, the *negation* holds — so this isn't merely unproven, it
@@ -1879,14 +1879,14 @@ auto test_reports_refinement_outside_narrowed_path() -> void {
 }
 
 auto test_accepts_proved_contracts() -> void {
-  const auto analyzed = analyze_test_data_file("accept_contract_proved.kira");
+  const auto analyzed = analyze_test_data_file("accept_contract_proved.cn");
   expect_clean(
       analyzed,
       "expected provable and unprovable contracts alike to check cleanly");
 }
 
 auto test_reports_refuted_precondition() -> void {
-  const auto analyzed = analyze_test_data_file("report_contract_refuted.kira");
+  const auto analyzed = analyze_test_data_file("report_contract_refuted.cn");
   expect(analyzed.error_count > 0,
          "expected a statically violated precondition to be a compile error");
   expect_diagnostic(analyzed, "precondition `0 > 0` is never true at this call",
@@ -1901,7 +1901,7 @@ auto test_reports_refuted_precondition() -> void {
 
 auto test_reports_return_outside_a_postcondition() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_contract_return_misuse.kira");
+      analyze_test_data_file("report_contract_return_misuse.cn");
   expect(analyzed.error_count > 0,
          "expected `return` outside a postcondition to be an error");
   expect_diagnostic(analyzed, "may only appear in a `post` condition",
@@ -1925,8 +1925,8 @@ auto test_check_program_persists_expression_types() -> void {
   const auto test_data_dir =
       kira::testing::find_test_data_dir("semantic_check_test");
   const auto text = kira::testing::load_test_data_file(
-      test_data_dir.string(), "check_program_persists_expression_types.kira");
-  const auto file_id = sources.add_file("sample.kira", text);
+      test_data_dir.string(), "check_program_persists_expression_types.cn");
+  const auto file_id = sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
   file_has_errors.resize(static_cast<size_t>(*file_id) + 1, false);
 
@@ -1983,7 +1983,7 @@ auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
   // literal happens to default to (int32). Both an int and a float call
   // must be accepted.
   const auto analyzed = analyze_test_data_file(
-      "bare_literal_never_forces_concrete_param_type.kira");
+      "bare_literal_never_forces_concrete_param_type.cn");
   expect_clean(analyzed,
                "expected `double` to stay generic over every numeric type, not "
                "collapse to whichever type the literal `2` defaults to");
@@ -1991,7 +1991,7 @@ auto test_bare_literal_never_forces_a_concrete_param_type() -> void {
 
 auto test_infers_param_type_from_annotated_sibling() -> void {
   const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_annotated_sibling.kira");
+      analyze_test_data_file("infer_param_type_from_annotated_sibling.cn");
   expect(analyzed.error_count > 0,
          "expected `x` to be inferred as `int32` from unifying with the "
          "annotated `y`");
@@ -2002,7 +2002,7 @@ auto test_infers_param_type_from_annotated_sibling() -> void {
 
 auto test_infers_param_type_from_call_to_annotated_function() -> void {
   const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_call_to_annotated_function.kira");
+      "infer_param_type_from_call_to_annotated_function.cn");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the call to "
          "`sink`");
@@ -2015,7 +2015,7 @@ auto test_pinned_param_rejects_wrong_argument() -> void {
   // `relay`'s body hands `x` to an `int32` parameter, which pins it; a call
   // from a function declared earlier must still be held to that.
   const auto analyzed =
-      analyze_test_data_file("pinned_param_rejects_wrong_argument.kira");
+      analyze_test_data_file("pinned_param_rejects_wrong_argument.cn");
   expect(analyzed.error_count > 0,
          "expected `relay(\"oops\")` to be refused: `relay`'s body pins `x` "
          "to `int32`");
@@ -2028,7 +2028,7 @@ auto test_inferred_return_type_is_held_against_the_caller() -> void {
   // `count` declares no return type; its body returns an `int32`, and the
   // caller — written earlier — must be measured against that.
   const auto analyzed =
-      analyze_test_data_file("inferred_return_rejects_wrong_use.kira");
+      analyze_test_data_file("inferred_return_rejects_wrong_use.cn");
   expect(analyzed.error_count > 0,
          "expected `return count(2)` from a `-> str` function to be refused: "
          "`count` returns an `int32`");
@@ -2039,7 +2039,7 @@ auto test_inferred_return_type_is_held_against_the_caller() -> void {
 
 auto test_pass_through_param_stays_unannotated() -> void {
   const auto analyzed =
-      analyze_test_data_file("pass_through_param_stays_unannotated.kira");
+      analyze_test_data_file("pass_through_param_stays_unannotated.cn");
   expect_clean(analyzed,
                "a parameter with no recognizable usage constraint must stay "
                "compatible with any argument type, exactly as it was before "
@@ -2048,7 +2048,7 @@ auto test_pass_through_param_stays_unannotated() -> void {
 
 auto test_infers_param_type_from_struct_field_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_struct_field_type.kira");
+      analyze_test_data_file("infer_param_type_from_struct_field_type.cn");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field");
@@ -2059,7 +2059,7 @@ auto test_infers_param_type_from_struct_field_type() -> void {
 
 auto test_infers_param_type_from_struct_field_shorthand() -> void {
   const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_struct_field_shorthand.kira");
+      "infer_param_type_from_struct_field_shorthand.cn");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field via shorthand initialization");
@@ -2070,7 +2070,7 @@ auto test_infers_param_type_from_struct_field_shorthand() -> void {
 
 auto test_infers_param_type_from_annotated_let_binding() -> void {
   const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_annotated_let_binding.kira");
+      "infer_param_type_from_annotated_let_binding.cn");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `y`");
@@ -2081,7 +2081,7 @@ auto test_infers_param_type_from_annotated_let_binding() -> void {
 
 auto test_infers_param_type_from_annotated_var_binding() -> void {
   const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_annotated_var_binding.kira");
+      "infer_param_type_from_annotated_var_binding.cn");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `var y`");
@@ -2092,7 +2092,7 @@ auto test_infers_param_type_from_annotated_var_binding() -> void {
 
 auto test_infers_param_type_from_declared_return_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("infer_param_type_from_declared_return_type.kira");
+      analyze_test_data_file("infer_param_type_from_declared_return_type.cn");
   expect(analyzed.error_count > 0,
          "expected `identity`'s `x` to be inferred as `int32` from its own "
          "declared return type");
@@ -2103,7 +2103,7 @@ auto test_infers_param_type_from_declared_return_type() -> void {
 
 auto test_infers_param_type_from_declared_return_type_on_expr_body() -> void {
   const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_declared_return_type_on_expr_body.kira");
+      "infer_param_type_from_declared_return_type_on_expr_body.cn");
   expect(analyzed.error_count > 0,
          "expected `identity`'s `x` to be inferred as `int32` from its own "
          "declared return type on a compact expression body");
@@ -2120,7 +2120,7 @@ auto test_method_call_receiver_subexpr_still_inferred() -> void {
   // subtree and must still be walked, not silently skipped because the
   // call's callee isn't a plain name.
   const auto analyzed =
-      analyze_test_data_file("infer_param_in_method_call_receiver.kira");
+      analyze_test_data_file("infer_param_in_method_call_receiver.cn");
   expect(analyzed.error_count > 0,
          "expected `combine`'s `a` to be inferred as `int32` via arithmetic "
          "with `b` inside a method-call receiver expression");
@@ -2135,7 +2135,7 @@ auto test_recursive_function_param_inference_terminates() -> void {
   // confirm inference over a self-recursive call doesn't hang or crash, not
   // that `n` gets pinned to one type.
   const auto analyzed =
-      analyze_test_data_file("infer_param_recursive_function.kira");
+      analyze_test_data_file("infer_param_recursive_function.cn");
   expect_clean(
       analyzed,
       "expected self-recursive parameter inference to terminate cleanly "
@@ -2144,7 +2144,7 @@ auto test_recursive_function_param_inference_terminates() -> void {
 
 auto test_reports_const_generic_value_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_const_generic_value_mismatch.kira");
+      analyze_test_data_file("report_const_generic_value_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected mismatched const-generic arguments to fail");
   expect_diagnostic(
@@ -2154,14 +2154,14 @@ auto test_reports_const_generic_value_mismatch() -> void {
 
 auto test_accepts_const_generic_value_match() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_const_generic_value_match.kira");
+      analyze_test_data_file("accept_const_generic_value_match.cn");
   expect_clean(analyzed,
                "expected matching const-generic arguments to check cleanly");
 }
 
 auto test_accepts_const_generic_try_from() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_const_generic_try_from.kira");
+      analyze_test_data_file("accept_const_generic_try_from.cn");
   expect_clean(
       analyzed,
       "expected `index[n].try_from` inside a function generic over `n` to "
@@ -2170,7 +2170,7 @@ auto test_accepts_const_generic_try_from() -> void {
 
 auto test_reports_unsolved_const_generic_value_param() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_const_generic_unsolved_value_param.kira");
+      analyze_test_data_file("report_const_generic_unsolved_value_param.cn");
   expect(analyzed.error_count > 0,
          "expected a call that fixes no value for `n` to fail");
   expect_diagnostic(analyzed, "cannot tell what `n` is in this call to `zeros`",
@@ -2183,9 +2183,9 @@ auto test_reports_unsolved_impl_const_generic_value_param() -> void {
   // mentions it (`impl[n: usize] sized for holder`) still has to be
   // diagnosed — only a target that *does* mention its value parameter
   // (`buf[n]`) is solvable, exercised end-to-end in
-  // testdata/codegen_stress/078_impl_const_generic_value_param.kira.
+  // testdata/codegen_stress/078_impl_const_generic_value_param.cn.
   const auto analyzed = analyze_test_data_file(
-      "report_impl_const_generic_unsolved_value_param.kira");
+      "report_impl_const_generic_unsolved_value_param.cn");
   expect(analyzed.error_count > 0,
          "expected a call to a method whose impl's value parameter its "
          "target never mentions to fail");
@@ -2197,7 +2197,7 @@ auto test_reports_unsolved_impl_const_generic_value_param() -> void {
 
 auto test_accepts_explicit_generic_args() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_explicit_generic_args.kira");
+      analyze_test_data_file("accept_explicit_generic_args.cn");
   expect_clean(
       analyzed,
       "expected a call to give its callee's compile-time arguments in "
@@ -2205,7 +2205,7 @@ auto test_accepts_explicit_generic_args() -> void {
 }
 
 auto test_accepts_generic_methods() -> void {
-  const auto analyzed = analyze_test_data_file("accept_generic_methods.kira");
+  const auto analyzed = analyze_test_data_file("accept_generic_methods.cn");
   expect_clean(
       analyzed,
       "expected const-generic, type-generic, and mixed generic methods on "
@@ -2214,7 +2214,7 @@ auto test_accepts_generic_methods() -> void {
 
 auto test_reports_bad_explicit_generic_args() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_bad_explicit_generic_args.kira");
+      analyze_test_data_file("report_bad_explicit_generic_args.cn");
   expect(analyzed.error_count > 0,
          "expected unusable compile-time arguments to fail");
   expect_diagnostic(
@@ -2231,7 +2231,7 @@ auto test_reports_bad_explicit_generic_args() -> void {
 
 auto test_accepts_return_position_inference() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_return_position_inference.kira");
+      analyze_test_data_file("accept_return_position_inference.cn");
   expect_clean(
       analyzed,
       "expected a type parameter appearing only in the return type to be "
@@ -2241,7 +2241,7 @@ auto test_accepts_return_position_inference() -> void {
 
 auto test_reports_unsolved_return_position_type_param() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unsolved_return_position_type_param.kira");
+      analyze_test_data_file("report_unsolved_return_position_type_param.cn");
   expect(analyzed.error_count > 0,
          "expected a call with neither arguments nor context to fail");
   expect_diagnostic(analyzed,
@@ -2256,7 +2256,7 @@ auto test_reports_unsolved_return_position_type_param() -> void {
 
 auto test_accepts_method_explicit_generic_args() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_method_explicit_generic_args.kira");
+      analyze_test_data_file("accept_method_explicit_generic_args.cn");
   expect_clean(analyzed,
                "expected brackets on a method call to be honored, and a nested "
                "generic to be usable as an explicit type argument");
@@ -2264,7 +2264,7 @@ auto test_accepts_method_explicit_generic_args() -> void {
 
 auto test_reports_bad_method_explicit_generic_args() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_bad_method_explicit_generic_args.kira");
+      analyze_test_data_file("report_bad_method_explicit_generic_args.cn");
   expect(analyzed.error_count > 0,
          "expected unusable brackets on a method call to fail");
   expect_diagnostic(analyzed,
@@ -2278,7 +2278,7 @@ auto test_reports_bad_method_explicit_generic_args() -> void {
 
 auto test_accepts_qualified_generic_call() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_qualified_generic_call.kira");
+      analyze_test_data_file("accept_qualified_generic_call.cn");
   expect_clean(analyzed,
                "expected a module-qualified generic call (`helper."
                "identity[T](v)`) inside a generic function's body to "
@@ -2287,7 +2287,7 @@ auto test_accepts_qualified_generic_call() -> void {
 
 auto test_accepts_type_param_static_dispatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_type_param_static_dispatch.kira");
+      analyze_test_data_file("accept_type_param_static_dispatch.cn");
   expect_clean(
       analyzed,
       "expected a static member reached through a solved type parameter to "
@@ -2296,7 +2296,7 @@ auto test_accepts_type_param_static_dispatch() -> void {
 
 auto test_reports_type_param_static_not_found() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_type_param_static_not_found.kira");
+      analyze_test_data_file("report_type_param_static_not_found.cn");
   expect(analyzed.error_count > 0,
          "expected a type parameter solved to a type without the needed "
          "static to fail");
@@ -2314,7 +2314,7 @@ auto test_reports_type_param_static_not_found() -> void {
 
 auto test_reports_refinement_predicate_not_bool() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_refinement_predicate_not_bool.kira");
+      analyze_test_data_file("report_refinement_predicate_not_bool.cn");
   expect(analyzed.error_count > 0,
          "expected a non-bool refinement predicate to fail");
   expect_diagnostic(analyzed,
@@ -2324,13 +2324,13 @@ auto test_reports_refinement_predicate_not_bool() -> void {
 
 auto test_accepts_refinement_predicate() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_refinement_predicate.kira");
+      analyze_test_data_file("accept_refinement_predicate.cn");
   expect_clean(analyzed,
                "expected a well-formed refinement predicate to check cleanly");
 }
 
 auto test_accepts_concept_bound() -> void {
-  const auto analyzed = analyze_test_data_file("accept_concept_bound.kira");
+  const auto analyzed = analyze_test_data_file("accept_concept_bound.cn");
   expect_clean(
       analyzed,
       "expected a concept composing trait and value constraints, used as "
@@ -2339,7 +2339,7 @@ auto test_accepts_concept_bound() -> void {
 
 auto test_reports_state_machine_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_state_machine_mismatch.kira");
+      analyze_test_data_file("report_state_machine_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected a connection[closed] argument where connection[open] is "
          "required to fail");
@@ -2350,7 +2350,7 @@ auto test_reports_state_machine_mismatch() -> void {
 
 auto test_accepts_state_machine_match() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_state_machine_match.kira");
+      analyze_test_data_file("accept_state_machine_match.cn");
   expect_clean(analyzed,
                "expected a connection[open] argument where connection[open] is "
                "required to check cleanly");
@@ -2366,7 +2366,7 @@ auto test_accepts_state_machine_match() -> void {
 
 auto test_reports_raw_pointer_outside_machine() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_raw_pointer_outside_machine.kira");
+      analyze_test_data_file("reject_raw_pointer_outside_machine.cn");
   expect(analyzed.error_count > 0,
          "expected raw-memory operations in an ordinary function to be "
          "rejected");
@@ -2384,7 +2384,7 @@ auto test_reports_raw_pointer_outside_machine() -> void {
 
 auto test_accepts_machine_pointer_ops() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_machine_pointer_ops.kira");
+      analyze_test_data_file("accept_machine_pointer_ops.cn");
   expect_clean(
       analyzed,
       "expected the same raw-memory operations to check cleanly inside a "
@@ -2393,7 +2393,7 @@ auto test_accepts_machine_pointer_ops() -> void {
 
 auto test_reports_write_through_const_pointer() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_write_through_const_pointer.kira");
+      analyze_test_data_file("reject_write_through_const_pointer.cn");
   expect(analyzed.error_count > 0,
          "expected a write through a read-only `*T` to be rejected");
   expect_diagnostic(
@@ -2404,7 +2404,7 @@ auto test_reports_write_through_const_pointer() -> void {
 
 auto test_reports_index_without_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_index_without_impl.kira");
+      analyze_test_data_file("reject_index_without_impl.cn");
   expect(analyzed.error_count > 0,
          "expected indexing a type with no `index` impl to be rejected");
   expect_diagnostic(analyzed, "cannot be indexed",
@@ -2417,14 +2417,14 @@ auto test_reports_index_without_impl() -> void {
 
 auto test_dispatches_index_by_key_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_index_range_dispatch.kira");
+      analyze_test_data_file("accept_index_range_dispatch.cn");
   expect_clean(analyzed, "expected a type with both an `index[usize]` and an "
                          "`index[range[usize]]` impl to check cleanly");
 }
 
 auto test_reports_index_wrong_key_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_index_wrong_key_type.kira");
+      analyze_test_data_file("reject_index_wrong_key_type.cn");
   expect(analyzed.error_count > 0,
          "expected indexing with a key the `index` impl does not take to be "
          "rejected");
@@ -2441,7 +2441,7 @@ auto test_reports_index_wrong_key_type() -> void {
 }
 
 auto test_reports_direct_drop_call() -> void {
-  const auto analyzed = analyze_test_data_file("reject_direct_drop_call.kira");
+  const auto analyzed = analyze_test_data_file("reject_direct_drop_call.cn");
   expect(analyzed.error_count > 0,
          "expected a direct `x.drop()` call to be rejected");
   expect_diagnostic(analyzed, "may not be called directly",
@@ -2453,7 +2453,7 @@ auto test_reports_direct_drop_call() -> void {
 
 auto test_reports_borrowed_number_used_as_a_number() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_borrowed_number_used_as_a_number.kira");
+      analyze_test_data_file("reject_borrowed_number_used_as_a_number.cn");
   expect(analyzed.error_count > 0,
          "expected a `&int32` used as an `int32` to be rejected");
   // Both halves, because they are refused by different code: a value
@@ -2476,7 +2476,7 @@ auto test_reports_borrowed_number_used_as_a_number() -> void {
 
 auto test_reports_index_write_without_index_set() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_index_write_without_index_set.kira");
+      analyze_test_data_file("reject_index_write_without_index_set.cn");
   expect(analyzed.error_count > 0,
          "expected `v[i] = x` without an `index_set` impl to be rejected");
   expect_diagnostic(analyzed, "cannot assign to",
@@ -2489,7 +2489,7 @@ auto test_reports_index_write_without_index_set() -> void {
 
 auto test_reports_index_mut_borrow_without_impl() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_index_mut_without_impl.kira");
+      analyze_test_data_file("reject_index_mut_without_impl.cn");
   expect(analyzed.error_count > 0,
          "expected `&mut v[i]` without an `index_mut` impl to be rejected");
   expect_diagnostic(analyzed, "cannot borrow",
@@ -2519,9 +2519,9 @@ auto test_dispatches_index_mut_borrow() -> void {
       kira::testing::find_test_data_dir("semantic_check_test");
   auto fixtures = prelude_fixtures();
   fixtures.push_back(source_fixture{
-      .path = "accept_index_mut_dispatch.kira",
+      .path = "accept_index_mut_dispatch.cn",
       .text = kira::testing::load_test_data_file(
-          test_data_dir.string(), "accept_index_mut_dispatch.kira"),
+          test_data_dir.string(), "accept_index_mut_dispatch.cn"),
   });
 
   const kira::ast::file *sample_file = nullptr;
@@ -2536,7 +2536,7 @@ auto test_dispatches_index_mut_borrow() -> void {
     auto tokens = lexer.tokenize();
     auto parser = kira::parser(std::move(tokens), file->id(), diag);
     auto ast_file = parser.parse_file();
-    if (fixture.path == "accept_index_mut_dispatch.kira") {
+    if (fixture.path == "accept_index_mut_dispatch.cn") {
       sample_file = ast_file.get();
     }
     parsed_modules.push_back(kira::semantic::parsed_module{
@@ -2589,14 +2589,14 @@ auto test_dispatches_index_mut_borrow() -> void {
 }
 
 auto test_accepts_intrinsic_decl() -> void {
-  const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.kira");
+  const auto analyzed = analyze_test_data_file("accept_intrinsic_decl.cn");
   expect_clean(analyzed,
                "expected recognized, fully-annotated intrinsic decls to check "
                "cleanly");
 }
 
 auto test_reports_unknown_intrinsic() -> void {
-  const auto analyzed = analyze_test_data_file("report_unknown_intrinsic.kira");
+  const auto analyzed = analyze_test_data_file("report_unknown_intrinsic.cn");
   expect(analyzed.error_count > 0, "expected unknown intrinsic to fail");
   expect_diagnostic(analyzed, "is not a recognized intrinsic",
                     "expected unknown-intrinsic diagnostic");
@@ -2606,7 +2606,7 @@ auto test_reports_unknown_intrinsic() -> void {
 
 auto test_reports_unannotated_intrinsic() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_unannotated_intrinsic.kira");
+      analyze_test_data_file("report_unannotated_intrinsic.cn");
   expect(analyzed.error_count > 0,
          "expected unannotated intrinsic parameter to fail");
   expect_diagnostic(analyzed, "must annotate every parameter",
@@ -2615,13 +2615,13 @@ auto test_reports_unannotated_intrinsic() -> void {
 
 auto test_accepts_generator_yields_typed_values() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_generator_yields_typed_values.kira");
+      analyze_test_data_file("accept_generator_yields_typed_values.cn");
   expect_clean(analyzed, "expected a well-typed generator to check cleanly");
 }
 
 auto test_accepts_for_loop_over_generator() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_for_loop_over_generator.kira");
+      analyze_test_data_file("accept_for_loop_over_generator.cn");
   expect_clean(
       analyzed,
       "expected `for x in <generator>` to check cleanly, binding `x` to "
@@ -2630,7 +2630,7 @@ auto test_accepts_for_loop_over_generator() -> void {
 
 auto test_reports_yield_outside_generator() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_yield_outside_generator.kira");
+      analyze_test_data_file("report_yield_outside_generator.cn");
   expect(analyzed.error_count > 0,
          "expected `yield` outside a generator to fail");
   expect_diagnostic(analyzed, "`yield` outside a `generator def` body",
@@ -2639,7 +2639,7 @@ auto test_reports_yield_outside_generator() -> void {
 
 auto test_reports_generator_missing_return_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_generator_missing_return_type.kira");
+      analyze_test_data_file("report_generator_missing_return_type.cn");
   expect(analyzed.error_count > 0,
          "expected a generator with no declared return type to fail");
   expect_diagnostic(analyzed, "must declare a `some iterator[T]` return type",
@@ -2648,7 +2648,7 @@ auto test_reports_generator_missing_return_type() -> void {
 
 auto test_reports_generator_yield_type_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_generator_yield_type_mismatch.kira");
+      analyze_test_data_file("report_generator_yield_type_mismatch.cn");
   expect(analyzed.error_count > 0, "expected a mismatched yield value to fail");
   expect_diagnostic(analyzed, "expected `int32`, found `str`",
                     "expected a yield type-mismatch diagnostic");
@@ -2656,7 +2656,7 @@ auto test_reports_generator_yield_type_mismatch() -> void {
 
 auto test_reports_generator_return_with_value() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_generator_return_with_value.kira");
+      analyze_test_data_file("report_generator_return_with_value.cn");
   expect(analyzed.error_count > 0,
          "expected `return <value>` inside a generator to fail");
   expect_diagnostic(analyzed,
@@ -2666,7 +2666,7 @@ auto test_reports_generator_return_with_value() -> void {
 
 auto test_reports_generator_postcondition() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_generator_postcondition.kira");
+      analyze_test_data_file("report_generator_postcondition.cn");
   expect(analyzed.error_count > 0,
          "expected a `post` condition on a `generator def` to fail");
   expect_diagnostic(
@@ -2690,7 +2690,7 @@ auto test_reports_existential_type_outside_generator() -> void {
   // fails, just via two different (and more specific) diagnostics than the
   // old blanket "only supported on generator def" rejection.
   const auto analyzed =
-      analyze_test_data_file("report_existential_type_outside_generator.kira");
+      analyze_test_data_file("report_existential_type_outside_generator.cn");
   expect(analyzed.error_count > 0,
          "expected `yield` outside a generator, with no concrete return "
          "value, to fail");
@@ -2703,7 +2703,7 @@ auto test_reports_existential_type_outside_generator() -> void {
 
 auto test_accepts_existential_return_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_existential_return_type.kira");
+      analyze_test_data_file("accept_existential_return_type.cn");
   expect_clean(analyzed,
                "expected a general `some Trait` return type, backed by a real "
                "impl, to check cleanly");
@@ -2711,7 +2711,7 @@ auto test_accepts_existential_return_type() -> void {
 
 auto test_accepts_existential_return_type_combined_bounds() -> void {
   const auto analyzed = analyze_test_data_file(
-      "accept_existential_return_type_combined_bounds.kira");
+      "accept_existential_return_type_combined_bounds.cn");
   expect_clean(
       analyzed,
       "expected `some A + B` and a chained call staying opaque to check "
@@ -2720,7 +2720,7 @@ auto test_accepts_existential_return_type_combined_bounds() -> void {
 
 auto test_reports_existential_return_type_in_parameter() -> void {
   const auto analyzed = analyze_test_data_file(
-      "report_existential_return_type_in_parameter.kira");
+      "report_existential_return_type_in_parameter.cn");
   expect(analyzed.error_count > 0,
          "expected `some Trait` in parameter position to fail");
   expect_diagnostic(
@@ -2731,7 +2731,7 @@ auto test_reports_existential_return_type_in_parameter() -> void {
 
 auto test_reports_existential_bound_not_satisfied() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_existential_bound_not_satisfied.kira");
+      analyze_test_data_file("report_existential_bound_not_satisfied.cn");
   expect(analyzed.error_count > 0,
          "expected a concrete type missing the bound trait to fail");
   expect_diagnostic(analyzed, "`box_thing` does not implement `describable`",
@@ -2740,7 +2740,7 @@ auto test_reports_existential_bound_not_satisfied() -> void {
 
 auto test_reports_existential_return_type_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_existential_return_type_mismatch.kira");
+      analyze_test_data_file("report_existential_return_type_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected two branches returning different concrete types to fail");
   expect_diagnostic(analyzed,
@@ -2751,7 +2751,7 @@ auto test_reports_existential_return_type_mismatch() -> void {
 
 auto test_reports_existential_method_not_in_bound() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_existential_method_not_in_bound.kira");
+      analyze_test_data_file("report_existential_method_not_in_bound.cn");
   expect(analyzed.error_count > 0,
          "expected field access on an opaque existential value to fail");
   expect_diagnostic(analyzed, "no field `n` on the existential type",
@@ -2764,7 +2764,7 @@ auto test_reports_existential_method_not_in_bound() -> void {
 
 auto test_accepts_higher_kinded_functor_monad() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_higher_kinded_functor_monad.kira");
+      analyze_test_data_file("accept_higher_kinded_functor_monad.cn");
   expect_clean(analyzed,
                "expected the spec functor/monad program (HK traits, impls for "
                "`option`, and calls through them) to check cleanly");
@@ -2772,7 +2772,7 @@ auto test_accepts_higher_kinded_functor_monad() -> void {
 
 auto test_reports_hk_impl_target_wrong_kind() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_hk_impl_target_wrong_kind.kira");
+      analyze_test_data_file("report_hk_impl_target_wrong_kind.cn");
   expect(analyzed.error_count > 0,
          "expected `impl functor for point` (a plain type) to be rejected");
   expect_diagnostic(analyzed, "impl target has the wrong kind",
@@ -2781,7 +2781,7 @@ auto test_reports_hk_impl_target_wrong_kind() -> void {
 
 auto test_reports_hk_ctor_arity_mismatch() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_hk_ctor_arity_mismatch.kira");
+      analyze_test_data_file("report_hk_ctor_arity_mismatch.cn");
   expect(analyzed.error_count > 0,
          "expected `impl functor for result` (arity 2 vs required 1) to be "
          "rejected");
@@ -2791,7 +2791,7 @@ auto test_reports_hk_ctor_arity_mismatch() -> void {
 
 auto test_reports_hk_param_wrong_arity() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_hk_param_wrong_arity.kira");
+      analyze_test_data_file("report_hk_param_wrong_arity.cn");
   expect(analyzed.error_count > 0,
          "expected `F[A, B]` where `F` was declared `F[_]` to be rejected");
   expect_diagnostic(analyzed, "expects 1 type argument, found 2",
@@ -2800,7 +2800,7 @@ auto test_reports_hk_param_wrong_arity() -> void {
 
 auto test_reports_hk_plain_param_applied() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_hk_plain_param_applied.kira");
+      analyze_test_data_file("report_hk_plain_param_applied.cn");
   expect(analyzed.error_count > 0,
          "expected `T[int32]` where `T` is an ordinary parameter to be "
          "rejected");
@@ -2811,7 +2811,7 @@ auto test_reports_hk_plain_param_applied() -> void {
 
 auto test_reports_hk_param_used_as_type() -> void {
   const auto analyzed =
-      analyze_test_data_file("report_hk_param_used_as_type.kira");
+      analyze_test_data_file("report_hk_param_used_as_type.cn");
   expect(analyzed.error_count > 0,
          "expected bare `F` where `F` was declared `F[_]` to be rejected");
   expect_diagnostic(analyzed, "higher-kinded parameter used as a type",
@@ -2827,7 +2827,7 @@ auto test_accepts_wellformed_signature_and_functor() -> void {
   // check without well-formedness errors. (The `use` instantiation itself
   // reports "elaboration pending", so it is checked separately below.)
   const auto analyzed = analyze_sources({{
-      .path = "sig_ok.kira",
+      .path = "sig_ok.cn",
       .text = "module sample\n"
               "\n"
               "signature backend:\n"
@@ -2850,7 +2850,7 @@ auto test_accepts_wellformed_signature_and_functor() -> void {
 
 auto test_reports_module_missing_signature_member() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "sig_missing.kira",
+      .path = "sig_missing.cn",
       .text = "module sample\n"
               "\n"
               "signature backend:\n"
@@ -2880,7 +2880,7 @@ auto test_reports_module_missing_signature_member() -> void {
 
 auto test_reports_signature_member_not_pub() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "sig_priv.kira",
+      .path = "sig_priv.cn",
       .text = "module sample\n"
               "\n"
               "signature backend:\n"
@@ -2906,7 +2906,7 @@ auto test_reports_signature_member_type_mismatch() -> void {
   // wrong parameter type (`int32` where the signature requires `str`). Deep
   // type-equality under the abstract-type binding must reject it.
   const auto analyzed = analyze_sources({{
-      .path = "sig_type_mismatch.kira",
+      .path = "sig_type_mismatch.cn",
       .text = "module sample\n"
               "\n"
               "signature backend:\n"
@@ -2937,7 +2937,7 @@ auto test_reports_signature_return_type_mismatch() -> void {
   // Right name/arity/params but the wrong return type: signature requires
   // `-> conn`, the module returns `-> str`.
   const auto analyzed = analyze_sources({{
-      .path = "sig_ret_mismatch.kira",
+      .path = "sig_ret_mismatch.cn",
       .text = "module sample\n"
               "\n"
               "signature backend:\n"
@@ -2964,7 +2964,7 @@ auto test_reports_signature_return_type_mismatch() -> void {
 
 auto test_reports_unknown_functor_instantiation() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "sig_unknown.kira",
+      .path = "sig_unknown.cn",
       .text = "module sample\n"
               "\n"
               "use nonexistent[postgres] as db\n",
@@ -2980,7 +2980,7 @@ auto test_materializes_functor_and_resolves_alias() -> void {
   // call through the alias resolves and type-checks, and the functor body's
   // `DB.conn` projection resolves to postgres's concrete `conn`.
   const auto analyzed = analyze_sources({{
-      .path = "mat_ok.kira",
+      .path = "mat_ok.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3013,7 +3013,7 @@ auto test_functor_body_impl_and_extend_members_check() -> void {
   // through a value of the local type. All must materialize, register into the
   // method table/coherence, and check cleanly per instantiation.
   const auto analyzed = analyze_sources({{
-      .path = "mat_impl.kira",
+      .path = "mat_impl.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3058,7 +3058,7 @@ auto test_functor_body_impl_coherence_across_instantiations() -> void {
   // differs. This would be a false "duplicate implementation" if the impls
   // shared a coherence key.
   const auto analyzed = analyze_sources({{
-      .path = "mat_coherence.kira",
+      .path = "mat_coherence.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3102,7 +3102,7 @@ auto test_impl_type_param_substituted_at_call_site() -> void {
   // silence. The bug here is a *missing* diagnostic, so what is asserted is
   // that the mismatch is now reported.
   const auto analyzed = analyze_sources({{
-      .path = "impl_type_param.kira",
+      .path = "impl_type_param.cn",
       .text = "module main\n"
               "\n"
               "trait get_it[T]:\n"
@@ -3135,7 +3135,7 @@ auto test_impls_on_distinct_instantiations_are_coherent() -> void {
   // impls for two genuinely different concrete types — which the reference
   // explicitly permits ("no two can apply to the same concrete type").
   const auto analyzed = analyze_sources({{
-      .path = "instantiation_coherence.kira",
+      .path = "instantiation_coherence.cn",
       .text = "module main\n"
               "\n"
               "trait get_it[T]:\n"
@@ -3165,7 +3165,7 @@ auto test_overlapping_generic_impl_still_conflicts() -> void {
   // through. Without this case, `impl_targets_overlap` could be weakened to
   // plain type-id equality and the suite would stay green.
   const auto analyzed = analyze_sources({{
-      .path = "overlapping_impl.kira",
+      .path = "overlapping_impl.cn",
       .text = "module main\n"
               "\n"
               "trait get_it[T]:\n"
@@ -3197,7 +3197,7 @@ auto test_functor_type_projection_resolves_concretely() -> void {
   // would later choke on the un-typed nodes). Returning a `str` where the
   // projection demands an `int32` must be diagnosed.
   const auto analyzed = analyze_sources({{
-      .path = "mat_proj.kira",
+      .path = "mat_proj.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3225,7 +3225,7 @@ auto test_functor_body_type_and_static_members_check() -> void {
   // `type row = DB.conn` projects through the parameter and a `static` is a
   // required constant. All are cloned and checked per instantiation.
   const auto analyzed = analyze_sources({{
-      .path = "mat_members.kira",
+      .path = "mat_members.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3256,7 +3256,7 @@ auto test_functor_body_type_and_static_members_check() -> void {
 
 auto test_functor_instantiation_arity_mismatch() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "mat_arity.kira",
+      .path = "mat_arity.cn",
       .text = "module main\n"
               "\n"
               "signature backend:\n"
@@ -3285,7 +3285,7 @@ auto test_functor_instantiation_arity_mismatch() -> void {
 /// diagnostic".
 auto test_bare_for_names_bind_tuple_components() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "for_bare.kira",
+      .path = "for_bare.cn",
       .text = "module main\n"
               "\n"
               "def main() -> int32:\n"
@@ -3302,7 +3302,7 @@ auto test_bare_for_names_bind_tuple_components() -> void {
 
 auto test_for_head_arity_must_match_element() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "for_arity.kira",
+      .path = "for_arity.cn",
       .text = "module main\n"
               "\n"
               "def main() -> int32:\n"
@@ -3319,7 +3319,7 @@ auto test_for_head_arity_must_match_element() -> void {
 
 auto test_for_head_cannot_split_a_non_tuple() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "for_non_tuple.kira",
+      .path = "for_non_tuple.cn",
       .text = "module main\n"
               "\n"
               "def main() -> int32:\n"
@@ -3345,7 +3345,7 @@ auto test_for_head_cannot_split_a_non_tuple() -> void {
 /// would hold there even with UFCS removed outright.
 auto test_free_function_callable_as_method() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "ufcs_basic.kira",
+      .path = "ufcs_basic.cn",
       .text = "module main\n"
               "\n"
               "type tag = { id: int32 }\n"
@@ -3368,7 +3368,7 @@ auto test_free_function_callable_as_method() -> void {
 /// be the error this expects not to see.
 auto test_method_wins_over_ufcs() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "ufcs_shadow.kira",
+      .path = "ufcs_shadow.cn",
       .text = "module main\n"
               "\n"
               "type counter = { value: int32 }\n"
@@ -3394,21 +3394,21 @@ auto test_method_wins_over_ufcs() -> void {
 auto test_ufcs_ambiguity_is_an_error() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "amb_a.kira",
+          .path = "amb_a.cn",
           .text = "module amb.a\n"
                   "\n"
                   "pub def scale(x: int32) -> int32:\n"
                   "    return x * 2\n",
       },
       {
-          .path = "amb_b.kira",
+          .path = "amb_b.cn",
           .text = "module amb.b\n"
                   "\n"
                   "pub def scale(x: int32) -> int32:\n"
                   "    return x * 3\n",
       },
       {
-          .path = "amb_main.kira",
+          .path = "amb_main.cn",
           .text = "module main\n"
                   "\n"
                   "use amb.a.*\n"
@@ -3430,7 +3430,7 @@ auto test_ufcs_ambiguity_is_an_error() -> void {
 /// of what the user needs to be told.
 auto test_ufcs_mut_receiver_must_be_mutable() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "ufcs_mut.kira",
+      .path = "ufcs_mut.cn",
       .text = "module main\n"
               "\n"
               "type acc = { total: int32 }\n"
@@ -3462,7 +3462,7 @@ auto test_ufcs_mut_receiver_must_be_mutable() -> void {
 /// anywhere, and checked "cleanly".
 auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "builtin_unknown_method.kira",
+      .path = "builtin_unknown_method.cn",
       .text = "module main\n"
               "\n"
               "def main() -> int32:\n"
@@ -3484,7 +3484,7 @@ auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
 /// method would report "no method" while listing an unrelated set.
 auto test_builtin_method_suggestion_includes_extend_methods() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "builtin_extend_suggestion.kira",
+      .path = "builtin_extend_suggestion.cn",
       .text = "module main\n"
               "\n"
               "extend str:\n"
@@ -3514,7 +3514,7 @@ auto test_builtin_method_suggestion_includes_extend_methods() -> void {
 /// that; this pins the single-error outcome it buys.
 auto test_unknown_method_on_generic_receiver_reports_once() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "generic_receiver.kira",
+      .path = "generic_receiver.cn",
       .text = "module main\n"
               "\n"
               "def call_it[T](x: T) -> int32:\n"
@@ -3536,7 +3536,7 @@ auto test_unknown_method_on_generic_receiver_reports_once() -> void {
 
 auto test_ufcs_reports_receiver_mismatch() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "ufcs_mismatch.kira",
+      .path = "ufcs_mismatch.cn",
       .text = "module main\n"
               "\n"
               "pub def total_of(items: list[int32]) -> int32:\n"
@@ -3565,7 +3565,7 @@ auto test_ufcs_reports_receiver_mismatch() -> void {
 auto test_ufcs_skips_private_functions_in_other_modules() -> void {
   const auto analyzed = analyze_sources({
       {
-          .path = "priv_lib.kira",
+          .path = "priv_lib.cn",
           .text = "module hidden.lib\n"
                   "\n"
                   "pub type token = { id: int32 }\n"
@@ -3574,7 +3574,7 @@ auto test_ufcs_skips_private_functions_in_other_modules() -> void {
                   "    return t.id\n",
       },
       {
-          .path = "priv_main.kira",
+          .path = "priv_main.cn",
           .text = "module main\n"
                   "\n"
                   "use hidden.lib.*\n"
@@ -3606,7 +3606,7 @@ auto test_ufcs_skips_private_functions_in_other_modules() -> void {
 /// masking the exact failure mode this regression guards.
 auto test_nested_def_resolves_as_a_value() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "nested_def.kira",
+      .path = "nested_def.cn",
       .text = "module main\n"
               "\n"
               "def compute() -> int32:\n"
@@ -3636,7 +3636,7 @@ auto test_nested_def_resolves_as_a_value() -> void {
 auto test_generic_struct_literal_explicit_type_args_drive_field_types()
     -> void {
   const auto analyzed = analyze_sources({{
-      .path = "explicit_struct_type_args.kira",
+      .path = "explicit_struct_type_args.cn",
       .text = "module main\n"
               "\n"
               "type holder[T] = { cur: T }\n"
@@ -3657,7 +3657,7 @@ auto test_generic_struct_literal_explicit_type_args_drive_field_types()
 /// value actually matches it.
 auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "explicit_struct_type_args_ok.kira",
+      .path = "explicit_struct_type_args_ok.cn",
       .text = "module main\n"
               "\n"
               "type holder[T] = { cur: T }\n"
@@ -3675,7 +3675,7 @@ auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
 /// padded.
 auto test_generic_struct_literal_wrong_type_arg_count() -> void {
   const auto analyzed = analyze_sources({{
-      .path = "explicit_struct_type_args_arity.kira",
+      .path = "explicit_struct_type_args_arity.cn",
       .text = "module main\n"
               "\n"
               "type holder[T] = { cur: T }\n"

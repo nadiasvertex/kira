@@ -7,8 +7,8 @@ module main
 #  `cmp` answers how its first argument relates to its second, letting the
 #  caller sort by any rule, not just `<`.
 #
-#  Run it:      kira demo/algorithm-sort_by.kira
-#  Compile it:  kira --compile -o algorithm-sort_by demo/algorithm-sort_by.kira
+#  Run it:      kira demo/algorithm-sort_by.cn
+#  Compile it:  kira --compile -o algorithm-sort_by demo/algorithm-sort_by.cn
 # ==========================================================================
 
 def main() -> int32:

@@ -97,7 +97,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!panic_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's AOT panic runtime support "
+        .message = "could not locate Cinder's AOT panic runtime support "
                    "library (libaot_runtime.a) — run `kira` via `bazelisk "
                    "run //src:kira` or from `bazel-bin/src/kira` inside the "
                    "workspace that built it"};
@@ -107,7 +107,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!heap_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's heap runtime support library "
+        .message = "could not locate Cinder's heap runtime support library "
                    "(libruntime.a) — run `kira` via `bazelisk run "
                    "//src:kira` or from `bazel-bin/src/kira` inside the "
                    "workspace that built it"};
@@ -127,7 +127,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!semantic_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's semantic-analysis support "
+        .message = "could not locate Cinder's semantic-analysis support "
                    "library (libsemantic.a, needed by the heap runtime's "
                    "struct/sum layout helpers) — run `kira` via `bazelisk "
                    "run //src:kira` or from `bazel-bin/src/kira` inside the "
@@ -138,7 +138,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!parser_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's parser support library "
+        .message = "could not locate Cinder's parser support library "
                    "(libparser.a, needed by the heap runtime's struct/sum "
                    "layout helpers) — run `kira` via `bazelisk run "
                    "//src:kira` or from `bazel-bin/src/kira` inside the "
@@ -153,7 +153,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!utf8_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Kira's UTF-8 support library "
+        .message = "could not locate Cinder's UTF-8 support library "
                    "(libutf8.a, needed by the heap runtime's string-"
                    "formatting intrinsics) — run `kira` via `bazelisk run "
                    "//src:kira` or from `bazel-bin/src/kira` inside the "

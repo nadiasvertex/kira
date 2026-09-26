@@ -10,11 +10,11 @@ module main
 #  own functions, as `label` shows.
 #
 #  The two forms are exclusive: a file that has top-level statements may not
-#  also declare `main` explicitly. See `hello-world-main.kira` for the
-#  explicit form, and `hello-world.kira` for the smallest script of all.
+#  also declare `main` explicitly. See `hello-world-main.cn` for the
+#  explicit form, and `hello-world.cn` for the smallest script of all.
 #
-#  Run it:      kira demo/script-mode.kira
-#  Compile it:  kira --compile -o script-mode demo/script-mode.kira
+#  Run it:      kira demo/script-mode.cn
+#  Compile it:  kira --compile -o script-mode demo/script-mode.cn
 # ==========================================================================
 
 def label(n: int32) -> str:

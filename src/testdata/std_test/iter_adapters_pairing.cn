@@ -7,7 +7,7 @@ module main
 # bound whole and destructured in the loop body — the spelling the doc
 # comments point users at.
 #
-# Indices are `usize` and elements are `int32`, and Kira converts neither
+# Indices are `usize` and elements are `int32`, and Cinder converts neither
 # implicitly, so index and value are accumulated separately rather than mixed
 # into one total. (`int32(...)` would be the obvious fix and does not lower
 # either — `spec/todo.md` item 8.)

@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-This is the normative specification of the Kira language and standard library. It states what is true of the language and its implementation, precisely and without tutorial framing. For a guided introduction, see the (forthcoming) tutorial; for the grammar, see `../kira-grammar.ebnf`; for C++ compiler-implementation conventions, see `../CONVENTIONS.md`.
+This is the normative specification of the Cinder language and standard library. It states what is true of the language and its implementation, precisely and without tutorial framing. For a guided introduction, see the (forthcoming) tutorial; for the grammar, see `../kira-grammar.ebnf`; for C++ compiler-implementation conventions, see `../CONVENTIONS.md`.
 
 ## Structure
 
@@ -23,11 +23,11 @@ Each chapter opens with a status line:
 
 ## Diagnostics
 
-Kira's compiler treats diagnostics as part of the language's interface, not an afterthought. A diagnostic states what was expected, what was found, why the constraint exists, and — where applicable — how to satisfy it:
+ Cinder's compiler treats diagnostics as part of the language's interface, not an afterthought. A diagnostic states what was expected, what was found, why the constraint exists, and — where applicable — how to satisfy it:
 
 ```
 error[E0012]: type mismatch
-  --> src/main.kira:14:5
+  --> src/main.cn:14:5
    |
 13 |     let x: int32 = compute()
 14 |     process(x)

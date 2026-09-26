@@ -6,7 +6,7 @@ Covers indentation-delimited blocks, comments and doc comments, and the `module`
 
 ## Indentation and blocks
 
-Kira has no semicolons and no braces for blocks. A block is introduced by `:` at the end of a line and one level of indentation; it ends when indentation returns to the enclosing level. The lexer synthesizes `INDENT`/`DEDENT`/`NEWLINE` tokens from indentation directly (see `INDENT`, `DEDENT` in `spec/kira-grammar.ebnf`); newlines inside balanced brackets `()`, `[]`, `{}` are suppressed, so an expression may wrap across lines there without a continuation marker.
+ Cinder has no semicolons and no braces for blocks. A block is introduced by `:` at the end of a line and one level of indentation; it ends when indentation returns to the enclosing level. The lexer synthesizes `INDENT`/`DEDENT`/`NEWLINE` tokens from indentation directly (see `INDENT`, `DEDENT` in `spec/kira-grammar.ebnf`); newlines inside balanced brackets `()`, `[]`, `{}` are suppressed, so an expression may wrap across lines there without a continuation marker.
 
 ```kira
 def greet(name: str) -> str:

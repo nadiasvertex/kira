@@ -75,31 +75,31 @@ auto find_std_dir() -> kira::testing::fs::path {
 auto prelude_fixtures() -> std::vector<source_fixture> {
   const auto std_dir = find_std_dir();
   auto fixtures = std::vector<source_fixture>{};
-  for (const auto *filename : {"intrinsics.kira",
-                               "traits.kira",
-                               "traits.ord.kira",
-                               "traits.show.kira",
-                               "traits.numeric.kira",
-                               "traits.conversion.kira",
-                               "traits.category.kira",
-                               "traits.index.kira",
-                               "traits.hash.kira",
-                               "limits.kira",
-                               "iter.kira",
-                               "prelude.kira",
-                               "panic.kira",
-                               "option.kira",
-                               "result.kira",
-                               "mem.kira",
-                               "list.kira",
-                               "io.kira",
-                               "console.kira",
-                               "algo.kira",
-                               "fmt.kira",
-                               "unicode_tables.kira",
-                               "unicode.kira",
-                               "string.kira",
-                               "deriving.kira"}) {
+  for (const auto *filename : {"intrinsics.cn",
+                               "traits.cn",
+                               "traits.ord.cn",
+                               "traits.show.cn",
+                               "traits.numeric.cn",
+                               "traits.conversion.cn",
+                               "traits.category.cn",
+                               "traits.index.cn",
+                               "traits.hash.cn",
+                               "limits.cn",
+                               "iter.cn",
+                               "prelude.cn",
+                               "panic.cn",
+                               "option.cn",
+                               "result.cn",
+                               "mem.cn",
+                               "list.cn",
+                               "io.cn",
+                               "console.cn",
+                               "algo.cn",
+                               "fmt.cn",
+                               "unicode_tables.cn",
+                               "unicode.cn",
+                               "string.cn",
+                               "deriving.cn"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
         .text = kira::testing::load_test_data_file(std_dir.string(), filename),
@@ -197,7 +197,7 @@ auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
 
 auto test_reuse_after_by_value_ufcs_call_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_reuse_after_for_each.kira");
+      analyze_test_data_file("reject_reuse_after_for_each.cn");
   expect(analyzed.error_count > 0,
          "expected reusing an iterator after `for_each` moved it to be "
          "rejected");
@@ -207,7 +207,7 @@ auto test_reuse_after_by_value_ufcs_call_is_rejected() -> void {
 
 auto test_reuse_after_by_value_free_function_ufcs_call_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_reuse_after_into_iter.kira");
+      analyze_test_data_file("reject_reuse_after_into_iter.cn");
   expect(analyzed.error_count > 0,
          "expected reusing a list after `into_iter` moved it to be rejected");
   expect_diagnostic(analyzed, "use of moved value `xs`",
@@ -223,7 +223,7 @@ auto test_reuse_after_by_value_free_function_ufcs_call_is_rejected() -> void {
 
 auto test_repeated_self_method_calls_on_same_binding_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_repeated_self_method_calls.kira");
+      analyze_test_data_file("accept_repeated_self_method_calls.cn");
   expect(analyzed.error_count == 0,
          "expected repeated `self`-receiver method calls on the same "
          "binding to check cleanly");
@@ -231,7 +231,7 @@ auto test_repeated_self_method_calls_on_same_binding_are_accepted() -> void {
 
 auto test_repeated_borrowing_ufcs_calls_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_repeated_borrowing_ufcs_calls.kira");
+      analyze_test_data_file("accept_repeated_borrowing_ufcs_calls.cn");
   expect(analyzed.error_count == 0,
          "expected repeated UFCS calls through a `&`-typed first parameter "
          "to check cleanly");
@@ -239,10 +239,10 @@ auto test_repeated_borrowing_ufcs_calls_are_accepted() -> void {
 
 auto test_repeated_iter_values_chains_are_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_repeated_iter_values_chains.kira");
+      analyze_test_data_file("accept_repeated_iter_values_chains.cn");
   expect(analyzed.error_count == 0,
          "expected rebuilding a fresh `iter().values()` chain per use to "
-         "check cleanly, the fix for the original `algorithm-for_each.kira` "
+         "check cleanly, the fix for the original `algorithm-for_each.cn` "
          "demo bug");
 }
 
@@ -254,7 +254,7 @@ auto test_repeated_iter_values_chains_are_accepted() -> void {
 
 auto test_reuse_after_move_capture_is_rejected() -> void {
   const auto analyzed =
-      analyze_test_data_file("reject_reuse_after_move_capture.kira");
+      analyze_test_data_file("reject_reuse_after_move_capture.cn");
   expect(analyzed.error_count > 0,
          "expected reusing a name after `move [...]` captured it to be "
          "rejected");
@@ -264,7 +264,7 @@ auto test_reuse_after_move_capture_is_rejected() -> void {
 
 auto test_reuse_after_plain_value_capture_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_reuse_after_plain_value_capture.kira");
+      analyze_test_data_file("accept_reuse_after_plain_value_capture.cn");
   expect(analyzed.error_count == 0,
          "expected a bare capture-list entry without `move` to stay a "
          "by-value copy, so reusing the original binding checks cleanly");
@@ -277,7 +277,7 @@ auto test_reuse_after_plain_value_capture_is_accepted() -> void {
 
 auto test_reuse_after_for_x_in_ref_is_accepted() -> void {
   const auto analyzed =
-      analyze_test_data_file("accept_reuse_after_for_x_in_ref.kira");
+      analyze_test_data_file("accept_reuse_after_for_x_in_ref.cn");
   expect(analyzed.error_count == 0,
          std::string("expected `for x in &xs` not to move `xs`, so "
                      "`xs.free()` afterward checks cleanly:\n") +

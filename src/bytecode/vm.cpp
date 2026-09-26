@@ -1008,7 +1008,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 // String-formatting intrinsics (`spec/string-formatting-design.md`). These
 // back `std.fmt`'s `pad_str`/`pad_integral` and the builtin-only numeric
 // format styles. Every scalar argument/return is boxed in a single-field
-// struct (see `src/std/fmt.kira`'s `box_*` types) so it stays
+// struct (see `src/std/fmt.cn`'s `box_*` types) so it stays
 // heap-representable, matching this file's existing struct-is-a-flat-slot-
 // block convention rather than special-casing scalar intrinsic arguments.
 // ---------------------------------------------------------------------------
@@ -1083,7 +1083,7 @@ auto intrinsic_rt_str_truncate_scalars(std::span<const slot_value> args)
 // marshal the VM's slot representation in and out.
 
 /// A 2-slot `find_result { found: bool; pos: usize }` (see
-/// `src/std/string.kira`).
+/// `src/std/string.cn`).
 [[nodiscard]] auto make_find_result(std::optional<size_t> hit) -> slot_value {
   const std::array<slot_value, 2> fields = {
       slot_value{static_cast<uint64_t>(hit.has_value() ? 1 : 0)},

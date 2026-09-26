@@ -4,7 +4,7 @@
 
 Compile-time evaluation of `static` declarations, `static if`/`static assert`/`static for`, compile-time reflection, `pure` functions, and quoting/splicing.
 
-There is no separate template or macro language. Compile-time code is ordinary Kira — the same functions, loops, and pattern matching — evaluated by an interpreter (`src/comptime/eval.*`) rather than compiled to machine code. See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
+There is no separate template or macro language. Compile-time code is ordinary Cinder — the same functions, loops, and pattern matching — evaluated by an interpreter (`src/comptime/eval.*`) rather than compiled to machine code. See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
 
 ## `static` bindings
 
@@ -74,7 +74,7 @@ T.name()            # name of the type as str
 ```
 
 - Reflection is implemented in `src/comptime/reflect.cpp` as a read-only traversal of the type's already-parsed declaration syntax — it does not consult the type checker's `type_table`.
-- Because Kira monomorphizes generics, the type `T` a reflective call queries is always concrete by the time it is evaluated, so the result is an ordinary compile-time constant.
+- Because Cinder monomorphizes generics, the type `T` a reflective call queries is always concrete by the time it is evaluated, so the result is an ordinary compile-time constant.
 - Reflection may only invoke `pure` functions and is itself referentially transparent — see [Compile-Time Semantics § Reflection](32-compile-time-semantics.md#reflection) for why this matters for contracts.
 
 ## `pure` functions
@@ -164,7 +164,7 @@ Implemented end to end:
 - Compile-time reflection (`T.fields()`, `T.field_count()`, `T.name()`) — `src/comptime/reflect.cpp` for `static` contexts. `T.name()` called on a generic function's own type parameter from *ordinary* (non-`static`) code also lowers, via `semantic::type_param_reflection`/`hir::lower_call` (`checker::infer_call` records the concrete name once inside a monomorphized instance; `comptime::evaluator` itself has no notion of that binding, being a wholly separate subsystem used only for `static if`/`static for`/`static assert`/`static let`). `T.field_count()`/`T.fields()` on a type parameter remain `static`-only.
 - `pure` verification for functions and lambdas — enforced in `check.cpp` and required inside contract conditions.
 - Quoting/splicing with all four fragment kinds (`expr`, `stmt`, `def_expr`, `type_expr`), reification at splice sites, and hygienic renaming of internal bindings — `src/comptime/hygiene.{h,cpp}`, `src/comptime/eval.cpp`, and the `quote_expr`/`splice_expr`/`splice_stmt`/`splice_type` node kinds in `check.cpp`.
-- The AST-builder intrinsics, as `expr.lit(value)`, `expr.ident(name)`, `expr.field(object, name)`, `expr.interp_concat(a, b)`, `expr.debug(value)`, `expr.binary(op, lhs, rhs)` (`==`, `!=`, `and`, `or`) and `expr.call(callee, args...)` — `evaluator::try_eval_expr_builder_call` (`src/comptime/eval.cpp`), with the same list mirrored in `checker::infer_method_call` so an unrecognized one is a type-check error rather than an evaluation-time surprise. `expr.call` is what lets a generated body be a *fold* rather than one flat expression, which is how `derive_ord` (`src/std/deriving.kira`) builds a lexicographic comparison. The builders construct only expressions: there is no statement or match-arm builder, so a generated body that needs branching calls a helper function instead.
+- The AST-builder intrinsics, as `expr.lit(value)`, `expr.ident(name)`, `expr.field(object, name)`, `expr.interp_concat(a, b)`, `expr.debug(value)`, `expr.binary(op, lhs, rhs)` (`==`, `!=`, `and`, `or`) and `expr.call(callee, args...)` — `evaluator::try_eval_expr_builder_call` (`src/comptime/eval.cpp`), with the same list mirrored in `checker::infer_method_call` so an unrecognized one is a type-check error rather than an evaluation-time surprise. `expr.call` is what lets a generated body be a *fold* rather than one flat expression, which is how `derive_ord` (`src/std/deriving.cn`) builds a lexicographic comparison. The builders construct only expressions: there is no statement or match-arm builder, so a generated body that needs branching calls a helper function instead.
 
 Documented gap: resolving a quote's free references against its own definition site (the other half of full hygiene, as opposed to the splice site) is explicitly not implemented — `hygiene.h`'s own comment notes this is "still-unimplemented."
 

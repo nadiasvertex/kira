@@ -8,7 +8,7 @@
 #include "driver/cli.h"
 #include "version.h"
 
-/// Run the Kira CLI driver from process entry to exit status.
+/// Run the Cinder CLI driver from process entry to exit status.
 ///
 /// @param argc Argument count supplied by the host process.
 /// @param argv Argument vector supplied by the host process.

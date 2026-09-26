@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package kira.metadata.v1;
 
-// Serialized summary of one parsed Kira module file.
+// Serialized summary of one parsed Cinder module file.
 message ModuleMetadata {
   // Metadata schema version understood by readers and writers.
   uint32 schema_version = 1;

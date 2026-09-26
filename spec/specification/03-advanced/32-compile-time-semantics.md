@@ -26,7 +26,7 @@ A function may be:
 
 Compile time has two distinct machineries.
 
-- **Evaluation** (`src/comptime/eval.*`) is an interpreter that runs ordinary Kira — loops, functions, pattern matching — on **known** values to produce compile-time values. `build_lookup_table()`, `deriving`, and quote/splice construction are all evaluation.
+- **Evaluation** (`src/comptime/eval.*`) is an interpreter that runs ordinary Cinder — loops, functions, pattern matching — on **known** values to produce compile-time values. `build_lookup_table()`, `deriving`, and quote/splice construction are all evaluation.
 - **Reasoning** (`src/semantic/reason.*`) is the constraint solver that discharges refinement predicates, contract conditions, and dependent-type obligations over **unknown** values. It proves; it does not run arbitrary code.
 
 They never substitute for one another. `vec[T, 2 + 3]` is evaluation — the expression is closed, so it folds to the constant `5`. `vec[T, m + n]` is reasoning — `m` and `n` are unknown, so the length is a symbolic term and any question about it is a proof, not a computation. The governing rule: **fold if closed, symbolize otherwise.** See [Dependent and Refinement Types § The two subsystems, concretely](33-dependent-and-refinement-types.md#the-two-subsystems-concretely).
@@ -57,7 +57,7 @@ pure def field_count[T]() -> usize:
     T.field_count()
 ```
 
-Reflection resolves at compile time. Because Kira monomorphizes generic code, the type a reflection queries is known statically at each instantiation, so it is computed once per instantiation and its result — an ordinary constant — flows into runtime like any other value. There is no *runtime* reflection: a value carries no type tag to interrogate.
+Reflection resolves at compile time. Because Cinder monomorphizes generic code, the type a reflection queries is known statically at each instantiation, so it is computed once per instantiation and its result — an ordinary constant — flows into runtime like any other value. There is no *runtime* reflection: a value carries no type tag to interrogate.
 
 Reflection may invoke only `pure` functions, so it can never cause an effect — which is exactly what makes it safe to use from inside a contract condition (see [Contracts](34-contracts.md)).
 

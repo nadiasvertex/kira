@@ -25,7 +25,7 @@ struct aot_error {
 ///
 /// This produces a plain `.o` with no reference to libLLVM's own runtime
 /// (`spec/codegen-design.md` Decision 5) — the caller is responsible for
-/// linking it (with a system linker and Kira's native runtime support
+/// linking it (with a system linker and Cinder's native runtime support
 /// library, see `aot_runtime.h`) into a standalone executable; this
 /// function only emits the object file.
 /// `level` runs `optimize_module` (codegen.h) over the module in between

@@ -7,7 +7,7 @@ module std.string
 # this module is the thin `extend str` layer that composes them.
 #
 # Case mapping/folding (`to_uppercase`/`to_lowercase`/`fold_case`/
-# `eq_ignore_case`) is the one exception: it is pure Kira over generated
+# `eq_ignore_case`) is the one exception: it is pure Cinder over generated
 # UCD tables (`std.unicode`/`std.unicode_tables`), not a Layer 1 intrinsic --
 # see `52-std-string.md`'s Architecture section for why.
 

@@ -323,7 +323,7 @@ auto parse_args(std::span<char *const> argv)
 auto render_help(std::string_view program_name) -> std::string {
   return std::format(
       "Usage: {} [OPTIONS] SOURCES...\n\n"
-      "Kira - Parse source files and emit module metadata\n\n"
+      " Cinder - Parse source files and emit module metadata\n\n"
       "Options:\n"
       "  -h, --help               Show this help message and exit\n"
       "  --version                Print the compiler version and exit\n"

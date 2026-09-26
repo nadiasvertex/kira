@@ -1,5 +1,5 @@
 error: function `wrong` returns `int32`, but its final expression has type `str`
-  --> 008_generic_return_mismatch.kira:13:5
+  --> 008_generic_return_mismatch.cn:13:5
    13 |     unwrap(h)
       |     ^^^^^^^^^ mismatched final expression
 

@@ -10,9 +10,9 @@ namespace kira::runtime {
 /// growable blocks and never frees anything. This is the explicit
 /// placeholder `spec/codegen-design.md` Decision 3 calls for — real memory
 /// management (refcounting, ownership-based drop, or a tracing GC) is
-/// blocked on Kira's still-undesigned ownership/borrow model, so this is
+/// blocked on Cinder's still-undesigned ownership/borrow model, so this is
 /// deliberately the simplest thing that could work, not a performance
-/// strategy. Every heap-backed Kira value (`str`, `list[T]`, tuple/struct/
+/// strategy. Every heap-backed Cinder value (`str`, `list[T]`, tuple/struct/
 /// sum-type payloads, closure environments) is allocated from here by both
 /// the bytecode VM and `llvm_codegen`-compiled code, which is exactly what
 /// keeps their in-memory layouts byte-for-byte identical per Decision 3.

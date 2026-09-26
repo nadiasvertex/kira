@@ -9,7 +9,7 @@ module main
 # `rt_str_to_upper`/`rt_str_to_lower` intrinsics' hardcoded ASCII/Latin-1/
 # Greek/Cyrillic ranges (Latin Extended-A "Ā"/"ā", U+0100/U+0101) -- that
 # case would have silently passed through unchanged before this module
-# replaced those intrinsics with pure-Kira lookups over generated,
+# replaced those intrinsics with pure- Cinder lookups over generated,
 # full-coverage UCD tables. Also exercises the two genuinely new
 # capabilities those intrinsics never had at all: default full (not just
 # simple 1:1) case mapping -- multi-code-point expansions ("ß" -> "SS",

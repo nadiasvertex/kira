@@ -6,8 +6,8 @@ module main
 #  Walks both iterators in lockstep with a caller-supplied comparator;
 #  differing elements or differing lengths both make the result `false`.
 #
-#  Run it:      kira demo/algorithm-eq_by.kira
-#  Compile it:  kira --compile -o algorithm-eq_by demo/algorithm-eq_by.kira
+#  Run it:      kira demo/algorithm-eq_by.cn
+#  Compile it:  kira --compile -o algorithm-eq_by demo/algorithm-eq_by.cn
 # ==========================================================================
 
 def main() -> int32:

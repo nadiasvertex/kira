@@ -72,7 +72,7 @@ inline constexpr const char *kPanicSymbolName = "kira_codegen_panic";
 ///
 /// Named `kira_heap_alloc`, not `kira_rt_alloc`: the `kira_rt_*` prefix is
 /// reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
-/// and `rt_alloc` is now one of them — a Kira-callable intrinsic whose
+/// and `rt_alloc` is now one of them — a Cinder-callable intrinsic whose
 /// native symbol `kira_rt_alloc` takes and returns opaque heap pointers,
 /// unlike this one's `(i64) -> ptr`.
 inline constexpr const char *kAllocSymbolName = "kira_heap_alloc";

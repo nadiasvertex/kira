@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers the core iterator traits (`iterator[T]`, `double_ended[T]`, `exact_size[T]`, `into_iterator[T]`, `from_iter[T]`), `collect`, and the three concrete iterator types `list[T]` provides, all from `src/std/iter.kira`.
+Covers the core iterator traits (`iterator[T]`, `double_ended[T]`, `exact_size[T]`, `into_iterator[T]`, `from_iter[T]`), `collect`, and the three concrete iterator types `list[T]` provides, all from `src/std/iter.cn`.
 
 ## Traits
 

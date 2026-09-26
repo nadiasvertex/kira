@@ -4,7 +4,7 @@
 
 The `path` value type: string-based construction, joining, and decomposition of filesystem paths.
 
-`std.fs.path` (`src/std/fs/path.kira`) is modeled after C++'s `std::filesystem::path`, but is deliberately **purely a string-manipulation library** — no syscalls, no filesystem access. Checking existence or querying whether a path names a directory or symlink belongs to a future `std.fs` module layered on top of this one, not here: separating "what does this path string mean" from "what does the filesystem say about it" keeps this module usable without I/O permissions and its behavior fully deterministic and host-independent.
+`std.fs.path` (`src/std/fs/path.cn`) is modeled after C++'s `std::filesystem::path`, but is deliberately **purely a string-manipulation library** — no syscalls, no filesystem access. Checking existence or querying whether a path names a directory or symlink belongs to a future `std.fs` module layered on top of this one, not here: separating "what does this path string mean" from "what does the filesystem say about it" keeps this module usable without I/O permissions and its behavior fully deterministic and host-independent.
 
 Guiding choices:
 
@@ -54,7 +54,7 @@ impl eq for path:
     def eq(self, other: &self) -> bool
 ```
 
-This matches `src/std/fs/path.kira` exactly; there is no drift between the design doc and the implementation.
+This matches `src/std/fs/path.cn` exactly; there is no drift between the design doc and the implementation.
 
 ## Method semantics
 

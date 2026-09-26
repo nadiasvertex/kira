@@ -20,7 +20,7 @@ namespace kira {
 //
 //  See spec/stdlib.md for the full signature of each intrinsic; this table
 //  only tracks names, since the signature itself is written and typechecked
-//  as ordinary Kira source at the `intrinsic def` site.
+//  as ordinary Cinder source at the `intrinsic def` site.
 // ==========================================================================
 inline constexpr std::array<std::string_view, 36> known_intrinsic_names = {{
     "rt_stdin",
@@ -52,7 +52,7 @@ inline constexpr std::array<std::string_view, 36> known_intrinsic_names = {{
     // self-synchronization. The algorithms live in `src/runtime/
     // string_ops.h` and are shared verbatim with the bytecode VM's dispatch
     // table. Case mapping/folding is *not* here: `to_uppercase`/
-    // `to_lowercase`/`fold_case` are pure Kira over generated UCD tables
+    // `to_lowercase`/`fold_case` are pure Cinder over generated UCD tables
     // (`std.unicode`), not a native intrinsic — see 52-std-string.md's
     // Architecture section.
     "rt_str_eq",
@@ -83,8 +83,8 @@ inline constexpr std::array<std::string_view, 36> known_intrinsic_names = {{
     "rt_bitcast_f64_to_u64",
     "rt_bitcast_f32_to_u32",
     // Raw heap allocation (`src/runtime/allocator.h`). These are what let a
-    // collection own its own storage in Kira source rather than relying on
-    // the compiler's built-in `list[T]` -- the substrate `src/std/list.kira`
+    // collection own its own storage in Cinder source rather than relying on
+    // the compiler's built-in `list[T]` -- the substrate `src/std/list.cn`
     // is rebuilt over. They pass the minimal-intrinsics justification test
     // (`spec/specification/04-stdlib/40-stdlib-overview.md`) on the strongest
     // possible grounds: obtaining memory is not expressible in terms of
@@ -172,7 +172,7 @@ inline constexpr std::array<uint8_t, 36> known_intrinsic_arities = {{
 //  cost a heap allocation per scalar crossing and an unbox on the other
 //  side for no reason a primitive value needs paying: `kind::i32`/`i64`/
 //  `f32`/`f64` below cross as themselves — a plain native scalar — the same
-//  way an ordinary (non-intrinsic) Kira function call already does.
+//  way an ordinary (non-intrinsic) Cinder function call already does.
 //
 //  `bool`/`uint8` widen to `i32`: not for range, but because a sub-32-bit
 //  integer argument's calling-convention lowering depends on a `zeroext`/
@@ -180,7 +180,7 @@ inline constexpr std::array<uint8_t, 36> known_intrinsic_arities = {{
 //  builds each `kira_rt_*` declaration and call site by hand) does not
 //  attempt to reproduce byte-for-byte against what Clang attaches to the
 //  real definition in `src/runtime/`. `i32`/`i64`/`f32`/`f64` need no such
-//  attribute on any target Kira builds for, so widening the two sub-32-bit
+//  attribute on any target Cinder builds for, so widening the two sub-32-bit
 //  cases sidesteps the question entirely rather than risking getting it
 //  subtly wrong.
 // ==========================================================================

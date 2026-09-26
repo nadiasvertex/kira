@@ -16,7 +16,7 @@
 namespace kira::comptime {
 
 /// A closed, tree-walking interpreter for the compile-time-evaluable subset
-/// of Kira used by `static` declarations (`static let`, `static assert`,
+/// of Cinder used by `static` declarations (`static let`, `static assert`,
 /// `static if`, `static for`, and `static def` calls).
 ///
 /// Deliberately closed: no I/O, no filesystem, no environment access, and

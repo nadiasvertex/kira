@@ -18,8 +18,8 @@ module main
 #  argument type as-is, matching what `T.name()` already reported when
 #  called directly in `describe_view`'s own body.
 #
-#  Run it:      kira demo/traits-is_view.kira
-#  Compile it:  kira --compile -o traits-is_view demo/traits-is_view.kira
+#  Run it:      kira demo/traits-is_view.cn
+#  Compile it:  kira --compile -o traits-is_view demo/traits-is_view.cn
 # ==========================================================================
 
 use std.traits.is_view

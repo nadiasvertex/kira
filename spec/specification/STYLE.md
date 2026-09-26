@@ -25,7 +25,7 @@ Every chapter file starts with:
 ```
 
 Status meanings (verify against the actual compiler/stdlib source before assigning — do not trust a design doc's aspirational description):
-- **Implemented** — works end-to-end today; you could write this code and compile/run it. Grep `src/` and `src/testdata/` for evidence (a passing test, a real `.kira` stdlib file) before marking this.
+- **Implemented** — works end-to-end today; you could write this code and compile/run it. Grep `src/` and `src/testdata/` for evidence (a passing test, a real `.cn` stdlib file) before marking this.
 - **Partial** — some of the chapter's surface works, some does not. State exactly which parts, in a "## Implementation status" subsection near the end, with specifics (function names, file:line if useful, or "parses but does not type-check/lower").
 - **Planned** — designed but not implemented (e.g., only parser/lexer support exists, or it's pure design-doc content with no code). Still write the chapter normatively (as if describing the target design), but the status line must say so and a closing note should say what's missing.
 

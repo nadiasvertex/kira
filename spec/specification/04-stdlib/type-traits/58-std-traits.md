@@ -2,13 +2,13 @@
 
 **Status:** Implemented
 
-Compile-time type predicates (`is_integer[T]`, `is_same[A, B]`, ...) and type transformations (`remove_view[T]`, ...), reinterpreting C++'s `<type_traits>` over Kira's reflection and monomorphization model.
+Compile-time type predicates (`is_integer[T]`, `is_same[A, B]`, ...) and type transformations (`remove_view[T]`, ...), reinterpreting C++'s `<type_traits>` over Cinder's reflection and monomorphization model.
 
 ## Rationale
 
-Kira monomorphizes every generic instantiation, so a "type trait" is not a runtime tag test — it is an ordinary compile-time boolean or type computed once per instantiation, exactly like the values [Compile-Time Execution](../../03-advanced/31-compile-time-execution.md) already produces. `std.traits` gives that computation a stable, named vocabulary instead of leaving each library to hand-roll it.
+ Cinder monomorphizes every generic instantiation, so a "type trait" is not a runtime tag test — it is an ordinary compile-time boolean or type computed once per instantiation, exactly like the values [Compile-Time Execution](../../03-advanced/31-compile-time-execution.md) already produces. `std.traits` gives that computation a stable, named vocabulary instead of leaving each library to hand-roll it.
 
-The need is not hypothetical: `src/std/algo.kira`'s `is_radix_integer[T]`/`is_signed_integer[T]` (backing `sort[T]`'s integer fast path) already compare `T.name()` against a hand-written list of string literals. `std.traits` generalizes that pattern into a reusable predicate library and gives `algo.kira` a single call (`is_integer[T]() and bit_width[T]() <= 64`) in place of the string list — see [Implementation status](#implementation-status).
+The need is not hypothetical: `src/std/algo.cn`'s `is_radix_integer[T]`/`is_signed_integer[T]` (backing `sort[T]`'s integer fast path) already compare `T.name()` against a hand-written list of string literals. `std.traits` generalizes that pattern into a reusable predicate library and gives `algo.cn` a single call (`is_integer[T]() and bit_width[T]() <= 64`) in place of the string list — see [Implementation status](#implementation-status).
 
 ## Type predicates
 

@@ -1,6 +1,6 @@
 module main
 
-# The fixed shape of `demo/algorithm-for_each.kira`: each traversal builds
+# The fixed shape of `demo/algorithm-for_each.cn`: each traversal builds
 # its own fresh iterator chain from `nums` rather than reusing one already
 # drained by a prior `for_each`. `nums.iter()` only borrows `nums`
 # (`iter[T](xs: &list[T])`), so building it twice is fine — this must check

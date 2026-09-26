@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers the slice algorithms `sort`, `sort_by`, `sort_by_key`, `sorted`, `stable_sort`, `binary_search`, `binary_search_by`, `reverse`, `rotate`, `dedup`, `partition_point`, `lower_bound`, `upper_bound`, `windows`, `chunks` — all implemented in `src/std/algo.kira` as free functions over `slice[T]`/`slice_mut[T]`, reachable by UFCS (`s.sort()`).
+Covers the slice algorithms `sort`, `sort_by`, `sort_by_key`, `sorted`, `stable_sort`, `binary_search`, `binary_search_by`, `reverse`, `rotate`, `dedup`, `partition_point`, `lower_bound`, `upper_bound`, `windows`, `chunks` — all implemented in `src/std/algo.cn` as free functions over `slice[T]`/`slice_mut[T]`, reachable by UFCS (`s.sort()`).
 
 ## Design
 
@@ -40,7 +40,7 @@ Selecting `ska_sort` for exactly the integer types requires knowing, from inside
 
 ## Implementation status
 
-Implemented in `src/std/algo.kira`, both backends (bytecode VM and LLVM AOT), verified via `src/testdata/std_test/algo_sort.kira`. This chapter was blocked on two real compiler gaps, both found and fixed in the course of implementing it:
+Implemented in `src/std/algo.cn`, both backends (bytecode VM and LLVM AOT), verified via `src/testdata/std_test/algo_sort.cn`. This chapter was blocked on two real compiler gaps, both found and fixed in the course of implementing it:
 
 - Range-indexing (`arr[a..b]`, which *forms* the `slice`/`slice_mut` view every algorithm here operates through) only scaled its resulting view's data pointer correctly for 1-byte-stride sources — silently wrong for `array[int32, N]`/`list[int32]`/etc. Fixed; see `general-stride-range-indexing-implemented` project memory.
 - `T.name()` reflection, needed for `sort`'s integer/non-integer dispatch, type-checked but never lowered outside `static` constructs. Fixed; see [Compile-Time Execution § Implementation status](../../03-advanced/31-compile-time-execution.md#implementation-status).
@@ -49,5 +49,5 @@ Implemented in `src/std/algo.kira`, both backends (bytecode VM and LLVM AOT), ve
 
 ## See also
 
-- [`list[T]`](../collections/43-list.md) — `list.kira`'s note on how `xs.sort()` reaches this chapter's `sort` via UFCS.
+- [`list[T]`](../collections/43-list.md) — `list.cn`'s note on how `xs.sort()` reaches this chapter's `sort` via UFCS.
 - [`deque[T]` and `bitset`](../collections/44-deque-and-bitset.md) — still blocked on `machine`-based containers' own, separate pointer-model gap.

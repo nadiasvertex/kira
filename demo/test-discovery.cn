@@ -23,9 +23,9 @@ module demo.testkit
 #  it covers, and the module this file declares has a suite of its own.
 #
 #  For hand-registered suites with a user-written `main`, see
-#  demo/test-explicit.kira.
+#  demo/test-explicit.cn.
 #
-#  Run it:  kira --test demo/test-discovery.kira
+#  Run it:  kira --test demo/test-discovery.cn
 #
 #  Exits 1: one case below fails on purpose.
 # ==========================================================================

@@ -310,7 +310,7 @@ struct collector {
 auto find_reachable_modules(const hir_module &entry,
                             const ptr_vec<hir_module> &all_modules)
     -> std::vector<const hir_module *> {
-  // A module name may have more than one `hir_module` behind it — Kira's
+  // A module name may have more than one `hir_module` behind it — Cinder's
   // multi-file modules (`session.cpp`'s `build_semantic_session`) lower one
   // `hir_module` per *file*, so a module declared across several files (like
   // `std.traits`) surfaces here as several same-named entries, every one of

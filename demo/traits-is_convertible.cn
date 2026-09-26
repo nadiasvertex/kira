@@ -5,10 +5,10 @@ module main
 #  the same type, or `From` implements `into` for *some* target (this can't
 #  ask specifically for `into[To]`, only whether `From` implements `into`
 #  at all — see the doc comment on `is_convertible` in
-#  src/std/traits.category.kira for the resulting over-approximation).
+#  src/std/traits.category.cn for the resulting over-approximation).
 #
-#  Run it:      kira demo/traits-is_convertible.kira
-#  Compile it:  kira --compile -o traits-is_convertible demo/traits-is_convertible.kira
+#  Run it:      kira demo/traits-is_convertible.cn
+#  Compile it:  kira --compile -o traits-is_convertible demo/traits-is_convertible.cn
 # ==========================================================================
 
 use std.traits.is_convertible

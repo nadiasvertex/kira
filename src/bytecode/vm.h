@@ -28,7 +28,7 @@ struct vm_result {
 /// job, not this one's).
 ///
 /// Call frames are an explicit `std::vector<frame>` growing one entry per
-/// nested `op_call`, not C++ call-stack recursion — this keeps Kira's own
+/// nested `op_call`, not C++ call-stack recursion — this keeps Cinder's own
 /// call-depth limit (and the `stack_overflow` panic it produces) independent
 /// of how deep the host's own C++ stack happens to tolerate, and keeps the
 /// dispatch loop as one flat `while` over whichever frame is current.

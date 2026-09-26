@@ -1,6 +1,6 @@
 module std.list
 
-# `list[T]` — a growable, heap-owning sequence, written entirely in Kira over
+# `list[T]` — a growable, heap-owning sequence, written entirely in Cinder over
 # `std.mem`'s typed allocation and the `machine` layer's raw-pointer
 # indexing, with no compiler support for the type beyond what any user
 # struct gets (`spec/list-migration-design.md`). `[1, 2, 3]` reaches this

@@ -181,7 +181,7 @@ auto is_same_or_descendant_module(std::string_view module_name,
                                      module_name[ancestor.size()] == '.');
 }
 
-/// `def` (no explicit modifier) reports as "module" here, matching Kira's
+/// `def` (no explicit modifier) reports as "module" here, matching Cinder's
 /// default module-visibility rule.
 auto visibility_name(ast::visibility visibility) -> std::string_view {
   switch (visibility) {
@@ -477,7 +477,7 @@ auto module_resolution_blocked_by_errors(
   return false;
 }
 
-/// Implements Kira's visibility rules: `pub` is visible everywhere, the
+/// Implements Cinder's visibility rules: `pub` is visible everywhere, the
 /// default/`module` visibility is visible to the declaring module and its
 /// descendants, and `file` only to the exact declaring file.
 auto is_import_visible(const submodule_declaration_record &declaration,

@@ -6,7 +6,7 @@ module codegen_stress.static_if_statement_in_function_body
 # (a chain of `static if <type check>: return ...` statements followed by a
 # trailing `static assert false` catch-all) type-checked but failed at
 # lowering with "statement kind 15 is not lowered yet". This is the exact
-# shape of `accept_static_if_chain_with_trailing_static_assert.kira`
+# shape of `accept_static_if_chain_with_trailing_static_assert.cn`
 # (src/testdata/semantic_check_test/), which only proved the checker's
 # reachability analysis was correct — it never exercised code generation,
 # since `check_test.cpp` never lowers or runs anything.

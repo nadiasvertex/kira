@@ -6,8 +6,8 @@ module main
 #  Consumes the whole iterator into two lists: elements that satisfy the
 #  predicate, and everything else, preserving relative order in each.
 #
-#  Run it:      kira demo/algorithm-partition.kira
-#  Compile it:  kira --compile -o algorithm-partition demo/algorithm-partition.kira
+#  Run it:      kira demo/algorithm-partition.cn
+#  Compile it:  kira --compile -o algorithm-partition demo/algorithm-partition.cn
 # ==========================================================================
 
 def main() -> int32:

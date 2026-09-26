@@ -1,6 +1,6 @@
 // The golden corpus of *wrong* programs (`spec/inference-rewrite.md` phase 5).
 //
-// Every `.kira` here is a program that must be rejected, and its `.expected`
+// Every `.cn` here is a program that must be rejected, and its `.expected`
 // file holds the compiler's rendered diagnostics for it, byte for byte.
 //
 // This exists before the blame machinery, not after, and that ordering is the
@@ -10,7 +10,7 @@
 // captured afterwards records whatever the new code happens to say, which is
 // not a bar at all.
 //
-// A `.kira` file whose leading comments say `bar: BELOW BAR TODAY` is recording
+// A `.cn` file whose leading comments say `bar: BELOW BAR TODAY` is recording
 // a message this compiler is not yet willing to stand behind. Its `.expected`
 // text is a floor, not a target: phase 5 is finished when those entries have
 // been rewritten deliberately and their goldens updated to match, never when
@@ -106,7 +106,7 @@ auto find_corpus_dir(std::string_view argv0) -> fs::path {
 auto list_cases(const fs::path &corpus_dir) -> std::vector<fs::path> {
   auto cases = std::vector<fs::path>{};
   for (const auto &entry : fs::directory_iterator(corpus_dir)) {
-    if (entry.is_regular_file() && entry.path().extension() == ".kira") {
+    if (entry.is_regular_file() && entry.path().extension() == ".cn") {
       cases.push_back(entry.path());
     }
   }
@@ -184,7 +184,7 @@ auto main(int argc, char *argv[]) -> int {
                                                      : std::string_view{});
     const auto cases = list_cases(corpus_dir);
     expect(!cases.empty(),
-           "expected the inference diagnostics corpus to contain .kira files");
+           "expected the inference diagnostics corpus to contain .cn files");
     expect(cases.size() >= 12,
            std::format("expected the acceptance-bar corpus to be intact, "
                        "found only {} cases",

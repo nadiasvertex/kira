@@ -6,8 +6,8 @@ module main
 #  Yields `(left, right)` tuples, advancing both iterators in lockstep;
 #  stops as soon as the shorter of the two runs out.
 #
-#  Run it:      kira demo/iterator-zip.kira
-#  Compile it:  kira --compile -o iterator-zip demo/iterator-zip.kira
+#  Run it:      kira demo/iterator-zip.cn
+#  Compile it:  kira --compile -o iterator-zip demo/iterator-zip.cn
 # ==========================================================================
 
 def main() -> int32:

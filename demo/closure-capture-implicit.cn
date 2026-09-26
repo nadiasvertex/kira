@@ -9,8 +9,8 @@ module main
 #  module-level functions directly, without capturing them — only local
 #  bindings are captured.
 #
-#  Run it:      kira demo/closure-capture-implicit.kira
-#  Compile it:  kira --compile -o closure-capture-implicit demo/closure-capture-implicit.kira
+#  Run it:      kira demo/closure-capture-implicit.cn
+#  Compile it:  kira --compile -o closure-capture-implicit demo/closure-capture-implicit.cn
 # ==========================================================================
 
 def bump(n: int32) -> int32:

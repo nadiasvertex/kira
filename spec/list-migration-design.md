@@ -1,6 +1,6 @@
 # Moving `list[T]` out of the compiler
 
-**Status:** All five phases implemented. `list[T]` is an ordinary Kira type
+**Status:** All five phases implemented. `list[T]` is an ordinary Cinder type
 over `std.mem`; what is left is the consequences the flip exposed (todo items
 17-20).
 
@@ -9,11 +9,11 @@ over `std.mem`; what is left is the consequences the flip exposed (todo items
 | 1 | `index`/`index_set` traits — `v[i]`, `v[i] = x` on any type | **Done**, `index_mut` included. Selection is by key type, so `index[usize]` and `index[range[usize]]` coexist; `&v[i]` (a read-borrow) still has no trait — todo 17 |
 | 2 | `for` through `into_iterator` | **Done**, both consuming and borrowing (`for x in &v`) |
 | 3 | `from_array` construction, and the settled `list` default for literals | **Done** |
-| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Done.** `list[T]` is the Kira struct; the builtin entries and the dead backend code behind them are gone, and the cost is measured (below). What the flip exposed is todo 17-19 |
+| 4 | Flip `list[T]` onto `vector[T]`'s storage | **Done.** `list[T]` is the Cinder struct; the builtin entries and the dead backend code behind them are gone, and the cost is measured (below). What the flip exposed is todo 17-19 |
 | 5 | A user collection with all four, as proof | **Done.** The proof type *became* `list[T]` in phase 4, which is the strongest form of it |
 
-`list[T]` (`src/std/list.kira`) is now a growable, heap-owning sequence
-written entirely in Kira over `std.mem` and the `machine` layer, with no
+`list[T]` (`src/std/list.cn`) is now a growable, heap-owning sequence
+written entirely in Cinder over `std.mem` and the `machine` layer, with no
 compiler support beyond what any user struct gets — reached through
 `std.traits`'s `index`/`index_mut`/`index_set`/`from_array` and `std.iter`'s
 `into_iterator`. `let v: list[int32] = [1, 2, 3]`, `v[0]`, `v[1] = x`,
@@ -31,7 +31,7 @@ not the goal in itself.
 
 ## What the compiler knew about `list` *(all four removed)*
 
-Four distinct pieces of knowledge, in four places — what a Kira struct could
+Four distinct pieces of knowledge, in four places — what a Cinder struct could
 not replicate. Each row's location is where the privilege lived before the
 phase that removed it.
 
@@ -46,8 +46,8 @@ Plus the runtime half: `list_reserve_slot` (`src/runtime/layout.h`, wired at
 `src/llvm_codegen/codegen.cpp:4434`) implements growth in C++, against the
 shared bump arena, with no `realloc` and no `free`.
 
-Privilege 2 is already almost gone — `extend[T] list[T]` in `src/std/list.kira`
-adds `is_empty`/`first`/`last` as ordinary Kira. The remaining four names are
+Privilege 2 is already almost gone — `extend[T] list[T]` in `src/std/list.cn`
+adds `is_empty`/`first`/`last` as ordinary Cinder. The remaining four names are
 the ones that need the representation.
 
 ## Phase 0 — scope-exit `drop` (prerequisite, todo item 6) *(done, for the case this needs)*
@@ -69,7 +69,7 @@ for aggregates, and not dropping a moved-from binding. Unwinding-through-drop
 and the prelude `drop(x)` function were never prerequisites. All three of the
 narrow requirements now hold (`src/semantic/check.cpp`'s `resolve_drop_plans`
 + `src/hir/drop_schedule.{h,cpp}` + `src/hir/lower.cpp`, verified end-to-end
-both backends by `src/testdata/std_test/scope_exit_drop.kira`) — for the
+both backends by `src/testdata/std_test/scope_exit_drop.cn`) — for the
 shape phase 4 actually exercises: a plain `let`/`var` local of struct type,
 in a function/block whose own tail carries no value (`vector[T]`'s methods
 are exactly this shape). See `todo.md` item 6 for the gaps left open beyond
@@ -102,7 +102,7 @@ pub trait index_set[I]:
     def set_at(mut self, i: I, value: self.output) -> unit
 ```
 
-*(As shipped, in `src/std/traits.index.kira`.* `at_mut` returns
+*(As shipped, in `src/std/traits.index.cn`.* `at_mut` returns
 `mut cell[self.output]` rather than a bare `mut self.output`: `mut` is only
 accepted in type position before `slice[T]` or `cell[T]`, so a bare
 `mut self.output` does not parse. `cell` is the language's existing spelling
@@ -150,11 +150,11 @@ help: Indexing is a trait, not a builtin. Add an impl that says what
                   ...
 ```
 
-**Tests.** `src/testdata/std_test/index_trait.kira` — a `ramp` with no
+**Tests.** `src/testdata/std_test/index_trait.cn` — a `ramp` with no
 storage at all, whose elements are computed, so a `v[i]` that silently fell
 through to some builtin container's direct addressing could not produce the
-printed values. Plus `reject_index_without_impl.kira` and
-`reject_index_write_without_index_set.kira` in `semantic_check_test` for the
+printed values. Plus `reject_index_without_impl.cn` and
+`reject_index_write_without_index_set.cn` in `semantic_check_test` for the
 two diagnostics.
 
 It lives in `std_test`, not `codegen_stress`, because `codegen_stress` is
@@ -181,7 +181,7 @@ strength of check as `# expect:` and not a differential one.
 
 ## Phase 2 — `for` through `into_iterator` *(done, with one gap)*
 
-`into_iterator[T]` already exists (`src/std/iter.kira:46`) and is unused by
+`into_iterator[T]` already exists (`src/std/iter.cn:46`) and is unused by
 the compiler. `for` currently reaches a user type only by duck-typing on a
 `next` method (`try_resolve_iterator`, `src/semantic/check.cpp:13541`,
 recorded in `for_iterator_dispatches`, `src/semantic/types.h:486`); a
@@ -210,9 +210,9 @@ in lowering — no new HIR node, matching how the duck-typed path was done.
 
 **Library work.** `vector[T]` gets `vector_iter[T]` and
 `impl[T] into_iterator[T] for vector[T]`. This is where the first real proof
-lands: `for x in v` over a Kira-written collection, both tiers, same output.
+lands: `for x in v` over a Cinder-written collection, both tiers, same output.
 
-**Test.** `src/testdata/std_test/into_iterator_loop.kira` — exact output, at
+**Test.** `src/testdata/std_test/into_iterator_loop.cn` — exact output, at
 two element widths, and the *order* of the elements is printed too, so an
 adapter called once per iteration rather than once per loop (which would
 restart the iterator and yield the first element forever) fails rather than
@@ -324,7 +324,7 @@ annotation that restores the old meaning; it does not yet.
 
 **Done.** Steps 1-4 landed; 5 is incomplete (see below).
 
-1. ~~Rename `vector[T]` → `list[T]`~~ **Done** — `src/std/list.kira`, with
+1. ~~Rename `vector[T]` → `list[T]`~~ **Done** — `src/std/list.cn`, with
    `impl index`/`index_mut`/`index_set`/`into_iterator`/`from_array`, and
    `drop`.
 2. ~~Delete `list` from `k_builtin_generic_arities` and its four entries
@@ -341,7 +341,7 @@ annotation that restores the old meaning; it does not yet.
    **Done** (2026-09-23).
 5. Sweep every stdlib module written against builtin `list` — `std.algo` in
    particular, whose sorts index and swap in hot loops. **Partly done:**
-   `std.algo` is clean and `src/testdata/std_test/algo_sort.kira` runs on
+   `std.algo` is clean and `src/testdata/std_test/algo_sort.cn` runs on
    both tiers. `std.io` (todo 18) and `std.iter`'s borrowing iterators
    (todo 17) are not.
 
@@ -364,7 +364,7 @@ Three things had to arrive with this phase, none of them anticipated above:
   of a raw pointer whose element type is compound (heap-boxed on both
   backends: a struct, sum, tuple, or array). Both backends' `compile_unary`
   short-circuit `&x`/`*r` to a no-op whenever the referent is already
-  heap-boxed — correct for an *ordinary* Kira reference (`&T`/`&mut T`),
+  heap-boxed — correct for an *ordinary* Cinder reference (`&T`/`&mut T`),
   where a compound value's own representation already **is** its address,
   but wrong for a *raw* pointer, where `&p[i]` means "the offset address"
   (`spec/specification/03-advanced/38-machine-layer.md`) regardless of the
@@ -378,12 +378,12 @@ Three things had to arrive with this phase, none of them anticipated above:
   shortcuts on the referent's type, not just its heap-kind-ness
   (`src/bytecode_compiler/compile.cpp`'s and `src/llvm_codegen/codegen.cpp`'s
   `is_raw_pointer_type`). Regression:
-  `src/testdata/codegen_stress/088_raw_pointer_addr_of_compound_element.kira`
+  `src/testdata/codegen_stress/088_raw_pointer_addr_of_compound_element.cn`
   (`# expect:`, not backend agreement — both tiers had made the identical
   mistake).
 
 **The thing that will actually hurt, and the honest answer.** Every `list`
-operation becomes a real Kira call where it used to be an inlined opcode
+operation becomes a real Cinder call where it used to be an inlined opcode
 sequence. `std.algo`'s introsort does `xs[i]`/`xs[j] = ...` in its innermost
 loop; on the bytecode VM each becomes a call frame. Expect a measurable
 regression there.
@@ -395,7 +395,7 @@ modes) so the number is a fact rather than a fear.
 **Measured (2026-09-23), after the fact.** The pre-flip number was never
 taken, so it was reconstructed: `a46bd51` (the commit before the flip, with
 only the LLVM 23 toolchain bump applied) against the flip-plus-cleanup tree,
-both built `-c opt`, running `bench/sort_100k_int32.kira` (push-fill,
+both built `-c opt`, running `bench/sort_100k_int32.cn` (push-fill,
 `sort` over `&mut xs[0..n]`, indexed sortedness check). Mean of 8-15 runs:
 
 | Tier | pre-flip | post-flip | |
@@ -424,14 +424,14 @@ it off). Same benchmark, same build:
 
 `codegen_stress_test` runs the whole corpus a second time with inlining on
 and requires the same result as without it, on both tiers
-(`100_inline_call_shapes.kira` covers each rewrite shape by value).
+(`100_inline_call_shapes.cn` covers each rewrite shape by value).
 
 ## Phase 5 — what the migration buys, made visible *(done)*
 
-The library type is the proof: `src/std/list.kira` carries
+The library type is the proof: `src/std/list.cn` carries
 `impl[T] index[usize]`, `index[range[usize]]`, `index_mut`, `index_set[usize]`,
 `into_iterator[T]`, `from_array[T]` and `drop` for it, and
-`src/testdata/std_test/list_owned_storage.kira` builds one from a literal,
+`src/testdata/std_test/list_owned_storage.cn` builds one from a literal,
 indexes it, range-indexes it, writes through the index, and iterates it —
 identically on both tiers. Every one of those was impossible before this
 work.

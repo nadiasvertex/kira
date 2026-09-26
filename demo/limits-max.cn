@@ -3,8 +3,8 @@ module main
 # ==========================================================================
 #  `limits.max` — The number of max in the numeric type.
 #
-#  Run it:      kira demo/limits-max.kira
-#  Compile it:  kira --compile -o limits-max.kira demo/limits-max.kira
+#  Run it:      kira demo/limits-max.cn
+#  Compile it:  kira --compile -o limits-max.cn demo/limits-max.cn
 # ==========================================================================
 
 use std.limits.max

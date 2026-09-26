@@ -218,7 +218,7 @@ public:
   ///
   /// **Every solution is substituted back through the `type_table`'s
   /// constructors, never by patching an entry in place.** That is the
-  /// load-bearing invariant of the entire design: Kira's dependent fragment
+  /// load-bearing invariant of the entire design: Cinder's dependent fragment
   /// is canonical by construction, so unification never needs a definitional
   /// equality check — but only for as long as two equal types remain the
   /// same `type_id`. Rebuilding through the constructors re-interns, so

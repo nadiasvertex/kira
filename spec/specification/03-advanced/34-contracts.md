@@ -69,7 +69,7 @@ An unproven condition survives past type checking as an `hir_contract_check` nod
 
 ## Implementation status
 
-Implemented end to end: parsing (`pre`/`post`/`invariant` clauses), type checking (predicate bool-ness, `pure`-only calls — `check_test.cpp:1003`), static discharge/refutation through the reasoning solver, runtime lowering in both backends, and the `--no-contract-checks` release-elision flag. Exercised together with refinement types in `src/testdata/semantic_stress/027_dependent_and_refinement_types.kira` (`reserve`, `reserves`, `precondition_is_a_fact`, `positive_int`) and by `src/testdata/semantic_stress/007_contract_purity.kira`.
+Implemented end to end: parsing (`pre`/`post`/`invariant` clauses), type checking (predicate bool-ness, `pure`-only calls — `check_test.cpp:1003`), static discharge/refutation through the reasoning solver, runtime lowering in both backends, and the `--no-contract-checks` release-elision flag. Exercised together with refinement types in `src/testdata/semantic_stress/027_dependent_and_refinement_types.cn` (`reserve`, `reserves`, `precondition_is_a_fact`, `positive_int`) and by `src/testdata/semantic_stress/007_contract_purity.cn`.
 
 ## See also
 

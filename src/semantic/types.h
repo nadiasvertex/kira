@@ -736,7 +736,7 @@ struct functor_instance {
   std::string impl_target;
 };
 
-/// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.kira`),
+/// Type ids for `std.fmt`'s runtime-support types (`src/std/fmt.cn`),
 /// resolved once after checking finishes and handed to `hir::lower` so it
 /// can build `format_spec` struct literals for interpolation lowering
 /// without a name-based lookup of its own — `type_table` only

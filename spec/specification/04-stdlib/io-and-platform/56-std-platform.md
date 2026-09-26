@@ -2,14 +2,14 @@
 
 **Status:** Implemented
 
-Compile-time target introspection and runtime host introspection: architecture, OS family, endianness, and Kira toolchain build metadata.
+Compile-time target introspection and runtime host introspection: architecture, OS family, endianness, and Cinder toolchain build metadata.
 
-`std.platform` (`src/std/platform.kira`) resolves a tension between two kinds of question a program can ask about "the platform":
+`std.platform` (`src/std/platform.cn`) resolves a tension between two kinds of question a program can ask about "the platform":
 
-- **Target** — architecture, pointer width, endianness, OS family — is knowable when the binary is built, computed once per compile from the toolchain's own preprocessor knowledge (`__x86_64__`, `__APPLE__`, `__linux__`, and similar), and exposed as `pure` accessor functions. Kira has no `--target` flag or cross-compilation support, so "target" and "the host the compiler itself was built on" are currently identical.
+- **Target** — architecture, pointer width, endianness, OS family — is knowable when the binary is built, computed once per compile from the toolchain's own preprocessor knowledge (`__x86_64__`, `__APPLE__`, `__linux__`, and similar), and exposed as `pure` accessor functions. Cinder has no `--target` flag or cross-compilation support, so "target" and "the host the compiler itself was built on" are currently identical.
 - **Host** — hostname, detailed OS release, processor name — can only be known by asking the OS at runtime, through thin intrinsics.
 
-Some of this module's declarations are not present in the checked-in `src/std/platform.kira` source: the target/build-info accessor functions (`target_arch`, `target_os`, `target_os_family`, `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`, `kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`) are generated and spliced in by the driver (`generate_platform_target_accessors`/`assemble_platform_module_source`, `src/driver/driver.cpp`) at compile time, each embedding its value as a literal directly in the function body. They cannot be declared in the checked-in file itself — a module path can only be declared by one file — and are generated as functions rather than `pub static` constants because of a bytecode-lowering bug with that alternative (see `generate_platform_target_accessors`'s doc comment). `target_os_family()` in particular is classified in C++ (`detect_target_os`) and baked in directly, rather than computed at runtime from `target_os()`'s string, because neither backend implements `str ==` yet for the general case.
+Some of this module's declarations are not present in the checked-in `src/std/platform.cn` source: the target/build-info accessor functions (`target_arch`, `target_os`, `target_os_family`, `target_vendor`, `target_env`, `target_endianness`, `target_pointer_width`, `kira_version`, `kira_implementation`, `kira_compiler`, `kira_build_date`) are generated and spliced in by the driver (`generate_platform_target_accessors`/`assemble_platform_module_source`, `src/driver/driver.cpp`) at compile time, each embedding its value as a literal directly in the function body. They cannot be declared in the checked-in file itself — a module path can only be declared by one file — and are generated as functions rather than `pub static` constants because of a bytecode-lowering bug with that alternative (see `generate_platform_target_accessors`'s doc comment). `target_os_family()` in particular is classified in C++ (`detect_target_os`) and baked in directly, rather than computed at runtime from `target_os()`'s string, because neither backend implements `str ==` yet for the general case.
 
 ## Types
 
@@ -125,7 +125,7 @@ pub def release() -> result[str, io_error]:
 
 `version()` follows the same shape, formatting `"{major}.{minor}.{build}"` on the Windows arm.
 
-Error propagation throughout this module uses `?`, not `.map`/`.map_err`/`.ok()`: `?` is Kira's one propagation primitive, and converts a failing intrinsic's `io_errno` to `io_error` implicitly via `impl from[io_errno] for io_error` (see [`std.io`](54-std-io.md)). Swallowing an error into `option` instead of propagating it is spelled with an explicit `match` (see `result_to_option` below).
+Error propagation throughout this module uses `?`, not `.map`/`.map_err`/`.ok()`: `?` is Cinder's one propagation primitive, and converts a failing intrinsic's `io_errno` to `io_error` implicitly via `impl from[io_errno] for io_error` (see [`std.io`](54-std-io.md)). Swallowing an error into `option` instead of propagating it is spelled with an explicit `match` (see `result_to_option` below).
 
 ## Cross-platform convenience
 

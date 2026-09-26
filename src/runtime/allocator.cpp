@@ -12,7 +12,7 @@
 namespace kira::runtime {
 namespace {
 
-/// Rounds a byte count up to the 8-byte granularity every Kira heap block is
+/// Rounds a byte count up to the 8-byte granularity every Cinder heap block is
 /// sized and aligned at (`spec/codegen-design.md` Decision 3's uniform
 /// 8-byte slot). Doing it here rather than in each caller means a `realloc`
 /// that grows a block by less than a slot is a no-op in `system` mode too,
@@ -22,14 +22,14 @@ namespace {
 }
 
 [[noreturn]] void out_of_memory(uint64_t bytes) {
-  // No Kira-level failure channel exists for allocation yet (`rt_alloc`
+  // No Cinder-level failure channel exists for allocation yet (`rt_alloc`
   // returns a bare `*mut byte`, not a `result`), so this aborts rather than
   // handing generated code a null it has no way to check. Phrased like a
   // compiler diagnostic because it is the user who sees it.
   std::println(stderr,
                "kira: out of memory\n"
                "  could not allocate {} bytes\n"
-               "  note: Kira's allocator has no failure channel yet, so an "
+               "  note: Cinder's allocator has no failure channel yet, so an "
                "allocation that cannot be satisfied terminates the process",
                bytes);
   std::abort();
@@ -65,7 +65,7 @@ extern "C" auto kira_heap_alloc(uint64_t bytes) -> void * {
   // aggregate by allocating its slot block and storing only the fields that
   // have an initializer, so the zeroing is load-bearing, and `calloc` can
   // get it from fresh pages for free. Alignment: every platform's `calloc`
-  // returns memory aligned for `max_align_t` (>= 8 everywhere Kira builds),
+  // returns memory aligned for `max_align_t` (>= 8 everywhere Cinder builds),
   // which is what the 8-byte slot invariant needs.
   void *const block = std::calloc(size, 1);
   if (block == nullptr) {
@@ -142,5 +142,5 @@ extern "C" auto kira_rt_realloc(uint64_t *ptr, uint64_t old_bytes,
 
 extern "C" auto kira_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t * {
   kira_heap_free(ptr, bytes);
-  return nullptr; // Kira `unit`; see allocator.h.
+  return nullptr; // Cinder `unit`; see allocator.h.
 }

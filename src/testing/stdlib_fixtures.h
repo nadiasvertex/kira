@@ -3,7 +3,7 @@
 // Shared stdlib injection for tests that drive `check_program` directly.
 //
 // `list`, `option`, `result` and friends are not compiler builtins: they are
-// ordinary Kira types declared in `src/std/*.kira` and found through the
+// ordinary Cinder types declared in `src/std/*.cn` and found through the
 // prelude (`checker::find_prelude_type`). A test that checks a bare module on
 // its own therefore cannot so much as name `list[int32]` — it gets
 // "undefined type `list`" — which is why every harness that calls
@@ -32,7 +32,7 @@ namespace kira::testing {
 
 /// One injected stdlib source: the path it is registered under, and its text.
 struct stdlib_source {
-  std::string path; ///< Session path, e.g. `std/list.kira`.
+  std::string path; ///< Session path, e.g. `std/list.cn`.
   std::string text; ///< File contents.
 };
 
@@ -67,42 +67,42 @@ inline auto find_std_dir() -> fs::path {
 /// index is built before any file is checked — but keeping it identical to
 /// `inject_stdlib_prelude`'s makes drift between the two obvious.
 ///
-/// Two of the driver's files are deliberately absent. `platform.kira` is not
+/// Two of the driver's files are deliberately absent. `platform.cn` is not
 /// injected verbatim by the driver either: it is spliced together with a
 /// generated `TARGET_*`/`KIRA_*` constants block
 /// (`assemble_platform_module_source`), which only the driver can produce,
 /// and reproducing that here would drag `//src/driver` (and LLVM with it)
-/// into every semantic test. `fs/path.kira` is its only consumer in the
+/// into every semantic test. `fs/path.cn` is its only consumer in the
 /// stdlib, so it goes too. A test that needs either should go through the
 /// driver (`src/cli_test.cpp`) instead.
 inline auto stdlib_filenames() -> std::span<const char *const> {
   static constexpr std::array names = {
-      "intrinsics.kira",
-      "traits.kira",
-      "traits.ord.kira",
-      "traits.show.kira",
-      "traits.numeric.kira",
-      "traits.conversion.kira",
-      "traits.category.kira",
-      "traits.index.kira",
-      "traits.hash.kira",
-      "limits.kira",
-      "iter.kira",
-      "prelude.kira",
-      "panic.kira",
-      "option.kira",
-      "result.kira",
-      "mem.kira",
-      "list.kira",
-      "io.kira",
-      "console.kira",
-      "algo.kira",
-      "fmt.kira",
-      "unicode_tables.kira",
-      "unicode.kira",
-      "string.kira",
-      "deriving.kira",
-      "test.kira",
+      "intrinsics.cn",
+      "traits.cn",
+      "traits.ord.cn",
+      "traits.show.cn",
+      "traits.numeric.cn",
+      "traits.conversion.cn",
+      "traits.category.cn",
+      "traits.index.cn",
+      "traits.hash.cn",
+      "limits.cn",
+      "iter.cn",
+      "prelude.cn",
+      "panic.cn",
+      "option.cn",
+      "result.cn",
+      "mem.cn",
+      "list.cn",
+      "io.cn",
+      "console.cn",
+      "algo.cn",
+      "fmt.cn",
+      "unicode_tables.cn",
+      "unicode.cn",
+      "string.cn",
+      "deriving.cn",
+      "test.cn",
   };
   return names;
 }

@@ -6,7 +6,7 @@ module std.unicode_tables
 # SpecialCasing.txt). See that script's module doc comment for
 # the exact table shapes and the regeneration command.
 #
-# Every KEY array is sorted ascending -- src/std/unicode.kira's
+# Every KEY array is sorted ascending -- src/std/unicode.cn's
 # lookups depend on this for binary search.
 
 # --- Simple (1:1) case mapping ------------------------------

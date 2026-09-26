@@ -7,8 +7,8 @@ module main
 #  A simplified timsort: natural runs are detected, extended by insertion
 #  sort, then merged bottom-up.
 #
-#  Run it:      kira demo/algorithm-stable_sort.kira
-#  Compile it:  kira --compile -o algorithm-stable_sort demo/algorithm-stable_sort.kira
+#  Run it:      kira demo/algorithm-stable_sort.cn
+#  Compile it:  kira --compile -o algorithm-stable_sort demo/algorithm-stable_sort.cn
 # ==========================================================================
 
 def main() -> int32:

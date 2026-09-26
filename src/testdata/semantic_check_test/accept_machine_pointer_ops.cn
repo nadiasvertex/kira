@@ -1,6 +1,6 @@
 module sample
 
-# The same operations `reject_raw_pointer_outside_machine.kira` refuses, all
+# The same operations `reject_raw_pointer_outside_machine.cn` refuses, all
 # accepted inside a `machine` function — the gate is on the enclosing
 # function's modifier, not on the operation being unusual.
 

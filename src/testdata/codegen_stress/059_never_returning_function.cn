@@ -2,11 +2,11 @@ module main
 
 # expect: 42
 
-# A Kira function whose return type is `never`.
+# A Cinder function whose return type is `never`.
 #
 # `never` reached the backends only as the *intrinsic* `rt_panic`'s return
 # type, which the LLVM tier emits from its own C-ABI declaration rather than
-# from a Kira signature. The moment an ordinary `def` returned `never` — as
+# from a Cinder signature. The moment an ordinary `def` returned `never` — as
 # `std.panic`'s `panic` wrapper does — AOT failed with "return type of `panic`
 # has no scalar or heap-value llvm_codegen representation yet", because
 # `storage_llvm_type` had no case for it.

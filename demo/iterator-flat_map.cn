@@ -6,8 +6,8 @@ module main
 #  Equivalent to `map` followed by `flatten`, but as a single adapter: each
 #  element expands into zero or more output elements.
 #
-#  Run it:      kira demo/iterator-flat_map.kira
-#  Compile it:  kira --compile -o iterator-flat_map demo/iterator-flat_map.kira
+#  Run it:      kira demo/iterator-flat_map.cn
+#  Compile it:  kira --compile -o iterator-flat_map demo/iterator-flat_map.cn
 # ==========================================================================
 
 # Expand each n into [n*10, n*10+1, ... n*10+(n-1)]

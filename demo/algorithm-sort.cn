@@ -6,8 +6,8 @@ module main
 #  Not guaranteed stable. Uses a byte-radix sort for builtin integer types
 #  and introsort (quicksort with a heapsort fallback) otherwise.
 #
-#  Run it:      kira demo/algorithm-sort.kira
-#  Compile it:  kira --compile -o algorithm-sort demo/algorithm-sort.kira
+#  Run it:      kira demo/algorithm-sort.cn
+#  Compile it:  kira --compile -o algorithm-sort demo/algorithm-sort.cn
 # ==========================================================================
 
 def print_ints(label: str, s: &slice[int32]) -> unit:

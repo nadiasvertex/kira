@@ -2,7 +2,7 @@
 //
 // The assertion that earns this file its place is `test_zonk_is_canonical`:
 // a zonked type must be *id-equal* to the same type written directly. The
-// whole engine rests on that — Kira's dependent fragment is canonical by
+// whole engine rests on that — Cinder's dependent fragment is canonical by
 // construction, which is why unification never needs a definitional-equality
 // check, and that property survives only if every solution is substituted
 // back through the `type_table`'s constructors rather than patched in place.

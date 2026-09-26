@@ -254,7 +254,7 @@ enum class opcode : uint8_t {
 
   // --- Heap values (spec/codegen-design.md increment 6) -------------------
   //
-  //  Every non-scalar Kira value (`str`, `list[T]`, fixed `array[T, N]`,
+  //  Every non-scalar Cinder value (`str`, `list[T]`, fixed `array[T, N]`,
   //  tuple, struct, sum-type payload, closure) is a single pointer into
   //  `src/runtime/arena.h`'s bump allocator (Decision 3); `slot_value`'s
   //  existing `u` field holds it, reinterpreted as an address — no new

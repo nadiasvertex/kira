@@ -1,5 +1,5 @@
 (* ================================================================= *)
-(*  Kira Language — Formal EBNF Grammar                              *)
+(*  Cinder Language — Formal EBNF Grammar                              *)
 (*                                                                   *)
 (*  Notation                                                         *)
 (*    rule = body ;          definition                              *)
@@ -13,7 +13,7 @@
 (*    (* comment *)          comment                                 *)
 (*                                                                   *)
 (*  Indentation                                                      *)
-(*    Kira uses significant indentation. The terminals INDENT,       *)
+(*    Cinder uses significant indentation. The terminals INDENT,       *)
 (*    DEDENT, and NEWLINE are emitted by the lexer and represent     *)
 (*    the increase, decrease, and continuation of indentation        *)
 (*    levels respectively. A NEWLINE that is followed by an INDENT   *)
@@ -737,7 +737,7 @@ quote_expr  = "`" "(" quoted_content ")" "`"
             | "`" quoted_content "`"
             ;
 
-quoted_content = (* any sequence of Kira tokens, with balanced brackets,
+quoted_content = (* any sequence of Cinder tokens, with balanced brackets,
                     may itself contain splice_expr for interpolation     *) ;
 
 splice_expr = "~" "(" expr ")" | "~" IDENT ;
@@ -1017,7 +1017,7 @@ DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
       static-for, and the static_expr form inside expressions. The
       token following "static" determines which production applies.
 
-  4.  Backtick quote regions may contain any Kira tokens including
+  4.  Backtick quote regions may contain any Cinder tokens including
       nested quotes and splice expressions. The parser maintains a
       quote depth counter; a "~" at depth > 0 is a splice, at depth
       0 it is a unary operator.

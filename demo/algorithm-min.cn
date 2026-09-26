@@ -5,8 +5,8 @@ module main
 #
 #  Both use the element type's own ordering; `@none` on an empty iterator.
 #
-#  Run it:      kira demo/algorithm-min.kira
-#  Compile it:  kira --compile -o algorithm-min demo/algorithm-min.kira
+#  Run it:      kira demo/algorithm-min.cn
+#  Compile it:  kira --compile -o algorithm-min demo/algorithm-min.cn
 # ==========================================================================
 
 def main() -> int32:

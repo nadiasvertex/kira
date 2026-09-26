@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-A single `type_kind` classification primitive and a small set of member-enumeration queries over Kira's existing reflection surface.
+A single `type_kind` classification primitive and a small set of member-enumeration queries over Cinder's existing reflection surface.
 
 ## Scope
 
@@ -63,10 +63,10 @@ Trait.requires() -> list[str]     # names of traits a trait's own `requires` cla
 
 ## What's deliberately out of scope
 
-- **Splicers and `std::meta::info` handles.** Kira's quote/splice fragments (`expr`, `type_expr`, `def_expr`, `stmt`) already play this role; introducing a second, more general reflection-handle type alongside them would be two mechanisms doing one job.
-- **`define_aggregate` / synthesizing a struct's field list from reflected data.** No Kira construct emits a new type declaration at compile time today (only new `impl`s and functions, via `def_expr`); adding one is a much larger feature than this chapter's scope and belongs, if ever built, in [Compile-Time Execution](../../03-advanced/31-compile-time-execution.md).
-- **Annotations.** C++26 attaches arbitrary compile-time values to a declaration for later reflection; Kira has no attribute syntax to attach them through, and no forcing use case in the existing stdlib.
-- **Namespace/access-specifier reflection.** Kira's only visibility axis is `pub`/private, already exposed on function and type descriptors as `is_pub` ([Modules as Compile-Time Values](../../03-advanced/36-modules-as-compile-time-values.md#reflecting-on-a-module)); there is no separate namespace concept to reflect over.
+- **Splicers and `std::meta::info` handles.** Cinder's quote/splice fragments (`expr`, `type_expr`, `def_expr`, `stmt`) already play this role; introducing a second, more general reflection-handle type alongside them would be two mechanisms doing one job.
+- **`define_aggregate` / synthesizing a struct's field list from reflected data.** No Cinder construct emits a new type declaration at compile time today (only new `impl`s and functions, via `def_expr`); adding one is a much larger feature than this chapter's scope and belongs, if ever built, in [Compile-Time Execution](../../03-advanced/31-compile-time-execution.md).
+- **Annotations.** C++26 attaches arbitrary compile-time values to a declaration for later reflection; Cinder has no attribute syntax to attach them through, and no forcing use case in the existing stdlib.
+- **Namespace/access-specifier reflection.** Cinder's only visibility axis is `pub`/private, already exposed on function and type descriptors as `is_pub` ([Modules as Compile-Time Values](../../03-advanced/36-modules-as-compile-time-values.md#reflecting-on-a-module)); there is no separate namespace concept to reflect over.
 
 ## Implementation status
 

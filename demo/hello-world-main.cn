@@ -4,12 +4,12 @@ module main
 #  Hello, world — with an explicit `def main() -> unit`.
 #
 #  The conventional entry point: a module with a `main` function is run by
-#  calling it, just like `hello-world.kira`'s bare top-level statement, but
+#  calling it, just like `hello-world.cn`'s bare top-level statement, but
 #  with a return type and (elsewhere) the option of returning an int32
 #  exit code instead of `unit`.
 #
-#  Run it:      kira demo/hello-world-main.kira
-#  Compile it:  kira --compile -o hello-world-main demo/hello-world-main.kira
+#  Run it:      kira demo/hello-world-main.cn
+#  Compile it:  kira --compile -o hello-world-main demo/hello-world-main.cn
 # ==========================================================================
 
 def main() -> unit:

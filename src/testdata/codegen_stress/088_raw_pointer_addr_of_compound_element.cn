@@ -3,14 +3,14 @@ module codegen_stress.raw_pointer_addr_of_compound_element
 # `&mut p[i]`/`&p[i]` on a raw pointer whose element type is *compound*
 # (heap-boxed on both backends: a struct, sum, tuple, array — anything
 # `is_heap_pointer_value` says yes to) — regression for a real bug found
-# building `list[T]`'s `index[range[usize]]` impl (`src/std/list.kira`,
+# building `list[T]`'s `index[range[usize]]` impl (`src/std/list.cn`,
 # `&mut self.data[i.start]`), which crashed `std.algo`'s `sort_by` over a
 # `list[(int32, int32)]` with a bad-memory-access SIGBUS on the bytecode
 # tier and silent corruption on LLVM.
 #
 # `compile_unary`'s `&`/`&mut` shortcut for an already-heap-boxed operand
 # (`is_heap_pointer_value`, both backends) is correct for an *ordinary*
-# place of compound type — a Kira reference to something already
+# place of compound type — a Cinder reference to something already
 # heap-boxed is bit-identical to the boxed value, nothing to compute — but
 # wrong for `p[i]` with `p` a raw pointer: the machine layer defines `&p[i]`
 # as "the offset address" (`spec/specification/03-advanced/

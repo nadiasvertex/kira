@@ -69,7 +69,7 @@ struct cli_config {
       std::string(k_default_run_function); ///< Zero-argument function to
                                            ///< execute when `run` is set.
   bool build = false; ///< Compile to a native object file via
-                      ///< `src/llvm_codegen`, link it against Kira's AOT
+                      ///< `src/llvm_codegen`, link it against Cinder's AOT
                       ///< runtime support library, and produce a standalone
                       ///< executable (`spec/codegen-design.md` increment 4).
                       ///< Requested via `--compile`.
@@ -116,7 +116,7 @@ struct compile_report {
                                    bool use_color = false)
     -> std::expected<compile_report, std::string>;
 
-/// Appends `prelude.kira`, `std/traits.kira`, and the rest of the stdlib
+/// Appends `prelude.cn`, `std/traits.cn`, and the rest of the stdlib
 /// prelude files (found next to the running binary via the same
 /// bundled-data search `find_bazel_archive` uses) to `cfg.sources`, unless
 /// a source with the same resolved path is already

@@ -7,8 +7,8 @@ module main
 #  too, but it's unimplemented in the compiler right now — this demo sticks
 #  to the plain heap-box form, `box[T]`.
 #
-#  Run it:      kira demo/traits-is_box.kira
-#  Compile it:  kira --compile -o traits-is_box demo/traits-is_box.kira
+#  Run it:      kira demo/traits-is_box.cn
+#  Compile it:  kira --compile -o traits-is_box demo/traits-is_box.cn
 # ==========================================================================
 
 use std.traits.is_box

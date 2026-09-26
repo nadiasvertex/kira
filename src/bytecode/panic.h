@@ -38,7 +38,7 @@ enum class panic_reason : uint8_t {
 
 /// Exit status of a program killed by a panic, whichever tier ran it and
 /// whichever panic it was — the compiler-emitted kind (`raise_panic` below,
-/// `kira_codegen_panic` in the AOT runtime) and the Kira-level kind
+/// `kira_codegen_panic` in the AOT runtime) and the Cinder-level kind
 /// (`std.panic.panic` -> `kira_rt_panic`, `src/runtime/io.cpp`).
 ///
 /// 101 rather than `abort`'s 134: it is the convention several other
@@ -57,7 +57,7 @@ inline constexpr int k_panic_exit_code = 101;
 /// program's own idea of a container's extent was wrong, and there is no
 /// recovery that does not amount to guessing. Treating it as fatal is also
 /// what makes every container agree: `list[T]`'s bounds check is ordinary
-/// Kira calling `std.panic.panic` (`src/std/list.kira`), which has always
+/// Cinder calling `std.panic.panic` (`src/std/list.cn`), which has always
 /// aborted, while `array[T, N]`/`slice[T]`/`str` are checked by a
 /// compiler-emitted opcode that used to unwind — so the same mistake
 /// behaved differently depending on which container it was made against.

@@ -4,8 +4,8 @@ module main
 #  `algorithm.upper_bound` — the index of the first element greater than a
 #  target, over an ascending-sorted slice.
 #
-#  Run it:      kira demo/algorithm-upper_bound.kira
-#  Compile it:  kira --compile -o algorithm-upper_bound demo/algorithm-upper_bound.kira
+#  Run it:      kira demo/algorithm-upper_bound.cn
+#  Compile it:  kira --compile -o algorithm-upper_bound demo/algorithm-upper_bound.cn
 # ==========================================================================
 
 def main() -> int32:

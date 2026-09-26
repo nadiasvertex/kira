@@ -21,9 +21,9 @@ Three layers:
 
   Not-found is signaled by `find_result = { found: bool, pos: usize }`, not a sentinel value and not a native-side `option` construction.
 
-- **Layer 2 — `std.unicode`/`std.unicode_tables`, pure Kira** (`src/std/unicode.kira`, `src/std/unicode_tables.kira`). Case mapping and folding are *not* a native intrinsic — they're ordinary Kira over generated Unicode Character Database (UCD) lookup tables. `tools/unicode/gen_case_tables.py` parses `UnicodeData.txt`/`CaseFolding.txt`/`SpecialCasing.txt` and emits `unicode_tables.kira`'s `static` arrays (simple 1:1 mappings, full multi-code-point mappings, full case-folding mappings, and the `cased`/`case-ignorable` code-point ranges Final_Sigma needs); `unicode.kira` decodes a `str`'s UTF-8 bytes by hand (`str.as_bytes()` plus a byte-cursor scalar decoder — see Implementation status for why not `for c in s`), binary-searches those tables (reusing `std.algo`'s `binary_search`/`partition_point`), and re-encodes results.
+- **Layer 2 — `std.unicode`/`std.unicode_tables`, pure Cinder** (`src/std/unicode.cn`, `src/std/unicode_tables.cn`). Case mapping and folding are *not* a native intrinsic — they're ordinary Cinder over generated Unicode Character Database (UCD) lookup tables. `tools/unicode/gen_case_tables.py` parses `UnicodeData.txt`/`CaseFolding.txt`/`SpecialCasing.txt` and emits `unicode_tables.cn`'s `static` arrays (simple 1:1 mappings, full multi-code-point mappings, full case-folding mappings, and the `cased`/`case-ignorable` code-point ranges Final_Sigma needs); `unicode.cn` decodes a `str`'s UTF-8 bytes by hand (`str.as_bytes()` plus a byte-cursor scalar decoder — see Implementation status for why not `for c in s`), binary-searches those tables (reusing `std.algo`'s `binary_search`/`partition_point`), and re-encodes results.
 
-- **Layer 3 — `extend str` composition** (`src/std/string.kira`, Kira source). Expresses the public API as composition over Layers 1 and 2: `starts_with`/`ends_with` are one anchored comparison each, `contains` is `find(...).is_some()`, `split` loops over `find` yielding zero-copy sub-slices, `to_uppercase`/`to_lowercase`/`fold_case` forward to `std.unicode`, `eq_ignore_case` folds both sides and compares.
+- **Layer 3 — `extend str` composition** (`src/std/string.cn`, Cinder source). Expresses the public API as composition over Layers 1 and 2: `starts_with`/`ends_with` are one anchored comparison each, `contains` is `find(...).is_some()`, `split` loops over `find` yielding zero-copy sub-slices, `to_uppercase`/`to_lowercase`/`fold_case` forward to `std.unicode`, `eq_ignore_case` folds both sides and compares.
 
 ## Public API
 
@@ -48,7 +48,7 @@ extend str:
     pub def split(self, sep: str) -> list[str]
 ```
 
-`impl add for str` (`src/std/string.kira`) also gives `str` a `+` operator backed by `rt_str_concat`, distinct from the `extend str` method table above. `eq` is a named method distinct from `==`; `==`/`!=` for `str` dispatch to it.
+`impl add for str` (`src/std/string.cn`) also gives `str` a `+` operator backed by `rt_str_concat`, distinct from the `extend str` method table above. `eq` is a named method distinct from `==`; `==`/`!=` for `str` dispatch to it.
 
 ## Method semantics
 
@@ -79,11 +79,11 @@ extend str:
 ## Example
 
 ```kira
-let s = "  Hello, Kira  "
-s.trim()                        # "Hello, Kira"
+let s = "  Hello, Cinder  "
+s.trim()                        # "Hello, Cinder"
 s.trim().to_uppercase()         # "HELLO, KIRA"
-s.contains("Kira")              # true
-s.find("Kira")                  # @some(9), a byte offset into s
+s.contains(" Cinder")              # true
+s.find(" Cinder")                  # @some(9), a byte offset into s
 "a::b".split(":")                # ["a", "", "b"]
 "abc".replace("b", "XY")         # "aXYc"
 "straße".to_uppercase()           # "STRASSE"
@@ -102,14 +102,14 @@ These are permanent v1 scope limits, not pending work (`spec/todo.md` tracks the
 
 ## Implementation status
 
-Both compiler backends (bytecode VM and LLVM/AOT) share the `rt_str_*` intrinsics from a single dispatch table (`src/intrinsics.h`), confirmed present in `src/runtime/string.{h,cpp}` and `src/bytecode/vm.cpp`. `to_uppercase`/`to_lowercase`/`fold_case`/`eq_ignore_case` are *not* in that dispatch table — they compile as ordinary Kira (`src/std/unicode.kira`/`unicode.kira`'s tables), so both backends get them automatically, with no C++ counterpart to keep in sync. `rt_str_to_upper`/`rt_str_to_lower`, the hand-rolled ASCII/Latin-1/Greek/Cyrillic-only C++ intrinsics this chapter previously ran on, have been removed entirely. The `extend str` layer (`src/std/string.kira`) matches the public API above exactly, plus the additional `impl add for str` operator overload noted above, which is not part of `std-reference.md`'s original API table.
+Both compiler backends (bytecode VM and LLVM/AOT) share the `rt_str_*` intrinsics from a single dispatch table (`src/intrinsics.h`), confirmed present in `src/runtime/string.{h,cpp}` and `src/bytecode/vm.cpp`. `to_uppercase`/`to_lowercase`/`fold_case`/`eq_ignore_case` are *not* in that dispatch table — they compile as ordinary Cinder (`src/std/unicode.cn`/`unicode.cn`'s tables), so both backends get them automatically, with no C++ counterpart to keep in sync. `rt_str_to_upper`/`rt_str_to_lower`, the hand-rolled ASCII/Latin-1/Greek/Cyrillic-only C++ intrinsics this chapter previously ran on, have been removed entirely. The `extend str` layer (`src/std/string.cn`) matches the public API above exactly, plus the additional `impl add for str` operator overload noted above, which is not part of `std-reference.md`'s original API table.
 
 This chapter's case-mapping/folding rewrite needed one real compiler fix along the way: `std.unicode_tables`'s generated `static` lookup tables are reached only through `std.unicode`'s functions reading a global, never through a function call into `std.unicode_tables` itself (it declares no functions) — `hir::find_reachable_modules`'s dependency walker had no case for `hir_global_ref` at all, so a module reached *only* through a global reference silently never made it into the compiled program, and every reference to one of its globals failed at bytecode/AOT compile time despite type-checking cleanly. Fixed by giving `hir_global_ref` an `owner_module` field (mirroring `hir_local_ref`'s) and adding the missing walker case; regression test: `src/hir/link_test.cpp`'s `test_discovers_dependency_reached_only_through_a_global`.
 
 Two further gaps were found but deliberately *not* fixed here, as out of scope for this chapter:
 
 - **`for c in s` does not actually decode UTF-8.** Despite this chapter's own "Model" section (and `std.unicode`'s original design) assuming a `for`-loop over a `str` yields decoded Unicode scalars, `str` has no `next(mut self)` method for the general user-iterator desugaring to dispatch to, so it falls through to `hir::lowerer::lower_indexed_loop` — the same byte-indexed loop shape used for `array`/`list`/`slice` — which indexes raw bytes, not scalars. Confirmed by probing `for c in "straße": println(c as uint32)`, which prints `ß`'s two raw continuation bytes (195, 159) instead of its scalar value (223). `std.unicode` works around this by decoding UTF-8 by hand over `str.as_bytes()` instead of using `for`. Fixing the `for`-loop desugaring itself needs new HIR-lowering machinery and is tracked separately (`spec/todo.md`).
-- **`\u{XXXX}` string escapes mis-trigger the interpolation scanner.** `has_interpolation`/`scan_interpolated_content` (`src/parser/interp_string.cpp`) skip exactly one character past a backslash for every escape, which is correct for `\n`/`\"`/etc. but wrong for the variable-width `\u{...}` escape: the `{` right after `\u` gets mistaken for the start of a real interpolation hole. A string literal containing `\u{...}` therefore fails to parse at all (reported as an "invalid escape sequence", or an unterminated interpolation, depending on what follows). Worked around in this chapter's own tests by typing non-ASCII characters directly into the `.kira` source files as UTF-8 rather than via the escape. Tracked separately (`spec/todo.md`).
+- **`\u{XXXX}` string escapes mis-trigger the interpolation scanner.** `has_interpolation`/`scan_interpolated_content` (`src/parser/interp_string.cpp`) skip exactly one character past a backslash for every escape, which is correct for `\n`/`\"`/etc. but wrong for the variable-width `\u{...}` escape: the `{` right after `\u` gets mistaken for the start of a real interpolation hole. A string literal containing `\u{...}` therefore fails to parse at all (reported as an "invalid escape sequence", or an unterminated interpolation, depending on what follows). Worked around in this chapter's own tests by typing non-ASCII characters directly into the `.cn` source files as UTF-8 rather than via the escape. Tracked separately (`spec/todo.md`).
 
 ## See also
 

@@ -17,7 +17,7 @@ Neither type exists in `src/std` today. This chapter describes the two-phase des
 - Lookup — O(log n), by binary search over `keys`.
 - Insert/remove — O(n), by `memmove`-style shifting of both parallel lists.
 
-Roughly 150 lines of Kira; it exercises `K: ord` end to end, and below about a thousand elements it outperforms a B-tree regardless. It ships the complete API immediately, before phase two lands.
+Roughly 150 lines of Cinder; it exercises `K: ord` end to end, and below about a thousand elements it outperforms a B-tree regardless. It ships the complete API immediately, before phase two lands.
 
 **Phase two** replaces the internals behind an unchanged public API with a **B-tree**, order B = 6 (five to eleven keys per node). Chosen over a red-black tree because a B-tree node's payload is `array[K, 11]` plus a length — which the existing const-generic support already handles — whereas a red-black tree needs option-of-node-pointer chasing and colour invariants that are considerably harder to get right without a borrow checker.
 

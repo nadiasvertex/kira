@@ -5,7 +5,7 @@ use std.traits.type_category
 #: `T`'s bit width: 8, 16, 32, or 64.
 #:
 #: `int128`/`uint128`/`float128` are deliberately absent, matching
-#: `std.traits.hash`'s own scalar impls (`src/std/traits.kira`): the
+#: `std.traits.hash`'s own scalar impls (`src/std/traits.cn`): the
 #: bytecode VM has no representation for them, and a reachable module
 #: compiles in full, so a query that mentioned them would fail every
 #: program that reaches this file, not just ones that call it with a

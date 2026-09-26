@@ -1,5 +1,5 @@
 error: type mismatch: expected `vec[T, n + 1]`, found `vec[int32, 0]`
-  --> 002_dependent_length_unsatisfiable.kira:12:10
+  --> 002_dependent_length_unsatisfiable.cn:12:10
    12 |     head(v)
       |          ^ expected `vec[T, n + 1]` for this argument
   help: `n + 1` can never equal `0` for `n: usize` — there is no value of `n` that would make these lengths agree.

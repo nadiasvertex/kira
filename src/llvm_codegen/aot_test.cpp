@@ -63,7 +63,7 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
     -> void {
   auto sources = kira::source_manager{};
   auto diag = kira::diagnostic_bag{};
-  const auto file_id = sources.add_file("sample.kira", text);
+  const auto file_id = sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
   const auto *file = sources.get(*file_id);
 

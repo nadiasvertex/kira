@@ -6,8 +6,8 @@ module main
 #  Drains the iterator purely to count; combine with `filter` to count
 #  elements matching a condition.
 #
-#  Run it:      kira demo/algorithm-count.kira
-#  Compile it:  kira --compile -o algorithm-count demo/algorithm-count.kira
+#  Run it:      kira demo/algorithm-count.cn
+#  Compile it:  kira --compile -o algorithm-count demo/algorithm-count.cn
 # ==========================================================================
 
 def main() -> int32:

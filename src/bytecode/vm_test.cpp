@@ -762,7 +762,7 @@ auto test_intrinsic_rt_write_and_rt_read_round_trip_through_a_pipe() -> void {
   // this test can confirm *both* intrinsics returned `@ok(...)` (tag 0) —
   // not just that some payload came back — without needing branchy
   // unwrap-or-panic bytecode; the real `@ok`/`@err` unwrap path is exercised
-  // through real Kira `match` syntax in
+  // through real Cinder `match` syntax in
   // src/bytecode_compiler/compile_test.cpp instead.
   int fds[2] = {-1, -1};
   expect(::pipe(fds) == 0, "expected pipe() to succeed");
@@ -899,7 +899,7 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
   //                    truncate})           // result[raw_fd, io_errno]
   //   return r.tag * 1000000 + r.payload.code
   // }
-  const std::string path = "/definitely/does/not/exist/kira-vm-test.kira";
+  const std::string path = "/definitely/does/not/exist/kira-vm-test.cn";
 
   auto writer = bc::chunk_writer{};
   // r7 = { len: r0, data_ptr: r1 } — the path string.

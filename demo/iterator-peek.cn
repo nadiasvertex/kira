@@ -7,8 +7,8 @@ module main
 #  `peek()` calls return the same element until a `next()` actually
 #  advances the iterator.
 #
-#  Run it:      kira demo/iterator-peek.kira
-#  Compile it:  kira --compile -o iterator-peek demo/iterator-peek.kira
+#  Run it:      kira demo/iterator-peek.cn
+#  Compile it:  kira --compile -o iterator-peek demo/iterator-peek.cn
 # ==========================================================================
 
 def main() -> int32:

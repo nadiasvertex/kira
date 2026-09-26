@@ -6,7 +6,7 @@ Covers the built-in `str` type, string literal interpolation and escape sequence
 
 ## `str`
 
-Kira strings are UTF-8. `str` literals support interpolation with `{...}`, evaluated and formatted in place:
+ Cinder strings are UTF-8. `str` literals support interpolation with `{...}`, evaluated and formatted in place:
 
 ```kira
 let name = "World"

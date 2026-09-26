@@ -4,7 +4,7 @@
 
 Standard stream handle accessors and the `print`/`println`/`eprint`/`eprintln` functions.
 
-`std.console` (`src/std/console.kira`) is a thin layer over [`std.io`](54-std-io.md): every function here is a direct call into `std.io`'s handle constructors and `writer` trait.
+`std.console` (`src/std/console.cn`) is a thin layer over [`std.io`](54-std-io.md): every function here is a direct call into `std.io`'s handle constructors and `writer` trait.
 
 ## Stream handles
 

@@ -1376,7 +1376,7 @@ auto walk_static_decl(const ast::static_decl &decl, scope_id active_scope,
 /// its items to build nested scopes/symbols and record per-node scope
 /// mappings. A later file declaring a `module` path already seen earlier in
 /// `inputs` extends that module's existing scope and `module_scope_record`
-/// instead of creating a sibling one under the same name — Kira's multi-file
+/// instead of creating a sibling one under the same name — Cinder's multi-file
 /// module support, matching how C++ lets several translation units reopen
 /// the same namespace. `module_scope_record::file_id` still names only the
 /// first file, kept for diagnostics that need *a* location for the module;

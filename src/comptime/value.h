@@ -40,18 +40,18 @@ enum class value_kind : uint8_t {
   /// A reference to a `static def` function, callable from other
   /// compile-time expressions.
   closure,
-  /// A quoted expression fragment (Kira type `expr`) — a boxed
+  /// A quoted expression fragment ( Cinder type `expr`) — a boxed
   /// `const ast::expr *` into `fragment` (stored as `const ast::node *`
   /// since the four quote-value kinds share one storage field; the actual
   /// dynamic type always matches `ast::quote_expr::fragment_kind`).
   expr_fragment,
-  /// A quoted statement fragment (Kira type `stmt`).
+  /// A quoted statement fragment ( Cinder type `stmt`).
   stmt_fragment,
-  /// A quoted item/definition fragment (Kira type `def_expr`).
+  /// A quoted item/definition fragment ( Cinder type `def_expr`).
   def_expr_fragment,
-  /// A quoted type fragment (Kira type `type_expr`).
+  /// A quoted type fragment ( Cinder type `type_expr`).
   type_expr_fragment,
-  /// A synthesized pattern fragment (Kira type `pattern`) — a boxed
+  /// A synthesized pattern fragment ( Cinder type `pattern`) — a boxed
   /// `const ast::pattern *` into `fragment`, built only by the
   /// `expr.ctor_pattern(...)` AST-builder intrinsic (`eval.cpp`) and
   /// consumed only by `expr.arm(...)`. Never produced by an ordinary
@@ -75,7 +75,7 @@ enum class value_kind : uint8_t {
 };
 
 /// A compile-time value produced by `evaluator`. Integers are held as a
-/// signed 64-bit value regardless of the expression's declared Kira width
+/// signed 64-bit value regardless of the expression's declared Cinder width
 /// — by the time the evaluator runs, `checker::infer_expr` has already
 /// validated the expression against its declared type, so the evaluator
 /// itself doesn't need to re-derive or enforce width/signedness; it only

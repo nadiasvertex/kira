@@ -6,8 +6,8 @@ module main
 #  `.peekable()` adds a `peek()` method that returns the next element
 #  without consuming it, alongside the normal `next()`.
 #
-#  Run it:      kira demo/iterator-peekable.kira
-#  Compile it:  kira --compile -o iterator-peekable demo/iterator-peekable.kira
+#  Run it:      kira demo/iterator-peekable.cn
+#  Compile it:  kira --compile -o iterator-peekable demo/iterator-peekable.cn
 # ==========================================================================
 
 def main() -> int32:

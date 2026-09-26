@@ -1,13 +1,13 @@
 module main
 
-# `list`'s direct accessors (spec/todo.md item 10), now ordinary Kira in
+# `list`'s direct accessors (spec/todo.md item 10), now ordinary Cinder in
 # `std.list` rather than `k_builtin_methods` entries the compiler typed and no
 # backend compiled.
 #
 # Only `is_empty`/`first`/`last` are covered because only those are list
 # methods now: `contains`/`any`/`all`/`find`/`filter` moved to the iterator
 # pipeline, `sort` to the slice algorithms, and `pop`/`clear` wait on Phase 7.
-# See `src/std/list.kira`.
+# See `src/std/list.cn`.
 
 def main() -> int32:
     let xs = [3, 1, 2]

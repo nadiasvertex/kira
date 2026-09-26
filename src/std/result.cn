@@ -3,7 +3,7 @@ module std.result
 # Inherent methods on `result[T, E]`, the companion to `std.option`.
 #
 # Like that module these were `k_builtin_methods` entries the compiler typed
-# but no backend compiled; they are ordinary Kira now. See `std.option`'s
+# but no backend compiled; they are ordinary Cinder now. See `std.option`'s
 # header for why the block is parameterized.
 
 use std.panic.panic

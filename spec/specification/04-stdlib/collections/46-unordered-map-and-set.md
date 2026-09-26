@@ -24,7 +24,7 @@ pub type unordered_map[K, V] = {
 - **Power-of-two capacity** with mask indexing (no modulo). Growth is triggered at 7/8 load factor.
 - **Complexity** — average O(1) per operation, worst case O(n).
 - **Hashing.** Comes from `K: hash` (returning `uint64`), but a fibonacci-multiply finalizer is applied to the hash before masking it down to a bucket index: user `hash` implementations will generally be low-quality, and linear probing is unforgiving of clustered hashes.
-- **No SIMD group-scan.** A Swiss-table-style vectorized control-byte scan would require SIMD intrinsics that do not exist in the primitive substrate, and would be the one part of the standard library not writable in portable Kira — deliberately not pursued.
+- **No SIMD group-scan.** A Swiss-table-style vectorized control-byte scan would require SIMD intrinsics that do not exist in the primitive substrate, and would be the one part of the standard library not writable in portable Cinder — deliberately not pursued.
 
 `unordered_set[K]` is named alongside `unordered_map[K, V]` in the design catalog but has no representation or API of its own written down beyond that; expect it to follow once `unordered_map` lands.
 

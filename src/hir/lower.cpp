@@ -1708,7 +1708,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
                                             std::move(args)));
     }
 
-    // A conversion call — `int32(n)`, `float64(i)` — which Kira spells like
+    // A conversion call — `int32(n)`, `float64(i)` — which Cinder spells like
     // a call because it has no cast operator in that position, but which is
     // the same operation `expr as T` lowers to (`lower_cast`). There is no
     // function being called: `check_conversion_call` types these off the

@@ -210,7 +210,7 @@ struct builtin_method_signature {
 /// *because* they are absent here — adding them would shadow that module.
 ///
 /// The direction of travel is toward nothing: `option`/`result`'s methods
-/// moved out to `std.option`/`std.result` as ordinary Kira, which is what
+/// moved out to `std.option`/`std.result` as ordinary Cinder, which is what
 /// removing their entries here made possible. Prefer writing a method in the
 /// stdlib over adding a row plus a matching interception in
 /// `hir::lower_call` (spec/collections-algorithms-design.md).
@@ -914,7 +914,7 @@ private:
       derived_trait_impls_;
   /// Derived `impl_decl` -> the span of the `type ... deriving ...` that
   /// caused it. A derived impl's own `span` points into the quote it was
-  /// built from in `src/std/deriving.kira`, so rendering a diagnostic at it
+  /// built from in `src/std/deriving.cn`, so rendering a diagnostic at it
   /// against the *user's* file id lands on an arbitrary offset in the user's
   /// source — unreadable, and exactly the kind of message this compiler's
   /// stated philosophy forbids. `impl_report_span` consults this so an
@@ -1388,7 +1388,7 @@ private:
 
   /// Emits a "type mismatch" error if `found` is not `compatible` with
   /// `expected`; a no-op otherwise. Adds a conversion hint when both sides
-  /// are numeric, since Kira never converts numbers implicitly.
+  /// are numeric, since Cinder never converts numbers implicitly.
   ///
   /// `value`, where a caller has the expression to hand, is what makes this
   /// the single chokepoint for *coercion* rather than just for shape: a value
@@ -1509,7 +1509,7 @@ private:
     // instance body synchronously (`check_instance` walks it on this same
     // C++ stack), and that body can itself reach `demand()` on a leaf of its
     // own — e.g. an unannotated parameter whose open/concrete verdict is
-    // still being probed (`096_unannotated_param_is_a_leaf.kira`). Letting a
+    // still being probed (`096_unannotated_param_is_a_leaf.cn`). Letting a
     // nested call re-enter this sequence recursed the checker onto its own
     // still-draining queues and blew the stack; the nested call instead
     // falls back to the old give-up-for-now answer, and the outer call's own
@@ -1690,7 +1690,7 @@ private:
       diag.with_help(*conflict);
     } else if (types_.is_numeric(expected) && types_.is_numeric(found)) {
       diag.with_help(std::format(
-          "Kira never converts numbers implicitly; write `{}(...)` to convert "
+          " Cinder never converts numbers implicitly; write `{}(...)` to convert "
           "this value explicitly.",
           types_.display(expected)));
     }
@@ -5882,7 +5882,7 @@ private:
   /// A leaf that is still open is reported *here*, against the literal's own
   /// line. That placement is the point: before phase 8 the alternative was a
   /// `list[?]` reaching the standard library and being reported from inside
-  /// `src/std/list.kira`, which is a diagnostic about the compiler's
+  /// `src/std/list.cn`, which is a diagnostic about the compiler's
   /// internals for a mistake in the user's own line.
   auto flush_leaf_literals() -> void {
     // Everything else first, then the defaults, one at a time. A literal
@@ -8574,7 +8574,7 @@ private:
   /// wrapping/saturating forms): both operands must be the same numeric
   /// type, or (for non-numeric operands) must implement the operator's
   /// overload trait. Reports a mismatched-numeric-types error rather than
-  /// converting either side, since Kira never converts numbers implicitly.
+  /// converting either side, since Cinder never converts numbers implicitly.
   auto infer_arithmetic(const ast::binary_expr &binary, type_id expected)
       -> type_id {
     // Operands participate as their *base* type: a `positive` is an `int32`
@@ -8689,7 +8689,7 @@ private:
           file_id_);
       diag.with_label(binary.span, "operands must have the same numeric type");
       diag.with_help(std::format(
-          "Kira never converts numbers implicitly; convert one side "
+          " Cinder never converts numbers implicitly; convert one side "
           "explicitly, e.g. `{}(...)`.",
           types_.display(lhs_final)));
       emit_diag(diag);
@@ -8792,7 +8792,7 @@ private:
   /// Wires `==`/`!=` between two `str` operands to a real call of
   /// `std.string`'s `str::eq` extend method (`rt_str_eq`-backed) — `str`
   /// has no scalar bytecode/LLVM representation for `==` to compare
-  /// directly (see `std/string.kira`'s own `eq` doc comment: "Use this
+  /// directly (see `std/string.cn`'s own `eq` doc comment: "Use this
   /// instead of `==`, which has no `str` codegen yet"). Recorded through
   /// the same `operator_dispatches_` map arithmetic operators use;
   /// `hir::lower_binary` negates the call's result for `!=` itself (it
@@ -8818,7 +8818,7 @@ private:
   }
 
   /// Infers `expr` expecting `bool` and reports an error if it isn't —
-  /// Kira has no truthiness, so every condition must be an explicit `bool`.
+  /// Cinder has no truthiness, so every condition must be an explicit `bool`.
   auto require_bool(const ast::expr &expr, std::string_view context) -> void {
     const auto found = strip_refs(infer_expr(expr, types_.builtin("bool")));
     if (!types_.is_unknown(found) && !types_.is_boolean(found)) {
@@ -8827,7 +8827,7 @@ private:
           std::format("{} must be `bool`, found `{}`", context,
                       types_.display(found)),
           "expected `bool` here",
-          "Kira has no truthiness; write an explicit comparison such as "
+          " Cinder has no truthiness; write an explicit comparison such as "
           "`x != 0` or `!list.is_empty()`.");
     }
   }
@@ -9506,7 +9506,7 @@ private:
   /// module `prelude` itself, or one of the stdlib modules it re-exports
   /// (currently `std.traits`, home of `from`/`drop`) — without requiring an
   /// explicit `use`. Every real invocation of the compiler injects
-  /// `prelude.kira`/`std/traits.kira` into the session (`compile_sources`,
+  /// `prelude.cn`/`std/traits.cn` into the session (`compile_sources`,
   /// `src/driver/driver.cpp`); a file that writes `no_prelude` opts out.
   /// Absent from a session that never included those files (most unit
   /// tests), this is simply inert.
@@ -9602,7 +9602,7 @@ private:
     // `std.traits` joins them for a narrower reason: its `ord_cmp`/`ord_then`/
     // `ord_equal` (and, for `deriving hash`, `hash_seed`/`hash_combine`/
     // `hash_value`/`hash_tag`) are the combinators a *generated* body calls
-    // (`src/std/deriving.kira`), and that body is spliced into the user's own
+    // (`src/std/deriving.cn`), and that body is spliced into the user's own
     // module, where those names have to resolve without an import the user
     // never wrote.
     static constexpr std::array<std::string_view, 4>
@@ -12226,7 +12226,7 @@ private:
       // the bare constructor `entry.name` holds: "no method `pusk` on type
       // `list`" leaves the reader to guess which `list`, and since `list`
       // stopped being a builtin and became an ordinary generic user type
-      // (`src/std/list.kira`) this arm is the one every `list` typo reaches.
+      // (`src/std/list.cn`) this arm is the one every `list` typo reaches.
       // The note and help stay on `entry.name` — an `impl` block is written
       // against the constructor, so that is the right spelling there.
       const auto display = types_.display(object);
@@ -12377,7 +12377,7 @@ private:
   }
 
   /// Types a constructor-style conversion call `target_name(value)` (e.g.
-  /// `float64(n)`), Kira's replacement for a cast operator. Reports a
+  /// `float64(n)`), Cinder's replacement for a cast operator. Reports a
   /// no-conversion-exists error when the source is a known non-numeric,
   /// non-boolean type and the target is numeric.
   auto check_conversion_call(const ast::call_expr &call,
@@ -13329,7 +13329,7 @@ private:
   /// A `*T`/`*mut T` escaping into an ordinary function is a raw-memory
   /// operation no matter which call produced it, so the gate lives here
   /// rather than on a list of blessed method names. It has to: since `list`
-  /// became an ordinary stdlib type (`src/std/list.kira`), its `as_ptr`/
+  /// became an ordinary stdlib type (`src/std/list.cn`), its `as_ptr`/
   /// `as_mut_ptr` are `pub machine def`s like any other user method, and a
   /// name-based gate over the *builtin* method table no longer sees them.
   /// Calling a `machine def` from safe code stays legal — that is how the
@@ -14414,7 +14414,7 @@ private:
 
   /// Types and desugars a `try_from` call.
   ///
-  /// Types it as `option[refined]`, and rewrites it into ordinary Kira that
+  /// Types it as `option[refined]`, and rewrites it into ordinary Cinder that
   /// any backend already knows how to lower — no new HIR node, no new opcode,
   /// no intrinsic:
   ///
@@ -15662,7 +15662,7 @@ private:
                       missing.find(',') != std::string::npos ? "s" : "",
                       missing, entry.name),
           "struct literal is incomplete",
-          "Every struct field must be initialized; Kira structs have no "
+          "Every struct field must be initialized; Cinder structs have no "
           "default field values.");
     }
 
@@ -15739,7 +15739,7 @@ private:
   /// annotation, or (failing that) from the corresponding slot of an
   /// expected `fn(...)` type; the declared/expected return type is checked
   /// against the body's inferred type. Always yields a concrete `fn(...)`
-  /// type — Kira monomorphizes closures, so there is no separate closure
+  /// type — Cinder monomorphizes closures, so there is no separate closure
   /// type distinct from the function-value type it's assigned/passed as.
   /// The set of names a lambda's body may reach across the lambda boundary,
   /// or `nullopt` when it declared no capture list (capture implicitly, the
@@ -17728,7 +17728,7 @@ private:
     // later `xs.push(v)` — so without this the literal would build a
     // `list[?]`, instantiate `list::from_array` with an unsolved `T`, and
     // surface as "cannot tell which `T` this call to `push` means" pointing
-    // into `src/std/list.kira`: a diagnostic about the standard library's
+    // into `src/std/list.cn`: a diagnostic about the standard library's
     // internals for a mistake in the user's own line.
     // A literal whose element type still carries an open leaf — `[1, 2, 3]`
     // with nothing yet saying what the `1` is. Wiring it now names
@@ -19114,7 +19114,7 @@ private:
   }
 
   /// True for a tail `while true:` — the one unit-typed statement control
-  /// never falls past, since Kira has no `break`: the loop can only be
+  /// never falls past, since Cinder has no `break`: the loop can only be
   /// left by `return`ing out of the enclosing function.
   static auto is_while_true(const ast::node &node) -> bool {
     const auto *stmt = dynamic_cast<const ast::while_stmt *>(&node);
@@ -21550,7 +21550,7 @@ private:
   /// Session-wide coherence check: for every trait impl in every module,
   /// records the (trait, target-type) pair in `impl_trait_index_` and
   /// reports a duplicate-implementation error (with both locations) if the
-  /// pair was already recorded — enforcing Kira's "at most one impl per
+  /// pair was already recorded — enforcing Cinder's "at most one impl per
   /// (trait, type)" rule. Inherent impls (no trait) are skipped since they
   /// cannot conflict by construction.
   auto validate_impl_coherence() -> void {
@@ -21776,7 +21776,7 @@ private:
           comptime_only_functions_.insert(&fn);
         }
       } else if (item->kind == ast::node_kind::type_decl) {
-        // Every `type` declaration is registered, unconditionally (Kira
+        // Every `type` declaration is registered, unconditionally ( Cinder
         // types have no "static" modifier to gate on — they're always
         // compile-time-known) — gives `comptime::evaluator::eval_call`'s
         // reflection intrinsics (`T.fields()`/etc., `reflect.cpp`) their
@@ -21891,7 +21891,7 @@ private:
   /// `check_file`'s item loop never falls through to re-evaluating it via
   /// `check_body_node`.
   /// Every `deriving`-able trait with a real `static def derive_<name>[T]()`
-  /// in `std.derive` (`src/std/deriving.kira`) — the traits that are
+  /// in `std.derive` (`src/std/deriving.cn`) — the traits that are
   /// re-derived for real, as opposed to left on the old, type-only
   /// `derived_method_result` path. That list is now all five: `hash` was the
   /// last holdout, on the theory that no builtin scalar implemented
@@ -21902,7 +21902,7 @@ private:
   /// `*`/`+` are overflow-checked and would panic on the second field. With
   /// those, `std.traits` can carry real `impl hash` blocks for the scalars
   /// and the `hash_seed`/`hash_combine`/`hash_value`/`hash_tag` combinators,
-  /// all in ordinary Kira. Unlike `ord`, `hash` has no operator dispatching
+  /// all in ordinary Cinder. Unlike `ord`, `hash` has no operator dispatching
   /// to it, so those scalar impls carry none of the infinite recursion that
   /// keeps `impl ord for int32` from existing (see `ord_cmp`).
   ///

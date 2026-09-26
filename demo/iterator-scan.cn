@@ -7,8 +7,8 @@ module main
 #  result — a running total or a cumulative combination, one output per
 #  input element.
 #
-#  Run it:      kira demo/iterator-scan.kira
-#  Compile it:  kira --compile -o iterator-scan demo/iterator-scan.kira
+#  Run it:      kira demo/iterator-scan.cn
+#  Compile it:  kira --compile -o iterator-scan demo/iterator-scan.cn
 # ==========================================================================
 
 def main() -> int32:

@@ -71,14 +71,14 @@ auto expect_checked_cleanly(const kira::source_manager &sources,
 }
 
 // The stdlib is injected alongside the fixture, exactly as the driver
-// injects it: `list`, `option` and friends are ordinary Kira types declared
-// in `src/std/*.kira`, so a fixture as plain as `-> list[int32]` does not
+// injects it: `list`, `option` and friends are ordinary Cinder types declared
+// in `src/std/*.cn`, so a fixture as plain as `-> list[int32]` does not
 // resolve without them. `stdlib` is held in the fixture because
 // `parsed_module` borrows the ASTs it points at.
 auto check_fixture(const std::string &text) -> checked_fixture {
   auto fixture = checked_fixture{};
   fixture.stdlib = kira::testing::parse_stdlib(fixture.sources, fixture.diag);
-  const auto file_id = fixture.sources.add_file("sample.kira", text);
+  const auto file_id = fixture.sources.add_file("sample.cn", text);
   expect(file_id.has_value(), "expected fixture source to register");
 
   const auto *file = fixture.sources.get(*file_id);
@@ -103,7 +103,7 @@ auto check_fixture(const std::string &text) -> checked_fixture {
 
 // Compiles the fixture together with every stdlib module it actually
 // reaches. A single-module compile no longer suffices: `xs.push(x)` on a
-// `list[T]` is a real call into `src/std/list.kira`, so the callee has to be
+// `list[T]` is a real call into `src/std/list.cn`, so the callee has to be
 // in the compiled set or the VM has nothing to jump to. `find_reachable_
 // modules` keeps that set to what the fixture uses rather than the whole
 // stdlib.
@@ -223,7 +223,7 @@ auto run_main(const bc::bytecode_module &module)
 }
 
 auto test_add_compiles_and_runs() -> void {
-  auto module = compile_fixture(load_fixture("add.kira"));
+  auto module = compile_fixture(load_fixture("add.cn"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{10}}, bc::slot_value{int64_t{32}}};
@@ -240,7 +240,7 @@ auto test_add_compiles_and_runs() -> void {
 /// Register allocation, observed through the compiled frame size.
 ///
 /// `register_alloc_test` covers the algorithm on synthetic inputs; this
-/// covers the thing that motivated it, on real Kira source. Before linear
+/// covers the thing that motivated it, on real Cinder source. Before linear
 /// scan, every `let` and every intermediate subexpression consumed a register
 /// forever, so `register_count` grew with the *number* of values a function
 /// ever named and 256 of them was a hard compile error. It should now track
@@ -341,10 +341,10 @@ auto test_intrinsic_call_compiles_to_op_call_intrinsic() -> void {
   // `intrinsic def rt_stdout() -> raw_fd` has no body — hir::lower_module
   // skips it, and this compiler recognizes the call by name (src/
   // intrinsics.h) and emits `op_call_intrinsic` instead of `op_call`. This
-  // fixture proves that end to end: real Kira source, through name
+  // fixture proves that end to end: real Cinder source, through name
   // resolution/typechecking, HIR lowering, bytecode compilation, and the
   // VM's native `rt_stdout` implementation (vm.cpp), which returns fd 1.
-  auto module = compile_fixture(load_fixture("intrinsic_call.kira"));
+  auto module = compile_fixture(load_fixture("intrinsic_call.cn"));
 
   // `intrinsic def` never gets a `bytecode_function` entry of its own.
   for (const auto &fn : module.functions) {
@@ -378,7 +378,7 @@ auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
   // here; `src/bytecode/vm_test.cpp`'s hand-assembled intrinsic tests
   // already exercise the `io_errno.code` payload directly without going
   // through that lowering path.
-  auto module = compile_fixture(load_fixture("intrinsic_result.kira"));
+  auto module = compile_fixture(load_fixture("intrinsic_result.cn"));
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() not to panic");
@@ -396,7 +396,7 @@ auto test_field_access_on_a_local_lowers_for_plain_lets_and_payload_bindings()
   // a variant-payload binding. Fixed by `lowerer::lower_module_path`
   // (src/hir/lower.cpp), which resolves the ambiguity the same way
   // `semantic::check.cpp`'s `infer_module_path` already does for typing.
-  auto module = compile_fixture(load_fixture("field_access_on_local.kira"));
+  auto module = compile_fixture(load_fixture("field_access_on_local.cn"));
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() not to panic");
@@ -411,7 +411,7 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
   // backend instead, confirming the `hir::lower_block`/`check.cpp` fix
   // isn't LLVM-specific.
   auto module =
-      compile_fixture(load_fixture("implicit_tail_match_and_if.kira"));
+      compile_fixture(load_fixture("implicit_tail_match_and_if.cn"));
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
@@ -425,7 +425,7 @@ auto test_implicit_tail_expression_is_the_return_value() -> void {
   // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
   // enforced by check_function; see check.cpp's "mismatched final
   // expression" diagnostic).
-  auto module = compile_fixture(load_fixture("implicit_tail_expression.kira"));
+  auto module = compile_fixture(load_fixture("implicit_tail_expression.cn"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{21}}};
   auto result = vm.run(function_index(module, "double"), args);
@@ -438,7 +438,7 @@ auto test_implicit_tail_expression_is_the_return_value() -> void {
 }
 
 auto test_if_expression_selects_branch_value() -> void {
-  auto module = compile_fixture(load_fixture("if_expression.kira"));
+  auto module = compile_fixture(load_fixture("if_expression.cn"));
   const auto vm = bc::vm{module};
 
   const auto neg_args = std::array{bc::slot_value{int64_t{-7}}};
@@ -458,7 +458,7 @@ auto test_if_expression_selects_branch_value() -> void {
 }
 
 auto test_while_loop_sums_one_to_n() -> void {
-  auto module = compile_fixture(load_fixture("while_loop.kira"));
+  auto module = compile_fixture(load_fixture("while_loop.cn"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{10}}};
   auto result = vm.run(function_index(module, "sum_to_n"), args);
@@ -471,7 +471,7 @@ auto test_while_loop_sums_one_to_n() -> void {
 }
 
 auto test_recursive_call_computes_factorial() -> void {
-  auto module = compile_fixture(load_fixture("recursive_factorial.kira"));
+  auto module = compile_fixture(load_fixture("recursive_factorial.cn"));
   const auto vm = bc::vm{module};
   const auto index = function_index(module, "factorial");
 
@@ -489,7 +489,7 @@ auto test_recursive_call_computes_factorial() -> void {
 }
 
 auto test_calls_another_function_in_the_same_module() -> void {
-  auto module = compile_fixture(load_fixture("function_calls.kira"));
+  auto module = compile_fixture(load_fixture("function_calls.cn"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{3}}, bc::slot_value{int64_t{4}}};
@@ -702,7 +702,7 @@ auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
 }
 
 auto test_and_or_short_circuit_to_correct_value() -> void {
-  auto module = compile_fixture(load_fixture("and_or_short_circuit.kira"));
+  auto module = compile_fixture(load_fixture("and_or_short_circuit.cn"));
   const auto vm = bc::vm{module};
   const auto index = function_index(module, "classify");
 
@@ -726,7 +726,7 @@ auto test_and_or_short_circuit_to_correct_value() -> void {
 }
 
 auto test_cast_widens_int_to_float() -> void {
-  auto module = compile_fixture(load_fixture("cast_int_to_float.kira"));
+  auto module = compile_fixture(load_fixture("cast_int_to_float.cn"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{21}}};
   auto result = vm.run(function_index(module, "to_float"), args);
@@ -740,7 +740,7 @@ auto test_cast_widens_int_to_float() -> void {
 }
 
 auto test_checked_add_panics_on_overflow_end_to_end() -> void {
-  auto module = compile_fixture(load_fixture("checked_add_overflow.kira"));
+  auto module = compile_fixture(load_fixture("checked_add_overflow.cn"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{100}}, bc::slot_value{int64_t{100}}};
@@ -757,7 +757,7 @@ auto test_checked_add_panics_on_overflow_end_to_end() -> void {
 }
 
 auto test_checked_div_panics_on_divide_by_zero_end_to_end() -> void {
-  auto module = compile_fixture(load_fixture("checked_div_by_zero.kira"));
+  auto module = compile_fixture(load_fixture("checked_div_by_zero.cn"));
   auto main_result = run_main(module);
   expect(!main_result.has_value(), "expected division by zero to panic");
   expect(main_result.error() == bc::panic_reason::integer_divide_by_zero,
@@ -775,7 +775,7 @@ auto test_checked_div_panics_on_divide_by_zero_end_to_end() -> void {
 // confirming the fold didn't disable the genuine overflow check.
 auto test_negate_of_min_integer_literal_does_not_panic() -> void {
   auto module =
-      compile_fixture(load_fixture("negate_min_integer_literal.kira"));
+      compile_fixture(load_fixture("negate_min_integer_literal.cn"));
   const auto vm = bc::vm{module};
 
   auto r8 = vm.run(function_index(module, "min_int8"),
@@ -814,7 +814,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
   // No surface `.len()` yet — reads the heap `str` value's own length slot
   // directly via a hand-assembled op_load_slot, mirroring vm_test.cpp's
   // own str test, just compiled from real source this time.
-  auto module = compile_fixture(load_fixture("string_literal.kira"));
+  auto module = compile_fixture(load_fixture("string_literal.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "greet"), {});
   expect(result.has_value(), "expected greet() to succeed");
@@ -839,7 +839,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
 }
 
 auto test_tuple_construction_and_projection() -> void {
-  auto module = compile_fixture(load_fixture("tuple_construction.kira"));
+  auto module = compile_fixture(load_fixture("tuple_construction.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make"), {});
   expect(result.has_value(), "expected make() to succeed");
@@ -858,7 +858,7 @@ auto test_tuple_construction_and_projection() -> void {
 }
 
 auto test_struct_literal_and_field_access() -> void {
-  auto module = compile_fixture(load_fixture("struct_field_access.kira"));
+  auto module = compile_fixture(load_fixture("struct_field_access.cn"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};
@@ -873,7 +873,7 @@ auto test_struct_literal_and_field_access() -> void {
 }
 
 auto test_fixed_array_construction_and_indexing() -> void {
-  auto module = compile_fixture(load_fixture("fixed_array_indexing.kira"));
+  auto module = compile_fixture(load_fixture("fixed_array_indexing.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "third"),
                        std::array{bc::slot_value{uint64_t{2}}});
@@ -886,7 +886,7 @@ auto test_fixed_array_construction_and_indexing() -> void {
 }
 
 auto test_packed_struct_field_access() -> void {
-  auto module = compile_fixture(load_fixture("packed_struct_layout.kira"));
+  auto module = compile_fixture(load_fixture("packed_struct_layout.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "combine"),
                        std::array{bc::slot_value{uint64_t{7}},
@@ -905,7 +905,7 @@ auto test_packed_struct_field_access() -> void {
 }
 
 auto test_padded_struct_field_access() -> void {
-  auto module = compile_fixture(load_fixture("padded_struct_layout.kira"));
+  auto module = compile_fixture(load_fixture("padded_struct_layout.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "combine"),
                        std::array{bc::slot_value{uint64_t{7}},
@@ -923,7 +923,7 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
   // the constructed struct's raw heap bytes directly to prove the
   // `packed` modifier actually removes alignment padding, not just that
   // reads/writes stay internally consistent.
-  auto module = compile_fixture(load_fixture("packed_struct_layout.kira"));
+  auto module = compile_fixture(load_fixture("packed_struct_layout.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make"),
                        std::array{bc::slot_value{uint64_t{0x1234}},
@@ -945,7 +945,7 @@ auto test_packed_struct_has_no_padding_in_memory() -> void {
 }
 
 auto test_padded_struct_has_alignment_padding_in_memory() -> void {
-  auto module = compile_fixture(load_fixture("padded_struct_layout.kira"));
+  auto module = compile_fixture(load_fixture("padded_struct_layout.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make"),
                        std::array{bc::slot_value{uint64_t{0x1234}},
@@ -969,7 +969,7 @@ auto test_padded_struct_has_alignment_padding_in_memory() -> void {
 }
 
 auto test_narrow_element_array_construction_and_indexing() -> void {
-  auto module = compile_fixture(load_fixture("narrow_element_array.kira"));
+  auto module = compile_fixture(load_fixture("narrow_element_array.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(
       function_index(module, "sum_all"),
@@ -989,7 +989,7 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
   // assertions can't distinguish a natural-stride `array[int16,5]` from one
   // that still wastes 8 bytes/element the old uniform-slot way — this reads
   // the constructed array's raw heap bytes directly.
-  auto module = compile_fixture(load_fixture("narrow_element_array.kira"));
+  auto module = compile_fixture(load_fixture("narrow_element_array.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make_fixed"), {});
   expect(result.has_value(), "expected make_fixed() to succeed");
@@ -1010,7 +1010,7 @@ auto test_narrow_element_array_has_no_padding_in_memory() -> void {
 }
 
 auto test_violated_precondition_panics() -> void {
-  auto module = compile_fixture(load_fixture("contract_violation.kira"));
+  auto module = compile_fixture(load_fixture("contract_violation.cn"));
 
   // `half(-4)` violates `pre x >= 0`, and the caller is opaque to the
   // checker, so the check is the callee's to make — and it fails.
@@ -1036,7 +1036,7 @@ auto test_violated_precondition_panics() -> void {
 // both faces of it: the check fires when the argument breaks the contract,
 // and is invisible when it doesn't.
 auto test_violated_generator_precondition_panics() -> void {
-  auto module = compile_fixture(load_fixture("generator_precondition.kira"));
+  auto module = compile_fixture(load_fixture("generator_precondition.cn"));
   auto main_result = run_main(module);
   expect(!main_result.has_value(),
          "expected counter(-1) to violate counter's precondition");
@@ -1046,7 +1046,7 @@ auto test_violated_generator_precondition_panics() -> void {
 
 auto test_satisfied_generator_precondition_yields_normally() -> void {
   auto module =
-      compile_fixture(load_fixture("generator_precondition_holds.kira"));
+      compile_fixture(load_fixture("generator_precondition_holds.cn"));
   auto main_result = run_main(module);
   expect(main_result.has_value(),
          "expected counter(3) to satisfy its own precondition");
@@ -1058,7 +1058,7 @@ auto test_satisfied_generator_precondition_yields_normally() -> void {
 // Every exit is an explicit `return`, so each one carries the postcondition
 // check itself — and the one that breaks the promise panics.
 auto test_violated_postcondition_in_diverging_tail_panics() -> void {
-  auto module = compile_fixture(load_fixture("contract_diverging_tail.kira"));
+  auto module = compile_fixture(load_fixture("contract_diverging_tail.cn"));
   auto main_result = run_main(module);
   expect(!main_result.has_value(),
          "expected broken_abs(-7) to violate its postcondition");
@@ -1067,7 +1067,7 @@ auto test_violated_postcondition_in_diverging_tail_panics() -> void {
 }
 
 auto test_array_fill_form_repeats_the_same_value() -> void {
-  auto module = compile_fixture(load_fixture("array_fill.kira"));
+  auto module = compile_fixture(load_fixture("array_fill.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_of_fives"), {});
   expect(result.has_value(), "expected sum_of_fives() to succeed");
@@ -1079,7 +1079,7 @@ auto test_array_fill_form_repeats_the_same_value() -> void {
 }
 
 auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
-  auto module = compile_fixture(load_fixture("sum_type_variant.kira"));
+  auto module = compile_fixture(load_fixture("sum_type_variant.cn"));
   const auto vm = bc::vm{module};
   auto result =
       vm.run(function_index(module, "make"), std::array{bc::slot_value{3.5}});
@@ -1102,7 +1102,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
 }
 
 auto test_sum_type_unit_variant_encodes_its_tag() -> void {
-  auto module = compile_fixture(load_fixture("sum_type_unit_variant.kira"));
+  auto module = compile_fixture(load_fixture("sum_type_unit_variant.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make_empty"), {});
   expect(result.has_value(), "expected make_empty() to succeed");
@@ -1118,7 +1118,7 @@ auto test_sum_type_unit_variant_encodes_its_tag() -> void {
 }
 
 auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
-  auto module = compile_fixture(load_fixture("match_literal_wildcard.kira"));
+  auto module = compile_fixture(load_fixture("match_literal_wildcard.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "classify");
   auto r0 = vm.run(idx, std::array{bc::slot_value{int64_t{0}}});
@@ -1134,7 +1134,7 @@ auto test_match_dispatches_on_literal_and_wildcard_patterns() -> void {
 }
 
 auto test_match_or_pattern_matches_any_alternative() -> void {
-  auto module = compile_fixture(load_fixture("match_or_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_or_pattern.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "is_small");
   auto r1 = vm.run(idx, std::array{bc::slot_value{int64_t{1}}});
@@ -1153,7 +1153,7 @@ auto test_match_or_pattern_matches_any_alternative() -> void {
 // arm even though its argument is a different block than the pattern's own
 // literal.
 auto test_match_string_literal_pattern() -> void {
-  auto module = compile_fixture(load_fixture("match_string_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_string_pattern.cn"));
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
   expect(main_result->value.i == 102,
@@ -1161,7 +1161,7 @@ auto test_match_string_literal_pattern() -> void {
 }
 
 auto test_match_range_pattern() -> void {
-  auto module = compile_fixture(load_fixture("match_range_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_range_pattern.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "bucket");
   auto r5 = vm.run(idx, std::array{bc::slot_value{int64_t{5}}});
@@ -1183,7 +1183,7 @@ auto test_match_guard_refines_a_pattern() -> void {
   // pre-existing lowering gap (`hir_match_arm.guard` is lowered before the
   // pattern's synthetic `hir_let` bindings, which only live in `body`), out
   // of scope for this increment's bytecode_compiler/llvm_codegen work.
-  auto module = compile_fixture(load_fixture("match_guard.kira"));
+  auto module = compile_fixture(load_fixture("match_guard.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "sign");
   auto rpos = vm.run(idx, std::array{bc::slot_value{int64_t{7}}});
@@ -1199,7 +1199,7 @@ auto test_match_guard_refines_a_pattern() -> void {
 }
 
 auto test_match_tuple_pattern_with_literal_and_binding() -> void {
-  auto module = compile_fixture(load_fixture("match_tuple_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_tuple_pattern.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "describe");
   auto r_zero_first = vm.run(
@@ -1218,7 +1218,7 @@ auto test_match_tuple_pattern_with_literal_and_binding() -> void {
 }
 
 auto test_match_constructor_pattern_over_a_sum_type() -> void {
-  auto module = compile_fixture(load_fixture("match_constructor_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_constructor_pattern.cn"));
   const auto vm = bc::vm{module};
   auto circle_result = vm.run(function_index(module, "circle_area"),
                               std::array{bc::slot_value{4.0}});
@@ -1236,7 +1236,7 @@ auto test_match_constructor_pattern_over_a_sum_type() -> void {
 }
 
 auto test_match_struct_pattern_destructures_named_fields() -> void {
-  auto module = compile_fixture(load_fixture("match_struct_pattern.kira"));
+  auto module = compile_fixture(load_fixture("match_struct_pattern.cn"));
   const auto vm = bc::vm{module};
   const auto args =
       std::array{bc::slot_value{int64_t{18}}, bc::slot_value{int64_t{24}}};
@@ -1251,7 +1251,7 @@ auto test_match_struct_pattern_destructures_named_fields() -> void {
 }
 
 auto test_list_literal_construction_and_indexing() -> void {
-  auto module = compile_fixture(load_fixture("list_literal_indexing.kira"));
+  auto module = compile_fixture(load_fixture("list_literal_indexing.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "third"),
                        std::array{bc::slot_value{uint64_t{2}}});
@@ -1267,7 +1267,7 @@ auto test_list_literal_construction_and_indexing() -> void {
 ///
 /// Asserts the bounds *decision* rather than the panic: `list` is an
 /// ordinary stdlib type now, so `xs[i]` out of range reaches
-/// `src/std/list.kira`'s `panic("index out of range")`, which aborts the
+/// `src/std/list.cn`'s `panic("index out of range")`, which aborts the
 /// process instead of raising a catchable `panic_reason` the way the
 /// bounds-checked VM/IR opcode behind `array[T, N]` still does. An aborting
 /// panic cannot be observed by a harness running either tier in-process;
@@ -1278,7 +1278,7 @@ auto test_list_literal_construction_and_indexing() -> void {
 /// exactly the indices `xs[i]` would refuse — so the comparison itself is
 /// still checked here, in both tiers, against a computed value.
 auto test_list_index_out_of_bounds_is_refused() -> void {
-  auto module = compile_fixture(load_fixture("list_out_of_bounds.kira"));
+  auto module = compile_fixture(load_fixture("list_out_of_bounds.cn"));
   const auto vm = bc::vm{module};
 
   auto in_bounds = vm.run(function_index(module, "at_or_sentinel"),
@@ -1299,7 +1299,7 @@ auto test_list_index_out_of_bounds_is_refused() -> void {
 }
 
 auto test_list_fill_form_grows_to_a_runtime_count() -> void {
-  auto module = compile_fixture(load_fixture("list_fill.kira"));
+  auto module = compile_fixture(load_fixture("list_fill.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_of_fives"),
                        std::array{bc::slot_value{uint64_t{4}}});
@@ -1313,7 +1313,7 @@ auto test_list_fill_form_grows_to_a_runtime_count() -> void {
 }
 
 auto test_list_for_loop_sums_every_element() -> void {
-  auto module = compile_fixture(load_fixture("list_for_loop.kira"));
+  auto module = compile_fixture(load_fixture("list_for_loop.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "main"), {});
   expect(result.has_value(), "expected main() to succeed");
@@ -1321,7 +1321,7 @@ auto test_list_for_loop_sums_every_element() -> void {
 }
 
 auto test_while_let_loops_until_the_pattern_stops_matching() -> void {
-  auto module = compile_fixture(load_fixture("while_let_pattern.kira"));
+  auto module = compile_fixture(load_fixture("while_let_pattern.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_while"), {});
   expect(result.has_value(), "expected sum_while() to succeed");
@@ -1333,7 +1333,7 @@ auto test_while_let_loops_until_the_pattern_stops_matching() -> void {
 }
 
 auto test_let_else_diverges_on_a_failed_pattern() -> void {
-  auto module = compile_fixture(load_fixture("let_else_pattern.kira"));
+  auto module = compile_fixture(load_fixture("let_else_pattern.cn"));
   const auto vm = bc::vm{module};
   auto some_result = vm.run(function_index(module, "some_case"), {});
   expect(some_result.has_value(), "expected some_case() to succeed");
@@ -1349,7 +1349,7 @@ auto test_let_else_diverges_on_a_failed_pattern() -> void {
 }
 
 auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
-  auto module = compile_fixture(load_fixture("list_comprehension.kira"));
+  auto module = compile_fixture(load_fixture("list_comprehension.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_squares"),
                        std::array{bc::slot_value{int64_t{4}}});
@@ -1363,7 +1363,7 @@ auto test_list_comprehension_builds_and_reads_back_a_list() -> void {
 
 auto test_closure_captures_an_outer_parameter_and_is_called_indirectly()
     -> void {
-  auto module = compile_fixture(load_fixture("closure_capture.kira"));
+  auto module = compile_fixture(load_fixture("closure_capture.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "main"), {});
   expect(result.has_value(), "expected main() to succeed");
@@ -1371,7 +1371,7 @@ auto test_closure_captures_an_outer_parameter_and_is_called_indirectly()
 }
 
 auto test_non_capturing_closure_is_called_indirectly() -> void {
-  auto module = compile_fixture(load_fixture("closure_noncapture.kira"));
+  auto module = compile_fixture(load_fixture("closure_noncapture.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "main"), {});
   expect(result.has_value(), "expected main() to succeed");

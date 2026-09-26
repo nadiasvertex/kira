@@ -1,5 +1,5 @@
 error: cannot tell what an empty `[]` is a list of
-  --> 013_open_leaf_at_a_generic_call.kira:22:15
+  --> 013_open_leaf_at_a_generic_call.cn:22:15
    22 |     var out = []
       |               ^^ nothing here ever says what this list holds
   help: An empty `[]` takes its element type from what is later done with it — a `push`, a return, an argument whose type is already known. Nothing here pinned it down. Annotate the binding — `var xs: list[int32] = []` — or start the list with the elements it should hold.

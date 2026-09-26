@@ -71,7 +71,7 @@ fill_char   := any character except { } : = \
 Five traits, each a single `def <name>(self) -> str` method — the same shape as `show`, so each is usable as a `box[trait]` object.
 
 ```kira
-trait show:                  # existing (src/std/traits.kira)
+trait show:                  # existing (src/std/traits.cn)
     def show(self) -> str
 
 trait debug:                 # used for `?`; derivable via `deriving show, debug`
@@ -87,7 +87,7 @@ trait binary:                 # used for `b`
     def binary(self) -> str   # digit string, no "0b" prefix, no sign
 ```
 
-All five are declared `pub` in `src/std/traits.kira`. Each of `hex`/`octal`/`binary` returns the unsigned digit string only — no sign, no `#`-prefix, no padding; the compiler-generated glue supplies sign, prefix, and padding uniformly via `pad_integral` (below), so an implementation never handles the spec itself.
+All five are declared `pub` in `src/std/traits.cn`. Each of `hex`/`octal`/`binary` returns the unsigned digit string only — no sign, no `#`-prefix, no padding; the compiler-generated glue supplies sign, prefix, and padding uniformly via `pad_integral` (below), so an implementation never handles the spec itself.
 
 A derived `debug` renders `type_name { field1: value1.debug(), field2: value2.debug(), ... }`, recursively, the same shape a derived `show` builds.
 
@@ -116,7 +116,7 @@ pub def pad_str(s: str, spec: format_spec) -> str
 pub def pad_integral(negative: bool, prefix: str, digits: str, spec: format_spec) -> str
 ```
 
-`src/std/fmt.kira`'s `format_spec` matches this exactly, field for field.
+`src/std/fmt.cn`'s `format_spec` matches this exactly, field for field.
 
 ### Padding, alignment, and zero-padding
 
@@ -134,7 +134,7 @@ A `hex`/`octal`/`binary` implementation never sees a `format_spec` — it return
 
 ### Fixed-signature entry points
 
-`src/std/fmt.kira` exposes one function per builtin type/style combination that `hir::lower_interpolated_string` calls directly, so lowering never constructs control flow (bool → `"true"`/`"false"`, sign/magnitude splitting) by hand — it only lowers the embedded value, builds a `format_spec` literal, and calls one of these:
+`src/std/fmt.cn` exposes one function per builtin type/style combination that `hir::lower_interpolated_string` calls directly, so lowering never constructs control flow (bool → `"true"`/`"false"`, sign/magnitude splitting) by hand — it only lowers the embedded value, builds a `format_spec` literal, and calls one of these:
 
 | Function | Purpose |
 |---|---|
@@ -222,20 +222,20 @@ Diagnostics use the project's nested `error:`/`help:`/`note:` shape:
 
 ```
 error[E0090]: `str` does not implement `hex`
-  --> src/main.kira:14:16
+  --> src/main.cn:14:16
    |
 14 |     let bad = "{s :x}"
    |                   ^ `str` does not support hexadecimal formatting
    |
    help: `str` supports the default/`s` style (`show`) and `?` (`debug`)
    note: implement `hex for str` yourself if you want `s :x` to mean
-         something specific — Kira does not derive it, since there's no
+         something specific — Cinder does not derive it, since there's no
          single obvious hex rendering of arbitrary text
 ```
 
 ```
 error[E0091]: `.precision` is not allowed with `x`
-  --> src/main.kira:16:16
+  --> src/main.cn:16:16
    |
 16 |     let bad = "{42 :.2x}"
    |                    ^^ precision is only meaningful for `s`, `?`, `f`, `e`/`E`, `g`/`G`
@@ -245,7 +245,7 @@ error[E0091]: `.precision` is not allowed with `x`
 
 ```
 error[E0092]: format width must be `usize`, found `str`
-  --> src/main.kira:15:20
+  --> src/main.cn:15:20
    |
 15 |     let bad = "{42 :{w}}"
    |                       ^ expected usize, found str
@@ -259,7 +259,7 @@ An earlier design used a single `format` trait taking a runtime `format_spec` an
 
 ## Implementation status
 
-Both backends share the `rt_fmt_*`/`rt_str_*` intrinsics that back this chapter, via the single dispatch table `src/intrinsics.h`; confirmed present in `src/runtime/fmt.{h,cpp}` and `src/bytecode/vm.cpp`, and reachable from `src/llvm_codegen/codegen.cpp` through the same generic intrinsic-declaration path every intrinsic uses (unlike `rt_str_eq`, `rt_fmt_*` needs no LLVM-side special-casing). `println`/`print`/`eprintln`/`eprint` and the interpolation/format-spec surface described here run end-to-end on both the bytecode VM and LLVM/AOT tiers. `format_spec` and the padding helpers in `src/std/fmt.kira` match this chapter's reference exactly, field for field and function for function.
+Both backends share the `rt_fmt_*`/`rt_str_*` intrinsics that back this chapter, via the single dispatch table `src/intrinsics.h`; confirmed present in `src/runtime/fmt.{h,cpp}` and `src/bytecode/vm.cpp`, and reachable from `src/llvm_codegen/codegen.cpp` through the same generic intrinsic-declaration path every intrinsic uses (unlike `rt_str_eq`, `rt_fmt_*` needs no LLVM-side special-casing). `println`/`print`/`eprintln`/`eprint` and the interpolation/format-spec surface described here run end-to-end on both the bytecode VM and LLVM/AOT tiers. `format_spec` and the padding helpers in `src/std/fmt.cn` match this chapter's reference exactly, field for field and function for function.
 
 ## See also
 

@@ -6,8 +6,8 @@ module main
 #  The first element is always yielded; after that, `step - 1` elements
 #  are skipped between each yield.
 #
-#  Run it:      kira demo/iterator-step_by.kira
-#  Compile it:  kira --compile -o iterator-step_by demo/iterator-step_by.kira
+#  Run it:      kira demo/iterator-step_by.cn
+#  Compile it:  kira --compile -o iterator-step_by demo/iterator-step_by.cn
 # ==========================================================================
 
 def main() -> int32:

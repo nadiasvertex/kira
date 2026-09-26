@@ -13,4 +13,4 @@ def open_marker(path: str) -> int32:
         @err(e) => 2
 
 def main() -> int32:
-    return open_marker("/definitely/does/not/exist/kira-codegen-test.kira")
+    return open_marker("/definitely/does/not/exist/kira-codegen-test.cn")

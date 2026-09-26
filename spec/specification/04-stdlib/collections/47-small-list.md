@@ -23,7 +23,7 @@ machine def as_slice[T, N: usize](buf: &uninit[T, N], len: usize) -> slice[T]
     # claims slots 0..len are initialized and hands back an ordinary view over them
 ```
 
-`spec/collections-algorithms-design.md` §4.3 additionally specifies these as *derivable* from the `std.machine` primitive substrate rather than intrinsics in their own right: `drop_first` is a loop over the substrate's `drop_in_place`, and the rest reduce similarly. Only the opaque `uninit[T, N]` type itself is compiler-intrinsic work; its accessors are ordinary (if `machine`-gated) Kira.
+`spec/collections-algorithms-design.md` §4.3 additionally specifies these as *derivable* from the `std.machine` primitive substrate rather than intrinsics in their own right: `drop_first` is a loop over the substrate's `drop_in_place`, and the rest reduce similarly. Only the opaque `uninit[T, N]` type itself is compiler-intrinsic work; its accessors are ordinary (if `machine`-gated) Cinder.
 
 Ordinary, non-`machine` code is free to *call* these functions; the unsafety is contained entirely inside them. A type built on `uninit[T, N]` calls them once, internally, and exposes a fully safe public API to everyone else — `small_list[T, N]` is the motivating example both documents name for this pattern.
 
@@ -35,7 +35,7 @@ Neither source goes further than that one-sentence motivation. No field layout, 
 
 ## Implementation status
 
-Nothing in this chapter is implemented. `uninit[T, N]` itself has no entry in the compiler's builtin generic table today, and there is no `small_list.kira` or equivalent under `src/std`. Beyond the representation and accessor signatures reproduced above (which are real, specced content), this chapter's coverage of `small_list[T, N]` proper is limited to what the two source documents state: that it exists as a design goal and that it is what `uninit[T, N]` is *for*. Its own structure and API remain open design work.
+Nothing in this chapter is implemented. `uninit[T, N]` itself has no entry in the compiler's builtin generic table today, and there is no `small_list.cn` or equivalent under `src/std`. Beyond the representation and accessor signatures reproduced above (which are real, specced content), this chapter's coverage of `small_list[T, N]` proper is limited to what the two source documents state: that it exists as a design goal and that it is what `uninit[T, N]` is *for*. Its own structure and API remain open design work.
 
 ## See also
 

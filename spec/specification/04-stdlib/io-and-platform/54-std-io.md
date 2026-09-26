@@ -4,7 +4,7 @@
 
 Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and the `file_handle` type.
 
-`std.io` (`src/std/io.kira`) is the foundation `std.console` and `std.fs.path` build on: `std.console` implements printing in terms of `file_handle`'s `writer` impl, and `std.string` builds on `std.io`'s `writer` trait for its own formatting entry points.
+`std.io` (`src/std/io.cn`) is the foundation `std.console` and `std.fs.path` build on: `std.console` implements printing in terms of `file_handle`'s `writer` impl, and `std.string` builds on `std.io`'s `writer` trait for its own formatting entry points.
 
 ## Types
 
@@ -121,7 +121,7 @@ Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw
 
 ## Implementation status
 
-Everything in this chapter is implemented in `src/std/io.kira` over the `rt_*` intrinsics, with one exception: **`impl drop for file_handle` never runs.** The impl is written and compiles, but the compiler emits no scope-exit destructor glue on either backend, so a descriptor is released only by an explicit `close()`. See [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status, and item 6 in [todo.md](../../../todo.md).
+Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics, with one exception: **`impl drop for file_handle` never runs.** The impl is written and compiles, but the compiler emits no scope-exit destructor glue on either backend, so a descriptor is released only by an explicit `close()`. See [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status, and item 6 in [todo.md](../../../todo.md).
 
 ## See also
 

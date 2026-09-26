@@ -37,7 +37,7 @@ def dot2(t: &(int8, int8, int64)) -> int64:
     return t.2
 
 # The `let (...)` destructure path (`hir_tuple_index` again, via lowering),
-# exercised separately from `.0`/`.1`/`.2` above. Kira does not widen `int8`
+# exercised separately from `.0`/`.1`/`.2` above. Cinder does not widen `int8`
 # to `int64` implicitly, so each binding is checked on its own rather than
 # summed across widths.
 def destructure_matches(t: &(int8, int8, int64)) -> bool:

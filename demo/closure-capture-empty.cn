@@ -9,8 +9,8 @@ module main
 #  must stay distinguishable, and `[]` proves the closure carries no
 #  environment.
 #
-#  Run it:      kira demo/closure-capture-empty.kira
-#  Compile it:  kira --compile -o closure-capture-empty demo/closure-capture-empty.kira
+#  Run it:      kira demo/closure-capture-empty.cn
+#  Compile it:  kira --compile -o closure-capture-empty demo/closure-capture-empty.cn
 # ==========================================================================
 
 def bump(n: int32) -> int32:

@@ -13,7 +13,7 @@ namespace kira::runtime {
 // ==========================================================================
 //  Heap value layouts shared by `bytecode_compiler`/`bytecode::vm` and
 //  `llvm_codegen` (spec/codegen-design.md Decision 3). Every non-scalar
-//  Kira value is a single pointer into `bump_arena` memory (`arena.h`) to a
+//  Cinder value is a single pointer into `bump_arena` memory (`arena.h`) to a
 //  flat block of 8-byte slots, uniform regardless of each slot's own type —
 //  a nested aggregate/heap value is itself just a pointer, so it fits in
 //  one slot the same as any scalar. This trades some memory for not having

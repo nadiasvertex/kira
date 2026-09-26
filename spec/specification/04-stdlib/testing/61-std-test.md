@@ -155,7 +155,7 @@ module tests:
         return assert_true(super.area(-1.0, 5.0) >= 0.0, "negative width should not underflow")
 ```
 
-`kira --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints (`demo/test-discovery.kira` is a runnable version of this, with nested submodules each carrying their own suite):
+`kira --test` compiles this module, discovers the `tests` submodule as a suite named `app.geometry`, and prints (`demo/test-discovery.cn` is a runnable version of this, with nested submodules each carrying their own suite):
 
 ```
 geometry suite starting
@@ -236,7 +236,7 @@ def main() -> int32:
 
 ## Implementation status
 
-Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.kira`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_discovers_nested_tests_submodules_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`/`test_test_mode_without_any_tests_is_an_error`/`test_test_mode_hooks_without_cases_find_no_tests`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.kira`/`081_fn_typed_struct_field_list_heterogeneous.kira`) — and `suite`'s hook defaults now work as documented (default parameter values are lowered at the call site; see `spec/todo.md` item 6), so a suite names only the hooks it uses.
+Fully implemented and end-to-end tested — the checker fix, the library, and `--test` discovery all landed together (`src/semantic/check.cpp`'s `infer_method_call`, `src/llvm_codegen/codegen.cpp`'s `compile_function_value`, `src/std/test.cn`, `src/driver/test_discovery.cpp`, `src/cli_test.cpp`'s `test_build_runs_std_test_suite_via_llvm_tier`/`test_build_discovers_and_runs_tests_submodule_via_llvm_tier`/`test_build_discovers_nested_tests_submodules_via_llvm_tier`/`test_build_test_mode_leaves_existing_main_unchanged`/`test_test_mode_without_any_tests_is_an_error`/`test_test_mode_hooks_without_cases_find_no_tests`, and `src/testdata/codegen_stress/080_fn_typed_struct_field_call.cn`/`081_fn_typed_struct_field_list_heterogeneous.cn`) — and `suite`'s hook defaults now work as documented (default parameter values are lowered at the call site; see `spec/todo.md` item 6), so a suite names only the hooks it uses.
 
 - The synthesized `--test` runner never needs a bare cross-module function reference as a value (a separate, broader gap than the one this chapter's own fix addresses — a bare `use`-imported or qualified function name used as a plain value, outside call position, is not reliably lowered in every position yet); it always wraps each discovered function in a zero-arg lambda calling it by qualified path (`() => app.geometry.tests.test_area()`), which is unaffected.
 

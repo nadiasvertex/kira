@@ -4,7 +4,7 @@
 
 namespace kira::runtime {
 
-/// Which allocation strategy every Kira heap allocation in this process
+/// Which allocation strategy every Cinder heap allocation in this process
 /// draws from. Both are complete implementations of the same three
 /// operations, selectable at startup so a change to the allocator can be
 /// A/B'd against the historical behavior without recompiling:
@@ -46,14 +46,14 @@ enum class allocator_mode : uint8_t {
 /// a non-zero byte in a slot nobody wrote would be observable.
 ///
 /// `old_bytes` is passed to realloc/free even though the system mode does
-/// not need it. It costs the caller nothing — every Kira caller is a
+/// not need it. It costs the caller nothing — every Cinder caller is a
 /// collection that already tracks its own capacity — and it is what lets a
 /// mode that does not record block sizes out-of-band (the arena, and any
 /// future pooled/sized allocator) implement the same three operations.
 extern "C" {
 /// Returns `bytes` of zeroed, 8-byte-aligned memory, or `nullptr` when
 /// `bytes` is 0. Never returns null for a non-zero request: allocation
-/// failure aborts, because there is no Kira-level way to signal it yet.
+/// failure aborts, because there is no Cinder-level way to signal it yet.
 auto kira_heap_alloc(uint64_t bytes) -> void *;
 
 /// Grows or shrinks `ptr` (which must have come from `kira_heap_alloc`/
@@ -71,8 +71,8 @@ void kira_heap_free(void *ptr, uint64_t bytes);
 }
 
 /// The `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/intrinsics.h`,
-/// declared as Kira in `src/std/intrinsics.kira`), exposing the three
-/// entry points above to Kira source so a collection can own its own
+/// declared as Cinder in `src/std/intrinsics.cn`), exposing the three
+/// entry points above to Cinder source so a collection can own its own
 /// storage instead of relying on the compiler's built-in `list[T]`.
 ///
 /// These are separate symbols from the `kira_heap_*` trio above because they
@@ -81,7 +81,7 @@ void kira_heap_free(void *ptr, uint64_t bytes);
 /// own allocations — in practice identical here, since a `usize` argument's
 /// wire kind is already a native `uint64_t` and a `*mut byte` is already
 /// pointer-shaped. `kira_rt_free` returns a pointer it never uses (always
-/// null, standing for Kira's `unit`) purely to share that one ABI.
+/// null, standing for Cinder's `unit`) purely to share that one ABI.
 extern "C" {
 auto kira_rt_alloc(uint64_t bytes) -> uint64_t *;
 auto kira_rt_realloc(uint64_t *ptr, uint64_t old_bytes, uint64_t new_bytes)
