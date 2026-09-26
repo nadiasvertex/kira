@@ -2452,6 +2452,24 @@ auto test_reports_bare_generic_static_call_unsolved() -> void {
                     "expected the help to show the applied spelling");
 }
 
+auto test_reports_generic_call_conflicting_args() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_generic_call_conflicting_args.cn");
+  expect(analyzed.error_count == 3,
+         std::format("expected each of the three conflicting calls to be "
+                     "rejected, found {} error(s)",
+                     analyzed.error_count));
+  expect_diagnostic(analyzed, "conflicting types for `T` in this call to `pick`",
+                    "expected the conflict to name the parameter and callee");
+  expect_diagnostic(analyzed, "this is `str`, but `T` is already `int32`",
+                    "expected the label to say both types");
+  expect_diagnostic(analyzed, "this is `bool`, but `T` is already `int32`",
+                    "expected the explicit-bracket call to be checked too");
+  expect_diagnostic(analyzed,
+                    "conflicting types for `T` in this call to `crate.make`",
+                    "expected the bare-type static call to be checked too");
+}
+
 auto test_reports_direct_drop_call() -> void {
   const auto analyzed = analyze_test_data_file("reject_direct_drop_call.cn");
   expect(analyzed.error_count > 0,
@@ -3759,6 +3777,7 @@ auto main() -> int {
     test_reports_index_wrong_key_type();
     test_dispatches_index_by_key_type();
     test_reports_direct_drop_call();
+    test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();
     test_reports_borrowed_number_used_as_a_number();
     test_reports_index_write_without_index_set();

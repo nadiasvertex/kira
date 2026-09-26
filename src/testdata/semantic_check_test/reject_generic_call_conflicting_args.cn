@@ -1,0 +1,21 @@
+module sample
+
+# One type parameter, two arguments that disagree about it (spec/todo.md item
+# 13). `T` was solved from the first argument and the second was never
+# compared with it, so `pick(1, "x")` compiled and returned `1`. Also through
+# explicit brackets and a bare-type static call on a generic `extend`.
+
+def pick[T](a: T, b: T) -> T:
+    return a
+
+type crate[T] = { a: T, b: T }
+
+extend[T] crate[T]:
+    def make(a: T, b: T) -> crate[T]:
+        return crate { a: a, b: b }
+
+def main() -> int32:
+    let s = pick(1, "x")
+    let t = pick[int32](2, true)
+    let c = crate.make(3, "y")
+    return 0

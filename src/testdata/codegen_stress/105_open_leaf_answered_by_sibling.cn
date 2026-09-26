@@ -1,0 +1,29 @@
+module codegen_stress.open_leaf_answered_by_sibling
+
+# A generic call whose arguments solve each other (spec/todo.md item 13).
+#
+# `first_or(out, 42)`: `out` is an open `[]`, so only `fallback` can say what
+# `T` is. Once it has, every argument is re-checked against the solution,
+# which pins `out` to `list[int32]` — previously rejected as "cannot tell what
+# an empty `[]` is a list of".
+#
+# `second(1, big)`: the literal takes its width from `big` rather than
+# defaulting to `int32` first. Before, `T` was solved to `int32` from the
+# literal and `big` went through unchecked — the call typed as `int32` while
+# carrying an `int64`. The value is chosen so a 32-bit result cannot produce it.
+# expect: 84
+
+def first_or[T](xs: list[T], fallback: T) -> T:
+    if xs.len() > 0:
+        return xs[0]
+    return fallback
+
+def second[T](a: T, b: T) -> T:
+    return b
+
+def main() -> int32:
+    var out = []
+    let big: int64 = 4294967338
+    let wide = second(1, big)
+    let base: int64 = 4294967296
+    return first_or(out, 42) + int32(wide - base)

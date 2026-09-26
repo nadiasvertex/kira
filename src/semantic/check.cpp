@@ -6899,6 +6899,34 @@ private:
       auto seen = std::unordered_set<type_id>{};
       open_leaf = open_leaf || mentions_type_var(arg_types[i], seen);
     }
+    // Arguments with a settled type answer first, and an argument still
+    // carrying a leaf then learns from them: in `pick(1, x)` with `x: int64`
+    // the literal is an `int64`, because `x` says what `T` is. Defaulting the
+    // literal to `int32` first would have `T` solved from it instead — and
+    // `x` then either rejected for a conflict the user never wrote, or, before
+    // every argument was re-checked against the solution, passed silently as
+    // the wrong width.
+    if (open_leaf) {
+      auto concrete = std::unordered_map<std::string, type_id>{};
+      for (size_t i = 0; i < params.size(); ++i) {
+        auto seen = std::unordered_set<type_id>{};
+        if (!types_.is_unknown(arg_types[i]) &&
+            !mentions_type_var(arg_types[i], seen)) {
+          unify_rigid(params[i].type, arg_types[i], concrete);
+        }
+      }
+      for (size_t i = 0; i < params.size(); ++i) {
+        auto seen = std::unordered_set<type_id>{};
+        if (!mentions_type_var(arg_types[i], seen)) {
+          continue;
+        }
+        const auto expected = substitute_solved(params[i].type, concrete);
+        if (!mentions_type_param(expected)) {
+          solve_leaves(expected, arg_types[i]);
+          arg_types[i] = settle(arg_types[i]);
+        }
+      }
+    }
     // A call is a point of *demand*: the answer names an instance to
     // compile, so a type has to be a type here. Every constraint that was
     // going to arrive has arrived, so the queue's last resort is owed.
@@ -6980,6 +7008,70 @@ private:
     }
     return index - 1 < args_by_param.size() ? args_by_param[index - 1]
                                             : nullptr;
+  }
+
+  /// Re-checks each argument of a generic call against its parameter type
+  /// *under the final solution*.
+  ///
+  /// Arguments are first checked against the declared parameter types while
+  /// `T` is still abstract, and an abstract `T` accepts anything. Solving then
+  /// takes the first answer each parameter gets (`unify_rigid`), so in
+  /// `pick(1, "x")` against `def pick[T](a: T, b: T)` the `str` was never
+  /// compared with anything: `T := int32` came from `a`, and `b` went through
+  /// unexamined. This is the comparison that was missing.
+  ///
+  /// Only an argument the first pass accepted is reported here, so a
+  /// structural mismatch (`list[T]` given a `str`) that pass already
+  /// diagnosed is not reported twice.
+  auto check_args_against_solution(
+      const ast::call_expr &call, const std::vector<fn_param_info> &params,
+      const std::unordered_map<std::string, type_id> &bindings,
+      std::string_view callee_name, const ast::expr *ufcs_receiver = nullptr)
+      -> void {
+    const auto mapping = call_argument_mappings_.find(&call);
+    if (mapping == call_argument_mappings_.end()) {
+      return;
+    }
+    for (size_t i = 0; i < params.size(); ++i) {
+      const auto *argument =
+          ufcs_argument_for(i, mapping->second.args_by_param, ufcs_receiver);
+      if (argument == nullptr) {
+        continue;
+      }
+      const auto recorded = node_types_.find(argument);
+      if (recorded == node_types_.end()) {
+        continue;
+      }
+      const auto declared = settle(params[i].type);
+      const auto expected = settle(substitute_solved(declared, bindings));
+      const auto found = settle(recorded->second);
+      if (expected == declared || mentions_type_param(expected) ||
+          types_.is_unknown(found) || found == k_error_type ||
+          !types_.compatible(declared, found) || agrees(expected, found)) {
+        continue;
+      }
+      const auto &declared_entry = types_.entry(declared);
+      if (declared_entry.kind != type_kind::type_param_kind) {
+        type_mismatch(argument->span, expected, found, "for this argument",
+                      argument);
+        continue;
+      }
+      const auto param_name = std::string(declared_entry.name);
+      error_with_help(
+          argument->span,
+          std::format("conflicting types for `{}` in this call to `{}`",
+                      param_name, callee_name),
+          std::format("this is `{}`, but `{}` is already `{}`",
+                      types_.display(found), param_name,
+                      types_.display(expected)),
+          std::format(
+              "`{}` stands for one type throughout a call to `{}`, and "
+              "another argument already fixed it as `{}`. Every argument "
+              "declared as `{}` has to be that same type: convert this one "
+              "(`{}(...)`), or change the other.",
+              param_name, callee_name, types_.display(expected), param_name,
+              types_.display(expected)));
+    }
   }
 
   /// Solves whatever the arguments left open from the type the call site
@@ -7071,6 +7163,8 @@ private:
     if (!solution.has_value()) {
       return std::nullopt;
     }
+    check_args_against_solution(call, params, solution->type_slots,
+                                decl.name, ufcs_receiver);
 
     const auto *instance = find_or_check_generic_instance(
         call, decl, owner, decl_file, *solution, decl.name + solution->suffix,
@@ -12692,6 +12786,9 @@ private:
       return k_error_type;
     }
 
+    check_args_against_solution(call, params, bindings,
+                                std::format("{}.{}", type_name,
+                                            method.decl->name));
     const auto target = settle(
         substitute_solved(method.impl_target_pattern, bindings));
     // Still written in type parameters: a template body calling
