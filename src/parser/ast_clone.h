@@ -2,6 +2,7 @@
 
 #include <expected>
 #include <string>
+#include <unordered_map>
 
 #include "ast.h"
 #include "source_location.h"
@@ -36,7 +37,16 @@ struct clone_error {
 /// than being silently dropped. A caller reports that error against the use
 /// that needed the copy; extend the relevant `clone_*` function here when a
 /// body legitimately needs more.
-[[nodiscard]] auto clone_func_decl(const func_decl &decl)
+///
+/// When `map` is given, every cloned node is recorded in it against the
+/// original it was cloned from — expressions, statements, patterns, type
+/// expressions, and the non-node records the checker keys on
+/// (`field_pattern`, `struct_field_init`, `contract_clause`, `type_param`).
+/// This is how a per-instance copy of a checked template's records finds the
+/// clone node each one belongs to.
+using clone_map = std::unordered_map<const void *, const void *>;
+[[nodiscard]] auto clone_func_decl(const func_decl &decl,
+                                   clone_map *map = nullptr)
     -> std::expected<ptr<func_decl>, clone_error>;
 
 /// Deep-clones a single expression, over the same bounded node set

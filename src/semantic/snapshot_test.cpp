@@ -115,6 +115,11 @@ constexpr auto k_inputs = std::array{
     // types: the instances must be named after the answer, not the leaf.
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "108_shape_demand_leaves_elements_open.cn"},
+    // Instances made by substitution (phase 9.7): each decision a template
+    // defers — a loop's iterator, an operator's impl, a method of a generic
+    // receiver, a `static if` — made once per instance.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "110_instances_by_substitution.cn"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.cn"},
     snapshot_input{.corpus = "semantic_stress",

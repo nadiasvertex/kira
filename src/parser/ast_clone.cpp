@@ -6,6 +6,16 @@ namespace cinder::ast {
 
 namespace {
 
+/// Where `clone_func_decl` is writing its original-to-clone pairs, or
+/// `nullptr` when no caller asked for them.
+thread_local clone_map *active_clone_map = nullptr;
+
+auto record_clone(const void *original, const void *cloned) -> void {
+  if (active_clone_map != nullptr) {
+    active_clone_map->insert_or_assign(original, cloned);
+  }
+}
+
 [[nodiscard]] auto unsupported(const node &n, std::string_view what)
     -> std::unexpected<clone_error> {
   return std::unexpected(clone_error{
@@ -24,6 +34,8 @@ namespace {
     -> std::expected<ptr<node>, clone_error>;
 [[nodiscard]] auto clone_bound(const bound &b)
     -> std::expected<bound, clone_error>;
+[[nodiscard]] auto clone_func_decl_unmapped(const func_decl &decl)
+    -> std::expected<ptr<func_decl>, clone_error>;
 
 template <typename T>
 [[nodiscard]] auto clone_optional(const ptr<T> &original)
@@ -66,7 +78,19 @@ template <typename T>
   return unsupported(n, "this generic argument");
 }
 
+[[nodiscard]] auto clone_type_expr_unmapped(const type_expr &t)
+    -> std::expected<ptr<type_expr>, clone_error>;
+
 [[nodiscard]] auto clone_type_expr(const type_expr &t)
+    -> std::expected<ptr<type_expr>, clone_error> {
+  auto cloned = clone_type_expr_unmapped(t);
+  if (cloned.has_value() && *cloned != nullptr) {
+    record_clone(&t, cloned->get());
+  }
+  return cloned;
+}
+
+[[nodiscard]] auto clone_type_expr_unmapped(const type_expr &t)
     -> std::expected<ptr<type_expr>, clone_error> {
   switch (t.kind) {
   case node_kind::named_type: {
@@ -218,7 +242,19 @@ template <typename T>
   return cloned;
 }
 
+[[nodiscard]] auto clone_pattern_unmapped(const pattern &p)
+    -> std::expected<ptr<pattern>, clone_error>;
+
 [[nodiscard]] auto clone_pattern(const pattern &p)
+    -> std::expected<ptr<pattern>, clone_error> {
+  auto cloned = clone_pattern_unmapped(p);
+  if (cloned.has_value() && *cloned != nullptr) {
+    record_clone(&p, cloned->get());
+  }
+  return cloned;
+}
+
+[[nodiscard]] auto clone_pattern_unmapped(const pattern &p)
     -> std::expected<ptr<pattern>, clone_error> {
   switch (p.kind) {
   case node_kind::wildcard_pattern: {
@@ -289,6 +325,9 @@ template <typename T>
                                              .name = field.name,
                                              .pattern = std::move(*sub),
                                              .is_rest = field.is_rest});
+    }
+    for (size_t i = 0; i < object.fields.size(); ++i) {
+      record_clone(&object.fields[i], &cloned->fields[i]);
     }
     return ptr<pattern>(std::move(cloned));
   }
@@ -501,7 +540,19 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
   return cloned;
 }
 
+[[nodiscard]] auto clone_expr_impl_unmapped(const expr &e)
+    -> std::expected<ptr<expr>, clone_error>;
+
 [[nodiscard]] auto clone_expr_impl(const expr &e)
+    -> std::expected<ptr<expr>, clone_error> {
+  auto cloned = clone_expr_impl_unmapped(e);
+  if (cloned.has_value() && *cloned != nullptr) {
+    record_clone(&e, cloned->get());
+  }
+  return cloned;
+}
+
+[[nodiscard]] auto clone_expr_impl_unmapped(const expr &e)
     -> std::expected<ptr<expr>, clone_error> {
   // An `error_expr` is *spelled* `node_kind::ident_expr` (see its constructor
   // in ast.h), so it has to be recognized before the switch or it would be
@@ -699,6 +750,9 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
       cloned->fields.push_back(struct_field_init{
           .span = field.span, .name = field.name, .value = std::move(*value)});
     }
+    for (size_t i = 0; i < object.fields.size(); ++i) {
+      record_clone(&object.fields[i], &cloned->fields[i]);
+    }
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::block_expr: {
@@ -865,7 +919,19 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
   return cloned;
 }
 
+[[nodiscard]] auto clone_node_unmapped(const node &n)
+    -> std::expected<ptr<node>, clone_error>;
+
 [[nodiscard]] auto clone_node(const node &n)
+    -> std::expected<ptr<node>, clone_error> {
+  auto cloned = clone_node_unmapped(n);
+  if (cloned.has_value() && *cloned != nullptr) {
+    record_clone(&n, cloned->get());
+  }
+  return cloned;
+}
+
+[[nodiscard]] auto clone_node_unmapped(const node &n)
     -> std::expected<ptr<node>, clone_error> {
   switch (n.kind) {
   case node_kind::let_stmt: {
@@ -1069,7 +1135,35 @@ auto clone_expr(const expr &e) -> std::expected<ptr<expr>, clone_error> {
   return clone_expr_impl(e);
 }
 
-auto clone_func_decl(const func_decl &decl)
+auto clone_func_decl(const func_decl &decl, clone_map *map)
+    -> std::expected<ptr<func_decl>, clone_error> {
+  // Restored on every exit, including the early error returns below.
+  struct map_scope {
+    clone_map *saved;
+    explicit map_scope(clone_map *next) : saved(active_clone_map) {
+      active_clone_map = next;
+    }
+    map_scope(const map_scope &) = delete;
+    auto operator=(const map_scope &) -> map_scope & = delete;
+    ~map_scope() { active_clone_map = saved; }
+  };
+  const auto scope = map_scope{map};
+  auto cloned = clone_func_decl_unmapped(decl);
+  if (cloned.has_value()) {
+    record_clone(&decl, cloned->get());
+    for (size_t i = 0; i < decl.contracts.size(); ++i) {
+      record_clone(&decl.contracts[i], &(*cloned)->contracts[i]);
+    }
+    for (size_t i = 0; i < decl.type_params.size(); ++i) {
+      record_clone(&decl.type_params[i], &(*cloned)->type_params[i]);
+    }
+  }
+  return cloned;
+}
+
+namespace {
+
+auto clone_func_decl_unmapped(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error> {
   if (decl.modifiers.async_context != nullptr || decl.modifiers.is_async) {
     return unsupported(decl, "an async function");
@@ -1180,6 +1274,8 @@ auto clone_func_decl(const func_decl &decl)
 
   return cloned;
 }
+
+} // namespace
 
 namespace {
 

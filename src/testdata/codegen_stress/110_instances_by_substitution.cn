@@ -1,0 +1,135 @@
+module codegen_stress.instances_by_substitution
+
+# expect: 10633
+
+# `spec/inference-rewrite.md` phase 9.7: an instance of a generic body is not
+# checked again. Its types are its template's, with each parameter replaced
+# by the instance's answer, and every decision the template could not make —
+# which function a call on a `T` reaches — is made once per instance from the
+# template's records.
+#
+# Each function below makes one such decision, at two element types of
+# different widths wherever the shape allows, so a decision leaking from one
+# instance into another gives a wrong total rather than a crash. The total is
+# asserted because both tiers would agree on that wrong answer.
+
+type money = { cents: int64 } deriving show, eq
+
+impl add for money:
+    def add(self, other: money) -> money:
+        return money { cents: self.cents + other.cents }
+
+impl ord for money:
+    def cmp(self, other: money) -> ordering:
+        if self.cents < other.cents:
+            return @less
+        if self.cents > other.cents:
+            return @greater
+        return @equal
+
+trait functor[F[_]]:
+    def map[A, B](fa: F[A], f: fn(A) -> B) -> F[B]
+
+impl functor for option:
+    def map[A, B](fa: option[A], f: fn(A) -> B) -> option[B]:
+        match fa:
+            @some(a) => @some(f(a))
+            @none    => @none
+
+type bag[T] = { first: T, items: list[T] }
+
+extend[T] bag[T]:
+    def count(self) -> usize:
+        return self.items.len()
+    # Generic over its own `U` and the block's `T`: an instance of `map` is
+    # named for both.
+    def map[U](self, f: fn(T) -> U) -> bag[U]:
+        var out: list[U] = []
+        var i: usize = 0
+        while i < self.items.len():
+            out.push(f(self.items[i]))
+            i = i + 1
+        return bag[U] { first: f(self.first), items: out }
+
+# `for` over a `list[T]`: the loop's `into_iter`/`next` are the instance's.
+def sum_list[T](xs: list[T], zero: T) -> T where T: add:
+    var acc = zero
+    for x in xs:
+        acc = acc + x
+    return acc
+
+# `>` on a `T`: builtin for `int32`, `money::cmp` for `money`.
+def biggest[T](xs: &list[T]) -> T where T: ord:
+    var best = xs[0]
+    var i: usize = 1
+    while i < xs.len():
+        if xs[i] > best:
+            best = xs[i]
+        i = i + 1
+    return best
+
+# A method of `option` reached with the receiver as its first argument.
+def bump[T](o: option[T], f: fn(T) -> T) -> option[T]:
+    return o.map(f)
+
+def get_or[T](o: option[T], d: T) -> T:
+    match o:
+        @some(v) => v
+        @none => d
+
+# `list[T].new()`, then methods on a receiver the template wrote in `T`.
+def pair_of[T](x: T) -> list[T]:
+    var out = list[T].new()
+    out.push(x)
+    out.push(x)
+    return out
+
+# A generic method on a generic receiver, from inside a template.
+def mapped_count[T](b: bag[T]) -> usize:
+    let m = b.map((x: T) => 1)
+    return m.count() + b.count()
+
+# `T.name()` decides a `static if` per instance, and only the taken branch
+# is compiled.
+def width_of[T]() -> int32:
+    let n = T.name()
+    static if n == "int8":
+        return 8
+    static if n == "int64":
+        return 64
+    return 32
+
+# A value parameter read as a value, and a recursive call at the same `n`.
+def count_down[n: usize](v: array[int32, n], i: usize) -> int32:
+    if i >= n:
+        return 0
+    return v[i] + count_down(v, i + 1)
+
+# How a `T` formats is the instance's choice.
+def framed[T](x: T) -> str where T: show:
+    return "[{x}]"
+
+def main() -> int32:
+    var score: int32 = 0
+    let ints: list[int32] = [3, 9, 4]
+    let monies: list[money] = [money { cents: 30 }, money { cents: 90 }]
+    score = score + biggest(&ints)                                 # 9
+    score = score + int32(biggest(&monies).cents)                  # 90
+    score = score + sum_list(ints, 0)                              # 16
+    score = score + int32(sum_list(monies, money { cents: 0 }).cents)  # 120
+    score = score + get_or(bump(@some(20), (x: int32) => x + 1), 0)    # 21
+    score = score + int32(get_or(bump(@some(int64(5)), (x: int64) => x * 3), int64(0)))  # 15
+    score = score + pair_of(100)[1]                                # 100
+    score = score + int32(pair_of(int64(200))[0])                  # 200
+    let b = bag[int32] { first: 1, items: [1, 2, 3] }
+    let wide = b.map((x: int32) => int64(x) * 1000)
+    score = score + int32(wide.first) + int32(wide.items[2])       # 4000
+    score = score + int32(mapped_count(b)) * 1000                  # 6000
+    score = score + width_of[int8]() + width_of[int64]() - width_of[int32]()  # 40
+    let arr: array[int32, 3] = [5, 6, 7]
+    score = score + count_down(arr, 0)                             # 18
+    println(framed(7))
+    println(framed(money { cents: 5 }))
+    let text = framed(int64(-3))
+    score = score + int32(text.len())                              # 4
+    return score
