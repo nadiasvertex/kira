@@ -1,0 +1,16 @@
+module codegen_stress.wide_literal_conversion
+
+# A literal argument to a conversion takes the conversion's width (spec/todo.md
+# item 14). `int64(4294967296)` used to type the literal at the `int32` default
+# and reject it as too large. Every value is outside `int32` range, so a result
+# computed at 32 bits cannot produce the expected total.
+# expect: 45
+
+def main() -> int32:
+    let v = int64(4294967338)
+    let n = int64(-4294967296)
+    let u = uint64(18446744073709551615)
+    let a = int32(v - int64(4294967296))
+    let b = int32(n + int64(4294967298))
+    let c = int32(u - uint64(18446744073709551614))
+    return a + b + c

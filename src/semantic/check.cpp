@@ -12490,7 +12490,15 @@ private:
     if (arg.value == nullptr) {
       return target;
     }
-    const auto found = strip_refs(infer_expr(*arg.value, k_unknown_type));
+    const auto inferred = infer_expr(*arg.value, k_unknown_type);
+    // An integer literal nothing else has typed takes the conversion's
+    // target, not the `int32` default: `int64(4294967296)` is a wide
+    // literal, not an `int32` that overflowed before being widened.
+    if (types_.is_numeric(target) &&
+        integer_literal_leaves_.contains(leaf_ctxt_.find(inferred))) {
+      solve_leaves(target, inferred);
+    }
+    const auto found = strip_refs(inferred);
     if (types_.is_numeric(target) && !types_.is_unknown(found) &&
         !types_.is_numeric(found) && !types_.is_boolean(found)) {
       error_with_help(

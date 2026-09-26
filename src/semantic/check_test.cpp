@@ -1500,6 +1500,17 @@ auto test_reports_integer_literal_overflow() -> void {
                     "expected literal-fit diagnostic");
 }
 
+auto test_reports_conversion_literal_overflow() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_conversion_literal_overflow.cn");
+  expect(analyzed.error_count > 0,
+         "expected `uint8(256)` to fail: the literal takes the conversion's "
+         "target type");
+  expect_diagnostic(analyzed, "integer literal `256` does not fit in `uint8`",
+                    "expected the literal to be range-checked against the "
+                    "conversion's target, not the `int32` default");
+}
+
 auto test_accepts_negative_min_integer_literals() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_negative_min_integer_literals.cn");
@@ -3824,6 +3835,7 @@ auto main() -> int {
     test_reports_hygiene_prevents_spliced_binding_leak();
     test_reports_splice_requires_quote_value();
     test_reports_integer_literal_overflow();
+    test_reports_conversion_literal_overflow();
     test_accepts_negative_min_integer_literals();
     test_reports_negated_integer_literal_still_too_large();
     test_reports_int64_positive_literal_still_too_large();
