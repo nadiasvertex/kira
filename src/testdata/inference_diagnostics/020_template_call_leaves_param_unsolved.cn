@@ -1,0 +1,13 @@
+# bar: AT BAR. Phase 9, step 9.8. A generic body is checked once, as itself,
+# so a call in it that leaves a callee's parameter unsolved is reported there
+# — not only once some instance of the body is made. `make`'s `T` appears in
+# no argument, and nothing annotates `y`. Before 9.8 the template pass stayed
+# quiet about this, so an uncalled `unsolved` compiled cleanly.
+module infer_diag.template_call_leaves_param_unsolved
+
+def make[T]() -> option[T]:
+    return none
+
+def unsolved[U](x: U) -> int32:
+    let y = make()
+    return 0

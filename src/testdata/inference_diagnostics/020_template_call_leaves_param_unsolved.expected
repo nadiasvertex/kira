@@ -1,0 +1,6 @@
+error: cannot tell what `T` is in this call to `make`
+  --> 020_template_call_leaves_param_unsolved.cn:12:13
+   12 |     let y = make()
+      |             ^^^^^^ `T` is a type parameter this call leaves unsolved
+  help: `make` is compiled once per concrete type, so every type parameter has to be pinned down. Either give it outright in brackets (`make[int32](...)`), or annotate the value that should determine `T` — an annotated `let`, a declared return type, or any other context with a known type is used to solve a parameter the arguments leave open.
+

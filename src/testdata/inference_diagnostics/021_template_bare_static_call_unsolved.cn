@@ -1,0 +1,15 @@
+# bar: AT BAR. Phase 9, step 9.8. The same rule for a static method of a
+# generic `extend` block called through the bare type name: `holder.make(3)`
+# says nothing about `T`, whether or not the call sits in a generic body.
+# Before 9.8 the template pass stayed quiet about this.
+module infer_diag.template_bare_static_call_unsolved
+
+type holder[T] = { v: int32 }
+
+extend[T] holder[T]:
+    static def make(v: int32) -> holder[T]:
+        return holder { v: v }
+
+def build[U](x: U) -> int32:
+    let h = holder.make(3)
+    return 0

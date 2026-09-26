@@ -19,9 +19,9 @@ def choose[T](flag: bool, a: T, b: T) -> T:
 
 # One generic function calling another: `wrap`'s body calls `identity`, but not
 # until `wrap` is itself instantiated (its `T` bound to a concrete type) does
-# that inner call have a concrete type to monomorphize against. While the
-# `wrap` *template* is being checked, `in_type_generic_template_` keeps the
-# inner `identity(x)` from being instantiated at the still-abstract `T`.
+# that inner call have a concrete type to monomorphize against. The `wrap`
+# *template*'s call solves `identity`'s `T` to `wrap`'s own, which names no
+# instance; each instance of `wrap` names `identity`'s for its own `T`.
 def wrap[T](x: T) -> T:
     return identity(x)
 

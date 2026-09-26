@@ -867,19 +867,6 @@ private:
   /// instantiates itself at an ever-changing constant (`f[n]` calling
   /// `f[n + 1]`) — which would otherwise never stop.
   size_t instantiation_depth_ = 0;
-  /// Whether the function being checked is a const-generic *template* — its
-  /// value parameters are still symbolic, and it will only ever reach a
-  /// backend through the instances `instantiate_generic_function` makes of it.
-  /// Constructs that need a real constant (`try_from` on `index[n]`) neither
-  /// report nor lower here; the instances handle both.
-  bool in_const_generic_template_ = false;
-  /// Whether the function being checked is a type-generic *template* — its
-  /// type parameters are still abstract `T`s (nothing bound them in
-  /// `type_param_slots_`), so a call it makes to another type-generic function
-  /// can't be monomorphized yet. The template reaches a backend only through
-  /// the instances `instantiate_generic_function` makes of it; those clear this
-  /// flag (their parameters are bound) and monomorphize such calls for real.
-  bool in_type_generic_template_ = false;
   /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
   /// (see its doc comment) for the whole session — stable-address (a
   /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
@@ -2006,11 +1993,12 @@ private:
   /// instantiation bound it to.
   ///
   /// This is the checker's test for "the body being checked is a template,
-  /// not an instance". A generic `def`, `impl` or `extend` body is checked
-  /// twice: once abstractly, to catch mistakes that do not depend on the
-  /// argument, and once per instantiation with real types. Diagnostics that
-  /// can only be decided from concrete types belong to the second pass, and
-  /// reporting them in the first blames the user for a phase boundary.
+  /// not an instance": a generic `def`, `impl` or `extend` body is checked
+  /// once, against its bounds, and its instances are made from its records
+  /// by substitution (`substitute_instance`). It says only whose records a
+  /// body's are; no elaboration decision is gated on it — a site that needs
+  /// its inputs concrete asks them (`mentions_template_param`) and defers to
+  /// the instances if not.
   [[nodiscard]] auto in_abstract_type_param_scope() -> bool {
     for (const auto &scope : type_params_) {
       for (const auto &[name, id] : scope) {
@@ -6268,9 +6256,8 @@ private:
     // once that function's own body has said what the parameter is — see
     // `resolve_open_param_calls`. `params` carries this call's private copy
     // of each still-open parameter leaf, already tied to the arguments.
-    if (!skip_self && !in_const_generic_template_ &&
-        !in_type_generic_template_ && has_unannotated_params(decl) &&
-        is_free_function(decl, owner)) {
+    if (!skip_self && has_unannotated_params(decl) &&
+        is_free_function(decl, owner) && !passes_template_param(params)) {
       auto param_types = std::vector<type_id>{};
       param_types.reserve(params.size());
       for (const auto &param : params) {
@@ -6286,13 +6273,12 @@ private:
                                   .module = module_});
       mint_open_result(decl, call.span);
     }
-    // Not from inside a template: a call there is written in terms of
-    // parameters that are still symbols (`get(v, i)` inside a function generic
-    // over `n` passes an `array[int32, n]`; `wrap(x)` inside one generic over
-    // `T` passes an abstract `T`), so there is nothing concrete to instantiate
-    // the callee with — and no need for one. The template is never lowered;
-    // its *instances* are, and this same call, re-checked in each of them,
-    // instantiates the callee for that instance's arguments.
+    // A call whose solution is written in the caller's own parameters
+    // (`get(v, i)` inside a function generic over `n` passes an
+    // `array[int32, n]`; `wrap(x)` inside one generic over `T` passes a `T`)
+    // names no instance; `instantiate_generic_function` defers it to the
+    // caller's instances. One whose solution is concrete names its instance
+    // here, template or not.
     //
     // Value parameters and type parameters take the same road, together: a
     // template mixing them (`[n: usize, T]`) is one solution with both kinds
@@ -6307,12 +6293,8 @@ private:
     // like a free function's.
     if (is_generic_template(decl) &&
         (is_free_function(decl, owner) || decl.modifiers.is_static)) {
-      const auto result =
-          in_const_generic_template_ || in_type_generic_template_
-              ? check_generic_call_in_template(call, decl, owner, decl_file,
-                                               solved, params, explicit_args)
-              : instantiate_generic_function(call, decl, owner, decl_file,
-                                             solved, params, explicit_args);
+      const auto result = instantiate_generic_function(
+          call, decl, owner, decl_file, solved, params, explicit_args);
       if (result.has_value()) {
         return *result;
       }
@@ -6565,16 +6547,11 @@ private:
     /// Deferred work has to carry the context it was deferred from, or it
     /// does something different from what it would have done in place —
     /// which is the same lesson `pending_instance` learned about its site
-    /// chain and its depth. Here the flags are the whole difference between
-    /// wiring and instantiating: a generic template's `[]` records its
-    /// conversion and stops, because the only `from_array` it could name
-    /// would be one for an abstract `T` that no backend ever compiles. At
-    /// flush time the walk is long over and both flags read false, so
-    /// without carrying them the template's literal instantiates for real
-    /// and produces `list::new$list___`.
+    /// chain and its depth. Here it is the template the literal's decisions
+    /// are deferred to: a generic template's `[]` of `T`s records its
+    /// conversion and leaves the `from_array` to each instance, and at flush
+    /// time the walk is long over.
     const module_members *module = nullptr;
-    bool in_const_generic_template = false;
-    bool in_type_generic_template = false;
     const ast::func_decl *current_template = nullptr;
     /// Set when the body this literal is in turned out to be an implicit
     /// generic (`classify_param_decls`): its instances mint their own.
@@ -6621,8 +6598,6 @@ private:
     std::string goal;
     file_id_type file = 0;
     const module_members *module = nullptr;
-    bool in_const_generic_template = false;
-    bool in_type_generic_template = false;
     const ast::func_decl *current_template = nullptr;
   };
   std::vector<pending_method_call> pending_method_calls_;
@@ -6848,8 +6823,6 @@ private:
     pending.swap(pending_leaf_literals_);
     const auto saved_file = file_id_;
     const auto *saved_module = module_;
-    const auto saved_const_template = in_const_generic_template_;
-    const auto saved_type_template = in_type_generic_template_;
     const auto *saved_current_template = current_template_;
     for (const auto &leaf : pending) {
       if (leaf.skip) {
@@ -6858,8 +6831,6 @@ private:
       const auto element = leaf_ctxt_.zonk(leaf.element);
       file_id_ = leaf.file;
       module_ = leaf.module;
-      in_const_generic_template_ = leaf.in_const_generic_template;
-      in_type_generic_template_ = leaf.in_type_generic_template;
       current_template_ = leaf.current_template;
       if (element == leaf.element) {
         error_with_help(
@@ -6876,8 +6847,6 @@ private:
     }
     file_id_ = saved_file;
     module_ = saved_module;
-    in_const_generic_template_ = saved_const_template;
-    in_type_generic_template_ = saved_type_template;
     current_template_ = saved_current_template;
   }
 
@@ -6901,8 +6870,6 @@ private:
         .goal = goal,
         .file = file_id_,
         .module = module_,
-        .in_const_generic_template = in_const_generic_template_,
-        .in_type_generic_template = in_type_generic_template_,
         .current_template = current_template_});
     auto watches = std::vector<type_id>{};
     auto seen = std::unordered_set<type_id>{};
@@ -6942,12 +6909,8 @@ private:
 
     const auto saved_file = file_id_;
     const auto *saved_module = module_;
-    const auto saved_const_template = in_const_generic_template_;
-    const auto saved_type_template = in_type_generic_template_;
     file_id_ = deferred.file;
     module_ = deferred.module;
-    in_const_generic_template_ = deferred.in_const_generic_template;
-    in_type_generic_template_ = deferred.in_type_generic_template;
     const auto *saved_current_template =
         std::exchange(current_template_, deferred.current_template);
 
@@ -6956,8 +6919,6 @@ private:
     current_template_ = saved_current_template;
     file_id_ = saved_file;
     module_ = saved_module;
-    in_const_generic_template_ = saved_const_template;
-    in_type_generic_template_ = saved_type_template;
     return infer::obligation_report{
         .outcome = infer::obligation_outcome::discharged, .detail = {}};
   }
@@ -7147,6 +7108,17 @@ private:
     pending_open_param_calls_ = std::move(remaining);
   }
 
+  /// Whether a call passes an argument written in the calling template's
+  /// parameters. Such a call names no instance of an implicit generic, and
+  /// nothing yet names one per instance of the caller (`spec/todo.md`), so
+  /// it is not queued.
+  auto passes_template_param(const std::vector<fn_param_info> &params)
+      -> bool {
+    return std::ranges::any_of(params, [&](const fn_param_info &param) {
+      return mentions_template_param(settle(param.type));
+    });
+  }
+
   /// Compiles `item.decl` for this call's argument types and points the call
   /// at the instance.
   auto instantiate_open_param_call(const pending_open_param_call &item,
@@ -7163,11 +7135,12 @@ private:
       // The callee's own leaf says nothing here — that is what made the
       // function generic — so the parameter's type is this call's argument.
       const auto type = settle(item.call_params[i]);
-      if (mentions_type_var(type)) {
+      if (mentions_type_var(type) || mentions_template_param(type)) {
         // Still open: the argument is itself an unsolved leaf, which is
         // either a parameter of an enclosing implicit generic (its own
         // instances re-check this call with a concrete type) or a literal
-        // that already reported its own problem.
+        // that already reported its own problem — or it is written in the
+        // calling template's parameters, which names no instance.
         return;
       }
       seeds[i] = type;
@@ -7495,10 +7468,6 @@ private:
     auto saved_sites = std::move(instantiation_sites_);
     const auto saved_depth = instantiation_depth_;
     const auto saved_template = std::exchange(current_template_, nullptr);
-    const auto saved_const_template =
-        std::exchange(in_const_generic_template_, false);
-    const auto saved_type_template =
-        std::exchange(in_type_generic_template_, false);
 
     enclosing_block_type_params_ = item.block_type_params;
     module_ = item.owner;
@@ -7525,8 +7494,6 @@ private:
 
     body();
 
-    in_type_generic_template_ = saved_type_template;
-    in_const_generic_template_ = saved_const_template;
     current_template_ = saved_template;
     instantiation_depth_ = saved_depth;
     instantiation_sites_ = std::move(saved_sites);
@@ -8241,8 +8208,7 @@ private:
           // `climb[n + 1]` inside a body generic over `n`: the argument is
           // written in the caller's own value parameters, a symbolic answer
           // like any other a generic body's call has.
-          if (!constant.has_value() && explicit_arg->value != nullptr &&
-              in_abstract_type_param_scope()) {
+          if (!constant.has_value() && explicit_arg->value != nullptr) {
             const auto symbolic =
                 resolve_length_arg(*explicit_arg->value, current_resolve_ctx());
             if (types_.entry(symbolic).kind ==
@@ -8283,8 +8249,8 @@ private:
           // The caller's own value parameter, or arithmetic over it
           // (`concat(v, w)` inside a body generic over `n` and `m`): an answer
           // written in symbols, which is what a generic body's call has. It
-          // names no instance — `solution_mentions_rigid` keeps it from
-          // being compiled — but it solves the call.
+          // names no instance — `solution_mentions_template_param` keeps it
+          // from being compiled — but it solves the call.
           if (mentions_rigid_param(found->second)) {
             solution.const_slots.emplace(param.name, found->second);
             solution.suffix += "$?";
@@ -8300,7 +8266,11 @@ private:
         // Solved to a polynomial over the caller's own value parameters —
         // the same symbolic answer as above, arrived at by value solving.
         if (const auto found = solved.find(param.name);
-            found != solved.end() && in_abstract_type_param_scope()) {
+            found != solved.end() &&
+            std::ranges::all_of(found->second.terms, [&](const auto &term) {
+              const auto own = lookup_type_param(term.var);
+              return own.has_value() && is_rigid_param(*own);
+            })) {
           solution.const_slots.emplace(
               param.name, types_.symbolic_value(*underlying, found->second));
           solution.suffix += "$?";
@@ -8312,14 +8282,6 @@ private:
 
       if (explicit_arg != nullptr) {
         const auto resolved = explicit_type_argument(*explicit_arg);
-        if (!resolved.has_value() && in_abstract_type_param_scope()) {
-          // `alloc[T](0)` inside `extend[T] vec[T]` — the bracket names the
-          // enclosing block's own parameter, which is still abstract in the
-          // template pass and so resolves to nothing here. Not a mistake:
-          // the instantiated copy names a real type. Same phase-boundary
-          // reasoning as the unsolved-parameter cases below.
-          return std::nullopt;
-        }
         if (!resolved.has_value()) {
           error_with_help(
               explicit_arg->span,
@@ -8390,14 +8352,6 @@ private:
         }
       }
       if (found == type_bindings.end() || types_.is_unknown(found->second)) {
-        if (in_abstract_type_param_scope()) {
-          // Same reasoning as the abstract-binding case just above, for the
-          // shape where unification produced no binding at all rather than
-          // an abstract one: an argument typed by a still-abstract parameter
-          // cannot pin anything down yet. Quiet here, reported for real when
-          // the enclosing template is instantiated.
-          return std::nullopt;
-        }
         report_unsolved_type_param(call, decl, param);
         return std::nullopt;
       }
@@ -8843,47 +8797,6 @@ private:
            std::ranges::any_of(solution.const_slots, open);
   }
 
-  auto solution_mentions_rigid(const generic_solution &solution) -> bool {
-    const auto rigid = [&](const auto &slot) {
-      return mentions_rigid_param(slot.second) ||
-             types_.entry(slot.second).kind == type_kind::symbolic_value_kind;
-    };
-    return std::ranges::any_of(solution.type_slots, rigid) ||
-           std::ranges::any_of(solution.const_slots, rigid);
-  }
-
-  /// A template's call to another generic function (phase 9, 9.6): solved and
-  /// checked exactly as an instance's would be, with the caller's own type
-  /// parameters as legitimate answers, and the result read through the
-  /// solution — so `identity(x)` with `x: T` is a `T`, the caller's, rather
-  /// than the callee's `T` showing through its signature. No instance is
-  /// made: nothing here is concrete yet.
-  auto check_generic_call_in_template(
-      const ast::call_expr &call, const ast::func_decl &decl,
-      const module_members *owner, file_id_type decl_file,
-      const value_bindings &solved, const std::vector<fn_param_info> &params,
-      const explicit_generic_args &explicit_args,
-      const ast::expr *ufcs_receiver = nullptr) -> std::optional<type_id> {
-    const auto solution =
-        solve_generic_call(call, decl, owner, decl_file, solved, params,
-                           explicit_args, ufcs_receiver);
-    if (!solution.has_value()) {
-      return std::nullopt;
-    }
-    auto [param_types, result] =
-        solved_signature(decl, owner, decl_file, *solution);
-    if (call.callee != nullptr) {
-      record_expr_type(*call.callee, types_.fn_of(param_types, result));
-    }
-    if (solution->bounds_hold) {
-      defer_generic_call(call, decl, owner, decl_file, *solution,
-                         ufcs_receiver);
-    }
-    if (result == k_unknown_type) {
-      return std::nullopt;
-    }
-    return record_expr_type(call, result);
-  }
 
   // ------------------------------------------------------------------------
   //  Bounds at the call site (phase 9, rule 3)
@@ -9178,7 +9091,7 @@ private:
     // `extend[T] list[T]` calling `alloc[T]`), and its instances make this
     // call again with `T` concrete. It is checked like a template's call. A
     // solution whose bounds failed is reported already and compiles nothing.
-    if (solution_mentions_rigid(*solution) || !solution->bounds_hold) {
+    if (solution_mentions_template_param(*solution) || !solution->bounds_hold) {
       auto [param_types, result] =
           solved_signature(decl, owner, decl_file, *solution);
       if (call.callee != nullptr) {
@@ -10505,9 +10418,7 @@ private:
   /// Phase 9 of `spec/inference-rewrite.md`. Before it, this returned
   /// `int32` on the spot — a decision made at the leaf, from no evidence,
   /// and irrevocable. `int32` is usually right, which is exactly what made
-  /// it expensive: every place it was wrong became its own repair, and the
-  /// `in_type_generic_template_` gate just above is one of them, still
-  /// needed only because the eager answer had to be suppressed somewhere.
+  /// it expensive: every place it was wrong became its own repair.
   ///
   /// Now the literal mints a leaf and raises a `defaulting` obligation whose
   /// candidate is `int32`. Real constraints — a later argument, a return, an
@@ -10560,23 +10471,14 @@ private:
       if (types_.is_float(stripped)) {
         return stripped;
       }
-      // An unresolved generic type parameter *of the function currently
-      // being checked as its own template* (e.g. `-> T` checked before any
-      // call site has bound `T` — see `in_type_generic_template_`) is not
-      // evidence the literal should default to `int32`; it just means the
-      // real target isn't known yet. Bounds-checking against `int32` here
-      // would reject e.g. `return -9223372036854775807 - 1` inside a `def
-      // f[T]() -> T` even when every concrete instantiation of `T` that can
-      // reach this statement is wide enough; the real check runs again,
-      // with `T` bound, when `find_or_check_generic_instance` rechecks the
-      // body per instantiation.
+      // A type parameter of the body being checked (`return 7` in a `def
+      // f[T]() -> T`) is not evidence the literal should default to `int32`:
+      // the literal has to fit every type `T` can be (phase 9, rule 4).
       //
-      // Gated on `in_type_generic_template_` (not merely "is a type
-      // param"): at an ordinary call site like `identity(7)`, `expected` is
-      // also a type param — `identity`'s own unbound `T` — but there this
-      // literal's *concrete* type (`int32`) is exactly what the call solves
-      // `T` from. Deferring there instead of defaulting would make
-      // unification see `T` against itself and leave `T` unsolved.
+      // Only the body's *own* parameter (`is_rigid_param`): at an ordinary
+      // call site like `identity(7)`, `expected` is also a type param —
+      // `identity`'s own unsolved `T` — but there this literal's concrete
+      // type (`int32`) is exactly what the call solves `T` from.
       if (is_rigid_param(stripped)) {
         return check_literal_as_param(lit, stripped, negated);
       }
@@ -10831,9 +10733,7 @@ private:
   /// `money` — wired by each instance for its own operand type.
   auto defer_operator_dispatch(const ast::binary_expr &binary, type_id lhs,
                                operator_kind kind) -> void {
-    if (current_template_ == nullptr ||
-        (!mentions_template_param(lhs) && !in_const_generic_template_ &&
-         !in_type_generic_template_)) {
+    if (current_template_ == nullptr || !mentions_template_param(lhs)) {
       return;
     }
     defer_to_instances(
@@ -10874,23 +10774,18 @@ private:
     // not carry a predicate through it, and pretending otherwise would be
     // unsound (`p + 1` overflows to a negative). Widening is free; this is
     // where it is free (`spec/dependent-types-design.md` §3.1).
-    // An unresolved type parameter of the function being checked as its own
-    // template (`-> T` checked before any call site has bound `T` — see
-    // `in_type_generic_template_`) isn't `is_numeric` — nothing says yet
-    // that it will be — but it still has to reach `infer_literal` as the
-    // expected type, not collapse to `k_unknown_type`: only there does an
-    // integer literal know to defer its own bounds-check instead of
-    // defaulting to `int32`. Gated on `in_type_generic_template_`, not
-    // merely "is a type param": at an ordinary call site the expected type
-    // can also be an unbound type param (the callee's own `T`), and there a
-    // literal operand's *concrete* type is exactly what solves it — see the
-    // matching guard in `infer_literal`.
+    // A type parameter of the body being checked isn't `is_numeric`, but it
+    // still has to reach `infer_literal` as the expected type, not collapse
+    // to `k_unknown_type`: only there is a literal checked against every
+    // type `T` can be instead of defaulting to `int32`. Only the body's own
+    // parameter (`is_rigid_param`): at an ordinary call site the expected
+    // type can also be the callee's unsolved `T`, and there a literal
+    // operand's concrete type is exactly what solves it — see the matching
+    // guard in `infer_literal`.
     const auto stripped_expected = strip_refs(expected);
     const auto numeric_expected =
         types_.is_numeric(stripped_expected) ||
-                (in_type_generic_template_ &&
-                 types_.entry(stripped_expected).kind ==
-                     type_kind::type_param_kind)
+                is_rigid_param(stripped_expected)
             ? base_shape(expected)
             : k_unknown_type;
     // Kept undecorated as well as stripped. `base_shape` drops the `&`, and
@@ -13343,8 +13238,7 @@ private:
                                    std::string_view discriminator = {})
       -> const ast::func_decl * {
     if (!impl_needs_instance(method, receiver_entry) ||
-        in_const_generic_template_ || in_type_generic_template_ ||
-        mentions_type_param(receiver_type)) {
+        mentions_template_param(receiver_type)) {
       return nullptr;
     }
     auto bindings = std::unordered_map<std::string, type_id>{};
@@ -13410,9 +13304,6 @@ private:
     if (!is_generic_template(*method.decl)) {
       return std::nullopt;
     }
-    const auto in_template = in_const_generic_template_ ||
-                             in_type_generic_template_ ||
-                             mentions_template_param(receiver_type);
     const auto params = signature_params(*method.decl, method.owner,
                                          /*skip_self=*/true);
     // Both solvers run, because they see different things: `unify_rigid`
@@ -13441,8 +13332,19 @@ private:
       solve_impl_value_params(method, strip_refs(receiver_type), impl_bindings);
     }
 
-    // In a template the method's own parameters and the block's are solved
-    // in the template's terms; each instance names its own copy.
+    // Solved in a template's terms — the receiver, or an answer for the
+    // method's own parameters or the block's, is written in the caller's
+    // parameters: each of the caller's instances names its own copy.
+    const auto open_slot = [&](const auto &slot) -> bool {
+      return mentions_template_param(slot.second);
+    };
+    const auto in_template =
+        mentions_template_param(receiver_type) ||
+        std::ranges::any_of(bindings, open_slot) ||
+        std::ranges::any_of(impl_bindings, open_slot) ||
+        std::ranges::any_of(solved, [](const auto &slot) -> bool {
+          return !slot.second.is_constant();
+        });
     if (in_template) {
       defer_impl_method_call(call, receiver_type);
       record_instance_method_callee(call, method, target_type_name, receiver);
@@ -13655,24 +13557,19 @@ private:
     if (!impl_needs_instance(method, receiver_entry)) {
       return std::nullopt;
     }
-    if (in_const_generic_template_ || in_type_generic_template_ ||
-        mentions_template_param(receiver_type)) {
+    // A receiver still written in type parameters — `self.cur.is_none()`
+    // where `cur: option[J]` inside `extend[J] holder[J]`. There is nothing
+    // concrete to instantiate yet; each of the enclosing template's instances
+    // names its own. Without this the loop below would report "cannot tell
+    // which `T` this call to `is_none` means" -- blaming the user's call for
+    // the compiler looking at it a phase too early, and pointing them at a
+    // fix (move `T` onto the method) for a declaration in the prelude that
+    // they cannot edit and that is not wrong.
+    if (mentions_template_param(receiver_type)) {
       return template_impl_method_call(call, method, receiver_entry, receiver,
                                        receiver_type);
     }
 
-    // A receiver still written in type parameters — `self.cur.is_none()`
-    // where `cur: option[J]` inside `extend[J] holder[J]`. There is nothing
-    // concrete to instantiate yet; the enclosing body is itself a template,
-    // and the call will be checked again for real once `J` is known.
-    //
-    // The `in_*_template_` flags above do not cover this: they track the
-    // free-function generic paths, not a method body inside a generic
-    // `impl`/`extend` block. Without this the loop below would report
-    // "cannot tell which `T` this call to `is_none` means" -- blaming the
-    // user's call for the compiler looking at it a phase too early, and
-    // pointing them at a fix (move `T` onto the method) for a declaration
-    // in the prelude that they cannot edit and that is not wrong.
     auto bindings = std::unordered_map<std::string, type_id>{};
     unify_rigid(method.impl_target_pattern, receiver_type, bindings);
     solve_impl_value_params(method, receiver_type, bindings);
@@ -14281,9 +14178,10 @@ private:
     // that parameter's leaf like any other argument was by
     // `check_call_args_against`; the rest of the record is the same as for an
     // ordinary call (`check_call_against_decl`).
-    if (!in_const_generic_template_ && !in_type_generic_template_ &&
-        has_unannotated_params(decl) &&
-        is_free_function(decl, candidate.owner)) {
+    if (has_unannotated_params(decl) &&
+        is_free_function(decl, candidate.owner) &&
+        !mentions_template_param(settle(receiver_type)) &&
+        !passes_template_param(rest)) {
       solve_leaves(params.front().type, receiver_type);
       auto param_types = std::vector<type_id>{};
       param_types.reserve(params.size());
@@ -14302,8 +14200,7 @@ private:
       mint_open_result(decl, call.span);
     }
 
-    if (!in_const_generic_template_ && !in_type_generic_template_ &&
-        is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
+    if (is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
       // A receiver still open after the arguments have had their say —
       // `xs.iter()` on a `list[?a]` that a later statement will pin. There
       // is no instance to name yet (`iter$list___` is a function nothing
@@ -14360,11 +14257,9 @@ private:
     // rule ("reached only after every method lookup above has failed, so a
     // free function can never shadow a method") exists to forbid.
     //
-    // Nothing is lost by declining: a generic body is checked again per
-    // instantiation with the parameter bound to a concrete type
-    // (`instantiate_generic_function`, and the deferred monomorphization
-    // `build_method_table` runs for trait defaults), and UFCS resolves there
-    // against a receiver that actually has a type.
+    // Nothing is lost by declining: a method on a `T` is what its bounds
+    // promise (`check_bound_method_call`), and each instance names the
+    // concrete method its template's call reaches.
     if (types_.entry(receiver_type).kind == type_kind::type_param_kind) {
       return std::nullopt;
     }
@@ -14577,8 +14472,8 @@ private:
         if (field.field_name == "name") {
           // Inside the *template* (not yet instantiated), `T` is bound to
           // an abstract placeholder rather than a concrete type — nothing
-          // to fold yet, and the template itself is never lowered anyway
-          // (see `in_type_generic_template_`). Only a genuinely concrete
+          // to fold yet, and the template itself is never lowered; each
+          // instance folds its own. Only a genuinely concrete
           // instance's binding is foldable; that's what `hir::lower` needs
           // in `type_param_reflections_` to give this call a runtime
           // answer (`static` contexts aside, `T.name()` has no other way
@@ -15167,8 +15062,7 @@ private:
     // then fail to lower on the first use of one.
     if (method->decl->type_params.empty() &&
         impl_needs_instance(*method, entry)) {
-      if (!in_const_generic_template_ && !in_type_generic_template_ &&
-          !mentions_template_param(target)) {
+      if (!mentions_template_param(target)) {
         if (const auto *instance = check_impl_generic_static_call(
                 call, *method, target, bindings)) {
           resolved_callees_[&call] =
@@ -15230,11 +15124,18 @@ private:
       unify_rigid(method->impl_target_pattern, target, impl_bindings);
       bindings.insert(impl_bindings.begin(), impl_bindings.end());
     }
-    // In a template the call is solved in the template's terms and each
-    // instance names its own copy.
+    // Solved in a template's terms — the target, or an answer for the
+    // method's own parameters, is written in the caller's parameters: each
+    // of the caller's instances names its own copy.
+    const auto open_slot = [&](const auto &slot) -> bool {
+      return mentions_template_param(slot.second);
+    };
     if (current_template_ != nullptr &&
-        (in_const_generic_template_ || in_type_generic_template_ ||
-         mentions_template_param(target))) {
+        (mentions_template_param(target) ||
+         std::ranges::any_of(bindings, open_slot) ||
+         std::ranges::any_of(solved, [](const auto &slot) -> bool {
+           return !slot.second.is_constant();
+         }))) {
       defer_to_instances(call,
                          [this, &call, &field, target](instance_subst &subst) {
                            const auto &clone = *clone_of(subst, &call);
@@ -15374,13 +15275,6 @@ private:
         bindings.emplace(type_param.name, own);
         continue;
       }
-      // Inside a template the arguments may themselves be abstract; each
-      // instance decides.
-      if (in_const_generic_template_ || in_type_generic_template_ ||
-          in_abstract_type_param_scope()) {
-        defer();
-        return k_unknown_type;
-      }
       error_with_help(
           call.span,
           std::format("cannot tell which `{}` this call to `{}.{}` means",
@@ -15405,8 +15299,7 @@ private:
         substitute_solved(method.impl_target_pattern, bindings));
     // Still written in type parameters: a template body calling
     // `example_type.make(x)` with `x: T`. Nothing concrete to compile yet.
-    if (in_const_generic_template_ || in_type_generic_template_ ||
-        in_abstract_type_param_scope() || mentions_type_param(target)) {
+    if (mentions_template_param(target)) {
       defer();
       return return_type();
     }
@@ -17344,7 +17237,7 @@ private:
 
     const auto parameters = refinement_constants(entry);
     if (!parameters.has_value()) {
-      if (in_const_generic_template_) {
+      if (mentions_template_param(refined)) {
         // `index[n].try_from(raw)` inside a function generic over `n`. There
         // is no check to build *here* — `n` is a symbol — but there will be
         // one in each instance the template is compiled into, where `n` is a
@@ -17792,9 +17685,7 @@ private:
                         .owner_module = method.owner->module_name,
                         .impl_target_type = callee != nullptr ? "" : entry.name,
                         .receiver = index.object.get()};
-    if (callee == nullptr &&
-        (mentions_template_param(target) || in_const_generic_template_ ||
-         in_type_generic_template_)) {
+    if (callee == nullptr && mentions_template_param(target)) {
       defer_to_instances(
           index, [this, &dispatches, &index, &method, target,
                   trait = std::string(trait)](instance_subst &subst) {
@@ -19093,9 +18984,7 @@ private:
   /// comprehension clause, keyed on `site` either way.
   auto defer_loop_route(const ast::expr &iterable_expr, const ast::node &site,
                         type_id iterable) -> void {
-    if (current_template_ == nullptr ||
-        (!mentions_template_param(iterable) && !in_const_generic_template_ &&
-         !in_type_generic_template_)) {
+    if (current_template_ == nullptr || !mentions_template_param(iterable)) {
       return;
     }
     defer_to_instances(
@@ -19211,8 +19100,7 @@ private:
     // The conversion a template's `?` calls is each instance's to name: its
     // error types, or the `from` impl's instance, depend on the parameters.
     if (current_template_ != nullptr &&
-        (in_const_generic_template_ || in_type_generic_template_ ||
-         mentions_template_param(operand_err) ||
+        (mentions_template_param(operand_err) ||
          mentions_template_param(fn_err))) {
       defer_to_instances(expr, [this, &expr, operand_err, fn_err,
                                 fn_return_type](instance_subst &subst) {
@@ -19437,7 +19325,7 @@ private:
       // the reason `try_resolve_into_iterator` documents: nothing in the
       // source names this call.
       if (site != nullptr && is_generic_template(*candidate.decl) &&
-          !in_const_generic_template_ && !in_type_generic_template_) {
+          !mentions_template_param(operand)) {
         auto solution = generic_solution{};
         solution.type_slots = bindings;
         solution.suffix = std::format("${}", mangle_type_for_instance(operand));
@@ -19510,7 +19398,7 @@ private:
     // nothing in the source names this call, so if the instance is not
     // requested here, lowering finds no such function.
     if (site != nullptr && impl_needs_instance(*method, entry) &&
-        !in_const_generic_template_ && !in_type_generic_template_) {
+        !mentions_template_param(stripped)) {
       auto scoped_params = method->fixed_type_params;
       scoped_params.insert(bindings.begin(), bindings.end());
       auto solution = generic_solution{};
@@ -19568,7 +19456,7 @@ private:
                                .element_type = ret_entry.args.front()};
 
     if (site == nullptr || !impl_needs_instance(*method, entry) ||
-        in_const_generic_template_ || in_type_generic_template_) {
+        mentions_template_param(stripped)) {
       return dispatch;
     }
 
@@ -19935,8 +19823,7 @@ private:
       value_key = seg.value.get();
       // How a `T` formats is each instance's choice — the builtin way for
       // `int32`, `show` for a user type.
-      if (mentions_template_param(value_type) || in_const_generic_template_ ||
-          in_type_generic_template_) {
+      if (mentions_template_param(value_type)) {
         defer_to_instances(
             *seg.value, [this, &seg, value_type](instance_subst &subst) {
               const auto concrete = substitute_type(value_type, subst);
@@ -20282,8 +20169,7 @@ private:
   /// `try_resolve_iterator` requests its `next` instance from the loop.
   auto instantiate_from_array_for(const ast::array_expr &array, type_id target,
                                   uint64_t length) -> void {
-    if (in_const_generic_template_ || in_type_generic_template_ ||
-        mentions_template_param(target)) {
+    if (mentions_template_param(target)) {
       defer_to_instances(
           array, [this, &array, target, length](instance_subst &subst) {
             instantiate_from_array_for(*clone_of(subst, &array),
@@ -20484,8 +20370,7 @@ private:
       if (const auto dispatch = resolve_new_push_dispatch(site, list_type)) {
         table[&site] = *dispatch;
       }
-      if (in_const_generic_template_ || in_type_generic_template_ ||
-          mentions_template_param(list_type)) {
+      if (mentions_template_param(list_type)) {
         defer_to_instances(
             site, [this, &site, &table, list_type](instance_subst &subst) {
               const auto &clone = *clone_of(subst, &site);
@@ -20510,7 +20395,7 @@ private:
   /// fill whose count is only known at runtime.
   auto resolve_new_push_dispatch(const ast::node &site, type_id list_type)
       -> std::optional<comprehension_dispatch> {
-    if (in_const_generic_template_ || in_type_generic_template_) {
+    if (mentions_template_param(list_type)) {
       return std::nullopt;
     }
     const auto &entry = types_.entry(list_type);
@@ -20617,8 +20502,6 @@ private:
         .span = array.span,
         .file = file_id_,
         .module = module_,
-        .in_const_generic_template = in_const_generic_template_,
-        .in_type_generic_template = in_type_generic_template_,
         .current_template = current_template_});
     return true;
   }
@@ -20654,7 +20537,7 @@ private:
         if (const auto dispatch =
                 resolve_new_push_dispatch(array, strip_refs(expected))) {
           runtime_fill_dispatches_[&array] = *dispatch;
-        } else if (!in_const_generic_template_ && !in_type_generic_template_) {
+        } else if (!mentions_template_param(strip_refs(expected))) {
           error_with_help(
               array.span,
               std::format("`{}` cannot be built from a fill whose count is "
@@ -20809,8 +20692,6 @@ private:
           .span = array.span,
           .file = file_id_,
           .module = module_,
-          .in_const_generic_template = in_const_generic_template_,
-          .in_type_generic_template = in_type_generic_template_,
           .current_template = current_template_});
       return resolve_list_type(leaf);
     }
@@ -22380,25 +22261,17 @@ private:
     in_comptime_only_function_ = comptime_only_functions_.contains(&decl);
     const auto saved_in_machine_function = in_machine_function_;
     in_machine_function_ = decl.modifiers.is_machine;
-    // A value parameter this function has no constant for is still a symbol
-    // here, which makes this the *template* — see the member's doc comment.
-    const auto saved_template = in_const_generic_template_;
-    in_const_generic_template_ = std::ranges::any_of(
-        decl.type_params, [this](const auto &param) -> bool {
-          return param.is_value_param && !param.name.empty() &&
-                 !const_param_slots_.contains(param.name);
-        });
-    // The type-parameter analog: a type parameter with no binding in
-    // `type_param_slots_` is still abstract, which makes this the template.
-    const auto saved_type_template = in_type_generic_template_;
-    in_type_generic_template_ = std::ranges::any_of(
-        decl.type_params, [this](const auto &param) -> bool {
-          return !param.is_value_param && !param.name.empty() &&
-                 !type_param_slots_.contains(param.name);
-        });
+    // A parameter of this function's own with no answer in
+    // `const_param_slots_`/`type_param_slots_` is still a symbol here, so
+    // this check is its template's: an error in it means no instance of it
+    // is ever made (`failed_templates_`).
     const auto errors_before_body = errors_emitted_;
-    const auto checking_template =
-        in_type_generic_template_ || in_const_generic_template_;
+    const auto checking_template = std::ranges::any_of(
+        decl.type_params, [this](const auto &param) -> bool {
+          return !param.name.empty() &&
+                 !(param.is_value_param ? const_param_slots_ : type_param_slots_)
+                      .contains(param.name);
+        });
     // A body with any parameter still abstract is a template: its records
     // are written in those parameters, and every decision that needs them
     // concrete is deferred to its instances (`defer_to_instances`).
@@ -22810,8 +22683,6 @@ private:
       waiting_instances_.erase(waiting);
     }
     current_template_ = saved_current_template;
-    in_const_generic_template_ = saved_template;
-    in_type_generic_template_ = saved_type_template;
     in_comptime_only_function_ = saved_in_comptime_only_function;
     in_machine_function_ = saved_in_machine_function;
     comptime_eval_.pop_locals();

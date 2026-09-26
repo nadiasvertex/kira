@@ -20,7 +20,7 @@ anywhere.
 | 6 | Elaboration split out of checking — decisions recorded, flushed after solving | **Done** — `src/semantic/check.cpp` (`flush_pending_instances`), fixture `codegen_stress/089_elaboration_snapshot_gaps.cn` |
 | 7 | Constraint generation migrated onto the one unifier | **Done** — `src/semantic/infer/rigid_match.{h,cpp}`, `rigid_match_test.cpp`; scoped `type_param`; all three allowances retired |
 | 8 | Real metavariables at the leaves (`[]`, unannotated params, literals) | **Done** — empty `[]`, integer-literal defaulting, and unannotated parameters (implicit generics, phase 8b below) |
-| 9 | Generic bodies checked once, abstractly | **Replanned 2026-09-26 as bounded generics** — the template/instance boundary is fixed and phase 8's acceptance test passes; the abstract pass turned out not to check `T`-typed values at all, so the remaining work is steps 9.1-9.8 below |
+| 9 | Generic bodies checked once, abstractly | **Done** (replanned 2026-09-26 as bounded generics, steps 9.1-9.8 below) — a generic body is checked once against its bounds, instances are made by substitution, and no decision reads which pass it is in |
 | 10 | `method_call` as an obligation | **In progress** — see below |
 | 11 | Demand discipline: default only what a decision needs | **Done** — scoped `demand`, `demand_shape`, and no demand where a type only flows; `spec/todo.md` item 14 fixed (and removed) |
 
@@ -982,7 +982,7 @@ Known hazard: the end-of-body default runs the leaf queue, which can default
 a caller's pending literal earlier than a later constraint would have pinned
 it.
 
-### Phase 9 — abstract generic bodies *(the boundary is fixed; the gates are not)*
+### Phase 9 — abstract generic bodies *(done)*
 
 **Phase 8's acceptance test passes.** The annotations are off `partition`'s
 `yes`/`no` (`src/std/algo.cn`) and `from_iter`'s `out`
@@ -1152,7 +1152,7 @@ here" chain.
 | 9.6 | Generic-to-generic calls by entailment; call-site bound checking (rule 3) | **Done** — `solve_generic_call` (shared by instances and templates) checks every bound against the solution (`check_call_bounds`, `satisfies_trait`/`satisfies_concept`, builtin scalars by `builtin_has_trait`); a template's call is solved with its own parameters as answers and its result read through the solution (`check_generic_call_in_template`); a solution written in the body's own parameters is never instantiated (`solution_mentions_rigid`); `T.zero()`-style static calls go through the bounds; `[T: ord]` is settled as a bounded type parameter once, before checking (`settle_bounded_params`); `inference_diagnostics/003` (now at bar), `018` |
 | 9.6b | A type parameter is rigid: `type_table::is_unknown` stops counting `type_param_kind`, so `T` against `int32` is a mismatch | **Done** — a call opens the callee's own unsolved parameters (`open_foreign_params`) instead of relying on them being "unknown"; value parameters solve symbolically across the call (`n := n`, `solve_for_unknown` no longer refuses a shared spelling); the move checker keeps not tracking `T` (see `spec/todo.md`); `inference_diagnostics/019` |
 | 9.7 | Instance types by substitution: the instance walk is replaced by substituting the template's records | **Done** — `substitute_instance`: records copied onto the clone (`clone_func_decl`'s `clone_map`) with `substitute_type`, deferred decisions replayed (`defer_to_instances`); instances of 8b implicit generics and compile-time-only functions are still walked; `codegen_stress/110` (`# expect: 10633`); see below |
-| 9.8 | Both `in_*_template_` gates and the template leniencies deleted | **Not started.** Tried turning both modes off at once (2026-09-26): every stdlib `list` instance failed to lower (`list::push$list_byte_` never compiled). The gates must be replaced one site at a time by a fact about that site's own inputs (`mentions_rigid_param`); about 20 sites remain |
+| 9.8 | Both `in_*_template_` gates and the template leniencies deleted | **Done** — both flags and every save/restore of them are gone; each site asks `mentions_template_param` of its own inputs; the solver's five "quiet inside a template" exits are deleted; `inference_diagnostics/020`, `021`; see below |
 
 #### 9.7: instances by substitution (2026-09-26)
 
@@ -1235,6 +1235,74 @@ gone, and 219 fewer types are interned (1994 → 1775, measured before
 
 **Known limits.** A template calling an implicit generic (`twice(x)` with
 `x: T`) does not lower — it did not before either (`spec/todo.md`). A
-comprehension in a generic body still cannot be cloned. The
-`in_*_template_` flags remain (9.8), but every site they gate now defers to
-the instances instead of suppressing the decision.
+comprehension in a generic body still cannot be cloned.
+
+#### 9.8: the gates are facts (2026-09-26)
+
+`in_const_generic_template_` and `in_type_generic_template_` are deleted,
+with the copies `pending_leaf_literal` and `pending_method_call` carried and
+every save/restore around them. Each of the sites they gated now asks a
+question of its own inputs — `mentions_template_param` of the receiver, the
+target, the operand, the solution — and defers to the instances when the
+answer is yes. A site whose inputs are concrete decides on the spot, in a
+template or not.
+
+Why this works now and did not in the 9.7 experiment: then, an instance was
+walked, so a template that instantiated a concrete callee and an instance
+that did it again named the same function twice, and the template's
+decision was the one without the instance's context. Now an instance
+*copies* the template's records, so a concrete decision made in the
+template is exactly the one every instance needs, and the replay
+(`defer_to_instances`) runs only for the decisions that were not concrete.
+
+What changed, site by site:
+
+- **Generic calls.** `check_generic_call_in_template` is gone:
+  `instantiate_generic_function` already deferred a solution written in the
+  caller's parameters. Its test is now `solution_mentions_template_param`
+  rather than `solution_mentions_rigid` (also gone), because rigidity is
+  read off the scope stack, which deferred work does not carry; whether a
+  type is written in parameters is a fact about the type alone.
+- **Method calls.** `check_generic_instance_method_call` and the static
+  path defer when the receiver, *or any answer for the method's own
+  parameters or its block's*, is written in the caller's parameters —
+  `list[usize].push(x)` is concrete, `list[usize].extend(it)` with `it: I`
+  is not.
+- **Operators, indexing, loops, `?`, interpolation, `from_array`,
+  new/push wiring, iterator adapters.** Each gates on its own operand,
+  target, iterable, or list type.
+- **Literals.** `infer_arithmetic` and `infer_literal` ask
+  `is_rigid_param` of the expected type — the body's own `T` rather than a
+  callee's unsolved one — which is what the flag was standing in for.
+- **Implicit generics.** A call from a template is queued unless an
+  argument is written in the template's parameters
+  (`passes_template_param`), which keeps `spec/todo.md` item 20 failing
+  where it did, with its location.
+- **`check_function`.** Whether an error makes the body a failed template
+  (`failed_templates_`) is a local fact about the declaration's own
+  unanswered parameters.
+
+**The leniencies.** Five exits in the solver returned `nullopt` quietly
+"inside a template": an unsolved type parameter, an explicit type argument
+that did not resolve, a symbolic explicit value argument, a symbolic value
+solution, and `holder.make(3)`'s undetermined block parameter. The first,
+second and fifth are deleted outright — the template is a check, and a call
+that leaves `T` unsolved is a mistake wherever it sits. The third and
+fourth were answers, not leniencies: they keep their behavior, gated on the
+answer being written in the body's own parameters. The first and fifth were
+the ones a program could reach: `020` and `021` are each accepted by the
+compiler before this step (it type-checks an uncalled generic body without
+a word) and rejected after. The second, `make[Q]()` naming an undefined `Q` in a template, now
+reports exactly as it does in ordinary code — including the duplicate
+``not a type this call can name`` after ``undefined type `Q` `` that
+ordinary code already had (`spec/todo.md`).
+
+**The snapshot moved in one direction only.** 22 decisions changed, and
+every one is a template site on a concrete receiver that used to record the
+uncompiled template method (`list::push`, `list::at`, `list::set_at`,
+`list::from_array`) and now names its instance (`list::push$list__usize__
+usize__`, `from_array$256$list_usize_`). These are `std.algo`'s concrete
+scratch lists inside generic sorts, plus two corpus lines. Sixteen more
+instances are compiled (169 → 185), the ones those sites name in templates
+the corpus never instantiates, and four more types are interned
+(1879 → 1883).

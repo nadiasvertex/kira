@@ -1,0 +1,6 @@
+error: cannot tell which `T` this call to `holder.make` means
+  --> 021_template_bare_static_call_unsolved.cn:14:13
+   14 |     let h = holder.make(3)
+      |             ^^^^^^^^^^^^^^ `T` is not determined by the arguments
+  help: `T` belongs to the `extend` block, and `holder` names the type without saying what `T` is, so the compiler reads it off the arguments instead. None of the arguments mention `T`. Name the type in full to say which one is meant, as in `holder[int32].make(...)`.
+
