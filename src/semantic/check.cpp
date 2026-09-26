@@ -12619,6 +12619,99 @@ private:
                     param_name, fn_name, types_.display(target), param_name));
   }
 
+  /// A static method of a generic `extend[T] crate[T]:` block called through
+  /// the *bare* type name — `crate.make(40)` rather than
+  /// `crate[int32].make(40)`. The bare name carries no type arguments, so the
+  /// impl's parameters have to be solved from the call's arguments instead
+  /// (`v: T` given `40` solves `T := int32`), which then names the concrete
+  /// target `crate[int32]` and goes through the same instance discipline as
+  /// the applied spelling.
+  ///
+  /// Without this, the call was typed against the uninstantiated template:
+  /// the result was a `crate[T]` with `T` abstract, and lowering failed with
+  /// "call to `crate::make` could not be resolved to a function in this
+  /// compiled module" — nothing ever compiled that function.
+  ///
+  /// `nullopt` for a method this does not apply to (a non-generic block, or
+  /// a method with type parameters of its own), leaving the caller on its
+  /// existing path.
+  auto check_bare_generic_static_call(const ast::call_expr &call,
+                                      const ast::field_expr &field,
+                                      const method_entry &method,
+                                      const std::string &type_name)
+      -> std::optional<type_id> {
+    if (method.block_type_params == nullptr ||
+        method.block_type_params->empty() ||
+        !method.decl->type_params.empty()) {
+      return std::nullopt;
+    }
+    record_expr_type(field, fn_type_of(*method.decl, method.owner));
+    const auto params = signature_params(*method.decl, method.owner,
+                                         /*skip_self=*/false,
+                                         method.block_type_params);
+    check_call_args_against(
+        call, params, method.decl->name,
+        source_location{.file_id = method.file_id, .span = method.decl->span});
+    check_call_preconditions(call, *method.decl, params);
+
+    auto bindings = std::unordered_map<std::string, type_id>{};
+    solve_from_argument_types(call, params, bindings,
+                              /*ufcs_receiver=*/nullptr,
+                              /*may_default=*/true);
+    const auto return_type = [&] {
+      return substitute_solved(signature_return_type(*method.decl,
+                                                     method.owner,
+                                                     method.block_type_params),
+                               bindings);
+    };
+
+    for (const auto &type_param : *method.block_type_params) {
+      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+        continue;
+      }
+      // Inside a template the arguments may themselves be abstract; the call
+      // is checked again, for real, in each instance.
+      if (in_const_generic_template_ || in_type_generic_template_ ||
+          in_abstract_type_param_scope()) {
+        return k_unknown_type;
+      }
+      error_with_help(
+          call.span,
+          std::format("cannot tell which `{}` this call to `{}.{}` means",
+                      type_param.name, type_name, method.decl->name),
+          std::format("`{}` is not determined by the arguments",
+                      type_param.name),
+          std::format(
+              "`{}` belongs to the `extend` block, and `{}` names the type "
+              "without saying what `{}` is, so the compiler reads it off the "
+              "arguments instead. None of the arguments mention `{}`. Name "
+              "the type in full to say which one is meant, as in "
+              "`{}[int32].{}(...)`.",
+              type_param.name, type_name, type_param.name, type_param.name,
+              type_name, method.decl->name));
+      return k_error_type;
+    }
+
+    const auto target = settle(
+        substitute_solved(method.impl_target_pattern, bindings));
+    // Still written in type parameters: a template body calling
+    // `crate.make(x)` with `x: T`. Nothing concrete to compile yet.
+    if (in_const_generic_template_ || in_type_generic_template_ ||
+        in_abstract_type_param_scope() || mentions_type_param(target)) {
+      return return_type();
+    }
+    const auto *instance =
+        check_impl_generic_static_call(call, method, target, bindings);
+    if (instance == nullptr) {
+      return k_error_type;
+    }
+    resolved_callees_[&call] =
+        resolved_callee{.decl = instance,
+                        .owner_module = method.owner->module_name,
+                        .impl_target_type = ""};
+    return return_type();
+  }
+
   auto infer_qualified_call(const ast::call_expr &call,
                             const ast::field_expr &field)
       -> std::optional<type_id> {
@@ -12812,6 +12905,10 @@ private:
                   *method->decl->params.front().pattern)
                       .name == "self";
           if (!has_self) {
+            if (const auto result = check_bare_generic_static_call(
+                    call, field, *method, found_type->first->name)) {
+              return *result;
+            }
             return resolve_against(*method->decl, method->owner, file_id_,
                                    found_type->first->name);
           }

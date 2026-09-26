@@ -1,0 +1,15 @@
+module sample
+
+# `crate.empty()` names the type without its argument, and `empty` takes no
+# argument that mentions `T` — nothing at the call can say which `T` is meant
+# (spec/todo.md item 12). The fix is the applied spelling, `crate[int32].empty()`.
+
+type crate[T] = { v: int32 }
+
+extend[T] crate[T]:
+    def empty() -> crate[T]:
+        return crate { v: 0 }
+
+def main() -> int32:
+    let c = crate.empty()
+    return c.v

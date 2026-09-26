@@ -1,0 +1,37 @@
+module codegen_stress.bare_generic_static_call
+
+# A static (no-`self`) method of a generic `extend[T] crate[T]:` block, called
+# through the bare type name (spec/todo.md item 12). `crate.make(40)` has to
+# solve `T` from the argument; before the fix the call type-checked against the
+# uninstantiated template and lowering reported "call to `crate::make` could
+# not be resolved to a function in this compiled module".
+#
+# Exercised from plain code, from a generic free function (where `T` is only
+# known per instance), from a method body inside the block itself, and at two
+# different instantiations so one shared instance cannot satisfy both.
+# expect: 4213
+
+type crate[T] = { v: T }
+
+extend[T] crate[T]:
+    def make(v: T) -> crate[T]:
+        return crate { v: v }
+
+    def get(self) -> T:
+        return self.v
+
+    def again(self) -> crate[T]:
+        return crate.make(self.v)
+
+def wrap[U](u: U) -> crate[U]:
+    return crate.make(u)
+
+def main() -> int32:
+    let a = crate.make(4)
+    let b = wrap(2)
+    let c = crate.make(1).again()
+    let flag = crate.make(true)
+    var total = a.get() * 1000 + b.get() * 100 + c.get() * 10
+    if flag.get():
+        total = total + 3
+    return total
