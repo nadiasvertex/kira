@@ -169,7 +169,7 @@ auto infer_ctxt::shallow_resolve(type_id id) const -> type_id {
 /// against its own record instead of its (absent) shape.
 auto infer_ctxt::check_sort(const meta_var &var, type_id value) const
     -> std::optional<bind_error> {
-  auto refuse = [&](bind_failure failure, std::string detail) {
+  auto refuse = [&](bind_failure failure, std::string detail) -> bind_error {
     return bind_error{
         .failure = failure, .value = value, .detail = std::move(detail)};
   };
@@ -352,7 +352,7 @@ auto infer_ctxt::zonk(type_id id) -> type_id {
 /// declaration.
 auto infer_ctxt::rebuild(type_id id) -> type_id {
   const auto &entry = table_->entry(id);
-  auto zonk_args = [&] {
+  auto zonk_args = [&] -> std::vector<type_id> {
     auto args = std::vector<type_id>{};
     args.reserve(entry.args.size());
     for (const auto arg : entry.args) {

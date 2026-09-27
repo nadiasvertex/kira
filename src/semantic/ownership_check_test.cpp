@@ -772,7 +772,8 @@ auto test_view_in_tuple_pattern_is_rejected() -> void {
 
 auto test_view_in_if_let_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_view_in_if_let.cn");
-  expect_diagnostic(analyzed, "cannot borrow `xs` while `o`, which borrows `xs`,",
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` while `o`, which borrows `xs`,",
                     "expected an option holding a view to borrow `xs`");
 }
 

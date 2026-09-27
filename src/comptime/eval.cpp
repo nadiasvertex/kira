@@ -11,6 +11,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
@@ -2321,7 +2322,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     case token_kind::char_lit: {
       const auto decoded = decode_char_literal(lit.value);
       return decoded.has_value() && v.kind == value_kind::integer &&
-             v.integer == static_cast<int64_t>(*decoded);
+             std::cmp_equal(v.integer, *decoded);
     }
     default:
       report(pattern.span, "this literal pattern form is not yet supported "

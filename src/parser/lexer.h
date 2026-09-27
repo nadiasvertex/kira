@@ -1225,7 +1225,7 @@ private:
                                   .end = static_cast<byte_offset>(pos_)};
       std::string msg = "unknown escape sequence `\\";
       msg += c;
-      msg += "`";
+      msg += '`';
 
       auto diag = diagnostic(diagnostic_level::error, msg, file_id_)
                       .with_label(esc_span, "not a recognized escape");

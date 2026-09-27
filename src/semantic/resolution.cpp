@@ -2151,10 +2151,11 @@ auto validate_session_imports(const std::vector<parsed_module> &inputs,
     if (decl.selector->kind != ast::use_selector_kind::wildcard &&
         !session_contains_module(index, base_module_name) &&
         !decl.selector->items.empty() &&
-        std::ranges::all_of(decl.selector->items, [&](const auto &item) {
-          return session_contains_module(
-              index, append_module_name(base_module_name, item.name));
-        })) {
+        std::ranges::all_of(
+            decl.selector->items, [&](const auto &item) -> auto {
+              return session_contains_module(
+                  index, append_module_name(base_module_name, item.name));
+            })) {
       for (const auto &item : decl.selector->items) {
         validate_import_target(index, import_record,
                                append_module_name(base_module_name, item.name),
@@ -2341,7 +2342,7 @@ auto collect_file_imports(const std::vector<ast::ptr<ast::node>> &items,
     -> file_imports {
   auto imports = file_imports{};
   const auto add = [&](std::string local_name, std::string target,
-                       source_span span) {
+                       source_span span) -> void {
     const auto location = source_location{.file_id = file_id, .span = span};
     if (session_contains_module(session_index, target)) {
       imports.modules.emplace_back(

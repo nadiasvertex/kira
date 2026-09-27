@@ -405,7 +405,7 @@ auto render_compile_summary(const compile_report &report,
   std::string out;
   auto append_line = [&out](std::string_view line) -> void {
     if (!out.empty()) {
-      out += "\n";
+      out += '\n';
     }
     out += line;
   };

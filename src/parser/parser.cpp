@@ -779,8 +779,10 @@ auto parser::parse_module_decl() -> ast::ptr<ast::module_decl> {
   // comes back empty after its diagnostic. The declaration must say so:
   // every later pass keys the file on this path, and one with an empty
   // segment names no module at all.
-  decl->has_error = std::ranges::any_of(
-      decl->path, [](const std::string &segment) { return segment.empty(); });
+  decl->has_error =
+      std::ranges::any_of(decl->path, [](const std::string &segment) -> bool {
+        return segment.empty();
+      });
   expect_newline();
 
   decl->span = start.merge(previous_span());

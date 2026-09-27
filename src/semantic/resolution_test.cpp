@@ -142,9 +142,9 @@ auto find_node_scope_or_fail(const cinder::semantic::semantic_session &session,
 /// Finds the one node `pick` accepts among every node the scope walk
 /// recorded — so a node the walk never reached is a test failure, not a
 /// crash in hand-navigated AST.
-template <typename predicate>
+template <typename Predicate>
 auto find_recorded_node(const cinder::semantic::semantic_session &session,
-                        predicate pick, std::string_view what)
+                        Predicate pick, std::string_view what)
     -> const cinder::ast::node & {
   const cinder::ast::node *found = nullptr;
   for (const auto &[node, scope] : session.node_scopes) {
@@ -182,7 +182,7 @@ auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
 
   const auto &k_ref = find_recorded_node(
       session,
-      [](const cinder::ast::node &node) {
+      [](const cinder::ast::node &node) -> bool {
         return node.kind == cinder::ast::node_kind::ident_expr &&
                dynamic_cast<const cinder::ast::ident_expr &>(node).name == "k";
       },
@@ -198,7 +198,7 @@ auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
 
   const auto &step_ref = find_recorded_node(
       session,
-      [](const cinder::ast::node &node) {
+      [](const cinder::ast::node &node) -> bool {
         return node.kind == cinder::ast::node_kind::module_path_expr &&
                dynamic_cast<const cinder::ast::module_path_expr &>(node)
                        .segments.front() == "step";

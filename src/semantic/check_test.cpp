@@ -39,7 +39,7 @@ auto expect_clean(const analyzed_session &analyzed, std::string_view message)
   if (analyzed.error_count != 0) {
     std::cerr << "check_test: expected a clean check, got:\n"
               << analyzed.diagnostics << '\n';
-    fail(std::string(message));
+    fail(message);
   }
 }
 
@@ -364,7 +364,8 @@ auto test_module_name_conflicts_are_general() -> void {
               "    return 7\n",
   };
   const auto expect_one = [&](std::string_view main_text,
-                              std::string_view needle, std::string_view what) {
+                              std::string_view needle,
+                              std::string_view what) -> void {
     const auto analyzed =
         analyze_sources({pkg, source_fixture{.path = "main.cn",
                                              .text = std::string(main_text)}});

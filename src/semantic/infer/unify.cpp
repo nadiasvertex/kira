@@ -316,7 +316,9 @@ auto unifier::unify_flex_app(type_id app, type_id other, bool app_is_expected,
   const auto other_entry = table_->entry(other);
   const auto head = ctx_->zonk(app_entry.result);
 
-  auto ordered = [&](type_id from_app, type_id from_other) {
+  auto ordered =
+      [&](type_id from_app,
+          type_id from_other) -> std::pair<unsigned int, unsigned int> {
     return app_is_expected ? std::pair{from_app, from_other}
                            : std::pair{from_other, from_app};
   };

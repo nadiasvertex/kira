@@ -395,19 +395,21 @@ auto renderer::run() -> std::string {
                      checked_.types.count());
 
   node_section("node_types", checked_.node_types,
-               [this](const auto &item) { return ty(item.second); });
+               [this](const auto &item) -> auto { return ty(item.second); });
 
   span_section("struct_pattern_field_types",
-               checked_.struct_pattern_field_types, [this](const auto &item) {
+               checked_.struct_pattern_field_types,
+               [this](const auto &item) -> auto {
                  return std::format("{} {}", item.first->name, ty(item.second));
                });
   span_section("struct_literal_field_types",
-               checked_.struct_literal_field_types, [this](const auto &item) {
+               checked_.struct_literal_field_types,
+               [this](const auto &item) -> auto {
                  return std::format("{} {}", item.first->name, ty(item.second));
                });
 
   node_section("call_argument_mappings", checked_.call_argument_mappings,
-               [](const auto &item) {
+               [](const auto &item) -> auto {
                  const auto &mapping = item.second;
                  auto text = std::string{};
                  for (size_t i = 0; i < mapping.param_names.size(); ++i) {
@@ -428,29 +430,31 @@ auto renderer::run() -> std::string {
                  return std::format("({})", text);
                });
 
-  const auto callee = [](const auto &item) { return callee_text(item.second); };
+  const auto callee = [](const auto &item) -> auto {
+    return callee_text(item.second);
+  };
   node_section("resolved_callees", checked_.resolved_callees, callee);
   node_section("resolved_fn_values", checked_.resolved_fn_values, callee);
   node_section("operator_dispatches", checked_.operator_dispatches, callee);
   node_section("ord_dispatch_result_types", checked_.ord_dispatch_result_types,
-               [this](const auto &item) { return ty(item.second); });
+               [this](const auto &item) -> auto { return ty(item.second); });
   node_section("index_dispatches", checked_.index_dispatches, callee);
   node_section("index_set_dispatches", checked_.index_set_dispatches, callee);
   node_section("index_mut_dispatches", checked_.index_mut_dispatches, callee);
   node_section("index_ref_dispatches", checked_.index_ref_dispatches, callee);
   node_section("try_conversions", checked_.try_conversions, callee);
   node_section("try_conversion_types", checked_.try_conversion_types,
-               [this](const auto &item) { return ty(item.second); });
+               [this](const auto &item) -> auto { return ty(item.second); });
 
   node_section("array_literal_conversions", checked_.array_literal_conversions,
-               [this](const auto &item) {
+               [this](const auto &item) -> auto {
                  return std::format("{} from {}",
                                     callee_text(item.second.callee),
                                     ty(item.second.array_type));
                });
 
   node_section("interp_dispatches", checked_.interp_dispatches,
-               [this](const auto &item) {
+               [this](const auto &item) -> auto {
                  const auto &d = item.second;
                  const auto kind = [&]() -> std::string_view {
                    switch (d.kind) {
@@ -480,67 +484,72 @@ auto renderer::run() -> std::string {
                });
 
   node_section("type_param_reflections", checked_.type_param_reflections,
-               [](const auto &item) { return item.second.type_name; });
+               [](const auto &item) -> auto { return item.second.type_name; });
 
-  node_section(
-      "for_iterator_dispatches", checked_.for_iterator_dispatches,
-      [this](const auto &item) { return loop_dispatch_text(item.second); });
-  node_section(
-      "comprehension_iterator_dispatches",
-      checked_.comprehension_iterator_dispatches,
-      [this](const auto &item) { return loop_dispatch_text(item.second); });
-  node_section(
-      "comprehension_dispatches", checked_.comprehension_dispatches,
-      [this](const auto &item) { return comprehension_text(item.second); });
-  node_section(
-      "runtime_fill_dispatches", checked_.runtime_fill_dispatches,
-      [this](const auto &item) { return comprehension_text(item.second); });
+  node_section("for_iterator_dispatches", checked_.for_iterator_dispatches,
+               [this](const auto &item) -> auto {
+                 return loop_dispatch_text(item.second);
+               });
+  node_section("comprehension_iterator_dispatches",
+               checked_.comprehension_iterator_dispatches,
+               [this](const auto &item) -> auto {
+                 return loop_dispatch_text(item.second);
+               });
+  node_section("comprehension_dispatches", checked_.comprehension_dispatches,
+               [this](const auto &item) -> auto {
+                 return comprehension_text(item.second);
+               });
+  node_section("runtime_fill_dispatches", checked_.runtime_fill_dispatches,
+               [this](const auto &item) -> auto {
+                 return comprehension_text(item.second);
+               });
 
-  node_section(
-      "layout_queries", checked_.layout_queries, [this](const auto &item) {
-        return std::format(
-            "{} of {}",
-            item.second.kind == layout_query_kind::size_of ? "size" : "align",
-            ty(item.second.operand));
-      });
+  node_section("layout_queries", checked_.layout_queries,
+               [this](const auto &item) -> auto {
+                 return std::format(
+                     "{} of {}",
+                     item.second.kind == layout_query_kind::size_of ? "size"
+                                                                    : "align",
+                     ty(item.second.operand));
+               });
   node_section("ptr_casts", checked_.ptr_casts,
-               [this](const auto &item) { return ty(item.second); });
+               [this](const auto &item) -> auto { return ty(item.second); });
   node_section("slice_from_raw_parts_calls",
                checked_.slice_from_raw_parts_calls,
-               [](const auto &) { return std::string{}; });
+               [](const auto &) -> auto { return std::string{}; });
   node_section("stack_buffers", checked_.stack_buffers,
-               [this](const auto &item) {
+               [this](const auto &item) -> auto {
                  return std::format("{} x {}", ty(item.second.element),
                                     item.second.count);
                });
   node_section("proven_in_bounds", checked_.proven_in_bounds,
-               [](const auto &) { return std::string{}; });
+               [](const auto &) -> auto { return std::string{}; });
 
   node_section("static_const_values", checked_.static_const_values,
-               [](const auto &item) {
+               [](const auto &item) -> auto {
                  return item.second == nullptr ? std::string("-")
                                                : item.second->value;
                });
   node_section("folded_comptime_calls", checked_.folded_comptime_calls,
-               [](const auto &item) {
+               [](const auto &item) -> auto {
                  return item.second == nullptr ? std::string("-")
                                                : item.second->value;
                });
   node_section("static_global_refs", checked_.static_global_refs,
-               [](const auto &item) { return item.second; });
+               [](const auto &item) -> auto { return item.second; });
   node_section("static_if_taken_branch", checked_.static_if_taken_branch,
-               [](const auto &item) {
+               [](const auto &item) -> auto {
                  return std::string(item.second ? "then" : "else");
                });
   node_section("static_global_defs", checked_.static_global_defs,
-               [this](const auto &item) {
+               [this](const auto &item) -> auto {
                  return std::format("{} : {} [{} element(s)]", item.second.name,
                                     ty(item.second.type),
                                     item.second.elements.size());
                });
 
   node_section("spliced_fragments", checked_.spliced_fragments,
-               [](const auto &item) {
+               [](const auto &item) -> auto {
                  return item.second == nullptr
                             ? std::string("-")
                             : std::string(node_kind_name(item.second->kind));

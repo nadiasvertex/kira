@@ -11,7 +11,8 @@ auto compute_drop_schedule(const ast::func_decl &decl,
                            const semantic::checked_types &checked)
     -> drop_schedule {
   auto schedule = drop_schedule{};
-  for (const auto &cfg : semantic::ownership::build_function_cfgs(decl, checked)) {
+  for (const auto &cfg :
+       semantic::ownership::build_function_cfgs(decl, checked)) {
     for (const auto &exit : semantic::ownership::owned_at_scope_exits(cfg)) {
       auto &drops = schedule.exits[exit.key];
       // `lowerer` finds each drop's local by name, which reaches only the

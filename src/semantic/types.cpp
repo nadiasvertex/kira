@@ -400,7 +400,7 @@ auto type_table::display(type_id id) const -> std::string {
       }
       out += display(item.args[i]);
     }
-    out += "]";
+    out += ']';
     return out;
   }
   case type_kind::tuple_kind: {
@@ -411,7 +411,7 @@ auto type_table::display(type_id id) const -> std::string {
       }
       out += display(item.args[i]);
     }
-    out += ")";
+    out += ')';
     return out;
   }
   case type_kind::array_kind:

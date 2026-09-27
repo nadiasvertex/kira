@@ -165,8 +165,8 @@ auto create_block_scope(scope_id parent_scope,
 }
 
 /// Walks `child` beneath `scope` when present.
-template <typename node_type>
-auto walk_child(const ast::ptr<node_type> &child, scope_id scope,
+template <typename NodeType>
+auto walk_child(const ast::ptr<NodeType> &child, scope_id scope,
                 const scope_build_context &context) -> void {
   if (child != nullptr) {
     walk_node(*child, scope, context);
@@ -176,8 +176,8 @@ auto walk_child(const ast::ptr<node_type> &child, scope_id scope,
 /// Walks each of `children` beneath `scope`. Unlike `walk_node_list`, no
 /// child's bindings reach its siblings: these are expressions, patterns, or
 /// types, not statements.
-template <typename node_type>
-auto walk_children(const std::vector<ast::ptr<node_type>> &children,
+template <typename NodeType>
+auto walk_children(const std::vector<ast::ptr<NodeType>> &children,
                    scope_id scope, const scope_build_context &context) -> void {
   for (const auto &child : children) {
     walk_child(child, scope, context);

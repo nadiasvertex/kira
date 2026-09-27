@@ -85,7 +85,7 @@ struct discovered_suite {
   auto out = std::string{};
   for (const auto &segment : segments) {
     if (!out.empty()) {
-      out += ".";
+      out += '.';
     }
     out += segment;
   }

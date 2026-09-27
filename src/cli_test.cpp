@@ -1472,10 +1472,10 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
   };
   cinder::driver::inject_stdlib_prelude(cfg);
 
-  const auto is_ident_char = [](char c) {
+  const auto is_ident_char = [](char c) -> bool {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
   };
-  const auto is_ident_start = [](char c) {
+  const auto is_ident_start = [](char c) -> bool {
     return std::isalpha(static_cast<unsigned char>(c)) != 0 || c == '_';
   };
   auto roots = std::set<std::string>{};
@@ -1511,7 +1511,7 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
   for (const auto *excluded : {"std", "main", "self", "super"}) {
     roots.erase(excluded);
   }
-  std::erase_if(roots, [](const std::string &root) {
+  std::erase_if(roots, [](const std::string &root) -> bool {
     return cinder::classify_ident(root) != cinder::token_kind::ident;
   });
   expect(roots.contains("s") && roots.contains("v"),
@@ -4659,7 +4659,8 @@ auto test_build_runs_script_mode_implicit_main() -> void {
 /// Exactly 1 MiB is accepted; one more `int64` slot, split across two
 /// buffers so only the sum is over, is not.
 auto test_compile_sources_enforces_frame_stack_budget() -> void {
-  const auto compile = [](std::string_view name, const std::string &program) {
+  const auto compile = [](std::string_view name,
+                          const std::string &program) -> auto {
     auto temp = make_temp_dir();
     auto source_path = temp.path / std::format("{}.cn", name);
     write_file(source_path, program);

@@ -401,15 +401,19 @@ public:
           return resolve_variant_tag(node);
         });
     comptime_eval_.set_path_resolver(
-        [this](const ast::module_path_expr &path, bool root_is_local) {
+        [this](const ast::module_path_expr &path,
+               bool root_is_local) -> comptime::evaluator::dotted_path_reading {
           return read_dotted_path_for_comptime(path, root_is_local);
         });
-    comptime_eval_.set_name_resolver([this](const std::string &name) {
-      return read_bare_name_for_comptime(name);
-    });
+    comptime_eval_.set_name_resolver(
+        [this](
+            const std::string &name) -> comptime::evaluator::bare_name_reading {
+          return read_bare_name_for_comptime(name);
+        });
     comptime_eval_.set_call_context(
         [this](const ast::func_decl &fn,
-               const std::function<comptime::value()> &body) {
+               const std::function<comptime::value()> &body)
+            -> cinder::comptime::value {
           const auto owner = function_owner(fn);
           if (!owner.has_value()) {
             return body();
@@ -2511,9 +2515,10 @@ private:
       if (named.path.empty()) {
         continue;
       }
-      const auto required = in_scope_of(home, file, [&] {
-        return find_trait_decl_by_name(named.path.back());
-      });
+      const auto required = in_scope_of(
+          home, file, [&] -> std::optional<const ast::trait_decl *> {
+            return find_trait_decl_by_name(named.path.back());
+          });
       if (required.has_value() && *required != nullptr) {
         add_fact_closure(**required, resolve_type_args(named.type_args, ctx),
                          out);
@@ -2571,7 +2576,7 @@ private:
                                            .param_bindings = &bindings,
                                            .use_type_param_stack = false,
                                            .quiet = true};
-      in_scope_of(home, concept_ref->file_id, [&] {
+      in_scope_of(home, concept_ref->file_id, [&] -> void {
         for (const auto &constraint : concept_decl.constraints) {
           const auto *constraint_bound = dynamic_cast<const ast::type_expr *>(
               constraint.bound_or_expr.get());
@@ -2678,7 +2683,7 @@ private:
     static constexpr auto k_float =
         std::array<std::string_view, 2>{"float32", "float64"};
     auto out = type_domain{};
-    const auto add = [&](const auto &names) {
+    const auto add = [&](const auto &names) -> auto {
       for (const auto name : names) {
         out.push_back(types_.builtin(name));
       }
@@ -2845,8 +2850,8 @@ private:
                              type_id target) -> void {
     const auto numeric_side = [&](type_id side) -> bool {
       if (is_rigid_param(side)) {
-        return domain_all(side,
-                          [&](type_id m) { return types_.is_numeric(m); });
+        return domain_all(
+            side, [&](type_id m) -> bool { return types_.is_numeric(m); });
       }
       return types_.is_unknown(side) || types_.is_numeric(side);
     };
@@ -2939,7 +2944,7 @@ private:
   }
 
   /// Completes a narrowing with its `else` domain, when one can be stated.
-  auto with_else(type_id param, type_domain then_domain) -> narrowing {
+  auto with_else(type_id param, const type_domain &then_domain) -> narrowing {
     auto out = narrowing{.param = param,
                          .then_domain = then_domain,
                          .else_domain = std::nullopt};
@@ -3086,16 +3091,18 @@ private:
         if (trait.decl == nullptr || !trait.decl->type_params.empty()) {
           continue;
         }
-        const auto all = std::ranges::all_of(domain, [&](type_id member) {
-          return satisfies_trait(member, *trait.decl, {});
-        });
+        const auto all =
+            std::ranges::all_of(domain, [&](type_id member) -> bool {
+              return satisfies_trait(member, *trait.decl, {});
+            });
         if (all) {
           facts.push_back(type_fact{.trait = trait.decl, .args = {}});
         }
       }
     }
-    std::ranges::sort(facts, {},
-                      [](const type_fact &fact) { return fact.trait->name; });
+    std::ranges::sort(facts, {}, [](const type_fact &fact) -> std::string {
+      return fact.trait->name;
+    });
     domain_facts_cache_.emplace(domain, facts);
     return facts;
   }
@@ -3115,7 +3122,7 @@ private:
     if (const auto domain = domain_of(param)) {
       for (const auto &fact : domain_facts(*domain)) {
         const auto known =
-            std::ranges::any_of(facts, [&](const type_fact &have) {
+            std::ranges::any_of(facts, [&](const type_fact &have) -> bool {
               return have.trait == fact.trait && have.args == fact.args;
             });
         if (!known) {
@@ -6718,7 +6725,7 @@ private:
         (solution_mentions_template_param(solution) ||
          (fixed_type_params != nullptr &&
           std::ranges::any_of(*fixed_type_params,
-                              [&](const auto &slot) {
+                              [&](const auto &slot) -> auto {
                                 return mentions_template_param(slot.second);
                               })) ||
          mentions_template_param(self_type))) {
@@ -7237,7 +7244,7 @@ private:
   /// nothing yet names one per instance of the caller (`spec/todo.md`), so
   /// it is not queued.
   auto passes_template_param(const std::vector<fn_param_info> &params) -> bool {
-    return std::ranges::any_of(params, [&](const fn_param_info &param) {
+    return std::ranges::any_of(params, [&](const fn_param_info &param) -> bool {
       return mentions_template_param(settle(param.type));
     });
   }
@@ -7482,19 +7489,20 @@ private:
     if (!instance_answers_are_concrete(item)) {
       return;
     }
-    with_instance_context(item, [&] { substitute_instance(item); });
+    with_instance_context(item, [&] -> void { substitute_instance(item); });
     const_generic_instances_.push_back(const_generic_instance{
         .decl = item.instance, .owner_module = item.owner->module_name});
   }
 
   auto instance_answers_are_concrete(const pending_instance &item) -> bool {
-    const auto concrete = [&](type_id answer) {
+    const auto concrete = [&](type_id answer) -> bool {
       return !mentions_abstract_type(settle(answer)) &&
              !mentions_template_param(settle(answer));
     };
-    const auto all = [&](const auto &slots) {
-      return std::ranges::all_of(
-          slots, [&](const auto &slot) { return concrete(slot.second); });
+    const auto all = [&](const auto &slots) -> auto {
+      return std::ranges::all_of(slots, [&](const auto &slot) -> auto {
+        return concrete(slot.second);
+      });
     };
     return all(item.solution.type_slots) && all(item.solution.const_slots) &&
            (!item.fixed_type_params.has_value() ||
@@ -7518,7 +7526,7 @@ private:
                               (item.block_type_params == nullptr ||
                                item.block_type_params->empty());
         if (concrete && !checked_templates_.contains(item.tmpl)) {
-          with_instance_context(item, [&] {
+          with_instance_context(item, [&] -> void {
             check_function(*item.tmpl, /*at_module_scope=*/false);
           });
         }
@@ -7526,7 +7534,7 @@ private:
           make_instance_by_substitution(item);
           continue;
         }
-        with_instance_context(item, [&] {
+        with_instance_context(item, [&] -> void {
           check_function(*item.instance, /*at_module_scope=*/false);
         });
         const_generic_instances_.push_back(const_generic_instance{
@@ -7556,7 +7564,7 @@ private:
       substitution_queue_.push_back(item);
       return;
     }
-    with_instance_context(item, [&] {
+    with_instance_context(item, [&] -> void {
       check_function(*item.instance, /*at_module_scope=*/false);
     });
     const_generic_instances_.push_back(const_generic_instance{
@@ -7725,7 +7733,8 @@ private:
 
   auto substitute_type_uncached(type_id id, instance_subst &subst) -> type_id {
     const auto item = types_.entry(id); // copy: interning below can push
-    const auto each = [&](const std::vector<type_id> &args) {
+    const auto each =
+        [&](const std::vector<type_id> &args) -> std::vector<type_id> {
       auto out = std::vector<type_id>{};
       out.reserve(args.size());
       for (const auto arg : args) {
@@ -7836,24 +7845,27 @@ private:
   /// Copies every record the template made onto the instance's clone, with
   /// its types substituted.
   auto copy_all_template_records(instance_subst &subst) -> void {
-    const auto type = [&](type_id id) { return substitute_type(id, subst); };
-    const auto callee = [&](resolved_callee record) {
+    const auto type = [&](type_id id) -> type_id {
+      return substitute_type(id, subst);
+    };
+    const auto callee = [&](resolved_callee record) -> resolved_callee {
       record.receiver = clone_of(subst, record.receiver);
       return record;
     };
-    const auto same = [](const auto &value) { return value; };
+    const auto same = [](const auto &value) -> auto { return value; };
     copy_template_records(node_types_, subst, type);
     copy_template_records(node_files_, subst, same);
     copy_template_records(struct_pattern_field_types_, subst, type);
     copy_template_records(struct_literal_field_types_, subst, type);
     copy_template_records(call_expected_types_, subst, type);
-    copy_template_records(call_argument_mappings_, subst,
-                          [&](call_argument_mapping mapping) {
-                            for (auto &arg : mapping.args_by_param) {
-                              arg = clone_of(subst, arg);
-                            }
-                            return mapping;
-                          });
+    copy_template_records(
+        call_argument_mappings_, subst,
+        [&](call_argument_mapping mapping) -> call_argument_mapping {
+          for (auto &arg : mapping.args_by_param) {
+            arg = clone_of(subst, arg);
+          }
+          return mapping;
+        });
     copy_template_records(resolved_callees_, subst, callee);
     copy_template_records(resolved_fn_values_, subst, callee);
     copy_template_records(operator_dispatches_, subst, callee);
@@ -7864,26 +7876,29 @@ private:
     copy_template_records(index_ref_dispatches_, subst, callee);
     copy_template_records(try_conversions_, subst, callee);
     copy_template_records(try_conversion_types_, subst, type);
-    copy_template_records(array_literal_conversions_, subst,
-                          [&](array_literal_conversion conversion) {
-                            conversion.callee = callee(conversion.callee);
-                            conversion.array_type = type(conversion.array_type);
-                            return conversion;
-                          });
+    copy_template_records(
+        array_literal_conversions_, subst,
+        [&](array_literal_conversion conversion) -> array_literal_conversion {
+          conversion.callee = callee(conversion.callee);
+          conversion.array_type = type(conversion.array_type);
+          return conversion;
+        });
     copy_template_records(interp_dispatches_, subst,
-                          [&](interp_dispatch dispatch) {
+                          [&](interp_dispatch dispatch) -> interp_dispatch {
                             dispatch.value_type = type(dispatch.value_type);
                             return dispatch;
                           });
     copy_template_records(type_param_reflections_, subst, same);
-    const auto loop = [&](iterator_loop_dispatch dispatch) {
+    const auto loop =
+        [&](iterator_loop_dispatch dispatch) -> iterator_loop_dispatch {
       dispatch.element_type = type(dispatch.element_type);
       dispatch.adapter_result_type = type(dispatch.adapter_result_type);
       return dispatch;
     };
     copy_template_records(for_iterator_dispatches_, subst, loop);
     copy_template_records(comprehension_iterator_dispatches_, subst, loop);
-    const auto comprehension = [&](comprehension_dispatch dispatch) {
+    const auto comprehension =
+        [&](comprehension_dispatch dispatch) -> comprehension_dispatch {
       dispatch.new_callee = callee(dispatch.new_callee);
       dispatch.push_callee = callee(dispatch.push_callee);
       dispatch.list_type = type(dispatch.list_type);
@@ -7892,27 +7907,30 @@ private:
     copy_template_records(comprehension_dispatches_, subst, comprehension);
     copy_template_records(runtime_fill_dispatches_, subst, comprehension);
     copy_template_records(folded_comptime_calls_, subst, same);
-    copy_template_records(layout_queries_, subst, [&](layout_query query) {
-      query.operand = type(query.operand);
-      return query;
-    });
+    copy_template_records(layout_queries_, subst,
+                          [&](layout_query query) -> layout_query {
+                            query.operand = type(query.operand);
+                            return query;
+                          });
     copy_template_records(ptr_casts_, subst, type);
     copy_template_members(slice_from_raw_parts_calls_, subst);
-    copy_template_records(stack_buffers_, subst,
-                          [&](stack_buffer_request request) {
-                            request.element = type(request.element);
-                            return request;
-                          });
+    copy_template_records(
+        stack_buffers_, subst,
+        [&](stack_buffer_request request) -> stack_buffer_request {
+          request.element = type(request.element);
+          return request;
+        });
     copy_template_records(static_if_taken_branch_, subst, same);
     copy_template_records(static_global_refs_, subst, same);
     copy_template_records(static_const_values_, subst, same);
-    copy_template_records(value_path_types_, subst,
-                          [&](std::vector<type_id> types) {
-                            for (auto &segment : types) {
-                              segment = type(segment);
-                            }
-                            return types;
-                          });
+    copy_template_records(
+        value_path_types_, subst,
+        [&](std::vector<type_id> types) -> std::vector<type_id> {
+          for (auto &segment : types) {
+            segment = type(segment);
+          }
+          return types;
+        });
     copy_template_members(proven_in_bounds_, subst);
     copy_template_members(elided_contracts_, subst);
     copy_template_records(spliced_fragments_, subst, same);
@@ -8018,8 +8036,7 @@ private:
     if (found != template_elaborations_.end()) {
       // By index: an elaboration can instantiate, which can check a template
       // on demand and so append to this very list.
-      for (size_t i = 0; i < found->second.size(); ++i) {
-        const auto elaboration = found->second[i];
+      for (auto elaboration : found->second) {
         if (!is_dead(subst, elaboration.span)) {
           elaboration.run(subst);
         }
@@ -8386,10 +8403,11 @@ private:
         // the same symbolic answer as above, arrived at by value solving.
         if (const auto found = solved.find(param.name);
             found != solved.end() &&
-            std::ranges::all_of(found->second.terms, [&](const auto &term) {
-              const auto own = lookup_type_param(term.var);
-              return own.has_value() && is_rigid_param(*own);
-            })) {
+            std::ranges::all_of(
+                found->second.terms, [&](const auto &term) -> auto {
+                  const auto own = lookup_type_param(term.var);
+                  return own.has_value() && is_rigid_param(*own);
+                })) {
           solution.const_slots.emplace(
               param.name, types_.symbolic_value(*underlying, found->second));
           solution.suffix += "$?";
@@ -8929,7 +8947,7 @@ private:
   /// parameters.
   auto solution_mentions_template_param(const generic_solution &solution)
       -> bool {
-    const auto open = [&](const auto &slot) {
+    const auto open = [&](const auto &slot) -> auto {
       return mentions_template_param(slot.second);
     };
     return std::ranges::any_of(solution.type_slots, open) ||
@@ -9040,7 +9058,7 @@ private:
                                  .param_bindings = &bindings,
                                  .use_type_param_stack = false,
                                  .quiet = true};
-    return in_scope_of(home, home_file, [&] {
+    return in_scope_of(home, home_file, [&] -> bool {
       for (const auto &constraint : concept_decl.constraints) {
         const auto *bound = dynamic_cast<const ast::type_expr *>(
             constraint.bound_or_expr.get());
@@ -9108,9 +9126,9 @@ private:
       source_span bound_span;
     };
     auto failed = std::optional<failure>{};
-    in_scope_of(owner, decl_file, [&] {
+    in_scope_of(owner, decl_file, [&] -> void {
       const auto check = [&](const std::string &param_name, type_id subject,
-                             const ast::type_expr &bound) {
+                             const ast::type_expr &bound) -> void {
         if (failed.has_value()) {
           return;
         }
@@ -9253,16 +9271,18 @@ private:
                           const module_members *owner, file_id_type decl_file,
                           const generic_solution &solution,
                           const ast::expr *ufcs_receiver) -> void {
-    defer_to_instances(call, [this, &call, &decl, owner, decl_file, solution,
-                              ufcs_receiver](instance_subst &subst) {
-      const auto concrete = substitute_solution(decl, solution, subst);
-      if (!concrete.has_value()) {
-        return;
-      }
-      (void)instantiate_solved_call(*clone_of(subst, &call), decl, owner,
-                                    decl_file, *concrete,
-                                    clone_of(subst, ufcs_receiver));
-    });
+    defer_to_instances(call,
+                       [this, &call, &decl, owner, decl_file, solution,
+                        ufcs_receiver](instance_subst &subst) -> void {
+                         const auto concrete =
+                             substitute_solution(decl, solution, subst);
+                         if (!concrete.has_value()) {
+                           return;
+                         }
+                         (void)instantiate_solved_call(
+                             *clone_of(subst, &call), decl, owner, decl_file,
+                             *concrete, clone_of(subst, ufcs_receiver));
+                       });
   }
 
   /// `solution` with every answer substituted, re-bound in declaration order
@@ -10261,7 +10281,7 @@ private:
     if (!static_bindings_evaluating_.insert(&decl).second) {
       return nullptr;
     }
-    const auto evaluated = [&] {
+    const auto evaluated = [&] -> value {
       if (owner == nullptr || owner == module_) {
         return comptime_eval_.evaluate(*decl.initializer);
       }
@@ -10269,7 +10289,7 @@ private:
       return in_module_context(
           *owner,
           listed != owner->statics.end() ? listed->second.file_id : file_id_,
-          [&] { return comptime_eval_.evaluate(*decl.initializer); });
+          [&] -> value { return comptime_eval_.evaluate(*decl.initializer); });
     }();
     static_bindings_evaluating_.erase(&decl);
     if (evaluated.is_error()) {
@@ -10395,7 +10415,7 @@ private:
         if (abstract != template_abstract_params_.end() &&
             abstract->second.contains(ident.name)) {
           defer_to_instances(
-              ident, [this, &ident, type](instance_subst &subst) {
+              ident, [this, &ident, type](instance_subst &subst) -> void {
                 record_const_param_reference(*clone_of(subst, &ident),
                                              substitute_type(type, subst));
               });
@@ -10871,7 +10891,7 @@ private:
       return;
     }
     defer_to_instances(
-        binary, [this, &binary, lhs, kind](instance_subst &subst) {
+        binary, [this, &binary, lhs, kind](instance_subst &subst) -> void {
           const auto &clone = *clone_of(subst, &binary);
           const auto operand = base_shape(substitute_type(lhs, subst));
           if (types_.is_unknown(operand) || mentions_template_param(operand)) {
@@ -11053,11 +11073,12 @@ private:
       const auto subject = rigid_lhs ? lhs : rhs;
       const auto other = rigid_lhs ? rhs : lhs;
       const auto op_name = ast::binary_op_name(binary.op);
-      const auto builtin_comparable = domain_all(subject, [&](type_id m) {
-        return is_equality
-                   ? types_.entry(m).kind == type_kind::builtin_kind
-                   : types_.is_numeric(m) || types_.entry(m).name == "char";
-      });
+      const auto builtin_comparable =
+          domain_all(subject, [&](type_id m) -> bool {
+            return is_equality
+                       ? types_.entry(m).kind == type_kind::builtin_kind
+                       : types_.is_numeric(m) || types_.entry(m).name == "char";
+          });
       if (!builtin_comparable &&
           !require_bound_operator(binary.span, subject,
                                   is_equality ? "eq" : "ord", op_name)) {
@@ -11292,7 +11313,8 @@ private:
                            ? strip_refs(infer_expr(*binary.rhs, lhs))
                            : k_unknown_type;
       for (const auto operand : {lhs, rhs}) {
-        if (is_rigid_param(operand) && domain_all(operand, [&](type_id m) {
+        if (is_rigid_param(operand) &&
+            domain_all(operand, [&](type_id m) -> bool {
               return types_.is_integer(m);
             })) {
           continue;
@@ -11468,7 +11490,7 @@ private:
     switch (unary.op) {
     case ast::unary_op::neg:
       if (types_.entry(stripped).kind == type_kind::type_param_kind) {
-        if (domain_all(stripped, [&](type_id m) {
+        if (domain_all(stripped, [&](type_id m) -> bool {
               return types_.is_float(m) ||
                      is_signed_integer_name(types_.entry(m).name);
             })) {
@@ -13614,15 +13636,16 @@ private:
   /// `list[T]`), made for each instance on the receiver's concrete type.
   auto defer_impl_method_call(const ast::call_expr &call, type_id receiver_type)
       -> void {
-    defer_to_instances(call, [this, &call,
-                              receiver_type](instance_subst &subst) {
-      const auto &clone = *clone_of(subst, &call);
-      auto explicit_args = explicit_generic_args{};
-      if (const auto *field = method_field_of(clone, explicit_args)) {
-        replay_method_call(clone, *field, substitute_type(receiver_type, subst),
-                           /*static_call=*/false, explicit_args);
-      }
-    });
+    defer_to_instances(
+        call, [this, &call, receiver_type](instance_subst &subst) -> void {
+          const auto &clone = *clone_of(subst, &call);
+          auto explicit_args = explicit_generic_args{};
+          if (const auto *field = method_field_of(clone, explicit_args)) {
+            replay_method_call(clone, *field,
+                               substitute_type(receiver_type, subst),
+                               /*static_call=*/false, explicit_args);
+          }
+        });
   }
 
   /// The `receiver.method` a method call names, and its explicit
@@ -13996,8 +14019,9 @@ private:
       } else if (current_template_ != nullptr) {
         // `o.map(f)` on an `option[T]`: the instance is each instance's.
         defer_to_instances(
-            call, [this, &call, &method, target = std::string(target_type_name),
-                   &receiver, receiver_type](instance_subst &subst) {
+            call,
+            [this, &call, &method, target = std::string(target_type_name),
+             &receiver, receiver_type](instance_subst &subst) -> void {
               const auto &clone = *clone_of(subst, &call);
               const auto concrete = substitute_type(receiver_type, subst);
               const auto params =
@@ -14617,14 +14641,16 @@ private:
             type_param_reflections_[&call] =
                 type_param_reflection{.type_name = bound_entry.name};
           } else {
-            defer_to_instances(call, [this, &call,
-                                      bound = *bound](instance_subst &subst) {
-              const auto settled = types_.entry(substitute_type(bound, subst));
-              if (settled.kind != type_kind::type_param_kind) {
-                type_param_reflections_[clone_of(subst, &call)] =
-                    type_param_reflection{.type_name = settled.name};
-              }
-            });
+            defer_to_instances(
+                call,
+                [this, &call, bound = *bound](instance_subst &subst) -> void {
+                  const auto settled =
+                      types_.entry(substitute_type(bound, subst));
+                  if (settled.kind != type_kind::type_param_kind) {
+                    type_param_reflections_[clone_of(subst, &call)] =
+                        type_param_reflection{.type_name = settled.name};
+                  }
+                });
           }
           return types_.builtin("str");
         }
@@ -15216,7 +15242,7 @@ private:
         // `list[T].new()` in a template: the instance is each instance's,
         // for its own `T`.
         defer_to_instances(
-            call, [this, &call, method, target](instance_subst &subst) {
+            call, [this, &call, method, target](instance_subst &subst) -> void {
               const auto &clone = *clone_of(subst, &call);
               auto impl_bindings = param_subst{};
               if (const auto *instance = check_impl_generic_static_call(
@@ -15275,15 +15301,15 @@ private:
          std::ranges::any_of(solved, [](const auto &slot) -> bool {
            return !slot.second.is_constant();
          }))) {
-      defer_to_instances(call,
-                         [this, &call, &field, target](instance_subst &subst) {
-                           const auto &clone = *clone_of(subst, &call);
-                           auto clone_args = explicit_generic_args{};
-                           (void)method_field_of(clone, clone_args);
-                           replay_method_call(clone, *clone_of(subst, &field),
-                                              substitute_type(target, subst),
-                                              /*static_call=*/true, clone_args);
-                         });
+      defer_to_instances(
+          call, [this, &call, &field, target](instance_subst &subst) -> void {
+            const auto &clone = *clone_of(subst, &call);
+            auto clone_args = explicit_generic_args{};
+            (void)method_field_of(clone, clone_args);
+            replay_method_call(clone, *clone_of(subst, &field),
+                               substitute_type(target, subst),
+                               /*static_call=*/true, clone_args);
+          });
       resolved_callees_[&call] =
           resolved_callee{.decl = method->decl,
                           .owner_module = method->owner->module_name,
@@ -15372,34 +15398,35 @@ private:
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
                               /*may_default=*/true);
-    const auto return_type = [&] {
+    const auto return_type = [&] -> type_id {
       return substitute_solved(signature_return_type(*method.decl, method.owner,
                                                      method.block_type_params),
                                bindings);
     };
     // In a template the impl's parameters are whatever the arguments are in
     // each instance, so the instance is each instance's to name.
-    const auto defer = [&] {
-      defer_to_instances(call, [this, &call, &method](instance_subst &subst) {
-        const auto &clone = *clone_of(subst, &call);
-        const auto params =
-            signature_params(*method.decl, method.owner,
-                             /*skip_self=*/false, method.block_type_params);
-        auto solved = param_subst{};
-        solve_from_argument_types(clone, params, solved);
-        const auto target =
-            settle(substitute_solved(method.impl_target_pattern, solved));
-        if (mentions_type_param(target) || types_.is_unknown(target)) {
-          return;
-        }
-        if (const auto *instance =
-                check_impl_generic_static_call(clone, method, target, solved)) {
-          resolved_callees_[&clone] =
-              resolved_callee{.decl = instance,
-                              .owner_module = method.owner->module_name,
-                              .impl_target_type = ""};
-        }
-      });
+    const auto defer = [&] -> void {
+      defer_to_instances(
+          call, [this, &call, &method](instance_subst &subst) -> void {
+            const auto &clone = *clone_of(subst, &call);
+            const auto params =
+                signature_params(*method.decl, method.owner,
+                                 /*skip_self=*/false, method.block_type_params);
+            auto solved = param_subst{};
+            solve_from_argument_types(clone, params, solved);
+            const auto target =
+                settle(substitute_solved(method.impl_target_pattern, solved));
+            if (mentions_type_param(target) || types_.is_unknown(target)) {
+              return;
+            }
+            if (const auto *instance = check_impl_generic_static_call(
+                    clone, method, target, solved)) {
+              resolved_callees_[&clone] =
+                  resolved_callee{.decl = instance,
+                                  .owner_module = method.owner->module_name,
+                                  .impl_target_type = ""};
+            }
+          });
     };
 
     for (const auto &type_param : *method.block_type_params) {
@@ -15592,8 +15619,9 @@ private:
                 // `option.pure(x)` with `x: T`: each instance solves it for
                 // its own `T`, from the arguments' recorded types.
                 defer_to_instances(
-                    call, [this, &call, method,
-                           target = root.front()](instance_subst &subst) {
+                    call,
+                    [this, &call, method,
+                     target = root.front()](instance_subst &subst) -> void {
                       const auto &clone = *clone_of(subst, &call);
                       const auto params =
                           signature_params(*method->decl, method->owner, false);
@@ -17328,20 +17356,22 @@ private:
     // `index[n].try_from(raw)` in a template has no check to build — `n` is
     // a symbol — so each instance builds its own, against its constant.
     if (current_template_ != nullptr && mentions_template_param(*refined)) {
-      defer_to_instances(call, [this, &call, &value,
-                                refined = *refined](instance_subst &subst) {
-        const auto concrete = substitute_type(refined, subst);
-        const auto concrete_entry = types_.entry(concrete);
-        if (concrete_entry.predicate == nullptr) {
-          return;
-        }
-        const auto &clone = *clone_of(subst, &call);
-        if (const auto *fragment = build_try_from_fragment(
-                clone, *clone_of(subst, &value), concrete_entry,
-                concrete_entry.result, concrete)) {
-          spliced_fragments_[&clone] = fragment;
-        }
-      });
+      defer_to_instances(
+          call,
+          [this, &call, &value,
+           refined = *refined](instance_subst &subst) -> void {
+            const auto concrete = substitute_type(refined, subst);
+            const auto concrete_entry = types_.entry(concrete);
+            if (concrete_entry.predicate == nullptr) {
+              return;
+            }
+            const auto &clone = *clone_of(subst, &call);
+            if (const auto *fragment = build_try_from_fragment(
+                    clone, *clone_of(subst, &value), concrete_entry,
+                    concrete_entry.result, concrete)) {
+              spliced_fragments_[&clone] = fragment;
+            }
+          });
       return record_expr_type(call, result_type);
     }
     auto fragment = build_try_from_fragment(call, value, entry, base, *refined);
@@ -17826,8 +17856,9 @@ private:
                         .receiver = index.object.get()};
     if (callee == nullptr && mentions_template_param(target)) {
       defer_to_instances(
-          index, [this, &dispatches, &index, &method, target,
-                  trait = std::string(trait)](instance_subst &subst) {
+          index,
+          [this, &dispatches, &index, &method, target,
+           trait = std::string(trait)](instance_subst &subst) -> void {
             dispatch_index(dispatches, *clone_of(subst, &index), method,
                            substitute_type(target, subst), trait);
           });
@@ -19157,7 +19188,8 @@ private:
       return;
     }
     defer_to_instances(
-        site, [this, &iterable_expr, &site, iterable](instance_subst &subst) {
+        site,
+        [this, &iterable_expr, &site, iterable](instance_subst &subst) -> void {
           const auto concrete = substitute_type(iterable, subst);
           if (mentions_template_param(concrete)) {
             return;
@@ -19270,13 +19302,15 @@ private:
     // error types, or the `from` impl's instance, depend on the parameters.
     if (current_template_ != nullptr && (mentions_template_param(operand_err) ||
                                          mentions_template_param(fn_err))) {
-      defer_to_instances(expr, [this, &expr, operand_err, fn_err,
-                                fn_return_type](instance_subst &subst) {
-        maybe_wire_try_conversion(*clone_of(subst, &expr),
-                                  substitute_type(operand_err, subst),
-                                  substitute_type(fn_err, subst),
-                                  substitute_type(fn_return_type, subst));
-      });
+      defer_to_instances(expr,
+                         [this, &expr, operand_err, fn_err,
+                          fn_return_type](instance_subst &subst) -> void {
+                           maybe_wire_try_conversion(
+                               *clone_of(subst, &expr),
+                               substitute_type(operand_err, subst),
+                               substitute_type(fn_err, subst),
+                               substitute_type(fn_return_type, subst));
+                         });
     }
     const auto stripped_operand_err = strip_refs(operand_err);
     const auto stripped_fn_err = strip_refs(fn_err);
@@ -20004,7 +20038,8 @@ private:
       // `int32`, `show` for a user type.
       if (mentions_template_param(value_type)) {
         defer_to_instances(
-            *seg.value, [this, &seg, value_type](instance_subst &subst) {
+            *seg.value,
+            [this, &seg, value_type](instance_subst &subst) -> void {
               const auto concrete = substitute_type(value_type, subst);
               if (!mentions_type_param(concrete)) {
                 finish_interp_segment(seg, concrete,
@@ -20350,7 +20385,7 @@ private:
                                   uint64_t length) -> void {
     if (mentions_template_param(target)) {
       defer_to_instances(
-          array, [this, &array, target, length](instance_subst &subst) {
+          array, [this, &array, target, length](instance_subst &subst) -> void {
             instantiate_from_array_for(*clone_of(subst, &array),
                                        substitute_type(target, subst), length);
           });
@@ -20549,7 +20584,8 @@ private:
       }
       if (mentions_template_param(list_type)) {
         defer_to_instances(
-            site, [this, &site, &table, list_type](instance_subst &subst) {
+            site,
+            [this, &site, &table, list_type](instance_subst &subst) -> auto {
               const auto &clone = *clone_of(subst, &site);
               if (const auto dispatch = resolve_new_push_dispatch(
                       clone, substitute_type(list_type, subst))) {
@@ -21773,15 +21809,17 @@ private:
               }
               // An instance knows what the template could not: `T.name()`
               // is a string there.
-              defer_to_instances(stmt, [this, &stmt, name = binding.name](
-                                           instance_subst &subst) {
-                const auto *initializer =
-                    clone_of(subst, stmt.initializer.get());
-                if (auto value = comptime_eval_.try_evaluate(*initializer);
-                    value.has_value()) {
-                  comptime_eval_.bind_local(name, std::move(*value));
-                }
-              });
+              defer_to_instances(
+                  stmt,
+                  [this, &stmt,
+                   name = binding.name](instance_subst &subst) -> void {
+                    const auto *initializer =
+                        clone_of(subst, stmt.initializer.get());
+                    if (auto value = comptime_eval_.try_evaluate(*initializer);
+                        value.has_value()) {
+                      comptime_eval_.bind_local(name, std::move(*value));
+                    }
+                  });
             }
           }
         } else {
@@ -23038,14 +23076,14 @@ private:
   auto display_fact(const type_fact &fact) -> std::string {
     auto out = fact.trait->name;
     if (!fact.args.empty()) {
-      out += "[";
+      out += '[';
       for (size_t i = 0; i < fact.args.size(); ++i) {
         if (i != 0) {
           out += ", ";
         }
         out += types_.display(fact.args[i]);
       }
-      out += "]";
+      out += ']';
     }
     return out;
   }
@@ -23166,15 +23204,16 @@ private:
         &solved, is_generic_template(*chosen.method) ? &generic : nullptr);
     // Which function this is depends on what the parameter turns out to be,
     // so each instance decides for itself.
-    defer_to_instances(call, [this, &call, &field, receiver,
-                              static_call](instance_subst &subst) {
-      const auto &clone = *clone_of(subst, &call);
-      auto clone_args = explicit_generic_args{};
-      (void)method_field_of(clone, clone_args);
-      replay_method_call(clone, *clone_of(subst, &field),
-                         substitute_type(receiver, subst), static_call,
-                         clone_args);
-    });
+    defer_to_instances(call,
+                       [this, &call, &field, receiver,
+                        static_call](instance_subst &subst) -> void {
+                         const auto &clone = *clone_of(subst, &call);
+                         auto clone_args = explicit_generic_args{};
+                         (void)method_field_of(clone, clone_args);
+                         replay_method_call(clone, *clone_of(subst, &field),
+                                            substitute_type(receiver, subst),
+                                            static_call, clone_args);
+                       });
     return result;
   }
 
@@ -23368,14 +23407,14 @@ private:
         }
         auto candidate = offer{.spelled = trait_name, .params = {}};
         if (!trait.decl->type_params.empty()) {
-          candidate.spelled += "[";
+          candidate.spelled += '[';
           for (size_t i = 0; i < trait.decl->type_params.size(); ++i) {
             const auto sep = i == 0 ? "" : ", ";
             candidate.spelled += sep + trait.decl->type_params[i].name;
             candidate.params +=
                 std::format("{}`{}`", sep, trait.decl->type_params[i].name);
           }
-          candidate.spelled += "]";
+          candidate.spelled += ']';
         }
         if (std::ranges::none_of(offering, [&](const offer &known) -> bool {
               return known.spelled == candidate.spelled;
@@ -23532,7 +23571,8 @@ private:
     const auto subject_name = types_.display(subject);
     // Every type a numeric domain allows has the builtin operator, and its
     // result is the operand type — no trait needed.
-    if (domain_all(subject, [&](type_id m) { return types_.is_numeric(m); })) {
+    if (domain_all(subject,
+                   [&](type_id m) -> bool { return types_.is_numeric(m); })) {
       if (!types_.is_unknown(other) && other != subject) {
         error(binary.span,
               std::format("`{}` on `{}` needs another `{}`, found `{}`",
@@ -24947,7 +24987,7 @@ private:
   /// the branch it does not take is dead there — never elaborated, and its
   /// records dropped.
   auto defer_static_if(const ast::static_decl &decl) -> void {
-    defer_to_instances(decl, [this, &decl](instance_subst &subst) {
+    defer_to_instances(decl, [this, &decl](instance_subst &subst) -> void {
       const auto &clone = *clone_of(subst, &decl);
       if (clone.if_condition == nullptr) {
         return;
@@ -25860,9 +25900,9 @@ private:
       }
     }
     comptime_eval_.push_field_type_context(std::move(field_type_names));
-    const auto fragment_value =
-        in_module_context(*derive_owner->first, derive_owner->second,
-                          [&] { return comptime_eval_.evaluate(*call); });
+    const auto fragment_value = in_module_context(
+        *derive_owner->first, derive_owner->second,
+        [&] -> value { return comptime_eval_.evaluate(*call); });
     comptime_eval_.pop_field_type_context();
     if (fragment_value.is_error() ||
         fragment_value.kind != comptime::value_kind::def_expr_fragment ||
@@ -26140,7 +26180,8 @@ public:
   /// checker writes to it, and only this flag, which parsing could not decide.
   auto settle_bounded_params(const std::vector<ast::ptr<ast::node>> &items)
       -> void {
-    const auto settle = [&](const std::vector<ast::type_param> &params) {
+    const auto settle =
+        [&](const std::vector<ast::type_param> &params) -> void {
       for (const auto &param : params) {
         if (param.is_value_param && param.bound_or_type != nullptr &&
             names_trait_or_concept(*param.bound_or_type)) {

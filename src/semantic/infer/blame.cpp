@@ -88,8 +88,10 @@ auto constraint_graph::outliers(type_id var) -> std::vector<demand> {
 
   auto counts = std::vector<std::pair<type_id, size_t>>{};
   for (const auto &one : all) {
-    const auto at = std::ranges::find_if(
-        counts, [&](const auto &entry) { return entry.first == one.required; });
+    const auto at =
+        std::ranges::find_if(counts, [&](const auto &entry) -> auto {
+          return entry.first == one.required;
+        });
     if (at == counts.end()) {
       counts.emplace_back(one.required, 1);
     } else {
@@ -101,10 +103,12 @@ auto constraint_graph::outliers(type_id var) -> std::vector<demand> {
   }
 
   const auto most = std::ranges::max_element(
-      counts, {}, [](const auto &entry) { return entry.second; });
+      counts, {}, [](const auto &entry) -> auto { return entry.second; });
   const auto majority = most->second;
-  const auto tied = std::ranges::count_if(
-      counts, [&](const auto &entry) { return entry.second == majority; });
+  const auto tied =
+      std::ranges::count_if(counts, [&](const auto &entry) -> auto {
+        return entry.second == majority;
+      });
   if (tied > 1) {
     // An even split. See the header: no winner is invented here.
     return {};
@@ -126,7 +130,7 @@ auto explain_conflict(constraint_graph &graph, infer_ctxt &ctx,
   if (all.size() < 2) {
     return std::nullopt;
   }
-  const auto disagrees = std::ranges::any_of(all, [&](const auto &one) {
+  const auto disagrees = std::ranges::any_of(all, [&](const auto &one) -> auto {
     return one.required != all.front().required;
   });
   if (!disagrees) {
@@ -172,7 +176,7 @@ auto explain_conflict(constraint_graph &graph, infer_ctxt &ctx,
   // shown as the reason it is one.
   const auto &blamed_edge = graph.at(odd.front().edge);
   const auto &blamed_why = ctx.cause_at(blamed_edge.why);
-  const auto expected = std::ranges::find_if(all, [&](const auto &one) {
+  const auto expected = std::ranges::find_if(all, [&](const auto &one) -> auto {
                           return one.required != odd.front().required;
                         })->required;
   const auto agreeing = all.size() - odd.size();

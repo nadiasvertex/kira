@@ -572,11 +572,11 @@ private:
     out += arrow_color;
     out += "-->";
     out += reset;
-    out += " ";
+    out += ' ';
     out += file->name();
-    out += ":";
+    out += ':';
     out += std::to_string(start_lc.line);
-    out += ":";
+    out += ':';
     out += std::to_string(start_lc.column);
     out += '\n';
 

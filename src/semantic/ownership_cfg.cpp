@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -72,9 +73,9 @@ auto place_root(const ast::expr &expr, bool &projected)
       if (current->has_error) {
         return std::nullopt;
       }
-      return root_name{
-          .name = dynamic_cast<const ast::ident_expr &>(*current).name,
-          .span = current->span};
+      return root_name{.name =
+                           dynamic_cast<const ast::ident_expr &>(*current).name,
+                       .span = current->span};
     case ast::node_kind::module_path_expr: {
       const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
       if (path.segments.empty()) {
@@ -341,8 +342,8 @@ private:
 
   /// Whether moving a value of `type` transfers ownership. Scalars, raw
   /// pointers (`38-machine-layer.md`: ownership behind one is the user's to
-  /// track), `&T` references and shared views are copies. A type parameter is not
-  /// tracked: that needs a notion of which `T`s copy (see `spec/todo.md`).
+  /// track), `&T` references and shared views are copies. A type parameter is
+  /// not tracked: that needs a notion of which `T`s copy (see `spec/todo.md`).
   [[nodiscard]] auto movable(type_id type) const -> bool {
     const auto &types = checked_.types;
     if (types.is_unknown(type) || type == k_error_type) {
@@ -401,19 +402,18 @@ private:
   auto end_scopes(std::size_t depth) -> void {
     for (auto i = scopes_.size(); i > depth; --i) {
       const auto &owned = scopes_[i - 1].owned;
-      for (auto it = owned.rbegin(); it != owned.rend(); ++it) {
-        access(*it, access_kind::storage_dead, cfg_.locals[*it].span);
+      for (unsigned int it : std::views::reverse(owned)) {
+        access(it, access_kind::storage_dead, cfg_.locals[it].span);
       }
     }
   }
 
   /// The `whole` locals `s` owns storage for, in reverse declaration order.
-  [[nodiscard]] auto exit_group(const scope &s) const
-      -> std::vector<local_id> {
+  [[nodiscard]] auto exit_group(const scope &s) const -> std::vector<local_id> {
     auto group = std::vector<local_id>{};
-    for (auto it = s.owned.rbegin(); it != s.owned.rend(); ++it) {
-      if (cfg_.locals[*it].whole) {
-        group.push_back(*it);
+    for (unsigned int it : std::views::reverse(s.owned)) {
+      if (cfg_.locals[it].whole) {
+        group.push_back(it);
       }
     }
     return group;
@@ -491,8 +491,8 @@ private:
 
   [[nodiscard]] auto lookup(std::string_view name) const
       -> std::optional<local_id> {
-    for (auto s = scopes_.rbegin(); s != scopes_.rend(); ++s) {
-      for (auto n = s->names.rbegin(); n != s->names.rend(); ++n) {
+    for (const auto &scope : std::views::reverse(scopes_)) {
+      for (auto n = scope.names.rbegin(); n != scope.names.rend(); ++n) {
         if (n->first == name) {
           return n->second;
         }
@@ -540,8 +540,7 @@ private:
         eval_subscripts(*index.object);
       }
       if (index.index != nullptr) {
-        static_cast<void>(
-            eval(*index.index, use_mode::read));
+        static_cast<void>(eval(*index.index, use_mode::read));
       }
       return;
     }
@@ -679,10 +678,8 @@ private:
     case ast::node_kind::binary_expr: {
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
-      stash(temp,
-            eval_opt(binary.lhs.get(), use_mode::read));
-      stash(temp,
-            eval_opt(binary.rhs.get(), use_mode::read));
+      stash(temp, eval_opt(binary.lhs.get(), use_mode::read));
+      stash(temp, eval_opt(binary.rhs.get(), use_mode::read));
       return compound_result(expr, temp);
     }
 
@@ -748,8 +745,7 @@ private:
         if (segment.is_literal) {
           continue;
         }
-        stash(temp,
-              eval_opt(segment.value.get(), use_mode::read));
+        stash(temp, eval_opt(segment.value.get(), use_mode::read));
         if (!segment.has_spec) {
           continue;
         }
@@ -757,8 +753,7 @@ private:
              {&segment.spec.width, &segment.spec.precision}) {
           if (const auto *part = std::get_if<ast::ptr<ast::expr>>(dynamic);
               part != nullptr) {
-            stash(temp,
-                  eval_opt(part->get(), use_mode::read));
+            stash(temp, eval_opt(part->get(), use_mode::read));
           }
         }
       }
@@ -797,8 +792,7 @@ private:
 
     case ast::node_kind::yield_expr: {
       const auto &yield_e = dynamic_cast<const ast::yield_expr &>(expr);
-      static_cast<void>(
-          eval_opt(yield_e.value.get(), use_mode::move));
+      static_cast<void>(eval_opt(yield_e.value.get(), use_mode::move));
       return {};
     }
 
@@ -827,8 +821,7 @@ private:
 
     case ast::node_kind::on_expr: {
       const auto &on = dynamic_cast<const ast::on_expr &>(expr);
-      static_cast<void>(
-          eval_opt(on.sender.get(), use_mode::read));
+      static_cast<void>(eval_opt(on.sender.get(), use_mode::read));
       static_cast<void>(lower_scoped_body(on.body, false));
       return {};
     }
@@ -855,8 +848,7 @@ private:
 
   /// `obj.f` where `obj` is not itself a place (a call result, ...).
   auto eval_field_of_value(const ast::field_expr &field) -> value {
-    auto object =
-        eval_opt(field.object.get(), use_mode::read);
+    auto object = eval_opt(field.object.get(), use_mode::read);
     return bears(type_of(&field)) ? object : value{};
   }
 
@@ -887,8 +879,7 @@ private:
                                                         : access_kind::read);
     }
     const auto temp = new_temp(local_role::call_temp);
-    stash(temp,
-          eval_opt(index.object.get(), use_mode::read));
+    stash(temp, eval_opt(index.object.get(), use_mode::read));
     stash(temp, eval_opt(index.index.get(), use_mode::read));
     return compound_result(index, temp);
   }
@@ -916,8 +907,7 @@ private:
     case ast::unary_op::neg:
     case ast::unary_op::bit_not:
     case ast::unary_op::logical_not:
-      static_cast<void>(
-          eval(*unary.operand, use_mode::read));
+      static_cast<void>(eval(*unary.operand, use_mode::read));
       return {};
     }
     return {};
@@ -1139,8 +1129,7 @@ private:
       auto subject = std::optional<local_id>{};
       if (branch.let_expr != nullptr) {
         // `if let`: the parser leaves a placeholder in `condition`.
-        subject = hold_subject(
-            eval(*branch.let_expr, use_mode::move));
+        subject = hold_subject(eval(*branch.let_expr, use_mode::move));
       } else {
         static_cast<void>(eval_opt(branch.condition.get(), use_mode::read));
       }
@@ -1170,8 +1159,7 @@ private:
   auto lower_match(const ast::expr *subject_expr,
                    const std::vector<ast::match_arm> &arms, bool want_value)
       -> value {
-    const auto subject =
-        hold_subject(eval_opt(subject_expr, use_mode::move));
+    const auto subject = hold_subject(eval_opt(subject_expr, use_mode::move));
     const auto join = new_temp(local_role::join_temp);
     const auto end = new_block();
     for (std::size_t i = 0; i < arms.size(); ++i) {
@@ -1275,11 +1263,9 @@ private:
     current_ = head;
     auto subject = std::optional<local_id>{};
     if (stmt.let_expr != nullptr) {
-      subject =
-          hold_subject(eval(*stmt.let_expr, use_mode::move));
+      subject = hold_subject(eval(*stmt.let_expr, use_mode::move));
     } else {
-      static_cast<void>(
-          eval_opt(stmt.condition.get(), use_mode::read));
+      static_cast<void>(eval_opt(stmt.condition.get(), use_mode::read));
     }
     const auto body = new_block();
     const auto exit = new_block();
@@ -1310,8 +1296,7 @@ private:
       if (comp.guard != nullptr) {
         static_cast<void>(eval(*comp.guard, use_mode::read));
       }
-      flow(join,
-           eval_opt(comp.yield_expr.get(), use_mode::move),
+      flow(join, eval_opt(comp.yield_expr.get(), use_mode::move),
            /*replace=*/false);
       return;
     }
@@ -1390,8 +1375,7 @@ private:
 
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
-      auto v =
-          eval_opt(stmt.initializer.get(), use_mode::move);
+      auto v = eval_opt(stmt.initializer.get(), use_mode::move);
       const auto local =
           declare(stmt.name, type_of(&stmt), stmt.span, /*whole=*/true);
       bind_value(local, v);
@@ -1488,8 +1472,7 @@ private:
   }
 
   auto lower_let(const ast::let_stmt &stmt) -> void {
-    auto v =
-        eval_opt(stmt.initializer.get(), use_mode::move);
+    auto v = eval_opt(stmt.initializer.get(), use_mode::move);
     if (stmt.pattern == nullptr) {
       return;
     }

@@ -2525,7 +2525,7 @@ private:
       emit_register(*end_reg);
       emit_register(*one_reg);
       writer_.emit_numeric_kind(numeric_kind::u64);
-      end_reg = inclusive_end_reg;
+      end_reg = std::move(inclusive_end_reg);
     }
 
     auto view =

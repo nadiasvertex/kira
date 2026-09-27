@@ -120,7 +120,7 @@ template <typename T>
       break;
     }
   }
-  out += "\"";
+  out += '\"';
   return out;
 }
 
@@ -1329,9 +1329,9 @@ auto lowerer::lower_ordering_comparison(source_span span, type_id bool_type,
     -> ptr<hir_expr> {
   const auto subject_symbol = mint_symbol();
   const auto bool_lit = [&](bool v) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(
-        span, bool_type, v ? token_kind::kw_true : token_kind::kw_false,
-        std::string(v ? "true" : "false")));
+    return {make<hir_literal>(span, bool_type,
+                              v ? token_kind::kw_true : token_kind::kw_false,
+                              std::string(v ? "true" : "false"))};
   };
   const auto less_true =
       op == ast::binary_op::lt || op == ast::binary_op::lt_eq;
@@ -1354,9 +1354,8 @@ auto lowerer::lower_ordering_comparison(source_span span, type_id bool_type,
   arms.push_back(make_arm("less", less_true));
   arms.push_back(make_arm("equal", equal_true));
   arms.push_back(make_arm("greater", greater_true));
-  return ptr<hir_expr>(make<hir_match>(span, bool_type,
-                                       std::move(ordering_value),
-                                       subject_symbol, std::move(arms)));
+  return {make<hir_match>(span, bool_type, std::move(ordering_value),
+                          subject_symbol, std::move(arms))};
 }
 
 auto lowerer::lower_unary(const ast::unary_expr &un)
@@ -2129,8 +2128,8 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
   for (const auto &[field_name, field_type] : plan.droppable_fields) {
     const place_fn field_place = [make_receiver, field_name,
                                   field_type]() -> ptr<hir_expr> {
-      return ptr<hir_expr>(make<hir_field>(source_span::dummy(), field_type,
-                                           make_receiver(), field_name));
+      return {make<hir_field>(source_span::dummy(), field_type, make_receiver(),
+                              field_name)};
     };
     if (auto sub = build_drop_calls(field_place, field_type, span, out);
         !sub.has_value()) {
@@ -2155,8 +2154,8 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
   const auto drop_name = drop.name;
   const place_fn make_receiver = [drop_symbol, drop_type,
                                   drop_name]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(source_span::dummy(), drop_type,
-                                             drop_symbol, drop_name));
+    return {make<hir_local_ref>(source_span::dummy(), drop_type, drop_symbol,
+                                drop_name)};
   };
   return build_drop_calls(make_receiver, drop.type, source_span::dummy(),
                           stmts);
@@ -2285,8 +2284,8 @@ auto lowerer::lower_runtime_fill(
     const auto symbol = resolve_reference(local_name);
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    return ptr<hir_expr>(
-        hir::make<hir_call>(span, result, std::move(callee), std::move(args)));
+    return {
+        hir::make<hir_call>(span, result, std::move(callee), std::move(args))};
   };
 
   auto count = lower_expr(*array.fill_count);
@@ -2551,8 +2550,8 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     const auto pspan = param.span;
     const std::function<ptr<hir_expr>()> make_place =
         [symbol, ptype, pspan]() -> ptr<hir_expr> {
-      return ptr<hir_expr>(
-          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>")));
+      return {
+          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
     auto pattern = lower_pattern(*param.pattern, make_place, pending);
@@ -2700,9 +2699,8 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   const auto subject_span = try_expr.operand->span;
   const std::function<ptr<hir_expr>()> make_place =
       [subject_symbol, subject_type, subject_span]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(subject_span, subject_type,
-                                             subject_symbol,
-                                             std::string("<try subject>")));
+    return {make<hir_local_ref>(subject_span, subject_type, subject_symbol,
+                                std::string("<try subject>"))};
   };
 
   const auto success_variant = std::string(is_result ? "ok" : "some");
@@ -2821,55 +2819,51 @@ auto lowerer::lower_interpolated_string(
   const auto usize_type = checked_.types.usize_type();
 
   const auto str_lit = [&](std::string_view text) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(span, str_type,
-                                           token_kind::string_lit,
-                                           quote_and_escape_for_literal(text)));
+    return {make<hir_literal>(span, str_type, token_kind::string_lit,
+                              quote_and_escape_for_literal(text))};
   };
   const auto bool_lit = [&](bool v) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(
-        span, bool_type, v ? token_kind::kw_true : token_kind::kw_false,
-        std::string(v ? "true" : "false")));
+    return {make<hir_literal>(span, bool_type,
+                              v ? token_kind::kw_true : token_kind::kw_false,
+                              std::string(v ? "true" : "false"))};
   };
   const auto usize_lit = [&](uint64_t v) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(
-        span, usize_type, token_kind::int_lit, std::to_string(v)));
+    return {make<hir_literal>(span, usize_type, token_kind::int_lit,
+                              std::to_string(v))};
   };
   const auto uint8_lit = [&](uint64_t v) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(
-        span, fmt.uint8_type, token_kind::int_lit, std::to_string(v)));
+    return {make<hir_literal>(span, fmt.uint8_type, token_kind::int_lit,
+                              std::to_string(v))};
   };
   const auto char_lit = [&](char c) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_literal>(span, checked_.types.char_type(),
-                                           token_kind::char_lit,
-                                           quote_char_for_literal(c)));
+    return {make<hir_literal>(span, checked_.types.char_type(),
+                              token_kind::char_lit, quote_char_for_literal(c))};
   };
   const auto unit_variant = [&](type_id type,
                                 std::string_view name) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_variant_init>(span, type, std::string(name),
-                                                ptr_vec<hir_expr>{}));
+    return {make<hir_variant_init>(span, type, std::string(name),
+                                   ptr_vec<hir_expr>{})};
   };
   const auto some_of = [&](type_id option_type,
                            ptr<hir_expr> payload) -> ptr<hir_expr> {
     auto args = ptr_vec<hir_expr>{};
     args.push_back(std::move(payload));
-    return ptr<hir_expr>(
-        make<hir_variant_init>(span, option_type, "some", std::move(args)));
+    return {make<hir_variant_init>(span, option_type, "some", std::move(args))};
   };
   const auto none_of = [&](type_id option_type) -> ptr<hir_expr> {
-    return ptr<hir_expr>(
-        make<hir_variant_init>(span, option_type, "none", ptr_vec<hir_expr>{}));
+    return {
+        make<hir_variant_init>(span, option_type, "none", ptr_vec<hir_expr>{})};
   };
   const auto call_fmt = [&](std::string_view name, type_id ret_type,
                             ptr_vec<hir_expr> args) -> ptr<hir_expr> {
-    auto callee = ptr<hir_expr>(make<hir_local_ref>(
-        span, k_unknown_type, resolve_reference(std::string(name)),
-        std::string(name), std::string("std.fmt")));
-    return ptr<hir_expr>(
-        make<hir_call>(span, ret_type, std::move(callee), std::move(args)));
+    auto callee = ptr<hir_expr>(
+        make<hir_local_ref>(span, k_unknown_type, resolve_reference(name),
+                            std::string(name), std::string("std.fmt")));
+    return {make<hir_call>(span, ret_type, std::move(callee), std::move(args))};
   };
   const auto cast_to = [&](ptr<hir_expr> value,
                            type_id target) -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_cast>(span, target, std::move(value)));
+    return {make<hir_cast>(span, target, std::move(value))};
   };
 
   // A dynamic `{expr}` width/precision was already type-checked as `usize`
@@ -3322,9 +3316,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     const auto subject_span = let.initializer->span;
     const std::function<ptr<hir_expr>()> make_place =
         [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
-      return ptr<hir_expr>(make<hir_local_ref>(subject_span, subj_type,
-                                               subject_symbol,
-                                               std::string("<let subject>")));
+      return {make<hir_local_ref>(subject_span, subj_type, subject_symbol,
+                                  std::string("<let subject>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
     auto pattern = lower_pattern(*let.pattern, make_place, pending);
@@ -3958,7 +3951,7 @@ auto lowerer::destructure_loop_element(
   auto name = std::string(subject_name);
   const std::function<ptr<hir_expr>()> make_place = [span, subject_type, symbol,
                                                      name]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(span, subject_type, symbol, name));
+    return {make<hir_local_ref>(span, subject_type, symbol, name)};
   };
 
   if (patterns.size() == 1) {
@@ -3981,8 +3974,7 @@ auto lowerer::destructure_loop_element(
     const auto elem_span = patterns[i]->span;
     const std::function<ptr<hir_expr>()> element_place =
         [make_place, elem_type, i, elem_span]() -> ptr<hir_expr> {
-      return ptr<hir_expr>(
-          make<hir_tuple_index>(elem_span, elem_type, make_place(), i));
+      return {make<hir_tuple_index>(elem_span, elem_type, make_place(), i)};
     };
     auto lowered = lower_pattern(*patterns[i], element_place, pending);
     if (!lowered.has_value()) {
@@ -4077,8 +4069,8 @@ auto lowerer::lower_range_loop(
   const auto element_type = *bound_type;
   const std::function<ptr<hir_expr>()> loop_var_value =
       [span, element_type, index_symbol]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(span, element_type, index_symbol,
-                                             std::string("<for index>")));
+    return {make<hir_local_ref>(span, element_type, index_symbol,
+                                std::string("<for index>"))};
   };
   auto body_block = build_for_loop_body(span, index_symbol, *bound_type,
                                         loop_var, loop_var_value, inner_stmts);
@@ -4175,12 +4167,12 @@ auto lowerer::lower_indexed_loop(
   const std::function<ptr<hir_expr>()> loop_var_value =
       [span, iterable_type, element_type, container_symbol, usize_type,
        index_symbol]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_index>(
+    return {make<hir_index>(
         span, element_type,
         ptr<hir_expr>(make<hir_local_ref>(span, iterable_type, container_symbol,
                                           std::string("<for container>"))),
         ptr<hir_expr>(make<hir_local_ref>(span, usize_type, index_symbol,
-                                          std::string("<for index>")))));
+                                          std::string("<for index>"))))};
   };
   auto body_block = build_for_loop_body(span, index_symbol, usize_type,
                                         loop_var, loop_var_value, inner_stmts);
@@ -4222,12 +4214,12 @@ auto lowerer::lower_str_scalar_loop(
 
   const auto container_ref = [span, iterable_type,
                               container_symbol]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(
-        span, iterable_type, container_symbol, std::string("<for container>")));
+    return {make<hir_local_ref>(span, iterable_type, container_symbol,
+                                std::string("<for container>"))};
   };
   const auto cursor_ref = [span, usize_type, cursor_symbol]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(span, usize_type, cursor_symbol,
-                                             std::string("<for cursor>")));
+    return {make<hir_local_ref>(span, usize_type, cursor_symbol,
+                                std::string("<for cursor>"))};
   };
 
   auto condition = ptr<hir_expr>(hir::make<hir_binary>(
@@ -4607,8 +4599,8 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
     const auto symbol = resolve_reference(local_name);
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
         call_span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    return ptr<hir_expr>(hir::make<hir_call>(
-        call_span, result, std::move(callee), std::move(args)));
+    return {hir::make<hir_call>(call_span, result, std::move(callee),
+                                std::move(args))};
   };
 
   const auto span = for_expr.span;
@@ -4816,9 +4808,8 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   const auto subject_span = while_stmt.let_expr->span;
   const std::function<ptr<hir_expr>()> make_place =
       [subject_symbol, subj_type, subject_span]() -> ptr<hir_expr> {
-    return ptr<hir_expr>(make<hir_local_ref>(subject_span, subj_type,
-                                             subject_symbol,
-                                             std::string("<while subject>")));
+    return {make<hir_local_ref>(subject_span, subj_type, subject_symbol,
+                                std::string("<while subject>"))};
   };
 
   push_scope();
@@ -5387,8 +5378,8 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     const auto pspan = param.span;
     const std::function<ptr<hir_expr>()> make_place =
         [symbol, ptype, pspan]() -> ptr<hir_expr> {
-      return ptr<hir_expr>(
-          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>")));
+      return {
+          make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
     auto pattern = lower_pattern(*param.pattern, make_place, pending);

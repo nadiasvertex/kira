@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <format>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <string>
 #include <utility>
@@ -211,8 +212,8 @@ private:
         const auto id = static_cast<block_id>(b - 1);
         auto live = live_out(id);
         const auto &events = cfg_.blocks[id].events;
-        for (auto e = events.rbegin(); e != events.rend(); ++e) {
-          live_step(*e, live);
+        for (const auto &event : std::views::reverse(events)) {
+          live_step(event, live);
         }
         if (live != live_in_[id]) {
           live_in_[id] = std::move(live);
@@ -339,8 +340,7 @@ private:
         type_kind_of(info.type) == type_kind::fn_kind) {
       return std::format("the closure `{}`", info.name);
     }
-    if (loan.origin == loan_origin::view ||
-        checked_.types.is_view(info.type)) {
+    if (loan.origin == loan_origin::view || checked_.types.is_view(info.type)) {
       return std::format("the view `{}` of `{}`", info.name, root);
     }
     if (type_kind_of(info.type) == type_kind::ref_kind) {
