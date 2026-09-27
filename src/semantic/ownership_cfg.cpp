@@ -492,9 +492,9 @@ private:
   [[nodiscard]] auto lookup(std::string_view name) const
       -> std::optional<local_id> {
     for (const auto &scope : std::views::reverse(scopes_)) {
-      for (auto n = scope.names.rbegin(); n != scope.names.rend(); ++n) {
-        if (n->first == name) {
-          return n->second;
+      for (const auto &n : std::views::reverse(scope.names)) {
+        if (n.first == name) {
+          return n.second;
         }
       }
     }

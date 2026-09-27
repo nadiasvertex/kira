@@ -8036,7 +8036,7 @@ private:
     if (found != template_elaborations_.end()) {
       // By index: an elaboration can instantiate, which can check a template
       // on demand and so append to this very list.
-      for (auto elaboration : found->second) {
+      for (const auto &elaboration : found->second) {
         if (!is_dead(subst, elaboration.span)) {
           elaboration.run(subst);
         }
@@ -10281,7 +10281,7 @@ private:
     if (!static_bindings_evaluating_.insert(&decl).second) {
       return nullptr;
     }
-    const auto evaluated = [&] -> value {
+    const auto evaluated = [&] -> comptime::value {
       if (owner == nullptr || owner == module_) {
         return comptime_eval_.evaluate(*decl.initializer);
       }
@@ -10289,7 +10289,9 @@ private:
       return in_module_context(
           *owner,
           listed != owner->statics.end() ? listed->second.file_id : file_id_,
-          [&] -> value { return comptime_eval_.evaluate(*decl.initializer); });
+          [&] -> comptime::value {
+            return comptime_eval_.evaluate(*decl.initializer);
+          });
     }();
     static_bindings_evaluating_.erase(&decl);
     if (evaluated.is_error()) {
@@ -20289,6 +20291,28 @@ private:
     }
   }
 
+  /// Rejects a `"{x}"` segment whose value is a reference type
+  /// (spec/todo.md item 28): formatting `&T` would print the reference's
+  /// address, not the value it points to, which is never what a user wants
+  /// out of string interpolation. Suggests `*x` instead.
+  auto reject_interpolated_reference(const ast::expr &value, type_id ref_type)
+      -> void {
+    auto diag = diagnostic(diagnostic_level::error,
+                           std::format("cannot interpolate a reference (`{}`)",
+                                       types_.display(ref_type)),
+                           file_id_);
+    diag.with_label(value.span,
+                    "this is a reference, not the value it points to");
+    diag.with_help(
+        "interpolating a reference would print its address, not the value "
+        "it lends — dereference it first with `*`.");
+    diag.with_fix(
+        "dereference with `*`",
+        source_span{.start = value.span.start, .end = value.span.start}, "*");
+    emit_diag(diag);
+    mark_error();
+  }
+
   auto check_interpolated_string(const ast::interpolated_string_expr &node)
       -> type_id {
     const auto usize_type = types_.builtin("usize");
@@ -20317,8 +20341,19 @@ private:
       // can wait for one: an open segment is queued below and retried once
       // the leaves settle, so `println("{a}")` followed by
       // `let c: int64 = a` formats an `int64` (phase 11, defect 2).
-      const auto value_type =
-          strip_refs(settle(infer_expr(*seg.value, k_unknown_type)));
+      const auto settled_type = settle(infer_expr(*seg.value, k_unknown_type));
+
+      if (types_.entry(settled_type).kind == type_kind::ref_kind) {
+        // A reference's runtime representation is an address; interpolating
+        // it directly would format that address instead of the value it
+        // points to (spec/todo.md item 28). Reject rather than silently
+        // stripping the reference and formatting the referent's type as if
+        // it were the value in hand.
+        reject_interpolated_reference(*seg.value, settled_type);
+        continue;
+      }
+
+      const auto value_type = strip_refs(settled_type);
 
       if (seg.has_spec) {
         check_dynamic_size(seg.spec.width);
@@ -25902,7 +25937,7 @@ private:
     comptime_eval_.push_field_type_context(std::move(field_type_names));
     const auto fragment_value = in_module_context(
         *derive_owner->first, derive_owner->second,
-        [&] -> value { return comptime_eval_.evaluate(*call); });
+        [&] -> comptime::value { return comptime_eval_.evaluate(*call); });
     comptime_eval_.pop_field_type_context();
     if (fragment_value.is_error() ||
         fragment_value.kind != comptime::value_kind::def_expr_fragment ||

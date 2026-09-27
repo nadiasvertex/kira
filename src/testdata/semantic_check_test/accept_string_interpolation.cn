@@ -14,7 +14,7 @@ impl show for point:
 impl hex for point:
     def hex(self) -> str: "abc"
 
-def run(width: usize) -> unit:
+def run(width: usize, xs: list[int32]) -> unit:
     let name = "Alice"
     let age: int32 = 30
     let pi = 3.5
@@ -27,3 +27,5 @@ def run(width: usize) -> unit:
     println("{pi :{width}.2f}")
     println("{p}")
     println("{p :x}")
+    for x in &xs:
+        println("Dereferenced: {*x}")

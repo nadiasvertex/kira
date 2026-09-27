@@ -2486,6 +2486,19 @@ auto test_reports_direct_drop_call() -> void {
       "expected the diagnostic to explain the double-drop hazard");
 }
 
+auto test_reports_interpolated_reference() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_interpolated_reference.cn");
+  expect(analyzed.error_count > 0,
+         "expected interpolating a `&int32` to be rejected");
+  expect_diagnostic(analyzed, "cannot interpolate a reference",
+                    "expected the diagnostic to name the reference type");
+  expect_diagnostic(
+      analyzed, "dereference it first with `*`",
+      "expected the diagnostic to suggest `*x` instead of formatting the "
+      "reference's address");
+}
+
 auto test_reports_borrowed_number_used_as_a_number() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_borrowed_number_used_as_a_number.cn");
@@ -4109,6 +4122,7 @@ auto main() -> int {
     test_reports_index_wrong_key_type();
     test_dispatches_index_by_key_type();
     test_reports_direct_drop_call();
+    test_reports_interpolated_reference();
     test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();
     test_reports_borrowed_number_used_as_a_number();

@@ -1,0 +1,8 @@
+module sample
+
+# spec/todo.md item 28: interpolating a reference formats its address, not
+# the value it lends. It must be rejected instead, with a `*x` suggestion.
+
+def run(xs: list[int32]) -> unit:
+    for x in &xs:
+        println("{x}")
