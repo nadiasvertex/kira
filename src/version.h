@@ -14,12 +14,12 @@ namespace cinder {
 /// bzlmod-mandated string that can't read this header — keep it in sync by
 /// hand whenever these constants change.
 inline constexpr unsigned k_version_major = 0;
-inline constexpr unsigned k_version_minor = 31;
+inline constexpr unsigned k_version_minor = 32;
 inline constexpr unsigned k_version_patch = 0;
 
 /// "MAJOR.MINOR.PATCH", kept in sync with the constants above by hand (no
 /// constexpr formatting dependency needed for three small integers).
-inline constexpr std::string_view k_version_string = "0.31.0";
+inline constexpr std::string_view k_version_string = "0.32.0";
 
 /// ISO-8601 date this version was cut, updated by hand alongside the
 /// version constants above. `__DATE__` can't serve this role: Bazel's
