@@ -98,7 +98,8 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "deriving.cn"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
-        .text = cinder::testing::load_test_data_file(std_dir.string(), filename),
+        .text =
+            cinder::testing::load_test_data_file(std_dir.string(), filename),
     });
   }
   return fixtures;
@@ -156,19 +157,21 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     fail("expected borrow check test fixtures to parse");
   }
 
-  const auto checked =
-      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors);
 
   // Mirror the driver's own pairing: the move checker runs first, then the
   // borrow checker, both over the same checked result and only over the
   // user's own files (`stdlib_boundary` skips the injected prelude).
   cinder::semantic::check_moves(parsed_modules, checked, diag, file_has_errors,
-                              static_cast<unsigned>(stdlib_boundary));
-  cinder::semantic::check_borrows(parsed_modules, checked, diag, file_has_errors,
                                 static_cast<unsigned>(stdlib_boundary));
+  cinder::semantic::check_borrows(parsed_modules, checked, diag,
+                                  file_has_errors,
+                                  static_cast<unsigned>(stdlib_boundary));
 
   return analyzed_session{
-      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics =
+          cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }
@@ -188,8 +191,7 @@ auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
 // ==========================================================================
 
 auto test_storing_a_borrow_in_a_let_is_rejected() -> void {
-  const auto analyzed =
-      analyze_test_data_file("reject_store_borrow_in_let.cn");
+  const auto analyzed = analyze_test_data_file("reject_store_borrow_in_let.cn");
   expect(analyzed.error_count > 0,
          "expected storing a borrow in a `let` to be rejected");
   expect_diagnostic(analyzed, "cannot escape the call it was made for",
@@ -205,8 +207,7 @@ auto test_returning_a_borrow_is_rejected() -> void {
 }
 
 auto test_borrow_in_an_aggregate_is_rejected() -> void {
-  const auto analyzed =
-      analyze_test_data_file("reject_borrow_in_aggregate.cn");
+  const auto analyzed = analyze_test_data_file("reject_borrow_in_aggregate.cn");
   expect(analyzed.error_count > 0,
          "expected placing a borrow into a tuple to be rejected");
   expect_diagnostic(analyzed, "cannot escape the call it was made for",
@@ -252,23 +253,20 @@ auto test_borrowing_as_a_call_argument_is_accepted() -> void {
 }
 
 auto test_many_shared_borrows_in_one_call_are_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_many_shared_borrows.cn");
+  const auto analyzed = analyze_test_data_file("accept_many_shared_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected any number of `&` borrows in one call to check cleanly");
 }
 
 auto test_sequential_borrows_are_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_sequential_borrows.cn");
+  const auto analyzed = analyze_test_data_file("accept_sequential_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected a `&mut` and a later `&` borrow in separate statements to "
          "check cleanly");
 }
 
 auto test_borrows_in_different_nested_calls_are_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_nested_call_borrows.cn");
+  const auto analyzed = analyze_test_data_file("accept_nested_call_borrows.cn");
   expect(analyzed.error_count == 0,
          "expected borrows in two different nested calls, not simultaneously "
          "live, to check cleanly");
@@ -337,8 +335,7 @@ auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
 }
 
 auto test_two_phase_receiver_is_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_two_phase_receiver.cn");
+  const auto analyzed = analyze_test_data_file("accept_two_phase_receiver.cn");
   expect(analyzed.error_count == 0,
          "expected `b.scale(b.val())` to check cleanly — the `mut self` "
          "reservation is compatible with a nested shared borrow");
@@ -422,8 +419,7 @@ auto test_two_shared_views_are_accepted() -> void {
 }
 
 auto test_view_dead_at_last_use_is_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_view_last_use_ends.cn");
+  const auto analyzed = analyze_test_data_file("accept_view_last_use_ends.cn");
   expect(analyzed.error_count == 0,
          "expected re-borrowing `xs` after a view's last use to check cleanly "
          "— liveness ends at the last use, not the end of scope");
@@ -482,8 +478,7 @@ auto test_owned_return_keeps_args_free_is_accepted() -> void {
 // ==========================================================================
 
 auto test_for_over_ref_borrow_is_accepted() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_for_over_ref_borrow.cn");
+  const auto analyzed = analyze_test_data_file("accept_for_over_ref_borrow.cn");
   expect(analyzed.error_count == 0,
          std::string("expected `for x in &xs` to check cleanly without "
                      "hitting the escape rule:\n") +

@@ -3,7 +3,7 @@ module std.list
 # `list[T]` — a growable, heap-owning sequence, written entirely in Cinder over
 # `std.mem`'s typed allocation and the `machine` layer's raw-pointer
 # indexing, with no compiler support for the type beyond what any user
-# struct gets (`spec/list-migration-design.md`). `[1, 2, 3]` reaches this
+# struct gets. `[1, 2, 3]` reaches this
 # type through `std.traits.from_array`, `xs[i]`/`xs[i] = v` through
 # `std.traits.index`/`index_set`, and `for x in xs` through
 # `std.iter.into_iterator` — the same three traits phases 1-3 of the
@@ -166,8 +166,8 @@ extend[T] list[T]:
     #: A read-only view of every element, for the algorithms
     #: (`std.algo`'s sort/search family) that operate over a `slice[T]`
     #: range rather than a whole collection. `array`/`slice`/`str` are the
-    #: only receivers the compiler still range-indexes directly
-    #: (`spec/list-migration-design.md` phase 4); this is how a library
+    #: only receivers the compiler still range-indexes directly;
+    #: this is how a library
     #: type built the same view `xs[0..xs.len()]` would have been.
     pub machine def as_slice(self) -> slice[T]:
         return slice_from_raw_parts(self.data, self.len)

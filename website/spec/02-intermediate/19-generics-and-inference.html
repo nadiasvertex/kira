@@ -56,6 +56,8 @@ id="toc-bracket-disambiguation">Bracket Disambiguation</a></li>
 <li><a href="#static-dispatch-through-a-type-parameter"
 id="toc-static-dispatch-through-a-type-parameter">Static Dispatch
 Through a Type Parameter</a></li>
+<li><a href="#bounded-generics" id="toc-bounded-generics">Bounded
+Generics</a></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
@@ -196,32 +198,103 @@ resolves to <code>k_unknown_type</code> and is checked only once
 instantiated. <code>from_iter</code> needs no object safety — dispatch
 through a type parameter is always static and monomorphic, never
 boxed.</p>
-<p>A bound like <code>C: from_iter</code> on such a function is not
-itself enforced at the call site: an unsuitable <code>C</code> fails
-where its body calls the missing static member, inside the instantiated
-generic, rather than at the point where <code>C</code> was chosen. The
-checker attaches an instantiation-site note pointing back at the call
-that solved <code>C</code>, and at what solved it, so the failure is
-still actionable even though it surfaces one level removed from the
-user’s code.</p>
-<h2 id="implementation-status">Implementation status</h2>
-<p>All of the above is implemented in
-<code>src/semantic/check.cpp</code>, sharing the
-<code>solve_generic_params</code> /
-<code>find_or_check_generic_instance</code> substrate:</p>
+<p>A bound like <code>C: from_iter</code> is checked where
+<code>C</code> is solved, like every other bound (see <em>Bounded
+Generics</em> below): an unsuitable <code>C</code> is reported at the
+caller’s call, naming the bound and where it was declared.</p>
+<h2 id="bounded-generics">Bounded Generics</h2>
+<p>A generic body is checked <strong>once</strong>, against the facts
+its signature declares — never against the instances that happen to
+exist — and a type argument is checked against those facts at the call
+that supplies it. A mistake in a generic body is therefore reported
+once, at its own line; a wrong type argument is reported at the user’s
+call, not inside library code under an “instantiated from here”
+chain.</p>
+<ol type="1">
+<li><strong>Facts.</strong> A type parameter’s facts are its inline
+bounds (<code>[T: ord]</code>), its <code>where</code> bounds,
+everything those <code>require</code>, the bounds of an enclosing
+generic <code>impl</code>/<code>extend</code> block, and the narrowing
+facts of an enclosing <code>static if</code> (rule 5). Nothing
+else.</li>
+<li><strong>Operations on a value of type <code>T</code></strong> are
+justified by a fact or rejected at the line that performs them:
 <ul>
-<li>Expected-type solving: <code>solve_from_expected_type</code>
-(<code>check.cpp:5182</code>), invoked from both the free-function and
-receiver-call paths (<code>check.cpp:5248</code>,
-<code>check.cpp:5445</code>).</li>
+<li>a method call — a method of a trait among <code>T</code>’s facts, or
+a free function whose own signature accepts the receiver by UFCS;</li>
+<li>an operator — its trait
+(<code>add</code>/<code>sub</code>/<code>mul</code>/<code>div</code>/<code>rem</code>/<code>neg</code>;
+<code>==</code>/<code>!=</code> by <code>eq</code>; ordering by
+<code>ord</code>);</li>
+<li>a numeric literal, or <code>as</code> to or from <code>T</code> — a
+<em>category</em> bound (rule 4);</li>
+<li>indexing and iteration — <code>index</code>,
+<code>into_iterator</code>/<code>iterator</code>;</li>
+<li>a call to another generic — the callee’s bounds must follow from the
+caller’s facts (entailment, not instantiation).</li>
+</ul></li>
+<li><strong>Call sites.</strong> When a call solves <code>T := X</code>,
+every bound on <code>T</code> is checked against <code>X</code> there,
+and a failure names the bound and where it was declared. No instance of
+a function whose bounds do not hold is ever made.</li>
+<li><strong>Category bounds</strong> are builtin concepts —
+<code>integer</code>, <code>signed_integer</code>,
+<code>unsigned_integer</code>, <code>float</code>, <code>numeric</code>
+(<code>std.traits</code>, prelude-visible) — satisfied by exactly the
+builtin scalar types their names say. They are what a literal or a
+numeric cast on <code>T</code> needs, and each implies the operator
+traits its members implement.</li>
+<li><strong><code>static if</code> narrows.</strong> A condition that
+mentions a type parameter is checked for the facts it establishes, and
+its taken branch is checked under them:
+<ul>
+<li><code>T.name() == "int8"</code>, <code>is_same[T, int8]()</code>
+(directly or through a <code>let</code> alias of <code>T.name()</code>)
+— equality; each disjunct of an <code>or</code> narrows its own
+branch;</li>
+<li><code>is_integer[T]()</code> and the other category predicates — the
+matching category bound;</li>
+<li><code>implements[T, Tr]()</code> — <code>Tr</code>;</li>
+<li>anything else — no facts.</li>
+</ul>
+Both branches of a type-dependent <code>static if</code> are checked,
+each under its own facts; the code after a branch that returns is
+checked under the negation. For a condition that does not mention a type
+parameter, the branch not taken is not type-checked (<a
+href="../03-advanced/31-compile-time-execution.html">31</a>).</li>
+</ol>
+<p>An instance is made by substitution: its types are the template’s
+with the type arguments filled in, and only the decisions the template
+could not make without them — which impl an operator or method call on
+<code>T</code> dispatches to, which branch of a type-dependent
+<code>static if</code> is taken — are made per instance.</p>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Implemented in <code>src/semantic/check.cpp</code>:</p>
+<ul>
+<li>Solving: <code>solve_call</code> is the one entry point for a
+generic call. Sources are added in the order above — arguments
+(<code>solve_from_argument_types</code>), bounds
+(<code>solve_from_bounds</code>), the expected type
+(<code>solve_from_expected_type</code>) — and all feed the one unifier
+(<code>match_params</code>, over <code>infer::match_pattern</code>). A
+solution is keyed by the parameter’s identity
+(<code>param_subst</code>), never its spelling.</li>
+<li>Bounded generics: facts (<code>record_declared_facts</code>),
+bound-checked methods and operators
+(<code>check_bound_method_call</code>,
+<code>check_bound_arithmetic</code>), category bounds
+(<code>check_literal_as_param</code>,
+<code>check_cast_with_param</code>), <code>static if</code> narrowing
+(<code>narrowing_of</code>), call-site bound checks
+(<code>check_call_bounds</code>), instances by substitution
+(<code>substitute_instance</code>).</li>
 <li>Explicit type arguments on method calls:
-<code>method_explicit_generic_args</code> (<code>check.cpp:8516</code>),
-consumed at <code>check.cpp:9036</code> — brackets on a method call are
-honored, not discarded.</li>
+<code>method_explicit_generic_args</code> — brackets on a method call
+are honored, not discarded.</li>
 <li>Static dispatch through a type parameter:
-<code>type_param_slots_</code> (<code>check.cpp:1107</code> and its use
-sites) holds the active per-instantiation binding used to resolve a
-qualified path whose base names a type parameter.</li>
+<code>type_param_slots_</code> holds the active per-instantiation
+binding used to resolve a qualified path whose base names a type
+parameter.</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>

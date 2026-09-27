@@ -2,8 +2,7 @@ module main
 
 # `v[i]` and `v[i] = x` on a user type, through the `std.traits.index` and
 # `index_set` impls — indexing as an ordinary trait rather than a compiler
-# privilege reserved for `list`/`slice`/`str`/`array`
-# (`spec/list-migration-design.md` phase 1).
+# privilege reserved for `list`/`slice`/`str`/`array`.
 #
 # Lives here rather than in `codegen_stress` because the traits are stdlib
 # declarations and that corpus is compiled without the stdlib injected.

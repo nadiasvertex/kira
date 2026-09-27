@@ -66,7 +66,7 @@ def main() -> unit:
     # `list[T]` as an ordinary collection: built from a literal, indexed,
     # and iterated, all through the `from_array`/`index`/`index_set`/
     # `into_iterator` impls rather than through anything the compiler knows
-    # about this type specifically (`spec/list-migration-design.md`).
+    # about this type specifically.
     var lit: list[int32] = [10, 20, 30]
     println("literal len={lit.len()} cap={lit.capacity()}")
     println("indexed={lit[0]},{lit[1]},{lit[2]}")

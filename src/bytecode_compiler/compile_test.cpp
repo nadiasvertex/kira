@@ -95,8 +95,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
@@ -115,7 +115,8 @@ auto compile_fixture(const std::string &text) -> bc::bytecode_module {
   auto modules = hir::ptr_vec<hir::hir_module>{};
   modules.push_back(std::move(*entry));
   const auto *entry_module = modules.front().get();
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
+                                        modules);
 
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
   auto compiled = bcc::compile_module(reachable, fixture.checked.types);
@@ -410,8 +411,7 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
   // full explanation — this is the same fixture run through the bytecode
   // backend instead, confirming the `hir::lower_block`/`check.cpp` fix
   // isn't LLVM-specific.
-  auto module =
-      compile_fixture(load_fixture("implicit_tail_match_and_if.cn"));
+  auto module = compile_fixture(load_fixture("implicit_tail_match_and_if.cn"));
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
@@ -774,8 +774,7 @@ auto test_checked_div_panics_on_divide_by_zero_end_to_end() -> void {
 // without panicking; `negate` on an actual runtime minimum still must panic,
 // confirming the fold didn't disable the genuine overflow check.
 auto test_negate_of_min_integer_literal_does_not_panic() -> void {
-  auto module =
-      compile_fixture(load_fixture("negate_min_integer_literal.cn"));
+  auto module = compile_fixture(load_fixture("negate_min_integer_literal.cn"));
   const auto vm = bc::vm{module};
 
   auto r8 = vm.run(function_index(module, "min_int8"),

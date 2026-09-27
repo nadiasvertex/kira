@@ -158,7 +158,7 @@ auto render_session() -> std::string {
     const auto corpus_dir = cinder::testing::find_test_data_dir(input.corpus);
     texts.emplace_back(std::string(input.filename),
                        cinder::testing::load_test_data_file(corpus_dir.string(),
-                                                          input.filename));
+                                                            input.filename));
   }
 
   for (const auto &[path, text] : texts) {
@@ -183,8 +183,8 @@ auto render_session() -> std::string {
     fail("expected the snapshot session to parse cleanly");
   }
 
-  const auto checked =
-      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors);
   if (diag.error_count() != 0) {
     std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected the snapshot session to check cleanly");

@@ -1,6 +1,6 @@
 # Sort 100k `int32` held in a `list[int32]`: push-fill, `sort` over the
-# list's range view, then an indexed sortedness check. The benchmark
-# spec/list-migration-design.md phase 4 asks for — it exercises `push`,
+# list's range view, then an indexed sortedness check. Taken to
+# measure the cost of moving `list[T]` into the stdlib; it exercises `push`,
 # `v[a..b]`, and `v[i]`, each a real `list` method call since the flip.
 #
 # From the repo root (the stdlib is found relative to cwd):

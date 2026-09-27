@@ -77,8 +77,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
@@ -126,8 +126,8 @@ auto check_fixture_multi(
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
@@ -1483,12 +1483,12 @@ auto test_lowers_call_to_named_function() -> void {
 auto test_lowers_module_qualified_call() -> void {
   auto fixture = check_fixture_multi({
       {"tools.cn", "module tools\n"
-                     "pub def double(x: int32) -> int32:\n"
-                     "    return x * 2\n"},
+                   "pub def double(x: int32) -> int32:\n"
+                   "    return x * 2\n"},
       {"app.cn", "module app\n"
-                   "use tools\n"
-                   "pub def run() -> int32:\n"
-                   "    return tools.double(21)\n"},
+                 "use tools\n"
+                 "pub def run() -> int32:\n"
+                 "    return tools.double(21)\n"},
   });
   const auto &decl = find_func(*fixture.ast_files[1], "run");
 
@@ -1517,18 +1517,18 @@ auto test_lowers_module_qualified_call() -> void {
 auto test_lowers_cross_module_generic_return_type() -> void {
   auto fixture = check_fixture_multi({
       {"types.cn", "module types\n"
-                     "pub type holder[T] = { pub value: T }\n"},
+                   "pub type holder[T] = { pub value: T }\n"},
       // The `use` below is the only thing that brings `holder` into scope for
       // `wrap`'s signature — the caller never names it.
       {"wrap.cn", "module wrap\n"
-                    "use types.holder\n"
-                    "pub def wrap[T](v: T) -> holder[T]:\n"
-                    "    return holder { value: v }\n"},
+                  "use types.holder\n"
+                  "pub def wrap[T](v: T) -> holder[T]:\n"
+                  "    return holder { value: v }\n"},
       {"app.cn", "module app\n"
-                   "use wrap.wrap\n"
-                   "pub def run() -> int32:\n"
-                   "    let h = wrap(7)\n"
-                   "    return h.value\n"},
+                 "use wrap.wrap\n"
+                 "pub def run() -> int32:\n"
+                 "    let h = wrap(7)\n"
+                 "    return h.value\n"},
   });
 
   auto module_result =

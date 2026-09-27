@@ -56,8 +56,8 @@ auto main(int argc, char *argv[]) -> int {
     const auto had_errors =
         report->error_count > 0 || run_failed || build_failed;
 
-    const auto summary =
-        cinder::driver::render_compile_summary(*report, cfg.show_compile_details);
+    const auto summary = cinder::driver::render_compile_summary(
+        *report, cfg.show_compile_details);
     if (!summary.empty()) {
       std::println("{}", summary);
     }

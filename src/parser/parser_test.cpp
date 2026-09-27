@@ -61,7 +61,8 @@ auto parse_source(std::string_view source) -> parsed_source {
 
   parsed_source parsed{
       .file = parser.parse_file(),
-      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics =
+          cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
   return parsed;
@@ -365,7 +366,8 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
   expect(impl_decl->items.size() == 1,
          "expected impl to preserve associated type item");
   auto *impl_assoc = expect_node<cinder::ast::associated_type_def_node>(
-      impl_decl->items[0].get(), cinder::ast::node_kind::associated_type_def_node,
+      impl_decl->items[0].get(),
+      cinder::ast::node_kind::associated_type_def_node,
       "expected impl associated type node");
   expect(impl_assoc->value.name == "item",
          "expected impl associated type name");
@@ -765,10 +767,11 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
 
   expect(parsed.error_count > 0,
          "expected parser to diagnose missing module declaration");
-  expect(parsed.diagnostics.find(
-             "every Cinder source file must start with a `module` declaration") !=
-             std::string::npos,
-         "expected missing-module diagnostic message");
+  expect(
+      parsed.diagnostics.find(
+          "every Cinder source file must start with a `module` declaration") !=
+          std::string::npos,
+      "expected missing-module diagnostic message");
   expect(parsed.file->module_decl != nullptr,
          "expected synthesized module declaration during recovery");
   expect(parsed.file->module_decl->has_error,
@@ -1105,7 +1108,8 @@ auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
   expect(run_decl->body_stmts.size() == 7,
          "expected six let bindings plus a return statement");
 
-  auto initializer_of = [](cinder::ast::node *stmt_node) -> cinder::ast::expr * {
+  auto initializer_of =
+      [](cinder::ast::node *stmt_node) -> cinder::ast::expr * {
     auto *let = expect_node<cinder::ast::let_stmt>(
         stmt_node, cinder::ast::node_kind::let_stmt, "expected let statement");
     return let->initializer.get();
@@ -1654,7 +1658,8 @@ auto test_parser_accepts_mut_binding_pattern() -> void {
       "expected drop function item");
   expect(drop_func->params.size() == 1, "expected a single self parameter");
   auto *self_pattern = expect_pattern<cinder::ast::binding_pattern>(
-      drop_func->params[0].pattern.get(), cinder::ast::node_kind::binding_pattern,
+      drop_func->params[0].pattern.get(),
+      cinder::ast::node_kind::binding_pattern,
       "expected self to parse as a binding pattern");
   expect(self_pattern->name == "self", "expected the parameter named self");
   expect(self_pattern->is_mut, "expected `mut self` to mark is_mut");
@@ -1937,9 +1942,9 @@ auto test_parser_classifies_quote_fragment_kind() -> void {
     expect(quote->fragment_kind == cinder::ast::quote_fragment_kind::expr,
            "expected `value` to classify as an expr fragment");
     expect_node<cinder::ast::ident_expr>(quote->parsed_body.get(),
-                                       cinder::ast::node_kind::ident_expr,
-                                       "expected the fragment body to be the "
-                                       "bare identifier `value`");
+                                         cinder::ast::node_kind::ident_expr,
+                                         "expected the fragment body to be the "
+                                         "bare identifier `value`");
   }
 
   // `(value + 1)` — the outer `(...)` right after the opening backtick is
@@ -2095,9 +2100,9 @@ auto test_script_module_synthesizes_main() -> void {
          "expected the synthesized function to be named `main`");
   expect(synthesized->body_stmts.size() == 2,
          "expected both top-level statements to become `main`'s body");
-  expect_node<cinder::ast::let_stmt>(synthesized->body_stmts[0].get(),
-                                   cinder::ast::node_kind::let_stmt,
-                                   "expected the `let` to run first in `main`");
+  expect_node<cinder::ast::let_stmt>(
+      synthesized->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
+      "expected the `let` to run first in `main`");
   auto *ret = expect_node<cinder::ast::named_type>(
       synthesized->return_type.get(), cinder::ast::node_kind::named_type,
       "expected the synthesized `main` to be annotated `-> unit`");
@@ -2157,7 +2162,8 @@ auto test_parser_accepts_signature_decl() -> void {
       "expected a signature_decl");
   expect(sig->name == "backend", "expected signature name `backend`");
   expect(sig->items.size() == 4, "expected four signature members");
-  expect(sig->items[0]->kind == cinder::ast::node_kind::associated_type_decl_node,
+  expect(sig->items[0]->kind ==
+             cinder::ast::node_kind::associated_type_decl_node,
          "expected abstract `type conn` member");
   expect(sig->items[1]->kind == cinder::ast::node_kind::func_decl,
          "expected `def connect` member");
@@ -2219,9 +2225,9 @@ auto test_parser_accepts_functor_instantiation_use() -> void {
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one use item");
 
-  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
-                                               cinder::ast::node_kind::use_decl,
-                                               "expected a use_decl");
+  auto *use = expect_node<cinder::ast::use_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
+      "expected a use_decl");
   expect(use->path.size() == 1 && use->path[0] == "audited",
          "expected functor path `audited` to be preserved intact");
   expect(use->instantiation_args.size() == 1,
@@ -2238,9 +2244,9 @@ auto test_parser_accepts_nested_functor_instantiation() -> void {
                              "\n"
                              "use audited[cached[postgres]]\n");
   expect(parsed.error_count == 0, parsed.diagnostics);
-  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
-                                               cinder::ast::node_kind::use_decl,
-                                               "expected a use_decl");
+  auto *use = expect_node<cinder::ast::use_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
+      "expected a use_decl");
   expect(use->instantiation_args.size() == 1,
          "expected one (nested) instantiation argument");
   expect(!use->selector.has_value(),
@@ -2434,9 +2440,9 @@ auto test_parser_accepts_root_module_alias() -> void {
                                    "use pkg as p\n");
   expect(parsed.error_count == 0,
          "expected `use pkg as p` to parse cleanly:\n" + parsed.diagnostics);
-  auto *use = expect_node<cinder::ast::use_decl>(parsed.file->items[0].get(),
-                                               cinder::ast::node_kind::use_decl,
-                                               "expected a use declaration");
+  auto *use = expect_node<cinder::ast::use_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
+      "expected a use declaration");
   expect(use->path == std::vector<std::string>{"pkg"},
          "expected the renamed root module to stay the whole path");
   expect(use->alias == std::optional<std::string>{"p"},

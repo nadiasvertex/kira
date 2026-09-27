@@ -19,10 +19,11 @@
 extern "C" {
 auto cinder_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t *;
 auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t;
-auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t *;
+auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
+    -> uint64_t *;
 auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t *;
 auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
-                              uint32_t uppercase) -> uint64_t *;
+                                uint32_t uppercase) -> uint64_t *;
 auto cinder_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t *;
 auto cinder_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
     -> uint64_t *;

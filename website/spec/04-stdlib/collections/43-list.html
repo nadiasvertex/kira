@@ -88,30 +88,15 @@ no in-place realloc.</li>
 computed from <code>layout_of(T).size_bytes</code> (1/2/4/8 bytes), so
 <code>list[bool]</code> and <code>list[int16]</code> do not pay 8 bytes
 per element the way the header’s own slots do.</li>
-<li>The denaturalization to
-<code>pub type list[T] = { data: *mut T, len: usize, cap: usize }</code>
-over the <code>machine</code> substrate
-(<code>spec/collections-algorithms-design.md</code> §6.2) is
-<strong>half done</strong>: the destination type exists and works — see
-<code>vector[T]</code> below — but <code>list[T]</code> itself has not
-moved to it. What still stands in the way is the <em>sugar</em>, not the
-data structure: array-literal lowering through a
-<code>list_from_array</code> constructor, <code>for</code> routed
-through <code>into_iterator</code>, and an <code>index</code> trait with
-an operator hook for <code>v[i]</code> (indexing is still a builtin
-operator, not a user-overridable trait method). <strong>Those three
-language changes have since landed</strong> — indexing is the
-<code>std.traits.index</code>/<code>index_set</code> traits,
-<code>for</code> routes through <code>std.iter.into_iterator</code>, and
-literals construct through <code>std.traits.from_array</code> — and
-<code>vector[T]</code> implements all four, so it is now usable as
-<code>let v: vector[int32] = [1, 2, 3]</code>, <code>v[0]</code>,
-<code>v[1] = x</code>, <code>for x in v</code>. What still blocks
-<code>list[T]</code> itself moving is scope-exit <code>drop</code>
-(<code>../../../todo.md</code> item 6) and a <em>borrowing</em>
-iteration route, since <code>into_iter(self)</code> consumes the
-collection (item 20). See <a
-href="../../../list-migration-design.html">list-migration-design.md</a>.</li>
+<li>The denaturalization to <code>pub type list[T]</code> over the
+<code>machine</code> substrate is <strong>done</strong>:
+<code>list[T]</code> is an ordinary Cinder struct in
+<code>src/std/list.cn</code> over <code>std.mem</code>, reached only
+through the <code>std.traits</code>
+<code>index</code>/<code>index_mut</code>/<code>index_set</code>/<code>from_array</code>
+traits and <code>std.iter.into_iterator</code> — no compiler support
+beyond what any user struct gets. <code>vector[T]</code> is an alias for
+it.</li>
 </ul>
 <h2 id="operations">Operations</h2>
 <h3 id="builtin-inherent-methods">Builtin inherent methods</h3>

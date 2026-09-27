@@ -89,8 +89,8 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
@@ -111,7 +111,8 @@ auto jit_fixture_for(const std::string &text) -> jit_fixture {
   auto modules = hir::ptr_vec<hir::hir_module>{};
   modules.push_back(std::move(*entry));
   const auto *entry_module = modules.front().get();
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
+                                        modules);
   const auto reachable = hir::find_reachable_modules(*entry_module, modules);
   auto compiled = lc::compile_module(reachable, fixture.checked.types);
   expect(compiled.has_value(),
@@ -157,8 +158,8 @@ auto jit_fixture_for_multi(
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect_checked_cleanly(fixture.sources, fixture.diag);
 
   auto modules = hir::ptr_vec<hir::hir_module>{};
@@ -172,7 +173,8 @@ auto jit_fixture_for_multi(
   // lower them into standalone modules just as `driver::lower_and_emit_
   // modules` does, so a `use m[args] as db` fixture's `db.f(...)` calls
   // resolve.
-  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked, modules);
+  cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
+                                        modules);
 
   auto functor_modules = hir::lower_functor_modules(fixture.checked);
   expect(functor_modules.has_value(),

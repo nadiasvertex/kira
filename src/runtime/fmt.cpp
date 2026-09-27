@@ -80,7 +80,8 @@ auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
   return count;
 }
 
-auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count) -> uint64_t * {
+auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
+    -> uint64_t * {
   std::string one;
   cinder::encode_utf8_scalar(codepoint, one);
   std::string out;
@@ -105,7 +106,7 @@ auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
 }
 
 auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
-                              uint32_t uppercase) -> uint64_t * {
+                                uint32_t uppercase) -> uint64_t * {
   const bool upper = uppercase != 0;
   if (value == 0) {
     return make_str("0");

@@ -52,10 +52,10 @@ auto inline_program(const std::string &text) -> inlined_program {
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
       cinder::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = program.ast_file.get()},
+                                      .ast_file = program.ast_file.get()},
   };
-  program.checked = cinder::semantic::check_program(parsed_modules, program.diag,
-                                                  file_has_errors);
+  program.checked = cinder::semantic::check_program(
+      parsed_modules, program.diag, file_has_errors);
   expect(program.diag.error_count() == 0, "expected fixture to check cleanly");
 
   auto lowered =

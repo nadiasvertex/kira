@@ -40,9 +40,9 @@ struct lowering_options {
   /// runtime `hir_contract_check`. False is the spec's release elision
   /// ("Release builds may elide runtime contract checks with an explicit
   /// flag — doing so is the programmer's assertion that all contracts hold by
-  /// other means", spec/cinder-reference.md), reached via `--no-contract-checks`.
-  /// It is deliberately not the default: a contract that is only *believed*
-  /// silently is worth less than one that is checked.
+  /// other means", spec/cinder-reference.md), reached via
+  /// `--no-contract-checks`. It is deliberately not the default: a contract
+  /// that is only *believed* silently is worth less than one that is checked.
   bool contract_checks = true;
 };
 

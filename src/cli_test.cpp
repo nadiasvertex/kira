@@ -153,12 +153,13 @@ auto test_parse_args_accepts_optimization_level() -> void {
          "expected bare -O to mean -O1");
 
   const auto levels =
-      std::array<std::pair<std::string, cinder::driver::optimization_level>, 4>{{
-          {"-O0", cinder::driver::optimization_level::o0},
-          {"-O1", cinder::driver::optimization_level::o1},
-          {"-O2", cinder::driver::optimization_level::o2},
-          {"-O3", cinder::driver::optimization_level::o3},
-      }};
+      std::array<std::pair<std::string, cinder::driver::optimization_level>, 4>{
+          {
+              {"-O0", cinder::driver::optimization_level::o0},
+              {"-O1", cinder::driver::optimization_level::o1},
+              {"-O2", cinder::driver::optimization_level::o2},
+              {"-O3", cinder::driver::optimization_level::o3},
+          }};
   for (const auto &[flag, expected] : levels) {
     std::vector<std::string> args = {"cinder", flag, "main.cn"};
     auto argv = make_argv(args);
@@ -623,10 +624,11 @@ auto test_compile_sources_reports_parser_errors() -> void {
          "expected compile driver to report parser failures");
   expect(report->error_count > 0, "expected parser errors for invalid source");
   expect(report->modules.empty(), "expected no metadata artifacts on failure");
-  expect(report->diagnostics.find(
-             "every Cinder source file must start with a `module` declaration") !=
-             std::string::npos,
-         "expected missing-module diagnostic");
+  expect(
+      report->diagnostics.find(
+          "every Cinder source file must start with a `module` declaration") !=
+          std::string::npos,
+      "expected missing-module diagnostic");
   expect(!fs::exists(metadata_dir),
          "expected no metadata directory on failure");
 }

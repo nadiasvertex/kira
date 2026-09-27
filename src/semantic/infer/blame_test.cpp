@@ -35,7 +35,8 @@ using cinder::testing::expect;
 /// matters here is *which* site a report points at, not how it renders.
 auto at_line(uint32_t line) -> cinder::source_location {
   return cinder::source_location{
-      .file_id = 0, .span = cinder::source_span{.start = line, .end = line + 1}};
+      .file_id = 0,
+      .span = cinder::source_span{.start = line, .end = line + 1}};
 }
 
 struct fixture {

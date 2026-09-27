@@ -4,8 +4,8 @@ module std.traits
 # indexing, and construction from a sequence literal.
 #
 # `a[i]` is the only core operator that used to be a compiler builtin over a
-# handful of known container shapes rather than a trait anyone can implement
-# (`spec/list-migration-design.md` phase 1). These traits are what make it
+# handful of known container shapes rather than a trait anyone can implement.
+# These traits are what make it
 # ordinary: a user collection that implements them is indexable with exactly
 # the syntax `list`/`slice`/`str`/`array` have always had.
 #
@@ -119,8 +119,8 @@ pub trait index_set[I]:
 #: `array[T, n]`, and this is handed that array. `n` is a compile-time
 #: constant, so an impl may size its storage exactly.
 #:
-#: This is the third privilege `list[T]` used to hold alone
-#: (`spec/list-migration-design.md` phase 3): literal syntax was wired to one
+#: This is the third privilege `list[T]` used to hold alone:
+#: literal syntax was wired to one
 #: compiler-known type rather than to anything that could say what a literal
 #: of it means.
 pub trait from_array[T]:

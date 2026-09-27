@@ -1241,14 +1241,15 @@ auto intrinsic_rt_alloc(std::span<const slot_value> args) -> slot_value {
 }
 
 auto intrinsic_rt_realloc(std::span<const slot_value> args) -> slot_value {
-  auto *block = cinder_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
-                                  args[1].u, args[2].u);
+  auto *block =
+      cinder_heap_realloc(reinterpret_cast<void *>(args[0].u), // NOLINT
+                          args[1].u, args[2].u);
   return slot_value{reinterpret_cast<uint64_t>(block)}; // NOLINT
 }
 
 auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
   cinder_heap_free(reinterpret_cast<void *>(args[0].u), args[1].u); // NOLINT
-  return slot_value{};                                            // `unit`
+  return slot_value{};                                              // `unit`
 }
 
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
@@ -1894,8 +1895,8 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ops.pos();
         const auto view = view_of(f.registers[str_reg]);
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
-        f.registers[dst] = slot_value{
-            static_cast<uint64_t>(cinder::runtime::str_scalar_at(view, offset))};
+        f.registers[dst] = slot_value{static_cast<uint64_t>(
+            cinder::runtime::str_scalar_at(view, offset))};
         break;
       }
       case opcode::op_str_scalar_width: {

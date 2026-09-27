@@ -217,8 +217,8 @@ auto test_a_mismatch_is_reported() -> void {
 auto test_unpinned_parameters_stay_absent() -> void {
   auto f = fixture{};
   const auto pattern = f.table.fn_of({f.param("T")}, f.param("U"));
-  const auto concrete =
-      f.table.fn_of({f.table.builtin("int32")}, cinder::semantic::k_unknown_type);
+  const auto concrete = f.table.fn_of({f.table.builtin("int32")},
+                                      cinder::semantic::k_unknown_type);
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(result.bindings.contains(f.param("T")),

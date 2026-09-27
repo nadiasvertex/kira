@@ -778,7 +778,8 @@ private:
                        file_id_)
                 .with_label(sp, "this line has unexpected indentation")
                 .with_help(
-                    " Cinder uses consistent indentation to define code blocks. "
+                    " Cinder uses consistent indentation to define code "
+                    "blocks. "
                     "Make sure each line is indented by the same amount as "
                     "other lines at the same nesting level. Using spaces "
                     "(not tabs) is recommended."));

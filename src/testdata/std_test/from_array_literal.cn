@@ -1,7 +1,7 @@
 module main
 
-# `[a, b, c]` constructing a user collection through `std.traits.from_array`
-# (`spec/list-migration-design.md` phase 3), and the settled rule that a
+# `[a, b, c]` constructing a user collection through `std.traits.from_array`,
+# and the settled rule that a
 # sequence literal with no expected type is a `list`.
 #
 # Literal syntax used to be wired to one compiler-known type. This is the

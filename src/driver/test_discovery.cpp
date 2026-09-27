@@ -229,10 +229,10 @@ render_runner_source(const std::vector<discovered_suite> &suites,
     // deeper anchor is renamed, since two can share a leaf (`x.geometry`,
     // `y.geometry`).
     if (!anchor_aliases.contains(anchor)) {
-      anchor_aliases.emplace(
-          anchor, anchor.contains('.')
-                      ? std::format("cinder_suite_root_{}", anchor_aliases.size())
-                      : anchor);
+      anchor_aliases.emplace(anchor, anchor.contains('.')
+                                         ? std::format("cinder_suite_root_{}",
+                                                       anchor_aliases.size())
+                                         : anchor);
     }
   }
   // `path` always starts with its anchor, followed by `.`.

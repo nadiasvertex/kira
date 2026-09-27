@@ -371,12 +371,12 @@ auto parser::parse_body(std::string_view construct_name)
                                 construct_name),
                     file_id_)
              .with_label(span, "expected `:` after this")
-             .with_help(
-                 std::format("In Cinder, the body of a {} is introduced by `:`. "
-                             "For a single expression: `{}: expr`. "
-                             "For a block of statements: `{}:` followed by an "
-                             "indented block on the next line.",
-                             construct_name, construct_name, construct_name)));
+             .with_help(std::format(
+                 "In Cinder, the body of a {} is introduced by `:`. "
+                 "For a single expression: `{}: expr`. "
+                 "For a block of statements: `{}:` followed by an "
+                 "indented block on the next line.",
+                 construct_name, construct_name, construct_name)));
     return result;
   }
   advance(); // consume `:`

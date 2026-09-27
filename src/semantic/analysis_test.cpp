@@ -68,11 +68,12 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     ast_files.push_back(std::move(ast_file));
   }
 
-  [[maybe_unused]] const auto checked =
-      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  [[maybe_unused]] const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
-      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics =
+          cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }

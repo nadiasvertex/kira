@@ -70,8 +70,8 @@ inline constexpr const char *kPanicSymbolName = "cinder_codegen_panic";
 /// resolved the same way `kPanicSymbolName` already is (process-symbol
 /// lookup for the JIT, ordinary static linking for `cinder build`).
 ///
-/// Named `cinder_heap_alloc`, not `cinder_rt_alloc`: the `cinder_rt_*` prefix is
-/// reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
+/// Named `cinder_heap_alloc`, not `cinder_rt_alloc`: the `cinder_rt_*` prefix
+/// is reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
 /// and `rt_alloc` is now one of them — a Cinder-callable intrinsic whose
 /// native symbol `cinder_rt_alloc` takes and returns opaque heap pointers,
 /// unlike this one's `(i64) -> ptr`.

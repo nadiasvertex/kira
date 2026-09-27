@@ -153,8 +153,8 @@ auto check_source(const std::string &text, const fs::path &path)
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   if (fixture.diag.error_count() != 0) {
     std::cerr << cinder::diagnostic_renderer(fixture.sources, false)
                      .render_all(fixture.diag);
@@ -608,7 +608,7 @@ auto run_one(const fs::path &path) -> void {
     owned_modules.push_back(std::move(submodule));
   }
   cinder::testing::lower_stdlib_modules(fixture.stdlib, fixture.checked,
-                                      owned_modules);
+                                        owned_modules);
   const auto module_set =
       hir::find_reachable_modules(*entry_module, owned_modules);
 

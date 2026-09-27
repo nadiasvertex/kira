@@ -77,7 +77,7 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
       cinder::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = ast_file.get()},
+                                      .ast_file = ast_file.get()},
   };
   auto checked =
       cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
@@ -99,7 +99,8 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
                                                 emitted.error().message));
 }
 
-auto build_and_run(const fs::path &dir, const std::string &cinder_source) -> int {
+auto build_and_run(const fs::path &dir, const std::string &cinder_source)
+    -> int {
   const auto object_path = dir / "program.o";
   const auto stub_path = dir / "panic_stub.c";
   const auto output_path = dir / "program";

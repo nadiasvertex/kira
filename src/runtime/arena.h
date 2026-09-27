@@ -43,8 +43,8 @@ private:
 /// C-ABI symbol `llvm_codegen`-compiled IR can call with no context argument.
 ///
 /// This is no longer the only allocation strategy: it is one of the two
-/// `cinder::runtime::allocator_mode`s, selected by `CINDER_ALLOCATOR=arena`. The
-/// C-ABI entry points every allocation actually goes through live in
+/// `cinder::runtime::allocator_mode`s, selected by `CINDER_ALLOCATOR=arena`.
+/// The C-ABI entry points every allocation actually goes through live in
 /// `allocator.h`.
 [[nodiscard]] auto global_arena() -> bump_arena &;
 

@@ -103,7 +103,8 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "deriving.cn"}) {
     fixtures.push_back(source_fixture{
         .path = std::string("std/") + filename,
-        .text = cinder::testing::load_test_data_file(std_dir.string(), filename),
+        .text =
+            cinder::testing::load_test_data_file(std_dir.string(), filename),
     });
   }
   return fixtures;
@@ -162,18 +163,19 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     fail("expected move check test fixtures to parse");
   }
 
-  const auto checked =
-      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors);
 
   // Mirrors `driver.cpp`'s own `validate_semantics` + `check_moves` pairing:
   // move checking is a separate pass over the same checked result, run only
   // over the user's own files (`stdlib_boundary` skips the injected prelude,
   // exactly like the driver's `stdlib_start`).
   cinder::semantic::check_moves(parsed_modules, checked, diag, file_has_errors,
-                              static_cast<unsigned>(stdlib_boundary));
+                                static_cast<unsigned>(stdlib_boundary));
 
   return analyzed_session{
-      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics =
+          cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }

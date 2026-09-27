@@ -338,13 +338,13 @@ auto str_scalar_width(std::string_view s, size_t pos) -> uint64_t {
 }
 
 extern "C" auto cinder_rt_str_scalar_at(const char *data, uint64_t len,
-                                      uint64_t offset) -> uint32_t {
+                                        uint64_t offset) -> uint32_t {
   return str_scalar_at(std::string_view(data, len),
                        static_cast<size_t>(offset));
 }
 
 extern "C" auto cinder_rt_str_scalar_width(const char *data, uint64_t len,
-                                         uint64_t offset) -> uint64_t {
+                                           uint64_t offset) -> uint64_t {
   return str_scalar_width(std::string_view(data, len),
                           static_cast<size_t>(offset));
 }

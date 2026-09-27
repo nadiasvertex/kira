@@ -598,8 +598,7 @@ struct iterator_loop_dispatch {
   ///
   /// This is what lets a *collection* be iterated, as opposed to only an
   /// iterator: `for x in v` over a `vector[T]` has nowhere to put a `next`,
-  /// because the collection is not consumed by iterating it
-  /// (`spec/list-migration-design.md` phase 2).
+  /// because the collection is not consumed by iterating it.
   const ast::func_decl *adapter_decl = nullptr;
   std::string adapter_owner_module;
   std::string adapter_impl_target_type;

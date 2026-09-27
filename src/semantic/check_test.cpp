@@ -116,11 +116,12 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected check test fixtures to parse");
   }
-  [[maybe_unused]] const auto checked =
-      cinder::semantic::validate_semantics(parsed_modules, diag, file_has_errors);
+  [[maybe_unused]] const auto checked = cinder::semantic::validate_semantics(
+      parsed_modules, diag, file_has_errors);
 
   return analyzed_session{
-      .diagnostics = cinder::diagnostic_renderer(sources, false).render_all(diag),
+      .diagnostics =
+          cinder::diagnostic_renderer(sources, false).render_all(diag),
       .error_count = diag.error_count(),
   };
 }
@@ -140,8 +141,7 @@ auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
   auto fixtures = std::vector<source_fixture>{};
 
   for (const auto &entry : cinder::testing::fs::directory_iterator(subdir)) {
-    if (entry.is_regular_file() &&
-        entry.path().extension().string() == ".cn") {
+    if (entry.is_regular_file() && entry.path().extension().string() == ".cn") {
       const auto filename = entry.path().filename().string();
       const auto path = cinder::testing::fs::path(dirname) / filename;
       const auto text = cinder::testing::load_test_data_file(
@@ -161,22 +161,19 @@ auto analyze_test_data_directory(std::string_view dirname) -> analyzed_session {
 // ==========================================================================
 
 auto test_accepts_typed_core_program() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_typed_core_program.cn");
+  const auto analyzed = analyze_test_data_file("accept_typed_core_program.cn");
   expect_clean(analyzed, "expected typed core program to check cleanly");
 }
 
 auto test_accepts_try_from_conversion() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_try_from_conversion.cn");
+  const auto analyzed = analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
       analyzed,
       "expected `?` with a matching `impl from[...]` to check cleanly");
 }
 
 auto test_accepts_structs_and_methods() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_structs_and_methods.cn");
+  const auto analyzed = analyze_test_data_file("accept_structs_and_methods.cn");
   expect_clean(analyzed, "expected struct/impl program to check cleanly");
 }
 
@@ -275,8 +272,7 @@ auto test_accepts_collections_and_lambdas() -> void {
 }
 
 auto test_accepts_option_result_flow() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_option_result_flow.cn");
+  const auto analyzed = analyze_test_data_file("accept_option_result_flow.cn");
   expect_clean(analyzed, "expected option/result program to check cleanly");
 }
 
@@ -637,8 +633,7 @@ auto test_accepts_extend_on_builtin_type() -> void {
 }
 
 auto test_accepts_extend_on_user_type() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_extend_on_user_type.cn");
+  const auto analyzed = analyze_test_data_file("accept_extend_on_user_type.cn");
   expect_clean(analyzed,
                "expected an extend block on a user type to check cleanly");
 }
@@ -1145,8 +1140,7 @@ auto test_reports_undefined_type() -> void {
 }
 
 auto test_reports_packed_on_sum_type() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_packed_on_sum_type.cn");
+  const auto analyzed = analyze_test_data_file("report_packed_on_sum_type.cn");
   expect(analyzed.error_count > 0, "expected `packed` on a sum type to fail");
   expect_diagnostic(analyzed, "`packed` only applies to struct types",
                     "expected a packed-on-non-struct diagnostic");
@@ -1155,8 +1149,7 @@ auto test_reports_packed_on_sum_type() -> void {
 }
 
 auto test_reports_annotation_mismatch() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_annotation_mismatch.cn");
+  const auto analyzed = analyze_test_data_file("report_annotation_mismatch.cn");
   expect(analyzed.error_count > 0, "expected annotation mismatch to fail");
   expect_diagnostic(analyzed, "expected `int32`, found `str`",
                     "expected annotation type-mismatch diagnostic");
@@ -1195,8 +1188,8 @@ auto test_accepts_splice_expr_reifies_quoted_value() -> void {
 }
 
 auto test_accepts_splice_stmt_reifies_quoted_statement() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "accept_splice_stmt_reifies_quoted_statement.cn");
+  const auto analyzed =
+      analyze_test_data_file("accept_splice_stmt_reifies_quoted_statement.cn");
   expect_clean(analyzed,
                std::string("expected `~make_binding` to graft the quoted `if "
                            "true: let y = 10 return y` statement into `run`'s "
@@ -1278,8 +1271,8 @@ auto test_reports_splice_expr_wrong_fragment_kind() -> void {
 }
 
 auto test_reports_hygiene_prevents_spliced_binding_leak() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "report_hygiene_prevents_spliced_binding_leak.cn");
+  const auto analyzed =
+      analyze_test_data_file("report_hygiene_prevents_spliced_binding_leak.cn");
   expect(analyzed.error_count > 0,
          "expected `y` (declared only inside the spliced `` `let y: int32 = "
          "10` `` fragment) to be undefined once referenced by hand-written "
@@ -1585,16 +1578,14 @@ auto test_reports_generic_return_literal_overflow() -> void {
 }
 
 auto test_reports_mixed_numeric_types() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_mixed_numeric_types.cn");
+  const auto analyzed = analyze_test_data_file("report_mixed_numeric_types.cn");
   expect(analyzed.error_count > 0, "expected mixed numerics to fail");
   expect_diagnostic(analyzed, "mismatched numeric types `int32` and `float64`",
                     "expected mixed-numeric diagnostic");
 }
 
 auto test_reports_non_bool_condition() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_non_bool_condition.cn");
+  const auto analyzed = analyze_test_data_file("report_non_bool_condition.cn");
   expect(analyzed.error_count > 0, "expected non-bool condition to fail");
   expect_diagnostic(analyzed, "must be `bool`, found `int32`",
                     "expected bool-condition diagnostic");
@@ -1741,8 +1732,7 @@ auto test_accepts_drop_impl() -> void {
 }
 
 auto test_reports_duplicate_drop_impl() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_duplicate_drop_impl.cn");
+  const auto analyzed = analyze_test_data_file("report_duplicate_drop_impl.cn");
   expect(analyzed.error_count > 0, "expected duplicate drop impl to fail");
   expect_diagnostic(analyzed,
                     "duplicate implementation of trait `drop` for `resource`",
@@ -1846,8 +1836,7 @@ auto test_accepts_proved_refinements() -> void {
 }
 
 auto test_reports_unproven_refinement() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_refinement_unproven.cn");
+  const auto analyzed = analyze_test_data_file("report_refinement_unproven.cn");
   expect(analyzed.error_count > 0,
          "expected an unprovable refinement obligation to be reported");
   // The failure UX *is* the feature (design doc section 6): name the goal, and
@@ -1860,8 +1849,7 @@ auto test_reports_unproven_refinement() -> void {
 }
 
 auto test_reports_refuted_refinement() -> void {
-  const auto analyzed =
-      analyze_test_data_file("report_refinement_refuted.cn");
+  const auto analyzed = analyze_test_data_file("report_refinement_refuted.cn");
   expect(analyzed.error_count > 0,
          "expected refuted refinement obligations to be reported");
   expect_diagnostic(analyzed, "`0 - 3 > 0` is never true here",
@@ -1956,7 +1944,7 @@ auto test_check_program_persists_expression_types() -> void {
 
   const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
       cinder::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = ast_file.get()},
+                                      .ast_file = ast_file.get()},
   };
   auto checked =
       cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
@@ -2074,8 +2062,8 @@ auto test_infers_param_type_from_struct_field_type() -> void {
 }
 
 auto test_infers_param_type_from_struct_field_shorthand() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_struct_field_shorthand.cn");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_struct_field_shorthand.cn");
   expect(analyzed.error_count > 0,
          "expected `make`'s `x` to be inferred as `int32` from `point`'s "
          "`x` field via shorthand initialization");
@@ -2085,8 +2073,8 @@ auto test_infers_param_type_from_struct_field_shorthand() -> void {
 }
 
 auto test_infers_param_type_from_annotated_let_binding() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_annotated_let_binding.cn");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_annotated_let_binding.cn");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `y`");
@@ -2096,8 +2084,8 @@ auto test_infers_param_type_from_annotated_let_binding() -> void {
 }
 
 auto test_infers_param_type_from_annotated_var_binding() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "infer_param_type_from_annotated_var_binding.cn");
+  const auto analyzed =
+      analyze_test_data_file("infer_param_type_from_annotated_var_binding.cn");
   expect(analyzed.error_count > 0,
          "expected `relay`'s `x` to be inferred as `int32` from the "
          "explicitly annotated local `var y`");
@@ -2367,8 +2355,7 @@ auto test_reports_state_machine_mismatch() -> void {
 }
 
 auto test_accepts_state_machine_match() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_state_machine_match.cn");
+  const auto analyzed = analyze_test_data_file("accept_state_machine_match.cn");
   expect_clean(analyzed,
                "expected a connection[open] argument where connection[open] is "
                "required to check cleanly");
@@ -2401,8 +2388,7 @@ auto test_reports_raw_pointer_outside_machine() -> void {
 }
 
 auto test_accepts_machine_pointer_ops() -> void {
-  const auto analyzed =
-      analyze_test_data_file("accept_machine_pointer_ops.cn");
+  const auto analyzed = analyze_test_data_file("accept_machine_pointer_ops.cn");
   expect_clean(
       analyzed,
       "expected the same raw-memory operations to check cleanly inside a "
@@ -2421,8 +2407,7 @@ auto test_reports_write_through_const_pointer() -> void {
 }
 
 auto test_reports_index_without_impl() -> void {
-  const auto analyzed =
-      analyze_test_data_file("reject_index_without_impl.cn");
+  const auto analyzed = analyze_test_data_file("reject_index_without_impl.cn");
   expect(analyzed.error_count > 0,
          "expected indexing a type with no `index` impl to be rejected");
   expect_diagnostic(analyzed, "cannot be indexed",
@@ -2461,11 +2446,11 @@ auto test_reports_index_wrong_key_type() -> void {
 auto test_reports_bare_generic_static_call_unsolved() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_bare_generic_static_call_unsolved.cn");
-  expect(analyzed.error_count > 0,
-         "expected `example_type.empty()` with no `T`-bearing argument to be rejected");
-  expect_diagnostic(analyzed,
-                    "cannot tell which `T` this call to `example_type.empty` means",
-                    "expected the diagnostic to name the unsolved parameter");
+  expect(analyzed.error_count > 0, "expected `example_type.empty()` with no "
+                                   "`T`-bearing argument to be rejected");
+  expect_diagnostic(
+      analyzed, "cannot tell which `T` this call to `example_type.empty` means",
+      "expected the diagnostic to name the unsolved parameter");
   expect_diagnostic(analyzed, "`example_type[int32].empty(...)`",
                     "expected the help to show the applied spelling");
 }
@@ -2477,15 +2462,16 @@ auto test_reports_generic_call_conflicting_args() -> void {
          std::format("expected each of the three conflicting calls to be "
                      "rejected, found {} error(s)",
                      analyzed.error_count));
-  expect_diagnostic(analyzed, "conflicting types for `T` in this call to `pick`",
+  expect_diagnostic(analyzed,
+                    "conflicting types for `T` in this call to `pick`",
                     "expected the conflict to name the parameter and callee");
   expect_diagnostic(analyzed, "this is `str`, but `T` is already `int32`",
                     "expected the label to say both types");
   expect_diagnostic(analyzed, "this is `bool`, but `T` is already `int32`",
                     "expected the explicit-bracket call to be checked too");
-  expect_diagnostic(analyzed,
-                    "conflicting types for `T` in this call to `example_type.make`",
-                    "expected the bare-type static call to be checked too");
+  expect_diagnostic(
+      analyzed, "conflicting types for `T` in this call to `example_type.make`",
+      "expected the bare-type static call to be checked too");
 }
 
 auto test_reports_direct_drop_call() -> void {
@@ -2621,8 +2607,8 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(borrow_it->body_stmts.size() == 1,
          "expected `borrow_it`'s body to be a single `let` statement");
 
-  const auto &let_stmt =
-      dynamic_cast<const cinder::ast::let_stmt &>(*borrow_it->body_stmts.front());
+  const auto &let_stmt = dynamic_cast<const cinder::ast::let_stmt &>(
+      *borrow_it->body_stmts.front());
   expect(let_stmt.initializer != nullptr,
          "expected `let c = &mut w[0]` to have an initializer");
 
@@ -2767,8 +2753,8 @@ auto test_accepts_existential_return_type_combined_bounds() -> void {
 }
 
 auto test_reports_existential_return_type_in_parameter() -> void {
-  const auto analyzed = analyze_test_data_file(
-      "report_existential_return_type_in_parameter.cn");
+  const auto analyzed =
+      analyze_test_data_file("report_existential_return_type_in_parameter.cn");
   expect(analyzed.error_count > 0,
          "expected `some Trait` in parameter position to fail");
   expect_diagnostic(
@@ -3553,7 +3539,8 @@ auto test_builtin_method_suggestion_includes_extend_methods() -> void {
 
 /// A method call on a value whose type is a type parameter is justified by a
 /// bound or rejected at the line that makes it (ch. 19,
-/// Bounded Generics, rule 2) — once, against `T`, and never again from the instance.
+/// Bounded Generics, rule 2) — once, against `T`, and never again from the
+/// instance.
 ///
 /// The instance knows `T` is `int32`, but repeating the mistake there would
 /// report it twice, the second time against a type the reader never wrote
@@ -3666,7 +3653,8 @@ auto test_operator_on_type_param_needs_a_bound() -> void {
               "def smaller[T](a: T, b: T) -> bool:\n"
               "    return a < b\n",
   }});
-  expect(rejected.error_count == 2, "expected one error per unbounded operator");
+  expect(rejected.error_count == 2,
+         "expected one error per unbounded operator");
   expect_diagnostic(rejected, "`+` on `T` needs `T` to implement `add`",
                     "expected `+` to name the trait it needs");
   expect_diagnostic(rejected, "`<` on `T` needs `T` to implement `ord`",

@@ -107,7 +107,12 @@ else:
 <li>The branch not taken is <strong>not compiled or
 type-checked</strong> — it is discarded before name resolution sees it
 (<code>static_decl_kind::conditional_compilation</code>,
-<code>check.cpp</code>’s <code>check_static_decl</code>).</li>
+<code>check.cpp</code>’s <code>check_static_decl</code>). The exception
+is a condition that mentions a type parameter of an enclosing generic:
+both branches are then checked, each under the facts its condition
+establishes, and the branch is chosen per instance (<a
+href="../02-intermediate/19-generics-and-inference.html#bounded-generics">19,
+Bounded Generics</a>).</li>
 <li><code>static if</code> is valid at module scope, selecting between
 top-level items, and inside a function body, where each branch’s body
 may hold ordinary statements (<code>return</code>, <code>let</code>, an

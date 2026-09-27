@@ -89,7 +89,8 @@ auto expect_func_decl(const cinder::ast::node *node)
   return dynamic_cast<const cinder::ast::func_decl *>(node);
 }
 
-auto expect_if_stmt(const cinder::ast::node *node) -> const cinder::ast::if_stmt * {
+auto expect_if_stmt(const cinder::ast::node *node)
+    -> const cinder::ast::if_stmt * {
   expect(node != nullptr, "expected if statement node");
   expect(node->kind == cinder::ast::node_kind::if_stmt,
          "expected if statement node kind");
@@ -208,8 +209,8 @@ auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
       session, step_scope, symbol_namespace::value_namespace, "step");
   expect(step_symbol != nullptr,
          "expected the `static for` binder to be in scope in its body");
-  const auto *binder_scope =
-      cinder::semantic::find_semantic_scope(session, step_symbol->defining_scope);
+  const auto *binder_scope = cinder::semantic::find_semantic_scope(
+      session, step_symbol->defining_scope);
   expect(binder_scope != nullptr &&
              binder_scope->kind ==
                  cinder::semantic::semantic_scope_kind::static_for_scope,
@@ -233,10 +234,11 @@ auto test_build_semantic_session_indexes_module_symbols() -> void {
   expect(module_scope->symbols.size() == 5,
          "expected five direct module symbols to be indexed");
 
-  const auto *type_symbol =
-      cinder::semantic::find_module_scope_symbol(index, "sample.tools", "point");
+  const auto *type_symbol = cinder::semantic::find_module_scope_symbol(
+      index, "sample.tools", "point");
   expect(type_symbol != nullptr, "expected type symbol lookup to succeed");
-  expect(type_symbol->kind == cinder::semantic::semantic_symbol_kind::type_symbol,
+  expect(type_symbol->kind ==
+             cinder::semantic::semantic_symbol_kind::type_symbol,
          "expected type symbol kind");
 
   const auto *function_symbol =
@@ -306,8 +308,8 @@ auto test_resolve_function_parameters_and_locals() -> void {
   const auto initializer_scope = find_node_scope_or_fail(session, *input_ident);
 
   const auto *current_symbol = cinder::semantic::resolve_symbol(
-      session, current_scope, cinder::semantic::symbol_namespace::value_namespace,
-      "current");
+      session, current_scope,
+      cinder::semantic::symbol_namespace::value_namespace, "current");
   const auto *input_symbol = cinder::semantic::resolve_symbol(
       session, initializer_scope,
       cinder::semantic::symbol_namespace::value_namespace, "input");
@@ -372,8 +374,8 @@ auto test_lambda_parameters_shadow_outer_bindings() -> void {
 
   const auto lambda_scope = find_node_scope_or_fail(session, *lambda_ident);
   const auto *resolved = cinder::semantic::resolve_symbol(
-      session, lambda_scope, cinder::semantic::symbol_namespace::value_namespace,
-      "value");
+      session, lambda_scope,
+      cinder::semantic::symbol_namespace::value_namespace, "value");
 
   expect(resolved != nullptr, "expected lambda body name to resolve");
   expect(resolved->kind ==

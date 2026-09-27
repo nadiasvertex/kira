@@ -64,8 +64,8 @@ auto lower_fixture(
   }
 
   auto file_has_errors = std::vector<bool>(file_ids.size(), false);
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
 
   for (size_t i = 0; i < fixture.ast_files.size(); ++i) {
@@ -95,8 +95,8 @@ auto find_module(const hir::ptr_vec<hir::hir_module> &modules,
 auto test_finds_only_entry_when_nothing_qualified() -> void {
   auto fixture = lower_fixture({
       {"app.cn", "module app\n"
-                   "pub def run() -> int32:\n"
-                   "    return 1\n"},
+                 "pub def run() -> int32:\n"
+                 "    return 1\n"},
   });
   const auto &entry = find_module(fixture.modules, "app");
 
@@ -108,12 +108,12 @@ auto test_finds_only_entry_when_nothing_qualified() -> void {
 auto test_discovers_direct_dependency() -> void {
   auto fixture = lower_fixture({
       {"tools.cn", "module tools\n"
-                     "pub def double(x: int32) -> int32:\n"
-                     "    return x * 2\n"},
+                   "pub def double(x: int32) -> int32:\n"
+                   "    return x * 2\n"},
       {"app.cn", "module app\n"
-                   "use tools\n"
-                   "pub def run() -> int32:\n"
-                   "    return tools.double(21)\n"},
+                 "use tools\n"
+                 "pub def run() -> int32:\n"
+                 "    return tools.double(21)\n"},
   });
   const auto &entry = find_module(fixture.modules, "app");
 
@@ -127,16 +127,16 @@ auto test_discovers_direct_dependency() -> void {
 auto test_discovers_transitive_dependency() -> void {
   auto fixture = lower_fixture({
       {"leaf.cn", "module leaf\n"
-                    "pub def value() -> int32:\n"
-                    "    return 7\n"},
+                  "pub def value() -> int32:\n"
+                  "    return 7\n"},
       {"mid.cn", "module mid\n"
-                   "use leaf\n"
-                   "pub def relay() -> int32:\n"
-                   "    return leaf.value()\n"},
+                 "use leaf\n"
+                 "pub def relay() -> int32:\n"
+                 "    return leaf.value()\n"},
       {"app.cn", "module app\n"
-                   "use mid\n"
-                   "pub def run() -> int32:\n"
-                   "    return mid.relay()\n"},
+                 "use mid\n"
+                 "pub def run() -> int32:\n"
+                 "    return mid.relay()\n"},
   });
   const auto &entry = find_module(fixture.modules, "app");
 
@@ -167,11 +167,11 @@ auto test_discovers_transitive_dependency() -> void {
 auto test_discovers_dependency_reached_only_through_a_global() -> void {
   auto fixture = lower_fixture({
       {"tables.cn", "module tables\n"
-                      "pub static VALUES: array[int32, 3] = [10, 20, 30]\n"},
+                    "pub static VALUES: array[int32, 3] = [10, 20, 30]\n"},
       {"app.cn", "module app\n"
-                   "use tables.*\n"
-                   "pub def run() -> int32:\n"
-                   "    return VALUES[1]\n"},
+                 "use tables.*\n"
+                 "pub def run() -> int32:\n"
+                 "    return VALUES[1]\n"},
   });
   const auto &entry = find_module(fixture.modules, "app");
 

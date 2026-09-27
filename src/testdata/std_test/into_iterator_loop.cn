@@ -1,7 +1,6 @@
 module main
 
-# `for x in collection` routed through `std.iter.into_iterator`
-# (`spec/list-migration-design.md` phase 2).
+# `for x in collection` routed through `std.iter.into_iterator`.
 #
 # Before this, `for` reached a user type only by duck-typing on a `next`
 # method, so a *collection* — which is not itself an iterator, and is not

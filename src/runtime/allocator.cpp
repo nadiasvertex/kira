@@ -75,7 +75,7 @@ extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
 }
 
 extern "C" auto cinder_heap_realloc(void *ptr, uint64_t old_bytes,
-                                  uint64_t new_bytes) -> void * {
+                                    uint64_t new_bytes) -> void * {
   const auto old_size = cinder::runtime::round_to_slot(old_bytes);
   const auto new_size = cinder::runtime::round_to_slot(new_bytes);
   if (ptr == nullptr) {
@@ -136,8 +136,9 @@ extern "C" auto cinder_rt_alloc(uint64_t bytes) -> uint64_t * {
 }
 
 extern "C" auto cinder_rt_realloc(uint64_t *ptr, uint64_t old_bytes,
-                                uint64_t new_bytes) -> uint64_t * {
-  return static_cast<uint64_t *>(cinder_heap_realloc(ptr, old_bytes, new_bytes));
+                                  uint64_t new_bytes) -> uint64_t * {
+  return static_cast<uint64_t *>(
+      cinder_heap_realloc(ptr, old_bytes, new_bytes));
 }
 
 extern "C" auto cinder_rt_free(uint64_t *ptr, uint64_t bytes) -> uint64_t * {

@@ -48,10 +48,10 @@ auto check_fixture(const std::string &text) -> checked_fixture {
       std::vector<bool>(static_cast<size_t>(*file_id) + 1, false);
   const auto parsed_modules = std::vector<cinder::semantic::parsed_module>{
       cinder::semantic::parsed_module{.file_id = *file_id,
-                                    .ast_file = fixture.ast_file.get()},
+                                      .ast_file = fixture.ast_file.get()},
   };
-  fixture.checked = cinder::semantic::check_program(parsed_modules, fixture.diag,
-                                                  file_has_errors);
+  fixture.checked = cinder::semantic::check_program(
+      parsed_modules, fixture.diag, file_has_errors);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
   return fixture;
 }

@@ -97,10 +97,11 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!panic_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Cinder's AOT panic runtime support "
-                   "library (libaot_runtime.a) — run `cinder` via `bazelisk "
-                   "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
-                   "workspace that built it"};
+        .message =
+            "could not locate Cinder's AOT panic runtime support "
+            "library (libaot_runtime.a) — run `cinder` via `bazelisk "
+            "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
+            "workspace that built it"};
   }
   const auto heap_archive =
       find_bazel_archive(program_name, "src/runtime", "runtime");
@@ -127,11 +128,12 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   if (!semantic_archive) {
     return build_outcome{
         .succeeded = false,
-        .message = "could not locate Cinder's semantic-analysis support "
-                   "library (libsemantic.a, needed by the heap runtime's "
-                   "struct/sum layout helpers) — run `cinder` via `bazelisk "
-                   "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
-                   "workspace that built it"};
+        .message =
+            "could not locate Cinder's semantic-analysis support "
+            "library (libsemantic.a, needed by the heap runtime's "
+            "struct/sum layout helpers) — run `cinder` via `bazelisk "
+            "run //src:cinder` or from `bazel-bin/src/cinder` inside the "
+            "workspace that built it"};
   }
   const auto parser_archive =
       find_bazel_archive(program_name, "src/parser", "parser");
