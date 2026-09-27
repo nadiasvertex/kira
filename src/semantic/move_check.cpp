@@ -836,10 +836,16 @@ auto check_moves(const std::vector<parsed_module> &inputs,
         file_has_errors[input.file_id]) {
       continue;
     }
+    const auto errors_before = diag.error_count();
     for (const auto &item : input.ast_file->items) {
       if (item != nullptr) {
         walk_item(*item, checked, diag, input.file_id);
       }
+    }
+    // A file with an ownership error must not reach lowering or execution.
+    if (diag.error_count() > errors_before &&
+        static_cast<size_t>(input.file_id) < file_has_errors.size()) {
+      file_has_errors[input.file_id] = true;
     }
   }
 }

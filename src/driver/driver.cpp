@@ -388,8 +388,12 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     hir::inline_small_calls(lowered_modules, checked.types);
   }
 
-  run_requested_function(effective_cfg, lowered_modules, checked, report);
-  build_requested_function(effective_cfg, lowered_modules, checked, report);
+  // A program with an error is never executed or linked: running it would
+  // show output from code the compiler has already rejected.
+  if (report.error_count == 0) {
+    run_requested_function(effective_cfg, lowered_modules, checked, report);
+    build_requested_function(effective_cfg, lowered_modules, checked, report);
+  }
 
   return report;
 }

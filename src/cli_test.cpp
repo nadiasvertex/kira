@@ -1079,6 +1079,67 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
          "expected unresolved qualified type path diagnostic");
 }
 
+/// Todo item 30: a program with a borrow or move error once ran on the VM
+/// (printing its output) before the error was reported, because those checks
+/// neither marked the file failing nor stopped `--run`/`--build`. Neither
+/// may execute or link now.
+auto test_ownership_error_blocks_run_and_build() -> void {
+  auto temp = make_temp_dir();
+  const auto programs = std::vector<std::pair<std::string, std::string>>{
+      {"borrow", "module b\n"
+                 "def main() -> int32:\n"
+                 "  println(\"ran\")\n"
+                 "  let a = 7\n"
+                 "  let r = &a\n"
+                 "  return 42\n"},
+      {"move", "module m\n"
+               "type holder = { v: list[int32] }\n"
+               "def take(h: holder) -> int32:\n"
+               "  return 1\n"
+               "def main() -> int32:\n"
+               "  let h = holder { v: [1] }\n"
+               "  let x = take(h)\n"
+               "  return take(h) + x\n"},
+  };
+  for (const auto &[name, text] : programs) {
+    auto source = temp.path / (name + ".cn");
+    write_file(source, text);
+
+    cinder::driver::cli_config run_cfg{
+        .program_name = "cinder",
+        .sources = {source.string()},
+        .metadata_dir = (temp.path / "meta").string(),
+        .show_help = false,
+        .run = true,
+        .run_function = "main",
+    };
+    cinder::driver::inject_stdlib_prelude(run_cfg);
+    auto run_report = cinder::driver::compile_sources(run_cfg, false);
+    expect(run_report.has_value(), "expected compile driver to return a report");
+    expect(run_report->error_count > 0,
+           std::format("expected the {} error to be reported", name));
+    expect(!run_report->run.has_value(),
+           std::format("expected a program with a {} error not to run", name));
+
+    cinder::driver::cli_config build_cfg{
+        .program_name = "cinder",
+        .sources = {source.string()},
+        .metadata_dir = (temp.path / "meta").string(),
+        .show_help = false,
+        .build = true,
+        .build_function = "main",
+        .build_output = (temp.path / (name + "_bin")).string(),
+    };
+    cinder::driver::inject_stdlib_prelude(build_cfg);
+    auto build_report = cinder::driver::compile_sources(build_cfg, false);
+    expect(build_report.has_value(),
+           "expected compile driver to return a report");
+    expect(!build_report->build.has_value(),
+           std::format("expected a program with a {} error not to be built",
+                       name));
+  }
+}
+
 /// Todo item 10: a user root module whose name matches a local binding in
 /// a library body (`for s in suites: s.cases` in `std.test`, `static for v
 /// in T.variants(): v.name` in `std.derive`) once turned every such field
@@ -4661,6 +4722,7 @@ auto main() -> int {
     test_compile_sources_writes_module_metadata();
     test_compile_sources_writes_functor_instantiation_metadata();
     test_compile_sources_folds_static_if_import_selection();
+    test_ownership_error_blocks_run_and_build();
     test_compile_sources_rejects_use_gated_by_nonliteral_static_if();
     test_compile_sources_folds_static_if_top_level_type_selection();
     test_compile_sources_folds_static_if_top_level_type_selection_else();
