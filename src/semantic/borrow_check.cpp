@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace cinder::semantic {
@@ -18,6 +19,29 @@ namespace {
 /// view live one statement too long can at worst raise a false positive, never
 /// mask an alias. Every construct that can hold an expression is recursed
 /// precisely so that safety valve is rarely reached.
+/// Whether `pred` holds for any expression an interpolation segment evaluates:
+/// its `{value}` and any dynamic `{width}`/`{precision}` in its format spec.
+template <typename pred_fn>
+[[nodiscard]] auto interp_segment_exprs_any(const ast::interp_segment &segment,
+                                            const pred_fn &pred) -> bool {
+  if (segment.is_literal) {
+    return false;
+  }
+  if (segment.value != nullptr && pred(*segment.value)) {
+    return true;
+  }
+  if (!segment.has_spec) {
+    return false;
+  }
+  for (const auto *dynamic : {&segment.spec.width, &segment.spec.precision}) {
+    if (const auto *expr = std::get_if<ast::ptr<ast::expr>>(dynamic);
+        expr != nullptr && *expr != nullptr && pred(**expr)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 [[nodiscard]] auto subtree_mentions(const ast::node &node,
                                     std::string_view name) -> bool;
 
@@ -183,6 +207,14 @@ auto subtree_mentions(const ast::node &node, std::string_view name) -> bool {
   case ast::node_kind::match_stmt: {
     const auto &e = dynamic_cast<const ast::match_stmt &>(node);
     return mentions_opt(e.subject.get(), name) || arms_mention(e.arms, name);
+  }
+  case ast::node_kind::interpolated_string_expr: {
+    const auto &e = dynamic_cast<const ast::interpolated_string_expr &>(node);
+    return std::ranges::any_of(e.segments, [&](const auto &segment) {
+      return interp_segment_exprs_any(segment, [&](const ast::expr &part) {
+        return subtree_mentions(part, name);
+      });
+    });
   }
   default:
     // An unrecognized construct that might mention `name`: assume it does, so a
@@ -549,7 +581,16 @@ private:
                           .is_mut = borrow->op == ast::unary_op::addr_of_mut,
                           .span = borrow->span});
         }
+        continue;
       }
+      // A view made in the argument itself (`f(&mut xs[a..b])`, `f(xs[a..b])`)
+      // borrows its source collection for the whole call, exactly like `&xs`
+      // would. Only *fresh* views count: a live view binding passed along is
+      // already in the live set, and a nested call's result is checked when
+      // that call is walked.
+      auto fresh = provenance_of(*arg.value, live_set{},
+                                 /*through_calls=*/false);
+      result.args.insert(result.args.end(), fresh.begin(), fresh.end());
     }
     if (const auto it = checked_.resolved_callees.find(&call);
         it != checked_.resolved_callees.end() && it->second.decl != nullptr) {
@@ -641,7 +682,8 @@ private:
   }
 
   [[nodiscard]] auto provenance_of(const ast::expr &expr,
-                                   const live_set &views) const
+                                   const live_set &views,
+                                   bool through_calls = true) const
       -> std::vector<call_borrow> {
     const auto &e = strip_groups(expr);
     // A closure with `&`/`&mut` capture entries borrows those variables and
@@ -659,7 +701,7 @@ private:
     case ast::node_kind::unary_expr: {
       const auto &unary = dynamic_cast<const ast::unary_expr &>(e);
       auto inner = unary.operand != nullptr
-                       ? provenance_of(*unary.operand, views)
+                       ? provenance_of(*unary.operand, views, through_calls)
                        : std::vector<call_borrow>{};
       if (unary.op == ast::unary_op::addr_of_mut) {
         for (auto &borrow : inner) {
@@ -676,11 +718,11 @@ private:
       // A sub-slice of an existing view (`m[a..b]`) borrows *m*'s sources, not
       // `m` itself; a slice of a real collection borrows that collection.
       if (is_view_bearing(*index.object)) {
-        return provenance_of(*index.object, views);
+        return provenance_of(*index.object, views, through_calls);
       }
       auto root = root_binding_name(*index.object);
       if (root.empty()) {
-        return provenance_of(*index.object, views);
+        return provenance_of(*index.object, views, through_calls);
       }
       return {call_borrow{.root = std::move(root),
                           .is_mut = view_is_mut(lookup_type(&e)),
@@ -698,19 +740,19 @@ private:
     }
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(e);
-      return field.object != nullptr ? provenance_of(*field.object, views)
+      return field.object != nullptr ? provenance_of(*field.object, views, through_calls)
                                      : std::vector<call_borrow>{};
     }
     case ast::node_kind::cast_expr: {
       const auto &cast = dynamic_cast<const ast::cast_expr &>(e);
-      return cast.operand != nullptr ? provenance_of(*cast.operand, views)
+      return cast.operand != nullptr ? provenance_of(*cast.operand, views, through_calls)
                                      : std::vector<call_borrow>{};
     }
     case ast::node_kind::tuple_expr: {
       const auto &tuple = dynamic_cast<const ast::tuple_expr &>(e);
       auto out = std::vector<call_borrow>{};
       for (const auto &element : tuple.elements) {
-        append_provenance(out, element.get(), views);
+        append_provenance(out, element.get(), views, through_calls);
       }
       return out;
     }
@@ -718,16 +760,16 @@ private:
       const auto &array = dynamic_cast<const ast::array_expr &>(e);
       auto out = std::vector<call_borrow>{};
       for (const auto &element : array.elements) {
-        append_provenance(out, element.get(), views);
+        append_provenance(out, element.get(), views, through_calls);
       }
-      append_provenance(out, array.fill_value.get(), views);
+      append_provenance(out, array.fill_value.get(), views, through_calls);
       return out;
     }
     case ast::node_kind::struct_expr: {
       const auto &literal = dynamic_cast<const ast::struct_expr &>(e);
       auto out = std::vector<call_borrow>{};
       for (const auto &field : literal.fields) {
-        append_provenance(out, field.value.get(), views);
+        append_provenance(out, field.value.get(), views, through_calls);
       }
       return out;
     }
@@ -735,14 +777,31 @@ private:
       // A call whose result carries a view keeps every place reachable through
       // its reference arguments and receiver borrowed for the view's lifetime —
       // the conservative rule that needs no per-argument provenance inference.
+      if (!through_calls) {
+        return {};
+      }
       const auto &call = dynamic_cast<const ast::call_expr &>(e);
       const auto borrows = collect_call_borrows(call);
       auto out = borrows.args;
       if (borrows.receiver.has_value()) {
         out.push_back(*borrows.receiver);
       }
+      // `borrows.args` already holds the fresh views made in the arguments;
+      // add only what they do not (views inherited from live bindings), so a
+      // fresh `&mut xs[a..b]` is not counted twice and reported against itself.
       for (const auto &arg : call.args) {
-        append_provenance(out, arg.value.get(), views);
+        auto more = std::vector<call_borrow>{};
+        append_provenance(more, arg.value.get(), views);
+        for (auto &borrow : more) {
+          const auto seen = std::ranges::any_of(out, [&](const auto &have) {
+            return have.root == borrow.root &&
+                   have.span.start == borrow.span.start &&
+                   have.span.end == borrow.span.end;
+          });
+          if (!seen) {
+            out.push_back(std::move(borrow));
+          }
+        }
       }
       return out;
     }
@@ -757,11 +816,12 @@ private:
 
   /// Appends `expr`'s provenance to `out` (no-op for a null or non-view expr).
   auto append_provenance(std::vector<call_borrow> &out, const ast::expr *expr,
-                         const live_set &views) const -> void {
+                         const live_set &views, bool through_calls = true) const
+      -> void {
     if (expr == nullptr) {
       return;
     }
-    auto more = provenance_of(*expr, views);
+    auto more = provenance_of(*expr, views, through_calls);
     out.insert(out.end(), more.begin(), more.end());
   }
 
@@ -905,17 +965,28 @@ private:
       // borrows are live, and its receiver borrow is *reserved* (two-phase):
       // it tolerates a nested shared borrow of the same value but still
       // conflicts with a nested `&mut` of it.
-      auto nested = live;
-      nested.insert(nested.end(), borrows.args.begin(), borrows.args.end());
-      if (borrows.receiver.has_value()) {
-        auto reserved = *borrows.receiver;
-        reserved.reserved = true;
-        nested.push_back(reserved);
-      }
+      //
+      // An argument's *own* borrow is taken only once that argument has been
+      // evaluated, so it is not live inside it: the bound in
+      // `sort(&mut xs[0..xs.len()])` reads `xs` before the view exists.
       for (const auto &arg : call.args) {
-        if (arg.value != nullptr) {
-          walk_expr(*arg.value, /*borrow_ok=*/true, nested);
+        if (arg.value == nullptr) {
+          continue;
         }
+        auto nested = live;
+        for (const auto &borrow : borrows.args) {
+          const bool own = borrow.span.start >= arg.value->span.start &&
+                           borrow.span.end <= arg.value->span.end;
+          if (!own) {
+            nested.push_back(borrow);
+          }
+        }
+        if (borrows.receiver.has_value()) {
+          auto reserved = *borrows.receiver;
+          reserved.reserved = true;
+          nested.push_back(reserved);
+        }
+        walk_expr(*arg.value, /*borrow_ok=*/true, nested);
       }
       return;
     }
@@ -1009,6 +1080,21 @@ private:
     case ast::node_kind::block_expr: {
       const auto &block = dynamic_cast<const ast::block_expr &>(expr);
       walk_body(block.stmts, live);
+      return;
+    }
+
+    case ast::node_kind::interpolated_string_expr: {
+      // Each `{expr}` is formatted on the spot, so it is a passing position:
+      // borrows in it are checked like any other, against the live set.
+      const auto &interp =
+          dynamic_cast<const ast::interpolated_string_expr &>(expr);
+      for (const auto &segment : interp.segments) {
+        static_cast<void>(
+            interp_segment_exprs_any(segment, [&](const ast::expr &part) {
+              walk_expr(part, /*borrow_ok=*/true, live);
+              return false;
+            }));
+      }
       return;
     }
 

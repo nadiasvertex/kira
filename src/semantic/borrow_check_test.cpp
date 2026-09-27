@@ -425,6 +425,37 @@ auto test_view_dead_at_last_use_is_accepted() -> void {
          "— liveness ends at the last use, not the end of scope");
 }
 
+auto test_slice_arg_with_live_view_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_slice_arg_with_live_view.cn");
+  expect(analyzed.error_count > 0,
+         "expected `poke(&mut xs[0..xs.len()])` to be rejected while the view "
+         "`middle` of `xs` is still live");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` while the view `middle` of `xs`",
+                    "expected the slice argument to conflict with `middle`");
+}
+
+auto test_slice_args_in_interpolation_are_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_slice_args_in_interpolation.cn");
+  expect(analyzed.error_count > 0,
+         "expected conflicting slice arguments inside an interpolation to be "
+         "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` as mutable and immutable at the same "
+                    "time",
+                    "expected a mut/shared conflict between the two slices");
+}
+
+auto test_slice_arg_after_view_use_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_slice_arg_after_view_use.cn");
+  expect(analyzed.error_count == 0,
+         "expected slice arguments to check cleanly once earlier views are "
+         "dead, with bounds reading the source, and with shared siblings");
+}
+
 auto test_view_of_other_variable_is_accepted() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_view_of_other_variable.cn");
@@ -524,6 +555,9 @@ auto main() -> int {
     test_two_shared_views_are_accepted();
     test_view_dead_at_last_use_is_accepted();
     test_view_of_other_variable_is_accepted();
+    test_slice_arg_with_live_view_is_rejected();
+    test_slice_args_in_interpolation_are_rejected();
+    test_slice_arg_after_view_use_is_accepted();
     test_two_mut_capture_closures_are_rejected();
     test_by_value_capture_is_not_a_borrow();
     test_shared_capture_closures_are_accepted();
