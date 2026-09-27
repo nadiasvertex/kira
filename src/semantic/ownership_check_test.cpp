@@ -656,7 +656,8 @@ auto test_replace_while_view_live_is_rejected() -> void {
 }
 
 auto test_move_while_view_live_is_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_move_while_view_live.cn");
+  const auto analyzed =
+      analyze_test_data_file("reject_move_while_view_live.cn");
   expect_diagnostic(analyzed,
                     "cannot move `xs` while the view `s` of `xs` is still in "
                     "use",
@@ -718,7 +719,8 @@ auto test_view_from_if_expr_is_rejected() -> void {
 }
 
 auto test_view_from_match_expr_is_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_view_from_match_expr.cn");
+  const auto analyzed =
+      analyze_test_data_file("reject_view_from_match_expr.cn");
   expect_diagnostic(analyzed, "cannot borrow `xs` while the view `s` of `xs`",
                     "expected a `match` expression's view to borrow `xs`");
 }
@@ -848,8 +850,8 @@ auto main() -> int {
     test_view_outliving_source_scope_is_rejected();
     test_return_view_of_parameter_is_accepted();
   } catch (const std::exception &ex) {
-    std::cerr << "ownership_check_test failed: unhandled exception: " << ex.what()
-              << '\n';
+    std::cerr << "ownership_check_test failed: unhandled exception: "
+              << ex.what() << '\n';
     std::exit(1);
   }
   return 0;

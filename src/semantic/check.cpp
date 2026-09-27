@@ -5511,8 +5511,7 @@ private:
     }
     const auto &e = types_.entry(id);
     if (types_.is_view(id) || e.kind == type_kind::ref_kind ||
-        e.kind == type_kind::fn_kind ||
-        e.kind == type_kind::type_param_kind ||
+        e.kind == type_kind::fn_kind || e.kind == type_kind::type_param_kind ||
         e.kind == type_kind::param_app_kind) {
       return true;
     }

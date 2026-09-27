@@ -60,12 +60,12 @@ public:
   auto walk_function(const ast::func_decl &decl) -> void {
     // A method's `self`/`mut self` is always passed *by reference*,
     // regardless of the `mut` spelling (see `receiver_mode` in
-    // `src/semantic/ownership_cfg.cpp`). So the function body never owns `self`, and it must
-    // never be scheduled for a scope-exit drop — not just inside a type's
-    // own `drop` method (which would otherwise recurse into itself
-    // forever), but in *every* method: `push`/`reserve`/etc. on a droppable
-    // receiver would otherwise drop it out from under a caller who still
-    // owns and uses it after the call returns.
+    // `src/semantic/ownership_cfg.cpp`). So the function body never owns
+    // `self`, and it must never be scheduled for a scope-exit drop — not just
+    // inside a type's own `drop` method (which would otherwise recurse into
+    // itself forever), but in *every* method: `push`/`reserve`/etc. on a
+    // droppable receiver would otherwise drop it out from under a caller who
+    // still owns and uses it after the call returns.
     push_scope();
     for (const auto &param : decl.params) {
       if (param.pattern != nullptr &&

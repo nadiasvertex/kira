@@ -103,8 +103,8 @@ auto live_step(const event &e, live_set &live) -> void {
   }
 }
 
-auto forward_step(const event &e, const function_cfg &cfg,
-                  forward_state &state) -> void {
+auto forward_step(const event &e, const function_cfg &cfg, forward_state &state)
+    -> void {
   if (const auto *a = std::get_if<access_event>(&e)) {
     switch (a->kind) {
     case access_kind::move:
@@ -268,8 +268,7 @@ private:
     }
   }
 
-  auto check_move(const access_event &a, const forward_state &state)
-      -> void {
+  auto check_move(const access_event &a, const forward_state &state) -> void {
     if (a.kind == access_kind::write_whole ||
         a.kind == access_kind::storage_dead) {
       return;
@@ -293,8 +292,7 @@ private:
       }
       for (const auto l : state.contents[h]) {
         const auto &loan = cfg_.loans[l];
-        if (loan.root != a.local || l == a.exempt ||
-            !conflicts(a.kind, loan)) {
+        if (loan.root != a.local || l == a.exempt || !conflicts(a.kind, loan)) {
           continue;
         }
         const auto rank = holder_rank(cfg_.locals[h].role);
@@ -398,9 +396,8 @@ private:
     const auto &borrow = *escape.borrow;
     const auto *spelling =
         borrow.op == ast::unary_op::addr_of_mut ? "&mut" : "&";
-    const auto subject = escape.root.empty()
-                             ? std::string("value")
-                             : std::format("`{}`", escape.root);
+    const auto subject = escape.root.empty() ? std::string("value")
+                                             : std::format("`{}`", escape.root);
     auto d = diagnostic(
         diagnostic_level::error,
         std::format("a borrow of {} cannot escape the call it was made for",
@@ -435,9 +432,9 @@ private:
     auto d = diagnostic(diagnostic_level::error, std::move(message), file_id_);
     d.with_label(a.span, std::format("`{}` borrowed as {} here", root,
                                      later_mut ? "mutable" : "immutable"));
-    d.with_secondary_label(
-        loan.span, std::format("`{}` already borrowed as {} here", root,
-                               earlier_mut ? "mutable" : "immutable"));
+    d.with_secondary_label(loan.span,
+                           std::format("`{}` already borrowed as {} here", root,
+                                       earlier_mut ? "mutable" : "immutable"));
     d.with_note("a borrow made for a call lasts until that call returns — "
                 "including while its other arguments, and any calls nested "
                 "in them, are evaluated");
@@ -460,15 +457,15 @@ private:
     const auto *verb = a.kind == access_kind::move   ? "move"
                        : a.kind == access_kind::read ? "use"
                                                      : "assign to";
-    auto d = diagnostic(
-        diagnostic_level::error,
-        std::format("cannot {} `{}` while it is {}borrowed", verb, root,
-                    loan.is_mut ? "mutably " : ""),
-        file_id_);
-    d.with_label(a.span, std::format("`{}` {} here", root,
-                                     a.kind == access_kind::move   ? "moved"
-                                     : a.kind == access_kind::read ? "used"
-                                                                   : "assigned"));
+    auto d = diagnostic(diagnostic_level::error,
+                        std::format("cannot {} `{}` while it is {}borrowed",
+                                    verb, root, loan.is_mut ? "mutably " : ""),
+                        file_id_);
+    d.with_label(a.span,
+                 std::format("`{}` {} here", root,
+                             a.kind == access_kind::move   ? "moved"
+                             : a.kind == access_kind::read ? "used"
+                                                           : "assigned"));
     d.with_secondary_label(
         loan.span,
         std::format("`{}` is borrowed here, until this call returns", root));
@@ -499,17 +496,16 @@ private:
                                                      : "assign to";
     const auto *still = is_loop ? "still running" : "still in use";
     auto d = diagnostic(diagnostic_level::error,
-                        std::format("cannot {} `{}` while {} is {}", verb,
-                                    root, description, still),
+                        std::format("cannot {} `{}` while {} is {}", verb, root,
+                                    description, still),
                         file_id_);
     switch (a.kind) {
     case access_kind::borrow_shared:
     case access_kind::borrow_mut:
-      d.with_label(a.span,
-                   std::format("`{}` borrowed as {} here", root,
-                               a.kind == access_kind::borrow_mut
-                                   ? "mutable"
-                                   : "immutable"));
+      d.with_label(a.span, std::format("`{}` borrowed as {} here", root,
+                                       a.kind == access_kind::borrow_mut
+                                           ? "mutable"
+                                           : "immutable"));
       break;
     case access_kind::move:
       d.with_label(a.span, std::format("`{}` moved here", root));
@@ -573,10 +569,9 @@ private:
   auto report_outlived(const access_event &a, const loan_info &loan,
                        local_id holder, const std::string &root) -> void {
     const auto &info = cfg_.locals[holder];
-    auto d =
-        diagnostic(diagnostic_level::error,
-                   std::format("`{}` does not live long enough", root),
-                   file_id_);
+    auto d = diagnostic(diagnostic_level::error,
+                        std::format("`{}` does not live long enough", root),
+                        file_id_);
     const auto named = info.role == local_role::binding ||
                        info.role == local_role::loop_source;
     d.with_label(loan.span,

@@ -241,7 +241,6 @@ private:
     return temp;
   }
 
-
   auto new_loan(local_id root, bool is_mut, loan_origin origin,
                 source_span span) -> loan_id {
     cfg_.loans.push_back(loan_info{
@@ -326,7 +325,8 @@ private:
     }
     const auto &entry = types.entry(type);
     if (entry.kind == type_kind::type_param_kind ||
-        entry.kind == type_kind::ptr_kind || entry.kind == type_kind::ref_kind) {
+        entry.kind == type_kind::ptr_kind ||
+        entry.kind == type_kind::ref_kind) {
       return false;
     }
     if (is_view(type) && !is_mut_view(type)) {
@@ -398,8 +398,8 @@ private:
   }
 
   auto declare(std::string name, type_id type, source_span span) -> local_id {
-    const auto local = new_local(name, local_role::binding, type, span,
-                                 movable(type));
+    const auto local =
+        new_local(name, local_role::binding, type, span, movable(type));
     if (owns_storage(type, name)) {
       scopes_.back().owned.push_back(local);
     }
@@ -458,9 +458,8 @@ private:
         return;
       }
     }
-    captures_.push_back(
-        implicit_capture{.name = std::string(name), .moved = moved,
-                         .span = span});
+    captures_.push_back(implicit_capture{
+        .name = std::string(name), .moved = moved, .span = span});
   }
 
   // ------------------------------------------------------------------
@@ -578,7 +577,8 @@ private:
   /// the parts' borrows if the result can carry one, else nothing.
   auto compound_result(const ast::expr &expr, local_id temp) -> value {
     emit(use_event{.local = temp});
-    return bears(type_of(&expr)) ? value{.loans = {}, .sources = {temp}} : value{};
+    return bears(type_of(&expr)) ? value{.loans = {}, .sources = {temp}}
+                                 : value{};
   }
 
   /// Evaluates `expr`. Whatever its parts borrowed, a value whose type
@@ -589,8 +589,7 @@ private:
     return bears(type_of(&expr)) ? result : value{};
   }
 
-  auto eval_parts(const ast::expr &expr, use_mode mode, position pos)
-      -> value {
+  auto eval_parts(const ast::expr &expr, use_mode mode, position pos) -> value {
     if (expr.has_error) {
       return {};
     }
@@ -602,8 +601,7 @@ private:
                                                          : access_kind::read);
       }
       if (expr.kind == ast::node_kind::field_expr) {
-        return eval_field_of_value(
-            dynamic_cast<const ast::field_expr &>(expr));
+        return eval_field_of_value(dynamic_cast<const ast::field_expr &>(expr));
       }
       return {};
 
@@ -621,8 +619,10 @@ private:
     case ast::node_kind::binary_expr: {
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
-      stash(temp, eval_opt(binary.lhs.get(), use_mode::read, position::storing));
-      stash(temp, eval_opt(binary.rhs.get(), use_mode::read, position::storing));
+      stash(temp,
+            eval_opt(binary.lhs.get(), use_mode::read, position::storing));
+      stash(temp,
+            eval_opt(binary.rhs.get(), use_mode::read, position::storing));
       return compound_result(expr, temp);
     }
 
@@ -662,10 +662,10 @@ private:
       for (const auto &element : array.elements) {
         stash(temp, eval_opt(element.get(), use_mode::move, position::storing));
       }
-      stash(temp,
-            eval_opt(array.fill_value.get(), use_mode::move, position::storing));
-      stash(temp,
-            eval_opt(array.fill_count.get(), use_mode::read, position::storing));
+      stash(temp, eval_opt(array.fill_value.get(), use_mode::move,
+                           position::storing));
+      stash(temp, eval_opt(array.fill_count.get(), use_mode::read,
+                           position::storing));
       return compound_result(expr, temp);
     }
 
@@ -778,7 +778,8 @@ private:
     case ast::node_kind::splice_expr: {
       const auto it = checked_.spliced_fragments.find(&expr);
       if (it != checked_.spliced_fragments.end()) {
-        if (const auto *fragment = dynamic_cast<const ast::expr *>(it->second)) {
+        if (const auto *fragment =
+                dynamic_cast<const ast::expr *>(it->second)) {
           return eval(*fragment, mode, pos);
         }
       }
@@ -796,7 +797,8 @@ private:
 
   /// `obj.f` where `obj` is not itself a place (a call result, ...).
   auto eval_field_of_value(const ast::field_expr &field) -> value {
-    auto object = eval_opt(field.object.get(), use_mode::read, position::passing);
+    auto object =
+        eval_opt(field.object.get(), use_mode::read, position::passing);
     return bears(type_of(&field)) ? object : value{};
   }
 
@@ -843,15 +845,14 @@ private:
       if (pos == position::storing && is_plain_borrow(unary)) {
         auto projected = false;
         const auto *root = place_root(*unary.operand, projected);
-        cfg_.escapes.push_back(escape_site{
-            .borrow = &unary,
-            .root = root != nullptr ? root->name : std::string{}});
+        cfg_.escapes.push_back(
+            escape_site{.borrow = &unary,
+                        .root = root != nullptr ? root->name : std::string{}});
       }
       const auto &operand = strip_groups(*unary.operand);
       const auto is_mut = unary.op == ast::unary_op::addr_of_mut;
       const auto origin =
-          operand.kind == ast::node_kind::index_expr &&
-                  is_view(type_of(&unary))
+          operand.kind == ast::node_kind::index_expr && is_view(type_of(&unary))
               ? loan_origin::view
               : loan_origin::borrow;
       return borrow_place(operand, is_mut, origin, unary.span);
@@ -890,8 +891,7 @@ private:
       if (callee.trait_name == "into_iterator") {
         return receiver_passing::move;
       }
-      return binding->is_mut ? receiver_passing::mut
-                             : receiver_passing::shared;
+      return binding->is_mut ? receiver_passing::mut : receiver_passing::shared;
     }
     const auto type = type_of(front.pattern.get());
     if (checked_.types.is_unknown(type)) {
@@ -950,8 +950,8 @@ private:
                                  receiver.span));
         break;
       case receiver_passing::mut: {
-        auto reserved = borrow_place(receiver, false, loan_origin::receiver,
-                                     receiver.span);
+        auto reserved =
+            borrow_place(receiver, false, loan_origin::receiver, receiver.span);
         if (!reserved.loans.empty()) {
           reservation = reserved.loans.front();
           cfg_.loans[reservation].reserved_mut = true;
@@ -1116,8 +1116,8 @@ private:
   auto lower_match(const ast::expr *subject_expr,
                    const std::vector<ast::match_arm> &arms, bool want_value)
       -> value {
-    const auto subject = hold_subject(
-        eval_opt(subject_expr, use_mode::move, position::storing));
+    const auto subject =
+        hold_subject(eval_opt(subject_expr, use_mode::move, position::storing));
     const auto join = new_temp(local_role::join_temp);
     const auto end = new_block();
     for (std::size_t i = 0; i < arms.size(); ++i) {
@@ -1164,10 +1164,9 @@ private:
   /// `for x in &xs`, or the collection behind `xs.iter()` — stays borrowed
   /// for the whole loop.
   auto lower_for(const ast::for_stmt &stmt) -> void {
-    const auto source =
-        start_loop_source(stmt.iterable.get(), stmt.iterable != nullptr
-                                                   ? stmt.iterable->span
-                                                   : stmt.span);
+    const auto source = start_loop_source(
+        stmt.iterable.get(),
+        stmt.iterable != nullptr ? stmt.iterable->span : stmt.span);
     const auto head = new_block();
     goto_block(head);
     current_ = head;
@@ -1222,8 +1221,8 @@ private:
     current_ = head;
     auto subject = std::optional<local_id>{};
     if (stmt.let_expr != nullptr) {
-      subject = hold_subject(
-          eval(*stmt.let_expr, use_mode::move, position::storing));
+      subject =
+          hold_subject(eval(*stmt.let_expr, use_mode::move, position::storing));
     } else {
       static_cast<void>(
           eval_opt(stmt.condition.get(), use_mode::read, position::storing));
@@ -1247,15 +1246,15 @@ private:
   auto lower_comprehension(const ast::for_expr &comp) -> value {
     const auto join = new_temp(local_role::join_temp);
     lower_clause(comp, 0, join);
-    return bears(type_of(&comp)) ? value{.loans = {}, .sources = {join}} : value{};
+    return bears(type_of(&comp)) ? value{.loans = {}, .sources = {join}}
+                                 : value{};
   }
 
-  auto lower_clause(const ast::for_expr &comp, std::size_t index,
-                    local_id join) -> void {
+  auto lower_clause(const ast::for_expr &comp, std::size_t index, local_id join)
+      -> void {
     if (index == comp.clauses.size()) {
       if (comp.guard != nullptr) {
-        static_cast<void>(
-            eval(*comp.guard, use_mode::read, position::storing));
+        static_cast<void>(eval(*comp.guard, use_mode::read, position::storing));
       }
       flow(join,
            eval_opt(comp.yield_expr.get(), use_mode::move, position::storing),
@@ -1434,7 +1433,8 @@ private:
   }
 
   auto lower_let(const ast::let_stmt &stmt) -> void {
-    auto v = eval_opt(stmt.initializer.get(), use_mode::move, position::storing);
+    auto v =
+        eval_opt(stmt.initializer.get(), use_mode::move, position::storing);
     if (stmt.pattern == nullptr) {
       return;
     }

@@ -1115,7 +1115,8 @@ auto test_ownership_error_blocks_run_and_build() -> void {
     };
     cinder::driver::inject_stdlib_prelude(run_cfg);
     auto run_report = cinder::driver::compile_sources(run_cfg, false);
-    expect(run_report.has_value(), "expected compile driver to return a report");
+    expect(run_report.has_value(),
+           "expected compile driver to return a report");
     expect(run_report->error_count > 0,
            std::format("expected the {} error to be reported", name));
     expect(!run_report->run.has_value(),
