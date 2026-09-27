@@ -113,7 +113,7 @@ private:
     }
     // A type parameter is not tracked. It used to be excluded by `is_unknown`,
     // which stopped counting type parameters when generic bodies became
-    // checked against their bounds (`spec/inference-rewrite.md` phase 9);
+    // checked against their bounds (ch. 19, Bounded Generics);
     // this keeps the move checker exactly where it was. Tracking one needs a
     // notion of which `T`s copy — a body generic over `T` passing `x` to
     // `pred(x)` and then returning it is a double move for a struct and fine

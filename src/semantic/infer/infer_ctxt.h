@@ -18,7 +18,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  The metavariable store
 //
-//  Phase 1 of `spec/inference-rewrite.md`: one union-find over `type_id`
+//  One union-find over `type_id`
 //  carrying every unknown the checker can have, whatever its sort, plus the
 //  substitution (`zonk`) and the provenance chain (`cause`) the later phases
 //  hang off it.

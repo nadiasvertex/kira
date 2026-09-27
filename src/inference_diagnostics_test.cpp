@@ -1,4 +1,4 @@
-// The golden corpus of *wrong* programs (`spec/inference-rewrite.md` phase 5).
+// The golden corpus of *wrong* programs.
 //
 // Every `.cn` here is a program that must be rejected, and its `.expected`
 // file holds the compiler's rendered diagnostics for it, byte for byte.

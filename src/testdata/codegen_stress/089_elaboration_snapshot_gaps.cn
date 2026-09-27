@@ -4,9 +4,9 @@ module codegen_stress.elaboration_snapshot_gaps
 
 # Five elaboration decisions that no snapshot fixture reached.
 #
-# `spec/inference-rewrite.md` phase 0 recorded which `checked_types` maps its
-# fixtures left empty, and phase 6 moves the instantiation sites that write
-# four of them. Moving code whose only safety net has zero coverage over it is
+# The elaboration snapshot recorded which `checked_types` maps its fixtures
+# left empty, and the elaboration split moved the instantiation sites that
+# write four of them. Moving code whose only safety net has no coverage is
 # the whole risk of that phase, so this file closes the gap first. The maps it
 # fills:
 #

@@ -1,6 +1,6 @@
 module sample
 
-# Bounded generics (`spec/inference-rewrite.md` phase 9, rule 3): `C`'s
+# Bounded generics (ch. 19, Bounded Generics, rule 3): `C`'s
 # bound is checked at the call that solves it, so an unsuitable `C` is
 # reported on the user's own line. The diagnostic names the bound, the type
 # that fails it, and — since the user never wrote `int32` as a type argument

@@ -200,7 +200,7 @@ public:
   /// callee's `list[T]` against a caller's `list[slice[T]]` then asks for
   /// `T := slice[T]`, an infinite type, and any matcher with an occurs check
   /// must either refuse it or be wrong. Scoping is how
-  /// `spec/inference-rewrite.md` phase 7 gets a real unifier onto these
+  /// `infer::match_pattern` puts the real unifier onto these
   /// matches at all.
   ///
   /// Passing `nullptr` is for parameters with no declaration node to name

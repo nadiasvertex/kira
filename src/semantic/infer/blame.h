@@ -16,7 +16,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  Blame
 //
-//  Phase 5 of `spec/inference-rewrite.md`. A constraint solver's natural
+//  A constraint solver's natural
 //  failure output is "expected X, found Y" at whichever constraint happened
 //  to fail last, and "type annotations needed" when nothing failed but
 //  nothing was determined either. Neither is acceptable in a compiler whose

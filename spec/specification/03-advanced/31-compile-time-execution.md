@@ -33,7 +33,7 @@ else:
 ```
 
 - The condition is evaluated at compile time; it must be closed.
-- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp`'s `check_static_decl`).
+- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp`'s `check_static_decl`). The exception is a condition that mentions a type parameter of an enclosing generic: both branches are then checked, each under the facts its condition establishes, and the branch is chosen per instance ([19, Bounded Generics](../02-intermediate/19-generics-and-inference.md#bounded-generics)).
 - `static if` is valid at module scope, selecting between top-level items, and inside a function body, where each branch's body may hold ordinary statements (`return`, `let`, an assignment, ...) as well as declarations — `parser::parse_static_branch_node` dispatches each line to whichever parses. Inside a generic `static def[T]`, a condition that depends on `T` (e.g. `T.name() == "int64"`) cannot be evaluated while the template itself is being checked (`T` is not yet bound to a concrete type); the checker falls back to type-checking both branches in that case, and real branch selection happens per call, once `T` is concretely bound, via the same evaluator that runs the rest of the `static def`'s body.
 
 ## `static assert`

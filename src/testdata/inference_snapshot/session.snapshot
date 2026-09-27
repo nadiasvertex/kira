@@ -1,7 +1,7 @@
 # inference snapshot
-# 1883 interned types
+# 1924 interned types
 
-## node_types (29459)
+## node_types (29611)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -1303,7 +1303,7 @@
 052_element_assignment.cn:41:15 [field] fn(_) -> usize
 052_element_assignment.cn:41:15 [call] usize
 052_element_assignment.cn:42:9 [ident] &mut list[int32]
-052_element_assignment.cn:42:9 [index] _
+052_element_assignment.cn:42:9 [index] int32
 052_element_assignment.cn:42:12 [ident] usize
 052_element_assignment.cn:42:17 [ident] &mut list[int32]
 052_element_assignment.cn:42:17 [index] int32
@@ -1343,13 +1343,13 @@
 052_element_assignment.cn:58:19 [index] int32
 052_element_assignment.cn:58:22 [ident] usize
 052_element_assignment.cn:59:9 [ident] &mut list[int32]
-052_element_assignment.cn:59:9 [index] _
+052_element_assignment.cn:59:9 [index] int32
 052_element_assignment.cn:59:12 [ident] usize
 052_element_assignment.cn:59:18 [ident] &mut list[int32]
 052_element_assignment.cn:59:18 [index] int32
 052_element_assignment.cn:59:21 [ident] usize
 052_element_assignment.cn:60:9 [ident] &mut list[int32]
-052_element_assignment.cn:60:9 [index] _
+052_element_assignment.cn:60:9 [index] int32
 052_element_assignment.cn:60:12 [ident] usize
 052_element_assignment.cn:60:18 [ident] int32
 052_element_assignment.cn:61:9 [ident] usize
@@ -1367,7 +1367,7 @@
 052_element_assignment.cn:66:22 [literal] int32
 052_element_assignment.cn:66:25 [literal] int32
 052_element_assignment.cn:67:5 [ident] list[int32]
-052_element_assignment.cn:67:5 [index] _
+052_element_assignment.cn:67:5 [index] int32
 052_element_assignment.cn:67:12 [literal] usize
 052_element_assignment.cn:67:17 [literal] int32
 052_element_assignment.cn:68:9 [binding_pat] int32
@@ -2618,7 +2618,6 @@
 110_instances_by_substitution.cn:58:9 [ident] T
 110_instances_by_substitution.cn:58:9 [ident] int32
 110_instances_by_substitution.cn:58:9 [ident] money
-110_instances_by_substitution.cn:58:11 [field] int64
 110_instances_by_substitution.cn:58:15 [ident] T
 110_instances_by_substitution.cn:58:15 [ident] int32
 110_instances_by_substitution.cn:58:15 [ident] money
@@ -2628,11 +2627,12 @@
 110_instances_by_substitution.cn:58:21 [ident] T
 110_instances_by_substitution.cn:58:21 [ident] int32
 110_instances_by_substitution.cn:58:21 [ident] money
-110_instances_by_substitution.cn:58:22 [ident] money
 110_instances_by_substitution.cn:59:12 [ident] T
 110_instances_by_substitution.cn:59:12 [ident] int32
 110_instances_by_substitution.cn:59:12 [ident] money
-110_instances_by_substitution.cn:61:24 [interp_string] str
+110_instances_by_substitution.cn:61:12 [field] int64
+110_instances_by_substitution.cn:61:23 [ident] money
+110_instances_by_substitution.cn:61:63 [interp_string] str
 110_instances_by_substitution.cn:62:16 [binding_pat] &list[T]
 110_instances_by_substitution.cn:62:16 [binding_pat] &list[int32]
 110_instances_by_substitution.cn:62:16 [binding_pat] &list[money]
@@ -2651,11 +2651,9 @@
 110_instances_by_substitution.cn:63:19 [literal] usize
 110_instances_by_substitution.cn:63:19 [literal] usize
 110_instances_by_substitution.cn:63:19 [literal] usize
-110_instances_by_substitution.cn:64:3 [binding_pat] money
 110_instances_by_substitution.cn:64:5 [var_stmt] usize
 110_instances_by_substitution.cn:64:5 [var_stmt] usize
 110_instances_by_substitution.cn:64:5 [var_stmt] usize
-110_instances_by_substitution.cn:64:12 [named_type] str
 110_instances_by_substitution.cn:64:20 [literal] usize
 110_instances_by_substitution.cn:64:20 [literal] usize
 110_instances_by_substitution.cn:64:20 [literal] usize
@@ -2674,6 +2672,8 @@
 110_instances_by_substitution.cn:65:15 [call] usize
 110_instances_by_substitution.cn:65:15 [call] usize
 110_instances_by_substitution.cn:65:15 [call] usize
+110_instances_by_substitution.cn:65:21 [binding_pat] money
+110_instances_by_substitution.cn:66:6 [named_type] str
 110_instances_by_substitution.cn:66:12 [ident] &list[T]
 110_instances_by_substitution.cn:66:12 [ident] &list[int32]
 110_instances_by_substitution.cn:66:12 [ident] &list[money]
@@ -3002,29 +3002,29 @@
 110_instances_by_substitution.cn:121:34 [call] option[int64]
 110_instances_by_substitution.cn:121:39 [call] option[int64]
 110_instances_by_substitution.cn:121:45 [call] int64
-110_instances_by_substitution.cn:121:48 [binary] bool
 110_instances_by_substitution.cn:121:51 [literal] int64
 110_instances_by_substitution.cn:121:56 [lambda] fn(int64) -> int64
 110_instances_by_substitution.cn:121:70 [ident] int64
 110_instances_by_substitution.cn:121:70 [binary] int64
 110_instances_by_substitution.cn:121:74 [literal] int64
 110_instances_by_substitution.cn:121:78 [call] int64
-110_instances_by_substitution.cn:121:79 [field] int64
 110_instances_by_substitution.cn:121:84 [literal] int64
-110_instances_by_substitution.cn:121:90 [ident] money
+110_instances_by_substitution.cn:121:87 [binary] bool
 110_instances_by_substitution.cn:122:5 [ident] int32
 110_instances_by_substitution.cn:122:13 [ident] int32
 110_instances_by_substitution.cn:122:13 [binary] int32
 110_instances_by_substitution.cn:122:21 [ident] fn(int32) -> list[int32]
 110_instances_by_substitution.cn:122:21 [call] list[int32]
 110_instances_by_substitution.cn:122:21 [index] int32
+110_instances_by_substitution.cn:122:24 [field] int64
 110_instances_by_substitution.cn:122:29 [literal] int32
 110_instances_by_substitution.cn:122:34 [literal] usize
-110_instances_by_substitution.cn:122:37 [field] int64
-110_instances_by_substitution.cn:122:48 [ident] &money
+110_instances_by_substitution.cn:122:35 [ident] money
+110_instances_by_substitution.cn:123:3 [field] int64
 110_instances_by_substitution.cn:123:5 [ident] int32
 110_instances_by_substitution.cn:123:13 [ident] int32
 110_instances_by_substitution.cn:123:13 [binary] int32
+110_instances_by_substitution.cn:123:14 [ident] &money
 110_instances_by_substitution.cn:123:21 [call] int32
 110_instances_by_substitution.cn:123:27 [ident] fn(int64) -> list[int64]
 110_instances_by_substitution.cn:123:27 [call] list[int64]
@@ -3054,17 +3054,17 @@
 110_instances_by_substitution.cn:126:13 [binary] int32
 110_instances_by_substitution.cn:126:21 [call] int32
 110_instances_by_substitution.cn:126:27 [module_path] int64
-110_instances_by_substitution.cn:126:31 [binding_pat] money
-110_instances_by_substitution.cn:126:37 [binding_pat] &money
 110_instances_by_substitution.cn:126:41 [call] int32
 110_instances_by_substitution.cn:126:47 [ident] bag[int64]
 110_instances_by_substitution.cn:126:47 [field] list[int64]
 110_instances_by_substitution.cn:126:47 [index] int64
-110_instances_by_substitution.cn:126:54 [named_type] bool
 110_instances_by_substitution.cn:126:58 [literal] usize
+110_instances_by_substitution.cn:126:70 [binding_pat] money
+110_instances_by_substitution.cn:127:2 [binding_pat] &money
 110_instances_by_substitution.cn:127:5 [ident] int32
 110_instances_by_substitution.cn:127:13 [ident] int32
 110_instances_by_substitution.cn:127:13 [binary] int32
+110_instances_by_substitution.cn:127:19 [named_type] bool
 110_instances_by_substitution.cn:127:21 [call] int32
 110_instances_by_substitution.cn:127:21 [binary] int32
 110_instances_by_substitution.cn:127:27 [ident] fn(bag[int32]) -> usize
@@ -3121,6 +3121,115 @@
 110_instances_by_substitution.cn:134:27 [ident] str
 110_instances_by_substitution.cn:134:27 [call] usize
 110_instances_by_substitution.cn:135:12 [ident] int32
+111_method_on_literal_waits.cn:15:15 [binding_pat] int64
+111_method_on_literal_waits.cn:15:24 [named_type] int64
+111_method_on_literal_waits.cn:16:16 [ident] int64
+111_method_on_literal_waits.cn:16:16 [binary] int64
+111_method_on_literal_waits.cn:16:23 [literal] int64
+111_method_on_literal_waits.cn:18:15 [named_type] int32
+111_method_on_literal_waits.cn:19:9 [binding_pat] int64
+111_method_on_literal_waits.cn:19:13 [literal] int64
+111_method_on_literal_waits.cn:20:9 [binding_pat] int64
+111_method_on_literal_waits.cn:20:13 [ident] int64
+111_method_on_literal_waits.cn:20:13 [field] fn(_) -> int64
+111_method_on_literal_waits.cn:20:13 [call] int64
+111_method_on_literal_waits.cn:21:9 [binding_pat] int64
+111_method_on_literal_waits.cn:21:20 [ident] int64
+111_method_on_literal_waits.cn:23:9 [binding_pat] int64
+111_method_on_literal_waits.cn:23:13 [literal] int64
+111_method_on_literal_waits.cn:24:9 [binding_pat] int64
+111_method_on_literal_waits.cn:24:13 [literal] int64
+111_method_on_literal_waits.cn:25:9 [binding_pat] ordering
+111_method_on_literal_waits.cn:25:13 [ident] int64
+111_method_on_literal_waits.cn:25:13 [field] fn(_, &int64) -> ordering
+111_method_on_literal_waits.cn:25:13 [call] ordering
+111_method_on_literal_waits.cn:25:19 [unary] &int64
+111_method_on_literal_waits.cn:25:20 [ident] int64
+111_method_on_literal_waits.cn:26:9 [binding_pat] int64
+111_method_on_literal_waits.cn:26:20 [ident] int64
+111_method_on_literal_waits.cn:27:9 [binding_pat] int64
+111_method_on_literal_waits.cn:27:20 [ident] int64
+111_method_on_literal_waits.cn:28:9 [binding_pat] int64
+111_method_on_literal_waits.cn:28:13 [match] int64
+111_method_on_literal_waits.cn:28:19 [ident] ordering
+111_method_on_literal_waits.cn:29:9 [ctor_pat] ordering
+111_method_on_literal_waits.cn:29:18 [ident] int64
+111_method_on_literal_waits.cn:29:18 [binary] int64
+111_method_on_literal_waits.cn:29:18 [binary] int64
+111_method_on_literal_waits.cn:29:22 [ident] int64
+111_method_on_literal_waits.cn:29:26 [literal] int64
+111_method_on_literal_waits.cn:30:9 [wildcard_pat] ordering
+111_method_on_literal_waits.cn:30:14 [ident] int64
+111_method_on_literal_waits.cn:30:14 [binary] int64
+111_method_on_literal_waits.cn:30:18 [ident] int64
+111_method_on_literal_waits.cn:31:12 [call] int32
+111_method_on_literal_waits.cn:31:18 [ident] int64
+111_method_on_literal_waits.cn:31:18 [binary] int64
+111_method_on_literal_waits.cn:31:18 [binary] int64
+111_method_on_literal_waits.cn:31:18 [binary] int64
+111_method_on_literal_waits.cn:31:22 [ident] int64
+111_method_on_literal_waits.cn:31:26 [literal] int64
+111_method_on_literal_waits.cn:31:39 [ident] int64
+112_index_borrow_and_write_wait.cn:15:15 [named_type] int64
+112_index_borrow_and_write_wait.cn:16:5 [var_stmt] list[int64]
+112_index_borrow_and_write_wait.cn:16:14 [array] list[int64]
+112_index_borrow_and_write_wait.cn:16:15 [literal] int64
+112_index_borrow_and_write_wait.cn:16:18 [literal] int64
+112_index_borrow_and_write_wait.cn:17:9 [binding_pat] cell[int64]
+112_index_borrow_and_write_wait.cn:17:13 [unary] cell[int64]
+112_index_borrow_and_write_wait.cn:17:14 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:17:14 [index] cell[int64]
+112_index_borrow_and_write_wait.cn:17:17 [literal] usize
+112_index_borrow_and_write_wait.cn:18:9 [binding_pat] int64
+112_index_borrow_and_write_wait.cn:18:20 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:18:20 [index] int64
+112_index_borrow_and_write_wait.cn:18:23 [literal] usize
+112_index_borrow_and_write_wait.cn:20:5 [var_stmt] list[int64]
+112_index_borrow_and_write_wait.cn:20:14 [array] list[int64]
+112_index_borrow_and_write_wait.cn:20:15 [literal] int64
+112_index_borrow_and_write_wait.cn:20:18 [literal] int64
+112_index_borrow_and_write_wait.cn:21:9 [binding_pat] cell_mut[int64]
+112_index_borrow_and_write_wait.cn:21:13 [unary] cell_mut[int64]
+112_index_borrow_and_write_wait.cn:21:18 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:21:18 [index] cell_mut[int64]
+112_index_borrow_and_write_wait.cn:21:21 [literal] usize
+112_index_borrow_and_write_wait.cn:22:5 [unary] int64
+112_index_borrow_and_write_wait.cn:22:6 [ident] cell_mut[int64]
+112_index_borrow_and_write_wait.cn:22:10 [literal] int64
+112_index_borrow_and_write_wait.cn:23:9 [binding_pat] int64
+112_index_borrow_and_write_wait.cn:23:20 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:23:20 [index] int64
+112_index_borrow_and_write_wait.cn:23:23 [literal] usize
+112_index_borrow_and_write_wait.cn:25:5 [var_stmt] list[int64]
+112_index_borrow_and_write_wait.cn:25:14 [array] list[int64]
+112_index_borrow_and_write_wait.cn:25:15 [literal] int64
+112_index_borrow_and_write_wait.cn:25:18 [literal] int64
+112_index_borrow_and_write_wait.cn:26:5 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:26:5 [index] int64
+112_index_borrow_and_write_wait.cn:26:8 [literal] usize
+112_index_borrow_and_write_wait.cn:26:13 [literal] int64
+112_index_borrow_and_write_wait.cn:27:9 [binding_pat] int64
+112_index_borrow_and_write_wait.cn:27:20 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:27:20 [index] int64
+112_index_borrow_and_write_wait.cn:27:23 [literal] usize
+112_index_borrow_and_write_wait.cn:29:12 [unary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:12 [binary] int64
+112_index_borrow_and_write_wait.cn:29:13 [ident] cell[int64]
+112_index_borrow_and_write_wait.cn:29:17 [ident] int64
+112_index_borrow_and_write_wait.cn:29:21 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:29:21 [index] int64
+112_index_borrow_and_write_wait.cn:29:24 [literal] usize
+112_index_borrow_and_write_wait.cn:29:29 [ident] int64
+112_index_borrow_and_write_wait.cn:29:33 [ident] list[int64]
+112_index_borrow_and_write_wait.cn:29:33 [index] int64
+112_index_borrow_and_write_wait.cn:29:36 [literal] usize
+112_index_borrow_and_write_wait.cn:29:41 [ident] int64
+112_index_borrow_and_write_wait.cn:29:45 [literal] int64
 std/algo.cn:41:14 [binding_pat] map_iter[I, T, U]
 std/algo.cn:41:27 [named_type] option[U]
 std/algo.cn:42:15 [module_path] I
@@ -4749,7 +4858,7 @@ std/algo.cn:1747:45 [ident] bool
 std/algo.cn:1747:59 [ident] usize
 std/algo.cn:1747:68 [literal] usize
 std/algo.cn:1748:13 [ident] list[usize]
-std/algo.cn:1748:13 [index] _
+std/algo.cn:1748:13 [index] usize
 std/algo.cn:1748:20 [ident] usize
 std/algo.cn:1748:30 [ident] list[usize]
 std/algo.cn:1748:30 [index] usize
@@ -4772,7 +4881,7 @@ std/algo.cn:1753:21 [ident] list[usize]
 std/algo.cn:1753:21 [index] usize
 std/algo.cn:1753:28 [ident] usize
 std/algo.cn:1754:13 [ident] list[usize]
-std/algo.cn:1754:13 [index] _
+std/algo.cn:1754:13 [index] usize
 std/algo.cn:1754:20 [ident] usize
 std/algo.cn:1754:25 [ident] usize
 std/algo.cn:1755:13 [ident] usize
@@ -4801,7 +4910,7 @@ std/algo.cn:1759:45 [ident] bool
 std/algo.cn:1759:59 [ident] usize
 std/algo.cn:1759:68 [literal] usize
 std/algo.cn:1760:13 [ident] list[T]
-std/algo.cn:1760:13 [index] _
+std/algo.cn:1760:13 [index] T
 std/algo.cn:1760:17 [ident] list[usize]
 std/algo.cn:1760:17 [index] usize
 std/algo.cn:1760:24 [ident] usize
@@ -4809,7 +4918,7 @@ std/algo.cn:1760:35 [ident] list[T]
 std/algo.cn:1760:35 [index] T
 std/algo.cn:1760:39 [ident] usize
 std/algo.cn:1761:13 [ident] list[usize]
-std/algo.cn:1761:13 [index] _
+std/algo.cn:1761:13 [index] usize
 std/algo.cn:1761:20 [ident] usize
 std/algo.cn:1761:30 [ident] list[usize]
 std/algo.cn:1761:30 [index] usize
@@ -8370,32 +8479,60 @@ std/list.cn:196:26 [ident] usize
 std/list.cn:196:26 [ident] usize
 std/list.cn:196:26 [ident] usize
 std/list.cn:201:24 [binding_pat] list[T]
+std/list.cn:201:24 [binding_pat] list[int64]
+std/list.cn:201:34 [binding_pat] usize
 std/list.cn:201:34 [binding_pat] usize
 std/list.cn:201:47 [named_type] cell_mut[T]
+std/list.cn:201:47 [named_type] cell_mut[int64]
+std/list.cn:202:12 [ident] usize
 std/list.cn:202:12 [ident] usize
 std/list.cn:202:12 [binary] bool
+std/list.cn:202:12 [binary] bool
+std/list.cn:202:17 [module_path] usize
 std/list.cn:202:17 [module_path] usize
 std/list.cn:203:13 [ident] fn(str) -> never
+std/list.cn:203:13 [ident] fn(str) -> never
+std/list.cn:203:13 [call] never
 std/list.cn:203:13 [call] never
 std/list.cn:203:19 [literal] str
+std/list.cn:203:19 [literal] str
 std/list.cn:204:16 [unary] cell_mut[T]
+std/list.cn:204:16 [unary] cell_mut[int64]
 std/list.cn:204:21 [ident] list[T]
+std/list.cn:204:21 [ident] list[int64]
 std/list.cn:204:21 [field] *mut T
+std/list.cn:204:21 [field] *mut int64
 std/list.cn:204:21 [index] T
+std/list.cn:204:21 [index] int64
+std/list.cn:204:31 [ident] usize
 std/list.cn:204:31 [ident] usize
 std/list.cn:210:24 [binding_pat] list[T]
+std/list.cn:210:24 [binding_pat] list[int64]
+std/list.cn:210:30 [binding_pat] usize
 std/list.cn:210:30 [binding_pat] usize
 std/list.cn:210:43 [named_type] cell[T]
+std/list.cn:210:43 [named_type] cell[int64]
+std/list.cn:211:12 [ident] usize
 std/list.cn:211:12 [ident] usize
 std/list.cn:211:12 [binary] bool
+std/list.cn:211:12 [binary] bool
+std/list.cn:211:17 [module_path] usize
 std/list.cn:211:17 [module_path] usize
 std/list.cn:212:13 [ident] fn(str) -> never
+std/list.cn:212:13 [ident] fn(str) -> never
+std/list.cn:212:13 [call] never
 std/list.cn:212:13 [call] never
 std/list.cn:212:19 [literal] str
+std/list.cn:212:19 [literal] str
 std/list.cn:213:16 [unary] cell[T]
+std/list.cn:213:16 [unary] cell[int64]
 std/list.cn:213:17 [ident] list[T]
+std/list.cn:213:17 [ident] list[int64]
 std/list.cn:213:17 [field] *mut T
+std/list.cn:213:17 [field] *mut int64
 std/list.cn:213:17 [index] T
+std/list.cn:213:17 [index] int64
+std/list.cn:213:27 [ident] usize
 std/list.cn:213:27 [ident] usize
 std/list.cn:224:20 [binding_pat] list[T]
 std/list.cn:224:20 [binding_pat] list[int32]
@@ -8491,48 +8628,63 @@ std/list.cn:238:41 [binary] usize
 std/list.cn:238:49 [module_path] usize
 std/list.cn:243:24 [binding_pat] list[T]
 std/list.cn:243:24 [binding_pat] list[int32]
+std/list.cn:243:24 [binding_pat] list[int64]
 std/list.cn:243:24 [binding_pat] list[usize]
+std/list.cn:243:34 [binding_pat] usize
 std/list.cn:243:34 [binding_pat] usize
 std/list.cn:243:34 [binding_pat] usize
 std/list.cn:243:34 [binding_pat] usize
 std/list.cn:243:44 [binding_pat] T
 std/list.cn:243:44 [binding_pat] int32
+std/list.cn:243:44 [binding_pat] int64
 std/list.cn:243:44 [binding_pat] usize
 std/list.cn:243:57 [named_type] unit
 std/list.cn:243:57 [named_type] unit
 std/list.cn:243:57 [named_type] unit
+std/list.cn:243:57 [named_type] unit
+std/list.cn:244:12 [ident] usize
 std/list.cn:244:12 [ident] usize
 std/list.cn:244:12 [ident] usize
 std/list.cn:244:12 [ident] usize
 std/list.cn:244:12 [binary] bool
 std/list.cn:244:12 [binary] bool
 std/list.cn:244:12 [binary] bool
+std/list.cn:244:12 [binary] bool
+std/list.cn:244:17 [module_path] usize
 std/list.cn:244:17 [module_path] usize
 std/list.cn:244:17 [module_path] usize
 std/list.cn:244:17 [module_path] usize
 std/list.cn:245:13 [ident] fn(str) -> never
 std/list.cn:245:13 [ident] fn(str) -> never
 std/list.cn:245:13 [ident] fn(str) -> never
+std/list.cn:245:13 [ident] fn(str) -> never
 std/list.cn:245:13 [call] never
 std/list.cn:245:13 [call] never
 std/list.cn:245:13 [call] never
+std/list.cn:245:13 [call] never
+std/list.cn:245:19 [literal] str
 std/list.cn:245:19 [literal] str
 std/list.cn:245:19 [literal] str
 std/list.cn:245:19 [literal] str
 std/list.cn:246:9 [ident] list[T]
 std/list.cn:246:9 [ident] list[int32]
+std/list.cn:246:9 [ident] list[int64]
 std/list.cn:246:9 [ident] list[usize]
 std/list.cn:246:9 [field] *mut T
 std/list.cn:246:9 [field] *mut int32
+std/list.cn:246:9 [field] *mut int64
 std/list.cn:246:9 [field] *mut usize
 std/list.cn:246:9 [index] T
 std/list.cn:246:9 [index] int32
+std/list.cn:246:9 [index] int64
 std/list.cn:246:9 [index] usize
+std/list.cn:246:19 [ident] usize
 std/list.cn:246:19 [ident] usize
 std/list.cn:246:19 [ident] usize
 std/list.cn:246:19 [ident] usize
 std/list.cn:246:24 [ident] T
 std/list.cn:246:24 [ident] int32
+std/list.cn:246:24 [ident] int64
 std/list.cn:246:24 [ident] usize
 std/list.cn:257:19 [binding_pat] list[(int64, int32)]
 std/list.cn:257:19 [binding_pat] list[T]
@@ -29466,7 +29618,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 
 ## struct_literal_field_types (190)
 ?:750 data array[T, m]
-?:828 cents int64
+?:789 cents int64
 ?:882 current int32
 ?:894 limit int32
 ?:1076 len usize
@@ -29492,6 +29644,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1728 cap usize
 ?:1728 cap usize
 ?:1728 cap usize
+?:1729 first U
+?:1729 first int32
+?:1729 first int64
 ?:1736 data *mut (int64, int32)
 ?:1736 data *mut (usize, usize)
 ?:1736 data *mut T
@@ -29503,12 +29658,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1736 data *mut uint32
 ?:1736 data *mut usize
 ?:1739 base int32
-?:1768 first U
-?:1768 first int32
-?:1768 first int64
-?:1790 items list[U]
-?:1790 items list[int32]
-?:1790 items list[int64]
+?:1751 items list[U]
+?:1751 items list[int32]
+?:1751 items list[int64]
 ?:1925 name str
 ?:1937 run fn() -> result[unit, test_failure]
 ?:1947 skip bool
@@ -29535,7 +29687,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:2843 total int32
 ?:2873 at int32
 ?:2880 stop int32
-?:3076 remaining int32
+?:3069 remaining int32
 ?:3110 at int32
 ?:3117 stop int32
 ?:3148 name str
@@ -29547,19 +29699,19 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:3286 after_each option[fn() -> result[unit, test_failure]]
 ?:3435 at int32
 ?:3442 stop int32
+?:3518 cents int64
+?:3539 cents int64
 ?:3553 at int32
-?:3557 cents int64
 ?:3560 stop int32
-?:3578 cents int64
-?:3857 cents int64
-?:3989 grams int32
-?:4010 grams int32
+?:3818 cents int64
+?:3982 grams int32
+?:4003 grams int32
 ?:4084 inner I
 ?:4085 seen int32
 ?:4085 seen int32
 ?:4095 f fn(T) -> U
-?:4224 first int32
-?:4234 items list[int32]
+?:4185 first int32
+?:4195 items list[int32]
 ?:4337 fd int32
 ?:4379 total int32
 ?:4379 total int32
@@ -29569,12 +29721,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4623 inner I
 ?:4631 align option[align_mode]
 ?:4634 pred fn(T) -> bool
+?:4660 cents int64
 ?:4661 src &list[T]
 ?:4669 fd raw_fd
 ?:4670 at usize
 ?:4677 end usize
 ?:4683 sign sign_mode
-?:4699 cents int64
 ?:4708 alternate bool
 ?:4743 zero_pad bool
 ?:4768 width option[usize]
@@ -29656,7 +29808,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56374 inner I
 ?:56385 f fn(&T) -> T
 
-## call_argument_mappings (727)
+## call_argument_mappings (732)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -29863,6 +30015,8 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 110_instances_by_substitution.cn:132:5 [call] (s=arg)
 110_instances_by_substitution.cn:132:13 [call] (x=arg)
 110_instances_by_substitution.cn:133:16 [call] (x=arg)
+111_method_on_literal_waits.cn:20:13 [call] ()
+111_method_on_literal_waits.cn:25:13 [call] (other=arg)
 std/algo.cn:42:15 [call] ()
 std/algo.cn:53:16 [call] ()
 std/algo.cn:74:30 [call] ()
@@ -30170,11 +30324,14 @@ std/list.cn:195:13 [call] (message=arg)
 std/list.cn:195:13 [call] (message=arg)
 std/list.cn:195:13 [call] (message=arg)
 std/list.cn:203:13 [call] (message=arg)
+std/list.cn:203:13 [call] (message=arg)
+std/list.cn:212:13 [call] (message=arg)
 std/list.cn:212:13 [call] (message=arg)
 std/list.cn:226:13 [call] (message=arg)
 std/list.cn:226:13 [call] (message=arg)
 std/list.cn:226:13 [call] (message=arg)
 std/list.cn:236:13 [call] (message=arg)
+std/list.cn:245:13 [call] (message=arg)
 std/list.cn:245:13 [call] (message=arg)
 std/list.cn:245:13 [call] (message=arg)
 std/list.cn:245:13 [call] (message=arg)
@@ -30385,7 +30542,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (387)
+## resolved_callees (392)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -30525,6 +30682,8 @@ std/unicode.cn:288:29 [call] (cp=arg)
 110_instances_by_substitution.cn:132:5 [call] std.console::println
 110_instances_by_substitution.cn:132:13 [call] codegen_stress.instances_by_substitution::framed$money
 110_instances_by_substitution.cn:133:16 [call] codegen_stress.instances_by_substitution::framed$int64
+111_method_on_literal_waits.cn:20:13 [call] codegen_stress.method_on_literal_waits::int64::twice recv
+111_method_on_literal_waits.cn:25:13 [call] std.traits::int64::cmp trait=ord recv
 std/algo.cn:1222:13 [call] std.list::list::push recv
 std/algo.cn:1224:13 [call] std.list::list::push recv
 std/algo.cn:1249:12 [call] std.option::option::is_none recv
@@ -30664,11 +30823,14 @@ std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:195:13 [call] std.panic::panic
 std/list.cn:203:13 [call] std.panic::panic
+std/list.cn:203:13 [call] std.panic::panic
+std/list.cn:212:13 [call] std.panic::panic
 std/list.cn:212:13 [call] std.panic::panic
 std/list.cn:226:13 [call] std.panic::panic
 std/list.cn:226:13 [call] std.panic::panic
 std/list.cn:226:13 [call] std.panic::panic
 std/list.cn:236:13 [call] std.panic::panic
+std/list.cn:245:13 [call] std.panic::panic
 std/list.cn:245:13 [call] std.panic::panic
 std/list.cn:245:13 [call] std.panic::panic
 std/list.cn:245:13 [call] std.panic::panic
@@ -30885,7 +31047,7 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 089_elaboration_snapshot_gaps.cn:72:8 [binary] ordering
 110_instances_by_substitution.cn:66:12 [binary] ordering
 
-## index_dispatches (78)
+## index_dispatches (85)
 003_collections_lambdas.cn:11:23 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:42:17 [index] std.list::list::at$list_int32_$usize recv
 052_element_assignment.cn:58:19 [index] std.list::list::at$list_int32_$usize recv
@@ -30929,6 +31091,13 @@ std/unicode.cn:288:23 [binary] std.string::str::add recv
 110_instances_by_substitution.cn:122:21 [index] std.list::list::at$list_int32_$usize recv
 110_instances_by_substitution.cn:123:27 [index] std.list::list::at$list_int64_$usize recv
 110_instances_by_substitution.cn:126:47 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:17:14 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:18:20 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:23:20 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:27:20 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:29:21 [index] std.list::list::at$list_int64_$usize recv
+112_index_borrow_and_write_wait.cn:29:33 [index] std.list::list::at$list_int64_$usize recv
 std/algo.cn:1747:37 [index] std.list::list::at recv
 std/algo.cn:1748:30 [index] std.list::list::at$list_usize_$usize recv
 std/algo.cn:1753:21 [index] std.list::list::at$list_usize_$usize recv
@@ -30965,20 +31134,23 @@ std/unicode.cn:260:18 [index] std.list::list::at$list_uint32_$usize recv
 std/unicode.cn:261:58 [index] std.list::list::at$list_uint32_$range_usize_ recv
 std/unicode.cn:281:18 [index] std.list::list::at$list_uint32_$usize recv
 
-## index_set_dispatches (8)
+## index_set_dispatches (9)
 052_element_assignment.cn:42:9 [index] std.list::list::set_at$list_int32_$usize recv
 052_element_assignment.cn:59:9 [index] std.list::list::set_at$list_int32_$usize recv
 052_element_assignment.cn:60:9 [index] std.list::list::set_at$list_int32_$usize recv
 052_element_assignment.cn:67:5 [index] std.list::list::set_at$list_int32_$usize recv
+112_index_borrow_and_write_wait.cn:26:5 [index] std.list::list::set_at$list_int64_$usize recv
 std/algo.cn:1748:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1754:13 [index] std.list::list::set_at$list_usize_$usize recv
 std/algo.cn:1760:13 [index] std.list::list::set_at recv
 std/algo.cn:1761:13 [index] std.list::list::set_at$list_usize_$usize recv
 
-## index_mut_dispatches (1)
+## index_mut_dispatches (2)
+112_index_borrow_and_write_wait.cn:21:18 [index] std.list::list::at_mut$list_int64_$usize recv
 std/iter.cn:157:25 [index] std.list::list::at_mut recv
 
-## index_ref_dispatches (2)
+## index_ref_dispatches (3)
+112_index_borrow_and_write_wait.cn:17:14 [index] std.list::list::at_ref$list_int64_$usize recv
 std/iter.cn:146:21 [index] std.list::list::at_ref recv
 std/iter.cn:180:21 [index] std.list::list::at_ref recv
 
@@ -30988,7 +31160,7 @@ std/iter.cn:180:21 [index] std.list::list::at_ref recv
 ## try_conversion_types (1)
 089_elaboration_snapshot_gaps.cn:52:13 [try] result[int32, app_error]
 
-## array_literal_conversions (40)
+## array_literal_conversions (43)
 003_collections_lambdas.cn:4:19 [array] std.list::list::from_array$5$list_int32_ from array[int32, 5]
 045_ufcs.cn:104:16 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 045_ufcs.cn:106:18 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
@@ -31013,6 +31185,9 @@ std/iter.cn:180:21 [index] std.list::list::at_ref recv
 110_instances_by_substitution.cn:114:29 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
 110_instances_by_substitution.cn:115:31 [array] std.list::list::from_array$2$list_money_ from array[money, 2]
 110_instances_by_substitution.cn:124:43 [array] std.list::list::from_array$3$list_int32_ from array[int32, 3]
+112_index_borrow_and_write_wait.cn:16:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+112_index_borrow_and_write_wait.cn:20:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
+112_index_borrow_and_write_wait.cn:25:14 [array] std.list::list::from_array$2$list_int64_ from array[int64, 2]
 std/algo.cn:1218:15 [array] std.list::list::from_array from array[T, 0]
 std/algo.cn:1219:14 [array] std.list::list::from_array from array[T, 0]
 std/algo.cn:1730:24 [array] std.list::list::from_array from array[T, 0]
@@ -31032,7 +31207,7 @@ std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from arra
 
 ## interp_dispatches (60)
 003_collections_lambdas.cn:18:15 [ident] show spec=' ' value=int32
-110_instances_by_substitution.cn:58:11 [field] show spec=' ' value=int64
+110_instances_by_substitution.cn:61:12 [field] show spec=' ' value=int64
 110_instances_by_substitution.cn:110:15 [ident] show spec=' ' value=int32
 110_instances_by_substitution.cn:110:15 [ident] show spec=' ' value=int64
 110_instances_by_substitution.cn:110:15 [ident] trait_method spec=' ' value=T
@@ -31100,17 +31275,17 @@ std/traits.scalar.cn:297:18 [ident] debug spec='?' value=float64
 ## for_iterator_dispatches (16)
 ?:517 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:927 [for_stmt] next=counter::next elem=int32 owner=codegen_stress.user_iterator_for_loop
-?:1171 [for_stmt] next=::list_into_iter::next$list_into_iter_int64_ elem=int64 owner=std.iter adapter=::list::into_iter$list_int64_ -> list_into_iter[int64]
-?:1241 [for_stmt] next=::list_into_iter::next$list_into_iter__int64__int32__ elem=(int64, int32) owner=std.iter adapter=::list::into_iter$list__int64__int32__ -> list_into_iter[(int64, int32)]
-?:1960 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
-?:1960 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
-?:1960 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
+?:1197 [for_stmt] next=::list_into_iter::next$list_into_iter_int64_ elem=int64 owner=std.iter adapter=::list::into_iter$list_int64_ -> list_into_iter[int64]
+?:1267 [for_stmt] next=::list_into_iter::next$list_into_iter__int64__int32__ elem=(int64, int32) owner=std.iter adapter=::list::into_iter$list__int64__int32__ -> list_into_iter[(int64, int32)]
+?:1921 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:1921 [for_stmt] next=::list_into_iter::next$list_into_iter_money_ elem=money owner=std.iter adapter=::list::into_iter$list_money_ -> list_into_iter[money]
+?:1921 [for_stmt] next=list_into_iter::next elem=T owner=std.iter adapter=list::into_iter -> list_into_iter[T]
 ?:2391 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:2986 [for_stmt] next=::map_iter::next$map_iter_counter__int32__int32_ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
-?:3122 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:3115 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:3267 [for_stmt] next=::doubler::next$doubler_map_iter_counter__int32__int32__ elem=int32 owner=codegen_stress.generic_impl_iterator_adapter
 ?:3276 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
-?:3345 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
+?:3338 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
 ?:4426 [for_stmt] next=::list_into_iter::next$list_into_iter_test_suite_ elem=test_suite owner=std.iter adapter=::list::into_iter$list_test_suite_ -> list_into_iter[test_suite]
 ?:4935 [for_stmt] next=::list_into_iter::next$list_into_iter_test_case_ elem=test_case owner=std.iter adapter=::list::into_iter$list_test_case_ -> list_into_iter[test_case]
 ?:5195 [for_stmt] next=::list_into_iter::next$list_into_iter_int32_ elem=int32 owner=std.iter adapter=::list::into_iter$list_int32_ -> list_into_iter[int32]
@@ -31341,12 +31516,12 @@ std/unicode.cn:284:18 [ident] static$FOLD_CP2$24
 std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 
 ## static_if_taken_branch (6)
-?:3013 [static_decl] else
-?:3013 [static_decl] else
-?:3013 [static_decl] then
-?:3057 [static_decl] else
-?:3057 [static_decl] else
-?:3057 [static_decl] then
+?:2974 [static_decl] else
+?:2974 [static_decl] else
+?:2974 [static_decl] then
+?:3018 [static_decl] else
+?:3018 [static_decl] else
+?:3018 [static_decl] then
 
 ## static_global_defs (26)
 ?:515 [static_decl] static$SIMPLE_UPPER_KEY$10 : array[uint32, 1505] [1505 element(s)]
@@ -31458,7 +31633,7 @@ list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
 
-## view_bearing_types (154)
+## view_bearing_types (158)
 &mut slice_mut[T]
 &mut slice_mut[T]
 &mut slice_mut[T]
@@ -31504,12 +31679,16 @@ cell[T]
 cell[T]
 cell[T]
 cell[_]
+cell[_]
 cell[int32]
+cell[int64]
 cell_mut[T]
 cell_mut[T]
 cell_mut[T]
 cell_mut[_]
+cell_mut[_]
 cell_mut[int32]
+cell_mut[int64]
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T], bool) -> unit
@@ -31687,7 +31866,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (185)
+## const_generic_instances (188)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -31773,6 +31952,8 @@ std.list::list::at$list_test_suite_$usize
 std.list::list::at$list_uint32_$range_usize_
 std.list::list::at$list_uint32_$usize
 std.list::list::at$list_usize_$usize
+std.list::list::at_mut$list_int64_$usize
+std.list::list::at_ref$list_int64_$usize
 std.list::list::cell$list_int32_
 std.list::list::drop$list__int64__int32__
 std.list::list::drop$list__usize__usize__
@@ -31840,6 +32021,7 @@ std.list::list::reserve$list_test_suite_
 std.list::list::reserve$list_uint32_
 std.list::list::reserve$list_usize_
 std.list::list::set_at$list_int32_$usize
+std.list::list::set_at$list_int64_$usize
 std.list::list::set_at$list_usize_$usize
 std.mem::alloc$_int64__int32_
 std.mem::alloc$_usize__usize_
@@ -31880,7 +32062,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (188)
+## synthesized_decls (191)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$int32
@@ -31957,6 +32139,8 @@ list::at$list_test_suite_$usize
 list::at$list_uint32_$range_usize_
 list::at$list_uint32_$usize
 list::at$list_usize_$usize
+list::at_mut$list_int64_$usize
+list::at_ref$list_int64_$usize
 list::cell$list_int32_
 list::drop$list__int64__int32__
 list::drop$list__usize__usize__
@@ -32024,6 +32208,7 @@ list::reserve$list_test_suite_
 list::reserve$list_uint32_
 list::reserve$list_usize_
 list::set_at$list_int32_$usize
+list::set_at$list_int64_$usize
 list::set_at$list_usize_$usize
 list[int32]::from_iter$upto
 list_into_iter::next$list_into_iter__int64__int32__

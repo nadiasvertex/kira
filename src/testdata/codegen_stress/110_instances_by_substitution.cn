@@ -2,7 +2,7 @@ module codegen_stress.instances_by_substitution
 
 # expect: 10633
 
-# `spec/inference-rewrite.md` phase 9.7: an instance of a generic body is not
+# An instance of a generic body is not
 # checked again. Its types are its template's, with each parameter replaced
 # by the instance's answer, and every decision the template could not make —
 # which function a call on a `T` reaches — is made once per instance from the

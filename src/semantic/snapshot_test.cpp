@@ -1,6 +1,6 @@
 // Golden snapshots of every elaboration decision `check_program` makes.
 //
-// The safety net for `spec/inference-rewrite.md` phase 0. What it protects
+// The safety net for changes to inference. What it protects
 // against is specific: a change to inference that keeps every existing test
 // green while silently resolving one call, index, operator or literal
 // conversion to a different target than before. Nothing else in the suite
@@ -120,6 +120,14 @@ constexpr auto k_inputs = std::array{
     // receiver, a `static if` — made once per instance.
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "110_instances_by_substitution.cn"},
+    // A method on a binding whose type a later statement settles: the call
+    // must name the method of the settled type, not of the default.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "111_method_on_literal_waits.cn"},
+    // Borrowing and writing an element of a list a later statement types:
+    // `at_ref`/`at_mut`/`set_at` must name the settled list's instances.
+    snapshot_input{.corpus = "codegen_stress",
+                   .filename = "112_index_borrow_and_write_wait.cn"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.cn"},
     snapshot_input{.corpus = "semantic_stress",

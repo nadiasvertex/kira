@@ -140,6 +140,20 @@ enum class binding_origin : uint8_t {
                    ///< name).
 };
 
+/// What a call site has solved each of the callee's type parameters to,
+/// keyed by the parameter itself: its interned `type_param` id, which is per
+/// declaration (`type_table::type_param`). Two parameters that share a
+/// spelling — the caller's `T` and the callee's — are two keys, so solving one
+/// never answers the other.
+using param_subst = std::unordered_map<type_id, type_id>;
+
+/// What each spelling of a type parameter refers to while resolving source
+/// written in those spellings — a signature, a body, a bound. A scope, not a
+/// solution: it answers a question about names, which is why it is keyed by
+/// them. A solution is a `param_subst`; `checker::bindings_by_name` turns one
+/// into the other where an instance body is about to be resolved under it.
+using type_scope = std::unordered_map<std::string, type_id>;
+
 /// One name bound in the current lexical scope stack, with enough
 /// information to type future references and to diagnose illegal mutation.
 struct value_binding {
@@ -345,7 +359,7 @@ struct method_entry {
   /// higher-kinded trait default monomorphized for one impl carries its
   /// trait's constructor parameter here (`F := option`), so re-checking a
   /// per-call instance of it resolves `F[A]` the same way its own check did.
-  std::unordered_map<std::string, type_id> fixed_type_params;
+  type_scope fixed_type_params;
   /// Type parameters of the `impl` or `extend` block this method was declared
   /// in, or null for a trait default. Needed because a block's *own* generic
   /// parameters (`impl[T] get_it[T] for holder[T]`, `extend[T] holder[T]`)
@@ -766,7 +780,7 @@ private:
   /// right impl's bindings before resolving such a method's return type.
   std::unordered_map<
       type_id,
-      std::unordered_map<std::string, std::unordered_map<std::string, type_id>>>
+      std::unordered_map<std::string, type_scope>>
       impl_assoc_types_;
   /// Every interpolation segment's resolved rendering dispatch — see
   /// `interp_dispatch`'s doc comment in types.h. Populated by
@@ -835,12 +849,12 @@ private:
   /// gives a `try_from` real parameters to compare against), and
   /// `resolve_ident` reads the second (so a *value* use of `n` lowers to the
   /// literal `3` — there is no runtime parameter to load it from).
-  std::unordered_map<std::string, type_id> const_param_slots_;
+  type_scope const_param_slots_;
   /// While checking a monomorphized copy of a generic *method* (higher-
   /// kinded trait impls — `instantiate_hk_method`): each type parameter
   /// name bound to the concrete type the call solved for it. The type
   /// analog of `const_param_slots_`, consulted by `push_type_params`.
-  std::unordered_map<std::string, type_id> type_param_slots_;
+  type_scope type_param_slots_;
   /// The block-level type parameters of the `impl`/`extend` a method
   /// currently being checked belongs to (`impl[n: usize] ... for buf[n]`'s
   /// `n`), or `nullptr` outside of one. These never appear in the method's
@@ -1047,12 +1061,12 @@ private:
     std::unordered_set<std::string> invalid;
   };
   std::vector<capture_barrier> capture_barriers_;
-  std::vector<std::unordered_map<std::string, type_id>> type_params_;
+  std::vector<type_scope> type_params_;
   type_id self_type_ = k_unknown_type;
   /// Associated-type names in scope for `self.<name>` references, valid
   /// while checking a trait's or impl's own members (see `check_trait_decl`
   /// and `check_impl_decl`).
-  std::unordered_map<std::string, type_id> self_assoc_types_;
+  type_scope self_assoc_types_;
   type_id return_type_ = k_unknown_type;
   bool return_annotated_ = false;
   /// While checking a function declared without a return type: the join of
@@ -1447,7 +1461,7 @@ private:
   /// A point of demand owes a default to the leaves it is about to decide
   /// on, not to every literal in the program: a global flush here answered
   /// `a` in `let a = 1; println("{b}"); let c: int64 = a` before the
-  /// annotation that pins it (spec/inference-rewrite.md phase 11, defect 1).
+  /// annotation that pins it.
   ///
   /// "Depends on" is the leaves `roots` mention, plus two kinds of leaf a
   /// root may be waiting on without mentioning it:
@@ -1941,7 +1955,7 @@ private:
   /// it would have if the programmer had written `3` there, and the code that
   /// needs a real number (`index[n]`'s bound, `try_from`'s check) finds one.
   auto push_type_params(const std::vector<ast::type_param> &params) -> void {
-    auto scope = std::unordered_map<std::string, type_id>{};
+    auto scope = type_scope{};
     for (const auto &param : params) {
       if (param.name.empty()) {
         continue;
@@ -2305,7 +2319,7 @@ private:
   /// the context of the function/type/impl currently being checked).
   struct resolve_ctx {
     const module_members *module = nullptr;
-    const std::unordered_map<std::string, type_id> *param_bindings = nullptr;
+    const type_scope *param_bindings = nullptr;
     bool use_type_param_stack = false;
     bool quiet = false;
     /// Whether `some Trait[Args]` (`existential_type`) may resolve to a real
@@ -2350,7 +2364,7 @@ private:
   }
 
   // ==========================================================================
-  //  Facts about type parameters (`spec/inference-rewrite.md` phase 9,
+  //  Facts about type parameters (ch. 19, Bounded Generics,
   //  rule 1)
   //
   //  What a generic body may rely on about `T` is exactly what its
@@ -2481,7 +2495,7 @@ private:
     if (!trait.requires_bound.has_value()) {
       return;
     }
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = type_scope{};
     for (size_t i = 0; i < trait.type_params.size() && i < args.size(); ++i) {
       bindings.emplace(trait.type_params[i].name, args[i]);
     }
@@ -2540,7 +2554,7 @@ private:
                 ? intersect_domains(found->second, *members)
                 : *members;
       }
-      auto bindings = std::unordered_map<std::string, type_id>{};
+      auto bindings = type_scope{};
       const auto args = resolve_type_args(named.type_args, ctx);
       for (size_t i = 0; i < concept_decl.params.size(); ++i) {
         const auto bound_to =
@@ -2635,7 +2649,7 @@ private:
   }
 
   // ------------------------------------------------------------------------
-  //  Domains (`spec/inference-rewrite.md` phase 9, rules 4 and 5)
+  //  Domains (ch. 19, Bounded Generics, rules 4 and 5)
   //
   //  A type parameter's domain is the finite set of builtin types it can
   //  still be, or no restriction at all. A category bound (`T: numeric`)
@@ -2867,7 +2881,7 @@ private:
   /// Locals bound to `T.name()`, so `let n = T.name()` followed by
   /// `static if n == "int8"` narrows `T` the same way the direct form does.
   /// Per function: saved and cleared in `check_function`.
-  std::unordered_map<std::string, type_id> type_name_aliases_;
+  type_scope type_name_aliases_;
 
   /// What a `static if` condition says about one type parameter: the domain
   /// in its branch, and — when the parameter's domain was already finite, so
@@ -3739,6 +3753,23 @@ private:
   /// What a call site has pinned each of the callee's value parameters to.
   using value_bindings = std::unordered_map<std::string, linear_poly>;
 
+
+  /// The id `param` is interned as, and so its key in a `param_subst`.
+  auto param_id(const ast::type_param &param) -> type_id {
+    return types_.type_param(param.name, param.higher_kinded_arity, &param);
+  }
+
+  /// A solution read back as a scope: each parameter's spelling to its
+  /// answer, for resolving a body written in those spellings.
+  auto bindings_by_name(const param_subst &bindings)
+      -> type_scope {
+    auto scope = type_scope{};
+    for (const auto &[param, solved] : bindings) {
+      scope.insert_or_assign(types_.entry(param).name, solved);
+    }
+    return scope;
+  }
+
   /// One explicit compile-time argument, as the parser managed to write it
   /// down.
   ///
@@ -3782,7 +3813,7 @@ private:
     /// written arguments are looked at (`check_ufcs_call`), and that binding
     /// is exactly the one a bound needs as its subject — `it.map(f)` knows
     /// `I` from `it` and needs `where I: iterator[T]` to get `T`.
-    const std::unordered_map<std::string, type_id> *seed = nullptr;
+    const param_subst *seed = nullptr;
   };
 
   /// A narrowing obligation raised by one call argument, held back until the
@@ -4823,8 +4854,8 @@ private:
   /// `unknown` when the caller wrote no arguments at all, which is legal).
   auto bindings_for_decl(const ast::type_decl &decl,
                          const std::vector<type_id> &args)
-      -> std::unordered_map<std::string, type_id> {
-    auto bindings = std::unordered_map<std::string, type_id>{};
+      -> type_scope {
+    auto bindings = type_scope{};
     for (size_t i = 0; i < decl.type_params.size(); ++i) {
       bindings.emplace(decl.type_params[i].name,
                        i < args.size() ? args[i] : k_unknown_type);
@@ -5341,7 +5372,7 @@ private:
   /// `decl` field, so nothing downstream needs the strip.
   auto type_param_comptime_values(
       const std::vector<ast::type_param> &type_params,
-      const std::unordered_map<std::string, type_id> &slots)
+      const type_scope &slots)
       -> std::vector<std::pair<std::string, comptime::value>> {
     auto values = std::vector<std::pair<std::string, comptime::value>>{};
     for (const auto &param : type_params) {
@@ -5367,8 +5398,8 @@ private:
   /// the concrete argument ids it was instantiated with, for substituting
   /// into field/variant-payload type expressions.
   auto param_bindings_for_instance(const type_entry &instance)
-      -> std::unordered_map<std::string, type_id> {
-    auto bindings = std::unordered_map<std::string, type_id>{};
+      -> type_scope {
+    auto bindings = type_scope{};
     if (instance.decl == nullptr) {
       return bindings;
     }
@@ -5386,7 +5417,7 @@ private:
   /// substitution.
   auto
   member_resolve_ctx(const type_entry &instance,
-                     const std::unordered_map<std::string, type_id> &bindings)
+                     const type_scope &bindings)
       -> resolve_ctx {
     return resolve_ctx{.module = index_.find_module(instance.module_name),
                        .param_bindings = &bindings,
@@ -5781,8 +5812,8 @@ private:
   auto generic_param_bindings(
       const ast::func_decl &decl,
       const std::vector<ast::type_param> *enclosing_block_params)
-      -> std::unordered_map<std::string, type_id> {
-    auto bindings = std::unordered_map<std::string, type_id>{};
+      -> type_scope {
+    auto bindings = type_scope{};
     const auto seed = [&](const ast::type_param &type_param) -> void {
       if (!type_param.name.empty()) {
         bindings.emplace(type_param.name,
@@ -6114,12 +6145,12 @@ private:
     }
     const auto check_argument =
         [&](const pending_argument &item,
-            const std::unordered_map<std::string, type_id> &bindings) -> void {
+            const param_subst &bindings) -> void {
       const auto declared = item.target != nullptr
                                 ? substitute_solved(item.target->type, bindings)
                                 : k_unknown_type;
       const auto expected =
-          open_foreign_params(substitute_params(declared, opened));
+          open_foreign_params(substitute_solved(declared, opened));
       const auto found = infer_expr(*item.value, expected);
       if (item.target == nullptr) {
         return;
@@ -6167,13 +6198,13 @@ private:
     // lambdas are visited, it does not visit them twice: `infer_expr` mints
     // symbols and declares locals, and running it twice over one lambda would
     // register its parameters two times over.
-    auto no_bindings = std::unordered_map<std::string, type_id>{};
+    auto no_bindings = param_subst{};
     for (const auto &item : pending) {
       if (item.value->kind != ast::node_kind::lambda_expr) {
         check_argument(item, no_bindings);
       }
     }
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     if (generic != nullptr) {
       // Not a point of demand: the lambda is checked against these, and a
       // parameter still answered by a literal's leaf is exactly what its
@@ -6383,11 +6414,11 @@ private:
   struct generic_solution {
     /// Value parameters, as the interned `const_value` types
     /// `push_type_params` binds them to.
-    std::unordered_map<std::string, type_id> const_slots;
+    type_scope const_slots;
     /// Value parameters, as the raw numbers `lower_ident` embeds.
     std::unordered_map<std::string, int64_t> values;
     /// Type parameters, as the concrete types they solved to.
-    std::unordered_map<std::string, type_id> type_slots;
+    type_scope type_slots;
     /// Every parameter's answer, in declaration order, as a symbol-safe
     /// suffix — `$3`, `$int32`, `$3$int32` for a mixed template.
     std::string suffix;
@@ -6411,6 +6442,27 @@ private:
     // name to characters every backend's symbol table accepts.
     solution.suffix += constant < 0 ? std::format("$m{}", -constant)
                                     : std::format("${}", constant);
+  }
+
+  /// A solution's answers keyed by the parameters of `params` they answer —
+  /// the substitution form of the scope `generic_solution` carries by name.
+  auto solution_subst(const std::vector<ast::type_param> &params,
+                      const generic_solution &solution) -> param_subst {
+    auto subst = param_subst{};
+    for (const auto &param : params) {
+      if (param.name.empty()) {
+        continue;
+      }
+      const auto &slots =
+          param.is_value_param ? solution.const_slots : solution.type_slots;
+      if (const auto found = slots.find(param.name); found != slots.end()) {
+        subst.emplace(param_id(param), found->second);
+      } else if (const auto other = solution.type_slots.find(param.name);
+                 other != solution.type_slots.end()) {
+        subst.emplace(param_id(param), other->second);
+      }
+    }
+    return subst;
   }
 
   auto bind_generic_type(generic_solution &solution,
@@ -6491,7 +6543,7 @@ private:
     const module_members *owner = nullptr;
     std::optional<file_id_type> decl_file;
     generic_solution solution;
-    std::optional<std::unordered_map<std::string, type_id>> fixed_type_params;
+    std::optional<type_scope> fixed_type_params;
     type_id self_type = k_unknown_type;
     const std::vector<ast::type_param> *block_type_params = nullptr;
     /// The whole chain of frames, not just this one: the "instantiated from
@@ -6502,7 +6554,7 @@ private:
     /// still bottoms out once the recursion is a worklist rather than a C++
     /// call stack.
     size_t depth = 0;
-    std::vector<std::unordered_map<std::string, type_id>> enclosing_type_params;
+    std::vector<type_scope> enclosing_type_params;
     std::shared_ptr<const ast::clone_map> clone_pairs;
     /// An instance of a function with unannotated parameters (phase 8b),
     /// checked against its call's concrete types rather than substituted:
@@ -6513,7 +6565,7 @@ private:
   std::vector<pending_instance> pending_instances_;
 
   // ------------------------------------------------------------------------
-  //  Leaf unknowns (`spec/inference-rewrite.md` phase 8)
+  //  Leaf unknowns
   //
   //  An empty `[]` with nothing to read a type from used to be rejected
   //  outright, because a `list[?]` reaching elaboration would mint an
@@ -6633,7 +6685,7 @@ private:
 
   /// Clones and names a generic instance, and queues its body to be checked.
   ///
-  /// Phase 6 of `spec/inference-rewrite.md` splits this function in half. The
+  /// The elaboration split cuts this function in half. The
   /// clone is still made here and the pointer still returned here, so every
   /// caller keeps getting a real declaration to record in its dispatch map
   /// exactly as before. What moved is the *checking* of the cloned body,
@@ -6651,7 +6703,7 @@ private:
       const ast::node &call, const ast::func_decl &decl,
       const module_members *owner, std::optional<file_id_type> decl_file,
       const generic_solution &solution, const std::string &name,
-      const std::unordered_map<std::string, type_id> *fixed_type_params,
+      const type_scope *fixed_type_params,
       type_id self_type = k_unknown_type,
       const std::vector<ast::type_param> *block_type_params = nullptr,
       const std::vector<type_id> *param_types = nullptr)
@@ -6881,6 +6933,76 @@ private:
                           .why = infer::k_no_cause,
                           .payload = payload});
   }
+
+  /// A method call whose receiver is not yet anything a method can be found
+  /// on — `a.cmp(&b)` for `let a = 5`, before a later `let c: int64 = a`
+  /// has said which integer `a` is. Defaulting the receiver here would pick
+  /// `int32` and then report the annotation as the mistake.
+  ///
+  /// The arguments are checked now, in the scopes they were written in; the
+  /// call answers with a leaf, and once the receiver settles the call is
+  /// checked again in full with the receiver and arguments replaying what
+  /// they were found to be (`replayed_exprs_`). A receiver that never
+  /// settles is owed its default by the queue's last resort, exactly as
+  /// `demand` would have spent it, only later.
+  ///
+  /// Refused — so the caller demands, as before — for a receiver that is not
+  /// a named binding: a temporary in a chain (`xs.iter().max_by(f)`) has no
+  /// later statement that could pin it, and the expression around it would
+  /// be typed against a leaf it cannot see through. Also refused where
+  /// replaying cannot stand in for checking: a lambda argument, which is
+  /// typed by the parameter it meets, and a generic body, whose type
+  /// parameters are out of scope by the time the queue runs.
+  auto defer_open_receiver_call(const ast::call_expr &call,
+                                const ast::field_expr &field)
+      -> std::optional<type_id> {
+    if (current_template_ != nullptr || in_abstract_type_param_scope() ||
+        field.object->kind != ast::node_kind::ident_expr) {
+      return std::nullopt;
+    }
+    for (const auto &arg : call.args) {
+      if (arg.value != nullptr &&
+          arg.value->kind == ast::node_kind::lambda_expr) {
+        return std::nullopt;
+      }
+    }
+    infer_call_args_loosely(call);
+    auto replay = std::vector<std::pair<const ast::expr *, type_id>>{};
+    const auto recorded = [this](const ast::expr &expr) -> type_id {
+      const auto found = node_types_.find(&expr);
+      return found != node_types_.end() ? found->second : k_unknown_type;
+    };
+    replay.emplace_back(field.object.get(), recorded(*field.object));
+    for (const auto &arg : call.args) {
+      if (arg.value != nullptr) {
+        replay.emplace_back(arg.value.get(), recorded(*arg.value));
+      }
+    }
+    const auto receiver = strip_refs(settle(replay.front().second));
+    const auto result = leaf_ctxt_.fresh_type(
+        std::format("the result of this call to `{}`", field.field_name),
+        source_location{.file_id = file_id_, .span = call.span});
+    defer_method_call(
+        field.field_name, receiver,
+        [this, &call, &field, replay = std::move(replay),
+         result](type_id /*settled*/) -> void {
+          for (const auto &[expr, type] : replay) {
+            replayed_exprs_[expr] = type;
+          }
+          const auto answer =
+              record_expr_type(call, infer_method_call(call, field));
+          for (const auto &[expr, type] : replay) {
+            replayed_exprs_.erase(expr);
+          }
+          if (!types_.is_unknown(answer) && answer != k_error_type) {
+            (void)leaf_engine_.unify(result, answer, infer::k_no_cause);
+          }
+        });
+    return result;
+  }
+  /// What a deferred call's receiver and arguments answer with while it is
+  /// re-run; see `defer_open_receiver_call`.
+  std::unordered_map<const ast::expr *, type_id> replayed_exprs_;
 
   /// Registers the resolvers. Lazy because they close over `this`.
   auto wire_leaf_queue() -> void {
@@ -7510,7 +7632,7 @@ private:
   }
 
   // ------------------------------------------------------------------------
-  //  Instances by substitution (`spec/inference-rewrite.md` phase 9.7)
+  //  Instances by substitution
   //
   //  A generic body is checked once, as the template, against the facts its
   //  signature declares (phase 9). An instance is then *not* checked again:
@@ -7558,7 +7680,7 @@ private:
   /// The abstract parameters in scope while each template was checked, by
   /// name — what an instance's answers are matched against.
   std::unordered_map<const ast::func_decl *,
-                     std::unordered_map<std::string, type_id>>
+                     type_scope>
       template_abstract_params_;
   /// Templates whose check has finished. An instance of one that has not is
   /// kept waiting in `pending_instances_`.
@@ -8108,13 +8230,12 @@ private:
   /// constraint already solved reads as that answer. Only if one is *still*
   /// open is the fixpoint run — and defaulting inside it is attempted only
   /// after every other obligation has stalled, one candidate at a time.
-  auto settle_bindings(std::unordered_map<std::string, type_id> &bindings)
-      -> void {
+  auto settle_bindings(param_subst &bindings) -> void {
     if (leaf_ctxt_.meta_count() == 0) {
       return;
     }
     auto still_open = false;
-    for (auto &[name, bound] : bindings) {
+    for (auto &[param, bound] : bindings) {
       bound = leaf_ctxt_.zonk(bound);
       auto seen = std::unordered_set<type_id>{};
       still_open = still_open || mentions_type_var(bound, seen);
@@ -8123,11 +8244,11 @@ private:
       return;
     }
     auto roots = std::vector<type_id>{};
-    for (const auto &[name, bound] : bindings) {
+    for (const auto &[param, bound] : bindings) {
       roots.push_back(bound);
     }
     flush_for(roots);
-    for (auto &[name, bound] : bindings) {
+    for (auto &[param, bound] : bindings) {
       bound = leaf_ctxt_.zonk(bound);
     }
   }
@@ -8153,7 +8274,7 @@ private:
   solve_generic_params(const ast::call_expr &call, const ast::func_decl &decl,
                        const module_members *owner,
                        const value_bindings &solved,
-                       std::unordered_map<std::string, type_id> &type_bindings,
+                       param_subst &type_bindings,
                        const explicit_generic_args &explicit_args)
       -> std::optional<generic_solution> {
     if (explicit_args.size() > decl.type_params.size()) {
@@ -8238,7 +8359,7 @@ private:
         }
         // A value parameter mentioned in a parameter's *type* is solved by
         // unification like any other, and arrives as an interned constant.
-        if (const auto found = type_bindings.find(param.name);
+        if (const auto found = type_bindings.find(param_id(param));
             found != type_bindings.end()) {
           const auto &entry = types_.entry(found->second);
           if (entry.kind == type_kind::const_value_kind) {
@@ -8299,7 +8420,7 @@ private:
         // binding is written back so the caller's own substitution into the
         // declared return type sees the type the call was *actually*
         // instantiated at, rather than the one unification happened to find.
-        if (const auto found = type_bindings.find(param.name);
+        if (const auto found = type_bindings.find(param_id(param));
             found != type_bindings.end() && found->second != *resolved &&
             !types_.is_unknown(found->second) &&
             !mentions_abstract_type(found->second)) {
@@ -8318,11 +8439,11 @@ private:
                           param.name, types_.display(*resolved)));
           return std::nullopt;
         }
-        type_bindings[param.name] = *resolved;
+        type_bindings[param_id(param)] = *resolved;
         bind_generic_type(solution, param, *resolved);
         continue;
       }
-      const auto found = type_bindings.find(param.name);
+      const auto found = type_bindings.find(param_id(param));
       if (found != type_bindings.end() && !types_.is_unknown(found->second) &&
           mentions_abstract_type(found->second)) {
         // The arguments *did* determine `T` — as another type parameter that
@@ -8376,7 +8497,7 @@ private:
   auto
   solve_from_argument_types(const ast::call_expr &call,
                             const std::vector<fn_param_info> &params,
-                            std::unordered_map<std::string, type_id> &bindings,
+                            param_subst &bindings,
                             const ast::expr *ufcs_receiver = nullptr,
                             bool may_default = false,
                             bool bind_open = false) -> void {
@@ -8412,12 +8533,12 @@ private:
     // every argument was re-checked against the solution, passed silently as
     // the wrong width.
     if (open_leaf) {
-      auto concrete = std::unordered_map<std::string, type_id>{};
+      auto concrete = param_subst{};
       for (size_t i = 0; i < params.size(); ++i) {
         auto seen = std::unordered_set<type_id>{};
         if (!types_.is_unknown(arg_types[i]) &&
             !mentions_type_var(arg_types[i], seen)) {
-          unify_rigid(params[i].type, arg_types[i], concrete);
+          match_params(params[i].type, arg_types[i], concrete);
         }
       }
       for (size_t i = 0; i < params.size(); ++i) {
@@ -8448,7 +8569,7 @@ private:
           mentions_type_var(arg_types[i], seen)) {
         continue;
       }
-      unify_rigid(params[i].type, arg_types[i], bindings);
+      match_params(params[i].type, arg_types[i], bindings);
     }
     // An argument still open answers too, with the leaf itself — only for a
     // caller that wants a *provisional* solution and will re-solve later.
@@ -8467,8 +8588,8 @@ private:
         }
         const auto matched =
             infer::match_pattern(types_, params[i].type, arg_types[i]);
-        for (const auto &[name, solved] : matched.bindings) {
-          bindings.try_emplace(name, solved);
+        for (const auto &[param, solved] : matched.bindings) {
+          bindings.try_emplace(param, solved);
         }
       }
     }
@@ -8488,10 +8609,8 @@ private:
   auto preliminary_type_bindings(const ast::call_expr &call,
                                  const std::vector<fn_param_info> &params,
                                  const generic_call_context &generic)
-      -> std::unordered_map<std::string, type_id> {
-    auto bindings = generic.seed != nullptr
-                        ? *generic.seed
-                        : std::unordered_map<std::string, type_id>{};
+      -> param_subst {
+    auto bindings = generic.seed != nullptr ? *generic.seed : param_subst{};
     const auto &decl = *generic.decl;
     if (generic.explicit_args != nullptr) {
       for (size_t i = 0;
@@ -8503,7 +8622,7 @@ private:
         }
         if (const auto resolved =
                 explicit_type_argument((*generic.explicit_args)[i])) {
-          bindings.emplace(param.name, *resolved);
+          bindings.emplace(param_id(param), *resolved);
         }
       }
     }
@@ -8551,8 +8670,8 @@ private:
   /// diagnosed is not reported twice.
   auto check_args_against_solution(
       const ast::call_expr &call, const std::vector<fn_param_info> &params,
-      const std::unordered_map<std::string, type_id> &bindings,
-      std::string_view callee_name, const ast::expr *ufcs_receiver = nullptr)
+      const param_subst &bindings, std::string_view callee_name,
+      const ast::expr *ufcs_receiver = nullptr)
       -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
@@ -8624,7 +8743,7 @@ private:
   solve_from_expected_type(const ast::call_expr &call,
                            const ast::func_decl &decl,
                            const module_members *owner,
-                           std::unordered_map<std::string, type_id> &bindings,
+                           param_subst &bindings,
                            const explicit_generic_args &explicit_args) -> void {
     if (decl.return_type == nullptr) {
       return;
@@ -8648,21 +8767,45 @@ private:
     // would see a hint-derived binding where it expects an argument-derived
     // one and report a conflict the user's arguments never had — the hint is
     // a fallback, and a fallback that can raise an error is not one.
-    auto from_expected = std::unordered_map<std::string, type_id>{};
-    unify_rigid(signature_return_type(decl, owner), expected, from_expected);
+    auto from_expected = param_subst{};
+    match_params(signature_return_type(decl, owner), expected, from_expected);
     for (size_t i = 0; i < decl.type_params.size(); ++i) {
       const auto &name = decl.type_params[i].name;
-      if (name.empty() || i < explicit_args.size() || bindings.contains(name)) {
+      const auto param = param_id(decl.type_params[i]);
+      if (name.empty() || i < explicit_args.size() ||
+          bindings.contains(param)) {
         continue;
       }
-      if (const auto solved = from_expected.find(name);
+      if (const auto solved = from_expected.find(param);
           solved != from_expected.end()) {
-        bindings.emplace(name, solved->second);
+        bindings.emplace(param, solved->second);
         expected_solved_params_[&call].push_back(
             std::format("`{}` was solved to `{}` from the type expected here",
                         name, types_.display(solved->second)));
       }
     }
+  }
+
+  /// Solves one call's compile-time parameters — the one entry point for
+  /// every generic call, free function or method alike.
+  ///
+  /// `bindings` arrives holding what the arguments (and, for a method, the
+  /// receiver) already said, since only the caller knows which parameters
+  /// its arguments reach. The remaining sources are added here in order of
+  /// decreasing authority, each unable to overturn an earlier one: the
+  /// declared bounds (`I` answers `T` through `where I: iterator[T]`), then
+  /// the type the call site expects; the solution is then read back with
+  /// the brackets taking precedence (`solve_generic_params`). Every source
+  /// feeds the one unifier (`match_params`).
+  auto solve_call(const ast::call_expr &call, const ast::func_decl &decl,
+                  const module_members *owner, const value_bindings &solved,
+                  param_subst &bindings,
+                  const explicit_generic_args &explicit_args)
+      -> std::optional<generic_solution> {
+    solve_from_bounds(decl, owner, bindings);
+    solve_from_expected_type(call, decl, owner, bindings, explicit_args);
+    return solve_generic_params(call, decl, owner, solved, bindings,
+                                explicit_args);
   }
 
   /// Monomorphizes `decl` for this call, returning the call's result type
@@ -8684,7 +8827,7 @@ private:
                           const explicit_generic_args &explicit_args,
                           const ast::expr *ufcs_receiver)
       -> std::optional<generic_solution> {
-    auto type_bindings = std::unordered_map<std::string, type_id>{};
+    auto type_bindings = param_subst{};
     solve_from_argument_types(call, params, type_bindings, ufcs_receiver,
                               /*may_default=*/true);
     // Between the arguments and the expected type, because a bound is solved
@@ -8693,15 +8836,13 @@ private:
     // the way every argument-derived binding does. `def sum[I, T](it: I)`
     // has no argument mentioning `T` at all, so without this the terminal of
     // every adapter chain is unsolvable.
-    solve_from_bounds(decl, owner, type_bindings);
-    solve_from_expected_type(call, decl, owner, type_bindings, explicit_args);
-
-    auto solution = solve_generic_params(call, decl, owner, solved,
-                                         type_bindings, explicit_args);
+    auto solution = solve_call(call, decl, owner, solved, type_bindings,
+                               explicit_args);
     if (!solution.has_value()) {
       return std::nullopt;
     }
-    check_args_against_solution(call, params, solution->type_slots,
+    check_args_against_solution(call, params,
+                                solution_subst(decl.type_params, *solution),
                                 decl.name, ufcs_receiver);
     solution->bounds_hold =
         check_call_bounds(call, decl, owner, decl_file, *solution);
@@ -8783,7 +8924,7 @@ private:
       }
     };
     collect(collect, id);
-    return substitute_params(id, foreign);
+    return substitute_solved(id, foreign);
   }
 
   /// Whether any type a call solved to is written in the body's own
@@ -8887,7 +9028,7 @@ private:
       }
       return std::ranges::binary_search(*members, stripped);
     }
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = type_scope{};
     if (!concept_decl.params.empty()) {
       bindings.emplace(concept_decl.params.front().name, subject);
     }
@@ -9400,15 +9541,13 @@ private:
   auto instantiate_hk_method(
       const ast::call_expr &call, const method_entry &method,
       std::string_view target_type_name,
-      std::unordered_map<std::string, type_id> &bindings,
-      const explicit_generic_args &explicit_args = {},
+      param_subst &bindings, const explicit_generic_args &explicit_args = {},
       const value_bindings &solved = {}, type_id self_type = k_unknown_type,
-      const std::unordered_map<std::string, type_id> *extra_fixed = nullptr)
+      const type_scope *extra_fixed = nullptr)
       -> const ast::func_decl * {
     const auto &decl = *method.decl;
-    solve_from_expected_type(call, decl, method.owner, bindings, explicit_args);
-    const auto solution = solve_generic_params(call, decl, method.owner, solved,
-                                               bindings, explicit_args);
+    const auto solution = solve_call(call, decl, method.owner, solved, bindings,
+                                     explicit_args);
     if (!solution.has_value()) {
       return nullptr;
     }
@@ -10350,7 +10489,7 @@ private:
   auto try_fold_comptime_only_call(
       const ast::call_expr &call, const ast::func_decl &decl,
       const ast::func_decl &instance, type_id result_type,
-      const std::unordered_map<std::string, type_id> &type_slots)
+      const type_scope &type_slots)
       -> const ast::literal_expr * {
     // Rebind `decl`'s own type parameters into the evaluator's locals the
     // same way `check_function` did while `instance` was being checked
@@ -10415,7 +10554,7 @@ private:
 
   /// An integer literal nothing has yet said the type of.
   ///
-  /// Phase 9 of `spec/inference-rewrite.md`. Before it, this returned
+  /// Before it, this returned
   /// `int32` on the spot — a decision made at the leaf, from no evidence,
   /// and irrevocable. `int32` is usually right, which is exactly what made
   /// it expensive: every place it was wrong became its own repair.
@@ -11383,6 +11522,13 @@ private:
         // A `&T`/`&mut T` is a checked borrow, not raw memory — never gated.
         return entry.result;
       }
+      // `&xs[i]`/`&mut xs[i]` hand back a `cell[T]`/`cell_mut[T]`, which is
+      // the element's address, so reading through one is a read of `T`.
+      if (entry.kind == type_kind::builtin_generic_kind &&
+          (entry.name == "cell" || entry.name == "cell_mut") &&
+          entry.args.size() == 1) {
+        return entry.args.front();
+      }
       return k_unknown_type;
     }
     case ast::unary_op::addr_of: {
@@ -11414,11 +11560,10 @@ private:
         const auto &index =
             dynamic_cast<const ast::index_expr &>(*unary.operand);
         if (index.object != nullptr) {
-          // A borrow through `index_ref`/`index_mut` names its instance
-          // here and has no deferred form yet, so it still demands the whole
-          // receiver (phase 11: only the read path defers).
-          const auto object_type =
-              demand(base_shape(infer_expr(*index.object, k_unknown_type)));
+          // Chosen from the head alone; the instance waits for the
+          // elements (`dispatch_index_when_settled`).
+          const auto object_type = demand_shape(
+              base_shape(infer_expr(*index.object, k_unknown_type)));
           const auto &object_entry = types_.entry(strip_refs(object_type));
           if (object_entry.kind == type_kind::struct_kind ||
               object_entry.kind == type_kind::sum_kind ||
@@ -11519,11 +11664,10 @@ private:
         const auto &index =
             dynamic_cast<const ast::index_expr &>(*unary.operand);
         if (index.object != nullptr) {
-          // A borrow through `index_ref`/`index_mut` names its instance
-          // here and has no deferred form yet, so it still demands the whole
-          // receiver (phase 11: only the read path defers).
-          const auto object_type =
-              demand(base_shape(infer_expr(*index.object, k_unknown_type)));
+          // Chosen from the head alone; the instance waits for the
+          // elements (`dispatch_index_when_settled`).
+          const auto object_type = demand_shape(
+              base_shape(infer_expr(*index.object, k_unknown_type)));
           const auto &object_entry = types_.entry(strip_refs(object_type));
           if (object_entry.kind == type_kind::struct_kind ||
               object_entry.kind == type_kind::sum_kind ||
@@ -11944,7 +12088,7 @@ private:
   /// key are read the same way.
   auto resolve_impl_trait_key(const impl_ref &impl, std::string_view trait_name)
       -> std::string {
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    auto param_bindings = type_scope{};
     for (const auto &param : impl.decl->type_params) {
       if (!param.name.empty()) {
         param_bindings.emplace(
@@ -11981,7 +12125,7 @@ private:
     if (argument == nullptr) {
       return k_unknown_type;
     }
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    auto param_bindings = type_scope{};
     for (const auto &param : impl.decl->type_params) {
       if (!param.name.empty()) {
         param_bindings.emplace(
@@ -12000,7 +12144,7 @@ private:
     if (impl.decl->for_type == nullptr) {
       return k_unknown_type;
     }
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    auto param_bindings = type_scope{};
     for (const auto &param : impl.decl->type_params) {
       if (!param.name.empty()) {
         param_bindings.emplace(
@@ -12027,7 +12171,7 @@ private:
     if (ext.decl->for_type == nullptr) {
       return k_unknown_type;
     }
-    auto param_bindings = std::unordered_map<std::string, type_id>{};
+    auto param_bindings = type_scope{};
     for (const auto &param : ext.decl->type_params) {
       if (!param.name.empty()) {
         param_bindings.emplace(
@@ -12312,7 +12456,7 @@ private:
     // `F[A]` in the clone re-resolves to the real applied type
     // (`apply_resolved_head` — `option[A]`, the same interned id ordinary
     // code gets).
-    auto bound_trait_params = std::unordered_map<std::string, type_id>{};
+    auto bound_trait_params = type_scope{};
     if (trait_decl != nullptr && !trait_decl->type_params.empty() &&
         trait_decl->type_params.front().higher_kinded_arity > 0 &&
         types_.entry(target).kind == type_kind::ctor_ref_kind) {
@@ -12550,7 +12694,7 @@ private:
   /// Solves `pattern`'s type parameters against `concrete`, adding what it
   /// learns to `bindings`.
   ///
-  /// Phase 7 of `spec/inference-rewrite.md`: the structural walk this used to
+  /// The structural walk this used to
   /// be is gone, and the work is done by the one unifier
   /// (`infer/rigid_match.h`). Every call site keeps the same
   /// name-keyed-map interface, so this step swaps the algorithm and nothing
@@ -12567,9 +12711,8 @@ private:
   /// this matcher to absorb the auto-borrow at call sites that nothing else
   /// performs. Removing it means giving that job to an explicit coercion
   /// step, which is its own piece of work.
-  auto unify_rigid(type_id pattern, type_id concrete,
-                   std::unordered_map<std::string, type_id> &bindings,
-                   bool allow_override = false) -> void {
+  auto match_params(type_id pattern, type_id concrete, param_subst &bindings,
+                    bool allow_override = false) -> void {
     if (pattern == concrete || types_.is_unknown(concrete)) {
       return;
     }
@@ -12578,11 +12721,11 @@ private:
     // change in what the compiler says — several call sites match
     // speculatively and expect a miss to be silent — so it belongs to its own
     // step, not to this one.
-    for (const auto &[name, solved] : matched.bindings) {
+    for (const auto &[param, solved] : matched.bindings) {
       if (allow_override) {
-        bindings.insert_or_assign(name, solved);
+        bindings.insert_or_assign(param, solved);
       } else {
-        bindings.try_emplace(name, solved);
+        bindings.try_emplace(param, solved);
       }
     }
   }
@@ -12702,21 +12845,19 @@ private:
   /// must preserve). Unsolved parameters and unrepresentable corners pass
   /// through unchanged, degrading to today's loosely-typed behavior rather
   /// than erring.
-  auto
-  substitute_solved(type_id id,
-                    const std::unordered_map<std::string, type_id> &bindings)
+  auto substitute_solved(type_id id, const param_subst &bindings)
       -> type_id {
     if (bindings.empty()) {
       return id;
     }
-    const auto item = types_.entry(id); // copy: interning below can push
-    if (item.kind == type_kind::type_param_kind && item.ctor_arity == 0) {
-      const auto it = bindings.find(item.name);
-      return it != bindings.end() ? it->second : id;
+    // Keyed by the parameter's own id, so a parameter is replaced wherever it
+    // stands — a bare `T`, or a constructor parameter `F` written unapplied.
+    if (const auto it = bindings.find(id); it != bindings.end()) {
+      return it->second;
     }
+    const auto item = types_.entry(id); // copy: interning below can push
     if (item.kind == type_kind::param_app_kind) {
-      const auto head = types_.entry(item.result);
-      const auto it = bindings.find(head.name);
+      const auto it = bindings.find(item.result);
       if (it == bindings.end()) {
         return id;
       }
@@ -12820,13 +12961,13 @@ private:
         // insisting that it does. Substituting the solution back and
         // requiring the original settles it, so `impl ... for holder[T]` is
         // accepted for `holder[int32]` and rejected for `boxed[int32]`.
-        auto impl_bindings = std::unordered_map<std::string, type_id>{};
-        unify_rigid(target, concrete, impl_bindings);
+        auto impl_bindings = param_subst{};
+        match_params(target, concrete, impl_bindings);
         if (substitute_solved(target, impl_bindings) != concrete) {
           continue;
         }
 
-        auto param_bindings = std::unordered_map<std::string, type_id>{};
+        auto param_bindings = type_scope{};
         for (const auto &param : impl.decl->type_params) {
           if (!param.name.empty()) {
             param_bindings.emplace(
@@ -12872,8 +13013,7 @@ private:
   /// arguments already settled.
   auto solve_from_bounds(const ast::func_decl &decl,
                          const module_members *owner,
-                         std::unordered_map<std::string, type_id> &bindings)
-      -> void {
+                         param_subst &bindings) -> void {
     auto pattern_params =
         generic_param_bindings(decl, /*enclosing_block_params=*/nullptr);
     const auto pattern_ctx = resolve_ctx{.module = owner,
@@ -12883,9 +13023,11 @@ private:
 
     const auto apply = [&](std::string_view subject_name,
                            const ast::type_expr &bound_expr) -> void {
-      const auto solved = bindings.find(std::string(subject_name));
-      if (solved != bindings.end()) {
+      const auto subject = pattern_params.find(std::string(subject_name));
+      if (subject == pattern_params.end()) {
+        return;
       }
+      const auto solved = bindings.find(subject->second);
       if (solved == bindings.end() || types_.is_unknown(solved->second) ||
           mentions_abstract_type(solved->second)) {
         return;
@@ -12925,7 +13067,7 @@ private:
             continue;
           }
           const auto resolved_arg = resolve_type(*arg_type, pattern_ctx);
-          unify_rigid(resolved_arg, (*concrete_args)[i], bindings,
+          match_params(resolved_arg, (*concrete_args)[i], bindings,
                       /*allow_override=*/true);
         }
       }
@@ -13241,11 +13383,12 @@ private:
         mentions_template_param(receiver_type)) {
       return nullptr;
     }
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    auto bindings = param_subst{};
+    match_params(method.impl_target_pattern, receiver_type, bindings);
     solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
-      if (!type_param.name.empty() && !bindings.contains(type_param.name)) {
+      if (!type_param.name.empty() &&
+          !bindings.contains(param_id(type_param))) {
         // An impl parameter the receiver doesn't pin. The call-shaped sibling
         // reports here; this path stays silent and falls back, since an
         // interpolation is not where a user would act on that diagnostic.
@@ -13253,7 +13396,7 @@ private:
       }
     }
     auto scoped_params = method.fixed_type_params;
-    scoped_params.insert(bindings.begin(), bindings.end());
+    scoped_params.merge(bindings_by_name(bindings));
     auto solution = generic_solution{};
     carry_impl_value_slots(method, bindings, solution);
     solution.suffix = std::format(
@@ -13318,16 +13461,16 @@ private:
         &solved);
     check_call_preconditions(call, *method.decl, params);
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
                               /*may_default=*/true);
     // A generic method of a generic block (`def map[U]` in `extend[T]
     // box[T]`) inherits `T` from the receiver: it rides into the instance as
     // a fixed binding, exactly as the static path delivers it.
-    auto impl_bindings = std::unordered_map<std::string, type_id>{};
+    auto impl_bindings = param_subst{};
     if (method.block_type_params != nullptr) {
-      unify_rigid(method.impl_target_pattern, strip_refs(receiver_type),
+      match_params(method.impl_target_pattern, strip_refs(receiver_type),
                   impl_bindings);
       solve_impl_value_params(method, strip_refs(receiver_type), impl_bindings);
     }
@@ -13354,9 +13497,10 @@ private:
                                                      method.block_type_params),
                                all);
     }
+    const auto impl_scope = bindings_by_name(impl_bindings);
     const auto *instance = instantiate_hk_method(
         call, method, target_type_name, bindings, explicit_args, solved,
-        receiver_type, &impl_bindings);
+        receiver_type, &impl_scope);
     if (instance == nullptr) {
       return std::nullopt;
     }
@@ -13406,13 +13550,12 @@ private:
   /// target pattern instead of a parameter list.
   auto
   solve_impl_value_params(const method_entry &method, type_id concrete,
-                          std::unordered_map<std::string, type_id> &bindings)
-      -> void {
+                          param_subst &bindings) -> void {
     auto solved = value_bindings{};
     solve_value_params(method.impl_target_pattern, concrete, solved);
     for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || !type_param.is_value_param ||
-          bindings.contains(type_param.name)) {
+          bindings.contains(param_id(type_param))) {
         continue;
       }
       const auto found = solved.find(type_param.name);
@@ -13422,7 +13565,7 @@ private:
       if (const auto underlying =
               value_param_underlying(type_param, method.owner)) {
         bindings.emplace(
-            type_param.name,
+            param_id(type_param),
             types_.const_value(*underlying,
                                static_cast<uint64_t>(found->second.constant)));
       }
@@ -13436,14 +13579,13 @@ private:
   /// a literal wherever the body reads it as a value — rather than only
   /// substituting it into the checked signature's types.
   auto carry_impl_value_slots(
-      const method_entry &method,
-      const std::unordered_map<std::string, type_id> &bindings,
+      const method_entry &method, const param_subst &bindings,
       generic_solution &solution) -> void {
     for (const auto &type_param : *method.block_type_params) {
       if (!type_param.is_value_param) {
         continue;
       }
-      const auto found = bindings.find(type_param.name);
+      const auto found = bindings.find(param_id(type_param));
       if (found == bindings.end()) {
         continue;
       }
@@ -13523,11 +13665,12 @@ private:
                                  type_id receiver_type)
       -> std::optional<type_id> {
     defer_impl_method_call(call, receiver_type);
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    auto bindings = param_subst{};
+    match_params(method.impl_target_pattern, receiver_type, bindings);
     solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
-      if (!type_param.name.empty() && !bindings.contains(type_param.name)) {
+      if (!type_param.name.empty() &&
+          !bindings.contains(param_id(type_param))) {
         return std::nullopt;
       }
     }
@@ -13570,11 +13713,11 @@ private:
                                        receiver_type);
     }
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+    auto bindings = param_subst{};
+    match_params(method.impl_target_pattern, receiver_type, bindings);
     solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
-      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+      if (type_param.name.empty() || bindings.contains(param_id(type_param))) {
         continue;
       }
       // The receiver didn't pin one of the impl's parameters — an impl whose
@@ -13605,7 +13748,7 @@ private:
     // already carries its `F := option`, and is the mechanism that makes the
     // *body* of `def get(self) -> T` resolve `T` while it is being checked.
     auto scoped_params = method.fixed_type_params;
-    scoped_params.insert(bindings.begin(), bindings.end());
+    scoped_params.merge(bindings_by_name(bindings));
 
     auto solution = generic_solution{};
     carry_impl_value_slots(method, bindings, solution);
@@ -13640,10 +13783,10 @@ private:
         return std::nullopt;
       }
       bindings.clear();
-      unify_rigid(method.impl_target_pattern, receiver_type, bindings);
+      match_params(method.impl_target_pattern, receiver_type, bindings);
       solve_impl_value_params(method, receiver_type, bindings);
       scoped_params = method.fixed_type_params;
-      scoped_params.insert(bindings.begin(), bindings.end());
+      scoped_params.merge(bindings_by_name(bindings));
       solution = generic_solution{};
       carry_impl_value_slots(method, bindings, solution);
       solution.suffix =
@@ -13672,11 +13815,11 @@ private:
             if (found == nullptr) {
               return;
             }
-            auto bindings = std::unordered_map<std::string, type_id>{};
-            unify_rigid(found->impl_target_pattern, settled, bindings);
+            auto bindings = param_subst{};
+            match_params(found->impl_target_pattern, settled, bindings);
             solve_impl_value_params(*found, settled, bindings);
             auto scoped = found->fixed_type_params;
-            scoped.insert(bindings.begin(), bindings.end());
+            scoped.merge(bindings_by_name(bindings));
             auto solution = generic_solution{};
             carry_impl_value_slots(*found, bindings, solution);
             solution.suffix =
@@ -13702,9 +13845,8 @@ private:
   auto finish_impl_generic_method_call(
       const ast::call_expr &call, const method_entry &method,
       std::string_view receiver_name, const ast::expr &receiver,
-      type_id receiver_type,
-      const std::unordered_map<std::string, type_id> &bindings,
-      const std::unordered_map<std::string, type_id> &scoped_params,
+      type_id receiver_type, const param_subst &bindings,
+      const type_scope &scoped_params,
       const generic_solution &solution) -> std::optional<type_id> {
     const auto name = std::format("{}::{}{}", receiver_name, method.decl->name,
                                   solution.suffix);
@@ -13749,12 +13891,11 @@ private:
   /// on its existing path.
   auto check_impl_generic_static_call(
       const ast::call_expr &call, const method_entry &method, type_id target,
-      std::unordered_map<std::string, type_id> &bindings)
-      -> const ast::func_decl * {
-    unify_rigid(method.impl_target_pattern, target, bindings);
+      param_subst &bindings) -> const ast::func_decl * {
+    match_params(method.impl_target_pattern, target, bindings);
     solve_impl_value_params(method, target, bindings);
     for (const auto &type_param : *method.block_type_params) {
-      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+      if (type_param.name.empty() || bindings.contains(param_id(type_param))) {
         continue;
       }
       // An impl parameter its own target type never mentions. No call site
@@ -13763,7 +13904,7 @@ private:
     }
 
     auto scoped_params = method.fixed_type_params;
-    scoped_params.insert(bindings.begin(), bindings.end());
+    scoped_params.merge(bindings_by_name(bindings));
 
     auto solution = generic_solution{};
     carry_impl_value_slots(method, bindings, solution);
@@ -13826,8 +13967,8 @@ private:
       return signature_return_type(*method.decl, method.owner);
     }
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(params.front().type, receiver_type, bindings);
+    auto bindings = param_subst{};
+    match_params(params.front().type, receiver_type, bindings);
     type_mismatch(receiver.span,
                   substitute_solved(params.front().type, bindings),
                   receiver_type, "for this method's receiver");
@@ -13868,8 +14009,8 @@ private:
               const auto concrete = substitute_type(receiver_type, subst);
               const auto params =
                   signature_params(*method.decl, method.owner, false);
-              auto solved = std::unordered_map<std::string, type_id>{};
-              unify_rigid(params.front().type, concrete, solved);
+              auto solved = param_subst{};
+              match_params(params.front().type, concrete, solved);
               auto rest =
                   std::vector<fn_param_info>(params.begin() + 1, params.end());
               for (auto &param : rest) {
@@ -14151,11 +14292,11 @@ private:
                                          /*skip_self=*/false);
     record_expr_type(field, fn_type_of(decl, candidate.owner));
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     // Solved through the references on both sides: a `&T` parameter taking
     // an auto-ref'd `T` receiver still has to bind `T`, and comparing the
     // decorated types would bind nothing.
-    unify_rigid(strip_refs(params.front().type), strip_refs(receiver_type),
+    match_params(strip_refs(params.front().type), strip_refs(receiver_type),
                 bindings);
 
     auto rest = std::vector<fn_param_info>(params.begin() + 1, params.end());
@@ -14570,20 +14711,24 @@ private:
     // obligation over the receiver's leaves and runs once a later statement
     // (`xs.push(big)`) has said what they are.
     auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
-    // The exception is a call nothing can wait for: no method by this name
-    // and no free function that could be reached by UFCS. There the impl is
-    // chosen by the receiver's type — `b32.get()` on a `boxed[?a]` with one
-    // `get` per element type — so the last resort is owed now, and the
-    // lookup below runs against the answer.
-    // A receiver that is a bare leaf (`5.total_of()`) has no shape to match a
-    // free function's first parameter against — a variable fits everything —
-    // so it is owed its default too.
+    // The exception is a call whose method cannot be found on the receiver
+    // as it stands: no method by this name and no free function that could
+    // be reached by UFCS — the impl is chosen by the receiver's type, as
+    // with `b32.get()` on a `boxed[?a]` with one `get` per element type — or
+    // a receiver that is a bare leaf (`a.cmp(&b)` for `let a = 5`), which
+    // has no shape to match anything against. A named receiver waits for a
+    // later statement to say what it is (`defer_open_receiver_call`); a
+    // temporary is owed the last resort now, and the lookup below runs
+    // against the answer.
     if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
         find_method(types_.entry(object), field.field_name, object) ==
             nullptr &&
         (types_.entry(settle(object)).kind == type_kind::type_var_kind ||
          field.object->kind != ast::node_kind::ident_expr ||
          collect_ufcs_candidates(field.field_name).empty())) {
+      if (const auto waiting = defer_open_receiver_call(call, field)) {
+        return *waiting;
+      }
       object = strip_refs(demand(object));
     }
     const auto &entry = types_.entry(object);
@@ -15044,7 +15189,7 @@ private:
         &solved);
     check_call_preconditions(call, *method->decl, params);
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
                               /*may_default=*/true);
@@ -15080,7 +15225,7 @@ private:
         defer_to_instances(
             call, [this, &call, method, target](instance_subst &subst) {
               const auto &clone = *clone_of(subst, &call);
-              auto impl_bindings = std::unordered_map<std::string, type_id>{};
+              auto impl_bindings = param_subst{};
               if (const auto *instance = check_impl_generic_static_call(
                       clone, *method, substitute_type(target, subst),
                       impl_bindings)) {
@@ -15101,8 +15246,8 @@ private:
       // The impl's own parameters are read off the target, so `list[T]
       // .new()` is a `list[T]` rather than a list of the impl's `T`.
       if (method->block_type_params != nullptr) {
-        auto impl_bindings = std::unordered_map<std::string, type_id>{};
-        unify_rigid(method->impl_target_pattern, target, impl_bindings);
+        auto impl_bindings = param_subst{};
+        match_params(method->impl_target_pattern, target, impl_bindings);
         bindings.insert(impl_bindings.begin(), impl_bindings.end());
         return substitute_solved(
             signature_return_type(*method->decl, method->owner,
@@ -15119,11 +15264,12 @@ private:
     // recovers it — `list[T]` against `list[int32]` gives `T := int32` — and
     // it then rides into the instance as a fixed binding, so the body resolves
     // `T` and the return type restates as `list[int32]` rather than `list[T]`.
-    auto impl_bindings = std::unordered_map<std::string, type_id>{};
+    auto impl_bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, target, impl_bindings);
+      match_params(method->impl_target_pattern, target, impl_bindings);
       bindings.insert(impl_bindings.begin(), impl_bindings.end());
     }
+    const auto impl_scope = bindings_by_name(impl_bindings);
     // Solved in a template's terms — the target, or an answer for the
     // method's own parameters, is written in the caller's parameters: each
     // of the caller's instances names its own copy.
@@ -15157,7 +15303,7 @@ private:
     const auto *instance =
         instantiate_hk_method(call, *method, target_name, bindings,
                               /*explicit_args=*/{}, solved,
-                              /*self_type=*/k_unknown_type, &impl_bindings);
+                              /*self_type=*/k_unknown_type, &impl_scope);
     if (instance == nullptr) {
       return k_error_type;
     }
@@ -15228,7 +15374,7 @@ private:
         source_location{.file_id = method.file_id, .span = method.decl->span});
     check_call_preconditions(call, *method.decl, params);
 
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
                               /*may_default=*/true);
@@ -15246,7 +15392,7 @@ private:
         const auto params =
             signature_params(*method.decl, method.owner,
                              /*skip_self=*/false, method.block_type_params);
-        auto solved = std::unordered_map<std::string, type_id>{};
+        auto solved = param_subst{};
         solve_from_argument_types(clone, params, solved);
         const auto target =
             settle(substitute_solved(method.impl_target_pattern, solved));
@@ -15264,7 +15410,7 @@ private:
     };
 
     for (const auto &type_param : *method.block_type_params) {
-      if (type_param.name.empty() || bindings.contains(type_param.name)) {
+      if (type_param.name.empty() || bindings.contains(param_id(type_param))) {
         continue;
       }
       // Called from inside its own block: the block's `T` is this body's own,
@@ -15272,7 +15418,7 @@ private:
       if (const auto own = types_.type_param(
               type_param.name, type_param.higher_kinded_arity, &type_param);
           is_rigid_param(own)) {
-        bindings.emplace(type_param.name, own);
+        bindings.emplace(own, own);
         continue;
       }
       error_with_help(
@@ -15435,7 +15581,7 @@ private:
                                     source_location{.file_id = file_id_,
                                                     .span = method->decl->span},
                                     &solved);
-            auto bindings = std::unordered_map<std::string, type_id>{};
+            auto bindings = param_subst{};
             solve_from_argument_types(call, params, bindings,
                                       /*ufcs_receiver=*/nullptr,
                                       /*may_default=*/true);
@@ -15460,7 +15606,7 @@ private:
                           signature_params(*method->decl, method->owner, false);
                       auto values = value_bindings{};
                       solve_values_from_argument_types(clone, params, values);
-                      auto types = std::unordered_map<std::string, type_id>{};
+                      auto types = param_subst{};
                       solve_from_argument_types(clone, params, types);
                       if (const auto *instance = instantiate_hk_method(
                               clone, *method, target, types, {}, values)) {
@@ -17531,8 +17677,8 @@ private:
     // receiver pins — the same two-step `check_impl_generic_method_call`
     // uses for this method's *parameter* types.
     if (method.block_type_params != nullptr) {
-      auto bindings = std::unordered_map<std::string, type_id>{};
-      unify_rigid(method.impl_target_pattern, target, bindings);
+      auto bindings = param_subst{};
+      match_params(method.impl_target_pattern, target, bindings);
       const auto declared = signature_return_type(*method.decl, method.owner,
                                                   method.block_type_params);
       const auto substituted = substitute_solved(declared, bindings);
@@ -17563,8 +17709,8 @@ private:
     if (!mentions_type_param(declared)) {
       return declared;
     }
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(method.impl_target_pattern, target, bindings);
+    auto bindings = param_subst{};
+    match_params(method.impl_target_pattern, target, bindings);
     const auto pattern_params = resolve_impl_param_types(
         method.impl_target_pattern, trait_name, method);
     return pattern_params.size() >= 2
@@ -17695,6 +17841,37 @@ private:
     }
   }
 
+  /// `dispatch_index`, once the receiver can name an instance.
+  ///
+  /// The impl is chosen from the head alone, but its instance is named after
+  /// the whole receiver: `list[?a]::at` is a function nothing ever compiles.
+  /// So a receiver whose elements are still open (`[1, 2][0]` before
+  /// `let y: int64 = ...` has said what they are) records the template now
+  /// and names the instance once the leaves settle — the same deferral an
+  /// ordinary method call on an open receiver gets. Shared by all four
+  /// index traits, so reading, borrowing and writing an element all leave
+  /// the element type to whatever later statement says it.
+  auto dispatch_index_when_settled(
+      std::unordered_map<const ast::index_expr *, resolved_callee> &dispatches,
+      const ast::index_expr &index, const method_entry &method, type_id target,
+      std::string_view trait) -> void {
+    if (!mentions_type_var(target)) {
+      dispatch_index(dispatches, index, method, target, trait);
+      return;
+    }
+    dispatches[&index] =
+        resolved_callee{.decl = method.decl,
+                        .owner_module = method.owner->module_name,
+                        .impl_target_type = types_.entry(target).name,
+                        .receiver = index.object.get()};
+    defer_method_call(method.decl->name, target,
+                      [this, &dispatches, &index, &method,
+                       trait = std::string(trait)](type_id receiver) -> void {
+                        dispatch_index(dispatches, index, method, receiver,
+                                       trait);
+                      });
+  }
+
   auto require_index_trait(const ast::index_expr &index, type_id object,
                            const type_entry &entry, type_id key) -> type_id {
     const auto target = strip_refs(object);
@@ -17731,25 +17908,8 @@ private:
       check_index_key(index, target, "index", *any, key);
       return k_error_type;
     }
-    // The impl is chosen from the head alone, but its instance is named
-    // after the whole receiver: `list[?a]::at` is a function nothing ever
-    // compiles. So a receiver whose elements are still open (`[1, 2][0]`
-    // before `let y: int64 = ...` has said what they are) records the
-    // template now and names the instance once the leaves settle — the same
-    // deferral an ordinary method call on an open receiver gets.
-    const auto dispatch = [this, &index, method](type_id receiver) -> void {
-      dispatch_index(index_dispatches_, index, *method, receiver, "index");
-    };
-    if (mentions_type_var(target)) {
-      index_dispatches_[&index] =
-          resolved_callee{.decl = method->decl,
-                          .owner_module = method->owner->module_name,
-                          .impl_target_type = entry.name,
-                          .receiver = index.object.get()};
-      defer_method_call("at", target, dispatch);
-    } else {
-      dispatch(target);
-    }
+    dispatch_index_when_settled(index_dispatches_, index, *method, target,
+                                "index");
     // Resolved against *this* impl's bindings: a type with both
     // `index[usize]` and `index[range[usize]]` has two `output`s, and the
     // bare trait name names whichever was checked last.
@@ -17799,7 +17959,8 @@ private:
       check_index_key(index, target, "index_ref", *any, key);
       return k_error_type;
     }
-    dispatch_index(index_ref_dispatches_, index, *method, target, "index_ref");
+    dispatch_index_when_settled(index_ref_dispatches_, index, *method, target,
+                                "index_ref");
     return resolve_index_output(
         target,
         parameterized_trait_key(
@@ -17829,8 +17990,8 @@ private:
       }
     }
     if (method.block_type_params != nullptr) {
-      auto bindings = std::unordered_map<std::string, type_id>{};
-      unify_rigid(method.impl_target_pattern, target, bindings);
+      auto bindings = param_subst{};
+      match_params(method.impl_target_pattern, target, bindings);
       const auto declared = signature_return_type(*method.decl, method.owner,
                                                   method.block_type_params);
       const auto substituted = substitute_solved(declared, bindings);
@@ -17869,7 +18030,8 @@ private:
       check_index_key(index, target, "index_mut", *any, key);
       return k_error_type;
     }
-    dispatch_index(index_mut_dispatches_, index, *method, target, "index_mut");
+    dispatch_index_when_settled(index_mut_dispatches_, index, *method, target,
+                                "index_mut");
     return resolve_index_mut_output(
         target,
         parameterized_trait_key(
@@ -17939,7 +18101,8 @@ private:
       check_index_key(index, target, "index_set", *any, key);
       return k_error_type;
     }
-    dispatch_index(index_set_dispatches_, index, *method, target, "index_set");
+    dispatch_index_when_settled(index_set_dispatches_, index, *method, target,
+                                "index_set");
     // The assigned value's expected type is `set_at`'s `value` parameter,
     // which is `self.output` in the trait and only resolves under the
     // impl's associated-type bindings.
@@ -17951,14 +18114,27 @@ private:
     }
     // Same generic-impl substitution the read half needs — `value:
     // self.output` is `T` until the receiver's arguments are applied.
-    auto bindings = std::unordered_map<std::string, type_id>{};
-    unify_rigid(method->impl_target_pattern, target, bindings);
+    auto bindings = param_subst{};
+    match_params(method->impl_target_pattern, target, bindings);
+    // A receiver whose elements are still open (`list[?a]`) has no impl
+    // bindings of its own to resolve `self.output` under, so it reads as
+    // `_`; the pattern's `T`, substituted, is the element leaf itself — the
+    // thing the assigned value is about to say.
     const auto declared = params.back().type;
-    if (!mentions_type_param(declared)) {
+    if (!mentions_type_param(declared) && !types_.is_unknown(declared)) {
       return declared;
     }
     auto pattern_params = resolve_impl_param_types(method->impl_target_pattern,
                                                    trait_key, *method);
+    if (pattern_params.size() >= 2 &&
+        types_.is_unknown(pattern_params.back().type) &&
+        method->block_type_params != nullptr) {
+      // `value: T` written directly, which only resolves with the impl
+      // block's own parameters in scope — the same two-step
+      // `resolve_index_output` takes for `at`'s result.
+      pattern_params = signature_params(*method->decl, method->owner, false,
+                                        method->block_type_params);
+    }
     return pattern_params.size() >= 2
                ? substitute_solved(pattern_params.back().type, bindings)
                : declared;
@@ -18355,7 +18531,7 @@ private:
     const auto member_ctx = member_resolve_ctx(entry, bindings);
 
     auto initialized = std::unordered_set<std::string>{};
-    auto inferred_by_field = std::unordered_map<std::string, type_id>{};
+    auto inferred_by_field = type_scope{};
 
     for (const auto &field : expr.fields) {
       if (!initialized.insert(field.name).second) {
@@ -19303,8 +19479,8 @@ private:
         continue;
       }
 
-      auto bindings = std::unordered_map<std::string, type_id>{};
-      unify_rigid(bare_param, operand, bindings);
+      auto bindings = param_subst{};
+      match_params(bare_param, operand, bindings);
       const auto ret_type = substitute_solved(
           signature_return_type(*candidate.decl, candidate.owner), bindings);
       if (types_.is_unknown(ret_type) || ret_type == k_error_type) {
@@ -19327,13 +19503,13 @@ private:
       if (site != nullptr && is_generic_template(*candidate.decl) &&
           !mentions_template_param(operand)) {
         auto solution = generic_solution{};
-        solution.type_slots = bindings;
+        solution.type_slots = bindings_by_name(bindings);
         solution.suffix = std::format("${}", mangle_type_for_instance(operand));
         const auto instance_name =
             std::format("{}{}", candidate.decl->name, solution.suffix);
         if (const auto *instance = find_or_check_generic_instance(
                 *site, *candidate.decl, candidate.owner, candidate.file_id,
-                solution, instance_name, &bindings)) {
+                solution, instance_name, &solution.type_slots)) {
           inner->adapter_decl = instance;
         }
       }
@@ -19368,9 +19544,9 @@ private:
 
     // The iterator type, with the impl's parameters solved from the receiver
     // — the same two-step every other generic-impl return type needs.
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, stripped, bindings);
+      match_params(method->impl_target_pattern, stripped, bindings);
     }
     const auto iter_type =
         substitute_solved(signature_return_type(*method->decl, method->owner,
@@ -19400,7 +19576,7 @@ private:
     if (site != nullptr && impl_needs_instance(*method, entry) &&
         !mentions_template_param(stripped)) {
       auto scoped_params = method->fixed_type_params;
-      scoped_params.insert(bindings.begin(), bindings.end());
+      scoped_params.merge(bindings_by_name(bindings));
       auto solution = generic_solution{};
       solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
       const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
@@ -19435,9 +19611,9 @@ private:
     // return type written in `U` until the receiver answers it, and an
     // unsubstituted `U` is what `hir::lower_iterator_loop` rejects as "the
     // iterator's item type did not resolve to a concrete type".
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, stripped, bindings);
+      match_params(method->impl_target_pattern, stripped, bindings);
     }
     const auto ret =
         substitute_solved(signature_return_type(*method->decl, method->owner,
@@ -19465,7 +19641,7 @@ private:
     // instantiations of one target both claim `next`, and only the
     // receiver's arguments tell them apart.
     auto scoped_params = method->fixed_type_params;
-    scoped_params.insert(bindings.begin(), bindings.end());
+    scoped_params.merge(bindings_by_name(bindings));
     auto solution = generic_solution{};
     solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
     const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
@@ -19552,6 +19728,17 @@ private:
   /// the one place that needs to — every `infer_*` helper is reached only
   /// through here (recursively, for nested expressions too).
   auto infer_expr(const ast::expr &expr, type_id expected) -> type_id {
+    // A deferred call being re-run (`defer_open_receiver_call`): its
+    // receiver and arguments were checked where they were written, in
+    // scopes that are gone now, so they answer with what they were found
+    // to be then.
+    if (const auto replayed = replayed_exprs_.find(&expr);
+        replayed != replayed_exprs_.end()) {
+      if (!types_.is_unknown(expected)) {
+        solve_leaves(types_.strip_refinement(expected), replayed->second);
+      }
+      return record_expr_type(expr, settle(replayed->second));
+    }
     // A refined `expected` is an *obligation*, not a shape hint. Inference
     // gets the base type, so an expression only ever comes back refined by
     // actually being one (a `positive` parameter read back, a `try_from`
@@ -20194,13 +20381,13 @@ private:
     auto solution = generic_solution{};
     bind_generic_constant(solution, length_param, types_.usize_type(),
                           static_cast<int64_t>(length));
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, target, bindings);
+      match_params(method->impl_target_pattern, target, bindings);
       solve_impl_value_params(*method, target, bindings);
     }
     auto scoped_params = method->fixed_type_params;
-    scoped_params.insert(bindings.begin(), bindings.end());
+    scoped_params.merge(bindings_by_name(bindings));
     carry_impl_value_slots(*method, bindings, solution);
     // The receiver goes in the name as well as the length. Without it
     // `vector[int32]` and `vector[int64]` both want `vector::from_array$3`
@@ -20249,9 +20436,9 @@ private:
     }
     // The element type is the impl's `T`, recovered from its target pattern
     // the same way every other generic-impl question is answered here.
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, target, bindings);
+      match_params(method->impl_target_pattern, target, bindings);
     }
     // `block_type_params` passed so the impl block's `T` resolves to the
     // parameter rather than to `unknown` — `substitute_solved` can bind a
@@ -21365,11 +21552,11 @@ private:
     if (index.object == nullptr) {
       return std::nullopt;
     }
-    // An `index_set` write names its instance here and has no deferred
-    // form yet, so it still demands the whole receiver (phase 11: only the
-    // read path defers).
+    // Chosen from the head alone; the instance waits for the elements
+    // (`dispatch_index_when_settled`), and the assigned value is checked
+    // against the element leaf, which is often what settles it.
     const auto object =
-        demand(base_shape(infer_expr(*index.object, k_unknown_type)));
+        demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
     const auto &entry = types_.entry(object);
     if (entry.kind != type_kind::struct_kind &&
         entry.kind != type_kind::sum_kind &&
@@ -22858,61 +23045,6 @@ private:
     return std::nullopt;
   }
 
-  /// Rewrites `id` with each type parameter in `subst` replaced, keyed by the
-  /// parameter's own id rather than its spelling — two parameters that share
-  /// a name are two parameters (`type_table::type_param`). Re-interns
-  /// bottom-up, so the result is the same id as the type written out.
-  auto substitute_params(type_id id,
-                         const std::unordered_map<type_id, type_id> &subst)
-      -> type_id {
-    if (subst.empty()) {
-      return id;
-    }
-    if (const auto it = subst.find(id); it != subst.end()) {
-      return it->second;
-    }
-    const auto item = types_.entry(id); // copy: interning below can push
-    auto args = std::vector<type_id>{};
-    args.reserve(item.args.size());
-    auto changed = false;
-    for (const auto arg : item.args) {
-      const auto rewritten = substitute_params(arg, subst);
-      changed = changed || rewritten != arg;
-      args.push_back(rewritten);
-    }
-    const auto result = item.result != k_unknown_type
-                            ? substitute_params(item.result, subst)
-                            : item.result;
-    changed = changed || result != item.result;
-    if (!changed) {
-      return id;
-    }
-    switch (item.kind) {
-    case type_kind::builtin_generic_kind:
-      return types_.builtin_generic(item.name, std::move(args));
-    case type_kind::tuple_kind:
-      return types_.tuple_of(std::move(args));
-    case type_kind::fn_kind:
-      return types_.fn_of(std::move(args), result);
-    case type_kind::ref_kind:
-      return types_.ref_to(result, item.is_mut);
-    case type_kind::ptr_kind:
-      return types_.ptr_to(result, item.is_mut);
-    case type_kind::array_kind:
-      return types_.array_of(result, item.array_size,
-                             args.empty() ? k_unknown_type : args.front());
-    case type_kind::struct_kind:
-    case type_kind::sum_kind:
-    case type_kind::opaque_kind:
-      return item.decl != nullptr
-                 ? types_.user_type(*item.decl, item.module_name,
-                                    std::move(args))
-                 : id;
-    default:
-      return id;
-    }
-  }
-
   /// `trait[args]` as a reader would write it.
   auto display_fact(const type_fact &fact) -> std::string {
     auto out = fact.trait->name;
@@ -22930,7 +23062,7 @@ private:
   }
 
   /// A method call on a value whose type is a type parameter
-  /// (`spec/inference-rewrite.md` phase 9, rule 2).
+  /// (ch. 19, Bounded Generics, rule 2).
   ///
   /// The method must belong to a trait among the parameter's facts, and the
   /// call is checked against that trait's signature with `self` standing for
@@ -23025,10 +23157,10 @@ private:
     }
     auto param_types = std::vector<type_id>{};
     for (auto &param : params) {
-      param.type = substitute_params(param.type, subst);
+      param.type = substitute_solved(param.type, subst);
       param_types.push_back(param.type);
     }
-    result = substitute_params(result, subst);
+    result = substitute_solved(result, subst);
     record_expr_type(field, types_.fn_of(std::move(param_types), result));
     if (!check_method_accepts_generic_args(field, *chosen.method,
                                            explicit_args)) {
@@ -23122,16 +23254,17 @@ private:
                                              /*skip_self=*/true);
         auto solved = value_bindings{};
         solve_values_from_argument_types(call, params, solved);
-        auto bindings = std::unordered_map<std::string, type_id>{};
+        auto bindings = param_subst{};
         solve_from_argument_types(call, params, bindings);
-        auto impl_bindings = std::unordered_map<std::string, type_id>{};
+        auto impl_bindings = param_subst{};
         if (method->block_type_params != nullptr) {
-          unify_rigid(method->impl_target_pattern, target, impl_bindings);
+          match_params(method->impl_target_pattern, target, impl_bindings);
           solve_impl_value_params(*method, target, impl_bindings);
         }
+        const auto impl_scope = bindings_by_name(impl_bindings);
         const auto *instance = instantiate_hk_method(
             call, *method, entry.name, bindings, explicit_args, solved, target,
-            &impl_bindings);
+            &impl_scope);
         if (instance != nullptr) {
           resolved_callees_[&call] =
               resolved_callee{.decl = instance,
@@ -23143,11 +23276,11 @@ private:
         return;
       }
       if (impl_needs_instance(*method, entry)) {
-        auto bindings = std::unordered_map<std::string, type_id>{};
-        unify_rigid(method->impl_target_pattern, target, bindings);
+        auto bindings = param_subst{};
+        match_params(method->impl_target_pattern, target, bindings);
         solve_impl_value_params(*method, target, bindings);
         auto scoped = method->fixed_type_params;
-        scoped.insert(bindings.begin(), bindings.end());
+        scoped.merge(bindings_by_name(bindings));
         auto solution = generic_solution{};
         carry_impl_value_slots(*method, bindings, solution);
         solution.suffix = std::format("${}", mangle_type_for_instance(target));
@@ -23162,7 +23295,7 @@ private:
 
     const auto target_name = types_.display(target);
     if (!generic_method && impl_needs_instance(*method, entry)) {
-      auto bindings = std::unordered_map<std::string, type_id>{};
+      auto bindings = param_subst{};
       if (const auto *instance =
               check_impl_generic_static_call(call, *method, target, bindings)) {
         resolved_callees_[&call] =
@@ -23183,16 +23316,17 @@ private:
                                          /*skip_self=*/false);
     auto solved = value_bindings{};
     solve_values_from_argument_types(call, params, solved);
-    auto bindings = std::unordered_map<std::string, type_id>{};
+    auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings);
-    auto impl_bindings = std::unordered_map<std::string, type_id>{};
+    auto impl_bindings = param_subst{};
     if (method->block_type_params != nullptr) {
-      unify_rigid(method->impl_target_pattern, target, impl_bindings);
+      match_params(method->impl_target_pattern, target, impl_bindings);
       bindings.insert(impl_bindings.begin(), impl_bindings.end());
     }
+    const auto impl_scope = bindings_by_name(impl_bindings);
     const auto *instance = instantiate_hk_method(
         call, *method, target_name, bindings, explicit_args, solved,
-        k_unknown_type, &impl_bindings);
+        k_unknown_type, &impl_scope);
     if (instance != nullptr) {
       resolved_callees_[&call] =
           resolved_callee{.decl = instance,
@@ -23322,7 +23456,7 @@ private:
   }
 
   /// An operator on a value of type `T` needs the operator's trait among
-  /// `T`'s facts (`spec/inference-rewrite.md` phase 9, rule 2). Returns the
+  /// `T`'s facts (ch. 19, Bounded Generics, rule 2). Returns the
   /// fact that allows it, or reports at the operator and returns `nullopt`.
   auto require_bound_operator(source_span span, type_id subject,
                               std::string_view trait_name,
@@ -23379,7 +23513,7 @@ private:
       if (assoc.name != name || assoc.default_type == nullptr) {
         continue;
       }
-      auto bindings = std::unordered_map<std::string, type_id>{};
+      auto bindings = type_scope{};
       for (size_t i = 0;
            i < fact.trait->type_params.size() && i < fact.args.size(); ++i) {
         bindings.emplace(fact.trait->type_params[i].name, fact.args[i]);
@@ -23937,7 +24071,7 @@ private:
   /// a trait/concept bound or a compile-time value expression) its
   /// bound-or-expression payload.
   auto check_concept_decl(const ast::concept_decl &decl) -> void {
-    auto param_scope = std::unordered_map<std::string, type_id>{};
+    auto param_scope = type_scope{};
     for (const auto &param : decl.params) {
       if (!param.name.empty()) {
         // A concept parameter is its own node kind with no `ast::type_param`
@@ -23978,7 +24112,7 @@ private:
   /// describes the shape a module must have to satisfy it
   /// (`spec/module-values-design.md` §3).
   auto check_signature_decl(const ast::signature_decl &decl) -> void {
-    auto param_scope = std::unordered_map<std::string, type_id>{};
+    auto param_scope = type_scope{};
     for (const auto &item : decl.items) {
       if (item == nullptr || item->has_error ||
           item->kind != ast::node_kind::associated_type_decl_node) {

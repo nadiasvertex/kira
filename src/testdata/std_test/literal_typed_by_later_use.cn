@@ -1,6 +1,6 @@
 module main
 
-# spec/todo.md item 14 and spec/inference-rewrite.md phase 11, defect 2: a
+# Formerly spec/todo.md item 14: a
 # point where a literal's type only *flows* is not a point of demand.
 #
 # `fold(0, (n, w) => n + w.len())` checks its lambda against `fn(A, T)`.

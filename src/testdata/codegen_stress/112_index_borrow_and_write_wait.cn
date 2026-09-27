@@ -1,0 +1,29 @@
+module codegen_stress.index_borrow_and_write_wait
+
+# expect: 9000000019
+
+# Borrowing an element (`&xs[i]`, `&mut xs[i]`) and writing one
+# (`xs[i] = v`) choose their impl from the list alone, so none of them may
+# spend the elements' `int32` default: the annotation after them says what
+# the elements are. Each list holds `3000000000`, which only fits if that
+# annotation was heard. The instance each one names (`at_ref`, `at_mut`,
+# `set_at`) must be the `int64` one, not an instance of a list of a
+# variable.
+#
+# Reading through the borrow (`*r`) is a read of the element.
+
+def main() -> int64:
+    var xs = [1, 3000000000]
+    let r = &xs[1]
+    let a: int64 = xs[0]
+
+    var ys = [2, 3000000000]
+    let m = &mut ys[0]
+    *m = 7
+    let b: int64 = ys[1]
+
+    var zs = [3, 4]
+    zs[0] = 3000000000
+    let c: int64 = zs[1]
+
+    return *r + a + ys[0] + b + zs[0] + c + 7

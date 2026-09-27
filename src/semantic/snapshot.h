@@ -10,7 +10,7 @@ namespace cinder::semantic {
 /// Renders every elaboration decision in `checked` as deterministic text.
 ///
 /// This is the safety net for the inference rewrite
-/// (`spec/inference-rewrite.md` phase 0), and it exists because the test suite
+///, and it exists because the test suite
 /// cannot see the thing the rewrite is most likely to break. `check_program`
 /// answers two questions at once: what type each expression has, and — far
 /// larger — which function every call, operator, index, literal conversion,

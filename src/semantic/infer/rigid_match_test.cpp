@@ -1,4 +1,4 @@
-// Tests for `rigid_match` (`spec/inference-rewrite.md` phase 7).
+// Tests for `rigid_match`.
 //
 // Two things are under test. First, that matching a declared pattern against
 // a concrete type through the one unifier produces the bindings the 28
@@ -34,11 +34,17 @@ struct fixture {
   }
 };
 
-auto bound(const cinder::semantic::infer::rigid_match_result &result,
+/// What the parameter spelled `name` solved to. Bindings are keyed by the
+/// parameter's identity; the tests name them by spelling for readability.
+auto bound(const fixture &f,
+           const cinder::semantic::infer::rigid_match_result &result,
            const std::string &name) -> type_id {
-  const auto it = result.bindings.find(name);
-  return it == result.bindings.end() ? cinder::semantic::k_unknown_type
-                                     : it->second;
+  for (const auto &[param, solved] : result.bindings) {
+    if (f.table.entry(param).name == name) {
+      return solved;
+    }
+  }
+  return cinder::semantic::k_unknown_type;
 }
 
 /// The everyday case every call site depends on: a generic container pattern
@@ -51,7 +57,7 @@ auto test_solves_a_nominal_argument() -> void {
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(), "expected the match to succeed");
-  expect(bound(result, "T") == int32, "expected `T` to solve to `int32`");
+  expect(bound(f, result, "T") == int32, "expected `T` to solve to `int32`");
 }
 
 /// Nested, and through a function type — the shape a lambda parameter takes.
@@ -66,8 +72,8 @@ auto test_solves_through_structure() -> void {
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(), "expected the match to succeed");
-  expect(bound(result, "T") == int32, "expected the parameter to solve");
-  expect(bound(result, "U") == boolean, "expected the result to solve");
+  expect(bound(f, result, "T") == int32, "expected the parameter to solve");
+  expect(bound(f, result, "U") == boolean, "expected the result to solve");
 }
 
 /// A higher-kinded head, which is the pattern fragment and the reason ch. 37's
@@ -80,8 +86,8 @@ auto test_solves_a_constructor_head() -> void {
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(), "expected the match to succeed");
-  expect(bound(result, "A") == int32, "expected the argument to solve");
-  expect(bound(result, "F") == f.table.ctor_ref("option", "", nullptr, 1),
+  expect(bound(f, result, "A") == int32, "expected the argument to solve");
+  expect(bound(f, result, "F") == f.table.ctor_ref("option", "", nullptr, 1),
          "expected the head to solve to the `option` constructor");
 }
 
@@ -99,8 +105,8 @@ auto test_array_length_now_solves() -> void {
   const auto concrete = f.table.array_of(int32, 4, length);
 
   const auto strict = match_pattern(f.table, pattern, concrete);
-  expect(bound(strict, "T") == int32, "expected the element to solve");
-  expect(bound(strict, "n") == length,
+  expect(bound(f, strict, "T") == int32, "expected the element to solve");
+  expect(bound(f, strict, "n") == length,
          "expected the length to solve — the gap this replaces");
 }
 
@@ -133,7 +139,7 @@ auto test_the_call_site_borrows() -> void {
   const auto result = match_pattern(f.table, pattern, list_int32);
   expect(!result.failure.has_value(),
          "expected the receiver to be borrowed for a `&self` method");
-  expect(bound(result, "T") == int32,
+  expect(bound(f, result, "T") == int32,
          "expected `T` to solve through the implicit borrow");
 }
 
@@ -148,7 +154,7 @@ auto test_the_call_site_dereferences() -> void {
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(),
          "expected the reference to be read through");
-  expect(bound(result, "T") == int32, "expected `T` to solve through it");
+  expect(bound(f, result, "T") == int32, "expected `T` to solve through it");
 }
 
 /// The line between a coercion and a blind spot. The old allowance fired at
@@ -181,13 +187,13 @@ auto test_a_bare_parameter_keeps_the_reference() -> void {
   const auto ref_int32 = f.table.ref_to(int32, /*is_mut=*/false);
 
   const auto top = match_pattern(f.table, f.param("T"), ref_int32);
-  expect(bound(top, "T") == ref_int32,
+  expect(bound(f, top, "T") == ref_int32,
          "expected a bare `T` to solve to `&int32`, not to `int32`");
 
   const auto nested =
       match_pattern(f.table, f.table.builtin_generic("list", {f.param("T")}),
                     f.table.builtin_generic("list", {ref_int32}));
-  expect(bound(nested, "T") == ref_int32,
+  expect(bound(f, nested, "T") == ref_int32,
          "expected the same nested, where no coercion applies at all");
 }
 
@@ -215,8 +221,9 @@ auto test_unpinned_parameters_stay_absent() -> void {
       f.table.fn_of({f.table.builtin("int32")}, cinder::semantic::k_unknown_type);
 
   const auto result = match_pattern(f.table, pattern, concrete);
-  expect(result.bindings.contains("T"), "expected the pinned one to solve");
-  expect(!result.bindings.contains("U"),
+  expect(result.bindings.contains(f.param("T")),
+         "expected the pinned one to solve");
+  expect(!result.bindings.contains(f.param("U")),
          "expected the unpinned one to be absent, not bound to `unknown`");
 }
 
@@ -235,7 +242,7 @@ auto test_a_value_parameter_binds_to_a_value() -> void {
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(),
          "expected a value to be an acceptable solution for `n`");
-  expect(bound(result, "n") == three, "expected `n` to solve to the value");
+  expect(bound(f, result, "n") == three, "expected `n` to solve to the value");
 }
 
 /// Adoption must not leak: the store is local, so the same `T` matched twice
@@ -251,8 +258,8 @@ auto test_matches_do_not_share_parameters() -> void {
       match_pattern(f.table, pattern, f.table.builtin_generic("list", {int32}));
   const auto second =
       match_pattern(f.table, pattern, f.table.builtin_generic("list", {str}));
-  expect(bound(first, "T") == int32, "expected the first match to stand");
-  expect(bound(second, "T") == str,
+  expect(bound(f, first, "T") == int32, "expected the first match to stand");
+  expect(bound(f, second, "T") == str,
          "expected the second match to be independent of the first");
 }
 

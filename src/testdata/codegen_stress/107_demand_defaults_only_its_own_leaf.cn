@@ -9,7 +9,7 @@ module codegen_stress.demand_defaults_only_its_own_leaf
 #
 # `demand` used to flush the whole obligation queue, defaulting *every*
 # pending literal: `a` became `int32` at `b + 1`, and 3000000000 does not fit
-# (spec/inference-rewrite.md phase 11, defect 1).
+#.
 #
 # `# expect:` rather than cross-tier agreement: a literal typed too early is
 # typed identically by both tiers. The answer is only right if `a` really is

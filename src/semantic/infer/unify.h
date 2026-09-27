@@ -13,7 +13,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  The unifier
 //
-//  Phase 2 of `spec/inference-rewrite.md`: one `unify` covering every
+//  One `unify` covering every
 //  `type_kind`, replacing the 28 `unify_rigid` call sites and the three
 //  string-keyed matchers beside them.
 //

@@ -2,7 +2,7 @@
 # new copy forever and must be stopped with an explanation rather than by
 # running out of memory.
 #
-# This case pins two things `spec/inference-rewrite.md` phase 6 changed. The
+# This case pins two things the elaboration split changed. The
 # depth guard used to be the C++ call stack's own depth, because instance
 # bodies were checked by recursive calls; now bodies are checked from a
 # worklist, and each pending instance carries the depth it was requested at.

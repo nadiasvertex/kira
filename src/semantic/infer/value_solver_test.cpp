@@ -1,4 +1,4 @@
-// Tests for value solving (`spec/inference-rewrite.md` phase 3).
+// Tests for value solving.
 //
 // The behaviour under test is the one ch. 33 records as missing: "the
 // compiler does not *solve for* `n` and propagate it". These assert that it

@@ -107,7 +107,7 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
     if (solved == param) {
       continue;
     }
-    result.bindings.emplace(table.entry(param).name, solved);
+    result.bindings.emplace(param, solved);
   }
   return result;
 }

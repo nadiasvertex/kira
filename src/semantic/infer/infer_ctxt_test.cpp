@@ -1,4 +1,4 @@
-// Tests for the metavariable store (`spec/inference-rewrite.md` phase 1).
+// Tests for the metavariable store.
 //
 // The assertion that earns this file its place is `test_zonk_is_canonical`:
 // a zonked type must be *id-equal* to the same type written directly. The

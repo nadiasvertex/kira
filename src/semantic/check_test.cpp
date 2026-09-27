@@ -3552,8 +3552,8 @@ auto test_builtin_method_suggestion_includes_extend_methods() -> void {
 }
 
 /// A method call on a value whose type is a type parameter is justified by a
-/// bound or rejected at the line that makes it (`spec/inference-rewrite.md`
-/// phase 9, rule 2) — once, against `T`, and never again from the instance.
+/// bound or rejected at the line that makes it (ch. 19,
+/// Bounded Generics, rule 2) — once, against `T`, and never again from the instance.
 ///
 /// The instance knows `T` is `int32`, but repeating the mistake there would
 /// report it twice, the second time against a type the reader never wrote

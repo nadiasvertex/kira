@@ -101,15 +101,39 @@ pub def collect[I, C](self: I) -> C:
 
 `C` is solved first (by the ordinary inference order above), and `C.from_iter` then resolves to the static member of the `impl` for the type `C` was solved to. Resolution substitutes the active binding for the type parameter and resolves the member against the resulting concrete type; inside an uninstantiated generic template, no binding exists yet, so the path resolves to `k_unknown_type` and is checked only once instantiated. `from_iter` needs no object safety — dispatch through a type parameter is always static and monomorphic, never boxed.
 
-A bound like `C: from_iter` on such a function is not itself enforced at the call site: an unsuitable `C` fails where its body calls the missing static member, inside the instantiated generic, rather than at the point where `C` was chosen. The checker attaches an instantiation-site note pointing back at the call that solved `C`, and at what solved it, so the failure is still actionable even though it surfaces one level removed from the user's code.
+A bound like `C: from_iter` is checked where `C` is solved, like every other bound (see *Bounded Generics* below): an unsuitable `C` is reported at the caller's call, naming the bound and where it was declared.
+
+## Bounded Generics
+
+A generic body is checked **once**, against the facts its signature declares — never against the instances that happen to exist — and a type argument is checked against those facts at the call that supplies it. A mistake in a generic body is therefore reported once, at its own line; a wrong type argument is reported at the user's call, not inside library code under an "instantiated from here" chain.
+
+1. **Facts.** A type parameter's facts are its inline bounds (`[T: ord]`), its `where` bounds, everything those `require`, the bounds of an enclosing generic `impl`/`extend` block, and the narrowing facts of an enclosing `static if` (rule 5). Nothing else.
+2. **Operations on a value of type `T`** are justified by a fact or rejected at the line that performs them:
+   - a method call — a method of a trait among `T`'s facts, or a free function whose own signature accepts the receiver by UFCS;
+   - an operator — its trait (`add`/`sub`/`mul`/`div`/`rem`/`neg`; `==`/`!=` by `eq`; ordering by `ord`);
+   - a numeric literal, or `as` to or from `T` — a *category* bound (rule 4);
+   - indexing and iteration — `index`, `into_iterator`/`iterator`;
+   - a call to another generic — the callee's bounds must follow from the caller's facts (entailment, not instantiation).
+3. **Call sites.** When a call solves `T := X`, every bound on `T` is checked against `X` there, and a failure names the bound and where it was declared. No instance of a function whose bounds do not hold is ever made.
+4. **Category bounds** are builtin concepts — `integer`, `signed_integer`, `unsigned_integer`, `float`, `numeric` (`std.traits`, prelude-visible) — satisfied by exactly the builtin scalar types their names say. They are what a literal or a numeric cast on `T` needs, and each implies the operator traits its members implement.
+5. **`static if` narrows.** A condition that mentions a type parameter is checked for the facts it establishes, and its taken branch is checked under them:
+   - `T.name() == "int8"`, `is_same[T, int8]()` (directly or through a `let` alias of `T.name()`) — equality; each disjunct of an `or` narrows its own branch;
+   - `is_integer[T]()` and the other category predicates — the matching category bound;
+   - `implements[T, Tr]()` — `Tr`;
+   - anything else — no facts.
+
+   Both branches of a type-dependent `static if` are checked, each under its own facts; the code after a branch that returns is checked under the negation. For a condition that does not mention a type parameter, the branch not taken is not type-checked ([31](../03-advanced/31-compile-time-execution.md)).
+
+An instance is made by substitution: its types are the template's with the type arguments filled in, and only the decisions the template could not make without them — which impl an operator or method call on `T` dispatches to, which branch of a type-dependent `static if` is taken — are made per instance.
 
 ## Implementation status
 
-All of the above is implemented in `src/semantic/check.cpp`, sharing the `solve_generic_params` / `find_or_check_generic_instance` substrate:
+Implemented in `src/semantic/check.cpp`:
 
-- Expected-type solving: `solve_from_expected_type` (`check.cpp:5182`), invoked from both the free-function and receiver-call paths (`check.cpp:5248`, `check.cpp:5445`).
-- Explicit type arguments on method calls: `method_explicit_generic_args` (`check.cpp:8516`), consumed at `check.cpp:9036` — brackets on a method call are honored, not discarded.
-- Static dispatch through a type parameter: `type_param_slots_` (`check.cpp:1107` and its use sites) holds the active per-instantiation binding used to resolve a qualified path whose base names a type parameter.
+- Solving: `solve_call` is the one entry point for a generic call. Sources are added in the order above — arguments (`solve_from_argument_types`), bounds (`solve_from_bounds`), the expected type (`solve_from_expected_type`) — and all feed the one unifier (`match_params`, over `infer::match_pattern`). A solution is keyed by the parameter's identity (`param_subst`), never its spelling.
+- Bounded generics: facts (`record_declared_facts`), bound-checked methods and operators (`check_bound_method_call`, `check_bound_arithmetic`), category bounds (`check_literal_as_param`, `check_cast_with_param`), `static if` narrowing (`narrowing_of`), call-site bound checks (`check_call_bounds`), instances by substitution (`substitute_instance`).
+- Explicit type arguments on method calls: `method_explicit_generic_args` — brackets on a method call are honored, not discarded.
+- Static dispatch through a type parameter: `type_param_slots_` holds the active per-instantiation binding used to resolve a qualified path whose base names a type parameter.
 
 ## See also
 

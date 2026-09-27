@@ -536,7 +536,7 @@ auto type_table::is_unknown(type_id id) const -> bool {
   const auto kind = entry(id).kind;
   // A type parameter is *not* unknown: inside the body that declares it, `T`
   // is one fixed type whose facts are its bounds, and `T` against `int32` is
-  // a mismatch (`spec/inference-rewrite.md` phase 9). It used to count, which
+  // a mismatch (ch. 19, Bounded Generics). It used to count, which
   // is what let a generic body type-check almost nothing it did with a `T`.
   //
   // `param_app_kind` still counts: `F[A]` under an abstract higher-kinded

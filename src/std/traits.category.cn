@@ -79,7 +79,7 @@ pub static pure def is_numeric[T]() -> bool:
 # Category concepts: the builtin scalar families, as bounds.
 #
 # A generic body may only do with a `T` what its bounds promise
-# (`spec/inference-rewrite.md` phase 9). Traits cover methods and the
+# (ch. 19, Bounded Generics). Traits cover methods and the
 # operators user types overload; these cover what only the builtin numbers
 # have — a literal written as a `T`, an `as` conversion, the builtin
 # operators — and every core trait all their members implement (`eq`, `ord`,

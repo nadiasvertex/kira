@@ -1,0 +1,31 @@
+module codegen_stress.method_on_literal_waits
+
+# expect: 82
+
+# A method called on a binding whose type is still an integer literal's
+# leaf waits for a later statement to say which integer it is, instead of
+# spending the `int32` default on the spot. Each literal here is
+# `3000000000`, which only fits if the annotation after the call was heard.
+#
+# `a.twice()` exists only on `int64`: defaulting first reported
+# "no method `twice` on type `int32`". `b.cmp(&c)` exists on every integer
+# and would have picked `int32`'s, making `3000000000` too large.
+
+extend int64:
+    def twice(self) -> int64:
+        return self * 2
+
+def main() -> int32:
+    let a = 3000000000
+    let t = a.twice()
+    let x: int64 = a
+
+    let b = 3000000000
+    let c = 3000000001
+    let o = b.cmp(&c)
+    let y: int64 = b
+    let z: int64 = c
+    let r = match o:
+        @less => z - y + 40
+        _ => z - z
+    return int32(t - x - 2999999959 + r)

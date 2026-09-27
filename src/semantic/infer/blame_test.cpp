@@ -1,4 +1,4 @@
-// Tests for blame (`spec/inference-rewrite.md` phase 5).
+// Tests for blame.
 //
 // What is under test is the *choice*: given several constraints that
 // disagree, which one does the compiler call the mistake, and what does it

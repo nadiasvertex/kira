@@ -1,4 +1,4 @@
-// Tests for the unifier (`spec/inference-rewrite.md` phase 2).
+// Tests for the unifier.
 //
 // The shapes below are the ones the 28 `unify_rigid` call sites in
 // `check.cpp` between them hand to the old matcher — nominal applications,

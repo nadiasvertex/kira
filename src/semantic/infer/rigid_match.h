@@ -12,7 +12,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  Matching a declared pattern against a concrete type
 //
-//  Phase 7 of `spec/inference-rewrite.md`. This is the replacement for
+//  This is the replacement for
 //  `checker::unify_rigid` (`check.cpp`), the matcher all 28 of its call sites
 //  and 67 binding maps run through.
 //
@@ -80,11 +80,12 @@ struct coerced_pair {
 
 /// What a match produced.
 struct rigid_match_result {
-  /// The pattern's type parameters that solved, by the name they are spelled
-  /// with. A parameter the concrete type does not pin is simply absent —
-  /// callers distinguish "solved to `unknown`" from "not solved" by
-  /// membership, exactly as they did with `unify_rigid`'s map.
-  std::unordered_map<std::string, type_id> bindings;
+  /// The pattern's type parameters that solved, keyed by the parameter
+  /// itself — its interned `type_param` id, which is per declaration — not
+  /// by its spelling: a caller's `T` and a callee's `T` are two parameters.
+  /// A parameter the concrete type does not pin is simply absent — callers
+  /// distinguish "solved to `unknown`" from "not solved" by membership.
+  std::unordered_map<type_id, type_id> bindings;
   /// Set when the two genuinely disagree.
   ///
   /// `unify_rigid` had nowhere to put this and so dropped it, which is why a

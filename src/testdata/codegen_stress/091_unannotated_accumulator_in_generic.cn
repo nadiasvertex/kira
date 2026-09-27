@@ -2,7 +2,7 @@ module codegen_stress.unannotated_accumulator_in_generic
 
 # expect: 116
 
-# `spec/inference-rewrite.md` phase 9: an unannotated `[]` accumulator inside
+# An unannotated `[]` accumulator inside
 # a *generic* body, instantiated at two different element types.
 #
 # This is the shape phase 8 could not do, and the reason is the phase

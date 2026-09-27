@@ -1,4 +1,4 @@
-// Tests for the obligation queue (`spec/inference-rewrite.md` phase 4).
+// Tests for the obligation queue.
 //
 // The resolvers below are stand-ins — the real ones are the existing impl
 // lookup and `reason.cpp`, plugged in behind the same signature in phase 7.

@@ -10,7 +10,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  Value solving
 //
-//  Phase 3 of `spec/inference-rewrite.md`. Ch. 33 says outright that the
+//  Ch. 33 says outright that the
 //  compiler "does not *solve for* `n` and propagate it" — an
 //  unresolved-but-satisfiable value slot is merely carried along. That is
 //  todo item 20 in the dependent fragment, and it is what produced

@@ -16,7 +16,7 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  The obligation queue
 //
-//  Phase 4 of `spec/inference-rewrite.md`. Method resolution, trait
+//  Method resolution, trait
 //  selection and refinement narrowing are *not* unification and must not
 //  touch the substitution — but all three share one shape: a decision that
 //  cannot be made yet, must be retried when something it depends on becomes
