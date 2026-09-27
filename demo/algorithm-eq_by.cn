@@ -16,17 +16,12 @@ def main() -> int32:
     let c = [1, 2, 4]
     let d = [1, 2]
 
-    let av = a.iter().values()
-    let bv = b.iter().values()
-    let cv = c.iter().values()
-    let dv = d.iter().values()
-
     # Same elements in same order
-    println("eq_same={av.eq_by(bv, (x, y) => x == y)}")
+    println("eq_same={a.iter().values().eq_by(b.iter().values(), (x, y) => x == y)}")
 
     # Different element
-    println("eq_diff={av.eq_by(cv, (x, y) => x == y)}")
+    println("eq_diff={a.iter().values().eq_by(c.iter().values(), (x, y) => x == y)}")
 
     # Different length
-    println("eq_length={av.eq_by(dv, (x, y) => x == y)}")
+    println("eq_length={a.iter().values().eq_by(d.iter().values(), (x, y) => x == y)}")
     return 0

@@ -1,0 +1,7 @@
+module ownership.return_view_of_local
+
+# `xs` belongs to `dangle` and is dropped when it returns, so a view of it
+# cannot be the return value.
+def dangle() -> slice[int32]:
+    let xs = [1, 2, 3, 4]
+    return xs[0..2]

@@ -1,0 +1,11 @@
+module ownership.view_outlives_source_scope
+
+# `xs` is dropped at the end of the `if` body, but `s` — declared outside it
+# — still views it on the last line.
+def demo(c: bool) -> int32:
+    var ys = [0]
+    var s = ys[0..1]
+    if c:
+        let xs = [1, 2, 3, 4]
+        s = xs[0..2]
+    return s[0]

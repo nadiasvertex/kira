@@ -1,0 +1,12 @@
+module ownership.move_in_loop
+
+# The first iteration moves `xs` into `take`; the second has nothing to move.
+def take(v: list[int32]) -> int32:
+    return v[0]
+
+def demo(c: bool) -> int32:
+    var xs = [1, 2, 3]
+    var t = 0
+    while c:
+        t = t + take(xs)
+    return t

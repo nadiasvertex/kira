@@ -3,8 +3,8 @@ module codegen_stress.lambda_capture_list_move
 # `move [n]` forces the bare entry to move rather than copy. At codegen time
 # a move capture stores a value into the environment block exactly like a
 # plain by-value capture (see `ast::is_reference_capture`) — the two are
-# only distinguished by the move-checker, which is a semantic-layer concern
-# with no separate test here (see `src/semantic/move_check_test.cpp`). This
+# only distinguished by the ownership checker, which is a semantic-layer concern
+# with no separate test here (see `src/semantic/ownership_check_test.cpp`). This
 # fixture exists to pin the *runtime* behavior: a `move`-captured value reads
 # back correctly and does not alias the (already-moved) outer binding.
 #

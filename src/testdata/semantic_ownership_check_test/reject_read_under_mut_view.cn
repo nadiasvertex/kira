@@ -1,0 +1,10 @@
+module ownership.read_under_mut_view
+
+# A `mut` view is exclusive: while `m` is live, `xs` cannot even be read
+# directly, since `m` may be writing through to it.
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let m = &mut xs[0..2]
+    let a = xs[0]
+    m[0] = 7
+    return a

@@ -1,0 +1,12 @@
+module ownership.move_in_one_branch
+
+# On the path through the `if`, `xs` has already been moved when it is used.
+def take(v: list[int32]) -> int32:
+    return v[0]
+
+def demo(c: bool) -> int32:
+    var xs = [1, 2, 3]
+    var t = 0
+    if c:
+        t = take(xs)
+    return t + xs[0]

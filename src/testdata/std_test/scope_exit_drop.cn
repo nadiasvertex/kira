@@ -43,8 +43,8 @@ extend noisy:
         println("touch {self.id}")
 
 # A method's `self`/`mut self` receiver is always passed *by reference*
-# (`src/semantic/move_check.cpp`'s `receiver_is_moved`: "methods always take
-# `self` by reference, regardless of `mut`") — calling a method on a
+# (`src/semantic/ownership_cfg.cpp`'s `receiver_mode`: methods always take
+# `self` by reference, regardless of `mut`) — calling a method on a
 # droppable value must not drop it out from under the caller who still owns
 # it. `a` is used (and would double-drop or use-after-drop if `touch`'s own
 # `self` parameter were wrongly scheduled for a drop at `touch`'s own return)

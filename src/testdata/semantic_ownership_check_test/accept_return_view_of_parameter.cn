@@ -1,0 +1,17 @@
+module ownership.return_view_of_parameter
+
+# A view of a borrowed parameter points at the caller's data, so it may be
+# returned — the caller then keeps that data borrowed.
+type bag = { items: list[int32] }
+
+def head(xs: &list[int32]) -> slice[int32]:
+    return xs[0..2]
+
+extend bag:
+    def front(self) -> slice[int32]:
+        return self.items[0..1]
+
+def demo() -> int32:
+    let xs = [1, 2, 3, 4]
+    let s = head(&xs)
+    return s[0]

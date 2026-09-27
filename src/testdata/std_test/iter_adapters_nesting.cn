@@ -90,7 +90,13 @@ def main() -> int32:
 
     # `size_hint` stays 0. It is a *lower* bound, and neither adapter can
     # promise anything: these two inners are empty, so the honest lower bound
-    # for an outer of size 2 is zero, not 2.
-    println("flatten_hint={all_empty.into_iter().map(l => l.into_iter()).flatten().size_hint()}")
+    # for an outer of size 2 is zero, not 2. (`all_empty` was consumed by
+    # `into_iter` above, so this builds a fresh outer of two empty inners.)
+    var two_empty: list[list[int32]] = []
+    var e3: list[int32] = []
+    two_empty.push(e3)
+    var e4: list[int32] = []
+    two_empty.push(e4)
+    println("flatten_hint={two_empty.into_iter().map(l => l.into_iter()).flatten().size_hint()}")
 
     return 0

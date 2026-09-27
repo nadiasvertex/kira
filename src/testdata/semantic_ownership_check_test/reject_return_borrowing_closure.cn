@@ -1,0 +1,9 @@
+module ownership.return_borrowing_closure
+
+# The closure borrows `total`, a local of `make` that is gone once `make`
+# returns — returning the closure would leave it pointing at nothing.
+def make() -> fn(int32) -> int32:
+    var total = 0
+    return [&mut total] (x: int32) -> int32 =>:
+        total = total + x
+        return total

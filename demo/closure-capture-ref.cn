@@ -3,9 +3,11 @@ module main
 # ==========================================================================
 #  Explicit by-reference capture — `&name` in a capture list.
 #
-#  Reads inside the closure go through the enclosing local's own storage
-#  rather than a copy, so a change made through one path is visible through
-#  the other.
+#  Reads and writes inside the closure go through the enclosing local's own
+#  storage rather than a copy, so a change made through the closure is
+#  visible in the original variable. While the closure is still going to be
+#  called, the variable is borrowed by it — it can be changed again directly
+#  only once the closure's last use is past.
 #
 #  Run it:      cinder demo/closure-capture-ref.cn
 #  Compile it:  cinder --compile -o closure-capture-ref demo/closure-capture-ref.cn
@@ -16,7 +18,11 @@ def main() -> unit:
 
     # `peek` reads through `&total` rather than a snapshot copy.
     let peek = [&total] () -> int32 => total
-
     println("peek() = {peek()}")   # 42
-    total = 100
-    println("peek() after mutation = {peek()}")   # 100 — same storage
+
+    # `add` writes through `&mut total`: the original variable changes.
+    let add = [&mut total] (n: int32) -> unit =>:
+        total = total + n
+    add(8)
+    add(50)
+    println("total after add = {total}")   # 100 — same storage

@@ -564,11 +564,11 @@ auto renderer::run() -> std::string {
   text_section("drop_plans", std::move(drops));
 
   auto views = std::vector<std::string>{};
-  views.reserve(checked_.view_bearing_types.size());
-  for (const auto type : checked_.view_bearing_types) {
+  views.reserve(checked_.borrow_bearing_types.size());
+  for (const auto type : checked_.borrow_bearing_types) {
     views.push_back(ty(type));
   }
-  text_section("view_bearing_types", std::move(views));
+  text_section("borrow_bearing_types", std::move(views));
 
   auto owners = std::vector<std::string>{};
   owners.reserve(checked_.static_global_owners.size());

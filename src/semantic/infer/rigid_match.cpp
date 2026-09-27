@@ -68,7 +68,7 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
   // Nothing is rewritten: the pattern's parameters are adopted in place, so
   // this matcher interns nothing at all. That is not a micro-optimization —
   // every rebuilt type would be permanently in the session's one table, and
-  // `resolve_drop_plans` and `compute_view_bearing_types` walk every interned
+  // `resolve_drop_plans` and `compute_borrow_bearing_types` walk every interned
   // type. A matcher running at tens of thousands of sites must leave no trail.
   const auto left = coerced.expected;
   const auto right = coerced.found;

@@ -1,0 +1,14 @@
+module ownership.returned_reference_kept_live
+
+# `pass` hands back the reference it was given, so `r` keeps `x` borrowed.
+def pass(p: &int32) -> &int32:
+    return p
+
+def bump(v: &mut int32) -> int32:
+    return *v
+
+def demo() -> int32:
+    var x = 3
+    let r = pass(&x)
+    let k = bump(&mut x)
+    return *r + k

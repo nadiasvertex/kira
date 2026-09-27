@@ -296,8 +296,8 @@ public:
   [[nodiscard]] auto mutable_entry(type_id id) -> type_entry &;
   /// The number of interned entries, so a caller can enumerate every live
   /// `type_id` as `[0, count())`. Used by `check_program` to precompute which
-  /// interned types transitively carry a view (`checked_types::
-  /// view_bearing_types`). Ids are dense and never reused, so a snapshot of
+  /// interned types can carry a borrow (`checked_types::
+  /// borrow_bearing_types`). Ids are dense and never reused, so a snapshot of
   /// this taken before an enumeration stays a valid upper bound even if the
   /// walk interns further types (`std::deque` keeps existing entries stable).
   [[nodiscard]] auto count() const -> std::size_t;
@@ -414,6 +414,12 @@ public:
   [[nodiscard]] auto is_numeric(type_id id) const -> bool;
   /// Whether `id` is the builtin `unit`.
   [[nodiscard]] auto is_unit(type_id id) const -> bool;
+  /// Whether `id` is a view — `slice[T]`/`mut slice[T]` or `cell[T]`/
+  /// `mut cell[T]`, the borrowing values allowed to outlive a call. `str`
+  /// is not one here: the implementation treats it as an owned value.
+  [[nodiscard]] auto is_view(type_id id) const -> bool;
+  /// Whether `id` is a mutable view (`mut slice[T]` / `mut cell[T]`).
+  [[nodiscard]] auto is_mut_view(type_id id) const -> bool;
 
   /// Whether a value of `found` is acceptable where `expected` is required.
   /// Unknown and error types are compatible with everything by design.
@@ -506,10 +512,23 @@ private:
 /// resolved against for every call form — and an omitted argument is lowered
 /// by lowering the callee's default expression right here at the call site
 /// (see `lower_call`), which needs exactly these two pieces.
+///
+/// `passing_by_param[i]` is how that parameter receives its argument — by
+/// value, or through a `&`/`&mut` reference (a bare place passed there is
+/// implicitly borrowed). Recorded here, once, from the parameter's declared
+/// type, so the ownership checker never re-derives a call's passing modes
+/// from the callee's syntax.
+enum class param_passing : std::uint8_t {
+  by_value,   ///< The argument is moved (or copied) into the callee.
+  shared_ref, ///< `&T`: the argument is lent for the call.
+  mut_ref,    ///< `&mut T`: the argument is lent mutably for the call.
+};
+
 struct call_argument_mapping {
   std::vector<const ast::expr *> args_by_param;
   std::vector<const ast::expr *> defaults_by_param;
   std::vector<std::string> param_names;
+  std::vector<param_passing> passing_by_param;
 };
 
 /// The declaration a module-qualified free-function call (`std.io.open(...)`),
@@ -535,7 +554,7 @@ struct resolved_callee {
   /// method, a plain free function, or an unresolved call. Lets a caller
   /// identify a specific, known-consuming trait method
   /// (`into_iterator::into_iter`) without a general by-value-`self`
-  /// convention to key off — see `move_checker::receiver_is_moved`.
+  /// convention to key off — see `receiver_mode` in `ownership_cfg.cpp`.
   std::string trait_name;
 };
 
@@ -1183,21 +1202,19 @@ struct checked_types {
   /// proved, which is the ordinary case and the reason contracts have a
   /// runtime form at all.
   std::unordered_set<const ast::contract_clause *> elided_contracts;
-  /// Every interned `type_id` that transitively carries a *view*
-  /// (`slice[T]`/`mut slice[T]`, directly or inside a struct field, sum
-  /// variant payload, tuple element, reference, or generic argument) — see
-  /// `checker::type_contains_view`, which computes this over the whole table
-  /// once checking finishes. The borrow checker (`check_borrows`) reads it to
-  /// decide whether a value keeps a borrow of its source collection alive past
-  /// the statement that made it (a call returning a `window[T]` that stores a
-  /// `slice` still borrows the sliced collection); it cannot compute this
-  /// itself because resolving a struct's field types needs the generic
-  /// substitution only the checker has. `str` is deliberately *excluded* even
-  /// though the language models it as a view: the implementation treats `str`
-  /// as an owned value everywhere, and tracking it as a borrow would reject
-  /// pervasive valid code — matching `is_view_type`, which also lists only
-  /// `slice`/`slice_mut`.
-  std::unordered_set<type_id> view_bearing_types;
+  /// Every interned `type_id` whose values can carry a borrow: a view
+  /// (`slice`/`mut slice`, `cell`/`mut cell`), a reference (`&T`/`&mut T`),
+  /// a callable (`fn(...)`, since a closure may hold `&`/`&mut` captures), or
+  /// a type parameter (it may be instantiated with any of these) — directly
+  /// or inside a struct field, sum variant payload, tuple element, array
+  /// element, or generic argument. Computed over the whole table once
+  /// checking finishes (`checker::type_carries_borrow`), because resolving a
+  /// struct's field types needs the generic substitution only the checker
+  /// has. The ownership checker (`check_ownership`) reads it to decide
+  /// whether copying or moving a value also copies the borrows it holds.
+  /// `str` is deliberately *excluded* even though the language models it as
+  /// a view: the implementation treats `str` as an owned value everywhere.
+  std::unordered_set<type_id> borrow_bearing_types;
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

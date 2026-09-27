@@ -1,0 +1,20 @@
+module ownership.view_dead_before_reassign_in_loop
+
+# The mirror of `reject_loop_carried_view.cn`: here `s` is re-pointed *after*
+# `bump(&mut xs)` and before its next read, so the old view is already dead
+# when `xs` is borrowed mutably.
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo(n: int32) -> int32:
+    var xs = [1, 2, 3, 4]
+    var ys = [5, 6]
+    var s = ys[0..1]
+    var total = 0
+    var i = 0
+    while i < n:
+        total = total + s[0]
+        total = total + bump(&mut xs)
+        s = xs[0..2]
+        i = i + 1
+    return total

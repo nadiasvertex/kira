@@ -5,7 +5,6 @@ cc_library(
     srcs = [
         "analysis.cpp",
         "binding_walk.cpp",
-        "borrow_check.cpp",
         "check.cpp",
         "infer/infer_ctxt.cpp",
         "infer/blame.cpp",
@@ -15,7 +14,8 @@ cc_library(
         "infer/value_solver.cpp",
         "linear_poly.cpp",
         "module_index.cpp",
-        "move_check.cpp",
+        "ownership_cfg.cpp",
+        "ownership_check.cpp",
         "reason.cpp",
         "resolution.cpp",
         "scopes.cpp",
@@ -27,7 +27,6 @@ cc_library(
     hdrs = [
         "analysis.h",
         "binding_walk.h",
-        "borrow_check.h",
         "check.h",
         "ids.h",
         "infer/infer_ctxt.h",
@@ -38,7 +37,8 @@ cc_library(
         "infer/value_solver.h",
         "linear_poly.h",
         "module_index.h",
-        "move_check.h",
+        "ownership_cfg.h",
+        "ownership_check.h",
         "reason.h",
         "resolution.h",
         "scopes.h",
@@ -85,24 +85,10 @@ cc_test(
 )
 
 cc_test(
-    name = "move_check_test",
-    srcs = ["move_check_test.cpp"],
+    name = "ownership_check_test",
+    srcs = ["ownership_check_test.cpp"],
     data = [
-        "//src:semantic_move_check_test_files",
-        "//src:std_sources",
-    ],
-    deps = [
-        ":semantic",
-        "//src/parser:parser",
-        "//src/testing",
-    ],
-)
-
-cc_test(
-    name = "borrow_check_test",
-    srcs = ["borrow_check_test.cpp"],
-    data = [
-        "//src:semantic_borrow_check_test_files",
+        "//src:semantic_ownership_check_test_files",
         "//src:std_sources",
     ],
     deps = [

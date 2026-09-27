@@ -1,5 +1,5 @@
 # inference snapshot
-# 1924 interned types
+# 1923 interned types
 
 ## node_types (29611)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -31633,7 +31633,48 @@ list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
 
-## view_bearing_types (158)
+## borrow_bearing_types (1433)
+&T
+&T
+&T
+&T
+&_
+&_
+&bool
+&byte
+&char
+&float32
+&float64
+&int16
+&int32
+&int64
+&int8
+&isize
+&list[T]
+&list[T]
+&list[T]
+&list[T]
+&list[T]
+&list[T]
+&list[_]
+&list[_]
+&list[int32]
+&list[money]
+&money
+&mut T
+&mut _
+&mut acc
+&mut list[T]
+&mut list[T]
+&mut list[T]
+&mut list[_]
+&mut list[_]
+&mut list[_]
+&mut list[_]
+&mut list[_]
+&mut list[byte]
+&mut list[int32]
+&mut peekable_iter[I, T]
 &mut slice_mut[T]
 &mut slice_mut[T]
 &mut slice_mut[T]
@@ -31655,6 +31696,7 @@ test_suite own=- fields=[cases: list[test_case]]
 &mut slice_mut[_]
 &mut slice_mut[byte]
 &mut slice_mut[int32]
+&self
 &slice[T]
 &slice[T]
 &slice[T]
@@ -31668,12 +31710,508 @@ test_suite own=- fields=[cases: list[test_case]]
 &slice[int32]
 &slice[uint32]
 &slice[uint8]
+&uint16
+&uint32
+&uint64
+&uint8
+&usize
+&weight
+(T, U)
+(list[T], list[T])
+(usize, T)
+*T
+*T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut U
 *mut slice[T]
 *mut slice[T]
+*mut test_case
+*mut test_suite
+A
+A
+A
+A
+A
+A
+A
+A
+A
+A
+B
+B
+B
+B
+B
+B
+B
+C
+C
+E
+F
+F
+From
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+I
+J
+J
+J
+J
+J
+J
+J
+J
+J
+J
+J
+J
+J
+J
+K
+K
+K
+M
+S
+S
+S
+S
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+To
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+U
+array[T, 0]
+array[T, 0]
+array[T, 0]
+array[T, 0]
+array[T, 0]
+array[T, 0]
+array[T, 2]
+array[T, k + 1]
+array[T, k + 3]
+array[T, m + n]
+array[T, m + n]
+array[T, m]
+array[T, m]
+array[T, m]
+array[T, n + 1]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[T, n]
+array[U, 0]
+array[U, n]
 array[slice[T], 0]
 array[slice[T], 0]
 array[slice[T], n]
 array[slice[T], n]
+array[test_suite, 1]
+array[test_suite, n]
+bag[T]
+bag[T]
+bag[U]
 cell[T]
 cell[T]
 cell[T]
@@ -31689,6 +32227,45 @@ cell_mut[_]
 cell_mut[_]
 cell_mut[int32]
 cell_mut[int64]
+chain_iter[I, J, T]
+chain_iter[I, J, T]
+chain_iter[I, J, _]
+cols
+doubler[I]
+doubler[map_iter[counter, int32, int32]]
+enumerate_iter[I, T]
+enumerate_iter[I, T]
+enumerate_iter[I, _]
+example_type[T]
+filter_iter
+filter_iter
+filter_iter[I, T]
+filter_iter[I, T]
+filter_iter[I, T]
+filter_iter[I, T]
+filter_iter[I, _]
+filter_iter[I, _]
+filter_iter[counter, _]
+filter_iter[counter, int32]
+filter_map_iter
+filter_map_iter[I, T, U]
+filter_map_iter[I, T, U]
+filter_map_iter[I, _, _]
+flat_map_iter
+flat_map_iter[I, T, J, U]
+flat_map_iter[I, T, J, U]
+flat_map_iter[I, _, _, _]
+flatten_iter[I, J, T]
+flatten_iter[I, J, T]
+flatten_iter[I, _, _]
+fn(&T) -> T
+fn(&list[T]) -> T
+fn(&list[int32]) -> int32
+fn(&list[money]) -> money
+fn(&mut acc, int32) -> int32
+fn(&mut list[int32]) -> unit
+fn(&mut list[int32], int32) -> unit
+fn(&mut list[int32], usize) -> bool
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T]) -> unit
 fn(&mut slice_mut[T], bool) -> unit
@@ -31735,25 +32312,696 @@ fn(&slice[uint32], fn(uint32) -> bool) -> usize
 fn(&slice[uint32], uint32) -> option[usize]
 fn(&slice[uint32], uint32) -> usize
 fn(&slice[uint32], usize) -> bool
+fn() -> T
+fn() -> T
+fn() -> array[int32, 3]
+fn() -> bool
+fn() -> connection[closed]
+fn() -> file_handle
+fn() -> float32
+fn() -> float64
+fn() -> int16
+fn() -> int32
+fn() -> int64
+fn() -> int8
+fn() -> isize
+fn() -> list[_]
+fn() -> option[J]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[T]
+fn() -> option[U]
+fn() -> option[U]
+fn() -> option[U]
+fn() -> option[U]
+fn() -> option[int32]
+fn() -> raw_fd
+fn() -> result[unit, test_failure]
+fn() -> self
+fn() -> type_category
+fn() -> uint16
+fn() -> uint32
+fn() -> uint64
+fn() -> uint8
+fn() -> usize
+fn(*mut (int64, int32), usize) -> unit
+fn(*mut (int64, int32), usize, usize) -> *mut (int64, int32)
+fn(*mut (usize, usize), usize) -> unit
+fn(*mut (usize, usize), usize, usize) -> *mut (usize, usize)
+fn(*mut T, usize) -> unit
+fn(*mut T, usize) -> unit
+fn(*mut T, usize) -> unit
+fn(*mut T, usize, usize) -> *mut T
+fn(*mut T, usize, usize) -> *mut T
+fn(*mut byte, usize) -> unit
+fn(*mut byte, usize, usize) -> *mut byte
+fn(*mut int32, usize) -> unit
+fn(*mut int32, usize, usize) -> *mut int32
+fn(*mut int64, usize) -> unit
+fn(*mut int64, usize, usize) -> *mut int64
+fn(*mut money, usize) -> unit
+fn(*mut money, usize, usize) -> *mut money
+fn(*mut str, usize) -> unit
+fn(*mut str, usize, usize) -> *mut str
+fn(*mut test_case, usize) -> unit
+fn(*mut test_suite, usize) -> unit
+fn(*mut test_suite, usize, usize) -> *mut test_suite
+fn(*mut uint32, usize) -> unit
+fn(*mut uint32, usize, usize) -> *mut uint32
+fn(*mut usize, usize) -> unit
+fn(*mut usize, usize, usize) -> *mut usize
+fn(A) -> B
+fn(A) -> B
+fn(A) -> B
+fn(A) -> B
+fn(A) -> M[B]
+fn(A) -> _
+fn(A) -> _
+fn(A) -> option[A]
+fn(A) -> option[B]
+fn(A, T) -> A
+fn(I) -> C
+fn(I) -> C
+fn(I) -> C
+fn(I) -> T
+fn(I) -> T
+fn(I) -> counter
+fn(I) -> counter
+fn(I) -> doubler
+fn(I) -> doubler
+fn(I) -> list[_]
+fn(I) -> list[int32]
+fn(I) -> list[int32]
+fn(I) -> self
+fn(I) -> self
+fn(I, fn(T) -> U) -> map_iter[I, T, U]
+fn(I, fn(T) -> bool) -> filter_iter[I, T]
+fn(K, K) -> ordering
+fn(S, T) -> S
+fn(S, T) -> S
+fn(S, T) -> S
+fn(S, _) -> S
+fn(T) -> B
+fn(T) -> J
+fn(T) -> J
+fn(T) -> J
+fn(T) -> K
+fn(T) -> K
+fn(T) -> K
+fn(T) -> T
+fn(T) -> T
+fn(T) -> T
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> U
+fn(T) -> _
+fn(T) -> _
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> bool
+fn(T) -> int32
+fn(T) -> list[T]
+fn(T) -> option[U]
+fn(T) -> option[U]
+fn(T) -> option[U]
+fn(T) -> option[U]
+fn(T) -> option[U]
+fn(T) -> ordering
+fn(T) -> str
+fn(T) -> unit
+fn(T) -> unit
+fn(T) -> unit
+fn(T) -> unit
+fn(T, T) -> T
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, T) -> ordering
+fn(T, U) -> bool
+fn(T, U) -> ordering
+fn(T, bool) -> usize
+fn(T, bool) -> usize
+fn(T, fn(T) -> option[U]) -> option[U]
+fn(_) -> *_
+fn(_) -> *mut _
+fn(_) -> U
+fn(_) -> _
+fn(_) -> bool
+fn(_) -> example_type[_]
+fn(_) -> float32
+fn(_) -> float64
+fn(_) -> int16
+fn(_) -> int32
+fn(_) -> int64
+fn(_) -> int8
+fn(_) -> isize
+fn(_) -> list_into_iter[_]
+fn(_) -> option[&_]
+fn(_) -> option[&mut _]
+fn(_) -> option[(_, _)]
+fn(_) -> option[(usize, _)]
+fn(_) -> option[U]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[int32]
+fn(_) -> result[unit, io_error]
+fn(_) -> self
 fn(_) -> slice[_]
 fn(_) -> slice_mut[_]
+fn(_) -> str
+fn(_) -> uint64
+fn(_) -> unit
+fn(_) -> usize
+fn(_, &bool) -> bool
+fn(_, &byte) -> bool
+fn(_, &byte) -> ordering
+fn(_, &char) -> bool
+fn(_, &char) -> ordering
+fn(_, &float32) -> bool
+fn(_, &float32) -> ordering
+fn(_, &float64) -> bool
+fn(_, &float64) -> ordering
+fn(_, &int16) -> bool
+fn(_, &int16) -> ordering
+fn(_, &int32) -> bool
+fn(_, &int32) -> ordering
+fn(_, &int64) -> bool
+fn(_, &int64) -> ordering
+fn(_, &int8) -> bool
+fn(_, &int8) -> ordering
+fn(_, &isize) -> bool
+fn(_, &isize) -> ordering
+fn(_, &money) -> bool
+fn(_, &mut list[byte]) -> result[usize, io_error]
 fn(_, &mut slice_mut[byte]) -> result[unit, io_error]
 fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
+fn(_, &self) -> bool
+fn(_, &self) -> ordering
 fn(_, &slice[byte]) -> result[unit, io_error]
 fn(_, &slice[byte]) -> result[usize, io_error]
+fn(_, &uint16) -> bool
+fn(_, &uint16) -> ordering
+fn(_, &uint32) -> bool
+fn(_, &uint32) -> ordering
+fn(_, &uint64) -> bool
+fn(_, &uint64) -> ordering
+fn(_, &uint8) -> bool
+fn(_, &uint8) -> ordering
+fn(_, &usize) -> bool
+fn(_, &usize) -> ordering
+fn(_, &weight) -> bool
+fn(_, &weight) -> ordering
+fn(_, T) -> T
+fn(_, _) -> _
 fn(_, _) -> cell[_]
+fn(_, _) -> ordering
+fn(_, _) -> unit
+fn(_, _, _) -> unit
+fn(_, array[T, n], index[n]) -> T
+fn(_, array[T, n], usize) -> T
+fn(_, array[int32, n], index[n]) -> int32
+fn(_, array[int32, n], usize) -> int32
+fn(_, byte) -> byte
+fn(_, float32) -> float32
+fn(_, float64) -> float64
+fn(_, fn(A) -> B) -> _
+fn(_, fn(A) -> B) -> _
+fn(_, fn(A) -> _) -> _
+fn(_, fn(_) -> U) -> bag[U]
+fn(_, int16) -> int16
+fn(_, int32) -> int32
+fn(_, int64) -> int64
+fn(_, int8) -> int8
+fn(_, isize) -> isize
+fn(_, money) -> money
+fn(_, money) -> ordering
 fn(_, range[usize]) -> slice[_]
 fn(_, range[usize]) -> slice_mut[_]
+fn(_, self) -> self
+fn(_, str) -> bool
+fn(_, str) -> list[str]
+fn(_, str) -> option[usize]
+fn(_, str) -> ordering
+fn(_, str) -> str
+fn(_, str, str) -> str
+fn(_, uint16) -> uint16
+fn(_, uint32) -> uint32
+fn(_, uint64) -> uint64
+fn(_, uint8) -> uint8
+fn(_, usize) -> _
 fn(_, usize) -> cell[_]
 fn(_, usize) -> cell_mut[_]
+fn(_, usize) -> option[_]
 fn(_, usize) -> option[cell_mut[_]]
+fn(_, usize) -> unit
+fn(_, usize) -> usize
+fn(_, usize, _) -> bool
+fn(_, usize, _) -> unit
+fn(array[T, n], index[n]) -> T
+fn(array[T, n], index[n]) -> T
+fn(array[_, n]) -> list[_]
+fn(array[_, n]) -> self
+fn(array[int32, 3], index[n]) -> int32
+fn(array[int32, 3], usize) -> int32
+fn(array[int32, 4], index[4]) -> int32
+fn(array[int32, 4], usize) -> int32
+fn(array[int32, 5]) -> int32
+fn(array[int32, 5], index[n]) -> int32
+fn(array[int32, 5], usize) -> int32
+fn(array[int32, 8], index[8]) -> int32
+fn(array[int32, 8], usize) -> int32
+fn(array[int32, n]) -> int32
+fn(array[int32, n], index[n]) -> int32
+fn(array[int32, n], usize) -> int32
+fn(bag[T]) -> usize
+fn(bag[int32]) -> usize
+fn(bool) -> str
+fn(bool, sign_mode) -> str
+fn(bool, str) -> str
+fn(bool, str, str, format_spec) -> str
+fn(char, usize) -> str
+fn(connection[closed]) -> connection[open]
+fn(connection[open], int32) -> unit
+fn(counter) -> int32
+fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32]
+fn(counter, fn(int32) -> int32) -> map_iter[counter, int32, int32]
+fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32]
+fn(float32) -> uint32
+fn(float64) -> uint64
+fn(float64, usize) -> str
+fn(float64, usize, bool) -> str
+fn(fn(int32) -> int32, int32) -> int32
+fn(int32) -> B
+fn(int32) -> U
+fn(int32) -> _
+fn(int32) -> array[int32, 4]
+fn(int32) -> bool
+fn(int32) -> int32
+fn(int32) -> int64
+fn(int32) -> list[int32]
+fn(int32) -> option[B]
+fn(int32) -> option[_]
+fn(int32) -> option[int32]
+fn(int32) -> result[int32, app_error]
+fn(int32) -> result[int32, parse_error]
+fn(int32) -> str
+fn(int32, fn(int32) -> option[int32]) -> option[int32]
+fn(int32, int32, int32) -> int32
+fn(int64) -> B
+fn(int64) -> int64
+fn(int64) -> list[int64]
+fn(int64) -> str
+fn(int64, uint8, bool, str, format_spec) -> str
+fn(io_errno) -> io_error
+fn(list[T], T) -> T
+fn(list[T], fn(T) -> T) -> list[T]
+fn(list[int32]) -> int32
+fn(list[int32], fn(int32) -> int32) -> list[int32]
+fn(list[int32], int32) -> int32
+fn(list[int64], fn(int64) -> int64) -> list[int64]
+fn(list[money], money) -> money
+fn(list[test_suite]) -> int32
+fn(map_iter[filter_iter[counter, int32], int32, int32]) -> int32
+fn(money) -> str
+fn(option[A], fn(A) -> B) -> option[B]
+fn(option[A], fn(A) -> B) -> option[B]
+fn(option[A], fn(A) -> option[B]) -> option[B]
+fn(option[T], T) -> T
+fn(option[T], fn(T) -> T) -> option[T]
+fn(option[align_mode]) -> bool
+fn(option[align_mode], align_mode) -> align_mode
+fn(option[int32], fn(int32) -> int32) -> option[int32]
+fn(option[int32], int32) -> int32
+fn(option[int64], fn(int64) -> int64) -> option[int64]
+fn(option[int64], int64) -> int64
+fn(option[usize]) -> usize
+fn(ordering) -> bool
+fn(parse_error) -> app_error
+fn(positive) -> int32
+fn(raw_fd) -> result[unit, io_errno]
 fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno]
 fn(raw_fd, &slice[byte]) -> result[usize, io_errno]
+fn(small) -> int32
+fn(str) -> list[uint32]
+fn(str) -> never
+fn(str) -> str
+fn(str) -> unit
+fn(str) -> usize
+fn(str, format_spec) -> str
+fn(str, list[test_case], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]]) -> test_suite
+fn(str, open_options) -> result[raw_fd, io_errno]
+fn(str, result[unit, test_failure]) -> bool
+fn(str, str) -> bool
+fn(str, str) -> find_result
+fn(str, str) -> int32
+fn(str, str) -> str
+fn(str, str, str) -> str
+fn(str, str, usize) -> find_result
+fn(str, uint8) -> str
+fn(str, usize) -> str
+fn(test_failure) -> str
+fn(uint32) -> bool
+fn(uint32) -> str
+fn(uint32, usize) -> str
+fn(uint64, uint64) -> uint64
+fn(uint64, uint8, bool) -> str
+fn(uint64, uint8, bool, str, format_spec) -> str
+fn(upto) -> counter
+fn(upto) -> doubler
+fn(upto) -> list[int32]
+fn(usize) -> *mut (int64, int32)
+fn(usize) -> *mut (usize, usize)
+fn(usize) -> *mut T
+fn(usize) -> *mut byte
+fn(usize) -> *mut int32
+fn(usize) -> *mut int64
+fn(usize) -> *mut money
+fn(usize) -> *mut str
+fn(usize) -> *mut test_suite
+fn(usize) -> *mut uint32
+fn(usize) -> *mut usize
+fn(usize) -> int32
+fn(usize) -> unit
+fn(usize) -> usize
+fn(vec[T, k + 1], vec[T, 2]) -> vec[T, k + 3]
+fn(vec[T, m], vec[T, n]) -> vec[T, m + n]
+fn(vec[T, m], vec[T, n]) -> vec[T, m + n]
+fn(vec[T, n + 1]) -> unit
+fn(vec[int32, 7]) -> unit
+fn(weight, weight) -> int32
+holder[T]
+holder[T]
+inspect_iter
+inspect_iter[I, T]
+inspect_iter[I, T]
+inspect_iter[I, _]
+k
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[T]
+list[U]
 list[slice[T]]
 list[slice[T]]
+list[test_case]
+list[test_suite]
+list_into_iter[T]
+list_into_iter[T]
+list_into_iter[T]
+list_into_iter[T]
+list_into_iter[T]
+list_into_iter[T]
+list_into_iter[test_case]
+list_into_iter[test_suite]
+list_iter
+list_iter[T]
+list_iter[T]
+list_iter[T]
+list_iter[T]
+list_iter[_]
+list_iter_mut
+list_iter_mut[T]
+list_iter_mut[T]
+list_iter_mut[_]
+m
+m
+m
+map_iter
+map_iter
+map_iter
+map_iter[I, &T, T]
+map_iter[I, T, U]
+map_iter[I, T, U]
+map_iter[I, T, U]
+map_iter[I, T, U]
+map_iter[I, T, U]
+map_iter[I, T, U]
+map_iter[I, _, _]
+map_iter[I, _, _]
+map_iter[I, _, _]
+map_iter[I, _, _]
+map_iter[counter, _, _]
+map_iter[counter, int32, int32]
+map_iter[filter_iter[counter, int32], _, _]
+map_iter[filter_iter[counter, int32], int32, int32]
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+n
+option[&T]
+option[&T]
+option[&_]
+option[&mut T]
+option[&mut _]
+option[(T, U)]
+option[(usize, T)]
+option[A]
+option[A]
+option[A]
+option[A]
+option[B]
+option[B]
+option[B]
+option[J]
+option[J]
+option[J]
+option[J]
+option[J]
+option[J]
+option[K]
+option[K]
+option[S]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[T]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
+option[U]
 option[cell_mut[T]]
 option[cell_mut[_]]
 option[cell_mut[int32]]
+option[fn() -> result[unit, test_failure]]
+option[test_case]
+option[test_suite]
+peekable_iter[I, T]
+peekable_iter[I, T]
+peekable_iter[I, T]
+peekable_iter[I, _]
+result[T, E]
+rev_iter[I, T]
+rev_iter[I, T]
+rev_iter[I, _]
+rows
+scan_iter
+scan_iter[I, T, S]
+scan_iter[I, T, S]
+scan_iter[I, _, S]
+self
+skip_iter[I, T]
+skip_iter[I, T]
+skip_iter[I, _]
+skip_while_iter
+skip_while_iter[I, T]
+skip_while_iter[I, T]
+skip_while_iter[I, _]
 slice[T]
 slice[T]
 slice[T]
@@ -31792,6 +33040,33 @@ slice_mut[T]
 slice_mut[_]
 slice_mut[byte]
 slice_mut[int32]
+step_by_iter[I, T]
+step_by_iter[I, T]
+step_by_iter[I, _]
+take_iter[I, T]
+take_iter[I, T]
+take_iter[I, _]
+take_while_iter
+take_while_iter[I, T]
+take_while_iter[I, T]
+take_while_iter[I, _]
+test_case
+test_suite
+vec[T, 2]
+vec[T, k + 1]
+vec[T, k + 3]
+vec[T, m + n]
+vec[T, m + n]
+vec[T, m]
+vec[T, m]
+vec[T, m]
+vec[T, n + 1]
+vec[T, n]
+vec[T, n]
+vec[T, n]
+zip_iter[I, J, T, U]
+zip_iter[I, J, T, U]
+zip_iter[I, J, _, _]
 
 ## static_global_owners (26)
 static$CASED_HI$1 -> std.unicode_tables

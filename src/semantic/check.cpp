@@ -344,8 +344,8 @@ struct method_entry {
   /// override of a required/provided trait method; empty for an `extend`
   /// block or any other inherent method. Lets a caller identify a specific,
   /// known-consuming trait method (`into_iterator::into_iter`) without a
-  /// general by-value-`self` convention to key off — see
-  /// `move_checker::receiver_is_moved`.
+  /// general by-value-`self` convention to key off — see `receiver_mode`
+  /// in `ownership_cfg.cpp`.
   std::string trait_name;
   /// File the method was written in. Every per-call instance of this method
   /// is re-checked, and name resolution reads imports out of the file being
@@ -543,7 +543,7 @@ public:
     }
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
-    auto view_bearing = compute_view_bearing_types();
+    auto borrow_bearing = compute_borrow_bearing_types();
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
@@ -597,7 +597,7 @@ public:
         .value_path_types = std::move(value_path_types_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
-        .view_bearing_types = std::move(view_bearing)};
+        .borrow_bearing_types = std::move(borrow_bearing)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -5493,17 +5493,15 @@ private:
     return payload;
   }
 
-  /// Whether `id` transitively carries a *view* (`slice`/`slice_mut`) —
-  /// directly, or through a reference/pointer inner type, array/tuple element,
-  /// generic argument, struct field, or sum-variant payload. `str` is
-  /// deliberately not a view here (see `checked_types::view_bearing_types`).
-  /// Resolving a struct field's or a variant payload's type requires the
-  /// instance's generic substitution, which is exactly what the borrow-check
-  /// pass consuming this result cannot do — so it is computed here, over the
-  /// whole table, once checking finishes. `visited` breaks recursive types
-  /// (`type tree = { kids: list[tree] }`); a genuine view is always reachable
-  /// on an acyclic path, so cycle edges may safely report "no view".
-  auto type_contains_view(type_id id, std::unordered_set<type_id> &visited)
+  /// Whether values of `id` can carry a borrow — see `checked_types::
+  /// borrow_bearing_types`: a view, a reference, a callable (a closure may
+  /// hold `&`/`&mut` captures), or a type parameter, directly or through a
+  /// pointer inner type, array/tuple element, generic argument, struct
+  /// field, or sum-variant payload. `str` is deliberately not a view here.
+  /// `visited` breaks recursive types (`type tree = { kids: list[tree] }`);
+  /// a genuine borrow is always reachable on an acyclic path, so cycle
+  /// edges may safely report "no borrow".
+  auto type_carries_borrow(type_id id, std::unordered_set<type_id> &visited)
       -> bool {
     if (types_.is_unknown(id) || id == k_error_type) {
       return false;
@@ -5512,16 +5510,17 @@ private:
       return false;
     }
     const auto &e = types_.entry(id);
-    if (e.kind == type_kind::builtin_generic_kind &&
-        (e.name == "slice" || e.name == "slice_mut" || e.name == "cell" ||
-         e.name == "cell_mut")) {
+    if (types_.is_view(id) || e.kind == type_kind::ref_kind ||
+        e.kind == type_kind::fn_kind ||
+        e.kind == type_kind::type_param_kind ||
+        e.kind == type_kind::param_app_kind) {
       return true;
     }
-    if (e.result != k_unknown_type && type_contains_view(e.result, visited)) {
+    if (e.result != k_unknown_type && type_carries_borrow(e.result, visited)) {
       return true;
     }
     for (const auto arg : e.args) {
-      if (type_contains_view(arg, visited)) {
+      if (type_carries_borrow(arg, visited)) {
         return true;
       }
     }
@@ -5529,7 +5528,7 @@ private:
       if (const auto *fields = struct_fields_of(e)) {
         for (const auto &field : *fields) {
           const auto ft = struct_field_type(e, field.name);
-          if (ft.has_value() && type_contains_view(*ft, visited)) {
+          if (ft.has_value() && type_carries_borrow(*ft, visited)) {
             return true;
           }
         }
@@ -5538,7 +5537,7 @@ private:
       if (const auto *variants = sum_variants_of(e)) {
         for (const auto &variant : *variants) {
           for (const auto payload : variant_payload_types(e, variant)) {
-            if (type_contains_view(payload, visited)) {
+            if (type_carries_borrow(payload, visited)) {
               return true;
             }
           }
@@ -5548,18 +5547,18 @@ private:
     return false;
   }
 
-  /// Classifies every interned `type_id` with `type_contains_view`, for
-  /// `checked_types::view_bearing_types`. Snapshots the table size first: a
+  /// Classifies every interned `type_id` with `type_carries_borrow`, for
+  /// `checked_types::borrow_bearing_types`. Snapshots the table size first: a
   /// struct/sum query may intern further types via `resolve_type`, but ids are
-  /// dense and existing entries are stable, and no expression the borrow
+  /// dense and existing entries are stable, and no expression the ownership
   /// checker queries can have a type minted only during this walk.
-  auto compute_view_bearing_types() -> std::unordered_set<type_id> {
+  auto compute_borrow_bearing_types() -> std::unordered_set<type_id> {
     auto result = std::unordered_set<type_id>{};
     const auto snapshot = types_.count();
     for (std::size_t raw = 0; raw < snapshot; ++raw) {
       const auto id = static_cast<type_id>(raw);
       auto visited = std::unordered_set<type_id>{};
-      if (type_contains_view(id, visited)) {
+      if (type_carries_borrow(id, visited)) {
         result.insert(id);
       }
     }
@@ -5595,7 +5594,7 @@ private:
   /// field that is; see `drop_plan` in types.h. `visiting` is the current
   /// recursion path, not a global "already seen" set — a sibling field of
   /// the same type as an earlier one must still be evaluated on its own, so
-  /// entries are erased on the way back out, unlike `type_contains_view`'s
+  /// entries are erased on the way back out, unlike `type_carries_borrow`'s
   /// `visited` (safe there only because that query is monotonic: once any
   /// branch answers "true", nothing downstream needs re-exploring). Cycle
   /// detection here is defense-in-depth rather than an expected case — a
@@ -5638,7 +5637,7 @@ private:
 
   /// Populates `drop_plans_` for `checked_types::drop_plans`. Run once, over
   /// the whole type table, from `take_checked_types` — mirroring `compute_
-  /// view_bearing_types` immediately above: a struct/sum type's droppability
+  /// borrow_bearing_types` immediately above: a struct/sum type's droppability
   /// depends on its fields' resolved types, which needs the same per-
   /// instance generic substitution `struct_field_type` does, so this can't
   /// run any earlier than the type table being essentially final.
@@ -5998,6 +5997,21 @@ private:
   //  Call checking
   // ==========================================================================
 
+  /// How a parameter of declared type `type` receives its argument — see
+  /// `call_argument_mapping::passing_by_param`. Only the outermost type
+  /// constructor matters: a `&`/`&mut` parameter borrows, anything else
+  /// takes its argument by value.
+  [[nodiscard]] auto passing_of(type_id type) const -> param_passing {
+    if (types_.is_unknown(type)) {
+      return param_passing::by_value;
+    }
+    const auto &entry = types_.entry(type);
+    if (entry.kind != type_kind::ref_kind) {
+      return param_passing::by_value;
+    }
+    return entry.is_mut ? param_passing::mut_ref : param_passing::shared_ref;
+  }
+
   /// Matches a call's arguments against a parameter list: positional
   /// arguments fill the next unused parameter in order, named arguments
   /// bind by name (reporting unknown/duplicate names), and each argument's
@@ -6098,16 +6112,20 @@ private:
     // below reads it back to find which argument reached which parameter.
     auto defaults_by_param = std::vector<const ast::expr *>{};
     auto param_names = std::vector<std::string>{};
+    auto passing_by_param = std::vector<param_passing>{};
     defaults_by_param.reserve(params.size());
     param_names.reserve(params.size());
+    passing_by_param.reserve(params.size());
     for (const auto &param : params) {
       defaults_by_param.push_back(param.default_value);
       param_names.push_back(param.name);
+      passing_by_param.push_back(passing_of(param.type));
     }
     call_argument_mappings_[&call] =
         call_argument_mapping{.args_by_param = args_by_param,
                               .defaults_by_param = std::move(defaults_by_param),
-                              .param_names = std::move(param_names)};
+                              .param_names = std::move(param_names),
+                              .passing_by_param = std::move(passing_by_param)};
 
     // A call instantiates the callee's own type parameters afresh, so while
     // they are unsolved they stand for nothing yet — not for the parameter of
@@ -12684,7 +12702,7 @@ private:
   ///
   /// The third — a reference meeting its target — is still switched on, and
   /// is not a defect that can simply be turned off: `cli_test`, `std_test`
-  /// and `move_check_test` all depend on it, because the checker relies on
+  /// and `ownership_check_test` all depend on it, because the checker relies on
   /// this matcher to absorb the auto-borrow at call sites that nothing else
   /// performs. Removing it means giving that job to an explicit coercion
   /// step, which is its own piece of work.

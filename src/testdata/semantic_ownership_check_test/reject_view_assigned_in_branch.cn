@@ -1,0 +1,15 @@
+module ownership.view_assigned_in_branch
+
+# `s` is re-pointed at `xs` inside the `if`, and used after it: on that path
+# `bump(&mut xs)` aliases the live view.
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo(c: bool) -> int32:
+    var xs = [1, 2, 3, 4]
+    var ys = [5, 6]
+    var s = ys[0..1]
+    if c:
+        s = xs[0..2]
+    let r = bump(&mut xs)
+    return s[0] + r

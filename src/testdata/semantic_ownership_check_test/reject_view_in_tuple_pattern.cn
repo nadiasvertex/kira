@@ -1,0 +1,12 @@
+module ownership.view_in_tuple_pattern
+
+# A destructuring `let` binds views just like a plain one.
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    var ys = [5, 6]
+    let (a, b) = (xs[0..2], ys[0..1])
+    let r = bump(&mut xs)
+    return a[0] + b[0] + r

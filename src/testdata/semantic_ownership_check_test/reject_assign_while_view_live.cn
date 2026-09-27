@@ -1,0 +1,9 @@
+module ownership.assign_while_view_live
+
+# `s` views `xs` and is read on the last line, so writing an element of `xs`
+# in between would change what `s` sees behind its back.
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = xs[0..2]
+    xs[0] = 42
+    return s[0]

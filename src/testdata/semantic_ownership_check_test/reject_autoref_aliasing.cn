@@ -1,0 +1,9 @@
+module ownership.autoref_aliasing
+
+# Both arguments are implicit borrows of `xs` — one of them mutable.
+def two(a: &mut list[int32], b: &list[int32]) -> int32:
+    return a[0] + b[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3]
+    return two(xs, xs)

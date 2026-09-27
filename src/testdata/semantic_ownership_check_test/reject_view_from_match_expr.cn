@@ -1,0 +1,12 @@
+module ownership.view_from_match_expr
+
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo(k: int32) -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = match k:
+        1 => xs[0..2]
+        _ => xs[1..2]
+    let r = bump(&mut xs)
+    return s[0] + r

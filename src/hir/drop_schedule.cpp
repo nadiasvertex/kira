@@ -23,17 +23,17 @@ struct scope_frame {
   bool is_loop_boundary = false;
 };
 
-/// Walks one function/lambda body computing a `drop_schedule`. Mirrors
-/// `semantic::move_checker`'s traversal shape (same statement/expression
-/// positions count as consuming vs. not — see that class's doc comments for
-/// the rationale behind each case) with three deliberate differences:
+/// Walks one function/lambda body computing a `drop_schedule`. Counts the
+/// same positions as consuming as the ownership checker
+/// (`semantic::check_ownership`, `ownership_cfg.cpp`) does for its moves, with
+/// three deliberate differences:
 ///
 /// 1. Only bindings whose type is in `checked_.drop_plans` are tracked at
 ///    all — everything else (the overwhelming majority of locals) is
-///    invisible to this pass, unlike move_check's much broader "any
-///    non-scalar" trackability.
+///    invisible to this pass, unlike the ownership checker's much broader
+///    "any non-scalar" trackability.
 /// 2. Scopes are **ordered** (`std::vector`, declaration order preserved)
-///    rather than move_check's `unordered_map`, since the whole point here
+///    rather than a set, since the whole point here
 ///    is emitting drops in reverse declaration order.
 /// 3. **Only plain `let`/`var name = expr` bindings and simple (non-
 ///    destructured) parameters are tracked.** A destructuring `let (a, b) =
@@ -45,14 +45,10 @@ struct scope_frame {
 ///    parallel model of. The common case — a `let`-bound resource in
 ///    ordinary code — is unaffected.
 ///
-/// **Branch-merge policy is the inverse of move_check's, and this matters
-/// for correctness, not just diagnostics.** `move_checker::merge_states`
-/// treats a binding as moved after an `if`/`match` only if *every* live
-/// branch moved it (the right call for a "was this definitely already used
-/// up" diagnostic — a false negative there just misses a warning). Scope-
-/// exit drop scheduling needs the opposite: a binding must be treated as
-/// moved after the construct if *any* branch moved it, because a single
-/// static drop call is emitted once for the merged point, and on whichever
+/// **Branch merge is "moved on any branch", and this matters for
+/// correctness, not just diagnostics.** A binding is treated as moved after
+/// an `if`/`match` if *any* branch moved it, because a single static drop
+/// call is emitted once for the merged point, and on whichever
 /// path a branch actually did move the value, a drop call there would be a
 /// double-drop / drop of a moved-from value — memory-unsafe, not merely a
 /// missed diagnostic. A leaked value on the path where it *wasn't* moved is
@@ -63,10 +59,8 @@ public:
 
   auto walk_function(const ast::func_decl &decl) -> void {
     // A method's `self`/`mut self` is always passed *by reference*,
-    // regardless of the `mut` spelling — `move_check.cpp`'s
-    // `receiver_is_moved` documents this ("methods always take `self` by
-    // reference ... called repeatedly on the same binding throughout
-    // `std.algo`"). So the function body never owns `self`, and it must
+    // regardless of the `mut` spelling (see `receiver_mode` in
+    // `src/semantic/ownership_cfg.cpp`). So the function body never owns `self`, and it must
     // never be scheduled for a scope-exit drop — not just inside a type's
     // own `drop` method (which would otherwise recurse into itself
     // forever), but in *every* method: `push`/`reserve`/etc. on a droppable
@@ -92,7 +86,7 @@ private:
   const checked_types &checked_;
   drop_schedule schedule_;
   std::vector<scope_frame> scopes_;
-  /// Mirrors `move_checker::diverged_`: true once the statement just walked
+  /// True once the statement just walked
   /// unconditionally leaves the enclosing block, so the rest of it is dead
   /// code and contributes nothing to a branch merge.
   bool diverged_ = false;
@@ -205,7 +199,7 @@ private:
     consume_named(ident.name);
   }
 
-  /// Mirrors `move_checker::param_name_of`.
+  /// A parameter's bound name, or empty for a destructuring pattern.
   [[nodiscard]] static auto param_name_of(const ast::param &param)
       -> std::string {
     if (param.pattern != nullptr &&
@@ -215,7 +209,8 @@ private:
     return {};
   }
 
-  /// Mirrors `move_checker::receiver_is_moved`.
+  /// Whether the call moves its receiver — the same rule as `receiver_mode`
+  /// in `src/semantic/ownership_cfg.cpp`.
   [[nodiscard]] auto receiver_is_moved(const ast::call_expr &call) const
       -> bool {
     const auto it = checked_.resolved_callees.find(&call);
@@ -369,8 +364,7 @@ private:
       // A lambda is only ever lowered inline, as part of lowering its
       // enclosing function (`lowerer::lower_lambda`'s sole call site is
       // `lower_expr`'s own `lambda_expr` case) — so its body gets its own
-      // nested scope in the *same* walk and the *same* `schedule_`, exactly
-      // mirroring `move_checker::check_lambda`'s recursive call.
+      // nested scope in the *same* walk and the *same* `schedule_`.
       walk_lambda_body(dynamic_cast<const ast::lambda_expr &>(expr));
       return;
     case ast::node_kind::if_expr: {
@@ -423,8 +417,7 @@ private:
   };
 
   /// OR-merge: a binding reads as moved after the construct if *any* live
-  /// branch moved it — see the class doc comment for why this is the
-  /// opposite of `move_checker::merge_states`.
+  /// branch moved it — see the class doc comment for why.
   static auto merge_scopes(std::vector<branch_result> results,
                            std::vector<scope_frame> base)
       -> std::vector<scope_frame> {

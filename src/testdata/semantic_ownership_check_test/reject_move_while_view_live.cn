@@ -1,0 +1,11 @@
+module ownership.move_while_view_live
+
+# Moving `xs` into `take` hands its storage away while `s` still views it.
+def take(v: list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = xs[0..2]
+    let r = take(xs)
+    return s[0] + r

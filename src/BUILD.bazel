@@ -60,14 +60,8 @@ filegroup(
 )
 
 filegroup(
-    name = "semantic_move_check_test_files",
-    srcs = glob(["testdata/semantic_move_check_test/**/*.cn"]),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "semantic_borrow_check_test_files",
-    srcs = glob(["testdata/semantic_borrow_check_test/**/*.cn"]),
+    name = "semantic_ownership_check_test_files",
+    srcs = glob(["testdata/semantic_ownership_check_test/**/*.cn"]),
     visibility = ["//visibility:public"],
 )
 

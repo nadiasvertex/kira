@@ -1,0 +1,9 @@
+module ownership.assign_while_capture_live
+
+# The closure `c` reads `n` through its `&n` capture, so `n` cannot be
+# assigned while `c` is still going to be called.
+def demo() -> int32:
+    var n = 5
+    let c = [&n] () -> int32 => n
+    n = 6
+    return c()

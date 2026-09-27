@@ -1,0 +1,12 @@
+module ownership.repeated_autoref_calls
+
+# A bare argument to a `&` parameter is lent, not moved, so it can be lent
+# again.
+def sum(v: &list[int32]) -> int32:
+    return v[0]
+
+def demo() -> int32:
+    var xs = [1, 2, 3]
+    let a = sum(xs)
+    let b = sum(xs)
+    return a + b

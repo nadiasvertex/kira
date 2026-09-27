@@ -12,13 +12,13 @@ module main
 def main() -> int32:
     let nums = [5, 2, 8, 1, 9, 3]
 
-    println("min={nums.into_iter().min().unwrap()}")
-    println("max={nums.into_iter().max().unwrap()}")
+    println("min={nums.iter().values().min().unwrap()}")
+    println("max={nums.iter().values().max().unwrap()}")
 
     # Single element
     let single = [42]
-    println("single_min={single.into_iter().min().unwrap()}")
-    println("single_max={single.into_iter().max().unwrap()}")
+    println("single_min={single.iter().values().min().unwrap()}")
+    println("single_max={single.iter().values().max().unwrap()}")
 
     # Empty
     let empty: list[int32] = []

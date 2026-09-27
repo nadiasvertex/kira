@@ -1,0 +1,12 @@
+module ownership.view_from_if_expr
+
+# `s` is a view of `xs` on one branch, so it keeps `xs` borrowed.
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def demo(c: bool) -> int32:
+    var xs = [1, 2, 3, 4]
+    var ys = [5, 6]
+    let s = if c: xs[0..2] else: ys[0..1]
+    let r = bump(&mut xs)
+    return s[0] + r

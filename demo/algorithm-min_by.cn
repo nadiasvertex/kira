@@ -29,8 +29,8 @@ def main() -> int32:
     let nums = [3, 1, 4, 1, 5]
 
     # Normal minimum
-    println("min={nums.into_iter().min_by(cmp_int).unwrap()}")
+    println("min={nums.iter().values().min_by(cmp_int).unwrap()}")
 
     # Reversed comparison gives maximum
-    println("max_via_cmp={nums.into_iter().min_by(rcmp).unwrap()}")
+    println("max_via_cmp={nums.iter().values().min_by(rcmp).unwrap()}")
     return 0

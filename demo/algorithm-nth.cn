@@ -13,10 +13,10 @@ module main
 def main() -> int32:
     let nums = [10, 20, 30, 40, 50]
 
-    println("nth0={nums.into_iter().nth(0).unwrap()}")
-    println("nth2={nums.into_iter().nth(2).unwrap()}")
-    println("nth4={nums.into_iter().nth(4).unwrap()}")
+    println("nth0={nums.iter().values().nth(0).unwrap()}")
+    println("nth2={nums.iter().values().nth(2).unwrap()}")
+    println("nth4={nums.iter().values().nth(4).unwrap()}")
 
     # Going past the end
-    println("nth_past={nums.into_iter().nth(10).is_none()}")
+    println("nth_past={nums.iter().values().nth(10).is_none()}")
     return 0

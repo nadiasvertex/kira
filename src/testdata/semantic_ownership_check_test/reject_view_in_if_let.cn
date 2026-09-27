@@ -1,0 +1,17 @@
+module ownership.view_in_if_let
+
+# `o` holds a view of `xs` inside an option and is unpacked by `if let` after
+# the conflicting borrow. (This shape used to crash the checker.)
+def bump(v: &mut list[int32]) -> int32:
+    return v[0]
+
+def pick(xs: &list[int32]) -> option[slice[int32]]:
+    return some(xs[0..2])
+
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let o = pick(&xs)
+    let r = bump(&mut xs)
+    if let @some(s) = o:
+        return s[0] + r
+    return 0

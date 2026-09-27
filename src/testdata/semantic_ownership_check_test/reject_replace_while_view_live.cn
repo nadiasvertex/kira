@@ -1,0 +1,8 @@
+module ownership.replace_while_view_live
+
+# Replacing `xs` wholesale frees the storage `s` still points into.
+def demo() -> int32:
+    var xs = [1, 2, 3, 4]
+    let s = xs[0..2]
+    xs = [9, 9]
+    return s[0]

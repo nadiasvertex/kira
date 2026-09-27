@@ -1,0 +1,22 @@
+module ownership.slice_arg_after_view_use
+
+# The slice-argument borrow is ordinary: it is fine once the earlier view is
+# dead, its own bounds may read `xs` (they are evaluated before the view
+# exists), a live view may be passed on or sub-sliced, and shared slice
+# arguments coexist.
+
+def poke(v: mut slice[int32]):
+    v[0] = 99
+
+def total(a: slice[int32], b: slice[int32]) -> int32:
+    return a[0] + b[0]
+
+def demo() -> int32:
+    var xs = [5, 4, 3, 2, 1]
+    let middle = xs[1..3]
+    let m = middle[0]
+    poke(&mut xs[0..xs.len()])
+    let t = total(xs[0..2], xs[1..3])
+    let s = &mut xs[0..2]
+    poke(s[0..1])
+    return m + t + s[0]
