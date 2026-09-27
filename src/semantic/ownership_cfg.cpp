@@ -24,11 +24,6 @@ struct value {
   }
 };
 
-/// Whether an expression position lends a plain `&`/`&mut` borrow (a call
-/// argument, the callee, a projection base, a `for` iterable, an
-/// interpolation segment) or would store it — see `escape_site`.
-enum class position : std::uint8_t { storing, passing };
-
 /// Whether a bare place in value position moves or only reads.
 enum class use_mode : std::uint8_t { move, read };
 
@@ -55,23 +50,43 @@ auto strip_groups(const ast::expr &expr) -> const ast::expr & {
   return *current;
 }
 
-/// The identifier a place expression is rooted at — the `x` in `x`,
-/// `x.f`, `x[i]`, `*x`, `(x).f[i]` — or null when the expression is not a
-/// place rooted in a name (a call result, a literal, ...). `projected` is set
-/// when the place is a part of the root rather than the root itself.
+/// The name a place expression is rooted at.
+struct root_name {
+  std::string_view name;
+  source_span span = source_span::dummy();
+};
+
+/// The name a place expression is rooted at — the `x` in `x`, `x.f`,
+/// `x[i]`, `*x`, `(x).f[i]` — or nothing when the expression is not a place
+/// rooted in a name (a call result, a literal, ...). `projected` is set when
+/// the place is a part of the root rather than the root itself. A plain
+/// dotted chain (`x.f.g`, not followed by a call or index) is parsed as a
+/// `module_path_expr`; it is a place whenever its first segment names a
+/// local, which the caller decides by looking the root up.
 auto place_root(const ast::expr &expr, bool &projected)
-    -> const ast::ident_expr * {
+    -> std::optional<root_name> {
   const auto *current = &expr;
   while (true) {
     switch (current->kind) {
     case ast::node_kind::ident_expr:
-      return current->has_error
-                 ? nullptr
-                 : &dynamic_cast<const ast::ident_expr &>(*current);
+      if (current->has_error) {
+        return std::nullopt;
+      }
+      return root_name{
+          .name = dynamic_cast<const ast::ident_expr &>(*current).name,
+          .span = current->span};
+    case ast::node_kind::module_path_expr: {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+      if (path.segments.empty()) {
+        return std::nullopt;
+      }
+      projected = projected || path.segments.size() > 1;
+      return root_name{.name = path.segments.front(), .span = current->span};
+    }
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(*current);
       if (field.object == nullptr) {
-        return nullptr;
+        return std::nullopt;
       }
       projected = true;
       current = field.object.get();
@@ -80,7 +95,7 @@ auto place_root(const ast::expr &expr, bool &projected)
     case ast::node_kind::index_expr: {
       const auto &index = dynamic_cast<const ast::index_expr &>(*current);
       if (index.object == nullptr) {
-        return nullptr;
+        return std::nullopt;
       }
       projected = true;
       current = index.object.get();
@@ -89,7 +104,7 @@ auto place_root(const ast::expr &expr, bool &projected)
     case ast::node_kind::group_expr: {
       const auto &group = dynamic_cast<const ast::group_expr &>(*current);
       if (group.inner == nullptr) {
-        return nullptr;
+        return std::nullopt;
       }
       current = group.inner.get();
       break;
@@ -97,21 +112,21 @@ auto place_root(const ast::expr &expr, bool &projected)
     case ast::node_kind::unary_expr: {
       const auto &unary = dynamic_cast<const ast::unary_expr &>(*current);
       if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
-        return nullptr;
+        return std::nullopt;
       }
       projected = true;
       current = unary.operand.get();
       break;
     }
     default:
-      return nullptr;
+      return std::nullopt;
     }
   }
 }
 
 auto is_place(const ast::expr &expr) -> bool {
   auto projected = false;
-  return place_root(expr, projected) != nullptr;
+  return place_root(expr, projected).has_value();
 }
 
 /// Builds one `function_cfg`. A lambda body gets its own builder whose
@@ -185,7 +200,7 @@ private:
               const std::vector<ast::ptr<ast::node>> &body_stmts) -> void {
     auto tail = value{};
     if (body_expr != nullptr) {
-      tail = eval(*body_expr, use_mode::move, position::storing);
+      tail = eval(*body_expr, use_mode::move);
     }
     auto stmts_tail = lower_body(body_stmts, /*want_value=*/true);
     if (body_expr == nullptr) {
@@ -316,7 +331,7 @@ private:
 
   /// Whether moving a value of `type` transfers ownership. Scalars, raw
   /// pointers (`38-machine-layer.md`: ownership behind one is the user's to
-  /// track), references and shared views are copies. A type parameter is not
+  /// track), `&T` references and shared views are copies. A type parameter is not
   /// tracked: that needs a notion of which `T`s copy (see `spec/todo.md`).
   [[nodiscard]] auto movable(type_id type) const -> bool {
     const auto &types = checked_.types;
@@ -324,9 +339,13 @@ private:
       return false;
     }
     const auto &entry = types.entry(type);
+    if (entry.kind == type_kind::ref_kind) {
+      // A `&T` copies; a `&mut T` is exclusive, so copying one would make
+      // two live mutable aliases — it moves instead.
+      return entry.is_mut;
+    }
     if (entry.kind == type_kind::type_param_kind ||
-        entry.kind == type_kind::ptr_kind ||
-        entry.kind == type_kind::ref_kind) {
+        entry.kind == type_kind::ptr_kind) {
       return false;
     }
     if (is_view(type) && !is_mut_view(type)) {
@@ -349,23 +368,6 @@ private:
       return false;
     }
     return !is_view(type);
-  }
-
-  /// Whether `unary` is a plain-reference borrow: an `&`/`&mut` whose result
-  /// is a reference to an ordinary value. A borrow of a view is not one —
-  /// views are the borrowing values allowed to outlive a call.
-  [[nodiscard]] auto is_plain_borrow(const ast::unary_expr &unary) const
-      -> bool {
-    if (unary.op != ast::unary_op::addr_of &&
-        unary.op != ast::unary_op::addr_of_mut) {
-      return false;
-    }
-    const auto type = type_of(&unary);
-    if (checked_.types.is_unknown(type)) {
-      return false;
-    }
-    const auto &entry = checked_.types.entry(type);
-    return entry.kind == type_kind::ref_kind && !is_view(entry.result);
   }
 
   // ------------------------------------------------------------------
@@ -484,7 +486,7 @@ private:
       }
       if (index.index != nullptr) {
         static_cast<void>(
-            eval(*index.index, use_mode::read, position::storing));
+            eval(*index.index, use_mode::read));
       }
       return;
     }
@@ -514,7 +516,7 @@ private:
   auto access_place(const ast::expr &expr, access_kind kind,
                     bool evaluate_subscripts = true) -> value {
     auto projected = false;
-    const auto *root = place_root(expr, projected);
+    const auto root = place_root(expr, projected);
     if (evaluate_subscripts) {
       eval_subscripts(expr);
     }
@@ -542,10 +544,10 @@ private:
                     source_span span, loan_id exempt = k_no_loan,
                     bool evaluate_subscripts = true) -> value {
     if (!is_place(expr)) {
-      return eval(expr, use_mode::read, position::passing);
+      return eval(expr, use_mode::read);
     }
     auto projected = false;
-    const auto *root = place_root(expr, projected);
+    const auto root = place_root(expr, projected);
     if (evaluate_subscripts) {
       eval_subscripts(expr);
     }
@@ -569,8 +571,8 @@ private:
   //  Expressions.
   // ------------------------------------------------------------------
 
-  auto eval_opt(const ast::expr *expr, use_mode mode, position pos) -> value {
-    return expr != nullptr ? eval(*expr, mode, pos) : value{};
+  auto eval_opt(const ast::expr *expr, use_mode mode) -> value {
+    return expr != nullptr ? eval(*expr, mode) : value{};
   }
 
   /// The value of a compound expression whose parts were stashed in `temp`:
@@ -584,18 +586,21 @@ private:
   /// Evaluates `expr`. Whatever its parts borrowed, a value whose type
   /// cannot carry a borrow carries none: `*r`, `s[0]`, `xs.len()` are plain
   /// values even when computing them borrowed something.
-  auto eval(const ast::expr &expr, use_mode mode, position pos) -> value {
-    auto result = eval_parts(expr, mode, pos);
+  auto eval(const ast::expr &expr, use_mode mode) -> value {
+    auto result = eval_parts(expr, mode);
     return bears(type_of(&expr)) ? result : value{};
   }
 
-  auto eval_parts(const ast::expr &expr, use_mode mode, position pos) -> value {
+  auto eval_parts(const ast::expr &expr, use_mode mode) -> value {
     if (expr.has_error) {
       return {};
     }
     switch (expr.kind) {
     case ast::node_kind::ident_expr:
     case ast::node_kind::field_expr:
+    case ast::node_kind::module_path_expr:
+      // A module path rooted in a module rather than a local finds no local
+      // in `access_place` and has no effect here.
       if (is_place(expr)) {
         return access_place(expr, mode == use_mode::move ? access_kind::move
                                                          : access_kind::read);
@@ -610,30 +615,30 @@ private:
 
     case ast::node_kind::group_expr: {
       const auto &group = dynamic_cast<const ast::group_expr &>(expr);
-      return eval_opt(group.inner.get(), mode, pos);
+      return eval_opt(group.inner.get(), mode);
     }
 
     case ast::node_kind::unary_expr:
-      return eval_unary(dynamic_cast<const ast::unary_expr &>(expr), pos);
+      return eval_unary(dynamic_cast<const ast::unary_expr &>(expr));
 
     case ast::node_kind::binary_expr: {
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
       stash(temp,
-            eval_opt(binary.lhs.get(), use_mode::read, position::storing));
+            eval_opt(binary.lhs.get(), use_mode::read));
       stash(temp,
-            eval_opt(binary.rhs.get(), use_mode::read, position::storing));
+            eval_opt(binary.rhs.get(), use_mode::read));
       return compound_result(expr, temp);
     }
 
     case ast::node_kind::cast_expr: {
       const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
-      return eval_opt(cast.operand.get(), mode, pos);
+      return eval_opt(cast.operand.get(), mode);
     }
 
     case ast::node_kind::try_expr: {
       const auto &tri = dynamic_cast<const ast::try_expr &>(expr);
-      auto result = eval_opt(tri.operand.get(), mode, pos);
+      auto result = eval_opt(tri.operand.get(), mode);
       // `?` may return from the function right here, carrying the operand.
       const auto early = new_block();
       const auto rest = new_block();
@@ -651,7 +656,7 @@ private:
       const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &element : tuple.elements) {
-        stash(temp, eval_opt(element.get(), use_mode::move, position::storing));
+        stash(temp, eval_opt(element.get(), use_mode::move));
       }
       return compound_result(expr, temp);
     }
@@ -660,12 +665,10 @@ private:
       const auto &array = dynamic_cast<const ast::array_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &element : array.elements) {
-        stash(temp, eval_opt(element.get(), use_mode::move, position::storing));
+        stash(temp, eval_opt(element.get(), use_mode::move));
       }
-      stash(temp, eval_opt(array.fill_value.get(), use_mode::move,
-                           position::storing));
-      stash(temp, eval_opt(array.fill_count.get(), use_mode::read,
-                           position::storing));
+      stash(temp, eval_opt(array.fill_value.get(), use_mode::move));
+      stash(temp, eval_opt(array.fill_count.get(), use_mode::read));
       return compound_result(expr, temp);
     }
 
@@ -674,7 +677,7 @@ private:
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &field : literal.fields) {
         if (field.value != nullptr) {
-          stash(temp, eval(*field.value, use_mode::move, position::storing));
+          stash(temp, eval(*field.value, use_mode::move));
         } else {
           stash(temp, eval_shorthand_field(field));
         }
@@ -691,7 +694,7 @@ private:
           continue;
         }
         stash(temp,
-              eval_opt(segment.value.get(), use_mode::read, position::passing));
+              eval_opt(segment.value.get(), use_mode::read));
         if (!segment.has_spec) {
           continue;
         }
@@ -700,7 +703,7 @@ private:
           if (const auto *part = std::get_if<ast::ptr<ast::expr>>(dynamic);
               part != nullptr) {
             stash(temp,
-                  eval_opt(part->get(), use_mode::read, position::passing));
+                  eval_opt(part->get(), use_mode::read));
           }
         }
       }
@@ -734,13 +737,13 @@ private:
 
     case ast::node_kind::await_expr: {
       const auto &await_e = dynamic_cast<const ast::await_expr &>(expr);
-      return eval_opt(await_e.operand.get(), use_mode::move, position::storing);
+      return eval_opt(await_e.operand.get(), use_mode::move);
     }
 
     case ast::node_kind::yield_expr: {
       const auto &yield_e = dynamic_cast<const ast::yield_expr &>(expr);
       static_cast<void>(
-          eval_opt(yield_e.value.get(), use_mode::move, position::storing));
+          eval_opt(yield_e.value.get(), use_mode::move));
       return {};
     }
 
@@ -752,7 +755,7 @@ private:
               : dynamic_cast<const ast::race_expr &>(expr).branches;
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &b : branches) {
-        stash(temp, eval_opt(b.get(), use_mode::move, position::storing));
+        stash(temp, eval_opt(b.get(), use_mode::move));
       }
       return compound_result(expr, temp);
     }
@@ -770,7 +773,7 @@ private:
     case ast::node_kind::on_expr: {
       const auto &on = dynamic_cast<const ast::on_expr &>(expr);
       static_cast<void>(
-          eval_opt(on.sender.get(), use_mode::read, position::storing));
+          eval_opt(on.sender.get(), use_mode::read));
       static_cast<void>(lower_scoped_body(on.body, false));
       return {};
     }
@@ -780,7 +783,7 @@ private:
       if (it != checked_.spliced_fragments.end()) {
         if (const auto *fragment =
                 dynamic_cast<const ast::expr *>(it->second)) {
-          return eval(*fragment, mode, pos);
+          return eval(*fragment, mode);
         }
       }
       return {};
@@ -788,7 +791,7 @@ private:
 
     default:
       // Every other expression kind has no runtime effect on a local:
-      // `literal_expr`, `module_path_expr`, `static_expr` (compile-time
+      // `literal_expr`, `static_expr` (compile-time
       // only), `quote_expr` (syntax, not a runtime value), and
       // `postfix_expr` (declared, never constructed).
       return {};
@@ -798,7 +801,7 @@ private:
   /// `obj.f` where `obj` is not itself a place (a call result, ...).
   auto eval_field_of_value(const ast::field_expr &field) -> value {
     auto object =
-        eval_opt(field.object.get(), use_mode::read, position::passing);
+        eval_opt(field.object.get(), use_mode::read);
     return bears(type_of(&field)) ? object : value{};
   }
 
@@ -830,25 +833,18 @@ private:
     }
     const auto temp = new_temp(local_role::call_temp);
     stash(temp,
-          eval_opt(index.object.get(), use_mode::read, position::passing));
-    stash(temp, eval_opt(index.index.get(), use_mode::read, position::storing));
+          eval_opt(index.object.get(), use_mode::read));
+    stash(temp, eval_opt(index.index.get(), use_mode::read));
     return compound_result(index, temp);
   }
 
-  auto eval_unary(const ast::unary_expr &unary, position pos) -> value {
+  auto eval_unary(const ast::unary_expr &unary) -> value {
     if (unary.operand == nullptr) {
       return {};
     }
     switch (unary.op) {
     case ast::unary_op::addr_of:
     case ast::unary_op::addr_of_mut: {
-      if (pos == position::storing && is_plain_borrow(unary)) {
-        auto projected = false;
-        const auto *root = place_root(*unary.operand, projected);
-        cfg_.escapes.push_back(
-            escape_site{.borrow = &unary,
-                        .root = root != nullptr ? root->name : std::string{}});
-      }
       const auto &operand = strip_groups(*unary.operand);
       const auto is_mut = unary.op == ast::unary_op::addr_of_mut;
       const auto origin =
@@ -861,12 +857,12 @@ private:
       if (is_place(unary)) {
         return access_place(unary, access_kind::read);
       }
-      return eval(*unary.operand, use_mode::read, position::passing);
+      return eval(*unary.operand, use_mode::read);
     case ast::unary_op::neg:
     case ast::unary_op::bit_not:
     case ast::unary_op::logical_not:
       static_cast<void>(
-          eval(*unary.operand, use_mode::read, position::storing));
+          eval(*unary.operand, use_mode::read));
       return {};
     }
     return {};
@@ -940,10 +936,10 @@ private:
       const auto &receiver = *resolved->second.receiver;
       switch (receiver_mode(resolved->second)) {
       case receiver_passing::move:
-        stash(temp, eval(receiver, use_mode::move, position::passing));
+        stash(temp, eval(receiver, use_mode::move));
         break;
       case receiver_passing::read:
-        stash(temp, eval(receiver, use_mode::read, position::passing));
+        stash(temp, eval(receiver, use_mode::read));
         break;
       case receiver_passing::shared:
         stash(temp, borrow_place(receiver, false, loan_origin::receiver,
@@ -962,7 +958,7 @@ private:
       }
       }
     } else if (call.callee != nullptr) {
-      stash(temp, eval(*call.callee, use_mode::read, position::passing));
+      stash(temp, eval(*call.callee, use_mode::read));
     }
 
     for (const auto &arg : call.args) {
@@ -983,7 +979,7 @@ private:
         stash(temp, borrow_place(argument, passing == param_passing::mut_ref,
                                  loan_origin::borrow, argument.span));
       } else {
-        stash(temp, eval(*arg.value, use_mode::move, position::passing));
+        stash(temp, eval(*arg.value, use_mode::move));
       }
     }
 
@@ -1085,10 +1081,9 @@ private:
       if (branch.let_expr != nullptr) {
         // `if let`: the parser leaves a placeholder in `condition`.
         subject = hold_subject(
-            eval(*branch.let_expr, use_mode::move, position::storing));
+            eval(*branch.let_expr, use_mode::move));
       } else {
-        static_cast<void>(eval_opt(branch.condition.get(), use_mode::read,
-                                   position::storing));
+        static_cast<void>(eval_opt(branch.condition.get(), use_mode::read));
       }
       const auto then = new_block();
       const auto next = new_block();
@@ -1117,7 +1112,7 @@ private:
                    const std::vector<ast::match_arm> &arms, bool want_value)
       -> value {
     const auto subject =
-        hold_subject(eval_opt(subject_expr, use_mode::move, position::storing));
+        hold_subject(eval_opt(subject_expr, use_mode::move));
     const auto join = new_temp(local_role::join_temp);
     const auto end = new_block();
     for (std::size_t i = 0; i < arms.size(); ++i) {
@@ -1134,14 +1129,14 @@ private:
       push_scope();
       bind_pattern(arm.pattern.get(), subject);
       if (arm.guard != nullptr) {
-        static_cast<void>(eval(*arm.guard, use_mode::read, position::storing));
+        static_cast<void>(eval(*arm.guard, use_mode::read));
         const auto guarded = new_block();
         fork(guarded, next);
         current_ = guarded;
       }
       auto tail = value{};
       if (arm.body_expr != nullptr) {
-        tail = eval(*arm.body_expr, use_mode::move, position::storing);
+        tail = eval(*arm.body_expr, use_mode::move);
       }
       auto stmts_tail = lower_body(arm.body_stmts, want_value);
       if (arm.body_expr == nullptr) {
@@ -1180,7 +1175,7 @@ private:
       bind_pattern(pattern.get(), source);
     }
     if (stmt.guard != nullptr) {
-      static_cast<void>(eval(*stmt.guard, use_mode::read, position::storing));
+      static_cast<void>(eval(*stmt.guard, use_mode::read));
       const auto kept = new_block();
       fork(kept, head);
       current_ = kept;
@@ -1204,13 +1199,13 @@ private:
           operand = unary.operand.get();
         }
       }
-      if (const auto *root = place_root(*operand, projected)) {
+      if (const auto root = place_root(*operand, projected)) {
         name = root->name;
       }
     }
     const auto source = new_local(std::move(name), local_role::loop_source,
                                   k_unknown_type, span, false);
-    flow(source, eval_opt(iterable, use_mode::move, position::passing),
+    flow(source, eval_opt(iterable, use_mode::move),
          /*replace=*/true);
     return source;
   }
@@ -1222,10 +1217,10 @@ private:
     auto subject = std::optional<local_id>{};
     if (stmt.let_expr != nullptr) {
       subject =
-          hold_subject(eval(*stmt.let_expr, use_mode::move, position::storing));
+          hold_subject(eval(*stmt.let_expr, use_mode::move));
     } else {
       static_cast<void>(
-          eval_opt(stmt.condition.get(), use_mode::read, position::storing));
+          eval_opt(stmt.condition.get(), use_mode::read));
     }
     const auto body = new_block();
     const auto exit = new_block();
@@ -1254,10 +1249,10 @@ private:
       -> void {
     if (index == comp.clauses.size()) {
       if (comp.guard != nullptr) {
-        static_cast<void>(eval(*comp.guard, use_mode::read, position::storing));
+        static_cast<void>(eval(*comp.guard, use_mode::read));
       }
       flow(join,
-           eval_opt(comp.yield_expr.get(), use_mode::move, position::storing),
+           eval_opt(comp.yield_expr.get(), use_mode::move),
            /*replace=*/false);
       return;
     }
@@ -1286,13 +1281,13 @@ private:
   auto lower_where(const ast::where_expr &where) -> value {
     push_scope();
     for (const auto &binding : where.bindings) {
-      auto v = eval_opt(binding.value.get(), use_mode::move, position::storing);
+      auto v = eval_opt(binding.value.get(), use_mode::move);
       const auto local =
           declare(binding.name, type_of(binding.value.get()), binding.span);
       bind_value(local, v);
     }
     const auto join = new_temp(local_role::join_temp);
-    flow(join, eval_opt(where.inner.get(), use_mode::move, position::storing),
+    flow(join, eval_opt(where.inner.get(), use_mode::move),
          /*replace=*/true);
     pop_scope();
     return value{.loans = {}, .sources = {join}};
@@ -1337,7 +1332,7 @@ private:
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       auto v =
-          eval_opt(stmt.initializer.get(), use_mode::move, position::storing);
+          eval_opt(stmt.initializer.get(), use_mode::move);
       const auto local = declare(stmt.name, type_of(&stmt), stmt.span);
       bind_value(local, v);
       return {};
@@ -1349,14 +1344,14 @@ private:
 
     case ast::node_kind::expr_stmt: {
       const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
-      auto v = eval_opt(stmt.expr.get(), use_mode::move, position::storing);
+      auto v = eval_opt(stmt.expr.get(), use_mode::move);
       return want_value ? v : value{};
     }
 
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
       emit_return(
-          eval_opt(stmt.value.get(), use_mode::move, position::storing));
+          eval_opt(stmt.value.get(), use_mode::move));
       start_unreachable();
       return {};
     }
@@ -1423,7 +1418,7 @@ private:
 
     default:
       if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {
-        auto v = eval(*expr, use_mode::move, position::storing);
+        auto v = eval(*expr, use_mode::move);
         return want_value ? v : value{};
       }
       // A nested item (type, `use`, `static`, ...) has no runtime effect on
@@ -1434,7 +1429,7 @@ private:
 
   auto lower_let(const ast::let_stmt &stmt) -> void {
     auto v =
-        eval_opt(stmt.initializer.get(), use_mode::move, position::storing);
+        eval_opt(stmt.initializer.get(), use_mode::move);
     if (stmt.pattern == nullptr) {
       return;
     }
@@ -1463,17 +1458,17 @@ private:
   }
 
   auto lower_assign(const ast::assign_stmt &stmt) -> void {
-    auto v = eval_opt(stmt.value.get(), use_mode::move, position::storing);
+    auto v = eval_opt(stmt.value.get(), use_mode::move);
     if (stmt.target == nullptr) {
       return;
     }
     const auto &target = strip_groups(*stmt.target);
     if (!is_place(target)) {
-      static_cast<void>(eval(target, use_mode::read, position::passing));
+      static_cast<void>(eval(target, use_mode::read));
       return;
     }
     auto projected = false;
-    const auto *root = place_root(target, projected);
+    const auto root = place_root(target, projected);
     eval_subscripts(target);
     const auto local = lookup(root->name);
     if (!local.has_value()) {

@@ -1087,11 +1087,12 @@ auto test_ownership_error_blocks_run_and_build() -> void {
   auto temp = make_temp_dir();
   const auto programs = std::vector<std::pair<std::string, std::string>>{
       {"borrow", "module b\n"
+                 "def dangle() -> &int32:\n"
+                 "  let a = 7\n"
+                 "  return &a\n"
                  "def main() -> int32:\n"
                  "  println(\"ran\")\n"
-                 "  let a = 7\n"
-                 "  let r = &a\n"
-                 "  return 42\n"},
+                 "  return *dangle()\n"},
       {"move", "module m\n"
                "type holder = { v: list[int32] }\n"
                "def take(h: holder) -> int32:\n"

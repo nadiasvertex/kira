@@ -84,7 +84,7 @@ module counter:
   pub def make() -> counter:
     return { value: 0 }
 
-  pub def bump(c: counter, by: int32) -> counter:
+  pub def bump(c: &counter, by: int32) -> counter:
     return { value: c.value + by }
 
   module tests:
@@ -110,7 +110,7 @@ module counter:
 
     def test_bump_is_not_in_place() -> result[unit, test_failure]:
       let start = super.make()
-      let bumped = super.bump(start, 7)
+      let bumped = super.bump(&start, 7)
       assert_eq(start.value, 0)?
       assert_false(bumped.value == start.value, "bump must not mutate its input")?
       return assert_eq(bumped.value, 7)

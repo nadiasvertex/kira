@@ -1,0 +1,9 @@
+module ownership.assign_while_aggregate_holds_reference
+
+# The tuple `t` stores a borrow of `n`, so it keeps `n` borrowed for as long
+# as `t` is used.
+def demo() -> int32:
+    var n = 5
+    let t = (&n, 3)
+    n = 7
+    return t.1

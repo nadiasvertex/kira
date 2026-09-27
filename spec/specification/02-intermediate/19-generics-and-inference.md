@@ -15,7 +15,7 @@ def largest[T: ord](items: &list[T]) -> option[usize]:
     var best = 0
     for i in 1..items.len():
         if items[i] > items[best]: best = i
-    return @some(best)    # return the index — a borrow could not escape this call
+    return @some(best)    # the index; a borrow into `items` would keep it borrowed
 ```
 
 `[T: show]` means "`T` is any type that implements `show`." Multiple bounds use `+`:

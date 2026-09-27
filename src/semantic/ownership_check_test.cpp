@@ -181,33 +181,73 @@ auto analyze_test_data_file(std::string_view filename) -> analyzed_session {
 }
 
 // ==========================================================================
-//  Escape rule: a plain-reference borrow is only legal in a passing position
-//  (a call argument, the callee, or a projection base). Stored anywhere else,
-//  it cannot escape the call it was made for.
+//  Stored borrows: a `&`/`&mut` may be bound, stored, and returned like a
+//  view — tracked for as long as the value holding it lives, and never
+//  allowed to outlive what it borrows.
 // ==========================================================================
 
-auto test_storing_a_borrow_in_a_let_is_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_store_borrow_in_let.cn");
-  expect(analyzed.error_count > 0,
-         "expected storing a borrow in a `let` to be rejected");
-  expect_diagnostic(analyzed, "cannot escape the call it was made for",
-                    "expected an escaping-borrow diagnostic");
+auto test_stored_borrow_is_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_store_borrow_in_let.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected a bound borrow with no conflict to check "
+                     "cleanly:\n") +
+             analyzed.diagnostics);
 }
 
-auto test_returning_a_borrow_is_rejected() -> void {
+auto test_assign_while_reference_live_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_assign_while_reference_live.cn");
+  expect_diagnostic(analyzed,
+                    "cannot assign to `n` while the reference `r` to `n` is "
+                    "still in use",
+                    "expected a bound `&n` to keep `n` borrowed");
+}
+
+auto test_assign_while_aggregate_holds_reference_is_rejected() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "reject_assign_while_aggregate_holds_reference.cn");
+  expect_diagnostic(analyzed,
+                    "cannot assign to `n` while `t`, which borrows `n`, is "
+                    "still in use",
+                    "expected a tuple storing `&n` to keep `n` borrowed");
+}
+
+auto test_returning_a_borrow_of_a_local_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_return_borrow.cn");
-  expect(analyzed.error_count > 0,
-         "expected returning a freshly made borrow to be rejected");
-  expect_diagnostic(analyzed, "cannot escape the call it was made for",
-                    "expected an escaping-borrow diagnostic");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `n`",
+                    "expected `return &n` of a local to be rejected");
 }
 
-auto test_borrow_in_an_aggregate_is_rejected() -> void {
-  const auto analyzed = analyze_test_data_file("reject_borrow_in_aggregate.cn");
-  expect(analyzed.error_count > 0,
-         "expected placing a borrow into a tuple to be rejected");
-  expect_diagnostic(analyzed, "cannot escape the call it was made for",
-                    "expected an escaping-borrow diagnostic");
+auto test_returning_a_laundered_borrow_of_a_local_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_return_reference_to_local_via_call.cn");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `n`",
+                    "expected `return pass(&n)` of a local to be rejected");
+}
+
+auto test_returning_a_reference_to_a_member_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_return_reference_to_member.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected `&q.b` of a borrowed parameter to be "
+                     "returnable:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_mutating_while_member_reference_live_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mutate_while_member_reference_live.cn");
+  expect_diagnostic(analyzed,
+                    "cannot assign to `p` while the reference `s` to `p` is "
+                    "still in use",
+                    "expected a returned member reference to keep `p` "
+                    "borrowed");
+}
+
+auto test_copying_a_mut_reference_moves_it() -> void {
+  const auto analyzed = analyze_test_data_file("reject_copy_mut_reference.cn");
+  expect_diagnostic(analyzed, "use of moved value `p`",
+                    "expected binding a `&mut` to a second name to move it");
 }
 
 // ==========================================================================
@@ -268,7 +308,7 @@ auto test_borrows_in_different_nested_calls_are_accepted() -> void {
          "live, to check cleanly");
 }
 
-auto test_mutable_slice_view_is_not_an_escape() -> void {
+auto test_mutable_slice_view_is_accepted() -> void {
   const auto analyzed = analyze_test_data_file("accept_mut_slice_view.cn");
   expect(analyzed.error_count == 0,
          "expected storing a `&mut xs[a..b]` view in a binding to check "
@@ -403,7 +443,7 @@ auto test_view_stored_in_struct_is_tracked() -> void {
          "expected a struct that stores a view to keep the sliced collection "
          "borrowed, so a later mutation of it is rejected");
   expect_diagnostic(
-      analyzed, "cannot borrow `xs` while the view `w` of `xs`",
+      analyzed, "cannot borrow `xs` while `w`, which borrows `xs`,",
       "expected the struct-stored view to conflict with `&mut xs`");
 }
 
@@ -499,16 +539,14 @@ auto test_owned_return_keeps_args_free_is_accepted() -> void {
 }
 
 // ==========================================================================
-//  `for x in &v` (spec/todo.md #20): a bare `&`/`&mut` iterable is allowed to
-//  "escape" into the loop it was made for, and is tracked as a view live for
-//  the loop's whole body.
+//  `for x in &v` (spec/todo.md #20): the loop holds its iterable's borrow for
+//  the whole body.
 // ==========================================================================
 
 auto test_for_over_ref_borrow_is_accepted() -> void {
   const auto analyzed = analyze_test_data_file("accept_for_over_ref_borrow.cn");
   expect(analyzed.error_count == 0,
-         std::string("expected `for x in &xs` to check cleanly without "
-                     "hitting the escape rule:\n") +
+         std::string("expected `for x in &xs` to check cleanly:\n") +
              analyzed.diagnostics);
 }
 
@@ -734,7 +772,7 @@ auto test_view_in_tuple_pattern_is_rejected() -> void {
 
 auto test_view_in_if_let_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_view_in_if_let.cn");
-  expect_diagnostic(analyzed, "cannot borrow `xs` while the view `o` of `xs`",
+  expect_diagnostic(analyzed, "cannot borrow `xs` while `o`, which borrows `xs`,",
                     "expected an option holding a view to borrow `xs`");
 }
 
@@ -787,16 +825,21 @@ auto test_return_view_of_parameter_is_accepted() -> void {
 
 auto main() -> int {
   try {
-    test_storing_a_borrow_in_a_let_is_rejected();
-    test_returning_a_borrow_is_rejected();
-    test_borrow_in_an_aggregate_is_rejected();
+    test_stored_borrow_is_accepted();
+    test_assign_while_reference_live_is_rejected();
+    test_assign_while_aggregate_holds_reference_is_rejected();
+    test_returning_a_borrow_of_a_local_is_rejected();
+    test_returning_a_laundered_borrow_of_a_local_is_rejected();
+    test_returning_a_reference_to_a_member_is_accepted();
+    test_mutating_while_member_reference_live_is_rejected();
+    test_copying_a_mut_reference_moves_it();
     test_two_mutable_borrows_in_one_call_are_rejected();
     test_mutable_and_shared_borrow_in_one_call_are_rejected();
     test_borrowing_as_a_call_argument_is_accepted();
     test_many_shared_borrows_in_one_call_are_accepted();
     test_sequential_borrows_are_accepted();
     test_borrows_in_different_nested_calls_are_accepted();
-    test_mutable_slice_view_is_not_an_escape();
+    test_mutable_slice_view_is_accepted();
     test_mut_borrow_across_nested_call_is_rejected();
     test_two_mut_borrows_across_nested_call_are_rejected();
     test_shared_borrows_across_nested_call_are_accepted();

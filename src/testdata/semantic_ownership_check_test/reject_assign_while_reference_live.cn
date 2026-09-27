@@ -1,0 +1,10 @@
+module ownership.assign_while_reference_live
+
+# `r` holds a `&` borrow of `n` and is read on the last line, so `n` cannot
+# be assigned in between: the read through `r` would see the change behind a
+# shared borrow's back.
+def demo() -> int32:
+    var n = 5
+    let r = &n
+    n = 6
+    return *r

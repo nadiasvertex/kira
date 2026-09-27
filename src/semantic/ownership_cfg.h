@@ -124,18 +124,10 @@ struct basic_block {
   std::vector<block_id> successors;
 };
 
-/// A plain `&`/`&mut` borrow written where it would be stored rather than
-/// passed — the spec's "a borrow cannot escape the call it was made for".
-struct escape_site {
-  const ast::unary_expr *borrow = nullptr;
-  std::string root;
-};
-
 struct function_cfg {
   std::vector<local_info> locals;
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.
-  std::vector<escape_site> escapes;
 };
 
 /// Builds the CFG of `decl`'s body, followed by one CFG per lambda or nested

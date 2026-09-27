@@ -1,0 +1,21 @@
+module ownership.return_reference_to_member
+
+# A reference to a field of a borrowed aggregate points at the caller's data,
+# so it may be returned; the caller keeps that aggregate borrowed while the
+# reference is live, and may change it again once it is not.
+type pair = { a: int32, b: int32 }
+
+def second(q: &pair) -> &int32:
+    return &q.b
+
+def second_mut(q: &mut pair) -> &mut int32:
+    return &mut q.b
+
+def demo() -> int32:
+    var p = pair { a: 10, b: 20 }
+    let s = second(&p)
+    let seen = *s
+    let m = second_mut(&mut p)
+    *m = 30
+    p.a = 1
+    return seen + p.b

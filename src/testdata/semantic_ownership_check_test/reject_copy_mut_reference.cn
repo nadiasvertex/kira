@@ -1,0 +1,9 @@
+module ownership.copy_mut_reference
+
+# A `&mut` is exclusive: binding it to a second name moves it, so the first
+# name cannot be used again.
+def demo(p: &mut int32) -> int32:
+    let q = p
+    *q = 1
+    *p = 2
+    return *q

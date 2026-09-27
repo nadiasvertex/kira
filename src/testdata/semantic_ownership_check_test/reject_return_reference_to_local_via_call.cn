@@ -1,0 +1,10 @@
+module ownership.return_reference_to_local_via_call
+
+# Laundering the borrow through a call changes nothing: `pass`'s result
+# carries the borrow of `n` it was given.
+def pass(p: &int32) -> &int32:
+    return p
+
+def borrow_local() -> &int32:
+    var n = 5
+    return pass(&n)

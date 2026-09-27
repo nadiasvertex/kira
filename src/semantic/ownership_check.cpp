@@ -167,9 +167,6 @@ public:
       : cfg_(cfg), checked_(checked), diag_(diag), file_id_(file_id) {}
 
   auto run() -> void {
-    for (const auto &escape : cfg_.escapes) {
-      report_escape(escape);
-    }
     compute_liveness();
     compute_forward();
     report();
@@ -322,24 +319,28 @@ private:
     return checked_.types.entry(type).kind;
   }
 
-  /// "the view `s` of `xs`", "the closure `a`", "the `for` loop over `xs`".
-  [[nodiscard]] auto describe_holder(local_id holder,
+  /// "the view `s` of `xs`", "the closure `a`", "the reference `r` to `x`",
+  /// "the `for` loop over `xs`", or "`t`, which borrows `n`," — chosen from
+  /// how the borrow was made, then what holds it.
+  [[nodiscard]] auto describe_holder(local_id holder, const loan_info &loan,
                                      const std::string &root) const
       -> std::string {
     const auto &info = cfg_.locals[holder];
     if (info.role == local_role::loop_source) {
       return std::format("the `for` loop over `{}`", root);
     }
-    const auto kind = type_kind_of(info.type);
-    if (kind == type_kind::fn_kind) {
+    if (loan.origin == loan_origin::capture ||
+        type_kind_of(info.type) == type_kind::fn_kind) {
       return std::format("the closure `{}`", info.name);
     }
-    if (kind == type_kind::ref_kind &&
-        !checked_.borrow_bearing_types.contains(
-            checked_.types.entry(info.type).result)) {
+    if (loan.origin == loan_origin::view ||
+        checked_.types.is_view(info.type)) {
+      return std::format("the view `{}` of `{}`", info.name, root);
+    }
+    if (type_kind_of(info.type) == type_kind::ref_kind) {
       return std::format("the reference `{}` to `{}`", info.name, root);
     }
-    return std::format("the view `{}` of `{}`", info.name, root);
+    return std::format("`{}`, which borrows `{}`,", info.name, root);
   }
 
   [[nodiscard]] static auto is_in_flight(local_role role) -> bool {
@@ -389,30 +390,6 @@ private:
         "needs to read or modify it, or restructure the code so `{0}` is "
         "only used once",
         name));
-    diag_.emit(d);
-  }
-
-  auto report_escape(const ownership::escape_site &escape) -> void {
-    const auto &borrow = *escape.borrow;
-    const auto *spelling =
-        borrow.op == ast::unary_op::addr_of_mut ? "&mut" : "&";
-    const auto subject = escape.root.empty() ? std::string("value")
-                                             : std::format("`{}`", escape.root);
-    auto d = diagnostic(
-        diagnostic_level::error,
-        std::format("a borrow of {} cannot escape the call it was made for",
-                    subject),
-        file_id_);
-    d.with_label(borrow.span,
-                 std::format("this `{}` borrow is created here", spelling));
-    d.with_note("a borrow lends a value to a function for the duration of one "
-                "call; it is a way of passing a value, not a value in its own "
-                "right, so it cannot be stored in a binding, returned, or "
-                "placed in a struct field or collection");
-    d.with_help("pass the borrow directly to the call that needs it; to hand "
-                "back a window into a collection that outlives the call, "
-                "return a view instead (see the Views chapter), or copy the "
-                "value if the callee needs its own");
     diag_.emit(d);
   }
 
@@ -485,7 +462,7 @@ private:
                                 local_id holder, const std::string &root)
       -> void {
     const auto &info = cfg_.locals[holder];
-    const auto description = describe_holder(holder, root);
+    const auto description = describe_holder(holder, loan, root);
     const auto is_loop = info.role == local_role::loop_source;
     const auto is_capture = loan.origin == loan_origin::capture;
     const auto *verb = a.kind == access_kind::borrow_shared ||
@@ -576,7 +553,7 @@ private:
                        info.role == local_role::loop_source;
     d.with_label(loan.span,
                  named ? std::format("{} borrows `{}` here",
-                                     describe_holder(holder, root), root)
+                                     describe_holder(holder, loan, root), root)
                        : std::format("`{}` is borrowed here", root));
     d.with_secondary_label(
         a.span, std::format("`{}` is declared here, and dropped at the end "

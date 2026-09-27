@@ -1,0 +1,10 @@
+module ownership.store_borrow_in_let
+
+# A borrow may be bound and used later, as long as nothing conflicts with it
+# while it is live and it does not outlive what it borrows.
+def demo() -> int32:
+    var n = 5
+    let r = &n
+    let k = *r + 1
+    n = 6
+    return k + n

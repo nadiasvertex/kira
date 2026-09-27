@@ -1,0 +1,13 @@
+module ownership.mutate_while_member_reference_live
+
+# `s` points into `p`, so `p` cannot change while `s` is still read.
+type pair = { a: int32, b: int32 }
+
+def second(q: &pair) -> &int32:
+    return &q.b
+
+def demo() -> int32:
+    var p = pair { a: 10, b: 20 }
+    let s = second(&p)
+    p.b = 99
+    return *s

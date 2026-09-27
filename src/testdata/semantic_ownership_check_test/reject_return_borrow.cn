@@ -1,8 +1,7 @@
 module ownership.return_borrow
 
-# Returning a freshly made borrow lets it outlive the call it belongs to (and,
-# here, the local it points at). A borrow cannot escape by being returned.
-
+# `n` is a local of `borrow_local`, gone once it returns: a borrow of it
+# cannot be the return value.
 def borrow_local() -> &int32:
     var n = 5
     return &n

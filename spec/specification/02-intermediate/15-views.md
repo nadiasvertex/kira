@@ -6,7 +6,7 @@
 
 ## Slices and Strings
 
-A view is the one kind of borrowing value the language permits to be passed *and* returned — its borrow is tracked without a lifetime annotation.
+A view is a borrow of part of a collection that may be passed, stored, *and* returned — like any borrow (see [Ownership and Borrowing](14-ownership-and-borrowing.md)), it is tracked without a lifetime annotation.
 
 ```cinder
 slice[T]       # a read-only view of a contiguous run of elements
@@ -73,4 +73,4 @@ def find_and_double(xs: &mut list[int32]) -> unit:
 
 ## See also
 
-- [Ownership and Borrowing](14-ownership-and-borrowing.md) — views are the escape hatch from "a borrow cannot escape a call."
+- [Ownership and Borrowing](14-ownership-and-borrowing.md) — the borrow rules views follow, and how a borrow's lifetime is tracked.
