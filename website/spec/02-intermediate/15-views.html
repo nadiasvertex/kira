@@ -124,23 +124,23 @@ checking paths throughout <code>src/semantic/resolution.cpp</code> and
 produce a <code>slice</code>, <code>slice</code>/<code>slice_mut</code>
 are distinguished, <code>.len()</code> and other builtin methods are
 wired up). It is genuinely usable today.</li>
-<li>The tracking claim here — a view keeping its source collection
-borrowed for as long as the view lives — <strong>is</strong> enforced,
-by the borrow checker’s view-borrow exclusivity (see <a
+<li>The tracking claim here — a view keeping its source borrowed for as
+long as the view lives, and never outliving it — <strong>is</strong>
+enforced by the ownership checker (see <a
 href="14-ownership-and-borrowing.html#implementation-status">Ownership
-and Borrowing</a>). A binding that holds a view is followed across
-statements to its last use, and a conflicting borrow of the sliced
-collection while the view is live is rejected. This covers a view
-returned from a call and the view-through-struct-field case above
-(<code>make_window</code> keeps <code>xs</code> borrowed for the
-returned <code>window</code>’s lifetime), because a call whose result
-carries a view is conservatively treated as borrowing all of its
-reference arguments. What remains target design is <em>precision</em>:
-the source is currently tracked at whole-variable granularity and, for a
-returned view, attributed to every reference argument rather than the
-exact one it was sliced from — an over-approximation that is sound
-(never misses an alias) but can reject a program that does not actually
-alias.</li>
+and Borrowing</a>). A view is a loan carried by whatever value holds it,
+through <code>let</code>/<code>var</code> bindings, reassignment, struct
+fields, <code>option</code>/sum payloads,
+<code>if</code>/<code>match</code> results, destructuring and pattern
+bindings, and across loop iterations; any conflicting access to the
+source while it is live — a borrow, a write, a move, or (for a
+<code>mut</code> view) a plain read — is rejected, as is a view
+outliving its source’s scope or being returned from the function that
+owns its source. The <code>make_window</code> case above works because a
+call whose result stores a view carries every borrow its arguments made.
+What remains target design is <em>precision</em>: whole-variable
+granularity, and attributing a returned view to every reference argument
+rather than the exact one it was sliced from.</li>
 <li><code>cell[T]</code> / <code>mut cell[T]</code> are implemented,
 both directly (<code>xs.cell(i)</code>/<code>xs.mutable_cell(i)</code>,
 <code>.get()</code>/<code>.set()</code>) and as the return shape of a

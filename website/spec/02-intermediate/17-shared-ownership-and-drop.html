@@ -149,10 +149,11 @@ lowering with “no concrete checked type is available for this node” — a
 compiler-gap diagnostic for what is really an undefined name. (The
 <code>drop</code> <em>trait</em> is correctly prelude-reachable:
 <code>impl drop for T</code> needs no <code>use</code>.)</li>
-<li><code>src/semantic/move_check.h</code> remains the move-tracking
-substrate these rules build on; <code>hir::compute_drop_schedule</code>
-is a second, HIR-oriented walker alongside it, not a replacement (see
-that file’s doc comment for why).</li>
+<li>The ownership checker (<code>src/semantic/ownership_check.h</code>)
+rejects any use after a move; <code>hir::compute_drop_schedule</code> is
+a separate, HIR-oriented walker that decides where drops go, and keeps
+its own record of which bindings were moved (see that file’s doc
+comment).</li>
 </ul></li>
 <li><strong><code>shared[T]</code> is a name with nothing behind
 it.</strong> <code>shared</code> is registered as a builtin generic

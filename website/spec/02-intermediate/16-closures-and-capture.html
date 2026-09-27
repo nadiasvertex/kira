@@ -174,22 +174,24 @@ now has real effect: <code>parse_lambda_expr</code> promotes every bare
 <code>name</code> entry in the list to
 <code>ast::capture_mode::by_move</code>
 (<code>&amp;name</code>/<code>&amp;mut name</code> entries are
-untouched, since they already state their own mode);
-<code>src/semantic/move_check.cpp</code>’s <code>check_lambda</code>
-consumes each <code>by_move</code> entry against the enclosing scope at
-the point the lambda is created, so reusing the original binding
-afterward is a use-after-move error, the same as any other move.
-Codegen-wise a move capture is indistinguishable from a by-value capture
-— both backends branch on <code>ast::is_reference_capture</code> rather
-than on <code>by_value</code> specifically, so <code>by_move</code>
-takes the existing value-capture path (a genuine copy at the bit level;
-only the move-checker enforces that the <em>source</em> is no longer
-usable). What remains unimplemented is the
-<strong>implicit</strong>-capture half of this chapter’s rule: an
-escaping closure without an explicit <code>move [...]</code> list is not
-rejected or forced to move — implicit capture is unconditionally by
-value in every lowering, and no escape analysis exists yet to drive the
-default borrow-or-move choice.</li>
+untouched, since they already state their own mode); the ownership
+checker (<code>src/semantic/ownership_cfg.cpp</code>,
+<code>eval_lambda</code>) moves each <code>by_move</code> entry out of
+the enclosing scope at the point the lambda is created, so reusing the
+original binding afterward is a use-after-move error, the same as any
+other move. Without a capture list, a name the body moves is moved into
+the closure at creation, and one it only reads is copied. Codegen-wise a
+move capture is indistinguishable from a by-value capture — both
+backends branch on <code>ast::is_reference_capture</code> rather than on
+<code>by_value</code> specifically, so <code>by_move</code> takes the
+existing value-capture path (a genuine copy at the bit level; only the
+move-checker enforces that the <em>source</em> is no longer usable).
+What remains unimplemented is the <strong>implicit</strong>-capture half
+of this chapter’s rule: an escaping closure without an explicit
+<code>move [...]</code> list is not rejected or forced to move —
+implicit capture is unconditionally by value in every lowering, and no
+escape analysis exists yet to drive the default borrow-or-move
+choice.</li>
 <li>Explicit capture lists
 (<code>[name, &amp;name, &amp;mut name]</code>, and <code>[]</code>) are
 implemented end to end:
@@ -228,19 +230,22 @@ by-reference-captured local into a one-slot heap cell which both frames
 then read and write through.</li>
 <li><strong>Borrows</strong> — a
 <code>&amp;</code>/<code>&amp;mut</code> entry registers a real borrow
-of the named local, live for as long as the closure is, through the same
-<code>live_view</code> machinery that tracks
-<code>slice</code>/<code>cell</code> views
-(<code>src/semantic/borrow_check.cpp</code>). Two closures holding
+of the named local, live for as long as the closure is, as a loan the
+closure value carries, exactly like a
+<code>slice</code>/<code>cell</code> view
+(<code>src/semantic/ownership_check.cpp</code>). Two closures holding
 <code>&amp;mut x</code> at once is the same error as two
-<code>mut slice</code> views of one collection.</li>
+<code>mut slice</code> views of one collection; assigning <code>x</code>
+while a closure capturing <code>&amp;x</code> is still going to be
+called is rejected; and returning a closure that borrows one of the
+function’s own locals is rejected as a dangling borrow.</li>
 <li>Exercised by <code>063</code>–<code>066</code> in
 <code>src/testdata/codegen_stress/</code> (each with a stated
 <code># expect:</code> value, since a by-reference capture silently
 degrading to a copy would degrade <em>identically</em> on both backends
 and satisfy a cross-backend agreement check), plus fixtures in
 <code>src/testdata/semantic_check_test/</code> and
-<code>src/testdata/semantic_borrow_check_test/</code>.</li>
+<code>src/testdata/semantic_ownership_check_test/</code>.</li>
 </ul></li>
 <li>The three ways to vary returned behavior: the dependent-type and
 sum-type forms rely on ordinary generics and sum types, both implemented
