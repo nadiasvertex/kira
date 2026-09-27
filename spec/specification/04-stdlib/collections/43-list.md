@@ -2,52 +2,75 @@
 
 **Status:** Implemented
 
-Covers `list[T]`'s representation, growth strategy, and the operations available on it today, split across a compiler builtin core and the ordinary- Cinder extensions in `std.list`.
+Covers `list[T]`'s representation, growth strategy, ownership, and the operations available on it.
 
 ## Representation
 
-`list[T]` is a compiler builtin generic (`type_kind::builtin_generic_kind`), not (yet) an ordinary Cinder struct — `list` still appears in the compiler's `k_builtin_generic_arities` table rather than being defined as `pub type list[T] = { ... }` over the `machine` primitive substrate. The runtime layout, shared by both backends, is a 3-slot heap header:
+`list[T]` is an ordinary Cinder struct in `std.list` (`src/std/list.cn`), written over `std.mem` and the [`machine` layer](../../03-advanced/38-machine-layer.md). The compiler has no special knowledge of it: literals, indexing, and `for` reach it through the same traits any user collection can implement.
 
+```cinder
+pub type list[T] = { len: usize, cap: usize, data: *mut T }
 ```
-{ u64 len; u64 cap; T* data; }
-```
 
-(`src/runtime/layout.h`.)
+- **Storage.** Exactly `cap` elements at `data`, or a null `data` when `cap == 0`. `len <= cap` always; slots `len..cap` are zeroed but hold no meaningful value.
+- **Element width.** Elements are stored at their own size (`size_of[T]()`), so `list[bool]` uses one byte per element.
+- **Growth.** `push` on a full list doubles the capacity, starting at 4, via `std.mem.resize`. A sequence of `n` pushes performs O(log n) reallocations.
+- **`vector[T]`** is an alias (`pub type vector[T] = list[T]`). There is one growable-sequence type; the alias only lets either name be used.
 
-- **Growth.** `push` reserves a slot via `list_reserve_slot`, which grows `data` when `len == cap`: starting capacity 4, doubling thereafter. Growing allocates a fresh, larger block from the shared bump arena and copies the existing `len * elem_size` bytes across; there is no in-place realloc.
-- **Element width.** The reserved slot's address is computed from `layout_of(T).size_bytes` (1/2/4/8 bytes), so `list[bool]` and `list[int16]` do not pay 8 bytes per element the way the header's own slots do.
-- The denaturalization to `pub type list[T]` over the `machine` substrate is **done**: `list[T]` is an ordinary Cinder struct in `src/std/list.cn` over `std.mem`, reached only through the `std.traits` `index`/`index_mut`/`index_set`/`from_array` traits and `std.iter.into_iterator` — no compiler support beyond what any user struct gets. `vector[T]` is an alias for it.
+An unannotated sequence literal is a `list`: `let xs = [1, 2, 3]` is a `list[int32]`. An `array` is spelled by asking for one (`let a: array[int32, 3] = [1, 2, 3]`).
+
+## Ownership and `drop`
+
+`list[T]` owns its storage and implements `drop`, which frees it at scope exit. Calling `free()` explicitly is allowed and makes the later `drop` a no-op.
+
+Elements are **not** dropped individually: a container recursing `drop` through its elements is not implemented ([`todo.md`](../../../todo.md) item 6). A `list` of resource-owning elements frees its own buffer but leaks what the elements own.
 
 ## Operations
 
-### Builtin inherent methods
+### Inherent methods
 
-Only two names have real lowering as builtin methods, from the compiler's `k_builtin_methods` table:
+| Method | Notes |
+|---|---|
+| `new() -> list[T]` | empty; allocates nothing |
+| `len(self) -> usize`, `capacity(self) -> usize`, `is_empty(self) -> bool` | |
+| `first(self) -> option[T]`, `last(self) -> option[T]` | `@none` when empty |
+| `get(self, i) -> option[T]` | `@none` when out of range |
+| `set(mut self, i, value) -> bool` | `false` when out of range |
+| `push(mut self, value: T)` | amortized O(1) |
+| `pop(mut self) -> option[T]` | `@none` when empty |
+| `reserve(mut self, n)` | ensures room for `n` elements; never shrinks |
+| `clear(mut self)` | O(1); keeps capacity; elements are not dropped |
+| `free(mut self)` | releases the storage; the list is empty and reusable afterwards |
+| `cell(self, i) -> cell[T]` | view of one element; panics when out of range |
+| `mutable_cell(mut self, i) -> option[cell_mut[T]]` | writable view; `@none` when out of range |
+| `as_slice(self) -> slice[T]`, `as_mut_slice(mut self) -> slice_mut[T]` | view of every element |
+| `as_ptr(self) -> *T`, `as_mut_ptr(mut self) -> *mut T` | `machine` access; bounds are the caller's responsibility |
 
-- `len(self) -> usize`
-- `push(mut self, x: T) -> unit` — amortized O(1).
+### Trait impls
 
-Indexing (`xs[i]`, `&xs[i]`, `&mut xs[i]`) is a builtin operator on `list[T]`, O(1), and is not expressed through any trait yet.
+| Trait | Gives | Notes |
+|---|---|---|
+| `std.traits.from_array[T]` | `let v: list[int32] = [1, 2, 3]` | allocates exactly the literal's length |
+| `std.traits.index[usize]` | `v[i]` | bounds-checked; out of range panics with `index out of bounds` |
+| `std.traits.index_set[usize]` | `v[i] = x` | same check |
+| `std.traits.index_ref[usize]` | `&v[i]` → `cell[T]` | same check |
+| `std.traits.index_mut[usize]` | `&mut v[i]` → `cell_mut[T]` | same check |
+| `std.traits.index[range[usize]]` | `v[a..b]` → `slice[T]` | no copy; `b == len` is allowed, `a > b` panics |
+| `std.traits.index_mut[range[usize]]` | `&mut v[a..b]` → `slice_mut[T]` | same check |
+| `std.iter.into_iterator[T]` | `for x in v` | **consumes `v`** |
+| `drop` | scope-exit release | see above |
 
-### `std.list` extensions
+`for x in v` moves the list. To keep it, iterate a borrow: `for x in &v` yields `&T` and `for x in &mut v` yields `&mut T`, through `std.iter`'s `iter`/`iter_mut` (see [The Iterator Protocol](../algorithms/48-iterator-protocol.md)).
 
-`src/std/list.cn` adds, as an ordinary `extend[T] list[T]` block over `len` and indexing:
+### Not provided
 
-- `is_empty(self) -> bool`
-- `first(self) -> option[T]` — `@some` of the first element, `@none` if empty.
-- `last(self) -> option[T]` — `@some` of the last element, `@none` if empty.
-
-### Deliberately absent
-
-- **`pop`, `clear`, `insert`, `remove`.** These need to *shrink* a list, which no primitive currently exposes; they return once `list` is rebuilt over `alloc`/pointer primitives.
-- **`contains`, `any`, `all`, `find`, `filter`.** These were builtin methods historically but are not reimplemented as `list` methods: they are iterator operations (`xs.iter().any(...)`), so they compose and stay lazy. An eager `list.filter` would have shadowed `std.algo`'s lazy `filter` with a different meaning for the same name under UFCS.
-- **`sort`.** Belongs with the slice algorithms, over a range rather than a whole list — see [Sorting and Searching](../algorithms/51-sorting-and-searching.md) (planned).
-
-Every builtin-method entry with no working lowering was removed from the table outright: an entry that type-checks and then fails inside the compiler is worse than an honest "no method" diagnostic with a suggestion.
+- **`insert`, `remove`, `truncate`, `extend`.** Not implemented yet.
+- **`contains`, `any`, `all`, `find`, `filter`.** These are iterator operations (`xs.iter().any(...)`), not `list` methods, so they compose and stay lazy. An eager `list.filter` would shadow `std.algo`'s lazy `filter` under UFCS with a different meaning.
+- **`sort`, `binary_search`.** These operate on a range, not a whole list: `sort(&mut xs[0..xs.len()])`. See [Sorting and Searching](../algorithms/51-sorting-and-searching.md).
 
 ## `std.mem` — typed allocation
 
-`std.mem` (`src/std/mem.cn`) wraps the raw `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`) in typed, *element-counted* form. Every function is `machine` and a few lines long; a caller that already knows it holds `T`s never multiplies by `size_of[T]()` itself, because that multiplication is where a buffer overflow comes from.
+`std.mem` (`src/std/mem.cn`) wraps the `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`) in typed, *element-counted* form. A caller that knows it holds `T`s never multiplies by `size_of[T]()` itself, because that multiplication is where buffer overflows come from.
 
 ```cinder
 machine def alloc[T](count: usize) -> *mut T
@@ -56,88 +79,33 @@ machine def free[T](p: *mut T, count: usize) -> unit
 machine def copy[T](dst: *mut T, src: *T, count: usize) -> unit
 ```
 
-Every block is zero-filled, including the grown tail of a `resize`. The allocator behind these is selectable at run time — `CINDER_ALLOCATOR=system` (the default: `calloc`/`realloc`/`free`, memory genuinely reclaimed) or `CINDER_ALLOCATOR=arena` (the historical bump arena, where `free` is a no-op). Code written on `std.mem` must be correct under both, which in practice means it must not depend on a freed block being reused.
-
-## `vector[T]` — a list owning its own storage
-
-`vector[T]` (`src/std/list.cn`) is the same data structure as `list[T]`, written in Cinder with no compiler support beyond what any user struct gets:
-
-```cinder
-pub type vector[T] = { len: usize, cap: usize, data: *mut T }
-```
-
-It exists because `list[T]`'s missing operations were never a library omission — `pop`, `clear` and `reserve` all need to *shrink* or *re-home* storage, and until `rt_realloc`/`rt_free` existed no primitive could. `vector[T]` has all of them:
-
-| Method | |
-|---|---|
-| `new() -> vector[T]` | empty, allocates nothing |
-| `len`, `capacity`, `is_empty` | |
-| `push(mut self, value: T)` | amortized O(1); capacity 4 then doubling |
-| `pop(mut self) -> option[T]` | |
-| `get(self, i) -> option[T]`, `set(mut self, i, value) -> bool` | bounds-checked, no panic |
-| `reserve(mut self, n)` | never shrinks |
-| `clear(mut self)` | O(1); keeps capacity |
-| `free(mut self)` | releases the storage |
-
-Every method that touches memory is `machine` and short; the public API is entirely safe.
-
-**`free` must be called explicitly.** Cinder runs no scope-exit `drop` glue on either backend (`../../../todo.md` item 6), so a `vector` that goes out of scope leaks its buffer under `CINDER_ALLOCATOR=system`, exactly as every heap value already leaks under the arena. Elements are not dropped either, for the same reason. This is the one place `vector[T]` is worse than `list[T]` today — a bump-arena `list` never promised to free anything, so it had nothing to forget to do.
+Every block is zero-filled, including the grown tail of a `resize`. The allocator is selected at run time by `CINDER_ALLOCATOR`: `system` (the default; `calloc`/`realloc`/`free`) or `arena` (a bump arena where `free` is a no-op). Code on `std.mem` must be correct under both, so it must not depend on a freed block being reused.
 
 ## Example
 
 ```cinder
-var xs: list[int32] = []
-xs.push(1)
-xs.push(2)
-xs.push(3)
-xs.is_empty()    # false
-xs.len()         # 3
-xs[0]            # 1
-xs.last()        # @some(3)
-```
+use std.algo.sort
 
-```cinder
-use std.list.vector
+def main() -> unit:
+    var xs: list[int32] = [3, 1, 2]
+    xs.push(5)
+    xs[0] = 4                          # [4, 1, 2, 5]
 
-var v = vector[int32].new()
-v.push(1)
-v.push(2)
-v.len()          # 2
-v.pop()          # @some(2)
-v.reserve(64)
-v.clear()
-v.free()
+    var total: int32 = 0
+    for x in &xs:                      # borrows; xs is still usable
+        total = total + *x             # 12
+
+    match xs.pop():
+        @some(v) => println("popped {v}")   # popped 5
+        @none => println("empty")
+
+    let middle = xs[1..3]              # slice[int32] over [1, 2]
+    sort(&mut xs[0..xs.len()])         # [1, 2, 4]
 ```
 
 ## See also
 
-- [The `machine` Layer](../../03-advanced/38-machine-layer.md) — the raw-pointer and allocation substrate `std.mem` and `vector[T]` are built on.
+- [The `machine` Layer](../../03-advanced/38-machine-layer.md) — the raw-pointer and allocation substrate `std.mem` and `list[T]` are built on.
 - [The Iterator Protocol](../algorithms/48-iterator-protocol.md) — `iter`, `iter_mut`, `into_iter` over `list[T]`.
-- [Lazy Adapters](../algorithms/49-lazy-adapters.md) and [Aggregation](../algorithms/50-aggregation.md) — where `filter`, `contains`-equivalents (`any`/`find`), and friends now live.
-- [Sorting and Searching](../algorithms/51-sorting-and-searching.md) — planned home of `sort` and the other slice algorithms.
-
-
-## `vector[T]` as an ordinary collection
-
-`vector[T]` implements the four traits that used to be `list[T]`'s exclusive privileges, so it is usable with the same syntax:
-
-```cinder
-use std.list.vector
-
-var v: vector[int32] = [10, 20, 30]   # from_array[T]
-let first = v[0]                      # index[usize]
-v[1] = 99                             # index_set[usize]
-for x in v:                           # into_iterator[T]
-    println("{x}")
-```
-
-| Trait | Gives | Notes |
-|---|---|---|
-| `std.traits.index[usize]` | `v[i]` | bounds-checked; out of range terminates the program with `index out of bounds`, exactly as it does for `array`/`slice`/`str` |
-| `std.traits.index_set[usize]` | `v[i] = x` | same check |
-| `std.iter.into_iterator[T]` | `for x in v` | **consumes `v`** — see below |
-| `std.traits.from_array[T]` | `let v: vector[int32] = [...]` | allocates exactly the literal's length |
-
-**Iterating consumes the vector.** `into_iter(self)` takes the collection by value, so `for x in v` moves it and the move checker refuses every later use, `v.free()` included. That is correct for `into_iterator` and is not what a collection wants; a borrowing route (`for x in &v`) is [`todo.md`](../../../todo.md) item 20, and a prerequisite for `list[T]` itself moving onto this storage.
-
-`&mut v[i]` is not available: `std.traits.index_mut` is declared but not wired (item 19).
+- [Lazy Adapters](../algorithms/49-lazy-adapters.md) and [Aggregation](../algorithms/50-aggregation.md) — where `filter`, `any`, `find`, and friends live.
+- [Sorting and Searching](../algorithms/51-sorting-and-searching.md) — `sort`, `binary_search`, and the other slice algorithms.
