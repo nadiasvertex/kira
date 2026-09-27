@@ -12,6 +12,13 @@ touch 50
 touch 50
 method_receiver body done
 drop 50
+peek 60
+peek 60
+lent body done
+drop 60
+peek 61
+lent early return
+drop 61
 early_return taking the early path
 drop 30
 drop 40

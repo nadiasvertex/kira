@@ -103,24 +103,30 @@ auto live_step(const event &e, live_set &live) -> void {
   }
 }
 
+/// Which locals may have been moved from, and where, across one access.
+auto moved_step(const access_event &a, const function_cfg &cfg,
+                std::vector<std::optional<source_span>> &moved_at) -> void {
+  switch (a.kind) {
+  case access_kind::move:
+    if (cfg.locals[a.local].movable && !moved_at[a.local]) {
+      moved_at[a.local] = a.span;
+    }
+    break;
+  case access_kind::write_whole:
+  case access_kind::storage_dead:
+    moved_at[a.local].reset();
+    break;
+  default:
+    break;
+  }
+}
+
 auto forward_step(const event &e, const function_cfg &cfg, forward_state &state)
     -> void {
   if (const auto *a = std::get_if<access_event>(&e)) {
-    switch (a->kind) {
-    case access_kind::move:
-      if (cfg.locals[a->local].movable && !state.moved_at[a->local]) {
-        state.moved_at[a->local] = a->span;
-      }
-      break;
-    case access_kind::write_whole:
-      state.moved_at[a->local].reset();
-      break;
-    case access_kind::storage_dead:
-      state.moved_at[a->local].reset();
+    moved_step(*a, cfg, state.moved_at);
+    if (a->kind == access_kind::storage_dead) {
       state.contents[a->local].clear();
-      break;
-    default:
-      break;
     }
   } else if (const auto *f = std::get_if<flow_event>(&e)) {
     auto next = f->replace ? loan_set{} : state.contents[f->dest];
@@ -673,6 +679,69 @@ auto check_ownership(const std::vector<parsed_module> &inputs,
       file_has_errors[input.file_id] = true;
     }
   }
+}
+
+auto ownership::owned_at_scope_exits(const function_cfg &cfg)
+    -> std::vector<scope_exit_owned> {
+  using moved_set = std::vector<std::optional<source_span>>;
+  const auto blocks = cfg.blocks.size();
+  auto reached = std::vector<bool>(blocks, false);
+  auto in = std::vector<moved_set>(blocks, moved_set(cfg.locals.size()));
+  reached[0] = true;
+  auto changed = true;
+  while (changed) {
+    changed = false;
+    for (std::size_t b = 0; b < blocks; ++b) {
+      if (!reached[b]) {
+        continue;
+      }
+      auto moved = in[b];
+      for (const auto &e : cfg.blocks[b].events) {
+        if (const auto *a = std::get_if<access_event>(&e)) {
+          moved_step(*a, cfg, moved);
+        }
+      }
+      for (const auto s : cfg.blocks[b].successors) {
+        if (!reached[s]) {
+          reached[s] = true;
+          in[s] = moved;
+          changed = true;
+          continue;
+        }
+        for (std::size_t i = 0; i < moved.size(); ++i) {
+          if (moved[i].has_value() && !in[s][i].has_value()) {
+            in[s][i] = moved[i];
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+
+  auto exits = std::vector<scope_exit_owned>{};
+  for (std::size_t b = 0; b < blocks; ++b) {
+    if (!reached[b]) {
+      continue;
+    }
+    auto moved = in[b];
+    for (const auto &e : cfg.blocks[b].events) {
+      if (const auto *a = std::get_if<access_event>(&e)) {
+        moved_step(*a, cfg, moved);
+      } else if (const auto *x = std::get_if<ownership::scope_exit_event>(&e)) {
+        auto owned = scope_exit_owned{.key = x->key, .groups = {}};
+        for (const auto &group : x->groups) {
+          auto &kept = owned.groups.emplace_back();
+          for (const auto local : group) {
+            if (!moved[local].has_value()) {
+              kept.push_back(local);
+            }
+          }
+        }
+        exits.push_back(std::move(owned));
+      }
+    }
+  }
+  return exits;
 }
 
 } // namespace cinder::semantic

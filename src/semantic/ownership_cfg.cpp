@@ -139,21 +139,20 @@ public:
       : checked_(checked), out_(out), outer_(outer) {}
 
   auto build_function(const ast::func_decl &decl) -> void {
-    begin();
+    begin(&decl);
     for (const auto &param : decl.params) {
       if (param.pattern != nullptr) {
-        declare_pattern(*param.pattern);
+        declare_param(*param.pattern);
       }
     }
     finish(decl.body_expr.get(), decl.body_stmts);
   }
 
   auto build_lambda(const ast::lambda_expr &lambda) -> void {
-    begin();
+    begin(&lambda);
     for (const auto &param : lambda.params) {
-      if (const auto *pattern =
-              dynamic_cast<const ast::pattern *>(param.pattern.get())) {
-        declare_pattern(*pattern);
+      if (param.pattern != nullptr) {
+        declare_param(*param.pattern);
       }
     }
     finish(lambda.body_expr.get(), lambda.body_stmts);
@@ -165,6 +164,10 @@ public:
 
 private:
   struct scope {
+    /// The statement vector this scope is the body of, as
+    /// `scope_exit_event::key`; null for a scope with no statements of its
+    /// own (a comprehension clause, a `where`).
+    const void *key = nullptr;
     std::vector<std::pair<std::string, local_id>> names;
     std::vector<local_id> owned; ///< Locals whose storage ends with the scope.
     bool is_loop = false;
@@ -186,29 +189,36 @@ private:
   //  Graph construction primitives.
   // ------------------------------------------------------------------
 
-  auto begin() -> void {
+  /// Starts the graph with the parameters' scope, keyed by the function or
+  /// lambda itself (`hir::lowerer` drops parameters under that key).
+  auto begin(const void *key) -> void {
     current_ = new_block();
     exit_ = new_block();
     return_slot_ = new_local("the returned value", local_role::return_slot,
                              k_unknown_type, source_span::dummy(), false);
-    scopes_.emplace_back();
+    push_scope(key);
   }
 
-  /// Lowers the body, sends its tail value to the return slot, ends the
-  /// function scope, and publishes the graph.
+  /// Lowers the body in a scope of its own, sends its tail value to the
+  /// return slot, ends the body and parameter scopes, and publishes the
+  /// graph.
   auto finish(const ast::expr *body_expr,
               const std::vector<ast::ptr<ast::node>> &body_stmts) -> void {
     auto tail = value{};
     if (body_expr != nullptr) {
       tail = eval(*body_expr, use_mode::move);
     }
+    push_scope(&body_stmts);
     auto stmts_tail = lower_body(body_stmts, /*want_value=*/true);
     if (body_expr == nullptr) {
       tail = std::move(stmts_tail);
     }
     flow(return_slot_, tail, /*replace=*/true);
+    for (auto i = scopes_.size(); i > 0; --i) {
+      mark_scope_exit(scopes_[i - 1]);
+    }
     end_scopes(0);
-    scopes_.pop_back();
+    scopes_.clear();
     goto_block(exit_);
     current_ = exit_;
     emit(use_event{.local = return_slot_});
@@ -374,11 +384,14 @@ private:
   //  Scopes and names.
   // ------------------------------------------------------------------
 
-  auto push_scope() -> void { scopes_.emplace_back(); }
+  auto push_scope(const void *key) -> void {
+    scopes_.push_back(scope{.key = key});
+  }
 
-  auto push_loop_scope(block_id continue_target, block_id break_target)
-      -> void {
-    scopes_.push_back(scope{.is_loop = true,
+  auto push_loop_scope(block_id continue_target, block_id break_target,
+                       const void *key) -> void {
+    scopes_.push_back(scope{.key = key,
+                            .is_loop = true,
                             .continue_target = continue_target,
                             .break_target = break_target});
   }
@@ -394,14 +407,46 @@ private:
     }
   }
 
+  /// The `whole` locals `s` owns storage for, in reverse declaration order.
+  [[nodiscard]] auto exit_group(const scope &s) const
+      -> std::vector<local_id> {
+    auto group = std::vector<local_id>{};
+    for (auto it = s.owned.rbegin(); it != s.owned.rend(); ++it) {
+      if (cfg_.locals[*it].whole) {
+        group.push_back(*it);
+      }
+    }
+    return group;
+  }
+
+  /// Marks `s` closing normally, under its own key.
+  auto mark_scope_exit(const scope &s) -> void {
+    if (s.key != nullptr) {
+      emit(scope_exit_event{.key = s.key, .groups = {exit_group(s)}});
+    }
+  }
+
+  /// Marks the early exit `jump` leaving every scope from the innermost
+  /// down to (and including) index `depth`.
+  auto mark_jump(const ast::node &jump, std::size_t depth) -> void {
+    auto event = scope_exit_event{.key = &jump, .groups = {}};
+    for (auto i = scopes_.size(); i > depth; --i) {
+      event.groups.push_back(exit_group(scopes_[i - 1]));
+    }
+    emit(std::move(event));
+  }
+
   auto pop_scope() -> void {
+    mark_scope_exit(scopes_.back());
     end_scopes(scopes_.size() - 1);
     scopes_.pop_back();
   }
 
-  auto declare(std::string name, type_id type, source_span span) -> local_id {
+  auto declare(std::string name, type_id type, source_span span,
+               bool whole = false) -> local_id {
     const auto local =
         new_local(name, local_role::binding, type, span, movable(type));
+    cfg_.locals[local].whole = whole;
     if (owns_storage(type, name)) {
       scopes_.back().owned.push_back(local);
     }
@@ -422,6 +467,16 @@ private:
           declare(binding.name, type_of(binding.node), binding.span));
     }
     return locals;
+  }
+
+  /// Declares a parameter: whole when it is a single name.
+  auto declare_param(const ast::node &pattern) -> void {
+    if (pattern.kind == ast::node_kind::binding_pattern) {
+      const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+      declare(binding.name, type_of(&pattern), binding.span, /*whole=*/true);
+      return;
+    }
+    declare_pattern(pattern);
   }
 
   /// Declares `pattern`'s bindings, each receiving what `subject` holds.
@@ -644,7 +699,7 @@ private:
       const auto rest = new_block();
       fork(rest, early);
       current_ = early;
-      emit_return(result);
+      emit_return(result, nullptr);
       current_ = rest;
       return result;
     }
@@ -1053,9 +1108,13 @@ private:
   }
 
   /// Leaves the function from the current block, returning `returned`:
-  /// every open scope ends, then the function exits.
-  auto emit_return(const value &returned) -> void {
+  /// every open scope ends, then the function exits. `jump` is the `return`
+  /// statement, marked for drop scheduling; null for a `?` exit.
+  auto emit_return(const value &returned, const ast::node *jump) -> void {
     flow(return_slot_, returned, /*replace=*/true);
+    if (jump != nullptr) {
+      mark_jump(*jump, 0);
+    }
     end_scopes(0);
     goto_block(exit_);
   }
@@ -1089,7 +1148,7 @@ private:
       const auto next = new_block();
       fork(then, next);
       current_ = then;
-      push_scope();
+      push_scope(&branch.body);
       if (subject.has_value()) {
         bind_pattern(branch.let_pattern.get(), *subject);
       }
@@ -1099,7 +1158,7 @@ private:
       goto_block(end);
       current_ = next;
     }
-    push_scope();
+    push_scope(&else_body);
     const auto tail = lower_body(else_body, want_value);
     flow(join, tail, /*replace=*/true);
     pop_scope();
@@ -1126,7 +1185,7 @@ private:
         fork(body, next);
       }
       current_ = body;
-      push_scope();
+      push_scope(&arm.body_stmts);
       bind_pattern(arm.pattern.get(), subject);
       if (arm.guard != nullptr) {
         static_cast<void>(eval(*arm.guard, use_mode::read));
@@ -1170,7 +1229,7 @@ private:
     const auto exit = new_block();
     fork(body, exit);
     current_ = body;
-    push_loop_scope(head, exit);
+    push_loop_scope(head, exit, &stmt.body);
     for (const auto &pattern : stmt.patterns) {
       bind_pattern(pattern.get(), source);
     }
@@ -1226,7 +1285,7 @@ private:
     const auto exit = new_block();
     fork(body, exit);
     current_ = body;
-    push_loop_scope(head, exit);
+    push_loop_scope(head, exit, &stmt.body);
     if (subject.has_value()) {
       bind_pattern(stmt.let_pattern.get(), *subject);
     }
@@ -1268,7 +1327,7 @@ private:
     const auto exit = new_block();
     fork(body, exit);
     current_ = body;
-    push_loop_scope(head, exit);
+    push_loop_scope(head, exit, nullptr);
     for (const auto &pattern : clause.patterns) {
       bind_pattern(pattern.get(), source);
     }
@@ -1279,7 +1338,7 @@ private:
   }
 
   auto lower_where(const ast::where_expr &where) -> value {
-    push_scope();
+    push_scope(nullptr);
     for (const auto &binding : where.bindings) {
       auto v = eval_opt(binding.value.get(), use_mode::move);
       const auto local =
@@ -1298,7 +1357,7 @@ private:
   /// locals is caught.
   auto lower_scoped_body(const std::vector<ast::ptr<ast::node>> &stmts,
                          bool want_value) -> value {
-    push_scope();
+    push_scope(&stmts);
     const auto tail = lower_body(stmts, want_value);
     const auto join = new_temp(local_role::join_temp);
     flow(join, tail, /*replace=*/true);
@@ -1333,7 +1392,8 @@ private:
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       auto v =
           eval_opt(stmt.initializer.get(), use_mode::move);
-      const auto local = declare(stmt.name, type_of(&stmt), stmt.span);
+      const auto local =
+          declare(stmt.name, type_of(&stmt), stmt.span, /*whole=*/true);
       bind_value(local, v);
       return {};
     }
@@ -1350,8 +1410,7 @@ private:
 
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
-      emit_return(
-          eval_opt(stmt.value.get(), use_mode::move));
+      emit_return(eval_opt(stmt.value.get(), use_mode::move), &node);
       start_unreachable();
       return {};
     }
@@ -1361,6 +1420,7 @@ private:
       const auto is_break = node.kind == ast::node_kind::break_stmt;
       for (auto i = scopes_.size(); i > 0; --i) {
         if (scopes_[i - 1].is_loop) {
+          mark_jump(node, i - 1);
           end_scopes(i - 1);
           goto_block(is_break ? scopes_[i - 1].break_target
                               : scopes_[i - 1].continue_target);
@@ -1450,7 +1510,8 @@ private:
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
       const auto local =
-          declare(binding.name, type_of(stmt.pattern.get()), binding.span);
+          declare(binding.name, type_of(stmt.pattern.get()), binding.span,
+                  /*whole=*/true);
       bind_value(local, v);
       return;
     }

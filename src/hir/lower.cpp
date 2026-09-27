@@ -453,20 +453,17 @@ private:
                                       type_id type, source_span span,
                                       ptr_vec<hir_node> &out)
       -> std::expected<void, lowering_error>;
-  /// Consults `drop_schedule_.scope_exit[key]`, if present, and appends the
-  /// resulting drop calls onto `stmts` — the shared tail both `lower_block`
-  /// (per block) and `lower_function`'s own outer parameter scope call.
-  /// Builds and appends the drop call(s) for one scheduled binding — shared
-  /// tail of `emit_scope_exit_drops` and `emit_jump_drops`.
+  /// Builds and appends the drop call(s) for one scheduled binding.
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
                                    ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
+  /// Appends the drop calls `drop_schedule_.exits[key]` lists, if any — for
+  /// `lower_block` (per block) and `lower_function`'s own parameter scope.
   [[nodiscard]] auto emit_scope_exit_drops(const void *key,
                                            ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
-  /// Same idea as `emit_scope_exit_drops`, for a `break`/`continue`/bare
-  /// `return` — `drop_schedule_.jump_exit[&node]`, if present, one group of
-  /// drops per scope the jump passes through, innermost first.
+  /// The same, for a `break`/`continue`/bare `return` leaving early: every
+  /// scope it passes through, innermost first.
   [[nodiscard]] auto emit_jump_drops(const ast::node &node,
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
@@ -2167,8 +2164,8 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
 
 auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  const auto found = drop_schedule_.scope_exit.find(key);
-  if (found == drop_schedule_.scope_exit.end()) {
+  const auto found = drop_schedule_.exits.find(key);
+  if (found == drop_schedule_.exits.end()) {
     return {};
   }
   for (const auto &drop : found->second) {
@@ -2181,18 +2178,7 @@ auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
 
 auto lowerer::emit_jump_drops(const ast::node &node, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  const auto found = drop_schedule_.jump_exit.find(&node);
-  if (found == drop_schedule_.jump_exit.end()) {
-    return {};
-  }
-  for (const auto &group : found->second) {
-    for (const auto &drop : group) {
-      if (auto result = emit_one_drop(drop, stmts); !result.has_value()) {
-        return result;
-      }
-    }
-  }
-  return {};
+  return emit_scope_exit_drops(&node, stmts);
 }
 
 auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
@@ -3422,7 +3408,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // A value-returning `return`'s own scheduled drops (for a local only
     // *borrowed* by the returned expression, e.g. `return h.get_id()` —
     // one directly returned, like `return h`, was already excluded from the
-    // schedule as a move, see `drop_schedule.cpp`'s `return_stmt` case) are
+    // schedule as a move by the ownership CFG) are
     // deliberately not emitted here: `hir_return`'s value expression is
     // evaluated as part of compiling the return itself, not hoisted into an
     // earlier statement, so a drop call placed ahead of this whole sequence

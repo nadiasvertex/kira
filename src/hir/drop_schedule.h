@@ -21,42 +21,30 @@ struct pending_drop {
 
 /// Where every synthesized drop call in one function/lambda body belongs,
 /// computed once (`compute_drop_schedule`) before `lowerer` walks the same
-/// tree for real — see `spec/todo.md` item 6 and `spec/list-migration-
-/// design.md`'s "Phase 0" for why this exists.
+/// tree for real.
 ///
-/// Both maps are keyed by the *address of the exact AST statement vector or
-/// node* `lowerer` already has in hand at the point it needs to consult
-/// them — `scope_exit` by `(const void *)&stmts` for whichever
-/// `std::vector<ast::ptr<ast::node>>` a block's body lives in (the same
-/// vector `lower_block` receives by reference: `&decl.body_stmts`,
-/// `&if_branch.body`, `&while_stmt.body`, `&match_arm.body_stmts`, a
-/// `for_stmt.body` forwarded through `lower_guarded_for_body`, ...), and
-/// `jump_exit` by the `ast::node*` of the `return_stmt`/`break_stmt`/
-/// `continue_stmt` itself. This works with zero new plumbing through
-/// `lower_block`'s parameter list because both this pass and the real
-/// lowering walk the identical tree, back to back, within one
-/// `lower_function`/lambda-lowering call — including for a monomorphized
-/// generic instance, whose cloned tree is already the one both passes see.
+/// `exits` is keyed by what `lowerer` already has in hand where it emits the
+/// drops: the address of the statement vector whose scope closes normally
+/// (the same vector `lower_block` receives by reference: `&decl.body_stmts`,
+/// `&if_branch.body`, `&match_arm.body_stmts`, ...), the `func_decl` itself
+/// for its parameters' scope, or the `return_stmt`/`break_stmt`/
+/// `continue_stmt` node that leaves early. Each entry lists the bindings
+/// still owned there, in the order they drop: innermost scope first, each
+/// scope in reverse declaration order.
 struct drop_schedule {
-  /// Bindings still live (declared, not moved) when a scope closes
-  /// normally, in reverse declaration order — the order they drop in.
-  std::unordered_map<const void *, std::vector<pending_drop>> scope_exit;
-  /// Bindings a `return`/`break`/`continue` must drop before it jumps,
-  /// grouped per enclosing scope it passes through (innermost first, each
-  /// group itself in reverse declaration order) — a `return` covers every
-  /// scope back to the function/lambda's own top scope; `break`/`continue`
-  /// cover only scopes back to (and including) the nearest enclosing loop's
-  /// body scope.
-  std::unordered_map<const ast::node *, std::vector<std::vector<pending_drop>>>
-      jump_exit;
+  std::unordered_map<const void *, std::vector<pending_drop>> exits;
 };
 
 /// Computes the drop schedule for one function body, including every lambda
-/// syntactically nested inside it (a lambda is only ever lowered inline, as
-/// part of lowering its enclosing function — see `lowerer::lower_lambda`'s
-/// sole call site — so one combined schedule per top-level function body
-/// covers everything `lower_block`/`lower_stmt` will ever need to consult
-/// while lowering it).
+/// nested inside it (a lambda is lowered inline, as part of its enclosing
+/// function). What is still owned at each exit comes from the ownership
+/// checker's own control-flow graph and "maybe moved" pass
+/// (`semantic::ownership::owned_at_scope_exits`), so a value only lent to a
+/// `&`/`&mut` parameter is still dropped, and one moved on any path to an
+/// exit is not — leaking on the paths that did not move it, rather than
+/// dropping a moved-from value. Only bindings that own their value whole
+/// (`let`/`var name`, single-name parameters) are dropped; a pattern binding
+/// may alias part of its subject.
 [[nodiscard]] auto compute_drop_schedule(const ast::func_decl &decl,
                                          const semantic::checked_types &checked)
     -> drop_schedule;

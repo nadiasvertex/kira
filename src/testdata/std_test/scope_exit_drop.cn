@@ -55,6 +55,25 @@ def method_receiver_not_dropped_early() -> unit:
     a.touch()
     println("method_receiver body done")
 
+def peek(n: &noisy) -> unit:
+    println("peek {n.id}")
+
+# Passing a bare value to a `&` parameter only lends it (implicit autoref);
+# the caller still owns it and must drop it at scope exit.
+def lent_value_still_drops() -> unit:
+    let a = noisy { id: 60 }
+    peek(a)
+    peek(&a)
+    println("lent body done")
+
+def lent_then_early_return(flag: bool) -> unit:
+    let a = noisy { id: 61 }
+    peek(a)
+    if flag:
+        println("lent early return")
+        return
+    println("lent fallthrough")
+
 def early_return(flag: bool) -> unit:
     let a = noisy { id: 30 }
     if flag:
@@ -77,6 +96,8 @@ def main() -> unit:
     moved_from_never_drops()
     field_wise_drop()
     method_receiver_not_dropped_early()
+    lent_value_still_drops()
+    lent_then_early_return(true)
     early_return(true)
     early_break()
     println("main done")

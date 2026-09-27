@@ -4,6 +4,7 @@
 
 #include "src/parser/diagnostic.h"
 #include "src/semantic/analysis.h"
+#include "src/semantic/ownership_cfg.h"
 #include "src/semantic/types.h"
 
 namespace cinder::semantic {
@@ -52,5 +53,22 @@ auto check_ownership(const std::vector<parsed_module> &inputs,
                      const checked_types &checked, diagnostic_bag &diag,
                      std::vector<bool> &file_has_errors,
                      unsigned skip_from_fileid) -> void;
+
+namespace ownership {
+
+/// One `scope_exit_event` some path reaches, with every local that may
+/// already have been moved from on some path to it removed: what is still
+/// owned there, and so what must be dropped.
+struct scope_exit_owned {
+  const void *key = nullptr;
+  std::vector<std::vector<local_id>> groups;
+};
+
+/// Runs the same forward "maybe moved" pass `check_ownership` uses for
+/// use-after-move over `cfg`, and reads it at each scope exit.
+[[nodiscard]] auto owned_at_scope_exits(const function_cfg &cfg)
+    -> std::vector<scope_exit_owned>;
+
+} // namespace ownership
 
 } // namespace cinder::semantic

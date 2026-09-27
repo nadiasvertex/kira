@@ -59,6 +59,11 @@ struct local_info {
   /// False for scalars, raw pointers, references, shared views, type
   /// parameters, and anything whose type is unknown.
   bool movable = false;
+  /// Bound whole — by a plain `let`/`var name`, or a parameter that is a
+  /// single name — so it owns its value outright. A pattern binding may
+  /// instead alias part of its subject (partial moves are not tracked), so
+  /// dropping it at scope exit could drop storage something else still owns.
+  bool whole = false;
 };
 
 /// How a loan was made — used only to word diagnostics.
@@ -117,7 +122,20 @@ struct use_event {
   local_id local = 0;
 };
 
-using event = std::variant<access_event, flow_event, use_event>;
+/// A point where scopes end, just before their locals' `storage_dead`
+/// accesses — what drop scheduling (`hir::compute_drop_schedule`) reads.
+/// `key` names the exit the way `hir::lowerer` does: the address of the
+/// statement vector whose scope closes normally, or of the
+/// `return`/`break`/`continue` that leaves early. `groups` holds, per scope
+/// ended (innermost first), its `whole` locals that own storage, in reverse
+/// declaration order. The checker ignores it.
+struct scope_exit_event {
+  const void *key = nullptr;
+  std::vector<std::vector<local_id>> groups;
+};
+
+using event =
+    std::variant<access_event, flow_event, use_event, scope_exit_event>;
 
 struct basic_block {
   std::vector<event> events;
