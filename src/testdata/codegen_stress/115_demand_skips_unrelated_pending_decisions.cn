@@ -1,0 +1,31 @@
+module codegen_stress.demand_skips_unrelated_pending_decisions
+
+# expect: 3000000005
+
+# `id(3)` is a point of demand: `T` is solved from `3`, so that literal is
+# owed its default there. The elements of `xs` and `ys` are not. An index and
+# a loop over them are waiting to name their instances until the elements
+# settle, but naming an instance solves nothing `id(3)` asks about, and the
+# annotations after it are what say the elements are `int64`.
+#
+# `demand` used to follow every pending decision's watches, so the index's
+# and the loop's element leaves were defaulted to `int32` at `id(3)` and the
+# annotations were then refused.
+#
+# `# expect:` rather than cross-tier agreement: the values only fit if the
+# elements really are `int64`.
+
+def id[T](x: T) -> T:
+    return x
+
+def main() -> int64:
+    let xs = [3000000000, 1]
+    let first = xs[0]
+    let ys = [4000000000, 2]
+    var last = 0
+    for y in ys:
+        last = y
+    let b = id(3)
+    let c: int64 = first
+    let d: int64 = last
+    return c + d + int64(b)

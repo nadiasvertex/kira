@@ -1474,51 +1474,73 @@ private:
   /// "Depends on" is the leaves `roots` mention, plus two kinds of leaf a
   /// root may be waiting on without mentioning it:
   ///
-  /// - whatever a stalled decision watches — a pending method call on `?a`
-  ///   may be the only thing that can solve the `?b` being asked about, and
-  ///   it cannot run until `?a` is known. Which leaves a decision will
-  ///   *bind* is not recorded, so its watches are included whole:
-  ///   conservative, and still far narrower than every literal.
+  /// - whatever a stalled decision watches, when that decision may solve a
+  ///   leaf already in scope — a pending method call on `?a` may be the only
+  ///   thing that can solve the `?b` being asked about, and it cannot run
+  ///   until `?a` is known. A decision that solves nothing in scope is not
+  ///   waited on: an index or loop over `[1, 2]` only names its instance
+  ///   once the elements settle, so demanding an unrelated literal must not
+  ///   default them before `let c: int64 = xs[0]` says what they are. A
+  ///   decision that does not record what it binds is followed whole.
   /// - the arguments of a pending call to an implicit generic whose result
-  ///   leaf is in scope, transitively: `add_one(5)`'s result is only known
-  ///   once the instance for the `5` is chosen, which that call records
-  ///   outside the queue (`pending_open_param_calls_`).
+  ///   leaf is in scope: `add_one(5)`'s result is only known once the
+  ///   instance for the `5` is chosen, which that call records outside the
+  ///   queue (`pending_open_param_calls_`).
   ///
-  /// Recomputed each time a default is considered, since the previous one
-  /// may have solved or merged what this one is asking about.
+  /// Both are followed to a fixpoint, since either can bring in a leaf the
+  /// other is waiting on. Recomputed each time a default is considered,
+  /// since the previous one may have solved or merged what this one is
+  /// asking about.
   auto flush_for(std::span<const type_id> roots) -> void {
     const auto in_scope = [&](type_id leaf) -> bool {
-      auto vars = std::vector<type_id>{};
-      auto seen = std::unordered_set<type_id>{};
-      for (const auto root : roots) {
-        collect_type_vars(leaf_ctxt_.zonk(root), vars, seen);
-      }
-      for (const auto id : leaf_queue_.stalled()) {
-        const auto &goal = leaf_queue_.at(id);
-        if (goal.kind != infer::obligation_kind::defaulting) {
-          for (const auto watch : goal.watches) {
-            collect_type_vars(leaf_ctxt_.zonk(watch), vars, seen);
-          }
-        }
-      }
       auto reps = std::unordered_set<type_id>{};
-      for (const auto var : vars) {
-        reps.insert(leaf_ctxt_.find(var));
+      const auto add = [&](type_id type) -> bool {
+        auto vars = std::vector<type_id>{};
+        auto seen = std::unordered_set<type_id>{};
+        collect_type_vars(leaf_ctxt_.zonk(type), vars, seen);
+        auto grew = false;
+        for (const auto var : vars) {
+          grew = reps.insert(leaf_ctxt_.find(var)).second || grew;
+        }
+        return grew;
+      };
+      const auto touches = [&](type_id type) -> bool {
+        auto vars = std::vector<type_id>{};
+        auto seen = std::unordered_set<type_id>{};
+        collect_type_vars(leaf_ctxt_.zonk(type), vars, seen);
+        return std::ranges::any_of(vars, [&](type_id var) -> bool {
+          return reps.contains(leaf_ctxt_.find(var));
+        });
+      };
+      for (const auto root : roots) {
+        (void)add(root);
+      }
+      auto decisions = std::vector<infer::obligation_id>{};
+      for (const auto id : leaf_queue_.stalled()) {
+        if (leaf_queue_.at(id).kind != infer::obligation_kind::defaulting) {
+          decisions.push_back(id);
+        }
       }
       auto grew = true;
       while (grew) {
         grew = false;
+        for (const auto id : decisions) {
+          const auto &goal = leaf_queue_.at(id);
+          if (goal.binds.has_value() &&
+              !std::ranges::any_of(*goal.binds, touches)) {
+            continue;
+          }
+          for (const auto watch : goal.watches) {
+            grew = add(watch) || grew;
+          }
+        }
         for (const auto &call : pending_open_param_calls_) {
           if (call.result_leaf == k_unknown_type ||
               !reps.contains(leaf_ctxt_.find(call.result_leaf))) {
             continue;
           }
-          auto args = std::vector<type_id>{};
           for (const auto param : call.call_params) {
-            collect_type_vars(leaf_ctxt_.zonk(param), args, seen);
-          }
-          for (const auto arg : args) {
-            grew = reps.insert(leaf_ctxt_.find(arg)).second || grew;
+            grew = add(param) || grew;
           }
         }
       }
@@ -6942,7 +6964,12 @@ private:
   /// one of them is solved. Registering it does not check the arguments
   /// again — those have already been checked, and are what may solve the
   /// receiver in the first place. Only the elaboration waits.
+  ///
+  /// `binds` is what running `finish` may solve (see `obligation::binds`):
+  /// empty for a call whose type is already known and only waits to name
+  /// an instance, `nullopt` when it re-checks code that may solve anything.
   auto defer_method_call(std::string_view name, type_id receiver_type,
+                         std::optional<std::vector<type_id>> binds,
                          std::function<void(type_id)> finish) -> void {
     wire_leaf_queue();
     auto goal =
@@ -6961,6 +6988,7 @@ private:
     leaf_queue_.add(
         infer::obligation{.kind = infer::obligation_kind::method_call,
                           .watches = std::move(watches),
+                          .binds = std::move(binds),
                           .goal = std::move(goal),
                           .why = infer::k_no_cause,
                           .payload = payload});
@@ -7073,8 +7101,18 @@ private:
     const auto result = leaf_ctxt_.fresh_type(
         std::format("the result of this call to `{}`", field.field_name),
         source_location{.file_id = file_id_, .span = call.span});
+    // The re-run solves the result leaf and whatever the parameters say
+    // about the arguments; a lambda argument is checked afresh and may solve
+    // anything it captures.
+    auto binds = std::optional<std::vector<type_id>>{};
+    if (!std::ranges::any_of(call.args, is_lambda)) {
+      binds.emplace(1, result);
+      for (const auto &[expr, type] : replay) {
+        binds->push_back(type);
+      }
+    }
     defer_method_call(
-        field.field_name, receiver,
+        field.field_name, receiver, std::move(binds),
         [this, &call, &field, replay = std::move(replay), result,
          context = capture_body_context()](type_id /*settled*/) mutable
             -> void {
@@ -11200,7 +11238,7 @@ private:
       -> type_id {
     defer_method_call(
         std::format("the `{}` operator", ast::binary_op_name(binary.op)), open,
-        [this, &binary](type_id settled) -> void {
+        std::vector<type_id>{}, [this, &binary](type_id settled) -> void {
           const auto operand = base_shape(settled);
           if (mentions_type_param(operand)) {
             defer_operator_dispatch(binary, operand, operator_kind::arithmetic);
@@ -14191,7 +14229,7 @@ private:
     // and `flush_deferred` runs it once `?a` is solved.
     if (mentions_type_var(receiver_type)) {
       defer_method_call(
-          method.decl->name, receiver_type,
+          method.decl->name, receiver_type, std::vector<type_id>{},
           [this, &call, &method, &receiver](type_id settled) -> void {
             // The settled receiver's own entry and method, not the open
             // one's: `list[?a]` and `list[int32]` are different entries with
@@ -14743,6 +14781,7 @@ private:
       // `iter[?a]`), so only the elaboration waits.
       if (mentions_type_var(settle(receiver_type))) {
         defer_method_call(decl.name, settle(receiver_type),
+                          std::vector<type_id>{},
                           [this, &call, &decl, candidate, solved, params,
                            &field](type_id /*settled*/) -> void {
                             (void)instantiate_generic_function(
@@ -18271,7 +18310,7 @@ private:
                         .owner_module = method.owner->module_name,
                         .impl_target_type = types_.entry(target).name,
                         .receiver = index.object.get()};
-    defer_method_call(method.decl->name, target,
+    defer_method_call(method.decl->name, target, std::vector<type_id>{},
                       [this, &dispatches, &index, &method,
                        trait = std::string(trait)](type_id receiver) -> void {
                         dispatch_index(dispatches, index, method, receiver,
@@ -19547,7 +19586,7 @@ private:
         resolve_loop_route(iterable_expr, iterable, nullptr, out);
     if (out.decl != nullptr) {
       defer_method_call(
-          "a `for` loop's iterator", iterable,
+          "a `for` loop's iterator", iterable, std::vector<type_id>{},
           [this, &iterable_expr, &site, &out](type_id settled) -> void {
             defer_loop_route(iterable_expr, site, settled);
             auto routed = iterator_loop_dispatch{};
@@ -21012,6 +21051,7 @@ private:
       return;
     }
     defer_method_call("`new`/`push` for this list", list_type,
+                      std::vector<type_id>{},
                       [this, &site, &table](type_id settled) -> void {
                         record_new_push_dispatch(site, settled, table);
                       });

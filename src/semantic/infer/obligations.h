@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -61,6 +62,14 @@ struct obligation {
   /// gains a solution, and never otherwise — this is what keeps the fixpoint
   /// from being a sweep over everything on every pass.
   std::vector<type_id> watches;
+  /// The types whose leaves discharging this obligation may solve, or
+  /// `nullopt` when that is not known and any leaf may be.
+  ///
+  /// A point of demand uses it to decide which stalled decisions it is
+  /// actually waiting on: one whose discharge solves nothing it asks about
+  /// (an index dispatch naming its instance, say) owes it nothing, so the
+  /// leaves that decision watches are not defaulted on its behalf.
+  std::optional<std::vector<type_id>> binds;
   /// What is being required, phrased for a diagnostic: "`push` on `?a`",
   /// "`T: ord`", "`i < n`".
   std::string goal;
