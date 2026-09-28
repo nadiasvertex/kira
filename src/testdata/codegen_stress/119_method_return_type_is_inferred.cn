@@ -1,0 +1,32 @@
+module codegen_stress.method_return_type_is_inferred
+
+# expect: 16000000121
+
+# todo.md item 19: a method with no declared return type takes it from its
+# body, as a free function does. `main` calls `big`, `chain` and `fact` before
+# the `extend` block that declares them is checked, `chain` calls `big`
+# declared after it, and `fact` calls itself. `big` returns an `int64` a
+# narrower default would truncate.
+#
+# `# expect:` because both tiers would agree on a width decided too early.
+
+type point = { x: int64, y: int64 }
+
+def main() -> int64:
+    let p = point{ x: 4000000000, y: 2 }
+    let a = p.big()
+    let b = p.fact(5)
+    let c = p.chain()
+    return a + b + c
+
+extend point:
+    def chain(self): self.big() + 1
+
+    def big(self):
+        let s = self.x * 2
+        return s
+
+    def fact(self, n: int64):
+        if n <= 1:
+            return 1
+        return n * self.fact(n - 1)

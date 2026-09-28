@@ -36,6 +36,15 @@ Two rules bound inference:
 1. **`pub` functions must annotate every parameter and the return type.** Diagnosed at the declaration (`public function \`{name}\` must annotate its parameters ...`, `src/semantic/check.cpp`). An exported function's signature is a contract for external callers, so it is written down rather than inferred.
 2. **Inference never crosses a call.** A function's types are determined by its own body alone. When the body underdetermines a type, the compiler reports it and asks for an annotation rather than inferring from callers.
 
+### Limits of implicit generics
+
+An implicit generic is checked once per concrete argument type, when a call asks for it. Two consequences are deliberate:
+
+- **An implicit generic that is never called is never checked.** Its body is only read against the argument types of its calls, so an error in it surfaces at the first call. Annotate the parameter, or write an explicit `[T]` with a `where` bound, to have the body checked on its own.
+- **No trait bounds are inferred.** The compiler does not work out that `x + x` requires `T: add` and record it as a bound. A call with a type that lacks the operation is reported inside the instance for that type, with a note naming the call that requested it. An explicit `where` bound is checked at the call site instead.
+
+A method with an unannotated parameter is an implicit generic in the same way, and each call compiles it for its own argument types.
+
 ## Expression-bodied functions
 
 When the whole body is a single expression, it can follow the `:` directly on the same line instead of an indented block. There is no separate syntax for this — `func_body` in `spec/cinder-grammar.ebnf` allows either an inline expression or an indented block after the colon, and the two are interchangeable everywhere a function body is expected.

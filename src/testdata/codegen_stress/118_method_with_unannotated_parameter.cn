@@ -1,0 +1,60 @@
+module codegen_stress.method_with_unannotated_parameter
+
+# expect: 17800000030
+
+# todo.md item 19: a method in an `extend` or `impl` block with an
+# unannotated parameter is an implicit generic, like a free function is. Each
+# call compiles the method for its own argument type, and the template itself
+# has no runtime form.
+#
+# `tag`'s parameter is only handed to a generic, so it is open:
+# `p.tag(3)` is an `int32` instance and `p.tag(wide(1))` an `int64` one.
+# `twice` has no return type either, so its result follows the instance:
+# `p.twice(wide(2500000000))` must be `5000000000`, which an `int32` instance
+# could not hold.
+#
+# `shift`'s body adds its parameter to an `int32` field, so the body pins the
+# parameter and the method is an ordinary concrete one. `origin` has no
+# parameters to infer and only an inferred return type.
+#
+# `scale` lives in an `impl` block, `tag` and the rest in an `extend` block.
+#
+# `# expect:` because both tiers would agree on a width decided too early.
+
+def wide(v: int64) -> int64:
+    return v
+
+def bits[T](v: T) -> int64:
+    if T.name() == "int64":
+        return 6400000000
+    return 6
+
+type point = { x: int32, y: int32 }
+
+trait scaled:
+    def scale(self, k) -> int64
+
+extend point:
+    def tag(self, k) -> int64:
+        return bits(k)
+
+    def twice(self, k): k + k
+
+    def shift(self, n): self.x + n
+
+    def origin(self): self.x - self.x
+
+impl scaled for point:
+    def scale(self, k) -> int64:
+        return bits(k) + int64(self.y)
+
+def main() -> int64:
+    let p = point{ x: 1, y: 2 }
+    let small = p.tag(3)
+    let big = p.tag(wide(1))
+    let narrow = int64(p.twice(5))
+    let wider = p.twice(wide(2500000000))
+    let pinned = int64(p.shift(3)) + int64(p.origin())
+    let scaled_small = p.scale(1)
+    let scaled_big = p.scale(wide(1))
+    return small + big + narrow + wider + pinned + scaled_small + scaled_big

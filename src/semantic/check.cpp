@@ -6332,17 +6332,33 @@ private:
     }
   }
 
+  /// What `check_call_against_decl` needs to know about a method call
+  /// (`p.tag(3)`) beyond the declaration: the method's table entry, the
+  /// impl target's display name, and the receiver. Absent for a free
+  /// function.
+  struct method_call_site {
+    const method_entry *method = nullptr;
+    std::string_view target_type_name;
+    const ast::expr *receiver = nullptr;
+    type_id receiver_type = k_unknown_type;
+  };
+
   /// Checks a call against a known `func_decl`: enforces the
   /// contract-purity rule when inside a contract condition, checks its
   /// arguments via `check_call_args_against`, and returns its return type.
   ///
   /// `explicit_args` are the compile-time arguments the call gave in brackets
   /// (`zeros[8]()`), empty for the ordinary bare-callee call.
+  ///
+  /// `method_site` is set for a call to a `self`-taking method of a
+  /// non-generic `impl`/`extend` block, so a method with an unannotated
+  /// parameter is instantiated per call like a free function is.
   auto check_call_against_decl(const ast::call_expr &call,
                                const ast::func_decl &decl,
                                const module_members *owner,
                                file_id_type decl_file, bool skip_self,
-                               const explicit_generic_args &explicit_args = {})
+                               const explicit_generic_args &explicit_args = {},
+                               const method_call_site *method_site = nullptr)
       -> type_id {
     if (in_contract_ && !decl.modifiers.is_pure) {
       error_with_help(
@@ -6369,21 +6385,36 @@ private:
     // once that function's own body has said what the parameter is — see
     // `resolve_open_param_calls`. `params` carries this call's private copy
     // of each still-open parameter leaf, already tied to the arguments.
-    if (!skip_self && has_unannotated_params(decl) &&
-        is_free_function(decl, owner) && !passes_template_param(params)) {
+    const auto is_free_call = !skip_self && is_free_function(decl, owner);
+    const auto is_method_call =
+        skip_self && method_site != nullptr &&
+        !mentions_template_param(settle(method_site->receiver_type));
+    if (has_unannotated_params(decl) && (is_free_call || is_method_call) &&
+        !passes_template_param(params)) {
       auto param_types = std::vector<type_id>{};
-      param_types.reserve(params.size());
+      param_types.reserve(params.size() + 1);
+      if (is_method_call) {
+        // `params` leaves `self` out; the record indexes by declaration.
+        param_types.push_back(k_unknown_type);
+      }
       for (const auto &param : params) {
         param_types.push_back(param.type);
       }
-      pending_open_param_calls_.push_back(
-          pending_open_param_call{.call = &call,
-                                  .decl = &decl,
-                                  .owner = owner,
-                                  .decl_file = decl_file,
-                                  .call_params = std::move(param_types),
-                                  .file = file_id_,
-                                  .module = module_});
+      auto pending = pending_open_param_call{
+          .call = &call,
+          .decl = &decl,
+          .owner = owner,
+          .decl_file = is_method_call ? method_site->method->file_id : decl_file,
+          .call_params = std::move(param_types),
+          .file = file_id_,
+          .module = module_};
+      if (is_method_call) {
+        pending.receiver = method_site->receiver;
+        pending.method = *method_site->method;
+        pending.target_type_name = std::string(method_site->target_type_name);
+        pending.self_type = strip_refs(settle(method_site->receiver_type));
+      }
+      pending_open_param_calls_.push_back(std::move(pending));
       mint_open_result(decl, call.span);
     }
     // A call whose solution is written in the caller's own parameters
@@ -7232,9 +7263,16 @@ private:
     std::vector<type_id> call_params;
     file_id_type file = 0;
     const module_members *module = nullptr;
-    /// The receiver of a UFCS call (`x.probe()`), which is the callee's
-    /// first argument; `nullptr` for an ordinary call.
+    /// The receiver of a UFCS call (`x.probe()`) or of a method call
+    /// (`p.tag(3)`), which is the callee's first argument; `nullptr` for an
+    /// ordinary call.
     const ast::expr *receiver = nullptr;
+    /// Set when the callee is a method of a non-generic `impl`/`extend` block
+    /// rather than a free function: its instance is named for the block's
+    /// target and checked with `self` bound to `self_type`.
+    std::optional<method_entry> method;
+    std::string target_type_name;
+    type_id self_type = k_unknown_type;
     /// The call's result when the callee declares no return type: a leaf that
     /// waits for the callee's inferred one, which for an open callee is the
     /// instance's, not the template's.
@@ -7430,10 +7468,23 @@ private:
       seeds[i] = type;
       suffix += "$" + mangle_type_for_instance(type);
     }
-    const auto *instance = find_or_check_generic_instance(
-        *item.call, decl, item.owner, item.decl_file, generic_solution{},
-        decl.name + suffix, /*fixed_type_params=*/nullptr, k_unknown_type,
-        /*block_type_params=*/nullptr, &seeds);
+    // A method's instance is named for its block's target (`point::tag$int64`,
+    // the way `hir` names an impl member) and checked with the block's fixed
+    // bindings and `self` in place; a free function's is its bare name.
+    const auto *instance =
+        item.method.has_value()
+            ? find_or_check_generic_instance(
+                  *item.call, decl, item.owner, item.decl_file,
+                  generic_solution{},
+                  std::format("{}::{}{}", item.target_type_name, decl.name,
+                              suffix),
+                  &item.method->fixed_type_params, item.self_type,
+                  item.method->block_type_params, &seeds)
+            : find_or_check_generic_instance(
+                  *item.call, decl, item.owner, item.decl_file,
+                  generic_solution{}, decl.name + suffix,
+                  /*fixed_type_params=*/nullptr, k_unknown_type,
+                  /*block_type_params=*/nullptr, &seeds);
     if (instance == nullptr) {
       return;
     }
@@ -15318,8 +15369,14 @@ private:
           return *instantiated;
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
+        const auto site =
+            method_call_site{.method = method,
+                             .target_type_name = entry.name,
+                             .receiver = field.object.get(),
+                             .receiver_type = object};
         return check_call_against_decl(call, *method->decl, method->owner,
-                                       file_id_, /*skip_self=*/true);
+                                       file_id_, /*skip_self=*/true,
+                                       /*explicit_args=*/{}, &site);
       }
       if (const auto derived = derived_method_result(entry, field.field_name)) {
         infer_call_args_loosely(call);
@@ -15476,8 +15533,14 @@ private:
           }
           record_instance_method_callee(call, *method, entry.name,
                                         *field.object);
+          const auto site =
+              method_call_site{.method = method,
+                               .target_type_name = entry.name,
+                               .receiver = field.object.get(),
+                               .receiver_type = object};
           return check_call_against_decl(call, *method->decl, method->owner,
-                                         file_id_, /*skip_self=*/true);
+                                         file_id_, /*skip_self=*/true,
+                                         /*explicit_args=*/{}, &site);
         }
         // Same last arm as the struct/sum/opaque case above, and the one
         // that matters most for `std.algo`: the whole catalog is free

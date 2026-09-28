@@ -5644,7 +5644,8 @@ auto lower_function(const ast::func_decl &decl,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (decl.modifiers.is_intrinsic) {
+    if (decl.modifiers.is_intrinsic ||
+        checked.open_param_templates.contains(&decl)) {
       continue;
     }
     auto lowered = lower_function(decl, checked, options);
@@ -5687,6 +5688,11 @@ auto lower_function(const ast::func_decl &decl,
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
     if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
+      continue;
+    }
+    if (checked.open_param_templates.contains(&decl)) {
+      // Generic over its unannotated parameters: only the per-call instances
+      // the checker made are lowered.
       continue;
     }
     auto lowered = lower_function(decl, checked, options);
