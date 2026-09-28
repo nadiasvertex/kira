@@ -55,9 +55,12 @@ auto cinder_rt_stdin() -> uint64_t * { return make_raw_fd(0); }
 auto cinder_rt_stdout() -> uint64_t * { return make_raw_fd(1); }
 auto cinder_rt_stderr() -> uint64_t * { return make_raw_fd(2); }
 
-auto cinder_rt_open(uint64_t *path, uint64_t *opts) -> uint64_t * {
+auto cinder_rt_open(uint64_t *path, uint64_t *opts_struct) -> uint64_t * {
   const auto path_bytes = bytes_of(path);
   const auto path_str = std::string(path_bytes.data(), path_bytes.size());
+  // `open_options` is five `bool`s, one byte each at offsets 0..4
+  // (`runtime::struct_layout`), not five 8-byte slots.
+  const auto *opts = reinterpret_cast<const uint8_t *>(opts_struct); // NOLINT
   const bool want_read = opts[0] != 0;
   const bool want_write = opts[1] != 0;
   const bool append = opts[2] != 0;

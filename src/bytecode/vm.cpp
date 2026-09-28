@@ -935,15 +935,17 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 [[nodiscard]] auto intrinsic_rt_open(std::span<const slot_value> args)
     -> slot_value {
   // args[0]: str `{ len; data_ptr }` path.
-  // args[1]: `open_options { read; write; append; create; truncate }`.
+  // args[1]: `open_options { read; write; append; create; truncate }` —
+  // five `bool`s, one byte each at offsets 0..4 (`runtime::struct_layout`),
+  // not five 8-byte slots.
   const auto path_bytes = bytes_of(args[0]);
   const auto path = std::string(path_bytes.data(), path_bytes.size());
-  const auto *opts = slots_of(args[1]);
-  const bool want_read = opts[0].u != 0;
-  const bool want_write = opts[1].u != 0;
-  const bool append = opts[2].u != 0;
-  const bool create = opts[3].u != 0;
-  const bool truncate = opts[4].u != 0;
+  const auto *opts = raw_bytes_of(args[1]);
+  const bool want_read = opts[0] != 0;
+  const bool want_write = opts[1] != 0;
+  const bool append = opts[2] != 0;
+  const bool create = opts[3] != 0;
+  const bool truncate = opts[4] != 0;
 
   int flags = O_RDONLY;
   if (want_read && want_write) {

@@ -1,0 +1,42 @@
+module main
+
+use std.io.open
+use std.io.reader
+use std.io.writer
+use std.intrinsics.open_options
+
+# Exercises every `open_options` flag through the real `rt_open` intrinsic:
+# `write`/`create`/`truncate` must take effect (the file is created and
+# overwritten), and `read` alone must open the same file for reading.
+def test_path() -> str:
+    return "/tmp/cinder_std_test_io_open_write_read.txt"
+
+def write_options() -> open_options:
+    return open_options { read: false, write: true, append: false, create: true, truncate: true }
+
+def read_options() -> open_options:
+    return open_options { read: true, write: false, append: false, create: false, truncate: false }
+
+def main() -> int32:
+    match open(test_path(), write_options()):
+        @ok(f) =>:
+            var out = f
+            out.write_all(&"first".as_bytes())
+            let closed = out.close()
+        @err(e) => println("open for write failed")
+    match open(test_path(), write_options()):
+        @ok(f) =>:
+            var out = f
+            out.write_all(&"hi".as_bytes())
+            let closed = out.close()
+        @err(e) => println("reopen for write failed")
+    match open(test_path(), read_options()):
+        @ok(f) =>:
+            var inp = f
+            var buf: array[byte, 16] = [0; 16]
+            match inp.read(&mut buf[0..16]):
+                @ok(n) => println("read {n} bytes: {buf[0]} {buf[1]}")
+                @err(e) => println("read failed")
+            let closed = inp.close()
+        @err(e) => println("open for read failed")
+    return 0

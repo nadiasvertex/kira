@@ -906,10 +906,16 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
   emit_alloc_slots(writer, 7, 2);
   emit_store_slot(writer, 7, 0, 0);
   emit_store_slot(writer, 7, 1, 1);
-  // r8 = { read: r2, write: r3, append: r4, create: r5, truncate: r6 }
-  emit_alloc_slots(writer, 8, 5);
+  // r8 = { read: r2, write: r3, append: r4, create: r5, truncate: r6 } —
+  // five one-byte `bool`s at offsets 0..4, as `runtime::struct_layout`
+  // lays out `open_options`.
+  emit_alloc_slots(writer, 8, 1);
   for (uint16_t i = 0; i < 5; ++i) {
-    emit_store_slot(writer, 8, i, static_cast<uint8_t>(2 + i));
+    writer.emit_opcode(bc::opcode::op_store_slot);
+    writer.emit_register(8);
+    writer.emit_u16(i);
+    writer.emit_register(static_cast<uint8_t>(2 + i));
+    writer.emit_u8(1);
   }
   // r9 = rt_open(r7, r8)
   writer.emit_opcode(bc::opcode::op_call_intrinsic);
