@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "src/semantic/infer/unify.h"
+#include "src/semantic/linear_poly.h"
 #include "src/semantic/types.h"
 
 namespace cinder::semantic::infer {
@@ -86,6 +87,12 @@ struct rigid_match_result {
   /// A parameter the concrete type does not pin is simply absent — callers
   /// distinguish "solved to `unknown`" from "not solved" by membership.
   std::unordered_map<type_id, type_id> bindings;
+  /// The pattern's value parameters that solved, keyed by polynomial variable
+  /// (`poly_param_var`, so per declaration like `bindings`). A solution is a
+  /// polynomial over the concrete side's variables — `n := m` from `n + 1`
+  /// against `m + 1` — and a constant when the concrete side has none.
+  /// Absent when unpinned, as for `bindings`.
+  std::unordered_map<std::string, linear_poly> values;
   /// Set when the two genuinely disagree.
   ///
   /// `unify_rigid` had nowhere to put this and so dropped it, which is why a

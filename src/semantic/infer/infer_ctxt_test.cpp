@@ -98,6 +98,25 @@ auto test_sorts_are_enforced() -> void {
          "expected the constructor variable to keep its sort");
 }
 
+/// An adopted arity-0 type parameter is a type, not "a type or a value": a
+/// value parameter reaches the store as a polynomial variable, never as a
+/// bare `type_param`, so there is nothing left for the spelling to leave
+/// open.
+auto test_an_adopted_type_parameter_is_a_type() -> void {
+  auto table = type_table{};
+  auto ctx = infer_ctxt(table);
+  const auto t = table.type_param("T");
+  ctx.adopt(t, meta_sort::type_sort, 0, "T", nowhere());
+
+  const auto to_value =
+      ctx.bind(t, table.const_value(table.usize_type(), 3), k_no_cause);
+  expect(!to_value.has_value(), "expected a value not to solve an adopted `T`");
+  expect(to_value.error().failure == bind_failure::sort_mismatch,
+         "expected a sort mismatch");
+  expect(ctx.bind(t, table.builtin("int32"), k_no_cause).has_value(),
+         "expected a type to solve an adopted `T`");
+}
+
 /// The load-bearing invariant. Zonking a solved structure must produce the
 /// same `type_id` the structure written directly interns to — including the
 /// higher-kinded case, where solving the head of an `F[A]` has to collapse
@@ -205,6 +224,7 @@ auto main() -> int {
   test_union_find_merges_classes();
   test_occurs_check();
   test_sorts_are_enforced();
+  test_an_adopted_type_parameter_is_a_type();
   test_zonk_is_canonical();
   test_zonk_memo_is_invalidated();
   test_cause_chain();

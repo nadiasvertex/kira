@@ -91,13 +91,6 @@ struct meta_var {
   /// For `value_sort`, the scalar type the value inhabits (`usize` for an
   /// array length). `k_unknown_type` for the other sorts.
   type_id underlying = k_unknown_type;
-  /// Set only by `adopt`, for a parameter whose own spelling does not say
-  /// which sort it is: an arity-0 `type_param_kind` is how both an ordinary
-  /// `T` and a value parameter `n` are written (`concrete_sort` refuses to
-  /// guess for exactly this reason). Such a variable accepts a solution of
-  /// any sort, because the alternative is to guess and be wrong half the
-  /// time.
-  bool sort_is_ambiguous = false;
   /// What this variable stands for, for diagnostics: "`T` of `push`".
   std::string origin;
   /// Where it was introduced.

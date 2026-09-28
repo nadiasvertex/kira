@@ -33,7 +33,22 @@ struct fixture {
   auto ctor_param(const std::string &name, size_t arity) -> type_id {
     return table.type_param(name, arity);
   }
+  /// A value slot mentioning the value parameter `var` — a polynomial, the one
+  /// representation a value slot has.
+  auto value_slot(const std::string &var, int64_t plus = 0) -> type_id {
+    return table.symbolic_value(
+        table.usize_type(),
+        cinder::semantic::poly_add(cinder::semantic::poly_variable(var),
+                                   cinder::semantic::poly_constant(plus)));
+  }
 };
+
+/// What the value parameter `var` solved to, rendered; empty when unsolved.
+auto solved_value(const cinder::semantic::infer::rigid_match_result &result,
+                  const std::string &var) -> std::string {
+  const auto it = result.values.find(var);
+  return it == result.values.end() ? std::string{} : it->second.display();
+}
 
 /// What the parameter spelled `name` solved to. Bindings are keyed by the
 /// parameter's identity; the tests name them by spelling for readability.
@@ -102,12 +117,12 @@ auto test_array_length_now_solves() -> void {
   const auto usize = f.table.usize_type();
   const auto length = f.table.const_value(usize, 4);
   const auto pattern =
-      f.table.array_of(f.param("T"), std::nullopt, f.param("n"));
+      f.table.array_of(f.param("T"), std::nullopt, f.value_slot("n"));
   const auto concrete = f.table.array_of(int32, 4, length);
 
   const auto strict = match_pattern(f.table, pattern, concrete);
   expect(bound(f, strict, "T") == int32, "expected the element to solve");
-  expect(bound(f, strict, "n") == length,
+  expect(solved_value(strict, "n") == "4",
          "expected the length to solve — the gap this replaces");
 }
 
@@ -228,22 +243,25 @@ auto test_unpinned_parameters_stay_absent() -> void {
          "expected the unpinned one to be absent, not bound to `unknown`");
 }
 
-/// A value parameter is spelled exactly like a type parameter, so the store
-/// must not refuse to bind it to a compile-time value. Getting this wrong
-/// breaks every const generic while leaving ordinary generics green.
+/// A value parameter solves to a value and is reported under its variable,
+/// not among the type bindings. Getting this wrong breaks every const generic
+/// while leaving ordinary generics green.
 auto test_a_value_parameter_binds_to_a_value() -> void {
   auto f = fixture{};
   const auto usize = f.table.usize_type();
-  const auto three = f.table.const_value(usize, 3);
+  const auto five = f.table.const_value(usize, 5);
   const auto pattern =
-      f.table.builtin_generic("vec", {f.param("T"), f.param("n")});
+      f.table.builtin_generic("vec", {f.param("T"), f.value_slot("n", 2)});
   const auto concrete =
-      f.table.builtin_generic("vec", {f.table.builtin("int32"), three});
+      f.table.builtin_generic("vec", {f.table.builtin("int32"), five});
 
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(),
          "expected a value to be an acceptable solution for `n`");
-  expect(bound(f, result, "n") == three, "expected `n` to solve to the value");
+  expect(solved_value(result, "n") == "3",
+         "expected `n + 2 = 5` to solve `n` to 3");
+  expect(result.bindings.size() == 1,
+         "expected only `T` among the type bindings");
 }
 
 /// A pattern's value parameter is a variable inside a polynomial, and an
@@ -267,8 +285,28 @@ auto test_a_polynomial_parameter_is_an_unknown() -> void {
   const auto result = match_pattern(f.table, pattern, concrete);
   expect(!result.failure.has_value(),
          "expected the pattern's `n` to solve against the caller's `m`");
+  expect(solved_value(result, "n") == "m",
+         "expected `n` to solve to the caller's `m`");
+  expect(!result.values.contains("m"),
+         "expected the caller's `m` to stay rigid, not solve");
   expect(bound(f, result, "T") == int32,
          "expected `T`, after the length, to solve too");
+}
+
+/// A value parameter nothing pins is absent, like an unpinned type parameter:
+/// `n + k = 5` has many answers, and neither is reported as one of them.
+auto test_an_unpinned_value_parameter_is_absent() -> void {
+  auto f = fixture{};
+  const auto usize = f.table.usize_type();
+  const auto two_unknowns = f.table.symbolic_value(
+      usize, cinder::semantic::poly_add(cinder::semantic::poly_variable("n"),
+                                        cinder::semantic::poly_variable("k")));
+  const auto pattern = f.table.builtin_generic("vec", {two_unknowns});
+  const auto concrete =
+      f.table.builtin_generic("vec", {f.table.const_value(usize, 5)});
+
+  const auto result = match_pattern(f.table, pattern, concrete);
+  expect(result.values.empty(), "expected nothing to be reported solved");
 }
 
 /// Adoption must not leak: the store is local, so the same `T` matched twice
@@ -305,6 +343,7 @@ auto main() -> int {
   test_unpinned_parameters_stay_absent();
   test_a_value_parameter_binds_to_a_value();
   test_a_polynomial_parameter_is_an_unknown();
+  test_an_unpinned_value_parameter_is_absent();
   test_matches_do_not_share_parameters();
   std::cout << "rigid_match_test passed\n";
   return 0;

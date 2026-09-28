@@ -9,12 +9,12 @@ namespace {
 
 /// Which sort a *concrete* type can stand for.
 ///
-/// One case is genuinely ambiguous and is resolved in `check_sort` rather
-/// than here: a `type_param_kind` of arity 0 is how the table spells both an
-/// ordinary type parameter `T` and a value parameter `n` before either is
-/// known, so it is accepted for both `type_sort` and `value_sort`.
-[[nodiscard]] auto concrete_sort(const type_entry &entry)
-    -> std::optional<meta_sort> {
+/// A `type_param_kind` says so itself: its arity decides constructor-ness,
+/// and `is_value_param` separates a value parameter `n` from a type `T`. (A
+/// value slot never holds a bare value parameter — it holds the polynomial
+/// over its variable — so the latter is a type parameter met in type
+/// position.)
+[[nodiscard]] auto concrete_sort(const type_entry &entry) -> meta_sort {
   if (is_value_kind(entry.kind)) {
     return meta_sort::value_sort;
   }
@@ -22,8 +22,10 @@ namespace {
     return meta_sort::ctor_sort;
   }
   if (entry.kind == type_kind::type_param_kind) {
-    return entry.ctor_arity > 0 ? std::optional(meta_sort::ctor_sort)
-                                : std::nullopt;
+    if (entry.ctor_arity > 0) {
+      return meta_sort::ctor_sort;
+    }
+    return entry.is_value_param ? meta_sort::value_sort : meta_sort::type_sort;
   }
   return meta_sort::type_sort;
 }
@@ -88,12 +90,8 @@ auto infer_ctxt::adopt(type_id id, meta_sort sort, size_t arity,
   if (vars_.contains(id)) {
     return false;
   }
-  const auto &entry = table_->entry(id);
   vars_.emplace(id, meta_var{.sort = sort,
                              .arity = arity,
-                             .sort_is_ambiguous =
-                                 entry.kind == type_kind::type_param_kind &&
-                                 entry.ctor_arity == 0,
                              .origin = std::move(origin),
                              .where = where});
   mint_order_.push_back(id);
@@ -183,13 +181,6 @@ auto infer_ctxt::check_sort(const meta_var &var, type_id value) const
         .failure = failure, .value = value, .detail = std::move(detail)};
   };
 
-  // A parameter whose spelling does not say its sort accepts any solution —
-  // the mirror of the latitude already given below to a *value* spelled that
-  // way. See `meta_var::sort_is_ambiguous`.
-  if (var.sort_is_ambiguous) {
-    return std::nullopt;
-  }
-
   if (const auto *other = meta(value); other != nullptr) {
     if (other->sort != var.sort) {
       return refuse(bind_failure::sort_mismatch,
@@ -214,22 +205,10 @@ auto infer_ctxt::check_sort(const meta_var &var, type_id value) const
   }
 
   const auto sort = concrete_sort(entry);
-  if (!sort.has_value()) {
-    // An arity-0 `type_param_kind`: both a `T` and an `n` are spelled this
-    // way, so it is accepted for either, and rejected only for `ctor_sort`
-    // where the arity settles it.
-    if (var.sort == meta_sort::ctor_sort) {
-      return refuse(bind_failure::arity_mismatch,
-                    std::format("`{}` takes no type arguments, but a "
-                                "constructor taking {} was required",
-                                entry.name, var.arity));
-    }
-    return std::nullopt;
-  }
-  if (*sort != var.sort) {
+  if (sort != var.sort) {
     return refuse(bind_failure::sort_mismatch,
                   std::format("`{}` is a {}, but a {} was required",
-                              table_->display(value), sort_name(*sort),
+                              table_->display(value), sort_name(sort),
                               sort_name(var.sort)));
   }
   if (var.sort == meta_sort::ctor_sort && entry.ctor_arity != var.arity) {

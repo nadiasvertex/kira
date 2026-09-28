@@ -95,10 +95,9 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
 
   for (const auto param : params) {
     const auto &entry = table.entry(param);
-    // Arity decides constructor-ness (kinds are arities, ch. 37). For an
-    // arity-0 parameter `adopt` records the sort as *ambiguous*, because the
-    // spelling genuinely does not say whether it is a type or a compile-time
-    // value — guessing would reject half of all const generics.
+    // Arity decides constructor-ness (kinds are arities, ch. 37). Every
+    // arity-0 parameter here is a type: a value parameter reaches a pattern
+    // only as a variable inside a polynomial, collected into `values`.
     ctx.adopt(param,
               entry.ctor_arity > 0 ? meta_sort::ctor_sort
                                    : meta_sort::type_sort,
@@ -123,6 +122,19 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
       continue;
     }
     result.bindings.emplace(param, solved);
+  }
+  for (const auto &var : values) {
+    const auto minted = ctx.value_param_named(var);
+    if (!minted.has_value()) {
+      continue; // Declared, but nothing solved it.
+    }
+    const auto solved = ctx.zonk(*minted);
+    const auto &entry = table.entry(solved);
+    if (entry.kind != type_kind::const_value_kind &&
+        entry.kind != type_kind::symbolic_value_kind) {
+      continue;
+    }
+    result.values.emplace(var, entry.value);
   }
   return result;
 }
