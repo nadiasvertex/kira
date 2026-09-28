@@ -12,16 +12,16 @@ namespace cinder::semantic::infer {
 // ==========================================================================
 //  Value solving
 //
-//  Ch. 33 says outright that the
-//  compiler "does not *solve for* `n` and propagate it" — an
-//  unresolved-but-satisfiable value slot is merely carried along. That is
-//  todo item 20 in the dependent fragment, and it is what produced
-//  `solve_value_params`, `bind_generic_constant` and the const-generic
-//  special cases: every consumer downstream of a value slot had to guess at
-//  an `n` nobody had solved.
-//
-//  Unifying `vec[T, n + 1]` against `vec[T, 3]` should yield `n := 2`, and a
+//  The one place an equation between two value slots is decided and solved.
+//  Unifying `vec[T, n + 1]` against `vec[T, 3]` yields `n := 2`, and a
 //  single linear equation over the integers is decided *and* solved exactly.
+//
+//  Every value parameter reaches it through the unifier (`unify_values`):
+//  inference's own unknowns directly, and a call's through `match_pattern`,
+//  which is how the checker reads a callee's `n` off its arguments. There
+//  used to be a second solver in the checker for the latter; it could not
+//  tell the callee's unknowns from the caller's fixed values, and a value
+//  solved one way on one path and another way on the other.
 // ==========================================================================
 
 /// Which of an equation's variables it may solve for.

@@ -28,7 +28,6 @@
 #include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
-#include "src/semantic/infer/value_solver.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
@@ -704,7 +703,7 @@ private:
   /// nested calls of its own, which would clobber one.
   ///
   /// Only ever a fallback: `solve_generic_params` consults it after explicit
-  /// arguments and after unification against the arguments, and `unify_rigid`
+  /// arguments and after unification against the arguments, and `match_params`
   /// declines to overwrite a name already bound. So a hint can turn an
   /// unsolvable call into a solved one and can never re-solve a call the
   /// arguments already answered — which is what keeps `k_unknown_type`'s
@@ -979,6 +978,11 @@ private:
   /// See `checked_types::ptr_casts`. Populated by `infer_ptr_cast_call`.
   std::unordered_map<const ast::call_expr *, type_id> ptr_casts_;
   std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls_;
+  /// Calls with an argument already reported as the wrong type. A value
+  /// parameter that argument would have fixed is left unsolved by it, and
+  /// saying so again ("cannot tell what `n` is") would only restate the
+  /// mismatch as a second, vaguer error.
+  std::unordered_set<const ast::call_expr *> mismatched_argument_calls_;
   /// See `checked_types::stack_buffers`. Populated by `infer_uninit_call`.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
       stack_buffers_;
@@ -4506,93 +4510,23 @@ private:
     mark_error();
   }
 
-  /// Solves a callee's value parameters against a concrete argument type, by
-  /// walking the two types in parallel and reading off every value slot the
-  /// argument determines: matching `array[T, n]` against `array[int32, 4]`
-  /// binds `n := 4`; matching `vec[T, n + 1]` against `vec[int32, 3]` binds
-  /// `n := 2`.
+  /// Solves a callee's value parameters against a concrete argument type:
+  /// matching `array[T, n]` against `array[int32, 4]` binds `n := 4`;
+  /// matching `vec[T, n + 1]` against a caller's `vec[int32, m + 1]` binds
+  /// `n := m`. What `out` already holds is substituted rather than solved
+  /// again, and a new answer never displaces an old one: a conflicting second
+  /// answer means the call is already ill-typed (`compatible` says so), and
+  /// guessing between them would only add a confusing second diagnostic.
   ///
   /// This is what makes a dependent signature usable from outside itself. The
   /// callee's `index[n]` means nothing at a call site until `n` is known, and
   /// this is where it becomes known — from the *other* argument, which is
   /// exactly how `safe_get(v, i)` ties the index to the array.
-  auto solve_value_params(type_id param, type_id argument, value_bindings &out)
+  auto match_value_params(type_id param, type_id argument, value_bindings &out)
       -> void {
-    auto visited = std::set<std::pair<type_id, type_id>>{};
-    solve_value_params(param, argument, out, visited);
-  }
-
-  auto solve_value_params(type_id param, type_id argument, value_bindings &out,
-                          std::set<std::pair<type_id, type_id>> &visited)
-      -> void {
-    // Identical types still have to be walked: the callee's `array[T, n]` and
-    // a caller's own `array[T, n]` intern as one type (a value's polynomial is
-    // keyed by its spelling), and matching them is exactly how the callee's
-    // `n` solves to the caller's. The visited set is what keeps a recursive
-    // type (whose argument list can point back at itself) from walking
-    // forever.
-    if (!visited.emplace(param, argument).second) {
-      return;
-    }
-    const auto &param_entry = types_.entry(param);
-    const auto &argument_entry = types_.entry(argument);
-
-    if (is_value_kind(param_entry.kind)) {
-      const auto pattern = slot_poly(param);
-      const auto value = slot_poly(argument);
-      if (!pattern.has_value() || !value.has_value()) {
-        return;
-      }
-      // The pattern's variables are the callee's unknowns; the value's are
-      // the caller's, fixed for the whole call. A recursive call names one
-      // declaration's `n` on both sides, and those are still two variables,
-      // so each of the pattern's is either replaced by what it is already
-      // known to be (an earlier argument, or the brackets: `split[3](a)`
-      // turns `m + n` into `3 + n`) or marked apart as the unknown.
-      constexpr auto unknown_mark = '?';
-      auto renamed = value_bindings{};
-      for (const auto &term : pattern->terms) {
-        const auto known = out.find(term.var);
-        renamed.emplace(term.var, known != out.end()
-                                      ? known->second
-                                      : poly_variable(unknown_mark + term.var));
-      }
-      // Not the unsigned domain: refusing `n + 1 = 0` is `compatible`'s to
-      // report, and this only reads off the answers a call does have.
-      const auto solution = infer::solve_value_equation(
-          poly_substitute(*pattern, renamed), *value,
-          /*unsigned_domain=*/false, [](std::string_view var) -> bool {
-            return var.starts_with(unknown_mark);
-          });
-      if (solution.answer == infer::value_answer::solved) {
-        // First binding wins: a second, conflicting one means the call is
-        // already ill-typed (`compatible` will have said so), and guessing
-        // between them would only add a confusing second diagnostic.
-        out.emplace(solution.var.substr(1), solution.value);
-      }
-      return;
-    }
-
-    if (param_entry.kind != argument_entry.kind) {
-      // A `&T` parameter taking a lent `T` (and the reverse) is the one shape
-      // difference that still carries the same structure underneath.
-      if (param_entry.kind == type_kind::ref_kind) {
-        solve_value_params(param_entry.result, argument, out, visited);
-      } else if (argument_entry.kind == type_kind::ref_kind) {
-        solve_value_params(param, argument_entry.result, out, visited);
-      }
-      return;
-    }
-
-    for (size_t i = 0;
-         i < param_entry.args.size() && i < argument_entry.args.size(); ++i) {
-      solve_value_params(param_entry.args[i], argument_entry.args[i], out,
-                         visited);
-    }
-    if (param_entry.result != k_unknown_type &&
-        argument_entry.result != k_unknown_type) {
-      solve_value_params(param_entry.result, argument_entry.result, out,
-                         visited);
+    for (auto &[var, value] :
+         infer::match_pattern(types_, param, argument, out).values) {
+      out.try_emplace(var, std::move(value));
     }
   }
 
@@ -6112,7 +6046,7 @@ private:
   /// `call_argument_mappings_` (see `call_argument_mapping`'s doc comment
   /// in types.h), since this is the only place that assignment is known.
   /// `solved_out`, when given, receives the callee's value parameters as the
-  /// arguments determined them (`solve_value_params`) — the same bindings the
+  /// arguments determined them (`match_value_params`) — the same bindings the
   /// refinement obligations below are discharged under, handed back so
   /// `check_call_against_decl` can monomorphize the callee with them.
   auto check_call_args_against(const ast::call_expr &call,
@@ -6228,7 +6162,7 @@ private:
     if (generic != nullptr && generic->decl != nullptr) {
       for (const auto &param : generic->decl->type_params) {
         // Value parameters are solved *from* this check
-        // (`solve_value_params`), so they stay as they are.
+        // (`match_value_params`), so they stay as they are.
         const auto is_type = !param.is_value_param ||
                              (param.bound_or_type != nullptr &&
                               names_trait_or_concept(*param.bound_or_type));
@@ -6264,8 +6198,11 @@ private:
       // from `v`, which for a differently-ordered signature could just as
       // easily come after `i`. So the shape check runs in place and the
       // obligation is collected for the second pass below.
+      if (!types_.compatible(settle(expected), settle(found))) {
+        mismatched_argument_calls_.insert(&call);
+      }
       type_mismatch(item.value->span, shown, found, "for this argument");
-      solve_value_params(expected, found, solved_values);
+      match_value_params(expected, found, solved_values);
       if (types_.entry(expected).kind == type_kind::refinement_kind) {
         deferred.push_back(deferred_narrowing{
             .expected = expected,
@@ -6453,7 +6390,7 @@ private:
   //  still a symbol.
   //
   //  So the template is never lowered. Instead, each call site whose arguments
-  //  pin `n` down to a constant (`solve_value_params`, already run to check
+  //  pin `n` down to a constant (`match_value_params`, already run to check
   //  the arguments) gets an *instance*: the declaration cloned, re-checked
   //  with `n` bound to that constant, and named `get$3`. Instances are shared
   //  per constant tuple, so a call in a loop compiles one of them.
@@ -8362,11 +8299,11 @@ private:
   /// because that is the order of decreasing explicitness:
   ///
   ///   1. an explicit argument (`zeros[8]()`), which says so outright;
-  ///   2. `unify_rigid`'s solution against the argument types, which pins a
+  ///   2. `match_pattern`'s solution against the argument types, which pins a
   ///      type parameter (`x: T` given an `int32`) and also a value parameter
   ///      mentioned in a type (`v: array[int32, n]` given an `array[int32,
   ///      3]`, whose `n` solves to a `const_value`);
-  ///   3. `solve_value_params`' polynomial solution, already computed while
+  ///   3. `match_value_params`' polynomial solution, already computed while
   ///      checking the arguments, for a value parameter a refinement or
   ///      length constrains.
   ///
@@ -8481,7 +8418,9 @@ private:
           solution.suffix += "$?";
           continue;
         }
-        report_unsolved_value_param(call, decl, param);
+        if (!mismatched_argument_calls_.contains(&call)) {
+          report_unsolved_value_param(call, decl, param);
+        }
         return std::nullopt;
       }
 
@@ -8743,7 +8682,7 @@ private:
   ///
   /// Arguments are first checked against the declared parameter types while
   /// `T` is still abstract, and an abstract `T` accepts anything. Solving then
-  /// takes the first answer each parameter gets (`unify_rigid`), so in
+  /// takes the first answer each parameter gets (`match_params`), so in
   /// `pick(1, "x")` against `def pick[T](a: T, b: T)` the `str` was never
   /// compared with anything: `T := int32` came from `a`, and `b` went through
   /// unexamined. This is the comparison that was missing.
@@ -8814,7 +8753,7 @@ private:
   /// reach a parameter mentioned nowhere but the return type (`def
   /// collect[I, C](self: I) -> C`).
   ///
-  /// Deliberately last, and deliberately non-overriding: `unify_rigid`
+  /// Deliberately last, and deliberately non-overriding: `match_params`
   /// declines to rebind a name, so "arguments win over context" falls out of
   /// call order rather than needing a rule of its own. That is what makes
   /// this safe to add without auditing existing call sites — it can turn an
@@ -8842,7 +8781,7 @@ private:
     }
     // Resolved in the *template's* own terms — `signature_return_type` binds
     // each type parameter to its abstract `type_param`, which is exactly the
-    // form `unify_rigid` knows how to solve, so `-> C` comes back as a
+    // form `match_params` knows how to solve, so `-> C` comes back as a
     // bindable `C` rather than as `unknown`.
     //
     // Solved aside and merged in, rather than unified straight into
@@ -9854,7 +9793,7 @@ private:
     // When the expected slot is itself still abstract (a callee's unsolved
     // type parameter — `option[B]` from a generic signature) but the payload
     // is concrete, answer with the concrete instantiation: echoing the
-    // abstract expectation back would tell rigid inference (`unify_rigid`)
+    // abstract expectation back would tell rigid inference (`match_params`)
     // nothing, leaving `B` unsolvable at a call that plainly determines it.
     if (expected_is("option") && (name == "some" || name == "none")) {
       if (name == "some" && !expected_entry.args.empty() &&
@@ -12600,7 +12539,7 @@ private:
       // interns the same way `type_param_kind` does for a type parameter —
       // as a placeholder the receiver is free to instantiate however it
       // likes. This is only a candidate filter; whether the receiver's
-      // actual value is one `unify_rigid`/`solve_value_params` can pin down
+      // actual value is one `match_value_params` can pin down
       // is decided afterward, by `check_impl_generic_method_call`.
       return true;
     }
@@ -13063,7 +13002,7 @@ private:
           continue;
         }
         // Rigid unification alone does not mean the impl applies —
-        // `unify_rigid` reports what *would* make the pattern match without
+        // `match_params` reports what *would* make the pattern match without
         // insisting that it does. Substituting the solution back and
         // requiring the original settles it, so `impl ... for holder[T]` is
         // accepted for `holder[int32]` and rejected for `boxed[int32]`.
@@ -13555,9 +13494,9 @@ private:
     }
     const auto params = signature_params(*method.decl, method.owner,
                                          /*skip_self=*/true);
-    // Both solvers run, because they see different things: `unify_rigid`
-    // below reads a type parameter straight off an argument's type, while
-    // `solve_value_params` (via `solved`) is what reaches *inside* a type to
+    // Both readings run, because they answer different things: the type
+    // bindings below read a type parameter straight off an argument's type,
+    // while `match_value_params` (via `solved`) is what reaches *inside* a type to
     // pin a value parameter — an `array[int32, n]` parameter given an
     // `array[int32, 3]` argument solves `n := 3` there and nowhere else.
     auto solved = value_bindings{};
@@ -13644,20 +13583,17 @@ private:
            (!method.block_type_params->empty() || !receiver.args.empty());
   }
 
-  /// Fills in `bindings` for an impl-block *value* parameter that
-  /// `unify_rigid` cannot bind on its own. `unify_rigid` only knows how to
-  /// bind a `type_param_kind` slot, but a value parameter such as `n: usize`
-  /// embedded in a target like `buf[n]` interns as a `symbolic_value_kind`
-  /// polynomial variable instead (see `resolve_value_arg`/`name_poly`), which
-  /// `unify_rigid` silently skips over — leaving `n` looking unsolved even
-  /// though `buf[4]` plainly determines it. This runs the same
-  /// `value_bindings`/`linear_poly` channel `solve_generic_params` already
-  /// uses for free functions (`solve_value_params`), against the impl's
-  /// target pattern instead of a parameter list.
+  /// Fills in `bindings` for an impl-block *value* parameter. `bindings` is
+  /// keyed by parameter id, but a value parameter such as `n: usize` embedded
+  /// in a target like `buf[n]` is a polynomial variable (see
+  /// `resolve_value_arg`/`name_poly`), so its answer arrives in the match's
+  /// value solutions rather than its type bindings. This reads it from there
+  /// — the same `match_value_params` free functions use, against the impl's
+  /// target pattern instead of a parameter list — and binds the constant.
   auto solve_impl_value_params(const method_entry &method, type_id concrete,
                                param_subst &bindings) -> void {
     auto solved = value_bindings{};
-    solve_value_params(method.impl_target_pattern, concrete, solved);
+    match_value_params(method.impl_target_pattern, concrete, solved);
     for (const auto &type_param : *method.block_type_params) {
       if (type_param.name.empty() || !type_param.is_value_param ||
           bindings.contains(param_id(type_param))) {
@@ -23373,7 +23309,7 @@ private:
       }
       const auto found = node_types_.find(args_by_param[i]);
       if (found != node_types_.end()) {
-        solve_value_params(params[i].type, settle(found->second), solved);
+        match_value_params(params[i].type, settle(found->second), solved);
       }
     }
   }

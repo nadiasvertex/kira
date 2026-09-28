@@ -11,6 +11,7 @@
 
 #include <iostream>
 #include <string>
+#include <unordered_map>
 
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/linear_poly.h"
@@ -309,6 +310,44 @@ auto test_an_unpinned_value_parameter_is_absent() -> void {
   expect(result.values.empty(), "expected nothing to be reported solved");
 }
 
+/// What is already known is substituted, not solved again: `m + n` against
+/// `5` has no single answer, but with `m := 3` (from the brackets,
+/// `split[3](a)`) it is `3 + n = 5`.
+auto test_a_known_value_is_substituted() -> void {
+  auto f = fixture{};
+  const auto usize = f.table.usize_type();
+  const auto m_plus_n = f.table.symbolic_value(
+      usize, cinder::semantic::poly_add(cinder::semantic::poly_variable("m"),
+                                        cinder::semantic::poly_variable("n")));
+  const auto pattern = f.table.builtin_generic("vec", {m_plus_n});
+  const auto concrete =
+      f.table.builtin_generic("vec", {f.table.const_value(usize, 5)});
+  const auto known = std::unordered_map<std::string, cinder::semantic::linear_poly>{
+      {"m", cinder::semantic::poly_constant(3)}};
+
+  const auto result = match_pattern(f.table, pattern, concrete, known);
+  expect(!result.failure.has_value(), "expected `3 + n = 5` to agree");
+  expect(solved_value(result, "n") == "2", "expected `n` to solve to 2");
+  expect(!result.values.contains("m"),
+         "expected the known `m` not to be reported again");
+}
+
+/// A recursive call names one declaration's `n` on both sides: the callee's,
+/// an unknown, and the caller's, fixed. `vec[n + 1]` given the caller's
+/// `vec[n]` solves the callee's `n` to the caller's `n - 1`, rather than
+/// refusing `n + 1 = n`.
+auto test_a_recursive_call_keeps_the_two_apart() -> void {
+  auto f = fixture{};
+  const auto pattern = f.table.builtin_generic("vec", {f.value_slot("n", 1)});
+  const auto concrete = f.table.builtin_generic("vec", {f.value_slot("n")});
+
+  const auto result = match_pattern(f.table, pattern, concrete);
+  expect(!result.failure.has_value(),
+         "expected the callee's `n` to be an unknown apart from the caller's");
+  expect(solved_value(result, "n") == "n - 1",
+         "expected the callee's `n` to solve to the caller's `n - 1`");
+}
+
 /// Adoption must not leak: the store is local, so the same `T` matched twice
 /// against different types solves independently. A shared store would make
 /// the second match a contradiction.
@@ -344,6 +383,8 @@ auto main() -> int {
   test_a_value_parameter_binds_to_a_value();
   test_a_polynomial_parameter_is_an_unknown();
   test_an_unpinned_value_parameter_is_absent();
+  test_a_known_value_is_substituted();
+  test_a_recursive_call_keeps_the_two_apart();
   test_matches_do_not_share_parameters();
   std::cout << "rigid_match_test passed\n";
   return 0;

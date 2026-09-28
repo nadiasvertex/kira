@@ -103,14 +103,22 @@ struct rigid_match_result {
   std::optional<unify_error> failure;
 };
 
-/// Solves `pattern`'s type parameters against `concrete`.
+/// Solves `pattern`'s type and value parameters against `concrete`.
 ///
-/// `pattern` is a declared type that may mention `type_param_kind` ids (the
-/// `T` and `n` of `def push[T](xs: list[T], v: T)`); `concrete` is what a
-/// caller actually supplied. Nothing is recorded outside the call: the store
-/// is local, which is what makes adopting interned parameter ids safe — see
-/// `infer_ctxt::adopt`.
-[[nodiscard]] auto match_pattern(type_table &table, type_id pattern,
-                                 type_id concrete) -> rigid_match_result;
+/// `pattern` is a declared type that may mention `type_param_kind` ids and
+/// polynomial variables (the `T` and `n` of `def get[T, n](v: vec[T, n])`);
+/// `concrete` is what a caller actually supplied. Nothing is recorded outside
+/// the call: the store is local, which is what makes adopting interned
+/// parameter ids safe — see `infer_ctxt::adopt`.
+///
+/// `known` holds value parameters already answered — by the brackets, or by
+/// an earlier argument. They are substituted rather than solved again, which
+/// is what lets `split[3](a)` turn `m + n` into `3 + n` and solve `n`. A
+/// value parameter the concrete side mentions too (a recursive call's own
+/// `n`) is still the pattern's unknown, not the caller's fixed value.
+[[nodiscard]] auto
+match_pattern(type_table &table, type_id pattern, type_id concrete,
+              const std::unordered_map<std::string, linear_poly> &known = {})
+    -> rigid_match_result;
 
 } // namespace cinder::semantic::infer

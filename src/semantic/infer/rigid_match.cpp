@@ -1,6 +1,8 @@
 #include "src/semantic/infer/rigid_match.h"
 
+#include <algorithm>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -12,15 +14,15 @@ namespace cinder::semantic::infer {
 namespace {
 
 /// Every `type_param_kind` id reachable from `id`, and every polynomial
-/// variable — a value parameter is not a `type_param` in a value slot but a
-/// variable inside a `symbolic_value`.
+/// variable with the scalar type its slot holds — a value parameter is not a
+/// `type_param` in a value slot but a variable inside a `symbolic_value`.
 ///
 /// A generic walk over `args`/`result` rather than a per-kind switch, for the
 /// same reason `infer_ctxt::occurs` is one: a kind added later cannot quietly
 /// stop being visited.
 auto collect_params(const type_table &table, type_id id,
                     std::vector<type_id> &found,
-                    std::vector<std::string> &values,
+                    std::unordered_map<std::string, type_id> &values,
                     std::unordered_set<type_id> &seen) -> void {
   if (!seen.insert(id).second) {
     return;
@@ -31,7 +33,7 @@ auto collect_params(const type_table &table, type_id id,
   }
   if (entry.kind == type_kind::symbolic_value_kind) {
     for (const auto &term : entry.value.terms) {
-      values.push_back(term.var);
+      values.emplace(term.var, entry.result);
     }
   }
   for (const auto arg : entry.args) {
@@ -41,6 +43,10 @@ auto collect_params(const type_table &table, type_id id,
     collect_params(table, entry.result, found, values, seen);
   }
 }
+
+/// The name a pattern's value parameter is solved under when it has to be
+/// told apart from the concrete side's variables. See `match_pattern`.
+constexpr auto k_renamed_mark = '?';
 
 } // namespace
 
@@ -70,21 +76,61 @@ auto coerce_at_call_site(const type_table &table, type_id expected,
           .adjusted = true};
 }
 
-auto match_pattern(type_table &table, type_id pattern, type_id concrete)
+auto match_pattern(type_table &table, type_id pattern, type_id concrete,
+                   const std::unordered_map<std::string, linear_poly> &known)
     -> rigid_match_result {
   const auto coerced = coerce_at_call_site(table, pattern, concrete);
-  // Nothing is rewritten: the pattern's parameters are adopted in place, so
-  // this matcher interns nothing at all. That is not a micro-optimization —
-  // every rebuilt type would be permanently in the session's one table, and
-  // `resolve_drop_plans` and `compute_borrow_bearing_types` walk every interned
-  // type. A matcher running at tens of thousands of sites must leave no trail.
+  // Nothing is rewritten in the common case: the pattern's parameters are
+  // adopted in place, so this matcher interns nothing. That is not a
+  // micro-optimization — every rebuilt type would be permanently in the
+  // session's one table, and `resolve_drop_plans` and
+  // `compute_borrow_bearing_types` walk every interned type. A matcher running
+  // at tens of thousands of sites must leave no trail. (The one exception,
+  // renaming value parameters apart, is below.)
   const auto left = coerced.expected;
   const auto right = coerced.found;
 
   auto params = std::vector<type_id>{};
-  auto values = std::vector<std::string>{};
+  auto values = std::unordered_map<std::string, type_id>{};
   auto seen = std::unordered_set<type_id>{};
   collect_params(table, left, params, values, seen);
+
+  // The pattern's value variables are solved under their own names, unless
+  // that would be ambiguous. Two things make it so: a variable already
+  // `known` (it must be replaced by its value, not solved again), and a
+  // recursive call, where the concrete side mentions the *same* declaration's
+  // `n` — the caller's, fixed — and the pattern's `n` must still be a
+  // separate unknown. Only then is the pattern rewritten, every variable
+  // either to its known value or to a marked name, so the common case
+  // interns nothing.
+  auto concrete_params = std::vector<type_id>{};
+  auto concrete_values = std::unordered_map<std::string, type_id>{};
+  auto concrete_seen = std::unordered_set<type_id>{};
+  collect_params(table, right, concrete_params, concrete_values,
+                 concrete_seen);
+  const auto must_rename =
+      std::ranges::any_of(values, [&](const auto &value) -> bool {
+        return known.contains(value.first) ||
+               concrete_values.contains(value.first);
+      });
+  auto unknown_name = [&](const std::string &var) -> std::string {
+    return must_rename ? k_renamed_mark + var : var;
+  };
+  auto matched = left;
+  if (must_rename) {
+    auto renamer = infer_ctxt{table};
+    for (const auto &[var, underlying] : values) {
+      const auto known_value = known.find(var);
+      const auto replacement = table.symbolic_value(
+          underlying, known_value != known.end()
+                          ? known_value->second
+                          : poly_variable(unknown_name(var)));
+      static_cast<void>(renamer.bind(
+          renamer.value_param(var, underlying, source_location{}),
+          replacement, k_no_cause));
+    }
+    matched = renamer.zonk(left);
+  }
 
   // Local, and that is load-bearing: a `type_param` id is interned by name,
   // so the `T` of one signature is the same id as the `T` of another.
@@ -106,12 +152,14 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
 
   // The pattern's value parameters are unknowns too; the concrete side's
   // are the caller's own, fixed for the match, and stay rigid.
-  for (const auto &var : values) {
-    ctx.declare_value_param(var);
+  for (const auto &[var, underlying] : values) {
+    if (!known.contains(var)) {
+      ctx.declare_value_param(unknown_name(var));
+    }
   }
 
   auto result = rigid_match_result{};
-  if (auto unified = engine.unify(left, right, k_no_cause);
+  if (auto unified = engine.unify(matched, right, k_no_cause);
       !unified.has_value()) {
     result.failure = std::move(unified.error());
   }
@@ -123,8 +171,11 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
     }
     result.bindings.emplace(param, solved);
   }
-  for (const auto &var : values) {
-    const auto minted = ctx.value_param_named(var);
+  for (const auto &[var, underlying] : values) {
+    if (known.contains(var)) {
+      continue;
+    }
+    const auto minted = ctx.value_param_named(unknown_name(var));
     if (!minted.has_value()) {
       continue; // Declared, but nothing solved it.
     }
