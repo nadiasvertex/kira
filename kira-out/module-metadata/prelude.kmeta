@@ -1,0 +1,11 @@
+src/std/prelude.cnprelude*
+std
+traits*
+std
+iter*
+std
+console:
+
+std.traits:
+std.iter:
+std.console

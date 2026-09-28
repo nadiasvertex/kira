@@ -1,0 +1,9 @@
+error: conflicting values for `n` in this call to `two`
+  --> 027_value_argument_tie.cn:9:20
+    9 |     two([1, 2, 3], [1, 2])
+      |                    ^^^^^^ this one is `2`
+  --> 027_value_argument_tie.cn:9:9
+    9 |     two([1, 2, 3], [1, 2])
+      |         ^^^^^^^^^ this one is `3`
+  help: `n` stands for one value throughout a call to `two`, and these arguments give it two, equally often, so the compiler will not guess which was meant. Make them agree, or give `n` explicitly to say which was intended.
+

@@ -1,0 +1,11 @@
+# Two arguments say `n` is 3 and one says 2. The outlier is the mistake and
+# the majority is the evidence, even though the outlier comes first: solving
+# takes the first answer, and blaming that one's rivals would point at both
+# arguments that agree.
+module infer_diag.value_argument_outlier
+
+def three[n: usize](a: array[int32, n], b: array[int32, n], c: array[int32, n]) -> usize:
+    n
+
+def wrong() -> usize:
+    three([1, 2], [1, 2, 3], [4, 5, 6])

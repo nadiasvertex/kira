@@ -1,0 +1,155 @@
+src/std/fmt.cnstdfmt* 
+std
+
+intrinsics
+rt_str_concat*%
+std
+
+intrinsics
+rt_str_len_scalars*%
+std
+
+intrinsics
+rt_str_repeat_char**
+std
+
+intrinsics
+rt_str_truncate_scalars*&
+std
+
+intrinsics
+rt_fmt_radix_digits*#
+std
+
+intrinsics
+rt_fmt_f64_fixed*!
+std
+
+intrinsics
+rt_fmt_f64_sci*%
+std
+
+intrinsics
+rt_fmt_f64_general*-
+std
+
+intrinsics
+rt_fmt_char_from_codepoint:"
+std.intrinsics.rt_str_concat:'
+!std.intrinsics.rt_str_len_scalars:'
+!std.intrinsics.rt_str_repeat_char:,
+&std.intrinsics.rt_str_truncate_scalars:(
+"std.intrinsics.rt_fmt_radix_digits:%
+std.intrinsics.rt_fmt_f64_fixed:#
+std.intrinsics.rt_fmt_f64_sci:'
+!std.intrinsics.rt_fmt_f64_general:/
+)std.intrinsics.rt_fmt_char_from_codepoint:6
+
+align_mode*$Text alignment modes for formatting.:;
+	sign_mode**Sign display modes for numeric formatting.:t
+format_spec*aSpecification for how to format a value. Controls alignment, sign, padding, width, and precision.:
+
+scalar_len:
+repeat_char:
+width_or_zero:
+align_or:
+	has_align:
+sign_prefix_char:
+alternate_prefix:
+	bool_text:Ä
+pad_str*´Pads a string value according to the format specification.
+Args:
+  s: the string to pad.
+  spec: the formatting specification.
+Returns:
+  the formatted string with padding applied.:æ
+pad_integral*ÑPads an integer value (with optional sign and prefix) according to the format specification.
+Args:
+  negative: whether the integer is negative.
+  prefix: an optional prefix (e.g., "0x" for hex).
+  digits: the digit string representation.
+  spec: the formatting specification.
+Returns:
+  the formatted integer string with padding applied.:±
+fmt_show_str*œFormats a string value with the given specification.
+Args:
+  s: the string to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:Õ
+fmt_debug_str*¿Formats a string value in debug mode (quoted and escaped) with the given specification.
+Args:
+  s: the string to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:Ï
+fmt_show_bool*¹Formats a boolean value as "true" or "false" with the given specification.
+Args:
+  b: the boolean value to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:¸
+fmt_show_char*¢Formats a character value with the given specification.
+Args:
+  c: the character to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:×
+fmt_char_codepoint*¼Formats a Unicode codepoint as a character with the given specification.
+Args:
+  cp: the Unicode codepoint to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:Ì
+fmt_show_i64*·Formats a 64-bit signed integer in decimal with the given specification.
+Args:
+  v: the integer value to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:Î
+fmt_show_u64*¹Formats a 64-bit unsigned integer in decimal with the given specification.
+Args:
+  v: the integer value to format.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:†
+fmt_radix_i64*ðFormats a 64-bit signed integer in the specified radix with optional prefix and uppercase.
+Args:
+  v: the integer value to format.
+  radix: the base for formatting (2-36).
+  uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+  prefix: an optional prefix string (e.g., "0x" for hex).
+  spec: the formatting specification.
+Returns:
+  the formatted string.:ˆ
+fmt_radix_u64*òFormats a 64-bit unsigned integer in the specified radix with optional prefix and uppercase.
+Args:
+  v: the integer value to format.
+  radix: the base for formatting (2-36).
+  uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+  prefix: an optional prefix string (e.g., "0x" for hex).
+  spec: the formatting specification.
+Returns:
+  the formatted string.:ˆ
+fmt_float_fixed*ðFormats a 64-bit floating-point number in fixed-point notation.
+Args:
+  v: the floating-point value to format.
+  precision: the number of digits after the decimal point.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:¿
+fmt_float_sci*©Formats a 64-bit floating-point number in scientific notation.
+Args:
+  v: the floating-point value to format.
+  precision: the number of digits after the decimal point.
+  uppercase: whether to use uppercase E for the exponent.
+  spec: the formatting specification.
+Returns:
+  the formatted string.:Å
+fmt_float_general*«Formats a 64-bit floating-point number in general notation (automatic choice between fixed and scientific).
+Args:
+  v: the floating-point value to format.
+  precision: the precision for formatting (number of significant digits).
+  spec: the formatting specification.
+Returns:
+  the formatted string.

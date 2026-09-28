@@ -1,0 +1,12 @@
+error: conflicting values for `n` in this call to `three`
+  --> 026_value_argument_outlier.cn:11:11
+   11 |     three([1, 2], [1, 2, 3], [4, 5, 6])
+      |           ^^^^^^ this argument's `n` is `2`
+  --> 026_value_argument_outlier.cn:11:19
+   11 |     three([1, 2], [1, 2, 3], [4, 5, 6])
+      |                   ^^^^^^^^^ this requires `3`
+  --> 026_value_argument_outlier.cn:11:30
+   11 |     three([1, 2], [1, 2, 3], [4, 5, 6])
+      |                              ^^^^^^^^^ this requires `3`
+  help: `n` stands for one value throughout a call to `three`. 2 others here require `3`, so this is the one that does not fit. Change it to `3`, or change the others if `2` is what was meant.
+

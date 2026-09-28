@@ -1,0 +1,30 @@
+src/std/test.cnstdtest:
+test_failure*úUnit testing: assertions, test-case/test-suite registration, and a
+runner. See spec/specification/04-stdlib/testing/61-std-test.md.
+An assertion failure: either a bare message, or an expected/actual
+mismatch with both sides already rendered to `str`.:Q
+assert_true*>Succeeds iff `cond` is `true`; otherwise fails with `message`.:S
+assert_false*?Succeeds iff `cond` is `false`; otherwise fails with `message`.:m
+	assert_eq*\Succeeds iff `actual == expected`; otherwise fails with a rendered
+expected/actual mismatch.:m
+	assert_ne*\Succeeds iff `actual != expected`; otherwise fails with a rendered
+expected/actual mismatch.:(
+fail*Always fails with `message`.:n
+	test_case*]One test to run: a name, the function to call, and whether the runner
+should skip calling it.:7
+case*+Builds an ordinary (non-skipped) test case.:W
+skipped*HBuilds a test case the runner reports as skipped, without calling `run`.:œ
+
+test_suite*‰A named group of test cases with optional once-per-suite
+(`before_all`/`after_all`) and once-per-case (`before_each`/`after_each`)
+hooks.:ˆ
+suite*{Builds a `test_suite`. Every hook defaults to `@none`, so a suite that
+needs none of them passes only a name and its cases.:A
+render_failure*+Renders a `test_failure` for a report line.:N
+report*@Prints one report line for `name` and returns whether it passed.:¼
+run*°Runs every case in `cases` in order (skipping `skip: true` ones), with no
+suite-level hooks and no per-suite name in the report. Equivalent to
+`run_suites([suite("", cases)])`.:z
+
+run_suites*hRuns every suite in order and prints a report; returns `0` if every case
+and hook passed, `1` otherwise.

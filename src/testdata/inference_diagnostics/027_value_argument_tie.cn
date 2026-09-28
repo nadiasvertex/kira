@@ -1,0 +1,9 @@
+# One argument says `n` is 3 and the other says 2. Nothing says which is
+# meant, so both are shown and neither is called the mistake.
+module infer_diag.value_argument_tie
+
+def two[n: usize](a: array[int32, n], b: array[int32, n]) -> usize:
+    n
+
+def wrong() -> usize:
+    two([1, 2, 3], [1, 2])

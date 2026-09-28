@@ -8849,10 +8849,10 @@ private:
         reported.insert(argument);
         continue;
       }
-      for (const auto &[param, solved] : matched.bindings) {
+      const auto record = [&](type_id param, type_id solved) -> void {
         if (fixed_params.contains(param) || types_.is_unknown(solved) ||
             solved == k_error_type) {
-          continue;
+          return;
         }
         auto slot = std::ranges::find_if(
             answers, [&](const auto &entry) -> bool {
@@ -8864,6 +8864,17 @@ private:
         }
         slot->second.push_back(
             argument_answer{.argument = argument, .solved = solved});
+      };
+      for (const auto &[param, solved] : matched.bindings) {
+        record(param, solved);
+      }
+      // A value parameter's answer is interned as the value slot it would
+      // fill, so `n := 3` and `n := 2` are two answers the same way `int32`
+      // and `str` are.
+      for (const auto &[var, value] : matched.values) {
+        if (const auto param = poly_var_identity(var); param.has_value()) {
+          record(*param, types_.symbolic_value(types_.usize_type(), value));
+        }
       }
     }
 
@@ -8886,31 +8897,39 @@ private:
       if (groups.size() < 2) {
         continue;
       }
+      const auto &param_entry = types_.entry(param);
+      const auto is_value = param_entry.is_value_param;
       // Answered by something other than these arguments — a bound's ground
       // truth replaces an argument's guess — so none of them is the authority.
+      // Nothing but the arguments and the brackets answers a value parameter.
       const auto chosen = bindings.find(param);
-      if (chosen == bindings.end() ||
-          std::ranges::none_of(groups, [&](type_id representative) -> bool {
-            return interchangeable(representative, settle(chosen->second));
-          })) {
+      if (!is_value &&
+          (chosen == bindings.end() ||
+           std::ranges::none_of(groups, [&](type_id representative) -> bool {
+             return interchangeable(representative, settle(chosen->second));
+           }))) {
         continue;
       }
 
-      const auto &param_entry = types_.entry(param);
       const auto param_name = std::string(param_entry.name);
       auto ctx = infer::infer_ctxt{types_};
-      static_cast<void>(ctx.adopt(param,
-                                  param_entry.ctor_arity > 0
-                                      ? infer::meta_sort::ctor_sort
-                                      : infer::meta_sort::type_sort,
-                                  param_entry.ctor_arity, param_name,
-                                  source_location{}));
+      static_cast<void>(ctx.adopt(
+          param,
+          is_value                       ? infer::meta_sort::value_sort
+          : param_entry.ctor_arity > 0 ? infer::meta_sort::ctor_sort
+                                       : infer::meta_sort::type_sort,
+          param_entry.ctor_arity, param_name, source_location{}));
       auto graph = infer::constraint_graph{ctx};
+      // "this argument is `2`" would misname an array as its length, so a
+      // value's label says which part of the argument it is.
+      const auto reason = is_value
+                              ? std::format("this argument's `{}`", param_name)
+                              : std::string{"this argument"};
       for (const auto &answer : given) {
         const auto why = ctx.add_cause(infer::cause{
             .where = source_location{.file_id = file_id_,
                                      .span = answer.argument->span},
-            .reason = "this argument",
+            .reason = reason,
             .expected_desc = {},
             .found_desc = {},
             .parent = infer::k_no_cause});
@@ -8922,9 +8941,10 @@ private:
         continue;
       }
       const auto tie = graph.outliers(param).empty();
+      const auto *sort = is_value ? "value" : "type";
       auto diag = diagnostic(
           diagnostic_level::error,
-          std::format("conflicting types for `{}` in this call to `{}`",
+          std::format("conflicting {}s for `{}` in this call to `{}`", sort,
                       param_name, callee_name),
           report->primary.file_id);
       diag.with_label(report->primary.span, report->label);
@@ -8933,15 +8953,15 @@ private:
       }
       diag.with_help(
           tie ? std::format(
-                    "`{}` stands for one type throughout a call to `{}`, and "
+                    "`{}` stands for one {} throughout a call to `{}`, and "
                     "these arguments give it two, equally often, so the "
                     "compiler will not guess which was meant. Make them "
                     "agree, or give `{}` explicitly to say which was "
                     "intended.",
-                    param_name, callee_name, param_name)
-              : std::format("`{}` stands for one type throughout a call to "
+                    param_name, sort, callee_name, param_name)
+              : std::format("`{}` stands for one {} throughout a call to "
                             "`{}`. {}",
-                            param_name, callee_name, report->help));
+                            param_name, sort, callee_name, report->help));
       emit_diag(diag);
       mark_error();
     }

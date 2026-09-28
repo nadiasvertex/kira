@@ -1,0 +1,155 @@
+<generated>/std/platform.cnstdplatform*
+std
+
+intrinsics
+	uname_raw*
+std
+
+intrinsics
+
+winver_raw*
+std
+
+intrinsics
+
+macver_raw*
+std
+
+intrinsics
+libc_version*
+std
+
+intrinsics
+io_errno*
+std
+
+intrinsics
+rt_uname*"
+std
+
+intrinsics
+rt_libc_version*%
+std
+
+intrinsics
+rt_windows_version*#
+std
+
+intrinsics
+rt_macos_version*!
+std
+
+intrinsics
+rt_gethostname*$
+std
+
+intrinsics
+rt_processor_name:
+target_arch:
+	target_os:
+target_os_family:
+target_vendor:
+
+target_env:
+target_endianness:
+target_pointer_width:
+cinder_version:
+cinder_implementation:
+cinder_compiler:
+cinder_build_date:
+std.intrinsics.uname_raw:
+std.intrinsics.winver_raw:
+std.intrinsics.macver_raw:!
+std.intrinsics.libc_version:
+std.intrinsics.io_errno:
+std.intrinsics.rt_uname:$
+std.intrinsics.rt_libc_version:'
+!std.intrinsics.rt_windows_version:%
+std.intrinsics.rt_macos_version:#
+std.intrinsics.rt_gethostname:&
+ std.intrinsics.rt_processor_name:
+io_error:í
+architecture*~CPU architectures supported by the compiler.
+
+Variants: x86_64, aarch64, arm, riscv32, riscv64, wasm32, wasm64, or other(str).:o
+	os_family*^Operating system families.
+
+Variants: unix (Linux, macOS, BSD), windows, macos, or other(str).:i
+
+endianness*WByte order of the target platform.
+
+Variants: little (little-endian), big (big-endian).:_
+platform_info*JComprehensive platform information as returned by uname() on Unix systems.:@
+cinder_build*,Build information about the Cinder compiler.:3
+windows_version*Windows version information.:/
+macos_version*macOS version information.:Ï
+is_unix*‹os_family equality has no runtime == codegen (only the compile-time
+evaluator understands sum-type equality ‚Äî see spec/std-reference.md), so
+these are spelled with match rather than target_os_family() == @unix.
+Checks if the target operating system is Unix-like (Linux, macOS, BSD).
+Returns:
+  true if the target OS is Unix-like, false otherwise.:Å
+
+is_windows*oChecks if the target operating system is Windows.
+Returns:
+  true if the target OS is Windows, false otherwise.:{
+is_macos*kChecks if the target operating system is macOS.
+Returns:
+  true if the target OS is macOS, false otherwise.:Ç
+node*ıRuntime queries ‚Äî ? propagates a failing intrinsic call, converting its
+io_errno to io_error via impl from[io_errno] for io_error (std.io).
+Gets the hostname of the machine.
+Returns:
+  the hostname string on success, or an io_error on failure.:u
+	processor*dGets the processor name.
+Returns:
+  the processor name string on success, or an io_error on failure.:É
+release*Ûrelease()/version() genuinely differ per platform. A static if-gated
+family of definitions (compiling only the branch matching TARGET_OS_FAMILY)
+would be a natural fit, but item-level static if only splices its taken
+branch's declarations in for that same file's own compile-time checking ‚Äî
+it doesn't register them in the module's ordinary scope for other
+functions to call (target_os_family/is_unix etc. above are declared
+unconditionally for the same reason intrinsic def is, just above). So
+instead there is one unconditional definition of each, branching on the
+runtime value target_os_family() returns.
+Gets the OS release string (e.g., kernel version on Unix, Windows version).
+Returns:
+  the release string on success, or an io_error on failure.:ö
+version*äGets the OS version string (e.g., more detailed version information).
+Returns:
+  the version string on success, or an io_error on failure.:À
+result_to_option*≤Cross-platform convenience
+? cannot express "swallow the error and continue" ‚Äî it only
+propagates ‚Äî so converting each result to option is spelled with an
+explicit match, factored into this one private helper.
+Args:
+  r: a result value to convert.
+Returns:
+  some(value) if r is @ok, none if r is @err.:è
+uname*ÅGathers comprehensive platform information similar to Unix uname().
+Returns:
+  a platform_info structure with system information.:ú
+platform*ãReturns a single-line platform identifier string in the format:
+os-release-architecture-processor.
+Returns:
+  a platform identifier string.:⁄
+cinder_build_info*¿Cinder runtime information ‚Äî all compile-time constants. cinder_version/
+cinder_implementation/cinder_compiler/cinder_build_date are generated
+above by the driver (see the top-of-file comment).
+Gets build information about the Cinder compiler.
+Returns:
+  a cinder_build structure with version and compiler information.:ü
+libc_ver*éPlatform-specific queries ‚Äî @none on a platform other than the one they
+describe, or when the underlying intrinsic fails; the caller uses if let.
+Gets C library version information (Unix-only).
+Returns:
+  some(libc_version) on Unix systems, none otherwise or on error.:ì
+	win32_ver*ÅGets Windows version information (Windows-only).
+Returns:
+  some(windows_version) on Windows systems, none otherwise or on error.:à
+mac_ver*yGets macOS version information (macOS-only).
+Returns:
+  some(macos_version) on macOS systems, none otherwise or on error.:
+parse_windows_version:
+parse_macos_version::::::::
