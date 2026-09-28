@@ -1,0 +1,6 @@
+error: conflicting types for `T` in this call to `same`
+  --> 024_generic_argument_split.cn:13:10
+   13 |     same(p)
+      |          ^ `T` would be both `int32` and `str` in this argument
+  help: `same` declares this parameter as `pair[T, T]`, and `T` stands for one type throughout the call. This `pair[int32, str]` puts `int32` in one place and `str` in another, so no single `T` fits. Make the parts agree.
+

@@ -1,0 +1,12 @@
+# The brackets fix `T`, so they are the authority, not a majority of the
+# arguments: each `str` is reported against `int64`, and the help points at
+# the brackets rather than at "another argument".
+module infer_diag.generic_argument_vs_brackets
+
+def pick3[T](a: T, b: T, c: T) -> T:
+    a
+
+def wrong() -> int64:
+    let x: int64 = 1
+    let s = "a"
+    pick3[int64](x, s, s)

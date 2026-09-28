@@ -1,0 +1,13 @@
+# Two arguments say `T` is `str` and one says `int64`. The outlier is the
+# mistake and the majority is the evidence, whatever order they come in:
+# solving takes the first answer, and blaming that one's rivals would point
+# at both `str` arguments instead of the one that does not fit.
+module infer_diag.generic_argument_outlier
+
+def pick3[T](a: T, b: T, c: T) -> T:
+    a
+
+def wrong() -> str:
+    let x: int64 = 1
+    let s = "a"
+    pick3(x, s, s)

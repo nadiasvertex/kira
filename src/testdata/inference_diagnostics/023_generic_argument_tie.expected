@@ -1,0 +1,9 @@
+error: conflicting types for `T` in this call to `pick`
+  --> 023_generic_argument_tie.cn:11:13
+   11 |     pick(x, s)
+      |             ^ this one is `str`
+  --> 023_generic_argument_tie.cn:11:10
+   11 |     pick(x, s)
+      |          ^ this one is `int64`
+  help: `T` stands for one type throughout a call to `pick`, and these arguments give it two, equally often, so the compiler will not guess which was meant. Make them agree, or give `T` explicitly to say which was intended.
+

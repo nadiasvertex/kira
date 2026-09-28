@@ -1,0 +1,12 @@
+error: conflicting types for `T` in this call to `pick3`
+  --> 025_generic_argument_vs_brackets.cn:12:21
+   12 |     pick3[int64](x, s, s)
+      |                     ^ this is `str`, but `T` is already `int64`
+  help: `T` stands for one type throughout a call to `pick3`, and the brackets fixed it as `int64`. Every argument declared as `T` has to be that same type: convert this one (`int64(...)`), or change the brackets.
+
+error: conflicting types for `T` in this call to `pick3`
+  --> 025_generic_argument_vs_brackets.cn:12:24
+   12 |     pick3[int64](x, s, s)
+      |                        ^ this is `str`, but `T` is already `int64`
+  help: `T` stands for one type throughout a call to `pick3`, and the brackets fixed it as `int64`. Every argument declared as `T` has to be that same type: convert this one (`int64(...)`), or change the brackets.
+

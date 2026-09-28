@@ -1,0 +1,13 @@
+# One argument disagrees with itself: `pair[T, T]` given `pair[int32, str]`.
+# The unifier's own failure names the two parts; the message must name `T`
+# and both of them, not only the solved-and-compared outer types.
+module infer_diag.generic_argument_split
+
+type pair[A, B] = { a: A, b: B }
+
+def same[T](p: pair[T, T]) -> T:
+    p.a
+
+def wrong() -> int32:
+    let p = pair[int32, str]{a: 1, b: "x"}
+    same(p)

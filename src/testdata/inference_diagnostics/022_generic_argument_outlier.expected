@@ -1,0 +1,12 @@
+error: conflicting types for `T` in this call to `pick3`
+  --> 022_generic_argument_outlier.cn:13:11
+   13 |     pick3(x, s, s)
+      |           ^ this argument is `int64`
+  --> 022_generic_argument_outlier.cn:13:14
+   13 |     pick3(x, s, s)
+      |              ^ this requires `str`
+  --> 022_generic_argument_outlier.cn:13:17
+   13 |     pick3(x, s, s)
+      |                 ^ this requires `str`
+  help: `T` stands for one type throughout a call to `pick3`. 2 others here require `str`, so this is the one that does not fit. Change it to `str`, or change the others if `int64` is what was meant.
+

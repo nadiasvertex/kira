@@ -2476,8 +2476,11 @@ auto test_reports_generic_call_conflicting_args() -> void {
   expect_diagnostic(analyzed,
                     "conflicting types for `T` in this call to `pick`",
                     "expected the conflict to name the parameter and callee");
-  expect_diagnostic(analyzed, "this is `str`, but `T` is already `int32`",
-                    "expected the label to say both types");
+  // An even split: neither argument is the authority, so both are shown.
+  expect_diagnostic(analyzed, "this one is `str`",
+                    "expected the tie to show the `str` argument");
+  expect_diagnostic(analyzed, "this one is `int32`",
+                    "expected the tie to show the `int32` argument too");
   expect_diagnostic(analyzed, "this is `bool`, but `T` is already `int32`",
                     "expected the explicit-bracket call to be checked too");
   expect_diagnostic(

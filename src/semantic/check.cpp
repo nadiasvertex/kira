@@ -24,6 +24,7 @@
 #include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
+#include "src/semantic/infer/blame.h"
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
@@ -8690,16 +8691,31 @@ private:
   /// Only an argument the first pass accepted is reported here, so a
   /// structural mismatch (`list[T]` given a `str`) that pass already
   /// diagnosed is not reported twice.
-  auto check_args_against_solution(const ast::call_expr &call,
-                                   const std::vector<fn_param_info> &params,
-                                   const param_subst &bindings,
-                                   std::string_view callee_name,
-                                   const ast::expr *ufcs_receiver = nullptr)
-      -> void {
+  ///
+  /// A disagreement the unifier can explain better is reported first
+  /// (`report_argument_conflicts`), and the arguments it covers are not
+  /// compared again. `fixed_params` are the parameters the brackets answered;
+  /// their arguments are simply compared with that answer.
+  ///
+  /// Returns whether such a conflict was reported. The solution then holds
+  /// whichever answer came first, which may be the one blame just called the
+  /// mistake, so a caller should not type the call's result from it.
+  auto check_args_against_solution(
+      const ast::call_expr &call, const std::vector<fn_param_info> &params,
+      const param_subst &bindings, std::string_view callee_name,
+      const ast::expr *ufcs_receiver = nullptr,
+      const std::unordered_set<type_id> &fixed_params = {}) -> bool {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
-      return;
+      return false;
     }
+    struct mismatch {
+      const ast::expr *argument = nullptr;
+      type_id declared = k_unknown_type;
+      type_id expected = k_unknown_type;
+      type_id found = k_unknown_type;
+    };
+    auto mismatches = std::vector<mismatch>{};
     for (size_t i = 0; i < params.size(); ++i) {
       const auto *argument =
           ufcs_argument_for(i, mapping->second.args_by_param, ufcs_receiver);
@@ -8724,6 +8740,24 @@ private:
           agrees(expected, found)) {
         continue;
       }
+      mismatches.push_back(mismatch{.argument = argument,
+                                    .declared = declared,
+                                    .expected = expected,
+                                    .found = found});
+    }
+    // Only a call that is wrong somewhere is matched again: the matcher can
+    // intern, and a correct call must leave no trail in the type table.
+    if (mismatches.empty()) {
+      return false;
+    }
+    const auto reported =
+        report_argument_conflicts(params, bindings, callee_name,
+                                  mapping->second.args_by_param, ufcs_receiver,
+                                  fixed_params);
+    for (const auto &[argument, declared, expected, found] : mismatches) {
+      if (reported.contains(argument)) {
+        continue;
+      }
       const auto &declared_entry = types_.entry(declared);
       if (declared_entry.kind != type_kind::type_param_kind) {
         type_mismatch(argument->span, expected, found, "for this argument",
@@ -8731,6 +8765,7 @@ private:
         continue;
       }
       const auto param_name = std::string(declared_entry.name);
+      const auto bracketed = fixed_params.contains(declared);
       error_with_help(
           argument->span,
           std::format("conflicting types for `{}` in this call to `{}`",
@@ -8739,13 +8774,221 @@ private:
                       types_.display(found), param_name,
                       types_.display(expected)),
           std::format(
-              "`{}` stands for one type throughout a call to `{}`, and "
-              "another argument already fixed it as `{}`. Every argument "
-              "declared as `{}` has to be that same type: convert this one "
-              "(`{}(...)`), or change the other.",
-              param_name, callee_name, types_.display(expected), param_name,
-              types_.display(expected)));
+              "`{}` stands for one type throughout a call to `{}`, and {} "
+              "fixed it as `{}`. Every argument declared as `{}` has to be "
+              "that same type: convert this one (`{}(...)`), or change {}.",
+              param_name, callee_name,
+              bracketed ? "the brackets" : "another argument",
+              types_.display(expected), param_name, types_.display(expected),
+              bracketed ? "the brackets" : "the other"));
     }
+    return !reported.empty();
+  }
+
+  /// Whether two answers for one type parameter are the same answer as far
+  /// as a call is concerned — a refinement and its base, a borrow and its
+  /// referent where the language coerces between them.
+  [[nodiscard]] auto interchangeable(type_id a, type_id b) const -> bool {
+    return types_.compatible(a, b) || types_.compatible(b, a);
+  }
+
+  /// Reports the disagreements among a generic call's arguments that the
+  /// unifier can explain, and returns the arguments it reported.
+  ///
+  /// Solving takes the first answer each parameter gets, which makes the
+  /// first argument the authority by accident of position. In
+  /// `pick3(x, s, s)` that blamed both `s` for disagreeing with `x`. Every
+  /// argument's answer is collected here instead, and blame
+  /// (`infer::explain_conflict`) points at the minority, showing the
+  /// majority as the evidence — or, on an even split, shows both and
+  /// blames neither.
+  ///
+  /// The second disagreement is one the unifier finds inside a single
+  /// argument: `pair[T, T]` given a `pair[int32, str]`. Matching that
+  /// argument fails, and the failure says which two parts clashed.
+  ///
+  /// Only parameters the arguments answered are considered. One the brackets
+  /// fixed, or one a bound answered over the arguments, has an authority of
+  /// its own, and each argument is compared with it by the caller.
+  auto report_argument_conflicts(
+      const std::vector<fn_param_info> &params, const param_subst &bindings,
+      std::string_view callee_name,
+      const std::vector<const ast::expr *> &args_by_param,
+      const ast::expr *ufcs_receiver,
+      const std::unordered_set<type_id> &fixed_params)
+      -> std::unordered_set<const ast::expr *> {
+    struct argument_answer {
+      const ast::expr *argument = nullptr;
+      type_id solved = k_unknown_type;
+    };
+    auto reported = std::unordered_set<const ast::expr *>{};
+    // In order of first appearance, so the diagnostics follow the source.
+    auto answers =
+        std::vector<std::pair<type_id, std::vector<argument_answer>>>{};
+    for (size_t i = 0; i < params.size(); ++i) {
+      const auto *argument = ufcs_argument_for(i, args_by_param, ufcs_receiver);
+      if (argument == nullptr) {
+        continue;
+      }
+      const auto recorded = node_types_.find(argument);
+      if (recorded == node_types_.end()) {
+        continue;
+      }
+      const auto declared = settle(params[i].type);
+      const auto found = settle(recorded->second);
+      // The same skips as the comparison that follows: nothing to match, or
+      // a shape the argument check already rejected.
+      if (types_.is_unknown(found) || found == k_error_type ||
+          !types_.compatible(open_foreign_params(declared), found)) {
+        continue;
+      }
+      const auto matched = infer::match_pattern(types_, declared, found);
+      if (matched.failure.has_value() &&
+          report_split_argument(*argument, declared, found, matched,
+                                callee_name)) {
+        reported.insert(argument);
+        continue;
+      }
+      for (const auto &[param, solved] : matched.bindings) {
+        if (fixed_params.contains(param) || types_.is_unknown(solved) ||
+            solved == k_error_type) {
+          continue;
+        }
+        auto slot = std::ranges::find_if(
+            answers, [&](const auto &entry) -> bool {
+              return entry.first == param;
+            });
+        if (slot == answers.end()) {
+          answers.emplace_back(param, std::vector<argument_answer>{});
+          slot = std::prev(answers.end());
+        }
+        slot->second.push_back(
+            argument_answer{.argument = argument, .solved = solved});
+      }
+    }
+
+    for (const auto &[param, given] : answers) {
+      // One representative per group of interchangeable answers, so blame
+      // counts `percent` and `int32` as the same vote.
+      auto groups = std::vector<type_id>{};
+      const auto group_of = [&](type_id solved) -> type_id {
+        for (const auto representative : groups) {
+          if (interchangeable(representative, solved)) {
+            return representative;
+          }
+        }
+        groups.push_back(solved);
+        return solved;
+      };
+      for (const auto &answer : given) {
+        static_cast<void>(group_of(answer.solved));
+      }
+      if (groups.size() < 2) {
+        continue;
+      }
+      // Answered by something other than these arguments — a bound's ground
+      // truth replaces an argument's guess — so none of them is the authority.
+      const auto chosen = bindings.find(param);
+      if (chosen == bindings.end() ||
+          std::ranges::none_of(groups, [&](type_id representative) -> bool {
+            return interchangeable(representative, settle(chosen->second));
+          })) {
+        continue;
+      }
+
+      const auto &param_entry = types_.entry(param);
+      const auto param_name = std::string(param_entry.name);
+      auto ctx = infer::infer_ctxt{types_};
+      static_cast<void>(ctx.adopt(param,
+                                  param_entry.ctor_arity > 0
+                                      ? infer::meta_sort::ctor_sort
+                                      : infer::meta_sort::type_sort,
+                                  param_entry.ctor_arity, param_name,
+                                  source_location{}));
+      auto graph = infer::constraint_graph{ctx};
+      for (const auto &answer : given) {
+        const auto why = ctx.add_cause(infer::cause{
+            .where = source_location{.file_id = file_id_,
+                                     .span = answer.argument->span},
+            .reason = "this argument",
+            .expected_desc = {},
+            .found_desc = {},
+            .parent = infer::k_no_cause});
+        static_cast<void>(graph.record(param, group_of(answer.solved), why));
+        reported.insert(answer.argument);
+      }
+      const auto report = infer::explain_conflict(graph, ctx, types_, param);
+      if (!report.has_value()) {
+        continue;
+      }
+      const auto tie = graph.outliers(param).empty();
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("conflicting types for `{}` in this call to `{}`",
+                      param_name, callee_name),
+          report->primary.file_id);
+      diag.with_label(report->primary.span, report->label);
+      for (const auto &note : report->notes) {
+        diag.with_secondary_label(note.where.span, note.message);
+      }
+      diag.with_help(
+          tie ? std::format(
+                    "`{}` stands for one type throughout a call to `{}`, and "
+                    "these arguments give it two, equally often, so the "
+                    "compiler will not guess which was meant. Make them "
+                    "agree, or give `{}` explicitly to say which was "
+                    "intended.",
+                    param_name, callee_name, param_name)
+              : std::format("`{}` stands for one type throughout a call to "
+                            "`{}`. {}",
+                            param_name, callee_name, report->help));
+      emit_diag(diag);
+      mark_error();
+    }
+    return reported;
+  }
+
+  /// Reports an argument that disagrees with itself about a type parameter —
+  /// `pair[T, T]` given `pair[int32, str]` — from the unifier's own failure,
+  /// and says whether it did.
+  ///
+  /// The failure names the two parts that clashed; this finds the parameter
+  /// that had been solved to one of them. Any other failure (a mutability
+  /// mismatch, say) is left to the ordinary comparison.
+  auto report_split_argument(const ast::expr &argument, type_id declared,
+                             type_id found,
+                             const infer::rigid_match_result &matched,
+                             std::string_view callee_name) -> bool {
+    const auto &failure = *matched.failure;
+    if (failure.failure != infer::unify_failure::mismatch) {
+      return false;
+    }
+    const auto clash = std::ranges::find_if(
+        matched.bindings, [&](const auto &binding) -> bool {
+          return binding.second == failure.expected_part ||
+                 binding.second == failure.found_part;
+        });
+    if (clash == matched.bindings.end()) {
+      return false;
+    }
+    const auto param_name = std::string(types_.entry(clash->first).name);
+    const auto first = clash->second;
+    const auto second = first == failure.expected_part ? failure.found_part
+                                                       : failure.expected_part;
+    error_with_help(
+        argument.span,
+        std::format("conflicting types for `{}` in this call to `{}`",
+                    param_name, callee_name),
+        std::format("`{}` would be both `{}` and `{}` in this argument",
+                    param_name, types_.display(first), types_.display(second)),
+        std::format("`{}` declares this parameter as `{}`, and `{}` stands for "
+                    "one type throughout the call. This `{}` puts `{}` in one "
+                    "place and `{}` in another, so no single `{}` fits. Make "
+                    "the parts agree.",
+                    callee_name, types_.display(declared), param_name,
+                    types_.display(found), types_.display(first),
+                    types_.display(second), param_name));
+    return true;
   }
 
   /// Solves whatever the arguments left open from the type the call site
@@ -8864,9 +9107,16 @@ private:
     if (!solution.has_value()) {
       return std::nullopt;
     }
-    check_args_against_solution(call, params,
-                                solution_subst(decl.type_params, *solution),
-                                decl.name, ufcs_receiver);
+    auto bracketed = std::unordered_set<type_id>{};
+    for (size_t i = 0; i < explicit_args.size() && i < decl.type_params.size();
+         ++i) {
+      bracketed.insert(param_id(decl.type_params[i]));
+    }
+    if (check_args_against_solution(
+            call, params, solution_subst(decl.type_params, *solution),
+            decl.name, ufcs_receiver, bracketed)) {
+      return std::nullopt;
+    }
     solution->bounds_hold =
         check_call_bounds(call, decl, owner, decl_file, *solution);
     return solution;
@@ -12742,10 +12992,11 @@ private:
       return;
     }
     const auto matched = infer::match_pattern(types_, pattern, concrete);
-    // The failure is deliberately dropped for now. Reporting it is a real
-    // change in what the compiler says — several call sites match
-    // speculatively and expect a miss to be silent — so it belongs to its own
-    // step, not to this one.
+    // The failure is deliberately dropped: nearly every caller matches
+    // speculatively (does this impl's target fit? what does the expected
+    // type suggest?) and a miss there is an answer, not an error. The one
+    // place a miss is the user's mistake — a generic call's arguments —
+    // matches again and reports through blame (`report_argument_conflicts`).
     for (const auto &[param, solved] : matched.bindings) {
       if (allow_override) {
         bindings.insert_or_assign(param, solved);
@@ -15485,9 +15736,11 @@ private:
       return k_error_type;
     }
 
-    check_args_against_solution(
-        call, params, bindings,
-        std::format("{}.{}", type_name, method.decl->name));
+    if (check_args_against_solution(
+            call, params, bindings,
+            std::format("{}.{}", type_name, method.decl->name))) {
+      return k_error_type;
+    }
     const auto target =
         settle(substitute_solved(method.impl_target_pattern, bindings));
     // Still written in type parameters: a template body calling

@@ -1,0 +1,11 @@
+# One argument says `T` is `int64` and the other says `str`. Nothing says
+# which is meant, so both are shown and neither is called the mistake.
+module infer_diag.generic_argument_tie
+
+def pick[T](a: T, b: T) -> T:
+    a
+
+def wrong() -> int64:
+    let x: int64 = 1
+    let s = "a"
+    pick(x, s)
