@@ -200,10 +200,11 @@ auto run_bytecode(const fs::path &path,
                   std::span<const hir::hir_module *const> modules,
                   const cinder::semantic::type_table &types) -> bytecode_run {
   auto compiled = bcc::compile_module(modules, types);
-  expect(compiled.has_value(),
-         std::format("`{}`: expected bytecode_compiler to accept this "
+  if (!compiled.has_value()) {
+    fail(std::format("`{}`: expected bytecode_compiler to accept this "
                      "corpus file: {}",
                      path.string(), compiled.error().message));
+  }
 
   auto index = size_t{0};
   for (; index < compiled->functions.size(); ++index) {
@@ -248,16 +249,18 @@ auto run_llvm(const fs::path &path,
               std::optional<bc::numeric_kind> return_kind, bool as_ptr)
     -> llvm_run {
   auto compiled = lc::compile_module(modules, types);
-  expect(
-      compiled.has_value(),
-      std::format("`{}`: expected llvm_codegen to accept this corpus file: {}",
-                  path.string(), compiled.error().message));
+  if (!compiled.has_value()) {
+    fail(std::format(
+        "`{}`: expected llvm_codegen to accept this corpus file: {}",
+        path.string(), compiled.error().message));
+  }
 
   auto jit = lc::jit_module::create(std::move(*compiled));
-  expect(jit.has_value(),
-         std::format("`{}`: expected the compiled module to JIT "
+  if (!jit.has_value()) {
+    fail(std::format("`{}`: expected the compiled module to JIT "
                      "successfully: {}",
                      path.string(), jit.error()));
+  }
 
   auto run =
       as_ptr ? jit->run_ptr_result("main") : jit->run("main", return_kind);
@@ -584,9 +587,10 @@ auto run_one(const fs::path &path) -> void {
   }
   auto lowered =
       hir::lower_module(*fixture.ast_file, module_name, fixture.checked);
-  expect(lowered.has_value(),
-         std::format("`{}`: expected corpus file to lower to HIR: {}",
+  if (!lowered.has_value()) {
+    fail(std::format("`{}`: expected corpus file to lower to HIR: {}",
                      path.string(), lowered.error().message));
+  }
 
   // An inline `module inner:` lowers to a module of its own, exactly as the
   // driver does it (`driver::lower_and_emit_modules`) — a call into one is
@@ -594,9 +598,10 @@ auto run_one(const fs::path &path) -> void {
   // whole set, entry module first, not just the file's top level.
   auto submodules = hir::lower_inline_submodules(*fixture.ast_file, module_name,
                                                  fixture.checked);
-  expect(submodules.has_value(),
-         std::format("`{}`: expected inline submodules to lower to HIR: {}",
+  if (!submodules.has_value()) {
+    fail(std::format("`{}`: expected inline submodules to lower to HIR: {}",
                      path.string(), submodules.error().message));
+  }
   // Both tiers also need every stdlib function the corpus file actually
   // calls: `list` is an ordinary stdlib type now, so `xs.push(x)` is a real
   // cross-module call. `find_reachable_modules` keeps the set to what this
