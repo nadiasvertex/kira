@@ -8750,10 +8750,9 @@ private:
     if (mismatches.empty()) {
       return false;
     }
-    const auto reported =
-        report_argument_conflicts(params, bindings, callee_name,
-                                  mapping->second.args_by_param, ufcs_receiver,
-                                  fixed_params);
+    const auto reported = report_argument_conflicts(
+        params, bindings, callee_name, mapping->second.args_by_param,
+        ufcs_receiver, fixed_params);
     for (const auto &[argument, declared, expected, found] : mismatches) {
       if (reported.contains(argument)) {
         continue;
@@ -8810,12 +8809,13 @@ private:
   /// Only parameters the arguments answered are considered. One the brackets
   /// fixed, or one a bound answered over the arguments, has an authority of
   /// its own, and each argument is compared with it by the caller.
-  auto report_argument_conflicts(
-      const std::vector<fn_param_info> &params, const param_subst &bindings,
-      std::string_view callee_name,
-      const std::vector<const ast::expr *> &args_by_param,
-      const ast::expr *ufcs_receiver,
-      const std::unordered_set<type_id> &fixed_params)
+  auto
+  report_argument_conflicts(const std::vector<fn_param_info> &params,
+                            const param_subst &bindings,
+                            std::string_view callee_name,
+                            const std::vector<const ast::expr *> &args_by_param,
+                            const ast::expr *ufcs_receiver,
+                            const std::unordered_set<type_id> &fixed_params)
       -> std::unordered_set<const ast::expr *> {
     struct argument_answer {
       const ast::expr *argument = nullptr;
@@ -8854,8 +8854,8 @@ private:
             solved == k_error_type) {
           return;
         }
-        auto slot = std::ranges::find_if(
-            answers, [&](const auto &entry) -> bool {
+        auto slot =
+            std::ranges::find_if(answers, [&](const auto &entry) -> bool {
               return entry.first == param;
             });
         if (slot == answers.end()) {
@@ -8913,12 +8913,12 @@ private:
 
       const auto param_name = std::string(param_entry.name);
       auto ctx = infer::infer_ctxt{types_};
-      static_cast<void>(ctx.adopt(
-          param,
-          is_value                       ? infer::meta_sort::value_sort
-          : param_entry.ctor_arity > 0 ? infer::meta_sort::ctor_sort
-                                       : infer::meta_sort::type_sort,
-          param_entry.ctor_arity, param_name, source_location{}));
+      static_cast<void>(
+          ctx.adopt(param,
+                    is_value                     ? infer::meta_sort::value_sort
+                    : param_entry.ctor_arity > 0 ? infer::meta_sort::ctor_sort
+                                                 : infer::meta_sort::type_sort,
+                    param_entry.ctor_arity, param_name, source_location{}));
       auto graph = infer::constraint_graph{ctx};
       // "this argument is `2`" would misname an array as its length, so a
       // value's label says which part of the argument it is.
@@ -9132,9 +9132,9 @@ private:
          ++i) {
       bracketed.insert(param_id(decl.type_params[i]));
     }
-    if (check_args_against_solution(
-            call, params, solution_subst(decl.type_params, *solution),
-            decl.name, ufcs_receiver, bracketed)) {
+    if (check_args_against_solution(call, params,
+                                    solution_subst(decl.type_params, *solution),
+                                    decl.name, ufcs_receiver, bracketed)) {
       return std::nullopt;
     }
     solution->bounds_hold =
