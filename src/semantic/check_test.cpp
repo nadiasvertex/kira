@@ -1140,6 +1140,25 @@ auto test_reports_undefined_type() -> void {
                     "expected undefined-type diagnostic");
 }
 
+/// An undefined explicit type argument is reported once, as an undefined
+/// type; the call must not add a second "not a type this call can name".
+auto test_undefined_explicit_type_argument_reported_once() -> void {
+  const auto analyzed = analyze_sources({{
+      .path = "undefined_explicit_type_arg.cn",
+      .text = "module main\n"
+              "\n"
+              "def make[T]() -> int32:\n"
+              "    return 1\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    return make[Q]()\n",
+  }});
+  expect_diagnostic(analyzed, "undefined type `Q`",
+                    "expected the undefined-type diagnostic");
+  expect(analyzed.diagnostics.find("this call can name") == std::string::npos,
+         "expected no second diagnostic for the same argument");
+}
+
 auto test_reports_packed_on_sum_type() -> void {
   const auto analyzed = analyze_test_data_file("report_packed_on_sum_type.cn");
   expect(analyzed.error_count > 0, "expected `packed` on a sum type to fail");
@@ -2235,9 +2254,7 @@ auto test_reports_bad_explicit_generic_args() -> void {
   expect_diagnostic(
       analyzed, "`zeros`'s compile-time argument `n` is not a constant",
       "expected a value argument that doesn't fold to be reported");
-  expect_diagnostic(analyzed,
-                    "`identity`'s compile-time argument `T` is not a type this "
-                    "call can name",
+  expect_diagnostic(analyzed, "undefined type `nonexistent_type`",
                     "expected a type argument naming no type to be reported");
   expect_diagnostic(
       analyzed, "`zeros` takes 1 compile-time argument(s), and this call gives",
@@ -4173,6 +4190,7 @@ auto main() -> int {
 
     test_reports_undefined_name_with_suggestion();
     test_reports_undefined_type();
+    test_undefined_explicit_type_argument_reported_once();
     test_reports_packed_on_sum_type();
     test_reports_annotation_mismatch();
     test_reports_quote_type_annotation_mismatch();

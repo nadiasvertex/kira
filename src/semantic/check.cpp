@@ -8222,15 +8222,25 @@ private:
   /// `resolve_type` on a synthesized `named_type` rather than resolved by
   /// hand, so an explicit argument reaches exactly the same builtins, user
   /// types, imports, and in-scope parameters an annotation would.
-  auto explicit_type_argument(const explicit_generic_arg &arg)
+  ///
+  /// `already_reported`, when given, is set when resolution failed with a
+  /// diagnostic (an undefined name), so a caller can skip a second message
+  /// at the same span.
+  auto explicit_type_argument(const explicit_generic_arg &arg,
+                              bool *already_reported = nullptr)
       -> std::optional<type_id> {
-    // Already a type on the way in (`b.take[int64](5)`): nothing to
-    // reinterpret, just resolve it.
-    if (arg.type != nullptr) {
-      const auto resolved = resolve_type(*arg.type, current_resolve_ctx());
+    const auto finish = [&](type_id resolved) -> std::optional<type_id> {
+      if (already_reported != nullptr && resolved == k_error_type) {
+        *already_reported = true;
+      }
       return types_.is_unknown(resolved) || resolved == k_error_type
                  ? std::nullopt
                  : std::optional{resolved};
+    };
+    // Already a type on the way in (`b.take[int64](5)`): nothing to
+    // reinterpret, just resolve it.
+    if (arg.type != nullptr) {
+      return finish(resolve_type(*arg.type, current_resolve_ctx()));
     }
     if (arg.value == nullptr) {
       return std::nullopt;
@@ -8241,10 +8251,7 @@ private:
     }
     const auto &type = *named;
     synthesized_types_.push_back(std::move(named));
-    const auto resolved = resolve_type(type, current_resolve_ctx());
-    return types_.is_unknown(resolved) || resolved == k_error_type
-               ? std::nullopt
-               : std::optional{resolved};
+    return finish(resolve_type(type, current_resolve_ctx()));
   }
 
   /// Rewrites an expression that was *meant* as a type into the `named_type`
@@ -8530,8 +8537,13 @@ private:
       }
 
       if (explicit_arg != nullptr) {
-        const auto resolved = explicit_type_argument(*explicit_arg);
+        bool already_reported = false;
+        const auto resolved =
+            explicit_type_argument(*explicit_arg, &already_reported);
         if (!resolved.has_value()) {
+          if (already_reported) {
+            return std::nullopt;
+          }
           error_with_help(
               explicit_arg->span,
               std::format("`{}`'s compile-time argument `{}` is not a type "
