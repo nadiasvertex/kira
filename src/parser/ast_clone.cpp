@@ -874,6 +874,38 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->value = std::move(*value);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::for_expr: {
+    const auto &comprehension = dynamic_cast<const for_expr &>(e);
+    auto cloned = make<for_expr>();
+    cloned->span = comprehension.span;
+    for (const auto &clause : comprehension.clauses) {
+      auto cloned_clause = for_expr::iter_clause{};
+      for (const auto &pattern : clause.patterns) {
+        auto cloned_pattern = clone_optional(pattern);
+        if (!cloned_pattern.has_value()) {
+          return std::unexpected(cloned_pattern.error());
+        }
+        cloned_clause.patterns.push_back(std::move(*cloned_pattern));
+      }
+      auto iterable = clone_optional(clause.iterable);
+      if (!iterable.has_value()) {
+        return std::unexpected(iterable.error());
+      }
+      cloned_clause.iterable = std::move(*iterable);
+      cloned->clauses.push_back(std::move(cloned_clause));
+    }
+    auto guard = clone_optional(comprehension.guard);
+    if (!guard.has_value()) {
+      return std::unexpected(guard.error());
+    }
+    cloned->guard = std::move(*guard);
+    auto yielded = clone_optional(comprehension.yield_expr);
+    if (!yielded.has_value()) {
+      return std::unexpected(yielded.error());
+    }
+    cloned->yield_expr = std::move(*yielded);
+    return ptr<expr>(std::move(cloned));
+  }
   case node_kind::module_path_expr: {
     // A dotted path (`self.value`, `DB.query`) the parser leaves unresolved
     // between field access and a qualified module reference — carried as bare

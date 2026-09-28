@@ -1,0 +1,11 @@
+module codegen_stress.comprehension_in_generic_body
+
+# expect: 14
+
+def copy_all[T](xs: list[T]) -> list[T]:
+    return for x in xs => x
+
+def main() -> int32:
+    let xs = for i in 0..4 => i * 2
+    let ys = copy_all(xs)
+    return ys[0] + ys[1] + ys[2] + ys[3] + 2
