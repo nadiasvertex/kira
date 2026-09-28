@@ -1369,10 +1369,10 @@ private:
       }
       auto unknowns = std::vector<std::string>{};
       for (const auto &term : expected_entry.value.terms) {
-        unknowns.push_back(term.var);
+        unknowns.push_back(poly_var_spelling(term.var));
       }
       for (const auto &term : found_entry.value.terms) {
-        unknowns.push_back(term.var);
+        unknowns.push_back(poly_var_spelling(term.var));
       }
       if (unknowns.empty()) {
         return std::nullopt; // two constants; the displayed types say it all
@@ -3457,7 +3457,7 @@ private:
     const auto &entry = types_.entry(*slot);
     switch (entry.kind) {
     case type_kind::type_param_kind:
-      return poly_variable(std::string(name));
+      return poly_variable(value_var(*slot));
     case type_kind::const_value_kind:
     case type_kind::symbolic_value_kind:
       return entry.value;
@@ -3696,13 +3696,14 @@ private:
         // A bare name resolves through the ordinary type path, which already
         // consults `param_bindings` and the type-parameter stack — so a slot
         // a caller has substituted a value into comes back as that value.
-        args.push_back(resolve_type(
-            dynamic_cast<const ast::named_type &>(*arg.value), ctx));
+        args.push_back(as_value_slot(resolve_type(
+            dynamic_cast<const ast::named_type &>(*arg.value), ctx)));
         break;
       case ast::node_kind::ident_expr: {
         const auto &ident = dynamic_cast<const ast::ident_expr &>(*arg.value);
         const auto slot = lookup_value_binding(ident.name, ctx);
-        args.push_back(slot.value_or(k_unknown_type));
+        args.push_back(slot.has_value() ? as_value_slot(*slot)
+                                        : k_unknown_type);
         break;
       }
       case ast::node_kind::literal_expr:
@@ -3756,6 +3757,38 @@ private:
   /// The id `param` is interned as, and so its key in a `param_subst`.
   auto param_id(const ast::type_param &param) -> type_id {
     return types_.type_param(param.name, param.higher_kinded_arity, &param);
+  }
+
+  /// The polynomial variable standing for the value parameter interned as
+  /// `param` — keyed on the declaration, so a callee's `n` and its caller's
+  /// `n` are two unknowns (`poly_param_var`).
+  auto value_var(type_id param) -> std::string {
+    return poly_param_var(types_.entry(param).name, param);
+  }
+
+  /// `id` as a value slot: a bare value parameter becomes the polynomial
+  /// over its variable, the one representation a value slot has. Anything
+  /// else comes back unchanged. The unlabelled-slot convention applies — no
+  /// declaration says what the value's type is, so it is `usize`.
+  auto as_value_slot(type_id id) -> type_id {
+    const auto &entry = types_.entry(id);
+    if (entry.kind != type_kind::type_param_kind || !entry.is_value_param) {
+      return id;
+    }
+    return types_.symbolic_value(types_.usize_type(),
+                                 poly_variable(value_var(id)));
+  }
+
+  /// The solver variable a bare name in a predicate or condition stands for:
+  /// an in-scope value parameter is its declaration's variable, anything else
+  /// (a local, a parameter) keys on its spelling.
+  auto ident_var(const std::string &name) -> std::string {
+    if (const auto param = lookup_type_param(name);
+        param.has_value() &&
+        types_.entry(*param).kind == type_kind::type_param_kind) {
+      return value_var(*param);
+    }
+    return name;
   }
 
   /// A solution read back as a scope: each parameter's spelling to its
@@ -3835,9 +3868,9 @@ private:
       const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
       if (const auto it = subst.values.find(ident.name);
           it != subst.values.end()) {
-        return it->second.display();
+        return it->second.atom_text();
       }
-      return ident.name;
+      return ident_var(ident.name);
     }
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(expr);
@@ -3864,7 +3897,7 @@ private:
       auto segments = path.segments;
       if (const auto it = subst.values.find(segments.front());
           it != subst.values.end()) {
-        segments.front() = it->second.display();
+        segments.front() = it->second.atom_text();
       }
       return join_strings(segments, ".");
     }
@@ -3933,7 +3966,7 @@ private:
           it != subst.values.end()) {
         return it->second;
       }
-      return poly_variable(ident.name);
+      return poly_variable(ident_var(ident.name));
     }
     case ast::node_kind::unary_expr: {
       const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
@@ -4210,7 +4243,7 @@ private:
   }
 
   /// The polynomial standing for a resolved value slot (`3`, `n + 1`, an
-  /// unsubstituted value parameter). This is how a refinement's arguments
+  /// unsubstituted `n`). This is how a refinement's arguments
   /// reach its predicate: `index[n + 1]`'s `self < n` must become
   /// `self < n + 1`.
   auto slot_poly(type_id slot) -> std::optional<linear_poly> {
@@ -4219,8 +4252,6 @@ private:
     case type_kind::const_value_kind:
     case type_kind::symbolic_value_kind:
       return entry.value;
-    case type_kind::type_param_kind:
-      return poly_variable(entry.name);
     default:
       return std::nullopt;
     }
@@ -4505,8 +4536,7 @@ private:
     const auto &param_entry = types_.entry(param);
     const auto &argument_entry = types_.entry(argument);
 
-    if (is_value_kind(param_entry.kind) ||
-        param_entry.kind == type_kind::type_param_kind) {
+    if (is_value_kind(param_entry.kind)) {
       const auto pattern = slot_poly(param);
       const auto value = slot_poly(argument);
       if (!pattern.has_value() || !value.has_value()) {
@@ -4703,7 +4733,7 @@ private:
            entry.name == "byte");
       if (unsigned_domain) {
         facts_.push_back(constraint{
-            .poly = poly_variable(param.name),
+            .poly = poly_variable(value_var(param_id(param))),
             .rel = relation::ge,
             .label = std::format("{} >= 0", param.name),
         });
@@ -8011,12 +8041,13 @@ private:
         subst.params.emplace(id, *found);
         const auto &entry = types_.entry(*found);
         if (entry.kind == type_kind::const_value_kind) {
-          subst.values.emplace(name, entry.value);
+          subst.values.emplace(value_var(id), entry.value);
         }
       }
-    }
-    for (const auto &[name, value] : item.solution.values) {
-      subst.values.insert_or_assign(name, poly_constant(value));
+      if (const auto it = item.solution.values.find(name);
+          it != item.solution.values.end()) {
+        subst.values.insert_or_assign(value_var(id), poly_constant(it->second));
+      }
     }
     return subst;
   }
@@ -8348,8 +8379,7 @@ private:
           if (!constant.has_value() && explicit_arg->value != nullptr) {
             const auto symbolic =
                 resolve_length_arg(*explicit_arg->value, current_resolve_ctx());
-            if (types_.entry(symbolic).kind == type_kind::symbolic_value_kind ||
-                is_rigid_param(symbolic)) {
+            if (types_.entry(symbolic).kind == type_kind::symbolic_value_kind) {
               solution.const_slots.emplace(param.name, symbolic);
               solution.suffix += "$?";
               continue;
@@ -8372,40 +8402,23 @@ private:
           bind_generic_constant(solution, param, *underlying, *constant);
           continue;
         }
-        // A value parameter mentioned in a parameter's *type* is solved by
-        // unification like any other, and arrives as an interned constant.
-        if (const auto found = type_bindings.find(param_id(param));
-            found != type_bindings.end()) {
-          const auto &entry = types_.entry(found->second);
-          if (entry.kind == type_kind::const_value_kind) {
-            bind_generic_constant(solution, param, *underlying,
-                                  entry.value.constant);
-            continue;
-          }
-          // The caller's own value parameter, or arithmetic over it
-          // (`concat(v, w)` inside a body generic over `n` and `m`): an answer
-          // written in symbols, which is what a generic body's call has. It
-          // names no instance — `solution_mentions_template_param` keeps it
-          // from being compiled — but it solves the call.
-          if (mentions_rigid_param(found->second)) {
-            solution.const_slots.emplace(param.name, found->second);
-            solution.suffix += "$?";
-            continue;
-          }
-        }
-        if (const auto found = solved.find(param.name);
+        const auto own_var = value_var(param_id(param));
+        if (const auto found = solved.find(own_var);
             found != solved.end() && found->second.is_constant()) {
           bind_generic_constant(solution, param, *underlying,
                                 found->second.constant);
           continue;
         }
-        // Solved to a polynomial over the caller's own value parameters —
-        // the same symbolic answer as above, arrived at by value solving.
-        if (const auto found = solved.find(param.name);
+        // Solved to a polynomial over the caller's own value parameters
+        // (`concat(v, w)` inside a body generic over `n` and `m`): an answer
+        // written in symbols, which is what a generic body's call has. It
+        // names no instance — `solution_mentions_template_param` keeps it
+        // from being compiled — but it solves the call.
+        if (const auto found = solved.find(own_var);
             found != solved.end() &&
             std::ranges::all_of(
                 found->second.terms, [&](const auto &term) -> auto {
-                  const auto own = lookup_type_param(term.var);
+                  const auto own = poly_var_identity(term.var);
                   return own.has_value() && is_rigid_param(*own);
                 })) {
           solution.const_slots.emplace(
@@ -12873,6 +12886,26 @@ private:
       return it->second;
     }
     const auto item = types_.entry(id); // copy: interning below can push
+    if (item.kind == type_kind::symbolic_value_kind) {
+      // A value parameter lives inside a polynomial, not as a slot of its
+      // own, so its binding is applied to each variable it keys.
+      auto values = std::unordered_map<std::string, linear_poly>{};
+      for (const auto &term : item.value.terms) {
+        const auto param = poly_var_identity(term.var);
+        const auto it =
+            param.has_value() ? bindings.find(*param) : bindings.end();
+        if (it == bindings.end()) {
+          continue;
+        }
+        if (const auto poly = slot_poly(it->second)) {
+          values.emplace(term.var, *poly);
+        }
+      }
+      return values.empty()
+                 ? id
+                 : types_.symbolic_value(item.result,
+                                         poly_substitute(item.value, values));
+    }
     if (item.kind == type_kind::param_app_kind) {
       const auto it = bindings.find(item.result);
       if (it == bindings.end()) {
@@ -12921,8 +12954,9 @@ private:
     case type_kind::ptr_kind:
       return types_.ptr_to(result, item.is_mut);
     case type_kind::array_kind:
-      return types_.array_of(result, item.array_size,
-                             args.empty() ? k_unknown_type : args.front());
+      return args.empty()
+                 ? types_.array_of(result, item.array_size, k_unknown_type)
+                 : array_with_length(result, args.front());
     case type_kind::struct_kind:
     case type_kind::sum_kind:
     case type_kind::opaque_kind:
@@ -13574,7 +13608,7 @@ private:
           bindings.contains(param_id(type_param))) {
         continue;
       }
-      const auto found = solved.find(type_param.name);
+      const auto found = solved.find(value_var(param_id(type_param)));
       if (found == solved.end() || !found->second.is_constant()) {
         continue;
       }

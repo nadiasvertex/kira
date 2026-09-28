@@ -61,7 +61,8 @@ auto solve_value_equation(const linear_poly &a, const linear_poly &b,
         .answer = value_answer::unsatisfiable,
         .detail = std::format("`{} = {}` would need `{}` to be {}, and it "
                               "cannot be negative",
-                              a.display(), b.display(), term.var, solved)};
+                              a.display(), b.display(),
+                              poly_var_spelling(term.var), solved)};
   }
   return value_solution{.answer = value_answer::solved,
                         .var = term.var,

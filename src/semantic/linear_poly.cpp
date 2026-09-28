@@ -1,6 +1,7 @@
 #include "linear_poly.h"
 
 #include <algorithm>
+#include <charconv>
 #include <format>
 #include <numeric>
 
@@ -47,7 +48,10 @@ auto linear_poly::key() const -> std::string {
   return out;
 }
 
-auto linear_poly::display() const -> std::string {
+namespace {
+
+auto render(const linear_poly &poly, bool keep_identity) -> std::string {
+  const auto &[terms, constant] = poly;
   if (terms.empty()) {
     return std::to_string(constant);
   }
@@ -64,12 +68,56 @@ auto linear_poly::display() const -> std::string {
     if (magnitude != 1) {
       out += std::format("{}*", magnitude);
     }
-    out += term.var;
+    out += keep_identity ? term.var : poly_var_spelling(term.var);
   }
   if (constant > 0) {
     out += std::format(" + {}", constant);
   } else if (constant < 0) {
     out += std::format(" - {}", -constant);
+  }
+  return out;
+}
+
+} // namespace
+
+auto linear_poly::display() const -> std::string {
+  return render(*this, false);
+}
+
+auto linear_poly::atom_text() const -> std::string {
+  return render(*this, false);
+}
+
+auto poly_param_var(std::string_view spelling, uint32_t identity)
+    -> std::string {
+  return std::format("{}#{}", spelling, identity);
+}
+
+auto poly_var_identity(std::string_view var) -> std::optional<uint32_t> {
+  const auto hash = var.rfind('#');
+  if (hash == std::string_view::npos || hash + 1 == var.size()) {
+    return std::nullopt;
+  }
+  auto identity = uint32_t{0};
+  const auto digits = var.substr(hash + 1);
+  const auto [end, error] =
+      std::from_chars(digits.data(), digits.data() + digits.size(), identity);
+  if (error != std::errc{} || end != digits.data() + digits.size()) {
+    return std::nullopt;
+  }
+  return identity;
+}
+
+auto poly_var_spelling(std::string_view var) -> std::string {
+  auto out = std::string{};
+  for (size_t at = 0; at < var.size(); ++at) {
+    if (var[at] != '#') {
+      out += var[at];
+      continue;
+    }
+    while (at + 1 < var.size() && var[at + 1] >= '0' && var[at + 1] <= '9') {
+      ++at;
+    }
   }
   return out;
 }

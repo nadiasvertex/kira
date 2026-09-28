@@ -1,5 +1,5 @@
 # inference snapshot
-# 1923 interned types
+# 1955 interned types
 
 ## node_types (29611)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -31633,7 +31633,7 @@ list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
 
-## borrow_bearing_types (1433)
+## borrow_bearing_types (1432)
 &T
 &T
 &T
@@ -32183,9 +32183,7 @@ array[T, m + n]
 array[T, m + n]
 array[T, m]
 array[T, m]
-array[T, m]
 array[T, n + 1]
-array[T, n]
 array[T, n]
 array[T, n]
 array[T, n]
@@ -32652,6 +32650,9 @@ fn(array[int32, 8], index[8]) -> int32
 fn(array[int32, 8], usize) -> int32
 fn(array[int32, n]) -> int32
 fn(array[int32, n], index[n]) -> int32
+fn(array[int32, n], index[n]) -> int32
+fn(array[int32, n], usize) -> int32
+fn(array[int32, n], usize) -> int32
 fn(array[int32, n], usize) -> int32
 fn(bag[T]) -> usize
 fn(bag[int32]) -> usize
@@ -33059,9 +33060,7 @@ vec[T, m + n]
 vec[T, m + n]
 vec[T, m]
 vec[T, m]
-vec[T, m]
 vec[T, n + 1]
-vec[T, n]
 vec[T, n]
 vec[T, n]
 zip_iter[I, J, T, U]

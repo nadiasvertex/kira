@@ -217,9 +217,12 @@ auto type_table::type_param(std::string_view name, size_t arity,
           ? std::format("vd:{}/{}", static_cast<const void *>(decl), arity)
       : arity == 0 ? std::format("v:{}", name)
                    : std::format("v:{}/{}", name, arity);
-  return intern(std::move(key), type_entry{.kind = type_kind::type_param_kind,
-                                           .name = std::string(name),
-                                           .ctor_arity = arity});
+  return intern(
+      std::move(key),
+      type_entry{.kind = type_kind::type_param_kind,
+                 .name = std::string(name),
+                 .ctor_arity = arity,
+                 .is_value_param = decl != nullptr && decl->is_value_param});
 }
 
 /// Interns on the declaration's address (user constructors) or the builtin

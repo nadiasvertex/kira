@@ -32,9 +32,10 @@ namespace cinder::semantic {
 // ==========================================================================
 
 /// One term of a canonical linear polynomial: `coeff * var`. A variable is
-/// named, not numbered, because both users of this file already have stable
-/// names for their unknowns — a value type-parameter (`n`) for the type
-/// table, and a solver atom key (`n`, `v.len`, `f(x)`) for the solver.
+/// either a declared value parameter, keyed on its declaration
+/// (`poly_param_var`), or a solver atom keyed on its spelling (`v.len`,
+/// `f(x)`). A parameter is never keyed on its spelling alone: a callee's `n`
+/// and its caller's `n` are two unknowns, and one polynomial can mention both.
 struct poly_term {
   int64_t coeff = 0;
   std::string var;
@@ -64,7 +65,23 @@ struct linear_poly {
   /// deliberately close to what the user wrote, since a diagnostic that
   /// echoes the source is the whole point of reporting the arithmetic.
   [[nodiscard]] auto display() const -> std::string;
+  /// `display()` with each variable's identity kept, for building a solver
+  /// atom key out of a polynomial: `len(n#4)` and `len(n#9)` must stay two
+  /// atoms even though both read `len(n)`.
+  [[nodiscard]] auto atom_text() const -> std::string;
 };
+
+/// The variable standing for a declared value parameter: its spelling plus
+/// the `type_id` its declaration interns as (`n#42`). The spelling is along
+/// for diagnostics only; the identity is what tells two `n`s apart.
+[[nodiscard]] auto poly_param_var(std::string_view spelling, uint32_t identity)
+    -> std::string;
+/// The declaration identity `var` carries, or `nullopt` for a solver atom.
+[[nodiscard]] auto poly_var_identity(std::string_view var)
+    -> std::optional<uint32_t>;
+/// `var` as the user wrote it, with every identity suffix removed — also
+/// inside an atom that mentions a parameter (`len(n#42)` reads `len(n)`).
+[[nodiscard]] auto poly_var_spelling(std::string_view var) -> std::string;
 
 /// The constant polynomial `value`.
 [[nodiscard]] auto poly_constant(int64_t value) -> linear_poly;

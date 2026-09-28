@@ -133,6 +133,11 @@ struct type_entry {
   /// `F[_, ...]` constructor parameter. For `ctor_ref_kind`: the number of
   /// type arguments the referenced constructor takes. 0 everywhere else.
   size_t ctor_arity = 0;
+  /// For `type_param_kind`: whether this is a declared *value* parameter
+  /// (`n: usize`). A value parameter is never a value slot by itself — a slot
+  /// that mentions it is a `symbolic_value_kind` over its variable — so this
+  /// is what lets a bare one met in type position be turned into that slot.
+  bool is_value_param = false;
   std::vector<bound_trait_ref> existential_bound; ///< `existential_kind` only.
   /// The value of a `const_value_kind` / `symbolic_value_kind` slot, always
   /// in canonical form — constant for the former, open for the latter. One
@@ -164,7 +169,7 @@ public:
   /// Interns a tuple type `(A, B, C)` from its element types.
   [[nodiscard]] auto tuple_of(std::vector<type_id> elements) -> type_id;
   /// Interns `array[T, n]`. `length` is the *value slot* holding the length
-  /// — a `const_value_kind`/`symbolic_value_kind`/`type_param_kind` id, or
+  /// — a `const_value_kind`/`symbolic_value_kind` id, or
   /// `k_unknown_type` when the length wasn't written or fell outside the
   /// reasoning fragment. `size` mirrors `length` as a plain integer when (and
   /// only when) the length is a closed constant, because layout and both

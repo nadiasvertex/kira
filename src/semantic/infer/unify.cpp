@@ -367,22 +367,16 @@ auto unifier::unify_flex_app(type_id app, type_id other, bool app_is_expected,
 
 /// Rule 3, value slots.
 ///
-/// Phase 2 only *decides* these: equal slots agree, provably-unsolvable ones
-/// fail, and anything still open is postponed. Phase 3 replaces the
-/// postponement with an actual solution for the unknown.
+/// Equal slots agree, provably-unsolvable ones fail, an equation in one
+/// unknown solves it, and an underdetermined one is postponed. Both sides are
+/// value kinds: a value parameter is a variable inside a polynomial, never a
+/// bare type parameter standing in a value slot.
 auto unifier::unify_values(type_id expected, type_id found, cause_id why,
                            type_id root_expected, type_id root_found)
     -> std::expected<void, unify_error> {
   const auto expected_entry = table_->entry(expected);
   const auto found_entry = table_->entry(found);
 
-  // A value parameter that hasn't been given a variable yet is spelled as an
-  // arity-0 type parameter; it is rigid and unknown, so wait.
-  if (expected_entry.kind == type_kind::type_param_kind ||
-      found_entry.kind == type_kind::type_param_kind) {
-    postpone(expected, found, why, "a value parameter is not yet known");
-    return {};
-  }
   if (!is_value_kind(expected_entry.kind) || !is_value_kind(found_entry.kind)) {
     return std::unexpected(refuse(
         unify_failure::mismatch, expected, found, root_expected, root_found,

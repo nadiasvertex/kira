@@ -49,32 +49,54 @@ def safe_get[n: usize](v: array[int32, n], i: index[n]) -> int32:
 def first[m: usize](v: array[int32, m + 1]) -> int32:
     return safe_get(v, 0)
 
+# Callee and caller both spell it `n`, and they are two parameters: the
+# callee's `n` solves to the caller's `n + 1`, not to a contradiction.
+def shifted[n: usize](v: array[int32, n + 1]) -> int32:
+    return cap(v) * 10 + (n as int32)
+
+# The same, with the callee's `n` reaching a refinement: `0 < n + 1`.
+def first_shifted[n: usize](v: array[int32, n + 1]) -> int32:
+    return safe_get(v, 0)
+
 def check(case: int32, actual: int32, expected: int32) -> int32:
     if actual == expected:
         return 0
     return case * 100 + actual
 
 def main() -> int32:
-    let three: array[int32, 3] = [7, 8, 9]
-    let four: array[int32, 4] = [1, 2, 3, 4]
+    # An array is not implicitly copied, so every by-value call gets its own.
+    let a1: array[int32, 3] = [7, 8, 9]
+    let a2: array[int32, 4] = [1, 2, 3, 4]
+    let a3: array[int32, 3] = [7, 8, 9]
+    let a4: array[int32, 3] = [7, 8, 9]
+    let a5: array[int32, 3] = [7, 8, 9]
+    let a6: array[int32, 3] = [7, 8, 9]
+    let a7: array[int32, 3] = [7, 8, 9]
     let two: array[int32, 2] = [1, 2]
     let five: array[int32, 5] = [1, 2, 3, 4, 5]
+    let a9: array[int32, 3] = [7, 8, 9]
+    let a10: array[int32, 3] = [7, 8, 9]
+    let a11: array[int32, 3] = [7, 8, 9]
 
-    var failed = check(1, cap(three), 3)
+    var failed = check(1, cap(a1), 3)
     if failed == 0:
-        failed = check(2, pred_len(four), 3)
+        failed = check(2, pred_len(a2), 3)
     if failed == 0:
-        failed = check(3, outer_same(three), 33)
+        failed = check(3, outer_same(a3), 33)
     if failed == 0:
-        failed = check(4, outer_plus(three), 32)
+        failed = check(4, outer_plus(a4), 32)
     if failed == 0:
-        failed = check(5, outer_minus(three), 23)
+        failed = check(5, outer_minus(a5), 23)
     if failed == 0:
-        failed = check(6, outer_spelled(three), 22)
+        failed = check(6, outer_spelled(a6), 22)
     if failed == 0:
-        failed = check(7, cap_ref(&three) * 10 + cap_ref(three), 33)
+        failed = check(7, cap_ref(&a7) * 10 + cap_ref(a7), 33)
     if failed == 0:
         failed = check(8, both(two, five), 25)
     if failed == 0:
-        failed = check(9, first(three), 7)
+        failed = check(9, first(a9), 7)
+    if failed == 0:
+        failed = check(10, shifted(a10), 32)
+    if failed == 0:
+        failed = check(11, first_shifted(a11), 7)
     return failed
