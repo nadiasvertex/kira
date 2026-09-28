@@ -1,0 +1,25 @@
+module codegen_stress.static_struct_global
+
+# A struct-valued `static let` used as a value: bound to a local, read
+# through a field, passed to another function, and nested in another
+# struct. Each reference rebuilds the struct from its compile-time value.
+#
+# `# expect:` pins the value, since both tiers share struct layout rules
+# and would agree on a wrong field offset.
+#
+# 3 * 1000 + 4 * 100 + 5 * 10 + 6 = 3456.
+
+# expect: 3456
+
+type point = { x: int32, y: int32 }
+type segment = { a: point, b: point }
+
+static let origin: point = point { x: 3, y: 4 }
+static let seg: segment = segment { a: point { x: 5, y: 6 }, b: origin }
+
+def sum_y(p: point) -> int32:
+    return p.y
+
+def main() -> int32:
+    let p = origin
+    return p.x * 1000 + sum_y(origin) * 100 + seg.a.x * 10 + seg.a.y

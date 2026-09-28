@@ -1091,6 +1091,10 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   // `checked_types::static_global_defs`) — same rationale as the scalar
   // case above, but the value is real backing data a backend builds once,
   // not something to inline at every reference site.
+  if (const auto it = checked_.static_struct_values.find(&ident);
+      it != checked_.static_struct_values.end()) {
+    return lower_expr(*it->second);
+  }
   if (const auto it = checked_.static_global_refs.find(&ident);
       it != checked_.static_global_refs.end()) {
     return ok_expr(make<hir_global_ref>(ident.span, *type, it->second,
@@ -1906,6 +1910,10 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   }
   // Module-qualified reference to a reified aggregate `static let` — see
   // the matching check in `lower_ident`.
+  if (const auto it = checked_.static_struct_values.find(&path);
+      it != checked_.static_struct_values.end()) {
+    return lower_expr(*it->second);
+  }
   if (const auto it = checked_.static_global_refs.find(&path);
       it != checked_.static_global_refs.end()) {
     auto type = checked_type_of(path);

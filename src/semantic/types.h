@@ -1170,6 +1170,13 @@ struct checked_types {
   /// to `hir_local_ref`, mirroring `static_const_values` but for the
   /// aggregate case that can't be inlined at each reference site.
   std::unordered_map<const ast::node *, std::string> static_global_refs;
+  /// Every `ident_expr`/`module_path_expr` that resolved to a struct-valued
+  /// `static let`, mapped to a synthesized struct literal rebuilding its
+  /// compile-time value (owned by `synthesized_static_structs`).
+  /// `hir::lower_ident`/`lower_module_path` lower that literal in place, so
+  /// each use constructs the struct from constants.
+  std::unordered_map<const ast::node *, const ast::expr *> static_struct_values;
+  ast::ptr_vec<ast::expr> synthesized_static_structs;
   /// Reified global name -> the module whose `static_decl` it was reified
   /// from (`reify_static_global`'s `owner` parameter). `hir::lower_ident`/
   /// `lower_module_path` consult this to fill in `hir_global_ref::

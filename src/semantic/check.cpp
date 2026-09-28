@@ -598,6 +598,8 @@ public:
         .static_global_defs = std::move(static_global_defs_),
         .static_if_taken_branch = std::move(static_if_taken_branch_),
         .static_global_refs = std::move(static_global_refs_),
+        .static_struct_values = std::move(static_struct_values_),
+        .synthesized_static_structs = std::move(synthesized_static_structs_),
         .static_global_owners = std::move(static_global_owners_),
         .value_path_types = std::move(value_path_types_),
         .proven_in_bounds = std::move(proven_in_bounds_),
@@ -935,6 +937,10 @@ private:
   /// Owns every literal node synthesized by `materialize_const_literal` —
   /// see `checked_types::synthesized_const_literals`'s doc comment.
   ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
+  /// See `checked_types::static_struct_values`'s doc comment.
+  std::unordered_map<const ast::node *, const ast::expr *>
+      static_struct_values_;
+  ast::ptr_vec<ast::expr> synthesized_static_structs_;
   /// See `checked_types::static_const_values`'s doc comment. Populated by
   /// `resolve_ident`.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
@@ -7135,8 +7141,8 @@ private:
     defer_method_call(
         field.field_name, receiver, std::move(binds),
         [this, &call, &field, replay = std::move(replay), result,
-         context = capture_body_context()](type_id /*settled*/) mutable
-            -> void {
+         context =
+             capture_body_context()](type_id /*settled*/) mutable -> void {
           swap_body_context(context);
           for (const auto &[expr, type] : replay) {
             replayed_exprs_[expr] = type;
@@ -10767,6 +10773,14 @@ private:
     if (const auto name =
             reify_static_global(decl, *value, type, owner_module)) {
       static_global_refs_[&reference] = *name;
+      return;
+    }
+    if (value->kind == comptime::value_kind::struct_instance) {
+      if (auto literal =
+              build_static_struct_expr(*value, reference.span, type)) {
+        static_struct_values_[&reference] = literal.get();
+        synthesized_static_structs_.push_back(std::move(literal));
+      }
     }
   }
 
@@ -10867,6 +10881,20 @@ private:
   /// sequences into a synthesized literal's raw spelling.
   auto materialize_const_literal(const comptime::value &value, source_span span,
                                  type_id type) -> const ast::literal_expr * {
+    auto lit = build_const_literal(value, span, type);
+    if (lit == nullptr) {
+      return nullptr;
+    }
+    const auto *raw = lit.get();
+    synthesized_const_literals_.push_back(std::move(lit));
+    return raw;
+  }
+
+  /// The owned literal `materialize_const_literal` hands out, for callers
+  /// (`build_static_struct_expr`) that embed it in a larger synthesized node
+  /// instead of keeping it in `synthesized_const_literals_`.
+  auto build_const_literal(const comptime::value &value, source_span span,
+                           type_id type) -> ast::ptr<ast::literal_expr> {
     auto lit = ast::make<ast::literal_expr>();
     lit->span = span;
     switch (value.kind) {
@@ -10895,10 +10923,43 @@ private:
     default:
       return nullptr;
     }
-    const auto *raw = lit.get();
-    synthesized_const_literals_.push_back(std::move(lit));
-    record_expr_type(*raw, type);
-    return raw;
+    record_expr_type(*lit, type);
+    return lit;
+  }
+
+  /// Rebuilds a compile-time struct value as a struct literal whose fields
+  /// are literals (or nested struct literals), so a reference to a
+  /// struct-valued `static let` can be lowered as an ordinary struct
+  /// construction at each use. Fields are emitted in declaration order.
+  /// Returns `nullptr` when `type` isn't a struct or any field's value is
+  /// neither a scalar nor such a struct (a string, a list, ...).
+  auto build_static_struct_expr(const comptime::value &value, source_span span,
+                                type_id type) -> ast::ptr<ast::expr> {
+    if (value.kind != comptime::value_kind::struct_instance) {
+      return build_const_literal(value, span, type);
+    }
+    const auto &entry = types_.entry(type);
+    const auto *decl_fields = struct_fields_of(entry);
+    if (decl_fields == nullptr || decl_fields->size() != value.fields.size()) {
+      return nullptr;
+    }
+    auto literal = ast::make<ast::struct_expr>();
+    literal->span = span;
+    for (const auto &field : *decl_fields) {
+      const auto found = value.fields.find(field.name);
+      const auto field_type = struct_field_type(entry, field.name);
+      if (found == value.fields.end() || !field_type.has_value()) {
+        return nullptr;
+      }
+      auto element = build_static_struct_expr(found->second, span, *field_type);
+      if (element == nullptr) {
+        return nullptr;
+      }
+      literal->fields.push_back(ast::struct_field_init{
+          .span = span, .name = field.name, .value = std::move(element)});
+    }
+    record_expr_type(*literal, type);
+    return literal;
   }
 
   /// Attempts to fold a call to a comptime-only `static def` instance
@@ -14813,15 +14874,14 @@ private:
       // already known in terms of the leaf (`T := ?a`, so the result is
       // `iter[?a]`), so only the elaboration waits.
       if (mentions_type_var(settle(receiver_type))) {
-        defer_method_call(decl.name, settle(receiver_type),
-                          std::vector<type_id>{},
-                          [this, &call, &decl, candidate, solved, params,
-                           &field](type_id /*settled*/) -> void {
-                            (void)instantiate_generic_function(
-                                call, decl, candidate.owner, candidate.file_id,
-                                solved, params, /*explicit_args=*/{},
-                                field.object.get());
-                          });
+        defer_method_call(
+            decl.name, settle(receiver_type), std::vector<type_id>{},
+            [this, &call, &decl, candidate, solved, params,
+             &field](type_id /*settled*/) -> void {
+              (void)instantiate_generic_function(
+                  call, decl, candidate.owner, candidate.file_id, solved,
+                  params, /*explicit_args=*/{}, field.object.get());
+            });
         return substitute_solved(signature_return_type(decl, candidate.owner),
                                  bindings);
       }
@@ -15179,8 +15239,7 @@ private:
     // Settled, so a receiver whose leaf an earlier statement solved (the
     // result of a call that waited, read back through its binding) is looked
     // up as what it now is.
-    auto object =
-        strip_refs(settle(infer_expr(*field.object, k_unknown_type)));
+    auto object = strip_refs(settle(infer_expr(*field.object, k_unknown_type)));
     // The exception is a call whose method cannot be found on the receiver
     // as it stands: no method by this name and no free function that could
     // be reached by UFCS — the impl is chosen by the receiver's type, as
