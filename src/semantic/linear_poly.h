@@ -5,7 +5,6 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace cinder::semantic {
@@ -111,25 +110,6 @@ struct linear_poly {
 poly_substitute(const linear_poly &poly,
                 const std::unordered_map<std::string, linear_poly> &bindings)
     -> linear_poly;
-
-/// Solves `pattern = value` for a single unknown, when the pattern is a
-/// linear expression in exactly one variable with a unit coefficient — the
-/// shape a declaration actually writes (`n`, `n + 1`, `n - 1`). Returns the
-/// variable and the polynomial it must equal, or `nullopt` when the pattern
-/// isn't of that shape (`2n`, `m + n`) and so doesn't determine its unknown.
-///
-/// Deliberately narrow: this is *inference*, and a call site that doesn't
-/// pin a value parameter down uniquely should leave it open rather than
-/// guess. `vec[T, m + n]` matched against `vec[T, 5]` determines neither `m`
-/// nor `n`, and the compiler says nothing about them rather than inventing a
-/// split.
-///
-/// The pattern's variables and the value's are in different namespaces — a
-/// callee's parameters against a caller's — so a variable appearing on both
-/// sides is two variables with one spelling, not a self-reference.
-[[nodiscard]] auto solve_for_unknown(const linear_poly &pattern,
-                                     const linear_poly &value)
-    -> std::optional<std::pair<std::string, linear_poly>>;
 
 /// Whether the equation `a = b` has *any* solution, given `vars_non_negative`
 /// (true when the unknowns range over an unsigned type, so `v >= 0`).

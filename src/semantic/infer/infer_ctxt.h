@@ -175,6 +175,11 @@ public:
   /// of a `vec[T, n]` — minting it on first use and returning the same one
   /// afterwards.
   ///
+  /// Minting makes `name` an unknown of this store, as does
+  /// `declare_value_param`. A polynomial variable that is neither is rigid to
+  /// the unifier: the caller's own `m`, which an answer may mention but
+  /// nothing here may solve.
+  ///
   /// Value parameters reach the store by *name* rather than by id because
   /// that is how `linear_poly` refers to them: a polynomial's terms are
   /// named, since both of its users already had stable names for their
@@ -186,6 +191,14 @@ public:
   /// The variable for `name`, if one has been minted.
   [[nodiscard]] auto value_param_named(std::string_view name) const
       -> std::optional<type_id>;
+  /// Makes `name` an unknown of this store without minting it yet — the
+  /// variable is minted by `value_param` once something solves it. This is
+  /// what lets `rigid_match` name a pattern's value parameters as unknowns
+  /// without interning a variable for each one at every match.
+  auto declare_value_param(std::string name) -> void;
+  /// Whether `name` is an unknown here (declared or minted), rather than a
+  /// rigid variable.
+  [[nodiscard]] auto is_value_unknown(std::string_view name) const -> bool;
 
   /// Whether `id` is one of this store's variables (solved or not).
   [[nodiscard]] auto is_meta(type_id id) const -> bool;
@@ -275,6 +288,8 @@ private:
   std::vector<type_id> mint_order_;
   /// Value parameters by the name their polynomials use; see `value_param`.
   std::unordered_map<std::string, type_id> value_params_;
+  /// Value parameters declared unknown but not yet minted.
+  std::unordered_set<std::string> declared_values_;
   /// Union-find parent links between variables. Mutable so `find` can
   /// compress a path without being a mutation in the caller's eyes.
   mutable std::unordered_map<type_id, type_id> parent_;

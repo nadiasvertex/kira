@@ -6,6 +6,7 @@
 // that it declines to guess at the ones that do not determine an answer.
 
 #include <iostream>
+#include <string_view>
 
 #include "src/semantic/infer/value_solver.h"
 #include "src/semantic/linear_poly.h"
@@ -19,12 +20,29 @@ using cinder::semantic::poly_constant;
 using cinder::semantic::poly_scale;
 using cinder::semantic::poly_sub;
 using cinder::semantic::poly_variable;
-using cinder::semantic::infer::solve_value_equation;
+using cinder::semantic::infer::flexible_vars;
 using cinder::semantic::infer::value_answer;
+using cinder::semantic::infer::value_solution;
 using cinder::testing::expect;
 
 auto n_plus(int64_t k) -> linear_poly {
   return poly_add(poly_variable("n"), poly_constant(k));
+}
+
+/// Every variable is an unknown — the one-sided equations below have no
+/// caller to hold anything fixed.
+auto solve_value_equation(const linear_poly &a, const linear_poly &b,
+                          bool unsigned_domain) -> value_solution {
+  return cinder::semantic::infer::solve_value_equation(
+      a, b, unsigned_domain, [](std::string_view) -> bool { return true; });
+}
+
+/// Only `n` is an unknown; every other variable is rigid.
+auto solve_for_n(const linear_poly &a, const linear_poly &b) -> value_solution {
+  const flexible_vars only_n = [](std::string_view var) -> bool {
+    return var == "n";
+  };
+  return cinder::semantic::infer::solve_value_equation(a, b, true, only_n);
 }
 
 /// The headline case: `n + 1 = 3` yields `n := 2`.
@@ -97,6 +115,41 @@ auto test_underdetermined_never_guesses() -> void {
   expect(split.var.empty(), "expected nothing to have been invented");
 }
 
+/// A rigid variable is a fixed quantity the answer may be written in, not a
+/// second unknown: `n + 1 = m + 1` solves `n := m` rather than stalling.
+auto test_rigid_variables_are_held_fixed() -> void {
+  const auto m = poly_variable("m");
+  const auto shifted = solve_for_n(n_plus(1), poly_add(m, poly_constant(1)));
+  expect(shifted.answer == value_answer::solved && shifted.var == "n" &&
+             shifted.value == m,
+         "expected `n + 1 = m + 1` to solve `n := m`");
+
+  // The answer may be any polynomial over the rigid variables, and one that
+  // is not provably non-negative is left for each instance to check.
+  const auto minus = solve_for_n(n_plus(1), m);
+  expect(minus.answer == value_answer::solved &&
+             minus.value == poly_sub(m, poly_constant(1)),
+         "expected `n + 1 = m` to solve `n := m - 1`");
+
+  // Rigid on both sides and different: no choice of anything makes `m` and
+  // `m + 1` the same value.
+  const auto rigid = solve_for_n(m, poly_add(m, poly_constant(1)));
+  expect(rigid.answer == value_answer::unsatisfiable && !rigid.detail.empty(),
+         "expected `m = m + 1` with `m` rigid to be refused");
+
+  // `2n = m` has a whole-number solution for some `m` but not for every one.
+  const auto halved = solve_for_n(poly_scale(poly_variable("n"), 2), m);
+  expect(halved.answer == value_answer::unsatisfiable,
+         "expected `2n = m` to be refused for a rigid `m`");
+
+  // A known value turns the underdetermined `m + n = 5` into `3 + n = 5` —
+  // exactly what an explicit `split[3](a)` supplies.
+  const auto split = solve_for_n(n_plus(3), poly_constant(5));
+  expect(split.answer == value_answer::solved &&
+             split.value == poly_constant(2),
+         "expected `3 + n = 5` to solve `n := 2`");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -104,6 +157,7 @@ auto main() -> int {
   test_unsigned_domain_refutes();
   test_gcd_criterion();
   test_underdetermined_never_guesses();
+  test_rigid_variables_are_held_fixed();
   std::cout << "value_solver_test passed\n";
   return 0;
 }

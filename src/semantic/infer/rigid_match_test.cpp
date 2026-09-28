@@ -13,6 +13,7 @@
 #include <string>
 
 #include "src/semantic/infer/rigid_match.h"
+#include "src/semantic/linear_poly.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
 
@@ -245,6 +246,31 @@ auto test_a_value_parameter_binds_to_a_value() -> void {
   expect(bound(f, result, "n") == three, "expected `n` to solve to the value");
 }
 
+/// A pattern's value parameter is a variable inside a polynomial, and an
+/// unknown of the match; the concrete side's variables are the caller's own
+/// and stay fixed. `n + 1` against a caller's `m + 1` therefore solves rather
+/// than refusing — and a refusal would matter beyond the length, because the
+/// match stops at its first failure and `T`, after it, would go unsolved.
+auto test_a_polynomial_parameter_is_an_unknown() -> void {
+  auto f = fixture{};
+  const auto usize = f.table.usize_type();
+  const auto int32 = f.table.builtin("int32");
+  const auto plus_one = [&](const char *var) -> type_id {
+    return f.table.symbolic_value(
+        usize, cinder::semantic::poly_add(cinder::semantic::poly_variable(var),
+                                          cinder::semantic::poly_constant(1)));
+  };
+  const auto pattern =
+      f.table.builtin_generic("vec", {plus_one("n"), f.param("T")});
+  const auto concrete = f.table.builtin_generic("vec", {plus_one("m"), int32});
+
+  const auto result = match_pattern(f.table, pattern, concrete);
+  expect(!result.failure.has_value(),
+         "expected the pattern's `n` to solve against the caller's `m`");
+  expect(bound(f, result, "T") == int32,
+         "expected `T`, after the length, to solve too");
+}
+
 /// Adoption must not leak: the store is local, so the same `T` matched twice
 /// against different types solves independently. A shared store would make
 /// the second match a contradiction.
@@ -278,6 +304,7 @@ auto main() -> int {
   test_a_mismatch_is_reported();
   test_unpinned_parameters_stay_absent();
   test_a_value_parameter_binds_to_a_value();
+  test_a_polynomial_parameter_is_an_unknown();
   test_matches_do_not_share_parameters();
   std::cout << "rigid_match_test passed\n";
   return 0;

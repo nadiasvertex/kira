@@ -1,6 +1,7 @@
 #include "src/semantic/infer/unify.h"
 
 #include <format>
+#include <string_view>
 #include <utility>
 
 #include "src/semantic/infer/value_solver.h"
@@ -371,11 +372,18 @@ auto unifier::unify_flex_app(type_id app, type_id other, bool app_is_expected,
 /// unknown solves it, and an underdetermined one is postponed. Both sides are
 /// value kinds: a value parameter is a variable inside a polynomial, never a
 /// bare type parameter standing in a value slot.
+///
+/// Only a polynomial variable this store holds as an unknown
+/// (`infer_ctxt::is_value_unknown`) is solved for. Any other is rigid — a
+/// generic body's own `n`, which it cannot choose — and an answer has to hold
+/// for every value it takes.
 auto unifier::unify_values(type_id expected, type_id found, cause_id why,
                            type_id root_expected, type_id root_found)
     -> std::expected<void, unify_error> {
-  const auto expected_entry = table_->entry(expected);
-  const auto found_entry = table_->entry(found);
+  // What the store already knows is substituted first, so a variable solved
+  // by an earlier slot is a value here rather than an unknown to re-solve.
+  const auto expected_entry = table_->entry(ctx_->zonk(expected));
+  const auto found_entry = table_->entry(ctx_->zonk(found));
 
   if (!is_value_kind(expected_entry.kind) || !is_value_kind(found_entry.kind)) {
     return std::unexpected(refuse(
@@ -402,8 +410,11 @@ auto unifier::unify_values(type_id expected, type_id found, cause_id why,
 
   const auto unsigned_domain = value_is_unsigned(*table_, expected_entry) ||
                                value_is_unsigned(*table_, found_entry);
-  const auto solution = solve_value_equation(
-      expected_entry.value, found_entry.value, unsigned_domain);
+  const auto solution =
+      solve_value_equation(expected_entry.value, found_entry.value,
+                           unsigned_domain, [&](std::string_view var) -> bool {
+                             return ctx_->is_value_unknown(var);
+                           });
   switch (solution.answer) {
   case value_answer::agreed:
     return {};

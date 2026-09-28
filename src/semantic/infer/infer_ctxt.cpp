@@ -113,6 +113,15 @@ auto infer_ctxt::value_param(std::string name, type_id underlying,
   return id;
 }
 
+auto infer_ctxt::declare_value_param(std::string name) -> void {
+  declared_values_.insert(std::move(name));
+}
+
+auto infer_ctxt::is_value_unknown(std::string_view name) const -> bool {
+  const auto key = std::string(name);
+  return declared_values_.contains(key) || value_params_.contains(key);
+}
+
 auto infer_ctxt::value_param_named(std::string_view name) const
     -> std::optional<type_id> {
   const auto it = value_params_.find(std::string(name));

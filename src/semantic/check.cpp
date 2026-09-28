@@ -28,6 +28,7 @@
 #include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
+#include "src/semantic/infer/value_solver.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
@@ -4542,11 +4543,32 @@ private:
       if (!pattern.has_value() || !value.has_value()) {
         return;
       }
-      if (auto solved = solve_for_unknown(*pattern, *value)) {
+      // The pattern's variables are the callee's unknowns; the value's are
+      // the caller's, fixed for the whole call. A recursive call names one
+      // declaration's `n` on both sides, and those are still two variables,
+      // so each of the pattern's is either replaced by what it is already
+      // known to be (an earlier argument, or the brackets: `split[3](a)`
+      // turns `m + n` into `3 + n`) or marked apart as the unknown.
+      constexpr auto unknown_mark = '?';
+      auto renamed = value_bindings{};
+      for (const auto &term : pattern->terms) {
+        const auto known = out.find(term.var);
+        renamed.emplace(term.var, known != out.end()
+                                      ? known->second
+                                      : poly_variable(unknown_mark + term.var));
+      }
+      // Not the unsigned domain: refusing `n + 1 = 0` is `compatible`'s to
+      // report, and this only reads off the answers a call does have.
+      const auto solution = infer::solve_value_equation(
+          poly_substitute(*pattern, renamed), *value,
+          /*unsigned_domain=*/false, [](std::string_view var) -> bool {
+            return var.starts_with(unknown_mark);
+          });
+      if (solution.answer == infer::value_answer::solved) {
         // First binding wins: a second, conflicting one means the call is
         // already ill-typed (`compatible` will have said so), and guessing
         // between them would only add a confusing second diagnostic.
-        out.emplace(std::move(solved->first), std::move(solved->second));
+        out.emplace(solution.var.substr(1), solution.value);
       }
       return;
     }
@@ -6048,6 +6070,39 @@ private:
     return entry.is_mut ? param_passing::mut_ref : param_passing::shared_ref;
   }
 
+  /// The value parameters a call gave in brackets, as the bindings argument
+  /// solving starts from: `split[3](a)` knows `m` before it looks at `a`, and
+  /// so solves `3 + n = 5` rather than the underdetermined `m + n = 5`.
+  auto explicit_value_bindings(const generic_call_context *generic)
+      -> value_bindings {
+    auto bindings = value_bindings{};
+    if (generic == nullptr || generic->decl == nullptr ||
+        generic->explicit_args == nullptr) {
+      return bindings;
+    }
+    const auto &type_params = generic->decl->type_params;
+    for (size_t i = 0;
+         i < generic->explicit_args->size() && i < type_params.size(); ++i) {
+      const auto &param = type_params[i];
+      const auto *value = (*generic->explicit_args)[i].value;
+      if (!param.is_value_param || value == nullptr) {
+        continue;
+      }
+      // The same readings `solve_generic_params` gives it: a constant, or a
+      // polynomial in the caller's own value parameters (`climb[n + 1]`).
+      auto poly = std::optional<linear_poly>{};
+      if (const auto constant = explicit_value_argument(*value)) {
+        poly = poly_constant(*constant);
+      } else {
+        poly = value_poly(*value, quiet_ctx(current_resolve_ctx()));
+      }
+      if (poly.has_value()) {
+        bindings.emplace(value_var(param_id(param)), *poly);
+      }
+    }
+    return bindings;
+  }
+
   /// Matches a call's arguments against a parameter list: positional
   /// arguments fill the next unused parameter in order, named arguments
   /// bind by name (reporting unknown/duplicate names), and each argument's
@@ -6072,7 +6127,7 @@ private:
     auto next_positional = size_t{0};
     auto seen_named = false;
     // See the deferral comment in the argument loop below.
-    auto solved_values = value_bindings{};
+    auto solved_values = explicit_value_bindings(generic);
     auto deferred = std::vector<deferred_narrowing>{};
     auto pending = std::vector<pending_argument>{};
 

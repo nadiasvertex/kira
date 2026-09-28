@@ -11,13 +11,16 @@ namespace cinder::semantic::infer {
 
 namespace {
 
-/// Every `type_param_kind` id reachable from `id`.
+/// Every `type_param_kind` id reachable from `id`, and every polynomial
+/// variable — a value parameter is not a `type_param` in a value slot but a
+/// variable inside a `symbolic_value`.
 ///
 /// A generic walk over `args`/`result` rather than a per-kind switch, for the
 /// same reason `infer_ctxt::occurs` is one: a kind added later cannot quietly
 /// stop being visited.
 auto collect_params(const type_table &table, type_id id,
                     std::vector<type_id> &found,
+                    std::vector<std::string> &values,
                     std::unordered_set<type_id> &seen) -> void {
   if (!seen.insert(id).second) {
     return;
@@ -26,11 +29,16 @@ auto collect_params(const type_table &table, type_id id,
   if (entry.kind == type_kind::type_param_kind) {
     found.push_back(id);
   }
+  if (entry.kind == type_kind::symbolic_value_kind) {
+    for (const auto &term : entry.value.terms) {
+      values.push_back(term.var);
+    }
+  }
   for (const auto arg : entry.args) {
-    collect_params(table, arg, found, seen);
+    collect_params(table, arg, found, values, seen);
   }
   if (entry.result != id) {
-    collect_params(table, entry.result, found, seen);
+    collect_params(table, entry.result, found, values, seen);
   }
 }
 
@@ -74,8 +82,9 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
   const auto right = coerced.found;
 
   auto params = std::vector<type_id>{};
+  auto values = std::vector<std::string>{};
   auto seen = std::unordered_set<type_id>{};
-  collect_params(table, left, params, seen);
+  collect_params(table, left, params, values, seen);
 
   // Local, and that is load-bearing: a `type_param` id is interned by name,
   // so the `T` of one signature is the same id as the `T` of another.
@@ -94,6 +103,12 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete)
               entry.ctor_arity > 0 ? meta_sort::ctor_sort
                                    : meta_sort::type_sort,
               entry.ctor_arity, entry.name, source_location{});
+  }
+
+  // The pattern's value parameters are unknowns too; the concrete side's
+  // are the caller's own, fixed for the match, and stay rigid.
+  for (const auto &var : values) {
+    ctx.declare_value_param(var);
   }
 
   auto result = rigid_match_result{};

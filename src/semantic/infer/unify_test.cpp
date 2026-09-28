@@ -194,6 +194,7 @@ auto test_value_slots() -> void {
 
   // `n + 1 ~ 0` has no solution over an unsigned domain: this is what
   // rejects `head` on an empty vector.
+  (void)f.ctx.value_param("n", usize, nowhere());
   const auto impossible =
       f.unify(f.table.builtin_generic("vec", {n_plus_one}),
               f.table.builtin_generic("vec", {f.table.const_value(usize, 0)}));
@@ -208,16 +209,43 @@ auto test_value_slots() -> void {
   const auto g_usize = g.table.usize_type();
   const auto g_pattern = g.table.symbolic_value(
       g_usize, poly_add(poly_variable("n"), poly_constant(1)));
+  const auto n = g.ctx.value_param("n", g_usize, nowhere());
   expect(g.unify(g_pattern, g.table.const_value(g_usize, 3)).has_value(),
          "expected a solvable equation to be accepted");
   expect(g.engine.deferred().empty(),
          "expected the equation to be solved rather than deferred");
-  const auto n = g.ctx.value_param_named("n");
-  expect(n.has_value(), "expected `n` to have entered the store");
-  expect(g.ctx.zonk(*n) == g.table.const_value(g_usize, 2),
+  expect(g.ctx.zonk(n) == g.table.const_value(g_usize, 2),
          "expected `n` to have been solved to 2");
   expect(g.ctx.zonk(g_pattern) == g.table.const_value(g_usize, 3),
          "expected `n + 1` to zonk to the interned `3`");
+
+  // A variable the store never minted is rigid: a generic body's own `n`,
+  // which no constraint inside that body gets to choose. `n + 1 ~ 3` is then
+  // a claim about every `n`, and false.
+  auto r = fixture{};
+  const auto r_usize = r.table.usize_type();
+  const auto r_pattern = r.table.symbolic_value(
+      r_usize, poly_add(poly_variable("n"), poly_constant(1)));
+  const auto rigid = r.unify(r_pattern, r.table.const_value(r_usize, 3));
+  expect(!rigid.has_value() && rigid.error().failure == unify_failure::value,
+         "expected a rigid `n + 1 ~ 3` to refuse rather than solve `n`");
+  expect(!r.ctx.value_param_named("n").has_value(),
+         "expected the rigid `n` not to have become an unknown");
+
+  // One unknown against a rigid variable solves to a polynomial over it:
+  // `n + 1 ~ m + 1` gives `n := m`, and zonking sees it.
+  auto p = fixture{};
+  const auto p_usize = p.table.usize_type();
+  const auto p_n = p.ctx.value_param("n", p_usize, nowhere());
+  const auto m_plus_one = p.table.symbolic_value(
+      p_usize, poly_add(poly_variable("m"), poly_constant(1)));
+  expect(p.unify(p.table.symbolic_value(
+                     p_usize, poly_add(poly_variable("n"), poly_constant(1))),
+                 m_plus_one)
+             .has_value(),
+         "expected `n + 1 ~ m + 1` to be accepted");
+  expect(p.ctx.zonk(p_n) == p.table.symbolic_value(p_usize, poly_variable("m")),
+         "expected `n` to solve to the rigid `m`");
 
   // Variants are identities, not quantities.
   auto h = fixture{};

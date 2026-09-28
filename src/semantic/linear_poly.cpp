@@ -181,30 +181,6 @@ auto poly_substitute(
   return result;
 }
 
-/// The pattern must be `±v + c` — one unknown, coefficient ±1 — for the
-/// equation `pattern = value` to name `v` uniquely without dividing. Anything
-/// wider (two unknowns, a coefficient of 2) is left unsolved on purpose; see
-/// the header.
-auto solve_for_unknown(const linear_poly &pattern, const linear_poly &value)
-    -> std::optional<std::pair<std::string, linear_poly>> {
-  if (pattern.terms.size() != 1) {
-    return std::nullopt;
-  }
-  const auto &term = pattern.terms.front();
-  if (term.coeff != 1 && term.coeff != -1) {
-    return std::nullopt;
-  }
-  // pattern = value  =>  coeff * v = value - constant  =>  v = ±(value - c)
-  auto solved = poly_sub(value, poly_constant(pattern.constant));
-  if (term.coeff == -1) {
-    solved = poly_negate(solved);
-  }
-  // No self-reference check: the pattern's variable is the callee's and the
-  // value's are the caller's, so `n = n + 1` at a call inside a body generic
-  // over its own `n` is two variables that share a spelling, and it solves.
-  return std::pair{term.var, solved};
-}
-
 /// Reduces `a = b` to `sum(coeff_i * var_i) = target` and asks whether that
 /// has a solution. Three refutations, in increasing specificity:
 ///

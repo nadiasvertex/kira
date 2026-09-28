@@ -58,6 +58,16 @@ def shifted[n: usize](v: array[int32, n + 1]) -> int32:
 def first_shifted[n: usize](v: array[int32, n + 1]) -> int32:
     return safe_get(v, 0)
 
+# Brackets fix `m`, which turns the underdetermined `m + n = 5` into
+# `3 + n = 5`.
+def split[m: usize, n: usize](v: array[int32, m + n]) -> int32:
+    return (m as int32) * 10 + (n as int32)
+
+# The same, with the rest answered by the caller's own `k`: `2 + n = k + 2`
+# solves `n := k`.
+def split_outer[k: usize](v: array[int32, k + 2]) -> int32:
+    return split[2](v)
+
 def check(case: int32, actual: int32, expected: int32) -> int32:
     if actual == expected:
         return 0
@@ -77,6 +87,8 @@ def main() -> int32:
     let a9: array[int32, 3] = [7, 8, 9]
     let a10: array[int32, 3] = [7, 8, 9]
     let a11: array[int32, 3] = [7, 8, 9]
+    let a12: array[int32, 5] = [1, 2, 3, 4, 5]
+    let a13: array[int32, 5] = [1, 2, 3, 4, 5]
 
     var failed = check(1, cap(a1), 3)
     if failed == 0:
@@ -99,4 +111,8 @@ def main() -> int32:
         failed = check(10, shifted(a10), 32)
     if failed == 0:
         failed = check(11, first_shifted(a11), 7)
+    if failed == 0:
+        failed = check(12, split[3](a12), 32)
+    if failed == 0:
+        failed = check(13, split_outer(a13), 23)
     return failed
