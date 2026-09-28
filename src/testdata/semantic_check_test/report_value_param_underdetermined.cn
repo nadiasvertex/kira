@@ -1,0 +1,10 @@
+module sample
+
+# `m + n` against `5` is satisfiable but pins neither unknown down, and the
+# compiler must not invent a split.
+def split[m: usize, n: usize](v: array[int32, m + n]) -> int32:
+    m as int32
+
+def run() -> int32:
+    let a: array[int32, 5] = [1, 2, 3, 4, 5]
+    split(a)

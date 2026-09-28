@@ -1,0 +1,80 @@
+module codegen_stress.value_param_solving
+
+# expect: 0
+
+# How a call solves the callee's value parameters from its arguments' types.
+# Each case returns what the callee saw its `n` to be, so a wrong solution is
+# a wrong number, not a compile failure. `main` returns 0 when every case
+# holds, and otherwise `case * 100 + actual` for the first one that doesn't.
+
+type index[n: usize] = usize where self < n
+
+def cap[n: usize](v: array[int32, n]) -> int32:
+    return n as int32
+
+def cap_ref[n: usize](v: &array[int32, n]) -> int32:
+    return n as int32
+
+# An offset in the pattern: `n + 1` against `4` solves `n := 3`.
+def pred_len[n: usize](v: array[int32, n + 1]) -> int32:
+    return n as int32
+
+# The callee's `n` answered by the caller's own `m`, symbolically, and fixed
+# only when `outer_same` is instantiated.
+def outer_same[m: usize](v: array[int32, m]) -> int32:
+    return cap(v) * 10 + (m as int32)
+
+# `n := m + 1`.
+def outer_plus[m: usize](v: array[int32, m + 1]) -> int32:
+    return cap(v) * 10 + (m as int32)
+
+# `n := m - 1`: not provably non-negative in the template, a plain number in
+# each instance.
+def outer_minus[m: usize](v: array[int32, m]) -> int32:
+    return pred_len(v) * 10 + (m as int32)
+
+# Callee and caller both spell it `n`, and the two agree: `n + 1 ~ n + 1`.
+def outer_spelled[n: usize](v: array[int32, n + 1]) -> int32:
+    return pred_len(v) * 10 + (n as int32)
+
+# Two unknowns, each pinned by its own argument.
+def both[m: usize, n: usize](a: array[int32, m], b: array[int32, n]) -> int32:
+    return (m as int32) * 10 + (n as int32)
+
+# A refinement written in the callee's `n`, discharged under `n := m + 1`:
+# `0 < m + 1` holds for every `m`.
+def safe_get[n: usize](v: array[int32, n], i: index[n]) -> int32:
+    return v[i]
+
+def first[m: usize](v: array[int32, m + 1]) -> int32:
+    return safe_get(v, 0)
+
+def check(case: int32, actual: int32, expected: int32) -> int32:
+    if actual == expected:
+        return 0
+    return case * 100 + actual
+
+def main() -> int32:
+    let three: array[int32, 3] = [7, 8, 9]
+    let four: array[int32, 4] = [1, 2, 3, 4]
+    let two: array[int32, 2] = [1, 2]
+    let five: array[int32, 5] = [1, 2, 3, 4, 5]
+
+    var failed = check(1, cap(three), 3)
+    if failed == 0:
+        failed = check(2, pred_len(four), 3)
+    if failed == 0:
+        failed = check(3, outer_same(three), 33)
+    if failed == 0:
+        failed = check(4, outer_plus(three), 32)
+    if failed == 0:
+        failed = check(5, outer_minus(three), 23)
+    if failed == 0:
+        failed = check(6, outer_spelled(three), 22)
+    if failed == 0:
+        failed = check(7, cap_ref(&three) * 10 + cap_ref(three), 33)
+    if failed == 0:
+        failed = check(8, both(two, five), 25)
+    if failed == 0:
+        failed = check(9, first(three), 7)
+    return failed

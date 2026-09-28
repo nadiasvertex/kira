@@ -2183,6 +2183,16 @@ auto test_reports_unsolved_const_generic_value_param() -> void {
                     "argument determines");
 }
 
+auto test_reports_underdetermined_value_params() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_value_param_underdetermined.cn");
+  expect(analyzed.error_count > 0,
+         "expected `m + n` against `5` to leave `m` unsolved, not split it");
+  expect_diagnostic(analyzed, "cannot tell what `m` is in this call to `split`",
+                    "expected the diagnostic to name the value parameter an "
+                    "underdetermined equation leaves open");
+}
+
 auto test_reports_unsolved_impl_const_generic_value_param() -> void {
   // todo #8: an impl block parameterized by a value whose target type never
   // mentions it (`impl[n: usize] sized for holder`) still has to be
@@ -4229,6 +4239,7 @@ auto main() -> int {
     test_accepts_const_generic_value_match();
     test_accepts_const_generic_try_from();
     test_reports_unsolved_const_generic_value_param();
+    test_reports_underdetermined_value_params();
     test_reports_unsolved_impl_const_generic_value_param();
     test_accepts_explicit_generic_args();
     test_accepts_generic_methods();
