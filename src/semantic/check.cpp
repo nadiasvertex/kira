@@ -4429,6 +4429,24 @@ private:
     return std::string(fallback);
   }
 
+  /// The label of the constraint the facts refute on its own, for a refuted
+  /// goal. Refutation of a conjunction comes from one conjunct, and quoting
+  /// the first would name a constraint that may well be satisfied
+  /// (`250 >= 0` when it is `250 <= 100` that fails). Falls back to
+  /// `goal_label` when only the conjunction as a whole is refuted.
+  auto refuted_label(const goal_form &goal, std::string_view fallback)
+      -> std::string {
+    for (const auto &alternative : goal) {
+      for (const auto &item : alternative) {
+        if (!item.label.empty() &&
+            solve(facts_, goal_form{fact_set{item}}) == proof_result::refuted) {
+          return item.label;
+        }
+      }
+    }
+    return goal_label(goal, fallback);
+  }
+
   /// The source text of a refinement's predicate, restated about `value` —
   /// the honest thing to quote when the predicate is real but undecidable.
   auto predicate_text(type_id refined, const ast::expr &value) -> std::string {
@@ -4499,7 +4517,10 @@ private:
 
     const auto refined_name = display_refined(expected, solved);
     const auto base_name = types_.display(types_.strip_refinement(expected));
-    const auto goal_text = goal_label(goal, predicate_text(expected, *value));
+    const auto fallback_text = predicate_text(expected, *value);
+    const auto goal_text = outcome == proof_result::refuted
+                               ? refuted_label(goal, fallback_text)
+                               : goal_label(goal, fallback_text);
     const auto message =
         outcome == proof_result::refuted
             ? std::format("`{}` is never true here, so this value can never "

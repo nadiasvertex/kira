@@ -18,3 +18,11 @@ def out_of_range(v: array[int32, 4]) -> int32:
 
 def literal_out_of_bounds(v: array[int32, 4]) -> int32:
     v[9]
+
+type percent = int32 where self >= 0 and self <= 100
+
+def show(p: percent) -> int32:
+    p
+
+def over_hundred() -> int32:
+    show(250)

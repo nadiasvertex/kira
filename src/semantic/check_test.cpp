@@ -1879,6 +1879,9 @@ auto test_reports_refuted_refinement() -> void {
                     "expected an out-of-range refined index to be refuted");
   expect_diagnostic(analyzed, "index out of bounds: `9 < 4` is never true",
                     "expected a provably out-of-bounds index to be rejected");
+  expect_diagnostic(analyzed, "`250 <= 100` is never true here",
+                    "expected the refuted conjunct, not the first one, to be "
+                    "named");
 }
 
 auto test_accepts_flow_narrowed_refinement() -> void {
