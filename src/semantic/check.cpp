@@ -13496,8 +13496,8 @@ private:
                                          /*skip_self=*/true);
     // Both readings run, because they answer different things: the type
     // bindings below read a type parameter straight off an argument's type,
-    // while `match_value_params` (via `solved`) is what reaches *inside* a type to
-    // pin a value parameter — an `array[int32, n]` parameter given an
+    // while `match_value_params` (via `solved`) is what reaches *inside* a type
+    // to pin a value parameter — an `array[int32, n]` parameter given an
     // `array[int32, 3]` argument solves `n := 3` there and nowhere else.
     auto solved = value_bindings{};
     check_call_args_against(

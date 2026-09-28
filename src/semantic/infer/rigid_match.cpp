@@ -106,8 +106,7 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete,
   auto concrete_params = std::vector<type_id>{};
   auto concrete_values = std::unordered_map<std::string, type_id>{};
   auto concrete_seen = std::unordered_set<type_id>{};
-  collect_params(table, right, concrete_params, concrete_values,
-                 concrete_seen);
+  collect_params(table, right, concrete_params, concrete_values, concrete_seen);
   const auto must_rename =
       std::ranges::any_of(values, [&](const auto &value) -> bool {
         return known.contains(value.first) ||
@@ -125,9 +124,9 @@ auto match_pattern(type_table &table, type_id pattern, type_id concrete,
           underlying, known_value != known.end()
                           ? known_value->second
                           : poly_variable(unknown_name(var)));
-      static_cast<void>(renamer.bind(
-          renamer.value_param(var, underlying, source_location{}),
-          replacement, k_no_cause));
+      static_cast<void>(
+          renamer.bind(renamer.value_param(var, underlying, source_location{}),
+                       replacement, k_no_cause));
     }
     matched = renamer.zonk(left);
   }

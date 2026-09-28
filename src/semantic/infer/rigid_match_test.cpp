@@ -322,8 +322,9 @@ auto test_a_known_value_is_substituted() -> void {
   const auto pattern = f.table.builtin_generic("vec", {m_plus_n});
   const auto concrete =
       f.table.builtin_generic("vec", {f.table.const_value(usize, 5)});
-  const auto known = std::unordered_map<std::string, cinder::semantic::linear_poly>{
-      {"m", cinder::semantic::poly_constant(3)}};
+  const auto known =
+      std::unordered_map<std::string, cinder::semantic::linear_poly>{
+          {"m", cinder::semantic::poly_constant(3)}};
 
   const auto result = match_pattern(f.table, pattern, concrete, known);
   expect(!result.failure.has_value(), "expected `3 + n = 5` to agree");
