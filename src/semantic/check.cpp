@@ -6966,6 +6966,58 @@ private:
                           .payload = payload});
   }
 
+  /// Where a body was standing when a call in it was deferred: everything a
+  /// re-run needs to check an expression as if it were still there.
+  ///
+  /// Captured by value. The bindings are immutable once made, and a re-run
+  /// only reads them, so a copy stands in for the scopes that are gone.
+  struct body_context {
+    std::vector<std::unordered_map<std::string, value_binding>> scopes;
+    std::vector<capture_barrier> capture_barriers;
+    std::vector<type_scope> type_params;
+    type_scope type_param_slots;
+    type_scope const_param_slots;
+    type_id self_type = k_unknown_type;
+    type_scope self_assoc_types;
+    fact_set facts;
+    type_scope type_name_aliases;
+    const std::vector<ast::type_param> *enclosing_block_type_params = nullptr;
+    bool in_machine_function = false;
+  };
+
+  [[nodiscard]] auto capture_body_context() const -> body_context {
+    return body_context{
+        .scopes = scopes_,
+        .capture_barriers = capture_barriers_,
+        .type_params = type_params_,
+        .type_param_slots = type_param_slots_,
+        .const_param_slots = const_param_slots_,
+        .self_type = self_type_,
+        .self_assoc_types = self_assoc_types_,
+        .facts = facts_,
+        .type_name_aliases = type_name_aliases_,
+        .enclosing_block_type_params = enclosing_block_type_params_,
+        .in_machine_function = in_machine_function_,
+    };
+  }
+
+  /// Trades the body context in place for `context`; calling it again with
+  /// the same `context` trades back.
+  auto swap_body_context(body_context &context) -> void {
+    std::swap(scopes_, context.scopes);
+    std::swap(capture_barriers_, context.capture_barriers);
+    std::swap(type_params_, context.type_params);
+    std::swap(type_param_slots_, context.type_param_slots);
+    std::swap(const_param_slots_, context.const_param_slots);
+    std::swap(self_type_, context.self_type);
+    std::swap(self_assoc_types_, context.self_assoc_types);
+    std::swap(facts_, context.facts);
+    std::swap(type_name_aliases_, context.type_name_aliases);
+    std::swap(enclosing_block_type_params_,
+              context.enclosing_block_type_params);
+    std::swap(in_machine_function_, context.in_machine_function);
+  }
+
   /// A method call whose receiver is not yet anything a method can be found
   /// on — `a.cmp(&b)` for `let a = 5`, before a later `let c: int64 = a`
   /// has said which integer `a` is. Defaulting the receiver here would pick
@@ -6978,27 +7030,34 @@ private:
   /// settles is owed its default by the queue's last resort, exactly as
   /// `demand` would have spent it, only later.
   ///
-  /// Refused — so the caller demands, as before — for a receiver that is not
-  /// a named binding: a temporary in a chain (`xs.iter().max_by(f)`) has no
-  /// later statement that could pin it, and the expression around it would
-  /// be typed against a leaf it cannot see through. Also refused where
-  /// replaying cannot stand in for checking: a lambda argument, which is
-  /// typed by the parameter it meets, and a generic body, whose type
-  /// parameters are out of scope by the time the queue runs.
+  /// The re-run stands in the body the call was written in
+  /// (`body_context`), so a generic body's type parameters are in scope for
+  /// it and a temporary receiver (`(a + 0).twice()`) waits like a named one.
+  /// A lambda argument is not checked now: it is typed by the parameter it
+  /// meets, which only the settled receiver's method can say, so the re-run
+  /// checks it for the first time. The one refusal: a lambda argument inside
+  /// a lambda with an explicit capture list, whose "captured but never used"
+  /// check runs when that lambda ends and would miss the uses the re-run
+  /// makes later.
   auto defer_open_receiver_call(const ast::call_expr &call,
                                 const ast::field_expr &field)
       -> std::optional<type_id> {
-    if (current_template_ != nullptr || in_abstract_type_param_scope() ||
-        field.object->kind != ast::node_kind::ident_expr) {
+    const auto is_lambda = [](const ast::call_arg &arg) -> bool {
+      return arg.value != nullptr &&
+             arg.value->kind == ast::node_kind::lambda_expr;
+    };
+    if (std::ranges::any_of(call.args, is_lambda) &&
+        std::ranges::any_of(capture_barriers_,
+                            [](const capture_barrier &barrier) -> bool {
+                              return barrier.allowed.has_value();
+                            })) {
       return std::nullopt;
     }
     for (const auto &arg : call.args) {
-      if (arg.value != nullptr &&
-          arg.value->kind == ast::node_kind::lambda_expr) {
-        return std::nullopt;
+      if (arg.value != nullptr && !is_lambda(arg)) {
+        infer_expr(*arg.value, k_unknown_type);
       }
     }
-    infer_call_args_loosely(call);
     auto replay = std::vector<std::pair<const ast::expr *, type_id>>{};
     const auto recorded = [this](const ast::expr &expr) -> type_id {
       const auto found = node_types_.find(&expr);
@@ -7006,7 +7065,7 @@ private:
     };
     replay.emplace_back(field.object.get(), recorded(*field.object));
     for (const auto &arg : call.args) {
-      if (arg.value != nullptr) {
+      if (arg.value != nullptr && !is_lambda(arg)) {
         replay.emplace_back(arg.value.get(), recorded(*arg.value));
       }
     }
@@ -7016,8 +7075,10 @@ private:
         source_location{.file_id = file_id_, .span = call.span});
     defer_method_call(
         field.field_name, receiver,
-        [this, &call, &field, replay = std::move(replay),
-         result](type_id /*settled*/) -> void {
+        [this, &call, &field, replay = std::move(replay), result,
+         context = capture_body_context()](type_id /*settled*/) mutable
+            -> void {
+          swap_body_context(context);
           for (const auto &[expr, type] : replay) {
             replayed_exprs_[expr] = type;
           }
@@ -7026,6 +7087,7 @@ private:
           for (const auto &[expr, type] : replay) {
             replayed_exprs_.erase(expr);
           }
+          swap_body_context(context);
           if (!types_.is_unknown(answer) && answer != k_error_type) {
             (void)leaf_engine_.unify(result, answer, infer::k_no_cause);
           }
@@ -7051,7 +7113,7 @@ private:
   }
 
   /// Runs one deferred call, under the context it was deferred from.
-  auto resolve_deferred_method_call(const pending_method_call &deferred)
+  auto resolve_deferred_method_call(pending_method_call &deferred)
       -> infer::obligation_report {
     const auto settled = settle(deferred.receiver_type);
     if (mentions_type_var(settled)) {
@@ -7068,7 +7130,11 @@ private:
     const auto *saved_current_template =
         std::exchange(current_template_, deferred.current_template);
 
-    deferred.finish(settled);
+    // Moved out first: running the call can defer another, which grows
+    // `pending_method_calls_` and would free this closure while it runs.
+    // Discharged below, so the obligation never comes back for it.
+    const auto finish = std::move(deferred.finish);
+    finish(settled);
 
     current_template_ = saved_current_template;
     file_id_ = saved_file;
@@ -11808,7 +11874,9 @@ private:
       }
       return stripped;
     case ast::unary_op::deref: {
-      const auto &entry = types_.entry(operand);
+      // What a deref reads is chosen by the operand's head — a borrow, a
+      // pointer, a cell — so a head still open is owed its answer now.
+      const auto &entry = types_.entry(demand_shape(operand));
       if (entry.kind == type_kind::ptr_kind) {
         require_machine_context(unary.span, "dereferencing a raw pointer");
         return entry.result;
@@ -13344,7 +13412,16 @@ private:
         return;
       }
       const auto solved = bindings.find(subject->second);
-      if (solved == bindings.end() || types_.is_unknown(solved->second) ||
+      if (solved == bindings.end()) {
+        return;
+      }
+      // The impl that answers the bound is chosen by the subject's head, so
+      // a head still open (the result of a call waiting on its receiver) is
+      // owed its answer now.
+      if (solved->second != k_unknown_type) {
+        solved->second = demand_shape(solved->second);
+      }
+      if (types_.is_unknown(solved->second) ||
           mentions_abstract_type(solved->second)) {
         return;
       }
@@ -15027,16 +15104,20 @@ private:
     // waited on rather than defaulted: the dispatch registers a `method_call`
     // obligation over the receiver's leaves and runs once a later statement
     // (`xs.push(big)`) has said what they are.
-    auto object = strip_refs(infer_expr(*field.object, k_unknown_type));
+    // Settled, so a receiver whose leaf an earlier statement solved (the
+    // result of a call that waited, read back through its binding) is looked
+    // up as what it now is.
+    auto object =
+        strip_refs(settle(infer_expr(*field.object, k_unknown_type)));
     // The exception is a call whose method cannot be found on the receiver
     // as it stands: no method by this name and no free function that could
     // be reached by UFCS — the impl is chosen by the receiver's type, as
     // with `b32.get()` on a `boxed[?a]` with one `get` per element type — or
     // a receiver that is a bare leaf (`a.cmp(&b)` for `let a = 5`), which
-    // has no shape to match anything against. A named receiver waits for a
-    // later statement to say what it is (`defer_open_receiver_call`); a
-    // temporary is owed the last resort now, and the lookup below runs
-    // against the answer.
+    // has no shape to match anything against. The call waits for a later
+    // statement to say what the receiver is (`defer_open_receiver_call`);
+    // where it cannot, the receiver is owed the last resort now, and the
+    // lookup below runs against the answer.
     if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
         find_method(types_.entry(object), field.field_name, object) ==
             nullptr &&
@@ -16863,7 +16944,9 @@ private:
   /// `field_expr` or as a value-rooted dotted path.
   auto field_access_type(type_id object, std::string_view name,
                          source_span span) -> type_id {
-    const auto stripped = strip_refs(object);
+    // A field is chosen by what kind of value this is, so a head still open
+    // (the result of a call waiting on its receiver) is owed its answer now.
+    const auto stripped = strip_refs(demand_shape(object));
     const auto &entry = types_.entry(stripped);
 
     switch (entry.kind) {

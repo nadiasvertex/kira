@@ -1,0 +1,36 @@
+module codegen_stress.method_on_literal_waits_everywhere
+
+# expect: 42
+
+# The three cases `111_method_on_literal_waits` left out. Each receiver is
+# built from `3000000000`, which only fits if the call waited for the
+# `int64` annotation after it instead of spending the `int32` default.
+#
+# - `a.apply(k => ...)`: a lambda argument. It is checked once the receiver
+#   settles, against the parameter of the method that was actually found.
+# - `measure[T]`: the same call inside a generic body, instantiated twice.
+# - `(b + 0).twice().twice()`: a temporary receiver, and a chain of them.
+
+extend int64:
+    def twice(self) -> int64:
+        return self * 2
+    def apply(self, f: fn(int64) -> int64) -> int64:
+        return f(self)
+
+def measure[T](v: T) -> int64:
+    let a = 3000000000
+    let t = a.twice()
+    let x: int64 = a
+    return t - x - 2999999999
+
+def main() -> int32:
+    let base = 7
+    let a = 3000000000
+    let r = a.apply(k => k + base)
+    let x: int64 = a
+
+    let b = 3000000000
+    let q = (b + 0).twice().twice()
+    let y: int64 = b
+
+    return int32((r - x) + (q - 4 * y) + measure(1) + measure(true) + 33)
