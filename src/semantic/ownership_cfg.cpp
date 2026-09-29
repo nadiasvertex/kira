@@ -482,7 +482,9 @@ private:
       declare(binding.name, type_of(&pattern), binding.span, /*whole=*/true);
       return;
     }
-    declare_pattern(pattern);
+    // A by-value destructuring parameter owns the parts it binds.
+    declare_pattern(pattern,
+                    owns_pattern_bindings(type_of(&pattern), pattern, checked_));
   }
 
   /// Declares `pattern`'s bindings, each receiving what `subject` holds.
@@ -1565,19 +1567,23 @@ private:
 
 } // namespace
 
+auto owns_pattern_bindings(type_id subject_type, const ast::node &pattern,
+                           const checked_types &checked) -> bool {
+  const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
+  return pat != nullptr && pattern_bindings_are_disjoint(*pat) &&
+         !checked.types.is_unknown(subject_type) &&
+         subject_type != k_error_type &&
+         checked.types.entry(subject_type).kind != type_kind::ref_kind &&
+         !checked.types.is_view(subject_type);
+}
+
 auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
                            const checked_types &checked,
                            const std::function<bool(std::string_view)> &is_local)
     -> bool {
-  if (!pattern_bindings_are_disjoint(pattern)) {
-    return false;
-  }
   const auto type_it = checked.node_types.find(&subject);
   if (type_it == checked.node_types.end() ||
-      checked.types.is_unknown(type_it->second) ||
-      type_it->second == k_error_type ||
-      checked.types.entry(type_it->second).kind == type_kind::ref_kind ||
-      checked.types.is_view(type_it->second)) {
+      !owns_pattern_bindings(type_it->second, pattern, checked)) {
     return false;
   }
   auto projected = false;

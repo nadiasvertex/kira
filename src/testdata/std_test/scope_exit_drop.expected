@@ -83,5 +83,25 @@ drop 212
 drop 211
 drop 210
 drop 209
+wl 220
+drop 220
+drop 221
+while_let_exit done
+drop 222
+else branch
+hit 223
+drop 223
+drop 225
+rest done 224
+drop 224
+params 226 227
+drop 227
+drop 226
+drop 229
+params rest 228
+drop 228
+drop 231
+params tuple 230
+drop 230
 main done
 drop 214

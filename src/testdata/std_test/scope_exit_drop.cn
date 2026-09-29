@@ -236,6 +236,40 @@ def let_destructure() -> unit:
     let (p, q) = (noisy { id: 211 }, noisy { id: 212 })
     println("destructure done")
 
+def while_let_exit_drops() -> unit:
+    var s: slot = @held(noisy { id: 220 })
+    while let @held(n) = s:
+        println("wl {n.id}")
+        s = @pair(1, noisy { id: 221 })
+    println("while_let_exit done")
+
+def let_else_miss_drops() -> unit:
+    let s: slot = @pair(2, noisy { id: 222 })
+    let @held(n) = s else:
+        println("else branch")
+        return
+    println("unreachable {n.id}")
+
+def let_else_hit() -> unit:
+    let s: slot = @held(noisy { id: 223 })
+    let @held(n) = s else:
+        return
+    println("hit {n.id}")
+
+def struct_rest_drops() -> unit:
+    let t = pair2 { a: noisy { id: 224 }, b: noisy { id: 225 } }
+    let {a: x, ..} = t
+    println("rest done {x.id}")
+
+def takes_pair({a: x, b: y}: pair2) -> unit:
+    println("params {x.id} {y.id}")
+
+def takes_pair_rest({a: x, ..}: pair2) -> unit:
+    println("params rest {x.id}")
+
+def takes_tuple((p, _): (noisy, noisy)) -> unit:
+    println("params tuple {p.id}")
+
 def main() -> unit:
     reverse_order()
     moved_from_never_drops()
@@ -269,4 +303,11 @@ def main() -> unit:
     if_let_hit_and_miss()
     while_let_binding()
     let_destructure()
+    while_let_exit_drops()
+    let_else_miss_drops()
+    let_else_hit()
+    struct_rest_drops()
+    takes_pair(pair2 { a: noisy { id: 226 }, b: noisy { id: 227 } })
+    takes_pair_rest(pair2 { a: noisy { id: 228 }, b: noisy { id: 229 } })
+    takes_tuple((noisy { id: 230 }, noisy { id: 231 }))
     println("main done")

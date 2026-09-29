@@ -159,6 +159,13 @@ struct function_cfg {
 /// (`pattern_bindings_are_disjoint`). `is_local` says whether a name is a
 /// local of the function. `hir::lowerer` asks the same question, so both
 /// sides agree on which bindings are dropped.
+[[nodiscard]] auto owns_pattern_bindings(type_id subject_type,
+                                         const ast::node &pattern,
+                                         const checked_types &checked) -> bool;
+
+/// The same question for a value of known type that no expression names,
+/// such as a by-value destructuring parameter: true unless the pattern's
+/// bindings overlap or the type is unknown, a reference or a view.
 [[nodiscard]] auto
 owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
                       const checked_types &checked,

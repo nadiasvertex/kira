@@ -2707,7 +2707,11 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
           make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
+    own_pattern_bindings_ =
+        semantic::ownership::owns_pattern_bindings(ptype, *param.pattern,
+                                                   checked_);
     auto pattern = lower_pattern(*param.pattern, make_place, pending);
+    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
@@ -3496,7 +3500,9 @@ auto lowerer::lower_stmt(const ast::node &node)
                                   std::string("<let subject>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
-    own_pattern_bindings_ = binds_owned_parts(*let.initializer, *let.pattern);
+    const auto own_subject =
+        binds_owned_parts(*let.initializer, *let.pattern);
+    own_pattern_bindings_ = own_subject;
     auto pattern = lower_pattern(*let.pattern, make_place, pending);
     own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
@@ -3519,6 +3525,20 @@ auto lowerer::lower_stmt(const ast::node &node)
       auto else_block = lower_block(let.else_body, let.span);
       if (!else_block.has_value()) {
         return std::unexpected(else_block.error());
+      }
+      if (own_subject && checked_.drop_plans.contains(subj_type)) {
+        // The pattern missed, so nothing bound the subject; drop it before
+        // the diverging else body runs.
+        auto drops = std::vector<ptr<hir_node>>{};
+        if (auto dropped = build_drop_calls(make_place, subj_type,
+                                            subject_span, drops);
+            !dropped.has_value()) {
+          return std::unexpected(dropped.error());
+        }
+        for (auto &stmt_ptr : (*else_block)->stmts) {
+          drops.push_back(std::move(stmt_ptr));
+        }
+        (*else_block)->stmts = std::move(drops);
       }
       result.push_back(ptr<hir_node>(
           make<hir_let_else>(let.span, subject_symbol, std::move(*initializer),
@@ -5040,8 +5060,9 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
 
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
-  own_pattern_bindings_ =
+  const auto owned =
       binds_owned_parts(*while_stmt.let_expr, *while_stmt.let_pattern);
+  own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*while_stmt.let_pattern, make_place, pending);
   own_pattern_bindings_ = false;
   if (!pattern.has_value()) {
@@ -5063,6 +5084,43 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   (*lowered_body)->stmts = std::move(body_stmts);
 
   auto result = ptr_vec<hir_node>{};
+  if (owned && checked_.drop_plans.contains(subj_type)) {
+    // The subject is moved into each test. When the pattern misses, nothing
+    // bound it, so the exit path drops it; `hir_while_let` has no such path,
+    // so this form is `while true: match subject: pattern => body, _ => drop
+    // and break`.
+    auto exit_stmts = std::vector<ptr<hir_node>>{};
+    if (auto dropped = build_drop_calls(make_place, subj_type, subject_span,
+                                        exit_stmts);
+        !dropped.has_value()) {
+      return std::unexpected(dropped.error());
+    }
+    exit_stmts.push_back(ptr<hir_node>(make<hir_break>(while_stmt.span)));
+    auto arms = std::vector<hir_match_arm>{};
+    arms.push_back(hir_match_arm{.pattern = std::move(*pattern),
+                                 .guard = nullptr,
+                                 .body = std::move(*lowered_body)});
+    arms.push_back(hir_match_arm{
+        .pattern =
+            ptr<hir_pattern>(make<hir_wildcard_pattern>(while_stmt.span)),
+        .guard = nullptr,
+        .body = make<hir_block>(while_stmt.span, k_unknown_type,
+                                std::move(exit_stmts))});
+    auto loop_body = ptr_vec<hir_node>{};
+    loop_body.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        while_stmt.span,
+        ptr<hir_expr>(make<hir_match>(
+            while_stmt.span, k_unknown_type, std::move(*subject_value),
+            subject_symbol, std::move(arms))))));
+    const auto bool_type = checked_.types.bool_type();
+    result.push_back(ptr<hir_node>(make<hir_while>(
+        while_stmt.span,
+        ptr<hir_expr>(make<hir_literal>(while_stmt.span, bool_type,
+                                        token_kind::kw_true, "true")),
+        make<hir_block>(while_stmt.span, k_unknown_type,
+                        std::move(loop_body)))));
+    return result;
+  }
   result.push_back(ptr<hir_node>(make<hir_while_let>(
       while_stmt.span, std::move(*subject_value), subject_symbol,
       std::move(*pattern), std::move(*lowered_body))));
@@ -5252,6 +5310,35 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       fields.push_back(hir_struct_pattern_field{
           .name = field_name,
           .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(field_span))});
+    }
+    const auto has_rest =
+        std::ranges::any_of(struct_pat.fields, &ast::field_pattern::is_rest);
+    if (own_pattern_bindings_ && has_rest) {
+      // `..` binds nothing, so the fields it skips would never be dropped.
+      const auto struct_type = make_place()->type;
+      if (const auto plan = checked_.drop_plans.find(struct_type);
+          plan != checked_.drop_plans.end()) {
+        for (const auto &[field_name, field_type] :
+             plan->second.droppable_fields) {
+          const auto mentioned = std::ranges::any_of(
+              struct_pat.fields, [&](const auto &f) {
+                return !f.is_rest && f.name == field_name;
+              });
+          if (mentioned) {
+            continue;
+          }
+          const place_fn skipped = [make_place, field_name, field_type,
+                                    span = pattern.span]() -> ptr<hir_expr> {
+            return {make<hir_field>(span, field_type, make_place(),
+                                    field_name)};
+          };
+          if (auto dropped =
+                  build_drop_calls(skipped, field_type, pattern.span, pending);
+              !dropped.has_value()) {
+            return std::unexpected(dropped.error());
+          }
+        }
+      }
     }
     return ptr<hir_pattern>(
         make<hir_struct_pattern>(pattern.span, std::move(fields)));
@@ -5637,7 +5724,11 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
+    own_pattern_bindings_ =
+        semantic::ownership::owns_pattern_bindings(ptype, *param.pattern,
+                                                   checked_);
     auto pattern = lower_pattern(*param.pattern, make_place, pending);
+    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
