@@ -270,7 +270,56 @@ def takes_pair_rest({a: x, ..}: pair2) -> unit:
 def takes_tuple((p, _): (noisy, noisy)) -> unit:
     println("params tuple {p.id}")
 
+# A `for` loop moves a whole local iterable into the loop. The loop variable
+# only borrows, so the iterable drops once the loop ends, `break` included.
+type counter = { guard: noisy, i: int32 }
+
+impl iterator[int32] for counter:
+    def next(mut self) -> option[int32]:
+        if self.i < 3:
+            self.i = self.i + 1
+            return @some(self.i)
+        return @none
+
+def for_iterable_drops() -> unit:
+    let c = counter { guard: noisy { id: 240 }, i: 0 }
+    for v in c:
+        println("for {v}")
+    println("for done")
+
+def for_break_drops() -> unit:
+    let c = counter { guard: noisy { id: 241 }, i: 0 }
+    for v in c:
+        println("for break {v}")
+        break
+    println("for break done")
+
+def for_return_drops() -> unit:
+    let c = counter { guard: noisy { id: 242 }, i: 0 }
+    for v in c:
+        println("for return {v}")
+        return
+
+def for_return_value(flag: bool) -> int32:
+    let c = counter { guard: noisy { id: 243 }, i: 0 }
+    for v in c:
+        if flag:
+            return v + 10
+    return 0
+
+def for_lambda_return() -> int32:
+    let c = counter { guard: noisy { id: 244 }, i: 0 }
+    var total = 0
+    for v in c:
+        let f = (x: int32) -> int32 => x + 1
+        total = total + f(v)
+    return total
+
 def main() -> unit:
+    println("rv {for_return_value(true)}")
+    println("rv {for_return_value(false)}")
+    println("lam {for_lambda_return()}")
+    for_return_drops()
     reverse_order()
     moved_from_never_drops()
     field_wise_drop()
@@ -310,4 +359,6 @@ def main() -> unit:
     takes_pair(pair2 { a: noisy { id: 226 }, b: noisy { id: 227 } })
     takes_pair_rest(pair2 { a: noisy { id: 228 }, b: noisy { id: 229 } })
     takes_tuple((noisy { id: 230 }, noisy { id: 231 }))
+    for_iterable_drops()
+    for_break_drops()
     println("main done")

@@ -2000,14 +2000,17 @@ auto test_lowers_list_for_loop() -> void {
   expect(result.has_value(), "expected a `for` loop over a list to lower");
 
   const auto &function = **result;
-  expect(function.body->stmts.size() == 4,
-         "expected total-let, the iterator let, the desugared while_let, and "
-         "the return");
+  expect(function.body->stmts.size() == 5,
+         "expected total-let, the iterator let, the desugared while_let, the "
+         "drop of the list the loop moved, and the return");
   expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
          "expected the iterator to be bound once, ahead of the loop");
   expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_while_let,
          "expected list iteration to desugar to a hir_while_let, not a "
          "counting loop over `xs[i]`");
+  expect(function.body->stmts[3]->kind == hir::hir_node_kind::hir_expr_stmt,
+         "expected `xs`, moved into the loop, to be dropped once the loop "
+         "ends");
 
   const auto &loop =
       dynamic_cast<const hir::hir_while_let &>(*function.body->stmts[2]);

@@ -1,3 +1,11 @@
+drop 243
+rv 11
+drop 243
+rv 0
+drop 244
+lam 9
+for return 1
+drop 242
 reverse_order body done
 drop 3
 drop 2
@@ -103,5 +111,13 @@ drop 228
 drop 231
 params tuple 230
 drop 230
+for 1
+for 2
+for 3
+drop 240
+for done
+for break 1
+drop 241
+for break done
 main done
 drop 214

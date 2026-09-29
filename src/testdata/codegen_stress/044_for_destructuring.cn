@@ -61,12 +61,13 @@ def nested_pattern_form() -> int32:
         total = total + x * 100 + y * 10 + z
     return total
 
-# Nested destructuring loops — see the note on `locals_` above.
+# Nested destructuring loops — see the note on `locals_` above. `for` moves
+# its list, so the inner list is built inside the outer loop.
 def nested_loop_form() -> int32:
     let pairs = [(1, 10), (2, 20), (3, 30)]
-    let inner = [(10, 20), (30, 40)]
     let mut total = 0
     for (p, q) in pairs:
+        let inner = [(10, 20), (30, 40)]
         for (r, s) in inner:
             total = total + p * r + q * s
     return total

@@ -247,6 +247,15 @@ template <typename T>
   return ident.span.len() > ident.name.size();
 }
 
+/// A whole owned local a `for` loop has moved into itself and still has to
+/// drop, so a `return` inside the loop drops it too.
+struct loop_iterable {
+  symbol_id symbol = 0;
+  type_id type = 0;
+  std::string name;
+  source_span span;
+};
+
 /// Performs the AST-to-HIR walk for one function at a time. Not reusable
 /// across functions: `scopes_`/`global_refs_`/`next_symbol_` are lowering-
 /// local bookkeeping, reset per `lower_function` call (see the class-level
@@ -505,6 +514,13 @@ private:
   /// Builds and appends the drop call(s) for one scheduled binding.
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
                                    ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
+  /// The iterable of `for_stmt` when it is a whole owned local the loop
+  /// moves and that has something to drop.
+  [[nodiscard]] auto owned_loop_iterable(const ast::for_stmt &for_stmt)
+      -> std::optional<loop_iterable>;
+  [[nodiscard]] auto drop_loop_iterable(const loop_iterable &iterable,
+                                        ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
   /// Appends the drop calls `drop_schedule_.exits[key]` lists, if any — for
   /// `lower_block` (per block) and `lower_function`'s own parameter scope.
@@ -959,6 +975,23 @@ private:
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
   drop_schedule drop_schedule_;
+
+  /// The iterables of the `for` loops enclosing the statement being lowered,
+  /// outermost first. Cleared while a lambda body is lowered: a `return`
+  /// there leaves the lambda, not the loops around it.
+  std::vector<loop_iterable> loop_iterables_;
+  struct loop_iterables_guard {
+    std::vector<loop_iterable> &target;
+    std::vector<loop_iterable> saved;
+    explicit loop_iterables_guard(std::vector<loop_iterable> &t)
+        : target(t), saved(std::move(t)) {
+      target.clear();
+    }
+    loop_iterables_guard(const loop_iterables_guard &) = delete;
+    auto operator=(const loop_iterables_guard &)
+        -> loop_iterables_guard & = delete;
+    ~loop_iterables_guard() { target = std::move(saved); }
+  };
   /// The enclosing function's postconditions that still need checking — read
   /// by `lower_return_value` at every exit. Empty while lowering a lambda
   /// body, where a `return` returns from the lambda and settles nothing about
@@ -2280,6 +2313,36 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
                           stmts);
 }
 
+auto lowerer::owned_loop_iterable(const ast::for_stmt &for_stmt)
+    -> std::optional<loop_iterable> {
+  if (for_stmt.iterable == nullptr ||
+      for_stmt.iterable->kind != ast::node_kind::ident_expr) {
+    return std::nullopt;
+  }
+  const auto &name =
+      dynamic_cast<const ast::ident_expr &>(*for_stmt.iterable).name;
+  const auto symbol = lookup_whole_local(name, 0);
+  const auto type = checked_type_of(*for_stmt.iterable);
+  if (!symbol.has_value() || !type.has_value() ||
+      !checked_.drop_plans.contains(*type)) {
+    return std::nullopt;
+  }
+  return loop_iterable{.symbol = *symbol,
+                       .type = *type,
+                       .name = name,
+                       .span = for_stmt.iterable->span};
+}
+
+auto lowerer::drop_loop_iterable(const loop_iterable &iterable,
+                                 ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const place_fn make_place = [iterable]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(iterable.span, iterable.type, iterable.symbol,
+                                iterable.name)};
+  };
+  return build_drop_calls(make_place, iterable.type, iterable.span, stmts);
+}
+
 auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
   const auto found = drop_schedule_.exits.find(key);
@@ -2330,7 +2393,18 @@ auto lowerer::emit_tail_scope_exit_drops(const void *key,
 
 auto lowerer::emit_jump_drops(const ast::node &node, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  return emit_scope_exit_drops(&node, stmts);
+  if (auto result = emit_scope_exit_drops(&node, stmts); !result.has_value()) {
+    return result;
+  }
+  if (node.kind != ast::node_kind::return_stmt) {
+    return {};
+  }
+  for (const auto &iterable : std::views::reverse(loop_iterables_)) {
+    if (auto result = drop_loop_iterable(iterable, stmts); !result.has_value()) {
+      return result;
+    }
+  }
+  return {};
 }
 
 auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
@@ -2631,6 +2705,7 @@ auto lowerer::lower_cast(const ast::cast_expr &cast)
 
 auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto enclosing_loops = loop_iterables_guard{loop_iterables_};
   auto lambda_type = checked_type_of(lambda);
   if (!lambda_type.has_value()) {
     return std::unexpected(lambda_type.error());
@@ -3605,7 +3680,9 @@ auto lowerer::lower_stmt(const ast::node &node)
     // would run too early.
     auto stmts = ptr_vec<hir_node>{};
     const auto scheduled = drop_schedule_.exits.find(&node);
-    if (scheduled != drop_schedule_.exits.end() && !scheduled->second.empty() &&
+    if (((scheduled != drop_schedule_.exits.end() &&
+          !scheduled->second.empty()) ||
+         !loop_iterables_.empty()) &&
         (*value)->type != k_unknown_type) {
       const auto value_type = (*value)->type;
       const auto temp = mint_symbol();
@@ -3818,8 +3895,29 @@ auto lowerer::lower_stmt(const ast::node &node)
     return one_stmt(ptr<hir_node>(
         make<hir_expr_stmt>(scope_s.span, ptr<hir_expr>(std::move(*body)))));
   }
-  case ast::node_kind::for_stmt:
-    return lower_for_stmt(dynamic_cast<const ast::for_stmt &>(node));
+  case ast::node_kind::for_stmt: {
+    const auto &for_stmt = dynamic_cast<const ast::for_stmt &>(node);
+    // `for x in xs` moves a whole local `xs` into the loop; the loop
+    // variable only borrows its elements, so the container still owns them
+    // and drops them (with itself) once the loop ends, `break` included. A
+    // `return` inside the body drops it through `emit_jump_drops`.
+    const auto iterable = owned_loop_iterable(for_stmt);
+    if (iterable.has_value()) {
+      loop_iterables_.push_back(*iterable);
+    }
+    auto lowered = lower_for_stmt(for_stmt);
+    if (iterable.has_value()) {
+      loop_iterables_.pop_back();
+    }
+    if (!lowered.has_value() || !iterable.has_value()) {
+      return lowered;
+    }
+    if (auto dropped = drop_loop_iterable(*iterable, *lowered);
+        !dropped.has_value()) {
+      return std::unexpected(dropped.error());
+    }
+    return lowered;
+  }
   case ast::node_kind::splice_stmt: {
     // Mirrors the `splice_expr` case in `lower_expr` above: `checker::
     // check_body_node`'s `splice_stmt` case records the resolved fragment
