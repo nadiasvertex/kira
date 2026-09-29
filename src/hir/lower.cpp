@@ -2659,6 +2659,24 @@ auto lowerer::lower_where(const ast::where_expr &where)
     pop_scope();
     return std::unexpected(inner.error());
   }
+  // The bindings' drops run after the inner expression is evaluated, so its
+  // value is held in a temporary across them; a block's tail is read off its
+  // last statement.
+  if (const auto scheduled = drop_schedule_.exits.find(&where);
+      scheduled != drop_schedule_.exits.end() && !scheduled->second.empty()) {
+    const auto held = mint_symbol();
+    const auto held_type = (*inner)->type;
+    stmts.push_back(ptr<hir_node>(make<hir_let>(where.inner->span, held,
+                                                std::string("where result"),
+                                                std::move(*inner))));
+    if (auto result = emit_scope_exit_drops(&where, stmts);
+        !result.has_value()) {
+      pop_scope();
+      return std::unexpected(result.error());
+    }
+    inner = ptr<hir_expr>(make<hir_local_ref>(where.inner->span, held_type,
+                                              held, "where result"));
+  }
   stmts.push_back(
       ptr<hir_node>(make<hir_expr_stmt>(where.inner->span, std::move(*inner))));
   pop_scope();
@@ -3596,6 +3614,19 @@ auto lowerer::lower_stmt(const ast::node &node)
     }
     return one_stmt(ptr<hir_node>(make<hir_while>(
         while_s.span, std::move(*condition), std::move(*body))));
+  }
+  case ast::node_kind::scope_stmt: {
+    const auto &scope_s = dynamic_cast<const ast::scope_stmt &>(node);
+    auto type = checked_type_of(scope_s);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    auto body = lower_block(scope_s.body, scope_s.span, *type);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    return one_stmt(ptr<hir_node>(
+        make<hir_expr_stmt>(scope_s.span, ptr<hir_expr>(std::move(*body)))));
   }
   case ast::node_kind::for_stmt:
     return lower_for_stmt(dynamic_cast<const ast::for_stmt &>(node));

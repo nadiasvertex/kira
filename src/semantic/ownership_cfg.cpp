@@ -167,7 +167,7 @@ private:
   struct scope {
     /// The statement vector this scope is the body of, as
     /// `scope_exit_event::key`; null for a scope with no statements of its
-    /// own (a comprehension clause, a `where`).
+    /// own (a comprehension clause); a `where` is keyed by its expression.
     const void *key = nullptr;
     std::vector<std::pair<std::string, local_id>> names;
     std::vector<local_id> owned; ///< Locals whose storage ends with the scope.
@@ -1323,11 +1323,11 @@ private:
   }
 
   auto lower_where(const ast::where_expr &where) -> value {
-    push_scope(nullptr);
+    push_scope(&where);
     for (const auto &binding : where.bindings) {
       auto v = eval_opt(binding.value.get(), use_mode::move);
-      const auto local =
-          declare(binding.name, type_of(binding.value.get()), binding.span);
+      const auto local = declare(binding.name, type_of(binding.value.get()),
+                                 binding.span, /*whole=*/true);
       bind_value(local, v);
     }
     const auto join = new_temp(local_role::join_temp);
@@ -1422,6 +1422,12 @@ private:
 
     case ast::node_kind::while_stmt:
       lower_while(dynamic_cast<const ast::while_stmt &>(node));
+      return {};
+
+    case ast::node_kind::scope_stmt:
+      static_cast<void>(
+          lower_scoped_body(dynamic_cast<const ast::scope_stmt &>(node).body,
+                            /*want_value=*/false));
       return {};
 
     case ast::node_kind::for_stmt:

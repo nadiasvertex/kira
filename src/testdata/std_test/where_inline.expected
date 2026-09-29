@@ -1,0 +1,5 @@
+v = 42
+drop 7
+w = 8
+kept 9
+drop 9

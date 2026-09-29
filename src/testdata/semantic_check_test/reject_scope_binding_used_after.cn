@@ -1,0 +1,13 @@
+module main
+
+# A binding made inside `scope:` ends at the scope's `DEDENT`, and a `where`
+# binding ends with its statement.
+
+def after_scope() -> int32:
+    scope:
+        let inside = 5
+    return inside
+
+def after_where() -> int32:
+    let v = helper + 1 where helper = 4
+    return helper

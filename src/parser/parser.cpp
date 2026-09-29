@@ -692,6 +692,7 @@ auto parser::parse_file() -> ast::ptr<ast::file> {
   case ast::node_kind::return_stmt:
   case ast::node_kind::if_stmt:
   case ast::node_kind::while_stmt:
+  case ast::node_kind::scope_stmt:
   case ast::node_kind::for_stmt:
   case ast::node_kind::match_stmt:
   case ast::node_kind::crew_stmt:
@@ -2950,6 +2951,8 @@ auto parser::parse_stmt() -> ast::ptr<ast::node> {
     return parse_if_stmt();
   case token_kind::kw_while:
     return parse_while_stmt();
+  case token_kind::kw_scope:
+    return parse_scope_stmt();
   case token_kind::kw_for:
     return parse_for_stmt();
   case token_kind::kw_match:
@@ -3190,6 +3193,17 @@ auto parser::parse_while_stmt() -> ast::ptr<ast::while_stmt> {
   }
 
   stmt->body = body_to_stmt_list(parse_body("while"));
+
+  stmt->span = start.merge(previous_span());
+  return stmt;
+}
+
+auto parser::parse_scope_stmt() -> ast::ptr<ast::scope_stmt> {
+  auto stmt = ast::make<ast::scope_stmt>();
+  auto start = peek().span;
+
+  expect(token_kind::kw_scope);
+  stmt->body = body_to_stmt_list(parse_body("scope"));
 
   stmt->span = start.merge(previous_span());
   return stmt;
@@ -5676,6 +5690,7 @@ auto parser::parse_static_expr() -> ast::ptr<ast::static_expr> {
 ///
 /// Grammar:
 ///   where_clause_expr = "where" ":" NEWLINE INDENT { where_binding } DEDENT
+///                     | "where" IDENT "=" expr { "," IDENT "=" expr }
 ///   where_binding     = IDENT "=" expr NEWLINE
 ///
 /// The `inner` argument is the already-parsed leading expression that the
@@ -5687,6 +5702,31 @@ auto parser::parse_where_expr(ast::ptr<ast::expr> inner)
   wexpr->inner = std::move(inner);
 
   expect(token_kind::kw_where);
+
+  // Inline form: `where a = expr, b = expr` on the same line.
+  if (at(token_kind::ident) && peek_at(1).is(token_kind::eq)) {
+    do {
+      ast::where_binding binding;
+      binding.span = peek().span;
+      if (!at(token_kind::ident) || !peek_at(1).is(token_kind::eq)) {
+        emit_unexpected("`name = expr` after `,` in this `where` clause");
+        wexpr->has_error = true;
+        break;
+      }
+      binding.name = std::string(advance().text);
+      advance(); // consume `=`
+      binding.value = parse_expr();
+      if (!binding.value) {
+        emit_unexpected("an expression after `=` in `where` binding");
+        wexpr->has_error = true;
+        binding.value = make_error_expr(previous_span());
+      }
+      binding.span.extend_to(previous_span());
+      wexpr->bindings.push_back(std::move(binding));
+    } while (match(token_kind::comma));
+    wexpr->span.extend_to(previous_span());
+    return wexpr;
+  }
 
   // Expect the `:` that opens the where block.
   if (!at(token_kind::colon)) {

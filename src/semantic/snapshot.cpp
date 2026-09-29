@@ -102,6 +102,8 @@ auto node_kind_name(ast::node_kind kind) -> std::string_view {
     return "if_stmt";
   case ast::node_kind::while_stmt:
     return "while_stmt";
+  case ast::node_kind::scope_stmt:
+    return "scope_stmt";
   case ast::node_kind::for_stmt:
     return "for_stmt";
   case ast::node_kind::match_stmt:

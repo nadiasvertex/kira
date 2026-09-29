@@ -351,7 +351,8 @@ auto infer_ctxt::open_vars(type_id id) -> std::vector<type_id> {
     for (const auto arg : entry.args) {
       self(self, arg);
     }
-    if ((entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+    if ((entry.kind == type_kind::fn_kind ||
+         entry.kind == type_kind::ref_kind ||
          entry.kind == type_kind::ptr_kind ||
          entry.kind == type_kind::array_kind) &&
         entry.result != k_unknown_type) {

@@ -665,6 +665,35 @@ auto test_parser_accepts_statements_in_static_if_branches() -> void {
       "expected a `return` statement inside the `static else` branch");
 }
 
+auto test_parser_accepts_scope_and_inline_where() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def run() -> int:\n"
+                             "  scope:\n"
+                             "    let a = 1\n"
+                             "  let v = x + y where x = 1, y = x + 2\n"
+                             "  return v\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
+      "expected function declaration");
+  expect(func_decl->body_stmts.size() == 3, "expected three statements");
+  auto *scope_stmt = expect_node<cinder::ast::scope_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::scope_stmt,
+      "expected `scope:` to parse as a scope statement");
+  expect(scope_stmt->body.size() == 1, "expected the scope body to be kept");
+  auto *let_stmt = expect_node<cinder::ast::let_stmt>(
+      func_decl->body_stmts[1].get(), cinder::ast::node_kind::let_stmt,
+      "expected let statement");
+  auto *where_expr = expect_expr<cinder::ast::where_expr>(
+      let_stmt->initializer.get(), cinder::ast::node_kind::where_expr,
+      "expected an inline where expression");
+  expect(where_expr->bindings.size() == 2, "expected two inline bindings");
+  expect(where_expr->bindings[0].name == "x" &&
+             where_expr->bindings[1].name == "y",
+         "expected inline binding names in source order");
+}
+
 auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -2451,7 +2480,7 @@ auto test_parser_accepts_root_module_alias() -> void {
 }
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 50> tests = {{
+  const std::array<named_test, 51> tests = {{
       {.name = "keyword_module_name",
        .fn = test_keyword_module_name_is_a_diagnosed_error},
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
@@ -2467,6 +2496,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_preserves_function_signature_and_control_flow},
       {.name = "trait_impl_and_block_expressions",
        .fn = test_parser_preserves_trait_impl_and_block_expressions},
+      {.name = "scope_and_inline_where",
+       .fn = test_parser_accepts_scope_and_inline_where},
       {.name = "missing_module_recovery",
        .fn = test_parser_reports_missing_module_and_recovers},
       {.name = "missing_where_colon_recovery",

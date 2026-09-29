@@ -2858,6 +2858,8 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     }
     return evaluate_stmts(stmt.else_body);
   }
+  case ast::node_kind::scope_stmt:
+    return evaluate_stmts(dynamic_cast<const ast::scope_stmt &>(node).body);
   case ast::node_kind::static_decl: {
     const auto &decl = dynamic_cast<const ast::static_decl &>(node);
     switch (decl.decl_kind) {

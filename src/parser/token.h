@@ -107,6 +107,7 @@ enum class token_kind : uint8_t {
   kw_else,  ///< Provides fallback control-flow or binding bodies.
   kw_for,   ///< Starts iteration statements and comprehension-like expressions.
   kw_while, ///< Starts looping statements.
+  kw_scope, ///< Starts a bare lexical scope block (`scope:`).
   kw_match, ///< Starts pattern-dispatch statements and expressions.
   kw_return,   ///< Terminates function evaluation with an optional value.
   kw_break,    ///< Exits the innermost enclosing loop.
@@ -481,6 +482,7 @@ struct token {
     case token_kind::kw_continue:
     case token_kind::kw_if:
     case token_kind::kw_while:
+    case token_kind::kw_scope:
     case token_kind::kw_for:
     case token_kind::kw_match:
     case token_kind::kw_crew:
@@ -750,6 +752,9 @@ struct token {
     if (text == "shared") {
       return token_kind::kw_shared;
     }
+    if (text == "scope") {
+      return token_kind::kw_scope;
+    }
     break;
   case 't':
     if (text == "type") {
@@ -896,6 +901,8 @@ struct token {
     return "`for`";
   case token_kind::kw_while:
     return "`while`";
+  case token_kind::kw_scope:
+    return "`scope`";
   case token_kind::kw_match:
     return "`match`";
   case token_kind::kw_return:

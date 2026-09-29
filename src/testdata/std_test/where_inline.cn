@@ -1,0 +1,19 @@
+module main
+
+# Inline `where a = e, b = e` on a `let`: bindings evaluate top to bottom, a
+# later one can use an earlier one, and none is visible after the statement.
+# A droppable binding is dropped when the statement finishes.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def main() -> unit:
+    let v = x + y where x = 40, y = x / 20
+    println("v = {v}")
+    let w = n.id + 1 where n = noisy { id: 7 }
+    println("w = {w}")
+    let kept = n where n = noisy { id: 9 }
+    println("kept {kept.id}")

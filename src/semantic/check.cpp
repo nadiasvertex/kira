@@ -6363,7 +6363,8 @@ private:
           .call = &call,
           .decl = &decl,
           .owner = owner,
-          .decl_file = is_method_call ? method_site->method->file_id : decl_file,
+          .decl_file =
+              is_method_call ? method_site->method->file_id : decl_file,
           .call_params = std::move(param_types),
           .file = file_id_,
           .module = module_,
@@ -7358,8 +7359,7 @@ private:
   /// left a parameter open and, if so, its signature.
   auto classify_probe(
       const unclassified_param_decl &probe,
-      const std::function<bool(const ast::func_decl *)> &unclassified)
-      -> void {
+      const std::function<bool(const ast::func_decl *)> &unclassified) -> void {
     for (auto &call : pending_open_param_calls_) {
       if (call.probe != probe.decl || call.typed) {
         continue;
@@ -7381,8 +7381,8 @@ private:
     // implicit type parameters, and nothing may answer them afterwards.
     auto signature = implicit_signature{};
     for (const auto type : param_types) {
-      signature.params.push_back(type == k_unknown_type ? k_unknown_type
-                                                        : leaf_ctxt_.zonk(type));
+      signature.params.push_back(
+          type == k_unknown_type ? k_unknown_type : leaf_ctxt_.zonk(type));
     }
     if (const auto found = open_returns_.find(probe.decl);
         found != open_returns_.end()) {
@@ -7557,10 +7557,10 @@ private:
       collect_type_vars(type, vars, seen);
       for (const auto var : vars) {
         if (!fresh.contains(var)) {
-          fresh.emplace(var, leaf_ctxt_.fresh_type(
-                                 std::format("a type in this call to `{}`",
-                                             decl.name),
-                                 where));
+          fresh.emplace(
+              var, leaf_ctxt_.fresh_type(
+                       std::format("a type in this call to `{}`", decl.name),
+                       where));
         }
       }
       return substitute_solved(substitute_solved(type, fresh), block);
@@ -7643,8 +7643,7 @@ private:
   /// Names the block's instance for a call to a method of a generic block
   /// whose body pinned every unannotated parameter, once the receiver
   /// settles.
-  auto name_block_method_instance(const pending_open_param_call &item)
-      -> void {
+  auto name_block_method_instance(const pending_open_param_call &item) -> void {
     const auto saved_file = std::exchange(file_id_, item.file);
     const auto *saved_module = std::exchange(module_, item.module);
     const auto *saved_template = std::exchange(current_template_, nullptr);
@@ -10392,13 +10391,15 @@ private:
   /// `decl` filled in — once the solution is concrete, which may be later
   /// (`when_solution_settles`). False when the call cannot be monomorphized
   /// (diagnosed here) or names no instance of its own (a template's call).
-  auto instantiate_hk_method(
-      const ast::call_expr &call, const method_entry &method,
-      std::string_view target_type_name, param_subst &bindings,
-      const resolved_callee &callee,
-      const explicit_generic_args &explicit_args = {},
-      const value_bindings &solved = {}, type_id self_type = k_unknown_type,
-      const type_scope *extra_fixed = nullptr) -> bool {
+  auto instantiate_hk_method(const ast::call_expr &call,
+                             const method_entry &method,
+                             std::string_view target_type_name,
+                             param_subst &bindings,
+                             const resolved_callee &callee,
+                             const explicit_generic_args &explicit_args = {},
+                             const value_bindings &solved = {},
+                             type_id self_type = k_unknown_type,
+                             const type_scope *extra_fixed = nullptr) -> bool {
     const auto &decl = *method.decl;
     const auto solution =
         solve_call(call, decl, method.owner, solved, bindings, explicit_args);
@@ -10428,9 +10429,11 @@ private:
     if (!solution_is_open(*solution)) {
       return name_instance(*solution);
     }
-    when_solution_settles(decl, *solution,
-                          [name_instance](const generic_solution &settled)
-                              -> void { (void)name_instance(settled); });
+    when_solution_settles(
+        decl, *solution,
+        [name_instance](const generic_solution &settled) -> void {
+          (void)name_instance(settled);
+        });
     return true;
   }
 
@@ -14756,10 +14759,10 @@ private:
           .probe = probing_decl_});
       mint_open_result(*method.decl, call.span);
       return open_call_result(
-          call, substitute_solved(signature_return_type(*method.decl,
-                                                        method.owner,
-                                                        method.block_type_params),
-                                  bindings));
+          call,
+          substitute_solved(signature_return_type(*method.decl, method.owner,
+                                                  method.block_type_params),
+                            bindings));
     }
 
     // Phase 8: the arguments above are what pin a receiver that was still
@@ -15751,11 +15754,10 @@ private:
           return *instantiated;
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
-        const auto site =
-            method_call_site{.method = method,
-                             .target_type_name = entry.name,
-                             .receiver = field.object.get(),
-                             .receiver_type = object};
+        const auto site = method_call_site{.method = method,
+                                           .target_type_name = entry.name,
+                                           .receiver = field.object.get(),
+                                           .receiver_type = object};
         return check_call_against_decl(call, *method->decl, method->owner,
                                        file_id_, /*skip_self=*/true,
                                        /*explicit_args=*/{}, &site);
@@ -15915,11 +15917,10 @@ private:
           }
           record_instance_method_callee(call, *method, entry.name,
                                         *field.object);
-          const auto site =
-              method_call_site{.method = method,
-                               .target_type_name = entry.name,
-                               .receiver = field.object.get(),
-                               .receiver_type = object};
+          const auto site = method_call_site{.method = method,
+                                             .target_type_name = entry.name,
+                                             .receiver = field.object.get(),
+                                             .receiver_type = object};
           return check_call_against_decl(call, *method->decl, method->owner,
                                          file_id_, /*skip_self=*/true,
                                          /*explicit_args=*/{}, &site);
@@ -16564,9 +16565,9 @@ private:
             if (!method->decl->type_params.empty()) {
               if (!instantiate_hk_method(
                       call, *method, root.front(), bindings,
-                      resolved_callee{
-                          .owner_module = method->owner->module_name,
-                          .impl_target_type = ""},
+                      resolved_callee{.owner_module =
+                                          method->owner->module_name,
+                                      .impl_target_type = ""},
                       /*explicit_args=*/{}, solved) &&
                   current_template_ != nullptr) {
                 // `option.pure(x)` with `x: T`: each instance solves it for
@@ -16584,9 +16585,9 @@ private:
                       solve_from_argument_types(clone, params, types);
                       (void)instantiate_hk_method(
                           clone, *method, target, types,
-                          resolved_callee{
-                              .owner_module = method->owner->module_name,
-                              .impl_target_type = ""},
+                          resolved_callee{.owner_module =
+                                              method->owner->module_name,
+                                          .impl_target_type = ""},
                           {}, values);
                     });
               }
@@ -23019,6 +23020,13 @@ private:
       --loop_depth_;
       pop_scope();
       return unit;
+    }
+
+    case ast::node_kind::scope_stmt: {
+      const auto &stmt = dynamic_cast<const ast::scope_stmt &>(node);
+      check_body_nodes(stmt.body, k_unknown_type);
+      // Lowering wraps the body in a block and needs its (unit) type.
+      return record_expr_type(stmt, unit);
     }
 
     case ast::node_kind::for_stmt: {

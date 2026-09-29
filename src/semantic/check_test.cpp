@@ -2508,6 +2508,18 @@ auto test_reports_generic_call_conflicting_args() -> void {
       "expected the bare-type static call to be checked too");
 }
 
+auto test_scope_and_where_bindings_end_with_their_scope() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_scope_binding_used_after.cn");
+  expect(analyzed.error_count == 2,
+         "expected one undefined-name error after `scope:` and one after "
+         "`where`");
+  expect_diagnostic(analyzed, "undefined name `inside`",
+                    "expected a `scope:` binding to be gone after the block");
+  expect_diagnostic(analyzed, "undefined name `helper`",
+                    "expected a `where` binding to be gone after its `let`");
+}
+
 auto test_reports_direct_drop_call() -> void {
   const auto analyzed = analyze_test_data_file("reject_direct_drop_call.cn");
   expect(analyzed.error_count > 0,
@@ -4154,6 +4166,7 @@ auto main() -> int {
     test_reports_index_without_impl();
     test_reports_index_wrong_key_type();
     test_dispatches_index_by_key_type();
+    test_scope_and_where_bindings_end_with_their_scope();
     test_reports_direct_drop_call();
     test_reports_interpolated_reference();
     test_reports_generic_call_conflicting_args();

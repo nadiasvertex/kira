@@ -142,7 +142,7 @@ process_next_step()
 
 - `if`, `while` (including `while let`), both forms of `for`, and `break`/`continue` are implemented end-to-end.
 - The irrefutability rule for a `for` head (and for `let`/`var`) is not yet enforced: the checker records a for-loop pattern's bindings without checking that it can't fail, and lowering (`hir/lower.cpp`) assumes it never does — passing a refutable pattern (e.g. `for @some(x) in xs:`) currently compiles instead of being rejected, and its runtime behavior on a non-matching element is unspecified. Treat this as a checker gap against the rule stated above, not a supported way to filter a loop.
-- `scope` is design-only: the `scope_stmt` production is in `spec/cinder-grammar.ebnf`, but there is no `scope` keyword token and no parser/checker/lowering support, so `scope:` is a parse error today. Everything in the `scope` section above describes the target design — including its drop behavior, which rests on scope-exit `drop` glue that does **not** exist for any kind of scope (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). Implementing `scope` is therefore blocked on destructors, not merely on parsing a keyword.
+- `scope` is implemented end-to-end on both backends (`src/testdata/std_test/scope_block.cn`). It is a statement with no value, so a `scope` block cannot be used as an expression. Its bindings end at the `DEDENT` and drop in reverse order there, including on an early `return`.
 
 ## See also
 

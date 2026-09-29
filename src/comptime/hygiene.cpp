@@ -129,6 +129,11 @@ private:
       visit_body(stmt.body);
       return;
     }
+    case ast::node_kind::scope_stmt: {
+      auto &stmt = dynamic_cast<ast::scope_stmt &>(node);
+      visit_body(stmt.body);
+      return;
+    }
     case ast::node_kind::for_stmt: {
       auto &stmt = dynamic_cast<ast::for_stmt &>(node);
       if (stmt.iterable != nullptr) {

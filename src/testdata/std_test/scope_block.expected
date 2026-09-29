@@ -1,0 +1,21 @@
+inside scope
+drop 3
+drop 2
+after scope
+drop 1
+inner body
+drop 11
+between
+drop 10
+nested done
+returning from scope
+drop 20
+scope fallthrough
+drop 20
+early_return done
+loop body 0
+drop 30
+loop body 1
+drop 31
+loop done
+main done

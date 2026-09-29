@@ -1822,6 +1822,13 @@ auto validate_ast_node(const ast::node &node,
     return;
   }
 
+  case ast::node_kind::scope_stmt: {
+    const auto &stmt = dynamic_cast<const ast::scope_stmt &>(node);
+    validate_node_list(stmt.body, context, semantic_index, session_index, diag,
+                       file_has_errors);
+    return;
+  }
+
   case ast::node_kind::for_stmt: {
     const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
     for (const auto &pattern : stmt.patterns) {

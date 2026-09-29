@@ -52,9 +52,9 @@ impl drop for file:
   - The prelude `drop(x)` free function still does not exist. A call to it is accepted by the checker anyway and then fails in lowering with "no concrete checked type is available for this node" — a compiler-gap diagnostic for what is really an undefined name. (The `drop` *trait* is correctly prelude-reachable: `impl drop for T` needs no `use`.)
   - The ownership checker (`src/semantic/ownership_check.h`) rejects any use after a move; `hir::compute_drop_schedule` is a separate, HIR-oriented walker that decides where drops go, and keeps its own record of which bindings were moved (see that file's doc comment).
 - **`shared[T]` is a name with nothing behind it.** `shared` is registered as a builtin generic (`src/semantic/types.cpp:51`) and that is the entire implementation. The `shared` expression form yields a plain reference — `let a: shared t = shared t{ id: 1 }` fails with ``expected `shared[t]`, found `&t` `` — and `shared[T]` has no methods, so `.clone()` does not resolve. No atomic reference count exists anywhere in the source tree, so neither the read-only-access guarantee nor drop-at-zero is enforced or implemented.
-- **The `scope` block this chapter relies on does not parse.** `scope_stmt` is in `spec/cinder-grammar.ebnf`, but there is no `kw_scope` token and no parser support, so the mechanism named above for ending a lifetime early is unavailable.
+- **`scope` blocks work** (`src/testdata/std_test/scope_block.cn`), and so do drops for `where` bindings (`src/testdata/std_test/where_inline.cn`). The block's locals drop in reverse order at its `DEDENT`; a `where` binding drops when its `let` finishes, after the initializer is evaluated.
 
-Tracked as items 6–8 in [todo.md](../../todo.md).
+Tracked as items 6–7 in [todo.md](../../todo.md).
 
 ## See also
 

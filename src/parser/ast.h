@@ -90,6 +90,7 @@ struct break_stmt;
 struct continue_stmt;
 struct if_stmt;
 struct while_stmt;
+struct scope_stmt;
 struct for_stmt;
 struct match_stmt;
 struct crew_stmt;
@@ -244,6 +245,7 @@ enum class node_kind : uint8_t {
   continue_stmt, ///< Loop next-iteration statement.
   if_stmt,       ///< Conditional statement.
   while_stmt,    ///< While-loop statement.
+  scope_stmt,    ///< Bare `scope:` block bounding its bindings' lifetimes.
   for_stmt,      ///< For-loop statement.
   match_stmt,    ///< Match statement.
   crew_stmt,     ///< Crew orchestration statement.
@@ -1526,6 +1528,14 @@ struct while_stmt : stmt {
   std::vector<ptr<node>> body; ///< Loop body nodes.
 
   while_stmt() : stmt(node_kind::while_stmt) {}
+};
+
+/// `scope: block` — a bare block with no value. Bindings declared directly in
+/// it are not visible after it and are dropped when it ends.
+struct scope_stmt : stmt {
+  std::vector<ptr<node>> body; ///< Scope body nodes.
+
+  scope_stmt() : stmt(node_kind::scope_stmt) {}
 };
 
 /// `for vars in expr [if guard]: block`

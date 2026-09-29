@@ -554,6 +554,15 @@ auto walk_node(const ast::node &node, scope_id active_scope,
     return active_scope;
   }
 
+  case ast::node_kind::scope_stmt: {
+    const auto &stmt = dynamic_cast<const ast::scope_stmt &>(node);
+    const auto body_scope = create_block_scope(active_scope, context,
+                                               semantic_scope_kind::block_scope,
+                                               "scope block", stmt.span);
+    walk_node_list(stmt.body, body_scope, context);
+    return active_scope;
+  }
+
   case ast::node_kind::for_stmt: {
     const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
     if (stmt.iterable != nullptr) {

@@ -1,0 +1,53 @@
+module main
+
+# `scope:` (spec/todo.md item 8): a bare block whose bindings are dropped, in
+# reverse declaration order, when it ends — before the statements after it.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def basic() -> unit:
+    let outer = noisy { id: 1 }
+    scope:
+        let a = noisy { id: 2 }
+        let b = noisy { id: 3 }
+        println("inside scope")
+    println("after scope")
+
+def nested() -> unit:
+    scope:
+        let a = noisy { id: 10 }
+        scope:
+            let b = noisy { id: 11 }
+            println("inner body")
+        println("between")
+    println("nested done")
+
+def early_return(flag: bool) -> unit:
+    scope:
+        let a = noisy { id: 20 }
+        if flag:
+            println("returning from scope")
+            return
+        println("scope fallthrough")
+    println("early_return done")
+
+def in_loop() -> unit:
+    var i = 0
+    while i < 2:
+        scope:
+            let a = noisy { id: 30 + i }
+            println("loop body {i}")
+        i = i + 1
+    println("loop done")
+
+def main() -> unit:
+    basic()
+    nested()
+    early_return(true)
+    early_return(false)
+    in_loop()
+    println("main done")

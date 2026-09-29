@@ -1088,6 +1088,17 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->body = std::move(*body);
     return ptr<node>(std::move(cloned));
   }
+  case node_kind::scope_stmt: {
+    const auto &scope_s = dynamic_cast<const scope_stmt &>(n);
+    auto body = clone_node_list(scope_s.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<scope_stmt>();
+    cloned->span = scope_s.span;
+    cloned->body = std::move(*body);
+    return ptr<node>(std::move(cloned));
+  }
   case node_kind::for_stmt: {
     const auto &loop = dynamic_cast<const for_stmt &>(n);
     auto patterns = clone_pattern_list(loop.patterns);

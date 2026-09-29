@@ -739,6 +739,7 @@ private:
   [[nodiscard]] auto parse_if_stmt() -> ast::ptr<ast::if_stmt>;
   /// Parses a `while` loop statement.
   [[nodiscard]] auto parse_while_stmt() -> ast::ptr<ast::while_stmt>;
+  [[nodiscard]] auto parse_scope_stmt() -> ast::ptr<ast::scope_stmt>;
   /// Parses a `for` loop statement.
   [[nodiscard]] auto parse_for_stmt() -> ast::ptr<ast::for_stmt>;
   /// Parses a `match` statement.
