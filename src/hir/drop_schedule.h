@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -14,9 +15,14 @@ namespace cinder::hir {
 /// AST, before `lowerer` mints its own per-function symbol ids) and type
 /// (the key into `semantic::checked_types::drop_plans`, which says what
 /// calling drop actually looks like).
+///
+/// `shadow_depth` says which binding of `name` this is when several of that
+/// name are owned at one exit (`let a = ...; let a = ...`): 0 is the most
+/// recently declared, 1 the one it shadows, and so on.
 struct pending_drop {
   std::string name;
   semantic::type_id type = 0;
+  std::size_t shadow_depth = 0;
 };
 
 /// Where every synthesized drop call in one function/lambda body belongs,

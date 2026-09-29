@@ -2531,6 +2531,13 @@ auto test_reports_direct_drop_call() -> void {
       "expected the diagnostic to explain the double-drop hazard");
 }
 
+auto test_reports_bare_drop_call() -> void {
+  const auto analyzed = analyze_test_data_file("reject_bare_drop_call.cn");
+  expect(analyzed.error_count > 0, "expected a bare `drop(x)` to be rejected");
+  expect_diagnostic(analyzed, "`drop` is a trait, not a function",
+                    "expected the diagnostic to say what `drop` names");
+}
+
 auto test_reports_interpolated_reference() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_interpolated_reference.cn");
@@ -4168,6 +4175,7 @@ auto main() -> int {
     test_dispatches_index_by_key_type();
     test_scope_and_where_bindings_end_with_their_scope();
     test_reports_direct_drop_call();
+    test_reports_bare_drop_call();
     test_reports_interpolated_reference();
     test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();

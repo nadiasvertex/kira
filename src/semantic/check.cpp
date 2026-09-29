@@ -17457,6 +17457,19 @@ private:
       return *variant;
     }
 
+    // `drop` names the prelude trait, not a function. Without this it would
+    // count as a type-like name, type-check as unknown, and fail in lowering.
+    if (name == "drop" && find_prelude_trait(name).has_value()) {
+      error_with_help(
+          call.span, "`drop` is a trait, not a function",
+          "no function `drop` exists",
+          "a value's `drop` runs on its own when its scope ends, so there is "
+          "no function to call it early. To release a value sooner, end its "
+          "scope sooner, or restructure so this is its last use.");
+      infer_call_args_loosely(call);
+      return k_error_type;
+    }
+
     if (is_prelude_value_name(name) || is_type_like_name(name) ||
         builtin_generic_arity(name).has_value()) {
       infer_call_args_loosely(call);

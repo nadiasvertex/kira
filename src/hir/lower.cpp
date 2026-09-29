@@ -286,12 +286,39 @@ private:
   /// (either directly, or via its already-lowered initializer/pattern
   /// expression's own `.type`), so this doesn't add a new type-resolution
   /// obligation, just persists one that already existed.
-  [[nodiscard]] auto declare_local(std::string_view name, type_id type)
-      -> symbol_id {
+  ///
+  /// A later binding of the same name in the same scope shadows the earlier
+  /// one for every lookup. `whole` marks a binding that owns its value
+  /// outright (`let`/`var name`, a single-name parameter): those are also
+  /// kept in declaration order, shadowed ones included, so a scope-exit drop
+  /// can still reach a binding its own name no longer resolves to.
+  [[nodiscard]] auto declare_local(std::string_view name, type_id type,
+                                   bool whole = false) -> symbol_id {
     const auto id = next_symbol_++;
-    scopes_.back().emplace(std::string(name), id);
+    auto &scope = scopes_.back();
+    scope.by_name.insert_or_assign(std::string(name), id);
+    if (whole) {
+      scope.whole.emplace_back(std::string(name), id);
+    }
     local_types_.emplace(id, type);
     return id;
+  }
+
+  /// The `depth`-th most recent whole binding of `name` still in scope
+  /// (0 = the one `lookup_local` finds, 1 = the one it shadows, ...),
+  /// searching innermost scope first. This is how a drop reaches a shadowed
+  /// binding: `compute_drop_schedule` counts shadowing the same way.
+  [[nodiscard]] auto lookup_whole_local(std::string_view name,
+                                        std::size_t depth) const
+      -> std::optional<symbol_id> {
+    for (const auto &scope : std::views::reverse(scopes_)) {
+      for (const auto &[bound, id] : std::views::reverse(scope.whole)) {
+        if (bound == name && depth-- == 0) {
+          return id;
+        }
+      }
+    }
+    return std::nullopt;
   }
 
   /// Mints an id with no name of its own — used for a `match` subject's
@@ -307,8 +334,8 @@ private:
   [[nodiscard]] auto lookup_local(std::string_view name) const
       -> std::optional<symbol_id> {
     for (const auto &scope : std::views::reverse(scopes_)) {
-      if (const auto found = scope.find(std::string(name));
-          found != scope.end()) {
+      if (const auto found = scope.by_name.find(std::string(name));
+          found != scope.by_name.end()) {
         return found->second;
       }
     }
@@ -843,7 +870,7 @@ private:
                                         source_span span)
       -> std::expected<ptr<hir_node>, lowering_error> {
     push_scope();
-    scopes_.back().emplace("self", self_symbol);
+    scopes_.back().by_name.emplace("self", self_symbol);
     local_types_.emplace(self_symbol, type);
     auto condition = lower_expr(invariant);
     pop_scope();
@@ -887,7 +914,11 @@ private:
 
   const checked_types &checked_;
   lowering_options options_;
-  std::vector<std::unordered_map<std::string, symbol_id>> scopes_;
+  struct lexical_scope {
+    std::unordered_map<std::string, symbol_id> by_name;
+    std::vector<std::pair<std::string, symbol_id>> whole;
+  };
+  std::vector<lexical_scope> scopes_;
   std::unordered_map<std::string, symbol_id> global_refs_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
@@ -2149,7 +2180,7 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
 
 auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  const auto symbol = lookup_local(drop.name);
+  const auto symbol = lookup_whole_local(drop.name, drop.shadow_depth);
   if (!symbol.has_value()) {
     return fail(lowering_error_kind::unsupported_construct,
                 source_span::dummy(),
@@ -2545,7 +2576,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-      const auto symbol = declare_local(binding.name, ptype);
+      const auto symbol = declare_local(binding.name, ptype, /*whole=*/true);
       params.push_back(
           hir_param{.symbol = symbol, .name = binding.name, .type = ptype});
       continue;
@@ -2645,7 +2676,8 @@ auto lowerer::lower_where(const ast::where_expr &where)
       pop_scope();
       return std::unexpected(value.error());
     }
-    const auto symbol = declare_local(binding.name, (*value)->type);
+    const auto symbol =
+        declare_local(binding.name, (*value)->type, /*whole=*/true);
     stmts.push_back(ptr<hir_node>(
         make<hir_let>(binding.span, symbol, binding.name, std::move(*value))));
   }
@@ -3322,7 +3354,8 @@ auto lowerer::lower_stmt(const ast::node &node)
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern);
-      const auto symbol = declare_local(binding.name, (*initializer)->type);
+      const auto symbol =
+          declare_local(binding.name, (*initializer)->type, /*whole=*/true);
       return one_stmt(ptr<hir_node>(make<hir_let>(
           let.span, symbol, binding.name, std::move(*initializer))));
     }
@@ -3424,19 +3457,36 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    // A value-returning `return`'s own scheduled drops (for a local only
-    // *borrowed* by the returned expression, e.g. `return h.get_id()` —
-    // one directly returned, like `return h`, was already excluded from the
-    // schedule as a move by the ownership CFG) are
-    // deliberately not emitted here: `hir_return`'s value expression is
-    // evaluated as part of compiling the return itself, not hoisted into an
-    // earlier statement, so a drop call placed ahead of this whole sequence
-    // would run before that read rather than after it — spec/todo.md item
-    // 6's documented gap, the same shape as `lower_block`'s value-producing-
-    // tail one. Not necessarily one statement even without that: an exit
-    // from a function with postconditions is a whole little sequence (bind,
-    // check, return).
-    return lower_return_value(ret.span, std::move(*value));
+    // A value-returning `return` with scheduled drops (for a local the
+    // returned expression only *borrows*, e.g. `return h.get_id()` — one
+    // returned directly, like `return h`, is a move and is not scheduled)
+    // evaluates the value into a temporary first, so the drops run after the
+    // read and the return then yields the temporary. `hir_return`'s own
+    // value is evaluated as part of the return, so a drop placed before it
+    // would run too early.
+    auto stmts = ptr_vec<hir_node>{};
+    const auto scheduled = drop_schedule_.exits.find(&node);
+    if (scheduled != drop_schedule_.exits.end() && !scheduled->second.empty() &&
+        (*value)->type != k_unknown_type) {
+      const auto value_type = (*value)->type;
+      const auto temp = mint_symbol();
+      const auto temp_name = std::format("<return value {}>", temp);
+      stmts.push_back(ptr<hir_node>(
+          make<hir_let>(ret.span, temp, temp_name, std::move(*value))));
+      if (auto result = emit_jump_drops(node, stmts); !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      value = ptr<hir_expr>(make<hir_local_ref>(source_span::dummy(),
+                                                value_type, temp, temp_name));
+    }
+    auto returned = lower_return_value(ret.span, std::move(*value));
+    if (!returned.has_value()) {
+      return std::unexpected(returned.error());
+    }
+    for (auto &stmt : *returned) {
+      stmts.push_back(std::move(stmt));
+    }
+    return stmts;
   }
   case ast::node_kind::break_stmt: {
     auto stmts = ptr_vec<hir_node>{};
@@ -3486,7 +3536,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!initializer.has_value()) {
       return std::unexpected(initializer.error());
     }
-    const auto symbol = declare_local(var.name, (*initializer)->type);
+    const auto symbol =
+        declare_local(var.name, (*initializer)->type, /*whole=*/true);
     return one_stmt(ptr<hir_node>(make<hir_let>(
         var.span, symbol, var.name, std::move(*initializer), /*mut=*/true)));
   }
@@ -5402,7 +5453,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*param.pattern);
-      const auto symbol = declare_local(binding.name, *type);
+      const auto symbol = declare_local(binding.name, *type, /*whole=*/true);
       params.push_back(
           hir_param{.symbol = symbol, .name = binding.name, .type = *type});
       continue;

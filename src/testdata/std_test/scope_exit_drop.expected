@@ -25,4 +25,11 @@ drop 40
 early_break breaking
 drop 41
 early_break loop done
+shadowed body 71
+drop 71
+drop 70
+shadowed by int 5
+drop 72
+drop 80
+returned 80
 main done

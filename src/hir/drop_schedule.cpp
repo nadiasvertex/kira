@@ -1,6 +1,6 @@
 #include "src/hir/drop_schedule.h"
 
-#include <set>
+#include <map>
 
 #include "src/semantic/ownership_cfg.h"
 #include "src/semantic/ownership_check.h"
@@ -15,16 +15,18 @@ auto compute_drop_schedule(const ast::func_decl &decl,
        semantic::ownership::build_function_cfgs(decl, checked)) {
     for (const auto &exit : semantic::ownership::owned_at_scope_exits(cfg)) {
       auto &drops = schedule.exits[exit.key];
-      // `lowerer` finds each drop's local by name, which reaches only the
-      // innermost binding of a shadowed name — so only that one is dropped,
-      // and a shadowed one leaks rather than the innermost dropping twice.
-      auto named = std::set<std::string_view>{};
+      // Groups run innermost scope first, each in reverse declaration order,
+      // so the first time a name shows up it is the binding a lookup finds
+      // and each later one is one shadow level deeper. Every whole binding
+      // counts, droppable or not, because `lowerer` counts them all.
+      auto seen = std::map<std::string_view, std::size_t>{};
       for (const auto &group : exit.groups) {
         for (const auto local : group) {
           const auto &info = cfg.locals[local];
-          if (checked.drop_plans.contains(info.type) &&
-              named.insert(info.name).second) {
-            drops.push_back(pending_drop{.name = info.name, .type = info.type});
+          const auto depth = seen[info.name]++;
+          if (checked.drop_plans.contains(info.type)) {
+            drops.push_back(pending_drop{
+                .name = info.name, .type = info.type, .shadow_depth = depth});
           }
         }
       }

@@ -91,6 +91,29 @@ def early_break() -> unit:
         i = i + 1
     println("early_break loop done")
 
+# A name rebound in the same scope hides the earlier binding, which is still
+# owned and still drops: both run, the later binding first.
+def shadowed_in_same_scope() -> unit:
+    let a = noisy { id: 70 }
+    let a = noisy { id: 71 }
+    println("shadowed body {a.id}")
+
+# A shadowing binding that is not droppable must not hide the droppable one
+# beneath it from the drop schedule.
+def shadowed_by_plain_value() -> unit:
+    let a = noisy { id: 72 }
+    let a = 5
+    println("shadowed by int {a}")
+
+def id_of(n: &noisy) -> int32:
+    return n.id
+
+# The returned expression only borrows the local, so the local still drops —
+# after the value is read, not before.
+def return_borrowing_local() -> int32:
+    let a = noisy { id: 80 }
+    return id_of(a)
+
 def main() -> unit:
     reverse_order()
     moved_from_never_drops()
@@ -100,4 +123,7 @@ def main() -> unit:
     lent_then_early_return(true)
     early_return(true)
     early_break()
+    shadowed_in_same_scope()
+    shadowed_by_plain_value()
+    println("returned {return_borrowing_local()}")
     println("main done")
