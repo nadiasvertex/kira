@@ -156,6 +156,86 @@ def tail_match(o: option[int32]) -> int32:
 def tail_param(n: noisy) -> int32:
     n.id
 
+# Pattern bindings own their part of a subject that is a whole local or a
+# fresh value, and drop with their scope. A `_` drops what it leaves unbound.
+# A subject that is only part of something else (`b.s`) still belongs to its
+# owner, so its bindings never drop.
+type pair2 = { a: noisy, b: noisy }
+type wrap = { s: slot }
+
+def match_binding_drops() -> unit:
+    let a: slot = @held(noisy { id: 200 })
+    match a:
+        @held(n) => println("arm {n.id}")
+        @pair(_, n) => println("pair")
+        @empty => println("empty")
+    println("match_binding done")
+
+def match_wildcard_drops() -> unit:
+    let a: slot = @pair(1, noisy { id: 201 })
+    match a:
+        @held(n) => println("held")
+        @pair(_, _) => println("wild")
+        @empty => println("empty")
+    println("match_wildcard done")
+
+def match_moved_binding() -> unit:
+    let a: slot = @held(noisy { id: 202 })
+    match a:
+        @held(n) => takes(n)
+        _ => println("other")
+    println("match_moved done")
+
+def match_return_in_arm() -> int32:
+    let a: slot = @held(noisy { id: 203 })
+    let z = noisy { id: 204 }
+    match a:
+        @held(n) => return 5
+        _ => println("other")
+    7
+
+def match_value_arm(o: option[noisy]) -> int32:
+    match o:
+        @some(n) => n.id
+        @none => 0
+
+def make_noisy() -> option[noisy]:
+    @some(noisy { id: 205 })
+
+def match_fresh_subject() -> unit:
+    match make_noisy():
+        @some(n) => println("fresh {n.id}")
+        @none => println("none")
+
+def match_part_of_place(w: &wrap) -> unit:
+    match w.s:
+        @held(n) => println("part {n.id}")
+        _ => println("part other")
+
+def if_let_hit_and_miss() -> unit:
+    let o: option[noisy] = @some(noisy { id: 206 })
+    if let @some(n) = o:
+        println("iflet {n.id}")
+    let s: slot = @pair(2, noisy { id: 207 })
+    if let @held(n) = s:
+        println("hit")
+    else:
+        println("miss")
+    println("if_let done")
+
+def while_let_binding() -> unit:
+    var o: option[noisy] = @some(noisy { id: 208 })
+    while let @some(n) = o:
+        println("loop {n.id}")
+        o = @none
+    println("while_let done")
+
+def let_destructure() -> unit:
+    let t = pair2 { a: noisy { id: 209 }, b: noisy { id: 210 } }
+    let {a: x, b: y} = t
+    let (p, q) = (noisy { id: 211 }, noisy { id: 212 })
+    println("destructure done")
+
 def main() -> unit:
     reverse_order()
     moved_from_never_drops()
@@ -177,4 +257,16 @@ def main() -> unit:
     println("tail_match {tail_match(@none)}")
     println("tail_param {tail_param(noisy { id: 104 })}")
     println("returned {return_borrowing_local()}")
+    match_binding_drops()
+    match_wildcard_drops()
+    match_moved_binding()
+    println("ret {match_return_in_arm()}")
+    println("val {match_value_arm(@some(noisy { id: 213 }))}")
+    match_fresh_subject()
+    let w = wrap { s: @held(noisy { id: 214 }) }
+    match_part_of_place(w)
+    println("part done")
+    if_let_hit_and_miss()
+    while_let_binding()
+    let_destructure()
     println("main done")

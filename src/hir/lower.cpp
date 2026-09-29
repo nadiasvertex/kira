@@ -18,6 +18,7 @@
 #include "src/parser/ast.h"
 #include "src/runtime/layout.h"
 #include "src/semantic/module_index.h"
+#include "src/semantic/ownership_cfg.h"
 #include "src/semantic/types.h"
 
 namespace cinder::hir {
@@ -325,6 +326,27 @@ private:
   /// synthetic binding, which arm code never refers to by spelling (see
   /// `lower_match`).
   [[nodiscard]] auto mint_symbol() -> symbol_id { return next_symbol_++; }
+
+  /// Whether the bindings of `pattern`, matched against `subject`, own the
+  /// parts of the value they bind. The ownership checker asks the same
+  /// question (`semantic::ownership::owns_pattern_bindings`), so its drop
+  /// schedule and the bindings declared `whole` here agree.
+  [[nodiscard]] auto binds_owned_parts(const ast::expr &subject,
+                                       const ast::node &pattern) const
+      -> bool {
+    const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
+    return pat != nullptr &&
+           semantic::ownership::owns_pattern_bindings(
+               subject, *pat, checked_,
+               [this](std::string_view name) -> bool {
+                 return lookup_local(name).has_value();
+               });
+  }
+
+  /// Set while `lower_pattern` runs over a pattern whose bindings own their
+  /// parts (`binds_owned_parts`): a droppable binding is then `whole`, and a
+  /// `_` at a droppable position drops what it leaves unbound.
+  bool own_pattern_bindings_ = false;
 
   /// Looks up `name` among locals currently in scope only — unlike
   /// `resolve_reference`, never falls back to minting/reusing a global
@@ -3474,7 +3496,9 @@ auto lowerer::lower_stmt(const ast::node &node)
                                   std::string("<let subject>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
+    own_pattern_bindings_ = binds_owned_parts(*let.initializer, *let.pattern);
     auto pattern = lower_pattern(*let.pattern, make_place, pending);
+    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       return std::unexpected(pattern.error());
     }
@@ -3937,7 +3961,10 @@ auto lowerer::lower_if_let_chain(
 
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
+  const auto owned = binds_owned_parts(*branch.let_expr, *branch.let_pattern);
+  own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*branch.let_pattern, make_place, pending);
+  own_pattern_bindings_ = false;
   if (!pattern.has_value()) {
     pop_scope();
     return std::unexpected(pattern.error());
@@ -3966,6 +3993,20 @@ auto lowerer::lower_if_let_chain(
   }
   if (*unmatched_body == nullptr) {
     *unmatched_body = make<hir_block>(span, type, ptr_vec<hir_node>{});
+  }
+  if (owned && checked_.drop_plans.contains(subj_type)) {
+    // The subject was moved into the test and nothing bound it, so the
+    // branch that did not match still has to drop it.
+    auto drops = std::vector<ptr<hir_node>>{};
+    if (auto dropped = build_drop_calls(make_place, subj_type,
+                                        branch.let_expr->span, drops);
+        !dropped.has_value()) {
+      return std::unexpected(dropped.error());
+    }
+    for (auto &stmt_ptr : (*unmatched_body)->stmts) {
+      drops.push_back(std::move(stmt_ptr));
+    }
+    (*unmatched_body)->stmts = std::move(drops);
   }
 
   auto arms = std::vector<hir_match_arm>{};
@@ -4999,7 +5040,10 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
 
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
+  own_pattern_bindings_ =
+      binds_owned_parts(*while_stmt.let_expr, *while_stmt.let_pattern);
   auto pattern = lower_pattern(*while_stmt.let_pattern, make_place, pending);
+  own_pattern_bindings_ = false;
   if (!pattern.has_value()) {
     pop_scope();
     return std::unexpected(pattern.error());
@@ -5034,8 +5078,22 @@ auto lowerer::lower_pattern(const ast::node &pattern,
                 "pattern carries a parse/recovery error and cannot be lowered");
   }
   switch (pattern.kind) {
-  case ast::node_kind::wildcard_pattern:
+  case ast::node_kind::wildcard_pattern: {
+    if (own_pattern_bindings_) {
+      // `_` binds nothing, so nothing else would ever drop this part.
+      auto place = make_place();
+      const auto place_type = place->type;
+      if (!checked_.drop_plans.contains(place_type)) {
+        return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
+      }
+      if (auto dropped = build_drop_calls(make_place, place_type, pattern.span,
+                                          pending);
+          !dropped.has_value()) {
+        return std::unexpected(dropped.error());
+      }
+    }
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
+  }
   case ast::node_kind::literal_pattern: {
     const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
     return ptr<hir_pattern>(
@@ -5044,7 +5102,11 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   case ast::node_kind::binding_pattern: {
     const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
     auto place = make_place();
-    const auto symbol = declare_local(binding.name, place->type);
+    const auto node_type = checked_.node_types.find(&pattern);
+    const auto whole = own_pattern_bindings_ &&
+                       node_type != checked_.node_types.end() &&
+                       checked_.drop_plans.contains(node_type->second);
+    const auto symbol = declare_local(binding.name, place->type, whole);
     pending.push_back(ptr<hir_node>(
         make<hir_let>(pattern.span, symbol, binding.name, std::move(place))));
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
@@ -5378,7 +5440,9 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
     }
     push_scope();
     auto pending = std::vector<ptr<hir_node>>{};
+    own_pattern_bindings_ = binds_owned_parts(subject_ast, *arm.pattern);
     auto pattern = lower_pattern(*arm.pattern, make_subject_place, pending);
+    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
@@ -5404,6 +5468,12 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
       auto stmts = std::move(pending);
       stmts.push_back(ptr<hir_node>(
           make<hir_expr_stmt>(arm.body_expr->span, std::move(*value))));
+      // The arm's bindings end with the arm, after its value is computed.
+      if (auto dropped = emit_tail_scope_exit_drops(&arm.body_stmts, stmts);
+          !dropped.has_value()) {
+        pop_scope();
+        return std::unexpected(dropped.error());
+      }
       body = make<hir_block>(arm.span, k_unknown_type, std::move(stmts));
     } else {
       auto lowered_body = lower_block(arm.body_stmts, arm.span, type);

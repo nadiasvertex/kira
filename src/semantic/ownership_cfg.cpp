@@ -1,6 +1,7 @@
 #include "ownership_cfg.h"
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -456,15 +457,20 @@ private:
 
   /// Declares every binding `pattern` introduces. Parameters start out
   /// holding nothing; the caller gives any other binding its value.
-  auto declare_pattern(const ast::node &pattern) -> std::vector<local_id> {
+  auto declare_pattern(const ast::node &pattern, bool owned = false)
+      -> std::vector<local_id> {
     auto locals = std::vector<local_id>{};
     const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
     if (pat == nullptr) {
       return locals;
     }
     for (const auto &binding : collect_pattern_bindings(*pat)) {
-      locals.push_back(
-          declare(binding.name, type_of(binding.node), binding.span));
+      const auto type = type_of(binding.node);
+      // An owned binding that needs a drop is dropped with its scope; the
+      // others are left to `storage_dead`, like every pattern binding.
+      const auto whole = owned && binding.node != nullptr &&
+                         checked_.drop_plans.contains(type);
+      locals.push_back(declare(binding.name, type, binding.span, whole));
     }
     return locals;
   }
@@ -480,11 +486,14 @@ private:
   }
 
   /// Declares `pattern`'s bindings, each receiving what `subject` holds.
-  auto bind_pattern(const ast::node *pattern, local_id subject) -> void {
+  /// `owned` says the bindings own their parts of the value (see
+  /// `owns_pattern_bindings`).
+  auto bind_pattern(const ast::node *pattern, local_id subject,
+                    bool owned = false) -> void {
     if (pattern == nullptr) {
       return;
     }
-    for (const auto local : declare_pattern(*pattern)) {
+    for (const auto local : declare_pattern(*pattern, owned)) {
       bind_value(local, value{.loans = {}, .sources = {subject}});
     }
   }
@@ -1113,6 +1122,17 @@ private:
   //  Control flow.
   // ------------------------------------------------------------------
 
+  /// Whether `pattern`, matched against `subject`, binds owned parts.
+  [[nodiscard]] auto binds_owned(const ast::expr *subject,
+                                 const ast::node *pattern) const -> bool {
+    const auto *pat = dynamic_cast<const ast::pattern *>(pattern);
+    return subject != nullptr && pat != nullptr &&
+           owns_pattern_bindings(*subject, *pat, checked_,
+                                 [this](std::string_view name) -> bool {
+                                   return lookup(name).has_value();
+                                 });
+  }
+
   /// A subject temporary holding `v`, for patterns to bind from.
   auto hold_subject(const value &v) -> local_id {
     const auto subject = new_temp(local_role::subject_temp);
@@ -1127,8 +1147,10 @@ private:
     const auto end = new_block();
     for (const auto &branch : branches) {
       auto subject = std::optional<local_id>{};
+      auto owned = false;
       if (branch.let_expr != nullptr) {
         // `if let`: the parser leaves a placeholder in `condition`.
+        owned = binds_owned(branch.let_expr.get(), branch.let_pattern.get());
         subject = hold_subject(eval(*branch.let_expr, use_mode::move));
       } else {
         static_cast<void>(eval_opt(branch.condition.get(), use_mode::read));
@@ -1139,7 +1161,7 @@ private:
       current_ = then;
       push_scope(&branch.body);
       if (subject.has_value()) {
-        bind_pattern(branch.let_pattern.get(), *subject);
+        bind_pattern(branch.let_pattern.get(), *subject, owned);
       }
       const auto tail = lower_body(branch.body, want_value);
       flow(join, tail, /*replace=*/true);
@@ -1159,6 +1181,7 @@ private:
   auto lower_match(const ast::expr *subject_expr,
                    const std::vector<ast::match_arm> &arms, bool want_value)
       -> value {
+    const auto owned_subject = subject_expr;
     const auto subject = hold_subject(eval_opt(subject_expr, use_mode::move));
     const auto join = new_temp(local_role::join_temp);
     const auto end = new_block();
@@ -1174,7 +1197,8 @@ private:
       }
       current_ = body;
       push_scope(&arm.body_stmts);
-      bind_pattern(arm.pattern.get(), subject);
+      bind_pattern(arm.pattern.get(), subject,
+                   binds_owned(owned_subject, arm.pattern.get()));
       if (arm.guard != nullptr) {
         static_cast<void>(eval(*arm.guard, use_mode::read));
         const auto guarded = new_block();
@@ -1262,7 +1286,9 @@ private:
     goto_block(head);
     current_ = head;
     auto subject = std::optional<local_id>{};
+    auto owned = false;
     if (stmt.let_expr != nullptr) {
+      owned = binds_owned(stmt.let_expr.get(), stmt.let_pattern.get());
       subject = hold_subject(eval(*stmt.let_expr, use_mode::move));
     } else {
       static_cast<void>(eval_opt(stmt.condition.get(), use_mode::read));
@@ -1273,7 +1299,7 @@ private:
     current_ = body;
     push_loop_scope(head, exit, &stmt.body);
     if (subject.has_value()) {
-      bind_pattern(stmt.let_pattern.get(), *subject);
+      bind_pattern(stmt.let_pattern.get(), *subject, owned);
     }
     static_cast<void>(lower_body(stmt.body, false));
     pop_scope();
@@ -1492,7 +1518,8 @@ private:
       static_cast<void>(lower_scoped_body(stmt.else_body, false));
       goto_block(bound);
       current_ = bound;
-      bind_pattern(stmt.pattern.get(), subject);
+      bind_pattern(stmt.pattern.get(), subject,
+                   binds_owned(stmt.initializer.get(), stmt.pattern.get()));
       return;
     }
     if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
@@ -1504,7 +1531,8 @@ private:
       bind_value(local, v);
       return;
     }
-    bind_pattern(stmt.pattern.get(), hold_subject(v));
+    bind_pattern(stmt.pattern.get(), hold_subject(v),
+                 binds_owned(stmt.initializer.get(), stmt.pattern.get()));
   }
 
   auto lower_assign(const ast::assign_stmt &stmt) -> void {
@@ -1536,6 +1564,29 @@ private:
 };
 
 } // namespace
+
+auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
+                           const checked_types &checked,
+                           const std::function<bool(std::string_view)> &is_local)
+    -> bool {
+  if (!pattern_bindings_are_disjoint(pattern)) {
+    return false;
+  }
+  const auto type_it = checked.node_types.find(&subject);
+  if (type_it == checked.node_types.end() ||
+      checked.types.is_unknown(type_it->second) ||
+      type_it->second == k_error_type ||
+      checked.types.entry(type_it->second).kind == type_kind::ref_kind ||
+      checked.types.is_view(type_it->second)) {
+    return false;
+  }
+  auto projected = false;
+  const auto root = place_root(subject, projected);
+  if (!root.has_value()) {
+    return true; // a call result, constructor or literal: a fresh value
+  }
+  return !projected && root->name != "self" && is_local(root->name);
+}
 
 auto build_function_cfgs(const ast::func_decl &decl,
                          const checked_types &checked)

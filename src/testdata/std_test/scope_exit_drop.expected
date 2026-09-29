@@ -52,4 +52,36 @@ drop 104
 tail_param 104
 drop 80
 returned 80
+arm 200
+drop 200
+match_binding done
+drop 201
+wild
+match_wildcard done
+consumed 202
+drop 202
+match_moved done
+drop 203
+drop 204
+ret 5
+drop 213
+val 213
+fresh 205
+drop 205
+part 214
+part done
+iflet 206
+drop 206
+drop 207
+miss
+if_let done
+loop 208
+drop 208
+while_let done
+destructure done
+drop 212
+drop 211
+drop 210
+drop 209
 main done
+drop 214

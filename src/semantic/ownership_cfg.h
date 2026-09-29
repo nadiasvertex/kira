@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -147,6 +149,21 @@ struct function_cfg {
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.
 };
+
+/// Whether the bindings of `pattern`, matched against `subject`, own the
+/// parts of the value they bind — so each may be dropped when its scope ends.
+/// True when the subject is a whole local or a fresh value (a call result, a
+/// constructor), which the match moves; false when it is a part of something
+/// (`x.f`, `x[i]`, `*x`), a reference or view, `self`, or a global — those
+/// still belong to their owner — or when the pattern's bindings overlap
+/// (`pattern_bindings_are_disjoint`). `is_local` says whether a name is a
+/// local of the function. `hir::lowerer` asks the same question, so both
+/// sides agree on which bindings are dropped.
+[[nodiscard]] auto
+owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
+                      const checked_types &checked,
+                      const std::function<bool(std::string_view)> &is_local)
+    -> bool;
 
 /// Builds the CFG of `decl`'s body, followed by one CFG per lambda or nested
 /// function written inside it.

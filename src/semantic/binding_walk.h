@@ -27,4 +27,13 @@ struct pattern_binding {
 [[nodiscard]] auto collect_pattern_bindings(const ast::pattern &pattern)
     -> std::vector<pattern_binding>;
 
+/// Whether every name `pattern` binds is its own copy of a distinct part of
+/// the subject, so that owning each one owns the subject's parts exactly
+/// once. False for a pattern with an alias (`(p) as x` binds the whole and
+/// the parts), an or-pattern (alternatives bind the same names), a `&`
+/// pattern (binds through a reference) or an array pattern (element and rest
+/// bindings are not one slot each).
+[[nodiscard]] auto pattern_bindings_are_disjoint(const ast::pattern &pattern)
+    -> bool;
+
 } // namespace cinder::semantic
