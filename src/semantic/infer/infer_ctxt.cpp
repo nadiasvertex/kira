@@ -1,6 +1,8 @@
 #include "src/semantic/infer/infer_ctxt.h"
 
+#include <algorithm>
 #include <format>
+#include <unordered_set>
 #include <utility>
 
 namespace cinder::semantic::infer {
@@ -329,6 +331,35 @@ auto infer_ctxt::zonk(type_id id) -> type_id {
   zonking_.erase(resolved);
   zonk_memo_[resolved] = rebuilt;
   return rebuilt;
+}
+
+auto infer_ctxt::open_vars(type_id id) -> std::vector<type_id> {
+  auto out = std::vector<type_id>{};
+  auto seen = std::unordered_set<type_id>{};
+  const auto walk = [&](auto &self, type_id at) -> void {
+    if (!seen.insert(at).second) {
+      return;
+    }
+    if (is_meta(at)) {
+      const auto rep = find(at);
+      if (std::ranges::find(out, rep) == out.end()) {
+        out.push_back(rep);
+      }
+      return;
+    }
+    const auto entry = table_->entry(at); // copy: the walk never interns
+    for (const auto arg : entry.args) {
+      self(self, arg);
+    }
+    if ((entry.kind == type_kind::fn_kind || entry.kind == type_kind::ref_kind ||
+         entry.kind == type_kind::ptr_kind ||
+         entry.kind == type_kind::array_kind) &&
+        entry.result != k_unknown_type) {
+      self(self, entry.result);
+    }
+  };
+  walk(walk, zonk(id));
+  return out;
 }
 
 /// Rebuilds one level through the table's constructors, with children

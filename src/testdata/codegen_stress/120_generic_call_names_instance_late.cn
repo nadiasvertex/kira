@@ -1,0 +1,46 @@
+module codegen_stress.generic_call_names_instance_late
+
+# expect: 8500000007
+
+# spec/todo.md item 14: a generic call's type parameters are solved without
+# defaulting the arguments' literals. The call's type is known in terms of
+# the literal's leaf, and the instance is named only once that leaf settles,
+# so a later annotation on the result decides the width.
+#
+# Each value below is only right at `int64`. `3000000000` and `2500000000`
+# do not fit an `int32`. `twice(1500000000)` fits as an argument but its sum
+# does not, so an `int32` instance would overflow rather than fail to
+# compile. The other cases cover a bound (`where T: add`), a generic method,
+# and a parameter matched through a `list[T]`. UFCS on a literal receiver
+# (`4.ident()`) is left out: it is miscompiled by the LLVM tier on its own
+# (spec/todo.md).
+#
+# `# expect:` because both tiers would agree on a width decided too early.
+
+def ident[T](x: T) -> T:
+    return x
+
+def twice[T](x: T) -> T where T: add:
+    return x + x
+
+def first[T](xs: list[T]) -> T:
+    return xs[0]
+
+type w = { v: int32 }
+
+extend w:
+    def pass[T](self, x: T) -> T:
+        return x
+
+def main() -> int64:
+    let a = ident(3000000000)
+    let a64: int64 = a
+    let b = twice(1500000000)
+    let b64: int64 = b
+    let p = w{ v: 1 }
+    let c = p.pass(7)
+    let c64: int64 = c
+    let xs = [2500000000, 1]
+    let e = first(xs)
+    let e64: int64 = e
+    return a64 + b64 + c64 + e64

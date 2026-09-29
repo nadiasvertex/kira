@@ -55,17 +55,22 @@ auto obligation_queue::stalled() const -> std::vector<obligation_id> {
   return open;
 }
 
-/// Re-points the watches at their current representatives.
+/// Re-points the watches at the variables they still wait on.
 ///
 /// Called on every attempt that leaves the obligation waiting, because a
 /// merge in between would otherwise leave it filed under a variable that no
 /// longer receives solutions — a wake index that silently stops waking is
-/// worse than none, since the symptom is a stall with no explanation.
+/// worse than none, since the symptom is a stall with no explanation. A
+/// watch solved to a type that is not yet closed is the same hazard one
+/// level down: `?c := chain_iter[.., ?a]` will never be solved again, so
+/// the obligation is filed under `?a`.
 auto obligation_queue::index_watches(obligation_id id) -> void {
   for (const auto watch : records_[id].goal.watches) {
-    auto &watchers = wake_index_[ctx_->find(watch)];
-    if (std::ranges::find(watchers, id) == watchers.end()) {
-      watchers.push_back(id);
+    for (const auto open : ctx_->open_vars(watch)) {
+      auto &watchers = wake_index_[open];
+      if (std::ranges::find(watchers, id) == watchers.end()) {
+        watchers.push_back(id);
+      }
     }
   }
 }

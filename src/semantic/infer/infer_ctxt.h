@@ -235,6 +235,11 @@ public:
   /// Memoized; the memo is dropped whenever a `bind` succeeds.
   [[nodiscard]] auto zonk(type_id id) -> type_id;
 
+  /// The unsolved representatives `id` still mentions once zonked: `id`'s
+  /// own when it is unsolved, the variables inside its solution when it is
+  /// solved to a type that is not yet closed (`?c := list[?a]` gives `?a`).
+  [[nodiscard]] auto open_vars(type_id id) -> std::vector<type_id>;
+
   /// Records a cause and returns its handle.
   auto add_cause(cause why) -> cause_id;
   /// The cause behind `id`; the empty cause for `k_no_cause`.

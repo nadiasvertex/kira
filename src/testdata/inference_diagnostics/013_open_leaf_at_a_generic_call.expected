@@ -1,9 +1,3 @@
-error: cannot tell what `T` is in this call to `count_of`
-  --> 013_open_leaf_at_a_generic_call.cn:22:12
-   22 |     return count_of(out, 0)
-      |            ^^^^^^^^^^^^^^^^ `T` is a type parameter this call leaves unsolved
-  help: `count_of` is compiled once per concrete type, so every type parameter has to be pinned down. Either give it outright in brackets (`count_of[int32](...)`), or annotate the value that should determine `T` — an annotated `let`, a declared return type, or any other context with a known type is used to solve a parameter the arguments leave open.
-
 error: cannot tell what an empty `[]` is a list of
   --> 013_open_leaf_at_a_generic_call.cn:21:15
    21 |     var out = []

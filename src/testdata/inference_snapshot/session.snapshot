@@ -1,5 +1,5 @@
 # inference snapshot
-# 2008 interned types
+# 2035 interned types
 
 ## node_types (29611)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -31633,7 +31633,7 @@ list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
 test_suite own=- fields=[cases: list[test_case]]
 
-## borrow_bearing_types (1432)
+## borrow_bearing_types (1440)
 &T
 &T
 &T
@@ -32519,7 +32519,12 @@ fn(T, bool) -> usize
 fn(T, fn(T) -> option[U]) -> option[U]
 fn(_) -> *_
 fn(_) -> *mut _
+fn(_) -> B
 fn(_) -> U
+fn(_) -> _
+fn(_) -> _
+fn(_) -> _
+fn(_) -> _
 fn(_) -> _
 fn(_) -> bool
 fn(_) -> example_type[_]
@@ -32530,6 +32535,7 @@ fn(_) -> int32
 fn(_) -> int64
 fn(_) -> int8
 fn(_) -> isize
+fn(_) -> list[_]
 fn(_) -> list_into_iter[_]
 fn(_) -> option[&_]
 fn(_) -> option[&mut _]
@@ -32546,6 +32552,7 @@ fn(_) -> result[unit, io_error]
 fn(_) -> self
 fn(_) -> slice[_]
 fn(_) -> slice_mut[_]
+fn(_) -> str
 fn(_) -> str
 fn(_) -> uint64
 fn(_) -> unit
@@ -32606,6 +32613,7 @@ fn(_, fn(A) -> B) -> _
 fn(_, fn(A) -> B) -> _
 fn(_, fn(A) -> _) -> _
 fn(_, fn(_) -> U) -> bag[U]
+fn(_, fn(_) -> option[_]) -> option[_]
 fn(_, int16) -> int16
 fn(_, int32) -> int32
 fn(_, int64) -> int64

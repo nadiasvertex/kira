@@ -1,0 +1,40 @@
+module codegen_stress.generic_block_method_implicit_param
+
+# expect: 4294967317
+
+# todo.md item 19: a method with an unannotated parameter in a generic
+# `extend` block is compiled once per receiver *and* per argument type, from
+# both halves of the call: `box[int32]`'s `T` and the call's `k`.
+#
+# - `tag` ignores `T`; called with an `int32` and an `int8`, two instances.
+# - `keep` returns `k`; the `2147483647` becomes an `int64` from the later
+#   annotation, so `+ 1` does not overflow.
+# - `pair` returns `(T, k)`; its `k` is pinned by the later annotation too.
+# - `plus`'s body makes `k` a `T`, so it is an ordinary method of the block.
+# - `use_it` calls `tag` from a generic body, instantiated for `int32`.
+#
+# `# expect:` because both tiers would agree on a width decided too early.
+
+type box[T] = { v: T }
+
+extend[T: add] box[T]:
+    def tag(self, k) -> int64: int64(k) + 1
+
+    def keep(self, k): k
+
+    def pair(self, k): (self.v, k)
+
+    def plus(self, k): self.v + k
+
+def use_it[U: add](b: box[U]) -> int64: b.tag(7)
+
+def main() -> int64:
+    let b = box[int32]{ v: 3 }
+    let small = b.tag(3) + b.tag(int8(5))
+    let r = b.keep(2147483647)
+    let wide: int64 = r
+    let p = b.pair(2147483647)
+    let second: int64 = p.1
+    let w = box[int64]{ v: 1 }
+    let sum = w.plus(2147483647)
+    return small + (wide + 1) + (second + 1) + (sum - 2147483648) + use_it(b) + int64(p.0)

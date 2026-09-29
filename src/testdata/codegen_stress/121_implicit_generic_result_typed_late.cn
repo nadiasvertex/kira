@@ -1,0 +1,36 @@
+module codegen_stress.implicit_generic_result_typed_late
+
+# expect: 11147483668
+
+# A call to a function with unannotated parameters is solved against that
+# function's signature like any generic call: `add_one`'s result is the type
+# of its argument, so a later `int64` annotation on the result makes the
+# argument an `int64` too. Each value below is only right at `int64`.
+#
+# `twice` is declared after `main`, `through` calls another implicit generic,
+# `plus` is a method of a non-generic block, and `twice(5)` inside a
+# conversion is typed by nothing and takes the literal's default.
+
+def add_one(x): x + 1
+
+def through(y): add_one(y)
+
+type point = { x: int64 }
+
+extend point:
+    def plus(self, k): k + k
+
+def main() -> int64:
+    let a = add_one(2147483647)
+    let wa: int64 = a
+    let b = twice(1500000000)
+    let wb: int64 = b
+    let c = through(2999999999)
+    let wc: int64 = c
+    let p = point{ x: 1 }
+    let d = p.plus(1500000000)
+    let wd: int64 = d
+    let e = int64(twice(10))
+    return wa + wb + wc + wd + e
+
+def twice(x): x + x

@@ -430,8 +430,11 @@ public:
     leaf_queue_.set_resolver(
         infer::obligation_kind::defaulting,
         [this](const infer::obligation &goal) -> infer::obligation_report {
-          const auto leaf = goal.watches.front();
-          if (leaf_ctxt_.find(leaf) != leaf) {
+          // The literal's leaf may have been merged with another that is
+          // just as open (an argument with the parameter of the call it is
+          // passed to); the default then answers for both.
+          const auto leaf = leaf_ctxt_.shallow_resolve(goal.watches.front());
+          if (!leaf_ctxt_.is_meta(leaf)) {
             // Something real arrived while this was waiting. The default
             // loses, which is the only reason it is last.
             return {.outcome = infer::obligation_outcome::discharged};
@@ -1207,7 +1210,6 @@ private:
   /// confluence requirement.
   comptime::evaluator comptime_eval_;
   std::unordered_set<const ast::type_decl *> aliases_in_progress_;
-  std::vector<type_id> param_leaves_;
 
   /// Cache of `param_types_for`'s result, so `check_function`'s own body
   /// check and `signature_params`'s call-site view agree on the same
@@ -1477,28 +1479,29 @@ private:
   /// `a` in `let a = 1; println("{b}"); let c: int64 = a` before the
   /// annotation that pins it.
   ///
-  /// "Depends on" is the leaves `roots` mention, plus two kinds of leaf a
-  /// root may be waiting on without mentioning it:
+  /// "Depends on" is the leaves `roots` mention, plus whatever a stalled
+  /// decision watches, when that decision may solve a leaf already in scope:
+  /// a pending method call on `?a` may be the only thing that can solve the
+  /// `?b` being asked about, and it cannot run until `?a` is known. A
+  /// decision that solves nothing in scope is not waited on: an index or
+  /// loop over `[1, 2]` only names its instance once the elements settle, so
+  /// demanding an unrelated literal must not default them before `let c:
+  /// int64 = xs[0]` says what they are. A decision that does not record what
+  /// it binds is followed whole.
   ///
-  /// - whatever a stalled decision watches, when that decision may solve a
-  ///   leaf already in scope — a pending method call on `?a` may be the only
-  ///   thing that can solve the `?b` being asked about, and it cannot run
-  ///   until `?a` is known. A decision that solves nothing in scope is not
-  ///   waited on: an index or loop over `[1, 2]` only names its instance
-  ///   once the elements settle, so demanding an unrelated literal must not
-  ///   default them before `let c: int64 = xs[0]` says what they are. A
-  ///   decision that does not record what it binds is followed whole.
-  /// - the arguments of a pending call to an implicit generic whose result
-  ///   leaf is in scope: `add_one(5)`'s result is only known once the
-  ///   instance for the `5` is chosen, which that call records outside the
-  ///   queue (`pending_open_param_calls_`).
-  ///
-  /// Both are followed to a fixpoint, since either can bring in a leaf the
-  /// other is waiting on. Recomputed each time a default is considered,
+  /// Followed to a fixpoint, since a decision can bring in a leaf another
+  /// is waiting on. Recomputed each time a default is considered,
   /// since the previous one may have solved or merged what this one is
   /// asking about.
-  auto flush_for(std::span<const type_id> roots) -> void {
+  ///
+  /// `answered`, if given, says the demand has what it needs: nothing more
+  /// is defaulted once it holds.
+  auto flush_for(std::span<const type_id> roots,
+                 const std::function<bool()> &answered = nullptr) -> void {
     const auto in_scope = [&](type_id leaf) -> bool {
+      if (answered && answered()) {
+        return false;
+      }
       auto reps = std::unordered_set<type_id>{};
       const auto add = [&](type_id type) -> bool {
         auto vars = std::vector<type_id>{};
@@ -1540,15 +1543,6 @@ private:
             grew = add(watch) || grew;
           }
         }
-        for (const auto &call : pending_open_param_calls_) {
-          if (call.result_leaf == k_unknown_type ||
-              !reps.contains(leaf_ctxt_.find(call.result_leaf))) {
-            continue;
-          }
-          for (const auto param : call.call_params) {
-            grew = add(param) || grew;
-          }
-        }
       }
       return reps.contains(leaf_ctxt_.find(leaf));
     };
@@ -1578,6 +1572,12 @@ private:
     if (!mentions_type_var(settled, seen)) {
       return settled;
     }
+    return demand_until(settled, nullptr);
+  }
+
+  /// `demand`'s last resort, spent only until `answered` holds.
+  auto demand_until(type_id settled, const std::function<bool()> &answered)
+      -> type_id {
     // A probed function's body may still be sitting in
     // `unclassified_param_decls_`, its open-parameter verdict not yet
     // recorded: `flush_leaf_literals`/`flush_pending_instances` normally
@@ -1592,55 +1592,14 @@ private:
     // the implicit generic its body actually makes it, and lowering then
     // rejected the never-instantiated template as "no declared return type,
     // and none could be inferred from its body" (spec/todo.md item 19).
+    //
+    // Resolving the calls to what was just classified states each call's
+    // result in terms of its arguments (`link_open_param_call`), so a
+    // demand on `1 + add_one(5)`'s right operand reaches the `5`.
     classify_param_decls();
-    flush_for(std::span{&settled, 1});
-    auto zonked = leaf_ctxt_.zonk(settled);
-    seen.clear();
-    if (!mentions_type_var(zonked, seen)) {
-      return zonked;
-    }
-    // Still open: `zonked` may be a call's result leaf minted by
-    // `mint_open_result`, which only `resolve_open_param_calls`/
-    // `finish_open_results` (normally run from `flush_deferred`) ever pin.
-    // `demand()` reached from outside that sequence — a binary operand, an
-    // index, a match subject, not just `check_interpolated_string`'s own
-    // retry path — used to hand back a type still naming a metavariable
-    // here, e.g. `1 + add_one(5)` for `def add_one(x): x + 1`
-    // (spec/todo.md item 20). Running the same sequence settles it the same
-    // way an interpolation segment's leaf already does.
-    //
-    // Only the `instantiate=true` half: the `false` half resolves *concrete*
-    // pending calls, which runs ordinarily at each `flush_deferred` and is
-    // not what a result leaf is waiting on — running it early here, before
-    // the statement it belongs to has finished being walked, reached calls
-    // nothing here needs yet. Likewise `flush_leaf_literals` is deliberately
-    // not run: it defaults every still-open literal leaf in the whole
-    // program, not just ones this call depends on, which is exactly the
-    // premature-defaulting mistake `demand()`'s own doc comment above
-    // describes for item 19 — just reached through this new path instead of
-    // the old unguarded flush. Draining `pending_instances_` alone is enough
-    // to let `check_instance` populate `inferred_returns_` for the instance
-    // `resolve_open_param_calls` just queued; any literal leaf that body
-    // touches stays queued for the real `flush_deferred` to default later.
-    //
-    // Guarded against reentrancy: `flush_pending_instances` below checks an
-    // instance body synchronously (`check_instance` walks it on this same
-    // C++ stack), and that body can itself reach `demand()` on a leaf of its
-    // own — e.g. an unannotated parameter whose open/concrete verdict is
-    // still being probed (`096_unannotated_param_is_a_leaf.cn`). Letting a
-    // nested call re-enter this sequence recursed the checker onto its own
-    // still-draining queues and blew the stack; the nested call instead
-    // falls back to the old give-up-for-now answer, and the outer call's own
-    // loop is what actually drains the queue to a fixed point.
-    if (!in_demand_open_resolve_) {
-      in_demand_open_resolve_ = true;
-      resolve_open_param_calls(/*instantiate=*/true);
-      flush_pending_instances();
-      finish_open_results();
-      in_demand_open_resolve_ = false;
-      zonked = leaf_ctxt_.zonk(zonked);
-    }
-    return zonked;
+    resolve_open_param_calls();
+    flush_for(std::span{&settled, 1}, answered);
+    return leaf_ctxt_.zonk(settled);
   }
   /// `demand`, for a point that selects on the head constructor alone.
   ///
@@ -1649,20 +1608,23 @@ private:
   /// `[1, 2]`'s element leaves are not owed their default here: a later
   /// `let y: int64 = xs[0]` is what says what they are (phase 11, defect 3).
   /// Only a head that is itself still a variable has no route to choose, and
-  /// that is owed the last resort as before.
+  /// that is owed the last resort, but only until the head is known: the
+  /// call that answers `let p = pair(1, 2147483647)` with a tuple leaves
+  /// `p.1`'s element to a later `let s: int64 = p.1`.
   auto demand_shape(type_id id) -> type_id {
     if (leaf_ctxt_.meta_count() == 0) {
       return id;
     }
     const auto settled = leaf_ctxt_.zonk(id);
-    if (types_.entry(base_shape(settled)).kind == type_kind::type_var_kind) {
-      return demand(settled);
+    const auto head_open = [&]() -> bool {
+      return types_.entry(base_shape(leaf_ctxt_.zonk(settled))).kind ==
+             type_kind::type_var_kind;
+    };
+    if (head_open()) {
+      return demand_until(settled, [&]() -> bool { return !head_open(); });
     }
     return settled;
   }
-  /// Reentrancy guard for the `resolve_open_param_calls`/
-  /// `finish_open_results` retry inside `demand()`; see the comment there.
-  bool in_demand_open_resolve_ = false;
 
   /// Teaches the leaf unknowns what a value flowing into a declared type says
   /// about them.
@@ -5802,17 +5764,8 @@ private:
       stored[i] = leaf_ctxt_.fresh_type(
           std::format("the type of parameter `{}`", name),
           source_location{.file_id = file_id_, .span = param.span});
-      param_leaves_.push_back(stored[i]);
     }
     return stored;
-  }
-
-  /// Whether `id` is (or has been tied to) an unannotated parameter's leaf.
-  auto is_param_leaf(type_id id) -> bool {
-    const auto settled = leaf_ctxt_.zonk(id);
-    return std::ranges::any_of(param_leaves_, [&](type_id leaf) -> bool {
-      return leaf_ctxt_.zonk(leaf) == settled;
-    });
   }
 
   /// Whether `decl` has an unannotated, non-`self` parameter to infer from
@@ -5903,9 +5856,15 @@ private:
         // A caller gets its own copy of an unannotated parameter's leaf, so
         // `double(3)` and `double(3.5)` each choose at their own call rather
         // than the first pinning the shared one the body is checked against.
+        // Always, once the body is known to leave it open: the body's leaf
+        // is then the implicit type parameter, and a later default of it
+        // answers nothing about a call.
         if (type != k_unknown_type && !name.empty()) {
           const auto settled = leaf_ctxt_.zonk(type);
-          type = !mentions_type_var(settled)
+          const auto classified = open_param_decls_.find(&decl);
+          const auto generic =
+              classified != open_param_decls_.end() && classified->second;
+          type = !generic && !mentions_type_var(settled)
                      ? settled
                      : leaf_ctxt_.fresh_type(
                            std::format(
@@ -6407,7 +6366,8 @@ private:
           .decl_file = is_method_call ? method_site->method->file_id : decl_file,
           .call_params = std::move(param_types),
           .file = file_id_,
-          .module = module_};
+          .module = module_,
+          .probe = probing_decl_};
       if (is_method_call) {
         pending.receiver = method_site->receiver;
         pending.method = *method_site->method;
@@ -7273,10 +7233,20 @@ private:
     std::optional<method_entry> method;
     std::string target_type_name;
     type_id self_type = k_unknown_type;
+    /// Set when the method's block is itself generic (`extend[T] box[T]`):
+    /// the instance is named for the receiver too, and the block's
+    /// parameters are solved from it (`open_call_block_bindings`).
+    bool block_generic = false;
     /// The call's result when the callee declares no return type: a leaf that
     /// waits for the callee's inferred one, which for an open callee is the
     /// instance's, not the template's.
     type_id result_leaf = k_unknown_type;
+    /// The probed function whose body made this call, if any: its verdict
+    /// decides whether the call stands (`resolve_open_param_calls`).
+    const ast::func_decl *probe = nullptr;
+    /// Whether the call's types have been solved against its callee's
+    /// signature (`type_open_param_call`).
+    bool typed = false;
   };
   std::vector<pending_open_param_call> pending_open_param_calls_;
 
@@ -7321,24 +7291,133 @@ private:
   };
   std::vector<unclassified_param_decl> unclassified_param_decls_;
 
+  /// An implicit generic's signature, as its probe left it: each
+  /// unannotated parameter's leaf (`k_unknown_type` for the rest) and the
+  /// result type in terms of them. The leaves are the function's implicit
+  /// type parameters; each call instantiates them afresh
+  /// (`link_open_param_call`).
+  struct implicit_signature {
+    std::vector<type_id> params;
+    type_id result = k_unknown_type;
+  };
+  std::unordered_map<const ast::func_decl *, implicit_signature>
+      implicit_signatures_;
+  /// A body's inferred return type that was still open when the body
+  /// ended; the implicit generic's result type if it is open on the
+  /// parameters.
+  std::unordered_map<const ast::func_decl *, type_id> open_returns_;
+
+  /// Classifies every probed function whose body has been checked.
+  ///
+  /// This is generalization over the probes as one group. A probe's calls
+  /// are solved before its own verdict is read, since they are what may
+  /// pin its parameters or state its result, so its callees go first: `def
+  /// g(y): add_one(y)` reads `add_one`'s signature, and only then is `g`'s
+  /// result known to be the type of `y`. Functions calling each other in a
+  /// cycle are one group, and call each other at their own leaves.
   auto classify_param_decls() -> void {
-    for (const auto &probe : unclassified_param_decls_) {
-      const auto open =
-          has_open_param(*probe.decl, param_types_for(*probe.decl, module_));
-      open_param_decls_[probe.decl] = open;
-      if (!open) {
-        continue;
-      }
-      for (auto i = probe.literal_begin;
-           i < probe.literal_end && i < pending_leaf_literals_.size(); ++i) {
-        pending_leaf_literals_[i].skip = true;
-      }
-      for (auto i = probe.call_begin;
-           i < probe.call_end && i < pending_method_calls_.size(); ++i) {
-        pending_method_calls_[i].finish = [](type_id) -> void {};
+    if (unclassified_param_decls_.empty()) {
+      return;
+    }
+    auto batch = std::move(unclassified_param_decls_);
+    unclassified_param_decls_.clear();
+    const auto unclassified = [&](const ast::func_decl *decl) -> bool {
+      return !open_param_decls_.contains(decl) &&
+             std::ranges::any_of(batch, [&](const auto &probe) -> bool {
+               return probe.decl == decl;
+             });
+    };
+    const auto waits_on_callee = [&](const ast::func_decl *decl) -> bool {
+      return std::ranges::any_of(
+          pending_open_param_calls_,
+          [&](const pending_open_param_call &call) -> bool {
+            return call.probe == decl && call.decl != decl &&
+                   unclassified(call.decl);
+          });
+    };
+    auto done = std::vector<bool>(batch.size(), false);
+    auto progress = true;
+    while (progress) {
+      progress = false;
+      for (size_t i = 0; i < batch.size(); ++i) {
+        if (!done[i] && !waits_on_callee(batch[i].decl)) {
+          classify_probe(batch[i], unclassified);
+          done[i] = true;
+          progress = true;
+        }
       }
     }
-    unclassified_param_decls_.clear();
+    for (size_t i = 0; i < batch.size(); ++i) {
+      if (!done[i]) {
+        classify_probe(batch[i], unclassified);
+      }
+    }
+  }
+
+  /// Solves the calls `probe`'s body made, then records whether its body
+  /// left a parameter open and, if so, its signature.
+  auto classify_probe(
+      const unclassified_param_decl &probe,
+      const std::function<bool(const ast::func_decl *)> &unclassified)
+      -> void {
+    for (auto &call : pending_open_param_calls_) {
+      if (call.probe != probe.decl || call.typed) {
+        continue;
+      }
+      if (open_param_decls_.contains(call.decl)) {
+        type_open_param_call(call);
+      } else if (unclassified(call.decl)) {
+        // Within its own group, a function is called at its own leaves.
+        type_group_call(call);
+      }
+    }
+    const auto &param_types = param_types_for(*probe.decl, module_);
+    const auto open = has_open_param(*probe.decl, param_types);
+    open_param_decls_[probe.decl] = open;
+    if (!open) {
+      return;
+    }
+    // Read now, before anything is defaulted: the probe's leaves are the
+    // implicit type parameters, and nothing may answer them afterwards.
+    auto signature = implicit_signature{};
+    for (const auto type : param_types) {
+      signature.params.push_back(type == k_unknown_type ? k_unknown_type
+                                                        : leaf_ctxt_.zonk(type));
+    }
+    if (const auto found = open_returns_.find(probe.decl);
+        found != open_returns_.end()) {
+      signature.result = leaf_ctxt_.zonk(found->second);
+    }
+    implicit_signatures_[probe.decl] = std::move(signature);
+    for (auto i = probe.literal_begin;
+         i < probe.literal_end && i < pending_leaf_literals_.size(); ++i) {
+      pending_leaf_literals_[i].skip = true;
+    }
+    for (auto i = probe.call_begin;
+         i < probe.call_end && i < pending_method_calls_.size(); ++i) {
+      pending_method_calls_[i].finish = [](type_id) -> void {};
+    }
+  }
+
+  /// A call between functions of one group: its arguments and result are
+  /// the callee's own leaves, as a recursive call's are.
+  auto type_group_call(pending_open_param_call &call) -> void {
+    const auto &callee_types = param_types_for(*call.decl, call.owner);
+    for (size_t i = 0; i < call.decl->params.size() &&
+                       i < call.call_params.size() && i < callee_types.size();
+         ++i) {
+      if (call.decl->params[i].type_annotation == nullptr &&
+          callee_types[i] != k_unknown_type) {
+        (void)leaf_engine_.unify(callee_types[i], call.call_params[i],
+                                 infer::k_no_cause);
+      }
+    }
+    if (const auto found = open_returns_.find(call.decl);
+        found != open_returns_.end() && call.result_leaf != k_unknown_type) {
+      (void)leaf_engine_.unify(found->second, call.result_leaf,
+                               infer::k_no_cause);
+    }
+    call.typed = true;
   }
 
   /// Whether any unannotated parameter of `decl` is still an open leaf.
@@ -7353,82 +7432,267 @@ private:
     return false;
   }
 
-  /// Classifies pending calls whose callee body has been checked.
+  /// Resolves each pending call whose callee's body has been classified.
   ///
-  /// With `instantiate` false, only the calls whose callee turned out
-  /// *concrete* are resolved (their arguments unified with the pinned types),
-  /// and they run before any literal is defaulted — `f(3)` where `f`'s body
-  /// says `int64` must make the `3` an `int64`, not answer `int32` first.
-  /// With it true, the calls whose callee is an implicit generic are
-  /// monomorphized, after defaulting has had its say about their arguments.
-  auto resolve_open_param_calls(bool instantiate) -> void {
+  /// Runs before any literal is defaulted, so the call's types are stated
+  /// before anything guesses at them (`type_open_param_call`); a call to an
+  /// implicit generic then names its instance once its arguments settle.
+  /// A call made in a probed body waits for that body's verdict: if the
+  /// function is an implicit generic, the call is dropped, since each
+  /// instance's body makes its own.
+  auto resolve_open_param_calls() -> void {
     auto remaining = std::vector<pending_open_param_call>{};
     auto pending = std::vector<pending_open_param_call>{};
     pending.swap(pending_open_param_calls_);
-    const auto saved_file = file_id_;
-    const auto saved_module = module_;
     for (auto &item : pending) {
+      if (item.probe != nullptr) {
+        const auto enclosing = open_param_decls_.find(item.probe);
+        if (enclosing == open_param_decls_.end()) {
+          remaining.push_back(std::move(item));
+          continue;
+        }
+        if (enclosing->second) {
+          continue;
+        }
+      }
       const auto classified = open_param_decls_.find(item.decl);
       if (classified == open_param_decls_.end()) {
         remaining.push_back(std::move(item));
         continue;
       }
-      const auto &callee_types = param_types_for(*item.decl, item.owner);
-      const auto open = classified->second;
-      if (open != instantiate) {
-        remaining.push_back(std::move(item));
-        continue;
+      if (!item.typed) {
+        type_open_param_call(item);
       }
-      file_id_ = item.file;
-      module_ = item.module;
-      if (!open) {
-        for (size_t i = 0;
-             i < item.decl->params.size() && i < item.call_params.size() &&
-             i < callee_types.size();
-             ++i) {
-          if (item.decl->params[i].type_annotation != nullptr ||
-              callee_types[i] == k_unknown_type) {
-            continue;
-          }
-          const auto pinned = settle(callee_types[i]);
-          if (!leaf_engine_
-                   .unify(pinned, item.call_params[i], infer::k_no_cause)
-                   .has_value()) {
-            error_with_help(
-                item.call->span,
-                std::format("argument for `{}` has type `{}`, but `{}`'s "
-                            "body needs `{}`",
-                            param_name_of(item.decl->params[i]),
-                            types_.display(settle(item.call_params[i])),
-                            item.decl->name, types_.display(pinned)),
-                "wrong type for this parameter",
-                std::format("`{}` has no annotation, so its type comes from "
-                            "how `{}`'s own body uses it — never from a "
-                            "call. Here the body requires `{}`.",
-                            param_name_of(item.decl->params[i]),
-                            item.decl->name, types_.display(pinned)));
-          }
-        }
-        if (item.result_leaf != k_unknown_type) {
-          const auto found = inferred_returns_.find(item.decl);
-          if (found != inferred_returns_.end() &&
-              found->second != k_unknown_type) {
-            type_mismatch(item.call->span, item.result_leaf, found->second,
-                          "as the result of this call");
-          }
-        }
-        continue;
+      if (classified->second) {
+        name_open_param_instance(std::move(item));
+      } else if (item.block_generic) {
+        // An ordinary method after all: its instance is the block's alone.
+        name_block_method_instance(item);
       }
-      instantiate_open_param_call(item, callee_types);
     }
-    file_id_ = saved_file;
-    module_ = saved_module;
     // Anything queued while instantiating (there is nothing today, since the
     // record is only made from a call walk) is kept alongside what waited.
     for (auto &item : pending_open_param_calls_) {
       remaining.push_back(std::move(item));
     }
     pending_open_param_calls_ = std::move(remaining);
+  }
+
+  /// States a call's types from its classified callee's signature.
+  ///
+  /// A call to a *concrete* callee has its arguments unified with the types
+  /// the body pinned: `f(3)` where `f`'s body says `int64` makes the `3` an
+  /// `int64`. A call to an implicit generic is solved against the callee's
+  /// signature like any generic call. The signature is the probe's: each
+  /// unannotated parameter's leaf, and the return type the body inferred in
+  /// terms of them (`x + 1` returns the type of `x`). Its leaves are the
+  /// function's implicit type parameters, so each call takes a fresh copy of
+  /// them, exactly as a call to `def add_one[T](x: T) -> T` takes a fresh
+  /// `T`. That ties the call's result to its arguments before any literal
+  /// is defaulted: `let r = add_one(5)` then `let c: int64 = r` makes the
+  /// `5` an `int64`.
+  ///
+  /// A return type the body could only state in terms of something other
+  /// than its parameters (a method on one, still waiting) is not part of the
+  /// signature; that call's result is the instance's, read once the
+  /// instance's body is checked (`finish_open_results`).
+  auto type_open_param_call(pending_open_param_call &item) -> void {
+    item.typed = true;
+    const auto &decl = *item.decl;
+    const auto saved_file = std::exchange(file_id_, item.file);
+    const auto *saved_module = std::exchange(module_, item.module);
+    // A method of a generic block states its signature in the block's
+    // parameters (`T`); this call's receiver says what they are.
+    const auto block = open_call_block_bindings(item);
+    if (!open_param_decls_.at(item.decl)) {
+      const auto &callee_types = param_types_for(decl, item.owner);
+      for (size_t i = 0; i < decl.params.size() &&
+                         i < item.call_params.size() && i < callee_types.size();
+           ++i) {
+        if (decl.params[i].type_annotation != nullptr ||
+            callee_types[i] == k_unknown_type) {
+          continue;
+        }
+        const auto pinned = substitute_solved(settle(callee_types[i]), block);
+        if (!leaf_engine_.unify(pinned, item.call_params[i], infer::k_no_cause)
+                 .has_value()) {
+          error_with_help(
+              item.call->span,
+              std::format("argument for `{}` has type `{}`, but `{}`'s "
+                          "body needs `{}`",
+                          param_name_of(decl.params[i]),
+                          types_.display(settle(item.call_params[i])),
+                          decl.name, types_.display(pinned)),
+              "wrong type for this parameter",
+              std::format("`{}` has no annotation, so its type comes from "
+                          "how `{}`'s own body uses it — never from a "
+                          "call. Here the body requires `{}`.",
+                          param_name_of(decl.params[i]), decl.name,
+                          types_.display(pinned)));
+        }
+      }
+      if (item.result_leaf != k_unknown_type) {
+        const auto found = inferred_returns_.find(item.decl);
+        if (found != inferred_returns_.end() &&
+            found->second != k_unknown_type) {
+          type_mismatch(item.call->span, item.result_leaf,
+                        substitute_solved(found->second, block),
+                        "as the result of this call");
+        }
+      }
+      file_id_ = saved_file;
+      module_ = saved_module;
+      return;
+    }
+    const auto &signature = implicit_signatures_.at(item.decl);
+    const auto where =
+        source_location{.file_id = item.file, .span = item.call->span};
+    // Read off the snapshot, never re-settled: the probe's leaves are the
+    // parameters, whatever a later default made of them. Its leaves are
+    // fresh at each call; the block's parameters are the receiver's.
+    auto fresh = param_subst{};
+    const auto instantiate = [&](type_id type) -> type_id {
+      auto vars = std::vector<type_id>{};
+      auto seen = std::unordered_set<type_id>{};
+      collect_type_vars(type, vars, seen);
+      for (const auto var : vars) {
+        if (!fresh.contains(var)) {
+          fresh.emplace(var, leaf_ctxt_.fresh_type(
+                                 std::format("a type in this call to `{}`",
+                                             decl.name),
+                                 where));
+        }
+      }
+      return substitute_solved(substitute_solved(type, fresh), block);
+    };
+    for (size_t i = 0; i < decl.params.size() && i < item.call_params.size() &&
+                       i < signature.params.size();
+         ++i) {
+      if (decl.params[i].type_annotation != nullptr ||
+          signature.params[i] == k_unknown_type) {
+        continue;
+      }
+      // A failure is the instance's to report, against a concrete type.
+      (void)leaf_engine_.unify(instantiate(signature.params[i]),
+                               item.call_params[i], infer::k_no_cause);
+    }
+    auto result_vars = std::vector<type_id>{};
+    auto result_seen = std::unordered_set<type_id>{};
+    collect_type_vars(signature.result, result_vars, result_seen);
+    if (item.result_leaf != k_unknown_type &&
+        signature.result != k_unknown_type &&
+        std::ranges::all_of(result_vars, [&](type_id var) -> bool {
+          return fresh.contains(var);
+        })) {
+      (void)leaf_engine_.unify(instantiate(signature.result), item.result_leaf,
+                               infer::k_no_cause);
+    }
+    file_id_ = saved_file;
+    module_ = saved_module;
+  }
+
+  /// Names the instance a call to an implicit generic asks for, once the
+  /// call's arguments settle.
+  auto name_open_param_instance(pending_open_param_call item) -> void {
+    const auto &decl = *item.decl;
+    auto open = std::vector<type_id>{};
+    for (size_t i = 0; i < decl.params.size() && i < item.call_params.size();
+         ++i) {
+      if (decl.params[i].type_annotation == nullptr &&
+          mentions_type_var(settle(item.call_params[i]))) {
+        open.push_back(item.call_params[i]);
+      }
+    }
+    if (item.block_generic && mentions_type_var(settle(item.self_type))) {
+      open.push_back(item.self_type);
+    }
+    // In the calling file and module, and in no template's body: the
+    // queue may run the naming from anywhere.
+    const auto saved_file = std::exchange(file_id_, item.file);
+    const auto *saved_module = std::exchange(module_, item.module);
+    const auto *saved_template = std::exchange(current_template_, nullptr);
+    if (open.empty()) {
+      instantiate_open_param_call(item, param_types_for(decl, item.owner));
+    } else {
+      defer_method_call(decl.name, types_.tuple_of(std::move(open)),
+                        std::vector<type_id>{},
+                        [this, item = std::move(item)](type_id) -> void {
+                          instantiate_open_param_call(
+                              item, param_types_for(*item.decl, item.owner));
+                        });
+    }
+    current_template_ = saved_template;
+    file_id_ = saved_file;
+    module_ = saved_module;
+  }
+
+  /// The generic block's parameters, solved from the call's receiver:
+  /// `T := int32` for `b.tag(3)` on a `box[int32]`. Empty for anything but
+  /// a method of a generic block.
+  auto open_call_block_bindings(const pending_open_param_call &item)
+      -> param_subst {
+    auto bindings = param_subst{};
+    if (item.block_generic) {
+      const auto self = settle(item.self_type);
+      match_params(item.method->impl_target_pattern, self, bindings);
+      solve_impl_value_params(*item.method, self, bindings);
+    }
+    return bindings;
+  }
+
+  /// Names the block's instance for a call to a method of a generic block
+  /// whose body pinned every unannotated parameter, once the receiver
+  /// settles.
+  auto name_block_method_instance(const pending_open_param_call &item)
+      -> void {
+    const auto saved_file = std::exchange(file_id_, item.file);
+    const auto *saved_module = std::exchange(module_, item.module);
+    const auto *saved_template = std::exchange(current_template_, nullptr);
+    const auto self = settle(item.self_type);
+    if (mentions_type_var(self)) {
+      defer_method_call(item.decl->name, self, std::vector<type_id>{},
+                        [this, &call = *item.call, name = item.decl->name,
+                         &receiver = *item.receiver](type_id settled) -> void {
+                          name_impl_method_instance(call, name, receiver,
+                                                    settled);
+                        });
+    } else {
+      name_impl_method_instance(*item.call, item.decl->name, *item.receiver,
+                                self);
+    }
+    current_template_ = saved_template;
+    file_id_ = saved_file;
+    module_ = saved_module;
+  }
+
+  /// Names the instance of a generic block's method for a settled receiver
+  /// and points the call at it.
+  auto name_impl_method_instance(const ast::call_expr &call,
+                                 std::string_view method_name,
+                                 const ast::expr &receiver, type_id settled)
+      -> void {
+    // The settled receiver's own entry and method, not the open one's:
+    // `list[?a]` and `list[int32]` are different entries with different
+    // method tables.
+    if (mentions_type_param(settled)) {
+      defer_impl_method_call(call, settled);
+      return;
+    }
+    const auto &entry = types_.entry(settled);
+    const auto *found = find_method(entry, method_name, settled);
+    if (found == nullptr) {
+      return;
+    }
+    auto bindings = param_subst{};
+    match_params(found->impl_target_pattern, settled, bindings);
+    solve_impl_value_params(*found, settled, bindings);
+    auto scoped = found->fixed_type_params;
+    scoped.merge(bindings_by_name(bindings));
+    auto solution = generic_solution{};
+    carry_impl_value_slots(*found, bindings, solution);
+    solution.suffix = std::format("${}", mangle_type_for_instance(settled));
+    (void)finish_impl_generic_method_call(call, *found, entry.name, receiver,
+                                          settled, bindings, scoped, solution);
   }
 
   /// Whether a call passes an argument written in the calling template's
@@ -7471,15 +7735,32 @@ private:
     // A method's instance is named for its block's target (`point::tag$int64`,
     // the way `hir` names an impl member) and checked with the block's fixed
     // bindings and `self` in place; a free function's is its bare name.
+    // A method of a generic block is named for its receiver as well
+    // (`box::tag$box_int32_$int32`) and checked with the block's parameters
+    // solved from it: one instance for both halves of the call.
+    const auto block = open_call_block_bindings(item);
+    const auto self_type = settle(item.self_type);
+    auto block_solution = generic_solution{};
+    auto scoped = type_scope{};
+    if (item.method.has_value()) {
+      scoped = item.method->fixed_type_params;
+    }
+    if (item.block_generic) {
+      if (mentions_type_var(self_type) || mentions_template_param(self_type)) {
+        return;
+      }
+      scoped.merge(bindings_by_name(block));
+      carry_impl_value_slots(*item.method, block, block_solution);
+      block_solution.suffix =
+          std::format("${}", mangle_type_for_instance(self_type));
+    }
     const auto *instance =
         item.method.has_value()
             ? find_or_check_generic_instance(
-                  *item.call, decl, item.owner, item.decl_file,
-                  generic_solution{},
-                  std::format("{}::{}{}", item.target_type_name, decl.name,
-                              suffix),
-                  &item.method->fixed_type_params, item.self_type,
-                  item.method->block_type_params, &seeds)
+                  *item.call, decl, item.owner, item.decl_file, block_solution,
+                  std::format("{}::{}{}{}", item.target_type_name, decl.name,
+                              block_solution.suffix, suffix),
+                  &scoped, self_type, item.method->block_type_params, &seeds)
             : find_or_check_generic_instance(
                   *item.call, decl, item.owner, item.decl_file,
                   generic_solution{}, decl.name + suffix,
@@ -7488,17 +7769,24 @@ private:
     if (instance == nullptr) {
       return;
     }
+    const auto *block_params =
+        item.method.has_value() ? item.method->block_type_params : nullptr;
+    const auto declared = signature_params(decl, item.owner,
+                                           /*skip_self=*/false, block_params);
     auto fn_params = std::vector<type_id>{};
     for (size_t i = 0; i < decl.params.size(); ++i) {
       fn_params.push_back(seeds[i] != k_unknown_type
                               ? seeds[i]
-                              : signature_param_type(decl, item.owner, i));
+                              : substitute_solved(declared[i].type, block));
     }
     if (decl.return_type != nullptr) {
       if (item.call->callee != nullptr) {
-        record_expr_type(*item.call->callee,
-                         types_.fn_of(std::move(fn_params),
-                                      signature_return_type(decl, item.owner)));
+        record_expr_type(
+            *item.call->callee,
+            types_.fn_of(std::move(fn_params),
+                         substitute_solved(signature_return_type(
+                                               decl, item.owner, block_params),
+                                           block)));
       }
     } else {
       // The instance's body may not have been checked yet — it is queued —
@@ -7575,7 +7863,7 @@ private:
   /// for the clone's.
   auto flush_deferred() -> void {
     classify_param_decls();
-    resolve_open_param_calls(/*instantiate=*/false);
+    resolve_open_param_calls();
     // Leaf literals first, because a leaf minted in one function can be
     // pinned by a constraint in another in the same file, so they have to be
     // settled before anything reads a type off them.
@@ -7586,7 +7874,6 @@ private:
     // checked type is available for this node".
     (void)leaf_queue_.flush();
     flush_leaf_values();
-    resolve_open_param_calls(/*instantiate=*/true);
     while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
       flush_leaf_literals();
       flush_pending_instances();
@@ -7614,6 +7901,9 @@ private:
     while (!substitution_queue_.empty() || !pending_instances_.empty() ||
            !pending_leaf_literals_.empty()) {
       flush_substitutions();
+      // A substituted instance's call to an implicit generic is queued by
+      // its replay.
+      resolve_open_param_calls();
       flush_leaf_literals();
       flush_pending_instances();
       finish_open_results();
@@ -8453,31 +8743,13 @@ private:
                                          : std::nullopt;
   }
 
-  /// Substitutes leaf solutions into a call's solved bindings, applying the
-  /// queue's last resort to any that are still open.
-  ///
-  /// Two steps, and the order is the point. Zonk first, so a leaf a real
-  /// constraint already solved reads as that answer. Only if one is *still*
-  /// open is the fixpoint run — and defaulting inside it is attempted only
-  /// after every other obligation has stalled, one candidate at a time.
+  /// Substitutes leaf solutions into a call's solved bindings. A binding
+  /// still open stays a leaf: solving is not a point of demand (see
+  /// `when_solution_settles`).
   auto settle_bindings(param_subst &bindings) -> void {
     if (leaf_ctxt_.meta_count() == 0) {
       return;
     }
-    auto still_open = false;
-    for (auto &[param, bound] : bindings) {
-      bound = leaf_ctxt_.zonk(bound);
-      auto seen = std::unordered_set<type_id>{};
-      still_open = still_open || mentions_type_var(bound, seen);
-    }
-    if (!still_open) {
-      return;
-    }
-    auto roots = std::vector<type_id>{};
-    for (const auto &[param, bound] : bindings) {
-      roots.push_back(bound);
-    }
-    flush_for(roots);
     for (auto &[param, bound] : bindings) {
       bound = leaf_ctxt_.zonk(bound);
     }
@@ -8521,18 +8793,10 @@ private:
       return std::nullopt;
     }
 
-    // A call is a point of *demand*: this is where a type has to be a type,
-    // because the answer names an instance to compile. If the arguments
-    // solved a parameter to a leaf that is still open, the constraints that
-    // were going to arrive have all arrived — so this is the moment the
-    // queue's last resort is owed, and `flush` is what decides whether there
-    // is one. An open `[]`'s element leaf has no candidate and stays open,
-    // which is right: nothing about this call says what it holds either.
-    //
-    // Running the fixpoint *here* rather than at the literal is the whole
-    // difference. `binary_search(&haystack[0..5], 5)` solves `T` from the
-    // slice, and the `5` takes the answer; only a literal that reaches a
-    // demand with nothing else to say falls back to `int32`.
+    // A parameter solved to a leaf that is still open keeps the leaf: the
+    // call's type is known in terms of it, and only naming the instance has
+    // to wait for it (`when_solution_settles`). A later `let c: int64 = r`
+    // is still free to say what the `5` in `let r = pick(5)` is.
     settle_bindings(type_bindings);
 
     auto solution = generic_solution{};
@@ -8662,6 +8926,12 @@ private:
         continue;
       }
       const auto found = type_bindings.find(param_id(param));
+      if (found != type_bindings.end() && mentions_type_var(found->second) &&
+          !mentions_abstract_type(found->second,
+                                  /*leaves_are_answers=*/true)) {
+        bind_generic_type(solution, param, found->second);
+        continue;
+      }
       if (found != type_bindings.end() && !types_.is_unknown(found->second) &&
           mentions_abstract_type(found->second)) {
         // The arguments *did* determine `T` — as another type parameter that
@@ -8706,17 +8976,16 @@ private:
   /// solves `n := 3`. Shared by the free-function and receiver-call paths,
   /// which differ only in which parameters they hand it.
   ///
-  /// `may_default` marks this as the *authoritative* solve — the one whose
-  /// answer names an instance and whose failure is reported. Only there may
-  /// a still-open leaf be handed to the obligation queue's last resort; the
-  /// preliminary pass runs partway through checking the arguments, where a
-  /// default would answer before the argument that was about to say
-  /// otherwise.
+  /// `bind_open` answers a parameter with an argument's still-open leaf when
+  /// nothing settled answers it. Solving never defaults a leaf: a call is not
+  /// a point of demand for its arguments' types, only for the instance it
+  /// names, and naming the instance waits for the leaves to settle
+  /// (`when_solution_settles`). `let r = pick(5)` followed by
+  /// `let c: int64 = r` makes the `5` an `int64`.
   auto solve_from_argument_types(const ast::call_expr &call,
                                  const std::vector<fn_param_info> &params,
                                  param_subst &bindings,
                                  const ast::expr *ufcs_receiver = nullptr,
-                                 bool may_default = false,
                                  bool bind_open = false) -> void {
     const auto mapping = call_argument_mappings_.find(&call);
     if (mapping == call_argument_mappings_.end()) {
@@ -8739,6 +9008,14 @@ private:
       // `T := ?a`, a parameter recorded as *solved to a variable*, which the
       // binding map cannot tell from a real answer.
       arg_types[i] = settle(found->second);
+      // A parameter with structure (`xs: list[T]`) is matched by the
+      // argument's head, so an argument whose head is still a leaf (`[5, 6]`
+      // before its literal is wired) owes its shape here. A bare `x: T`
+      // takes the leaf as it is.
+      if (types_.entry(strip_refs(params[i].type)).kind !=
+          type_kind::type_param_kind) {
+        arg_types[i] = demand_shape(arg_types[i]);
+      }
       auto seen = std::unordered_set<type_id>{};
       open_leaf = open_leaf || mentions_type_var(arg_types[i], seen);
     }
@@ -8770,16 +9047,6 @@ private:
         }
       }
     }
-    // A call is a point of *demand*: the answer names an instance to
-    // compile, so a type has to be a type here. Every constraint that was
-    // going to arrive has arrived, so the queue's last resort is owed.
-    // `pick(1, 2)` gets `int32` this way; an open `[]` has no candidate and
-    // stays open.
-    if (open_leaf && may_default) {
-      for (auto &arg : arg_types) {
-        arg = demand(arg);
-      }
-    }
     for (size_t i = 0; i < params.size(); ++i) {
       auto seen = std::unordered_set<type_id>{};
       if (types_.is_unknown(arg_types[i]) ||
@@ -8788,14 +9055,13 @@ private:
       }
       match_params(params[i].type, arg_types[i], bindings);
     }
-    // An argument still open answers too, with the leaf itself — only for a
-    // caller that wants a *provisional* solution and will re-solve later.
+    // An argument still open answers too, with the leaf itself.
     // `fold(0, (n, w) => n + w.len())` checks its lambda against `fn(A, T)`,
     // and `A` answered with the `0`'s leaf lets the body's `n + usize` say
     // what the `0` is; answered with nothing, `A` stays abstract; answered
-    // with the default, the `0` is an `int32` before the body is read
-    // (spec/todo.md item 14). Settled arguments answered first, so a leaf
-    // never displaces a real type.
+    // with the default, the `0` is an `int32` before the body is read.
+    // Settled arguments answered first, so a leaf never displaces a real
+    // type.
     if (bind_open) {
       for (size_t i = 0; i < params.size(); ++i) {
         auto seen = std::unordered_set<type_id>{};
@@ -8844,7 +9110,7 @@ private:
       }
     }
     solve_from_argument_types(call, params, bindings, generic.ufcs_receiver,
-                              /*may_default=*/false, /*bind_open=*/true);
+                              /*bind_open=*/true);
     solve_from_bounds(decl, generic.owner, bindings);
     return bindings;
   }
@@ -9309,7 +9575,7 @@ private:
       -> std::optional<generic_solution> {
     auto type_bindings = param_subst{};
     solve_from_argument_types(call, params, type_bindings, ufcs_receiver,
-                              /*may_default=*/true);
+                              /*bind_open=*/true);
     // Between the arguments and the expected type, because a bound is solved
     // *from* an argument-derived binding (`I` answers `T` via
     // `where I: iterator[T]`) and should still lose to an explicit annotation
@@ -9331,7 +9597,11 @@ private:
                                     decl.name, ufcs_receiver, bracketed)) {
       return std::nullopt;
     }
+    // A bound on an answer that is still an open leaf is a decision that
+    // waits with the instance (`when_solution_settles`): `list_iter[?a]` is
+    // not yet an `iterator[&int32]`, nor yet refused as one.
     solution->bounds_hold =
+        solution_is_open(*solution) ||
         check_call_bounds(call, decl, owner, decl_file, *solution);
     return solution;
   }
@@ -9731,8 +10001,79 @@ private:
       }
       return record_expr_type(call, result);
     }
+    if (solution_is_open(*solution)) {
+      auto [param_types, result] =
+          solved_signature(decl, owner, decl_file, *solution);
+      if (result == k_unknown_type) {
+        result = leaf_ctxt_.fresh_type(
+            std::format("the result of this call to `{}`", decl.name),
+            source_location{.file_id = file_id_, .span = call.span});
+      }
+      if (call.callee != nullptr) {
+        record_expr_type(*call.callee, types_.fn_of(param_types, result));
+      }
+      // The bounds held vacuously against a leaf; they are checked again
+      // against what it settles to.
+      when_solution_settles(
+          decl, *solution,
+          [this, &call, &decl, owner, decl_file, ufcs_receiver,
+           result](const generic_solution &settled) -> void {
+            auto concrete = settled;
+            concrete.bounds_hold =
+                check_call_bounds(call, decl, owner, decl_file, concrete);
+            if (!concrete.bounds_hold) {
+              return;
+            }
+            if (const auto answer = instantiate_solved_call(
+                    call, decl, owner, decl_file, concrete, ufcs_receiver)) {
+              (void)leaf_engine_.unify(result, *answer, infer::k_no_cause);
+            }
+          });
+      return record_expr_type(call, result);
+    }
     return instantiate_solved_call(call, decl, owner, decl_file, *solution,
                                    ufcs_receiver);
+  }
+
+  /// Whether any type `solution` solved to is still an open leaf.
+  auto solution_is_open(const generic_solution &solution) -> bool {
+    return std::ranges::any_of(solution.type_slots,
+                               [&](const auto &slot) -> bool {
+                                 return mentions_type_var(slot.second);
+                               });
+  }
+
+  /// Runs `name_instance` with `solution` once every type it solved to is
+  /// concrete: now, if it already is.
+  ///
+  /// Solving a call never defaults its arguments' leaves. The call's type is
+  /// known in terms of them; only the instance it names needs them settled,
+  /// so naming is the decision that waits, retried by the leaf queue as the
+  /// leaves are solved. A leaf nothing pins gets the queue's last resort, as
+  /// `demand` would have given it, but only after every later statement has
+  /// had its say: `let r = pick(5)` then `let c: int64 = r` names
+  /// `pick$int64`.
+  auto when_solution_settles(
+      const ast::func_decl &decl, const generic_solution &solution,
+      std::function<void(const generic_solution &)> name_instance) -> void {
+    if (!solution_is_open(solution)) {
+      name_instance(solution);
+      return;
+    }
+    auto open = std::vector<type_id>{};
+    for (const auto &[name, type] : solution.type_slots) {
+      if (mentions_type_var(type)) {
+        open.push_back(type);
+      }
+    }
+    defer_method_call(
+        decl.name, types_.tuple_of(std::move(open)), std::vector<type_id>{},
+        [this, &decl, solution,
+         name_instance = std::move(name_instance)](type_id) -> void {
+          if (const auto settled = settled_solution(decl, solution)) {
+            name_instance(*settled);
+          }
+        });
   }
 
   /// A template's call to a generic function, made for each instance with
@@ -9763,6 +10104,28 @@ private:
                            const generic_solution &solution,
                            instance_subst &subst)
       -> std::optional<generic_solution> {
+    return map_solution(decl, solution, [&](type_id type) -> type_id {
+      return substitute_type(type, subst);
+    });
+  }
+
+  /// `solution` with its open leaves replaced by what they settled to;
+  /// `nullopt` if one is still not concrete.
+  auto settled_solution(const ast::func_decl &decl,
+                        const generic_solution &solution)
+      -> std::optional<generic_solution> {
+    return map_solution(decl, solution, [&](type_id type) -> type_id {
+      return leaf_ctxt_.zonk(type);
+    });
+  }
+
+  /// `solution` with `map` applied to every answer, re-bound in declaration
+  /// order so its suffix names the instance; `nullopt` if an answer is still
+  /// not concrete.
+  auto map_solution(const ast::func_decl &decl,
+                    const generic_solution &solution,
+                    const std::function<type_id(type_id)> &map)
+      -> std::optional<generic_solution> {
     auto out = generic_solution{};
     for (const auto &param : decl.type_params) {
       if (param.name.empty()) {
@@ -9770,7 +10133,7 @@ private:
       }
       if (const auto found = solution.const_slots.find(param.name);
           found != solution.const_slots.end()) {
-        const auto value = substitute_type(found->second, subst);
+        const auto value = map(found->second);
         const auto entry = types_.entry(value);
         if (entry.kind != type_kind::const_value_kind) {
           return std::nullopt;
@@ -9780,7 +10143,7 @@ private:
       }
       if (const auto found = solution.type_slots.find(param.name);
           found != solution.type_slots.end()) {
-        const auto type = substitute_type(found->second, subst);
+        const auto type = map(found->second);
         if (mentions_type_param(type) || mentions_abstract_type(type)) {
           return std::nullopt;
         }
@@ -10024,27 +10387,51 @@ private:
   /// The impl's parameters have to arrive the way
   /// `check_impl_generic_method_call` delivers them: as scoped fixed
   /// bindings, not as solution slots.
+  ///
+  /// The instance is recorded as the call's callee — `callee` with its
+  /// `decl` filled in — once the solution is concrete, which may be later
+  /// (`when_solution_settles`). False when the call cannot be monomorphized
+  /// (diagnosed here) or names no instance of its own (a template's call).
   auto instantiate_hk_method(
       const ast::call_expr &call, const method_entry &method,
       std::string_view target_type_name, param_subst &bindings,
+      const resolved_callee &callee,
       const explicit_generic_args &explicit_args = {},
       const value_bindings &solved = {}, type_id self_type = k_unknown_type,
-      const type_scope *extra_fixed = nullptr) -> const ast::func_decl * {
+      const type_scope *extra_fixed = nullptr) -> bool {
     const auto &decl = *method.decl;
     const auto solution =
         solve_call(call, decl, method.owner, solved, bindings, explicit_args);
     if (!solution.has_value()) {
-      return nullptr;
+      return false;
     }
-    const auto name =
-        std::format("{}::{}{}", target_type_name, decl.name, solution->suffix);
     auto scoped_params = method.fixed_type_params;
     if (extra_fixed != nullptr) {
       scoped_params.insert(extra_fixed->begin(), extra_fixed->end());
     }
-    return find_or_check_generic_instance(call, decl, method.owner,
-                                          method.file_id, *solution, name,
-                                          &scoped_params, self_type);
+    const auto name_instance =
+        [this, &call, &method, target = std::string(target_type_name),
+         scoped_params, self_type,
+         callee](const generic_solution &settled) -> bool {
+      const auto *instance = find_or_check_generic_instance(
+          call, *method.decl, method.owner, method.file_id, settled,
+          std::format("{}::{}{}", target, method.decl->name, settled.suffix),
+          &scoped_params, self_type);
+      if (instance == nullptr) {
+        return false;
+      }
+      auto named = callee;
+      named.decl = instance;
+      resolved_callees_[&call] = named;
+      return true;
+    };
+    if (!solution_is_open(*solution)) {
+      return name_instance(*solution);
+    }
+    when_solution_settles(decl, *solution,
+                          [name_instance](const generic_solution &settled)
+                              -> void { (void)name_instance(settled); });
+    return true;
   }
 
   /// Holds a callee's `pre` conditions to account at the call site.
@@ -11509,11 +11896,10 @@ private:
       return k_error_type;
     }
 
-    // An operand tied to an unannotated parameter keeps the old answer
-    // (`unknown`): `x * 2` says `x` is numeric, not that it is `int32`, and
-    // each instance checks its own body.
-    if (leaf_ctxt_.meta_count() != 0 && !is_param_leaf(lhs_final) &&
-        !is_param_leaf(rhs)) {
+    // An unannotated parameter's leaf is no exception: `x + 1` is the type
+    // of `x`, which is what makes it the implicit generic's result type
+    // (`link_open_param_call`). The operator is chosen per instance.
+    if (leaf_ctxt_.meta_count() != 0) {
       if (mentions_type_var(lhs_final)) {
         return defer_open_arithmetic(binary, lhs_final);
       }
@@ -13598,38 +13984,46 @@ private:
       if (solved == bindings.end()) {
         return;
       }
+      // A `+`-joined list contributes from each term independently; a bare
+      // `Trait[Args]` is the one-term case of the same thing. Only a term
+      // with arguments (`iterator[T]`) has anything to solve.
+      auto terms = std::vector<const ast::named_type *>{};
+      const auto add_term = [&](const ast::type_expr *term) -> void {
+        if (term == nullptr || term->kind != ast::node_kind::named_type) {
+          return;
+        }
+        const auto &named = dynamic_cast<const ast::named_type &>(*term);
+        if (!named.path.empty() && !named.type_args.empty()) {
+          terms.push_back(&named);
+        }
+      };
+      if (bound_expr.kind == ast::node_kind::bound_type) {
+        for (const auto &term :
+             dynamic_cast<const ast::bound_type &>(bound_expr).value.terms) {
+          add_term(term.type.get());
+        }
+      } else {
+        add_term(&bound_expr);
+      }
+      if (terms.empty()) {
+        return;
+      }
       // The impl that answers the bound is chosen by the subject's head, so
       // a head still open (the result of a call waiting on its receiver) is
       // owed its answer now.
       if (solved->second != k_unknown_type) {
         solved->second = demand_shape(solved->second);
       }
+      // Only the head has to be known: `list_iter[?a]` answers
+      // `iterator[&?a]`, and the leaf travels on into `T`.
       if (types_.is_unknown(solved->second) ||
-          mentions_abstract_type(solved->second)) {
+          mentions_abstract_type(solved->second,
+                                 /*leaves_are_answers=*/true)) {
         return;
-      }
-      // A `+`-joined list contributes from each term independently; a bare
-      // `Trait[Args]` is the one-term case of the same thing.
-      auto terms = std::vector<const ast::type_expr *>{};
-      if (bound_expr.kind == ast::node_kind::bound_type) {
-        for (const auto &term :
-             dynamic_cast<const ast::bound_type &>(bound_expr).value.terms) {
-          if (term.type != nullptr) {
-            terms.push_back(term.type.get());
-          }
-        }
-      } else {
-        terms.push_back(&bound_expr);
       }
 
       for (const auto *term : terms) {
-        if (term->kind != ast::node_kind::named_type) {
-          continue;
-        }
-        const auto &named = dynamic_cast<const ast::named_type &>(*term);
-        if (named.path.empty() || named.type_args.empty()) {
-          continue;
-        }
+        const auto &named = *term;
         auto concrete_args = trait_args_of_impl_for(strip_refs(solved->second),
                                                     named.path.back());
         if (!concrete_args.has_value()) {
@@ -14040,7 +14434,7 @@ private:
     auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
-                              /*may_default=*/true);
+                              /*bind_open=*/true);
     // A generic method of a generic block (`def map[U]` in `extend[T]
     // box[T]`) inherits `T` from the receiver: it rides into the instance as
     // a fixed binding, exactly as the static path delivers it.
@@ -14074,18 +14468,15 @@ private:
                                all);
     }
     const auto impl_scope = bindings_by_name(impl_bindings);
-    const auto *instance = instantiate_hk_method(
-        call, method, target_type_name, bindings, explicit_args, solved,
-        receiver_type, &impl_scope);
-    if (instance == nullptr) {
+    if (!instantiate_hk_method(
+            call, method, target_type_name, bindings,
+            resolved_callee{.owner_module = method.owner->module_name,
+                            .impl_target_type = "",
+                            .receiver = &receiver,
+                            .trait_name = method.trait_name},
+            explicit_args, solved, receiver_type, &impl_scope)) {
       return std::nullopt;
     }
-    resolved_callees_[&call] =
-        resolved_callee{.decl = instance,
-                        .owner_module = method.owner->module_name,
-                        .impl_target_type = "",
-                        .receiver = &receiver,
-                        .trait_name = method.trait_name};
     return substitute_solved(signature_return_type(*method.decl, method.owner),
                              bindings);
   }
@@ -14339,6 +14730,38 @@ private:
         source_location{.file_id = file_id_, .span = method.decl->span});
     check_call_preconditions(call, *method.decl, params);
 
+    // A method with an unannotated parameter is elaborated once its body has
+    // said what the parameter is, as any such call is: its instance needs
+    // both the receiver's bindings and, if the body left the parameter
+    // open, this call's arguments (`resolve_open_param_calls`).
+    if (has_unannotated_params(*method.decl) &&
+        !passes_template_param(params)) {
+      auto call_params = std::vector<type_id>{k_unknown_type};
+      for (const auto &param : params) {
+        call_params.push_back(param.type);
+      }
+      pending_open_param_calls_.push_back(pending_open_param_call{
+          .call = &call,
+          .decl = method.decl,
+          .owner = method.owner,
+          .decl_file = method.file_id,
+          .call_params = std::move(call_params),
+          .file = file_id_,
+          .module = module_,
+          .receiver = &receiver,
+          .method = method,
+          .target_type_name = std::string(receiver_entry.name),
+          .self_type = strip_refs(receiver_type),
+          .block_generic = true,
+          .probe = probing_decl_});
+      mint_open_result(*method.decl, call.span);
+      return open_call_result(
+          call, substitute_solved(signature_return_type(*method.decl,
+                                                        method.owner,
+                                                        method.block_type_params),
+                                  bindings));
+    }
+
     // Phase 8: the arguments above are what pin a receiver that was still
     // open — `out.push(i)` on a `list[?a]` solves `?a` from `i`. Checking the
     // arguments is what ran the solver, so everything named from the receiver
@@ -14376,30 +14799,8 @@ private:
       defer_method_call(
           method.decl->name, receiver_type, std::vector<type_id>{},
           [this, &call, &method, &receiver](type_id settled) -> void {
-            // The settled receiver's own entry and method, not the open
-            // one's: `list[?a]` and `list[int32]` are different entries with
-            // different method tables.
-            if (mentions_type_param(settled)) {
-              defer_impl_method_call(call, settled);
-              return;
-            }
-            const auto &entry = types_.entry(settled);
-            const auto *found = find_method(entry, method.decl->name, settled);
-            if (found == nullptr) {
-              return;
-            }
-            auto bindings = param_subst{};
-            match_params(found->impl_target_pattern, settled, bindings);
-            solve_impl_value_params(*found, settled, bindings);
-            auto scoped = found->fixed_type_params;
-            scoped.merge(bindings_by_name(bindings));
-            auto solution = generic_solution{};
-            carry_impl_value_slots(*found, bindings, solution);
-            solution.suffix =
-                std::format("${}", mangle_type_for_instance(settled));
-            (void)finish_impl_generic_method_call(call, *found, entry.name,
-                                                  receiver, settled, bindings,
-                                                  scoped, solution);
+            name_impl_method_instance(call, method.decl->name, receiver,
+                                      settled);
           });
       return substitute_solved(signature_return_type(*method.decl, method.owner,
                                                      method.block_type_params),
@@ -14560,21 +14961,20 @@ private:
     // type back and unify it too, then state the return type under the
     // full solution.
     solve_from_argument_types(call, rest, bindings, /*ufcs_receiver=*/nullptr,
-                              /*may_default=*/true);
+                              /*bind_open=*/true);
 
     // A generic method has no compiled form of its own — resolve the call
     // against a monomorphized instance (`option::bind$int32$str`) so both
     // backends see only concrete types. A non-generic method resolves
     // directly, exactly like a `self`-taking method does.
     if (!method.decl->type_params.empty()) {
-      if (const auto *instance = instantiate_hk_method(
-              call, method, target_type_name, bindings, explicit_args)) {
-        resolved_callees_[&call] =
-            resolved_callee{.decl = instance,
-                            .owner_module = method.owner->module_name,
-                            .impl_target_type = "",
-                            .receiver = &receiver};
-      } else if (current_template_ != nullptr) {
+      if (!instantiate_hk_method(
+              call, method, target_type_name, bindings,
+              resolved_callee{.owner_module = method.owner->module_name,
+                              .impl_target_type = "",
+                              .receiver = &receiver},
+              explicit_args) &&
+          current_template_ != nullptr) {
         // `o.map(f)` on an `option[T]`: the instance is each instance's.
         defer_to_instances(
             call,
@@ -14596,14 +14996,12 @@ private:
               if (const auto *field = method_field_of(clone, clone_args)) {
                 (void)field;
               }
-              if (const auto *instance = instantiate_hk_method(
-                      clone, method, target, solved, clone_args)) {
-                resolved_callees_[&clone] =
-                    resolved_callee{.decl = instance,
-                                    .owner_module = method.owner->module_name,
-                                    .impl_target_type = "",
-                                    .receiver = clone_of(subst, &receiver)};
-              }
+              (void)instantiate_hk_method(
+                  clone, method, target, solved,
+                  resolved_callee{.owner_module = method.owner->module_name,
+                                  .impl_target_type = "",
+                                  .receiver = clone_of(subst, &receiver)},
+                  clone_args);
             });
       }
     } else {
@@ -14912,35 +15310,19 @@ private:
                                   .call_params = std::move(param_types),
                                   .file = file_id_,
                                   .module = module_,
-                                  .receiver = field.object.get()});
+                                  .receiver = field.object.get(),
+                                  .probe = probing_decl_});
       mint_open_result(decl, call.span);
     }
 
+    // A receiver still open (`xs.iter()` on a `list[?a]` a later statement
+    // will pin) names its instance once it settles, like any generic call
+    // (`when_solution_settles`).
     if (is_generic_template(decl) && is_free_function(decl, candidate.owner)) {
-      // A receiver still open after the arguments have had their say —
-      // `xs.iter()` on a `list[?a]` that a later statement will pin. There
-      // is no instance to name yet (`iter$list___` is a function nothing
-      // compiles), and defaulting the receiver now would answer before the
-      // statement that was about to say otherwise. The call's *type* is
-      // already known in terms of the leaf (`T := ?a`, so the result is
-      // `iter[?a]`), so only the elaboration waits.
-      if (mentions_type_var(settle(receiver_type))) {
-        defer_method_call(
-            decl.name, settle(receiver_type), std::vector<type_id>{},
-            [this, &call, &decl, candidate, solved, params,
-             &field](type_id /*settled*/) -> void {
-              (void)instantiate_generic_function(
-                  call, decl, candidate.owner, candidate.file_id, solved,
-                  params, /*explicit_args=*/{}, field.object.get());
-            });
-        return substitute_solved(signature_return_type(decl, candidate.owner),
-                                 bindings);
-      }
       if (const auto result = instantiate_generic_function(
               call, decl, candidate.owner, candidate.file_id, solved, params,
               /*explicit_args=*/{}, field.object.get())) {
         return *result;
-      } else {
       }
     }
 
@@ -15784,7 +16166,7 @@ private:
     auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
-                              /*may_default=*/true);
+                              /*bind_open=*/true);
 
     // A `static def` carried by a generic impl block. Checked before the
     // method's own `type_params` are consulted, because the parameter that
@@ -15892,17 +16274,14 @@ private:
                                                      method->block_type_params),
                                bindings);
     }
-    const auto *instance =
-        instantiate_hk_method(call, *method, target_name, bindings,
-                              /*explicit_args=*/{}, solved,
-                              /*self_type=*/k_unknown_type, &impl_scope);
-    if (instance == nullptr) {
+    if (!instantiate_hk_method(
+            call, *method, target_name, bindings,
+            resolved_callee{.owner_module = method->owner->module_name,
+                            .impl_target_type = ""},
+            /*explicit_args=*/{}, solved,
+            /*self_type=*/k_unknown_type, &impl_scope)) {
       return k_error_type;
     }
-    resolved_callees_[&call] =
-        resolved_callee{.decl = instance,
-                        .owner_module = method->owner->module_name,
-                        .impl_target_type = ""};
     return substitute_solved(
         signature_return_type(*method->decl, method->owner), bindings);
   }
@@ -15970,7 +16349,7 @@ private:
     auto bindings = param_subst{};
     solve_from_argument_types(call, params, bindings,
                               /*ufcs_receiver=*/nullptr,
-                              /*may_default=*/true);
+                              /*bind_open=*/true);
     const auto return_type = [&] -> type_id {
       return substitute_solved(signature_return_type(*method.decl, method.owner,
                                                      method.block_type_params),
@@ -16179,18 +16558,17 @@ private:
             auto bindings = param_subst{};
             solve_from_argument_types(call, params, bindings,
                                       /*ufcs_receiver=*/nullptr,
-                                      /*may_default=*/true);
+                                      /*bind_open=*/true);
             // Same instance discipline as `check_receiver_call`: a generic
             // associated function resolves to its monomorphized copy.
             if (!method->decl->type_params.empty()) {
-              if (const auto *instance = instantiate_hk_method(
+              if (!instantiate_hk_method(
                       call, *method, root.front(), bindings,
-                      /*explicit_args=*/{}, solved)) {
-                resolved_callees_[&call] =
-                    resolved_callee{.decl = instance,
-                                    .owner_module = method->owner->module_name,
-                                    .impl_target_type = ""};
-              } else if (current_template_ != nullptr) {
+                      resolved_callee{
+                          .owner_module = method->owner->module_name,
+                          .impl_target_type = ""},
+                      /*explicit_args=*/{}, solved) &&
+                  current_template_ != nullptr) {
                 // `option.pure(x)` with `x: T`: each instance solves it for
                 // its own `T`, from the arguments' recorded types.
                 defer_to_instances(
@@ -16204,13 +16582,12 @@ private:
                       solve_values_from_argument_types(clone, params, values);
                       auto types = param_subst{};
                       solve_from_argument_types(clone, params, types);
-                      if (const auto *instance = instantiate_hk_method(
-                              clone, *method, target, types, {}, values)) {
-                        resolved_callees_[&clone] = resolved_callee{
-                            .decl = instance,
-                            .owner_module = method->owner->module_name,
-                            .impl_target_type = ""};
-                      }
+                      (void)instantiate_hk_method(
+                          clone, *method, target, types,
+                          resolved_callee{
+                              .owner_module = method->owner->module_name,
+                              .impl_target_type = ""},
+                          {}, values);
                     });
               }
             } else {
@@ -22998,7 +23375,9 @@ private:
                                 .literal_begin = pending_leaf_literals_.size(),
                                 .call_begin = pending_method_calls_.size()};
     probe_capture_ = &held;
+    probing_decl_ = &decl;
     check_function_impl(decl, at_module_scope);
+    probing_decl_ = nullptr;
     probe_capture_ = nullptr;
     mark.literal_end = pending_leaf_literals_.size();
     mark.call_end = pending_method_calls_.size();
@@ -23016,6 +23395,8 @@ private:
     file_id_type file = 0;
   };
   std::vector<diagnostic> *probe_capture_ = nullptr;
+  /// The function being probed, while its body is checked.
+  const ast::func_decl *probing_decl_ = nullptr;
   std::vector<param_probe> param_probes_;
 
   /// Emits the held diagnostics of every probed function whose parameters
@@ -23474,9 +23855,14 @@ private:
         }
       }
       // An answer still open (`return forever()`) is no answer: the function
-      // keeps no inferred return type, and lowering says so.
+      // keeps no inferred return type, and lowering says so. One open on the
+      // parameters is the implicit generic's result type, kept for its
+      // signature (`classify_param_decls`).
       inferred_returns_[&decl] =
           mentions_type_var(result) ? k_unknown_type : result;
+      if (mentions_type_var(result)) {
+        open_returns_[&decl] = result;
+      }
     }
     inferring_return_ = saved_inferring;
     inferred_return_ = saved_inferred;
@@ -23865,6 +24251,49 @@ private:
     }
   }
 
+  /// An instance's call to a generic block's method with an unannotated
+  /// parameter: queued like the template's own call would have been, with
+  /// the types the instance recorded for its arguments, so it names the
+  /// instance for this receiver and these arguments.
+  auto replay_open_method_call(const ast::call_expr &call,
+                               const method_entry &method,
+                               std::string_view receiver_name,
+                               const ast::expr &receiver, type_id target)
+      -> void {
+    const auto params = signature_params(*method.decl, method.owner,
+                                         /*skip_self=*/true);
+    auto call_params = std::vector<type_id>{k_unknown_type};
+    const auto mapping = call_argument_mappings_.find(&call);
+    for (size_t i = 0; i < params.size(); ++i) {
+      auto type = k_unknown_type;
+      if (mapping != call_argument_mappings_.end() &&
+          i < mapping->second.args_by_param.size() &&
+          mapping->second.args_by_param[i] != nullptr) {
+        if (const auto found =
+                node_types_.find(mapping->second.args_by_param[i]);
+            found != node_types_.end()) {
+          type = settle(found->second);
+        }
+      }
+      call_params.push_back(type);
+    }
+    pending_open_param_calls_.push_back(pending_open_param_call{
+        .call = &call,
+        .decl = method.decl,
+        .owner = method.owner,
+        .decl_file = method.file_id,
+        .call_params = std::move(call_params),
+        .file = file_id_,
+        .module = module_,
+        .receiver = &receiver,
+        .method = method,
+        .target_type_name = std::string(receiver_name),
+        .self_type = target,
+        .block_generic = true,
+        // The template already stated the call's types; this names only.
+        .typed = true});
+  }
+
   /// Resolves a method call whose receiver was a type parameter in the
   /// template and is `target` in this instance, from the types the template
   /// recorded for its arguments — the elaboration half of a call, without
@@ -23899,17 +24328,18 @@ private:
           solve_impl_value_params(*method, target, impl_bindings);
         }
         const auto impl_scope = bindings_by_name(impl_bindings);
-        const auto *instance =
-            instantiate_hk_method(call, *method, entry.name, bindings,
-                                  explicit_args, solved, target, &impl_scope);
-        if (instance != nullptr) {
-          resolved_callees_[&call] =
-              resolved_callee{.decl = instance,
-                              .owner_module = method->owner->module_name,
-                              .impl_target_type = "",
-                              .receiver = &receiver,
-                              .trait_name = method->trait_name};
-        }
+        (void)instantiate_hk_method(
+            call, *method, entry.name, bindings,
+            resolved_callee{.owner_module = method->owner->module_name,
+                            .impl_target_type = "",
+                            .receiver = &receiver,
+                            .trait_name = method->trait_name},
+            explicit_args, solved, target, &impl_scope);
+        return;
+      }
+      if (impl_needs_instance(*method, entry) &&
+          has_unannotated_params(*method->decl)) {
+        replay_open_method_call(call, *method, entry.name, receiver, target);
         return;
       }
       if (impl_needs_instance(*method, entry)) {
@@ -23961,15 +24391,11 @@ private:
       bindings.insert(impl_bindings.begin(), impl_bindings.end());
     }
     const auto impl_scope = bindings_by_name(impl_bindings);
-    const auto *instance = instantiate_hk_method(
-        call, *method, target_name, bindings, explicit_args, solved,
-        k_unknown_type, &impl_scope);
-    if (instance != nullptr) {
-      resolved_callees_[&call] =
-          resolved_callee{.decl = instance,
-                          .owner_module = method->owner->module_name,
-                          .impl_target_type = ""};
-    }
+    (void)instantiate_hk_method(
+        call, *method, target_name, bindings,
+        resolved_callee{.owner_module = method->owner->module_name,
+                        .impl_target_type = ""},
+        explicit_args, solved, k_unknown_type, &impl_scope);
   }
 
   /// "no method `m` on `T`", with what *is* known about `T` and — when some
