@@ -5610,17 +5610,54 @@ private:
       return std::nullopt;
     }
     const auto &entry = types_.entry(id);
+    const auto is_prelude_sum =
+        entry.kind == type_kind::builtin_generic_kind &&
+        ((entry.name == "option" && entry.args.size() == 1) ||
+         (entry.name == "result" && entry.args.size() == 2));
     if (entry.kind != type_kind::struct_kind &&
-        entry.kind != type_kind::sum_kind) {
+        entry.kind != type_kind::sum_kind && !is_prelude_sum) {
       return std::nullopt;
     }
     if (!visiting.insert(id).second) {
       return std::nullopt;
     }
     auto plan = drop_plan{.own_drop = resolve_own_drop(entry, id)};
-    // Sum-type variant payloads are deliberately not recursed into here —
-    // spec/todo.md item 6's "sum-type field-wise drop" gap. A sum type only
-    // drops via an explicit `impl drop` on the sum type itself, above.
+    if (is_prelude_sum) {
+      // `option`/`result` have no declaration to read variants from; their
+      // payloads are the generic arguments. `some`/`ok` hold `args[0]`,
+      // `err` holds `args[1]`.
+      const auto variants =
+          entry.name == "option"
+              ? std::vector<std::pair<std::string, type_id>>{{"some",
+                                                              entry.args[0]}}
+              : std::vector<std::pair<std::string, type_id>>{
+                    {"ok", entry.args[0]}, {"err", entry.args[1]}};
+      for (const auto &[variant, payload] : variants) {
+        if (resolve_drop_plan(payload, visiting).has_value()) {
+          plan.variant_drops.push_back(
+              variant_drop{.variant = variant,
+                           .arity = 1,
+                           .droppable_payloads = {{0, payload}}});
+        }
+      }
+    }
+    if (entry.kind == type_kind::sum_kind) {
+      if (const auto *variants = sum_variants_of(entry)) {
+        for (const auto &variant : *variants) {
+          auto vd = variant_drop{.variant = variant.name,
+                                 .arity = variant.payload_types.size()};
+          const auto payloads = variant_payload_types(entry, variant);
+          for (size_t i = 0; i < payloads.size(); ++i) {
+            if (resolve_drop_plan(payloads[i], visiting).has_value()) {
+              vd.droppable_payloads.emplace_back(i, payloads[i]);
+            }
+          }
+          if (!vd.droppable_payloads.empty()) {
+            plan.variant_drops.push_back(std::move(vd));
+          }
+        }
+      }
+    }
     if (entry.kind == type_kind::struct_kind) {
       if (const auto *fields = struct_fields_of(entry)) {
         for (const auto &field : *fields) {
@@ -5633,7 +5670,8 @@ private:
       }
     }
     visiting.erase(id);
-    if (!plan.own_drop.has_value() && plan.droppable_fields.empty()) {
+    if (!plan.own_drop.has_value() && plan.droppable_fields.empty() &&
+        plan.variant_drops.empty()) {
       return std::nullopt;
     }
     return plan;

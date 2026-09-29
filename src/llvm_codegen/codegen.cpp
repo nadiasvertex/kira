@@ -866,7 +866,18 @@ private:
         builder_.CreateRetVoid();
       } else {
         const auto &last = *stmts.back();
-        if (last.kind == hir_node_kind::hir_expr_stmt) {
+        // A trailing unknown-typed `if`/`match` (a synthesized scope-exit
+        // drop of a sum-type value ends a body this way) carries no value:
+        // compile it as a statement, like `compile_stmt` does mid-body.
+        const auto valueless_tail =
+            return_is_unit_ && last.kind == hir_node_kind::hir_expr_stmt &&
+            types_.is_unknown(
+                dynamic_cast<const hir::hir_expr_stmt &>(last).expr->type) &&
+            (dynamic_cast<const hir::hir_expr_stmt &>(last).expr->kind ==
+                 hir_node_kind::hir_if ||
+             dynamic_cast<const hir::hir_expr_stmt &>(last).expr->kind ==
+                 hir_node_kind::hir_match);
+        if (last.kind == hir_node_kind::hir_expr_stmt && !valueless_tail) {
           const auto &expr_stmt =
               dynamic_cast<const hir::hir_expr_stmt &>(last);
           if (expr_stmt.expr->kind == hir_node_kind::hir_call) {

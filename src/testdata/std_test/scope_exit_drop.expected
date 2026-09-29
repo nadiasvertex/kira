@@ -30,6 +30,26 @@ drop 71
 drop 70
 shadowed by int 5
 drop 72
+sum body done
+drop 91
+drop 90
+option body done
+drop 92
+sum moved body done
+drop 93
+drop 100
+tail_fn 100
+drop 102
+drop 101
+tail_if 1102
+drop 101
+tail_if 101
+drop 103
+tail_match 104
+drop 103
+tail_match 103
+drop 104
+tail_param 104
 drop 80
 returned 80
 main done

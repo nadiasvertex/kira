@@ -568,9 +568,17 @@ auto renderer::run() -> std::string {
       }
       fields += std::format("{}: {}", name, ty(field_type));
     }
+    auto variants = std::string{};
+    for (const auto &vd : plan.variant_drops) {
+      for (const auto &[index, payload_type] : vd.droppable_payloads) {
+        variants += std::format("{}{}.{}: {}", variants.empty() ? "" : ", ",
+                                vd.variant, index, ty(payload_type));
+      }
+    }
     drops.push_back(std::format(
-        "{} own={} fields=[{}]", ty(type),
-        plan.own_drop.has_value() ? callee_text(*plan.own_drop) : "-", fields));
+        "{} own={} fields=[{}]{}", ty(type),
+        plan.own_drop.has_value() ? callee_text(*plan.own_drop) : "-", fields,
+        variants.empty() ? "" : std::format(" variants=[{}]", variants)));
   }
   text_section("drop_plans", std::move(drops));
 

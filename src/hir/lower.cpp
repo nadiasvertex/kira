@@ -489,6 +489,15 @@ private:
   [[nodiscard]] auto emit_scope_exit_drops(const void *key,
                                            ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
+  /// Like `emit_scope_exit_drops`, for a scope whose last statement is a
+  /// value: that value is evaluated into a temporary first, the drops run,
+  /// and the temporary becomes the scope's tail again. Without it the drops
+  /// would replace the value as the structural tail, and both backends read a
+  /// block's value off `stmts.back()`. A tail whose type is unknown or
+  /// `unit`, or a scope with no tail expression, takes the plain path.
+  [[nodiscard]] auto emit_tail_scope_exit_drops(const void *key,
+                                                ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
   /// The same, for a `break`/`continue`/bare `return` leaving early: every
   /// scope it passes through, innermost first.
   [[nodiscard]] auto emit_jump_drops(const ast::node &node,
@@ -2175,6 +2184,55 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
       return sub;
     }
   }
+  if (!plan.variant_drops.empty()) {
+    // A sum value: match on the active variant and drop only its payload.
+    // The subject is the place itself, so nothing is copied out first.
+    const auto subject_symbol = mint_symbol();
+    const place_fn subject_place = [type, subject_symbol]() -> ptr<hir_expr> {
+      return {make<hir_local_ref>(source_span::dummy(), type, subject_symbol,
+                                  std::string("<drop subject>"))};
+    };
+    auto arms = std::vector<hir_match_arm>{};
+    for (const auto &vd : plan.variant_drops) {
+      auto body_stmts = ptr_vec<hir_node>{};
+      for (const auto &[index, payload_type] : vd.droppable_payloads) {
+        const auto variant_name = vd.variant;
+        const auto slot = index;
+        const place_fn payload_place = [subject_place, variant_name, slot,
+                                        payload_type]() -> ptr<hir_expr> {
+          return {make<hir_variant_payload>(source_span::dummy(), payload_type,
+                                            subject_place(), variant_name,
+                                            slot)};
+        };
+        if (auto sub =
+                build_drop_calls(payload_place, payload_type, span, body_stmts);
+            !sub.has_value()) {
+          return sub;
+        }
+      }
+      auto pattern_args = ptr_vec<hir_pattern>{};
+      for (size_t i = 0; i < vd.arity; ++i) {
+        pattern_args.push_back(
+            ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
+      }
+      auto pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+          span, vd.variant, std::move(pattern_args)));
+      pattern->subject_type = type;
+      arms.push_back(
+          hir_match_arm{.pattern = std::move(pattern),
+                        .guard = nullptr,
+                        .body = make<hir_block>(span, k_unknown_type,
+                                                std::move(body_stmts))});
+    }
+    arms.push_back(hir_match_arm{
+        .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(span)),
+        .guard = nullptr,
+        .body = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{})});
+    auto match =
+        ptr<hir_expr>(make<hir_match>(span, k_unknown_type, make_receiver(),
+                                      subject_symbol, std::move(arms)));
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(span, std::move(match))));
+  }
   return {};
 }
 
@@ -2211,6 +2269,40 @@ auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
       return result;
     }
   }
+  return {};
+}
+
+auto lowerer::emit_tail_scope_exit_drops(const void *key,
+                                         ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const auto scheduled = drop_schedule_.exits.find(key);
+  if (scheduled == drop_schedule_.exits.end() || scheduled->second.empty()) {
+    return {};
+  }
+  const auto has_value_tail =
+      !stmts.empty() && stmts.back()->kind == hir_node_kind::hir_expr_stmt &&
+      [&] {
+        const auto &tail = dynamic_cast<const hir_expr_stmt &>(*stmts.back());
+        return tail.expr->type != k_unknown_type &&
+               !checked_.types.is_unit(tail.expr->type);
+      }();
+  if (!has_value_tail) {
+    return emit_scope_exit_drops(key, stmts);
+  }
+  auto tail = std::move(dynamic_cast<hir_expr_stmt &>(*stmts.back()).expr);
+  const auto tail_span = tail->span;
+  const auto tail_type = tail->type;
+  stmts.pop_back();
+  const auto temp = mint_symbol();
+  const auto temp_name = std::format("<tail value {}>", temp);
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(tail_span, temp, temp_name, std::move(tail))));
+  if (auto result = emit_scope_exit_drops(key, stmts); !result.has_value()) {
+    return result;
+  }
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      tail_span, ptr<hir_expr>(make<hir_local_ref>(tail_span, tail_type, temp,
+                                                   temp_name)))));
   return {};
 }
 
@@ -3297,16 +3389,19 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
       lowered_stmts.push_back(std::move(node));
     }
   }
-  // See `always_exits`'s doc comment for why both conditions are needed:
-  // appending anything after an unconditional jump is invalid, and
-  // appending anything after a real (non-unit) tail value would silently
-  // replace it, since both backends read a value-typed block's tail
-  // structurally off `stmts.back()`.
+  // See `always_exits`'s doc comment: appending anything after an
+  // unconditional jump is invalid. A real (non-unit) tail value is different:
+  // appending after it would replace it, since both backends read a
+  // value-typed block's tail structurally off `stmts.back()`, so
+  // `emit_tail_scope_exit_drops` evaluates it into a temporary first.
   const auto safe_to_append_drops =
-      (lowered_stmts.empty() || !always_exits(*lowered_stmts.back())) &&
-      (type == k_unknown_type || checked_.types.is_unit(type));
+      lowered_stmts.empty() || !always_exits(*lowered_stmts.back());
   if (safe_to_append_drops) {
-    if (auto result = emit_scope_exit_drops(&stmts, lowered_stmts);
+    const auto value_typed =
+        type != k_unknown_type && !checked_.types.is_unit(type);
+    if (auto result = value_typed
+                          ? emit_tail_scope_exit_drops(&stmts, lowered_stmts)
+                          : emit_scope_exit_drops(&stmts, lowered_stmts);
         !result.has_value()) {
       pop_scope();
       return std::unexpected(result.error());
@@ -5616,22 +5711,19 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // Parameters live in this function's own outer scope, not inside
   // `decl.body_stmts`'s nested one `lower_block` already handled above — so
   // their drops (if any) are this function's own responsibility, appended
-  // here, right before that outer scope closes. Safe under the same rule
-  // `lower_block` uses (see `always_exits`'s doc comment): skip whenever the
-  // body's last statement already exits unconditionally (an explicit
-  // `return`, including the one the fallthrough-tail-value promotion above
-  // may have just synthesized), *and* whenever the function's own return
-  // type carries a real value onward — a body ending `unit` no differently
-  // than falling off the end (e.g. `file_handle::close`'s trailing `match`
-  // yields its `result[...]`, not `unit`) would otherwise have a unit-typed
-  // drop call appended as its new structural tail, silently replacing the
-  // real return value the same way `lower_block`'s doc comment describes.
+  // here, right before that outer scope closes. Skipped whenever the body's
+  // last statement already exits unconditionally (an explicit `return`,
+  // including the one the fallthrough-tail-value promotion above may have
+  // just synthesized). A value-returning function's tail is evaluated into a
+  // temporary first, as in `lower_block`.
   if (body.has_value() && !decl.modifiers.is_generator &&
       ((*body)->stmts.empty() || !always_exits(*(*body)->stmts.back())) &&
-      return_type.has_value() &&
-      (*return_type == k_unknown_type ||
-       checked_.types.is_unit(*return_type))) {
-    if (auto result = emit_scope_exit_drops(&decl, (*body)->stmts);
+      return_type.has_value()) {
+    const auto value_typed =
+        *return_type != k_unknown_type && !checked_.types.is_unit(*return_type);
+    if (auto result = value_typed
+                          ? emit_tail_scope_exit_drops(&decl, (*body)->stmts)
+                          : emit_scope_exit_drops(&decl, (*body)->stmts);
         !result.has_value()) {
       pop_scope();
       post_contracts_.clear();

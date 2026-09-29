@@ -114,6 +114,48 @@ def return_borrowing_local() -> int32:
     let a = noisy { id: 80 }
     return id_of(a)
 
+# Sum types drop the active variant's payload; other variants drop nothing.
+type slot = @held(noisy) | @pair(int32, noisy) | @empty
+
+def sum_active_variant() -> unit:
+    let a: slot = @held(noisy { id: 90 })
+    let b: slot = @pair(7, noisy { id: 91 })
+    let c: slot = @empty
+    println("sum body done")
+
+def sum_in_option() -> unit:
+    let o: option[noisy] = @some(noisy { id: 92 })
+    let n: option[noisy] = @none
+    println("option body done")
+
+def sum_moved_out() -> unit:
+    let o: option[noisy] = @some(noisy { id: 93 })
+    let p = o
+    println("sum moved body done")
+
+# A scope whose tail is a value still drops its locals, after the tail has
+# been evaluated (so a tail that only borrows a local reads it first).
+def tail_fn() -> int32:
+    let a = noisy { id: 100 }
+    id_of(a)
+
+def tail_if(flag: bool) -> int32:
+    let a = noisy { id: 101 }
+    if flag:
+        let b = noisy { id: 102 }
+        id_of(b) + 1000
+    else:
+        id_of(a)
+
+def tail_match(o: option[int32]) -> int32:
+    let a = noisy { id: 103 }
+    match o:
+        @some(x) => x + id_of(a)
+        @none => id_of(a)
+
+def tail_param(n: noisy) -> int32:
+    n.id
+
 def main() -> unit:
     reverse_order()
     moved_from_never_drops()
@@ -125,5 +167,14 @@ def main() -> unit:
     early_break()
     shadowed_in_same_scope()
     shadowed_by_plain_value()
+    sum_active_variant()
+    sum_in_option()
+    sum_moved_out()
+    println("tail_fn {tail_fn()}")
+    println("tail_if {tail_if(true)}")
+    println("tail_if {tail_if(false)}")
+    println("tail_match {tail_match(@some(1))}")
+    println("tail_match {tail_match(@none)}")
+    println("tail_param {tail_param(noisy { id: 104 })}")
     println("returned {return_borrowing_local()}")
     println("main done")

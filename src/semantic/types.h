@@ -587,14 +587,22 @@ struct array_literal_conversion {
 /// `impl drop`, if it has one; `droppable_fields` are the struct fields (in
 /// declaration order) that are themselves droppable, whether or not this
 /// type has an `own_drop` of its own — the spec's implicit field-wise rule
-/// applies regardless. Sum types never populate `droppable_fields` (payload
-/// recursion is not implemented — a sum type only drops via an explicit
-/// `impl drop` on the sum type itself). A `type_id` absent from
+/// applies regardless. A sum type instead lists `variant_drops`: for each
+/// variant with a droppable payload slot, that variant's arity and the
+/// droppable slots, so lowering can match on the active variant and drop
+/// only that variant's payload. A `type_id` absent from
 /// `checked_types::drop_plans` is not droppable at all; that absence is the
 /// scope-exit drop pass's only "should I even look at this local" test.
+struct variant_drop {
+  std::string variant;
+  size_t arity = 0; ///< Total payload slots, droppable or not.
+  std::vector<std::pair<size_t, type_id>> droppable_payloads;
+};
+
 struct drop_plan {
   std::optional<resolved_callee> own_drop;
   std::vector<std::pair<std::string, type_id>> droppable_fields;
+  std::vector<variant_drop> variant_drops; ///< Sum types only.
 };
 
 /// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`

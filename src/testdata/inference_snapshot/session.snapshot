@@ -31561,7 +31561,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (70)
+## drop_plans (72)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -31631,6 +31631,8 @@ list_into_iter[int64] own=- fields=[src: list[int64]]
 list_into_iter[money] own=- fields=[src: list[money]]
 list_into_iter[test_case] own=- fields=[src: list[test_case]]
 list_into_iter[test_suite] own=- fields=[src: list[test_suite]]
+option[test_suite] own=- fields=[] variants=[some.0: test_suite]
+result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
 test_suite own=- fields=[cases: list[test_case]]
 
 ## borrow_bearing_types (1440)
