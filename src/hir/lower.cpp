@@ -695,7 +695,8 @@ private:
       source_span span, const ast::expr &iterable, type_id iterable_type,
       const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-          &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+          &inner_stmts,
+      bool owns_var = false) -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// The user-`iterator[T]` shape: `for x in it: ...` where `it`'s type
   /// implements `std.iter.iterator[T]`. Structurally identical to
   /// `lower_generator_loop` — evaluate the handle once, then loop `while let
@@ -708,7 +709,8 @@ private:
       const ast::binding_pattern &loop_var,
       const semantic::iterator_loop_dispatch &dispatch,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-          &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+          &inner_stmts,
+      bool owns_var = false) -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// The two halves of a desugared `for`: the body proper, and the index
   /// increment that must run even when the body ends in a `continue`.
   struct for_loop_body {
@@ -4246,6 +4248,11 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (!iterable_type.has_value()) {
     return std::unexpected(iterable_type.error());
   }
+  // The ownership checker asks the same question, so the variable is
+  // dropped exactly where its drop schedule says.
+  const auto owns_element =
+      plain_var != nullptr &&
+      semantic::ownership::for_variable_owns(for_stmt, checked_);
   const auto &iterable_entry = checked_.types.entry(*iterable_type);
   if (iterable_entry.kind == type_kind::builtin_generic_kind &&
       iterable_entry.name == "option") {
@@ -4255,13 +4262,14 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (iterable_entry.kind == type_kind::builtin_generic_kind &&
       iterable_entry.name == "generator") {
     return lower_generator_loop(for_stmt.span, *for_stmt.iterable,
-                                *iterable_type, loop_var, inner_stmts);
+                                *iterable_type, loop_var, inner_stmts,
+                                owns_element);
   }
   if (const auto it = checked_.for_iterator_dispatches.find(&for_stmt);
       it != checked_.for_iterator_dispatches.end()) {
     return lower_iterator_loop(for_stmt.span, *for_stmt.iterable,
                                *iterable_type, loop_var, it->second,
-                               inner_stmts);
+                               inner_stmts, owns_element);
   }
   {
     auto stripped = *iterable_type;
@@ -4723,7 +4731,8 @@ auto lowerer::lower_generator_loop(
     source_span span, const ast::expr &iterable, type_id iterable_type,
     const ast::binding_pattern &loop_var,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-        &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+        &inner_stmts,
+    bool owns_var) -> std::expected<ptr_vec<hir_node>, lowering_error> {
   const auto &entry = checked_.types.entry(iterable_type);
   const auto element_type = entry.args.empty() ? k_unknown_type : entry.args[0];
   if (element_type == k_unknown_type || element_type == k_error_type) {
@@ -4764,7 +4773,9 @@ auto lowerer::lower_generator_loop(
                                         std::string("<for generator>")))));
 
   push_scope();
-  const auto loop_var_symbol = declare_local(loop_var.name, element_type);
+  const auto loop_var_symbol = declare_local(
+      loop_var.name, element_type,
+      owns_var && checked_.drop_plans.contains(element_type));
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, loop_var_symbol, loop_var.name,
@@ -4802,7 +4813,8 @@ auto lowerer::lower_iterator_loop(
     const ast::binding_pattern &loop_var,
     const semantic::iterator_loop_dispatch &dispatch,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
-        &inner_stmts) -> std::expected<ptr_vec<hir_node>, lowering_error> {
+        &inner_stmts,
+    bool owns_var) -> std::expected<ptr_vec<hir_node>, lowering_error> {
   const auto element_type = dispatch.element_type;
   if (element_type == k_unknown_type || element_type == k_error_type) {
     return fail(lowering_error_kind::unresolved_type, span,
@@ -4873,7 +4885,9 @@ auto lowerer::lower_iterator_loop(
       span, option_type, std::move(callee), std::move(call_args)));
 
   push_scope();
-  const auto loop_var_symbol = declare_local(loop_var.name, element_type);
+  const auto loop_var_symbol = declare_local(
+      loop_var.name, element_type,
+      owns_var && checked_.drop_plans.contains(element_type));
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, loop_var_symbol, loop_var.name,

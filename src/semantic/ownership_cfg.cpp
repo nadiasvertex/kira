@@ -1244,8 +1244,9 @@ private:
     fork(body, exit);
     current_ = body;
     push_loop_scope(head, exit, &stmt.body);
+    const auto owned = for_variable_owns(stmt, checked_);
     for (const auto &pattern : stmt.patterns) {
-      bind_pattern(pattern.get(), source);
+      bind_pattern(pattern.get(), source, owned);
     }
     if (stmt.guard != nullptr) {
       static_cast<void>(eval(*stmt.guard, use_mode::read));
@@ -1575,6 +1576,35 @@ auto owns_pattern_bindings(type_id subject_type, const ast::node &pattern,
          subject_type != k_error_type &&
          checked.types.entry(subject_type).kind != type_kind::ref_kind &&
          !checked.types.is_view(subject_type);
+}
+
+auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
+    -> bool {
+  if (stmt.iterable == nullptr || stmt.patterns.size() != 1 ||
+      stmt.patterns.front() == nullptr ||
+      stmt.patterns.front()->kind != ast::node_kind::binding_pattern) {
+    return false;
+  }
+  auto element = k_unknown_type;
+  if (const auto it = checked.for_iterator_dispatches.find(&stmt);
+      it != checked.for_iterator_dispatches.end()) {
+    if (it->second.adapter_decl != nullptr) {
+      return false;
+    }
+    element = it->second.element_type;
+  } else {
+    const auto type_it = checked.node_types.find(stmt.iterable.get());
+    if (type_it == checked.node_types.end()) {
+      return false;
+    }
+    const auto &entry = checked.types.entry(type_it->second);
+    if (entry.kind != type_kind::builtin_generic_kind ||
+        entry.name != "generator" || entry.args.empty()) {
+      return false;
+    }
+    element = entry.args[0];
+  }
+  return owns_pattern_bindings(element, *stmt.patterns.front(), checked);
 }
 
 auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,

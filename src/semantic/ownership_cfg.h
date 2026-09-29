@@ -163,6 +163,15 @@ struct function_cfg {
                                          const ast::node &pattern,
                                          const checked_types &checked) -> bool;
 
+/// Whether the single-name loop variable of `stmt` owns the element the loop
+/// hands it, so it is dropped at the end of each iteration. True when the
+/// loop calls `next` on an iterator or generator that yields values (not
+/// references or views). A loop over a collection (`for x in xs`, through
+/// `into_iterator`), an `option`, a range or a string borrows: the container
+/// drops its own elements. `hir::lowerer` asks the same question.
+[[nodiscard]] auto for_variable_owns(const ast::for_stmt &stmt,
+                                     const checked_types &checked) -> bool;
+
 /// The same question for a value of known type that no expression names,
 /// such as a by-value destructuring parameter: true unless the pattern's
 /// bindings overlap or the type is unknown, a reference or a view.

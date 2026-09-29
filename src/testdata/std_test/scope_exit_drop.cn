@@ -315,6 +315,51 @@ def for_lambda_return() -> int32:
         total = total + f(v)
     return total
 
+# An iterator that yields owned values: the loop variable owns each one and
+# drops it at the end of its iteration (or on `break`/`continue`/`return`),
+# unless the body moves it away.
+type maker = { i: int32, base: int32 }
+
+impl iterator[noisy] for maker:
+    def next(mut self) -> option[noisy]:
+        if self.i < 3:
+            self.i = self.i + 1
+            return @some(noisy { id: self.base + self.i })
+        return @none
+
+def for_owned_yield() -> unit:
+    let m = maker { i: 0, base: 260 }
+    for n in m:
+        println("owned {n.id}")
+    println("owned done")
+
+def for_owned_break() -> unit:
+    let m = maker { i: 0, base: 270 }
+    for n in m:
+        println("owned break {n.id}")
+        if n.id == 271:
+            break
+    println("owned break done")
+
+def for_owned_continue() -> unit:
+    let m = maker { i: 0, base: 280 }
+    for n in m:
+        if n.id == 281:
+            continue
+        println("owned cont {n.id}")
+    println("owned cont done")
+
+def for_owned_moved() -> unit:
+    let m = maker { i: 0, base: 290 }
+    for n in m:
+        takes(n)
+    println("owned moved done")
+
+def for_owned_return() -> unit:
+    let m = maker { i: 0, base: 300 }
+    for n in m:
+        return
+
 def main() -> unit:
     println("rv {for_return_value(true)}")
     println("rv {for_return_value(false)}")
@@ -361,4 +406,9 @@ def main() -> unit:
     takes_tuple((noisy { id: 230 }, noisy { id: 231 }))
     for_iterable_drops()
     for_break_drops()
+    for_owned_yield()
+    for_owned_break()
+    for_owned_continue()
+    for_owned_moved()
+    for_owned_return()
     println("main done")

@@ -119,5 +119,29 @@ for done
 for break 1
 drop 241
 for break done
+owned 261
+drop 261
+owned 262
+drop 262
+owned 263
+drop 263
+owned done
+owned break 271
+drop 271
+owned break done
+drop 281
+owned cont 282
+drop 282
+owned cont 283
+drop 283
+owned cont done
+consumed 291
+drop 291
+consumed 292
+drop 292
+consumed 293
+drop 293
+owned moved done
+drop 301
 main done
 drop 214
