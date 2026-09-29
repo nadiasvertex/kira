@@ -55,9 +55,10 @@ borrowing values, view inference through returned values and struct
 fields, and single-element views
 (<code>cell[T]</code>/<code>mut cell[T]</code>).</p>
 <h2 id="slices-and-strings">Slices and Strings</h2>
-<p>A view is the one kind of borrowing value the language permits to be
-passed <em>and</em> returned — its borrow is tracked without a lifetime
-annotation.</p>
+<p>A view is a borrow of part of a collection that may be passed,
+stored, <em>and</em> returned — like any borrow (see <a
+href="14-ownership-and-borrowing.html">Ownership and Borrowing</a>), it
+is tracked without a lifetime annotation.</p>
 <pre class="cinder"><code>slice[T]       # a read-only view of a contiguous run of elements
 mut slice[T]   # a mutable view
 str            # a read-only view of UTF-8 text</code></pre>
@@ -154,8 +155,8 @@ account.</li>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="14-ownership-and-borrowing.html">Ownership and
-Borrowing</a> — views are the escape hatch from “a borrow cannot escape
-a call.”</li>
+Borrowing</a> — the borrow rules views follow, and how a borrow’s
+lifetime is tracked.</li>
 </ul>
 </body>
 </html>

@@ -551,8 +551,12 @@ expr = pipe_expr [ where_clause_expr ] ;
 (*               b = substr(v2, 5)                                        *)
 (*               c = compute_a_thing(v, 10)                               *)
 
+(* The inline form keeps the clause on the statement's line:              *)
+(*   let v = x + y where x = 40, y = x / 20                               *)
+
 where_clause_expr
     = "where" ":" NEWLINE INDENT { where_binding } DEDENT
+    | "where" IDENT "=" expr { "," IDENT "=" expr }
     ;
 
 where_binding = IDENT "=" expr NEWLINE ;

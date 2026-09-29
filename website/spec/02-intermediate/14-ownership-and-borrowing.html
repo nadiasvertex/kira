@@ -50,7 +50,7 @@ id="toc-implementation-status">Implementation status</a></li>
 <p><strong>Status:</strong> Complete</p>
 <p>Ownership transfer on assignment and call,
 <code>&amp;</code>/<code>&amp;mut</code> borrowing, and the invariant
-that a borrow cannot escape the call it was made for.</p>
+that a borrow never outlives what it borrows.</p>
 <h2 id="ownership">Ownership</h2>
 <ol type="1">
 <li>Assigning a value or passing it to a function transfers ownership by
@@ -71,13 +71,13 @@ let result = process(numbers)
 # numbers is no longer accessible here — process owns it now</code></pre>
 <p>To use a value again after a call, copy it or lend it.</p>
 <h2 id="borrowing">Borrowing</h2>
-<p>A borrow lends a value to a function for the duration of one call.
-The owner keeps ownership; the callee may use the value but not move it.
-A borrow is a way of <em>passing</em> a value, not a value in its own
-right — it cannot be stored in a variable that outlives the call,
-returned, or placed in a struct field or collection. Because every
-borrow is bounded by the call that created it, there are no lifetime
-annotations.</p>
+<p>A borrow lends a value without giving up ownership: the owner keeps
+it, and whoever holds the borrow may use the value but not move it. Most
+borrows are made for a single call, but a borrow is also a value in its
+own right — it may be bound to a name, stored in a struct field or
+collection, and returned, as long as it never outlives the value it
+borrows. There are no lifetime annotations: the compiler tracks how long
+each borrow is held by following the values that carry it.</p>
 <p>Syntax: <code>&amp;</code> marks an immutable-borrow parameter type
 and, at the call site, lends the value; <code>&amp;mut</code> does the
 same for a mutable borrow. Writing <code>&amp;mut</code> at the call
@@ -109,13 +109,33 @@ simultaneously.</li>
 <li>At most one mutable borrow (<code>&amp;mut</code>) may exist at a
 time.</li>
 <li>A mutable borrow cannot coexist with any immutable borrows.</li>
-<li>A borrow cannot escape the call it was made for — it cannot be
-returned, stored in a field, or placed in a collection.</li>
+<li>While a borrow is held, the borrowed value cannot be moved or
+replaced, and cannot be changed except through a <code>&amp;mut</code>
+borrow — nor, while a <code>&amp;mut</code> borrow is held, read
+directly.</li>
+<li>A borrow cannot outlive the value it borrows. In particular, a
+function cannot return a borrow of one of its own locals — scalar or
+not, directly or through a call — since every local is gone once the
+function returns. A borrow of a parameter the function was itself lent,
+or of a part of one, may be returned; the caller then keeps that value
+borrowed for as long as the returned borrow is used.</li>
+<li>A <code>&amp;T</code> may be copied freely; a
+<code>&amp;mut T</code> is exclusive, so binding or passing it by value
+moves it.</li>
 </ul>
-<p>A construct that needs to hand back a window into a collection
-instead uses a view type, the one kind of borrowing value the language
-allows to outlive a single call; see <a
-href="15-views.html">Views</a>.</p>
+<pre class="cinder"><code>type pair = { a: int32, b: int32 }
+
+def second(q: &amp;pair) -&gt; &amp;int32:    # a borrow of part of the caller&#39;s pair
+    return &amp;q.b
+
+def dangle() -&gt; &amp;int32:
+    let n = 5
+    return &amp;n                       # error: `n` is gone once `dangle` returns</code></pre>
+<p>When a function returns a borrow, the compiler does not know which
+argument it came from, so the caller keeps <em>every</em> value it lent
+that call borrowed while the result is in use. A view (see <a
+href="15-views.html">Views</a>) is the same kind of tracked borrow, of a
+range or element of a collection.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
 <li>All of this chapter’s rules — ownership transfer, the four borrow
@@ -168,14 +188,14 @@ outliving the block of its source, or a returned view or closure that
 borrows one of the function’s own locals. Views of borrowed parameters
 and of <code>self</code> may be returned; the caller then keeps that
 data borrowed.</li>
-<li><strong>No escape.</strong> A plain
-<code>&amp;</code>/<code>&amp;mut</code> borrow (typed
-<code>ref_kind</code>, not a view) is only written in a passing position
-— a call argument, the callee, a field/index base, a <code>for</code>
-iterable, or an interpolation segment. Written anywhere it would be
-stored, it is rejected. A value that <em>carries</em> a reference —
-returned from a call, say — is tracked like a view rather than
-rejected.</li>
+<li><strong>Stored and returned borrows.</strong> A
+<code>&amp;</code>/<code>&amp;mut</code> is a value like a view: bound,
+stored in an aggregate, or returned, it is a loan carried by whatever
+holds it, with the same exclusivity and dangling checks. A
+<code>&amp;mut T</code> is move-only, so it cannot be copied into a
+second live alias. A reference returned by a call reads the original
+storage on both backends (checked for a scalar local and a struct
+field).</li>
 <li>Because the language has no lifetime annotations to say
 <em>which</em> argument a returned borrow comes from, a call whose
 result can carry a borrow

@@ -42,6 +42,8 @@
 <li><a href="#shadowing" id="toc-shadowing">Shadowing</a></li>
 <li><a href="#compound-assignment" id="toc-compound-assignment">Compound
 assignment</a></li>
+<li><a href="#where-bindings" id="toc-where-bindings"><code>where</code>
+bindings</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
 </ul></li>
 </ul>
@@ -87,6 +89,29 @@ total += 5       # same as total = total + 5</code></pre>
 <p>The wrapping (<code>+%=</code>) and saturating compound forms exist
 for the same operators as their non-assigning counterparts; see <a
 href="02-built-in-types.html#integer-overflow">Built-in Types</a>.</p>
+<h2 id="where-bindings"><code>where</code> bindings</h2>
+<p>A <code>let</code> or <code>var</code> initializer can name helper
+values with a trailing <code>where</code> clause. The helpers are
+visible only inside that initializer and end with the statement.</p>
+<pre class="cinder"><code>let v = x + y where x = 40, y = x / 20</code></pre>
+<p>Longer clauses use an indented block:</p>
+<pre class="cinder"><code>let v = do_something(a, b, c) where:
+    a = find_a_thing(v1, v2)
+    b = substr(v2, 5)
+    c = compute_a_thing(v, 10)</code></pre>
+<ul>
+<li>Bindings evaluate top to bottom, and a later one can use an earlier
+one. They are not mutually recursive.</li>
+<li>They shadow outer names inside the initializer. After the statement
+they are gone.</li>
+<li>A <code>where</code> binding with a <code>drop</code> impl drops
+when the statement finishes, unless the initializer moved it out.</li>
+<li>The inline form must fit on one line. The <code>where</code> keyword
+in a function signature (<code>where T: add</code>) is a separate
+construct.</li>
+</ul>
+<p>For a bare block that bounds the lifetime of several statements, see
+<a href="08-control-flow.html#scope"><code>scope</code></a>.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="02-built-in-types.html">Built-in Types</a> — literal type

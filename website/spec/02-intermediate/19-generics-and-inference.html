@@ -79,7 +79,7 @@ def largest[T: ord](items: &amp;list[T]) -&gt; option[usize]:
     var best = 0
     for i in 1..items.len():
         if items[i] &gt; items[best]: best = i
-    return @some(best)    # return the index — a borrow could not escape this call</code></pre>
+    return @some(best)    # the index; a borrow into `items` would keep it borrowed</code></pre>
 <p><code>[T: show]</code> means “<code>T</code> is any type that
 implements <code>show</code>.” Multiple bounds use <code>+</code>:</p>
 <pre class="cinder"><code>def inspect[T: show + eq](a: T, b: T) -&gt; unit:

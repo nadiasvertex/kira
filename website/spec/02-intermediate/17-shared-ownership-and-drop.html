@@ -165,13 +165,15 @@ reference — <code>let a: shared t = shared t{ id: 1 }</code> fails with
 resolve. No atomic reference count exists anywhere in the source tree,
 so neither the read-only-access guarantee nor drop-at-zero is enforced
 or implemented.</li>
-<li><strong>The <code>scope</code> block this chapter relies on does not
-parse.</strong> <code>scope_stmt</code> is in
-<code>spec/cinder-grammar.ebnf</code>, but there is no
-<code>kw_scope</code> token and no parser support, so the mechanism
-named above for ending a lifetime early is unavailable.</li>
+<li><strong><code>scope</code> blocks work</strong>
+(<code>src/testdata/std_test/scope_block.cn</code>), and so do drops for
+<code>where</code> bindings
+(<code>src/testdata/std_test/where_inline.cn</code>). The block’s locals
+drop in reverse order at its <code>DEDENT</code>; a <code>where</code>
+binding drops when its <code>let</code> finishes, after the initializer
+is evaluated.</li>
 </ul>
-<p>Tracked as items 6–8 in <a href="../../todo.html">todo.md</a>.</p>
+<p>Tracked as items 6–7 in <a href="../../todo.html">todo.md</a>.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="14-ownership-and-borrowing.html">Ownership and

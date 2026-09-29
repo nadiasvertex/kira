@@ -233,17 +233,11 @@ currently compiles instead of being rejected, and its runtime behavior
 on a non-matching element is unspecified. Treat this as a checker gap
 against the rule stated above, not a supported way to filter a
 loop.</li>
-<li><code>scope</code> is design-only: the <code>scope_stmt</code>
-production is in <code>spec/cinder-grammar.ebnf</code>, but there is no
-<code>scope</code> keyword token and no parser/checker/lowering support,
-so <code>scope:</code> is a parse error today. Everything in the
-<code>scope</code> section above describes the target design — including
-its drop behavior, which rests on scope-exit <code>drop</code> glue that
-does <strong>not</strong> exist for any kind of scope (see <a
-href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
-Ownership and Drop</a>, Implementation status). Implementing
-<code>scope</code> is therefore blocked on destructors, not merely on
-parsing a keyword.</li>
+<li><code>scope</code> is implemented end-to-end on both backends
+(<code>src/testdata/std_test/scope_block.cn</code>). It is a statement
+with no value, so a <code>scope</code> block cannot be used as an
+expression. Its bindings end at the <code>DEDENT</code> and drop in
+reverse order there, including on an early <code>return</code>.</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>

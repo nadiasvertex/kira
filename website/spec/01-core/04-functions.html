@@ -38,8 +38,12 @@
 <li><a href="#functions" id="toc-functions">4. Functions</a>
 <ul>
 <li><a href="#syntax" id="toc-syntax">Syntax</a></li>
-<li><a href="#type-inference" id="toc-type-inference">Type
-inference</a></li>
+<li><a href="#type-inference" id="toc-type-inference">Type inference</a>
+<ul>
+<li><a href="#limits-of-implicit-generics"
+id="toc-limits-of-implicit-generics">Limits of implicit
+generics</a></li>
+</ul></li>
 <li><a href="#expression-bodied-functions"
 id="toc-expression-bodied-functions">Expression-bodied
 functions</a></li>
@@ -89,6 +93,24 @@ are determined by its own body alone. When the body underdetermines a
 type, the compiler reports it and asks for an annotation rather than
 inferring from callers.</li>
 </ol>
+<h3 id="limits-of-implicit-generics">Limits of implicit generics</h3>
+<p>An implicit generic is checked once per concrete argument type, when
+a call asks for it. Two consequences are deliberate:</p>
+<ul>
+<li><strong>An implicit generic that is never called is never
+checked.</strong> Its body is only read against the argument types of
+its calls, so an error in it surfaces at the first call. Annotate the
+parameter, or write an explicit <code>[T]</code> with a
+<code>where</code> bound, to have the body checked on its own.</li>
+<li><strong>No trait bounds are inferred.</strong> The compiler does not
+work out that <code>x + x</code> requires <code>T: add</code> and record
+it as a bound. A call with a type that lacks the operation is reported
+inside the instance for that type, with a note naming the call that
+requested it. An explicit <code>where</code> bound is checked at the
+call site instead.</li>
+</ul>
+<p>A method with an unannotated parameter is an implicit generic in the
+same way, and each call compiles it for its own argument types.</p>
 <h2 id="expression-bodied-functions">Expression-bodied functions</h2>
 <p>When the whole body is a single expression, it can follow the
 <code>:</code> directly on the same line instead of an indented block.
