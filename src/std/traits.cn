@@ -8,3 +8,14 @@ pub trait drop:
     #: Returns:
     #:   unit (nothing).
     def drop(mut self) -> unit
+
+#: A type whose values copy instead of moving
+#: (`spec/specification/02-intermediate/14-ownership-and-borrowing.md`, Copy
+#: and move): the builtin scalars, `str`, `&T`, the raw pointers, and the
+#: read-only views `slice[T]` and `cell[T]`. No user type is `copy`.
+#:
+#: The body is the scalar part of that rule, as documentation. The checker
+#: answers `T: copy` itself, from the full list (`type_table::is_copy`),
+#: because references, pointers and views have no predicate to name here.
+pub concept copy[T]:
+    is_scalar[T]() or is_str[T]() or is_unit[T]()

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -56,6 +57,15 @@ auto strip_groups(const ast::expr &expr) -> const ast::expr & {
 struct root_name {
   std::string_view name;
   source_span span = source_span::dummy();
+};
+
+/// One step from a place's root toward the place: a field, an element, or a
+/// dereference, with the type it reaches.
+struct place_step {
+  enum class kind : std::uint8_t { field, index, deref };
+  kind step = kind::field;
+  std::string field; ///< For a field step.
+  type_id type = k_unknown_type;
 };
 
 /// The name a place expression is rooted at — the `x` in `x`, `x.f`,
@@ -186,6 +196,8 @@ private:
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
+  /// The `field_path` local for each (parent, field) pair made so far.
+  std::map<std::pair<local_id, std::string>, local_id> field_paths_;
 
   // ------------------------------------------------------------------
   //  Graph construction primitives.
@@ -281,6 +293,13 @@ private:
         .local = local, .kind = kind, .span = span, .exempt = exempt});
   }
 
+  /// An access to part of `local` (see `access_event::projected`).
+  auto access_part_of(local_id local, access_kind kind, source_span span)
+      -> void {
+    emit(access_event{
+        .local = local, .kind = kind, .span = span, .projected = true});
+  }
+
   auto flow(local_id dest, const value &v, bool replace) -> void {
     if (!replace && v.empty()) {
       return;
@@ -341,30 +360,14 @@ private:
     return checked_.types.is_mut_view(referent(type));
   }
 
-  /// Whether moving a value of `type` transfers ownership. Scalars, raw
-  /// pointers (`38-machine-layer.md`: ownership behind one is the user's to
-  /// track), `&T` references and shared views are copies. A type parameter is
-  /// not tracked: that needs a notion of which `T`s copy (see `spec/todo.md`).
+  /// Whether moving a value of `type` transfers ownership: anything that is
+  /// not `copy` (ch. 14, Copy and move), including a type parameter without
+  /// a `copy` bound.
   [[nodiscard]] auto movable(type_id type) const -> bool {
-    const auto &types = checked_.types;
-    if (types.is_unknown(type) || type == k_error_type) {
+    if (checked_.types.is_unknown(type)) {
       return false;
     }
-    const auto &entry = types.entry(type);
-    if (entry.kind == type_kind::ref_kind) {
-      // A `&T` copies; a `&mut T` is exclusive, so copying one would make
-      // two live mutable aliases — it moves instead.
-      return entry.is_mut;
-    }
-    if (entry.kind == type_kind::type_param_kind ||
-        entry.kind == type_kind::ptr_kind) {
-      return false;
-    }
-    if (is_view(type) && !is_mut_view(type)) {
-      return false;
-    }
-    return !types.is_boolean(type) && !types.is_numeric(type) &&
-           !types.is_unit(type);
+    return !checked_.is_copy(type);
   }
 
   /// Whether a local's storage ends with its scope, so that nothing may
@@ -443,11 +446,18 @@ private:
     scopes_.pop_back();
   }
 
+  /// Declares a binding. `owns` says it owns its value (see
+  /// `local_info::owns`); a `whole` binding always does.
   auto declare(std::string name, type_id type, source_span span,
-               bool whole = false) -> local_id {
+               bool whole = false, bool owns = false) -> local_id {
     const auto local =
         new_local(name, local_role::binding, type, span, movable(type));
     cfg_.locals[local].whole = whole;
+    cfg_.locals[local].owns = (whole || owns) && name != "self" &&
+                              owns_storage(type, name) &&
+                              (checked_.types.is_unknown(type) ||
+                               checked_.types.entry(type).kind !=
+                                   type_kind::ptr_kind);
     if (owns_storage(type, name)) {
       scopes_.back().owned.push_back(local);
     }
@@ -470,7 +480,8 @@ private:
       // others are left to `storage_dead`, like every pattern binding.
       const auto whole = owned && binding.node != nullptr &&
                          checked_.drop_plans.contains(type);
-      locals.push_back(declare(binding.name, type, binding.span, whole));
+      locals.push_back(
+          declare(binding.name, type, binding.span, whole, owned));
     }
     return locals;
   }
@@ -574,10 +585,153 @@ private:
     }
   }
 
+  /// The steps from `expr`'s root to `expr` (which must satisfy
+  /// `is_place`), outermost last.
+  auto place_steps(const ast::expr &expr, std::vector<place_step> &out) const
+      -> void {
+    switch (expr.kind) {
+    case ast::node_kind::module_path_expr: {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+      const auto types = checked_.value_path_types.find(&path);
+      for (std::size_t i = 1; i < path.segments.size(); ++i) {
+        const auto type = types != checked_.value_path_types.end() &&
+                                  i < types->second.size()
+                              ? types->second[i]
+                              : k_unknown_type;
+        out.push_back(place_step{.step = place_step::kind::field,
+                                 .field = path.segments[i],
+                                 .type = type});
+      }
+      return;
+    }
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      place_steps(*field.object, out);
+      out.push_back(place_step{.step = place_step::kind::field,
+                               .field = field.field_name,
+                               .type = type_of(&expr)});
+      return;
+    }
+    case ast::node_kind::index_expr: {
+      const auto &index = dynamic_cast<const ast::index_expr &>(expr);
+      place_steps(*index.object, out);
+      out.push_back(
+          place_step{.step = place_step::kind::index, .type = type_of(&expr)});
+      return;
+    }
+    case ast::node_kind::group_expr:
+      place_steps(*dynamic_cast<const ast::group_expr &>(expr).inner, out);
+      return;
+    case ast::node_kind::unary_expr:
+      place_steps(*dynamic_cast<const ast::unary_expr &>(expr).operand, out);
+      out.push_back(
+          place_step{.step = place_step::kind::deref, .type = type_of(&expr)});
+      return;
+    default:
+      return;
+    }
+  }
+
+  /// The `field_path` local for `root` followed by `steps`, all of which are
+  /// fields; made on first use, along with every shorter path.
+  auto field_path_local(local_id root, const std::vector<place_step> &steps)
+      -> local_id {
+    auto parent = root;
+    for (const auto &step : steps) {
+      const auto key = std::pair{parent, step.field};
+      auto it = field_paths_.find(key);
+      if (it == field_paths_.end()) {
+        const auto path = new_local(
+            std::format("{}.{}", cfg_.locals[parent].name, step.field),
+            local_role::field_path, step.type, cfg_.locals[root].span,
+            /*movable=*/true);
+        cfg_.locals[path].parent = parent;
+        cfg_.locals[parent].children.push_back(path);
+        it = field_paths_.emplace(key, path).first;
+      }
+      parent = it->second;
+    }
+    return parent;
+  }
+
+  [[nodiscard]] auto has_own_drop(type_id type) const -> bool {
+    const auto it = checked_.drop_plans.find(type);
+    return it != checked_.drop_plans.end() && it->second.own_drop.has_value();
+  }
+
+  /// Spells `root` followed by the first `count` of `steps`.
+  [[nodiscard]] auto spell_place(std::string_view root,
+                                 const std::vector<place_step> &steps,
+                                 std::size_t count) const -> std::string {
+    auto out = std::string(root);
+    for (std::size_t i = 0; i < count && i < steps.size(); ++i) {
+      switch (steps[i].step) {
+      case place_step::kind::field:
+        out += '.';
+        out += steps[i].field;
+        break;
+      case place_step::kind::index:
+        out += "[…]";
+        break;
+      case place_step::kind::deref:
+        out.insert(0, "*");
+        break;
+      }
+    }
+    return out;
+  }
+
+  /// Why the part of `root` that `steps` reach cannot be moved out, if it
+  /// cannot (ch. 14, Moving out of places).
+  [[nodiscard]] auto move_blocker(local_id root,
+                                  const std::vector<place_step> &steps,
+                                  source_span span) const
+      -> std::optional<invalid_move_event> {
+    const auto &root_name = cfg_.locals[root].name;
+    auto reached = cfg_.locals[root].type;
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      const auto through = reached;
+      reached = steps[i].type;
+      if (steps[i].step == place_step::kind::field) {
+        continue;
+      }
+      // A raw read (`p[i]`, `*p`) is a bitwise copy whose ownership is the
+      // `machine` code's to track (ch. 38, Raw memory and ownership).
+      if (!checked_.types.is_unknown(through) &&
+          checked_.types.entry(through).kind == type_kind::ptr_kind) {
+        return std::nullopt;
+      }
+      return invalid_move_event{
+          .span = span,
+          .reason = steps[i].step == place_step::kind::index
+                        ? move_block::element
+                        : move_block::deref,
+          .place = spell_place(root_name, steps, i + 1),
+          .owner = spell_place(root_name, steps, i)};
+    }
+    if (!cfg_.locals[root].owns) {
+      return invalid_move_event{.span = span,
+                                .reason = move_block::borrowed,
+                                .place = spell_place(root_name, steps,
+                                                     steps.size()),
+                                .owner = root_name};
+    }
+    auto type = cfg_.locals[root].type;
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      if (has_own_drop(type)) {
+        return invalid_move_event{.span = span,
+                                  .reason = move_block::own_drop,
+                                  .place = spell_place(root_name, steps, i + 1),
+                                  .owner = checked_.types.display(type)};
+      }
+      type = steps[i].type;
+    }
+    return std::nullopt;
+  }
+
   /// Accesses the place `expr` (which must satisfy `is_place`). A move of a
-  /// projection, or of a value that copies, is a read: partial moves are not
-  /// tracked. The result carries the root's borrows when the place's own
-  /// type can hold one.
+  /// value that copies is a read. The result carries the root's borrows when
+  /// the place's own type can hold one.
   auto access_place(const ast::expr &expr, access_kind kind,
                     bool evaluate_subscripts = true) -> value {
     auto projected = false;
@@ -591,16 +745,58 @@ private:
                    root->span);
       return {};
     }
-    if (kind == access_kind::move &&
-        (projected || !cfg_.locals[*local].movable)) {
-      kind = access_kind::read;
+    if (!projected) {
+      if (kind == access_kind::move && !cfg_.locals[*local].movable) {
+        kind = access_kind::read;
+      }
+      access(*local, kind, expr.span);
+    } else {
+      access_part(*local, expr, kind);
     }
-    access(*local, kind, expr.span);
     auto result = value{};
     if (bears(type_of(&expr))) {
       result.sources.push_back(*local);
     }
     return result;
+  }
+
+  /// Accesses the part of `root` that `expr` names. Moving a non-`copy` part
+  /// is a partial move when every step is a field of a value `root` owns, and
+  /// is rejected otherwise; any other access checks that the part (and
+  /// everything above and below it) is still there.
+  auto access_part(local_id root, const ast::expr &expr, access_kind kind)
+      -> void {
+    auto steps = std::vector<place_step>{};
+    place_steps(expr, steps);
+    const auto moving =
+        kind == access_kind::move && movable(type_of(&expr));
+    if (!moving && kind == access_kind::move) {
+      kind = access_kind::read;
+    }
+    if (moving) {
+      if (auto blocked = move_blocker(root, steps, expr.span)) {
+        emit(std::move(*blocked));
+        access_part_of(root, access_kind::read, expr.span);
+        return;
+      }
+    }
+    access_part_of(root, kind, expr.span);
+    use_field_path(root, steps, moving ? access_kind::move : access_kind::read,
+                   expr.span);
+  }
+
+  /// Accesses the `field_path` local for `root` followed by `steps`, when
+  /// every step is a field of a value `root` owns — the only parts whose
+  /// moves are tracked.
+  auto use_field_path(local_id root, const std::vector<place_step> &steps,
+                      access_kind kind, source_span span) -> void {
+    const auto fields_only =
+        std::ranges::all_of(steps, [](const place_step &step) -> bool {
+          return step.step == place_step::kind::field;
+        });
+    if (fields_only && !steps.empty() && cfg_.locals[root].owns) {
+      access(field_path_local(root, steps), kind, span);
+    }
   }
 
   /// Borrows the place `expr` — or, when it is not a place, evaluates it as
@@ -621,9 +817,17 @@ private:
       note_capture(root->name, /*moved=*/false, root->span);
       return {};
     }
-    access(*local,
-           is_mut ? access_kind::borrow_mut : access_kind::borrow_shared, span,
-           exempt);
+    emit(access_event{.local = *local,
+                      .kind = is_mut ? access_kind::borrow_mut
+                                     : access_kind::borrow_shared,
+                      .span = span,
+                      .exempt = exempt,
+                      .projected = projected});
+    if (projected) {
+      auto steps = std::vector<place_step>{};
+      place_steps(expr, steps);
+      use_field_path(*local, steps, access_kind::read, span);
+    }
     auto result = value{};
     result.loans.push_back(new_loan(*local, is_mut, origin, span));
     if (bears(type_of(&expr))) {
@@ -684,7 +888,7 @@ private:
     }
 
     case ast::node_kind::unary_expr:
-      return eval_unary(dynamic_cast<const ast::unary_expr &>(expr));
+      return eval_unary(dynamic_cast<const ast::unary_expr &>(expr), mode);
 
     case ast::node_kind::binary_expr: {
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
@@ -731,6 +935,14 @@ private:
         stash(temp, eval_opt(element.get(), use_mode::move));
       }
       stash(temp, eval_opt(array.fill_value.get(), use_mode::move));
+      if (array.fill_value != nullptr &&
+          movable(type_of(array.fill_value.get()))) {
+        emit(invalid_move_event{
+            .span = array.fill_value->span,
+            .reason = move_block::fill,
+            .place = {},
+            .owner = checked_.types.display(type_of(array.fill_value.get()))});
+      }
       stash(temp, eval_opt(array.fill_count.get(), use_mode::read));
       return compound_result(expr, temp);
     }
@@ -895,7 +1107,7 @@ private:
     return compound_result(index, temp);
   }
 
-  auto eval_unary(const ast::unary_expr &unary) -> value {
+  auto eval_unary(const ast::unary_expr &unary, use_mode mode) -> value {
     if (unary.operand == nullptr) {
       return {};
     }
@@ -912,7 +1124,8 @@ private:
     }
     case ast::unary_op::deref:
       if (is_place(unary)) {
-        return access_place(unary, access_kind::read);
+        return access_place(unary, mode == use_mode::move ? access_kind::move
+                                                          : access_kind::read);
       }
       return eval(*unary.operand, use_mode::read);
     case ast::unary_op::neg:
@@ -1135,6 +1348,33 @@ private:
                                  });
   }
 
+  /// How a `match`/`if let`/`while let`/`let` subject is used. A part of a
+  /// local (a field, element, or what a reference points at) is moved out
+  /// only when some pattern binds a non-`copy` part of it by value; a
+  /// pattern that binds nothing that moves leaves it in place. Any other
+  /// subject moves, as before.
+  [[nodiscard]] auto subject_mode(const ast::expr *subject,
+                                  const std::vector<const ast::node *> &patterns)
+      const -> use_mode {
+    auto projected = false;
+    if (subject == nullptr || !place_root(*subject, projected).has_value() ||
+        !projected) {
+      return use_mode::move;
+    }
+    for (const auto *node : patterns) {
+      const auto *pat = dynamic_cast<const ast::pattern *>(node);
+      if (pat == nullptr) {
+        continue;
+      }
+      for (const auto &binding : collect_pattern_bindings(*pat)) {
+        if (binding.node == nullptr || movable(type_of(binding.node))) {
+          return use_mode::move;
+        }
+      }
+    }
+    return use_mode::read;
+  }
+
   /// A subject temporary holding `v`, for patterns to bind from.
   auto hold_subject(const value &v) -> local_id {
     const auto subject = new_temp(local_role::subject_temp);
@@ -1153,7 +1393,9 @@ private:
       if (branch.let_expr != nullptr) {
         // `if let`: the parser leaves a placeholder in `condition`.
         owned = binds_owned(branch.let_expr.get(), branch.let_pattern.get());
-        subject = hold_subject(eval(*branch.let_expr, use_mode::move));
+        subject = hold_subject(
+            eval(*branch.let_expr, subject_mode(branch.let_expr.get(),
+                                                {branch.let_pattern.get()})));
       } else {
         static_cast<void>(eval_opt(branch.condition.get(), use_mode::read));
       }
@@ -1184,7 +1426,12 @@ private:
                    const std::vector<ast::match_arm> &arms, bool want_value)
       -> value {
     const auto owned_subject = subject_expr;
-    const auto subject = hold_subject(eval_opt(subject_expr, use_mode::move));
+    auto patterns = std::vector<const ast::node *>{};
+    for (const auto &arm : arms) {
+      patterns.push_back(arm.pattern.get());
+    }
+    const auto subject = hold_subject(
+        eval_opt(subject_expr, subject_mode(subject_expr, patterns)));
     const auto join = new_temp(local_role::join_temp);
     const auto end = new_block();
     for (std::size_t i = 0; i < arms.size(); ++i) {
@@ -1292,7 +1539,9 @@ private:
     auto owned = false;
     if (stmt.let_expr != nullptr) {
       owned = binds_owned(stmt.let_expr.get(), stmt.let_pattern.get());
-      subject = hold_subject(eval(*stmt.let_expr, use_mode::move));
+      subject = hold_subject(eval(
+          *stmt.let_expr,
+          subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
       static_cast<void>(eval_opt(stmt.condition.get(), use_mode::read));
     }
@@ -1507,7 +1756,8 @@ private:
   }
 
   auto lower_let(const ast::let_stmt &stmt) -> void {
-    auto v = eval_opt(stmt.initializer.get(), use_mode::move);
+    auto v = eval_opt(stmt.initializer.get(),
+                      subject_mode(stmt.initializer.get(), {stmt.pattern.get()}));
     if (stmt.pattern == nullptr) {
       return;
     }
@@ -1561,7 +1811,19 @@ private:
       bind_value(*local, v);
       return;
     }
-    access(*local, access_kind::write_part, target.span);
+    if (!projected) {
+      access(*local, access_kind::write_part, target.span);
+    } else {
+      access_part_of(*local, access_kind::write_part, target.span);
+      // Assigning a field fills it again after a partial move; `+=` reads it.
+      auto steps = std::vector<place_step>{};
+      place_steps(target, steps);
+      use_field_path(*local, steps,
+                     stmt.op == ast::assign_op::assign
+                         ? access_kind::write_whole
+                         : access_kind::read,
+                     target.span);
+    }
     flow(*local, v, /*replace=*/false);
   }
 };

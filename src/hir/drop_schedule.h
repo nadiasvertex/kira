@@ -23,6 +23,10 @@ struct pending_drop {
   std::string name;
   semantic::type_id type = 0;
   std::size_t shadow_depth = 0;
+  /// Field paths (`{"output"}`, `{"a", "b"}`) that may have been moved out
+  /// of the binding: those fields are not dropped with it, and every other
+  /// droppable field still is (ch. 14, Moving out of places).
+  std::vector<std::vector<std::string>> moved_paths;
 };
 
 /// Where every synthesized drop call in one function/lambda body belongs,

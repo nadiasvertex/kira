@@ -1,0 +1,16 @@
+module main
+
+# `copy` is a built-in concept (ch. 14, Copy and move): a `list` never
+# satisfies it, and no `impl` can make it. The help must say so rather than
+# suggest writing `impl copy for list[int32]`.
+
+def larger[T: copy + ord](a: T, b: T) -> T:
+    if a > b:
+        return a
+    return b
+
+def main() -> int32:
+    let xs = [1, 2]
+    let ys = [3, 4]
+    let zs = larger(xs, ys)
+    return larger(3, 4)

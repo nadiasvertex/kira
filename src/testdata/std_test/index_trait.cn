@@ -27,7 +27,9 @@ impl index[usize] for ramp:
 # parameters in scope *and* the receiver's arguments substituted in.
 type offset[T] = { a: T, b: T, c: T }
 
-impl[T] index[usize] for offset[T]:
+# `T: copy` because `at` hands back a field of a borrowed `self` by value,
+# which would move it out for any other `T` (ch. 14, Moving out of places).
+impl[T: copy] index[usize] for offset[T]:
     type output = T
     def at(self, i: usize) -> T:
         if i == 0:

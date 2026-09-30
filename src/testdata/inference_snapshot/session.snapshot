@@ -1,7 +1,7 @@
 # inference snapshot
 # 2035 interned types
 
-## node_types (29611)
+## node_types (29619)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -121,12 +121,12 @@
 027_dependent_and_refinement_types.cn:57:5 [ident] int32
 027_dependent_and_refinement_types.cn:57:5 [binary] bool
 027_dependent_and_refinement_types.cn:57:9 [ident] int32
-027_dependent_and_refinement_types.cn:61:27 [binding_pat] array[T, n]
-027_dependent_and_refinement_types.cn:61:27 [binding_pat] array[int32, 8]
-027_dependent_and_refinement_types.cn:61:43 [binding_pat] usize
-027_dependent_and_refinement_types.cn:61:43 [binding_pat] usize
-027_dependent_and_refinement_types.cn:61:59 [named_type] T
-027_dependent_and_refinement_types.cn:61:59 [named_type] int32
+027_dependent_and_refinement_types.cn:61:33 [binding_pat] array[T, n]
+027_dependent_and_refinement_types.cn:61:33 [binding_pat] array[int32, 8]
+027_dependent_and_refinement_types.cn:61:49 [binding_pat] usize
+027_dependent_and_refinement_types.cn:61:49 [binding_pat] usize
+027_dependent_and_refinement_types.cn:61:65 [named_type] T
+027_dependent_and_refinement_types.cn:61:65 [named_type] int32
 027_dependent_and_refinement_types.cn:62:5 [ident] array[T, n]
 027_dependent_and_refinement_types.cn:62:5 [ident] array[int32, 8]
 027_dependent_and_refinement_types.cn:62:5 [index] T
@@ -10577,6 +10577,14 @@ std/traits.category.cn:239:9 [wildcard_pat] _
 std/traits.category.cn:239:21 [ident] type_category
 std/traits.cn:10:14 [binding_pat] self
 std/traits.cn:10:27 [named_type] unit
+std/traits.cn:21:5 [index] fn() -> bool
+std/traits.cn:21:5 [call] bool
+std/traits.cn:21:5 [binary] bool
+std/traits.cn:21:5 [binary] bool
+std/traits.cn:21:23 [index] fn() -> bool
+std/traits.cn:21:23 [call] bool
+std/traits.cn:21:38 [index] fn() -> bool
+std/traits.cn:21:38 [call] bool
 std/traits.conversion.cn:10:14 [binding_pat] T
 std/traits.conversion.cn:10:27 [named_type] self
 std/traits.conversion.cn:17:14 [binding_pat] self
@@ -29712,10 +29720,10 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4095 f fn(T) -> U
 ?:4185 first int32
 ?:4195 items list[int32]
-?:4337 fd int32
+?:4343 fd int32
 ?:4379 total int32
 ?:4379 total int32
-?:4419 fd int32
+?:4425 fd int32
 ?:4465 fd raw_fd
 ?:4606 fill char
 ?:4623 inner I
@@ -29808,7 +29816,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56374 inner I
 ?:56385 f fn(&T) -> T
 
-## call_argument_mappings (732)
+## call_argument_mappings (735)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -30464,6 +30472,9 @@ std/traits.category.cn:120:12 [call] ()
 std/traits.category.cn:120:31 [call] ()
 std/traits.category.cn:120:47 [call] ()
 std/traits.category.cn:211:12 [call] ()
+std/traits.cn:21:5 [call] ()
+std/traits.cn:21:23 [call] ()
+std/traits.cn:21:38 [call] ()
 std/traits.hash.cn:66:12 [call] ()
 std/traits.hash.cn:79:12 [call] (acc=arg, next=arg)
 std/traits.hash.cn:79:25 [call] ()
@@ -33541,7 +33552,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 89
+synthesized_types 95
 synthesized_fragments 30
 synthesized_const_literals 63
 elided_contracts 0

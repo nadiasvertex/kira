@@ -618,6 +618,18 @@ auto test_reports_type_generic_unsolved() -> void {
                     "be rejected");
 }
 
+auto test_reports_copy_bound_unsatisfied() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_copy_bound_unsatisfied.cn");
+  expect_diagnostic(analyzed,
+                    "`larger` needs `T: copy + ord`, and `list[int32]` does "
+                    "not satisfy it",
+                    "expected a `list` passed to a `T: copy` parameter to be "
+                    "rejected");
+  expect_diagnostic(analyzed, "no `impl` can make `list[int32]` one",
+                    "expected the help to say `copy` cannot be implemented");
+}
+
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.cn");
@@ -4123,6 +4135,7 @@ auto test_generic_struct_literal_wrong_type_arg_count() -> void {
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
+    test_reports_copy_bound_unsatisfied();
     test_accepts_try_from_conversion();
     test_accepts_structs_and_methods();
     test_accepts_packed_struct();

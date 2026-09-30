@@ -21,9 +21,16 @@ An unannotated sequence literal is a `list`: `let xs = [1, 2, 3]` is a `list[int
 
 ## Ownership and `drop`
 
-`list[T]` owns its storage and implements `drop`, which frees it at scope exit. Calling `free()` explicitly is allowed and makes the later `drop` a no-op.
+`list[T]` owns its storage and its elements. Its `drop` drops each element in index order, then frees the storage. Calling `free()` explicitly is allowed; it drops the elements the same way, and the later `drop` has nothing left to do.
 
-Elements are **not** dropped individually: a container recursing `drop` through its elements is not implemented ([`todo.md`](../../../todo.md) item 6). A `list` of resource-owning elements frees its own buffer but leaks what the elements own.
+Because the list owns its elements, nothing else may own one while it is stored:
+
+- `v[i]` by value copies the element, so it requires `T: copy`. For any other `T`, borrow it (`&v[i]`, `&mut v[i]`, or a method call on `v[i]`) or take it out with `pop`.
+- `first`, `last` and `get` return copies, so they are available only when `T` is `copy`. `cell` and `mutable_cell` borrow for any `T`.
+- `v[i] = x`, `set`, and `clear` drop the elements they overwrite or remove.
+- `for x in v` consumes `v`: each element moves into `x`, and the elements a loop leaves unvisited (through `break` or `return`) drop with the iterator.
+
+**Not yet implemented:** today elements are never dropped, and the copy-only methods are available for every `T`, returning bitwise copies. That is sound only while no element type needs a drop. See [`todo.md`](../../../todo.md) item 6.
 
 ## Operations
 
@@ -33,14 +40,14 @@ Elements are **not** dropped individually: a container recursing `drop` through 
 |---|---|
 | `new() -> list[T]` | empty; allocates nothing |
 | `len(self) -> usize`, `capacity(self) -> usize`, `is_empty(self) -> bool` | |
-| `first(self) -> option[T]`, `last(self) -> option[T]` | `@none` when empty |
-| `get(self, i) -> option[T]` | `@none` when out of range |
-| `set(mut self, i, value) -> bool` | `false` when out of range |
+| `first(self) -> option[T]`, `last(self) -> option[T]` | `@none` when empty; `T: copy` |
+| `get(self, i) -> option[T]` | `@none` when out of range; `T: copy` |
+| `set(mut self, i, value) -> bool` | `false` when out of range; drops the old element |
 | `push(mut self, value: T)` | amortized O(1) |
 | `pop(mut self) -> option[T]` | `@none` when empty |
 | `reserve(mut self, n)` | ensures room for `n` elements; never shrinks |
-| `clear(mut self)` | O(1); keeps capacity; elements are not dropped |
-| `free(mut self)` | releases the storage; the list is empty and reusable afterwards |
+| `clear(mut self)` | keeps capacity; drops the elements (O(1) when `T` needs no drop) |
+| `free(mut self)` | drops the elements and releases the storage; the list is empty and reusable afterwards |
 | `cell(self, i) -> cell[T]` | view of one element; panics when out of range |
 | `mutable_cell(mut self, i) -> option[cell_mut[T]]` | writable view; `@none` when out of range |
 | `as_slice(self) -> slice[T]`, `as_mut_slice(mut self) -> slice_mut[T]` | view of every element |
@@ -51,8 +58,8 @@ Elements are **not** dropped individually: a container recursing `drop` through 
 | Trait | Gives | Notes |
 |---|---|---|
 | `std.traits.from_array[T]` | `let v: list[int32] = [1, 2, 3]` | allocates exactly the literal's length |
-| `std.traits.index[usize]` | `v[i]` | bounds-checked; out of range panics with `index out of bounds` |
-| `std.traits.index_set[usize]` | `v[i] = x` | same check |
+| `std.traits.index[usize]` | `v[i]` | `T: copy`; bounds-checked; out of range panics with `index out of bounds` |
+| `std.traits.index_set[usize]` | `v[i] = x` | same check; drops the old element |
 | `std.traits.index_ref[usize]` | `&v[i]` → `cell[T]` | same check |
 | `std.traits.index_mut[usize]` | `&mut v[i]` → `cell_mut[T]` | same check |
 | `std.traits.index[range[usize]]` | `v[a..b]` → `slice[T]` | no copy; `b == len` is allowed, `a > b` panics |

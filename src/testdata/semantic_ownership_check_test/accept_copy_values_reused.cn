@@ -1,0 +1,29 @@
+module main
+
+# `copy` values (ch. 14, Copy and move) stay usable after being passed or
+# bound by value: `str`, `char`, a `&T`, and a type parameter bounded by
+# `copy`. Before the `copy` rule, `str` and `char` moved like a `list`.
+
+def larger[T: copy + ord](a: T, b: T) -> T:
+    if a > b:
+        return a
+    return b
+
+def both[T](x: T) -> (T, T) where T: copy:
+    return (x, x)
+
+def count(xs: &list[int32]) -> usize:
+    return xs.len()
+
+def main() -> int32:
+    let s = "cinder"
+    let s2 = s
+    let s3 = s
+    let c = 'a'
+    let c2 = c
+    let c3 = c
+    let xs = [1, 2, 3]
+    let r = &xs
+    let n = count(r) + count(r)
+    let pair = both(s)
+    return larger(3, 4)

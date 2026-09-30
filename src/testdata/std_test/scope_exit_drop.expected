@@ -143,5 +143,19 @@ consumed 293
 drop 293
 owned moved done
 drop 301
+consumed 310
+drop 310
+partial done
+drop 311
+consumed 313
+drop 313
+deep partial done
+drop 312
+drop 314
+consumed 315
+drop 315
+refilled done
+drop 317
+drop 316
 main done
 drop 214

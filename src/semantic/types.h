@@ -425,6 +425,12 @@ public:
   [[nodiscard]] auto is_view(type_id id) const -> bool;
   /// Whether `id` is a mutable view (`mut slice[T]` / `mut cell[T]`).
   [[nodiscard]] auto is_mut_view(type_id id) const -> bool;
+  /// Whether a value of `id` copies rather than moves (ch. 14, Copy and
+  /// move): a builtin scalar (including `str`), `&T`, a raw pointer, or a
+  /// read-only view. A type parameter is never `copy` here; whether its
+  /// `copy` bound makes it one is the caller's to ask
+  /// (`checked_types::copy_type_params`).
+  [[nodiscard]] auto is_copy(type_id id) const -> bool;
 
   /// Whether a value of `found` is acceptable where `expected` is required.
   /// Unknown and error types are compatible with everything by design.
@@ -1235,6 +1241,16 @@ struct checked_types {
   /// `str` is deliberately *excluded* even though the language models it as
   /// a view: the implementation treats `str` as an owned value everywhere.
   std::unordered_set<type_id> borrow_bearing_types;
+  /// The type parameters declared with a `copy` bound, inline or in a
+  /// `where` clause. Keyed like every type parameter, on the declaration that
+  /// introduced it, so the set means the same thing in every body.
+  std::unordered_set<type_id> copy_type_params;
+
+  /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
+  /// or a type parameter bounded by `copy`.
+  [[nodiscard]] auto is_copy(type_id id) const -> bool {
+    return types.is_copy(id) || copy_type_params.contains(id);
+  }
 };
 
 /// Whether `name` is a builtin scalar type (`int32`, `str`, `bool`, ...).

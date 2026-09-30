@@ -208,7 +208,8 @@ def match_fresh_subject() -> unit:
         @none => println("none")
 
 def match_part_of_place(w: &wrap) -> unit:
-    match w.s:
+    # Matched through a borrow: moving `n` out of `w.s` is rejected.
+    match &w.s:
         @held(n) => println("part {n.id}")
         _ => println("part other")
 
@@ -360,6 +361,28 @@ def for_owned_return() -> unit:
     for n in m:
         return
 
+# A partial move (ch. 14, Moving out of places): the moved field drops with
+# its new owner, and the local drops only the fields it still owns. A field
+# refilled by assignment drops again with the local.
+type nest = { d: pair2, c: noisy }
+
+def partial_move() -> unit:
+    let p = pair2 { a: noisy { id: 310 }, b: noisy { id: 311 } }
+    takes(p.a)
+    println("partial done")
+
+def deep_partial_move() -> unit:
+    let n = nest { d: pair2 { a: noisy { id: 312 }, b: noisy { id: 313 } },
+                   c: noisy { id: 314 } }
+    takes(n.d.b)
+    println("deep partial done")
+
+def refilled_field() -> unit:
+    var p = pair2 { a: noisy { id: 315 }, b: noisy { id: 316 } }
+    takes(p.a)
+    p.a = noisy { id: 317 }
+    println("refilled done")
+
 def main() -> unit:
     println("rv {for_return_value(true)}")
     println("rv {for_return_value(false)}")
@@ -411,4 +434,7 @@ def main() -> unit:
     for_owned_continue()
     for_owned_moved()
     for_owned_return()
+    partial_move()
+    deep_partial_move()
+    refilled_field()
     println("main done")

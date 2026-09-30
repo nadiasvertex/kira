@@ -22,12 +22,16 @@ using ownership::block_id;
 using ownership::event;
 using ownership::flow_event;
 using ownership::function_cfg;
+using ownership::invalid_move_event;
+using ownership::k_no_local;
 using ownership::k_no_loan;
 using ownership::loan_id;
 using ownership::loan_info;
 using ownership::loan_origin;
 using ownership::local_id;
 using ownership::local_role;
+using ownership::move_block;
+using ownership::owned_local;
 using ownership::use_event;
 
 using loan_set = std::vector<loan_id>; ///< Sorted, unique.
@@ -104,18 +108,59 @@ auto live_step(const event &e, live_set &live) -> void {
   }
 }
 
-/// Which locals may have been moved from, and where, across one access.
+/// Forgets that `local`, or any field path below it, was moved.
+auto reset_moved(local_id local, const function_cfg &cfg,
+                 std::vector<std::optional<source_span>> &moved_at) -> void {
+  moved_at[local].reset();
+  for (const auto child : cfg.locals[local].children) {
+    reset_moved(child, cfg, moved_at);
+  }
+}
+
+/// A field path below `local` that may have been moved, if any.
+auto moved_below(local_id local, const function_cfg &cfg,
+                 const std::vector<std::optional<source_span>> &moved_at)
+    -> std::optional<local_id> {
+  for (const auto child : cfg.locals[local].children) {
+    if (moved_at[child].has_value()) {
+      return child;
+    }
+    if (const auto deeper = moved_below(child, cfg, moved_at)) {
+      return deeper;
+    }
+  }
+  return std::nullopt;
+}
+
+/// The topmost field paths below `local` that may have been moved.
+auto moved_parts(local_id local, const function_cfg &cfg,
+                 const std::vector<std::optional<source_span>> &moved_at)
+    -> std::vector<local_id> {
+  auto out = std::vector<local_id>{};
+  for (const auto child : cfg.locals[local].children) {
+    if (moved_at[child].has_value()) {
+      out.push_back(child);
+      continue;
+    }
+    auto deeper = moved_parts(child, cfg, moved_at);
+    out.insert(out.end(), deeper.begin(), deeper.end());
+  }
+  return out;
+}
+
+/// Which locals may have been moved from, and where, across one access. A
+/// move of part of a local moves only that part's `field_path` local.
 auto moved_step(const access_event &a, const function_cfg &cfg,
                 std::vector<std::optional<source_span>> &moved_at) -> void {
   switch (a.kind) {
   case access_kind::move:
-    if (cfg.locals[a.local].movable && !moved_at[a.local]) {
+    if (!a.projected && cfg.locals[a.local].movable && !moved_at[a.local]) {
       moved_at[a.local] = a.span;
     }
     break;
   case access_kind::write_whole:
   case access_kind::storage_dead:
-    moved_at[a.local].reset();
+    reset_moved(a.local, cfg, moved_at);
     break;
   default:
     break;
@@ -266,23 +311,52 @@ private:
         if (const auto *a = std::get_if<access_event>(&events[i])) {
           check_move(*a, state);
           check_conflict(*a, state, live_after[i]);
+        } else if (const auto *m =
+                       std::get_if<invalid_move_event>(&events[i])) {
+          report_invalid_move(*m);
         }
         forward_step(events[i], cfg_, state);
       }
     }
   }
 
+  /// Reports a use of `a.local` after it, a field path above it, or (for a
+  /// use of the whole) a field path below it may have been moved.
   auto check_move(const access_event &a, const forward_state &state) -> void {
     if (a.kind == access_kind::write_whole ||
         a.kind == access_kind::storage_dead) {
       return;
     }
-    const auto &moved = state.moved_at[a.local];
-    if (!moved.has_value() || !cfg_.locals[a.local].movable ||
-        !reported_moves_.insert(a.local).second) {
+    auto moved = std::optional<local_id>{};
+    if (state.moved_at[a.local].has_value() && cfg_.locals[a.local].movable) {
+      moved = a.local;
+    }
+    // A part access checks only the root itself: the part's own field path
+    // local is accessed separately.
+    for (auto up = cfg_.locals[a.local].parent;
+         !moved.has_value() && !a.projected && up != k_no_local &&
+         cfg_.locals[up].role == local_role::field_path;
+         up = cfg_.locals[up].parent) {
+      if (state.moved_at[up].has_value()) {
+        moved = up;
+      }
+    }
+    auto partly = false;
+    if (!moved.has_value() && !a.projected) {
+      moved = moved_below(a.local, cfg_, state.moved_at);
+      partly = moved.has_value();
+    }
+    if (!moved.has_value() || !reported_moves_.insert(a.local).second) {
       return;
     }
-    report_use_after_move(cfg_.locals[a.local].name, a.span, *moved);
+    if (partly) {
+      report_use_after_partial_move(cfg_.locals[a.local].name,
+                                    cfg_.locals[*moved].name, a.span,
+                                    *state.moved_at[*moved]);
+      return;
+    }
+    report_use_after_move(cfg_.locals[*moved].name, cfg_.locals[*moved].type,
+                          a.span, *state.moved_at[*moved]);
   }
 
   auto check_conflict(const access_event &a, const forward_state &state,
@@ -378,24 +452,113 @@ private:
     report_access_while_held(a, loan, holder, root);
   }
 
-  auto report_use_after_move(const std::string &name, source_span span,
-                             source_span moved_at) -> void {
+  auto report_use_after_move(const std::string &name, type_id type,
+                             source_span span, source_span moved_at) -> void {
     auto d = diagnostic(diagnostic_level::error,
                         std::format("use of moved value `{}`", name), file_id_);
     d.with_label(span, std::format("`{}` used here after being moved", name));
     d.with_secondary_label(moved_at, std::format("`{}` moved here", name));
+    const auto is_param = checked_.types.entry(type).kind ==
+                          type_kind::type_param_kind;
     d.with_note(
-        "a value's owner may use it once more before it goes out of scope; "
-        "moving it transfers that ownership away, and Cinder does not "
-        "implicitly copy non-scalar values");
+        is_param
+            ? std::format("`{0}` is a `{1}`, and a type parameter's values "
+                          "move unless it is bounded by `copy`: `{1}` could "
+                          "be a type that owns something, such as a `list`",
+                          name, checked_.types.display(type))
+            : std::string("a value's owner may use it once more before it "
+                          "goes out of scope; moving it transfers that "
+                          "ownership away, and only `copy` types (the "
+                          "scalars, `str`, `&T`, raw pointers and read-only "
+                          "views) are copied implicitly"));
     d.with_note("a move inside a loop, or in only one branch of an `if` or "
                 "`match`, still counts: the use is rejected if any path to "
                 "it has already moved the value");
-    d.with_help(std::format(
-        "borrow it instead with `&{0}` (or `&mut {0}`) if the callee only "
-        "needs to read or modify it, or restructure the code so `{0}` is "
-        "only used once",
-        name));
+    d.with_help(
+        is_param
+            ? std::format("borrow it instead with `&{0}` if the callee only "
+                          "needs to read it, or add `where {1}: copy` if "
+                          "every `{1}` this is used with is a scalar or "
+                          "another `copy` type",
+                          name, checked_.types.display(type))
+            : std::format("borrow it instead with `&{0}` (or `&mut {0}`) if "
+                          "the callee only needs to read or modify it, or "
+                          "restructure the code so `{0}` is only used once",
+                          name));
+    diag_.emit(d);
+  }
+
+  auto report_use_after_partial_move(const std::string &name,
+                                     const std::string &part, source_span span,
+                                     source_span moved_at) -> void {
+    auto d = diagnostic(diagnostic_level::error,
+                        std::format("use of partly moved value `{}`", name),
+                        file_id_);
+    d.with_label(span, std::format("`{}` used here after `{}` was moved out "
+                                   "of it",
+                                   name, part));
+    d.with_secondary_label(moved_at, std::format("`{}` moved here", part));
+    d.with_note("moving a field out of a value leaves its other fields "
+                "usable, but not the value as a whole");
+    d.with_help(std::format("give `{0}` a new value (`{0} = ...`) before "
+                            "using `{1}` again, or use only its other fields",
+                            part, name));
+    diag_.emit(d);
+  }
+
+  /// A move out of a place the rules forbid moving out of.
+  auto report_invalid_move(const invalid_move_event &m) -> void {
+    auto message = std::string{};
+    auto label = std::string{};
+    auto help = std::string{};
+    switch (m.reason) {
+    case move_block::element:
+      message = std::format("cannot move out of an element of `{}`", m.owner);
+      label = std::format("this element is still owned by `{}`", m.owner);
+      help = "borrow the element instead of moving it (write `&` before it), "
+             "or take it out with a method that removes it from the "
+             "collection, such as `pop`";
+      break;
+    case move_block::deref:
+      message = std::format("cannot move out of `{}`", m.place);
+      label = std::format("this value is behind `{}`, which does not own it",
+                          m.owner);
+      help = "borrow the value instead of moving it";
+      break;
+    case move_block::borrowed:
+      message = std::format("cannot move out of `{}`", m.place);
+      label = m.owner == "self"
+                  ? std::string("`self` is only borrowed by this method, so "
+                                "its fields stay with the caller")
+                  : std::format("`{}` only borrows its value, so its fields "
+                                "stay with their owner",
+                                m.owner);
+      help = std::format("borrow it instead with `&{}`", m.place);
+      break;
+    case move_block::fill:
+      message = std::format("`[v; n]` needs a `copy` value, and `{}` is not "
+                            "one",
+                            m.owner);
+      label = "this value would be duplicated into every element";
+      help = "build the elements one at a time instead, for example with a "
+             "loop that pushes a fresh value each time";
+      break;
+    case move_block::own_drop:
+      message = std::format("cannot move out of `{}`", m.place);
+      label = std::format("`{}` implements `drop`, which needs all of its "
+                          "fields when it runs",
+                          m.owner);
+      help = std::format("borrow the field instead with `&{}`", m.place);
+      break;
+    }
+    auto d = diagnostic(diagnostic_level::error, message, file_id_);
+    d.with_label(m.span, label);
+    d.with_note(m.reason == move_block::fill
+                    ? "a value that is not `copy` has one owner, so it cannot "
+                      "be in several elements at once"
+                    : "moving it out would give the value two owners, and the "
+                      "one it was taken from would still drop it");
+    d.with_help(help);
     diag_.emit(d);
   }
 
@@ -681,66 +844,98 @@ auto check_ownership(const std::vector<parsed_module> &inputs,
   }
 }
 
-auto ownership::owned_at_scope_exits(const function_cfg &cfg)
-    -> std::vector<scope_exit_owned> {
-  using moved_set = std::vector<std::optional<source_span>>;
+namespace {
+
+using moved_set = std::vector<std::optional<source_span>>;
+
+/// The forward "maybe moved" facts at the entry of each block, and whether
+/// the block is reached at all.
+struct moved_facts {
+  std::vector<bool> reached;
+  std::vector<moved_set> in;
+};
+
+auto compute_moved_facts(const function_cfg &cfg) -> moved_facts {
   const auto blocks = cfg.blocks.size();
-  auto reached = std::vector<bool>(blocks, false);
-  auto in = std::vector<moved_set>(blocks, moved_set(cfg.locals.size()));
-  reached[0] = true;
+  auto facts = moved_facts{
+      .reached = std::vector<bool>(blocks, false),
+      .in = std::vector<moved_set>(blocks, moved_set(cfg.locals.size()))};
+  facts.reached[0] = true;
   auto changed = true;
   while (changed) {
     changed = false;
     for (std::size_t b = 0; b < blocks; ++b) {
-      if (!reached[b]) {
+      if (!facts.reached[b]) {
         continue;
       }
-      auto moved = in[b];
+      auto moved = facts.in[b];
       for (const auto &e : cfg.blocks[b].events) {
         if (const auto *a = std::get_if<access_event>(&e)) {
           moved_step(*a, cfg, moved);
         }
       }
       for (const auto s : cfg.blocks[b].successors) {
-        if (!reached[s]) {
-          reached[s] = true;
-          in[s] = moved;
+        if (!facts.reached[s]) {
+          facts.reached[s] = true;
+          facts.in[s] = moved;
           changed = true;
           continue;
         }
         for (std::size_t i = 0; i < moved.size(); ++i) {
-          if (moved[i].has_value() && !in[s][i].has_value()) {
-            in[s][i] = moved[i];
+          if (moved[i].has_value() && !facts.in[s][i].has_value()) {
+            facts.in[s][i] = moved[i];
             changed = true;
           }
         }
       }
     }
   }
+  return facts;
+}
 
-  auto exits = std::vector<scope_exit_owned>{};
-  for (std::size_t b = 0; b < blocks; ++b) {
-    if (!reached[b]) {
+/// Replays each reached block from its entry facts, calling `visit(event,
+/// moved)` on every event with the facts just before it.
+template <typename Visit>
+auto replay_moved(const function_cfg &cfg, const moved_facts &facts,
+                  Visit visit) -> void {
+  for (std::size_t b = 0; b < cfg.blocks.size(); ++b) {
+    if (!facts.reached[b]) {
       continue;
     }
-    auto moved = in[b];
+    auto moved = facts.in[b];
     for (const auto &e : cfg.blocks[b].events) {
+      visit(e, moved);
       if (const auto *a = std::get_if<access_event>(&e)) {
         moved_step(*a, cfg, moved);
-      } else if (const auto *x = std::get_if<ownership::scope_exit_event>(&e)) {
-        auto owned = scope_exit_owned{.key = x->key, .groups = {}};
-        for (const auto &group : x->groups) {
-          auto &kept = owned.groups.emplace_back();
-          for (const auto local : group) {
-            if (!moved[local].has_value()) {
-              kept.push_back(local);
-            }
-          }
-        }
-        exits.push_back(std::move(owned));
       }
     }
   }
+}
+
+} // namespace
+
+auto ownership::owned_at_scope_exits(const function_cfg &cfg)
+    -> std::vector<scope_exit_owned> {
+  auto exits = std::vector<scope_exit_owned>{};
+  replay_moved(cfg, compute_moved_facts(cfg),
+               [&](const event &e, const moved_set &moved) -> void {
+                 const auto *x = std::get_if<ownership::scope_exit_event>(&e);
+                 if (x == nullptr) {
+                   return;
+                 }
+                 auto owned = scope_exit_owned{.key = x->key, .groups = {}};
+                 for (const auto &group : x->groups) {
+                   auto &kept = owned.groups.emplace_back();
+                   for (const auto local : group) {
+                     if (!moved[local].has_value()) {
+                       kept.push_back(owned_local{
+                           .local = local,
+                           .moved_parts = moved_parts(local, cfg, moved)});
+                     }
+                   }
+                 }
+                 exits.push_back(std::move(owned));
+               });
   return exits;
 }
 

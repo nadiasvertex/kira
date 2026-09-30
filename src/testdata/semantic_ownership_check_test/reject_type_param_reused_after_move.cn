@@ -1,0 +1,14 @@
+module main
+
+# A type parameter without a `copy` bound moves (ch. 14, Copy and move): `T`
+# could be a `list`. `keep_if` passes `x` to `pred` by value and then returns
+# it, which is two owners for one value. This is the shape of spec/todo.md
+# item 12 (std.algo's `filter`).
+
+def keep_if[T](x: T, pred: fn(T) -> bool) -> option[T]:
+    if pred(x):
+        return @some(x)
+    return @none
+
+def main() -> int32:
+    return 0

@@ -614,6 +614,53 @@ auto test_repeated_iter_values_chains_are_accepted() -> void {
              analyzed.diagnostics);
 }
 
+auto test_copy_values_reused_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_copy_values_reused.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected `str`, `char`, `&T` and `T: copy` values to "
+                     "stay usable after a by-value use:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_type_param_reused_after_move_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_type_param_reused_after_move.cn");
+  expect(analyzed.error_count > 0,
+         "expected a `T` without a `copy` bound to move, so reusing it after "
+         "passing it by value is rejected");
+  expect(analyzed.diagnostics.find("use of moved value `x`") !=
+             std::string::npos,
+         std::string("expected a use-after-move of `x`:\n") +
+             analyzed.diagnostics);
+  expect(analyzed.diagnostics.find("where T: copy") != std::string::npos,
+         std::string("expected the help to offer a `copy` bound:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_partial_moves_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_partial_moves.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected partial moves, field refills, matching a "
+                     "field, and raw-pointer reads to check cleanly:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_moves_out_of_places_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_moves_out_of_places.cn");
+  for (const auto *needle :
+       {"cannot move out of `self.items`",
+        "cannot move out of an element of `xs`", "cannot move out of `*r`",
+        "cannot move out of `g.inner`", "use of partly moved value `j`",
+        "`[v; n]` needs a `copy` value"}) {
+    expect(analyzed.diagnostics.find(needle) != std::string::npos,
+           std::string("expected `") + needle + "`:\n" +
+               analyzed.diagnostics);
+  }
+  expect(analyzed.error_count == 6,
+         std::string("expected exactly the six rejected moves:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reuse_after_move_capture_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_reuse_after_move_capture.cn");
@@ -869,7 +916,11 @@ auto main() -> int {
     test_repeated_self_method_calls_are_accepted();
     test_repeated_borrowing_ufcs_calls_are_accepted();
     test_repeated_iter_values_chains_are_accepted();
-    test_reuse_after_move_capture_is_rejected();
+    test_copy_values_reused_are_accepted();
+  test_type_param_reused_after_move_is_rejected();
+  test_partial_moves_are_accepted();
+  test_moves_out_of_places_are_rejected();
+  test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();
     test_reuse_after_for_x_in_ref_is_accepted();
     test_move_in_loop_is_rejected();

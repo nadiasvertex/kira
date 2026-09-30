@@ -58,7 +58,7 @@ def compares(p: positive, raw: int32) -> bool:
 
 # --- Indexing -------------------------------------------------------------
 
-def safe_get[T, n: usize](v: array[T, n], i: index[n]) -> T:
+def safe_get[T: copy, n: usize](v: array[T, n], i: index[n]) -> T:
     v[i]
 
 def in_bounds(v: array[int32, 8], i: index[8]) -> int32:

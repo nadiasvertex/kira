@@ -59,6 +59,26 @@ As implemented, the buffer needs fewer operations than the sketch above: `buf[i]
 
 `std.mem` is the worked example of this containment: every function in it is `machine` and a handful of lines long, and `std.list`'s `vector[T]` — a growable list owning its own heap storage — is written entirely against it with a fully safe public API.
 
+### Raw memory and ownership
+
+Memory behind a raw pointer has no owner the compiler knows about. The code holding the pointer decides which slots hold live values, and is responsible for dropping each one exactly once. These rules follow:
+
+- A raw read, `p[i]` or `*p`, is a bitwise copy whatever the element type. For a type that is not `copy`, the read gives the caller ownership of the value, and the slot must then be treated as empty.
+- A raw write, `p[i] = v`, takes ownership of `v` and never drops what the slot held before, since the slot may be uninitialized.
+- `std.mem.drop_in_place[T](p: *mut T)` runs `T`'s drop glue on the value at `p` and leaves the slot empty. It does nothing for a type that needs no drop.
+- `std.mem.needs_drop[T]() -> bool` answers whether `T` needs a drop. It folds to a constant, so a loop guarded by it disappears for a type that needs none.
+
+A collection built on raw memory uses these to meet [the element rule](../02-intermediate/17-shared-ownership-and-drop.md#owners): its `drop` calls `drop_in_place` on each slot that holds a value, and a method that overwrites a live element drops it first.
+
+```cinder
+impl[T] drop for list[T]:
+    machine def drop(mut self) -> unit:
+        if needs_drop[T]():
+            for i in 0..self.len:
+                drop_in_place(&mut self.data[i])
+        free(self.data, self.cap)
+```
+
 ### `packed` struct layout
 
 `packed` is a struct-only modifier — fields laid back-to-back with no padding, final size rounded up to the widest field's alignment (or not rounded at all when packed) — and is available on any struct declaration, **not** gated by `machine`; see [Type Declarations](../01-core/10-type-declarations.md) for the full field-layout rules. Finer-grained per-field `layout`/`align`/`offset` control beyond `packed` remains aspirational.
@@ -76,7 +96,8 @@ As implemented, the buffer needs fewer operations than the sketch above: `buf[i]
   - `uninit[T, N]` and genuine stack storage for it: an `alloca` in the LLVM tier's entry block, a statically-sized frame-local byte range (`op_stack_alloc`) in the bytecode tier. `buf[i]` is bounds-checked against `N` (a compile-time constant, so the check is free); `.len()` folds to `N`; `.as_mut_ptr()` hands out the buffer. Buffers are zero-filled, which `uninit` does not promise — it only removes the nondeterminism, so a read of an unwritten slot fails the same way every run. A function's `uninit` buffers together may use at most **1 MiB** of frame storage (`hir::k_max_frame_stack_bytes`); a larger frame is a compile error on every backend, naming each contributing buffer. Lambda bodies are frames of their own. A callee holding a buffer is never inlined (which would move the buffer into the caller's budget), and a function owning a buffer makes no tail calls (a callee may still point into it). On the LLVM tier every function carries inline stack probes, so running out of thread stack under the limit faults on the guard page instead of stepping past it.
   - Raw heap memory: the `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`), wrapped in typed, element-counted form by [`std.mem`](../04-stdlib/collections/43-list.md). The allocator is selectable at run time (`CINDER_ALLOCATOR=system|arena`).
 - **Not implemented:**
-  - The four named machine functions in the sketch above (`slot_ptr`, `write_slot`, `read_slot`, `drop_first`, `as_slice`) do not exist under those names. `slot_ptr`/`write_slot`/`read_slot` are subsumed by `buf.as_mut_ptr()` and `buf[i]`. `as_slice` has no equivalent: there is no way to form a `slice[T]` over the first `len` slots of a buffer. `drop_first` is blocked on destructors, which do not run anywhere (`../../todo.md` item 6).
+  - The four named machine functions in the sketch above (`slot_ptr`, `write_slot`, `read_slot`, `drop_first`, `as_slice`) do not exist under those names. `slot_ptr`/`write_slot`/`read_slot` are subsumed by `buf.as_mut_ptr()` and `buf[i]`. `as_slice` has no equivalent: there is no way to form a `slice[T]` over the first `len` slots of a buffer. `drop_first` is blocked on `drop_in_place`.
+  - `std.mem.drop_in_place` and `std.mem.needs_drop` do not exist yet (`../../todo.md` item 6). Raw reads and writes already behave as described above, but nothing yet lets generic code drop a `T` in place.
   - `small_list[T, N]` ([Small List](../04-stdlib/collections/47-small-list.md)) is now *buildable* on `uninit[T, N]`, but has not been built.
   - `transmute` does not exist anywhere in the source tree.
   - SIMD intrinsics do not exist.

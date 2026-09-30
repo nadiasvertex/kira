@@ -90,7 +90,7 @@ pub def iter_mut[T](xs: &mut list[T]) -> list_iter_mut[T]
 pub def into_iter[T](xs: list[T]) -> list_into_iter[T]
 ```
 
-`iter` borrows, `iter_mut` borrows mutably (so elements can be mutated in place through the yielded `&mut T`), `into_iter` consumes the list and yields owned values.
+`iter` borrows, `iter_mut` borrows mutably (so elements can be mutated in place through the yielded `&mut T`), `into_iter` consumes the list and yields owned values. Elements the iterator has not yet yielded drop with it.
 
 Trait coverage of each, exactly as implemented:
 

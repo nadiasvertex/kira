@@ -1,0 +1,47 @@
+module main
+
+# Moving out of places (ch. 14): a field of a local the function owns may be
+# moved out, leaving the other fields usable; assigning the field fills it
+# again. Matching a field moves nothing when no pattern binds a non-`copy`
+# part, and a place that cannot be moved out of can still be matched through
+# a borrow. A raw-pointer read is a bitwise copy the `machine` code owns.
+
+type job = { name: str, input: list[int32], output: list[int32] }
+
+type holder = { head: option[list[int32]], k: int32 }
+
+extend holder:
+    def has_head(self) -> bool:
+        match self.head:
+            @some(_) => return true
+            @none => return false
+
+    def head_len(self) -> usize:
+        match &self.head:
+            @some(xs) => return xs.len()
+            @none => return 0
+
+def split(j: job) -> list[int32]:
+    let out = j.output
+    println(j.name)
+    let n = j.input.len()
+    return out
+
+def refill(j: job) -> job:
+    var k = j
+    let out = k.output
+    k.output = [9]
+    return k
+
+machine def swap_raw(pa: *mut list[int32], pb: *mut list[int32]) -> unit:
+    let tmp = *pa
+    *pa = *pb
+    *pb = tmp
+
+def main() -> int32:
+    let j = job { name: "a", input: [1], output: [2, 3] }
+    let out = split(j)
+    let h = holder { head: @some([1, 2]), k: 1 }
+    let yes = h.has_head()
+    let n = h.head_len()
+    return int32(out.len() + n)

@@ -12,11 +12,19 @@ The prelude is the set of names available in every module without a `use` declar
 
 `index`/`index_set` are what make `v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences. `index_mut` is declared but not yet wired (`../../todo.md` item 19).
 
-**Concepts:** `send`, `share`.
+**Concepts:** `copy`, `send`, `share`. `copy` is satisfied by the types listed in [Ownership and Borrowing](../02-intermediate/14-ownership-and-borrowing.md#copy-and-move). It is declared in `std.traits` and answered by the checker, not by its body.
 
-**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `align_of`, `ptr_cast`, `uninit`, `args`, `env`, `drop`.
+**Functions:** `println`, `print`, `panic`, `assert`, `size_of`, `align_of`, `ptr_cast`, `uninit`, `args`, `env`, `drop`, `swap`, `replace`.
 
-`drop` is the one entry here that does not exist: no `def drop` is defined outside the `drop` trait itself, and a call to `drop(x)` type-checks but then fails to lower (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). The `drop` *trait* listed above is genuinely prelude-reachable.
+The three ownership functions exist so that a value can leave a place it cannot be moved out of (see [Ownership and Borrowing](../02-intermediate/14-ownership-and-borrowing.md#moving-out-of-places)):
+
+```cinder
+def drop[T](x: T) -> unit                    # takes x and drops it now
+def swap[T](a: &mut T, b: &mut T) -> unit    # exchanges the two values
+def replace[T](dest: &mut T, value: T) -> T  # stores value, returns the old one
+```
+
+None of the three exists yet. A call to `drop(x)` type-checks but then fails to lower (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). The `drop` *trait* listed above is genuinely prelude-reachable.
 
 Four of these are not ordinary functions but compiler-answered forms, each taking its argument in brackets:
 

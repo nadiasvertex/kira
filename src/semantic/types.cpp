@@ -598,6 +598,21 @@ auto type_table::is_mut_view(type_id id) const -> bool {
          (item.name == "slice_mut" || item.name == "cell_mut");
 }
 
+auto type_table::is_copy(type_id id) const -> bool {
+  const auto &item = entry(strip_refinement(id));
+  switch (item.kind) {
+  case type_kind::builtin_kind:
+  case type_kind::ptr_kind:
+    return true;
+  case type_kind::ref_kind:
+    return !item.is_mut;
+  case type_kind::builtin_generic_kind:
+    return item.name == "slice" || item.name == "cell";
+  default:
+    return false;
+  }
+}
+
 /// Whether the unknowns of a value slot range over an unsigned type, which is
 /// the fact that refutes `n + 1 = 0`. Read off the slot's underlying type
 /// (`result`), so `n: usize` constrains and `n: int32` doesn't.

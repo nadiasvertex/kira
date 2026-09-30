@@ -505,11 +505,15 @@ private:
   /// onto `out`. `make_receiver` is invoked once per call actually built
   /// (own-drop, then once per recursed-into field), never shared, since each
   /// use needs its own freshly-built HIR expression tree — the same pattern
-  /// `lower_pattern`'s `make_place` callbacks already use.
+  /// `lower_pattern`'s `make_place` callbacks already use. `moved_paths`
+  /// are field paths already moved out of the value (see `pending_drop`):
+  /// those fields are skipped.
   using place_fn = std::function<ptr<hir_expr>()>;
+  using field_paths = std::vector<std::vector<std::string>>;
   [[nodiscard]] auto build_drop_calls(const place_fn &make_receiver,
                                       type_id type, source_span span,
-                                      ptr_vec<hir_node> &out)
+                                      ptr_vec<hir_node> &out,
+                                      const field_paths &moved_paths = {})
       -> std::expected<void, lowering_error>;
   /// Builds and appends the drop call(s) for one scheduled binding.
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
@@ -2197,7 +2201,8 @@ auto lowerer::lower_index_dispatch(source_span span, type_id result,
 }
 
 auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
-                               source_span span, ptr_vec<hir_node> &out)
+                               source_span span, ptr_vec<hir_node> &out,
+                               const field_paths &moved_paths)
     -> std::expected<void, lowering_error> {
   const auto found = checked_.drop_plans.find(type);
   if (found == checked_.drop_plans.end()) {
@@ -2230,13 +2235,31 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
   // Field-wise, in declaration order, regardless of whether this type had
   // its own `impl drop` above — the spec's implicit field-wise rule applies
   // either way (`drop_plan`'s doc comment, types.h).
+  // A field moved out whole is skipped; one moved out of in part drops
+  // what it still owns.
   for (const auto &[field_name, field_type] : plan.droppable_fields) {
+    auto moved_whole = false;
+    auto moved_below = field_paths{};
+    for (const auto &path : moved_paths) {
+      if (path.empty() || path.front() != field_name) {
+        continue;
+      }
+      if (path.size() == 1) {
+        moved_whole = true;
+      } else {
+        moved_below.emplace_back(path.begin() + 1, path.end());
+      }
+    }
+    if (moved_whole) {
+      continue;
+    }
     const place_fn field_place = [make_receiver, field_name,
                                   field_type]() -> ptr<hir_expr> {
       return {make<hir_field>(source_span::dummy(), field_type, make_receiver(),
                               field_name)};
     };
-    if (auto sub = build_drop_calls(field_place, field_type, span, out);
+    if (auto sub =
+            build_drop_calls(field_place, field_type, span, out, moved_below);
         !sub.has_value()) {
       return sub;
     }
@@ -2312,7 +2335,7 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
                                 drop_name)};
   };
   return build_drop_calls(make_receiver, drop.type, source_span::dummy(),
-                          stmts);
+                          stmts, drop.moved_paths);
 }
 
 auto lowerer::owned_loop_iterable(const ast::for_stmt &for_stmt)

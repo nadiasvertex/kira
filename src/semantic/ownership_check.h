@@ -56,12 +56,20 @@ auto check_ownership(const std::vector<parsed_module> &inputs,
 
 namespace ownership {
 
+/// A local still owned at a scope exit. `moved_parts` lists the topmost
+/// `field_path` locals below it that may have been moved out; only the
+/// fields outside them are still its to drop.
+struct owned_local {
+  local_id local = 0;
+  std::vector<local_id> moved_parts;
+};
+
 /// One `scope_exit_event` some path reaches, with every local that may
 /// already have been moved from on some path to it removed: what is still
 /// owned there, and so what must be dropped.
 struct scope_exit_owned {
   const void *key = nullptr;
-  std::vector<std::vector<local_id>> groups;
+  std::vector<std::vector<owned_local>> groups;
 };
 
 /// Runs the same forward "maybe moved" pass `check_ownership` uses for

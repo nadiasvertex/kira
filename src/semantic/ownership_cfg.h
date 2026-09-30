@@ -40,6 +40,7 @@ using loan_id = std::uint32_t;
 using block_id = std::uint32_t;
 
 inline constexpr auto k_no_loan = std::numeric_limits<loan_id>::max();
+inline constexpr auto k_no_local = std::numeric_limits<local_id>::max();
 
 /// What a local stands for — used to choose how a diagnostic describes the
 /// value that still holds a borrow.
@@ -50,6 +51,9 @@ enum class local_role : std::uint8_t {
   join_temp,    ///< The value an `if`/`match`/block expression produces.
   subject_temp, ///< A `match`/`if let`/destructuring subject.
   return_slot,  ///< The value the function returns.
+  field_path,   ///< A field of an owning local reached through fields only
+                ///< (`j.output`, `j.a.b`), tracked so a partial move of it
+                ///< is known. Its `parent` is the path one field shorter.
 };
 
 struct local_info {
@@ -58,9 +62,18 @@ struct local_info {
   type_id type = k_unknown_type;
   source_span span = source_span::dummy();
   /// Moving it transfers ownership, so a later use is a use-after-move.
-  /// False for scalars, raw pointers, references, shared views, type
-  /// parameters, and anything whose type is unknown.
+  /// False for `copy` types (ch. 14) and anything whose type is unknown.
   bool movable = false;
+  /// Owns its value, so a field may be moved out of it: a `let`/`var`
+  /// binding, a parameter other than `self`, or a pattern binding that owns
+  /// what it binds. A binding that only borrows its value (`self`, a
+  /// reference, a loop variable over a collection) does not.
+  bool owns = false;
+  /// For a `field_path` local, the local it is a field of; `k_no_local`
+  /// otherwise.
+  local_id parent = k_no_local;
+  /// The `field_path` locals one field below this one.
+  std::vector<local_id> children;
   /// Bound whole — by a plain `let`/`var name`, or a parameter that is a
   /// single name — so it owns its value outright. A pattern binding may
   /// instead alias part of its subject (partial moves are not tracked), so
@@ -105,6 +118,31 @@ struct access_event {
   access_kind kind = access_kind::read;
   source_span span = source_span::dummy();
   loan_id exempt = k_no_loan;
+  /// The access touches only part of `local` (a field, element, or what it
+  /// points at). It conflicts with `local`'s loans as usual, but a move does
+  /// not move `local` itself, and only a move of `local` itself makes it a
+  /// use after move. A part reached through fields alone is also accessed as
+  /// its own `field_path` local.
+  bool projected = false;
+};
+
+/// Why a value cannot be moved out of a place (ch. 14, Moving out of places).
+enum class move_block : std::uint8_t {
+  element,  ///< `xs[i]`: the collection still owns it.
+  deref,    ///< `*r`: it is behind a pointer or reference.
+  borrowed, ///< The root only borrows its value (`self`, a reference).
+  own_drop, ///< A field of a type with its own `drop`.
+  fill,     ///< `[v; n]` duplicates `v`, which is not `copy`.
+};
+
+/// A by-value use of a non-`copy` place the rules forbid moving out of.
+/// `place` spells the place up to the part that blocks the move; `owner` is
+/// the root name, or for `own_drop` the type that implements `drop`.
+struct invalid_move_event {
+  source_span span = source_span::dummy();
+  move_block reason = move_block::element;
+  std::string place;
+  std::string owner;
 };
 
 /// `dest` receives `loans`, plus every loan the `sources` hold right now.
@@ -136,8 +174,8 @@ struct scope_exit_event {
   std::vector<std::vector<local_id>> groups;
 };
 
-using event =
-    std::variant<access_event, flow_event, use_event, scope_exit_event>;
+using event = std::variant<access_event, flow_event, use_event,
+                           scope_exit_event, invalid_move_event>;
 
 struct basic_block {
   std::vector<event> events;

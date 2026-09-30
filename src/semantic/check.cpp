@@ -607,7 +607,8 @@ public:
         .value_path_types = std::move(value_path_types_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
-        .borrow_bearing_types = std::move(borrow_bearing)};
+        .borrow_bearing_types = std::move(borrow_bearing),
+        .copy_type_params = std::move(copy_type_params_)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -2535,6 +2536,10 @@ private:
       if (named.path.empty()) {
         continue;
       }
+      if (names_copy(named)) {
+        copy_type_params_.insert(subject);
+        continue;
+      }
       if (const auto trait = find_trait_decl_by_name(named.path.back());
           trait.has_value() && *trait != nullptr) {
         add_fact_closure(**trait, resolve_type_args(named.type_args, ctx),
@@ -2600,7 +2605,8 @@ private:
              }
              const auto &named = dynamic_cast<const ast::named_type &>(*term);
              return !named.path.empty() &&
-                    (find_trait_decl_by_name(named.path.back()).has_value() ||
+                    (names_copy(named) ||
+                     find_trait_decl_by_name(named.path.back()).has_value() ||
                      find_concept_decl_by_name(named.path.back()).has_value());
            });
   }
@@ -2725,6 +2731,48 @@ private:
       return std::nullopt;
     }
     return category_members(concept_decl.name);
+  }
+
+  /// Whether `concept_decl` is `std.traits.copy`, which the checker answers
+  /// itself (`type_table::is_copy`) rather than from its body.
+  auto is_copy_concept(const ast::concept_decl &concept_decl) -> bool {
+    const auto *traits_module = index_.find_module("std.traits");
+    if (traits_module == nullptr || concept_decl.name != "copy") {
+      return false;
+    }
+    const auto it = traits_module->concepts.find("copy");
+    return it != traits_module->concepts.end() &&
+           it->second.decl == &concept_decl;
+  }
+
+  /// The type parameters declared with a `copy` bound (`record_declared_
+  /// facts`), for `checked_types::copy_type_params`.
+  std::unordered_set<type_id> copy_type_params_;
+
+  /// Whether `named`, in a bound, is the built-in `copy` concept: the prelude
+  /// one, or the bare name when no stdlib is loaded, unless a trait or
+  /// another concept of that name is in scope.
+  auto names_copy(const ast::named_type &named) -> bool {
+    if (named.path.empty() || named.path.back() != "copy") {
+      return false;
+    }
+    if (const auto trait = find_trait_decl_by_name("copy");
+        trait.has_value() && *trait != nullptr) {
+      return false;
+    }
+    const auto found = find_concept_decl_by_name("copy");
+    return !found.has_value() || found->decl == nullptr ||
+           is_copy_concept(*found->decl);
+  }
+
+  /// Whether `subject` satisfies `copy`. Not through `strip_refs`: `&T` is
+  /// `copy` whatever `T` is.
+  auto type_is_copy(type_id subject) -> bool {
+    if ((types_.is_unknown(subject) && !is_rigid_param(subject)) ||
+        subject == k_error_type) {
+      return true;
+    }
+    return types_.is_copy(subject) || copy_type_params_.contains(subject);
   }
 
   static auto intersect_domains(const type_domain &a, const type_domain &b)
@@ -5259,7 +5307,7 @@ private:
     // `T: numeric`).
     if (find_prelude_trait(name).has_value() ||
         find_prelude_concept(name).has_value() || name == "send" ||
-        name == "share" || name == "pool") {
+        name == "share" || name == "pool" || name == "copy") {
       return k_unknown_type;
     }
 
@@ -9807,6 +9855,9 @@ private:
   /// membership, any other concept by each of its trait constraints.
   auto satisfies_concept(type_id subject, const ast::concept_decl &concept_decl)
       -> bool {
+    if (is_copy_concept(concept_decl)) {
+      return type_is_copy(subject);
+    }
     const auto stripped = strip_refs(subject);
     if ((types_.is_unknown(stripped) && !is_rigid_param(stripped)) ||
         stripped == k_error_type) {
@@ -9864,6 +9915,12 @@ private:
       }
       const auto &named = dynamic_cast<const ast::named_type &>(*term);
       if (named.path.empty()) {
+        continue;
+      }
+      if (names_copy(named)) {
+        if (!type_is_copy(subject)) {
+          missing.emplace_back("copy");
+        }
         continue;
       }
       if (const auto trait = find_trait_decl_by_name(named.path.back());
@@ -9995,6 +10052,13 @@ private:
           "on it. Add the same bound — `where {}: {}` — and pass the "
           "requirement on to this function's own callers.",
           subject_name, subject_name, failed->missing.front()));
+    } else if (std::ranges::contains(failed->missing, std::string("copy"))) {
+      diag.with_help(std::format(
+          "Only the builtin scalars, `str`, `&T`, raw pointers, and the "
+          "read-only views `slice[T]` and `cell[T]` are `copy`, and no `impl` "
+          "can make `{}` one. Lend it instead (`&x` makes `{}` a `&{}`), or "
+          "take the `copy` bound off `{}` so its values move.",
+          subject_name, failed->param, subject_name, failed->param));
     } else {
       diag.with_help(std::format(
           "Pass a type that implements {}, or implement it for `{}` — `impl "

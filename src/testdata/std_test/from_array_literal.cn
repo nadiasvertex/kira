@@ -18,7 +18,9 @@ impl from_array[int32] for trio:
 
 type pair[T] = { x: T, y: T }
 
-impl[T] from_array[T] for pair[T]:
+# `T: copy` because the elements are read out of `items` by value, which
+# moves them for any other `T` (ch. 14, Moving out of places).
+impl[T: copy] from_array[T] for pair[T]:
     static def from_array[n: usize](items: array[T, n]) -> pair[T]:
         return pair[T] { x: items[0], y: items[1] }
 
