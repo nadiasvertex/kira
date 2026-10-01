@@ -609,6 +609,9 @@ struct drop_plan {
   std::optional<resolved_callee> own_drop;
   std::vector<std::pair<std::string, type_id>> droppable_fields;
   std::vector<variant_drop> variant_drops; ///< Sum types only.
+  /// A `generator[T]`: dropping one that has not finished resumes it once to
+  /// return, which drops what its body still owns.
+  bool cancels_generator = false;
 };
 
 /// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`

@@ -50,7 +50,7 @@ auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
       }
       if (!field.name.empty()) {
         out.push_back(pattern_binding{
-            .name = field.name, .node = nullptr, .span = field.span});
+            .name = field.name, .field = &field, .span = field.span});
       }
     }
     return;
@@ -107,7 +107,7 @@ auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
     }
     if (group.alias.has_value()) {
       out.push_back(pattern_binding{
-          .name = *group.alias, .node = nullptr, .span = group.span});
+          .name = *group.alias, .alias_of = &group, .span = group.span});
     }
     return;
   }

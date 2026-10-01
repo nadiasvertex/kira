@@ -1,0 +1,27 @@
+module main
+
+# `for x in r` where `r` only borrows a collection reaches `into_iter`, which
+# consumes the collection, so the loop could only copy its elements out
+# (ch. 17). That is allowed for `copy` elements and rejected otherwise.
+
+type res = { id: int32 }
+
+impl drop for res:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def show(xs: &list[res]) -> unit:
+    for r in xs:
+        println("{r.id}")
+
+def total(xs: &list[int32]) -> int32:
+    var sum = 0
+    for x in xs:
+        sum = sum + x
+    return sum
+
+def main() -> unit:
+    let rs = [res { id: 1 }]
+    show(&rs)
+    let ns = [1, 2]
+    println("{total(&ns)}")

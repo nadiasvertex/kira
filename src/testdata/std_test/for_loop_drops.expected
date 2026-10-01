@@ -1,0 +1,23 @@
+drop 1
+drop 2
+drop 3
+returned 2
+consumed 4
+drop 4
+saw
+saw
+drop 5
+after loop
+it 6
+drop 6
+it 7
+drop 7
+after temporary
+drop 8
+drop 9
+ids 2
+pair 10 1
+drop 10
+pair 11 2
+drop 11
+after pairs

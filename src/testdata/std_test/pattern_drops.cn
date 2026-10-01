@@ -1,0 +1,63 @@
+module main
+
+# Pattern bindings own what they bind, and every part of a matched value is
+# dropped exactly once (ch. 17): a binding moved on one path only is dropped
+# under a drop flag, a `match` whose patterns bind only copies leaves a local
+# in place, a match on a field moves just that field, struct shorthand
+# bindings own their fields, an `as` alias owns the whole value, and an arm
+# whose `|` pattern binds nothing drops the temporary it matched.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+type holder = { a: option[noisy], b: noisy }
+type kind = @one(noisy) | @two(noisy) | @three
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+def maybe(id: int32) -> option[noisy]:
+    return @some(mk(id))
+def make_kind(id: int32) -> kind:
+    return @one(mk(id))
+def consume(n: noisy) -> unit:
+    println("consumed {n.id}")
+def moved_on_one_path(take: bool) -> unit:
+    if let @some(n) = maybe(1):
+        if take:
+            consume(n)
+        println("body")
+    println("after if let")
+def copies_only() -> unit:
+    let o = maybe(2)
+    match o:
+        @some(_) => println("some")
+        @none => println("none")
+    println("after match")
+def field_subject() -> unit:
+    let h = holder { a: maybe(3), b: mk(4) }
+    match h.a:
+        @some(n) => println("got {n.id}")
+        @none => println("none")
+    println("after field match")
+def shorthand() -> unit:
+    let h = holder { a: @none, b: mk(5) }
+    let {a, b} = h
+    println("shorthand {b.id}")
+def alias_owner() -> unit:
+    match maybe(6):
+        @some(_) as whole => println("alias {whole.is_some()}")
+        @none => println("none")
+    println("after alias")
+def or_pattern() -> unit:
+    match make_kind(7):
+        @one(_) | @two(_) => println("one or two")
+        @three => println("three")
+    println("after or")
+def main() -> int32:
+    moved_on_one_path(true)
+    moved_on_one_path(false)
+    copies_only()
+    field_subject()
+    shorthand()
+    alias_owner()
+    or_pattern()
+    return 0

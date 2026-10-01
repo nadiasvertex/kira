@@ -2000,17 +2000,24 @@ auto test_lowers_list_for_loop() -> void {
   expect(result.has_value(), "expected a `for` loop over a list to lower");
 
   const auto &function = **result;
-  expect(function.body->stmts.size() == 5,
+  expect(function.body->stmts.size() == 6,
          "expected total-let, the iterator let, the desugared while_let, the "
-         "drop of the list the loop moved, and the return");
+         "iterator's own drop, the drop of the list it holds, and the return");
   expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
          "expected the iterator to be bound once, ahead of the loop");
   expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_while_let,
          "expected list iteration to desugar to a hir_while_let, not a "
          "counting loop over `xs[i]`");
-  expect(function.body->stmts[3]->kind == hir::hir_node_kind::hir_expr_stmt,
-         "expected `xs`, moved into the loop, to be dropped once the loop "
-         "ends");
+  // `xs` moved into the iterator, which drops what it has not yielded and
+  // then the list it holds once the loop ends.
+  for (const std::size_t i : {std::size_t{3}, std::size_t{4}}) {
+    expect(function.body->stmts[i]->kind == hir::hir_node_kind::hir_expr_stmt,
+           "expected the loop's iterator to be dropped once the loop ends");
+    const auto &drop =
+        dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[i]);
+    expect(drop.expr->kind == hir::hir_node_kind::hir_call,
+           "expected the iterator's drop to be a call");
+  }
 
   const auto &loop =
       dynamic_cast<const hir::hir_while_let &>(*function.body->stmts[2]);
@@ -2159,9 +2166,15 @@ auto test_lowers_generator_for_loop() -> void {
   expect(result.has_value(), "expected `generator[T]` iteration to lower");
 
   const auto &function = **result;
-  expect(function.body->stmts.size() == 4,
+  expect(function.body->stmts.size() == 5,
          "expected total-let, the generator-handle let, the desugared "
-         "while_let, and the return");
+         "while_let, the generator's drop, and the return");
+  // The loop owns the generator it was handed and drops it, cancelling it
+  // if it has not finished.
+  const auto &drop =
+      dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[3]);
+  expect(drop.expr->kind == hir::hir_node_kind::hir_generator_cancel,
+         "expected the generator to be dropped once the loop ends");
   expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
          "expected the generator handle to be bound once, ahead of the loop");
   expect(function.body->stmts[2]->kind == hir::hir_node_kind::hir_while_let,
@@ -2381,19 +2394,44 @@ auto test_lowers_generator_function() -> void {
   expect(!fixture.checked.types.is_unknown((*result)->item_type),
          "expected the generator's item type to resolve");
 
-  expect((*result)->body->stmts.size() == 2,
-         "expected two top-level statements: the first yield and the if");
-  expect((*result)->body->stmts.front()->kind == hir::hir_node_kind::hir_yield,
-         "expected the first statement to lower directly to hir_yield");
+  // A generator dropped before it runs, or while suspended at a `yield`,
+  // is resumed only to return: its body tests for that first and after
+  // every `yield`.
+  const auto &stmts = (*result)->body->stmts;
+  expect(stmts.size() == 4,
+         "expected four top-level statements: the cancellation test, the "
+         "first yield, the test after it, and the if");
+  const auto is_cancel_check = [](const hir::hir_node &node) -> bool {
+    if (node.kind != hir::hir_node_kind::hir_expr_stmt) {
+      return false;
+    }
+    const auto &expr = *dynamic_cast<const hir::hir_expr_stmt &>(node).expr;
+    if (expr.kind != hir::hir_node_kind::hir_if) {
+      return false;
+    }
+    const auto &branch = dynamic_cast<const hir::hir_if &>(expr).branches;
+    return branch.size() == 1 &&
+           branch.front().condition->kind ==
+               hir::hir_node_kind::hir_generator_cancelled &&
+           branch.front().body->stmts.back()->kind ==
+               hir::hir_node_kind::hir_return;
+  };
+  expect(is_cancel_check(*stmts[0]),
+         "expected the body to start by testing for cancellation");
+  expect(stmts[1]->kind == hir::hir_node_kind::hir_yield,
+         "expected the first yield to lower directly to hir_yield");
+  expect(is_cancel_check(*stmts[2]),
+         "expected a cancellation test right after the yield");
 
-  const auto &tail_stmt =
-      dynamic_cast<const hir::hir_expr_stmt &>(*(*result)->body->stmts.back());
+  const auto &tail_stmt = dynamic_cast<const hir::hir_expr_stmt &>(*stmts[3]);
   const auto &if_node = dynamic_cast<const hir::hir_if &>(*tail_stmt.expr);
   expect(if_node.branches.size() == 1, "expected a single if branch");
-  expect(if_node.branches.front().body->stmts.front()->kind ==
-             hir::hir_node_kind::hir_yield,
+  const auto &nested = if_node.branches.front().body->stmts;
+  expect(nested.front()->kind == hir::hir_node_kind::hir_yield,
          "expected the nested yield inside the if branch to also lower to "
          "hir_yield");
+  expect(nested.size() == 2 && is_cancel_check(*nested[1]),
+         "expected the nested yield to be followed by its own test");
 }
 
 // A general `some Trait[Args]` existential return type is a checker-only

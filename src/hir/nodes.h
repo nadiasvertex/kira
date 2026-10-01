@@ -112,6 +112,10 @@ enum class hir_node_kind : uint8_t {
   hir_generator_next,    ///< `g.next()` on a `generator[T]` value — no
                          ///< backing `func_decl`, same rationale as
                          ///< `hir_container_len`.
+  hir_generator_cancel,  ///< Drops a `generator[T]` value: see
+                         ///< `hir_generator_cancel`'s doc comment.
+  hir_generator_cancelled, ///< Inside a generator's body, whether it was
+                           ///< resumed only to be cancelled.
   hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
                          ///< into a `str` (`for`-loop lowering only) — see
                          ///< `hir_str_decode_scalar`'s doc comment.
@@ -630,6 +634,27 @@ struct hir_generator_next : hir_expr {
         object(std::move(obj)) {}
 };
 
+/// Drops a `generator[T]` value. A generator that has not finished is
+/// marked cancelled and resumed once: its body sees
+/// `hir_generator_cancelled` where it was suspended (or before it first
+/// runs) and returns, dropping what it still owns. A finished generator owns
+/// nothing. Evaluates to `unit`.
+struct hir_generator_cancel : hir_expr {
+  ptr<hir_expr> object;
+
+  hir_generator_cancel(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_generator_cancel, s, t),
+        object(std::move(obj)) {}
+};
+
+/// Inside a `generator def`'s body: whether the generator was resumed only
+/// to be cancelled (`hir_generator_cancel`). `type` is `bool`. Lowering
+/// tests it before the body first runs and right after each `yield`.
+struct hir_generator_cancelled : hir_expr {
+  hir_generator_cancelled(source_span s, type_id t)
+      : hir_expr(hir_node_kind::hir_generator_cancelled, s, t) {}
+};
+
 /// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already
 /// is (a `cell_mut[T]` is a bare element address) and evaluates to `unit`. A
 /// dedicated node rather than reuse of `hir_assign` (`*c = v`), because
@@ -651,8 +676,20 @@ struct hir_cell_set : hir_expr {
 /// type of the trailing expression (or `unit` if the block ends in a
 /// non-expression statement); statement-only blocks (a function body, an
 /// `if` arm) reuse the same node with `type` left at the unused default.
+/// Which scopes a jump leaves, for the placeholder lowering leaves before
+/// it (`hir_block::exit`).
+enum class jump_exit : std::uint8_t {
+  none,     ///< Not a placeholder.
+  function, ///< A `return`, or the failure path of a `?`.
+  loop,     ///< A `break` or `continue`.
+};
+
 struct hir_block : hir_expr {
   ptr_vec<hir_node> stmts;
+  /// Set on the empty block lowering leaves before a jump's own drops:
+  /// `make_references_explicit` fills it with the drops of the temporaries
+  /// the jump leaves alive, and removes it when there are none.
+  jump_exit exit = jump_exit::none;
 
   hir_block(source_span s, type_id t, ptr_vec<hir_node> body)
       : hir_expr(hir_node_kind::hir_block, s, t), stmts(std::move(body)) {}

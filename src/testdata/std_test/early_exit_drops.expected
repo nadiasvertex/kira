@@ -1,0 +1,26 @@
+drop 2
+drop 1
+try true
+drop 2
+drop 1
+try 8
+drop 10
+v 10
+drop 11
+after break
+drop 21
+drop 22
+v 22
+after continue
+drop 30
+return 7
+wl 41
+drop 40
+wl 42
+drop 40
+drop 40
+after while let
+wlb 51
+drop 50
+drop 50
+after while let break

@@ -84,6 +84,17 @@ auto contains_symbol(const std::vector<hir::symbol_id> &symbols,
   return std::ranges::find(symbols, sym) != symbols.end();
 }
 
+/// The body's first `let`. A generator's body starts with its cancellation
+/// test, and each `yield` is followed by one, so lets are found by kind.
+auto first_let(const hir::hir_function &fn) -> const hir::hir_let & {
+  for (const auto &stmt : fn.body->stmts) {
+    if (stmt->kind == hir::hir_node_kind::hir_let) {
+      return dynamic_cast<const hir::hir_let &>(*stmt);
+    }
+  }
+  fail("expected the generator body to bind a local");
+}
+
 auto test_local_bound_before_yield_and_used_after_is_live() -> void {
   auto fixture =
       check_fixture("module sample\n"
@@ -92,8 +103,7 @@ auto test_local_bound_before_yield_and_used_after_is_live() -> void {
                     "    yield a\n"
                     "    yield a\n");
   const auto fn = lower_generator(fixture, "counter");
-  const auto &let =
-      dynamic_cast<const hir::hir_let &>(*fn->body->stmts.front());
+  const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
   expect(contains_symbol(live, let.symbol),
          "expected `a` (bound before the first yield, read again by the "
@@ -107,8 +117,7 @@ auto test_local_used_only_before_yield_is_not_live() -> void {
                     "    let a = 1\n"
                     "    yield a\n");
   const auto fn = lower_generator(fixture, "counter");
-  const auto &let =
-      dynamic_cast<const hir::hir_let &>(*fn->body->stmts.front());
+  const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
   expect(!contains_symbol(live, let.symbol),
          "expected `a`, referenced only before the single yield, to not be "
@@ -125,7 +134,7 @@ auto test_local_bound_between_two_yields_and_used_after_later_yield_is_live()
                     "    yield b\n"
                     "    yield b\n");
   const auto fn = lower_generator(fixture, "counter");
-  const auto &let = dynamic_cast<const hir::hir_let &>(*fn->body->stmts[1]);
+  const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
   expect(contains_symbol(live, let.symbol),
          "expected `b` (bound after the first yield, read again after the "
@@ -141,7 +150,7 @@ auto test_loop_condition_variable_spanning_yield_is_live() -> void {
                                "        yield n\n"
                                "        n = n + 1\n");
   const auto fn = lower_generator(fixture, "counter");
-  const auto &let = dynamic_cast<const hir::hir_let &>(*fn->body->stmts[0]);
+  const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
   expect(contains_symbol(live, let.symbol),
          "expected the loop counter, tested and updated across the yield in "

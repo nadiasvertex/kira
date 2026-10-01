@@ -320,6 +320,13 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     return hir::make<hir_generator_next>(span, type,
                                          clone_as(*n.object, rename));
   }
+  case hir_node_kind::hir_generator_cancel: {
+    const auto &n = dynamic_cast<const hir_generator_cancel &>(node);
+    return hir::make<hir_generator_cancel>(span, type,
+                                           clone_as(*n.object, rename));
+  }
+  case hir_node_kind::hir_generator_cancelled:
+    return hir::make<hir_generator_cancelled>(span, type);
   case hir_node_kind::hir_str_decode_scalar: {
     const auto &n = dynamic_cast<const hir_str_decode_scalar &>(node);
     return hir::make<hir_str_decode_scalar>(span, type,

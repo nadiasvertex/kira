@@ -1310,6 +1310,24 @@ private:
     case hir_node_kind::hir_generator_next:
       return compile_generator_next(
           dynamic_cast<const hir::hir_generator_next &>(expr));
+    case hir_node_kind::hir_generator_cancel:
+      return compile_generator_cancel(
+          dynamic_cast<const hir::hir_generator_cancel &>(expr));
+    case hir_node_kind::hir_generator_cancelled: {
+      if (!is_generator_step_) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = expr.span,
+            .message = "internal error: a generator cancellation test "
+                       "outside a generator's own body"});
+      }
+      auto *finished = builder_.CreateLoad(
+          llvm::Type::getInt64Ty(ctx_),
+          slot_address(generator_self_arg_, size_t{3}), "gen.finished");
+      return builder_.CreateICmpEQ(
+          finished, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 2),
+          "gen.cancelled");
+    }
     case hir_node_kind::hir_str_decode_scalar:
       return compile_str_decode_scalar(
           dynamic_cast<const hir::hir_str_decode_scalar &>(expr));
@@ -3135,6 +3153,47 @@ private:
     return builder_.CreateLoad(ptr_ty, result_alloca, "gen.next.value");
   }
 
+  /// Drops a generator value — mirrors `op_generator_cancel`: one that has
+  /// not finished is marked cancelled (`finished = 2`) and resumed once, so
+  /// its body returns and drops what it owns.
+  [[nodiscard]] auto
+  compile_generator_cancel(const hir::hir_generator_cancel &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto *gen = *object;
+    auto *i64 = llvm::Type::getInt64Ty(ctx_);
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *finished = builder_.CreateLoad(i64, slot_address(gen, size_t{3}),
+                                         "gen.finished");
+    auto *running = builder_.CreateICmpEQ(
+        finished, llvm::ConstantInt::get(i64, 0), "gen.running");
+    auto *cancel_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.cancel", current_fn_);
+    auto *done_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.cancel.done", current_fn_);
+    builder_.CreateCondBr(running, cancel_bb, done_bb);
+
+    builder_.SetInsertPoint(cancel_bb);
+    builder_.CreateStore(llvm::ConstantInt::get(i64, 2),
+                         slot_address(gen, size_t{3}));
+    auto *step_fn_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(gen, size_t{0}), "gen.step_fn");
+    auto *state_ptr =
+        builder_.CreateLoad(ptr_ty, slot_address(gen, size_t{1}), "gen.state");
+    auto *resume_idx = builder_.CreateLoad(i64, slot_address(gen, size_t{2}),
+                                           "gen.resume");
+    auto *step_fn_type = llvm::FunctionType::get(ptr_ty, {ptr_ty, i64, ptr_ty},
+                                                 /*isVarArg=*/false);
+    builder_.CreateCall(step_fn_type, step_fn_ptr, {state_ptr, resume_idx, gen});
+    builder_.CreateBr(done_bb);
+
+    builder_.SetInsertPoint(done_bb);
+    return llvm::ConstantInt::get(i64, 0);
+  }
+
   /// Sum-type variant construction `@variant(args...)` — mirrors
   /// `bytecode_compiler::compile_variant_init`: allocates a block sized to
   /// the widest variant's payload (slot 0 is the tag, so any variant of
@@ -3792,6 +3851,12 @@ private:
         if (expr_stmt.expr->kind == hir_node_kind::hir_match) {
           return compile_match(
               dynamic_cast<const hir::hir_match &>(*expr_stmt.expr), nullptr);
+        }
+        // A block of statements with no value, such as the drops
+        // `hir::make_references_explicit` puts before a jump.
+        if (expr_stmt.expr->kind == hir_node_kind::hir_block) {
+          return compile_block_as_value(
+              dynamic_cast<const hir::hir_block &>(*expr_stmt.expr), nullptr);
         }
       }
       auto result = compile_expr(*expr_stmt.expr);

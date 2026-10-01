@@ -5768,6 +5768,12 @@ private:
       return std::nullopt;
     }
     const auto &entry = types_.entry(id);
+    if (entry.kind == type_kind::builtin_generic_kind &&
+        entry.name == "generator") {
+      // What a generator's body still owns depends on where it is
+      // suspended, so every generator is dropped by cancelling it.
+      return drop_plan{.cancels_generator = true};
+    }
     const auto is_prelude_sum =
         entry.kind == type_kind::builtin_generic_kind &&
         ((entry.name == "option" && entry.args.size() == 1) ||

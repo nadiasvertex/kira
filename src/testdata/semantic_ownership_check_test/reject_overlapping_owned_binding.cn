@@ -1,0 +1,29 @@
+module main
+
+# A pattern whose bindings overlap (an `as` alias, a `|` or an array
+# pattern) cannot give two names one value, so besides an alias of the whole
+# value, which owns it, it may bind only copies (ch. 17).
+
+type res = { id: int32 }
+
+impl drop for res:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+type pair = { r: res, k: int32 }
+
+def maybe(id: int32) -> option[res]:
+    return @some(res { id: id })
+
+def make_pair(id: int32) -> pair:
+    return pair { r: res { id: id }, k: id }
+
+def main() -> unit:
+    match maybe(1):
+        @some(r) as whole => println("{r.id}")
+        @none => println("none")
+    match maybe(2):
+        @some(_) as whole => println("{whole.is_some()}")
+        @none => println("none")
+    match make_pair(3):
+        {k: k} as whole => println("{k} {whole.r.id}")

@@ -1889,6 +1889,33 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
+      case opcode::op_generator_cancel: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto generator_reg = ops.reg();
+        f.pc = ops.pos();
+        auto *gen_slots = slots_of(f.registers[generator_reg]);
+        if (gen_slots[3].u != 0) {
+          f.registers[dst] = slot_value{};
+          break;
+        }
+        gen_slots[3] = slot_value{uint64_t{2}};
+        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[0].u);
+        const std::array<slot_value, 3> call_args = {
+            gen_slots[1], gen_slots[2], f.registers[generator_reg]};
+        push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
+                   dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
+      case opcode::op_generator_cancelled: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto generator_reg = ops.reg();
+        f.pc = ops.pos();
+        f.registers[dst] =
+            store_bool(slots_of(f.registers[generator_reg])[3].u == 2);
+        break;
+      }
       case opcode::op_str_decode_scalar: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();

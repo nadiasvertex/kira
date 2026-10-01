@@ -42,6 +42,12 @@ struct temporary {
   symbol_id symbol = k_invalid_symbol_id;
   type_id type = k_unknown_type;
   std::vector<std::vector<std::string>> moved_paths;
+  /// The block whose first statement stores the temporary, where its live
+  /// flag is set right after.
+  hir_block *creation = nullptr;
+  /// The temporary's live flag, when a jump can leave it alive or it is a
+  /// `while let` subject's: set once it is stored, cleared once dropped.
+  symbol_id live = k_invalid_symbol_id;
 };
 
 /// Appends the drop of one temporary to a statement list.
@@ -66,9 +72,12 @@ using drop_temporary_fn =
 /// its statement. A condition, a match guard, the right operand of
 /// `and`/`or`, a returned value and a block's value are full expressions of
 /// their own, whose temporaries are dropped as soon as they are evaluated.
-/// The ownership checker ends the same temporaries at the same points
-/// (`semantic::ownership`), so nothing still borrows one when it drops. A
-/// temporary is not dropped on a path that leaves its statement early.
+/// A `while let` subject's temporaries last one iteration. A `return`,
+/// `break`, `continue` or `?` that leaves a statement early drops the
+/// temporaries it has made so far, under run-time live flags, in the
+/// placeholder lowering leaves before the jump (`hir_block::exit`). The
+/// ownership checker ends the same temporaries at the same points
+/// (`semantic::ownership`), so nothing still borrows one when it drops.
 auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,

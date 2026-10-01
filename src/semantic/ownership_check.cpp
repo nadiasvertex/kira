@@ -560,6 +560,25 @@ private:
       help = "build the elements one at a time instead, for example with a "
              "loop that pushes a fresh value each time";
       break;
+    case move_block::iterated:
+      message = std::format("cannot iterate over `{}` by value", m.place);
+      label = std::format("`{}` is a `{}`: it only borrows the collection, "
+                          "and a loop over it by value would move every "
+                          "element out",
+                          m.place, m.owner);
+      help = std::format("iterate over borrowed elements instead with "
+                         "`for x in {}.iter()`",
+                         m.place);
+      break;
+    case move_block::overlapping:
+      message = std::format("cannot move `{}` out of the matched value",
+                            m.place);
+      label = std::format("`{}` is not `copy`, and a pattern with an `as` "
+                          "alias, a `|` or an array pattern binds only copies",
+                          m.place);
+      help = "match a borrow of the value instead (`match &value:`), or "
+             "bind the parts without the alias";
+      break;
     case move_block::own_drop:
       message = std::format("cannot move out of `{}`", m.place);
       label = std::format("`{}` implements `drop`, which needs all of its "

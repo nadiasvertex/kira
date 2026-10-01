@@ -2,8 +2,8 @@ module main
 
 # A `list` owns its elements (ch. 43): `v[i] = x` drops the element it
 # overwrites, `clear` drops them all, `pop` hands one to the caller, a `for`
-# loop that breaks early leaves the rest for the list to drop, and the list
-# drops what it still holds at scope exit. Each `noisy` prints its drop
+# loop owns each element it yields and its iterator drops the rest when the
+# loop breaks early, and the list drops what it still holds at scope exit. Each `noisy` prints its drop
 # exactly once.
 type noisy = { id: int32 }
 impl drop for noisy:

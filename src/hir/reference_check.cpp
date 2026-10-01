@@ -157,6 +157,10 @@ private:
       projection(*dynamic_cast<const hir_generator_next &>(node).object,
                  "a generator step");
       break;
+    case hir_node_kind::hir_generator_cancel:
+      projection(*dynamic_cast<const hir_generator_cancel &>(node).object,
+                 "a generator drop");
+      break;
     case hir_node_kind::hir_str_decode_scalar:
       projection(*dynamic_cast<const hir_str_decode_scalar &>(node).object,
                  "a string decode");
@@ -270,6 +274,7 @@ public:
                                              : function.return_type);
     if (function.body != nullptr) {
       visit(*function.body);
+      remove_empty_exits(*function.body);
     }
     returns_.pop_back();
   }
@@ -280,9 +285,39 @@ private:
   const std::function<symbol_id()> &mint_;
   const drop_temporary_fn &drop_temporary_;
   std::vector<type_id> returns_;
-  /// The temporaries made in each enclosing statement or full expression,
-  /// innermost last. Each is dropped when its frame closes.
-  std::vector<std::vector<temporary>> frames_;
+  /// The temporaries made in one enclosing statement or full expression.
+  struct frame {
+    std::vector<temporary> temps;
+    /// Every temporary gets a live flag (a `while let` subject's).
+    bool flag_all = false;
+  };
+  /// The enclosing frames, innermost last. Each frame's temporaries are
+  /// dropped when it closes.
+  std::vector<frame> frames_;
+
+  /// A jump that leaves frames: it drops their temporaries, the innermost
+  /// frame's first, under their live flags.
+  struct exit_point {
+    /// The placeholder lowering left before the jump, or null for a
+    /// `return` with a value and no placeholder, whose value carries the
+    /// drops instead (`{let r = value; drops; r}`).
+    hir_block *placeholder = nullptr;
+    hir_return *ret = nullptr;
+    /// The first frame the jump leaves: 0 for a `return`, the innermost
+    /// loop's for a `break` or `continue`.
+    std::size_t boundary = 0;
+    /// How many frames enclose it that have not closed yet.
+    std::size_t depth = 0;
+    ptr_vec<hir_node> drops;
+  };
+  std::vector<exit_point> exits_;
+  /// The frame count at each enclosing loop's body, innermost last.
+  std::vector<std::size_t> loop_bases_;
+  /// Set by a placeholder until the jump it comes before is visited.
+  bool placeholder_pending_ = false;
+  /// Statements to insert after the one being visited: the drops of a
+  /// `while let` subject's temporaries left alive when the loop ends.
+  ptr_vec<hir_node> after_statement_;
 
   [[nodiscard]] auto needs_drop(type_id type) const -> bool {
     return drop_temporary_ != nullptr && !types_.is_unknown(type) &&
@@ -291,17 +326,20 @@ private:
 
   /// Notes `symbol`, a local holding a temporary value, to be dropped when
   /// the innermost frame closes.
-  auto note_temporary(symbol_id symbol, type_id type) -> void {
+  auto note_temporary(symbol_id symbol, type_id type, hir_block *creation)
+      -> void {
     if (!needs_drop(type) || frames_.empty()) {
       return;
     }
-    frames_.back().push_back(
-        temporary{.symbol = symbol, .type = type, .moved_paths = {}});
+    frames_.back().temps.push_back(temporary{.symbol = symbol,
+                                             .type = type,
+                                             .moved_paths = {},
+                                             .creation = creation});
   }
 
   [[nodiscard]] auto find_temporary(symbol_id symbol) -> temporary * {
     for (auto &frame : frames_) {
-      for (auto &temp : frame) {
+      for (auto &temp : frame.temps) {
         if (temp.symbol == symbol) {
           return &temp;
         }
@@ -341,20 +379,199 @@ private:
         dynamic_cast<const hir_let &>(*block.stmts.front()).symbol);
   }
 
-  /// Appends the drops of `temps` to `out`, last made first.
-  auto drop_all(std::vector<temporary> &temps, ptr_vec<hir_node> &out)
-      -> void {
+  /// The drop of one temporary, its receiver made a reference like any
+  /// other call's.
+  auto drop_one(const temporary &temp) -> ptr_vec<hir_node> {
     auto drops = ptr_vec<hir_node>{};
-    for (auto &temp : std::views::reverse(temps)) {
-      drop_temporary_(temp, drops);
-    }
-    // The drop calls take their receiver by reference like any other call.
+    drop_temporary_(temp, drops);
     frames_.emplace_back();
     for (auto &drop : drops) {
       visit(*drop);
-      out.push_back(std::move(drop));
     }
     frames_.pop_back();
+    return drops;
+  }
+
+  [[nodiscard]] auto bool_literal(source_span span, bool value) const
+      -> ptr<hir_expr> {
+    return ptr<hir_expr>(hir::make<hir_literal>(
+        span, types_.bool_type(),
+        value ? token_kind::kw_true : token_kind::kw_false,
+        value ? "true" : "false"));
+  }
+
+  [[nodiscard]] auto live_ref(const temporary &temp, source_span span) const
+      -> ptr<hir_expr> {
+    return ptr<hir_expr>(hir::make<hir_local_ref>(
+        span, types_.bool_type(), temp.live, std::string("<live>")));
+  }
+
+  /// Appends the drops of `temps` to `out`, last made first: under its live
+  /// flag, which it clears, for a temporary that has one.
+  auto drop_all(std::vector<temporary> &temps, ptr_vec<hir_node> &out)
+      -> void {
+    for (auto &temp : std::views::reverse(temps)) {
+      auto drops = drop_one(temp);
+      if (temp.live == k_invalid_symbol_id) {
+        for (auto &drop : drops) {
+          out.push_back(std::move(drop));
+        }
+        continue;
+      }
+      out.push_back(guarded(temp, std::move(drops)));
+    }
+  }
+
+  /// `if live: live = false; drops`.
+  auto guarded(const temporary &temp, ptr_vec<hir_node> drops)
+      -> ptr<hir_node> {
+    const auto span = source_span::dummy();
+    auto body = ptr_vec<hir_node>{};
+    body.push_back(ptr<hir_node>(hir::make<hir_assign>(
+        span, ast::assign_op::assign, live_ref(temp, span),
+        bool_literal(span, false))));
+    for (auto &drop : drops) {
+      body.push_back(std::move(drop));
+    }
+    auto branches = std::vector<hir_if_branch>{};
+    branches.push_back(hir_if_branch{
+        .condition = live_ref(temp, span),
+        .body = hir::make<hir_block>(span, semantic::k_unknown_type,
+                                     std::move(body))});
+    return ptr<hir_node>(hir::make<hir_expr_stmt>(
+        span, ptr<hir_expr>(hir::make<hir_if>(span, semantic::k_unknown_type,
+                                              std::move(branches), nullptr))));
+  }
+
+  /// Gives `temp` a live flag: declared false in `lets`, which run before
+  /// the frame, and set right after the temporary is stored.
+  auto give_flag(temporary &temp, ptr_vec<hir_node> &lets) -> void {
+    if (temp.creation == nullptr || temp.creation->stmts.empty()) {
+      return;
+    }
+    const auto span = source_span::dummy();
+    temp.live = mint_();
+    lets.push_back(ptr<hir_node>(hir::make<hir_let>(
+        span, temp.live, std::string("<live>"), bool_literal(span, false),
+        /*mut=*/true)));
+    auto &stmts = temp.creation->stmts;
+    stmts.insert(stmts.begin() + 1,
+                 ptr<hir_node>(hir::make<hir_assign>(
+                     span, ast::assign_op::assign, live_ref(temp, span),
+                     bool_literal(span, true))));
+  }
+
+  /// A closed frame's temporaries, and the declarations of their live flags,
+  /// which must run before the frame does.
+  struct closed_frame {
+    std::vector<temporary> temps;
+    ptr_vec<hir_node> flag_lets;
+  };
+
+  /// Closes the innermost frame. Every jump inside it that leaves it drops
+  /// its temporaries, which then get live flags; a jump that leaves no
+  /// further frames gets its drops in place.
+  auto close_frame() -> closed_frame {
+    auto closing = std::move(frames_.back());
+    frames_.pop_back();
+    const auto index = frames_.size();
+    auto out = closed_frame{.temps = std::move(closing.temps), .flag_lets = {}};
+    const auto leaves = [index](const exit_point &e) -> bool {
+      return e.depth > index && e.boundary <= index;
+    };
+    if (!out.temps.empty() &&
+        (closing.flag_all || std::ranges::any_of(exits_, leaves))) {
+      for (auto &temp : out.temps) {
+        give_flag(temp, out.flag_lets);
+      }
+      for (auto &e : exits_) {
+        if (leaves(e)) {
+          drop_all(out.temps, e.drops);
+        }
+      }
+    }
+    for (auto &e : exits_) {
+      e.depth = std::min(e.depth, index);
+    }
+    // A jump whose last frame closed has all of its drops.
+    for (auto &e : exits_) {
+      if (e.boundary >= index && e.depth <= index) {
+        place_exit(e);
+      }
+    }
+    std::erase_if(exits_, [index](const exit_point &e) {
+      return e.boundary >= index && e.depth <= index;
+    });
+    return out;
+  }
+
+  /// Puts an exit's drops where its jump runs them.
+  auto place_exit(exit_point &e) -> void {
+    if (e.drops.empty()) {
+      return;
+    }
+    if (e.placeholder != nullptr) {
+      for (auto &drop : e.drops) {
+        e.placeholder->stmts.push_back(std::move(drop));
+      }
+      return;
+    }
+    if (e.ret == nullptr || e.ret->value == nullptr) {
+      return;
+    }
+    auto &slot = e.ret->value;
+    const auto span = slot->span;
+    const auto type = slot->type;
+    const auto symbol = mint_();
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
+        span, symbol, std::string("<returned>"), std::move(slot))));
+    for (auto &drop : e.drops) {
+      stmts.push_back(std::move(drop));
+    }
+    stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
+        span, ptr<hir_expr>(hir::make<hir_local_ref>(
+                  span, type, symbol, std::string("<returned>"))))));
+    slot = ptr<hir_expr>(hir::make<hir_block>(span, type, std::move(stmts)));
+  }
+
+  /// Registers a jump: one with a placeholder, or a `return` whose value
+  /// carries its drops.
+  auto note_jump(hir_block *placeholder, hir_return *ret, jump_exit kind)
+      -> void {
+    const auto boundary = kind == jump_exit::loop && !loop_bases_.empty()
+                              ? loop_bases_.back()
+                              : std::size_t{0};
+    exits_.push_back(exit_point{.placeholder = placeholder,
+                                .ret = ret,
+                                .boundary = boundary,
+                                .depth = frames_.size(),
+                                .drops = {}});
+  }
+
+  /// Removes the placeholders no temporary needed.
+  static auto remove_empty_exits(hir_node &node) -> void {
+    if (node.kind == hir_node_kind::hir_block) {
+      std::erase_if(dynamic_cast<hir_block &>(node).stmts,
+                    [](const ptr<hir_node> &stmt) -> bool {
+                      if (stmt->kind != hir_node_kind::hir_expr_stmt) {
+                        return false;
+                      }
+                      const auto &expr =
+                          dynamic_cast<const hir_expr_stmt &>(*stmt).expr;
+                      if (expr == nullptr ||
+                          expr->kind != hir_node_kind::hir_block) {
+                        return false;
+                      }
+                      const auto &block =
+                          dynamic_cast<const hir_block &>(*expr);
+                      return block.exit != jump_exit::none &&
+                             block.stmts.empty();
+                    });
+    }
+    for_each_child(node, [](auto &child) -> void {
+      remove_empty_exits(*child);
+    });
   }
 
   /// Evaluates `slot` as a full expression: the temporaries made inside it
@@ -370,14 +587,14 @@ private:
 
   /// Closes the innermost frame around `slot`: `{let r = slot; drops; r}`.
   auto close_into(ptr<hir_expr> &slot) -> void {
-    auto temps = std::move(frames_.back());
-    frames_.pop_back();
+    auto closed = close_frame();
+    auto &temps = closed.temps;
     if (temps.empty()) {
       return;
     }
     const auto span = slot->span;
     const auto type = slot->type;
-    auto stmts = ptr_vec<hir_node>{};
+    auto stmts = std::move(closed.flag_lets);
     if (!types_.is_unknown(type) && !types_.is_unit(type)) {
       const auto symbol = mint_();
       stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
@@ -410,6 +627,8 @@ private:
       }
       frames_.emplace_back();
       auto value_tail = false;
+      auto after = std::vector<ptr_vec<hir_node>>(end - i);
+      auto before = ptr_vec<hir_node>(end - i);
       for (auto k = i; k < end; ++k) {
         auto &stmt = stmts[k];
         const auto last = k + 1 == stmts.size();
@@ -430,26 +649,62 @@ private:
               needs_drop(expr->type)) {
             const auto symbol = mint_();
             const auto type = expr->type;
-            stmt = ptr<hir_node>(hir::make<hir_let>(
-                stmt->span, symbol, std::string("<discarded>"),
-                std::move(expr)));
-            note_temporary(symbol, type);
+            const auto span = stmt->span;
+            auto store = ptr_vec<hir_node>{};
+            store.push_back(ptr<hir_node>(hir::make<hir_let>(
+                span, symbol, std::string("<discarded>"), std::move(expr))));
+            auto block = hir::make<hir_block>(span, semantic::k_unknown_type,
+                                              std::move(store));
+            auto *creation = block.get();
+            stmt = ptr<hir_node>(hir::make<hir_expr_stmt>(
+                span, ptr<hir_expr>(std::move(block))));
+            note_temporary(symbol, type, creation);
           }
+          after[k - i] = std::move(after_statement_);
+          after_statement_.clear();
           continue;
         }
+        if (!placeholder_pending_ &&
+            (stmt->kind == hir_node_kind::hir_break ||
+             stmt->kind == hir_node_kind::hir_continue ||
+             (stmt->kind == hir_node_kind::hir_return &&
+              dynamic_cast<const hir_return &>(*stmt).value == nullptr))) {
+          // A jump lowering made without a placeholder of its own.
+          auto placeholder = hir::make<hir_block>(
+              stmt->span, semantic::k_unknown_type, ptr_vec<hir_node>{});
+          placeholder->exit = stmt->kind == hir_node_kind::hir_return
+                                  ? jump_exit::function
+                                  : jump_exit::loop;
+          note_jump(placeholder.get(), nullptr, placeholder->exit);
+          before[k - i] = ptr<hir_node>(hir::make<hir_expr_stmt>(
+              stmt->span, ptr<hir_expr>(std::move(placeholder))));
+        }
         visit(*stmt);
+        after[k - i] = std::move(after_statement_);
+        after_statement_.clear();
       }
-      auto temps = std::move(frames_.back());
-      frames_.pop_back();
-      const auto before_last =
-          !temps.empty() && (value_tail || is_jump(*stmts[end - 1]));
+      auto closed = close_frame();
+      auto &temps = closed.temps;
+      for (auto &let : closed.flag_lets) {
+        out.push_back(std::move(let));
+      }
+      // A statement that ends in a jump never reaches its end: the jump
+      // drops its temporaries.
+      const auto jumps = is_jump(*stmts[end - 1]);
+      const auto before_last = !temps.empty() && value_tail;
       for (auto k = i; k < end; ++k) {
         if (before_last && k + 1 == end) {
           drop_all(temps, out);
         }
+        if (before[k - i] != nullptr) {
+          out.push_back(std::move(before[k - i]));
+        }
         out.push_back(std::move(stmts[k]));
+        for (auto &extra : after[k - i]) {
+          out.push_back(std::move(extra));
+        }
       }
-      if (!temps.empty() && !before_last) {
+      if (!temps.empty() && !before_last && !jumps) {
         drop_all(temps, out);
       }
       i = end;
@@ -497,7 +752,6 @@ private:
     }
     const auto symbol = mint_();
     const auto value_type = expr->type;
-    note_temporary(symbol, value_type);
     auto stmts = ptr_vec<hir_node>{};
     stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
         span, symbol, std::string("<borrowed>"), std::move(expr))));
@@ -505,7 +759,9 @@ private:
         span, value_type, symbol, std::string("<borrowed>")));
     stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
         span, ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(place))))));
-    return ptr<hir_expr>(hir::make<hir_block>(span, want, std::move(stmts)));
+    auto block = hir::make<hir_block>(span, want, std::move(stmts));
+    note_temporary(symbol, value_type, block.get());
+    return ptr<hir_expr>(std::move(block));
   }
 
   /// `slot` made to agree with a destination of type `want` on being a
@@ -618,18 +874,37 @@ private:
     if (node.kind == hir_node_kind::hir_lambda) {
       auto &lambda = dynamic_cast<hir_lambda &>(node);
       returns_.push_back(lambda.return_type);
+      // A `return` in the lambda leaves the lambda, not the frames and
+      // loops around it.
       auto outer = std::move(frames_);
+      auto outer_exits = std::move(exits_);
+      auto outer_loops = std::move(loop_bases_);
       frames_.clear();
+      exits_.clear();
+      loop_bases_.clear();
       if (lambda.body != nullptr) {
         visit(*lambda.body);
       }
       frames_ = std::move(outer);
+      exits_ = std::move(outer_exits);
+      loop_bases_ = std::move(outer_loops);
       returns_.pop_back();
       return;
     }
     switch (node.kind) {
-    case hir_node_kind::hir_block:
-      visit_block(dynamic_cast<hir_block &>(node), false);
+    case hir_node_kind::hir_block: {
+      auto &block = dynamic_cast<hir_block &>(node);
+      if (block.exit != jump_exit::none) {
+        note_jump(&block, nullptr, block.exit);
+        placeholder_pending_ = true;
+        return;
+      }
+      visit_block(block, false);
+      return;
+    }
+    case hir_node_kind::hir_break:
+    case hir_node_kind::hir_continue:
+      placeholder_pending_ = false;
       return;
     case hir_node_kind::hir_if: {
       // A condition is a full expression: what it makes is dropped before
@@ -649,12 +924,14 @@ private:
     case hir_node_kind::hir_while: {
       auto &loop = dynamic_cast<hir_while &>(node);
       full_expression(loop.condition);
+      loop_bases_.push_back(frames_.size());
       if (loop.body != nullptr) {
         visit_block(*loop.body, true);
       }
       if (loop.step != nullptr) {
         visit_block(*loop.step, true);
       }
+      loop_bases_.pop_back();
       return;
     }
     case hir_node_kind::hir_binary: {
@@ -685,6 +962,15 @@ private:
       } else {
         frames_.pop_back();
       }
+      if (node.kind == hir_node_kind::hir_return) {
+        // Without a placeholder before it, the returned value carries the
+        // drops of what the `return` leaves alive.
+        if (!placeholder_pending_ && value != nullptr) {
+          note_jump(nullptr, &dynamic_cast<hir_return &>(node),
+                    jump_exit::function);
+        }
+        placeholder_pending_ = false;
+      }
       return;
     }
     default:
@@ -714,6 +1000,11 @@ private:
     case hir_node_kind::hir_while_let: {
       auto &loop = dynamic_cast<hir_while_let &>(node);
       match_through(node, loop.subject, loop.subject_symbol);
+      // The subject's temporaries last one iteration: they are dropped
+      // after the body, when the pattern fails, and by a jump out of the
+      // body, each under its live flag.
+      loop_bases_.push_back(frames_.size());
+      frames_.push_back(frame{.temps = {}, .flag_all = true});
       if (loop.subject != nullptr) {
         visit(*loop.subject);
       }
@@ -722,6 +1013,21 @@ private:
       }
       if (loop.body != nullptr) {
         visit_block(*loop.body, true);
+      }
+      auto closed = close_frame();
+      loop_bases_.pop_back();
+      if (!closed.temps.empty() && loop.subject != nullptr) {
+        const auto span = loop.subject->span;
+        const auto type = loop.subject->type;
+        auto stmts = std::move(closed.flag_lets);
+        stmts.push_back(ptr<hir_node>(
+            hir::make<hir_expr_stmt>(span, std::move(loop.subject))));
+        loop.subject =
+            ptr<hir_expr>(hir::make<hir_block>(span, type, std::move(stmts)));
+        if (loop.body != nullptr) {
+          drop_all(closed.temps, loop.body->stmts);
+        }
+        drop_all(closed.temps, after_statement_);
       }
       return;
     }
@@ -773,6 +1079,9 @@ private:
       return;
     case hir_node_kind::hir_generator_next:
       project(dynamic_cast<hir_generator_next &>(node).object);
+      return;
+    case hir_node_kind::hir_generator_cancel:
+      project(dynamic_cast<hir_generator_cancel &>(node).object);
       return;
     case hir_node_kind::hir_str_decode_scalar:
       project(dynamic_cast<hir_str_decode_scalar &>(node).object);

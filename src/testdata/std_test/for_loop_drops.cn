@@ -1,0 +1,49 @@
+module main
+
+# `for x in xs` consumes `xs` (ch. 17, ch. 48): the loop variable owns each
+# element and drops it at the end of its iteration unless the body moves it,
+# and the loop's iterator drops the elements it never yielded, after the
+# loop or when a `return` leaves it. A comprehension's variable owns its
+# element the same way, and so do the bindings of a destructuring head.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+type pair = { n: noisy, k: int32 }
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+def consume(n: noisy) -> unit:
+    println("consumed {n.id}")
+def early_return() -> int32:
+    var xs: list[noisy] = [mk(1), mk(2), mk(3)]
+    for n in xs:
+        if n.id == 2:
+            return n.id
+    return 0
+def moved_sometimes() -> unit:
+    var xs: list[noisy] = [mk(4), mk(5)]
+    for n in xs:
+        if n.id == 4:
+            consume(n)
+        println("saw")
+    println("after loop")
+def temporary_list() -> unit:
+    for n in [mk(6), mk(7)]:
+        println("it {n.id}")
+    println("after temporary")
+def comprehension() -> unit:
+    var xs: list[noisy] = [mk(8), mk(9)]
+    let ids = for n in xs => n.id
+    println("ids {ids.len()}")
+def destructuring() -> unit:
+    var ps: list[pair] = [pair { n: mk(10), k: 1 }, pair { n: mk(11), k: 2 }]
+    for {n: n, k: k} in ps:
+        println("pair {n.id} {k}")
+    println("after pairs")
+def main() -> int32:
+    println("returned {early_return()}")
+    moved_sometimes()
+    temporary_list()
+    comprehension()
+    destructuring()
+    return 0

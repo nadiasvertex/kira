@@ -1,0 +1,61 @@
+module main
+
+# A generator owns its parameters and the locals its body binds (ch. 17,
+# ch. 31). Run to completion, its body drops them as any function's does.
+# Dropped before it finishes, it is resumed once to return from where it is
+# suspended, which drops what it still owns: a loop that breaks early drops
+# the generator it was iterating, and a generator that never ran drops its
+# parameters. A generator that iterates another drops it the same way.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+def consume(n: noisy) -> unit:
+    println("consumed {n.id}")
+generator def values(p: noisy) -> some iterator[int32]:
+    let a = mk(1)
+    yield a.id
+    let b = mk(2)
+    yield b.id + p.id
+generator def maybe_consumed(take: bool) -> some iterator[int32]:
+    let c = mk(3)
+    if take:
+        consume(c)
+    yield 0
+    yield 1
+generator def outer() -> some iterator[int32]:
+    let d = mk(4)
+    for v in values(mk(5)):
+        yield v + d.id
+def step(g: &mut generator[int32]) -> int32:
+    match g.next():
+        @some(v) => return v
+        @none => return -1
+def main() -> int32:
+    for v in values(mk(10)):
+        println("full {v}")
+    println("--")
+    for v in values(mk(20)):
+        println("early {v}")
+        break
+    println("--")
+    let g = values(mk(30))
+    println("never started")
+    println("--")
+    for v in maybe_consumed(true):
+        println("taken {v}")
+        break
+    for v in maybe_consumed(false):
+        println("kept {v}")
+        break
+    println("--")
+    for v in outer():
+        println("outer {v}")
+        break
+    println("--")
+    var h = values(mk(40))
+    println("step {step(&mut h)}")
+    println("end")
+    return 0

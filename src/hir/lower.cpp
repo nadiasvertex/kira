@@ -248,15 +248,6 @@ template <typename T>
   return ident.span.len() > ident.name.size();
 }
 
-/// A whole owned local a `for` loop has moved into itself and still has to
-/// drop, so a `return` inside the loop drops it too.
-struct loop_iterable {
-  symbol_id symbol = 0;
-  type_id type = 0;
-  std::string name;
-  source_span span;
-};
-
 /// A direct call to `decl`, recording it as the call's `target` so its
 /// parameters' types can make each argument's borrow explicit
 /// (`make_references_explicit`).
@@ -353,17 +344,50 @@ private:
   /// parts of the value they bind. The ownership checker asks the same
   /// question (`semantic::ownership::owns_pattern_bindings`), so its drop
   /// schedule and the bindings declared `whole` here agree.
-  [[nodiscard]] auto binds_owned_parts(const ast::expr &subject,
-                                       const ast::node &pattern) const
+  /// `patterns` are every pattern matched against `subject`.
+  [[nodiscard]] auto
+  binds_owned_parts(const ast::expr &subject, const ast::node &pattern,
+                    const std::vector<const ast::node *> &patterns) const
       -> bool {
     const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
     return pat != nullptr &&
            semantic::ownership::owns_pattern_bindings(
-               subject, *pat, checked_,
+               subject, *pat, patterns, checked_,
                [this](std::string_view name) -> bool {
                  return lookup_local(name).has_value();
                });
   }
+
+  /// Declares the arm's `<subject>` local when the arm owns the whole value
+  /// `make_place` reads (`semantic::ownership::arm_owns_subject`), so it is
+  /// dropped with the arm's scope.
+  auto own_matched_subject(const ast::expr &subject, const ast::node &pattern,
+                           const std::vector<const ast::node *> &patterns,
+                           const std::function<ptr<hir_expr>()> &make_place,
+                           std::vector<ptr<hir_node>> &pending) -> void {
+    const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
+    if (pat == nullptr ||
+        !semantic::ownership::arm_owns_subject(
+            subject, *pat, patterns, checked_,
+            [this](std::string_view name) -> bool {
+              return lookup_local(name).has_value();
+            })) {
+      return;
+    }
+    if (const auto *alias = semantic::ownership::owning_alias(*pat)) {
+      owning_alias_ = alias;
+      return;
+    }
+    auto place = make_place();
+    const auto symbol = declare_local("<subject>", place->type, /*whole=*/true);
+    pending.push_back(ptr<hir_node>(make<hir_let>(
+        pattern.span, symbol, std::string("<subject>"), std::move(place))));
+    declare_flags(&pattern, pattern.span, pending);
+  }
+
+  /// The group pattern whose alias owns the whole matched value, set by
+  /// `own_matched_subject` for `lower_pattern` to declare it so.
+  const ast::group_pattern *owning_alias_ = nullptr;
 
   /// Set while `lower_pattern` runs over a pattern whose bindings own their
   /// parts (`binds_owned_parts`): a droppable binding is then `whole`, and a
@@ -552,13 +576,6 @@ private:
   [[nodiscard]] auto emit_one_drop(const pending_drop &drop,
                                    ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
-  /// The iterable of `for_stmt` when it is a whole owned local the loop
-  /// moves and that has something to drop.
-  [[nodiscard]] auto owned_loop_iterable(const ast::for_stmt &for_stmt)
-      -> std::optional<loop_iterable>;
-  [[nodiscard]] auto drop_loop_iterable(const loop_iterable &iterable,
-                                        ptr_vec<hir_node> &stmts)
-      -> std::expected<void, lowering_error>;
   /// Appends the drop calls `drop_schedule_.exits[key]` lists, if any — for
   /// `lower_block` (per block) and `lower_function`'s own parameter scope.
   [[nodiscard]] auto emit_scope_exit_drops(const void *key,
@@ -573,8 +590,19 @@ private:
   [[nodiscard]] auto emit_tail_scope_exit_drops(const void *key,
                                                 ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
-  /// The same, for a `break`/`continue`/bare `return` leaving early: every
-  /// scope it passes through, innermost first.
+  /// The drops of the exit keyed by `key`, which leaves the function or the
+  /// innermost loop (`kind`): every scope it passes through, innermost
+  /// first, after the temporaries it leaves alive.
+  [[nodiscard]] auto emit_exit_drops(const void *key, jump_exit kind,
+                                     source_span span, ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
+  /// `if <cancelled>: return`, dropping what the generator owns at the
+  /// cancel point `key` (`semantic::ownership::generator_start` or a
+  /// `yield`).
+  [[nodiscard]] auto generator_cancel_check(const void *key, source_span span)
+      -> std::expected<ptr<hir_node>, lowering_error>;
+  /// The same, for a `break`/`continue`/`return` or the failure path of a
+  /// `?` leaving early: every scope it passes through, innermost first.
   [[nodiscard]] auto emit_jump_drops(const ast::node &node,
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
@@ -728,9 +756,14 @@ private:
   /// iteration) is what actually drives repeated evaluation; no new node
   /// kind or backend support is needed; both `compile_while_let`s already
   /// re-run `subject` every pass.
+  ///
+  /// The loop runs in a scope of its own, keyed by `handle_scope` (the
+  /// loop's `iterable` member), where the generator lives as a
+  /// `<for iterator>` local the drop schedule drops
+  /// (`semantic::ownership::loop_handle_type`).
   [[nodiscard]] auto lower_generator_loop(
-      source_span span, const ast::expr &iterable, type_id iterable_type,
-      const ast::binding_pattern &loop_var,
+      source_span span, const void *handle_scope, const ast::expr &iterable,
+      type_id iterable_type, const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts,
       bool owns_var = false) -> std::expected<ptr_vec<hir_node>, lowering_error>;
@@ -742,8 +775,8 @@ private:
   /// `iterator_loop_dispatch` the checker recorded) rather than a
   /// `hir_generator_next` node. No new node kind or backend support needed.
   [[nodiscard]] auto lower_iterator_loop(
-      source_span span, const ast::expr &iterable, type_id iterable_type,
-      const ast::binding_pattern &loop_var,
+      source_span span, const void *handle_scope, const ast::expr &iterable,
+      type_id iterable_type, const ast::binding_pattern &loop_var,
       const semantic::iterator_loop_dispatch &dispatch,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts,
@@ -1033,22 +1066,6 @@ private:
   /// binding has been lowered.
   std::vector<symbol_id> flag_symbols_;
 
-  /// The iterables of the `for` loops enclosing the statement being lowered,
-  /// outermost first. Cleared while a lambda body is lowered: a `return`
-  /// there leaves the lambda, not the loops around it.
-  std::vector<loop_iterable> loop_iterables_;
-  struct loop_iterables_guard {
-    std::vector<loop_iterable> &target;
-    std::vector<loop_iterable> saved;
-    explicit loop_iterables_guard(std::vector<loop_iterable> &t)
-        : target(t), saved(std::move(t)) {
-      target.clear();
-    }
-    loop_iterables_guard(const loop_iterables_guard &) = delete;
-    auto operator=(const loop_iterables_guard &)
-        -> loop_iterables_guard & = delete;
-    ~loop_iterables_guard() { target = std::move(saved); }
-  };
   /// The enclosing function's postconditions that still need checking — read
   /// by `lower_return_value` at every exit. Empty while lowering a lambda
   /// body, where a `return` returns from the lambda and settles nothing about
@@ -1876,7 +1893,12 @@ auto lowerer::lower_call(const ast::call_expr &call)
     if (field.object != nullptr && field.field_name == "next") {
       auto object_type = checked_type_of(*field.object);
       if (object_type.has_value()) {
-        const auto &object_entry = checked_.types.entry(*object_type);
+        // Through a reference too: `make_references_explicit` derefs it.
+        auto stripped = *object_type;
+        while (checked_.types.entry(stripped).kind == type_kind::ref_kind) {
+          stripped = checked_.types.entry(stripped).result;
+        }
+        const auto &object_entry = checked_.types.entry(stripped);
         if (object_entry.kind == type_kind::builtin_generic_kind &&
             object_entry.name == "generator") {
           auto object = lower_expr(*field.object);
@@ -2390,6 +2412,12 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                 "checker::resolve_drop_plans have gotten out of sync");
   }
   const auto &plan = found->second;
+  if (plan.cancels_generator) {
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_generator_cancel>(span, k_unknown_type,
+                                                       make_receiver())))));
+    return {};
+  }
   if (plan.own_drop.has_value()) {
     const auto &resolved = *plan.own_drop;
     // Same convention as `lower_index_dispatch` just above: an empty
@@ -2554,35 +2582,6 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
   return {};
 }
 
-auto lowerer::owned_loop_iterable(const ast::for_stmt &for_stmt)
-    -> std::optional<loop_iterable> {
-  if (for_stmt.iterable == nullptr ||
-      for_stmt.iterable->kind != ast::node_kind::ident_expr) {
-    return std::nullopt;
-  }
-  const auto &name =
-      dynamic_cast<const ast::ident_expr &>(*for_stmt.iterable).name;
-  const auto symbol = lookup_whole_local(name, 0);
-  const auto type = checked_type_of(*for_stmt.iterable);
-  if (!symbol.has_value() || !type.has_value() ||
-      !checked_.drop_plans.contains(*type)) {
-    return std::nullopt;
-  }
-  return loop_iterable{.symbol = *symbol,
-                       .type = *type,
-                       .name = name,
-                       .span = for_stmt.iterable->span};
-}
-
-auto lowerer::drop_loop_iterable(const loop_iterable &iterable,
-                                 ptr_vec<hir_node> &stmts)
-    -> std::expected<void, lowering_error> {
-  const place_fn make_place = [iterable]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(iterable.span, iterable.type, iterable.symbol,
-                                iterable.name)};
-  };
-  return build_drop_calls(make_place, iterable.type, iterable.span, stmts);
-}
 
 auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
@@ -2634,18 +2633,42 @@ auto lowerer::emit_tail_scope_exit_drops(const void *key,
 
 auto lowerer::emit_jump_drops(const ast::node &node, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  if (auto result = emit_scope_exit_drops(&node, stmts); !result.has_value()) {
-    return result;
+  return emit_exit_drops(&node,
+                         node.kind == ast::node_kind::break_stmt ||
+                                 node.kind == ast::node_kind::continue_stmt
+                             ? jump_exit::loop
+                             : jump_exit::function,
+                         node.span, stmts);
+}
+
+auto lowerer::emit_exit_drops(const void *key, jump_exit kind, source_span span,
+                              ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  // The temporaries the jump leaves alive drop first, innermost; the rewriter
+  // that makes them (`make_references_explicit`) fills this in.
+  auto placeholder = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{});
+  placeholder->exit = kind;
+  stmts.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(placeholder)))));
+  return emit_scope_exit_drops(key, stmts);
+}
+
+auto lowerer::generator_cancel_check(const void *key, source_span span)
+    -> std::expected<ptr<hir_node>, lowering_error> {
+  auto exit = ptr_vec<hir_node>{};
+  if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
+      !dropped.has_value()) {
+    return std::unexpected(dropped.error());
   }
-  if (node.kind != ast::node_kind::return_stmt) {
-    return {};
-  }
-  for (const auto &iterable : std::views::reverse(loop_iterables_)) {
-    if (auto result = drop_loop_iterable(iterable, stmts); !result.has_value()) {
-      return result;
-    }
-  }
-  return {};
+  exit.push_back(ptr<hir_node>(make<hir_return>(span, nullptr)));
+  auto branches = std::vector<hir_if_branch>{};
+  branches.push_back(hir_if_branch{
+      .condition = ptr<hir_expr>(
+          make<hir_generator_cancelled>(span, checked_.types.bool_type())),
+      .body = make<hir_block>(span, k_unknown_type, std::move(exit))});
+  return ptr<hir_node>(make<hir_expr_stmt>(
+      span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
+                                       std::move(branches), nullptr))));
 }
 
 auto lowerer::lower_tuple(const ast::tuple_expr &tuple)
@@ -2955,7 +2978,6 @@ auto lowerer::lower_cast(const ast::cast_expr &cast)
 
 auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     -> std::expected<ptr<hir_expr>, lowering_error> {
-  const auto enclosing_loops = loop_iterables_guard{loop_iterables_};
   auto lambda_type = checked_type_of(lambda);
   if (!lambda_type.has_value()) {
     return std::unexpected(lambda_type.error());
@@ -3272,6 +3294,12 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
           make<hir_variant_init>(try_expr.span, fn_return_type, failure_variant,
                                  std::move(init_args)));
     }
+  }
+  // The failure path leaves the function: drop what every enclosing scope
+  // owns first.
+  if (auto dropped = emit_jump_drops(try_expr, failure_stmts);
+      !dropped.has_value()) {
+    return std::unexpected(dropped.error());
   }
   failure_stmts.push_back(ptr<hir_node>(make<hir_return>(
       try_expr.span,
@@ -3832,8 +3860,10 @@ auto lowerer::lower_stmt(const ast::node &node)
                                   std::string("<let subject>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
+    own_matched_subject(*let.initializer, *let.pattern, {let.pattern.get()},
+                        make_place, pending);
     const auto own_subject =
-        binds_owned_parts(*let.initializer, *let.pattern);
+        binds_owned_parts(*let.initializer, *let.pattern, {let.pattern.get()});
     own_pattern_bindings_ = own_subject;
     auto pattern = lower_pattern(*let.pattern, make_place, pending);
     own_pattern_bindings_ = false;
@@ -3904,8 +3934,16 @@ auto lowerer::lower_stmt(const ast::node &node)
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      return one_stmt(
+      auto stmts = ptr_vec<hir_node>{};
+      stmts.push_back(
           ptr<hir_node>(make<hir_yield>(yield_ast.span, std::move(*value))));
+      // Resumed only to be dropped: return from here.
+      auto cancel = generator_cancel_check(&yield_ast, yield_ast.span);
+      if (!cancel.has_value()) {
+        return std::unexpected(cancel.error());
+      }
+      stmts.push_back(std::move(*cancel));
+      return stmts;
     }
     auto lowered = lower_expr(*expr_stmt.expr);
     if (!lowered.has_value()) {
@@ -3937,10 +3975,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     // would run too early.
     auto stmts = ptr_vec<hir_node>{};
     const auto scheduled = drop_schedule_.exits.find(&node);
-    if (((scheduled != drop_schedule_.exits.end() &&
-          !scheduled->second.empty()) ||
-         !loop_iterables_.empty()) &&
-        (*value)->type != k_unknown_type) {
+    if (scheduled != drop_schedule_.exits.end() &&
+        !scheduled->second.empty() && (*value)->type != k_unknown_type) {
       const auto value_type = (*value)->type;
       const auto temp = mint_symbol();
       const auto temp_name = std::format("<return value {}>", temp);
@@ -4207,27 +4243,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         make<hir_expr_stmt>(scope_s.span, ptr<hir_expr>(std::move(*body)))));
   }
   case ast::node_kind::for_stmt: {
-    const auto &for_stmt = dynamic_cast<const ast::for_stmt &>(node);
-    // `for x in xs` moves a whole local `xs` into the loop; the loop
-    // variable only borrows its elements, so the container still owns them
-    // and drops them (with itself) once the loop ends, `break` included. A
-    // `return` inside the body drops it through `emit_jump_drops`.
-    const auto iterable = owned_loop_iterable(for_stmt);
-    if (iterable.has_value()) {
-      loop_iterables_.push_back(*iterable);
-    }
-    auto lowered = lower_for_stmt(for_stmt);
-    if (iterable.has_value()) {
-      loop_iterables_.pop_back();
-    }
-    if (!lowered.has_value() || !iterable.has_value()) {
-      return lowered;
-    }
-    if (auto dropped = drop_loop_iterable(*iterable, *lowered);
-        !dropped.has_value()) {
-      return std::unexpected(dropped.error());
-    }
-    return lowered;
+    return lower_for_stmt(dynamic_cast<const ast::for_stmt &>(node));
   }
   case ast::node_kind::splice_stmt: {
     // Mirrors the `splice_expr` case in `lower_expr` above: `checker::
@@ -4390,7 +4406,10 @@ auto lowerer::lower_if_let_chain(
 
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
-  const auto owned = binds_owned_parts(*branch.let_expr, *branch.let_pattern);
+  own_matched_subject(*branch.let_expr, *branch.let_pattern,
+                      {branch.let_pattern.get()}, make_place, pending);
+  const auto owned = binds_owned_parts(*branch.let_expr, *branch.let_pattern,
+                                         {branch.let_pattern.get()});
   own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*branch.let_pattern, make_place, pending);
   own_pattern_bindings_ = false;
@@ -4513,11 +4532,14 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     subject.name = std::format("<for subject {}>", next_symbol_);
   }
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
+  // The ownership checker asks the same question, so what the loop
+  // variables bind is dropped exactly where its drop schedule says.
+  const auto owns = semantic::ownership::for_variable_owns(for_stmt, checked_);
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       inner_stmts =
-          [this, &for_stmt, plain_var,
-           &subject]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+          [this, &for_stmt, plain_var, &subject,
+           owns]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto bindings = std::vector<ptr<hir_node>>{};
     if (plain_var == nullptr) {
       auto patterns = std::vector<const ast::pattern *>{};
@@ -4525,8 +4547,10 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
       for (const auto &pattern : for_stmt.patterns) {
         patterns.push_back(pattern.get());
       }
+      own_pattern_bindings_ = owns;
       auto destructured =
           destructure_loop_element(patterns, subject.name, bindings);
+      own_pattern_bindings_ = false;
       if (!destructured.has_value()) {
         return std::unexpected(destructured.error());
       }
@@ -4557,11 +4581,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (!iterable_type.has_value()) {
     return std::unexpected(iterable_type.error());
   }
-  // The ownership checker asks the same question, so the variable is
-  // dropped exactly where its drop schedule says.
-  const auto owns_element =
-      plain_var != nullptr &&
-      semantic::ownership::for_variable_owns(for_stmt, checked_);
+  const auto owns_element = plain_var != nullptr && owns;
   const auto &iterable_entry = checked_.types.entry(*iterable_type);
   if (iterable_entry.kind == type_kind::builtin_generic_kind &&
       iterable_entry.name == "option") {
@@ -4570,13 +4590,15 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   }
   if (iterable_entry.kind == type_kind::builtin_generic_kind &&
       iterable_entry.name == "generator") {
-    return lower_generator_loop(for_stmt.span, *for_stmt.iterable,
+    return lower_generator_loop(for_stmt.span, &for_stmt.iterable,
+                                *for_stmt.iterable,
                                 *iterable_type, loop_var, inner_stmts,
                                 owns_element);
   }
   if (const auto it = checked_.for_iterator_dispatches.find(&for_stmt);
       it != checked_.for_iterator_dispatches.end()) {
-    return lower_iterator_loop(for_stmt.span, *for_stmt.iterable,
+    return lower_iterator_loop(for_stmt.span, &for_stmt.iterable,
+                               *for_stmt.iterable,
                                *iterable_type, loop_var, it->second,
                                inner_stmts, owns_element);
   }
@@ -5037,8 +5059,8 @@ auto lowerer::lower_option_loop(
 }
 
 auto lowerer::lower_generator_loop(
-    source_span span, const ast::expr &iterable, type_id iterable_type,
-    const ast::binding_pattern &loop_var,
+    source_span span, const void *handle_scope, const ast::expr &iterable,
+    type_id iterable_type, const ast::binding_pattern &loop_var,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
         &inner_stmts,
     bool owns_var) -> std::expected<ptr_vec<hir_node>, lowering_error> {
@@ -5058,9 +5080,16 @@ auto lowerer::lower_generator_loop(
     return std::unexpected(generator_value.error());
   }
   auto result = ptr_vec<hir_node>{};
-  const auto generator_symbol = mint_symbol();
+  // The loop owns the generator it was handed: it drops once the loop ends,
+  // and with the scopes a jump out of the body leaves.
+  push_scope();
+  const auto generator_symbol =
+      semantic::ownership::loop_handle_type(&iterable, nullptr, checked_)
+              .has_value()
+          ? declare_local("<for iterator>", iterable_type, /*whole=*/true)
+          : mint_symbol();
   result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, generator_symbol,
-                                               std::string("<for generator>"),
+                                               std::string("<for iterator>"),
                                                std::move(*generator_value))));
 
   // `option[T]` for this exact `T` may not already be interned — a
@@ -5079,12 +5108,12 @@ auto lowerer::lower_generator_loop(
       span, option_type,
       ptr<hir_expr>(make<hir_local_ref>(iterable.span, iterable_type,
                                         generator_symbol,
-                                        std::string("<for generator>")))));
+                                        std::string("<for iterator>")))));
 
   push_scope();
-  const auto loop_var_symbol = declare_local(
-      loop_var.name, element_type,
-      owns_var && checked_.drop_plans.contains(element_type));
+  const auto owned_var = owns_var && checked_.drop_plans.contains(element_type);
+  const auto loop_var_symbol =
+      declare_local(loop_var.name, element_type, owned_var);
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, loop_var_symbol, loop_var.name,
@@ -5093,9 +5122,13 @@ auto lowerer::lower_generator_loop(
           ptr<hir_expr>(make<hir_local_ref>(span, option_type, subject_symbol,
                                             std::string("<for subject>"))),
           std::string("some"), size_t{0})))));
+  if (owned_var) {
+    declare_flags(&loop_var, span, body_stmts);
+  }
 
   auto inner = inner_stmts();
   if (!inner.has_value()) {
+    pop_scope();
     pop_scope();
     return std::unexpected(inner.error());
   }
@@ -5114,12 +5147,17 @@ auto lowerer::lower_generator_loop(
   result.push_back(ptr<hir_node>(
       make<hir_while_let>(span, std::move(subject), subject_symbol,
                           std::move(pattern), std::move(body_block))));
+  auto dropped = emit_scope_exit_drops(handle_scope, result);
+  pop_scope();
+  if (!dropped.has_value()) {
+    return std::unexpected(dropped.error());
+  }
   return result;
 }
 
 auto lowerer::lower_iterator_loop(
-    source_span span, const ast::expr &iterable, type_id iterable_type,
-    const ast::binding_pattern &loop_var,
+    source_span span, const void *handle_scope, const ast::expr &iterable,
+    type_id iterable_type, const ast::binding_pattern &loop_var,
     const semantic::iterator_loop_dispatch &dispatch,
     const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
         &inner_stmts,
@@ -5165,7 +5203,16 @@ auto lowerer::lower_iterator_loop(
     handle_type = dispatch.adapter_result_type;
   }
   auto result = ptr_vec<hir_node>{};
-  const auto handle_symbol = mint_symbol();
+  // The handle owns what the loop has not yet yielded (and, for `for x in
+  // xs`, the collection itself): it drops once the loop ends, and with the
+  // scopes a jump out of the body leaves. One made from a borrowed
+  // collection only copies it, and owns nothing.
+  push_scope();
+  const auto handle_symbol =
+      semantic::ownership::loop_handle_type(&iterable, &dispatch, checked_)
+              .has_value()
+          ? declare_local("<for iterator>", handle_type, /*whole=*/true)
+          : mint_symbol();
   result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, handle_symbol,
                                                std::string("<for iterator>"),
                                                std::move(*handle_value))));
@@ -5196,9 +5243,9 @@ auto lowerer::lower_iterator_loop(
       span, option_type, std::move(callee), std::move(call_args), dispatch.decl));
 
   push_scope();
-  const auto loop_var_symbol = declare_local(
-      loop_var.name, element_type,
-      owns_var && checked_.drop_plans.contains(element_type));
+  const auto owned_var = owns_var && checked_.drop_plans.contains(element_type);
+  const auto loop_var_symbol =
+      declare_local(loop_var.name, element_type, owned_var);
   auto body_stmts = ptr_vec<hir_node>{};
   body_stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, loop_var_symbol, loop_var.name,
@@ -5207,9 +5254,13 @@ auto lowerer::lower_iterator_loop(
           ptr<hir_expr>(make<hir_local_ref>(span, option_type, subject_symbol,
                                             std::string("<for subject>"))),
           std::string("some"), size_t{0})))));
+  if (owned_var) {
+    declare_flags(&loop_var, span, body_stmts);
+  }
 
   auto inner = inner_stmts();
   if (!inner.has_value()) {
+    pop_scope();
     pop_scope();
     return std::unexpected(inner.error());
   }
@@ -5228,6 +5279,11 @@ auto lowerer::lower_iterator_loop(
   result.push_back(ptr<hir_node>(
       make<hir_while_let>(span, std::move(subject), subject_symbol,
                           std::move(pattern), std::move(body_block))));
+  auto dropped = emit_scope_exit_drops(handle_scope, result);
+  pop_scope();
+  if (!dropped.has_value()) {
+    return std::unexpected(dropped.error());
+  }
   return result;
 }
 
@@ -5383,11 +5439,14 @@ auto lowerer::lower_comprehension_clause(
   }
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
   const auto span = clause.iterable->span;
+  const auto owns = semantic::ownership::clause_variable_owns(clause, checked_);
+  const auto owns_element = plain_var != nullptr && owns;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       nested =
           [this, &clauses, index, fallback_span, plain_var, &subject,
-           &innermost]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+           &innermost,
+           owns]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto bindings = std::vector<ptr<hir_node>>{};
     if (plain_var == nullptr) {
       auto patterns = std::vector<const ast::pattern *>{};
@@ -5395,8 +5454,10 @@ auto lowerer::lower_comprehension_clause(
       for (const auto &pattern : clauses[index].patterns) {
         patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
       }
+      own_pattern_bindings_ = owns;
       auto destructured =
           destructure_loop_element(patterns, subject.name, bindings);
+      own_pattern_bindings_ = false;
       if (!destructured.has_value()) {
         return std::unexpected(destructured.error());
       }
@@ -5408,6 +5469,12 @@ auto lowerer::lower_comprehension_clause(
     }
     for (auto &stmt_ptr : *rest) {
       bindings.push_back(std::move(stmt_ptr));
+    }
+    // What the clause's variables still own is dropped at the end of each
+    // iteration.
+    if (auto dropped = emit_scope_exit_drops(&clauses[index], bindings);
+        !dropped.has_value()) {
+      return std::unexpected(dropped.error());
     }
     return bindings;
   };
@@ -5432,8 +5499,9 @@ auto lowerer::lower_comprehension_clause(
   }
   if (entry.kind == type_kind::builtin_generic_kind &&
       entry.name == "generator") {
-    return lower_generator_loop(span, *clause.iterable, *iterable_type,
-                                loop_var, nested);
+    return lower_generator_loop(span, &clause.iterable, *clause.iterable,
+                                *iterable_type,
+                                loop_var, nested, owns_element);
   }
   // The same iterator-protocol route the statement `for` takes. A clause
   // over a `list` reaches this and not the indexed-loop fallback below,
@@ -5442,8 +5510,9 @@ auto lowerer::lower_comprehension_clause(
   if (const auto it = checked_.comprehension_iterator_dispatches.find(
           static_cast<const ast::node *>(clause.iterable.get()));
       it != checked_.comprehension_iterator_dispatches.end()) {
-    return lower_iterator_loop(span, *clause.iterable, *iterable_type, loop_var,
-                               it->second, nested);
+    return lower_iterator_loop(span, &clause.iterable, *clause.iterable,
+                               *iterable_type, loop_var,
+                               it->second, nested, owns_element);
   }
   {
     auto stripped = *iterable_type;
@@ -5483,8 +5552,11 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
 
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
+  own_matched_subject(*while_stmt.let_expr, *while_stmt.let_pattern,
+                      {while_stmt.let_pattern.get()}, make_place, pending);
   const auto owned =
-      binds_owned_parts(*while_stmt.let_expr, *while_stmt.let_pattern);
+      binds_owned_parts(*while_stmt.let_expr, *while_stmt.let_pattern,
+                        {while_stmt.let_pattern.get()});
   own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*while_stmt.let_pattern, make_place, pending);
   own_pattern_bindings_ = false;
@@ -5590,6 +5662,9 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     const auto symbol = declare_local(binding.name, place->type, whole);
     pending.push_back(ptr<hir_node>(
         make<hir_let>(pattern.span, symbol, binding.name, std::move(place))));
+    if (whole) {
+      declare_flags(&pattern, pattern.span, pending);
+    }
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::group_pattern: {
@@ -5604,9 +5679,14 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     }
     if (group.alias.has_value()) {
       auto place = make_place();
-      const auto symbol = declare_local(*group.alias, place->type);
+      const auto owner = &group == owning_alias_;
+      const auto symbol = declare_local(*group.alias, place->type, owner);
       pending.push_back(ptr<hir_node>(
           make<hir_let>(pattern.span, symbol, *group.alias, std::move(place))));
+      if (owner) {
+        owning_alias_ = nullptr;
+        declare_flags(&group, pattern.span, pending);
+      }
     }
     return inner;
   }
@@ -5725,11 +5805,16 @@ auto lowerer::lower_pattern(const ast::node &pattern,
                     "typed-ir-design.md Decision 1)");
       }
       const auto ftype = found->second;
-      const auto symbol = declare_local(field_name, ftype);
+      const auto whole =
+          own_pattern_bindings_ && checked_.drop_plans.contains(ftype);
+      const auto symbol = declare_local(field_name, ftype, whole);
       pending.push_back(ptr<hir_node>(
           make<hir_let>(field_span, symbol, field_name,
                         ptr<hir_expr>(make<hir_field>(
                             field_span, ftype, make_place(), field_name)))));
+      if (whole) {
+        declare_flags(&field, field_span, pending);
+      }
       fields.push_back(hir_struct_pattern_field{
           .name = field_name,
           .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(field_span))});
@@ -5938,6 +6023,10 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
 
   auto hir_arms = std::vector<hir_match_arm>{};
   hir_arms.reserve(arms.size());
+  auto arm_patterns = std::vector<const ast::node *>{};
+  for (const auto &arm : arms) {
+    arm_patterns.push_back(arm.pattern.get());
+  }
   for (const auto &arm : arms) {
     if (arm.has_error) {
       return fail(lowering_error_kind::unsupported_construct, arm.span,
@@ -5950,7 +6039,10 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
     }
     push_scope();
     auto pending = std::vector<ptr<hir_node>>{};
-    own_pattern_bindings_ = binds_owned_parts(subject_ast, *arm.pattern);
+    own_matched_subject(subject_ast, *arm.pattern, arm_patterns,
+                        make_subject_place, pending);
+    own_pattern_bindings_ =
+        binds_owned_parts(subject_ast, *arm.pattern, arm_patterns);
     auto pattern = lower_pattern(*arm.pattern, make_subject_place, pending);
     own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
@@ -6061,15 +6153,10 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                             decl.name));
   }
 
-  // A generator's body compiles into a resumable step function, not an
-  // ordinary call frame — a local can be live *across* a `yield` (see
-  // `live_across_yield.h`), so "goes out of scope" doesn't mean the same
-  // thing it does for a plain function. Scope-exit drop for generator
-  // bodies is not implemented; skip computing a schedule so nothing below
-  // finds one to (incorrectly) act on.
-  if (!decl.modifiers.is_generator) {
-    drop_schedule_ = compute_drop_schedule(decl, checked_);
-  }
+  // A generator's body drops like any other, in its step function: its
+  // locals live in the generator's state across a `yield`, and a generator
+  // dropped while suspended is resumed to return (`hir_generator_cancel`).
+  drop_schedule_ = compute_drop_schedule(decl, checked_);
   flag_symbols_.assign(drop_schedule_.flag_count, k_invalid_symbol_id);
 
   // An implicit generic has no body of its own to lower — only the instances
@@ -6239,6 +6326,17 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     body = lower_block(decl.body_stmts, decl.span,
                        decl.modifiers.is_generator ? k_unknown_type
                                                    : *return_type);
+    if (body.has_value() && decl.modifiers.is_generator) {
+      // A generator dropped before its body first runs returns at once.
+      auto cancel = generator_cancel_check(
+          semantic::ownership::generator_start(decl), decl.span);
+      if (!cancel.has_value()) {
+        pop_scope();
+        post_contracts_.clear();
+        return std::unexpected(cancel.error());
+      }
+      param_prelude.push_back(std::move(*cancel));
+    }
     if (body.has_value() && !param_prelude.empty()) {
       auto merged = std::move(param_prelude);
       for (auto &stmt_ptr : (*body)->stmts) {
@@ -6302,11 +6400,13 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // including the one the fallthrough-tail-value promotion above may have
   // just synthesized). A value-returning function's tail is evaluated into a
   // temporary first, as in `lower_block`.
-  if (body.has_value() && !decl.modifiers.is_generator &&
+  if (body.has_value() &&
       ((*body)->stmts.empty() || !always_exits(*(*body)->stmts.back())) &&
       return_type.has_value()) {
-    const auto value_typed =
-        *return_type != k_unknown_type && !checked_.types.is_unit(*return_type);
+    // A generator's body has no value to return: it ends returning `none`.
+    const auto value_typed = !decl.modifiers.is_generator &&
+                             *return_type != k_unknown_type &&
+                             !checked_.types.is_unit(*return_type);
     if (auto result = value_typed
                           ? emit_tail_scope_exit_drops(&decl, (*body)->stmts)
                           : emit_scope_exit_drops(&decl, (*body)->stmts);

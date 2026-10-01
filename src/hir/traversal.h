@@ -24,6 +24,7 @@ template <typename F> auto for_each_child(hir_node &node, F &&f) -> void {
   };
   switch (node.kind) {
   case hir_node_kind::hir_literal:
+  case hir_node_kind::hir_generator_cancelled:
   case hir_node_kind::hir_local_ref:
   case hir_node_kind::hir_global_ref:
   case hir_node_kind::hir_stack_buffer:
@@ -124,6 +125,9 @@ template <typename F> auto for_each_child(hir_node &node, F &&f) -> void {
     return;
   case hir_node_kind::hir_generator_next:
     visit(dynamic_cast<hir_generator_next &>(node).object);
+    return;
+  case hir_node_kind::hir_generator_cancel:
+    visit(dynamic_cast<hir_generator_cancel &>(node).object);
     return;
   case hir_node_kind::hir_str_decode_scalar: {
     auto &n = dynamic_cast<hir_str_decode_scalar &>(node);

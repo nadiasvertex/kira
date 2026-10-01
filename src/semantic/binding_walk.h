@@ -17,7 +17,25 @@ struct pattern_binding {
   /// pattern node of its own to key a later lookup (e.g. into
   /// `checked_types::node_types`) against.
   const ast::pattern *node = nullptr;
+  /// The shorthand field (`{x}`) that declares the binding, if it is one.
+  /// Its type is in `checked_types::struct_pattern_field_types`.
+  const ast::field_pattern *field = nullptr;
+  /// The group pattern whose alias (`(inner) as x`) the binding is, if it is
+  /// one. The alias has the group pattern's type.
+  const ast::group_pattern *alias_of = nullptr;
   source_span span;
+
+  /// What identifies the binding's declaration: the pattern node, the
+  /// shorthand field or the aliased group.
+  [[nodiscard]] auto key() const -> const void * {
+    if (node != nullptr) {
+      return node;
+    }
+    if (field != nullptr) {
+      return field;
+    }
+    return alias_of;
+  }
 };
 
 /// Recursively collects every name `pattern` would bind — including nested

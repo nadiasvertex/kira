@@ -1,0 +1,28 @@
+full 1
+full 12
+drop 2
+drop 1
+drop 10
+--
+early 1
+drop 1
+drop 20
+--
+never started
+--
+consumed 3
+drop 3
+taken 0
+kept 0
+drop 3
+--
+outer 5
+drop 1
+drop 5
+drop 4
+--
+step 1
+end
+drop 1
+drop 40
+drop 30

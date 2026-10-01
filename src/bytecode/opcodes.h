@@ -471,6 +471,17 @@ enum class opcode : uint8_t {
                         ///< `return` (compiled to build `none`, set
                         ///< `finished=1` on the generator object, and
                         ///< `op_return_value` it).
+  op_generator_cancel, ///< u16 dst, u16 generator_reg — the compiled form
+                       ///< of `hir_generator_cancel`. If reg[generator_reg]'s
+                       ///< `finished` slot is set, does nothing. Otherwise
+                       ///< sets it to `2` (cancelled) and resumes the
+                       ///< generator exactly as `op_generator_next` does; its
+                       ///< body sees the cancellation and returns, dropping
+                       ///< what it owns, which sets `finished` to `1`. The
+                       ///< `none` it returns lands in dst, unread.
+  op_generator_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
+                          ///< reg[generator_reg]'s `finished` slot is `2`:
+                          ///< the generator was resumed only to be cancelled.
   op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
                         ///< the UTF-8 scalar starting at byte offset
                         ///< reg[offset_reg] within the `str` reg[str_reg],
@@ -660,6 +671,8 @@ struct operand_signature {
   case opcode::op_yield:
     return sig({reg, reg, imm8});
   case opcode::op_generator_next:
+  case opcode::op_generator_cancel:
+  case opcode::op_generator_cancelled:
     return sig({reg, reg});
   case opcode::op_str_decode_scalar:
   case opcode::op_str_scalar_width:

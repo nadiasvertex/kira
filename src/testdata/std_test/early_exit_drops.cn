@@ -1,0 +1,74 @@
+module main
+
+# A path that leaves a statement early drops what it leaves behind (ch. 17):
+# the failure path of `?` drops the function's locals and the temporaries
+# its statement has made so far; `break`, `continue` and `return` out of a
+# statement drop its temporaries too; and a `while let` subject's
+# temporaries last one iteration, including the one whose pattern fails and
+# the one a `break` leaves.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+type counter = { at: int32, limit: int32 }
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+def peek(n: &noisy) -> int32:
+    return n.id
+def get(k: int32) -> option[int32]:
+    if k > 0:
+        return @some(k)
+    return @none
+def try_exit(k: int32) -> option[int32]:
+    let a = mk(1)
+    let r = peek(&mk(2)) + get(k)?
+    return @some(r + a.id)
+def break_out() -> unit:
+    var i = 0
+    while i < 3:
+        let v: int32 = match peek(&mk(10 + i)):
+            11 => break
+            n => n
+        println("v {v}")
+        i = i + 1
+    println("after break")
+def continue_out() -> unit:
+    var i = 0
+    while i < 2:
+        i = i + 1
+        let v: int32 = match peek(&mk(20 + i)):
+            21 => continue
+            n => n
+        println("v {v}")
+    println("after continue")
+def return_out(k: int32) -> int32:
+    let v: int32 = match peek(&mk(30)) + k:
+        30 => return 7
+        n => n
+    return v
+def next_of(n: &noisy, c: &mut counter) -> option[int32]:
+    if c.at >= c.limit:
+        return @none
+    c.at = c.at + 1
+    return @some(n.id + c.at)
+def while_let_subject() -> unit:
+    var c = counter { at: 0, limit: 2 }
+    while let @some(v) = next_of(&mk(40), &mut c):
+        println("wl {v}")
+    println("after while let")
+def while_let_break() -> unit:
+    var c = counter { at: 0, limit: 5 }
+    while let @some(v) = next_of(&mk(50), &mut c):
+        if v == 52:
+            break
+        println("wlb {v}")
+    println("after while let break")
+def main() -> int32:
+    println("try {try_exit(0).is_none()}")
+    println("try {try_exit(5).unwrap()}")
+    break_out()
+    continue_out()
+    println("return {return_out(0)}")
+    while_let_subject()
+    while_let_break()
+    return 0

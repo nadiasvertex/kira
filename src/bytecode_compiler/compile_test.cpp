@@ -1383,56 +1383,37 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
 //  plus an internal step function reachable only via the generator object's
 //  `step_function_index` slot); calling `counter(...)` and then `.next()`
 //  repeatedly should produce `some(0), some(1), ..., none, none, ...`.
+//  A function that took the generator by value would own it and drop it,
+//  cancelling it, on return, so the fixtures borrow it.
 // ==========================================================================
 
-auto option_tag_and_payload(bc::slot_value option_value)
-    -> std::pair<int64_t, bc::slot_value> {
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
-      static_cast<uintptr_t>(option_value.u));
-  return {slots[0].i, slots[1]};
-}
-
 auto test_generator_sequential_next_calls_yield_then_exhaust() -> void {
+  // `step` reads one value, or -1 once the generator is exhausted. Four
+  // calls give 1, 2, -1, -1, encoded as one number:
+  // 1*1000 + 2*100 + (-1+2)*10 + (-1+2) = 1211.
   auto module = compile_fixture("module sample\n"
                                 "generator def counter() -> some "
                                 "iterator[int32]:\n"
                                 "  yield 1\n"
                                 "  yield 2\n"
-                                "def make() -> generator[int32]:\n"
-                                "  return counter()\n"
-                                "def next_of(g: generator[int32]) -> "
-                                "option[int32]:\n"
-                                "  return g.next()\n");
+                                "def step(g: &mut generator[int32]) -> int32:\n"
+                                "  match g.next():\n"
+                                "    @some(v) => return v\n"
+                                "    @none => return -1\n"
+                                "def run() -> int32:\n"
+                                "  var g = counter()\n"
+                                "  let a = step(&mut g)\n"
+                                "  let b = step(&mut g)\n"
+                                "  let c = step(&mut g)\n"
+                                "  let d = step(&mut g)\n"
+                                "  return a * 1000 + b * 100 + (c + 2) * 10 + "
+                                "(d + 2)\n");
   const auto vm = bc::vm{module};
-  auto gen_result = vm.run(function_index(module, "make"), {});
-  expect(gen_result.has_value(), "expected make() to succeed");
-  const auto gen = gen_result->value;
-
-  auto first = vm.run(function_index(module, "next_of"), std::array{gen});
-  expect(first.has_value(), "expected the first next() to succeed");
-  auto [first_tag, first_payload] = option_tag_and_payload(first->value);
-  expect(first_tag == 0, "expected the first next() to be some(...)");
-  expect(first_payload.i == 1, "expected the first yielded value to be 1");
-
-  auto second = vm.run(function_index(module, "next_of"), std::array{gen});
-  expect(second.has_value(), "expected the second next() to succeed");
-  auto [second_tag, second_payload] = option_tag_and_payload(second->value);
-  expect(second_tag == 0, "expected the second next() to be some(...)");
-  expect(second_payload.i == 2, "expected the second yielded value to be 2");
-
-  auto third = vm.run(function_index(module, "next_of"), std::array{gen});
-  expect(third.has_value(), "expected the third next() to succeed");
-  auto [third_tag, third_payload] = option_tag_and_payload(third->value);
-  (void)third_payload;
-  expect(third_tag == 1, "expected the generator to be exhausted (none)");
-
-  auto fourth = vm.run(function_index(module, "next_of"), std::array{gen});
-  expect(fourth.has_value(), "expected a next() call after exhaustion to "
-                             "still succeed");
-  auto [fourth_tag, fourth_payload] = option_tag_and_payload(fourth->value);
-  (void)fourth_payload;
-  expect(fourth_tag == 1,
-         "expected the generator to stay exhausted on further calls");
+  auto result = vm.run(function_index(module, "run"), {});
+  expect(result.has_value(), "expected run() to succeed");
+  expect(result->value.i == 1211,
+         std::format("expected 1, 2, then exhaustion twice (1211), got {}",
+                     result->value.i));
 }
 
 auto test_generator_loop_with_yield_sums_values() -> void {

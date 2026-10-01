@@ -676,6 +676,29 @@ auto test_outlived_temporaries_are_rejected() -> void {
              analyzed.diagnostics);
 }
 
+auto test_consuming_loop_over_borrow_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_consuming_loop_over_borrow.cn");
+  expect_diagnostic(analyzed, "cannot iterate over `xs` by value",
+                    "expected a loop over a borrowed list of non-`copy` "
+                    "elements to be rejected");
+  expect(analyzed.error_count == 1,
+         std::string("expected only the non-`copy` loop to be rejected:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_overlapping_owned_binding_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_overlapping_owned_binding.cn");
+  expect_diagnostic(analyzed, "cannot move `r` out of the matched value",
+                    "expected a non-`copy` binding under an alias to be "
+                    "rejected");
+  expect(analyzed.error_count == 1,
+         std::string("expected an alias of the whole value to own it, and "
+                     "only `r` to be rejected:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reuse_after_move_capture_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_reuse_after_move_capture.cn");
@@ -936,6 +959,8 @@ auto main() -> int {
   test_partial_moves_are_accepted();
   test_moves_out_of_places_are_rejected();
   test_outlived_temporaries_are_rejected();
+  test_consuming_loop_over_borrow_is_rejected();
+  test_overlapping_owned_binding_is_rejected();
   test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();
     test_reuse_after_for_x_in_ref_is_accepted();

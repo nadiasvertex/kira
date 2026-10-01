@@ -14,6 +14,15 @@
 #include "src/semantic/binding_walk.h"
 
 namespace cinder::semantic::ownership {
+
+auto owning_alias(const ast::pattern &pattern) -> const ast::group_pattern * {
+  if (pattern.kind != ast::node_kind::group_pattern) {
+    return nullptr;
+  }
+  const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+  return group.alias.has_value() ? &group : nullptr;
+}
+
 namespace {
 
 /// The borrows an evaluated expression carries: loans it made itself, plus
@@ -75,6 +84,25 @@ struct place_step {
 /// dotted chain (`x.f.g`, not followed by a call or index) is parsed as a
 /// `module_path_expr`; it is a place whenever its first segment names a
 /// local, which the caller decides by looking the root up.
+/// The checked type of what `binding` binds, or unknown.
+auto binding_type(const pattern_binding &binding, const checked_types &checked)
+    -> type_id {
+  if (binding.field != nullptr) {
+    const auto found = checked.struct_pattern_field_types.find(binding.field);
+    return found != checked.struct_pattern_field_types.end() ? found->second
+                                                              : k_unknown_type;
+  }
+  const ast::node *node = binding.node;
+  if (node == nullptr) {
+    node = binding.alias_of;
+  }
+  if (node == nullptr) {
+    return k_unknown_type;
+  }
+  const auto found = checked.node_types.find(node);
+  return found != checked.node_types.end() ? found->second : k_unknown_type;
+}
+
 auto place_root(const ast::expr &expr, bool &projected)
     -> std::optional<root_name> {
   const auto *current = &expr;
@@ -157,6 +185,10 @@ public:
         declare_param(*param.pattern);
       }
     }
+    if (decl.modifiers.is_generator) {
+      // A generator dropped before it first runs returns at once.
+      cancel_point(generator_start(decl));
+    }
     finish(decl.body_expr.get(), decl.body_stmts);
   }
 
@@ -185,6 +217,9 @@ private:
     bool is_loop = false;
     block_id continue_target = 0;
     block_id break_target = 0;
+    /// For a loop, how many temporary frames were open around it: a
+    /// `break` or `continue` ends the ones opened inside it.
+    std::size_t temporary_depth = 0;
   };
 
   const checked_types &checked_;
@@ -241,6 +276,17 @@ private:
     current_ = exit_;
     emit(use_event{.local = return_slot_});
     out_.push_back(std::move(cfg_));
+  }
+
+  /// A point where a generator may be resumed only to be cancelled: it then
+  /// returns, keyed by `key`, dropping what it owns.
+  auto cancel_point(const void *key) -> void {
+    const auto early = new_block();
+    const auto rest = new_block();
+    fork(rest, early);
+    current_ = early;
+    emit_return(value{}, key);
+    current_ = rest;
   }
 
   auto new_block() -> block_id {
@@ -405,7 +451,8 @@ private:
     scopes_.push_back(scope{.key = key,
                             .is_loop = true,
                             .continue_target = continue_target,
-                            .break_target = break_target});
+                            .break_target = break_target,
+                            .temporary_depth = temporaries_.size()});
   }
 
   /// Ends every scope from the innermost down to (and including) index
@@ -439,8 +486,8 @@ private:
 
   /// Marks the early exit `jump` leaving every scope from the innermost
   /// down to (and including) index `depth`.
-  auto mark_jump(const ast::node &jump, std::size_t depth) -> void {
-    auto event = scope_exit_event{.key = &jump, .groups = {}};
+  auto mark_jump(const void *jump, std::size_t depth) -> void {
+    auto event = scope_exit_event{.key = jump, .groups = {}};
     for (auto i = scopes_.size(); i > depth; --i) {
       event.groups.push_back(exit_group(scopes_[i - 1]));
     }
@@ -484,13 +531,12 @@ private:
       return locals;
     }
     for (const auto &binding : collect_pattern_bindings(*pat)) {
-      const auto type = type_of(binding.node);
+      const auto type = binding_type(binding, checked_);
       // An owned binding that needs a drop is dropped with its scope; the
       // others are left to `storage_dead`, like every pattern binding.
-      const auto whole = owned && binding.node != nullptr &&
-                         checked_.drop_plans.contains(type);
-      locals.push_back(
-          declare(binding.name, type, binding.span, whole, owned));
+      const auto whole = owned && checked_.drop_plans.contains(type);
+      locals.push_back(declare(binding.name, type, binding.span, whole, owned,
+                               binding.key()));
     }
     return locals;
   }
@@ -893,6 +939,16 @@ private:
 
   auto open_temporaries() -> void { temporaries_.emplace_back(); }
 
+  /// Ends the temporaries of every open frame from index `depth` on,
+  /// innermost first, on a path that leaves them early.
+  auto end_temporaries(std::size_t depth) -> void {
+    for (auto i = temporaries_.size(); i > depth; --i) {
+      for (const auto temp : std::views::reverse(temporaries_[i - 1])) {
+        access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
+      }
+    }
+  }
+
   /// Ends the temporaries of the innermost frame. A value the frame produced
   /// is held across their end in a join temporary, so a value that still
   /// borrows one of them is caught where it is used.
@@ -993,7 +1049,7 @@ private:
       const auto rest = new_block();
       fork(rest, early);
       current_ = early;
-      emit_return(result, nullptr);
+      emit_return(result, &tri);
       current_ = rest;
       return result;
     }
@@ -1098,6 +1154,9 @@ private:
     case ast::node_kind::yield_expr: {
       const auto &yield_e = dynamic_cast<const ast::yield_expr &>(expr);
       static_cast<void>(eval_opt(yield_e.value.get(), use_mode::move));
+      // Dropping the generator while it is suspended here resumes it only
+      // to return.
+      cancel_point(&yield_e);
       return {};
     }
 
@@ -1430,16 +1489,12 @@ private:
   /// Leaves the function from the current block, returning `returned`:
   /// every open scope ends, then the function exits. `jump` is the `return`
   /// statement, marked for drop scheduling; null for a `?` exit.
-  auto emit_return(const value &returned, const ast::node *jump) -> void {
+  auto emit_return(const value &returned, const void *jump) -> void {
     flow(return_slot_, returned, /*replace=*/true);
     if (jump != nullptr) {
-      mark_jump(*jump, 0);
+      mark_jump(jump, 0);
     }
-    for (const auto &frame : std::views::reverse(temporaries_)) {
-      for (const auto temp : std::views::reverse(frame)) {
-        access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
-      }
-    }
+    end_temporaries(0);
     end_scopes(0);
     goto_block(exit_);
   }
@@ -1449,41 +1504,67 @@ private:
   // ------------------------------------------------------------------
 
   /// Whether `pattern`, matched against `subject`, binds owned parts.
-  [[nodiscard]] auto binds_owned(const ast::expr *subject,
-                                 const ast::node *pattern) const -> bool {
+  /// `patterns` are every pattern matched against `subject`.
+  [[nodiscard]] auto
+  binds_owned(const ast::expr *subject, const ast::node *pattern,
+              const std::vector<const ast::node *> &patterns) const -> bool {
     const auto *pat = dynamic_cast<const ast::pattern *>(pattern);
     return subject != nullptr && pat != nullptr &&
-           owns_pattern_bindings(*subject, *pat, checked_,
+           owns_pattern_bindings(*subject, *pat, patterns, checked_,
                                  [this](std::string_view name) -> bool {
                                    return lookup(name).has_value();
                                  });
   }
 
-  /// How a `match`/`if let`/`while let`/`let` subject is used. A part of a
-  /// local (a field, element, or what a reference points at) is moved out
-  /// only when some pattern binds a non-`copy` part of it by value; a
-  /// pattern that binds nothing that moves leaves it in place. Any other
-  /// subject moves, as before.
+  /// Declares the bindings of `pattern`, one of `patterns` matched against
+  /// `subject_expr`, whose value `subject` holds. An arm whose bindings
+  /// overlap owns the whole subject instead (`arm_owns_subject`), and may
+  /// bind only copies besides: through the alias of the whole pattern
+  /// (`p as whole`) when it has one, otherwise as a `<subject>` local.
+  auto bind_arm(const ast::node *pattern, local_id subject,
+                const ast::expr *subject_expr,
+                const std::vector<const ast::node *> &patterns) -> void {
+    const auto *pat = dynamic_cast<const ast::pattern *>(pattern);
+    if (pat == nullptr || subject_expr == nullptr ||
+        !arm_owns_subject(*subject_expr, *pat, patterns, checked_,
+                          [this](std::string_view name) -> bool {
+                            return lookup(name).has_value();
+                          })) {
+      bind_pattern(pattern, subject,
+                   binds_owned(subject_expr, pattern, patterns));
+      return;
+    }
+    const auto *owner = owning_alias(*pat);
+    if (owner == nullptr) {
+      const auto whole =
+          declare("<subject>", type_of(subject_expr), pat->span,
+                  /*whole=*/true, /*owns=*/false, pat);
+      bind_value(whole, value{.loans = {}, .sources = {subject}});
+    }
+    for (const auto &binding : collect_pattern_bindings(*pat)) {
+      const auto type = binding_type(binding, checked_);
+      const auto is_owner = owner != nullptr && binding.alias_of == owner;
+      if (!is_owner && movable(type)) {
+        emit(invalid_move_event{.span = binding.span,
+                                .reason = move_block::overlapping,
+                                .place = binding.name,
+                                .owner = {}});
+      }
+      const auto local = declare(binding.name, type, binding.span,
+                                 /*whole=*/is_owner, /*owns=*/false,
+                                 binding.key());
+      bind_value(local, value{.loans = {}, .sources = {subject}});
+    }
+  }
+
+  /// How a `match`/`if let`/`while let`/`let` subject is used: moved or
+  /// read, as `subject_moves` decides.
   [[nodiscard]] auto subject_mode(const ast::expr *subject,
                                   const std::vector<const ast::node *> &patterns)
       const -> use_mode {
-    auto projected = false;
-    if (subject == nullptr || !place_root(*subject, projected).has_value() ||
-        !projected) {
-      return use_mode::move;
-    }
-    for (const auto *node : patterns) {
-      const auto *pat = dynamic_cast<const ast::pattern *>(node);
-      if (pat == nullptr) {
-        continue;
-      }
-      for (const auto &binding : collect_pattern_bindings(*pat)) {
-        if (binding.node == nullptr || movable(type_of(binding.node))) {
-          return use_mode::move;
-        }
-      }
-    }
-    return use_mode::read;
+    return subject == nullptr || subject_moves(*subject, patterns, checked_)
+               ? use_mode::move
+               : use_mode::read;
   }
 
   /// A subject temporary holding `v`, for patterns to bind from.
@@ -1500,10 +1581,8 @@ private:
     const auto end = new_block();
     for (const auto &branch : branches) {
       auto subject = std::optional<local_id>{};
-      auto owned = false;
       if (branch.let_expr != nullptr) {
         // `if let`: the parser leaves a placeholder in `condition`.
-        owned = binds_owned(branch.let_expr.get(), branch.let_pattern.get());
         subject = hold_subject(
             eval(*branch.let_expr, subject_mode(branch.let_expr.get(),
                                                 {branch.let_pattern.get()})));
@@ -1516,7 +1595,8 @@ private:
       current_ = then;
       push_scope(&branch.body);
       if (subject.has_value()) {
-        bind_pattern(branch.let_pattern.get(), *subject, owned);
+        bind_arm(branch.let_pattern.get(), *subject, branch.let_expr.get(),
+                 {branch.let_pattern.get()});
       }
       const auto tail = lower_body(branch.body, want_value);
       flow(join, tail, /*replace=*/true);
@@ -1557,8 +1637,7 @@ private:
       }
       current_ = body;
       push_scope(&arm.body_stmts);
-      bind_pattern(arm.pattern.get(), subject,
-                   binds_owned(owned_subject, arm.pattern.get()));
+      bind_arm(arm.pattern.get(), subject, owned_subject, patterns);
       if (arm.guard != nullptr) {
         static_cast<void>(eval(*arm.guard, use_mode::read));
         const auto guarded = new_block();
@@ -1589,10 +1668,32 @@ private:
   /// used at every iteration, so whatever it borrows — `&xs` in
   /// `for x in &xs`, or the collection behind `xs.iter()` — stays borrowed
   /// for the whole loop.
+  /// `for x in r` where `into_iter` would consume what `r` only borrows:
+  /// allowed when the elements are `copy`, since the loop then copies them.
+  auto check_loop_borrow(const ast::expr *iterable,
+                         const iterator_loop_dispatch *dispatch) -> void {
+    if (!loop_consumes_borrow(iterable, dispatch, checked_) ||
+        !movable(dispatch->element_type)) {
+      return;
+    }
+    emit(invalid_move_event{.span = iterable->span,
+                            .reason = move_block::iterated,
+                            .place = spell_value(*iterable),
+                            .owner = checked_.types.display(
+                                type_of(iterable))});
+  }
+
   auto lower_for(const ast::for_stmt &stmt) -> void {
+    const iterator_loop_dispatch *dispatch = nullptr;
+    if (const auto it = checked_.for_iterator_dispatches.find(&stmt);
+        it != checked_.for_iterator_dispatches.end()) {
+      dispatch = &it->second;
+      check_loop_borrow(stmt.iterable.get(), dispatch);
+    }
     const auto source = start_loop_source(
         stmt.iterable.get(),
         stmt.iterable != nullptr ? stmt.iterable->span : stmt.span);
+    hold_loop_handle(&stmt.iterable, stmt.iterable.get(), dispatch, source);
     const auto head = new_block();
     goto_block(head);
     current_ = head;
@@ -1616,6 +1717,23 @@ private:
     pop_scope();
     goto_block(head);
     current_ = exit;
+    pop_scope();
+  }
+
+  /// Opens the scope around a loop over `iterable`, keyed by `key` (the
+  /// loop's `iterable` member), and declares the iterator the loop holds
+  /// there when it owns one that needs a drop (`loop_handle_type`): dropped
+  /// once the loop ends, and by a jump out of it before what the enclosing
+  /// scopes own.
+  auto hold_loop_handle(const void *key, const ast::expr *iterable,
+                        const iterator_loop_dispatch *dispatch,
+                        local_id source) -> void {
+    push_scope(key);
+    if (const auto type = loop_handle_type(iterable, dispatch, checked_)) {
+      const auto handle =
+          declare("<for iterator>", *type, iterable->span, /*whole=*/true);
+      bind_value(handle, value{.loans = {}, .sources = {source}});
+    }
   }
 
   auto start_loop_source(const ast::expr *iterable, source_span span)
@@ -1646,28 +1764,41 @@ private:
     const auto head = new_block();
     goto_block(head);
     current_ = head;
+    // A condition is a full expression. A `while let` subject's
+    // temporaries last one iteration: they end after the body, when the
+    // pattern fails, and at a `break` or `continue`.
+    const auto depth = temporaries_.size();
+    open_temporaries();
     auto subject = std::optional<local_id>{};
-    auto owned = false;
     if (stmt.let_expr != nullptr) {
-      owned = binds_owned(stmt.let_expr.get(), stmt.let_pattern.get());
       subject = hold_subject(eval(
           *stmt.let_expr,
           subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
       static_cast<void>(eval_opt(stmt.condition.get(), use_mode::read));
+      static_cast<void>(close_temporaries());
     }
     const auto body = new_block();
     const auto exit = new_block();
     fork(body, exit);
     current_ = body;
     push_loop_scope(head, exit, &stmt.body);
+    scopes_.back().temporary_depth = depth;
     if (subject.has_value()) {
-      bind_pattern(stmt.let_pattern.get(), *subject, owned);
+      bind_arm(stmt.let_pattern.get(), *subject, stmt.let_expr.get(),
+               {stmt.let_pattern.get()});
     }
     static_cast<void>(lower_body(stmt.body, false));
     pop_scope();
+    if (subject.has_value()) {
+      end_temporaries(depth);
+    }
     goto_block(head);
     current_ = exit;
+    if (subject.has_value()) {
+      end_temporaries(depth);
+      temporaries_.pop_back();
+    }
   }
 
   /// `for x in xs, y in ys if g => e`: nested loops appending `e` to the
@@ -1691,9 +1822,18 @@ private:
       return;
     }
     const auto &clause = comp.clauses[index];
+    const iterator_loop_dispatch *dispatch = nullptr;
+    if (const auto it = checked_.comprehension_iterator_dispatches.find(
+            static_cast<const ast::node *>(clause.iterable.get()));
+        it != checked_.comprehension_iterator_dispatches.end()) {
+      dispatch = &it->second;
+      check_loop_borrow(clause.iterable.get(), dispatch);
+    }
     const auto source = start_loop_source(
         clause.iterable.get(),
         clause.iterable != nullptr ? clause.iterable->span : comp.span);
+    hold_loop_handle(&clause.iterable, clause.iterable.get(), dispatch,
+                     source);
     const auto head = new_block();
     goto_block(head);
     current_ = head;
@@ -1702,14 +1842,16 @@ private:
     const auto exit = new_block();
     fork(body, exit);
     current_ = body;
-    push_loop_scope(head, exit, nullptr);
+    push_loop_scope(head, exit, &clause);
+    const auto owned = clause_variable_owns(clause, checked_);
     for (const auto &pattern : clause.patterns) {
-      bind_pattern(pattern.get(), source);
+      bind_pattern(pattern.get(), source, owned);
     }
     lower_clause(comp, index + 1, join);
     pop_scope();
     goto_block(head);
     current_ = exit;
+    pop_scope();
   }
 
   auto lower_where(const ast::where_expr &where) -> value {
@@ -1797,7 +1939,8 @@ private:
       const auto is_break = node.kind == ast::node_kind::break_stmt;
       for (auto i = scopes_.size(); i > 0; --i) {
         if (scopes_[i - 1].is_loop) {
-          mark_jump(node, i - 1);
+          mark_jump(&node, i - 1);
+          end_temporaries(scopes_[i - 1].temporary_depth);
           end_scopes(i - 1);
           goto_block(is_break ? scopes_[i - 1].break_target
                               : scopes_[i - 1].continue_target);
@@ -1886,8 +2029,8 @@ private:
       static_cast<void>(lower_scoped_body(stmt.else_body, false));
       goto_block(bound);
       current_ = bound;
-      bind_pattern(stmt.pattern.get(), subject,
-                   binds_owned(stmt.initializer.get(), stmt.pattern.get()));
+      bind_arm(stmt.pattern.get(), subject, stmt.initializer.get(),
+               {stmt.pattern.get()});
       return;
     }
     if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
@@ -1899,8 +2042,8 @@ private:
       bind_value(local, v);
       return;
     }
-    bind_pattern(stmt.pattern.get(), hold_subject(v),
-                 binds_owned(stmt.initializer.get(), stmt.pattern.get()));
+    bind_arm(stmt.pattern.get(), hold_subject(v), stmt.initializer.get(),
+             {stmt.pattern.get()});
   }
 
   auto lower_assign(const ast::assign_stmt &stmt) -> void {
@@ -1988,22 +2131,67 @@ auto owns_pattern_bindings(type_id subject_type, const ast::node &pattern,
          !checked.types.is_view(subject_type);
 }
 
-auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
-    -> bool {
-  if (stmt.iterable == nullptr || stmt.patterns.size() != 1 ||
-      stmt.patterns.front() == nullptr ||
-      stmt.patterns.front()->kind != ast::node_kind::binding_pattern) {
+auto loop_consumes_borrow(const ast::expr *iterable,
+                          const iterator_loop_dispatch *dispatch,
+                          const checked_types &checked) -> bool {
+  if (iterable == nullptr || dispatch == nullptr ||
+      dispatch->adapter_decl == nullptr) {
+    return false;
+  }
+  const auto found = checked.node_types.find(iterable);
+  return found != checked.node_types.end() &&
+         !checked.types.is_unknown(found->second) &&
+         checked.types.entry(found->second).kind == type_kind::ref_kind;
+}
+
+auto loop_handle_type(const ast::expr *iterable,
+                      const iterator_loop_dispatch *dispatch,
+                      const checked_types &checked) -> std::optional<type_id> {
+  if (iterable == nullptr ||
+      loop_consumes_borrow(iterable, dispatch, checked)) {
+    return std::nullopt;
+  }
+  const auto found = checked.node_types.find(iterable);
+  if (found == checked.node_types.end() ||
+      checked.types.is_unknown(found->second)) {
+    return std::nullopt;
+  }
+  auto type = found->second;
+  if (dispatch != nullptr) {
+    if (dispatch->adapter_decl != nullptr) {
+      type = dispatch->adapter_result_type;
+    }
+  } else {
+    const auto &entry = checked.types.entry(type);
+    if (entry.kind != type_kind::builtin_generic_kind ||
+        entry.name != "generator") {
+      return std::nullopt;
+    }
+  }
+  if (!checked.drop_plans.contains(type)) {
+    return std::nullopt;
+  }
+  return type;
+}
+
+namespace {
+
+/// Whether `patterns` own the parts of each element a loop over `iterable`
+/// hands them. `dispatch` is the loop's `next` dispatch, if it has one.
+template <typename pattern_ptr>
+auto loop_patterns_own(const std::vector<pattern_ptr> &patterns,
+                       const ast::expr *iterable,
+                       const iterator_loop_dispatch *dispatch,
+                       const checked_types &checked) -> bool {
+  if (iterable == nullptr || patterns.empty() ||
+      loop_consumes_borrow(iterable, dispatch, checked)) {
     return false;
   }
   auto element = k_unknown_type;
-  if (const auto it = checked.for_iterator_dispatches.find(&stmt);
-      it != checked.for_iterator_dispatches.end()) {
-    if (it->second.adapter_decl != nullptr) {
-      return false;
-    }
-    element = it->second.element_type;
+  if (dispatch != nullptr) {
+    element = dispatch->element_type;
   } else {
-    const auto type_it = checked.node_types.find(stmt.iterable.get());
+    const auto type_it = checked.node_types.find(iterable);
     if (type_it == checked.node_types.end()) {
       return false;
     }
@@ -2014,16 +2202,78 @@ auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
     }
     element = entry.args[0];
   }
-  return owns_pattern_bindings(element, *stmt.patterns.front(), checked);
+  return std::ranges::all_of(
+      patterns, [&](const pattern_ptr &pattern) -> bool {
+        return pattern != nullptr &&
+               owns_pattern_bindings(element, *pattern, checked);
+      });
 }
 
-auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
-                           const checked_types &checked,
-                           const std::function<bool(std::string_view)> &is_local)
+} // namespace
+
+auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
+    -> bool {
+  const auto it = checked.for_iterator_dispatches.find(&stmt);
+  return loop_patterns_own(stmt.patterns, stmt.iterable.get(),
+                           it != checked.for_iterator_dispatches.end()
+                               ? &it->second
+                               : nullptr,
+                           checked);
+}
+
+auto clause_variable_owns(const ast::for_expr::iter_clause &clause,
+                          const checked_types &checked) -> bool {
+  const auto it = checked.comprehension_iterator_dispatches.find(
+      static_cast<const ast::node *>(clause.iterable.get()));
+  return loop_patterns_own(clause.patterns, clause.iterable.get(),
+                           it != checked.comprehension_iterator_dispatches.end()
+                               ? &it->second
+                               : nullptr,
+                           checked);
+}
+
+auto subject_moves(const ast::expr &subject,
+                   const std::vector<const ast::node *> &patterns,
+                   const checked_types &checked) -> bool {
+  auto projected = false;
+  if (!place_root(subject, projected).has_value()) {
+    return true;
+  }
+  for (const auto *node : patterns) {
+    const auto *pat = dynamic_cast<const ast::pattern *>(node);
+    if (pat == nullptr) {
+      continue;
+    }
+    for (const auto &binding : collect_pattern_bindings(*pat)) {
+      const auto type = binding_type(binding, checked);
+      if (!checked.types.is_unknown(type) && !checked.is_copy(type)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+namespace {
+
+/// Whether matching `subject` against `patterns` hands the match the
+/// subject's value to own: the subject moves (`subject_moves`), its type is
+/// a value rather than a reference or view, and it is a fresh value or a
+/// local or a field of one, not `self` or a global.
+auto match_owns_subject(const ast::expr &subject,
+                        const std::vector<const ast::node *> &patterns,
+                        const checked_types &checked,
+                        const std::function<bool(std::string_view)> &is_local)
     -> bool {
   const auto type_it = checked.node_types.find(&subject);
-  if (type_it == checked.node_types.end() ||
-      !owns_pattern_bindings(type_it->second, pattern, checked)) {
+  if (type_it == checked.node_types.end()) {
+    return false;
+  }
+  const auto type = type_it->second;
+  if (checked.types.is_unknown(type) || type == k_error_type ||
+      checked.types.entry(type).kind == type_kind::ref_kind ||
+      checked.types.is_view(type) ||
+      !subject_moves(subject, patterns, checked)) {
     return false;
   }
   auto projected = false;
@@ -2031,7 +2281,37 @@ auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern
   if (!root.has_value()) {
     return true; // a call result, constructor or literal: a fresh value
   }
-  return !projected && root->name != "self" && is_local(root->name);
+  // A field of a local moves out of it like the whole does: the local then
+  // drops everything but that field. A part the rules forbid moving out of
+  // (an element, or anything behind a reference) is rejected on its own.
+  return root->name != "self" && is_local(root->name);
+}
+
+} // namespace
+
+auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
+                           const std::vector<const ast::node *> &patterns,
+                           const checked_types &checked,
+                           const std::function<bool(std::string_view)> &is_local)
+    -> bool {
+  return pattern_bindings_are_disjoint(pattern) &&
+         match_owns_subject(subject, patterns, checked, is_local);
+}
+
+auto arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
+                      const std::vector<const ast::node *> &patterns,
+                      const checked_types &checked,
+                      const std::function<bool(std::string_view)> &is_local)
+    -> bool {
+  const auto type_it = checked.node_types.find(&subject);
+  return !pattern_bindings_are_disjoint(pattern) &&
+         type_it != checked.node_types.end() &&
+         checked.drop_plans.contains(type_it->second) &&
+         match_owns_subject(subject, patterns, checked, is_local);
+}
+
+auto generator_start(const ast::func_decl &decl) -> const void * {
+  return &decl.modifiers;
 }
 
 auto build_function_cfgs(const ast::func_decl &decl,
