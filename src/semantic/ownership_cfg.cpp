@@ -198,6 +198,9 @@ private:
   local_id return_slot_ = 0;
   /// The `field_path` local for each (parent, field) pair made so far.
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
+  /// The temporaries made in each enclosing statement or full expression,
+  /// innermost last; each ends with its frame (`close_temporaries`).
+  std::vector<std::vector<local_id>> temporaries_;
 
   // ------------------------------------------------------------------
   //  Graph construction primitives.
@@ -211,6 +214,7 @@ private:
     return_slot_ = new_local("the returned value", local_role::return_slot,
                              k_unknown_type, source_span::dummy(), false);
     push_scope(key);
+    temporaries_.clear();
   }
 
   /// Lowers the body in a scope of its own, sends its tail value to the
@@ -220,7 +224,7 @@ private:
               const std::vector<ast::ptr<ast::node>> &body_stmts) -> void {
     auto tail = value{};
     if (body_expr != nullptr) {
-      tail = eval(*body_expr, use_mode::move);
+      tail = eval_full(*body_expr);
     }
     push_scope(&body_stmts);
     auto stmts_tail = lower_body(body_stmts, /*want_value=*/true);
@@ -288,9 +292,12 @@ private:
   }
 
   auto access(local_id local, access_kind kind, source_span span,
-              loan_id exempt = k_no_loan) -> void {
-    emit(access_event{
-        .local = local, .kind = kind, .span = span, .exempt = exempt});
+              loan_id exempt = k_no_loan, const void *node = nullptr) -> void {
+    emit(access_event{.local = local,
+                      .kind = kind,
+                      .span = span,
+                      .exempt = exempt,
+                      .node = node});
   }
 
   /// An access to part of `local` (see `access_event::projected`).
@@ -449,10 +456,12 @@ private:
   /// Declares a binding. `owns` says it owns its value (see
   /// `local_info::owns`); a `whole` binding always does.
   auto declare(std::string name, type_id type, source_span span,
-               bool whole = false, bool owns = false) -> local_id {
+               bool whole = false, bool owns = false,
+               const void *node = nullptr) -> local_id {
     const auto local =
         new_local(name, local_role::binding, type, span, movable(type));
     cfg_.locals[local].whole = whole;
+    cfg_.locals[local].node = node;
     cfg_.locals[local].owns = (whole || owns) && name != "self" &&
                               owns_storage(type, name) &&
                               (checked_.types.is_unknown(type) ||
@@ -490,7 +499,8 @@ private:
   auto declare_param(const ast::node &pattern) -> void {
     if (pattern.kind == ast::node_kind::binding_pattern) {
       const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-      declare(binding.name, type_of(&pattern), binding.span, /*whole=*/true);
+      declare(binding.name, type_of(&pattern), binding.span, /*whole=*/true,
+              /*owns=*/false, &pattern);
       return;
     }
     // A by-value destructuring parameter owns the parts it binds.
@@ -659,6 +669,27 @@ private:
     return it != checked_.drop_plans.end() && it->second.own_drop.has_value();
   }
 
+  /// A short spelling of a value that is not a place, for a diagnostic:
+  /// `make()`, `a.make()`, or `(...)`.
+  [[nodiscard]] static auto spell_value(const ast::expr &expr) -> std::string {
+    const auto &inner = strip_groups(expr);
+    switch (inner.kind) {
+    case ast::node_kind::ident_expr:
+      return dynamic_cast<const ast::ident_expr &>(inner).name;
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(inner);
+      return (field.object != nullptr ? spell_value(*field.object) : "") +
+             "." + field.field_name;
+    }
+    case ast::node_kind::call_expr: {
+      const auto &call = dynamic_cast<const ast::call_expr &>(inner);
+      return (call.callee != nullptr ? spell_value(*call.callee) : "") + "()";
+    }
+    default:
+      return "(...)";
+    }
+  }
+
   /// Spells `root` followed by the first `count` of `steps`.
   [[nodiscard]] auto spell_place(std::string_view root,
                                  const std::vector<place_step> &steps,
@@ -749,7 +780,7 @@ private:
       if (kind == access_kind::move && !cfg_.locals[*local].movable) {
         kind = access_kind::read;
       }
-      access(*local, kind, expr.span);
+      access(*local, kind, expr.span, k_no_loan, &expr);
     } else {
       access_part(*local, expr, kind);
     }
@@ -782,20 +813,21 @@ private:
     }
     access_part_of(root, kind, expr.span);
     use_field_path(root, steps, moving ? access_kind::move : access_kind::read,
-                   expr.span);
+                   expr.span, &expr);
   }
 
   /// Accesses the `field_path` local for `root` followed by `steps`, when
   /// every step is a field of a value `root` owns — the only parts whose
   /// moves are tracked.
   auto use_field_path(local_id root, const std::vector<place_step> &steps,
-                      access_kind kind, source_span span) -> void {
+                      access_kind kind, source_span span,
+                      const void *node = nullptr) -> void {
     const auto fields_only =
         std::ranges::all_of(steps, [](const place_step &step) -> bool {
           return step.step == place_step::kind::field;
         });
     if (fields_only && !steps.empty() && cfg_.locals[root].owns) {
-      access(field_path_local(root, steps), kind, span);
+      access(field_path_local(root, steps), kind, span, k_no_loan, node);
     }
   }
 
@@ -805,7 +837,7 @@ private:
                     source_span span, loan_id exempt = k_no_loan,
                     bool evaluate_subscripts = true) -> value {
     if (!is_place(expr)) {
-      return eval(expr, use_mode::read);
+      return borrow_temporary(expr, is_mut, origin, span);
     }
     auto projected = false;
     const auto root = place_root(expr, projected);
@@ -834,6 +866,55 @@ private:
       result.sources.push_back(*local);
     }
     return result;
+  }
+
+  /// Borrows `expr`, which is not a place: its value is stored in a
+  /// temporary that lives until the end of the enclosing statement, the
+  /// point lowering drops it (`hir::make_references_explicit`). A borrow
+  /// still in use after that is reported against the temporary.
+  auto borrow_temporary(const ast::expr &expr, bool is_mut, loan_origin origin,
+                        source_span span) -> value {
+    const auto held = eval(expr, use_mode::move);
+    const auto type = type_of(&expr);
+    const auto temp = new_local("temporary", local_role::temporary, type,
+                                expr.span, false);
+    flow(temp, held, /*replace=*/true);
+    if (temporaries_.empty()) {
+      temporaries_.emplace_back();
+    }
+    temporaries_.back().push_back(temp);
+    auto result = value{};
+    result.loans.push_back(new_loan(temp, is_mut, origin, span));
+    if (bears(type)) {
+      result.sources.push_back(temp);
+    }
+    return result;
+  }
+
+  auto open_temporaries() -> void { temporaries_.emplace_back(); }
+
+  /// Ends the temporaries of the innermost frame. A value the frame produced
+  /// is held across their end in a join temporary, so a value that still
+  /// borrows one of them is caught where it is used.
+  auto close_temporaries(const value &produced = {}) -> value {
+    auto result = produced;
+    if (!temporaries_.back().empty() && !produced.empty()) {
+      const auto hold = new_temp(local_role::join_temp);
+      flow(hold, produced, /*replace=*/true);
+      result = value{.loans = {}, .sources = {hold}};
+    }
+    for (const auto temp : std::views::reverse(temporaries_.back())) {
+      access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
+    }
+    temporaries_.pop_back();
+    return result;
+  }
+
+  /// Evaluates `expr` as a full expression: the temporaries it makes end
+  /// with it (a lambda's or match arm's expression body).
+  auto eval_full(const ast::expr &expr) -> value {
+    open_temporaries();
+    return close_temporaries(eval(expr, use_mode::move));
   }
 
   // ------------------------------------------------------------------
@@ -875,7 +956,8 @@ private:
                                                          : access_kind::read);
       }
       if (expr.kind == ast::node_kind::field_expr) {
-        return eval_field_of_value(dynamic_cast<const ast::field_expr &>(expr));
+        return eval_field_of_value(dynamic_cast<const ast::field_expr &>(expr),
+                                   mode);
       }
       return {};
 
@@ -1070,7 +1152,31 @@ private:
   }
 
   /// `obj.f` where `obj` is not itself a place (a call result, ...).
-  auto eval_field_of_value(const ast::field_expr &field) -> value {
+  /// `make().f`: a field of a value that is not a place. Moving a field
+  /// that is not `copy` out of it leaves the rest to be dropped with the
+  /// temporary, which a type with its own `drop` does not allow.
+  auto eval_field_of_value(const ast::field_expr &field, use_mode mode)
+      -> value {
+    if (mode == use_mode::move && movable(type_of(&field))) {
+      auto path = "." + field.field_name;
+      for (const ast::expr *at = field.object.get(); at != nullptr;) {
+        if (has_own_drop(type_of(at))) {
+          emit(invalid_move_event{.span = field.span,
+                                  .reason = move_block::own_drop,
+                                  .place = spell_value(*at) + path,
+                                  .owner = checked_.types.display(
+                                      type_of(at))});
+          break;
+        }
+        const auto &inner = strip_groups(*at);
+        if (inner.kind != ast::node_kind::field_expr) {
+          break;
+        }
+        const auto &outer = dynamic_cast<const ast::field_expr &>(inner);
+        path.insert(0, "." + outer.field_name);
+        at = outer.object.get();
+      }
+    }
     auto object = eval_opt(field.object.get(), use_mode::read);
     return bears(type_of(&field)) ? object : value{};
   }
@@ -1085,7 +1191,7 @@ private:
     const auto type = cfg_.locals[*local].type;
     access(*local,
            cfg_.locals[*local].movable ? access_kind::move : access_kind::read,
-           field.span);
+           field.span, k_no_loan, &field);
     return bears(type) ? value{.loans = {}, .sources = {*local}} : value{};
   }
 
@@ -1280,7 +1386,7 @@ private:
       const auto &info = cfg_.locals[*local];
       access(*local,
              moved && info.movable ? access_kind::move : access_kind::read,
-             span);
+             span, k_no_loan, &lambda);
       if (bears(info.type)) {
         result.sources.push_back(*local);
       }
@@ -1328,6 +1434,11 @@ private:
     flow(return_slot_, returned, /*replace=*/true);
     if (jump != nullptr) {
       mark_jump(*jump, 0);
+    }
+    for (const auto &frame : std::views::reverse(temporaries_)) {
+      for (const auto temp : std::views::reverse(frame)) {
+        access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
+      }
     }
     end_scopes(0);
     goto_block(exit_);
@@ -1456,7 +1567,7 @@ private:
       }
       auto tail = value{};
       if (arm.body_expr != nullptr) {
-        tail = eval(*arm.body_expr, use_mode::move);
+        tail = eval_full(*arm.body_expr);
       }
       auto stmts_tail = lower_body(arm.body_stmts, want_value);
       if (arm.body_expr == nullptr) {
@@ -1574,8 +1685,9 @@ private:
       if (comp.guard != nullptr) {
         static_cast<void>(eval(*comp.guard, use_mode::read));
       }
-      flow(join, eval_opt(comp.yield_expr.get(), use_mode::move),
-           /*replace=*/false);
+      if (comp.yield_expr != nullptr) {
+        flow(join, eval_full(*comp.yield_expr), /*replace=*/false);
+      }
       return;
     }
     const auto &clause = comp.clauses[index];
@@ -1637,7 +1749,9 @@ private:
       if (stmts[i] == nullptr) {
         continue;
       }
-      tail = lower_stmt(*stmts[i], want_value && i + 1 == stmts.size());
+      open_temporaries();
+      tail = close_temporaries(
+          lower_stmt(*stmts[i], want_value && i + 1 == stmts.size()));
     }
     return tail;
   }
@@ -1655,7 +1769,8 @@ private:
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
       auto v = eval_opt(stmt.initializer.get(), use_mode::move);
       const auto local =
-          declare(stmt.name, type_of(&stmt), stmt.span, /*whole=*/true);
+          declare(stmt.name, type_of(&stmt), stmt.span, /*whole=*/true,
+                  /*owns=*/false, &stmt);
       bind_value(local, v);
       return {};
     }
@@ -1780,7 +1895,7 @@ private:
           dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
       const auto local =
           declare(binding.name, type_of(stmt.pattern.get()), binding.span,
-                  /*whole=*/true);
+                  /*whole=*/true, /*owns=*/false, stmt.pattern.get());
       bind_value(local, v);
       return;
     }
@@ -1807,9 +1922,42 @@ private:
       return;
     }
     if (!projected && stmt.op == ast::assign_op::assign) {
+      emit(assign_event{.key = &stmt, .local = *local});
       access(*local, access_kind::write_whole, target.span);
       bind_value(*local, v);
       return;
+    }
+    if (projected && stmt.op == ast::assign_op::assign) {
+      auto steps = std::vector<place_step>{};
+      place_steps(target, steps);
+      const auto through_ref = [&]() -> bool {
+        // A field of a local that owns its value is tracked by path; one
+        // reached through a reference or `*r` always holds a value. An
+        // element (`xs[i] = v`) or a raw pointer write is the collection's
+        // or the `machine` code's to handle.
+        auto reached = cfg_.locals[*local].type;
+        for (const auto &step : steps) {
+          if (step.step == place_step::kind::index) {
+            return false;
+          }
+          if (!checked_.types.is_unknown(reached) &&
+              checked_.types.entry(reached).kind == type_kind::ptr_kind) {
+            return false;
+          }
+          reached = step.type;
+        }
+        return true;
+      };
+      if (through_ref()) {
+        const auto fields_only =
+            std::ranges::all_of(steps, [](const place_step &step) -> bool {
+              return step.step == place_step::kind::field;
+            });
+        emit(assign_event{.key = &stmt,
+                          .local = fields_only && cfg_.locals[*local].owns
+                                       ? field_path_local(*local, steps)
+                                       : k_no_local});
+      }
     }
     if (!projected) {
       access(*local, access_kind::write_part, target.span);

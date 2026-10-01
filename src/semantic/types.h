@@ -876,6 +876,12 @@ struct checked_types {
       struct_pattern_field_types;
   std::unordered_map<const ast::struct_field_init *, type_id>
       struct_literal_field_types;
+  /// Each struct literal field's *declared* type, as the literal's struct
+  /// instance spells it (`list[int32]` for `list_into_iter[int32]`'s `src`).
+  /// Lowering reads it to make a borrow or deref between the value and the
+  /// field explicit (`hir::make_references_explicit`).
+  std::unordered_map<const ast::struct_field_init *, type_id>
+      struct_literal_field_expected;
   std::unordered_map<const ast::call_expr *, call_argument_mapping>
       call_argument_mappings;
   /// Every call resolved by `infer_qualified_call` — see `resolved_callee`'s
@@ -1245,11 +1251,18 @@ struct checked_types {
   /// `where` clause. Keyed like every type parameter, on the declaration that
   /// introduced it, so the set means the same thing in every body.
   std::unordered_set<type_id> copy_type_params;
+  /// The sum types (user sums, `option`, `result`) whose every variant
+  /// payload is `copy` and that have no `drop`. A sum value never changes
+  /// after it is built, so sharing its heap block is a copy (ch. 14, Copy and
+  /// move). Computed over the whole table once checking finishes, because a
+  /// generic sum's payload types need the checker's substitution.
+  std::unordered_set<type_id> copy_sum_types;
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
-  /// or a type parameter bounded by `copy`.
+  /// a type parameter bounded by `copy`, or a `copy` sum.
   [[nodiscard]] auto is_copy(type_id id) const -> bool {
-    return types.is_copy(id) || copy_type_params.contains(id);
+    return types.is_copy(id) || copy_type_params.contains(id) ||
+           copy_sum_types.contains(types.strip_refinement(id));
   }
 };
 

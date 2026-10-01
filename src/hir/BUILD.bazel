@@ -10,6 +10,7 @@ cc_library(
         "link.cpp",
         "live_across_yield.cpp",
         "lower.cpp",
+        "reference_check.cpp",
         "tail_calls.cpp",
     ],
     hdrs = [
@@ -22,6 +23,7 @@ cc_library(
         "live_across_yield.h",
         "lower.h",
         "nodes.h",
+        "reference_check.h",
         "tail_calls.h",
         "traversal.h",
     ],

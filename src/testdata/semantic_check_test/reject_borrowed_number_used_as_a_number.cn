@@ -1,8 +1,10 @@
 module check.borrowed_number_used_as_a_number
 
 # A `&int32` is an address. Using it as the number it points at, without the
-# `*` that does the load, is refused in both of the places it can happen:
-# flowing into a declared type, and as an operand.
+# `*` that does the load, is refused in each of the places it can happen:
+# flowing into a declared type, as an arithmetic operand, as a comparison
+# operand, and as the operand of a lambda whose parameter is only known to
+# be a `&int32` after its body was checked.
 #
 # It used to be accepted in both, and the address was used as the number —
 # a silently wrong answer rather than a crash (`spec/todo.md` 21).
@@ -12,6 +14,15 @@ def read_it(v: &int32) -> int32:
 
 def add_it(v: &int32) -> int32:
     return v + 1
+
+def compare_it(v: &int32) -> bool:
+    return v > 2
+
+def keep(pred: fn(&int32) -> bool, v: int32) -> bool:
+    return pred(&v)
+
+def settled_late() -> bool:
+    return keep((x) => x > 2, 5)
 
 # The contrast: a borrow of something that *is* an address already needs no
 # `*`, and must keep working exactly as before.

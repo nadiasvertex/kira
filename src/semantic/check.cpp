@@ -528,6 +528,9 @@ public:
     for (auto &[field, type] : struct_literal_field_types_) {
       type = types_.erase_refinements(settle(type));
     }
+    for (auto &[field, type] : struct_literal_field_expected_) {
+      type = types_.erase_refinements(settle(type));
+    }
     for (auto &[node, dispatch] : for_iterator_dispatches_) {
       dispatch.element_type =
           types_.erase_refinements(settle(dispatch.element_type));
@@ -552,12 +555,21 @@ public:
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
     auto borrow_bearing = compute_borrow_bearing_types();
+    auto copy_sum_types = std::unordered_set<type_id>{};
+    for (std::size_t raw = 0; raw < types_.count(); ++raw) {
+      const auto id = static_cast<type_id>(raw);
+      if (is_sum_like(id) && value_is_copy(id)) {
+        copy_sum_types.insert(id);
+      }
+    }
     return checked_types{
         .types = std::move(types_),
         .node_types = std::move(node_types_),
         .node_files = std::move(node_files_),
         .struct_pattern_field_types = std::move(struct_pattern_field_types_),
         .struct_literal_field_types = std::move(struct_literal_field_types_),
+        .struct_literal_field_expected =
+            std::move(struct_literal_field_expected_),
         .call_argument_mappings = std::move(call_argument_mappings_),
         .resolved_callees = std::move(resolved_callees_),
         .resolved_fn_values = std::move(resolved_fn_values_),
@@ -608,7 +620,8 @@ public:
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .borrow_bearing_types = std::move(borrow_bearing),
-        .copy_type_params = std::move(copy_type_params_)};
+        .copy_type_params = std::move(copy_type_params_),
+        .copy_sum_types = std::move(copy_sum_types)};
   }
 
   /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
@@ -696,6 +709,9 @@ private:
   /// they need their own map. Handed to the caller via `take_checked_types`.
   std::unordered_map<const ast::struct_field_init *, type_id>
       struct_literal_field_types_;
+  /// See `checked_types::struct_literal_field_expected`.
+  std::unordered_map<const ast::struct_field_init *, type_id>
+      struct_literal_field_expected_;
   /// Per-call-site argument-to-parameter mapping, recorded in
   /// `check_call_args_against` — the only place a call is matched against
   /// a real declared parameter list (see `call_argument_mapping`'s doc
@@ -1743,6 +1759,25 @@ private:
     return true;
   }
 
+  /// Rejects an operator operand that is a `&int32` (see
+  /// `needs_explicit_deref`), now or once its type settles: `(x) => x > 2`
+  /// passed where a `fn(&int32) -> bool` is expected only learns that `x`
+  /// is a reference after its body was checked. False when it reported.
+  auto require_explicit_deref(const ast::expr &operand, type_id raw) -> bool {
+    const auto settled = settle(raw);
+    if (needs_explicit_deref(settled)) {
+      report_missing_deref(operand, settled);
+      return false;
+    }
+    if (mentions_type_var(settled)) {
+      defer_method_call("the operand", settled, std::vector<type_id>{},
+                        [this, &operand](type_id now) -> void {
+                          (void)require_explicit_deref(operand, now);
+                        });
+    }
+    return true;
+  }
+
   /// The missing `*`. Named as the fix rather than as the mismatch, because
   /// "expected `int32`, found `&int32`" is a true sentence that teaches
   /// nothing: the two spellings differ by one character and the user has to
@@ -2552,6 +2587,13 @@ private:
       }
       const auto &concept_decl = *concept_ref->decl;
       if (const auto members = concept_category(concept_decl)) {
+        // A category's members are builtin scalars, so a parameter bounded
+        // by one copies (ch. 14, Copy and move).
+        if (std::ranges::all_of(*members, [this](type_id member) -> bool {
+              return types_.is_copy(member);
+            })) {
+          copy_type_params_.insert(subject);
+        }
         const auto found = declared_domains_.find(subject);
         declared_domains_[subject] =
             found != declared_domains_.end()
@@ -2733,6 +2775,21 @@ private:
     return category_members(concept_decl.name);
   }
 
+  /// The type of a method's `self` parameter. `self` is always borrowed
+  /// (ch. 14): a heap-represented `self` is a `&T`, or a `&mut T` when
+  /// written `mut self`, so that a borrow of it is the address of the
+  /// caller's place (`spec/todo.md` item 20). A scalar `self` is passed by
+  /// value, which reads the same.
+  auto self_param_type(const ast::param &param) -> type_id {
+    if (types_.is_unknown(self_type_) || self_type_ == k_error_type ||
+        !types_.is_heap_represented(self_type_)) {
+      return self_type_;
+    }
+    const auto *binding =
+        dynamic_cast<const ast::binding_pattern *>(param.pattern.get());
+    return types_.ref_to(self_type_, binding != nullptr && binding->is_mut);
+  }
+
   /// Whether `concept_decl` is `std.traits.copy`, which the checker answers
   /// itself (`type_table::is_copy`) rather than from its body.
   auto is_copy_concept(const ast::concept_decl &concept_decl) -> bool {
@@ -2772,7 +2829,60 @@ private:
         subject == k_error_type) {
       return true;
     }
-    return types_.is_copy(subject) || copy_type_params_.contains(subject);
+    return value_is_copy(subject);
+  }
+
+  /// A user sum, `option` or `result`.
+  [[nodiscard]] auto is_sum_like(type_id id) const -> bool {
+    const auto &entry = types_.entry(types_.strip_refinement(id));
+    return entry.kind == type_kind::sum_kind ||
+           (entry.kind == type_kind::builtin_generic_kind &&
+            (entry.name == "option" || entry.name == "result"));
+  }
+
+  /// Whether a value of `id` copies (ch. 14, Copy and move), including a sum
+  /// whose every payload copies and that has no `drop`: a sum value never
+  /// changes after it is built, so sharing its block is a copy. `visiting`
+  /// breaks a recursive sum's cycle by assuming it copies, which holds
+  /// exactly when every other payload does.
+  auto value_is_copy(type_id id) -> bool {
+    auto visiting = std::unordered_set<type_id>{};
+    return value_is_copy(id, visiting);
+  }
+
+  auto value_is_copy(type_id id, std::unordered_set<type_id> &visiting)
+      -> bool {
+    if (types_.is_copy(id) || copy_type_params_.contains(id)) {
+      return true;
+    }
+    const auto stripped = types_.strip_refinement(id);
+    if (!is_sum_like(stripped)) {
+      return false;
+    }
+    if (!visiting.insert(stripped).second) {
+      return true;
+    }
+    const auto &entry = types_.entry(stripped);
+    if (entry.kind == type_kind::builtin_generic_kind) {
+      return std::ranges::all_of(entry.args, [&](type_id arg) -> bool {
+        return !types_.is_unknown(arg) && value_is_copy(arg, visiting);
+      });
+    }
+    if (type_has_trait(entry, "drop")) {
+      return false;
+    }
+    const auto *variants = sum_variants_of(entry);
+    if (variants == nullptr) {
+      return false;
+    }
+    for (const auto &variant : *variants) {
+      for (const auto payload : variant_payload_types(entry, variant)) {
+        if (types_.is_unknown(payload) || !value_is_copy(payload, visiting)) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   static auto intersect_domains(const type_domain &a, const type_domain &b)
@@ -8437,6 +8547,7 @@ private:
     copy_template_records(node_files_, subst, same);
     copy_template_records(struct_pattern_field_types_, subst, type);
     copy_template_records(struct_literal_field_types_, subst, type);
+    copy_template_records(struct_literal_field_expected_, subst, type);
     copy_template_records(call_expected_types_, subst, type);
     copy_template_records(
         call_argument_mappings_, subst,
@@ -11992,12 +12103,10 @@ private:
     }
     const auto lhs_final = lhs_settled;
     const auto op_name = ast::binary_op_name(binary.op);
-    if (binary.lhs != nullptr && needs_explicit_deref(raw_lhs)) {
-      report_missing_deref(*binary.lhs, raw_lhs);
+    if (binary.lhs != nullptr && !require_explicit_deref(*binary.lhs, raw_lhs)) {
       return k_error_type;
     }
-    if (binary.rhs != nullptr && needs_explicit_deref(raw_rhs)) {
-      report_missing_deref(*binary.rhs, raw_rhs);
+    if (binary.rhs != nullptr && !require_explicit_deref(*binary.rhs, raw_rhs)) {
       return k_error_type;
     }
 
@@ -12077,13 +12186,23 @@ private:
     // `index[n]` compares against a `usize` without ceremony, and the trait
     // lookup below (`ord`/`eq`) is asked of `usize`, which is what actually
     // implements it.
-    const auto lhs = binary.lhs != nullptr
-                         ? base_shape(infer_expr(*binary.lhs, k_unknown_type))
-                         : k_unknown_type;
-    const auto rhs = binary.rhs != nullptr
-                         ? base_shape(infer_expr(*binary.rhs, lhs))
-                         : k_unknown_type;
+    const auto raw_lhs = binary.lhs != nullptr
+                             ? infer_expr(*binary.lhs, k_unknown_type)
+                             : k_unknown_type;
+    const auto lhs = base_shape(raw_lhs);
+    const auto raw_rhs = binary.rhs != nullptr
+                             ? infer_expr(*binary.rhs, lhs)
+                             : k_unknown_type;
+    const auto rhs = base_shape(raw_rhs);
     const auto bool_type = types_.builtin("bool");
+    // A `&int32` operand is an address, and comparing it compiles a compare
+    // of the address — the same trap arithmetic reports (`infer_arithmetic`).
+    if (binary.lhs != nullptr && !require_explicit_deref(*binary.lhs, raw_lhs)) {
+      return bool_type;
+    }
+    if (binary.rhs != nullptr && !require_explicit_deref(*binary.rhs, raw_rhs)) {
+      return bool_type;
+    }
     defer_operator_dispatch(binary, lhs,
                             is_equality ? operator_kind::equality
                                         : operator_kind::ordering);
@@ -17049,17 +17168,35 @@ private:
       infer_call_args_loosely(call);
       return k_error_type;
     }
-    const auto operand =
-        strip_refs(infer_expr(*call.args.front().value, k_unknown_type));
+    const auto written = infer_expr(*call.args.front().value, k_unknown_type);
+    const auto operand = strip_refs(written);
     const auto &operand_entry = types_.entry(operand);
+    // A reference is the address of the place it borrows, so `ptr_cast[T]`
+    // of a `&T`/`&mut T` is a raw pointer to that place: how `machine` code
+    // moves a value into or out of a borrowed place (`swap`, `replace`).
+    // Mutability follows the reference, as it follows a pointer operand.
+    if (operand_entry.kind != type_kind::ptr_kind &&
+        !types_.is_unknown(written) && written != k_error_type &&
+        types_.entry(written).kind == type_kind::ref_kind) {
+      const auto is_mut = types_.entry(written).is_mut;
+      require_machine_context(call.span, "`ptr_cast`");
+      const auto target =
+          explicit_type_argument(bracket_args.front()).value_or(k_unknown_type);
+      const auto result = types_.ptr_to(target, is_mut);
+      if (!types_.is_unknown(target)) {
+        ptr_casts_[&call] = result;
+      }
+      return record_expr_type(call, result);
+    }
     if (operand_entry.kind != type_kind::ptr_kind) {
       if (types_.is_unknown(operand) || operand == k_error_type) {
         return record_expr_type(call, k_unknown_type);
       }
       error(call.args.front().value->span,
-            std::format("`ptr_cast` requires a raw pointer, found `{}`",
+            std::format("`ptr_cast` requires a raw pointer or a reference, "
+                        "found `{}`",
                         types_.display(operand)),
-            "not a `*T` or `*mut T`");
+            "not a `*T`, `*mut T`, `&T` or `&mut T`");
       return k_error_type;
     }
     require_machine_context(call.span, "`ptr_cast`");
@@ -19004,6 +19141,21 @@ private:
     }
     dispatch_index_when_settled(index_dispatches_, index, *method, target,
                                 "index");
+    // A read of an element that is not `copy` cannot take it out of the
+    // container (ch. 14, Moving out of places): it reads the element in
+    // place, through `at_ref`'s address, so a borrow or field read of it
+    // does not see a bitwise copy. Lowering picks it when the element type
+    // is not `copy`.
+    if (type_has_trait(entry, "index_ref")) {
+      if (const auto *by_ref =
+              find_method(entry, "at_ref", target,
+                          index_key_filter(target, "index_ref", key));
+          by_ref != nullptr && !by_ref->decl->params.empty() &&
+          param_name_of(by_ref->decl->params.front()) == "self") {
+        dispatch_index_when_settled(index_ref_dispatches_, index, *by_ref,
+                                    target, "index_ref");
+      }
+    }
     // Resolved against *this* impl's bindings: a type with both
     // `index[usize]` and `index[range[usize]]` has two `output`s, and the
     // bare trait name names whichever was checked last.
@@ -19678,6 +19830,7 @@ private:
       // is a plain `.find` — see `struct_literal_field_types_`'s doc
       // comment.
       struct_literal_field_types_[&field] = found;
+      struct_literal_field_expected_[&field] = field_expected;
       inferred_by_field.emplace(field.name, found);
     }
 
@@ -23666,7 +23819,7 @@ private:
         // message of their own.
         type = resolve_type(*param.type_annotation, current_resolve_ctx());
       } else if (i == 0 && param_name_of(param) == "self") {
-        type = self_type_;
+        type = self_param_type(param);
       } else if (i < inferred_types.size()) {
         type = inferred_types[i];
       }

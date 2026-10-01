@@ -1,0 +1,37 @@
+module main
+
+# The prelude's `swap`, `replace` and `drop(x)` (ch. 42), written in Cinder
+# over `ptr_cast` of a reference: each value leaves one place and enters
+# another without being dropped, and `drop(x)` drops at the call. Every
+# `noisy` prints its drop exactly once.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+type holder = { held: option[noisy], k: int32 }
+extend holder:
+    def take(mut self) -> option[noisy]:
+        return replace(&mut self.held, @none)
+def main() -> int32:
+    var a: int32 = 1
+    var b: int32 = 2
+    swap(&mut a, &mut b)
+    println("ints {a} {b}")
+    var xs = [1, 2, 3]
+    var ys = [9]
+    swap(&mut xs, &mut ys)
+    println("lists {xs.len()} {ys.len()} {xs[0]}")
+    var s = "left"
+    let old = replace(&mut s, "right")
+    println("strs {old} {s}")
+    var h = holder { held: @some(noisy { id: 7 }), k: 0 }
+    match h.take():
+        @some(n) => println("took {n.id}")
+        @none => println("none")
+    match h.take():
+        @some(n) => println("took again {n.id}")
+        @none => println("empty now")
+    let n = noisy { id: 8 }
+    drop(n)
+    println("after drop")
+    return 0

@@ -1,0 +1,14 @@
+module main
+
+# A function value is called as it is: nothing borrows or dereferences
+# between a caller of `fn(&int32)` and a body written for `fn(int32)`. So a
+# `fn(int32)` is not accepted where a `fn(&int32)` is expected, even though a
+# direct call to a `&int32` parameter accepts a lent `int32`. Accepting it
+# used to run the body on an address read as a number.
+
+def keep(pred: fn(&int32) -> bool, v: int32) -> bool:
+    return pred(&v)
+
+def main() -> int32:
+    let kept = keep((x: int32) => x > 2, 5)
+    return 0

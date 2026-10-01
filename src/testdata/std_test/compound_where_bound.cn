@@ -40,11 +40,12 @@ def main() -> int32:
     println("product_empty={empty.iter().values().product()}")
 
     # A second instantiation of the same `sum`, over a user type whose `add`
-    # and `zero` are both user impls.
+    # and `zero` are both user impls. The lists are consumed (`into_iter`):
+    # a struct cannot be copied out of the references `iter()` yields.
     let wallet = [money { cents: 250 }, money { cents: 125 }, money { cents: 7 }]
-    println("wallet_sum={wallet.iter().values().sum().cents}")
+    println("wallet_sum={wallet.into_iter().sum().cents}")
 
     let no_money: list[money] = []
-    println("wallet_empty={no_money.iter().values().sum().cents}")
+    println("wallet_empty={no_money.into_iter().sum().cents}")
 
     return 0

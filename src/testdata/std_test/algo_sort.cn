@@ -60,7 +60,7 @@ def main() -> int32:
 
     # `stable_sort` stability itself: pairs sharing a key must keep their
     # relative input order after sorting by that key alone.
-    let by_first = (p: (int32, int32), q: (int32, int32)) => (
+    let by_first = (p: &(int32, int32), q: &(int32, int32)) => (
         if p.0 < q.0: @less elif q.0 < p.0: @greater else: @equal)
     var pairs: list[(int32, int32)] = [(1, 10), (0, 20), (1, 30), (0, 40)]
     sort_by(&mut pairs[0..4], by_first)
@@ -71,7 +71,7 @@ def main() -> int32:
 
     # `sort_by_key`: descending order via a negated key.
     var to_key: list[int32] = [5, 2, 8, 1]
-    sort_by_key(&mut to_key[0..4], (x: int32) => 0 - x)
+    sort_by_key(&mut to_key[0..4], (x: &int32) => 0 - *x)
     i = 0
     while i < 4:
         println("by_key_desc[{i}]={to_key[i]}")
@@ -98,8 +98,8 @@ def main() -> int32:
     match binary_search(&haystack[0..5], 4):
         @some(idx) => println("binary_search_miss={idx}")
         @none => println("binary_search_miss=none")
-    match binary_search_by(&haystack[0..5], (x: int32) =>
-            if x < 7: @less elif x > 7: @greater else: @equal):
+    match binary_search_by(&haystack[0..5], (x: &int32) =>
+            if *x < 7: @less elif *x > 7: @greater else: @equal):
         @some(idx) => println("binary_search_by_hit={idx}")
         @none => println("binary_search_by_hit=none")
 
@@ -110,7 +110,7 @@ def main() -> int32:
     println("upper_bound_present={upper_bound(&haystack[0..5], 5)}")
     println("lower_bound_between={lower_bound(&haystack[0..5], 4)}")
     println("upper_bound_between={upper_bound(&haystack[0..5], 4)}")
-    println("partition_point={partition_point(&haystack[0..5], (x: int32) => x < 5)}")
+    println("partition_point={partition_point(&haystack[0..5], (x: &int32) => *x < 5)}")
 
     # `reverse`.
     var to_reverse = [1, 2, 3, 4, 5]

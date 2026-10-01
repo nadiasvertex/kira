@@ -774,14 +774,41 @@ auto type_table::compatible(type_id expected, type_id found) const -> bool {
     }
     return true;
   }
-  case type_kind::tuple_kind:
-  case type_kind::fn_kind: {
+  case type_kind::tuple_kind: {
     if (expected_entry.args.size() != found_entry.args.size() ||
         !compatible(expected_entry.result, found_entry.result)) {
       return false;
     }
     for (size_t i = 0; i < expected_entry.args.size(); ++i) {
       if (!compatible(expected_entry.args[i], found_entry.args[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  case type_kind::fn_kind: {
+    // A function value's parameters and result are passed as they are:
+    // nothing borrows or dereferences between a caller of `fn(&int32)` and
+    // a body written for `fn(int32)`, so being a reference has to match
+    // exactly here, unlike at a direct call.
+    const auto same_ref = [this](type_id want, type_id got) -> bool {
+      if (is_unknown(want) || is_unknown(got)) {
+        return true;
+      }
+      const auto want_ref =
+          entry(strip_refinement(want)).kind == type_kind::ref_kind;
+      const auto got_ref =
+          entry(strip_refinement(got)).kind == type_kind::ref_kind;
+      return want_ref == got_ref;
+    };
+    if (expected_entry.args.size() != found_entry.args.size() ||
+        !same_ref(expected_entry.result, found_entry.result) ||
+        !compatible(expected_entry.result, found_entry.result)) {
+      return false;
+    }
+    for (size_t i = 0; i < expected_entry.args.size(); ++i) {
+      if (!same_ref(expected_entry.args[i], found_entry.args[i]) ||
+          !compatible(expected_entry.args[i], found_entry.args[i])) {
         return false;
       }
     }

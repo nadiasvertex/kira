@@ -64,3 +64,24 @@ pub machine def copy[T](dst: *mut T, src: *T, count: usize) -> unit:
     while i < count:
         dst[i] = src[i]
         i = i + 1
+
+#: Drops the value at `p`, leaving the slot without one.
+#:
+#: The raw read hands the value to `drop`, whose by-value parameter drops it
+#: (`spec/specification/03-advanced/38-machine-layer.md`, Raw memory and
+#: ownership). For a type that needs no drop this does nothing. The slot must
+#: hold a value, and must not be read as holding one afterward.
+#: Args:
+#:   p: the slot to empty.
+pub machine def drop_in_place[T](p: *mut T) -> unit:
+    drop(p[0])
+
+#: Drops the `count` values starting at `p`, in order.
+#: Args:
+#:   p: the first slot.
+#:   count: how many slots hold values.
+pub machine def drop_range[T](p: *mut T, count: usize) -> unit:
+    var i: usize = 0
+    while i < count:
+        drop_in_place(&mut p[i])
+        i = i + 1

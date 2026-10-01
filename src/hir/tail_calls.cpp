@@ -374,12 +374,57 @@ auto mark_tail_block(hir_block &block,
   return found;
 }
 
+/// Whether `place` is storage in this frame: a local, or a field, element
+/// or payload of one — not something reached through a pointer.
+[[nodiscard]] auto is_frame_place(const hir_expr &place) -> bool {
+  switch (place.kind) {
+  case hir_node_kind::hir_local_ref:
+    return true;
+  case hir_node_kind::hir_field:
+    return is_frame_place(*dynamic_cast<const hir_field &>(place).object);
+  case hir_node_kind::hir_tuple_index:
+    return is_frame_place(*dynamic_cast<const hir_tuple_index &>(place).object);
+  case hir_node_kind::hir_variant_payload:
+    return is_frame_place(
+        *dynamic_cast<const hir_variant_payload &>(place).object);
+  default:
+    return false;
+  }
+}
+
+/// Whether the body borrows one of the frame's own locals (`&x`, `&x.f`,
+/// or a receiver lent implicitly, which `make_references_explicit` spells
+/// the same way). Same hazard as `owns_stack_buffer`: a callee may hold that
+/// address, and a tail call would reuse the frame it points into.
+[[nodiscard]] auto borrows_a_local(hir_node &node) -> bool {
+  if (node.kind == hir_node_kind::hir_lambda) {
+    return false;
+  }
+  if (node.kind == hir_node_kind::hir_unary) {
+    const auto &unary = dynamic_cast<const hir_unary &>(node);
+    if ((unary.op == ast::unary_op::addr_of ||
+         unary.op == ast::unary_op::addr_of_mut) &&
+        unary.operand != nullptr && is_frame_place(*unary.operand)) {
+      return true;
+    }
+  }
+  auto found = false;
+  for_each_child(node, [&](auto &slot) -> void {
+    found = found || borrows_a_local(*slot);
+  });
+  return found;
+}
+
 } // namespace
 
 auto mark_tail_calls(hir_function &fn) -> void {
   if (fn.is_generator) {
     // This body doubles as the generator step function's body — excluded
     // outright (Decision 2 / Future extensions item 4).
+    return;
+  }
+  if (borrows_a_local(*fn.body)) {
+    // A callee handed `&local` would read a frame the tail call reused.
     return;
   }
   if (owns_stack_buffer(*fn.body)) {

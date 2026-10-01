@@ -1,0 +1,96 @@
+module main
+
+# Run-time drop flags (ch. 17, When drops run): a value moved on some paths
+# to the end of its scope and not on others is dropped only on the paths
+# that did not move it. Every `noisy` prints `drop <id>` exactly once.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+type pair = { left: noisy, right: noisy }
+
+def consume(n: noisy) -> unit:
+    println("consumed {n.id}")
+
+def moved_in_one_branch(take: bool, id: int32) -> unit:
+    let n = noisy { id: id }
+    if take:
+        consume(n)
+    println("end of scope {id}")
+
+def moved_in_a_loop(rounds: int32) -> unit:
+    let n = noisy { id: 30 }
+    var i = 0
+    while i < rounds:
+        if i == 1:
+            consume(n)
+            break
+        i = i + 1
+    println("loop done")
+
+def field_moved_in_one_branch(take: bool) -> unit:
+    let p = pair { left: noisy { id: 40 }, right: noisy { id: 41 } }
+    if take:
+        consume(p.left)
+    println("pair scope ends")
+
+def refilled(take: bool) -> unit:
+    var n = noisy { id: 50 }
+    if take:
+        consume(n)
+    n = noisy { id: 51 }
+    println("refilled {n.id}")
+
+def parameter(n: noisy, take: bool) -> unit:
+    if take:
+        consume(n)
+    println("parameter done")
+
+def shadowed() -> unit:
+    let a = noisy { id: 70 }
+    let a = noisy { id: 71 }
+    consume(a)
+    println("shadow done")
+
+def in_match(k: int32) -> unit:
+    let n = noisy { id: 80 }
+    match k:
+        0 => consume(n)
+        _ => println("kept")
+    println("match done")
+
+def in_closure(take: bool) -> unit:
+    let n = noisy { id: 90 }
+    if take:
+        let f = () => consume(n)
+        f()
+    println("closure done")
+
+def refill_field(take: bool) -> unit:
+    var p = pair { left: noisy { id: 100 }, right: noisy { id: 101 } }
+    if take:
+        consume(p.left)
+    p.left = noisy { id: 102 }
+    println("refill field done")
+
+def main() -> unit:
+    moved_in_one_branch(true, 10)
+    moved_in_one_branch(false, 20)
+    moved_in_a_loop(3)
+    moved_in_a_loop(1)
+    field_moved_in_one_branch(true)
+    field_moved_in_one_branch(false)
+    refilled(true)
+    refilled(false)
+    parameter(noisy { id: 60 }, true)
+    parameter(noisy { id: 61 }, false)
+    shadowed()
+    in_match(0)
+    in_match(1)
+    in_closure(true)
+    in_closure(false)
+    refill_field(true)
+    refill_field(false)

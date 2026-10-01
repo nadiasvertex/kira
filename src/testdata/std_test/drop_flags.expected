@@ -1,0 +1,53 @@
+consumed 10
+drop 10
+end of scope 10
+end of scope 20
+drop 20
+consumed 30
+drop 30
+loop done
+loop done
+drop 30
+consumed 40
+drop 40
+pair scope ends
+drop 41
+pair scope ends
+drop 40
+drop 41
+consumed 50
+drop 50
+refilled 51
+drop 51
+drop 50
+refilled 51
+drop 51
+consumed 60
+drop 60
+parameter done
+parameter done
+drop 61
+consumed 71
+drop 71
+shadow done
+drop 70
+consumed 80
+drop 80
+match done
+kept
+match done
+drop 80
+consumed 90
+drop 90
+closure done
+closure done
+drop 90
+consumed 100
+drop 100
+refill field done
+drop 102
+drop 101
+drop 100
+refill field done
+drop 102
+drop 101

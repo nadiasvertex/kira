@@ -54,6 +54,9 @@ enum class local_role : std::uint8_t {
   field_path,   ///< A field of an owning local reached through fields only
                 ///< (`j.output`, `j.a.b`), tracked so a partial move of it
                 ///< is known. Its `parent` is the path one field shorter.
+  temporary,    ///< A value that is not a place, stored so it can be
+                ///< borrowed (`&make()`, `make().len()`). It is dropped at
+                ///< the end of its statement (ch. 17, When drops run).
 };
 
 struct local_info {
@@ -79,6 +82,11 @@ struct local_info {
   /// instead alias part of its subject (partial moves are not tracked), so
   /// dropping it at scope exit could drop storage something else still owns.
   bool whole = false;
+  /// The declaration that binds it — a `let`/`var` binding pattern, a `var`
+  /// statement, or a single-name parameter's pattern — where lowering can
+  /// set its drop flag (`hir::compute_drop_schedule`). Null for a pattern
+  /// binding, a temporary, or a `field_path` local.
+  const void *node = nullptr;
 };
 
 /// How a loan was made — used only to word diagnostics.
@@ -124,6 +132,10 @@ struct access_event {
   /// use after move. A part reached through fields alone is also accessed as
   /// its own `field_path` local.
   bool projected = false;
+  /// For a move, the expression whose evaluation moves the value (the
+  /// place expression, a struct literal's shorthand field, or the lambda
+  /// that captures it): where lowering clears a drop flag.
+  const void *node = nullptr;
 };
 
 /// Why a value cannot be moved out of a place (ch. 14, Moving out of places).
@@ -174,8 +186,19 @@ struct scope_exit_event {
   std::vector<std::vector<local_id>> groups;
 };
 
+/// An assignment `x = v` or `x.f = v` about to overwrite its target, after
+/// `v` has been evaluated — what drop scheduling reads to decide whether the
+/// old value must be dropped first. `local` is the target's local or
+/// `field_path` local, or `k_no_local` for a place reached through a borrow
+/// (`self.f`, `r.f`, `*r`), which always holds a value. `key` is the
+/// `ast::assign_stmt`. The checker ignores it.
+struct assign_event {
+  const void *key = nullptr;
+  local_id local = k_no_local;
+};
+
 using event = std::variant<access_event, flow_event, use_event,
-                           scope_exit_event, invalid_move_event>;
+                           scope_exit_event, invalid_move_event, assign_event>;
 
 struct basic_block {
   std::vector<event> events;

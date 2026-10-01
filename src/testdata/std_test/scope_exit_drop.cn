@@ -383,6 +383,33 @@ def refilled_field() -> unit:
     p.a = noisy { id: 317 }
     println("refilled done")
 
+# Assignment drops the old value after computing the new one (ch. 17, When
+# drops run): a whole local, a field of a local, and a field through `self`.
+# A target that was moved out has nothing to drop.
+extend holder:
+    def reset(mut self, id: int32) -> unit:
+        self.inner = noisy { id: id }
+
+def pass_through(n: noisy) -> noisy:
+    return n
+
+def reassign_drops() -> unit:
+    var a = noisy { id: 320 }
+    a = noisy { id: 321 }
+    println("reassigned a")
+    var h = holder { inner: noisy { id: 322 }, tag: 0 }
+    h.inner = noisy { id: 323 }
+    println("reassigned h.inner")
+    h.reset(324)
+    println("reset h")
+    var b = noisy { id: 325 }
+    takes(b)
+    b = noisy { id: 326 }
+    println("refilled b")
+    var c = noisy { id: 327 }
+    c = pass_through(c)
+    println("round-tripped c")
+
 def main() -> unit:
     println("rv {for_return_value(true)}")
     println("rv {for_return_value(false)}")
@@ -437,4 +464,5 @@ def main() -> unit:
     partial_move()
     deep_partial_move()
     refilled_field()
+    reassign_drops()
     println("main done")

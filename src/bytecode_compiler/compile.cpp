@@ -1560,29 +1560,14 @@ private:
       emit_register(*src);
       return {};
     }
-    if ((un.op == ast::unary_op::addr_of ||
-         un.op == ast::unary_op::addr_of_mut) &&
-        is_heap_pointer_value(un.operand->type) &&
-        !is_raw_pointer_type(un.type)) {
-      // The operand's compiled value already is the pointer a reference to
-      // it would hold — compile it straight into `dst`, no new opcode.
-      return compile_expr_into(*un.operand, dst);
-    }
     if (un.op == ast::unary_op::addr_of ||
         un.op == ast::unary_op::addr_of_mut) {
-      // A *scalar* referent has no address of its own until one is taken:
-      // it lives inline in a register, or packed at its natural width
-      // inside a block. `compile_addr_of` computes the real one.
+      // A reference is the address of the place it borrows, whatever the
+      // place holds — a scalar, or the pointer to a heap block (ch. 14,
+      // `spec/todo.md` item 20). `compile_addr_of` computes it.
       return compile_addr_of(*un.operand, dst);
     }
     if (un.op == ast::unary_op::deref) {
-      if (is_heap_pointer_value(un.type) &&
-          !is_raw_pointer_type(un.operand->type)) {
-        // Mirror of the `addr_of` passthrough above: for an aggregate
-        // referent the reference's value already *is* the referent's, so
-        // there is nothing to load.
-        return compile_expr_into(*un.operand, dst);
-      }
       auto ptr = compile_expr(*un.operand);
       if (!ptr.has_value()) {
         return std::unexpected(ptr.error());
@@ -2337,8 +2322,54 @@ private:
   [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place,
                                      virtual_reg dst)
       -> std::expected<void, compile_error> {
+    if (place.kind == hir_node_kind::hir_unary &&
+        dynamic_cast<const hir::hir_unary &>(place).op ==
+            ast::unary_op::deref) {
+      // `&*r` is `r`.
+      return compile_expr_into(*dynamic_cast<const hir::hir_unary &>(place).operand,
+                               dst);
+    }
+    if (place.kind == hir_node_kind::hir_tuple_index) {
+      const auto &node = dynamic_cast<const hir::hir_tuple_index &>(place);
+      const auto object_type = strip_refs(node.object->type);
+      const auto &object_entry = types_.entry(object_type);
+      auto offset = std::optional<std::size_t>{};
+      if (object_entry.kind == semantic::type_kind::array_kind) {
+        offset = node.index * element_stride(object_entry.result);
+      } else if (const auto found = runtime::tuple_element_offset(
+                     types_, object_type, node.index)) {
+        offset = *found;
+      }
+      if (!offset.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = place.span,
+            .message = "cannot take the address of this tuple element"});
+      }
+      auto object_reg = compile_expr(*node.object);
+      if (!object_reg.has_value()) {
+        return std::unexpected(object_reg.error());
+      }
+      emit_op(opcode::op_addr_slot);
+      emit_register(dst);
+      emit_register(*object_reg);
+      writer_.emit_u16(static_cast<uint16_t>(*offset));
+      return {};
+    }
     if (place.kind == hir_node_kind::hir_local_ref) {
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
+      if (is_cell_local(local.symbol)) {
+        // A cell-promoted local lives in its cell: the cell pointer is the
+        // place's address.
+        if (const auto cell = lookup_local(local.symbol)) {
+          if (*cell != dst) {
+            emit_op(opcode::op_move);
+            emit_register(dst);
+            emit_register(*cell);
+          }
+          return {};
+        }
+      }
       const auto reg = lookup_local(local.symbol);
       if (!reg.has_value()) {
         return std::unexpected(compile_error{
@@ -2381,7 +2412,20 @@ private:
       writer_.emit_u16(static_cast<uint16_t>(*offset));
       return {};
     }
-    if (place.kind == hir_node_kind::hir_index) {
+    const auto is_range_index = [&]() -> bool {
+      if (place.kind != hir_node_kind::hir_index) {
+        return false;
+      }
+      const auto &index = dynamic_cast<const hir::hir_index &>(place);
+      if (index.index == nullptr ||
+          index.index->kind != hir_node_kind::hir_binary) {
+        return false;
+      }
+      const auto op = dynamic_cast<const hir::hir_binary &>(*index.index).op;
+      return op == ast::binary_op::range ||
+             op == ast::binary_op::range_inclusive;
+    };
+    if (place.kind == hir_node_kind::hir_index && !is_range_index()) {
       // Shares `compile_index`'s own element-location computation, so
       // `&mut xs[i]` is bounds-checked exactly like `xs[i]` is, and points
       // into the same block a read would have loaded from. Computing this
@@ -2400,12 +2444,20 @@ private:
       writer_.emit_u8(location->elem_size);
       return {};
     }
-    return std::unexpected(compile_error{
-        .kind = compile_error_kind::unsupported_construct,
-        .span = place.span,
-        .message = "cannot take the address of this expression — `&`/`&mut` "
-                   "needs a place that exists in memory: a local variable, a "
-                   "struct field, or an element"});
+    // Anything else is a temporary (a call result, a range view `xs[a..b]`):
+    // it is stored in a register of its own, and the borrow points there.
+    auto temp = alloc_register(place.span);
+    if (!temp.has_value()) {
+      return std::unexpected(temp.error());
+    }
+    if (auto value = compile_expr_into(place, *temp); !value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    address_taken_.push_back(*temp);
+    emit_op(opcode::op_addr_local);
+    emit_register(dst);
+    emit_register(*temp);
+    return {};
   }
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field, virtual_reg dst)
@@ -3826,7 +3878,24 @@ private:
     }
     if (assign.op == ast::assign_op::assign) {
       if (!is_cell_local(target.symbol)) {
-        return compile_expr_into(*assign.value, *reg);
+        // A value built in place (a struct literal, an inlined body) may
+        // still read the target through a borrow of it — `b = b.plus(x)`
+        // inlined reads `(*self).cents` with `self` pointing at `b`'s own
+        // register — so it is built elsewhere and moved in once complete.
+        if (assign.value->kind == hir_node_kind::hir_literal ||
+            assign.value->kind == hir_node_kind::hir_local_ref) {
+          return compile_expr_into(*assign.value, *reg);
+        }
+        auto value = compile_expr(*assign.value);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        if (*value != *reg) {
+          emit_op(opcode::op_move);
+          emit_register(*reg);
+          emit_register(*value);
+        }
+        return {};
       }
       // Writing a cell-promoted local: the value goes into the cell, so
       // that a closure holding the same cell sees the write.

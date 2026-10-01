@@ -1,0 +1,75 @@
+module main
+
+# Temporaries drop at the end of their statement (ch. 17, When drops run):
+# a value computed and discarded, a value stored so it can be borrowed, and a
+# value a field is read from. Every `noisy` below prints `drop <id>` exactly
+# once, at the point the rules say; one printed twice, early or never is a
+# wrong drop.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+extend noisy:
+    def get(self) -> int32:
+        return self.id
+
+type pair = { left: noisy, right: noisy }
+
+def mk(id: int32) -> noisy:
+    return noisy { id: id }
+
+def mk_pair(a: int32, b: int32) -> pair:
+    return pair { left: mk(a), right: mk(b) }
+
+def peek(n: &noisy) -> int32:
+    return n.id
+
+def id_of(n: noisy) -> int32:
+    return n.id
+
+def returns_field() -> int32:
+    return mk(9).id
+
+def main() -> unit:
+    # Discarded: dropped right after its statement.
+    mk(1)
+    println("after discard")
+
+    # Borrowed by a method receiver and by an explicit `&`.
+    println("get {mk(2).get()}")
+    println("peek {peek(&mk(3))}")
+
+    # A field read: the rest of the value drops.
+    println("field {mk(4).id}")
+
+    # A field moved out: only the other field drops here.
+    let left = mk_pair(5, 6).left
+    println("moved left {left.id}")
+
+    # An element read in place is not a temporary.
+    let xs = [mk(7)]
+    println("element {xs[0].id}")
+
+    # A condition's temporaries drop before the branch runs.
+    if mk(8).get() == 8:
+        println("in branch")
+
+    # A returned value's temporaries drop before the return.
+    println("returned {returns_field()}")
+
+    # Each iteration drops its own.
+    var i = 0
+    while i < 2:
+        mk(10 + i)
+        i = i + 1
+
+    # A value moved into a call is the callee's to drop.
+    println("moved {id_of(mk(12))}")
+
+    # A standard stream handle does not close its stream when dropped.
+    print("still ")
+    println("printing")
+    println("end")

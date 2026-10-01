@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
+#include <limits>
 #include <format>
 #include <fstream>
 #include <map>
@@ -14,6 +15,7 @@
 #include "parse_stage.h"
 #include "run_build_stage.h"
 #include "src/hir/inline.h"
+#include "src/hir/reference_check.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/ownership_check.h"
 #include "src/util/path.h"
@@ -368,8 +370,12 @@ auto compile_sources(const cli_config &cfg, bool use_color)
                                      !effective_cfg.parse_only});
 
   if (!effective_cfg.parse_only) {
+    // The standard library is held to the same ownership rules as user code
+    // (ch. 14): drops rely on no value having two owners.
+    static_cast<void>(stdlib_start);
     semantic::check_ownership(semantic_inputs, checked, session_diagnostics,
-                              file_has_errors, stdlib_start);
+                              file_has_errors,
+                              std::numeric_limits<unsigned>::max());
   }
 
   report.error_count += session_diagnostics.error_count();
@@ -381,6 +387,24 @@ auto compile_sources(const cli_config &cfg, bool use_color)
   auto lowered_modules =
       lower_and_emit_modules(effective_cfg, parsed_inputs, file_has_errors,
                              checked, metadata_root, lowering_renderer, report);
+  // Every borrow and deref must be explicit before a backend sees the code:
+  // a reference is the address of its place, so an implicit one would be
+  // compiled as the wrong operation (`hir::make_references_explicit`). A
+  // leftover is a lowering gap, reported rather than run.
+  if (effective_cfg.run || effective_cfg.build) {
+    for (const auto &violation :
+         hir::find_implicit_references(lowered_modules, checked.types)) {
+      auto diag = diagnostic(
+          diagnostic_level::error,
+          std::format("could not lower `{}` in module `{}`: {}",
+                      violation.function, violation.module, violation.what),
+          0);
+      diag.with_note("this is a gap in the compiler's lowering, not a "
+                     "mistake in your program");
+      append_text(report.diagnostics, lowering_renderer.render(diag));
+      ++report.error_count;
+    }
+  }
   if (effective_cfg.inline_calls) {
     hir::inline_small_calls(lowered_modules, checked.types);
   }

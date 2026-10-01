@@ -1,5 +1,7 @@
 module std.iter
 
+use std.mem.drop_range
+
 #: An iterator that yields values of type T.
 pub trait iterator[T]:
     #: Advances the iterator and returns the next value.
@@ -128,7 +130,8 @@ pub def iter[T](xs: &list[T]) -> list_iter[T]:
 #: Returns:
 #:   an iterator yielding `&mut T`.
 pub def iter_mut[T](xs: &mut list[T]) -> list_iter_mut[T]:
-    return list_iter_mut { src: xs, at: 0, end: xs.len() }
+    let n = xs.len()
+    return list_iter_mut { src: xs, at: 0, end: n }
 
 #: Consumes a list and iterates over its elements by value.
 #: Args:
@@ -143,9 +146,9 @@ impl[T] iterator[&T] for list_iter[T]:
     def next(mut self) -> option[&T]:
         if self.at >= self.end:
             return @none
-        let slot = &self.src[self.at]
+        let i = self.at
         self.at = self.at + 1
-        return @some(slot)
+        return @some(&self.src[i])
 
     def size_hint(self) -> usize:
         return self.end - self.at
@@ -154,38 +157,51 @@ impl[T] iterator[&mut T] for list_iter_mut[T]:
     def next(mut self) -> option[&mut T]:
         if self.at >= self.end:
             return @none
-        let slot = &mut self.src[self.at]
+        let i = self.at
         self.at = self.at + 1
-        return @some(slot)
+        return @some(&mut self.src[i])
 
     def size_hint(self) -> usize:
         return self.end - self.at
 
+# `next`/`next_back` move each element out of the list with a raw read
+# (ch. 38, Raw memory and ownership): the iterator owns the list, and each
+# element leaves it exactly once, as `at` and `end` pass it.
 impl[T] iterator[T] for list_into_iter[T]:
-    def next(mut self) -> option[T]:
+    machine def next(mut self) -> option[T]:
         if self.at >= self.end:
             return @none
-        let v = self.src[self.at]
+        let i = self.at
         self.at = self.at + 1
-        return @some(v)
+        return @some(self.src.as_ptr()[i])
 
     def size_hint(self) -> usize:
         return self.end - self.at
+
+# The elements in `at..end` were never yielded, so the iterator drops them;
+# the others already left by raw reads. `src.len` is zeroed first, so the
+# list's own drop, which runs next, frees the storage and nothing else.
+impl[T] drop for list_into_iter[T]:
+    machine def drop(mut self) -> unit:
+        let at = self.at
+        let count = self.end - self.at
+        let data = self.src.as_mut_ptr()
+        drop_range(&mut data[at], count)
+        self.src.len = 0
 
 impl[T] double_ended[&T] for list_iter[T]:
     def next_back(mut self) -> option[&T]:
         if self.at >= self.end:
             return @none
         self.end = self.end - 1
-        let slot = &self.src[self.end]
-        return @some(slot)
+        return @some(&self.src[self.end])
 
 impl[T] double_ended[T] for list_into_iter[T]:
-    def next_back(mut self) -> option[T]:
+    machine def next_back(mut self) -> option[T]:
         if self.at >= self.end:
             return @none
         self.end = self.end - 1
-        return @some(self.src[self.end])
+        return @some(self.src.as_ptr()[self.end])
 
 impl[T] exact_size[&T] for list_iter[T]:
     def exact_len(self) -> usize:

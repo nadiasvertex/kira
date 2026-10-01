@@ -1,0 +1,28 @@
+module main
+
+# A `list` owns its elements (ch. 43): `v[i] = x` drops the element it
+# overwrites, `clear` drops them all, `pop` hands one to the caller, a `for`
+# loop that breaks early leaves the rest for the list to drop, and the list
+# drops what it still holds at scope exit. Each `noisy` prints its drop
+# exactly once.
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+def main() -> int32:
+    var xs = [noisy { id: 1 }, noisy { id: 2 }]
+    xs.push(noisy { id: 3 })
+    xs[0] = noisy { id: 4 }
+    let p = xs.pop()
+    println("popped")
+    var ys = [noisy { id: 5 }, noisy { id: 6 }, noisy { id: 7 }]
+    for y in ys:
+        println("see {y.id}")
+        if y.id == 6:
+            break
+    println("after loop")
+    var zs = [noisy { id: 8 }, noisy { id: 9 }]
+    zs.clear()
+    println("cleared")
+    println("end")
+    return 0

@@ -661,6 +661,21 @@ auto test_moves_out_of_places_are_rejected() -> void {
              analyzed.diagnostics);
 }
 
+auto test_outlived_temporaries_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_temporary_outlived.cn");
+  for (const auto *needle :
+       {"`it` still borrows the temporary after the statement ends",
+        "`r` still borrows the temporary after the statement ends",
+        "cannot move out of `make_guarded().inner`"}) {
+    expect(analyzed.diagnostics.find(needle) != std::string::npos,
+           std::string("expected `") + needle + "`:\n" +
+               analyzed.diagnostics);
+  }
+  expect(analyzed.error_count == 3,
+         std::string("expected exactly the three rejected temporaries:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_reuse_after_move_capture_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_reuse_after_move_capture.cn");
@@ -920,6 +935,7 @@ auto main() -> int {
   test_type_param_reused_after_move_is_rejected();
   test_partial_moves_are_accepted();
   test_moves_out_of_places_are_rejected();
+  test_outlived_temporaries_are_rejected();
   test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();
     test_reuse_after_for_x_in_ref_is_accepted();

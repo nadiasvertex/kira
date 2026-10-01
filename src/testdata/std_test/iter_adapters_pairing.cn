@@ -50,7 +50,7 @@ def main() -> int32:
     # Position counts from where `enumerate` is applied, not from the source:
     # after a `filter`, the kept elements are numbered 0, 1, 2 consecutively.
     # Were it numbering by source position, the indices would be 2, 3, 4.
-    var f = ys.iter().filter(p => *p > 20).enumerate()
+    var f = ys.iter().filter(p => **p > 20).enumerate()
     var fidx: usize = 0
     var fval = 0
     while let @some(pair) = f.next():

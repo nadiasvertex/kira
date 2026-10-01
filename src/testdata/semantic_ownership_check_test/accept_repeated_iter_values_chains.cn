@@ -11,5 +11,5 @@ def main() -> int32:
 
     nums.iter().values().for_each(x => println("x2={x * 2}"))
 
-    nums.iter().values().filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    nums.iter().values().filter(x => *x % 2 == 0).for_each(x => println("even={x}"))
     return 0

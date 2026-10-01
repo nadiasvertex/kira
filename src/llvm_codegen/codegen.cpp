@@ -1722,26 +1722,14 @@ private:
       }
       return builder_.CreateNot(*src);
     }
-    if ((un.op == ast::unary_op::addr_of ||
-         un.op == ast::unary_op::addr_of_mut) &&
-        is_heap_pointer_value(un.operand->type) &&
-        !is_raw_pointer_type(un.type)) {
-      // The operand's compiled value already is the pointer a reference to
-      // it would hold — compile it straight through, no new instruction.
-      return compile_expr(*un.operand);
-    }
     if (un.op == ast::unary_op::addr_of ||
         un.op == ast::unary_op::addr_of_mut) {
-      // A *scalar* referent has no address of its own until one is taken.
+      // A reference is the address of the place it borrows, whatever the
+      // place holds — a scalar, or the pointer to a heap block (ch. 14,
+      // `spec/todo.md` item 20).
       return compile_addr_of(*un.operand);
     }
     if (un.op == ast::unary_op::deref) {
-      if (is_heap_pointer_value(un.type) &&
-          !is_raw_pointer_type(un.operand->type)) {
-        // Mirror of the `addr_of` passthrough above: an aggregate
-        // reference's value already *is* the referent's.
-        return compile_expr(*un.operand);
-      }
       auto ptr = compile_expr(*un.operand);
       if (!ptr.has_value()) {
         return std::unexpected(ptr.error());
@@ -1958,7 +1946,11 @@ private:
     // information at runtime — matches `op_call_indirect`'s bytecode-side
     // convention: the environment pointer is the callee's hidden first
     // argument, ahead of the declared args.
-    const auto &callee_entry = types_.entry(call.callee->type);
+    // A `&fn(...)` callee is the same closure pointer (a reference to a
+    // heap-boxed value is the box itself), so its signature is the
+    // referent's.
+    const auto &callee_entry =
+        types_.entry(strip_refs(types_, call.callee->type));
     auto param_types =
         std::vector<llvm::Type *>{llvm::PointerType::get(ctx_, 0)};
     param_types.reserve(1 + callee_entry.args.size());
@@ -2458,6 +2450,51 @@ private:
   /// same non-place operands with the same wording.
   [[nodiscard]] auto compile_addr_of(const hir::hir_expr &place)
       -> std::expected<llvm::Value *, codegen_error> {
+    if (place.kind == hir_node_kind::hir_unary &&
+        dynamic_cast<const hir::hir_unary &>(place).op ==
+            ast::unary_op::deref) {
+      // `&*r` is `r`.
+      return compile_expr(*dynamic_cast<const hir::hir_unary &>(place).operand);
+    }
+    if (place.kind == hir_node_kind::hir_tuple_index) {
+      const auto &node = dynamic_cast<const hir::hir_tuple_index &>(place);
+      const auto object_type = strip_refs(types_, node.object->type);
+      const auto &object_entry = types_.entry(object_type);
+      auto offset = std::optional<std::size_t>{};
+      if (object_entry.kind == semantic::type_kind::array_kind) {
+        const auto element = runtime::layout_of(types_, object_entry.result);
+        if (element.has_value()) {
+          offset = node.index * element->size_bytes;
+        }
+      } else if (const auto found = runtime::tuple_element_offset(
+                     types_, object_type, node.index)) {
+        offset = *found;
+      }
+      if (!offset.has_value()) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = place.span,
+            .message = "cannot take the address of this tuple element"});
+      }
+      auto object = compile_expr(*node.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return byte_address(*object, *offset);
+    }
+    const auto is_range_index = [&]() -> bool {
+      if (place.kind != hir_node_kind::hir_index) {
+        return false;
+      }
+      const auto &index = dynamic_cast<const hir::hir_index &>(place);
+      if (index.index == nullptr ||
+          index.index->kind != hir_node_kind::hir_binary) {
+        return false;
+      }
+      const auto op = dynamic_cast<const hir::hir_binary &>(*index.index).op;
+      return op == ast::binary_op::range ||
+             op == ast::binary_op::range_inclusive;
+    };
     if (place.kind == hir_node_kind::hir_local_ref) {
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
       // Every local is already an `alloca`, so its address is the slot
@@ -2492,19 +2529,22 @@ private:
       }
       return byte_address(*object, *offset);
     }
-    if (place.kind == hir_node_kind::hir_index) {
+    if (place.kind == hir_node_kind::hir_index && !is_range_index()) {
       // Shares `compile_index`'s own address computation, so `&mut xs[i]`
       // is bounds-checked exactly like `xs[i]` and points into the same
       // block a read would have loaded from (see `compile_element_address`).
       return compile_element_address(
           dynamic_cast<const hir::hir_index &>(place));
     }
-    return std::unexpected(codegen_error{
-        .kind = codegen_error_kind::unsupported_construct,
-        .span = place.span,
-        .message = "cannot take the address of this expression — `&`/`&mut` "
-                   "needs a place that exists in memory: a local variable, a "
-                   "struct field, or an element"});
+    // Anything else is a temporary (a call result, a range view `xs[a..b]`):
+    // it is stored in a slot of its own, and the borrow points there.
+    auto value = compile_expr(place);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto *slot = create_local_alloca((*value)->getType(), "borrowed");
+    builder_.CreateStore(*value, slot);
+    return slot;
   }
 
   [[nodiscard]] auto compile_field(const hir::hir_field &field)

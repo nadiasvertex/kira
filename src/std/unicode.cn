@@ -153,7 +153,7 @@ def is_case_ignorable(cp: uint32) -> bool:
 #: Returns:
 #:   true iff `cp` falls within one of the `[lo, hi]` ranges.
 def in_ranges(los: &slice[uint32], his: &slice[uint32], cp: uint32) -> bool:
-    let idx = partition_point(los, (lo: uint32) => lo <= cp)
+    let idx = partition_point(los, (lo: &uint32) => *lo <= cp)
     if idx == 0:
         return false
     return his[idx - 1] >= cp

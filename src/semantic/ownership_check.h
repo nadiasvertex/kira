@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <vector>
 
 #include "src/parser/diagnostic.h"
@@ -56,26 +58,57 @@ auto check_ownership(const std::vector<parsed_module> &inputs,
 
 namespace ownership {
 
-/// A local still owned at a scope exit. `moved_parts` lists the topmost
-/// `field_path` locals below it that may have been moved out; only the
-/// fields outside them are still its to drop.
-struct owned_local {
+/// Whether a local still holds its value at some point: on every path
+/// (`owned`), on some paths only (`maybe_moved`, so dropping it needs a
+/// run-time drop flag), or on none (`moved`).
+enum class move_state : std::uint8_t { owned, maybe_moved, moved };
+
+/// A `field_path` local below a dropped local that is not `owned` there.
+struct moved_part {
   local_id local = 0;
-  std::vector<local_id> moved_parts;
+  move_state state = move_state::moved;
 };
 
-/// One `scope_exit_event` some path reaches, with every local that may
-/// already have been moved from on some path to it removed: what is still
-/// owned there, and so what must be dropped.
+/// A local a scope exit ends, and whether it still holds its value there.
+/// `moved_parts` lists the
+/// topmost `field_path` locals below it that may have been moved out; only
+/// the fields outside them are surely still its to drop.
+struct owned_local {
+  local_id local = 0;
+  move_state state = move_state::owned;
+  std::vector<moved_part> moved_parts;
+};
+
+/// One `scope_exit_event` some path reaches, with the state of each local
+/// it ends: what is still owned there, and so what must be dropped.
 struct scope_exit_owned {
   const void *key = nullptr;
   std::vector<std::vector<owned_local>> groups;
 };
 
+/// One `assign_event` some path reaches: whether its target still holds a
+/// value there (so the old one must be dropped first), and the field paths
+/// below it that may have been moved out. `local` is `k_no_local` for a
+/// place reached through a borrow, which always holds a value.
+struct assign_owned {
+  const void *key = nullptr;
+  local_id local = k_no_local;
+  move_state state = move_state::owned;
+  std::vector<moved_part> moved_parts;
+};
+
+/// What drop scheduling needs from one body's "maybe moved" and "moved on
+/// every path" passes: the owned locals at each scope exit, and the state
+/// of each assignment's target.
+struct drop_facts {
+  std::vector<scope_exit_owned> exits;
+  std::vector<assign_owned> assignments;
+};
+
 /// Runs the same forward "maybe moved" pass `check_ownership` uses for
-/// use-after-move over `cfg`, and reads it at each scope exit.
-[[nodiscard]] auto owned_at_scope_exits(const function_cfg &cfg)
-    -> std::vector<scope_exit_owned>;
+/// use-after-move over `cfg`, plus its "moved on every path" counterpart,
+/// and reads both at each scope exit and assignment.
+[[nodiscard]] auto drop_facts_of(const function_cfg &cfg) -> drop_facts;
 
 } // namespace ownership
 

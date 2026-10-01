@@ -1,0 +1,34 @@
+module main
+
+# A temporary lives until the end of its statement (ch. 17, When drops
+# run). A borrow of one that is still used after that, and a field moved out
+# of a temporary whose type has its own `drop`, are rejected.
+
+type res = { id: int32 }
+
+impl drop for res:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+type guarded = { inner: list[int32] }
+
+impl drop for guarded:
+    def drop(mut self) -> unit:
+        println("guarded")
+
+def make_list() -> list[int32]:
+    return [1, 2, 3]
+
+def make_guarded() -> guarded:
+    return guarded { inner: [1] }
+
+def keep(r: &list[int32]) -> &list[int32]:
+    return r
+
+def main() -> int32:
+    let it = make_list().iter()
+    println("{it.count()}")
+    let r = keep(&make_list())
+    println("{r.len()}")
+    let inner = make_guarded().inner
+    return 0

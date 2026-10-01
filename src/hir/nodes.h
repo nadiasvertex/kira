@@ -160,6 +160,12 @@ struct hir_node {
   hir_node_kind kind;
   source_span span;
   type_id type = k_unknown_type;
+  /// Set on every statement after the first that lowering produced from one
+  /// source statement (a `for` loop's iterator `let` and its loop, a
+  /// destructuring `let` and its bindings): the temporaries that statement
+  /// makes are dropped after the last of them
+  /// (`make_references_explicit`).
+  bool continues_statement = false;
 
   explicit hir_node(hir_node_kind k, source_span s, type_id t = k_unknown_type)
       : kind(k), span(s), type(t) {}
@@ -342,6 +348,17 @@ struct hir_call : hir_expr {
   /// a generator step. See spec/specification/03-advanced/
   /// 39-tail-call-optimization.md for the exact eligibility rules.
   bool is_tail_call = false;
+  /// The declaration a direct call reaches, when lowering resolved one: what
+  /// `make_references_explicit` reads the parameters' types from to make an
+  /// argument's borrow or deref explicit. Null for a call through a function
+  /// value, whose parameter types are its callee's `fn` type. Not read by
+  /// either backend.
+  const ast::func_decl *target = nullptr;
+  /// The callee takes ownership of the value its `self` receiver refers to
+  /// (`into_iterator`'s `into_iter`, the one consuming `self`), though it
+  /// receives it by reference like every `self`: a receiver stored in a
+  /// temporary is not dropped after the call.
+  bool consumes_receiver = false;
 
   hir_call(source_span s, type_id t, ptr<hir_expr> c, ptr_vec<hir_expr> a)
       : hir_expr(hir_node_kind::hir_call, s, t), callee(std::move(c)),
@@ -401,6 +418,9 @@ struct hir_array_init : hir_expr {
 struct hir_struct_init_field {
   std::string name;
   ptr<hir_expr> value;
+  /// The field's declared type, when lowering knows it: what
+  /// `make_references_explicit` coerces `value` to. Unknown otherwise.
+  type_id declared = k_unknown_type;
 };
 
 /// Struct literal `{a: 1, b: 2}`. The explicit type head some surface

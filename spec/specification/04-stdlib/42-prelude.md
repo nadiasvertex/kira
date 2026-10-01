@@ -24,7 +24,7 @@ def swap[T](a: &mut T, b: &mut T) -> unit    # exchanges the two values
 def replace[T](dest: &mut T, value: T) -> T  # stores value, returns the old one
 ```
 
-None of the three exists yet. A call to `drop(x)` type-checks but then fails to lower (see [Shared Ownership and Drop](../02-intermediate/17-shared-ownership-and-drop.md), Implementation status). The `drop` *trait* listed above is genuinely prelude-reachable.
+All three are in `std.traits` (`src/std/traits.cn`). `swap` and `replace` move values with raw reads and writes through `ptr_cast` of the references, so neither value is dropped; `drop(x)` is an empty function whose by-value parameter drops when it returns. Tested by `src/testdata/std_test/swap_replace_drop.cn`.
 
 Four of these are not ordinary functions but compiler-answered forms, each taking its argument in brackets:
 

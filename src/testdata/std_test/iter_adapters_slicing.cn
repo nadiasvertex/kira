@@ -43,7 +43,7 @@ def main() -> int32:
     # after crossing it, so the two disagree: `take_while` yields 1, 2 and
     # stops at 9, while `filter` would also collect the trailing 3.
     let ys = [1, 2, 9, 3]
-    var tw = ys.iter().take_while(p => *p < 4)
+    var tw = ys.iter().take_while(p => **p < 4)
     var c = 0
     var wc = 1
     while let @some(v) = tw.next():
@@ -64,7 +64,7 @@ def main() -> int32:
 
     # The mirror image: `skip_while` drops only the leading run, so the 1 and
     # 2 *after* the 9 are kept even though they satisfy the predicate.
-    var sw = ys.iter().skip_while(p => *p < 4)
+    var sw = ys.iter().skip_while(p => **p < 4)
     var d = 0
     var wd = 1
     while let @some(v) = sw.next():
@@ -94,7 +94,7 @@ def main() -> int32:
     println("filter_map={f}")
 
     # Composed: the adapters have to nest, not just work alone.
-    var chain = xs.iter().skip(2).take_while(p => *p < 8).step_by(2)
+    var chain = xs.iter().skip(2).take_while(p => **p < 8).step_by(2)
     var g = 0
     var wg = 1
     while let @some(v) = chain.next():

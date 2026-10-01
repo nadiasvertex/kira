@@ -14,13 +14,12 @@ module std.list
 # no meaningful value. Every method that touches memory is `machine` and
 # short; everything a caller needs is safe.
 #
-# `impl drop` below releases the storage automatically at scope exit
-# (`spec/todo.md` item 6). Elements are not individually dropped — a
-# container recursing `drop` through its elements isn't implemented, only a
-# struct's own fields are — so a `list` of resource-owning elements still
-# leaks *those*, just not its own backing allocation.
+# The list owns its elements: `impl drop` below drops each one, in index
+# order, and then frees the storage; `clear`, `set` and `v[i] = x` drop what
+# they remove or overwrite (`std.mem.drop_in_place`). Everything else moves
+# elements with raw reads and writes, so each element has one owner.
 
-use std.mem.{alloc, resize, free as mem_free, copy}
+use std.mem.{alloc, resize, free as mem_free, copy, drop_in_place, drop_range}
 use std.panic.panic
 use std.iter.list_into_iter
 
@@ -52,13 +51,13 @@ extend[T] list[T]:
         return self.len == 0
 
     #: The first element, or `@none` when the list is empty.
-    pub def first(self) -> option[T]:
+    pub def first(self) -> option[T] where T: copy:
         if self.len == 0:
             return @none
         return @some(self[0])
 
     #: The last element, or `@none` when the list is empty.
-    pub def last(self) -> option[T]:
+    pub def last(self) -> option[T] where T: copy:
         if self.len == 0:
             return @none
         return @some(self[self.len - 1])
@@ -119,7 +118,7 @@ extend[T] list[T]:
         return @some(self.data[self.len])
 
     #: The element at `i`, or `@none` when `i` is out of range.
-    pub machine def get(self, i: usize) -> option[T]:
+    pub machine def get(self, i: usize) -> option[T] where T: copy:
         if i >= self.len:
             return @none
         return @some(self.data[i])
@@ -128,15 +127,18 @@ extend[T] list[T]:
     pub machine def set(mut self, i: usize, value: T) -> bool:
         if i >= self.len:
             return false
+        drop_in_place(&mut self.data[i])
         self.data[i] = value
         return true
 
     #: Removes every element, keeping the allocated capacity.
     #:
-    #: O(1): only `len` changes. The elements are not dropped — a container
-    #: recursing `drop` through its elements is not implemented.
-    pub def clear(mut self) -> unit:
+    #: Drops the elements in index order. `len` is zero before the first
+    #: drop runs, so a `drop` that reads the list sees it empty.
+    pub machine def clear(mut self) -> unit:
+        let n = self.len
         self.len = 0
+        drop_range(self.data, n)
 
     #: Releases the storage, leaving an empty `list` that owns nothing.
     #:
@@ -148,6 +150,7 @@ extend[T] list[T]:
     #: pointer is a real double-free, not merely a logical one — `mem_free`'s
     #: `count == 0` does not stop it from calling through to the allocator.
     pub machine def free(mut self) -> unit:
+        drop_range(self.data, self.len)
         mem_free(self.data, self.cap)
         self.len = 0
         self.cap = 0
@@ -177,13 +180,11 @@ extend[T] list[T]:
         return slice_mut_from_raw_parts(self.data, self.len)
 
 impl[T] drop for list[T]:
-    #: Releases the storage this list owns. Elements are not individually
-    #: dropped (`spec/todo.md` item 6: sum/struct payload recursion through a
-    #: container isn't implemented), only the backing allocation itself —
-    #: exactly what `free` above already does, and safe to run twice: a list
-    #: already `free`d has `cap == 0`/`data` null, and `mem_free` on that is
-    #: a no-op.
+    #: Drops the elements in index order and releases the storage — what
+    #: `free` above does. Safe after `free`: a freed list has `len == 0`,
+    #: `cap == 0` and a null `data`, so there is nothing left to drop or free.
     machine def drop(mut self) -> unit:
+        drop_range(self.data, self.len)
         mem_free(self.data, self.cap)
 
 #: Reading `v[i]`. Bounds-checked: an out-of-range index panics rather than
@@ -243,6 +244,7 @@ impl[T] index_set[usize] for list[T]:
     machine def set_at(mut self, i: usize, value: T) -> unit:
         if i >= self.len:
             panic("index out of bounds")
+        drop_in_place(&mut self.data[i])
         self.data[i] = value
 
 #: `for x in v` — hands back `std.iter`'s consuming iterator
@@ -267,8 +269,10 @@ impl[T] from_array[T] for list[T]:
         var out = list[T].new()
         out.reserve(n)
         var i: usize = 0
+        # Each element moves out of `items` once, by a raw read.
+        let src = items.as_ptr()
         while i < n:
-            out.push(items[i])
+            out.push(src[i])
             i = i + 1
         return out
 

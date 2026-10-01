@@ -19,3 +19,45 @@ pub trait drop:
 #: because references, pointers and views have no predicate to name here.
 pub concept copy[T]:
     is_scalar[T]() or is_str[T]() or is_unit[T]()
+
+#: Takes `x` and drops it now, rather than at the end of its owner's scope.
+#:
+#: Nothing to write: `x` is a by-value parameter, so it is dropped when this
+#: function returns (`spec/specification/02-intermediate/
+#: 17-shared-ownership-and-drop.md`).
+#: Args:
+#:   x: the value to drop (moved).
+pub def drop[T](x: T) -> unit:
+    return
+
+#: Exchanges the values in two places.
+#:
+#: Moves each value out of its place and into the other with raw reads and
+#: writes (`spec/specification/03-advanced/38-machine-layer.md`, Raw memory
+#: and ownership): neither value is dropped, and each place ends up owning
+#: exactly one of them.
+#: Args:
+#:   a: the first place.
+#:   b: the second place.
+pub machine def swap[T](a: &mut T, b: &mut T) -> unit:
+    let pa = ptr_cast[T](a)
+    let pb = ptr_cast[T](b)
+    let held = pa[0]
+    pa[0] = pb[0]
+    pb[0] = held
+
+#: Stores `value` in a place and returns what the place held before.
+#:
+#: The old value moves out to the caller and the new one moves in, without
+#: either being dropped — how a value leaves a place it cannot be moved out
+#: of (a field of `self`, an element; ch. 14, Moving out of places).
+#: Args:
+#:   dest: the place to fill.
+#:   value: the new value (moved).
+#: Returns:
+#:   the value `dest` held before.
+pub machine def replace[T](dest: &mut T, value: T) -> T:
+    let p = ptr_cast[T](dest)
+    let old = p[0]
+    p[0] = value
+    return old

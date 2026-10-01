@@ -1,0 +1,23 @@
+drop 1
+after discard
+get 2
+drop 2
+peek 3
+drop 3
+field 4
+drop 4
+drop 6
+moved left 5
+element 7
+drop 8
+in branch
+drop 9
+returned 9
+drop 10
+drop 11
+drop 12
+moved 12
+still printing
+end
+drop 7
+drop 5

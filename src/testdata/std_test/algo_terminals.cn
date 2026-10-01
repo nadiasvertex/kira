@@ -37,10 +37,10 @@ def main() -> int32:
     xs.iter().values().for_each((x) => println("for_each={x * 2}"))
 
     # True and false for each predicate terminal, over the same source.
-    println("any_yes={xs.iter().values().any((x) => x > 4)}")
-    println("any_no={xs.iter().values().any((x) => x > 9)}")
-    println("all_yes={xs.iter().values().all((x) => x > 0)}")
-    println("all_no={xs.iter().values().all((x) => x > 1)}")
+    println("any_yes={xs.iter().values().any((x) => *x > 4)}")
+    println("any_no={xs.iter().values().any((x) => *x > 9)}")
+    println("all_yes={xs.iter().values().all((x) => *x > 0)}")
+    println("all_no={xs.iter().values().all((x) => *x > 1)}")
 
     # `all` over an empty source is true and `any` is false -- the readings
     # that make them compose, and the ones most easily got backwards.
@@ -49,16 +49,16 @@ def main() -> int32:
 
     # `find` returns the *first* match: 4 and 5 both pass, so a terminal
     # returning the last would answer 5.
-    println("find={xs.iter().values().find((x) => x > 3).unwrap()}")
-    println("find_miss={xs.iter().values().find((x) => x > 9).is_none()}")
+    println("find={xs.iter().values().find((x) => *x > 3).unwrap()}")
+    println("find_miss={xs.iter().values().find((x) => *x > 9).is_none()}")
 
     # Likewise `find_map`, whose first `@some` is at the 4.
     println("find_map={xs.iter().values().find_map((x) => if x > 3: @some(x * 100) else: @none).unwrap()}")
 
     # 4 sits at index 2, which is neither its value nor the length -- an
     # off-by-one or a returned element rather than an index would show.
-    println("position={xs.iter().values().position((x) => x > 3).unwrap()}")
-    println("position_miss={xs.iter().values().position((x) => x > 9).is_none()}")
+    println("position={xs.iter().values().position((x) => *x > 3).unwrap()}")
+    println("position_miss={xs.iter().values().position((x) => *x > 9).is_none()}")
 
     # `last` is 5 and `max` is also 5, so `last` is checked on a source whose
     # final element is *not* the largest.
@@ -76,12 +76,12 @@ def main() -> int32:
 
     # A key that reverses the order, so `min_by_key` must disagree with `min`
     # and agree with `max`. Sharing a source with them makes that visible.
-    println("min_by_key={xs.iter().values().min_by_key((x) => 0 - x).unwrap()}")
-    println("max_by_key={xs.iter().values().max_by_key((x) => 0 - x).unwrap()}")
+    println("min_by_key={xs.iter().values().min_by_key((x) => 0 - *x).unwrap()}")
+    println("max_by_key={xs.iter().values().max_by_key((x) => 0 - *x).unwrap()}")
 
     # Both halves, and their order within each half. 3 and 4 and 5 pass; the
     # two 1s do not, and stay in the order they were yielded.
-    let parts = xs.iter().values().partition((x) => x > 2)
+    let parts = xs.iter().values().partition((x) => *x > 2)
     println("part_yes={parts.0.len()} part_no={parts.1.len()}")
     println("part_first={parts.0[0]} part_last={parts.0[2]}")
 
@@ -91,10 +91,10 @@ def main() -> int32:
     let b = [1, 2, 3]
     let c = [1, 2, 4]
     let d = [1, 2]
-    println("eq_same={a.iter().values().eq_by(b.iter().values(), (p, q) => p == q)}")
-    println("eq_diff={a.iter().values().eq_by(c.iter().values(), (p, q) => p == q)}")
-    println("eq_short_right={a.iter().values().eq_by(d.iter().values(), (p, q) => p == q)}")
-    println("eq_short_left={d.iter().values().eq_by(a.iter().values(), (p, q) => p == q)}")
+    println("eq_same={a.iter().values().eq_by(b.iter().values(), (p, q) => *p == *q)}")
+    println("eq_diff={a.iter().values().eq_by(c.iter().values(), (p, q) => *p == *q)}")
+    println("eq_short_right={a.iter().values().eq_by(d.iter().values(), (p, q) => *p == *q)}")
+    println("eq_short_left={d.iter().values().eq_by(a.iter().values(), (p, q) => *p == *q)}")
 
     comparators()
     identities()
@@ -125,11 +125,11 @@ def comparators() -> unit:
     let xs = [3, 1, 4, 1, 5]
     let empty: list[int32] = []
 
-    println("min_by={xs.iter().values().min_by((a, b) => cmp_int(a, b)).unwrap()}")
-    println("max_by={xs.iter().values().max_by((a, b) => cmp_int(a, b)).unwrap()}")
-    println("min_by_rev={xs.iter().values().min_by((a, b) => rcmp_int(a, b)).unwrap()}")
-    println("max_by_rev={xs.iter().values().max_by((a, b) => rcmp_int(a, b)).unwrap()}")
-    println("min_by_empty={empty.iter().values().min_by((a, b) => cmp_int(a, b)).is_none()}")
+    println("min_by={xs.iter().values().min_by((a, b) => cmp_int(*a, *b)).unwrap()}")
+    println("max_by={xs.iter().values().max_by((a, b) => cmp_int(*a, *b)).unwrap()}")
+    println("min_by_rev={xs.iter().values().min_by((a, b) => rcmp_int(*a, *b)).unwrap()}")
+    println("max_by_rev={xs.iter().values().max_by((a, b) => rcmp_int(*a, *b)).unwrap()}")
+    println("min_by_empty={empty.iter().values().min_by((a, b) => cmp_int(*a, *b)).is_none()}")
 
     # Lexicographic: equal, then a difference decided at the second element
     # rather than the first, then each length case. The differing pair is not
@@ -139,14 +139,14 @@ def comparators() -> unit:
     let b = [1, 2, 3]
     let c = [1, 9, 0]
     let d = [1, 2]
-    println("cmp_same={show_ord(a.iter().values().cmp_by(b.iter().values(), (a, b) => cmp_int(a, b)))}")
-    println("cmp_lt={show_ord(a.iter().values().cmp_by(c.iter().values(), (a, b) => cmp_int(a, b)))}")
-    println("cmp_gt={show_ord(c.iter().values().cmp_by(a.iter().values(), (a, b) => cmp_int(a, b)))}")
+    println("cmp_same={show_ord(a.iter().values().cmp_by(b.iter().values(), (a, b) => cmp_int(*a, *b)))}")
+    println("cmp_lt={show_ord(a.iter().values().cmp_by(c.iter().values(), (a, b) => cmp_int(*a, *b)))}")
+    println("cmp_gt={show_ord(c.iter().values().cmp_by(a.iter().values(), (a, b) => cmp_int(*a, *b)))}")
 
     # A prefix is less than the whole, and the decision comes from running out
     # rather than from any comparison.
-    println("cmp_prefix={show_ord(d.iter().values().cmp_by(a.iter().values(), (a, b) => cmp_int(a, b)))}")
-    println("cmp_longer={show_ord(a.iter().values().cmp_by(d.iter().values(), (a, b) => cmp_int(a, b)))}")
+    println("cmp_prefix={show_ord(d.iter().values().cmp_by(a.iter().values(), (a, b) => cmp_int(*a, *b)))}")
+    println("cmp_longer={show_ord(a.iter().values().cmp_by(d.iter().values(), (a, b) => cmp_int(*a, *b)))}")
 
 # `sum` and `product` go through the `zero`/`one` traits in `std.traits`,
 # whose only implementors are the numeric primitives.

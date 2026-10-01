@@ -109,7 +109,10 @@ pub trait writer:
         return @ok(unit)
 
 #: A file handle that can be used for reading and writing operations.
-pub type file_handle = { fd: raw_fd }
+#: `owns` says whether dropping the handle closes its descriptor: a handle
+#: from `open` owns it, and a handle to a standard stream does not, so a
+#: temporary `stdout_handle()` does not close standard output.
+pub type file_handle = { fd: raw_fd, owns: bool }
 
 #: Opens a file with the specified path and options.
 #: Args:
@@ -119,46 +122,53 @@ pub type file_handle = { fd: raw_fd }
 #:   a file handle on success, or an io_error on failure.
 pub def open(path: str, opts: open_options) -> result[file_handle, io_error]:
     match rt_open(path, opts):
-        @ok(fd) => @ok(file_handle { fd: fd })
+        @ok(fd) => @ok(file_handle { fd: fd, owns: true })
         @err(e) => @err(io_error.from(e))
 
 #: Returns a file handle for standard input.
 #: Returns:
 #:   a file handle for stdin.
 pub def stdin_handle() -> file_handle:
-    return file_handle { fd: rt_stdin() }
+    return file_handle { fd: rt_stdin(), owns: false }
 
 #: Returns a file handle for standard output.
 #: Returns:
 #:   a file handle for stdout.
 pub def stdout_handle() -> file_handle:
-    return file_handle { fd: rt_stdout() }
+    return file_handle { fd: rt_stdout(), owns: false }
 
 #: Returns a file handle for standard error.
 #: Returns:
 #:   a file handle for stderr.
 pub def stderr_handle() -> file_handle:
-    return file_handle { fd: rt_stderr() }
+    return file_handle { fd: rt_stderr(), owns: false }
+
+extend file_handle:
+    #: The descriptor number, as a fresh `raw_fd` for one intrinsic call.
+    #: `raw_fd` is a struct, so it moves; the handle keeps its own.
+    def fd_arg(self) -> raw_fd:
+        return raw_fd { value: self.fd.value }
 
 impl reader for file_handle:
     def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]:
-        match rt_read(self.fd, buf):
+        match rt_read(self.fd_arg(), buf):
             @ok(n) => @ok(n)
             @err(e) => @err(io_error.from(e))
 
 impl writer for file_handle:
     def write(mut self, buf: &slice[byte]) -> result[usize, io_error]:
-        match rt_write(self.fd, buf):
+        match rt_write(self.fd_arg(), buf):
             @ok(n) => @ok(n)
             @err(e) => @err(io_error.from(e))
     def flush(mut self) -> result[unit, io_error]:
-        match rt_flush(self.fd):
+        match rt_flush(self.fd_arg()):
             @ok(u) => @ok(u)
             @err(e) => @err(io_error.from(e))
 
 impl drop for file_handle:
     def drop(mut self) -> unit:
-        rt_close(self.fd)
+        if self.owns:
+            rt_close(self.fd_arg())
         return unit
 
 extend file_handle:
@@ -168,8 +178,9 @@ extend file_handle:
     #: Returns:
     #:   unit on success, or an io_error on failure.
     pub def close(mut self) -> result[unit, io_error]:
-        let r = rt_close(self.fd)
+        let r = rt_close(self.fd_arg())
         self.fd = raw_fd { value: -1 }
+        self.owns = false
         match r:
             @ok(u) => @ok(u)
             @err(e) => @err(io_error.from(e))

@@ -75,7 +75,7 @@ def main() -> int32:
     # `inspect` prints per element drawn, and `take(2)` draws only two, so the
     # third element of `xs` is never inspected at all. An eager pipeline would
     # print three `saw=` lines.
-    var i = xs.iter().inspect(v => println("saw={*v}")).take(2)
+    var i = xs.iter().inspect(v => println("saw={**v}")).take(2)
     var e = 0
     while let @some(v) = i.next():
         e = e + 1

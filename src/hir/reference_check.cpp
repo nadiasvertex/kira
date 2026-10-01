@@ -1,0 +1,898 @@
+#include "src/hir/reference_check.h"
+
+#include <format>
+#include <map>
+#include <ranges>
+#include <string>
+#include <utility>
+
+#include "src/hir/traversal.h"
+
+namespace cinder::hir {
+namespace {
+
+using semantic::type_id;
+using semantic::type_kind;
+
+class checker {
+public:
+  checker(const ptr_vec<hir_module> &modules, const semantic::type_table &types)
+      : types_(types) {
+    for (const auto &module : modules) {
+      for (const auto &function : module->functions) {
+        functions_.emplace(std::pair{module->module_name, function->name},
+                           function.get());
+      }
+    }
+  }
+
+  auto run(const ptr_vec<hir_module> &modules)
+      -> std::vector<reference_violation> {
+    for (const auto &module : modules) {
+      module_ = module->module_name;
+      for (const auto &function : module->functions) {
+        function_ = function.get();
+        for (const auto &param : function->params) {
+          if (param.name == "self" && !is_ref(param.type) &&
+              types_.is_heap_represented(param.type)) {
+            report(function->span, std::format("`self` is typed `{}`, not a "
+                                               "reference",
+                                               types_.display(param.type)));
+          }
+        }
+        symbol_types_.clear();
+        if (function->body != nullptr) {
+          collect_symbol_types(*function->body);
+          walk(*function->body);
+        }
+      }
+    }
+    return std::move(out_);
+  }
+
+private:
+  const semantic::type_table &types_;
+  std::map<std::pair<std::string, std::string>, const hir_function *>
+      functions_;
+  std::string module_;
+  const hir_function *function_ = nullptr;
+  std::vector<reference_violation> out_;
+  /// Each local's type, as its references spell it.
+  std::map<symbol_id, type_id> symbol_types_;
+
+  auto collect_symbol_types(const hir_node &node) -> void {
+    if (node.kind == hir_node_kind::hir_local_ref) {
+      const auto &ref = dynamic_cast<const hir_local_ref &>(node);
+      if (!types_.is_unknown(ref.type)) {
+        symbol_types_.emplace(ref.symbol, ref.type);
+      }
+    }
+    for_each_child(const_cast<hir_node &>(node),
+                   [this](auto &child) -> void { collect_symbol_types(*child); });
+  }
+
+  [[nodiscard]] auto is_ref(type_id type) const -> bool {
+    return !types_.is_unknown(type) &&
+           types_.entry(type).kind == type_kind::ref_kind;
+  }
+
+  /// A reference, or a `cell` view, which is the address of one element.
+  [[nodiscard]] auto is_ref_like(type_id type) const -> bool {
+    if (is_ref(type)) {
+      return true;
+    }
+    if (types_.is_unknown(type)) {
+      return false;
+    }
+    const auto &entry = types_.entry(type);
+    return entry.kind == type_kind::builtin_generic_kind &&
+           (entry.name == "cell" || entry.name == "cell_mut");
+  }
+
+  auto report(source_span span, std::string what) -> void {
+    out_.push_back(reference_violation{
+        .module = module_,
+        .function = function_ != nullptr ? function_->name : std::string{},
+        .span = span,
+        .what = std::move(what)});
+  }
+
+  auto projection(const hir_expr &object, std::string_view what) -> void {
+    if (is_ref(object.type)) {
+      report(object.span, std::format("{} through `{}` with no explicit deref",
+                                      what, types_.display(object.type)));
+    }
+  }
+
+  /// A value flowing into a destination of type `want`.
+  auto flows(const hir_expr &value, type_id want, std::string_view where)
+      -> void {
+    if (types_.is_unknown(want) || types_.is_unknown(value.type)) {
+      return;
+    }
+    if (is_ref_like(want) != is_ref_like(value.type)) {
+      report(value.span, std::format("{}: `{}` flows where `{}` is expected",
+                                     where, types_.display(value.type),
+                                     types_.display(want)));
+    }
+  }
+
+  [[nodiscard]] auto callee_of(const hir_call &call) const
+      -> const hir_function * {
+    if (call.callee == nullptr ||
+        call.callee->kind != hir_node_kind::hir_local_ref) {
+      return nullptr;
+    }
+    const auto &ref = dynamic_cast<const hir_local_ref &>(*call.callee);
+    const auto found =
+        functions_.find(std::pair{ref.owner_module.value_or(module_), ref.name});
+    return found != functions_.end() ? found->second : nullptr;
+  }
+
+  auto walk(const hir_node &node) -> void {
+    switch (node.kind) {
+    case hir_node_kind::hir_field:
+      projection(*dynamic_cast<const hir_field &>(node).object, "field access");
+      break;
+    case hir_node_kind::hir_tuple_index:
+      projection(*dynamic_cast<const hir_tuple_index &>(node).object,
+                 "tuple projection");
+      break;
+    case hir_node_kind::hir_variant_payload:
+      projection(*dynamic_cast<const hir_variant_payload &>(node).object,
+                 "payload projection");
+      break;
+    case hir_node_kind::hir_index:
+      projection(*dynamic_cast<const hir_index &>(node).object, "indexing");
+      break;
+    case hir_node_kind::hir_container_data:
+      projection(*dynamic_cast<const hir_container_data &>(node).object,
+                 "a container's data pointer");
+      break;
+    case hir_node_kind::hir_container_len:
+      projection(*dynamic_cast<const hir_container_len &>(node).object,
+                 "a container's length");
+      break;
+    case hir_node_kind::hir_generator_next:
+      projection(*dynamic_cast<const hir_generator_next &>(node).object,
+                 "a generator step");
+      break;
+    case hir_node_kind::hir_str_decode_scalar:
+      projection(*dynamic_cast<const hir_str_decode_scalar &>(node).object,
+                 "a string decode");
+      break;
+    case hir_node_kind::hir_str_scalar_width:
+      projection(*dynamic_cast<const hir_str_scalar_width &>(node).object,
+                 "a string decode");
+      break;
+    case hir_node_kind::hir_cell_set:
+      projection(*dynamic_cast<const hir_cell_set &>(node).cell, "a cell write");
+      break;
+    case hir_node_kind::hir_match:
+      projection(*dynamic_cast<const hir_match &>(node).subject,
+                 "a match subject");
+      break;
+    case hir_node_kind::hir_while_let:
+      projection(*dynamic_cast<const hir_while_let &>(node).subject,
+                 "a `while let` subject");
+      break;
+    case hir_node_kind::hir_let_else:
+      projection(*dynamic_cast<const hir_let_else &>(node).initializer,
+                 "a `let ... else` subject");
+      break;
+    case hir_node_kind::hir_call: {
+      const auto &call = dynamic_cast<const hir_call &>(node);
+      if (call.callee != nullptr && call.target == nullptr) {
+        projection(*call.callee, "a call");
+      }
+      if (const auto *callee = callee_of(call);
+          callee != nullptr && callee->params.size() == call.args.size()) {
+        for (std::size_t i = 0; i < call.args.size(); ++i) {
+          if (call.args[i] != nullptr) {
+            flows(*call.args[i], callee->params[i].type,
+                  std::format("argument {} of `{}`", i, callee->name));
+          }
+        }
+      }
+      break;
+    }
+    case hir_node_kind::hir_return: {
+      const auto &ret = dynamic_cast<const hir_return &>(node);
+      if (ret.value != nullptr && function_ != nullptr &&
+          !function_->is_generator) {
+        flows(*ret.value, function_->return_type, "returned value");
+      }
+      break;
+    }
+    case hir_node_kind::hir_let: {
+      const auto &let = dynamic_cast<const hir_let &>(node);
+      if (const auto found = symbol_types_.find(let.symbol);
+          found != symbol_types_.end() && let.initializer != nullptr) {
+        flows(*let.initializer, found->second,
+              std::format("initializer of `{}`", let.name));
+      }
+      break;
+    }
+    case hir_node_kind::hir_assign: {
+      const auto &assign = dynamic_cast<const hir_assign &>(node);
+      if (assign.target != nullptr && assign.value != nullptr) {
+        flows(*assign.value, assign.target->type, "assigned value");
+      }
+      break;
+    }
+    default:
+      break;
+    }
+    // The traversal helper hands out mutable slots; nothing here writes.
+    for_each_child(const_cast<hir_node &>(node),
+                   [this](auto &child) -> void { walk(*child); });
+  }
+};
+
+/// Whether `type` is a type parameter itself, so whether it is a reference
+/// is not known until an instance says what it is.
+auto is_bare_param(const semantic::type_table &types, type_id type) -> bool {
+  const auto kind = types.entry(type).kind;
+  return kind == type_kind::type_param_kind || kind == type_kind::param_app_kind;
+}
+
+[[nodiscard]] auto is_place(const hir_expr &expr) -> bool {
+  switch (expr.kind) {
+  case hir_node_kind::hir_local_ref:
+  case hir_node_kind::hir_field:
+  case hir_node_kind::hir_index:
+  case hir_node_kind::hir_tuple_index:
+  case hir_node_kind::hir_variant_payload:
+    return true;
+  case hir_node_kind::hir_unary:
+    return dynamic_cast<const hir_unary &>(expr).op == ast::unary_op::deref;
+  default:
+    return false;
+  }
+}
+
+[[nodiscard]] auto is_jump(const hir_node &node) -> bool {
+  return node.kind == hir_node_kind::hir_return ||
+         node.kind == hir_node_kind::hir_break ||
+         node.kind == hir_node_kind::hir_continue;
+}
+
+class rewriter {
+public:
+  rewriter(const semantic::checked_types &checked,
+           const std::function<symbol_id()> &mint,
+           const drop_temporary_fn &drop_temporary)
+      : checked_(checked), types_(checked.types), mint_(mint),
+        drop_temporary_(drop_temporary) {}
+
+  auto run(hir_function &function) -> void {
+    returns_.push_back(function.is_generator ? semantic::k_unknown_type
+                                             : function.return_type);
+    if (function.body != nullptr) {
+      visit(*function.body);
+    }
+    returns_.pop_back();
+  }
+
+private:
+  const semantic::checked_types &checked_;
+  const semantic::type_table &types_;
+  const std::function<symbol_id()> &mint_;
+  const drop_temporary_fn &drop_temporary_;
+  std::vector<type_id> returns_;
+  /// The temporaries made in each enclosing statement or full expression,
+  /// innermost last. Each is dropped when its frame closes.
+  std::vector<std::vector<temporary>> frames_;
+
+  [[nodiscard]] auto needs_drop(type_id type) const -> bool {
+    return drop_temporary_ != nullptr && !types_.is_unknown(type) &&
+           checked_.drop_plans.contains(type);
+  }
+
+  /// Notes `symbol`, a local holding a temporary value, to be dropped when
+  /// the innermost frame closes.
+  auto note_temporary(symbol_id symbol, type_id type) -> void {
+    if (!needs_drop(type) || frames_.empty()) {
+      return;
+    }
+    frames_.back().push_back(
+        temporary{.symbol = symbol, .type = type, .moved_paths = {}});
+  }
+
+  [[nodiscard]] auto find_temporary(symbol_id symbol) -> temporary * {
+    for (auto &frame : frames_) {
+      for (auto &temp : frame) {
+        if (temp.symbol == symbol) {
+          return &temp;
+        }
+      }
+    }
+    return nullptr;
+  }
+
+  /// The temporary a place made of fields of `*{let t = ...; &t}` is part
+  /// of, with the field names down to `expr`.
+  auto temporary_root(const hir_expr &expr, std::vector<std::string> &path)
+      -> temporary * {
+    if (expr.kind == hir_node_kind::hir_field) {
+      const auto &field = dynamic_cast<const hir_field &>(expr);
+      auto *temp = field.object != nullptr
+                       ? temporary_root(*field.object, path)
+                       : nullptr;
+      if (temp != nullptr) {
+        path.push_back(field.field_name);
+      }
+      return temp;
+    }
+    if (expr.kind != hir_node_kind::hir_unary) {
+      return nullptr;
+    }
+    const auto &deref = dynamic_cast<const hir_unary &>(expr);
+    if (deref.op != ast::unary_op::deref || deref.operand == nullptr ||
+        deref.operand->kind != hir_node_kind::hir_block) {
+      return nullptr;
+    }
+    const auto &block = dynamic_cast<const hir_block &>(*deref.operand);
+    if (block.stmts.empty() ||
+        block.stmts.front()->kind != hir_node_kind::hir_let) {
+      return nullptr;
+    }
+    return find_temporary(
+        dynamic_cast<const hir_let &>(*block.stmts.front()).symbol);
+  }
+
+  /// Appends the drops of `temps` to `out`, last made first.
+  auto drop_all(std::vector<temporary> &temps, ptr_vec<hir_node> &out)
+      -> void {
+    auto drops = ptr_vec<hir_node>{};
+    for (auto &temp : std::views::reverse(temps)) {
+      drop_temporary_(temp, drops);
+    }
+    // The drop calls take their receiver by reference like any other call.
+    frames_.emplace_back();
+    for (auto &drop : drops) {
+      visit(*drop);
+      out.push_back(std::move(drop));
+    }
+    frames_.pop_back();
+  }
+
+  /// Evaluates `slot` as a full expression: the temporaries made inside it
+  /// are dropped right after it, before its value is used.
+  auto full_expression(ptr<hir_expr> &slot) -> void {
+    if (slot == nullptr) {
+      return;
+    }
+    frames_.emplace_back();
+    visit(*slot);
+    close_into(slot);
+  }
+
+  /// Closes the innermost frame around `slot`: `{let r = slot; drops; r}`.
+  auto close_into(ptr<hir_expr> &slot) -> void {
+    auto temps = std::move(frames_.back());
+    frames_.pop_back();
+    if (temps.empty()) {
+      return;
+    }
+    const auto span = slot->span;
+    const auto type = slot->type;
+    auto stmts = ptr_vec<hir_node>{};
+    if (!types_.is_unknown(type) && !types_.is_unit(type)) {
+      const auto symbol = mint_();
+      stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
+          span, symbol, std::string("<full expression>"), std::move(slot))));
+      drop_all(temps, stmts);
+      stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
+          span, ptr<hir_expr>(hir::make<hir_local_ref>(
+                    span, type, symbol, std::string("<full expression>"))))));
+    } else {
+      stmts.push_back(
+          ptr<hir_node>(hir::make<hir_expr_stmt>(span, std::move(slot))));
+      drop_all(temps, stmts);
+    }
+    slot = ptr<hir_expr>(hir::make<hir_block>(span, type, std::move(stmts)));
+  }
+
+  /// A block's statements, one source statement at a time: the
+  /// temporaries a statement makes are dropped after it, or before it when
+  /// it leaves the block (a `return`, `break` or `continue`, whose own value
+  /// is a full expression) or is the block's value. A value computed and
+  /// discarded is itself a temporary.
+  auto visit_block(hir_block &block, bool statements_only) -> void {
+    auto &stmts = block.stmts;
+    auto out = ptr_vec<hir_node>{};
+    std::size_t i = 0;
+    while (i < stmts.size()) {
+      auto end = i + 1;
+      while (end < stmts.size() && stmts[end]->continues_statement) {
+        ++end;
+      }
+      frames_.emplace_back();
+      auto value_tail = false;
+      for (auto k = i; k < end; ++k) {
+        auto &stmt = stmts[k];
+        const auto last = k + 1 == stmts.size();
+        if (stmt->kind == hir_node_kind::hir_expr_stmt) {
+          auto &expr = dynamic_cast<hir_expr_stmt &>(*stmt).expr;
+          const auto has_value = expr != nullptr &&
+                                 !types_.is_unknown(expr->type) &&
+                                 !types_.is_unit(expr->type);
+          if (last && has_value &&
+              !(statements_only || types_.is_unit(block.type))) {
+            // The block's value: its temporaries end with it.
+            full_expression(expr);
+            value_tail = true;
+            continue;
+          }
+          visit(*stmt);
+          if (expr != nullptr && has_value && !is_place(*expr) &&
+              needs_drop(expr->type)) {
+            const auto symbol = mint_();
+            const auto type = expr->type;
+            stmt = ptr<hir_node>(hir::make<hir_let>(
+                stmt->span, symbol, std::string("<discarded>"),
+                std::move(expr)));
+            note_temporary(symbol, type);
+          }
+          continue;
+        }
+        visit(*stmt);
+      }
+      auto temps = std::move(frames_.back());
+      frames_.pop_back();
+      const auto before_last =
+          !temps.empty() && (value_tail || is_jump(*stmts[end - 1]));
+      for (auto k = i; k < end; ++k) {
+        if (before_last && k + 1 == end) {
+          drop_all(temps, out);
+        }
+        out.push_back(std::move(stmts[k]));
+      }
+      if (!temps.empty() && !before_last) {
+        drop_all(temps, out);
+      }
+      i = end;
+    }
+    stmts = std::move(out);
+  }
+
+  [[nodiscard]] auto is_ref(type_id type) const -> bool {
+    return !types_.is_unknown(type) &&
+           types_.entry(type).kind == type_kind::ref_kind;
+  }
+
+  [[nodiscard]] auto is_cell(type_id type) const -> bool {
+    if (types_.is_unknown(type)) {
+      return false;
+    }
+    const auto &entry = types_.entry(type);
+    return entry.kind == type_kind::builtin_generic_kind &&
+           (entry.name == "cell" || entry.name == "cell_mut");
+  }
+
+  /// `expr` read through every reference it is: `*expr`, `**expr`, ...
+  auto deref(ptr<hir_expr> expr) -> ptr<hir_expr> {
+    while (expr != nullptr && is_ref(expr->type)) {
+      const auto referent = types_.entry(expr->type).result;
+      const auto span = expr->span;
+      expr = ptr<hir_expr>(
+          hir::make<hir_unary>(span, referent, ast::unary_op::deref, std::move(expr)));
+    }
+    return expr;
+  }
+
+  /// `&expr` typed `want`; a value that is not a place is stored first.
+  auto borrow(ptr<hir_expr> expr, type_id want) -> ptr<hir_expr> {
+    const auto span = expr->span;
+    const auto op = types_.entry(want).is_mut ? ast::unary_op::addr_of_mut
+                                              : ast::unary_op::addr_of;
+    if (is_place(*expr)) {
+      // A part of a temporary that is borrowed stays in it.
+      auto path = std::vector<std::string>{};
+      if (auto *temp = temporary_root(*expr, path); temp != nullptr) {
+        temp->moved_paths.clear();
+      }
+      return ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(expr)));
+    }
+    const auto symbol = mint_();
+    const auto value_type = expr->type;
+    note_temporary(symbol, value_type);
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
+        span, symbol, std::string("<borrowed>"), std::move(expr))));
+    auto place = ptr<hir_expr>(hir::make<hir_local_ref>(
+        span, value_type, symbol, std::string("<borrowed>")));
+    stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
+        span, ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(place))))));
+    return ptr<hir_expr>(hir::make<hir_block>(span, want, std::move(stmts)));
+  }
+
+  /// `slot` made to agree with a destination of type `want` on being a
+  /// reference.
+  auto coerce(ptr<hir_expr> &slot, type_id want) -> void {
+    // Whether a value is a reference is its type's head; only a bare type
+    // parameter leaves that open.
+    if (slot == nullptr || types_.is_unknown(want) ||
+        types_.is_unknown(slot->type) || is_bare_param(types_, want) ||
+        is_bare_param(types_, slot->type)) {
+      return;
+    }
+    // A `cell[T]` is the address of one element — what `&xs[i]` lowers to
+    // through `index_ref` — so it already is the reference a `&T` wants.
+    const auto want_ref = is_ref(want) || is_cell(want);
+    const auto have_ref = is_ref(slot->type) || is_cell(slot->type);
+    if (want_ref && !have_ref) {
+      slot = borrow(std::move(slot), want);
+    } else if (!want_ref && have_ref) {
+      slot = deref(std::move(slot));
+    }
+  }
+
+  /// Dereferences a pattern subject that is a reference, and retypes the
+  /// subject symbol's uses (and the patterns' subject types) inside `node`.
+  auto match_through(hir_node &node, ptr<hir_expr> &subject, symbol_id symbol)
+      -> void {
+    if (subject == nullptr || !is_ref(subject->type)) {
+      return;
+    }
+    const auto old_type = subject->type;
+    subject = deref(std::move(subject));
+    retype(node, symbol, old_type, subject->type, subject.get());
+  }
+
+  auto retype(hir_node &node, symbol_id symbol, type_id from, type_id to,
+              const hir_expr *skip) -> void {
+    if (&node == skip) {
+      return;
+    }
+    if (node.kind == hir_node_kind::hir_local_ref) {
+      auto &ref = dynamic_cast<hir_local_ref &>(node);
+      if (ref.symbol == symbol && ref.type == from) {
+        ref.type = to;
+      }
+    }
+    if (auto *pattern = dynamic_cast<hir_pattern *>(&node);
+        pattern != nullptr && pattern->subject_type == from) {
+      pattern->subject_type = to;
+    }
+    for_each_child(node, [&](auto &child) -> void {
+      retype(*child, symbol, from, to, skip);
+    });
+  }
+
+  /// Stores `slot`, a value that is not a place and must be dropped, in a
+  /// temporary, and reads it in place: `*{let t = slot; &t}`.
+  auto read_through_temporary(ptr<hir_expr> &slot) -> void {
+    if (slot == nullptr || is_place(*slot) || !needs_drop(slot->type) ||
+        frames_.empty()) {
+      return;
+    }
+    const auto type = slot->type;
+    const auto ref = const_cast<semantic::type_table &>(types_).ref_to(
+        type, /*is_mut=*/false);
+    slot = deref(borrow(std::move(slot), ref));
+  }
+
+  auto project(ptr<hir_expr> &object) -> void {
+    if (object != nullptr && is_ref(object->type)) {
+      object = deref(std::move(object));
+    }
+  }
+
+  [[nodiscard]] auto param_types(const hir_call &call) const
+      -> std::vector<type_id> {
+    auto out = std::vector<type_id>{};
+    if (call.target != nullptr) {
+      for (const auto &param : call.target->params) {
+        const auto found = checked_.node_types.find(param.pattern.get());
+        auto type = found != checked_.node_types.end()
+                        ? found->second
+                        : semantic::k_unknown_type;
+        // A runtime intrinsic receives a heap value's own pointer where its
+        // signature says `&T`: the runtime reads and writes through the
+        // block, never the caller's slot.
+        if (call.target->modifiers.is_intrinsic && is_ref(type) &&
+            types_.is_heap_represented(types_.entry(type).result)) {
+          type = types_.entry(type).result;
+        }
+        out.push_back(type);
+      }
+      return out;
+    }
+    if (call.callee == nullptr || types_.is_unknown(call.callee->type)) {
+      return out;
+    }
+    auto callee_type = call.callee->type;
+    while (is_ref(callee_type)) {
+      callee_type = types_.entry(callee_type).result;
+    }
+    const auto &entry = types_.entry(callee_type);
+    if (entry.kind == type_kind::fn_kind) {
+      out.assign(entry.args.begin(), entry.args.end());
+    }
+    return out;
+  }
+
+  auto visit(hir_node &node) -> void {
+    if (node.kind == hir_node_kind::hir_lambda) {
+      auto &lambda = dynamic_cast<hir_lambda &>(node);
+      returns_.push_back(lambda.return_type);
+      auto outer = std::move(frames_);
+      frames_.clear();
+      if (lambda.body != nullptr) {
+        visit(*lambda.body);
+      }
+      frames_ = std::move(outer);
+      returns_.pop_back();
+      return;
+    }
+    switch (node.kind) {
+    case hir_node_kind::hir_block:
+      visit_block(dynamic_cast<hir_block &>(node), false);
+      return;
+    case hir_node_kind::hir_if: {
+      // A condition is a full expression: what it makes is dropped before
+      // a branch runs.
+      auto &branch_if = dynamic_cast<hir_if &>(node);
+      for (auto &branch : branch_if.branches) {
+        full_expression(branch.condition);
+        if (branch.body != nullptr) {
+          visit(*branch.body);
+        }
+      }
+      if (branch_if.else_body != nullptr) {
+        visit(*branch_if.else_body);
+      }
+      return;
+    }
+    case hir_node_kind::hir_while: {
+      auto &loop = dynamic_cast<hir_while &>(node);
+      full_expression(loop.condition);
+      if (loop.body != nullptr) {
+        visit_block(*loop.body, true);
+      }
+      if (loop.step != nullptr) {
+        visit_block(*loop.step, true);
+      }
+      return;
+    }
+    case hir_node_kind::hir_binary: {
+      auto &binary = dynamic_cast<hir_binary &>(node);
+      if (binary.op == ast::binary_op::logical_and ||
+          binary.op == ast::binary_op::logical_or) {
+        // The right operand runs only sometimes.
+        if (binary.lhs != nullptr) {
+          visit(*binary.lhs);
+        }
+        full_expression(binary.rhs);
+        return;
+      }
+      break;
+    }
+    case hir_node_kind::hir_return:
+    case hir_node_kind::hir_yield: {
+      auto &value = node.kind == hir_node_kind::hir_return
+                        ? dynamic_cast<hir_return &>(node).value
+                        : dynamic_cast<hir_yield &>(node).value;
+      frames_.emplace_back();
+      if (value != nullptr) {
+        visit(*value);
+        if (node.kind == hir_node_kind::hir_return && !returns_.empty()) {
+          coerce(value, returns_.back());
+        }
+        close_into(value);
+      } else {
+        frames_.pop_back();
+      }
+      return;
+    }
+    default:
+      break;
+    }
+    // A `match`/`while let`/`let ... else` on a reference matches what it
+    // refers to: the subject is dereferenced once, and every use of the
+    // subject's own symbol (the patterns' projections) sees the value.
+    switch (node.kind) {
+    case hir_node_kind::hir_match: {
+      auto &match = dynamic_cast<hir_match &>(node);
+      match_through(node, match.subject, match.subject_symbol);
+      if (match.subject != nullptr) {
+        visit(*match.subject);
+      }
+      for (auto &arm : match.arms) {
+        if (arm.pattern != nullptr) {
+          visit(*arm.pattern);
+        }
+        full_expression(arm.guard);
+        if (arm.body != nullptr) {
+          visit(*arm.body);
+        }
+      }
+      return;
+    }
+    case hir_node_kind::hir_while_let: {
+      auto &loop = dynamic_cast<hir_while_let &>(node);
+      match_through(node, loop.subject, loop.subject_symbol);
+      if (loop.subject != nullptr) {
+        visit(*loop.subject);
+      }
+      if (loop.pattern != nullptr) {
+        visit(*loop.pattern);
+      }
+      if (loop.body != nullptr) {
+        visit_block(*loop.body, true);
+      }
+      return;
+    }
+    case hir_node_kind::hir_let_else: {
+      auto &let = dynamic_cast<hir_let_else &>(node);
+      match_through(node, let.initializer, let.subject_symbol);
+      break;
+    }
+    default:
+      break;
+    }
+    for_each_child(node, [this](auto &child) -> void { visit(*child); });
+    switch (node.kind) {
+    case hir_node_kind::hir_field: {
+      auto &field = dynamic_cast<hir_field &>(node);
+      project(field.object);
+      read_through_temporary(field.object);
+      // A field of a temporary that is not `copy`, used by value, is moved
+      // out of it; the temporary drops only the rest. A borrow of it
+      // (`borrow`) puts it back.
+      auto path = std::vector<std::string>{};
+      if (auto *temp = temporary_root(field, path); temp != nullptr) {
+        temp->moved_paths.clear();
+        if (!checked_.is_copy(field.type)) {
+          temp->moved_paths.push_back(std::move(path));
+        }
+      }
+      return;
+    }
+    case hir_node_kind::hir_unary: {
+      auto &unary = dynamic_cast<hir_unary &>(node);
+      if ((unary.op == ast::unary_op::addr_of ||
+           unary.op == ast::unary_op::addr_of_mut) &&
+          unary.operand != nullptr) {
+        auto path = std::vector<std::string>{};
+        if (auto *temp = temporary_root(*unary.operand, path);
+            temp != nullptr) {
+          temp->moved_paths.clear();
+        }
+        read_through_temporary(unary.operand);
+      }
+      return;
+    }
+    case hir_node_kind::hir_container_data:
+      project(dynamic_cast<hir_container_data &>(node).object);
+      return;
+    case hir_node_kind::hir_container_len:
+      project(dynamic_cast<hir_container_len &>(node).object);
+      return;
+    case hir_node_kind::hir_generator_next:
+      project(dynamic_cast<hir_generator_next &>(node).object);
+      return;
+    case hir_node_kind::hir_str_decode_scalar:
+      project(dynamic_cast<hir_str_decode_scalar &>(node).object);
+      return;
+    case hir_node_kind::hir_str_scalar_width:
+      project(dynamic_cast<hir_str_scalar_width &>(node).object);
+      return;
+    case hir_node_kind::hir_cell_set:
+      project(dynamic_cast<hir_cell_set &>(node).cell);
+      return;
+    case hir_node_kind::hir_tuple_index:
+      project(dynamic_cast<hir_tuple_index &>(node).object);
+      return;
+    case hir_node_kind::hir_variant_payload:
+      project(dynamic_cast<hir_variant_payload &>(node).object);
+      return;
+    case hir_node_kind::hir_index:
+      project(dynamic_cast<hir_index &>(node).object);
+      return;
+    case hir_node_kind::hir_call: {
+      auto &call = dynamic_cast<hir_call &>(node);
+      // Calling through a `&fn(...)` calls the function value it refers to.
+      if (call.target == nullptr) {
+        project(call.callee);
+      }
+      const auto params = param_types(call);
+      if (params.size() == call.args.size()) {
+        for (std::size_t i = 0; i < params.size(); ++i) {
+          if (i == 0 && call.consumes_receiver) {
+            // The callee owns the receiver now; a temporary holding it is
+            // not dropped here.
+            frames_.emplace_back();
+            coerce(call.args[i], params[i]);
+            frames_.pop_back();
+            continue;
+          }
+          coerce(call.args[i], params[i]);
+        }
+      }
+      return;
+    }
+    case hir_node_kind::hir_struct_init:
+      for (auto &field : dynamic_cast<hir_struct_init &>(node).fields) {
+        coerce(field.value, field.declared);
+      }
+      return;
+    case hir_node_kind::hir_tuple: {
+      auto &tuple = dynamic_cast<hir_tuple &>(node);
+      if (!types_.is_unknown(tuple.type) &&
+          types_.entry(tuple.type).kind == type_kind::tuple_kind) {
+        const auto elements = types_.entry(tuple.type).args;
+        if (elements.size() == tuple.elements.size()) {
+          for (std::size_t i = 0; i < elements.size(); ++i) {
+            coerce(tuple.elements[i], elements[i]);
+          }
+        }
+      }
+      return;
+    }
+    case hir_node_kind::hir_array_init: {
+      auto &array = dynamic_cast<hir_array_init &>(node);
+      if (!types_.is_unknown(array.type)) {
+        const auto &entry = types_.entry(array.type);
+        const auto element = entry.kind == type_kind::array_kind
+                                 ? entry.result
+                                 : semantic::k_unknown_type;
+        for (auto &value : array.elements) {
+          coerce(value, element);
+        }
+        coerce(array.fill_value, element);
+      }
+      return;
+    }
+    case hir_node_kind::hir_variant_init: {
+      // `option` and `result` spell their payload types in their own type
+      // arguments; a user sum's payloads are not recorded here yet.
+      auto &init = dynamic_cast<hir_variant_init &>(node);
+      if (types_.is_unknown(init.type) || init.args.size() != 1) {
+        return;
+      }
+      const auto &entry = types_.entry(init.type);
+      if (entry.kind != type_kind::builtin_generic_kind) {
+        return;
+      }
+      if (entry.name == "option" && init.variant_name == "some" &&
+          !entry.args.empty()) {
+        coerce(init.args[0], entry.args[0]);
+      } else if (entry.name == "result" && entry.args.size() == 2) {
+        coerce(init.args[0],
+               init.variant_name == "ok" ? entry.args[0] : entry.args[1]);
+      }
+      return;
+    }
+    case hir_node_kind::hir_assign: {
+      auto &assign = dynamic_cast<hir_assign &>(node);
+      if (assign.target != nullptr) {
+        coerce(assign.value, assign.target->type);
+      }
+      return;
+    }
+    default:
+      return;
+    }
+  }
+};
+
+} // namespace
+
+auto make_references_explicit(hir_function &function,
+                              const semantic::checked_types &checked,
+                              const std::function<symbol_id()> &mint,
+                              const drop_temporary_fn &drop_temporary)
+    -> void {
+  rewriter(checked, mint, drop_temporary).run(function);
+}
+
+auto find_implicit_references(const ptr_vec<hir_module> &modules,
+                              const semantic::type_table &types)
+    -> std::vector<reference_violation> {
+  return checker(modules, types).run(modules);
+}
+
+} // namespace cinder::hir

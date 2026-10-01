@@ -2408,41 +2408,34 @@ auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
          "lowering as `option[point]`, not `option[_]`");
 }
 
-/// `std.algo.max_by[I, T](it: I, cmp: fn(T, T) -> ordering) -> option[T]
+/// `std.algo.max_by[I, T](it: I, cmp: fn(&T, &T) -> ordering) -> option[T]
 /// where I: iterator[T]` has two sources for `T`: `cmp`'s own signature, and
-/// the `where I: iterator[T]` bound (`I`'s true element type). `nums.iter()`
-/// yields `&int32`, but `cmp_int` below takes plain `int32` —
-/// `types_.compatible` is deliberately lenient about a reference meeting its
-/// target, so this type-checks either way; which source *wins* the binding
-/// for `T` is not cosmetic, though, since it becomes the runtime
+/// the `where I: iterator[T]` bound. Which one wins becomes the runtime
 /// representation the whole `max_by` instance is compiled against.
 ///
-/// `unify_rigid`'s first-binding-wins policy used to let the
-/// argument-derived guess (`T := int32`, solved before the bound ever ran)
-/// permanently shadow the bound-derived ground truth (`T := &int32`) — a
-/// plain `try_emplace` no-op'd on the correct answer. The instance then
-/// compiled `cmp: fn(int32, int32) -> ordering` while the iterator it
-/// actually drove yielded `&int32`: every element `max_by` touched was a raw
-/// pointer reinterpreted as a 32-bit int, so the returned "maximum" was
-/// pointer-address garbage — with no diagnostic anywhere, because every step
-/// individually type-checked. Asserting the actual exit code (not just a
-/// clean compile) is what makes this able to fail: the corrupted run used to
-/// compile without error too.
+/// This used to run `nums.iter().max_by(cmp_int)` with an `int32`-typed
+/// comparator over a `&int32`-yielding iterator, which type-checked only
+/// because a function type let a reference meet its target; the instance
+/// then read addresses as numbers. Function types now have to agree exactly
+/// on references (`report_fn_value_reference_mismatch.cn`), so the sample
+/// iterates values and compares through references. Asserting the exit code,
+/// not just a clean compile, is what makes it able to fail.
 auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
   auto temp = make_temp_dir();
   auto source_path = temp.path / "sample_max_by.cn";
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path, "module sample\n"
-                          "def cmp_int(a: int32, b: int32) -> ordering:\n"
-                          "    if a < b:\n"
+                          "def cmp_int(a: &int32, b: &int32) -> ordering:\n"
+                          "    if *a < *b:\n"
                           "        return @less\n"
-                          "    elif a > b:\n"
+                          "    elif *a > *b:\n"
                           "        return @greater\n"
                           "    return @equal\n"
                           "def main() -> int32:\n"
                           "    let nums = [3, 1, 4, 1, 5]\n"
-                          "    return *nums.iter().max_by(cmp_int).unwrap()\n");
+                          "    return nums.iter().values().max_by(cmp_int)"
+                          ".unwrap()\n");
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2457,8 +2450,8 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
   auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 0,
-         "expected `max_by` over a `&int32`-yielding iterator with an "
-         "`int32`-typed comparator to compile cleanly: " +
+         "expected `max_by` with a `fn(&int32, &int32)` comparator to "
+         "compile cleanly: " +
              report->diagnostics);
   expect(report->run.has_value(), "expected a run outcome to be recorded");
   expect(report->run->succeeded,

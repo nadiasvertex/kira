@@ -630,6 +630,15 @@ auto test_reports_copy_bound_unsatisfied() -> void {
                     "expected the help to say `copy` cannot be implemented");
 }
 
+auto test_reports_fn_value_reference_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_fn_value_reference_mismatch.cn");
+  expect_diagnostic(analyzed,
+                    "expected `fn(&int32) -> bool`, found `fn(int32) -> bool`",
+                    "expected a `fn(int32)` passed as a `fn(&int32)` to be "
+                    "rejected");
+}
+
 auto test_accepts_associated_type_self_output() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_associated_type_self_output.cn");
@@ -2543,11 +2552,10 @@ auto test_reports_direct_drop_call() -> void {
       "expected the diagnostic to explain the double-drop hazard");
 }
 
-auto test_reports_bare_drop_call() -> void {
-  const auto analyzed = analyze_test_data_file("reject_bare_drop_call.cn");
-  expect(analyzed.error_count > 0, "expected a bare `drop(x)` to be rejected");
-  expect_diagnostic(analyzed, "`drop` is a trait, not a function",
-                    "expected the diagnostic to say what `drop` names");
+auto test_accepts_bare_drop_call() -> void {
+  const auto analyzed = analyze_test_data_file("accept_bare_drop_call.cn");
+  expect_clean(analyzed, "expected the prelude's `drop(x)` to resolve next to "
+                         "the `drop` trait");
 }
 
 auto test_reports_interpolated_reference() -> void {
@@ -2580,8 +2588,8 @@ auto test_reports_borrowed_number_used_as_a_number() -> void {
       "expected the help to explain why a number differs from an aggregate");
   expect_diagnostic(analyzed, "Write `*` in front of this",
                     "expected the help to name the fix");
-  expect(analyzed.error_count == 2,
-         "expected exactly the two bad uses to be reported — `xs.len()` "
+  expect(analyzed.error_count == 4,
+         "expected exactly the four bad uses to be reported — `xs.len()` "
          "through a `&list[int32]` is a borrow of something that is already "
          "an address, and must stay free");
 }
@@ -4136,6 +4144,7 @@ auto main() -> int {
   try {
     test_accepts_typed_core_program();
     test_reports_copy_bound_unsatisfied();
+    test_reports_fn_value_reference_mismatch();
     test_accepts_try_from_conversion();
     test_accepts_structs_and_methods();
     test_accepts_packed_struct();
@@ -4188,7 +4197,7 @@ auto main() -> int {
     test_dispatches_index_by_key_type();
     test_scope_and_where_bindings_end_with_their_scope();
     test_reports_direct_drop_call();
-    test_reports_bare_drop_call();
+    test_accepts_bare_drop_call();
     test_reports_interpolated_reference();
     test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();

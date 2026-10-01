@@ -116,7 +116,7 @@ pub def run_suites(suites: list[test_suite]) -> int32:
 
     for s in suites:
         var suite_failure: option[test_failure] = @none
-        match s.before_all:
+        match &s.before_all:
             @some(hook) =>:
                 let outcome = hook()
                 match outcome:
@@ -129,7 +129,7 @@ pub def run_suites(suites: list[test_suite]) -> int32:
                     failed = failed + 1
             @none => unit
 
-        for c in s.cases:
+        for c in &s.cases:
             if c.skip:
                 println("skip {c.name}")
                 skipped_count = skipped_count + 1
@@ -142,7 +142,7 @@ pub def run_suites(suites: list[test_suite]) -> int32:
                             failed = failed + 1
                     @none =>:
                         var case_failure: option[test_failure] = @none
-                        match s.before_each:
+                        match &s.before_each:
                             @some(hook) =>:
                                 match hook():
                                     @ok(_) => unit
@@ -162,7 +162,7 @@ pub def run_suites(suites: list[test_suite]) -> int32:
                                 else:
                                     failed = failed + 1
 
-                        match s.after_each:
+                        match &s.after_each:
                             @some(hook) =>:
                                 if report("{c.name}.after_each", hook()):
                                     passed = passed + 1
@@ -170,7 +170,7 @@ pub def run_suites(suites: list[test_suite]) -> int32:
                                     failed = failed + 1
                             @none => unit
 
-        match s.after_all:
+        match &s.after_all:
             @some(hook) =>:
                 if report("{s.name}.after_all", hook()):
                     passed = passed + 1

@@ -90,10 +90,10 @@ Native entry points, implemented on both backends (`src/runtime/io.cpp`, `src/by
 ## The `file_handle` type
 
 ```cinder
-pub type file_handle = { fd: raw_fd }
+pub type file_handle = { fd: raw_fd, owns: bool }
 ```
 
-A handle wrapping a `raw_fd`. (Named `file_handle` rather than `file` because `file` is a reserved visibility keyword — see [Modules and Imports](../../01-core/12-modules-and-imports.md).)
+A handle wrapping a `raw_fd`. `owns` says whether the handle owns the descriptor, and so whether dropping it closes the descriptor. (Named `file_handle` rather than `file` because `file` is a reserved visibility keyword — see [Modules and Imports](../../01-core/12-modules-and-imports.md).)
 
 ```cinder
 pub def open(path: str, opts: open_options) -> result[file_handle, io_error]
@@ -102,14 +102,14 @@ pub def stdout_handle() -> file_handle
 pub def stderr_handle() -> file_handle
 ```
 
-- `open` calls `rt_open` and wraps the resulting descriptor in a `file_handle`, converting any `io_errno` to `io_error`.
-- `stdin_handle`/`stdout_handle`/`stderr_handle` wrap the corresponding niladic intrinsic; these never fail.
+- `open` calls `rt_open` and wraps the resulting descriptor in a `file_handle` that owns it, converting any `io_errno` to `io_error`.
+- `stdin_handle`/`stdout_handle`/`stderr_handle` wrap the corresponding niladic intrinsic in a handle that does not own it, so dropping one (for example the temporary in `stdout_handle().write_all(...)`) leaves the standard stream open; these never fail.
 
 ### Trait implementations
 
 - `impl reader for file_handle`: `read` delegates to `rt_read`, converting the error.
 - `impl writer for file_handle`: `write` delegates to `rt_write`; `flush` delegates to `rt_flush`; both convert the error. `write_all` is inherited from the trait default.
-- `impl drop for file_handle`: calls `rt_close` on drop, discarding the result — a `file_handle` going out of scope is *intended* to close its descriptor unconditionally. **This does not happen today:** the compiler emits no scope-exit `drop` glue on either backend (see [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status), so this impl never runs. Until destructors land, every `file_handle` not explicitly `.close()`d leaks its descriptor — call `close` explicitly.
+- `impl drop for file_handle`: calls `rt_close` on drop when the handle owns its descriptor, discarding the result.
 
 ### `extend file_handle`
 
@@ -117,11 +117,11 @@ pub def stderr_handle() -> file_handle
 pub def close(mut self) -> result[unit, io_error]
 ```
 
-Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }`, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure. A `file_handle` not explicitly closed is meant to be closed by `drop` — but destructors do not run yet (see above), so `close` is currently the *only* way a descriptor is released.
+Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }` and `owns` to false, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure. A `file_handle` not explicitly closed is closed by `drop`.
 
 ## Implementation status
 
-Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics, with one exception: **`impl drop for file_handle` never runs.** The impl is written and compiles, but the compiler emits no scope-exit destructor glue on either backend, so a descriptor is released only by an explicit `close()`. See [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md), Implementation status, and item 6 in [todo.md](../../../todo.md).
+Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics. A handle is dropped where [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md) says values drop; the cases that still leak are listed in item 6 of [todo.md](../../../todo.md).
 
 ## See also
 

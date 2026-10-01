@@ -30,7 +30,7 @@ Because the list owns its elements, nothing else may own one while it is stored:
 - `v[i] = x`, `set`, and `clear` drop the elements they overwrite or remove.
 - `for x in v` consumes `v`: each element moves into `x`, and the elements a loop leaves unvisited (through `break` or `return`) drop with the iterator.
 
-**Not yet implemented:** today elements are never dropped, and the copy-only methods are available for every `T`, returning bitwise copies. That is sound only while no element type needs a drop. See [`todo.md`](../../../todo.md) item 6.
+Implemented as described, except that `v[i]` by value is rejected for a non-`copy` element by the ownership checker (a move out of an element) rather than by a bound on the `index` impl, so `v.at(i)` called by name still returns a bitwise copy.
 
 ## Operations
 

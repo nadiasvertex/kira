@@ -1,0 +1,14 @@
+module sample
+
+# `drop(x)` is the prelude function that takes `x` and drops it now
+# (ch. 17). `drop` also names the trait; the two live in different
+# namespaces, so both resolve.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return unit
+
+def use_it(n: noisy) -> unit:
+    drop(n)

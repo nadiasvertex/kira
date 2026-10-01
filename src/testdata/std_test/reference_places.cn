@@ -1,0 +1,58 @@
+module main
+
+# A reference is the address of the place it borrows, for every type
+# (`spec/todo.md` item 20). Before, a `&` to a struct, list or other
+# heap-represented value was the value's own heap pointer, so writing a whole
+# new value through it (`*r = v`) overwrote the start of the old value's
+# block instead of the caller's variable, and printed garbage.
+#
+# Each case below prints a value only the address model produces.
+
+type pt = { x: int32, y: int32 }
+
+extend pt:
+    def plus(self, k: int32) -> pt:
+        return pt { x: self.x + k, y: self.y + k }
+
+    def scaled(self) -> option[pt]:
+        return @some(pt { x: self.x * 10, y: self.y * 10 })
+
+    # `p` is bound by a `match` and lent to `plus`; the call is in tail
+    # position, and must not reuse the frame `&p` points into.
+    def scaled_plus(self, k: int32) -> pt:
+        match self.scaled():
+            @some(p) =>:
+                return p.plus(k)
+            @none =>:
+                return pt { x: 0, y: 0 }
+
+def set_pt(r: &mut pt, v: pt) -> unit:
+    *r = v
+
+def set_list(r: &mut list[int32], v: list[int32]) -> unit:
+    *r = v
+
+def main() -> unit:
+    var p = pt { x: 1, y: 2 }
+    set_pt(&mut p, pt { x: 3, y: 4 })
+    println("set_pt={p.x},{p.y}")
+
+    var xs = [1, 2, 3]
+    set_list(&mut xs, [7, 8])
+    println("set_list={xs.len()},{xs[0]},{xs[1]}")
+
+    # The new value is built while the method still reads `self`, which
+    # points at `q` itself.
+    var q = pt { x: 5, y: 6 }
+    q = q.plus(1)
+    q = q.plus(10)
+    println("reassigned={q.x},{q.y}")
+
+    let s = pt { x: 1, y: 2 }
+    let t = s.scaled_plus(3)
+    println("tail={t.x},{t.y}")
+
+    var total = 0
+    for v in [4, 5, 6]:
+        total = total + v
+    println("loop={total}")

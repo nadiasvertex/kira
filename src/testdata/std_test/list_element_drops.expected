@@ -1,0 +1,15 @@
+drop 1
+popped
+see 5
+see 6
+drop 5
+drop 6
+drop 7
+after loop
+drop 8
+drop 9
+cleared
+end
+drop 3
+drop 4
+drop 2

@@ -2253,8 +2253,13 @@ auto test_lowers_simple_comprehension() -> void {
   const auto &push = dynamic_cast<const hir::hir_call &>(*push_stmt.expr);
   expect(push.args.size() == 2,
          "expected `push(acc, value)` — the receiver plus the yielded value");
-  const auto &push_target =
-      dynamic_cast<const hir::hir_local_ref &>(*push.args[0]);
+  // `push` takes `mut self`, so the receiver is lent explicitly: `&mut acc`.
+  expect(push.args[0]->kind == hir::hir_node_kind::hir_unary &&
+             dynamic_cast<const hir::hir_unary &>(*push.args[0]).op ==
+                 cinder::ast::unary_op::addr_of_mut,
+         "expected the push receiver to be an explicit `&mut` borrow");
+  const auto &push_target = dynamic_cast<const hir::hir_local_ref &>(
+      *dynamic_cast<const hir::hir_unary &>(*push.args[0]).operand);
   expect(push_target.symbol == acc_let.symbol,
          "expected the push receiver to be the same accumulator symbol");
   expect(push.args[1]->kind == hir::hir_node_kind::hir_binary,

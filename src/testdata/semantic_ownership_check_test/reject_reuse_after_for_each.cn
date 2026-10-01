@@ -11,5 +11,5 @@ def main() -> int32:
 
     nv.for_each(x => println("x2={x * 2}"))
 
-    nv.filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    nv.filter(x => *x % 2 == 0).for_each(x => println("even={x}"))
     return 0

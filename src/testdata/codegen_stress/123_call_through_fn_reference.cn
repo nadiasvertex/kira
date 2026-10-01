@@ -1,0 +1,22 @@
+module codegen_stress.call_through_fn_reference
+
+# Calling a function value through a `&fn(...)`. A reference to a closure is
+# the closure pointer itself, so the call's signature is the referent's. The
+# LLVM tier used to build the signature from the reference type and emit a
+# call with the wrong argument count, which failed verification; the
+# bytecode tier was right.
+#
+# twice(&add3, 1) = 7, apply(&add3, 10) = 13, total 20.
+
+# expect: 20
+
+def apply(f: &fn(int32) -> int32, x: int32) -> int32:
+    return f(x)
+
+def twice(f: &fn(int32) -> int32, x: int32) -> int32:
+    return apply(f, apply(f, x))
+
+def main() -> int32:
+    let k = 3
+    let add3 = (x: int32) => x + k
+    return twice(&add3, 1) + apply(&add3, 10)
