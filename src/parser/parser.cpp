@@ -5005,8 +5005,13 @@ auto parser::parse_match_arm() -> ast::match_arm {
   arm.pattern = parse_pattern();
 
   // Optional guard: `if expr`
+  // A lambda is not allowed at the top of the guard: the `=>` that follows it
+  // belongs to the arm, not to a lambda arrow.
   if (match(token_kind::kw_if)) {
+    auto saved_allow_lambda = allow_lambda_expr_;
+    allow_lambda_expr_ = false;
     arm.guard = parse_expr();
+    allow_lambda_expr_ = saved_allow_lambda;
   }
 
   // `=>` introduces the arm body.

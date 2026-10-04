@@ -975,6 +975,38 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
 /// "expected `else` in conditional expression" errors. Exercises the
 /// preceding-`var`-statement shape from the bug report, since the fix must
 /// not depend on the match statement's position in the block.
+/// A guard ending in a bare name or a parenthesized expression must not take
+/// the arm's `=>` for a lambda arrow.
+auto test_parser_match_guard_ending_in_name_is_not_lambda() -> void {
+  auto parsed = parse_source("module sample\n"
+                             "\n"
+                             "def pick(o, k):\n"
+                             "  return match o:\n"
+                             "    @held(n) if (n.id == k) => 1\n"
+                             "    @some(m) if k => 2\n"
+                             "    _ => 3\n");
+
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *func_decl = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
+      "expected pick function declaration");
+  auto *ret = expect_node<cinder::ast::return_stmt>(
+      func_decl->body_stmts[0].get(), cinder::ast::node_kind::return_stmt,
+      "expected return statement");
+  auto *match_expr = expect_expr<cinder::ast::match_expr>(
+      ret->value.get(), cinder::ast::node_kind::match_expr,
+      "expected returned match expression");
+  expect(match_expr->arms.size() == 3, "expected three match arms");
+  expect(match_expr->arms[0].guard != nullptr &&
+             match_expr->arms[0].guard->kind !=
+                 cinder::ast::node_kind::lambda_expr,
+         "expected first guard to be a plain expression");
+  expect(match_expr->arms[1].guard != nullptr &&
+             match_expr->arms[1].guard->kind !=
+                 cinder::ast::node_kind::lambda_expr,
+         "expected second guard to be a plain expression");
+}
+
 auto test_parser_disambiguates_if_stmt_after_multiline_match_let() -> void {
   auto parsed = parse_source("module sample\n"
                              "\n"
@@ -2480,7 +2512,7 @@ auto test_parser_accepts_root_module_alias() -> void {
 }
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 51> tests = {{
+  const std::array<named_test, 52> tests = {{
       {.name = "keyword_module_name",
        .fn = test_keyword_module_name_is_a_diagnosed_error},
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
@@ -2506,6 +2538,8 @@ auto main(int argc, char *argv[]) -> int {
        .fn = test_parser_accepts_spec_valid_regressions},
       {.name = "if_stmt_after_multiline_match_let",
        .fn = test_parser_disambiguates_if_stmt_after_multiline_match_let},
+      {.name = "match_guard_is_not_lambda",
+       .fn = test_parser_match_guard_ending_in_name_is_not_lambda},
       {.name = "remaining_phase1_constructs",
        .fn = test_parser_accepts_remaining_phase1_constructs},
       {.name = "tilde_splice_vs_bitwise_not",
