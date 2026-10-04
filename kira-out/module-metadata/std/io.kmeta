@@ -1,75 +1,0 @@
-src/std/io.cnstdio*
-std
-
-intrinsics
-raw_fd*
-std
-
-intrinsics
-io_errno*
-std
-
-intrinsics
-open_options*
-std
-
-intrinsics
-rt_stdin*
-std
-
-intrinsics
-	rt_stdout*
-std
-
-intrinsics
-	rt_stderr*
-std
-
-intrinsics
-rt_open*
-std
-
-intrinsics
-rt_close*
-std
-
-intrinsics
-rt_read*
-std
-
-intrinsics
-rt_write*
-std
-
-intrinsics
-rt_flush:
-std.intrinsics.raw_fd:
-std.intrinsics.io_errno:!
-std.intrinsics.open_options:
-std.intrinsics.rt_stdin:
-std.intrinsics.rt_stdout:
-std.intrinsics.rt_stderr:
-std.intrinsics.rt_open:
-std.intrinsics.rt_close:
-std.intrinsics.rt_read:
-std.intrinsics.rt_write:
-std.intrinsics.rt_flush:A
-io_error*1Error types that can occur during I/O operations.::7
-reader*)A type that can read bytes from a source.:;
-writer*-A type that can write bytes to a destination.:U
-file_handle*BA file handle that can be used for reading and writing operations.:ð
-open*ãOpens a file with the specified path and options.
-Args:
-  path: the path to the file to open.
-  opts: open options controlling read/write/create/truncate behavior.
-Returns:
-  a file handle on success, or an io_error on failure.:a
-stdin_handle*MReturns a file handle for standard input.
-Returns:
-  a file handle for stdin.:d
-stdout_handle*OReturns a file handle for standard output.
-Returns:
-  a file handle for stdout.:c
-stderr_handle*NReturns a file handle for standard error.
-Returns:
-  a file handle for stderr.::::

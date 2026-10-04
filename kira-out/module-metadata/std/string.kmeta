@@ -1,30 +1,0 @@
-src/std/string.cnstdstring*
-std
-unicode
-to_uppercase*
-std
-unicode
-to_lowercase*
-std
-unicode
-	fold_case:
-std.unicode.to_uppercase:
-std.unicode.to_lowercase:
-std.unicode.fold_case:[
-find_result*HResult of a substring search. pos is meaningful only when found is true.:µ
-	rt_str_eq*£Layer 1: native intrinsics
-Search is Two-Way (linear worst case) over UTF-8 bytes, scalar-correct by
-self-synchronization. trim mode: 0 = both, 1 = start, 2 = end.:
-
-rt_str_cmp:
-rt_str_find:
-rt_str_rfind:
-rt_str_reverse:
-rt_str_trim:
-rt_str_replace:>*:Layer 2: public API (thin composition over the intrinsics):
-rt_str_concat:ä*ÝConcatenates `a` and `b`, returning a string containing both.
-Args:
-  a: string whose contents are prepended to `b`.
-  b: string whose contents are appended to `a`.
-Returns:
-  a new string containing the contents of both.
