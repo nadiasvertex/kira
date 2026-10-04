@@ -66,7 +66,7 @@ Memory behind a raw pointer has no owner the compiler knows about. The code hold
 - A raw read, `p[i]` or `*p`, is a bitwise copy whatever the element type. For a type that is not `copy`, the read gives the caller ownership of the value, and the slot must then be treated as empty.
 - A raw write, `p[i] = v`, takes ownership of `v` and never drops what the slot held before, since the slot may be uninitialized.
 - `std.mem.drop_in_place[T](p: *mut T)` runs `T`'s drop glue on the value at `p` and leaves the slot empty. It does nothing for a type that needs no drop.
-- `std.mem.needs_drop[T]() -> bool` answers whether `T` needs a drop. It folds to a constant, so a loop guarded by it disappears for a type that needs none.
+- `needs_drop[T]() -> bool` (a prelude query, like `size_of`) answers whether `T` needs a drop. It folds to a constant, so a loop guarded by it disappears for a type that needs none.
 
 A collection built on raw memory uses these to meet [the element rule](../02-intermediate/17-shared-ownership-and-drop.md#owners): its `drop` calls `drop_in_place` on each slot that holds a value, and a method that overwrites a live element drops it first.
 
@@ -97,7 +97,7 @@ impl[T] drop for list[T]:
   - Raw heap memory: the `rt_alloc`/`rt_realloc`/`rt_free` intrinsics (`src/runtime/allocator.h`), wrapped in typed, element-counted form by [`std.mem`](../04-stdlib/collections/43-list.md). The allocator is selectable at run time (`CINDER_ALLOCATOR=system|arena`).
 - **Not implemented:**
   - The four named machine functions in the sketch above (`slot_ptr`, `write_slot`, `read_slot`, `drop_first`, `as_slice`) do not exist under those names. `slot_ptr`/`write_slot`/`read_slot` are subsumed by `buf.as_mut_ptr()` and `buf[i]`. `as_slice` has no equivalent: there is no way to form a `slice[T]` over the first `len` slots of a buffer. `drop_first` is blocked on `drop_in_place`.
-  - `std.mem.drop_in_place` exists, written in Cinder as a raw read handed to the prelude's `drop(x)`, with `drop_range` for a run of slots. `std.mem.needs_drop` does not exist yet, so a loop over elements that need no drop still runs (as calls that do nothing).
+  - `std.mem.drop_in_place` exists, written in Cinder as a raw read handed to the prelude's `drop(x)`, with `drop_range` for a run of slots. `needs_drop[T]()` exists and `drop_in_place`/`drop_range` are guarded by it, so a loop over elements that need no drop is not lowered. It works in ordinary `if` conditions only, not in `static if`.
   - `small_list[T, N]` ([Small List](../04-stdlib/collections/47-small-list.md)) is now *buildable* on `uninit[T, N]`, but has not been built.
   - `transmute` does not exist anywhere in the source tree.
   - SIMD intrinsics do not exist.

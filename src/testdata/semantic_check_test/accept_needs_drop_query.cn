@@ -1,0 +1,6 @@
+module main
+
+def main() -> int32:
+    if needs_drop[int32]():
+        return 1
+    return 0

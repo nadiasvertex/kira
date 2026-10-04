@@ -2558,6 +2558,35 @@ auto test_accepts_bare_drop_call() -> void {
                          "the `drop` trait");
 }
 
+auto test_accepts_needs_drop_query() -> void {
+  const auto analyzed = analyze_test_data_file("accept_needs_drop_query.cn");
+  expect_clean(analyzed, "expected `needs_drop[T]()` to type-check as a bool");
+}
+
+auto test_user_needs_drop_shadows_the_query() -> void {
+  const auto analyzed = analyze_test_data_file("accept_user_needs_drop.cn");
+  expect_clean(analyzed, "expected a user-defined `needs_drop` to win over "
+                         "the prelude query");
+}
+
+auto test_reports_needs_drop_arguments() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_needs_drop_arguments.cn");
+  expect(analyzed.error_count > 0,
+         "expected `needs_drop[T](x)` to be rejected");
+  expect_diagnostic(analyzed, "`needs_drop[T]()` takes no value arguments",
+                    "expected the diagnostic to name the extra arguments");
+}
+
+auto test_reports_needs_drop_without_type() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_needs_drop_no_type.cn");
+  expect(analyzed.error_count > 0,
+         "expected `needs_drop()` with no type to be rejected");
+  expect_diagnostic(analyzed, "`needs_drop` takes one type argument",
+                    "expected the diagnostic to ask for a type argument");
+}
+
 auto test_reports_interpolated_reference() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_interpolated_reference.cn");
@@ -4198,6 +4227,10 @@ auto main() -> int {
     test_scope_and_where_bindings_end_with_their_scope();
     test_reports_direct_drop_call();
     test_accepts_bare_drop_call();
+    test_accepts_needs_drop_query();
+    test_user_needs_drop_shadows_the_query();
+    test_reports_needs_drop_arguments();
+    test_reports_needs_drop_without_type();
     test_reports_interpolated_reference();
     test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();

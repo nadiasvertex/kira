@@ -1816,6 +1816,17 @@ auto lowerer::lower_call(const ast::call_expr &call)
                   "of — name a concrete type, or a type parameter of the "
                   "enclosing function");
     }
+    if (query->second.kind == semantic::layout_query_kind::needs_drop) {
+      // Every drop decision reads `drop_plans`, so the answer cannot
+      // disagree with what scope exit actually does.
+      return ok_expr(make<hir_literal>(
+          call.span, *type,
+          checked_.drop_plans.contains(query->second.operand)
+              ? token_kind::kw_true
+              : token_kind::kw_false,
+          checked_.drop_plans.contains(query->second.operand) ? "true"
+                                                              : "false"));
+    }
     const auto layout =
         runtime::layout_of(checked_.types, query->second.operand);
     if (!layout.has_value()) {
@@ -4325,6 +4336,13 @@ auto lowerer::lower_stmt(const ast::node &node)
   }
 }
 
+/// Whether `expr` is the literal `false`.
+[[nodiscard]] auto is_false_literal(const hir_expr &expr) -> bool {
+  return expr.kind == hir_node_kind::hir_literal &&
+         dynamic_cast<const hir_literal &>(expr).lit_kind ==
+             token_kind::kw_false;
+}
+
 auto lowerer::lower_if(const std::vector<ast::if_branch> &branches,
                        const std::vector<ast::ptr<ast::node>> &else_body,
                        source_span span, type_id type)
@@ -4348,6 +4366,7 @@ auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
   // run ends at the first `let` branch (which becomes that `hir_if`'s else
   // block, via `lower_if_fallback`) or at the end of the chain.
   auto hir_branches = std::vector<hir_if_branch>{};
+  auto dead_condition_type = k_unknown_type;
   auto next = index;
   for (; next < branches.size() && branches[next].let_pattern == nullptr;
        ++next) {
@@ -4360,6 +4379,13 @@ auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
+    // A condition that lowered to the literal `false` (`needs_drop[T]()` for
+    // a type with nothing to drop is the motivating case) can never run its
+    // body, so the branch is not lowered at all.
+    if (is_false_literal(**condition)) {
+      dead_condition_type = (*condition)->type;
+      continue;
+    }
     auto body = lower_block(branch.body, branch.span, type);
     if (!body.has_value()) {
       return std::unexpected(body.error());
@@ -4371,6 +4397,21 @@ auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
   auto else_block = lower_if_fallback(branches, else_body, next, span, type);
   if (!else_block.has_value()) {
     return std::unexpected(else_block.error());
+  }
+  if (hir_branches.empty()) {
+    // Every branch was dead: only the fallback is left. It stays an
+    // `hir_if`, which both backends accept in statement position, guarded
+    // by a constant `true`.
+    auto fallback =
+        *else_block != nullptr
+            ? std::move(*else_block)
+            : ptr<hir_block>(make<hir_block>(span, type, ptr_vec<hir_node>{}));
+    hir_branches.push_back(hir_if_branch{
+        .condition = ptr<hir_expr>(make<hir_literal>(
+            span, dead_condition_type, token_kind::kw_true, "true")),
+        .body = std::move(fallback)});
+    return ptr<hir_expr>(
+        make<hir_if>(span, type, std::move(hir_branches), nullptr));
   }
   return ptr<hir_expr>(make<hir_if>(span, type, std::move(hir_branches),
                                     std::move(*else_block)));

@@ -508,11 +508,13 @@ auto renderer::run() -> std::string {
 
   node_section("layout_queries", checked_.layout_queries,
                [this](const auto &item) -> auto {
-                 return std::format(
-                     "{} of {}",
+                 const auto *what =
                      item.second.kind == layout_query_kind::size_of ? "size"
-                                                                    : "align",
-                     ty(item.second.operand));
+                     : item.second.kind == layout_query_kind::align_of
+                         ? "align"
+                         : "needs_drop";
+                 return std::format("{} of {}", what,
+                                    ty(item.second.operand));
                });
   node_section("ptr_casts", checked_.ptr_casts,
                [this](const auto &item) -> auto { return ty(item.second); });

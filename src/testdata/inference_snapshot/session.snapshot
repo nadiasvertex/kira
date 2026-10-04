@@ -1,7 +1,7 @@
 # inference snapshot
 # 2261 interned types
 
-## node_types (30529)
+## node_types (30577)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -10171,306 +10171,354 @@ std/mem.cn:66:9 [ident] usize
 std/mem.cn:66:13 [ident] usize
 std/mem.cn:66:13 [binary] usize
 std/mem.cn:66:17 [literal] usize
-std/mem.cn:76:34 [binding_pat] *mut (int64, int32)
-std/mem.cn:76:34 [binding_pat] *mut (usize, usize)
-std/mem.cn:76:34 [binding_pat] *mut T
-std/mem.cn:76:34 [binding_pat] *mut byte
-std/mem.cn:76:34 [binding_pat] *mut int32
-std/mem.cn:76:34 [binding_pat] *mut int64
-std/mem.cn:76:34 [binding_pat] *mut money
-std/mem.cn:76:34 [binding_pat] *mut str
-std/mem.cn:76:34 [binding_pat] *mut test_case
-std/mem.cn:76:34 [binding_pat] *mut test_suite
-std/mem.cn:76:34 [binding_pat] *mut uint32
-std/mem.cn:76:34 [binding_pat] *mut usize
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:76:48 [named_type] unit
-std/mem.cn:77:5 [ident] fn((int64, int32)) -> unit
-std/mem.cn:77:5 [ident] fn((usize, usize)) -> unit
-std/mem.cn:77:5 [ident] fn(T) -> unit
-std/mem.cn:77:5 [ident] fn(byte) -> unit
-std/mem.cn:77:5 [ident] fn(int32) -> unit
-std/mem.cn:77:5 [ident] fn(int64) -> unit
-std/mem.cn:77:5 [ident] fn(money) -> unit
-std/mem.cn:77:5 [ident] fn(str) -> unit
-std/mem.cn:77:5 [ident] fn(test_case) -> unit
-std/mem.cn:77:5 [ident] fn(test_suite) -> unit
-std/mem.cn:77:5 [ident] fn(uint32) -> unit
-std/mem.cn:77:5 [ident] fn(usize) -> unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:5 [call] unit
-std/mem.cn:77:10 [ident] *mut (int64, int32)
-std/mem.cn:77:10 [ident] *mut (usize, usize)
-std/mem.cn:77:10 [ident] *mut T
-std/mem.cn:77:10 [ident] *mut byte
-std/mem.cn:77:10 [ident] *mut int32
-std/mem.cn:77:10 [ident] *mut int64
-std/mem.cn:77:10 [ident] *mut money
-std/mem.cn:77:10 [ident] *mut str
-std/mem.cn:77:10 [ident] *mut test_case
-std/mem.cn:77:10 [ident] *mut test_suite
-std/mem.cn:77:10 [ident] *mut uint32
-std/mem.cn:77:10 [ident] *mut usize
-std/mem.cn:77:10 [index] (int64, int32)
-std/mem.cn:77:10 [index] (usize, usize)
-std/mem.cn:77:10 [index] T
-std/mem.cn:77:10 [index] byte
-std/mem.cn:77:10 [index] int32
-std/mem.cn:77:10 [index] int64
-std/mem.cn:77:10 [index] money
-std/mem.cn:77:10 [index] str
-std/mem.cn:77:10 [index] test_case
-std/mem.cn:77:10 [index] test_suite
-std/mem.cn:77:10 [index] uint32
-std/mem.cn:77:10 [index] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:77:12 [literal] usize
-std/mem.cn:83:31 [binding_pat] *mut (int64, int32)
-std/mem.cn:83:31 [binding_pat] *mut (usize, usize)
-std/mem.cn:83:31 [binding_pat] *mut T
-std/mem.cn:83:31 [binding_pat] *mut byte
-std/mem.cn:83:31 [binding_pat] *mut int32
-std/mem.cn:83:31 [binding_pat] *mut int64
-std/mem.cn:83:31 [binding_pat] *mut money
-std/mem.cn:83:31 [binding_pat] *mut str
-std/mem.cn:83:31 [binding_pat] *mut test_case
-std/mem.cn:83:31 [binding_pat] *mut test_suite
-std/mem.cn:83:31 [binding_pat] *mut uint32
-std/mem.cn:83:31 [binding_pat] *mut usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:42 [binding_pat] usize
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:83:59 [named_type] unit
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:5 [var_stmt] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:84:20 [literal] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [ident] usize
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:11 [binary] bool
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:85:15 [ident] usize
-std/mem.cn:86:9 [ident] fn(*mut (int64, int32)) -> unit
-std/mem.cn:86:9 [ident] fn(*mut (usize, usize)) -> unit
-std/mem.cn:86:9 [ident] fn(*mut T) -> unit
-std/mem.cn:86:9 [ident] fn(*mut byte) -> unit
-std/mem.cn:86:9 [ident] fn(*mut int32) -> unit
-std/mem.cn:86:9 [ident] fn(*mut int64) -> unit
-std/mem.cn:86:9 [ident] fn(*mut money) -> unit
-std/mem.cn:86:9 [ident] fn(*mut str) -> unit
-std/mem.cn:86:9 [ident] fn(*mut test_case) -> unit
-std/mem.cn:86:9 [ident] fn(*mut test_suite) -> unit
-std/mem.cn:86:9 [ident] fn(*mut uint32) -> unit
-std/mem.cn:86:9 [ident] fn(*mut usize) -> unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:9 [call] unit
-std/mem.cn:86:23 [unary] *mut (int64, int32)
-std/mem.cn:86:23 [unary] *mut (usize, usize)
-std/mem.cn:86:23 [unary] *mut T
-std/mem.cn:86:23 [unary] *mut byte
-std/mem.cn:86:23 [unary] *mut int32
-std/mem.cn:86:23 [unary] *mut int64
-std/mem.cn:86:23 [unary] *mut money
-std/mem.cn:86:23 [unary] *mut str
-std/mem.cn:86:23 [unary] *mut test_case
-std/mem.cn:86:23 [unary] *mut test_suite
-std/mem.cn:86:23 [unary] *mut uint32
-std/mem.cn:86:23 [unary] *mut usize
-std/mem.cn:86:28 [ident] *mut (int64, int32)
-std/mem.cn:86:28 [ident] *mut (usize, usize)
-std/mem.cn:86:28 [ident] *mut T
-std/mem.cn:86:28 [ident] *mut byte
-std/mem.cn:86:28 [ident] *mut int32
-std/mem.cn:86:28 [ident] *mut int64
-std/mem.cn:86:28 [ident] *mut money
-std/mem.cn:86:28 [ident] *mut str
-std/mem.cn:86:28 [ident] *mut test_case
-std/mem.cn:86:28 [ident] *mut test_suite
-std/mem.cn:86:28 [ident] *mut uint32
-std/mem.cn:86:28 [ident] *mut usize
-std/mem.cn:86:28 [index] (int64, int32)
-std/mem.cn:86:28 [index] (usize, usize)
-std/mem.cn:86:28 [index] T
-std/mem.cn:86:28 [index] byte
-std/mem.cn:86:28 [index] int32
-std/mem.cn:86:28 [index] int64
-std/mem.cn:86:28 [index] money
-std/mem.cn:86:28 [index] str
-std/mem.cn:86:28 [index] test_case
-std/mem.cn:86:28 [index] test_suite
-std/mem.cn:86:28 [index] uint32
-std/mem.cn:86:28 [index] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:86:30 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:9 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [ident] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:13 [binary] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
-std/mem.cn:87:17 [literal] usize
+std/mem.cn:77:34 [binding_pat] *mut (int64, int32)
+std/mem.cn:77:34 [binding_pat] *mut (usize, usize)
+std/mem.cn:77:34 [binding_pat] *mut T
+std/mem.cn:77:34 [binding_pat] *mut byte
+std/mem.cn:77:34 [binding_pat] *mut int32
+std/mem.cn:77:34 [binding_pat] *mut int64
+std/mem.cn:77:34 [binding_pat] *mut money
+std/mem.cn:77:34 [binding_pat] *mut str
+std/mem.cn:77:34 [binding_pat] *mut test_case
+std/mem.cn:77:34 [binding_pat] *mut test_suite
+std/mem.cn:77:34 [binding_pat] *mut uint32
+std/mem.cn:77:34 [binding_pat] *mut usize
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
+std/mem.cn:79:9 [ident] fn((int64, int32)) -> unit
+std/mem.cn:79:9 [ident] fn((usize, usize)) -> unit
+std/mem.cn:79:9 [ident] fn(T) -> unit
+std/mem.cn:79:9 [ident] fn(byte) -> unit
+std/mem.cn:79:9 [ident] fn(int32) -> unit
+std/mem.cn:79:9 [ident] fn(int64) -> unit
+std/mem.cn:79:9 [ident] fn(money) -> unit
+std/mem.cn:79:9 [ident] fn(str) -> unit
+std/mem.cn:79:9 [ident] fn(test_case) -> unit
+std/mem.cn:79:9 [ident] fn(test_suite) -> unit
+std/mem.cn:79:9 [ident] fn(uint32) -> unit
+std/mem.cn:79:9 [ident] fn(usize) -> unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:14 [ident] *mut (int64, int32)
+std/mem.cn:79:14 [ident] *mut (usize, usize)
+std/mem.cn:79:14 [ident] *mut T
+std/mem.cn:79:14 [ident] *mut byte
+std/mem.cn:79:14 [ident] *mut int32
+std/mem.cn:79:14 [ident] *mut int64
+std/mem.cn:79:14 [ident] *mut money
+std/mem.cn:79:14 [ident] *mut str
+std/mem.cn:79:14 [ident] *mut test_case
+std/mem.cn:79:14 [ident] *mut test_suite
+std/mem.cn:79:14 [ident] *mut uint32
+std/mem.cn:79:14 [ident] *mut usize
+std/mem.cn:79:14 [index] (int64, int32)
+std/mem.cn:79:14 [index] (usize, usize)
+std/mem.cn:79:14 [index] T
+std/mem.cn:79:14 [index] byte
+std/mem.cn:79:14 [index] int32
+std/mem.cn:79:14 [index] int64
+std/mem.cn:79:14 [index] money
+std/mem.cn:79:14 [index] str
+std/mem.cn:79:14 [index] test_case
+std/mem.cn:79:14 [index] test_suite
+std/mem.cn:79:14 [index] uint32
+std/mem.cn:79:14 [index] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:85:31 [binding_pat] *mut (int64, int32)
+std/mem.cn:85:31 [binding_pat] *mut (usize, usize)
+std/mem.cn:85:31 [binding_pat] *mut T
+std/mem.cn:85:31 [binding_pat] *mut byte
+std/mem.cn:85:31 [binding_pat] *mut int32
+std/mem.cn:85:31 [binding_pat] *mut int64
+std/mem.cn:85:31 [binding_pat] *mut money
+std/mem.cn:85:31 [binding_pat] *mut str
+std/mem.cn:85:31 [binding_pat] *mut test_case
+std/mem.cn:85:31 [binding_pat] *mut test_suite
+std/mem.cn:85:31 [binding_pat] *mut uint32
+std/mem.cn:85:31 [binding_pat] *mut usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:89:13 [ident] fn(*mut (int64, int32)) -> unit
+std/mem.cn:89:13 [ident] fn(*mut (usize, usize)) -> unit
+std/mem.cn:89:13 [ident] fn(*mut T) -> unit
+std/mem.cn:89:13 [ident] fn(*mut byte) -> unit
+std/mem.cn:89:13 [ident] fn(*mut int32) -> unit
+std/mem.cn:89:13 [ident] fn(*mut int64) -> unit
+std/mem.cn:89:13 [ident] fn(*mut money) -> unit
+std/mem.cn:89:13 [ident] fn(*mut str) -> unit
+std/mem.cn:89:13 [ident] fn(*mut test_case) -> unit
+std/mem.cn:89:13 [ident] fn(*mut test_suite) -> unit
+std/mem.cn:89:13 [ident] fn(*mut uint32) -> unit
+std/mem.cn:89:13 [ident] fn(*mut usize) -> unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:27 [unary] *mut (int64, int32)
+std/mem.cn:89:27 [unary] *mut (usize, usize)
+std/mem.cn:89:27 [unary] *mut T
+std/mem.cn:89:27 [unary] *mut byte
+std/mem.cn:89:27 [unary] *mut int32
+std/mem.cn:89:27 [unary] *mut int64
+std/mem.cn:89:27 [unary] *mut money
+std/mem.cn:89:27 [unary] *mut str
+std/mem.cn:89:27 [unary] *mut test_case
+std/mem.cn:89:27 [unary] *mut test_suite
+std/mem.cn:89:27 [unary] *mut uint32
+std/mem.cn:89:27 [unary] *mut usize
+std/mem.cn:89:32 [ident] *mut (int64, int32)
+std/mem.cn:89:32 [ident] *mut (usize, usize)
+std/mem.cn:89:32 [ident] *mut T
+std/mem.cn:89:32 [ident] *mut byte
+std/mem.cn:89:32 [ident] *mut int32
+std/mem.cn:89:32 [ident] *mut int64
+std/mem.cn:89:32 [ident] *mut money
+std/mem.cn:89:32 [ident] *mut str
+std/mem.cn:89:32 [ident] *mut test_case
+std/mem.cn:89:32 [ident] *mut test_suite
+std/mem.cn:89:32 [ident] *mut uint32
+std/mem.cn:89:32 [ident] *mut usize
+std/mem.cn:89:32 [index] (int64, int32)
+std/mem.cn:89:32 [index] (usize, usize)
+std/mem.cn:89:32 [index] T
+std/mem.cn:89:32 [index] byte
+std/mem.cn:89:32 [index] int32
+std/mem.cn:89:32 [index] int64
+std/mem.cn:89:32 [index] money
+std/mem.cn:89:32 [index] str
+std/mem.cn:89:32 [index] test_case
+std/mem.cn:89:32 [index] test_suite
+std/mem.cn:89:32 [index] uint32
+std/mem.cn:89:32 [index] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
 std/option.cn:23:16 [binding_pat] &option[T]
 std/option.cn:23:25 [named_type] T
 std/option.cn:24:16 [match] T
@@ -31375,30 +31423,30 @@ std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:77:5 [call] (x=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
-std/mem.cn:86:9 [call] (p=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
 std/option.cn:26:22 [call] (message=arg)
 std/panic.cn:24:12 [call] (msg=arg)
 std/result.cn:21:24 [call] (message=arg)
@@ -31943,29 +31991,29 @@ std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
-std/mem.cn:77:5 [call] std.traits::drop
-std/mem.cn:77:5 [call] std.traits::drop$_int64__int32_
-std/mem.cn:77:5 [call] std.traits::drop$_usize__usize_
-std/mem.cn:77:5 [call] std.traits::drop$byte
-std/mem.cn:77:5 [call] std.traits::drop$int32
-std/mem.cn:77:5 [call] std.traits::drop$int64
-std/mem.cn:77:5 [call] std.traits::drop$money
-std/mem.cn:77:5 [call] std.traits::drop$str
-std/mem.cn:77:5 [call] std.traits::drop$test_case
-std/mem.cn:77:5 [call] std.traits::drop$test_suite
-std/mem.cn:77:5 [call] std.traits::drop$uint32
-std/mem.cn:77:5 [call] std.traits::drop$usize
-std/mem.cn:86:9 [call] std.mem::drop_in_place$_int64__int32_
-std/mem.cn:86:9 [call] std.mem::drop_in_place$_usize__usize_
-std/mem.cn:86:9 [call] std.mem::drop_in_place$byte
-std/mem.cn:86:9 [call] std.mem::drop_in_place$int32
-std/mem.cn:86:9 [call] std.mem::drop_in_place$int64
-std/mem.cn:86:9 [call] std.mem::drop_in_place$money
-std/mem.cn:86:9 [call] std.mem::drop_in_place$str
-std/mem.cn:86:9 [call] std.mem::drop_in_place$test_case
-std/mem.cn:86:9 [call] std.mem::drop_in_place$test_suite
-std/mem.cn:86:9 [call] std.mem::drop_in_place$uint32
-std/mem.cn:86:9 [call] std.mem::drop_in_place$usize
+std/mem.cn:79:9 [call] std.traits::drop
+std/mem.cn:79:9 [call] std.traits::drop$_int64__int32_
+std/mem.cn:79:9 [call] std.traits::drop$_usize__usize_
+std/mem.cn:79:9 [call] std.traits::drop$byte
+std/mem.cn:79:9 [call] std.traits::drop$int32
+std/mem.cn:79:9 [call] std.traits::drop$int64
+std/mem.cn:79:9 [call] std.traits::drop$money
+std/mem.cn:79:9 [call] std.traits::drop$str
+std/mem.cn:79:9 [call] std.traits::drop$test_case
+std/mem.cn:79:9 [call] std.traits::drop$test_suite
+std/mem.cn:79:9 [call] std.traits::drop$uint32
+std/mem.cn:79:9 [call] std.traits::drop$usize
+std/mem.cn:89:13 [call] std.mem::drop_in_place$_int64__int32_
+std/mem.cn:89:13 [call] std.mem::drop_in_place$_usize__usize_
+std/mem.cn:89:13 [call] std.mem::drop_in_place$byte
+std/mem.cn:89:13 [call] std.mem::drop_in_place$int32
+std/mem.cn:89:13 [call] std.mem::drop_in_place$int64
+std/mem.cn:89:13 [call] std.mem::drop_in_place$money
+std/mem.cn:89:13 [call] std.mem::drop_in_place$str
+std/mem.cn:89:13 [call] std.mem::drop_in_place$test_case
+std/mem.cn:89:13 [call] std.mem::drop_in_place$test_suite
+std/mem.cn:89:13 [call] std.mem::drop_in_place$uint32
+std/mem.cn:89:13 [call] std.mem::drop_in_place$usize
 std/option.cn:26:22 [call] std.panic::panic
 std/result.cn:21:24 [call] std.panic::panic
 std/string.cn:157:16 [call] std.unicode::to_uppercase
@@ -32406,7 +32454,7 @@ std/traits.scalar.cn:297:18 [ident] debug spec='?' value=float64
 ## runtime_fill_dispatches (1)
 089_elaboration_snapshot_gaps.cn:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
-## layout_queries (44)
+## layout_queries (68)
 std/mem.cn:30:32 [call] size of (int64, int32)
 std/mem.cn:30:32 [call] size of (usize, usize)
 std/mem.cn:30:32 [call] size of T
@@ -32451,6 +32499,30 @@ std/mem.cn:55:40 [call] size of test_case
 std/mem.cn:55:40 [call] size of test_suite
 std/mem.cn:55:40 [call] size of uint32
 std/mem.cn:55:40 [call] size of usize
+std/mem.cn:78:8 [call] needs_drop of (int64, int32)
+std/mem.cn:78:8 [call] needs_drop of (usize, usize)
+std/mem.cn:78:8 [call] needs_drop of T
+std/mem.cn:78:8 [call] needs_drop of byte
+std/mem.cn:78:8 [call] needs_drop of int32
+std/mem.cn:78:8 [call] needs_drop of int64
+std/mem.cn:78:8 [call] needs_drop of money
+std/mem.cn:78:8 [call] needs_drop of str
+std/mem.cn:78:8 [call] needs_drop of test_case
+std/mem.cn:78:8 [call] needs_drop of test_suite
+std/mem.cn:78:8 [call] needs_drop of uint32
+std/mem.cn:78:8 [call] needs_drop of usize
+std/mem.cn:86:8 [call] needs_drop of (int64, int32)
+std/mem.cn:86:8 [call] needs_drop of (usize, usize)
+std/mem.cn:86:8 [call] needs_drop of T
+std/mem.cn:86:8 [call] needs_drop of byte
+std/mem.cn:86:8 [call] needs_drop of int32
+std/mem.cn:86:8 [call] needs_drop of int64
+std/mem.cn:86:8 [call] needs_drop of money
+std/mem.cn:86:8 [call] needs_drop of str
+std/mem.cn:86:8 [call] needs_drop of test_case
+std/mem.cn:86:8 [call] needs_drop of test_suite
+std/mem.cn:86:8 [call] needs_drop of uint32
+std/mem.cn:86:8 [call] needs_drop of usize
 
 ## ptr_casts (47)
 std/mem.cn:31:12 [call] *mut (int64, int32)
@@ -34973,7 +35045,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 100
+synthesized_types 102
 synthesized_fragments 30
 synthesized_const_literals 63
 elided_contracts 0

@@ -11067,7 +11067,7 @@ private:
     }
     for (const auto prelude :
          {"println", "print", "panic", "assert", "size_of", "align_of",
-          "ptr_cast", "args", "env", "min", "max", "slice_from_raw_parts",
+          "needs_drop", "ptr_cast", "args", "env", "min", "max", "slice_from_raw_parts",
           "slice_mut_from_raw_parts"}) {
       candidates.emplace_back(prelude);
     }
@@ -11110,7 +11110,7 @@ private:
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "align_of" ||
-           name == "ptr_cast" || name == "args" || name == "env" ||
+           name == "needs_drop" || name == "ptr_cast" || name == "args" || name == "env" ||
            name == "min" || name == "max" || name == "cancel" ||
            name == "pool" || name == "io" || name == "cpu" ||
            name == "channel" || name == "watch" || name == "shared" ||
@@ -16972,8 +16972,8 @@ private:
                                    explicit_args);
   }
 
-  /// Recognizes `size_of[T]()` and `align_of[T]()`, the two layout queries,
-  /// and records which type each asks about
+  /// Recognizes `size_of[T]()`, `align_of[T]()` and `needs_drop[T]()`, the
+  /// type queries answered at lowering time, and records which type each asks about
   /// (`checked_types::layout_queries`) for `hir::lower_call` to answer
   /// against `runtime::layout_of`. Both are prelude names with no
   /// declaration anywhere — `size_of` used to type-check to `usize` here and
@@ -16998,10 +16998,11 @@ private:
       return std::nullopt;
     }
     const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
-    const auto kind = name == "size_of"    ? layout_query_kind::size_of
-                      : name == "align_of" ? layout_query_kind::align_of
-                                           : layout_query_kind::size_of;
-    if (name != "size_of" && name != "align_of") {
+    const auto kind = name == "size_of"      ? layout_query_kind::size_of
+                      : name == "align_of"   ? layout_query_kind::align_of
+                      : name == "needs_drop" ? layout_query_kind::needs_drop
+                                             : layout_query_kind::size_of;
+    if (name != "size_of" && name != "align_of" && name != "needs_drop") {
       return std::nullopt;
     }
     // A user is free to define their own `size_of`; the prelude never wins
@@ -17010,7 +17011,10 @@ private:
       return std::nullopt;
     }
 
-    const auto usize = types_.builtin("usize");
+    // `needs_drop` answers a `bool`; the two layout queries answer a `usize`.
+    const auto result_type = kind == layout_query_kind::needs_drop
+                                 ? types_.builtin("bool")
+                                 : types_.builtin("usize");
     auto operand = k_unknown_type;
     if (bracket_args.size() == 1) {
       // `size_of[T]()` — the type is in the brackets, and the parentheses
@@ -17047,7 +17051,7 @@ private:
 
     layout_queries_[&call] = layout_query{.operand = operand, .kind = kind};
     record_expr_type(*base, k_unknown_type);
-    return record_expr_type(call, usize);
+    return record_expr_type(call, result_type);
   }
 
   /// Reports `operation` as needing a `machine` function, unless one is

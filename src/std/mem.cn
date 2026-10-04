@@ -69,19 +69,22 @@ pub machine def copy[T](dst: *mut T, src: *T, count: usize) -> unit:
 #:
 #: The raw read hands the value to `drop`, whose by-value parameter drops it
 #: (`spec/specification/03-advanced/38-machine-layer.md`, Raw memory and
-#: ownership). For a type that needs no drop this does nothing. The slot must
-#: hold a value, and must not be read as holding one afterward.
+#: ownership). For a type that needs no drop this does nothing, and
+#: `needs_drop` folds the whole body away. The slot must hold a value, and
+#: must not be read as holding one afterward.
 #: Args:
 #:   p: the slot to empty.
 pub machine def drop_in_place[T](p: *mut T) -> unit:
-    drop(p[0])
+    if needs_drop[T]():
+        drop(p[0])
 
 #: Drops the `count` values starting at `p`, in order.
 #: Args:
 #:   p: the first slot.
 #:   count: how many slots hold values.
 pub machine def drop_range[T](p: *mut T, count: usize) -> unit:
-    var i: usize = 0
-    while i < count:
-        drop_in_place(&mut p[i])
-        i = i + 1
+    if needs_drop[T]():
+        var i: usize = 0
+        while i < count:
+            drop_in_place(&mut p[i])
+            i = i + 1

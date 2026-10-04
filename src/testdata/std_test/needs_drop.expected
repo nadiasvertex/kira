@@ -1,0 +1,10 @@
+int32: no
+plain: no
+tag: no
+noisy: yes
+holder: yes
+shape: yes
+list[int32]: yes
+list[noisy]: yes
+elif-free branch taken
+elif taken

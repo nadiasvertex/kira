@@ -835,11 +835,14 @@ struct fmt_runtime_types {
   type_id option_usize = 0;
 };
 
-/// Which of the two layout questions a `checked_types::layout_queries` entry
-/// asks about its operand type.
+/// Which question a `checked_types::layout_queries` entry asks about its
+/// operand type.
 enum class layout_query_kind : uint8_t {
   size_of,  ///< `size_of[T]()` — the bytes one `T` occupies.
   align_of, ///< `align_of[T]()` — the byte boundary a `T` must start on.
+  /// `needs_drop[T]()` — whether dropping a `T` does anything. Answered from
+  /// `checked_types::drop_plans`, which is only complete after checking ends.
+  needs_drop,
 };
 
 /// A resolved `size_of[T]()` / `align_of[T]()` — which type, which question.

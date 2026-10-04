@@ -1059,6 +1059,57 @@ auto test_lowers_while_loop() -> void {
          "expected the loop body's statement to be a hir_assign");
 }
 
+auto test_needs_drop_folds_dead_branch() -> void {
+  auto fixture = check_fixture("module sample\n"
+                               "type noisy = { id: int32 }\n"
+                               "impl drop for noisy:\n"
+                               "    def drop(mut self) -> unit:\n"
+                               "        return\n"
+                               "def plain(n: int32) -> int32:\n"
+                               "    if needs_drop[int32]():\n"
+                               "        var x = n\n"
+                               "        while x > 0:\n"
+                               "            x = x - 1\n"
+                               "    return n\n"
+                               "def owned(n: int32) -> int32:\n"
+                               "    if needs_drop[noisy]():\n"
+                               "        var x = n\n"
+                               "        while x > 0:\n"
+                               "            x = x - 1\n"
+                               "    return n\n");
+
+  const auto first_if =
+      [](const hir::hir_function &function) -> const hir::hir_if & {
+    expect(function.body->stmts.front()->kind ==
+                   hir::hir_node_kind::hir_expr_stmt ||
+               function.body->stmts.front()->kind == hir::hir_node_kind::hir_if,
+           "expected the guarded `if` to be the first statement");
+    if (function.body->stmts.front()->kind == hir::hir_node_kind::hir_if) {
+      return dynamic_cast<const hir::hir_if &>(*function.body->stmts.front());
+    }
+    const auto &stmt =
+        dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts.front());
+    expect(stmt.expr->kind == hir::hir_node_kind::hir_if,
+           "expected the first statement to hold an `if`");
+    return dynamic_cast<const hir::hir_if &>(*stmt.expr);
+  };
+
+  auto plain = hir::lower_function(find_func(*fixture.ast_file, "plain"),
+                                   fixture.checked);
+  expect(plain.has_value(), "expected the guarded function to lower");
+  const auto &dead = first_if(**plain);
+  expect(dead.branches.size() == 1 && dead.branches[0].body->stmts.empty(),
+         "expected `needs_drop[int32]()` to leave no loop behind: the guarded "
+         "body is dead");
+
+  auto owned = hir::lower_function(find_func(*fixture.ast_file, "owned"),
+                                   fixture.checked);
+  expect(owned.has_value(), "expected the guarded function to lower");
+  const auto &live = first_if(**owned);
+  expect(live.branches.size() == 1 && !live.branches[0].body->stmts.empty(),
+         "expected `needs_drop[noisy]()` to keep its guarded body");
+}
+
 auto test_lowers_while_let() -> void {
   auto fixture = check_fixture("module sample\n"
                                "def parse(v: option[int32]) -> int32:\n"
@@ -2848,6 +2899,7 @@ auto main() -> int {
     test_lowers_var_and_plain_assignment();
     test_lowers_compound_assignment();
     test_lowers_while_loop();
+    test_needs_drop_folds_dead_branch();
     test_lowers_while_let();
     test_lowers_if_let();
     test_lowers_elif_let_chain();

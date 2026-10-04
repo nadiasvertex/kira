@@ -1,0 +1,40 @@
+module main
+
+# `needs_drop[T]()` answers whether dropping a `T` does anything, from the same
+# drop plans scope exit reads. A type with no `drop` anywhere inside it needs
+# none; a type with its own `drop`, or a field or payload that has one, does.
+type plain = { a: int32, b: bool }
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+type holder = { n: noisy, k: int32 }
+type shape =
+    | @empty
+    | @held(noisy)
+type tag =
+    | @a
+    | @b(int32)
+
+def report[T](name: str) -> unit:
+    if needs_drop[T]():
+        println("{name}: yes")
+    else:
+        println("{name}: no")
+
+def main() -> int32:
+    report[int32]("int32")
+    report[plain]("plain")
+    report[tag]("tag")
+    report[noisy]("noisy")
+    report[holder]("holder")
+    report[shape]("shape")
+    report[list[int32]]("list[int32]")
+    report[list[noisy]]("list[noisy]")
+    if needs_drop[noisy]():
+        println("elif-free branch taken")
+    if needs_drop[int32]():
+        println("never printed")
+    elif needs_drop[holder]():
+        println("elif taken")
+    return 0
