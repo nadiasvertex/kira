@@ -222,6 +222,13 @@ auto compute_drop_schedule(const ast::func_decl &decl,
     }
     plan.assign(schedule);
 
+    for (const auto &local : cfg.locals) {
+      if (local.whole && local.owns && checked.drop_plans.contains(local.type)) {
+        schedule.owned_locals.push_back(
+            owned_decl{.name = local.name, .type = local.type});
+      }
+    }
+
     for (const auto &assign : facts.assignments) {
       auto drop = assignment_drop{};
       drop.drop_old = assign.state != move_state::moved;

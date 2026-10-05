@@ -1,6 +1,7 @@
 #include "src/hir/lower.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <format>
 #include <functional>
 #include <optional>
@@ -272,6 +273,12 @@ public:
   [[nodiscard]] auto lower_function(const ast::func_decl &decl)
       -> std::expected<ptr<hir_function>, lowering_error>;
 
+  /// Temporary (item 6 of `spec/todo.md`): fails when the locals this walk
+  /// declared as owning a droppable value differ from the ones the ownership
+  /// CFG says own one.
+  [[nodiscard]] auto check_drop_agreement(const ast::func_decl &decl) const
+      -> std::optional<lowering_error>;
+
 private:
   // ------------------------------------------------------------------
   //  Local identity
@@ -313,6 +320,10 @@ private:
     scope.by_name.insert_or_assign(std::string(name), id);
     if (whole) {
       scope.whole.emplace_back(std::string(name), id);
+      if (checked_.drop_plans.contains(type)) {
+        declared_owned_.push_back(
+            owned_decl{.name = std::string(name), .type = type});
+      }
     }
     local_types_.emplace(id, type);
     return id;
@@ -1062,6 +1073,8 @@ private:
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
   drop_schedule drop_schedule_;
+  /// The `whole` locals with a drop plan this walk declared.
+  std::vector<owned_decl> declared_owned_;
   /// The local each drop flag of `drop_schedule_` is declared as, once its
   /// binding has been lowered.
   std::vector<symbol_id> flag_symbols_;
@@ -6505,6 +6518,33 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   return function;
 }
 
+auto lowerer::check_drop_agreement(const ast::func_decl &decl) const
+    -> std::optional<lowering_error> {
+  if (std::getenv("KIRA_CHECK_DROP_AGREEMENT") == nullptr) {
+    return std::nullopt;
+  }
+  auto lowered = declared_owned_;
+  auto checked = drop_schedule_.owned_locals;
+  std::ranges::sort(lowered);
+  std::ranges::sort(checked);
+  if (lowered == checked) {
+    return std::nullopt;
+  }
+  const auto describe = [&](const std::vector<owned_decl> &list) {
+    auto out = std::string{};
+    for (const auto &d : list) {
+      out += std::format(" `{}`:{}", d.name, d.type);
+    }
+    return out;
+  };
+  return lowering_error{
+      .kind = lowering_error_kind::unsupported_construct,
+      .span = decl.span,
+      .message = std::format("internal error: in `{}` the lowerer owns [{}] "
+                             "but the ownership checker owns [{}]",
+                             decl.name, describe(lowered), describe(checked))};
+}
+
 } // namespace
 
 auto lower_function(const ast::func_decl &decl,
@@ -6513,6 +6553,12 @@ auto lower_function(const ast::func_decl &decl,
     -> std::expected<ptr<hir_function>, lowering_error> {
   auto walker = lowerer(checked, options);
   auto result = walker.lower_function(decl);
+  if (result.has_value()) {
+    if (auto disagreement = walker.check_drop_agreement(decl);
+        disagreement.has_value()) {
+      return std::unexpected(*disagreement);
+    }
+  }
   // Every `hir_function` this milestone produces passes through this one
   // choke point (`lower_module`/`lower_inline_submodules`/
   // `lower_functor_modules` all call it), so running tail-position
