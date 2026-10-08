@@ -1,0 +1,42 @@
+module codegen_stress.generic_lambda
+
+# expect: 24000000096
+
+# todo.md item 11: a lambda bound by `let` with an unannotated parameter is an
+# implicit generic, like `def twice(x)`. Each use checks its own copy of the
+# lambda for that use's types, and lowering binds one closure per copy where
+# the `let` stands.
+#
+# - `twice` is used at `float64`, at `int64`, inside another generic lambda,
+#   and as a value where `fn(int64) -> int64` is expected.
+# - `plus_k` captures `k`; `add` captures `total` by mutable reference.
+# - `run` is an explicit generic whose body binds and calls a generic lambda,
+#   so its instances get substituted copies of the lambda's copies.
+# - The lambda called where it is written is typed by its one call.
+#
+# `# expect:` because most values overflow `int32`.
+
+def apply(g: fn(int64) -> int64, v: int64) -> int64:
+    return g(v)
+
+def run[T](v: T, n: int64) -> int64:
+    let f = (x) => x + n
+    return f(n) + f(1)
+
+def main() -> int64:
+    let big: int64 = 3000000000
+    let k: int64 = 7
+    let twice = (x) => x + x
+    let plus_k = (x) => twice(x) + k
+    var total: int64 = 0
+    let add = [&mut total] (x) =>:
+        total = total + x
+    add(big)
+    add(1)
+    let f = twice(2.5)
+    let a = twice(big)
+    let b = plus_k(big)
+    let c = apply(twice, 21)
+    let d = run(1, 10) + run(true, 3)
+    let e = ((z) => z * 3)(big)
+    return a + b + c + d + e + total + int64(f)

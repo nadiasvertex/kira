@@ -162,6 +162,10 @@ struct value_binding {
   binding_origin origin = binding_origin::let_binding;
   source_span
       span; ///< Where the binding was introduced, for "declared here" notes.
+  /// Set when the binding is a generic lambda (`let f = (x) => x + x`): `f`
+  /// has no type of its own, and each use checks a copy of this lambda —
+  /// see `instantiate_generic_lambda`.
+  const ast::lambda_expr *generic_lambda = nullptr;
 };
 
 /// A normalized function/method parameter, used by call-argument checking
@@ -602,6 +606,9 @@ public:
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
         .open_param_templates = std::move(open_param_templates),
+        .generic_lambda_instances = std::move(generic_lambda_instances_),
+        .generic_lambda_refs = std::move(generic_lambda_refs_),
+        .synthesized_lambdas = std::move(synthesized_lambdas_),
         .implicit_signatures = std::move(implicit_signatures_),
         .instance_templates = std::move(instance_templates_),
         .inferred_return_types = std::move(inferred_returns_),
@@ -7293,6 +7300,324 @@ private:
     std::swap(in_machine_function_, context.in_machine_function);
   }
 
+  // ------------------------------------------------------------------------
+  //  Generic lambdas
+  //
+  //  `let f = (x) => x + x` gives `x` no annotation and nothing to read one
+  //  from. The spec infers such a parameter the way it infers an unannotated
+  //  `def` parameter: it is an implicit type parameter. So `f` is generic,
+  //  and each use of it checks its own copy of the lambda — `f(3)` one for
+  //  `int32`, `f(2.5)` another for `float64` — exactly as each call to an
+  //  implicit-generic function compiles its own instance.
+  //
+  //  A copy is checked in the scope the `let` stood in (`body_context`), not
+  //  the one the use stands in: the lambda captures what was visible where it
+  //  was written, and a later `let` that shadows a captured name must not
+  //  change what the lambda means. Each unannotated parameter starts as a
+  //  fresh leaf, so the use's arguments and the lambda's own body solve it
+  //  together, before any literal is defaulted. Lowering creates one closure
+  //  per copy where the `let` stands (`checked_types::
+  //  generic_lambda_instances`), and none for a lambda that is never used.
+  // ------------------------------------------------------------------------
+
+  /// Where a generic lambda was bound, for checking its copies there.
+  struct generic_lambda_site {
+    body_context context;
+    std::string name;
+    const ast::node *pattern = nullptr;
+  };
+  std::unordered_map<const ast::lambda_expr *, generic_lambda_site>
+      generic_lambda_sites_;
+  std::unordered_map<const ast::lambda_expr *,
+                     std::vector<const ast::lambda_expr *>>
+      generic_lambda_instances_;
+  std::unordered_map<const ast::ident_expr *, const ast::lambda_expr *>
+      generic_lambda_refs_;
+  ast::ptr_vec<ast::expr> synthesized_lambdas_;
+
+  /// The lambda `let name = <lambda>` binds, when that binding is a generic
+  /// lambda: no annotation on the `let`, and some parameter without one.
+  [[nodiscard]] static auto generic_lambda_of(const ast::let_stmt &stmt)
+      -> const ast::lambda_expr * {
+    if (stmt.type_annotation != nullptr || stmt.initializer == nullptr ||
+        stmt.initializer->kind != ast::node_kind::lambda_expr ||
+        stmt.pattern == nullptr ||
+        stmt.pattern->kind != ast::node_kind::binding_pattern ||
+        !stmt.else_body.empty() ||
+        dynamic_cast<const ast::binding_pattern &>(*stmt.pattern).is_mut) {
+      return nullptr;
+    }
+    const auto &lambda =
+        dynamic_cast<const ast::lambda_expr &>(*stmt.initializer);
+    return has_unannotated_param(lambda) ? &lambda : nullptr;
+  }
+
+  [[nodiscard]] static auto has_unannotated_param(const ast::lambda_expr &lambda)
+      -> bool {
+    return std::ranges::any_of(
+        lambda.params, [](const ast::lambda_param &param) -> bool {
+          return param.type_annotation == nullptr;
+        });
+  }
+
+  /// A mutable binding initialized with a lambda whose parameter has no
+  /// annotation and nothing to infer one from. A generic lambda is a family
+  /// of closures, one per use, and assigning to such a binding would have
+  /// to replace all of them at once, so only `let` may bind one.
+  auto report_mutable_generic_lambda(const ast::expr *initializer,
+                                     bool annotated, std::string_view name)
+      -> bool {
+    if (annotated || initializer == nullptr ||
+        initializer->kind != ast::node_kind::lambda_expr ||
+        !has_unannotated_param(
+            dynamic_cast<const ast::lambda_expr &>(*initializer))) {
+      return false;
+    }
+    error_with_help(
+        initializer->span,
+        std::format("`{}` is mutable, so its lambda needs annotated "
+                    "parameters",
+                    name),
+        "a parameter here has no type",
+        std::format(
+            "A lambda parameter with no annotation is generic, and each use "
+            "of a generic lambda compiles its own copy. A mutable binding "
+            "holds one value, so it needs one type. Annotate the parameters "
+            "(for example `(x: int32) => ...`), give `{}` a function type "
+            "(`: fn(int32) -> int32`), or bind it with `let`.",
+            name));
+    return true;
+  }
+
+  /// Binds `let name = <lambda>` as a generic lambda. Its body is not checked
+  /// here: like an implicit-generic function, it is checked once per use, for
+  /// that use's types.
+  auto bind_generic_lambda(const ast::let_stmt &stmt,
+                           const ast::lambda_expr &lambda) -> void {
+    const auto &binding =
+        dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+    generic_lambda_sites_.insert_or_assign(
+        &lambda, generic_lambda_site{.context = capture_body_context(),
+                                     .name = binding.name,
+                                     .pattern = stmt.pattern.get()});
+    generic_lambda_instances_.try_emplace(&lambda);
+    bind_value(binding.name, k_unknown_type,
+               binding.is_mut ? binding_origin::mut_binding
+                              : binding_origin::let_binding,
+               binding.span);
+    if (!scopes_.empty()) {
+      if (const auto found = scopes_.back().find(binding.name);
+          found != scopes_.back().end()) {
+        found->second.generic_lambda = &lambda;
+      }
+    }
+  }
+
+  /// Checks a fresh copy of the generic lambda `tmpl` for the use `ident`,
+  /// and returns the copy's `fn` type. `params` gives the parameter types a
+  /// use in value position expects; a call passes `nullopt`, and each
+  /// unannotated parameter starts as a fresh leaf its arguments then solve.
+  auto instantiate_generic_lambda(const ast::lambda_expr &tmpl,
+                                  const ast::ident_expr &ident,
+                                  const std::vector<type_id> *params)
+      -> type_id {
+    auto &site = generic_lambda_sites_.at(&tmpl);
+    auto cloned = ast::clone_expr(tmpl);
+    if (!cloned.has_value()) {
+      error_with_help(
+          cloned.error().span,
+          std::format("`{}` cannot be copied for this use: {}", ident.name,
+                      cloned.error().message),
+          "this part of the lambda",
+          "A lambda with an unannotated parameter is copied for each use. "
+          "Annotate its parameters so it has a single type instead.");
+      return k_error_type;
+    }
+    const auto &copy = dynamic_cast<const ast::lambda_expr &>(**cloned);
+    synthesized_lambdas_.push_back(std::move(*cloned));
+
+    auto param_types = std::vector<type_id>{};
+    for (size_t i = 0; i < copy.params.size(); ++i) {
+      if (copy.params[i].type_annotation != nullptr) {
+        param_types.push_back(k_unknown_type);
+      } else if (params != nullptr && i < params->size()) {
+        param_types.push_back((*params)[i]);
+      } else {
+        param_types.push_back(leaf_ctxt_.fresh_type(
+            std::format("a parameter of `{}` in this use", ident.name),
+            source_location{.file_id = file_id_, .span = ident.span}));
+      }
+    }
+
+    instantiation_sites_.push_back(instantiation_frame{
+        .call_span = ident.span,
+        .call_file = file_id_,
+        .instance_name = ident.name,
+        .context_solutions = {}});
+    swap_body_context(site.context);
+    const auto type = infer_expr(
+        copy, types_.fn_of(std::move(param_types), k_unknown_type));
+    swap_body_context(site.context);
+    instantiation_sites_.pop_back();
+
+    // A capture list the copy used belongs to a lambda the use stands in
+    // too; tell its unused-capture check what the copy read.
+    for (const auto &used : site.context.capture_barriers) {
+      for (auto &live : capture_barriers_) {
+        if (live.lambda == used.lambda) {
+          live.used.insert(used.used.begin(), used.used.end());
+        }
+      }
+    }
+
+    auto &instances = generic_lambda_instances_[&tmpl];
+    if (instances.empty() && site.pattern != nullptr) {
+      // The binding's own record, for the ownership checker: what kind of
+      // value `f` holds. Every copy is a closure, so the first one says.
+      record_expr_type(*site.pattern, type);
+    }
+    instances.push_back(&copy);
+    generic_lambda_refs_[&ident] = &copy;
+    return type;
+  }
+
+  /// A use of a generic lambda's name anywhere but as a call's callee. Only
+  /// a use that expects a function type says what the copy's parameters are.
+  auto generic_lambda_value(const ast::ident_expr &ident,
+                            const value_binding &binding, type_id expected)
+      -> type_id {
+    const auto &lambda = *binding.generic_lambda;
+    const auto &entry = types_.entry(strip_refs(expected));
+    if (entry.kind == type_kind::fn_kind &&
+        entry.args.size() == lambda.params.size()) {
+      const auto params = entry.args;
+      return instantiate_generic_lambda(lambda, ident, &params);
+    }
+    auto unannotated = std::string{};
+    for (const auto &param : lambda.params) {
+      if (param.type_annotation == nullptr && param.pattern != nullptr &&
+          param.pattern->kind == ast::node_kind::binding_pattern) {
+        unannotated =
+            dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
+        break;
+      }
+    }
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("cannot tell which type of `{}` is meant here",
+                    ident.name),
+        file_id_);
+    diag.with_label(ident.span, "used as a value, not called");
+    diag.with_secondary_label(binding.span, "declared here");
+    diag.with_help(std::format(
+        "{} has no annotation, so `{}` is generic: each call compiles it for "
+        "that call's argument types. Used as a value it needs one type, and "
+        "nothing here says which. Annotate the parameter (for example "
+        "`({}: int32) => ...`), or use `{}` where a function type is "
+        "expected.",
+        unannotated.empty() ? std::string("a parameter")
+                            : std::format("`{}`", unannotated),
+        ident.name, unannotated.empty() ? std::string("x") : unannotated,
+        ident.name));
+    emit_diag(diag);
+    mark_error();
+    return k_error_type;
+  }
+
+  /// What a lambda called where it is written (`((x) => x + 1)(0)`) is
+  /// checked against. It has exactly one use, so it needs no copies: each
+  /// unannotated parameter is a fresh leaf, solved by this call's arguments.
+  /// `k_unknown_type` for any other callee.
+  auto invoked_lambda_expectation(const ast::expr &callee) -> type_id {
+    const auto *inner = &callee;
+    while (inner->kind == ast::node_kind::group_expr) {
+      const auto &group = dynamic_cast<const ast::group_expr &>(*inner);
+      if (group.inner == nullptr) {
+        return k_unknown_type;
+      }
+      inner = group.inner.get();
+    }
+    if (inner->kind != ast::node_kind::lambda_expr) {
+      return k_unknown_type;
+    }
+    const auto &lambda = dynamic_cast<const ast::lambda_expr &>(*inner);
+    if (!has_unannotated_param(lambda)) {
+      return k_unknown_type;
+    }
+    auto params = std::vector<type_id>{};
+    for (const auto &param : lambda.params) {
+      params.push_back(
+          param.type_annotation != nullptr
+              ? k_unknown_type
+              : leaf_ctxt_.fresh_type(
+                    "a parameter of this lambda",
+                    source_location{.file_id = file_id_, .span = param.span}));
+    }
+    return types_.fn_of(std::move(params), k_unknown_type);
+  }
+
+  /// Gives an explicit generic instance its own copies of every generic
+  /// lambda its template's body made copies of, before the template's
+  /// records are copied onto the instance: the records of those copies are
+  /// the template's too, and are found through the same clone map.
+  auto clone_generic_lambdas_for(pending_instance &item) -> void {
+    if (item.clone_pairs == nullptr || generic_lambda_instances_.empty()) {
+      return;
+    }
+    auto merged = std::make_shared<ast::clone_map>(*item.clone_pairs);
+    auto added_any = false;
+    // A copy can bind a generic lambda of its own, which this pass then
+    // finds in the map it just grew.
+    for (auto grew = true; grew;) {
+      grew = false;
+      auto added = std::vector<std::pair<const ast::lambda_expr *,
+                                         std::vector<const ast::lambda_expr *>>>{};
+      for (const auto &[tmpl, instances] : generic_lambda_instances_) {
+        const auto found = merged->find(tmpl);
+        if (found == merged->end()) {
+          continue;
+        }
+        const auto *target =
+            static_cast<const ast::lambda_expr *>(found->second);
+        if (generic_lambda_instances_.contains(target)) {
+          continue;
+        }
+        auto copies = std::vector<const ast::lambda_expr *>{};
+        for (const auto *instance : instances) {
+          auto cloned = ast::clone_expr(*instance, merged.get());
+          if (!cloned.has_value()) {
+            continue; // the instance was itself cloned from this node
+          }
+          copies.push_back(
+              dynamic_cast<const ast::lambda_expr *>(cloned->get()));
+          synthesized_lambdas_.push_back(std::move(*cloned));
+        }
+        added.emplace_back(target, std::move(copies));
+      }
+      for (auto &[target, copies] : added) {
+        generic_lambda_instances_.emplace(target, std::move(copies));
+        grew = true;
+        added_any = true;
+      }
+    }
+    if (!added_any) {
+      return;
+    }
+    auto refs = std::vector<
+        std::pair<const ast::ident_expr *, const ast::lambda_expr *>>{};
+    for (const auto &[ident, instance] : generic_lambda_refs_) {
+      const auto ident_copy = merged->find(ident);
+      const auto instance_copy = merged->find(instance);
+      if (ident_copy != merged->end() && instance_copy != merged->end()) {
+        refs.emplace_back(
+            static_cast<const ast::ident_expr *>(ident_copy->second),
+            static_cast<const ast::lambda_expr *>(instance_copy->second));
+      }
+    }
+    generic_lambda_refs_.insert(refs.begin(), refs.end());
+    item.clone_pairs = std::move(merged);
+  }
+
   /// A method call whose receiver is not yet anything a method can be found
   /// on — `a.cmp(&b)` for `let a = 5`, before a later `let c: int64 = a`
   /// has said which integer `a` is. Defaulting the receiver here would pick
@@ -8784,6 +9109,7 @@ private:
   /// Makes `item`'s records from its template's, and runs the decisions the
   /// template deferred to it.
   auto substitute_instance(pending_instance &item) -> void {
+    clone_generic_lambdas_for(item);
     auto subst = instance_subst_for(item);
     copy_all_template_records(subst);
     // The instance's own parameters, as the compile-time values a `static
@@ -11282,6 +11608,9 @@ private:
     }
 
     if (const auto *binding = lookup_value(name)) {
+      if (binding->generic_lambda != nullptr) {
+        return generic_lambda_value(ident, *binding, expected);
+      }
       if (binding->origin == binding_origin::parameter) {
         record_const_param_reference(ident, binding->type);
       }
@@ -17684,7 +18013,8 @@ private:
     }
 
     if (call.callee->kind != ast::node_kind::ident_expr) {
-      const auto callee = infer_expr(*call.callee, k_unknown_type);
+      const auto callee =
+          infer_expr(*call.callee, invoked_lambda_expectation(*call.callee));
       const auto &entry = types_.entry(strip_refs(callee));
       if (entry.kind == type_kind::fn_kind) {
         return check_call_against_fn_type(call, entry, "this function value");
@@ -17707,6 +18037,17 @@ private:
     }
 
     if (const auto *binding = lookup_value(name)) {
+      if (binding->generic_lambda != nullptr) {
+        const auto copy = record_expr_type(
+            ident,
+            instantiate_generic_lambda(*binding->generic_lambda, ident,
+                                       /*params=*/nullptr));
+        if (types_.entry(copy).kind != type_kind::fn_kind) {
+          infer_call_args_loosely(call);
+          return k_error_type;
+        }
+        return check_call_against_fn_type(call, types_.entry(copy), name);
+      }
       const auto &entry = types_.entry(strip_refs(binding->type));
       if (entry.kind == type_kind::fn_kind) {
         // The callee ident is resolved straight from the scope binding
@@ -23257,6 +23598,23 @@ private:
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
       const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
+      if (const auto *lambda = generic_lambda_of(stmt)) {
+        bind_generic_lambda(stmt, *lambda);
+        return unit;
+      }
+      if (stmt.pattern != nullptr &&
+          stmt.pattern->kind == ast::node_kind::binding_pattern) {
+        const auto &binding =
+            dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+        if (binding.is_mut &&
+            report_mutable_generic_lambda(stmt.initializer.get(),
+                                          stmt.type_annotation != nullptr,
+                                          binding.name)) {
+          bind_value(binding.name, k_error_type, binding_origin::mut_binding,
+                     binding.span);
+          return unit;
+        }
+      }
       auto declared = k_unknown_type;
       if (stmt.type_annotation != nullptr) {
         declared = resolve_type(*stmt.type_annotation, current_resolve_ctx());
@@ -23342,6 +23700,14 @@ private:
 
     case ast::node_kind::var_stmt: {
       const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
+      if (report_mutable_generic_lambda(stmt.initializer.get(),
+                                        stmt.type_annotation != nullptr,
+                                        stmt.name)) {
+        record_expr_type(stmt, k_error_type);
+        bind_value(stmt.name, k_error_type, binding_origin::var_binding,
+                   stmt.span);
+        return unit;
+      }
       auto declared = k_unknown_type;
       if (stmt.type_annotation != nullptr) {
         declared = resolve_type(*stmt.type_annotation, current_resolve_ctx());

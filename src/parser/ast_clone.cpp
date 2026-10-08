@@ -1173,23 +1173,31 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
 
 } // namespace
 
+namespace {
+
+/// Points the cloners at `map` for one public call, restored on every exit,
+/// including the early error returns.
+struct map_scope {
+  clone_map *saved;
+  explicit map_scope(clone_map *next) : saved(active_clone_map) {
+    active_clone_map = next;
+  }
+  map_scope(const map_scope &) = delete;
+  auto operator=(const map_scope &) -> map_scope & = delete;
+  ~map_scope() { active_clone_map = saved; }
+};
+
+} // namespace
+
 /// The public face of the anonymous-namespace cloner above; see the header.
-auto clone_expr(const expr &e) -> std::expected<ptr<expr>, clone_error> {
+auto clone_expr(const expr &e, clone_map *map)
+    -> std::expected<ptr<expr>, clone_error> {
+  const auto scope = map_scope{map};
   return clone_expr_impl(e);
 }
 
 auto clone_func_decl(const func_decl &decl, clone_map *map)
     -> std::expected<ptr<func_decl>, clone_error> {
-  // Restored on every exit, including the early error returns below.
-  struct map_scope {
-    clone_map *saved;
-    explicit map_scope(clone_map *next) : saved(active_clone_map) {
-      active_clone_map = next;
-    }
-    map_scope(const map_scope &) = delete;
-    auto operator=(const map_scope &) -> map_scope & = delete;
-    ~map_scope() { active_clone_map = saved; }
-  };
   const auto scope = map_scope{map};
   auto cloned = clone_func_decl_unmapped(decl);
   if (cloned.has_value()) {

@@ -618,6 +618,23 @@ auto test_reports_type_generic_unsolved() -> void {
                     "be rejected");
 }
 
+auto test_reports_generic_lambda_as_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generic_lambda_as_value.cn");
+  expect_diagnostic(analyzed, "cannot tell which type of `f` is meant here",
+                    "expected a generic lambda used as a value with no "
+                    "function type expected to be rejected");
+}
+
+auto test_reports_mutable_generic_lambda() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_mutable_generic_lambda.cn");
+  expect_diagnostic(analyzed,
+                    "`f` is mutable, so its lambda needs annotated parameters",
+                    "expected a `var` bound to a lambda with an unannotated "
+                    "parameter to be rejected");
+}
+
 auto test_reports_copy_bound_unsatisfied() -> void {
   const auto analyzed =
       analyze_test_data_file("report_copy_bound_unsatisfied.cn");
@@ -4310,6 +4327,8 @@ auto main() -> int {
     test_accepts_for_over_user_iterator();
     test_accepts_type_generic_free_function();
     test_reports_type_generic_unsolved();
+    test_reports_generic_lambda_as_value();
+    test_reports_mutable_generic_lambda();
     test_reports_str_index_non_integer();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();

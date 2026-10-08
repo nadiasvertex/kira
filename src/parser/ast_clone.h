@@ -59,7 +59,10 @@ using clone_map = std::unordered_map<const void *, const void *>;
 /// refinement's `where` predicate to speak about a concrete value rather than
 /// `self`, and cannot mutate the declaration's own AST to do it — several
 /// call sites share that one predicate node, and each needs its own copy.
-[[nodiscard]] auto clone_expr(const expr &e)
+/// Also used to copy a generic lambda once per call (`check.cpp`'s
+/// `instantiate_generic_lambda`), which is why it takes a `map` exactly like
+/// `clone_func_decl` does.
+[[nodiscard]] auto clone_expr(const expr &e, clone_map *map = nullptr)
     -> std::expected<ptr<expr>, clone_error>;
 
 /// Deep-clones a `type` declaration — visibility, modifiers, name, type

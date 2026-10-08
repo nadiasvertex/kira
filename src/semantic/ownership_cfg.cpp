@@ -1314,8 +1314,24 @@ private:
       return compound_result(expr, temp);
     }
 
-    case ast::node_kind::lambda_expr:
-      return eval_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
+    case ast::node_kind::lambda_expr: {
+      const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
+      // A generic lambda is never created itself: one closure per checked
+      // copy is, right here (`checked_types::generic_lambda_instances`).
+      const auto copies = checked_.generic_lambda_instances.find(&lambda);
+      if (copies == checked_.generic_lambda_instances.end()) {
+        return eval_lambda(lambda);
+      }
+      auto result = value{};
+      for (const auto *copy : copies->second) {
+        auto made = eval_lambda(*copy);
+        result.loans.insert(result.loans.end(), made.loans.begin(),
+                            made.loans.end());
+        result.sources.insert(result.sources.end(), made.sources.begin(),
+                              made.sources.end());
+      }
+      return result;
+    }
 
     case ast::node_kind::if_expr: {
       const auto &if_e = dynamic_cast<const ast::if_expr &>(expr);

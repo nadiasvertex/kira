@@ -1,0 +1,6 @@
+module report_generic_lambda_as_value
+
+def main() -> int32:
+    let f = (x) => x + x
+    let g = f
+    return 0

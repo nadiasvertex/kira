@@ -1,5 +1,5 @@
 # inference snapshot
-# 2261 interned types
+# 2264 interned types
 
 ## node_types (30577)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -10,13 +10,13 @@
 003_collections_lambdas.cn:4:26 [literal] int32
 003_collections_lambdas.cn:4:29 [literal] int32
 003_collections_lambdas.cn:4:32 [literal] int32
-003_collections_lambdas.cn:10:9 [binding_pat] fn(_) -> bool
-003_collections_lambdas.cn:10:15 [lambda] fn(_) -> bool
-003_collections_lambdas.cn:10:20 [ident] _
+003_collections_lambdas.cn:10:9 [binding_pat] fn(int32) -> bool
+003_collections_lambdas.cn:10:15 [lambda] fn(int32) -> bool
+003_collections_lambdas.cn:10:20 [ident] int32
 003_collections_lambdas.cn:10:20 [binary] bool
 003_collections_lambdas.cn:10:24 [literal] int32
 003_collections_lambdas.cn:11:9 [binding_pat] bool
-003_collections_lambdas.cn:11:19 [ident] fn(_) -> bool
+003_collections_lambdas.cn:11:19 [ident] fn(int32) -> bool
 003_collections_lambdas.cn:11:19 [call] bool
 003_collections_lambdas.cn:11:23 [ident] list[int32]
 003_collections_lambdas.cn:11:23 [index] int32
@@ -32817,7 +32817,7 @@ option[test_suite] own=- fields=[] variants=[some.0: test_suite]
 result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
 test_suite own=- fields=[cases: list[test_case]]
 
-## borrow_bearing_types (1658)
+## borrow_bearing_types (1660)
 &K
 &T
 &T
@@ -33921,6 +33921,8 @@ fn(_) -> _
 fn(_) -> _
 fn(_) -> _
 fn(_) -> _
+fn(_) -> _
+fn(_) -> bool
 fn(_) -> bool
 fn(_) -> example_type[_]
 fn(_) -> float32

@@ -1028,6 +1028,10 @@ private:
   };
   std::vector<lexical_scope> scopes_;
   std::unordered_map<std::string, symbol_id> global_refs_;
+  /// The local each copy of a generic lambda is bound to, where its `let`
+  /// stands — see `checked_types::generic_lambda_instances`.
+  std::unordered_map<const ast::lambda_expr *, symbol_id>
+      generic_lambda_symbols_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
   /// Where every synthesized scope-exit `drop` call belongs in this
@@ -1314,6 +1318,20 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   auto type = checked_type_of(ident);
   if (!type.has_value()) {
     return std::unexpected(type.error());
+  }
+  // A use of a generic lambda: the closure made for the copy this use was
+  // checked against, bound where the lambda's `let` stands.
+  if (const auto copy = checked_.generic_lambda_refs.find(&ident);
+      copy != checked_.generic_lambda_refs.end()) {
+    const auto symbol = generic_lambda_symbols_.find(copy->second);
+    if (symbol == generic_lambda_symbols_.end()) {
+      return fail(lowering_error_kind::unsupported_construct, ident.span,
+                  "a use of a generic lambda was lowered before the `let` "
+                  "that binds it — the checker and lowering disagree about "
+                  "where it stands");
+    }
+    return ok_expr(
+        make<hir_local_ref>(ident.span, *type, symbol->second, ident.name));
   }
   if (is_variant_ident(ident)) {
     // A bare unit-variant reference, e.g. `@none` with no call parens —
@@ -3812,6 +3830,29 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (let.initializer == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
                   "let binding has no initializer");
+    }
+    // `let f = (x) => x + x`: one closure per copy the checker made for a
+    // use of `f`, and none if `f` is never used.
+    if (const auto copies = checked_.generic_lambda_instances.find(
+            dynamic_cast<const ast::lambda_expr *>(let.initializer.get()));
+        copies != checked_.generic_lambda_instances.end() &&
+        let.pattern->kind == ast::node_kind::binding_pattern) {
+      const auto &name =
+          dynamic_cast<const ast::binding_pattern &>(*let.pattern).name;
+      auto result = ptr_vec<hir_node>{};
+      for (size_t i = 0; i < copies->second.size(); ++i) {
+        const auto *copy = copies->second[i];
+        auto closure = lower_lambda(*copy);
+        if (!closure.has_value()) {
+          return std::unexpected(closure.error());
+        }
+        auto copy_name = std::format("{}${}", name, i);
+        const auto symbol = declare_local(copy_name, (*closure)->type);
+        generic_lambda_symbols_.insert_or_assign(copy, symbol);
+        result.push_back(ptr<hir_node>(make<hir_let>(
+            let.span, symbol, std::move(copy_name), std::move(*closure))));
+      }
+      return result;
     }
     auto initializer = lower_expr(*let.initializer);
     if (!initializer.has_value()) {

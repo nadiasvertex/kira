@@ -1062,6 +1062,21 @@ struct checked_types {
   /// `const_generic_instances`, and `hir::lower_module` skips these
   /// templates exactly as it skips an explicit generic.
   std::unordered_set<const ast::func_decl *> open_param_templates;
+  /// Lambdas bound by `let f = (x) => ...` with an unannotated parameter.
+  /// Like an unannotated `def` parameter, that parameter is an implicit type
+  /// parameter, so the lambda written in the source has no runtime form of
+  /// its own: each use of `f` checked a copy of it for that use's types.
+  /// Maps the written lambda to those copies, in the order they were made;
+  /// `hir::lowerer` binds one closure per copy where the `let` stands, and
+  /// none at all for a lambda that is never used.
+  std::unordered_map<const ast::lambda_expr *,
+                     std::vector<const ast::lambda_expr *>>
+      generic_lambda_instances;
+  /// Each use of a generic lambda's name, to the copy it was checked against.
+  std::unordered_map<const ast::ident_expr *, const ast::lambda_expr *>
+      generic_lambda_refs;
+  /// Owns the copies in `generic_lambda_instances`.
+  ast::ptr_vec<ast::expr> synthesized_lambdas;
   /// Each `open_param_templates` entry's signature.
   std::unordered_map<const ast::func_decl *, implicit_signature>
       implicit_signatures;
