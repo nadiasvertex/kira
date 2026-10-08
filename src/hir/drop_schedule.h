@@ -56,17 +56,6 @@ struct assignment_drop {
   std::vector<std::size_t> sets;
 };
 
-/// A local the ownership CFG says owns a value that needs a drop. `lowerer`
-/// declares the same locals itself, and the two lists are compared
-/// (`KIRA_CHECK_DROP_AGREEMENT`) while item 6 of `spec/todo.md` moves that
-/// decision to one side.
-struct owned_decl {
-  const void *node = nullptr;
-  std::string name;
-  semantic::type_id type = 0;
-  auto operator<=>(const owned_decl &) const = default;
-};
-
 /// Where every synthesized drop call in one function/lambda body belongs,
 /// computed once (`compute_drop_schedule`) before `lowerer` walks the same
 /// tree for real.
@@ -94,8 +83,6 @@ struct drop_schedule {
   std::unordered_map<const void *, std::vector<std::size_t>> binding_flags;
   std::unordered_map<const void *, std::vector<std::size_t>> move_clears;
   std::size_t flag_count = 0;
-  /// Every `whole` local of the body (and its lambdas) with a drop plan.
-  std::vector<owned_decl> owned_locals;
   /// The nodes that declare a `whole` local (`local_info::node`).
   std::unordered_set<const void *> owned_bindings;
   /// The top-level patterns (a `let`, `if let`, `while let`, `match` arm or

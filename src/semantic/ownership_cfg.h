@@ -216,7 +216,7 @@ struct basic_block {
 struct function_cfg {
   /// The top-level patterns whose bindings own the parts they bind
   /// (`owns_pattern_bindings`), and those whose arm owns the whole subject
-  /// (`arm_owns_subject`) — what `hir::lowerer` reads instead of asking.
+  /// (`arm_owns_subject`) — what `hir::lowerer` reads.
   std::set<const void *> owning_patterns;
   std::set<const void *> owning_subjects;
   /// Where an owning pattern leaves a droppable part unbound: its `_`
@@ -244,91 +244,6 @@ struct function_cfg {
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.
 };
-
-/// Whether the bindings of `pattern`, matched against a value of
-/// `subject_type` that no expression names (such as a by-value destructuring
-/// parameter), own the parts they bind, so each is dropped when its scope
-/// ends: true unless the bindings overlap (`pattern_bindings_are_disjoint`)
-/// or the type is unknown, a reference or a view. `hir::lowerer` asks the
-/// same questions, so both sides agree on which bindings are dropped.
-[[nodiscard]] auto owns_pattern_bindings(type_id subject_type,
-                                         const ast::node &pattern,
-                                         const checked_types &checked) -> bool;
-
-/// Whether the loop variables of `stmt` own the element the loop hands them,
-/// so what they bind is dropped at the end of each iteration. True when the
-/// loop calls `next` on an iterator or generator that yields values (not
-/// references or views), including the iterator `into_iter` makes of a
-/// collection (`for x in xs` consumes `xs`), and the patterns' bindings do
-/// not overlap. `hir::lowerer` asks the same question.
-[[nodiscard]] auto for_variable_owns(const ast::for_stmt &stmt,
-                                     const checked_types &checked) -> bool;
-
-/// Whether a loop over `iterable` reaches `into_iter`, which consumes the
-/// collection, through a reference (`for x in xs` where `xs: &list[T]`).
-/// The loop then only copies the collection: nothing it yields is owned and
-/// its iterator is not dropped, and the ownership checker rejects the loop
-/// unless the elements are `copy`.
-[[nodiscard]] auto loop_consumes_borrow(const ast::expr *iterable,
-                                        const iterator_loop_dispatch *dispatch,
-                                        const checked_types &checked) -> bool;
-
-/// The type of the iterator a loop over `iterable` holds and drops, when it
-/// owns one that needs a drop: what `into_iter` made of a collection, an
-/// iterator or generator the loop was handed by value. `dispatch` is the
-/// loop's `next` dispatch, if it has one. The ownership checker declares it
-/// as a `<for iterator>` local in a scope around the loop, keyed by the
-/// address of the loop's `iterable` member, so it drops after the loop and
-/// with every scope a jump leaves; `hir::lowerer` declares the same local.
-[[nodiscard]] auto loop_handle_type(const ast::expr *iterable,
-                                    const iterator_loop_dispatch *dispatch,
-                                    const checked_types &checked)
-    -> std::optional<type_id>;
-
-/// The same question as `for_variable_owns` for one clause of a
-/// comprehension.
-[[nodiscard]] auto
-clause_variable_owns(const ast::for_expr::iter_clause &clause,
-                     const checked_types &checked) -> bool;
-
-/// Whether matching `subject` against `patterns` (every arm of a `match`,
-/// or the one pattern of a `let`, `if let` or `while let`) moves it. A
-/// value that is not a place always moves. A place moves only when some
-/// pattern binds a non-`copy` part of it by value; otherwise the bindings
-/// are copies and the place keeps its value, to be dropped by its owner.
-[[nodiscard]] auto subject_moves(const ast::expr &subject,
-                                 const std::vector<const ast::node *> &patterns,
-                                 const checked_types &checked) -> bool;
-
-/// Whether `pattern`'s bindings own the parts of `subject` they bind: the
-/// subject is a fresh value or a local or a field of one (not a reference
-/// or view, `self`, or a global), the match moves it
-/// (`subject_moves` over `patterns`), and the bindings do not overlap.
-/// `is_local` says whether a name is a local of the function.
-[[nodiscard]] auto
-owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
-                      const std::vector<const ast::node *> &patterns,
-                      const checked_types &checked,
-                      const std::function<bool(std::string_view)> &is_local)
-    -> bool;
-
-/// Whether the arm of `pattern` owns the whole of `subject` and drops it at
-/// the end of the arm: the match takes the subject's value, but the
-/// pattern's bindings overlap (an `as` alias, a `|` or an array pattern), so
-/// they cannot own its parts. The ownership checker rejects such a pattern
-/// unless every name it binds is `copy`.
-[[nodiscard]] auto
-arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
-                 const std::vector<const ast::node *> &patterns,
-                 const checked_types &checked,
-                 const std::function<bool(std::string_view)> &is_local)
-    -> bool;
-
-/// The group pattern whose alias names the whole of what `pattern` matches
-/// (`p as whole`), if `pattern` is one. When the arm owns the whole subject
-/// (`arm_owns_subject`), this alias is its owner.
-[[nodiscard]] auto owning_alias(const ast::pattern &pattern)
-    -> const ast::group_pattern *;
 
 /// The key of the exit a `generator def` takes when it is dropped before
 /// its body first runs. A generator dropped while suspended at a `yield`

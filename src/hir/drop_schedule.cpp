@@ -223,10 +223,6 @@ auto compute_drop_schedule(const ast::func_decl &decl,
     plan.assign(schedule);
 
     for (const auto &local : cfg.locals) {
-      if (local.whole && local.owns && checked.drop_plans.contains(local.type)) {
-        schedule.owned_locals.push_back(owned_decl{
-            .node = local.node, .name = local.name, .type = local.type});
-      }
       if (local.whole && local.node != nullptr) {
         schedule.owned_bindings.insert(local.node);
       }

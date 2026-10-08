@@ -273,12 +273,6 @@ public:
   [[nodiscard]] auto lower_function(const ast::func_decl &decl)
       -> std::expected<ptr<hir_function>, lowering_error>;
 
-  /// Temporary (item 6 of `spec/todo.md`): fails when the locals this walk
-  /// declared as owning a droppable value differ from the ones the ownership
-  /// CFG says own one.
-  [[nodiscard]] auto check_drop_agreement(const ast::func_decl &decl) const
-      -> std::optional<lowering_error>;
-
 private:
   // ------------------------------------------------------------------
   //  Local identity
@@ -321,10 +315,6 @@ private:
     scope.by_name.insert_or_assign(std::string(name), id);
     if (whole) {
       scope.whole.push_back(lexical_scope::whole_binding{.node = node, .id = id});
-      if (checked_.drop_plans.contains(type)) {
-        declared_owned_.push_back(
-            owned_decl{.node = node, .name = std::string(name), .type = type});
-      }
     }
     local_types_.emplace(id, type);
     return id;
@@ -373,30 +363,6 @@ private:
         pattern.span, symbol, std::string("<subject>"), std::move(place))));
     declare_flags(&pattern, pattern.span, pending);
   }
-
-  /// Temporary (item 6 of `spec/todo.md`): notes when the lowerer's own
-  /// answer to a drop decision differs from the ownership checker's, for
-  /// `check_drop_agreement`. Returns the checker's answer.
-  auto agree(bool lowerer_says, bool checker_says, std::string_view what,
-             source_span span) -> bool {
-    if (lowerer_says != checker_says) {
-      drop_disagreements_.push_back(
-          lowering_error{.kind = lowering_error_kind::unsupported_construct,
-                         .span = span,
-                         .message = std::format(
-                             "internal error: the lowerer {} {} but the "
-                             "ownership checker {}",
-                             lowerer_says ? "does" : "does not", what,
-                             checker_says ? "does" : "does not")});
-    }
-    return checker_says;
-  }
-  std::vector<lowering_error> drop_disagreements_;
-
-  /// Set while `lower_pattern` runs over a pattern whose bindings own their
-  /// parts (`binds_owned_parts`): a droppable binding is then `whole`, and a
-  /// `_` at a droppable position drops what it leaves unbound.
-  bool own_pattern_bindings_ = false;
 
   /// Looks up `name` among locals currently in scope only — unlike
   /// `resolve_reference`, never falls back to minting/reusing a global
@@ -1070,8 +1036,6 @@ private:
   /// See `drop_schedule`'s doc comment (`src/hir/drop_schedule.h`) for why
   /// this needs no new plumbing through `lower_block`'s parameters.
   drop_schedule drop_schedule_;
-  /// The `whole` locals with a drop plan this walk declared.
-  std::vector<owned_decl> declared_owned_;
   /// The local each drop flag of `drop_schedule_` is declared as, once its
   /// binding has been lowered.
   std::vector<symbol_id> flag_symbols_;
@@ -2047,10 +2011,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
     receiver_ast = resolved.receiver;
     target_decl = resolved.decl;
     // The same rule as the ownership checker's `receiver_mode`.
-    consumes_receiver =
-        agree(resolved.trait_name == "into_iterator",
-              drop_schedule_.consuming_calls.contains(&call),
-              "consumes the receiver of a call", call.span);
+    consumes_receiver = drop_schedule_.consuming_calls.contains(&call);
     const auto local_name =
         resolved.impl_target_type.empty()
             ? resolved.decl->name
@@ -3085,9 +3046,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
           make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
-    own_pattern_bindings_ = binds_owned_parts(*param.pattern);
     auto pattern = lower_pattern(*param.pattern, make_place, pending);
-    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
@@ -3896,10 +3855,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     };
     auto pending = std::vector<ptr<hir_node>>{};
     own_matched_subject(*let.pattern, make_place, pending);
-    const auto own_subject = binds_owned_parts(*let.pattern);
-    own_pattern_bindings_ = own_subject;
     auto pattern = lower_pattern(*let.pattern, make_place, pending);
-    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       return std::unexpected(pattern.error());
     }
@@ -3921,9 +3877,7 @@ auto lowerer::lower_stmt(const ast::node &node)
       if (!else_block.has_value()) {
         return std::unexpected(else_block.error());
       }
-      if (agree(own_subject && checked_.drop_plans.contains(subj_type),
-                drop_schedule_.unmatched_drops.contains(let.pattern.get()),
-                "drop the subject of a missed `let else`", let.span)) {
+      if (drop_schedule_.unmatched_drops.contains(let.pattern.get())) {
         // The pattern missed, so nothing bound the subject; drop it before
         // the diverging else body runs.
         auto drops = std::vector<ptr<hir_node>>{};
@@ -4472,10 +4426,7 @@ auto lowerer::lower_if_let_chain(
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
   own_matched_subject(*branch.let_pattern, make_place, pending);
-  const auto owned = binds_owned_parts(*branch.let_pattern);
-  own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*branch.let_pattern, make_place, pending);
-  own_pattern_bindings_ = false;
   if (!pattern.has_value()) {
     pop_scope();
     return std::unexpected(pattern.error());
@@ -4505,9 +4456,7 @@ auto lowerer::lower_if_let_chain(
   if (*unmatched_body == nullptr) {
     *unmatched_body = make<hir_block>(span, type, ptr_vec<hir_node>{});
   }
-  if (agree(owned && checked_.drop_plans.contains(subj_type),
-            drop_schedule_.unmatched_drops.contains(branch.let_pattern.get()),
-            "drop the subject of a missed `if let`", branch.span)) {
+  if (drop_schedule_.unmatched_drops.contains(branch.let_pattern.get())) {
     // The subject was moved into the test and nothing bound it, so the
     // branch that did not match still has to drop it.
     auto drops = std::vector<ptr<hir_node>>{};
@@ -4597,17 +4546,14 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
     subject.name = std::format("<for subject {}>", next_symbol_);
   }
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
-  // The ownership checker asks the same question, so what the loop
-  // variables bind is dropped exactly where its drop schedule says.
-  const auto owns = agree(
-      semantic::ownership::for_variable_owns(for_stmt, checked_),
-      drop_schedule_.owning_loops.contains(&for_stmt),
-      "owns the variables of a `for`", for_stmt.span);
+  // Whether the loop variables own what they bind is the ownership
+  // checker's decision (`drop_schedule::owning_loops`).
+  const auto owns = drop_schedule_.owning_loops.contains(&for_stmt);
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       inner_stmts =
-          [this, &for_stmt, plain_var, &subject,
-           owns]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+          [this, &for_stmt, plain_var,
+           &subject]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto bindings = std::vector<ptr<hir_node>>{};
     if (plain_var == nullptr) {
       auto patterns = std::vector<const ast::pattern *>{};
@@ -4615,10 +4561,8 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
       for (const auto &pattern : for_stmt.patterns) {
         patterns.push_back(pattern.get());
       }
-      own_pattern_bindings_ = owns;
       auto destructured =
           destructure_loop_element(patterns, subject.name, bindings);
-      own_pattern_bindings_ = false;
       if (!destructured.has_value()) {
         return std::unexpected(destructured.error());
       }
@@ -5152,10 +5096,7 @@ auto lowerer::lower_generator_loop(
   // and with the scopes a jump out of the body leaves.
   push_scope();
   const auto generator_symbol =
-      agree(semantic::ownership::loop_handle_type(&iterable, nullptr, checked_)
-                .has_value(),
-            drop_schedule_.loop_handles.contains(handle_scope),
-            "holds an iterator to drop", iterable.span)
+      drop_schedule_.loop_handles.contains(handle_scope)
           ? declare_local("<for iterator>", iterable_type, /*whole=*/true,
                         handle_scope)
           : mint_symbol();
@@ -5280,10 +5221,7 @@ auto lowerer::lower_iterator_loop(
   // collection only copies it, and owns nothing.
   push_scope();
   const auto handle_symbol =
-      agree(semantic::ownership::loop_handle_type(&iterable, &dispatch, checked_)
-                .has_value(),
-            drop_schedule_.loop_handles.contains(handle_scope),
-            "holds an iterator to drop", iterable.span)
+      drop_schedule_.loop_handles.contains(handle_scope)
           ? declare_local("<for iterator>", handle_type, /*whole=*/true,
                         handle_scope)
           : mint_symbol();
@@ -5513,17 +5451,13 @@ auto lowerer::lower_comprehension_clause(
   }
   const auto &loop_var = plain_var != nullptr ? *plain_var : subject;
   const auto span = clause.iterable->span;
-  const auto owns = agree(
-      semantic::ownership::clause_variable_owns(clause, checked_),
-      drop_schedule_.owning_loops.contains(&clause),
-      "owns the variables of a comprehension clause", clause.iterable->span);
+  const auto owns = drop_schedule_.owning_loops.contains(&clause);
   const auto owns_element = plain_var != nullptr && owns;
 
   const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
       nested =
           [this, &clauses, index, fallback_span, plain_var, &subject,
-           &innermost,
-           owns]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
+           &innermost]() -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto bindings = std::vector<ptr<hir_node>>{};
     if (plain_var == nullptr) {
       auto patterns = std::vector<const ast::pattern *>{};
@@ -5531,10 +5465,8 @@ auto lowerer::lower_comprehension_clause(
       for (const auto &pattern : clauses[index].patterns) {
         patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
       }
-      own_pattern_bindings_ = owns;
       auto destructured =
           destructure_loop_element(patterns, subject.name, bindings);
-      own_pattern_bindings_ = false;
       if (!destructured.has_value()) {
         return std::unexpected(destructured.error());
       }
@@ -5630,10 +5562,7 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   push_scope();
   auto pending = std::vector<ptr<hir_node>>{};
   own_matched_subject(*while_stmt.let_pattern, make_place, pending);
-  const auto owned = binds_owned_parts(*while_stmt.let_pattern);
-  own_pattern_bindings_ = owned;
   auto pattern = lower_pattern(*while_stmt.let_pattern, make_place, pending);
-  own_pattern_bindings_ = false;
   if (!pattern.has_value()) {
     pop_scope();
     return std::unexpected(pattern.error());
@@ -5653,10 +5582,7 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   (*lowered_body)->stmts = std::move(body_stmts);
 
   auto result = ptr_vec<hir_node>{};
-  if (agree(owned && checked_.drop_plans.contains(subj_type),
-            drop_schedule_.unmatched_drops.contains(
-                while_stmt.let_pattern.get()),
-            "drop the subject of a missed `while let`", while_stmt.span)) {
+  if (drop_schedule_.unmatched_drops.contains(while_stmt.let_pattern.get())) {
     // The subject is moved into each test. When the pattern misses, nothing
     // bound it, so the exit path drops it; `hir_while_let` has no such path,
     // so this form is `while true: match subject: pattern => body, _ => drop
@@ -5710,11 +5636,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
   switch (pattern.kind) {
   case ast::node_kind::wildcard_pattern: {
     // `_` binds nothing, so nothing else would ever drop this part.
-    const auto old_drops =
-        own_pattern_bindings_ &&
-        checked_.drop_plans.contains(make_place()->type);
-    if (agree(old_drops, drop_schedule_.leftover_drops.contains(&pattern),
-              "drop a `_` leftover", pattern.span)) {
+    if (drop_schedule_.leftover_drops.contains(&pattern)) {
       auto place = make_place();
       const auto place_type = place->type;
       if (auto dropped = build_drop_calls(make_place, place_type, pattern.span,
@@ -5894,26 +5816,9 @@ auto lowerer::lower_pattern(const ast::node &pattern,
           .name = field_name,
           .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(field_span))});
     }
-    const auto has_rest =
-        std::ranges::any_of(struct_pat.fields, &ast::field_pattern::is_rest);
     // `..` binds nothing, so the fields it skips would never be dropped.
     const auto struct_type = make_place()->type;
-    const auto old_skips = [&]() -> bool {
-      if (!own_pattern_bindings_ || !has_rest) {
-        return false;
-      }
-      const auto plan = checked_.drop_plans.find(struct_type);
-      return plan != checked_.drop_plans.end() &&
-             std::ranges::any_of(
-                 plan->second.droppable_fields, [&](const auto &df) -> bool {
-                   return !std::ranges::any_of(
-                       struct_pat.fields, [&](const auto &f) -> bool {
-                         return !f.is_rest && f.name == df.first;
-                       });
-                 });
-    }();
-    if (agree(old_skips, drop_schedule_.leftover_drops.contains(&pattern),
-              "drop fields a `..` skips", pattern.span)) {
+    if (drop_schedule_.leftover_drops.contains(&pattern)) {
       if (const auto plan = checked_.drop_plans.find(struct_type);
           plan != checked_.drop_plans.end()) {
         for (const auto &[field_name, field_type] :
@@ -6130,9 +6035,7 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
     push_scope();
     auto pending = std::vector<ptr<hir_node>>{};
     own_matched_subject(*arm.pattern, make_subject_place, pending);
-    own_pattern_bindings_ = binds_owned_parts(*arm.pattern);
     auto pattern = lower_pattern(*arm.pattern, make_subject_place, pending);
-    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
@@ -6325,9 +6228,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           make<hir_local_ref>(pspan, ptype, symbol, std::string("<param>"))};
     };
     auto pending = std::vector<ptr<hir_node>>{};
-    own_pattern_bindings_ = binds_owned_parts(*param.pattern);
     auto pattern = lower_pattern(*param.pattern, make_place, pending);
-    own_pattern_bindings_ = false;
     if (!pattern.has_value()) {
       pop_scope();
       return std::unexpected(pattern.error());
@@ -6545,55 +6446,17 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           drop_failure = dropped.error();
         }
       },
-      temporary_ends{
-          .end_of = [this](const void *origin) -> std::optional<const void *> {
-            const auto found = drop_schedule_.temporary_ends.find(origin);
-            if (found == drop_schedule_.temporary_ends.end()) {
-              return std::nullopt;
-            }
-            return found->second;
-          },
-          .disagree = [this](source_span span, std::string_view what) -> void {
-            drop_disagreements_.push_back(lowering_error{
-                .kind = lowering_error_kind::unsupported_construct,
-                .span = span,
-                .message = std::format(
-                    "internal error: the temporary rewriter would {}", what)});
-          }});
+      [this](const void *origin) -> std::optional<const void *> {
+        const auto found = drop_schedule_.temporary_ends.find(origin);
+        if (found == drop_schedule_.temporary_ends.end()) {
+          return std::nullopt;
+        }
+        return found->second;
+      });
   if (drop_failure.has_value()) {
     return std::unexpected(*drop_failure);
   }
   return function;
-}
-
-auto lowerer::check_drop_agreement(const ast::func_decl &decl) const
-    -> std::optional<lowering_error> {
-  if (std::getenv("KIRA_CHECK_DROP_AGREEMENT") == nullptr) {
-    return std::nullopt;
-  }
-  if (!drop_disagreements_.empty()) {
-    return drop_disagreements_.front();
-  }
-  auto lowered = declared_owned_;
-  auto checked = drop_schedule_.owned_locals;
-  std::ranges::sort(lowered);
-  std::ranges::sort(checked);
-  if (lowered == checked) {
-    return std::nullopt;
-  }
-  const auto describe = [&](const std::vector<owned_decl> &list) {
-    auto out = std::string{};
-    for (const auto &d : list) {
-      out += std::format(" `{}`:{}", d.name, d.type);
-    }
-    return out;
-  };
-  return lowering_error{
-      .kind = lowering_error_kind::unsupported_construct,
-      .span = decl.span,
-      .message = std::format("internal error: in `{}` the lowerer owns [{}] "
-                             "but the ownership checker owns [{}]",
-                             decl.name, describe(lowered), describe(checked))};
 }
 
 } // namespace
@@ -6604,12 +6467,6 @@ auto lower_function(const ast::func_decl &decl,
     -> std::expected<ptr<hir_function>, lowering_error> {
   auto walker = lowerer(checked, options);
   auto result = walker.lower_function(decl);
-  if (result.has_value()) {
-    if (auto disagreement = walker.check_drop_agreement(decl);
-        disagreement.has_value()) {
-      return std::unexpected(*disagreement);
-    }
-  }
   // Every `hir_function` this milestone produces passes through this one
   // choke point (`lower_module`/`lower_inline_submodules`/
   // `lower_functor_modules` all call it), so running tail-position

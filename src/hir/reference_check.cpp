@@ -266,9 +266,9 @@ public:
   rewriter(const semantic::checked_types &checked,
            const std::function<symbol_id()> &mint,
            const drop_temporary_fn &drop_temporary,
-           const temporary_ends &ends)
+           const temporary_end_fn &end_of)
       : checked_(checked), types_(checked.types), mint_(mint),
-        drop_temporary_(drop_temporary), ends_(ends) {}
+        drop_temporary_(drop_temporary), end_of_(end_of) {}
 
   auto run(hir_function &function) -> void {
     returns_.push_back(function.is_generator ? semantic::k_unknown_type
@@ -285,7 +285,7 @@ private:
   const semantic::type_table &types_;
   const std::function<symbol_id()> &mint_;
   const drop_temporary_fn &drop_temporary_;
-  const temporary_ends &ends_;
+  const temporary_end_fn &end_of_;
   std::vector<type_id> returns_;
   /// The temporaries made in one enclosing statement or full expression.
   struct frame {
@@ -352,28 +352,16 @@ private:
   [[nodiscard]] auto end_frame(const hir_expr &value) const -> std::size_t {
     const auto innermost = frames_.size() - 1;
     if (frames_.back().discard || value.origin == nullptr ||
-        ends_.end_of == nullptr) {
+        end_of_ == nullptr) {
       return innermost;
     }
-    const auto end = ends_.end_of(value.origin);
-    if (!end.has_value()) {
-      ends_.disagree(value.span, "drop a temporary the ownership checker "
-                                 "does not make");
-      return innermost;
-    }
-    for (auto i = frames_.size(); i > 0; --i) {
-      if (frames_[i - 1].origin == *end) {
-        if (i - 1 != innermost) {
-          ends_.disagree(value.span,
-                         "drop this temporary earlier than the ownership "
-                         "checker ends it");
+    if (const auto end = end_of_(value.origin); end.has_value()) {
+      for (auto i = frames_.size(); i > 0; --i) {
+        if (frames_[i - 1].origin == *end) {
+          return i - 1;
         }
-        return i - 1;
       }
     }
-    ends_.disagree(value.span,
-                   "have no open frame where the ownership checker ends this "
-                   "temporary");
     return innermost;
   }
 
@@ -620,7 +608,10 @@ private:
     if (slot == nullptr) {
       return;
     }
-    frames_.push_back(frame{.origin = slot->origin});
+    frames_.push_back(frame{.temps = {},
+                            .flag_all = false,
+                            .origin = slot->origin,
+                            .discard = false});
     visit(*slot);
     close_into(slot);
   }
@@ -665,7 +656,10 @@ private:
       while (end < stmts.size() && stmts[end]->continues_statement) {
         ++end;
       }
-      frames_.push_back(frame{.origin = stmts[i]->origin});
+      frames_.push_back(frame{.temps = {},
+                              .flag_all = false,
+                              .origin = stmts[i]->origin,
+                              .discard = false});
       auto value_tail = false;
       auto after = std::vector<ptr_vec<hir_node>>(end - i);
       auto before = ptr_vec<hir_node>(end - i);
@@ -995,7 +989,10 @@ private:
                         ? dynamic_cast<hir_return &>(node).value
                         : dynamic_cast<hir_yield &>(node).value;
       frames_.push_back(
-          frame{.origin = value != nullptr ? value->origin : nullptr});
+          frame{.temps = {},
+                .flag_all = false,
+                .origin = value != nullptr ? value->origin : nullptr,
+                .discard = false});
       if (value != nullptr) {
         visit(*value);
         if (node.kind == hir_node_kind::hir_return && !returns_.empty()) {
@@ -1049,7 +1046,10 @@ private:
       // after the body, when the pattern fails, and by a jump out of the
       // body, each under its live flag.
       loop_bases_.push_back(frames_.size());
-      frames_.push_back(frame{.flag_all = true, .origin = subject_origin});
+      frames_.push_back(frame{.temps = {},
+                              .flag_all = true,
+                              .origin = subject_origin,
+                              .discard = false});
       if (loop.subject != nullptr) {
         visit(*loop.subject);
       }
@@ -1158,7 +1158,10 @@ private:
           if (i == 0 && call.consumes_receiver) {
             // The callee owns the receiver now; a temporary holding it is
             // not dropped here.
-            frames_.push_back(frame{.discard = true});
+            frames_.push_back(frame{.temps = {},
+                                    .flag_all = false,
+                                    .origin = nullptr,
+                                    .discard = true});
             coerce(call.args[i], params[i]);
             frames_.pop_back();
             continue;
@@ -1239,8 +1242,8 @@ auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
                               const drop_temporary_fn &drop_temporary,
-                              const temporary_ends &ends) -> void {
-  rewriter(checked, mint, drop_temporary, ends).run(function);
+                              const temporary_end_fn &end_of) -> void {
+  rewriter(checked, mint, drop_temporary, end_of).run(function);
 }
 
 auto find_implicit_references(const ptr_vec<hir_module> &modules,

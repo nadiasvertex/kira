@@ -15,6 +15,94 @@
 #include "src/semantic/binding_walk.h"
 
 namespace cinder::semantic::ownership {
+namespace {
+
+// The ownership predicates. They are file-local: the drop decisions they
+// make reach `hir::lowerer` only through the CFG's records
+// (`function_cfg::owning_patterns`, `owning_loops`, `loop_handles`, ...).
+
+/// Whether the bindings of `pattern`, matched against a value of
+/// `subject_type` that no expression names (such as a by-value destructuring
+/// parameter), own the parts they bind, so each is dropped when its scope
+/// ends: true unless the bindings overlap (`pattern_bindings_are_disjoint`)
+/// or the type is unknown, a reference or a view.
+[[nodiscard]] auto owns_pattern_bindings(type_id subject_type,
+                                         const ast::node &pattern,
+                                         const checked_types &checked) -> bool;
+
+/// Whether the loop variables of `stmt` own the element the loop hands them,
+/// so what they bind is dropped at the end of each iteration. True when the
+/// loop calls `next` on an iterator or generator that yields values (not
+/// references or views), including the iterator `into_iter` makes of a
+/// collection (`for x in xs` consumes `xs`), and the patterns' bindings do
+/// not overlap.
+[[nodiscard]] auto for_variable_owns(const ast::for_stmt &stmt,
+                                     const checked_types &checked) -> bool;
+
+/// Whether a loop over `iterable` reaches `into_iter`, which consumes the
+/// collection, through a reference (`for x in xs` where `xs: &list[T]`).
+/// The loop then only copies the collection: nothing it yields is owned and
+/// its iterator is not dropped, and the ownership checker rejects the loop
+/// unless the elements are `copy`.
+[[nodiscard]] auto loop_consumes_borrow(const ast::expr *iterable,
+                                        const iterator_loop_dispatch *dispatch,
+                                        const checked_types &checked) -> bool;
+
+/// The type of the iterator a loop over `iterable` holds and drops, when it
+/// owns one that needs a drop: what `into_iter` made of a collection, an
+/// iterator or generator the loop was handed by value. `dispatch` is the
+/// loop's `next` dispatch, if it has one. The ownership checker declares it
+/// as a `<for iterator>` local in a scope around the loop, keyed by the
+/// address of the loop's `iterable` member, so it drops after the loop and
+/// with every scope a jump leaves.
+[[nodiscard]] auto loop_handle_type(const ast::expr *iterable,
+                                    const iterator_loop_dispatch *dispatch,
+                                    const checked_types &checked)
+    -> std::optional<type_id>;
+
+/// The same question as `for_variable_owns` for one clause of a
+/// comprehension.
+[[nodiscard]] auto
+clause_variable_owns(const ast::for_expr::iter_clause &clause,
+                     const checked_types &checked) -> bool;
+
+/// Whether matching `subject` against `patterns` (every arm of a `match`,
+/// or the one pattern of a `let`, `if let` or `while let`) moves it. A
+/// value that is not a place always moves. A place moves only when some
+/// pattern binds a non-`copy` part of it by value; otherwise the bindings
+/// are copies and the place keeps its value, to be dropped by its owner.
+[[nodiscard]] auto subject_moves(const ast::expr &subject,
+                                 const std::vector<const ast::node *> &patterns,
+                                 const checked_types &checked) -> bool;
+
+/// Whether `pattern`'s bindings own the parts of `subject` they bind: the
+/// subject is a fresh value or a local or a field of one (not a reference
+/// or view, `self`, or a global), the match moves it
+/// (`subject_moves` over `patterns`), and the bindings do not overlap.
+/// `is_local` says whether a name is a local of the function.
+[[nodiscard]] auto
+owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
+                      const std::vector<const ast::node *> &patterns,
+                      const checked_types &checked,
+                      const std::function<bool(std::string_view)> &is_local)
+    -> bool;
+
+/// Whether the arm of `pattern` owns the whole of `subject` and drops it at
+/// the end of the arm: the match takes the subject's value, but the
+/// pattern's bindings overlap (an `as` alias, a `|` or an array pattern), so
+/// they cannot own its parts. The ownership checker rejects such a pattern
+/// unless every name it binds is `copy`.
+[[nodiscard]] auto
+arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
+                 const std::vector<const ast::node *> &patterns,
+                 const checked_types &checked,
+                 const std::function<bool(std::string_view)> &is_local) -> bool;
+
+/// The group pattern whose alias names the whole of what `pattern` matches
+/// (`p as whole`), if `pattern` is one. When the arm owns the whole subject
+/// (`arm_owns_subject`), this alias is its owner.
+[[nodiscard]] auto owning_alias(const ast::pattern &pattern)
+    -> const ast::group_pattern *;
 
 auto owning_alias(const ast::pattern &pattern) -> const ast::group_pattern * {
   if (pattern.kind != ast::node_kind::group_pattern) {
@@ -23,8 +111,6 @@ auto owning_alias(const ast::pattern &pattern) -> const ast::group_pattern * {
   const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
   return group.alias.has_value() ? &group : nullptr;
 }
-
-namespace {
 
 /// The borrows an evaluated expression carries: loans it made itself, plus
 /// whatever the `sources` holders carry at this point.
@@ -2274,8 +2360,6 @@ private:
   }
 };
 
-} // namespace
-
 auto owns_pattern_bindings(type_id subject_type, const ast::node &pattern,
                            const checked_types &checked) -> bool {
   const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
@@ -2329,8 +2413,6 @@ auto loop_handle_type(const ast::expr *iterable,
   return type;
 }
 
-namespace {
-
 /// Whether `patterns` own the parts of each element a loop over `iterable`
 /// hands them. `dispatch` is the loop's `next` dispatch, if it has one.
 template <typename pattern_ptr>
@@ -2363,8 +2445,6 @@ auto loop_patterns_own(const std::vector<pattern_ptr> &patterns,
                owns_pattern_bindings(element, *pattern, checked);
       });
 }
-
-} // namespace
 
 auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
     -> bool {
@@ -2409,8 +2489,6 @@ auto subject_moves(const ast::expr &subject,
   return false;
 }
 
-namespace {
-
 /// Whether matching `subject` against `patterns` hands the match the
 /// subject's value to own: the subject moves (`subject_moves`), its type is
 /// a value rather than a reference or view, and it is a fresh value or a
@@ -2442,8 +2520,6 @@ auto match_owns_subject(const ast::expr &subject,
   return root->name != "self" && is_local(root->name);
 }
 
-} // namespace
-
 auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
                            const std::vector<const ast::node *> &patterns,
                            const checked_types &checked,
@@ -2464,6 +2540,8 @@ auto arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
          checked.drop_plans.contains(type_it->second) &&
          match_owns_subject(subject, patterns, checked, is_local);
 }
+
+} // namespace
 
 auto generator_start(const ast::func_decl &decl) -> const void * {
   return &decl.modifiers;
