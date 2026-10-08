@@ -6554,8 +6554,7 @@ private:
     const auto is_method_call =
         skip_self && method_site != nullptr &&
         !mentions_template_param(settle(method_site->receiver_type));
-    if (has_unannotated_params(decl) && (is_free_call || is_method_call) &&
-        !passes_template_param(params)) {
+    if (has_unannotated_params(decl) && (is_free_call || is_method_call)) {
       auto param_types = std::vector<type_id>{};
       param_types.reserve(params.size() + 1);
       if (is_method_call) {
@@ -6581,7 +6580,7 @@ private:
         pending.target_type_name = std::string(method_site->target_type_name);
         pending.self_type = strip_refs(settle(method_site->receiver_type));
       }
-      pending_open_param_calls_.push_back(std::move(pending));
+      queue_open_param_call(std::move(pending));
       mint_open_result(decl, call.span);
     }
     // A call whose solution is written in the caller's own parameters
@@ -7907,14 +7906,50 @@ private:
                                           settled, bindings, scoped, solution);
   }
 
-  /// Whether a call passes an argument written in the calling template's
-  /// parameters. Such a call names no instance of an implicit generic, and
-  /// nothing yet names one per instance of the caller (`spec/todo.md`), so
-  /// it is not queued.
-  auto passes_template_param(const std::vector<fn_param_info> &params) -> bool {
-    return std::ranges::any_of(params, [&](const fn_param_info &param) -> bool {
-      return mentions_template_param(settle(param.type));
-    });
+  /// Queues a call to a function with an unannotated parameter.
+  ///
+  /// A call written in the calling template's parameters (`twice(v)` with
+  /// `v: T`) is typed in the template like any other — its result is stated
+  /// in terms of `T` — but names no instance there. Each instance of the
+  /// caller queues it again with its own argument types, which names the
+  /// callee's instance for them.
+  ///
+  /// Whether it is so written is asked at the replay, once the template's
+  /// leaves have settled: in `twice(twice(v))` the outer call's argument is
+  /// the inner call's result, which is only `T` once the inner call is typed.
+  auto queue_open_param_call(pending_open_param_call item) -> void {
+    if (current_template_ != nullptr) {
+      defer_to_instances(*item.call, [this,
+                                      item](instance_subst &subst) -> void {
+        const auto written_in_template_params =
+            mentions_template_param(settle(item.self_type)) ||
+            std::ranges::any_of(item.call_params, [&](type_id type) -> bool {
+              return mentions_template_param(settle(type));
+            });
+        if (!written_in_template_params) {
+          // The template named this call's instance itself.
+          return;
+        }
+        auto replay = item;
+        replay.call = clone_of(subst, item.call);
+        replay.receiver = clone_of(subst, item.receiver);
+        for (auto &type : replay.call_params) {
+          if (type != k_unknown_type) {
+            type = substitute_type(type, subst);
+          }
+        }
+        if (replay.self_type != k_unknown_type) {
+          replay.self_type = substitute_type(replay.self_type, subst);
+        }
+        // The template already stated the call's types; this names only,
+        // and the call's result is the instance's.
+        replay.result_leaf = k_unknown_type;
+        replay.probe = nullptr;
+        replay.typed = true;
+        pending_open_param_calls_.push_back(std::move(replay));
+      });
+    }
+    pending_open_param_calls_.push_back(std::move(item));
   }
 
   /// Compiles `item.decl` for this call's argument types and points the call
@@ -14975,13 +15010,12 @@ private:
     // said what the parameter is, as any such call is: its instance needs
     // both the receiver's bindings and, if the body left the parameter
     // open, this call's arguments (`resolve_open_param_calls`).
-    if (has_unannotated_params(*method.decl) &&
-        !passes_template_param(params)) {
+    if (has_unannotated_params(*method.decl)) {
       auto call_params = std::vector<type_id>{k_unknown_type};
       for (const auto &param : params) {
         call_params.push_back(param.type);
       }
-      pending_open_param_calls_.push_back(pending_open_param_call{
+      queue_open_param_call(pending_open_param_call{
           .call = &call,
           .decl = method.decl,
           .owner = method.owner,
@@ -15534,16 +15568,14 @@ private:
     // `check_call_args_against`; the rest of the record is the same as for an
     // ordinary call (`check_call_against_decl`).
     if (has_unannotated_params(decl) &&
-        is_free_function(decl, candidate.owner) &&
-        !mentions_template_param(settle(receiver_type)) &&
-        !passes_template_param(rest)) {
+        is_free_function(decl, candidate.owner)) {
       solve_leaves(params.front().type, receiver_type);
       auto param_types = std::vector<type_id>{};
       param_types.reserve(params.size());
       for (const auto &param : params) {
         param_types.push_back(param.type);
       }
-      pending_open_param_calls_.push_back(
+      queue_open_param_call(
           pending_open_param_call{.call = &call,
                                   .decl = &decl,
                                   .owner = candidate.owner,

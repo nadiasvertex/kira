@@ -1,0 +1,49 @@
+module codegen_stress.generic_body_calls_implicit_generic
+
+# expect: 21474836490
+
+# todo.md item 13: a generic body calling an implicit generic with an argument
+# written in its own parameters. The template types the call in terms of `T`;
+# each instance names the callee's instance for its own argument types.
+#
+# - `quad` nests the calls, so the outer call's argument is the inner call's
+#   result, which is only `T` once the inner call is typed.
+# - `via_ufcs` passes a `T` to a free function called by UFCS on a concrete
+#   receiver.
+# - `via_method` passes a `T` to a method of a non-generic block, and
+#   `via_block` to a method of a generic block with a concrete receiver.
+# - Each is instantiated at `int64` and `float64`.
+#
+# `# expect:` because each `int64` value overflows `int32`.
+
+def twice(x): x + x
+
+def quad[T](v: T) -> T where T: add: twice(twice(v))
+
+type point = { x: int64 }
+
+def scaled(p, k): k + k + k
+
+def via_ufcs[T](v: T) -> T where T: add:
+    let p = point{ x: 1 }
+    return p.scaled(v)
+
+extend point:
+    def plus(self, k): k + k
+
+def via_method[T](p: &point, v: T) -> T where T: add: p.plus(v)
+
+type box[T] = { v: T }
+
+extend[T] box[T]:
+    def keep(self, k): k
+
+def via_block[T](v: T) -> T:
+    let b = box[int32]{ v: 3 }
+    return b.keep(v)
+
+def main() -> int64:
+    let big: int64 = 2147483648
+    let p = point{ x: 1 }
+    let f = quad(1.5) + via_ufcs(0.5) + via_method(p, 0.5) + via_block(2.0)
+    return quad(big) + via_ufcs(big) + via_method(p, big) + via_block(big) + int64(f)
