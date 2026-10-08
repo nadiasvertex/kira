@@ -1766,6 +1766,40 @@ auto test_reports_incomplete_trait_impl() -> void {
                     "expected extra-method diagnostic");
 }
 
+// An impl method reached through its trait receives what the trait declares.
+// A by-value `other` where the trait says `&self` would drop a value the
+// caller still owns.
+auto test_reports_impl_signature_mismatch() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_impl_signature_mismatch.cn");
+  expect(analyzed.error_count == 4,
+         std::format("expected four signature mismatches, got {}",
+                     analyzed.error_count));
+  expect_diagnostic(analyzed,
+                    "parameter `other` of `same` has type `point`, but trait "
+                    "`same` declares it as `&point`",
+                    "expected by-value-vs-reference diagnostic");
+  expect_diagnostic(analyzed,
+                    "method `grow` takes `self`, but trait `grow` declares it "
+                    "with `mut self`",
+                    "expected receiver-mode diagnostic");
+  expect_diagnostic(analyzed,
+                    "method `measure` returns `int32`, but trait `measure` "
+                    "declares it to return `float64`",
+                    "expected return-type diagnostic");
+  expect_diagnostic(analyzed,
+                    "parameter `value` of `take` has type `int32`, but trait "
+                    "`take` declares it as `int64`",
+                    "expected the trait argument to be substituted");
+}
+
+auto test_accepts_impl_signature_match() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_impl_signature_match.cn");
+  expect_clean(analyzed,
+               "expected impl methods matching their trait to typecheck");
+}
+
 auto test_accepts_drop_impl() -> void {
   const auto analyzed = analyze_test_data_file("accept_drop_impl.cn");
   expect_clean(analyzed,
@@ -4321,6 +4355,8 @@ auto main() -> int {
     test_reports_unannotated_pub_function();
     test_reports_duplicate_trait_impl();
     test_reports_incomplete_trait_impl();
+    test_reports_impl_signature_mismatch();
+    test_accepts_impl_signature_match();
     test_accepts_drop_impl();
     test_reports_duplicate_drop_impl();
     test_reports_incomplete_drop_impl();

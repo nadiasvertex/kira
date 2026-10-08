@@ -20,7 +20,7 @@ impl add for money:
         return money { cents: self.cents + other.cents }
 
 impl ord for money:
-    def cmp(self, other: money) -> ordering:
+    def cmp(self, other: &money) -> ordering:
         if self.cents < other.cents:
             return @less
         if self.cents > other.cents:

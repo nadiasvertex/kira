@@ -24981,6 +24981,7 @@ private:
     // `for` target is read — `impl monad for option` names the constructor
     // `option`, while `impl show for option` would name an instantiation.
     const ast::trait_decl *trait_decl = nullptr;
+    const module_members *trait_owner = nullptr;
     auto trait_name = std::string{};
     if (decl.trait_type != nullptr) {
       resolve_type(*decl.trait_type, current_resolve_ctx());
@@ -24994,6 +24995,7 @@ private:
       if (!trait_name.empty()) {
         if (const auto found = find_trait_anywhere(trait_name)) {
           trait_decl = found->first;
+          trait_owner = found->second;
         } else if (module_ != nullptr && module_->types.contains(trait_name)) {
           error_with_help(
               decl.trait_type->span,
@@ -25111,6 +25113,12 @@ private:
       }
     }
 
+    // After `self_type_` and the associated types are bound, so the trait's
+    // `&self` and `self.output` read as this impl's types.
+    if (trait_decl != nullptr && hk_param == nullptr) {
+      check_impl_signatures(decl, *trait_decl, trait_owner, trait_name);
+    }
+
     const auto saved_block_type_params = enclosing_block_type_params_;
     enclosing_block_type_params_ = &decl.type_params;
     for (const auto &item : decl.items) {
@@ -25190,6 +25198,193 @@ private:
     enclosing_block_type_params_ = saved_block_type_params;
     self_type_ = saved_self;
     pop_type_params();
+  }
+
+  /// How a parameter type passes its value, read off the written type:
+  /// owned, `&`, `&mut`, or a bare `mut` view.
+  static auto passing_mode(const ast::type_expr *type) -> std::string_view {
+    if (type == nullptr) {
+      return "";
+    }
+    if (type->kind == ast::node_kind::ref_type) {
+      return dynamic_cast<const ast::ref_type &>(*type).is_mut ? "&mut" : "&";
+    }
+    if (type->kind == ast::node_kind::mut_type) {
+      return "mut";
+    }
+    return "owned";
+  }
+
+  /// Checks that each impl method's parameters and return type are the ones
+  /// its trait declares. A caller reaching the method through the trait (an
+  /// operator, a `where T: eq` bound) passes what the trait says, so any
+  /// difference is a mismatch between what the caller hands over and what
+  /// the body does with it. Passing mode matters most: an impl taking
+  /// `other: t` where the trait says `&self` would drop a value the caller
+  /// still owns.
+  ///
+  /// Runs with `self_type_` and `self_assoc_types_` bound to the impl. Full
+  /// types are compared only when both sides resolve to known types and
+  /// neither method has its own type parameters; otherwise only the passing
+  /// mode is compared.
+  auto check_impl_signatures(const ast::impl_decl &impl,
+                             const ast::trait_decl &trait,
+                             const module_members *trait_owner,
+                             std::string_view trait_name) -> void {
+    auto trait_bindings = type_scope{};
+    auto trait_args_known = true;
+    if (!trait.type_params.empty()) {
+      const auto *named =
+          impl.trait_type != nullptr &&
+                  impl.trait_type->kind == ast::node_kind::named_type
+              ? &dynamic_cast<const ast::named_type &>(*impl.trait_type)
+              : nullptr;
+      if (named == nullptr ||
+          named->type_args.size() != trait.type_params.size()) {
+        trait_args_known = false;
+      } else {
+        auto quiet_ctx = current_resolve_ctx();
+        quiet_ctx.quiet = true;
+        for (size_t i = 0; i < trait.type_params.size(); ++i) {
+          const auto *argument = dynamic_cast<const ast::type_expr *>(
+              named->type_args[i].value.get());
+          if (argument == nullptr) {
+            trait_args_known = false;
+            break;
+          }
+          trait_bindings.emplace(trait.type_params[i].name,
+                                 resolve_type(*argument, quiet_ctx));
+        }
+      }
+    }
+    const auto trait_ctx = resolve_ctx{.module = trait_owner,
+                                       .param_bindings = &trait_bindings,
+                                       .use_type_param_stack = false,
+                                       .quiet = true};
+    auto impl_ctx = current_resolve_ctx();
+    impl_ctx.quiet = true;
+    const auto known = [&](type_id type) -> bool {
+      return !mentions_unknown(type);
+    };
+
+    for (const auto &item : impl.items) {
+      if (item == nullptr || item->has_error ||
+          item->kind != ast::node_kind::func_decl) {
+        continue;
+      }
+      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const ast::func_decl *declared = nullptr;
+      for (const auto &trait_item : trait.items) {
+        if (trait_item != nullptr &&
+            trait_item->kind == ast::node_kind::func_decl &&
+            dynamic_cast<const ast::func_decl &>(*trait_item).name == fn.name) {
+          declared = &dynamic_cast<const ast::func_decl &>(*trait_item);
+          break;
+        }
+      }
+      // A missing member or a parameter-count mismatch is reported by
+      // `check_impl_members`.
+      if (declared == nullptr || declared->params.size() != fn.params.size()) {
+        continue;
+      }
+      const auto compare_types = trait_args_known &&
+                                 fn.type_params.empty() &&
+                                 declared->type_params.empty();
+
+      for (size_t i = 0; i < fn.params.size(); ++i) {
+        const auto &param = fn.params[i];
+        const auto &expected = declared->params[i];
+        const auto name = param_name_of(param);
+        if (name == "self" && param_name_of(expected) == "self") {
+          const auto is_mut_self = [](const ast::param &p) -> bool {
+            return p.pattern != nullptr &&
+                   p.pattern->kind == ast::node_kind::binding_pattern &&
+                   dynamic_cast<const ast::binding_pattern &>(*p.pattern)
+                       .is_mut;
+          };
+          if (is_mut_self(param) != is_mut_self(expected)) {
+            const auto *wrote = is_mut_self(param) ? "mut self" : "self";
+            const auto *wants = is_mut_self(expected) ? "mut self" : "self";
+            error_with_help(
+                param.span,
+                std::format("method `{}` takes `{}`, but trait `{}` declares "
+                            "it with `{}`",
+                            fn.name, wrote, trait_name, wants),
+                "receiver differs from the trait",
+                std::format("Write `{}` here. Code that calls `{}` through "
+                            "the trait passes the receiver the way the trait "
+                            "declares it.",
+                            wants, fn.name));
+          }
+          continue;
+        }
+        if (param.type_annotation == nullptr ||
+            expected.type_annotation == nullptr) {
+          continue;
+        }
+        const auto expected_type =
+            compare_types ? resolve_type(*expected.type_annotation, trait_ctx)
+                          : k_unknown_type;
+        const auto written_type =
+            compare_types ? resolve_type(*param.type_annotation, impl_ctx)
+                          : k_unknown_type;
+        const auto both_known = known(expected_type) && known(written_type);
+        const auto mode = passing_mode(param.type_annotation.get());
+        const auto expected_mode = passing_mode(expected.type_annotation.get());
+        if (both_known ? expected_type == written_type
+                       : mode == expected_mode) {
+          continue;
+        }
+        const auto label_name =
+            name.empty() ? std::format("parameter {}", i + 1)
+                         : std::format("parameter `{}`", name);
+        const auto found_text = both_known ? types_.display(written_type)
+                                           : std::string(mode);
+        const auto expected_text = both_known
+                                       ? types_.display(expected_type)
+                                       : std::string(expected_mode);
+        auto help = std::format(
+            "Write `{}` here, as the trait does. Code that calls `{}` through "
+            "the trait passes this argument as `{}`, so the method has to "
+            "accept exactly that.",
+            expected_text, fn.name, expected_text);
+        if (mode != expected_mode) {
+          help += expected_mode == "owned"
+                      ? " The trait hands the value over, so the method owns "
+                        "it."
+                      : " A reference only borrows the value: the caller "
+                        "keeps it, and the method must not drop it.";
+        }
+        error_with_help(
+            param.type_annotation->span,
+            std::format("{} of `{}` has type `{}`, but trait `{}` declares "
+                        "it as `{}`",
+                        label_name, fn.name, found_text, trait_name,
+                        expected_text),
+            "parameter type differs from the trait", help);
+      }
+
+      if (compare_types && fn.return_type != nullptr &&
+          declared->return_type != nullptr) {
+        const auto expected_type =
+            resolve_type(*declared->return_type, trait_ctx);
+        const auto written_type = resolve_type(*fn.return_type, impl_ctx);
+        if (known(expected_type) && known(written_type) &&
+            expected_type != written_type) {
+          error_with_help(
+              fn.return_type->span,
+              std::format("method `{}` returns `{}`, but trait `{}` declares "
+                          "it to return `{}`",
+                          fn.name, types_.display(written_type), trait_name,
+                          types_.display(expected_type)),
+              "return type differs from the trait",
+              std::format("Write `-> {}` here. Code that calls `{}` through "
+                          "the trait reads its result as `{}`.",
+                          types_.display(expected_type), fn.name,
+                          types_.display(expected_type)));
+        }
+      }
+    }
   }
 
   /// Validates an impl's members against its trait's requirements: every

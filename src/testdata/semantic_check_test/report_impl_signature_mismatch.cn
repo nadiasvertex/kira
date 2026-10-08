@@ -1,0 +1,22 @@
+module sample
+type point = { x: float64 }
+trait same:
+    def same(self, other: &self) -> bool
+trait grow:
+    def grow(mut self) -> unit
+trait measure:
+    def measure(self) -> float64
+trait take[U]:
+    def take(self, value: U) -> U
+impl same for point:
+    def same(self, other: point) -> bool:
+        return self.x == other.x
+impl grow for point:
+    def grow(self) -> unit:
+        return
+impl measure for point:
+    def measure(self) -> int32:
+        return 1
+impl take[int64] for point:
+    def take(self, value: int32) -> int64:
+        return 1
