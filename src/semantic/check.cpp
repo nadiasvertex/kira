@@ -15577,6 +15577,67 @@ private:
                                 bindings));
   }
 
+  /// Whether a builtin receiver of type `receiver` has a method `name` of its
+  /// own — the arms of the builtin method ladder that run before UFCS.
+  [[nodiscard]] auto builtin_has_method(type_id receiver,
+                                        const std::string &name) -> bool {
+    const auto &entry = types_.entry(receiver);
+    return !types_.is_unknown(builtin_method_result(entry, name)) ||
+           find_builtin_impl_method(entry.name, name) != nullptr ||
+           find_extend_method_for_builtin(entry, name) != nullptr;
+  }
+
+  /// `4.id64()` for `def id64(x: int64)`: an integer literal receiver is
+  /// solved by the one free function the call can reach, as `id64(4)` is by
+  /// the parameter it is passed to. Waiting would default the literal to
+  /// `int32` first and then report that `id64` cannot be called on it.
+  ///
+  /// Only an integer literal, because its candidates are the numeric types
+  /// alone, so "no method by this name" can be checked against the type the
+  /// call would pin it to — UFCS never shadows a method. Only when exactly
+  /// one candidate fits at the most-visible level and its first parameter
+  /// is a concrete number; anything else waits as before, and an ambiguity
+  /// or a mismatch is still reported by `try_ufcs_call`.
+  auto pin_literal_receiver_by_ufcs(const ast::field_expr &field,
+                                    type_id receiver) -> bool {
+    if (types_.entry(receiver).kind != type_kind::type_var_kind ||
+        !integer_literal_leaves_.contains(leaf_ctxt_.find(receiver))) {
+      return false;
+    }
+    auto viable = std::vector<std::pair<ufcs_candidate, type_id>>{};
+    for (const auto &candidate : collect_ufcs_candidates(field.field_name)) {
+      const auto params = signature_params(*candidate.decl, candidate.owner,
+                                           /*skip_self=*/false);
+      if (params.empty()) {
+        continue;
+      }
+      const auto first = strip_refs(params.front().type);
+      if (types_.is_numeric(first) ||
+          types_.entry(first).kind == type_kind::type_param_kind) {
+        viable.emplace_back(candidate, params.front().type);
+      }
+    }
+    if (viable.empty()) {
+      return false;
+    }
+    const auto best = std::ranges::min(
+        viable, {}, [](const auto &c) -> ufcs_origin { return c.first.origin; });
+    std::erase_if(viable, [&](const auto &c) -> bool {
+      return c.first.origin != best.first.origin;
+    });
+    if (viable.size() != 1) {
+      return false;
+    }
+    const auto param = viable.front().second;
+    const auto number = strip_refs(param);
+    if (!types_.is_numeric(number) ||
+        builtin_has_method(number, field.field_name)) {
+      return false;
+    }
+    solve_leaves(number, receiver);
+    return true;
+  }
+
   /// The fourth and last arm of the method-call ladder. Returns `nullopt`
   /// when no free function of this name is visible at all, leaving the
   /// caller to report its own not-found error; otherwise this call is UFCS's
@@ -15914,6 +15975,9 @@ private:
     // result of a call that waited, read back through its binding) is looked
     // up as what it now is.
     auto object = strip_refs(settle(infer_expr(*field.object, k_unknown_type)));
+    if (pin_literal_receiver_by_ufcs(field, object)) {
+      object = strip_refs(settle(object));
+    }
     // The exception is a call whose method cannot be found on the receiver
     // as it stands: no method by this name and no free function that could
     // be reached by UFCS — the impl is chosen by the receiver's type, as

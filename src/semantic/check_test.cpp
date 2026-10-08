@@ -4063,6 +4063,45 @@ auto test_ufcs_reports_receiver_mismatch() -> void {
                     "expected the mismatch note to name the parameter type");
 }
 
+/// `3000000000.id64()`: the literal receiver takes its type from the one
+/// free function the call reaches, as `id64(3000000000)` would. Defaulting
+/// it to `int32` first reported the call as a receiver mismatch, and the
+/// literal as out of range. The second function pins a named literal the
+/// same way, so a later `int32` use of it is the mistake.
+auto test_ufcs_literal_receiver_takes_param_type() -> void {
+  const auto ok = analyze_sources({{
+      .path = "ufcs_literal.cn",
+      .text = "module main\n"
+              "\n"
+              "def id64(x: int64) -> int64:\n"
+              "    return x\n"
+              "\n"
+              "def main() -> int64:\n"
+              "    let v = 3000000000.id64()\n"
+              "    return v + 4.id64()\n",
+  }});
+  expect(ok.error_count == 0,
+         "expected a literal receiver to take the UFCS parameter's type");
+
+  const auto pinned = analyze_sources({{
+      .path = "ufcs_literal_pinned.cn",
+      .text = "module main\n"
+              "\n"
+              "def id64(x: int64) -> int64:\n"
+              "    return x\n"
+              "\n"
+              "def main() -> int32:\n"
+              "    let a = 5\n"
+              "    let b = a.id64()\n"
+              "    let c: int32 = a\n"
+              "    return c\n",
+  }});
+  expect(pinned.error_count == 1,
+         "expected the UFCS call to pin `a` to `int64`, so `int32` mismatches");
+  expect_diagnostic(pinned, "expected `int32`, found `int64`",
+                    "expected the annotation, not the call, to be the error");
+}
+
 /// A non-`pub` function in another module is not UFCS-eligible, so it never
 /// enters the candidate pool — the call falls through to the ordinary
 /// not-found error rather than reaching across the module boundary.
@@ -4452,6 +4491,7 @@ auto main() -> int {
     test_bounds_are_checked_at_the_call();
     test_type_param_is_rigid_in_its_body();
     test_ufcs_reports_receiver_mismatch();
+    test_ufcs_literal_receiver_takes_param_type();
     test_ufcs_skips_private_functions_in_other_modules();
     test_nested_def_resolves_as_a_value();
     test_generic_struct_literal_explicit_type_args_drive_field_types();
