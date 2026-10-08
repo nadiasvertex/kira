@@ -1,0 +1,8 @@
+module report_generic_lambda_shorthand
+
+type holder = { f: int32 }
+
+def main() -> int32:
+    let f = (x) => x + x
+    let h = holder{f}
+    return 0

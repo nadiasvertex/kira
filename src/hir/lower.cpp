@@ -1032,6 +1032,10 @@ private:
   /// stands — see `checked_types::generic_lambda_instances`.
   std::unordered_map<const ast::lambda_expr *, symbol_id>
       generic_lambda_symbols_;
+  /// The symbol a generic lambda's own name is bound to, mapped to the
+  /// locals of its copies, so a capture list that names it (`[f]`) captures
+  /// every closure made for it.
+  std::unordered_map<symbol_id, std::vector<symbol_id>> generic_lambda_groups_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
   /// Where every synthesized scope-exit `drop` call belongs in this
@@ -2928,7 +2932,20 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
                   "type-checked, fully-annotated code (spec/"
                   "typed-ir-design.md Decision 1)");
     }
-    const auto symbol = resolve_reference(field.name);
+    auto symbol = resolve_reference(field.name);
+    // `{f}` for a generic lambda `f`: the closure of the copy it was
+    // checked against, as for any other use (`lower_ident`).
+    if (const auto copy = checked_.generic_lambda_refs.find(&field);
+        copy != checked_.generic_lambda_refs.end()) {
+      const auto bound = generic_lambda_symbols_.find(copy->second);
+      if (bound == generic_lambda_symbols_.end()) {
+        return fail(lowering_error_kind::unsupported_construct, field.span,
+                    "a use of a generic lambda was lowered before the `let` "
+                    "that binds it — the checker and lowering disagree about "
+                    "where it stands");
+      }
+      symbol = bound->second;
+    }
     const auto declared = checked_.struct_literal_field_expected.find(&field);
     fields.push_back(hir_struct_init_field{
         .name = field.name,
@@ -3022,6 +3039,13 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
                     "a captured name did not resolve to a local of the "
                     "enclosing function — capture checking and lowering "
                     "have gotten out of sync");
+      }
+      if (const auto group = generic_lambda_groups_.find(*symbol);
+          group != generic_lambda_groups_.end()) {
+        for (const auto copy : group->second) {
+          resolved.push_back(hir_capture{.symbol = copy, .mode = item.mode});
+        }
+        continue;
       }
       resolved.push_back(hir_capture{.symbol = *symbol, .mode = item.mode});
     }
@@ -3840,6 +3864,7 @@ auto lowerer::lower_stmt(const ast::node &node)
       const auto &name =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern).name;
       auto result = ptr_vec<hir_node>{};
+      auto group = std::vector<symbol_id>{};
       for (size_t i = 0; i < copies->second.size(); ++i) {
         const auto *copy = copies->second[i];
         auto closure = lower_lambda(*copy);
@@ -3849,9 +3874,16 @@ auto lowerer::lower_stmt(const ast::node &node)
         auto copy_name = std::format("{}${}", name, i);
         const auto symbol = declare_local(copy_name, (*closure)->type);
         generic_lambda_symbols_.insert_or_assign(copy, symbol);
+        group.push_back(symbol);
         result.push_back(ptr<hir_node>(make<hir_let>(
             let.span, symbol, std::move(copy_name), std::move(*closure))));
       }
+      // Bound after the copies, so the name shadows like any `let`; only a
+      // capture list reads it (`lower_lambda`), every other use names its
+      // own copy.
+      const auto name_symbol = mint_symbol();
+      scopes_.back().by_name.insert_or_assign(name, name_symbol);
+      generic_lambda_groups_.emplace(name_symbol, std::move(group));
       return result;
     }
     auto initializer = lower_expr(*let.initializer);

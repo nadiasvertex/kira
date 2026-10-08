@@ -1,0 +1,10 @@
+module reject_generic_lambda_moves_capture_twice
+
+def main() -> int64:
+    let s: list[int64] = [1, 2]
+    let f = (x) =>:
+        let t = s
+        x
+    let a = f(1)
+    let b = f(2.5)
+    return a

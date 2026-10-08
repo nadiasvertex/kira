@@ -1922,10 +1922,20 @@ private:
                          "into a cell — `ref_captured_symbols` and register "
                          "allocation have gotten out of sync"});
         }
-        // Either way this stores the register's contents. For a cell-promoted
-        // local that *is* the cell pointer, which is precisely what a
-        // by-reference capture needs the environment to hold; for an ordinary
-        // local it is the value, the by-value copy.
+        // A by-reference capture stores the cell pointer itself, which is
+        // what the register of a cell-promoted local holds. A by-value
+        // capture stores the value: read through the cell when another
+        // lambda captures the same local by reference.
+        if (!ast::is_reference_capture(plan[i].mode) &&
+            is_cell_local(plan[i].symbol)) {
+          const auto value = alloc_register(lambda.span);
+          if (!value.has_value()) {
+            return std::unexpected(value.error());
+          }
+          read_local_into(plan[i].symbol, *src, *value);
+          emit_store_slot(env_reg, static_cast<uint16_t>(i), *value);
+          continue;
+        }
         emit_store_slot(env_reg, static_cast<uint16_t>(i), *src);
       }
     }

@@ -626,6 +626,36 @@ auto test_reports_generic_lambda_as_value() -> void {
                     "function type expected to be rejected");
 }
 
+auto test_reports_generic_lambda_member() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generic_lambda_member.cn");
+  expect_diagnostic(analyzed, "cannot tell which type of `f` is meant here",
+                    "expected a member access on a generic lambda to be "
+                    "rejected");
+}
+
+auto test_reports_generic_lambda_shorthand() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generic_lambda_shorthand.cn");
+  expect_diagnostic(analyzed, "cannot tell which type of `f` is meant here",
+                    "expected a generic lambda as the shorthand of a "
+                    "non-function field to be rejected");
+}
+
+auto test_generic_lambda_copy_error_names_use() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_generic_lambda_copy_error.cn");
+  expect_diagnostic(analyzed,
+                    "operator `-` requires numeric operands, found `bool`",
+                    "expected `x - x` on `bool` to be rejected in the copy "
+                    "for `f(true)`");
+  expect_diagnostic(analyzed, "found in the copy of `f` checked for this use",
+                    "expected an error in a generic lambda's copy to name "
+                    "the use that asked for it");
+  expect_diagnostic(analyzed, "6 |     let b = f(true)",
+                    "expected the note to point at `f(true)`, not `f(1)`");
+}
+
 auto test_reports_mutable_generic_lambda() -> void {
   const auto analyzed =
       analyze_test_data_file("report_mutable_generic_lambda.cn");
@@ -4329,6 +4359,9 @@ auto main() -> int {
     test_reports_type_generic_unsolved();
     test_reports_generic_lambda_as_value();
     test_reports_mutable_generic_lambda();
+    test_reports_generic_lambda_member();
+    test_reports_generic_lambda_shorthand();
+    test_generic_lambda_copy_error_names_use();
     test_reports_str_index_non_integer();
     test_accepts_associated_type_self_output();
     test_accepts_extend_on_builtin_type();

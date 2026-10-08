@@ -1073,8 +1073,18 @@ struct checked_types {
                      std::vector<const ast::lambda_expr *>>
       generic_lambda_instances;
   /// Each use of a generic lambda's name, to the copy it was checked against.
-  std::unordered_map<const ast::ident_expr *, const ast::lambda_expr *>
+  /// A use is an `ast::ident_expr` or a shorthand `ast::struct_field_init`.
+  std::unordered_map<const void *, const ast::lambda_expr *>
       generic_lambda_refs;
+  /// Where a copy in `generic_lambda_instances` was asked for: the name of
+  /// the generic lambda and the use that needed the copy. Read by the
+  /// ownership checker to explain a capture each copy moves.
+  struct generic_lambda_use {
+    std::string name;
+    source_span span;
+  };
+  std::unordered_map<const ast::lambda_expr *, generic_lambda_use>
+      generic_lambda_uses;
   /// Owns the copies in `generic_lambda_instances`.
   ast::ptr_vec<ast::expr> synthesized_lambdas;
   /// Each `open_param_templates` entry's signature.

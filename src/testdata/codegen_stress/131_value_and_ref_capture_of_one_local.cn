@@ -1,0 +1,19 @@
+module codegen_stress.value_and_ref_capture_of_one_local
+
+# expect: 610
+
+# One local captured by value in one lambda and by reference in another.
+# The `&` capture boxes the local into a cell on the bytecode VM, and the
+# by-value capture used to copy the cell's address into its environment
+# instead of the value: `copy()` read a pointer, and a captured closure
+# crashed the VM when called. Found with generic lambdas in capture lists
+# (todo.md item 11), but nothing here is generic.
+
+def main() -> int32:
+    let n = 5
+    let copy = () => n
+    let borrowed = [&n] () => n
+    let t = (x: int32) => x + x
+    let by_value = [t] () => t(100)
+    let by_ref = [&t] () => t(200)
+    return copy() + borrowed() + by_value() + by_ref()

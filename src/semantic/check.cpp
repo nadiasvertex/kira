@@ -608,6 +608,7 @@ public:
         .open_param_templates = std::move(open_param_templates),
         .generic_lambda_instances = std::move(generic_lambda_instances_),
         .generic_lambda_refs = std::move(generic_lambda_refs_),
+        .generic_lambda_uses = std::move(generic_lambda_uses_),
         .synthesized_lambdas = std::move(synthesized_lambdas_),
         .implicit_signatures = std::move(implicit_signatures_),
         .instance_templates = std::move(instance_templates_),
@@ -769,6 +770,9 @@ private:
     /// One line per parameter solved from the expected type rather than from
     /// an argument.
     std::vector<std::string> context_solutions;
+    /// The frame is a use of the generic lambda `instance_name`, which
+    /// checks its own copy of the lambda (`instantiate_generic_lambda`).
+    bool lambda_use = false;
   };
   std::vector<instantiation_frame> instantiation_sites_;
   /// Every module-qualified or type-qualified call resolved by
@@ -1356,6 +1360,18 @@ private:
     }
     auto annotated = diag;
     for (const auto &frame : std::views::reverse(instantiation_sites_)) {
+      if (frame.lambda_use) {
+        annotated.children.push_back(
+            diagnostic(diagnostic_level::note,
+                       std::format("found in the copy of `{}` checked for "
+                                   "this use",
+                                   frame.instance_name),
+                       frame.call_file)
+                .with_label(frame.call_span,
+                            std::format("this use of `{}` needs that copy",
+                                        frame.instance_name)));
+        continue;
+      }
       annotated.children.push_back(
           diagnostic(diagnostic_level::note,
                      std::format("instantiated from here, as `{}`",
@@ -6957,6 +6973,9 @@ private:
     file_id_type file = 0;
     const module_members *module = nullptr;
     const ast::func_decl *current_template = nullptr;
+    /// The uses that asked for the copy this call stands in, so an error the
+    /// re-run finds still names them (`with_instantiation_notes`).
+    std::vector<instantiation_frame> sites;
   };
   std::vector<pending_method_call> pending_method_calls_;
 
@@ -7235,7 +7254,8 @@ private:
                             .goal = goal,
                             .file = file_id_,
                             .module = module_,
-                            .current_template = current_template_});
+                            .current_template = current_template_,
+                            .sites = instantiation_sites_});
     auto watches = std::vector<type_id>{};
     auto seen = std::unordered_set<type_id>{};
     collect_type_vars(receiver_type, watches, seen);
@@ -7331,8 +7351,11 @@ private:
   std::unordered_map<const ast::lambda_expr *,
                      std::vector<const ast::lambda_expr *>>
       generic_lambda_instances_;
-  std::unordered_map<const ast::ident_expr *, const ast::lambda_expr *>
+  std::unordered_map<const void *, const ast::lambda_expr *>
       generic_lambda_refs_;
+  std::unordered_map<const ast::lambda_expr *,
+                     checked_types::generic_lambda_use>
+      generic_lambda_uses_;
   ast::ptr_vec<ast::expr> synthesized_lambdas_;
 
   /// The lambda `let name = <lambda>` binds, when that binding is a generic
@@ -7413,12 +7436,21 @@ private:
     }
   }
 
+  /// A use of a generic lambda's name: the node lowering finds it by (an
+  /// `ast::ident_expr`, or a shorthand `ast::struct_field_init`), and where
+  /// it was written.
+  struct generic_lambda_use {
+    const void *node = nullptr;
+    std::string_view name;
+    source_span span;
+  };
+
   /// Checks a fresh copy of the generic lambda `tmpl` for the use `ident`,
   /// and returns the copy's `fn` type. `params` gives the parameter types a
   /// use in value position expects; a call passes `nullopt`, and each
   /// unannotated parameter starts as a fresh leaf its arguments then solve.
   auto instantiate_generic_lambda(const ast::lambda_expr &tmpl,
-                                  const ast::ident_expr &ident,
+                                  const generic_lambda_use &ident,
                                   const std::vector<type_id> *params)
       -> type_id {
     auto &site = generic_lambda_sites_.at(&tmpl);
@@ -7452,8 +7484,9 @@ private:
     instantiation_sites_.push_back(instantiation_frame{
         .call_span = ident.span,
         .call_file = file_id_,
-        .instance_name = ident.name,
-        .context_solutions = {}});
+        .instance_name = std::string(ident.name),
+        .context_solutions = {},
+        .lambda_use = true});
     swap_body_context(site.context);
     const auto type = infer_expr(
         copy, types_.fn_of(std::move(param_types), k_unknown_type));
@@ -7477,13 +7510,16 @@ private:
       record_expr_type(*site.pattern, type);
     }
     instances.push_back(&copy);
-    generic_lambda_refs_[&ident] = &copy;
+    generic_lambda_refs_[ident.node] = &copy;
+    generic_lambda_uses_.insert_or_assign(
+        &copy, checked_types::generic_lambda_use{.name = std::string(ident.name),
+                                                 .span = ident.span});
     return type;
   }
 
   /// A use of a generic lambda's name anywhere but as a call's callee. Only
   /// a use that expects a function type says what the copy's parameters are.
-  auto generic_lambda_value(const ast::ident_expr &ident,
+  auto generic_lambda_value(const generic_lambda_use &ident,
                             const value_binding &binding, type_id expected)
       -> type_id {
     const auto &lambda = *binding.generic_lambda;
@@ -7588,8 +7624,13 @@ private:
           if (!cloned.has_value()) {
             continue; // the instance was itself cloned from this node
           }
-          copies.push_back(
-              dynamic_cast<const ast::lambda_expr *>(cloned->get()));
+          const auto *made =
+              dynamic_cast<const ast::lambda_expr *>(cloned->get());
+          if (const auto use = generic_lambda_uses_.find(instance);
+              use != generic_lambda_uses_.end()) {
+            generic_lambda_uses_.insert_or_assign(made, use->second);
+          }
+          copies.push_back(made);
           synthesized_lambdas_.push_back(std::move(*cloned));
         }
         added.emplace_back(target, std::move(copies));
@@ -7603,14 +7644,14 @@ private:
     if (!added_any) {
       return;
     }
-    auto refs = std::vector<
-        std::pair<const ast::ident_expr *, const ast::lambda_expr *>>{};
-    for (const auto &[ident, instance] : generic_lambda_refs_) {
-      const auto ident_copy = merged->find(ident);
+    auto refs =
+        std::vector<std::pair<const void *, const ast::lambda_expr *>>{};
+    for (const auto &[use, instance] : generic_lambda_refs_) {
+      const auto use_copy = merged->find(use);
       const auto instance_copy = merged->find(instance);
-      if (ident_copy != merged->end() && instance_copy != merged->end()) {
+      if (use_copy != merged->end() && instance_copy != merged->end()) {
         refs.emplace_back(
-            static_cast<const ast::ident_expr *>(ident_copy->second),
+            use_copy->second,
             static_cast<const ast::lambda_expr *>(instance_copy->second));
       }
     }
@@ -7739,6 +7780,8 @@ private:
     module_ = deferred.module;
     const auto *saved_current_template =
         std::exchange(current_template_, deferred.current_template);
+    auto saved_sites =
+        std::exchange(instantiation_sites_, std::move(deferred.sites));
 
     // Moved out first: running the call can defer another, which grows
     // `pending_method_calls_` and would free this closure while it runs.
@@ -7746,6 +7789,7 @@ private:
     const auto finish = std::move(deferred.finish);
     finish(settled);
 
+    instantiation_sites_ = std::move(saved_sites);
     current_template_ = saved_current_template;
     file_id_ = saved_file;
     module_ = saved_module;
@@ -11609,7 +11653,9 @@ private:
 
     if (const auto *binding = lookup_value(name)) {
       if (binding->generic_lambda != nullptr) {
-        return generic_lambda_value(ident, *binding, expected);
+        return generic_lambda_value(
+            {.node = &ident, .name = ident.name, .span = ident.span}, *binding,
+            expected);
       }
       if (binding->origin == binding_origin::parameter) {
         record_const_param_reference(ident, binding->type);
@@ -18040,8 +18086,10 @@ private:
       if (binding->generic_lambda != nullptr) {
         const auto copy = record_expr_type(
             ident,
-            instantiate_generic_lambda(*binding->generic_lambda, ident,
-                                       /*params=*/nullptr));
+            instantiate_generic_lambda(
+                *binding->generic_lambda,
+                {.node = &ident, .name = ident.name, .span = ident.span},
+                /*params=*/nullptr));
         if (types_.entry(copy).kind != type_kind::fn_kind) {
           infer_call_args_loosely(call);
           return k_error_type;
@@ -18800,6 +18848,12 @@ private:
     auto base = self_type_;
     auto module_value = std::optional<module_value_ref>{};
     if (const auto *binding = lookup_value(root)) {
+      if (binding->generic_lambda != nullptr) {
+        // No member of a closure could say which copy is meant.
+        return generic_lambda_value(
+            {.node = &path, .name = root, .span = path.span}, *binding,
+            k_unknown_type);
+      }
       base = binding->type;
     } else if (const auto *barrier = capture_barrier_blocking(root)) {
       emit_capture_not_listed(path.span, root, *barrier);
@@ -20333,7 +20387,12 @@ private:
                       "for this field", field.value.get());
       } else if (const auto *binding = lookup_value(field.name)) {
         // Shorthand `{name}` binds the in-scope value of the same name.
-        found = binding->type;
+        found = binding->generic_lambda != nullptr
+                    ? generic_lambda_value({.node = &field,
+                                            .name = field.name,
+                                            .span = field.span},
+                                           *binding, field_expected)
+                    : binding->type;
         type_mismatch(field.span, field_expected, found, "for this field");
       }
       // Recorded unconditionally (even when neither branch above ran, in

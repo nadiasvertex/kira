@@ -751,6 +751,18 @@ auto test_reuse_after_for_x_in_ref_is_accepted() -> void {
              analyzed.diagnostics);
 }
 
+auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_generic_lambda_moves_capture_twice.cn");
+  expect_diagnostic(analyzed,
+                    "each use of `f` makes a closure that moves `s`",
+                    "expected two copies of a generic lambda that each move "
+                    "a capture to be explained in terms of the copies");
+  expect(analyzed.diagnostics.find("use of moved value") == std::string::npos,
+         std::string("expected no plain use-after-move report as well:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_move_in_loop_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_move_in_loop.cn");
   expect_diagnostic(analyzed, "use of moved value `xs`",
@@ -1013,6 +1025,7 @@ auto main() -> int {
     test_return_borrowing_closure_is_rejected();
     test_view_outliving_source_scope_is_rejected();
     test_return_view_of_parameter_is_accepted();
+    test_generic_lambda_moving_capture_twice_is_explained();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "
               << ex.what() << '\n';

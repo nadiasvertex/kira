@@ -1,0 +1,6 @@
+module report_generic_lambda_member
+
+def main() -> int32:
+    let f = (x) => x + x
+    let y = f.z
+    return 0

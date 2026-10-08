@@ -1,0 +1,25 @@
+module codegen_stress.generic_lambda_captured_and_shorthand
+
+# expect: 702
+
+# todo.md item 11: a generic lambda named in a capture list, or as a struct
+# literal's shorthand field, is still one closure per use. A capture-list
+# entry `[f]` captures every closure made for `f`; `{f}` takes the closure
+# of the copy checked against the field's function type.
+#
+# - `by_value`, `by_ref` and `moved` capture `twice` and use it at `int32`
+#   and `float64` inside their bodies. `moved` comes last: it moves `twice`.
+# - `holder{thrice}` checks a copy against `fn(int32) -> int32`.
+
+type holder = { thrice: fn(int32) -> int32 }
+
+def main() -> int32:
+    let twice = (x) => x + x
+    let thrice = (x) => x * 3
+    let by_value = [twice] () => twice(100) + int32(twice(1.5))
+    let by_ref = [&twice] () => twice(200) + int32(twice(2.5))
+    let r = by_value() + by_ref() + int32(thrice(1.5))
+    let h = holder{thrice}
+    let g = h.thrice
+    let moved = move [twice] () => twice(40) + int32(twice(0.5))
+    return r + moved() + g(3)

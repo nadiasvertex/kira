@@ -1,0 +1,7 @@
+module report_generic_lambda_copy_error
+
+def main() -> int32:
+    let f = (x) => x - x
+    let a = f(1)
+    let b = f(true)
+    return a

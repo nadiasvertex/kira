@@ -362,8 +362,77 @@ private:
                                     *state.moved_at[*moved]);
       return;
     }
+    if (report_generic_lambda_moves_twice(a, cfg_.locals[*moved].name,
+                                          *state.moved_at[*moved])) {
+      return;
+    }
     report_use_after_move(cfg_.locals[*moved].name, cfg_.locals[*moved].type,
                           a.span, *state.moved_at[*moved]);
+  }
+
+  /// A generic lambda that moves a captured value, used more than once: each
+  /// use made its own copy of the lambda, so its own closure, and each
+  /// closure moves the value again. The second capture's span is the first
+  /// one's, since the copies are clones. Reported in terms of the copies,
+  /// because the source shows one lambda and one capture.
+  auto report_generic_lambda_moves_twice(const access_event &a,
+                                         const std::string &name,
+                                         source_span moved_at) -> bool {
+    if (a.node == nullptr || moved_at != a.span) {
+      return false;
+    }
+    const auto *copy = static_cast<const ast::lambda_expr *>(a.node);
+    const auto use = checked_.generic_lambda_uses.find(copy);
+    if (use == checked_.generic_lambda_uses.end()) {
+      return false;
+    }
+    // The copy made just before this one is the closure that already took
+    // the value.
+    auto earlier = std::optional<source_span>{};
+    for (const auto &[tmpl, copies] : checked_.generic_lambda_instances) {
+      const auto at = std::ranges::find(copies, copy);
+      if (at == copies.end()) {
+        continue;
+      }
+      if (at != copies.begin()) {
+        if (const auto prior = checked_.generic_lambda_uses.find(*(at - 1));
+            prior != checked_.generic_lambda_uses.end()) {
+          earlier = prior->second.span;
+        }
+      }
+      break;
+    }
+    const auto &lambda = use->second.name;
+    auto d = diagnostic(
+        diagnostic_level::error,
+        std::format("each use of `{}` makes a closure that moves `{}`", lambda,
+                    name),
+        file_id_);
+    d.with_label(a.span, std::format("`{}` is moved into the closure here",
+                                     name));
+    if (earlier.has_value()) {
+      d.with_secondary_label(*earlier,
+                             std::format("this use of `{}` makes one closure, "
+                                         "which takes `{}`",
+                                         lambda, name));
+    }
+    d.with_secondary_label(use->second.span,
+                           std::format("this use makes another, which needs "
+                                       "`{}` too",
+                                       name));
+    d.with_note(std::format(
+        "a parameter of `{0}` has no annotation, so `{0}` is generic: each "
+        "use compiles its own copy of the lambda, and each copy is a "
+        "separate closure with its own captures. `{1}` can be moved into "
+        "only one of them",
+        lambda, name));
+    d.with_help(std::format(
+        "capture `{1}` by reference (`[&{1}]`) so every closure borrows it, "
+        "or annotate the parameters of `{0}` so it has one type and one "
+        "closure, used everywhere",
+        lambda, name));
+    diag_.emit(d);
+    return true;
   }
 
   auto check_conflict(const access_event &a, const forward_state &state,
