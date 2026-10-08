@@ -1,0 +1,10 @@
+module ownership.return_borrow_through_implicit_generic
+
+# `first`'s result is its first parameter's type, so a borrow passed there
+# is part of the result, and returning it outlives the local `n`.
+def first(a, b):
+    return a
+
+def borrow_local(r: &int32) -> &int32:
+    let n = 5
+    return first(&n, r)

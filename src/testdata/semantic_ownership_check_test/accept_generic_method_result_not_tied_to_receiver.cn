@@ -1,0 +1,38 @@
+module ownership.generic_method_result_not_tied_to_receiver
+
+# A result typed with a type parameter can only carry borrows that arrived
+# in an argument of that type. `plus` returns `U`, and only `k` is a `U`,
+# so the result does not borrow the receiver `p`.
+type point = { x: int64 }
+
+extend point:
+    def plus[U](self, k: U) -> U where U: add:
+        return k + k
+
+    def double(self, k):
+        return k + k
+
+def f[T](v: T) -> T where T: add:
+    let p = point{ x: 1 }
+    return p.plus(v)
+
+def g[T](v: T) -> T where T: add:
+    let p = point{ x: 1 }
+    return p.double(v)
+
+# From a concrete caller the callee is an instance (`U` = `&int64`); its
+# template's signature still says the result comes from `k` alone.
+extend point:
+    def pick[U](self, k: U) -> U:
+        return k
+
+def h(r: &int64) -> &int64:
+    let p = point{ x: 1 }
+    return p.pick(r)
+
+def first(a, b):
+    return a
+
+def g2(r: &int64) -> &int64:
+    let n: int64 = 5
+    return first(r, &n)

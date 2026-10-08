@@ -1,0 +1,14 @@
+module ownership.return_borrow_of_receiver_through_type_param
+
+# `get` returns `T`, and the receiver is a `holder[T]`, so the result may
+# carry the borrow the holder stores.
+type holder[T] = { v: T }
+
+extend[T] holder[T]:
+    def get[U](self, k: U) -> T where T: copy:
+        return self.v
+
+def borrow_local(r: &int32) -> &int32:
+    let n = 5
+    let h = holder{ v: &n }
+    return h.get(r)
