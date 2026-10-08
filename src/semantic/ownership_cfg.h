@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <set>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -84,8 +85,12 @@ struct local_info {
   bool whole = false;
   /// The declaration that binds it — a `let`/`var` binding pattern, a `var`
   /// statement, or a single-name parameter's pattern — where lowering can
-  /// set its drop flag (`hir::compute_drop_schedule`). Null for a pattern
-  /// binding, a temporary, or a `field_path` local.
+  /// set its drop flag (`hir::compute_drop_schedule`) and find the local
+  /// again (`hir::lowerer` declares the same node). A pattern binding is
+  /// declared by its pattern, shorthand field or aliased group
+  /// (`pattern_binding::key`), a `<for iterator>` by the loop's `iterable`,
+  /// a `<subject>` by its pattern. Null for a temporary or a `field_path`
+  /// local.
   const void *node = nullptr;
 };
 
@@ -208,6 +213,31 @@ struct basic_block {
 };
 
 struct function_cfg {
+  /// The top-level patterns whose bindings own the parts they bind
+  /// (`owns_pattern_bindings`), and those whose arm owns the whole subject
+  /// (`arm_owns_subject`) — what `hir::lowerer` reads instead of asking.
+  std::set<const void *> owning_patterns;
+  std::set<const void *> owning_subjects;
+  /// Where an owning pattern leaves a droppable part unbound: its `_`
+  /// patterns, and its struct patterns whose `..` skips a droppable field.
+  std::set<const void *> leftover_drops;
+  /// The source ranges of the expressions whose temporaries end with them
+  /// rather than with their statement: a condition, a match or loop guard,
+  /// the right operand of `and`/`or`, a returned or yielded value, a block's
+  /// value, an arm or lambda body. `hir::make_references_explicit` drops a
+  /// temporary no earlier than the end of the innermost one that holds it.
+  std::set<std::pair<byte_offset, byte_offset>> full_expressions;
+  /// The top-level owning patterns whose subject is still owned by the path
+  /// where the pattern misses (`let else`, `if let`, `while let`).
+  std::set<const void *> unmatched_drops;
+  /// The `for` statements and comprehension clauses whose loop variables own
+  /// the elements they bind (`for_variable_owns`, `clause_variable_owns`).
+  std::set<const void *> owning_loops;
+  /// The keys (a loop's `iterable` member) of loops that hold an iterator
+  /// they must drop (`loop_handle_type`).
+  std::set<const void *> loop_handles;
+  /// The calls whose receiver is consumed by `into_iter`.
+  std::set<const void *> consuming_calls;
   std::vector<local_info> locals;
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.

@@ -1,5 +1,6 @@
 #include "ownership_cfg.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <map>
@@ -182,7 +183,7 @@ public:
     begin(&decl);
     for (const auto &param : decl.params) {
       if (param.pattern != nullptr) {
-        declare_param(*param.pattern);
+        declare_param(*param.pattern, type_of(param.pattern.get()));
       }
     }
     if (decl.modifiers.is_generator) {
@@ -194,9 +195,21 @@ public:
 
   auto build_lambda(const ast::lambda_expr &lambda) -> void {
     begin(&lambda);
-    for (const auto &param : lambda.params) {
+    // A lambda's parameter patterns carry no type of their own when it is
+    // inferred from the use site: the lambda's `fn` type does, and
+    // `hir::lowerer` reads it from there too.
+    const auto fn_type = type_of(&lambda);
+    const auto *fn = fn_type != k_unknown_type &&
+                             checked_.types.entry(fn_type).kind ==
+                                 type_kind::fn_kind
+                         ? &checked_.types.entry(fn_type)
+                         : nullptr;
+    for (std::size_t i = 0; i < lambda.params.size(); ++i) {
+      const auto &param = lambda.params[i];
       if (param.pattern != nullptr) {
-        declare_param(*param.pattern);
+        declare_param(*param.pattern, fn != nullptr && i < fn->args.size()
+                                          ? fn->args[i]
+                                          : type_of(param.pattern.get()));
       }
     }
     finish(lambda.body_expr.get(), lambda.body_stmts);
@@ -521,6 +534,70 @@ private:
     return local;
   }
 
+  /// Records the parts of an owned `pattern` that nothing binds but that
+  /// still need a drop: a `_` at a droppable position, and the droppable
+  /// fields a struct pattern's `..` skips.
+  auto record_leftovers(const ast::pattern &pattern) -> void {
+    const auto recurse = [this](const ast::pattern *inner) -> void {
+      if (inner != nullptr) {
+        record_leftovers(*inner);
+      }
+    };
+    switch (pattern.kind) {
+    case ast::node_kind::wildcard_pattern:
+      if (checked_.drop_plans.contains(type_of(&pattern))) {
+        cfg_.leftover_drops.insert(&pattern);
+      }
+      break;
+    case ast::node_kind::group_pattern:
+      recurse(dynamic_cast<const ast::group_pattern &>(pattern).inner.get());
+      break;
+    case ast::node_kind::tuple_pattern:
+      for (const auto &element :
+           dynamic_cast<const ast::tuple_pattern &>(pattern).elements) {
+        recurse(element.get());
+      }
+      break;
+    case ast::node_kind::constructor_pattern:
+      for (const auto &arg :
+           dynamic_cast<const ast::constructor_pattern &>(pattern).args) {
+        recurse(arg.get());
+      }
+      break;
+    case ast::node_kind::option_pattern:
+      recurse(dynamic_cast<const ast::option_pattern &>(pattern).inner.get());
+      break;
+    case ast::node_kind::result_pattern:
+      recurse(dynamic_cast<const ast::result_pattern &>(pattern).inner.get());
+      break;
+    case ast::node_kind::struct_pattern: {
+      const auto &fields =
+          dynamic_cast<const ast::struct_pattern &>(pattern).fields;
+      for (const auto &field : fields) {
+        recurse(field.pattern.get());
+      }
+      if (!std::ranges::any_of(fields, &ast::field_pattern::is_rest)) {
+        break;
+      }
+      const auto plan = checked_.drop_plans.find(type_of(&pattern));
+      if (plan == checked_.drop_plans.end()) {
+        break;
+      }
+      for (const auto &[name, type] : plan->second.droppable_fields) {
+        if (!std::ranges::any_of(fields, [&](const auto &f) -> bool {
+              return !f.is_rest && f.name == name;
+            })) {
+          cfg_.leftover_drops.insert(&pattern);
+          break;
+        }
+      }
+      break;
+    }
+    default:
+      break;
+    }
+  }
+
   /// Declares every binding `pattern` introduces. Parameters start out
   /// holding nothing; the caller gives any other binding its value.
   auto declare_pattern(const ast::node &pattern, bool owned = false)
@@ -529,6 +606,10 @@ private:
     const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
     if (pat == nullptr) {
       return locals;
+    }
+    if (owned) {
+      cfg_.owning_patterns.insert(&pattern);
+      record_leftovers(*pat);
     }
     for (const auto &binding : collect_pattern_bindings(*pat)) {
       const auto type = binding_type(binding, checked_);
@@ -542,16 +623,15 @@ private:
   }
 
   /// Declares a parameter: whole when it is a single name.
-  auto declare_param(const ast::node &pattern) -> void {
+  auto declare_param(const ast::node &pattern, type_id type) -> void {
     if (pattern.kind == ast::node_kind::binding_pattern) {
       const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
-      declare(binding.name, type_of(&pattern), binding.span, /*whole=*/true,
+      declare(binding.name, type, binding.span, /*whole=*/true,
               /*owns=*/false, &pattern);
       return;
     }
     // A by-value destructuring parameter owns the parts it binds.
-    declare_pattern(pattern,
-                    owns_pattern_bindings(type_of(&pattern), pattern, checked_));
+    declare_pattern(pattern, owns_pattern_bindings(type, pattern, checked_));
   }
 
   /// Declares `pattern`'s bindings, each receiving what `subject` holds.
@@ -968,9 +1048,15 @@ private:
 
   /// Evaluates `expr` as a full expression: the temporaries it makes end
   /// with it (a lambda's or match arm's expression body).
-  auto eval_full(const ast::expr &expr) -> value {
+  auto eval_full(const ast::expr &expr, use_mode mode = use_mode::move)
+      -> value {
+    note_full_expression(expr.span);
     open_temporaries();
-    return close_temporaries(eval(expr, use_mode::move));
+    return close_temporaries(eval(expr, mode));
+  }
+
+  auto note_full_expression(source_span span) -> void {
+    cfg_.full_expressions.emplace(span.start, span.end);
   }
 
   // ------------------------------------------------------------------
@@ -1032,7 +1118,16 @@ private:
       const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
       const auto temp = new_temp(local_role::call_temp);
       stash(temp, eval_opt(binary.lhs.get(), use_mode::read));
-      stash(temp, eval_opt(binary.rhs.get(), use_mode::read));
+      // The right operand of `and`/`or` runs only sometimes: a full
+      // expression of its own.
+      const auto short_circuits =
+          binary.op == ast::binary_op::logical_and ||
+          binary.op == ast::binary_op::logical_or;
+      if (short_circuits && binary.rhs != nullptr) {
+        stash(temp, eval_full(*binary.rhs, use_mode::read));
+      } else {
+        stash(temp, eval_opt(binary.rhs.get(), use_mode::read));
+      }
       return compound_result(expr, temp);
     }
 
@@ -1153,7 +1248,9 @@ private:
 
     case ast::node_kind::yield_expr: {
       const auto &yield_e = dynamic_cast<const ast::yield_expr &>(expr);
-      static_cast<void>(eval_opt(yield_e.value.get(), use_mode::move));
+      if (yield_e.value != nullptr) {
+        static_cast<void>(eval_full(*yield_e.value));
+      }
       // Dropping the generator while it is suspended here resumes it only
       // to return.
       cancel_point(&yield_e);
@@ -1370,6 +1467,9 @@ private:
       const auto &receiver = *resolved->second.receiver;
       switch (receiver_mode(resolved->second)) {
       case receiver_passing::move:
+        if (resolved->second.trait_name == "into_iterator") {
+          cfg_.consuming_calls.insert(&call);
+        }
         stash(temp, eval(receiver, use_mode::move));
         break;
       case receiver_passing::read:
@@ -1530,12 +1630,18 @@ private:
                           [this](std::string_view name) -> bool {
                             return lookup(name).has_value();
                           })) {
-      bind_pattern(pattern, subject,
-                   binds_owned(subject_expr, pattern, patterns));
+      const auto owned = binds_owned(subject_expr, pattern, patterns);
+      bind_pattern(pattern, subject, owned);
+      // A miss leaves the subject unbound, so the path that did not match
+      // drops it.
+      if (owned && checked_.drop_plans.contains(type_of(subject_expr))) {
+        cfg_.unmatched_drops.insert(pattern);
+      }
       return;
     }
     const auto *owner = owning_alias(*pat);
     if (owner == nullptr) {
+      cfg_.owning_subjects.insert(pat);
       const auto whole =
           declare("<subject>", type_of(subject_expr), pat->span,
                   /*whole=*/true, /*owns=*/false, pat);
@@ -1587,7 +1693,9 @@ private:
             eval(*branch.let_expr, subject_mode(branch.let_expr.get(),
                                                 {branch.let_pattern.get()})));
       } else {
-        static_cast<void>(eval_opt(branch.condition.get(), use_mode::read));
+        if (branch.condition != nullptr) {
+          static_cast<void>(eval_full(*branch.condition, use_mode::read));
+        }
       }
       const auto then = new_block();
       const auto next = new_block();
@@ -1639,7 +1747,7 @@ private:
       push_scope(&arm.body_stmts);
       bind_arm(arm.pattern.get(), subject, owned_subject, patterns);
       if (arm.guard != nullptr) {
-        static_cast<void>(eval(*arm.guard, use_mode::read));
+        static_cast<void>(eval_full(*arm.guard, use_mode::read));
         const auto guarded = new_block();
         fork(guarded, next);
         current_ = guarded;
@@ -1704,11 +1812,14 @@ private:
     current_ = body;
     push_loop_scope(head, exit, &stmt.body);
     const auto owned = for_variable_owns(stmt, checked_);
+    if (owned) {
+      cfg_.owning_loops.insert(&stmt);
+    }
     for (const auto &pattern : stmt.patterns) {
       bind_pattern(pattern.get(), source, owned);
     }
     if (stmt.guard != nullptr) {
-      static_cast<void>(eval(*stmt.guard, use_mode::read));
+      static_cast<void>(eval_full(*stmt.guard, use_mode::read));
       const auto kept = new_block();
       fork(kept, head);
       current_ = kept;
@@ -1730,8 +1841,10 @@ private:
                         local_id source) -> void {
     push_scope(key);
     if (const auto type = loop_handle_type(iterable, dispatch, checked_)) {
+      cfg_.loop_handles.insert(key);
       const auto handle =
-          declare("<for iterator>", *type, iterable->span, /*whole=*/true);
+          declare("<for iterator>", *type, iterable->span, /*whole=*/true,
+                  /*owns=*/false, key);
       bind_value(handle, value{.loans = {}, .sources = {source}});
     }
   }
@@ -1775,7 +1888,10 @@ private:
           *stmt.let_expr,
           subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
-      static_cast<void>(eval_opt(stmt.condition.get(), use_mode::read));
+      if (stmt.condition != nullptr) {
+        note_full_expression(stmt.condition->span);
+        static_cast<void>(eval(*stmt.condition, use_mode::read));
+      }
       static_cast<void>(close_temporaries());
     }
     const auto body = new_block();
@@ -1814,7 +1930,7 @@ private:
       -> void {
     if (index == comp.clauses.size()) {
       if (comp.guard != nullptr) {
-        static_cast<void>(eval(*comp.guard, use_mode::read));
+        static_cast<void>(eval_full(*comp.guard, use_mode::read));
       }
       if (comp.yield_expr != nullptr) {
         flow(join, eval_full(*comp.yield_expr), /*replace=*/false);
@@ -1844,6 +1960,9 @@ private:
     current_ = body;
     push_loop_scope(head, exit, &clause);
     const auto owned = clause_variable_owns(clause, checked_);
+    if (owned) {
+      cfg_.owning_loops.insert(&clause);
+    }
     for (const auto &pattern : clause.patterns) {
       bind_pattern(pattern.get(), source, owned);
     }
@@ -1859,7 +1978,8 @@ private:
     for (const auto &binding : where.bindings) {
       auto v = eval_opt(binding.value.get(), use_mode::move);
       const auto local = declare(binding.name, type_of(binding.value.get()),
-                                 binding.span, /*whole=*/true);
+                                 binding.span, /*whole=*/true,
+                                 /*owns=*/false, &binding);
       bind_value(local, v);
     }
     const auto join = new_temp(local_role::join_temp);
@@ -1891,9 +2011,20 @@ private:
       if (stmts[i] == nullptr) {
         continue;
       }
+      const auto last = want_value && i + 1 == stmts.size();
+      if (last) {
+        // The block's value: its temporaries end with it.
+        note_full_expression(stmts[i]->span);
+        if (stmts[i]->kind == ast::node_kind::expr_stmt) {
+          const auto &value_expr =
+              dynamic_cast<const ast::expr_stmt &>(*stmts[i]).expr;
+          if (value_expr != nullptr) {
+            note_full_expression(value_expr->span);
+          }
+        }
+      }
       open_temporaries();
-      tail = close_temporaries(
-          lower_stmt(*stmts[i], want_value && i + 1 == stmts.size()));
+      tail = close_temporaries(lower_stmt(*stmts[i], last));
     }
     return tail;
   }
@@ -1929,7 +2060,8 @@ private:
 
     case ast::node_kind::return_stmt: {
       const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
-      emit_return(eval_opt(stmt.value.get(), use_mode::move), &node);
+      emit_return(stmt.value != nullptr ? eval_full(*stmt.value) : value{},
+                  &node);
       start_unreachable();
       return {};
     }

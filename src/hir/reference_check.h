@@ -54,6 +54,12 @@ struct temporary {
 using drop_temporary_fn =
     std::function<void(const temporary &, ptr_vec<hir_node> &)>;
 
+/// Told each time the rewriter drops temporaries at the end of a full
+/// expression, with that expression's source range. The ownership checker
+/// ends the temporaries of the same expressions
+/// (`function_cfg::full_expressions`); a consistency check compares the two.
+using full_expression_fn = std::function<void(source_span)>;
+
 /// Makes every implicit reference conversion in `function` explicit, the
 /// ones `find_implicit_references` reports: a projection through a
 /// reference gets a `hir_unary` deref, and an argument, returned value or
@@ -81,6 +87,8 @@ using drop_temporary_fn =
 auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
-                              const drop_temporary_fn &drop_temporary) -> void;
+                              const drop_temporary_fn &drop_temporary,
+                              const full_expression_fn &ends_temporaries)
+    -> void;
 
 } // namespace cinder::hir

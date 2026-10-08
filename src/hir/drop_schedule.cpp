@@ -224,10 +224,29 @@ auto compute_drop_schedule(const ast::func_decl &decl,
 
     for (const auto &local : cfg.locals) {
       if (local.whole && local.owns && checked.drop_plans.contains(local.type)) {
-        schedule.owned_locals.push_back(
-            owned_decl{.name = local.name, .type = local.type});
+        schedule.owned_locals.push_back(owned_decl{
+            .node = local.node, .name = local.name, .type = local.type});
+      }
+      if (local.whole && local.node != nullptr) {
+        schedule.owned_bindings.insert(local.node);
       }
     }
+    schedule.owning_patterns.insert(cfg.owning_patterns.begin(),
+                                    cfg.owning_patterns.end());
+    schedule.owning_subjects.insert(cfg.owning_subjects.begin(),
+                                    cfg.owning_subjects.end());
+    schedule.leftover_drops.insert(cfg.leftover_drops.begin(),
+                                   cfg.leftover_drops.end());
+    schedule.unmatched_drops.insert(cfg.unmatched_drops.begin(),
+                                    cfg.unmatched_drops.end());
+    schedule.owning_loops.insert(cfg.owning_loops.begin(),
+                                 cfg.owning_loops.end());
+    schedule.loop_handles.insert(cfg.loop_handles.begin(),
+                                 cfg.loop_handles.end());
+    schedule.consuming_calls.insert(cfg.consuming_calls.begin(),
+                                    cfg.consuming_calls.end());
+    schedule.full_expressions.insert(cfg.full_expressions.begin(),
+                                     cfg.full_expressions.end());
 
     for (const auto &assign : facts.assignments) {
       auto drop = assignment_drop{};
@@ -254,16 +273,9 @@ auto compute_drop_schedule(const ast::func_decl &decl,
 
     for (const auto &exit : facts.exits) {
       auto &drops = schedule.exits[exit.key];
-      // Groups run innermost scope first, each in reverse declaration order,
-      // so the first time a name shows up it is the binding a lookup finds
-      // and each later one is one shadow level deeper. Every whole binding
-      // counts, moved or not and droppable or not, because `lowerer` counts
-      // them all.
-      auto seen = std::map<std::string_view, std::size_t>{};
       for (const auto &group : exit.groups) {
         for (const auto &owned : group) {
           const auto &info = cfg.locals[owned.local];
-          const auto depth = seen[info.name]++;
           if (!checked.drop_plans.contains(info.type) ||
               owned.state == move_state::moved) {
             continue;
@@ -276,9 +288,9 @@ auto compute_drop_schedule(const ast::func_decl &decl,
             }
           }
           drops.push_back(pending_drop{
+              .node = info.node,
               .name = info.name,
               .type = info.type,
-              .shadow_depth = depth,
               .flag = flag,
               .moved_paths = moved_paths_of(cfg, plan, owned.moved_parts)});
         }

@@ -2,8 +2,11 @@
 
 #include <cstddef>
 #include <optional>
+#include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "src/parser/ast.h"
@@ -21,18 +24,18 @@ struct moved_path {
 };
 
 /// One local binding that needs a drop call inserted where it goes out of
-/// scope — by name (not `semantic::symbol_id`: this pass runs over the raw
-/// AST, before `lowerer` mints its own per-function symbol ids) and type
-/// (the key into `semantic::checked_types::drop_plans`, which says what
-/// calling drop actually looks like).
-///
-/// `shadow_depth` says which binding of `name` this is when several of that
-/// name are owned at one exit (`let a = ...; let a = ...`): 0 is the most
-/// recently declared, 1 the one it shadows, and so on.
+/// scope — by the AST node that declares it (not `semantic::symbol_id`: this
+/// pass runs over the raw AST, before `lowerer` mints its own per-function
+/// symbol ids) and type (the key into `semantic::checked_types::drop_plans`,
+/// which says what calling drop actually looks like). `name` is only the
+/// spelling, for the reference the drop call is made on.
 struct pending_drop {
+  /// What declares the binding: a `let`/`var` pattern, a pattern binding, a
+  /// parameter's pattern, a loop's `iterable` for its `<for iterator>`, ...
+  /// (`semantic::ownership::local_info::node`).
+  const void *node = nullptr;
   std::string name;
   semantic::type_id type = 0;
-  std::size_t shadow_depth = 0;
   /// Set when the binding was moved on some paths to this exit only: the
   /// drop runs when this drop flag is still set.
   std::optional<std::size_t> flag;
@@ -60,6 +63,7 @@ struct assignment_drop {
 /// (`KIRA_CHECK_DROP_AGREEMENT`) while item 6 of `spec/todo.md` moves that
 /// decision to one side.
 struct owned_decl {
+  const void *node = nullptr;
   std::string name;
   semantic::type_id type = 0;
   auto operator<=>(const owned_decl &) const = default;
@@ -94,6 +98,24 @@ struct drop_schedule {
   std::size_t flag_count = 0;
   /// Every `whole` local of the body (and its lambdas) with a drop plan.
   std::vector<owned_decl> owned_locals;
+  /// The nodes that declare a `whole` local (`local_info::node`).
+  std::unordered_set<const void *> owned_bindings;
+  /// The top-level patterns (a `let`, `if let`, `while let`, `match` arm or
+  /// destructuring parameter) whose bindings own the parts they bind, so a
+  /// `_` or `..` in them leaves a part to drop.
+  std::unordered_set<const void *> owning_patterns;
+  /// The `match` arm, `let` and `if let`/`while let` patterns whose bindings
+  /// overlap, so the arm owns the whole subject as a `<subject>` local.
+  std::unordered_set<const void *> owning_subjects;
+  /// `function_cfg::leftover_drops` and `unmatched_drops`.
+  std::unordered_set<const void *> leftover_drops;
+  std::unordered_set<const void *> unmatched_drops;
+  /// `function_cfg::owning_loops`, `loop_handles` and `consuming_calls`.
+  std::unordered_set<const void *> owning_loops;
+  std::unordered_set<const void *> loop_handles;
+  std::unordered_set<const void *> consuming_calls;
+  /// `function_cfg::full_expressions`, as source ranges.
+  std::set<std::pair<byte_offset, byte_offset>> full_expressions;
 };
 
 /// Computes the drop schedule for one function body, including every lambda

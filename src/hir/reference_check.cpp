@@ -265,9 +265,10 @@ class rewriter {
 public:
   rewriter(const semantic::checked_types &checked,
            const std::function<symbol_id()> &mint,
-           const drop_temporary_fn &drop_temporary)
+           const drop_temporary_fn &drop_temporary,
+           const full_expression_fn &ends_temporaries)
       : checked_(checked), types_(checked.types), mint_(mint),
-        drop_temporary_(drop_temporary) {}
+        drop_temporary_(drop_temporary), ends_temporaries_(ends_temporaries) {}
 
   auto run(hir_function &function) -> void {
     returns_.push_back(function.is_generator ? semantic::k_unknown_type
@@ -284,6 +285,7 @@ private:
   const semantic::type_table &types_;
   const std::function<symbol_id()> &mint_;
   const drop_temporary_fn &drop_temporary_;
+  const full_expression_fn &ends_temporaries_;
   std::vector<type_id> returns_;
   /// The temporaries made in one enclosing statement or full expression.
   struct frame {
@@ -591,6 +593,9 @@ private:
     auto &temps = closed.temps;
     if (temps.empty()) {
       return;
+    }
+    if (ends_temporaries_ != nullptr) {
+      ends_temporaries_(slot->span);
     }
     const auto span = slot->span;
     const auto type = slot->type;
@@ -1193,9 +1198,10 @@ private:
 auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
-                              const drop_temporary_fn &drop_temporary)
+                              const drop_temporary_fn &drop_temporary,
+                              const full_expression_fn &ends_temporaries)
     -> void {
-  rewriter(checked, mint, drop_temporary).run(function);
+  rewriter(checked, mint, drop_temporary, ends_temporaries).run(function);
 }
 
 auto find_implicit_references(const ptr_vec<hir_module> &modules,
