@@ -1,7 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "src/hir/nodes.h"
@@ -54,11 +56,18 @@ struct temporary {
 using drop_temporary_fn =
     std::function<void(const temporary &, ptr_vec<hir_node> &)>;
 
-/// Told each time the rewriter drops temporaries at the end of a full
-/// expression, with that expression. The ownership checker ends the
-/// temporaries of the same expressions (`function_cfg::full_expressions`,
-/// found through `hir_node::origin`); a consistency check compares the two.
-using full_expression_fn = std::function<void(const hir_expr &)>;
+/// The ownership checker's answers about temporaries, keyed by the AST
+/// nodes HIR nodes came from (`hir_node::origin`).
+struct temporary_ends {
+  /// The node of the statement or full expression the temporary holding
+  /// the value of `origin` ends with (`function_cfg::temporary_ends`), or
+  /// nothing when the checker made no such temporary.
+  std::function<std::optional<const void *>(const void *origin)> end_of;
+  /// Told of each temporary the checker has no record for, or whose end is
+  /// no frame the rewriter has open: the consistency check of
+  /// `spec/todo.md` item 6.
+  std::function<void(source_span, std::string_view what)> disagree;
+};
 
 /// Makes every implicit reference conversion in `function` explicit, the
 /// ones `find_implicit_references` reports: a projection through a
@@ -88,7 +97,7 @@ auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
                               const drop_temporary_fn &drop_temporary,
-                              const full_expression_fn &ends_temporaries)
+                              const temporary_ends &ends)
     -> void;
 
 } // namespace cinder::hir

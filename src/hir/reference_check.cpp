@@ -266,9 +266,9 @@ public:
   rewriter(const semantic::checked_types &checked,
            const std::function<symbol_id()> &mint,
            const drop_temporary_fn &drop_temporary,
-           const full_expression_fn &ends_temporaries)
+           const temporary_ends &ends)
       : checked_(checked), types_(checked.types), mint_(mint),
-        drop_temporary_(drop_temporary), ends_temporaries_(ends_temporaries) {}
+        drop_temporary_(drop_temporary), ends_(ends) {}
 
   auto run(hir_function &function) -> void {
     returns_.push_back(function.is_generator ? semantic::k_unknown_type
@@ -285,13 +285,20 @@ private:
   const semantic::type_table &types_;
   const std::function<symbol_id()> &mint_;
   const drop_temporary_fn &drop_temporary_;
-  const full_expression_fn &ends_temporaries_;
+  const temporary_ends &ends_;
   std::vector<type_id> returns_;
   /// The temporaries made in one enclosing statement or full expression.
   struct frame {
     std::vector<temporary> temps;
     /// Every temporary gets a live flag (a `while let` subject's).
     bool flag_all = false;
+    /// The AST node of the statement or full expression the frame is, which
+    /// the ownership checker names as a temporary's end. Null for a frame
+    /// with no source construct.
+    const void *origin = nullptr;
+    /// A frame whose temporaries are never dropped: the receiver a call
+    /// consumes.
+    bool discard = false;
   };
   /// The enclosing frames, innermost last. Each frame's temporaries are
   /// dropped when it closes.
@@ -326,17 +333,48 @@ private:
            checked_.drop_plans.contains(type);
   }
 
-  /// Notes `symbol`, a local holding a temporary value, to be dropped when
-  /// the innermost frame closes.
-  auto note_temporary(symbol_id symbol, type_id type, hir_block *creation)
-      -> void {
+  /// Notes `symbol`, a local holding the value of `value` (a temporary), to
+  /// be dropped when the frame the ownership checker ends it with closes.
+  auto note_temporary(symbol_id symbol, type_id type, hir_block *creation,
+                      const hir_expr &value) -> void {
     if (!needs_drop(type) || frames_.empty()) {
       return;
     }
-    frames_.back().temps.push_back(temporary{.symbol = symbol,
-                                             .type = type,
-                                             .moved_paths = {},
-                                             .creation = creation});
+    frames_[end_frame(value)].temps.push_back(temporary{.symbol = symbol,
+                                                        .type = type,
+                                                        .moved_paths = {},
+                                                        .creation = creation});
+  }
+
+  /// The frame a temporary holding `value` is dropped with: the one the
+  /// ownership checker ends it with. A value lowering synthesized has no
+  /// record and ends with the innermost frame.
+  [[nodiscard]] auto end_frame(const hir_expr &value) const -> std::size_t {
+    const auto innermost = frames_.size() - 1;
+    if (frames_.back().discard || value.origin == nullptr ||
+        ends_.end_of == nullptr) {
+      return innermost;
+    }
+    const auto end = ends_.end_of(value.origin);
+    if (!end.has_value()) {
+      ends_.disagree(value.span, "drop a temporary the ownership checker "
+                                 "does not make");
+      return innermost;
+    }
+    for (auto i = frames_.size(); i > 0; --i) {
+      if (frames_[i - 1].origin == *end) {
+        if (i - 1 != innermost) {
+          ends_.disagree(value.span,
+                         "drop this temporary earlier than the ownership "
+                         "checker ends it");
+        }
+        return i - 1;
+      }
+    }
+    ends_.disagree(value.span,
+                   "have no open frame where the ownership checker ends this "
+                   "temporary");
+    return innermost;
   }
 
   [[nodiscard]] auto find_temporary(symbol_id symbol) -> temporary * {
@@ -582,7 +620,7 @@ private:
     if (slot == nullptr) {
       return;
     }
-    frames_.emplace_back();
+    frames_.push_back(frame{.origin = slot->origin});
     visit(*slot);
     close_into(slot);
   }
@@ -593,9 +631,6 @@ private:
     auto &temps = closed.temps;
     if (temps.empty()) {
       return;
-    }
-    if (ends_temporaries_ != nullptr) {
-      ends_temporaries_(*slot);
     }
     const auto span = slot->span;
     const auto type = slot->type;
@@ -630,7 +665,7 @@ private:
       while (end < stmts.size() && stmts[end]->continues_statement) {
         ++end;
       }
-      frames_.emplace_back();
+      frames_.push_back(frame{.origin = stmts[i]->origin});
       auto value_tail = false;
       auto after = std::vector<ptr_vec<hir_node>>(end - i);
       auto before = ptr_vec<hir_node>(end - i);
@@ -655,6 +690,7 @@ private:
             const auto symbol = mint_();
             const auto type = expr->type;
             const auto span = stmt->span;
+            const auto &value = *expr;
             auto store = ptr_vec<hir_node>{};
             store.push_back(ptr<hir_node>(hir::make<hir_let>(
                 span, symbol, std::string("<discarded>"), std::move(expr))));
@@ -663,7 +699,7 @@ private:
             auto *creation = block.get();
             stmt = ptr<hir_node>(hir::make<hir_expr_stmt>(
                 span, ptr<hir_expr>(std::move(block))));
-            note_temporary(symbol, type, creation);
+            note_temporary(symbol, type, creation, value);
           }
           after[k - i] = std::move(after_statement_);
           after_statement_.clear();
@@ -757,6 +793,7 @@ private:
     }
     const auto symbol = mint_();
     const auto value_type = expr->type;
+    const auto &value = *expr;
     auto stmts = ptr_vec<hir_node>{};
     stmts.push_back(ptr<hir_node>(hir::make<hir_let>(
         span, symbol, std::string("<borrowed>"), std::move(expr))));
@@ -765,7 +802,7 @@ private:
     stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
         span, ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(place))))));
     auto block = hir::make<hir_block>(span, want, std::move(stmts));
-    note_temporary(symbol, value_type, block.get());
+    note_temporary(symbol, value_type, block.get(), value);
     return ptr<hir_expr>(std::move(block));
   }
 
@@ -957,7 +994,8 @@ private:
       auto &value = node.kind == hir_node_kind::hir_return
                         ? dynamic_cast<hir_return &>(node).value
                         : dynamic_cast<hir_yield &>(node).value;
-      frames_.emplace_back();
+      frames_.push_back(
+          frame{.origin = value != nullptr ? value->origin : nullptr});
       if (value != nullptr) {
         visit(*value);
         if (node.kind == hir_node_kind::hir_return && !returns_.empty()) {
@@ -1004,12 +1042,14 @@ private:
     }
     case hir_node_kind::hir_while_let: {
       auto &loop = dynamic_cast<hir_while_let &>(node);
+      const auto *subject_origin =
+          loop.subject != nullptr ? loop.subject->origin : nullptr;
       match_through(node, loop.subject, loop.subject_symbol);
       // The subject's temporaries last one iteration: they are dropped
       // after the body, when the pattern fails, and by a jump out of the
       // body, each under its live flag.
       loop_bases_.push_back(frames_.size());
-      frames_.push_back(frame{.temps = {}, .flag_all = true});
+      frames_.push_back(frame{.flag_all = true, .origin = subject_origin});
       if (loop.subject != nullptr) {
         visit(*loop.subject);
       }
@@ -1118,7 +1158,7 @@ private:
           if (i == 0 && call.consumes_receiver) {
             // The callee owns the receiver now; a temporary holding it is
             // not dropped here.
-            frames_.emplace_back();
+            frames_.push_back(frame{.discard = true});
             coerce(call.args[i], params[i]);
             frames_.pop_back();
             continue;
@@ -1199,9 +1239,8 @@ auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
                               const drop_temporary_fn &drop_temporary,
-                              const full_expression_fn &ends_temporaries)
-    -> void {
-  rewriter(checked, mint, drop_temporary, ends_temporaries).run(function);
+                              const temporary_ends &ends) -> void {
+  rewriter(checked, mint, drop_temporary, ends).run(function);
 }
 
 auto find_implicit_references(const ptr_vec<hir_module> &modules,

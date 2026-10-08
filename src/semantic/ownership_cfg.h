@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -221,12 +222,13 @@ struct function_cfg {
   /// Where an owning pattern leaves a droppable part unbound: its `_`
   /// patterns, and its struct patterns whose `..` skips a droppable field.
   std::set<const void *> leftover_drops;
-  /// The expressions whose temporaries end with them
-  /// rather than with their statement: a condition, a match or loop guard,
-  /// the right operand of `and`/`or`, a returned or yielded value, a block's
-  /// value, an arm or lambda body. `hir::make_references_explicit` drops a
-  /// temporary no earlier than the end of the innermost one that holds it.
-  std::set<const void *> full_expressions;
+  /// Where each temporary ends: the expression whose value was stored in
+  /// one (borrowed while not a place, read a field from, or computed and
+  /// discarded), mapped to the node of the statement or full expression it
+  /// ends with. Null when it ends with no statement of this body.
+  /// `hir::make_references_explicit` drops it there, finding both through
+  /// `hir_node::origin`.
+  std::map<const void *, const void *> temporary_ends;
   /// The top-level owning patterns whose subject is still owned by the path
   /// where the pattern misses (`let else`, `if let`, `while let`).
   std::set<const void *> unmatched_drops;

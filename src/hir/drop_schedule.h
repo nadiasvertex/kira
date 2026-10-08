@@ -112,8 +112,8 @@ struct drop_schedule {
   std::unordered_set<const void *> owning_loops;
   std::unordered_set<const void *> loop_handles;
   std::unordered_set<const void *> consuming_calls;
-  /// `function_cfg::full_expressions`.
-  std::unordered_set<const void *> full_expressions;
+  /// `function_cfg::temporary_ends`.
+  std::unordered_map<const void *, const void *> temporary_ends;
 };
 
 /// Computes the drop schedule for one function body, including every lambda

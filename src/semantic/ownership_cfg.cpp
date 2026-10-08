@@ -246,9 +246,14 @@ private:
   local_id return_slot_ = 0;
   /// The `field_path` local for each (parent, field) pair made so far.
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
-  /// The temporaries made in each enclosing statement or full expression,
-  /// innermost last; each ends with its frame (`close_temporaries`).
-  std::vector<std::vector<local_id>> temporaries_;
+  /// The temporaries made in one statement or full expression, which end
+  /// with it (`close_temporaries`). `key` is its AST node.
+  struct temporary_frame {
+    const void *key = nullptr;
+    std::vector<local_id> temps;
+  };
+  /// The enclosing frames, innermost last.
+  std::vector<temporary_frame> temporaries_;
 
   // ------------------------------------------------------------------
   //  Graph construction primitives.
@@ -1002,13 +1007,7 @@ private:
                         source_span span) -> value {
     const auto held = eval(expr, use_mode::move);
     const auto type = type_of(&expr);
-    const auto temp = new_local("temporary", local_role::temporary, type,
-                                expr.span, false);
-    flow(temp, held, /*replace=*/true);
-    if (temporaries_.empty()) {
-      temporaries_.emplace_back();
-    }
-    temporaries_.back().push_back(temp);
+    const auto temp = hold_temporary(expr, held);
     auto result = value{};
     result.loans.push_back(new_loan(temp, is_mut, origin, span));
     if (bears(type)) {
@@ -1017,13 +1016,29 @@ private:
     return result;
   }
 
-  auto open_temporaries() -> void { temporaries_.emplace_back(); }
+  /// Stores `held`, the value of `expr`, in a temporary of the innermost
+  /// frame, and records where that temporary ends.
+  auto hold_temporary(const ast::expr &expr, const value &held) -> local_id {
+    const auto temp = new_local("temporary", local_role::temporary,
+                                type_of(&expr), expr.span, false);
+    flow(temp, held, /*replace=*/true);
+    if (temporaries_.empty()) {
+      temporaries_.emplace_back();
+    }
+    temporaries_.back().temps.push_back(temp);
+    cfg_.temporary_ends[&expr] = temporaries_.back().key;
+    return temp;
+  }
+
+  auto open_temporaries(const void *key) -> void {
+    temporaries_.push_back(temporary_frame{.key = key, .temps = {}});
+  }
 
   /// Ends the temporaries of every open frame from index `depth` on,
   /// innermost first, on a path that leaves them early.
   auto end_temporaries(std::size_t depth) -> void {
     for (auto i = temporaries_.size(); i > depth; --i) {
-      for (const auto temp : std::views::reverse(temporaries_[i - 1])) {
+      for (const auto temp : std::views::reverse(temporaries_[i - 1].temps)) {
         access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
       }
     }
@@ -1034,12 +1049,12 @@ private:
   /// borrows one of them is caught where it is used.
   auto close_temporaries(const value &produced = {}) -> value {
     auto result = produced;
-    if (!temporaries_.back().empty() && !produced.empty()) {
+    if (!temporaries_.back().temps.empty() && !produced.empty()) {
       const auto hold = new_temp(local_role::join_temp);
       flow(hold, produced, /*replace=*/true);
       result = value{.loans = {}, .sources = {hold}};
     }
-    for (const auto temp : std::views::reverse(temporaries_.back())) {
+    for (const auto temp : std::views::reverse(temporaries_.back().temps)) {
       access(temp, access_kind::storage_dead, cfg_.locals[temp].span);
     }
     temporaries_.pop_back();
@@ -1050,14 +1065,10 @@ private:
   /// with it (a lambda's or match arm's expression body).
   auto eval_full(const ast::expr &expr, use_mode mode = use_mode::move)
       -> value {
-    note_full_expression(expr);
-    open_temporaries();
+    open_temporaries(&expr);
     return close_temporaries(eval(expr, mode));
   }
 
-  auto note_full_expression(const ast::node &node) -> void {
-    cfg_.full_expressions.insert(&node);
-  }
 
   // ------------------------------------------------------------------
   //  Expressions.
@@ -1334,6 +1345,11 @@ private:
       }
     }
     auto object = eval_opt(field.object.get(), use_mode::read);
+    if (field.object != nullptr) {
+      // The object is stored so its field can be read, and the rest of it
+      // drops with the temporary.
+      static_cast<void>(hold_temporary(*field.object, object));
+    }
     return bears(type_of(&field)) ? object : value{};
   }
 
@@ -1364,7 +1380,13 @@ private:
                                                         : access_kind::read);
     }
     const auto temp = new_temp(local_role::call_temp);
-    stash(temp, eval_opt(index.object.get(), use_mode::read));
+    const auto object = eval_opt(index.object.get(), use_mode::read);
+    if (index.object != nullptr) {
+      // The object is stored so it can be indexed, and drops with the
+      // temporary.
+      static_cast<void>(hold_temporary(*index.object, object));
+    }
+    stash(temp, object);
     stash(temp, eval_opt(index.index.get(), use_mode::read));
     return compound_result(index, temp);
   }
@@ -1881,7 +1903,9 @@ private:
     // temporaries last one iteration: they end after the body, when the
     // pattern fails, and at a `break` or `continue`.
     const auto depth = temporaries_.size();
-    open_temporaries();
+    open_temporaries(stmt.let_expr != nullptr
+                         ? static_cast<const void *>(stmt.let_expr.get())
+                         : stmt.condition.get());
     auto subject = std::optional<local_id>{};
     if (stmt.let_expr != nullptr) {
       subject = hold_subject(eval(
@@ -1889,7 +1913,6 @@ private:
           subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
       if (stmt.condition != nullptr) {
-        note_full_expression(*stmt.condition);
         static_cast<void>(eval(*stmt.condition, use_mode::read));
       }
       static_cast<void>(close_temporaries());
@@ -2012,18 +2035,7 @@ private:
         continue;
       }
       const auto last = want_value && i + 1 == stmts.size();
-      if (last) {
-        // The block's value: its temporaries end with it.
-        note_full_expression(*stmts[i]);
-        if (stmts[i]->kind == ast::node_kind::expr_stmt) {
-          const auto &value_expr =
-              dynamic_cast<const ast::expr_stmt &>(*stmts[i]).expr;
-          if (value_expr != nullptr) {
-            note_full_expression(*value_expr);
-          }
-        }
-      }
-      open_temporaries();
+      open_temporaries(stmts[i].get());
       tail = close_temporaries(lower_stmt(*stmts[i], last));
     }
     return tail;
@@ -2054,8 +2066,19 @@ private:
 
     case ast::node_kind::expr_stmt: {
       const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
-      auto v = eval_opt(stmt.expr.get(), use_mode::move);
-      return want_value ? v : value{};
+      if (stmt.expr == nullptr) {
+        return {};
+      }
+      if (want_value) {
+        // The block's value: its temporaries end with it.
+        return eval_full(*stmt.expr);
+      }
+      auto v = eval(*stmt.expr, use_mode::move);
+      if (!is_place(*stmt.expr)) {
+        // A value computed and discarded is a temporary of its statement.
+        static_cast<void>(hold_temporary(*stmt.expr, v));
+      }
+      return {};
     }
 
     case ast::node_kind::return_stmt: {

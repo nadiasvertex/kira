@@ -6545,15 +6545,21 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           drop_failure = dropped.error();
         }
       },
-      [this](const hir_expr &expr) -> void {
-        // The rewriter drops temporaries here; the ownership checker must
-        // end them no later. A node lowering synthesized has no record.
-        if (expr.origin != nullptr) {
-          static_cast<void>(
-              agree(true, drop_schedule_.full_expressions.contains(expr.origin),
-                    "end temporaries at a full expression", expr.span));
-        }
-      });
+      temporary_ends{
+          .end_of = [this](const void *origin) -> std::optional<const void *> {
+            const auto found = drop_schedule_.temporary_ends.find(origin);
+            if (found == drop_schedule_.temporary_ends.end()) {
+              return std::nullopt;
+            }
+            return found->second;
+          },
+          .disagree = [this](source_span span, std::string_view what) -> void {
+            drop_disagreements_.push_back(lowering_error{
+                .kind = lowering_error_kind::unsupported_construct,
+                .span = span,
+                .message = std::format(
+                    "internal error: the temporary rewriter would {}", what)});
+          }});
   if (drop_failure.has_value()) {
     return std::unexpected(*drop_failure);
   }
