@@ -542,6 +542,15 @@ struct call_argument_mapping {
   std::vector<param_passing> passing_by_param;
 };
 
+/// An implicit generic's signature (`def double(x): return x + x`), as its
+/// probe left it: each unannotated parameter's leaf (`k_unknown_type` for
+/// the rest) and the result type in terms of them. The leaves — inference
+/// variables — are the function's implicit type parameters.
+struct implicit_signature {
+  std::vector<type_id> params;
+  type_id result = k_unknown_type;
+};
+
 /// The declaration a module-qualified free-function call (`std.io.open(...)`),
 /// a type-qualified associated-function call (`io_error.from(...)`), or a
 /// genuine instance-method call (`x.method(...)`) resolved to — recorded by
@@ -1053,6 +1062,14 @@ struct checked_types {
   /// `const_generic_instances`, and `hir::lower_module` skips these
   /// templates exactly as it skips an explicit generic.
   std::unordered_set<const ast::func_decl *> open_param_templates;
+  /// Each `open_param_templates` entry's signature.
+  std::unordered_map<const ast::func_decl *, implicit_signature>
+      implicit_signatures;
+  /// Each `const_generic_instances` entry's template: the generic
+  /// declaration it was made from, whose signature still names the type
+  /// parameters the instance's has substituted away.
+  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
+      instance_templates;
 
   /// The return type the checker inferred from the body of each function
   /// declared without one. Lowering reads it where it would read the
@@ -1253,6 +1270,12 @@ struct checked_types {
   /// `str` is deliberately *excluded* even though the language models it as
   /// a view: the implementation treats `str` as an owned value everywhere.
   std::unordered_set<type_id> borrow_bearing_types;
+  /// The subset of `borrow_bearing_types` that carries a borrow of its own,
+  /// not only through a type parameter: `&T` and `box[&int32]` are in it,
+  /// `T` and `box[T]` are not. A call whose declared result is outside this
+  /// set can only hand back borrows that arrived through an argument typed
+  /// with one of the result's type parameters.
+  std::unordered_set<type_id> own_borrow_bearing_types;
   /// The type parameters declared with a `copy` bound, inline or in a
   /// `where` clause. Keyed like every type parameter, on the declaration that
   /// introduced it, so the set means the same thing in every body.

@@ -558,7 +558,10 @@ public:
     }
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
-    auto borrow_bearing = compute_borrow_bearing_types();
+    const auto type_count = types_.count();
+    auto borrow_bearing = compute_borrow_bearing_types(type_count);
+    auto own_borrow_bearing =
+        compute_borrow_bearing_types(type_count, /*params_bear=*/false);
     auto copy_sum_types = std::unordered_set<type_id>{};
     for (std::size_t raw = 0; raw < types_.count(); ++raw) {
       const auto id = static_cast<type_id>(raw);
@@ -599,6 +602,8 @@ public:
         .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
         .const_generic_instances = std::move(const_generic_instances_),
         .open_param_templates = std::move(open_param_templates),
+        .implicit_signatures = std::move(implicit_signatures_),
+        .instance_templates = std::move(instance_templates_),
         .inferred_return_types = std::move(inferred_returns_),
         .comptime_only_functions = std::move(comptime_only_functions_),
         .synthesized_functor_nodes = std::move(synthetic_nodes_),
@@ -624,6 +629,7 @@ public:
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .borrow_bearing_types = std::move(borrow_bearing),
+        .own_borrow_bearing_types = std::move(own_borrow_bearing),
         .copy_type_params = std::move(copy_type_params_),
         .copy_sum_types = std::move(copy_sum_types)};
   }
@@ -5667,9 +5673,11 @@ private:
   /// field, or sum-variant payload. `str` is deliberately not a view here.
   /// `visited` breaks recursive types (`type tree = { kids: list[tree] }`);
   /// a genuine borrow is always reachable on an acyclic path, so cycle
-  /// edges may safely report "no borrow".
-  auto type_carries_borrow(type_id id, std::unordered_set<type_id> &visited)
-      -> bool {
+  /// edges may safely report "no borrow". With `params_bear` false, a type
+  /// parameter counts as carrying nothing: the question becomes whether the
+  /// type carries a borrow of its own, whatever its parameters turn out to be.
+  auto type_carries_borrow(type_id id, std::unordered_set<type_id> &visited,
+                           bool params_bear = true) -> bool {
     if (types_.is_unknown(id) || id == k_error_type) {
       return false;
     }
@@ -5677,16 +5685,19 @@ private:
       return false;
     }
     const auto &e = types_.entry(id);
+    if (e.kind == type_kind::type_param_kind) {
+      return params_bear;
+    }
     if (types_.is_view(id) || e.kind == type_kind::ref_kind ||
-        e.kind == type_kind::fn_kind || e.kind == type_kind::type_param_kind ||
-        e.kind == type_kind::param_app_kind) {
+        e.kind == type_kind::fn_kind || e.kind == type_kind::param_app_kind) {
       return true;
     }
-    if (e.result != k_unknown_type && type_carries_borrow(e.result, visited)) {
+    if (e.result != k_unknown_type &&
+        type_carries_borrow(e.result, visited, params_bear)) {
       return true;
     }
     for (const auto arg : e.args) {
-      if (type_carries_borrow(arg, visited)) {
+      if (type_carries_borrow(arg, visited, params_bear)) {
         return true;
       }
     }
@@ -5694,7 +5705,8 @@ private:
       if (const auto *fields = struct_fields_of(e)) {
         for (const auto &field : *fields) {
           const auto ft = struct_field_type(e, field.name);
-          if (ft.has_value() && type_carries_borrow(*ft, visited)) {
+          if (ft.has_value() &&
+              type_carries_borrow(*ft, visited, params_bear)) {
             return true;
           }
         }
@@ -5703,7 +5715,7 @@ private:
       if (const auto *variants = sum_variants_of(e)) {
         for (const auto &variant : *variants) {
           for (const auto payload : variant_payload_types(e, variant)) {
-            if (type_carries_borrow(payload, visited)) {
+            if (type_carries_borrow(payload, visited, params_bear)) {
               return true;
             }
           }
@@ -5718,13 +5730,17 @@ private:
   /// struct/sum query may intern further types via `resolve_type`, but ids are
   /// dense and existing entries are stable, and no expression the ownership
   /// checker queries can have a type minted only during this walk.
-  auto compute_borrow_bearing_types() -> std::unordered_set<type_id> {
+  /// With `params_bear` false, computes `checked_types::
+  /// own_borrow_bearing_types` instead. `snapshot` is the table size to
+  /// classify up to, shared by both sets.
+  auto compute_borrow_bearing_types(std::size_t snapshot,
+                                    bool params_bear = true)
+      -> std::unordered_set<type_id> {
     auto result = std::unordered_set<type_id>{};
-    const auto snapshot = types_.count();
     for (std::size_t raw = 0; raw < snapshot; ++raw) {
       const auto id = static_cast<type_id>(raw);
       auto visited = std::unordered_set<type_id>{};
-      if (type_carries_borrow(id, visited)) {
+      if (type_carries_borrow(id, visited, params_bear)) {
         result.insert(id);
       }
     }
@@ -7504,17 +7520,13 @@ private:
   };
   std::vector<unclassified_param_decl> unclassified_param_decls_;
 
-  /// An implicit generic's signature, as its probe left it: each
-  /// unannotated parameter's leaf (`k_unknown_type` for the rest) and the
-  /// result type in terms of them. The leaves are the function's implicit
-  /// type parameters; each call instantiates them afresh
-  /// (`link_open_param_call`).
-  struct implicit_signature {
-    std::vector<type_id> params;
-    type_id result = k_unknown_type;
-  };
+  /// See `implicit_signature` in types.h; each call instantiates the leaves
+  /// afresh (`link_open_param_call`).
   std::unordered_map<const ast::func_decl *, implicit_signature>
       implicit_signatures_;
+  /// See `checked_types::instance_templates`.
+  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
+      instance_templates_;
   /// A body's inferred return type that was still open when the body
   /// ended; the implicit generic's result type if it is open on the
   /// parameters.
@@ -8224,6 +8236,13 @@ private:
     substitution_queue_.clear();
   }
 
+  /// Registers a made instance for lowering, and the template it came from.
+  auto record_instance(const pending_instance &item) -> void {
+    const_generic_instances_.push_back(const_generic_instance{
+        .decl = item.instance, .owner_module = item.owner->module_name});
+    instance_templates_[item.instance] = item.tmpl;
+  }
+
   auto make_instance_by_substitution(pending_instance &item) -> void {
     // An instance asked for at a type nothing solved (`list___`) is the
     // requester's mistake, and the requester reports it. There is nothing
@@ -8232,8 +8251,7 @@ private:
       return;
     }
     with_instance_context(item, [&] -> void { substitute_instance(item); });
-    const_generic_instances_.push_back(const_generic_instance{
-        .decl = item.instance, .owner_module = item.owner->module_name});
+    record_instance(item);
   }
 
   auto instance_answers_are_concrete(const pending_instance &item) -> bool {
@@ -8279,8 +8297,7 @@ private:
         with_instance_context(item, [&] -> void {
           check_function(*item.instance, /*at_module_scope=*/false);
         });
-        const_generic_instances_.push_back(const_generic_instance{
-            .decl = item.instance, .owner_module = item.owner->module_name});
+        record_instance(item);
       }
     }
   }
@@ -8309,8 +8326,7 @@ private:
     with_instance_context(item, [&] -> void {
       check_function(*item.instance, /*at_module_scope=*/false);
     });
-    const_generic_instances_.push_back(const_generic_instance{
-        .decl = item.instance, .owner_module = item.owner->module_name});
+    record_instance(item);
     // The clone is a distinct `func_decl` from the template it came from,
     // so membership has to be propagated explicitly — see
     // `comptime_only_functions_`'s doc comment; without this, `hir::lower`

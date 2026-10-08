@@ -225,6 +225,31 @@ auto test_returning_a_laundered_borrow_of_a_local_is_rejected() -> void {
                     "expected `return pass(&n)` of a local to be rejected");
 }
 
+auto test_generic_method_result_not_tied_to_receiver_is_accepted() -> void {
+  const auto analyzed = analyze_test_data_file(
+      "accept_generic_method_result_not_tied_to_receiver.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected a `U`-typed method result not to borrow its "
+                     "`point` receiver:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_returning_a_borrow_through_an_implicit_generic_is_rejected()
+    -> void {
+  const auto analyzed = analyze_test_data_file(
+      "reject_return_borrow_through_implicit_generic.cn");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `n`",
+                    "expected `first(&n, r)` to carry the borrow of `n`");
+}
+
+auto test_returning_a_receiver_borrow_through_a_type_param_is_rejected()
+    -> void {
+  const auto analyzed = analyze_test_data_file(
+      "reject_return_borrow_of_receiver_through_type_param.cn");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `h`",
+                    "expected a `T` result to borrow a `holder[T]` receiver");
+}
+
 auto test_returning_a_reference_to_a_member_is_accepted() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_return_reference_to_member.cn");
@@ -916,6 +941,9 @@ auto main() -> int {
     test_assign_while_aggregate_holds_reference_is_rejected();
     test_returning_a_borrow_of_a_local_is_rejected();
     test_returning_a_laundered_borrow_of_a_local_is_rejected();
+    test_generic_method_result_not_tied_to_receiver_is_accepted();
+    test_returning_a_borrow_through_an_implicit_generic_is_rejected();
+    test_returning_a_receiver_borrow_through_a_type_param_is_rejected();
     test_returning_a_reference_to_a_member_is_accepted();
     test_mutating_while_member_reference_live_is_rejected();
     test_copying_a_mut_reference_moves_it();

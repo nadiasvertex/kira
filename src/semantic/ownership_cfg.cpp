@@ -8,6 +8,7 @@
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -1557,6 +1558,157 @@ private:
     return param_passing::by_value;
   }
 
+  /// The declaration whose signature describes a call to `decl`: its
+  /// template if `decl` is a generic instance, whose signature still names
+  /// the type parameters the instance's has substituted away.
+  [[nodiscard]] auto signature_decl(const ast::func_decl *decl) const
+      -> const ast::func_decl * {
+    const auto it = checked_.instance_templates.find(decl);
+    return it != checked_.instance_templates.end() ? it->second : decl;
+  }
+
+  /// The type parameters through which a call to `decl` can hand back a
+  /// borrow it was given, read off `decl`'s declared signature: a result
+  /// typed `T` can only return a borrow that arrived in a value mentioning
+  /// `T`. `nullopt` when any input's borrows may reach the result — the
+  /// result carries a borrow of its own (`&T`, a view, a closure, an
+  /// existential), or the signature is not known.
+  [[nodiscard]] auto result_borrow_params(const ast::func_decl *decl) const
+      -> std::optional<std::unordered_set<type_id>> {
+    if (decl == nullptr) {
+      return std::nullopt;
+    }
+    auto result = k_unknown_type;
+    if (decl->return_type != nullptr) {
+      result = type_of(decl->return_type.get());
+    } else if (const auto implicit = checked_.implicit_signatures.find(decl);
+               implicit != checked_.implicit_signatures.end()) {
+      result = implicit->second.result;
+    } else if (const auto it = checked_.inferred_return_types.find(decl);
+               it != checked_.inferred_return_types.end()) {
+      result = it->second;
+    }
+    if (unknown_signature_type(result) || result == k_error_type ||
+        checked_.own_borrow_bearing_types.contains(result)) {
+      return std::nullopt;
+    }
+    auto params = std::unordered_set<type_id>{};
+    if (!collect_type_params(result, params)) {
+      return std::nullopt;
+    }
+    return params;
+  }
+
+  /// Whether `type`, read from a callee's signature, says nothing — unknown
+  /// outright. An implicit generic's leaf is a parameter, not unknown.
+  [[nodiscard]] auto unknown_signature_type(type_id type) const -> bool {
+    return checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).kind != type_kind::type_var_kind;
+  }
+
+  /// Whether `kind` is a type parameter: a declared one, or an implicit
+  /// generic's leaf (`implicit_signature`).
+  [[nodiscard]] static auto is_type_parameter(type_kind kind) -> bool {
+    return kind == type_kind::type_param_kind ||
+           kind == type_kind::type_var_kind;
+  }
+
+  /// Adds every type parameter `type` mentions to `params`; false if `type`
+  /// has a part whose borrows cannot be traced to a type parameter.
+  [[nodiscard]] auto
+  collect_type_params(type_id type, std::unordered_set<type_id> &params) const
+      -> bool {
+    if (unknown_signature_type(type)) {
+      return false;
+    }
+    const auto &e = checked_.types.entry(type);
+    if (is_type_parameter(e.kind)) {
+      params.insert(type);
+      return true;
+    }
+    if (e.kind == type_kind::param_app_kind ||
+        e.kind == type_kind::existential_kind) {
+      return false;
+    }
+    if (e.result != k_unknown_type && !collect_type_params(e.result, params)) {
+      return false;
+    }
+    return std::ranges::all_of(e.args, [&](type_id arg) {
+      return collect_type_params(arg, params);
+    });
+  }
+
+  /// Whether a parameter of type `type` can pass a borrow on to a result
+  /// that carries borrows only through `params` (`result_borrow_params`).
+  [[nodiscard]] auto
+  reaches_result(type_id type, const std::unordered_set<type_id> &params) const
+      -> bool {
+    if (unknown_signature_type(type)) {
+      return true;
+    }
+    const auto &e = checked_.types.entry(type);
+    if (is_type_parameter(e.kind)) {
+      return params.contains(type);
+    }
+    if (e.kind == type_kind::param_app_kind ||
+        e.kind == type_kind::existential_kind) {
+      return true;
+    }
+    if (e.result != k_unknown_type && reaches_result(e.result, params)) {
+      return true;
+    }
+    return std::ranges::any_of(
+        e.args, [&](type_id arg) { return reaches_result(arg, params); });
+  }
+
+  /// Whether `decl`'s parameter named `name` can pass a borrow on to the
+  /// call's result; true when the callee's signature does not say.
+  [[nodiscard]] auto
+  param_reaches_result(const ast::func_decl *decl, std::string_view name,
+                       const std::optional<std::unordered_set<type_id>> &flow)
+      const -> bool {
+    if (!flow.has_value()) {
+      return true;
+    }
+    const auto implicit = checked_.implicit_signatures.find(decl);
+    for (std::size_t i = 0; i < decl->params.size(); ++i) {
+      const auto &param = decl->params[i];
+      if (param.pattern == nullptr ||
+          param.pattern->kind != ast::node_kind::binding_pattern ||
+          dynamic_cast<const ast::binding_pattern &>(*param.pattern).name !=
+              name) {
+        continue;
+      }
+      auto type = type_of(param.pattern.get());
+      if (implicit != checked_.implicit_signatures.end() &&
+          i < implicit->second.params.size() &&
+          implicit->second.params[i] != k_unknown_type) {
+        type = implicit->second.params[i];
+      }
+      return reaches_result(type, *flow);
+    }
+    return true;
+  }
+
+  /// The name of the parameter `arg` was passed to, or empty if unknown.
+  [[nodiscard]] auto argument_param_name(const ast::call_expr &call,
+                                         const ast::expr *arg) const
+      -> std::string_view {
+    const auto it = checked_.call_argument_mappings.find(&call);
+    if (it == checked_.call_argument_mappings.end()) {
+      return {};
+    }
+    const auto &mapping = it->second;
+    for (std::size_t i = 0; i < mapping.args_by_param.size() &&
+                            i < mapping.param_names.size();
+         ++i) {
+      if (mapping.args_by_param[i] == arg) {
+        return mapping.param_names[i];
+      }
+    }
+    return {};
+  }
+
   /// A call: the callee and receiver, then each argument in order, then the
   /// call itself. Every borrow made along the way is held by the call's
   /// temporary until the call runs, so later arguments see it. A `mut self`
@@ -1564,27 +1716,51 @@ private:
   /// reservation while the arguments run, activated as a real `&mut` when the
   /// call does — which lets `xs.set(i, xs.get(j))` through while
   /// `xs.set(i, take(&mut xs))` still conflicts.
+  ///
+  /// The result carries the borrows of only those inputs the callee's
+  /// signature lets reach it (`result_borrow_params`); the rest are held by a
+  /// second temporary that ends with the call.
   auto eval_call(const ast::call_expr &call) -> value {
     const auto temp = new_temp(local_role::call_temp);
+    const auto held = new_temp(local_role::call_temp);
     const ast::expr *activate = nullptr;
+    auto activate_temp = temp;
     auto reservation = k_no_loan;
 
     const auto resolved = checked_.resolved_callees.find(&call);
+    const auto *decl = signature_decl(
+        resolved != checked_.resolved_callees.end() ? resolved->second.decl
+                                                    : nullptr);
+    const auto flow = result_borrow_params(decl);
+    const auto target_of = [&](std::string_view param_name) -> local_id {
+      return param_name.empty() || param_reaches_result(decl, param_name, flow)
+                 ? temp
+                 : held;
+    };
     if (resolved != checked_.resolved_callees.end() &&
         resolved->second.receiver != nullptr) {
       const auto &receiver = *resolved->second.receiver;
+      const auto receiver_temp =
+          decl != nullptr && !decl->params.empty() &&
+                  decl->params.front().pattern != nullptr &&
+                  decl->params.front().pattern->kind ==
+                      ast::node_kind::binding_pattern
+              ? target_of(dynamic_cast<const ast::binding_pattern &>(
+                              *decl->params.front().pattern)
+                              .name)
+              : temp;
       switch (receiver_mode(resolved->second)) {
       case receiver_passing::move:
         if (resolved->second.trait_name == "into_iterator") {
           cfg_.consuming_calls.insert(&call);
         }
-        stash(temp, eval(receiver, use_mode::move));
+        stash(receiver_temp, eval(receiver, use_mode::move));
         break;
       case receiver_passing::read:
-        stash(temp, eval(receiver, use_mode::read));
+        stash(receiver_temp, eval(receiver, use_mode::read));
         break;
       case receiver_passing::shared:
-        stash(temp, borrow_place(receiver, false, loan_origin::receiver,
+        stash(receiver_temp, borrow_place(receiver, false, loan_origin::receiver,
                                  receiver.span));
         break;
       case receiver_passing::mut: {
@@ -1594,8 +1770,9 @@ private:
           reservation = reserved.loans.front();
           cfg_.loans[reservation].reserved_mut = true;
           activate = &receiver;
+          activate_temp = receiver_temp;
         }
-        stash(temp, reserved);
+        stash(receiver_temp, reserved);
         break;
       }
       }
@@ -1609,6 +1786,8 @@ private:
       }
       const auto &argument = strip_groups(*arg.value);
       const auto passing = argument_passing(call, arg.value.get());
+      const auto arg_temp =
+          target_of(argument_param_name(call, arg.value.get()));
       const auto is_explicit_borrow =
           argument.kind == ast::node_kind::unary_expr &&
           (dynamic_cast<const ast::unary_expr &>(argument).op ==
@@ -1618,18 +1797,20 @@ private:
       if (passing != param_passing::by_value && !is_explicit_borrow &&
           is_place(argument)) {
         // Implicit autoref: a bare place passed to a `&`/`&mut` parameter.
-        stash(temp, borrow_place(argument, passing == param_passing::mut_ref,
+        stash(arg_temp, borrow_place(argument, passing == param_passing::mut_ref,
                                  loan_origin::borrow, argument.span));
       } else {
-        stash(temp, eval(*arg.value, use_mode::move));
+        stash(arg_temp, eval(*arg.value, use_mode::move));
       }
     }
 
     if (activate != nullptr) {
-      stash(temp, borrow_place(*activate, true, loan_origin::receiver,
-                               activate->span, reservation,
-                               /*evaluate_subscripts=*/false));
+      const auto activated =
+          borrow_place(*activate, true, loan_origin::receiver, activate->span,
+                       reservation, /*evaluate_subscripts=*/false);
+      stash(activate_temp, activated);
     }
+    emit(use_event{.local = held});
     return compound_result(call, temp);
   }
 
