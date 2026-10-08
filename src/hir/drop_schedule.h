@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "src/parser/ast.h"
+#include "src/semantic/ownership_cfg.h"
 #include "src/semantic/types.h"
 
 namespace cinder::hir {
@@ -101,6 +102,10 @@ struct drop_schedule {
   std::unordered_set<const void *> consuming_calls;
   /// `function_cfg::temporary_ends`.
   std::unordered_map<const void *, const void *> temporary_ends;
+  /// `function_cfg::owned_captures`: what each lambda's drop glue drops.
+  std::unordered_map<const void *,
+                     std::vector<semantic::ownership::owned_capture>>
+      owned_captures;
 };
 
 /// Computes the drop schedule for one function body, including every lambda

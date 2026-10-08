@@ -127,6 +127,9 @@ struct collector {
       for (const auto &stmt : node.body->stmts) {
         walk_stmt(*stmt);
       }
+      if (node.drop_glue != nullptr) {
+        walk_expr(*node.drop_glue);
+      }
       return;
     }
     case hir_node_kind::hir_tuple_index:
@@ -160,6 +163,9 @@ struct collector {
       return;
     case hir_node_kind::hir_generator_cancel:
       walk_expr(*dynamic_cast<const hir_generator_cancel &>(expr).object);
+      return;
+    case hir_node_kind::hir_closure_drop:
+      walk_expr(*dynamic_cast<const hir_closure_drop &>(expr).object);
       return;
     case hir_node_kind::hir_str_decode_scalar: {
       const auto &n = dynamic_cast<const hir_str_decode_scalar &>(expr);

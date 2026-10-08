@@ -560,6 +560,18 @@ public:
       dispatch.value_type =
           types_.erase_refinements(settle(dispatch.value_type));
     }
+    // Settling interns the solved types — a generic lambda's copy is typed
+    // `fn(int64) -> int64` only now — after `resolve_drop_plans` ran. A
+    // closure's plan does not depend on its signature, so every `fn` type
+    // gets one here too.
+    for (std::size_t raw = 0; raw < types_.count(); ++raw) {
+      const auto id = static_cast<type_id>(raw);
+      auto scratch = std::unordered_set<type_id>{};
+      if (types_.entry(id).kind == type_kind::fn_kind &&
+          !drop_plans_.contains(id) && !mentions_type_var(id, scratch)) {
+        drop_plans_.emplace(id, drop_plan{.closure_glue = closure_glue_type_});
+      }
+    }
     // Precompute which interned types carry a view, before `types_` is moved
     // out below — the borrow checker reads this to track view-borrow lifetimes.
     const auto type_count = types_.count();
@@ -859,6 +871,8 @@ private:
   /// Populated once by `resolve_drop_plans`, after the main per-function
   /// walk. Handed to the caller via `take_checked_types`.
   std::unordered_map<type_id, drop_plan> drop_plans_;
+  /// `fn() -> unit`, the type of a closure's drop glue (`drop_plan`).
+  type_id closure_glue_type_ = k_unknown_type;
   /// Every `for ... => yield` comprehension's resolved constructor/push
   /// calls — see `comprehension_dispatch` in types.h. Populated by
   /// `infer_for_expr`.
@@ -5817,6 +5831,11 @@ private:
       // suspended, so every generator is dropped by cancelling it.
       return drop_plan{.cancels_generator = true};
     }
+    if (entry.kind == type_kind::fn_kind) {
+      // What a closure's environment owns depends on the lambda that made
+      // it, so every `fn` value is dropped through the glue it carries.
+      return drop_plan{.closure_glue = closure_glue_type_};
+    }
     const auto is_prelude_sum =
         entry.kind == type_kind::builtin_generic_kind &&
         ((entry.name == "option" && entry.args.size() == 1) ||
@@ -5944,6 +5963,7 @@ private:
   }
 
   auto resolve_drop_plans() -> void {
+    closure_glue_type_ = types_.fn_of({}, types_.builtin("unit"));
     const auto snapshot = types_.count();
     for (std::size_t raw = 0; raw < snapshot; ++raw) {
       const auto id = static_cast<type_id>(raw);

@@ -62,6 +62,13 @@ def in_match(k: int32) -> unit:
         _ => println("kept")
     println("match done")
 
+def in_closure(take: bool) -> unit:
+    let n = noisy { id: 90 }
+    if take:
+        let f = move () => n.id
+        println("closure saw {f()}")
+    println("closure done")
+
 def refill_field(take: bool) -> unit:
     var p = pair { left: noisy { id: 100 }, right: noisy { id: 101 } }
     if take:
@@ -83,5 +90,7 @@ def main() -> unit:
     shadowed()
     in_match(0)
     in_match(1)
+    in_closure(true)
+    in_closure(false)
     refill_field(true)
     refill_field(false)

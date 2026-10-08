@@ -394,11 +394,14 @@ enum class opcode : uint8_t {
                      ///< as a `fn` argument or stored in a local.
 
   // --- Closures (spec/codegen-design.md increment 6) -----------------------
-  op_make_closure,  ///< u16 dst, u16 function_index, u16 env_ptr —
-                    ///< reg[dst] = a fresh 2-slot heap block
-                    ///< `{ function_index; reg[env_ptr] }` (`src/runtime/
-                    ///< layout.h`'s closure layout). `env_ptr` is a plain
-                    ///< heap pointer to the capture block (itself a flat
+  op_make_closure,  ///< u16 dst, u16 function_index, u16 env_ptr,
+                    ///< u16 glue_index — reg[dst] = a fresh 3-slot heap
+                    ///< block `{ function_index; reg[env_ptr]; glue }`
+                    ///< (`src/runtime/layout.h`'s closure layout), where
+                    ///< `glue` is `glue_index + 1`, or `0` when
+                    ///< `glue_index` is `k_no_drop_glue` (the closure's
+                    ///< environment owns nothing to drop). `env_ptr` is a
+                    ///< plain heap pointer to the capture block (itself a flat
                     ///< `op_alloc`'d slot block, one slot per free variable,
                     ///< populated via `op_store_slot`), or the sentinel `0`
                     ///< when the lambda captures nothing.
@@ -482,6 +485,11 @@ enum class opcode : uint8_t {
   op_generator_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
+  op_drop_closure, ///< u16 dst, u16 closure_reg — the compiled form of
+                   ///< `hir_closure_drop`. When reg[closure_reg] carries
+                   ///< drop glue, calls it with the closure's `env_ptr` as
+                   ///< its only argument; its `unit` lands in dst, unread.
+                   ///< Otherwise does nothing.
   op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
                         ///< the UTF-8 scalar starting at byte offset
                         ///< reg[offset_reg] within the `str` reg[str_reg],
@@ -545,6 +553,9 @@ enum class operand_kind : uint8_t {
 /// construction, the whole of a width change: every other size and offset
 /// in the encoding is derived from `operands_of` below.
 inline constexpr size_t k_register_operand_bytes = 2;
+
+/// `op_make_closure`'s `glue_index` for a closure with no drop glue.
+inline constexpr uint16_t k_no_drop_glue = 0xFFFF;
 
 /// The ordered operand sequence of one opcode. No instruction in this ISA
 /// takes more than four operands, so this is a fixed array rather than a
@@ -662,7 +673,7 @@ struct operand_signature {
     return sig({reg, imm16});
 
   case opcode::op_make_closure:
-    return sig({reg, imm16, reg});
+    return sig({reg, imm16, reg, imm16});
   case opcode::op_call_indirect:
     return sig({reg, reg, reg, imm8});
 
@@ -673,6 +684,7 @@ struct operand_signature {
   case opcode::op_generator_next:
   case opcode::op_generator_cancel:
   case opcode::op_generator_cancelled:
+  case opcode::op_drop_closure:
     return sig({reg, reg});
   case opcode::op_str_decode_scalar:
   case opcode::op_str_scalar_width:

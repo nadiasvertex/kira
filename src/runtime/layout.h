@@ -26,7 +26,8 @@ namespace cinder::runtime {
 //                            { slot_0; slot_1; ...; slot_{N-1}; } (N slots)
 //  - sum type:               { i64 tag; <payload slots...>; }     (1 + max
 //                            payload-slot-count across all variants)
-//  - closure/`fn` value:     { u64 fn_slot; u64 env_ptr; }        (2 slots)
+//  - closure/`fn` value:     { u64 fn_slot; u64 env_ptr; u64 drop_glue; }
+//                             (3 slots; `drop_glue` 0 when none)
 //
 //  This header only answers "what slot index does field/variant X live
 //  at" from a struct/sum type's *declaration* (field/variant name and

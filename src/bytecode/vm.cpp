@@ -1772,11 +1772,12 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(3 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] =
             slot_value{static_cast<uint64_t>(0)}; // null env for direct fn
+        slots[2] = slot_value{uint64_t{0}};       // no drop glue
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -1786,11 +1787,15 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         const auto env_reg = ops.reg();
+        const auto glue_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(3 * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
         slots[1] = f.registers[env_reg];
+        slots[2] = slot_value{glue_idx == bytecode::k_no_drop_glue
+                                  ? uint64_t{0}
+                                  : static_cast<uint64_t>(glue_idx) + 1};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -1904,6 +1909,22 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const std::array<slot_value, 3> call_args = {
             gen_slots[1], gen_slots[2], f.registers[generator_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
+                   dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
+      case opcode::op_drop_closure: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto closure_reg = ops.reg();
+        f.pc = ops.pos();
+        const auto *closure = slots_of(f.registers[closure_reg]);
+        if (closure[2].u == 0) {
+          f.registers[dst] = slot_value{};
+          break;
+        }
+        const auto glue_idx = static_cast<uint16_t>(closure[2].u - 1);
+        const std::array<slot_value, 1> call_args = {closure[1]};
+        push_frame(frames, module_.functions.at(glue_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }

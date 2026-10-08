@@ -1,0 +1,28 @@
+called 1
+scope ends
+drop 1
+drop 2
+applied 2
+caller done
+returned 3
+returned done
+drop 3
+sum 9
+drop 5
+drop 4
+read 6
+drop 6
+held 7
+struct done
+drop 7
+nested 9
+drop 8
+first 9
+drop 9
+second 10
+drop 10
+generic 111
+drop 11
+captured generic 212
+captured generic done
+drop 12

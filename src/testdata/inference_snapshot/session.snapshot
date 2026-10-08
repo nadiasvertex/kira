@@ -1,5 +1,5 @@
 # inference snapshot
-# 2264 interned types
+# 2265 interned types
 
 ## node_types (30577)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -32743,14 +32743,578 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (72)
+## drop_plans (668)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
 bag[_] own=- fields=[items: list[_]]
 bag[int32] own=- fields=[items: list[int32]]
 bag[int64] own=- fields=[items: list[int64]]
+doubler[map_iter[counter, int32, int32]] own=- fields=[inner: map_iter[counter, int32, int32]]
 file_handle own=std.io::file_handle::drop fields=[]
+filter_iter own=- fields=[pred: fn(&_) -> bool]
+filter_iter own=- fields=[pred: fn(_) -> bool]
+filter_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+filter_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+filter_iter[I, T] own=- fields=[pred: fn(T) -> bool]
+filter_iter[I, T] own=- fields=[pred: fn(T) -> bool]
+filter_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
+filter_iter[I, _] own=- fields=[pred: fn(_) -> bool]
+filter_iter[counter, _] own=- fields=[pred: fn(_) -> bool]
+filter_iter[counter, int32] own=- fields=[pred: fn(int32) -> bool]
+filter_map_iter own=- fields=[f: fn(_) -> option[_]]
+filter_map_iter[I, T, U] own=- fields=[f: fn(T) -> option[U]]
+filter_map_iter[I, T, U] own=- fields=[f: fn(T) -> option[U]]
+filter_map_iter[I, _, _] own=- fields=[f: fn(_) -> option[_]]
+flat_map_iter own=- fields=[f: fn(_) -> _]
+flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
+flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
+flat_map_iter[I, _, _, _] own=- fields=[f: fn(_) -> _]
+fn(&K, &K) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T) -> K own=- fields=[] glue=fn() -> unit
+fn(&T) -> K own=- fields=[] glue=fn() -> unit
+fn(&T) -> K own=- fields=[] glue=fn() -> unit
+fn(&T) -> T own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T) -> unit own=- fields=[] glue=fn() -> unit
+fn(&T) -> unit own=- fields=[] glue=fn() -> unit
+fn(&T) -> unit own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &T) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&T, &U) -> bool own=- fields=[] glue=fn() -> unit
+fn(&T, &U) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&_) -> bool own=- fields=[] glue=fn() -> unit
+fn(&_) -> unit own=- fields=[] glue=fn() -> unit
+fn(&_, &_) -> ordering own=- fields=[] glue=fn() -> unit
+fn(&list[T]) -> T own=- fields=[] glue=fn() -> unit
+fn(&list[int32]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&list[money]) -> money own=- fields=[] glue=fn() -> unit
+fn(&mut T, T) -> T own=- fields=[] glue=fn() -> unit
+fn(&mut acc, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&mut list[int32]) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut list[int32], int32) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut list[int32], usize) -> bool own=- fields=[] glue=fn() -> unit
+fn(&mut option[T], option[T]) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], bool) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], bool) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> usize own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> usize own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> usize own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, &fn(&T, &T) -> ordering) -> usize own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[int32]) -> unit own=- fields=[] glue=fn() -> unit
+fn(&ordering) -> bool own=- fields=[] glue=fn() -> unit
+fn(&slice[T], T) -> option[usize] own=- fields=[] glue=fn() -> unit
+fn(&slice[T], fn(&T) -> bool) -> usize own=- fields=[] glue=fn() -> unit
+fn(&slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&slice[int32]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], &slice[uint32], uint32) -> bool own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32] own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], &slice[uint8], &slice[uint32], &slice[uint32], &slice[uint32], &slice[uint32], uint32) -> option[str] own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], fn(&uint32) -> bool) -> usize own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], uint32) -> option[usize] own=- fields=[] glue=fn() -> unit
+fn(&slice[uint32], usize) -> bool own=- fields=[] glue=fn() -> unit
+fn(&uint32) -> bool own=- fields=[] glue=fn() -> unit
+fn((int64, int32)) -> unit own=- fields=[] glue=fn() -> unit
+fn((usize, usize)) -> unit own=- fields=[] glue=fn() -> unit
+fn() -> T own=- fields=[] glue=fn() -> unit
+fn() -> T own=- fields=[] glue=fn() -> unit
+fn() -> array[int32, 3] own=- fields=[] glue=fn() -> unit
+fn() -> bool own=- fields=[] glue=fn() -> unit
+fn() -> connection[closed] own=- fields=[] glue=fn() -> unit
+fn() -> file_handle own=- fields=[] glue=fn() -> unit
+fn() -> float32 own=- fields=[] glue=fn() -> unit
+fn() -> float64 own=- fields=[] glue=fn() -> unit
+fn() -> int16 own=- fields=[] glue=fn() -> unit
+fn() -> int32 own=- fields=[] glue=fn() -> unit
+fn() -> int64 own=- fields=[] glue=fn() -> unit
+fn() -> int8 own=- fields=[] glue=fn() -> unit
+fn() -> isize own=- fields=[] glue=fn() -> unit
+fn() -> list[_] own=- fields=[] glue=fn() -> unit
+fn() -> option[J] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[T] own=- fields=[] glue=fn() -> unit
+fn() -> option[U] own=- fields=[] glue=fn() -> unit
+fn() -> option[U] own=- fields=[] glue=fn() -> unit
+fn() -> option[U] own=- fields=[] glue=fn() -> unit
+fn() -> option[U] own=- fields=[] glue=fn() -> unit
+fn() -> option[int32] own=- fields=[] glue=fn() -> unit
+fn() -> raw_fd own=- fields=[] glue=fn() -> unit
+fn() -> result[unit, test_failure] own=- fields=[] glue=fn() -> unit
+fn() -> self own=- fields=[] glue=fn() -> unit
+fn() -> type_category own=- fields=[] glue=fn() -> unit
+fn() -> uint16 own=- fields=[] glue=fn() -> unit
+fn() -> uint32 own=- fields=[] glue=fn() -> unit
+fn() -> uint64 own=- fields=[] glue=fn() -> unit
+fn() -> uint8 own=- fields=[] glue=fn() -> unit
+fn() -> unit own=- fields=[] glue=fn() -> unit
+fn() -> usize own=- fields=[] glue=fn() -> unit
+fn(*mut (int64, int32)) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut (int64, int32), usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut (int64, int32), usize, usize) -> *mut (int64, int32) own=- fields=[] glue=fn() -> unit
+fn(*mut (usize, usize)) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut (usize, usize), usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut (usize, usize), usize, usize) -> *mut (usize, usize) own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(*mut byte) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut byte, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut byte, usize, usize) -> *mut byte own=- fields=[] glue=fn() -> unit
+fn(*mut int32) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut int32, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut int32, usize, usize) -> *mut int32 own=- fields=[] glue=fn() -> unit
+fn(*mut int64) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut int64, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut int64, usize, usize) -> *mut int64 own=- fields=[] glue=fn() -> unit
+fn(*mut money) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut money, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut money, usize, usize) -> *mut money own=- fields=[] glue=fn() -> unit
+fn(*mut str) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut str, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut str, usize, usize) -> *mut str own=- fields=[] glue=fn() -> unit
+fn(*mut test_case) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut test_case, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut test_suite) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut test_suite, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut test_suite, usize, usize) -> *mut test_suite own=- fields=[] glue=fn() -> unit
+fn(*mut uint32) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut uint32, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut uint32, usize, usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
+fn(*mut usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize, usize) -> *mut usize own=- fields=[] glue=fn() -> unit
+fn(A) -> B own=- fields=[] glue=fn() -> unit
+fn(A) -> B own=- fields=[] glue=fn() -> unit
+fn(A) -> B own=- fields=[] glue=fn() -> unit
+fn(A) -> B own=- fields=[] glue=fn() -> unit
+fn(A) -> M[B] own=- fields=[] glue=fn() -> unit
+fn(A) -> _ own=- fields=[] glue=fn() -> unit
+fn(A) -> _ own=- fields=[] glue=fn() -> unit
+fn(A) -> option[A] own=- fields=[] glue=fn() -> unit
+fn(A) -> option[B] own=- fields=[] glue=fn() -> unit
+fn(A, T) -> A own=- fields=[] glue=fn() -> unit
+fn(I) -> C own=- fields=[] glue=fn() -> unit
+fn(I) -> C own=- fields=[] glue=fn() -> unit
+fn(I) -> C own=- fields=[] glue=fn() -> unit
+fn(I) -> T own=- fields=[] glue=fn() -> unit
+fn(I) -> T own=- fields=[] glue=fn() -> unit
+fn(I) -> counter own=- fields=[] glue=fn() -> unit
+fn(I) -> counter own=- fields=[] glue=fn() -> unit
+fn(I) -> doubler own=- fields=[] glue=fn() -> unit
+fn(I) -> doubler own=- fields=[] glue=fn() -> unit
+fn(I) -> list[_] own=- fields=[] glue=fn() -> unit
+fn(I) -> list[int32] own=- fields=[] glue=fn() -> unit
+fn(I) -> list[int32] own=- fields=[] glue=fn() -> unit
+fn(I) -> self own=- fields=[] glue=fn() -> unit
+fn(I) -> self own=- fields=[] glue=fn() -> unit
+fn(I, fn(T) -> U) -> map_iter[I, T, U] own=- fields=[] glue=fn() -> unit
+fn(I, fn(T) -> bool) -> filter_iter[I, T] own=- fields=[] glue=fn() -> unit
+fn(K, K) -> ordering own=- fields=[] glue=fn() -> unit
+fn(K, K) -> ordering own=- fields=[] glue=fn() -> unit
+fn(S, T) -> S own=- fields=[] glue=fn() -> unit
+fn(S, T) -> S own=- fields=[] glue=fn() -> unit
+fn(S, T) -> S own=- fields=[] glue=fn() -> unit
+fn(S, _) -> S own=- fields=[] glue=fn() -> unit
+fn(T) -> B own=- fields=[] glue=fn() -> unit
+fn(T) -> J own=- fields=[] glue=fn() -> unit
+fn(T) -> J own=- fields=[] glue=fn() -> unit
+fn(T) -> J own=- fields=[] glue=fn() -> unit
+fn(T) -> T own=- fields=[] glue=fn() -> unit
+fn(T) -> T own=- fields=[] glue=fn() -> unit
+fn(T) -> T own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> U own=- fields=[] glue=fn() -> unit
+fn(T) -> _ own=- fields=[] glue=fn() -> unit
+fn(T) -> bool own=- fields=[] glue=fn() -> unit
+fn(T) -> bool own=- fields=[] glue=fn() -> unit
+fn(T) -> bool own=- fields=[] glue=fn() -> unit
+fn(T) -> int32 own=- fields=[] glue=fn() -> unit
+fn(T) -> list[T] own=- fields=[] glue=fn() -> unit
+fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(T) -> str own=- fields=[] glue=fn() -> unit
+fn(T) -> unit own=- fields=[] glue=fn() -> unit
+fn(T) -> unit own=- fields=[] glue=fn() -> unit
+fn(T) -> unit own=- fields=[] glue=fn() -> unit
+fn(T, T) -> T own=- fields=[] glue=fn() -> unit
+fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
+fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
+fn(T, fn(T) -> option[U]) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(_) -> *_ own=- fields=[] glue=fn() -> unit
+fn(_) -> *mut _ own=- fields=[] glue=fn() -> unit
+fn(_) -> U own=- fields=[] glue=fn() -> unit
+fn(_) -> _ own=- fields=[] glue=fn() -> unit
+fn(_) -> bool own=- fields=[] glue=fn() -> unit
+fn(_) -> example_type[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> float32 own=- fields=[] glue=fn() -> unit
+fn(_) -> float64 own=- fields=[] glue=fn() -> unit
+fn(_) -> int16 own=- fields=[] glue=fn() -> unit
+fn(_) -> int32 own=- fields=[] glue=fn() -> unit
+fn(_) -> int64 own=- fields=[] glue=fn() -> unit
+fn(_) -> int8 own=- fields=[] glue=fn() -> unit
+fn(_) -> isize own=- fields=[] glue=fn() -> unit
+fn(_) -> list_into_iter[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[&_] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[&mut _] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[(_, _)] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[(usize, _)] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(_) -> raw_fd own=- fields=[] glue=fn() -> unit
+fn(_) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(_) -> self own=- fields=[] glue=fn() -> unit
+fn(_) -> slice[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> slice_mut[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> str own=- fields=[] glue=fn() -> unit
+fn(_) -> uint64 own=- fields=[] glue=fn() -> unit
+fn(_) -> unit own=- fields=[] glue=fn() -> unit
+fn(_) -> usize own=- fields=[] glue=fn() -> unit
+fn(_, &bool) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &byte) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &byte) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &char) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &char) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &float32) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &float32) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &float64) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &float64) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &int16) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &int16) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &int32) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &int32) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &int64) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &int64) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &int8) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &int8) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &isize) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &isize) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &money) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &money) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &mut list[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &mut slice_mut[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &self) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &self) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &slice[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &uint16) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &uint16) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &uint32) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &uint32) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &uint64) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &uint64) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &uint8) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &uint8) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &usize) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &usize) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &weight) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &weight) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, T) -> T own=- fields=[] glue=fn() -> unit
+fn(_, _) -> _ own=- fields=[] glue=fn() -> unit
+fn(_, _) -> cell[_] own=- fields=[] glue=fn() -> unit
+fn(_, _) -> unit own=- fields=[] glue=fn() -> unit
+fn(_, _, _) -> unit own=- fields=[] glue=fn() -> unit
+fn(_, array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(_, array[T, n], usize) -> T own=- fields=[] glue=fn() -> unit
+fn(_, array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(_, array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(_, byte) -> byte own=- fields=[] glue=fn() -> unit
+fn(_, float32) -> float32 own=- fields=[] glue=fn() -> unit
+fn(_, float64) -> float64 own=- fields=[] glue=fn() -> unit
+fn(_, fn(A) -> B) -> _ own=- fields=[] glue=fn() -> unit
+fn(_, fn(A) -> B) -> _ own=- fields=[] glue=fn() -> unit
+fn(_, fn(A) -> _) -> _ own=- fields=[] glue=fn() -> unit
+fn(_, fn(_) -> U) -> bag[U] own=- fields=[] glue=fn() -> unit
+fn(_, int16) -> int16 own=- fields=[] glue=fn() -> unit
+fn(_, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(_, int64) -> int64 own=- fields=[] glue=fn() -> unit
+fn(_, int8) -> int8 own=- fields=[] glue=fn() -> unit
+fn(_, isize) -> isize own=- fields=[] glue=fn() -> unit
+fn(_, money) -> money own=- fields=[] glue=fn() -> unit
+fn(_, range[usize]) -> slice[_] own=- fields=[] glue=fn() -> unit
+fn(_, range[usize]) -> slice_mut[_] own=- fields=[] glue=fn() -> unit
+fn(_, self) -> self own=- fields=[] glue=fn() -> unit
+fn(_, str) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, str) -> list[str] own=- fields=[] glue=fn() -> unit
+fn(_, str) -> option[usize] own=- fields=[] glue=fn() -> unit
+fn(_, str) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, str) -> str own=- fields=[] glue=fn() -> unit
+fn(_, str, str) -> str own=- fields=[] glue=fn() -> unit
+fn(_, uint16) -> uint16 own=- fields=[] glue=fn() -> unit
+fn(_, uint32) -> uint32 own=- fields=[] glue=fn() -> unit
+fn(_, uint64) -> uint64 own=- fields=[] glue=fn() -> unit
+fn(_, uint8) -> uint8 own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> _ own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> cell[_] own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> cell_mut[_] own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> option[_] own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> option[cell_mut[_]] own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(_, usize) -> usize own=- fields=[] glue=fn() -> unit
+fn(_, usize, _) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, usize, _) -> unit own=- fields=[] glue=fn() -> unit
+fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
+fn(array[_, n]) -> list[_] own=- fields=[] glue=fn() -> unit
+fn(array[_, n]) -> self own=- fields=[] glue=fn() -> unit
+fn(array[int32, 3], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 3], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 4], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 4], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 5]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 5], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 5], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 8], index[8]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, 8], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n], index[n]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(bag[T]) -> usize own=- fields=[] glue=fn() -> unit
+fn(bag[int32]) -> usize own=- fields=[] glue=fn() -> unit
+fn(bool) -> str own=- fields=[] glue=fn() -> unit
+fn(bool, sign_mode) -> str own=- fields=[] glue=fn() -> unit
+fn(bool, str) -> str own=- fields=[] glue=fn() -> unit
+fn(bool, str, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
+fn(byte) -> unit own=- fields=[] glue=fn() -> unit
+fn(char, usize) -> str own=- fields=[] glue=fn() -> unit
+fn(connection[closed]) -> connection[open] own=- fields=[] glue=fn() -> unit
+fn(connection[open], int32) -> unit own=- fields=[] glue=fn() -> unit
+fn(counter) -> int32 own=- fields=[] glue=fn() -> unit
+fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32] own=- fields=[] glue=fn() -> unit
+fn(counter, fn(int32) -> int32) -> map_iter[counter, int32, int32] own=- fields=[] glue=fn() -> unit
+fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32] own=- fields=[] glue=fn() -> unit
+fn(float32) -> uint32 own=- fields=[] glue=fn() -> unit
+fn(float64) -> uint64 own=- fields=[] glue=fn() -> unit
+fn(float64, usize) -> str own=- fields=[] glue=fn() -> unit
+fn(float64, usize, bool) -> str own=- fields=[] glue=fn() -> unit
+fn(fn(int32) -> int32, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(int32) -> B own=- fields=[] glue=fn() -> unit
+fn(int32) -> U own=- fields=[] glue=fn() -> unit
+fn(int32) -> _ own=- fields=[] glue=fn() -> unit
+fn(int32) -> array[int32, 4] own=- fields=[] glue=fn() -> unit
+fn(int32) -> bool own=- fields=[] glue=fn() -> unit
+fn(int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(int32) -> int64 own=- fields=[] glue=fn() -> unit
+fn(int32) -> list[int32] own=- fields=[] glue=fn() -> unit
+fn(int32) -> option[B] own=- fields=[] glue=fn() -> unit
+fn(int32) -> option[_] own=- fields=[] glue=fn() -> unit
+fn(int32) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(int32) -> result[int32, app_error] own=- fields=[] glue=fn() -> unit
+fn(int32) -> result[int32, parse_error] own=- fields=[] glue=fn() -> unit
+fn(int32) -> str own=- fields=[] glue=fn() -> unit
+fn(int32) -> unit own=- fields=[] glue=fn() -> unit
+fn(int32, fn(int32) -> option[int32]) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(int32, int32, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(int64) -> B own=- fields=[] glue=fn() -> unit
+fn(int64) -> int64 own=- fields=[] glue=fn() -> unit
+fn(int64) -> list[int64] own=- fields=[] glue=fn() -> unit
+fn(int64) -> str own=- fields=[] glue=fn() -> unit
+fn(int64) -> unit own=- fields=[] glue=fn() -> unit
+fn(int64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
+fn(io_errno) -> io_error own=- fields=[] glue=fn() -> unit
+fn(list[T], T) -> T own=- fields=[] glue=fn() -> unit
+fn(list[T], fn(T) -> T) -> list[T] own=- fields=[] glue=fn() -> unit
+fn(list[int32]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(list[int32], fn(int32) -> int32) -> list[int32] own=- fields=[] glue=fn() -> unit
+fn(list[int32], int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(list[int64], fn(int64) -> int64) -> list[int64] own=- fields=[] glue=fn() -> unit
+fn(list[money], money) -> money own=- fields=[] glue=fn() -> unit
+fn(list[test_suite]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(map_iter[filter_iter[counter, int32], int32, int32]) -> int32 own=- fields=[] glue=fn() -> unit
+fn(money) -> str own=- fields=[] glue=fn() -> unit
+fn(money) -> unit own=- fields=[] glue=fn() -> unit
+fn(option[A], fn(A) -> B) -> option[B] own=- fields=[] glue=fn() -> unit
+fn(option[A], fn(A) -> B) -> option[B] own=- fields=[] glue=fn() -> unit
+fn(option[A], fn(A) -> option[B]) -> option[B] own=- fields=[] glue=fn() -> unit
+fn(option[T], T) -> T own=- fields=[] glue=fn() -> unit
+fn(option[T], fn(T) -> T) -> option[T] own=- fields=[] glue=fn() -> unit
+fn(option[align_mode]) -> bool own=- fields=[] glue=fn() -> unit
+fn(option[align_mode], align_mode) -> align_mode own=- fields=[] glue=fn() -> unit
+fn(option[int32], fn(int32) -> int32) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(option[int32], int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(option[int64], fn(int64) -> int64) -> option[int64] own=- fields=[] glue=fn() -> unit
+fn(option[int64], int64) -> int64 own=- fields=[] glue=fn() -> unit
+fn(option[usize]) -> usize own=- fields=[] glue=fn() -> unit
+fn(parse_error) -> app_error own=- fields=[] glue=fn() -> unit
+fn(positive) -> int32 own=- fields=[] glue=fn() -> unit
+fn(raw_fd) -> result[unit, io_errno] own=- fields=[] glue=fn() -> unit
+fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno] own=- fields=[] glue=fn() -> unit
+fn(raw_fd, &slice[byte]) -> result[usize, io_errno] own=- fields=[] glue=fn() -> unit
+fn(small) -> int32 own=- fields=[] glue=fn() -> unit
+fn(str) -> list[uint32] own=- fields=[] glue=fn() -> unit
+fn(str) -> never own=- fields=[] glue=fn() -> unit
+fn(str) -> str own=- fields=[] glue=fn() -> unit
+fn(str) -> unit own=- fields=[] glue=fn() -> unit
+fn(str) -> usize own=- fields=[] glue=fn() -> unit
+fn(str, format_spec) -> str own=- fields=[] glue=fn() -> unit
+fn(str, list[test_case], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]], option[fn() -> result[unit, test_failure]]) -> test_suite own=- fields=[] glue=fn() -> unit
+fn(str, open_options) -> result[raw_fd, io_errno] own=- fields=[] glue=fn() -> unit
+fn(str, result[unit, test_failure]) -> bool own=- fields=[] glue=fn() -> unit
+fn(str, str) -> bool own=- fields=[] glue=fn() -> unit
+fn(str, str) -> find_result own=- fields=[] glue=fn() -> unit
+fn(str, str) -> int32 own=- fields=[] glue=fn() -> unit
+fn(str, str) -> str own=- fields=[] glue=fn() -> unit
+fn(str, str, str) -> str own=- fields=[] glue=fn() -> unit
+fn(str, str, usize) -> find_result own=- fields=[] glue=fn() -> unit
+fn(str, uint8) -> str own=- fields=[] glue=fn() -> unit
+fn(str, usize) -> str own=- fields=[] glue=fn() -> unit
+fn(test_case) -> unit own=- fields=[] glue=fn() -> unit
+fn(test_failure) -> str own=- fields=[] glue=fn() -> unit
+fn(test_suite) -> unit own=- fields=[] glue=fn() -> unit
+fn(uint32) -> bool own=- fields=[] glue=fn() -> unit
+fn(uint32) -> str own=- fields=[] glue=fn() -> unit
+fn(uint32) -> unit own=- fields=[] glue=fn() -> unit
+fn(uint32, usize) -> str own=- fields=[] glue=fn() -> unit
+fn(uint64, uint64) -> uint64 own=- fields=[] glue=fn() -> unit
+fn(uint64, uint8, bool) -> str own=- fields=[] glue=fn() -> unit
+fn(uint64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
+fn(upto) -> counter own=- fields=[] glue=fn() -> unit
+fn(upto) -> doubler own=- fields=[] glue=fn() -> unit
+fn(upto) -> list[int32] own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut (int64, int32) own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut (usize, usize) own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut byte own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut int32 own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut int64 own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut money own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut str own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut test_suite own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut usize own=- fields=[] glue=fn() -> unit
+fn(usize) -> int32 own=- fields=[] glue=fn() -> unit
+fn(usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(usize) -> usize own=- fields=[] glue=fn() -> unit
+fn(vec[T, k + 1], vec[T, 2]) -> vec[T, k + 3] own=- fields=[] glue=fn() -> unit
+fn(vec[T, m], vec[T, n]) -> vec[T, m + n] own=- fields=[] glue=fn() -> unit
+fn(vec[T, m], vec[T, n]) -> vec[T, m + n] own=- fields=[] glue=fn() -> unit
+fn(vec[T, n + 1]) -> unit own=- fields=[] glue=fn() -> unit
+fn(vec[int32, 7]) -> unit own=- fields=[] glue=fn() -> unit
+fn(weight, weight) -> int32 own=- fields=[] glue=fn() -> unit
+inspect_iter own=- fields=[f: fn(&_) -> unit]
+inspect_iter[I, T] own=- fields=[f: fn(&T) -> unit]
+inspect_iter[I, T] own=- fields=[f: fn(&T) -> unit]
+inspect_iter[I, _] own=- fields=[f: fn(&_) -> unit]
 list[(int64, int32)] own=std.list::list::drop$list__int64__int32__ fields=[]
 list[(usize, usize)] own=std.list::list::drop$list__usize__usize__ fields=[]
 list[T] own=std.list::list::drop fields=[]
@@ -32813,11 +33377,43 @@ list_into_iter[int32] own=std.iter::list_into_iter::drop$list_into_iter_int32_ f
 list_into_iter[int64] own=std.iter::list_into_iter::drop$list_into_iter_int64_ fields=[src: list[int64]]
 list_into_iter[money] own=std.iter::list_into_iter::drop$list_into_iter_money_ fields=[src: list[money]]
 list_into_iter[test_suite] own=std.iter::list_into_iter::drop$list_into_iter_test_suite_ fields=[src: list[test_suite]]
+map_iter own=- fields=[f: fn(_) -> _]
+map_iter own=- fields=[f: fn(_) -> _]
+map_iter own=- fields=[f: fn(_) -> _]
+map_iter[I, &T, T] own=- fields=[f: fn(&T) -> T]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
+map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
+map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
+map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
+map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
+map_iter[counter, _, _] own=- fields=[f: fn(_) -> _]
+map_iter[counter, int32, int32] own=- fields=[f: fn(int32) -> int32]
+map_iter[filter_iter[counter, int32], _, _] own=- fields=[inner: filter_iter[counter, int32], f: fn(_) -> _]
+map_iter[filter_iter[counter, int32], int32, int32] own=- fields=[inner: filter_iter[counter, int32], f: fn(int32) -> int32]
+option[fn() -> result[unit, test_failure]] own=- fields=[] variants=[some.0: fn() -> result[unit, test_failure]]
 option[test_suite] own=- fields=[] variants=[some.0: test_suite]
 result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
-test_suite own=- fields=[cases: list[test_case]]
+scan_iter own=- fields=[f: fn(_, _) -> _]
+scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
+scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
+scan_iter[I, _, S] own=- fields=[f: fn(S, _) -> S]
+skip_while_iter own=- fields=[pred: fn(&_) -> bool]
+skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+skip_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
+take_while_iter own=- fields=[pred: fn(&_) -> bool]
+take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+take_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
+test_case own=- fields=[run: fn() -> result[unit, test_failure]]
+test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1660)
+## borrow_bearing_types (1661)
 &K
 &T
 &T
@@ -33798,6 +34394,7 @@ fn() -> uint16
 fn() -> uint32
 fn() -> uint64
 fn() -> uint8
+fn() -> unit
 fn() -> usize
 fn(*mut (int64, int32)) -> unit
 fn(*mut (int64, int32), usize) -> unit

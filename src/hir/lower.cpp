@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/hir/captures.h"
 #include "src/hir/drop_schedule.h"
 #include "src/hir/reference_check.h"
 #include "src/hir/ids.h"
@@ -591,6 +592,11 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_cast(const ast::cast_expr &cast)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The drop glue of the closure `lambda` lowered to (`hir_lambda::
+  /// drop_glue`): null when its environment owns nothing to drop.
+  [[nodiscard]] auto lower_drop_glue(const ast::lambda_expr &lambda,
+                                     const hir_lambda &closure)
+      -> std::expected<ptr<hir_lambda>, lowering_error>;
   [[nodiscard]] auto lower_lambda(const ast::lambda_expr &lambda)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_where(const ast::where_expr &where)
@@ -1036,6 +1042,10 @@ private:
   /// locals of its copies, so a capture list that names it (`[f]`) captures
   /// every closure made for it.
   std::unordered_map<symbol_id, std::vector<symbol_id>> generic_lambda_groups_;
+  /// A generic lambda's `let` pattern, mapped to the locals of its copies:
+  /// dropping the binding drops every closure made for it.
+  std::unordered_map<const void *, std::vector<symbol_id>>
+      generic_lambda_bindings_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
   /// Where every synthesized scope-exit `drop` call belongs in this
@@ -2430,6 +2440,12 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                                                        make_receiver())))));
     return {};
   }
+  if (plan.closure_glue.has_value()) {
+    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_closure_drop>(span, k_unknown_type,
+                                                   make_receiver())))));
+    return {};
+  }
   if (plan.own_drop.has_value()) {
     const auto &resolved = *plan.own_drop;
     // Same convention as `lower_index_dispatch` just above: an empty
@@ -2555,28 +2571,52 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
 
 auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
-  const auto symbol = lookup_whole_local(drop.node);
-  if (!symbol.has_value()) {
-    return fail(lowering_error_kind::unsupported_construct,
-                source_span::dummy(),
-                std::format("internal error: drop schedule named `{}`, which "
-                            "is not a local in scope at this point",
-                            drop.name));
-  }
-  const auto drop_symbol = *symbol;
-  const auto drop_type = drop.type;
-  const auto drop_name = drop.name;
-  const place_fn make_receiver = [drop_symbol, drop_type,
-                                  drop_name]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(source_span::dummy(), drop_type, drop_symbol,
-                                drop_name)};
-  };
   auto drops = ptr_vec<hir_node>{};
-  if (auto built = build_drop_calls(make_receiver, drop.type,
-                                    source_span::dummy(), drops,
-                                    drop.moved_paths);
-      !built.has_value()) {
-    return built;
+  if (const auto copies = generic_lambda_bindings_.find(drop.node);
+      copies != generic_lambda_bindings_.end()) {
+    // A generic lambda's binding holds one closure per copy.
+    for (const auto copy : copies->second) {
+      const auto type = local_types_.find(copy);
+      if (type == local_types_.end() ||
+          !checked_.drop_plans.contains(type->second)) {
+        continue;
+      }
+      const auto copy_type = type->second;
+      const auto copy_name = drop.name;
+      const place_fn make_copy = [copy, copy_type,
+                                  copy_name]() -> ptr<hir_expr> {
+        return {make<hir_local_ref>(source_span::dummy(), copy_type, copy,
+                                    copy_name)};
+      };
+      if (auto built = build_drop_calls(make_copy, copy_type,
+                                        source_span::dummy(), drops);
+          !built.has_value()) {
+        return built;
+      }
+    }
+  } else {
+    const auto symbol = lookup_whole_local(drop.node);
+    if (!symbol.has_value()) {
+      return fail(lowering_error_kind::unsupported_construct,
+                  source_span::dummy(),
+                  std::format("internal error: drop schedule named `{}`, "
+                              "which is not a local in scope at this point",
+                              drop.name));
+    }
+    const auto drop_symbol = *symbol;
+    const auto drop_type = drop.type;
+    const auto drop_name = drop.name;
+    const place_fn make_receiver = [drop_symbol, drop_type,
+                                    drop_name]() -> ptr<hir_expr> {
+      return {make<hir_local_ref>(source_span::dummy(), drop_type, drop_symbol,
+                                  drop_name)};
+    };
+    if (auto built =
+            build_drop_calls(make_receiver, drop.type, source_span::dummy(),
+                             drops, drop.moved_paths);
+        !built.has_value()) {
+      return built;
+    }
   }
   // Moved on some paths to this exit only: drop it when its flag says it is
   // still here.
@@ -3147,9 +3187,76 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
     return std::unexpected(body.error());
   }
 
-  return ok_expr(make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
-                                  return_type, std::move(*body),
-                                  std::move(captures)));
+  auto closure =
+      make<hir_lambda>(lambda.span, *lambda_type, std::move(params),
+                       return_type, std::move(*body), std::move(captures));
+  auto glue = lower_drop_glue(lambda, *closure);
+  if (!glue.has_value()) {
+    return std::unexpected(glue.error());
+  }
+  closure->drop_glue = std::move(*glue);
+  return ok_expr(std::move(closure));
+}
+
+auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
+                              const hir_lambda &closure)
+    -> std::expected<ptr<hir_lambda>, lowering_error> {
+  const auto owned = drop_schedule_.owned_captures.find(&lambda);
+  if (owned == drop_schedule_.owned_captures.end()) {
+    return ptr<hir_lambda>{};
+  }
+  const auto plan = checked_.drop_plans.find(closure.type);
+  if (plan == checked_.drop_plans.end() ||
+      !plan->second.closure_glue.has_value()) {
+    return fail(lowering_error_kind::unsupported_construct, lambda.span,
+                "internal error: a closure owns captured values but its "
+                "`fn` type has no drop plan");
+  }
+  const auto glue_type = *plan->second.closure_glue;
+  const auto unit = checked_.types.entry(glue_type).result;
+  // Last captured, first dropped — the reverse-declaration order of an
+  // ordinary scope.
+  auto stmts = ptr_vec<hir_node>{};
+  for (const auto &capture : std::views::reverse(owned->second)) {
+    const auto symbol = lookup_local(capture.name);
+    if (!symbol.has_value()) {
+      return fail(lowering_error_kind::unsupported_construct, lambda.span,
+                  "internal error: a value moved into a closure did not "
+                  "resolve to a local of the enclosing function");
+    }
+    // A generic lambda's name stands for one closure per copy, and the
+    // environment captured each of them (`lower_lambda`).
+    auto parts = std::vector<std::pair<symbol_id, type_id>>{};
+    if (const auto group = generic_lambda_groups_.find(*symbol);
+        group != generic_lambda_groups_.end()) {
+      for (const auto copy : group->second) {
+        if (const auto type = local_types_.find(copy);
+            type != local_types_.end() &&
+            checked_.drop_plans.contains(type->second)) {
+          parts.emplace_back(copy, type->second);
+        }
+      }
+    } else {
+      parts.emplace_back(*symbol, capture.type);
+    }
+    const auto span = lambda.span;
+    for (const auto &[part, type] : parts) {
+      const auto name = capture.name;
+      const place_fn place = [span, part, type, name]() -> ptr<hir_expr> {
+        return {make<hir_local_ref>(span, type, part, name)};
+      };
+      if (auto drops = build_drop_calls(place, type, span, stmts);
+          !drops.has_value()) {
+        return std::unexpected(drops.error());
+      }
+    }
+  }
+  // The same capture list as the closure, so the glue reads the same
+  // environment block.
+  return make<hir_lambda>(lambda.span, glue_type, std::vector<hir_param>{},
+                          unit,
+                          make<hir_block>(lambda.span, unit, std::move(stmts)),
+                          capture_plan(closure));
 }
 
 auto lowerer::lower_where(const ast::where_expr &where)
@@ -3883,7 +3990,9 @@ auto lowerer::lower_stmt(const ast::node &node)
       // own copy.
       const auto name_symbol = mint_symbol();
       scopes_.back().by_name.insert_or_assign(name, name_symbol);
+      generic_lambda_bindings_.insert_or_assign(let.pattern.get(), group);
       generic_lambda_groups_.emplace(name_symbol, std::move(group));
+      declare_flags(let.pattern.get(), let.span, result);
       return result;
     }
     auto initializer = lower_expr(*let.initializer);

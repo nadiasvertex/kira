@@ -185,6 +185,9 @@ struct walker {
     case hir_node_kind::hir_generator_cancel:
       walk_expr(*dynamic_cast<const hir_generator_cancel &>(expr).object);
       return;
+    case hir_node_kind::hir_closure_drop:
+      walk_expr(*dynamic_cast<const hir_closure_drop &>(expr).object);
+      return;
     case hir_node_kind::hir_str_decode_scalar: {
       const auto &n = dynamic_cast<const hir_str_decode_scalar &>(expr);
       walk_expr(*n.object);

@@ -578,9 +578,12 @@ auto renderer::run() -> std::string {
       }
     }
     drops.push_back(std::format(
-        "{} own={} fields=[{}]{}", ty(type),
+        "{} own={} fields=[{}]{}{}", ty(type),
         plan.own_drop.has_value() ? callee_text(*plan.own_drop) : "-", fields,
-        variants.empty() ? "" : std::format(" variants=[{}]", variants)));
+        variants.empty() ? "" : std::format(" variants=[{}]", variants),
+        plan.closure_glue.has_value()
+            ? std::format(" glue={}", ty(*plan.closure_glue))
+            : ""));
   }
   text_section("drop_plans", std::move(drops));
 

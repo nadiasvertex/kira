@@ -221,6 +221,11 @@ auto collect_bound_symbols(const hir_node &node,
         *dynamic_cast<const hir_generator_cancel &>(node).object, bound);
     return;
   }
+  case hir_node_kind::hir_closure_drop: {
+    collect_bound_symbols(*dynamic_cast<const hir_closure_drop &>(node).object,
+                          bound);
+    return;
+  }
   case hir_node_kind::hir_cell_set: {
     const auto &n = dynamic_cast<const hir_cell_set &>(node);
     collect_bound_symbols(*n.cell, bound);

@@ -243,6 +243,8 @@ auto compute_drop_schedule(const ast::func_decl &decl,
                                     cfg.consuming_calls.end());
     schedule.temporary_ends.insert(cfg.temporary_ends.begin(),
                                    cfg.temporary_ends.end());
+    schedule.owned_captures.insert(cfg.owned_captures.begin(),
+                                   cfg.owned_captures.end());
 
     for (const auto &assign : facts.assignments) {
       auto drop = assignment_drop{};

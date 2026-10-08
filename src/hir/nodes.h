@@ -114,6 +114,8 @@ enum class hir_node_kind : uint8_t {
                          ///< `hir_container_len`.
   hir_generator_cancel,  ///< Drops a `generator[T]` value: see
                          ///< `hir_generator_cancel`'s doc comment.
+  hir_closure_drop,      ///< Drops a `fn` value: see `hir_closure_drop`'s
+                         ///< doc comment.
   hir_generator_cancelled, ///< Inside a generator's body, whether it was
                            ///< resumed only to be cancelled.
   hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
@@ -653,6 +655,18 @@ struct hir_generator_cancel : hir_expr {
         object(std::move(obj)) {}
 };
 
+/// Drops a `fn` value: runs the drop glue its closure carries
+/// (`hir_lambda::drop_glue`) over its environment. A closure whose
+/// environment owns nothing, and a plain function value, carry none.
+/// Evaluates to `unit`.
+struct hir_closure_drop : hir_expr {
+  ptr<hir_expr> object;
+
+  hir_closure_drop(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_closure_drop, s, t),
+        object(std::move(obj)) {}
+};
+
 /// Inside a `generator def`'s body: whether the generator was resumed only
 /// to be cancelled (`hir_generator_cancel`). `type` is `bool`. Lowering
 /// tests it before the body first runs and right after each `yield`.
@@ -776,6 +790,13 @@ struct hir_lambda : hir_expr {
   /// it collapses both cases into the one ordered list the backends build
   /// the environment block from.
   std::optional<std::vector<hir_capture>> captures;
+  /// Drops what the environment owns — the values moved into it — when the
+  /// closure itself is dropped (`hir_closure_drop`). A lambda with no
+  /// parameters whose explicit capture list is this lambda's `capture_plan`,
+  /// so it reads the same environment block; compiled alongside this lambda
+  /// and stored in the closure value. Null when the environment owns
+  /// nothing that needs dropping.
+  ptr<hir_lambda> drop_glue;
 
   hir_lambda(source_span s, type_id t, std::vector<hir_param> p, type_id ret,
              ptr<hir_block> b,

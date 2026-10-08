@@ -1,0 +1,104 @@
+module main
+
+# A closure owns the values moved into its environment and drops them when
+# it is dropped itself (ch. 16, ch. 17). Every `noisy` prints `drop <id>`
+# exactly once.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+type holder = { f: fn() -> int32 }
+
+def apply(f: fn() -> int32) -> int32:
+    return f()
+
+def make(id: int32) -> fn() -> int32:
+    let n = noisy { id: id }
+    return move () => n.id
+
+# Dropped where the closure's scope ends, not where it was created.
+def at_scope_end() -> unit:
+    let n = noisy { id: 1 }
+    let f = move () => n.id
+    println("called {f()}")
+    println("scope ends")
+
+# Passed by value: the callee owns the closure and drops it.
+def passed_to_callee() -> unit:
+    let n = noisy { id: 2 }
+    let f = move () => n.id
+    println("applied {apply(f)}")
+    println("caller done")
+
+# Returned: the caller owns it.
+def returned() -> unit:
+    let f = make(3)
+    println("returned {f()}")
+    println("returned done")
+
+# Several captures drop in reverse capture order.
+def several() -> unit:
+    let a = noisy { id: 4 }
+    let b = noisy { id: 5 }
+    let f = move [a, b] () => a.id + b.id
+    println("sum {f()}")
+
+# Without `move` the closure copies a value it only reads: the enclosing
+# scope still owns it and drops it, and the closure drops nothing.
+def read_only() -> unit:
+    let n = noisy { id: 6 }
+    let f = () => n.id
+    println("read {f()}")
+
+# A closure stored in a struct field drops with the struct.
+def in_a_struct() -> unit:
+    let n = noisy { id: 7 }
+    let h = holder { f: move () => n.id }
+    println("held {(h.f)()}")
+    println("struct done")
+
+# A closure moved into another closure is dropped by that closure's glue.
+def nested() -> unit:
+    let n = noisy { id: 8 }
+    let inner = move () => n.id
+    let outer = move () => inner() + 1
+    println("nested {outer()}")
+
+# Reassigning drops the closure that was there before.
+def reassigned() -> unit:
+    let a = noisy { id: 9 }
+    let b = noisy { id: 10 }
+    var f = move () => a.id
+    println("first {f()}")
+    f = move () => b.id
+    println("second {f()}")
+
+# A generic lambda's closure owns what it moved in, too.
+def generic() -> unit:
+    let n = noisy { id: 11 }
+    let f = move (x) => x + n.id
+    println("generic {f(100)}")
+
+# A generic lambda moved into another closure: that closure's glue drops
+# the generic lambda's closure, which drops what it moved in.
+def generic_captured() -> unit:
+    let n = noisy { id: 12 }
+    let f = move (x) => x + n.id
+    let outer = move [f] () => f(200)
+    println("captured generic {outer()}")
+    println("captured generic done")
+
+def main() -> unit:
+    at_scope_end()
+    passed_to_callee()
+    returned()
+    several()
+    read_only()
+    in_a_struct()
+    nested()
+    reassigned()
+    generic()
+    generic_captured()

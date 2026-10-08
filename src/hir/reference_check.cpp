@@ -161,6 +161,10 @@ private:
       projection(*dynamic_cast<const hir_generator_cancel &>(node).object,
                  "a generator drop");
       break;
+    case hir_node_kind::hir_closure_drop:
+      projection(*dynamic_cast<const hir_closure_drop &>(node).object,
+                 "a closure drop");
+      break;
     case hir_node_kind::hir_str_decode_scalar:
       projection(*dynamic_cast<const hir_str_decode_scalar &>(node).object,
                  "a string decode");
@@ -925,6 +929,9 @@ private:
       exits_ = std::move(outer_exits);
       loop_bases_ = std::move(outer_loops);
       returns_.pop_back();
+      if (lambda.drop_glue != nullptr) {
+        visit(*lambda.drop_glue);
+      }
       return;
     }
     switch (node.kind) {
@@ -1127,6 +1134,9 @@ private:
       return;
     case hir_node_kind::hir_generator_cancel:
       project(dynamic_cast<hir_generator_cancel &>(node).object);
+      return;
+    case hir_node_kind::hir_closure_drop:
+      project(dynamic_cast<hir_closure_drop &>(node).object);
       return;
     case hir_node_kind::hir_str_decode_scalar:
       project(dynamic_cast<hir_str_decode_scalar &>(node).object);

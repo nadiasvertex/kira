@@ -621,6 +621,10 @@ struct drop_plan {
   /// A `generator[T]`: dropping one that has not finished resumes it once to
   /// return, which drops what its body still owns.
   bool cancels_generator = false;
+  /// A `fn` value: what its closure environment owns depends on which lambda
+  /// made it, so dropping one runs the drop glue the closure carries, if any.
+  /// The glue is a `fn() -> unit` of this type over the same environment.
+  std::optional<type_id> closure_glue;
 };
 
 /// The resolved `list[T]::new`/`list[T]::push` calls a `for ... => yield`

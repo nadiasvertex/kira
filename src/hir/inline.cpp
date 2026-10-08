@@ -277,9 +277,11 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
                                         .mode = capture.mode});
       }
     }
-    return hir::make<hir_lambda>(span, type, std::move(params), n.return_type,
-                                 clone_as(*n.body, rename),
-                                 std::move(captures));
+    auto copy =
+        hir::make<hir_lambda>(span, type, std::move(params), n.return_type,
+                              clone_as(*n.body, rename), std::move(captures));
+    copy->drop_glue = clone_opt(n.drop_glue, rename);
+    return copy;
   }
   case hir_node_kind::hir_tuple_index: {
     const auto &n = dynamic_cast<const hir_tuple_index &>(node);
@@ -324,6 +326,10 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     const auto &n = dynamic_cast<const hir_generator_cancel &>(node);
     return hir::make<hir_generator_cancel>(span, type,
                                            clone_as(*n.object, rename));
+  }
+  case hir_node_kind::hir_closure_drop: {
+    const auto &n = dynamic_cast<const hir_closure_drop &>(node);
+    return hir::make<hir_closure_drop>(span, type, clone_as(*n.object, rename));
   }
   case hir_node_kind::hir_generator_cancelled:
     return hir::make<hir_generator_cancelled>(span, type);

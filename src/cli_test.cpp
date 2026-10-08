@@ -2307,6 +2307,72 @@ auto test_build_links_and_runs_a_string_interpolation_program() -> void {
                      output));
 }
 
+/// A closure drops the values moved into its environment on the LLVM tier
+/// too: at the end of its own scope, in a callee it was passed to, and only
+/// on the path that moved the value in (`std_test/closure_drops.cn` and
+/// `drop_flags.cn` cover the VM).
+auto test_build_closure_drops_its_captures() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "sample_closure_drops.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "sample_closure_drops_bin";
+
+  write_file(source_path, "module sample\n"
+                          "type noisy = { id: int32 }\n"
+                          "impl drop for noisy:\n"
+                          "  def drop(mut self) -> unit:\n"
+                          "    println(\"drop {self.id}\")\n"
+                          "def apply(f: fn() -> int32) -> int32:\n"
+                          "  return f()\n"
+                          "def one_path(take: bool) -> unit:\n"
+                          "  let n = noisy { id: 1 }\n"
+                          "  if take:\n"
+                          "    let f = move () => n.id\n"
+                          "    println(\"saw {f()}\")\n"
+                          "  println(\"done\")\n"
+                          "def passed() -> unit:\n"
+                          "  let n = noisy { id: 2 }\n"
+                          "  let f = move () => n.id\n"
+                          "  println(\"applied {apply(f)}\")\n"
+                          "def main() -> int32:\n"
+                          "  one_path(true)\n"
+                          "  one_path(false)\n"
+                          "  passed()\n"
+                          "  return 0\n");
+
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(cfg);
+
+  auto report = cinder::driver::compile_sources(cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected valid source to compile cleanly: " + report->diagnostics);
+  expect(report->build.has_value() && report->build->succeeded,
+         "expected `--build` to link successfully");
+
+  auto *pipe = popen(output_path.string().c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(close_status == 0, "expected the linked executable to exit cleanly");
+  expect(output == "saw 1\ndrop 1\ndone\ndone\ndrop 1\ndrop 2\napplied 2\n",
+         std::format("unexpected stdout from the closure-drop program: `{}`",
+                     output));
+}
+
 /// `--run`'s exit code should mirror whatever the executed function
 /// returned (mirroring any other process's `main` return value), and the
 /// rendered summary should stay silent on a clean run unless
@@ -4755,6 +4821,7 @@ auto main() -> int {
     test_module_qualified_function_used_as_a_value();
     test_build_at_o2_still_links_and_runs_correctly();
     test_build_links_and_runs_a_string_interpolation_program();
+    test_build_closure_drops_its_captures();
     test_run_reports_exit_code_and_silent_summary();
     test_run_resolves_call_return_type_naming_a_transitively_used_type();
     test_run_generic_bound_solves_t_over_conflicting_argument();

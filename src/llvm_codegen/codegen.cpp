@@ -1126,10 +1126,12 @@ private:
       thunk_builder.CreateRet(call_result);
     }
 
-    auto *closure_block = compile_heap_alloc(2);
+    auto *closure_block = compile_heap_alloc(3);
     builder_.CreateStore(thunk, slot_address(closure_block, size_t{0}));
     builder_.CreateStore(llvm::ConstantPointerNull::get(ptr_ty),
                          slot_address(closure_block, size_t{1}));
+    builder_.CreateStore(llvm::ConstantPointerNull::get(ptr_ty),
+                         slot_address(closure_block, size_t{2}));
     return closure_block;
   }
 
@@ -1313,6 +1315,9 @@ private:
     case hir_node_kind::hir_generator_cancel:
       return compile_generator_cancel(
           dynamic_cast<const hir::hir_generator_cancel &>(expr));
+    case hir_node_kind::hir_closure_drop:
+      return compile_closure_drop(
+          dynamic_cast<const hir::hir_closure_drop &>(expr));
     case hir_node_kind::hir_generator_cancelled: {
       if (!is_generator_step_) {
         return std::unexpected(codegen_error{
@@ -2191,9 +2196,31 @@ private:
       return std::unexpected(compiled.error());
     }
 
-    auto *closure_block = compile_heap_alloc(2);
+    // The drop glue reads the same environment, so it is compiled against
+    // the same plan: `void(ptr env)`.
+    llvm::Value *glue_ptr = llvm::ConstantPointerNull::get(ptr_ty);
+    if (lambda.drop_glue != nullptr) {
+      auto *glue_type = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx_),
+                                                {ptr_ty}, /*isVarArg=*/false);
+      auto *glue_fn = llvm::Function::Create(
+          glue_type, llvm::Function::InternalLinkage,
+          std::format("lambda.{}.drop", reinterpret_cast<uintptr_t>(&lambda)),
+          current_fn_->getParent());
+      auto glue_compiler = function_compiler(
+          ctx_, types_, functions_, panic_fn_, alloc_fn_, intrinsic_fns_,
+          entry_module_name_, current_module_name_, globals_);
+      auto glue = glue_compiler.compile_lambda_body(*lambda.drop_glue, plan,
+                                                    capture_types, glue_fn);
+      if (!glue.has_value()) {
+        return std::unexpected(glue.error());
+      }
+      glue_ptr = glue_fn;
+    }
+
+    auto *closure_block = compile_heap_alloc(3);
     builder_.CreateStore(lambda_fn, slot_address(closure_block, size_t{0}));
     builder_.CreateStore(env_ptr, slot_address(closure_block, size_t{1}));
+    builder_.CreateStore(glue_ptr, slot_address(closure_block, size_t{2}));
     return closure_block;
   }
 
@@ -3192,6 +3219,36 @@ private:
 
     builder_.SetInsertPoint(done_bb);
     return llvm::ConstantInt::get(i64, 0);
+  }
+
+  /// `hir_closure_drop`: calls the closure's drop glue (slot 2) on its
+  /// environment, when it carries one.
+  [[nodiscard]] auto compile_closure_drop(const hir::hir_closure_drop &node)
+      -> std::expected<llvm::Value *, codegen_error> {
+    auto object = compile_expr(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto *closure = *object;
+    auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *glue = builder_.CreateLoad(ptr_ty, slot_address(closure, size_t{2}),
+                                     "closure.glue");
+    auto *has_glue = builder_.CreateIsNotNull(glue, "closure.has_glue");
+    auto *drop_bb = llvm::BasicBlock::Create(ctx_, "closure.drop", current_fn_);
+    auto *done_bb =
+        llvm::BasicBlock::Create(ctx_, "closure.drop.done", current_fn_);
+    builder_.CreateCondBr(has_glue, drop_bb, done_bb);
+
+    builder_.SetInsertPoint(drop_bb);
+    auto *env = builder_.CreateLoad(ptr_ty, slot_address(closure, size_t{1}),
+                                    "closure.env");
+    auto *glue_type = llvm::FunctionType::get(llvm::Type::getVoidTy(ctx_),
+                                              {ptr_ty}, /*isVarArg=*/false);
+    builder_.CreateCall(glue_type, glue, {env});
+    builder_.CreateBr(done_bb);
+
+    builder_.SetInsertPoint(done_bb);
+    return llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0);
   }
 
   /// Sum-type variant construction `@variant(args...)` — mirrors

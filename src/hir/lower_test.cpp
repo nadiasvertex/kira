@@ -2803,11 +2803,13 @@ auto test_marks_calls_in_tail_position_of_if_branches() -> void {
 }
 
 auto test_does_not_mark_indirect_call_through_a_parameter() -> void {
-  // `f` is a `fn(int32) -> int32`-typed parameter, not a statically-known
+  // `f` is a `&fn(int32) -> int32`-typed parameter, not a statically-known
   // function — Decision 2 excludes every indirect/closure call outright.
+  // Borrowed, so no drop of `f` follows the call and it stays in tail
+  // position.
   auto fixture = check_fixture(
       "module sample\n"
-      "def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:\n"
+      "def apply_twice(f: &fn(int32) -> int32, x: int32) -> int32:\n"
       "    return f(f(x))\n");
   const auto &decl = find_func(*fixture.ast_file, "apply_twice");
 

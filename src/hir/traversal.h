@@ -99,9 +99,12 @@ template <typename F> auto for_each_child(hir_node &node, F &&f) -> void {
     }
     return;
   }
-  case hir_node_kind::hir_lambda:
-    visit(dynamic_cast<hir_lambda &>(node).body);
+  case hir_node_kind::hir_lambda: {
+    auto &n = dynamic_cast<hir_lambda &>(node);
+    visit(n.body);
+    visit(n.drop_glue);
     return;
+  }
   case hir_node_kind::hir_tuple_index:
     visit(dynamic_cast<hir_tuple_index &>(node).object);
     return;
@@ -128,6 +131,9 @@ template <typename F> auto for_each_child(hir_node &node, F &&f) -> void {
     return;
   case hir_node_kind::hir_generator_cancel:
     visit(dynamic_cast<hir_generator_cancel &>(node).object);
+    return;
+  case hir_node_kind::hir_closure_drop:
+    visit(dynamic_cast<hir_closure_drop &>(node).object);
     return;
   case hir_node_kind::hir_str_decode_scalar: {
     auto &n = dynamic_cast<hir_str_decode_scalar &>(node);

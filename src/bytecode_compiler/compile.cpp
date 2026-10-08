@@ -1427,6 +1427,17 @@ private:
       emit_register(*object_reg);
       return {};
     }
+    case hir_node_kind::hir_closure_drop: {
+      auto object_reg = compile_expr(
+          *dynamic_cast<const hir::hir_closure_drop &>(expr).object);
+      if (!object_reg.has_value()) {
+        return std::unexpected(object_reg.error());
+      }
+      emit_op(opcode::op_drop_closure);
+      emit_register(dst);
+      emit_register(*object_reg);
+      return {};
+    }
     case hir_node_kind::hir_generator_cancelled:
       if (!is_generator_step_) {
         return std::unexpected(compile_error{
@@ -1951,10 +1962,27 @@ private:
     const auto fn_index = static_cast<uint16_t>(function_table_base_ +
                                                 lambda_functions_.size() - 1);
 
+    // The drop glue reads the same environment, so it is compiled against
+    // the same plan.
+    auto glue_index = bytecode::k_no_drop_glue;
+    if (lambda.drop_glue != nullptr) {
+      auto glue = function_compiler(types_, functions_, lambda_functions_,
+                                    function_table_base_, entry_module_name_,
+                                    current_module_name_, globals_)
+                      .compile_lambda_body(*lambda.drop_glue, plan);
+      if (!glue.has_value()) {
+        return std::unexpected(glue.error());
+      }
+      lambda_functions_.push_back(std::move(*glue));
+      glue_index = static_cast<uint16_t>(function_table_base_ +
+                                         lambda_functions_.size() - 1);
+    }
+
     emit_op(opcode::op_make_closure);
     emit_register(dst);
     writer_.emit_u16(fn_index);
     emit_register(env_reg);
+    writer_.emit_u16(glue_index);
     return {};
   }
 

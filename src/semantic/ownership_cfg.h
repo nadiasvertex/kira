@@ -214,6 +214,13 @@ struct basic_block {
   std::vector<block_id> successors;
 };
 
+/// A captured value a closure's environment owns: moved in when the lambda
+/// is created, so the closure's drop glue drops it.
+struct owned_capture {
+  std::string name;
+  type_id type = k_unknown_type;
+};
+
 struct function_cfg {
   /// The top-level patterns whose bindings own the parts they bind
   /// (`owns_pattern_bindings`), and those whose arm owns the whole subject
@@ -241,6 +248,9 @@ struct function_cfg {
   std::set<const void *> loop_handles;
   /// The calls whose receiver is consumed by `into_iter`.
   std::set<const void *> consuming_calls;
+  /// The droppable values each lambda moves into its environment, in
+  /// capture order, keyed by the `ast::lambda_expr`.
+  std::map<const void *, std::vector<owned_capture>> owned_captures;
   std::vector<local_info> locals;
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.

@@ -1896,9 +1896,13 @@ private:
         return;
       }
       const auto &info = cfg_.locals[*local];
-      access(*local,
-             moved && info.movable ? access_kind::move : access_kind::read,
-             span, k_no_loan, &lambda);
+      const auto moves = moved && info.movable;
+      access(*local, moves ? access_kind::move : access_kind::read, span,
+             k_no_loan, &lambda);
+      if (moves && checked_.drop_plans.contains(info.type)) {
+        cfg_.owned_captures[&lambda].push_back(
+            owned_capture{.name = std::string(name), .type = info.type});
+      }
       if (bears(info.type)) {
         result.sources.push_back(*local);
       }

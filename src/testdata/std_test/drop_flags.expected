@@ -37,6 +37,11 @@ match done
 kept
 match done
 drop 80
+closure saw 90
+drop 90
+closure done
+closure done
+drop 90
 consumed 100
 drop 100
 refill field done
