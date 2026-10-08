@@ -525,6 +525,10 @@ public:
     for (auto &[field, type] : struct_pattern_field_types_) {
       type = types_.erase_refinements(settle(type));
     }
+    for (auto &[literal, conversion] : array_literal_conversions_) {
+      conversion.array_type =
+          types_.erase_refinements(settle(conversion.array_type));
+    }
     for (auto &[field, type] : struct_literal_field_types_) {
       type = types_.erase_refinements(settle(type));
     }
@@ -21649,6 +21653,17 @@ private:
   /// `try_resolve_iterator` requests its `next` instance from the loop.
   auto instantiate_from_array_for(const ast::array_expr &array, type_id target,
                                   uint64_t length) -> void {
+    // A target still holding a leaf — the second `[2]` in `[[1], [2]]`, whose
+    // expected type is the first element's `list[?a]` — would name an
+    // instance of `list[?a]`, compiled with no concrete element type. Wait
+    // for the leaf, the same way an open `new`/`push` dispatch does.
+    if (mentions_type_var(target)) {
+      defer_method_call("from_array", target, std::vector<type_id>{},
+                        [this, &array, length](type_id settled) -> void {
+                          instantiate_from_array_for(array, settled, length);
+                        });
+      return;
+    }
     if (mentions_template_param(target)) {
       defer_to_instances(
           array, [this, &array, target, length](instance_subst &subst) -> void {
@@ -21992,15 +22007,23 @@ private:
     // Done before the builtin shapes below, because `expected` being a user
     // type rules every one of them out anyway.
     if (const auto from_array_element = try_wire_from_array(array, expected)) {
+      // The element type is a requirement, not a hint: without the check an
+      // `int64` element of a `list[int32]` was accepted and truncated, and an
+      // open `list[?a]` (the second `[x]` in `[[1], [x]]`) never learned
+      // `?a` from its elements.
       if (array.fill_value != nullptr) {
-        infer_expr(*array.fill_value, *from_array_element);
+        const auto found = infer_expr(*array.fill_value, *from_array_element);
+        type_mismatch(array.fill_value->span, *from_array_element, found,
+                      "for this element", array.fill_value.get());
         if (array.fill_count != nullptr) {
           check_fill_count(*array.fill_count);
         }
       }
       for (const auto &item : array.elements) {
         if (item != nullptr) {
-          infer_expr(*item, *from_array_element);
+          const auto found = infer_expr(*item, *from_array_element);
+          type_mismatch(item->span, *from_array_element, found,
+                        "for this element", item.get());
         }
       }
       // The literal still *is* an `array[T, n]` underneath; record which one
@@ -22014,6 +22037,13 @@ private:
       // result — see `checked_types::runtime_fill_dispatches`.
       if (array.fill_value != nullptr && !count.has_value()) {
         array_literal_conversions_.erase(&array);
+        // An open target (`[[1], [0; n]]`) cannot name its `new`/`push` yet;
+        // `record_new_push_dispatch` waits for the leaf.
+        if (mentions_type_var(strip_refs(expected))) {
+          record_new_push_dispatch(array, strip_refs(expected),
+                                   runtime_fill_dispatches_);
+          return strip_refs(expected);
+        }
         if (const auto dispatch =
                 resolve_new_push_dispatch(array, strip_refs(expected))) {
           runtime_fill_dispatches_[&array] = *dispatch;

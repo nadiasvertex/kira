@@ -1,0 +1,6 @@
+error: type mismatch: expected `int32`, found `int64`
+  --> 028_list_literal_element_mismatch.cn:8:31
+    8 |     let xs: list[int32] = [1, big]
+      |                               ^^^ expected `int32` for this element
+  help:  Cinder never converts numbers implicitly; write `int32(...)` to convert this value explicitly.
+

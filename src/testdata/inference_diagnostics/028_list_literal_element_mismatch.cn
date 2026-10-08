@@ -1,0 +1,9 @@
+# An element of a literal converted through `from_array` is checked against
+# the collection's element type. This `int64` used to be accepted into a
+# `list[int32]` and truncated in silence.
+module infer_diag.list_literal_element_mismatch
+
+def wrong() -> int32:
+    let big: int64 = 4294967306
+    let xs: list[int32] = [1, big]
+    return xs[0]

@@ -1,0 +1,25 @@
+module codegen_stress.nested_list_literal
+
+# Nested list literals with no annotation (spec/todo.md item 19).
+#
+# `[[1], [2]]`: the second `[2]` is checked against the first element's
+# `list[?a]`, an open leaf. Its `from_array` instance used to be named for
+# `list[?a]` right there, and lowering then found `list[T]::new` with no
+# concrete element type ("could not lower module `std.list`").
+#
+# `[[1], [big]]`: the `int64` in the second element is what says `?a` is
+# `int64`. The `from_array` path did not check its elements against the
+# element type, so the leaf defaulted to `int32` and `big` was truncated.
+# The value is chosen so a 32-bit element cannot produce it.
+#
+# `[[1], [7; n]]`: the runtime-count fill waits for the leaf the same way.
+# expect: 22
+
+def main() -> int32:
+    let xs = [[1], [2]]
+    let big: int64 = 4294967306
+    let ys = [[1], [big]]
+    let n: usize = 3
+    let zs = [[1], [7; n]]
+    let base: int64 = 4294967296
+    return xs[1][0] + int32(ys[1][0] - base) + zs[1][2] + int32(zs[1].len())
