@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <exception>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -763,6 +764,29 @@ auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
              analyzed.diagnostics);
 }
 
+auto test_move_out_of_capture_is_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_move_out_of_capture.cn");
+  for (const auto *place : {"bare", "implicit", "moved", "generic", "h.items"}) {
+    expect_diagnostic(analyzed,
+                      std::format("cannot move `{}` out of the closure", place),
+                      std::format("expected moving the capture `{}` out of "
+                                  "a closure body to be rejected",
+                                  place));
+  }
+  expect(analyzed.error_count == 5,
+         std::string("expected one error per moved capture, and one for both "
+                     "copies of the generic lambda:\n") +
+             analyzed.diagnostics);
+}
+
+auto test_reads_of_captures_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_reads_of_captures.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected reading or borrowing a capture to be "
+                     "accepted:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_move_in_loop_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_move_in_loop.cn");
   expect_diagnostic(analyzed, "use of moved value `xs`",
@@ -1026,6 +1050,8 @@ auto main() -> int {
     test_view_outliving_source_scope_is_rejected();
     test_return_view_of_parameter_is_accepted();
     test_generic_lambda_moving_capture_twice_is_explained();
+    test_move_out_of_capture_is_rejected();
+    test_reads_of_captures_are_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "
               << ex.what() << '\n';

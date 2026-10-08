@@ -153,6 +153,7 @@ enum class move_block : std::uint8_t {
   fill,     ///< `[v; n]` duplicates `v`, which is not `copy`.
   iterated, ///< `for x in r`: `into_iter` would consume what `r` borrows.
   overlapping, ///< A non-`copy` name bound by a pattern whose bindings overlap.
+  captured, ///< A closure's capture: the closure keeps it between calls.
 };
 
 /// A by-value use of a non-`copy` place the rules forbid moving out of.

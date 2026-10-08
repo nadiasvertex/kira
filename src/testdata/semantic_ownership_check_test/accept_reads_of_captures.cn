@@ -1,0 +1,18 @@
+module main
+
+# Reading a capture, borrowing it, or moving it into the closure with `move`
+# and only reading it there leaves the closure callable any number of times.
+
+def total(xs: &list[int64]) -> int64:
+    var sum = 0
+    for x in xs:
+        sum = sum + x
+    return sum
+
+def main() -> int64:
+    let s: list[int64] = [1, 2, 3]
+    let owned: list[int64] = [4]
+    let a = [s] (x: int64) => x + int64(s.len())
+    let b = [&s] (x: int64) => x + total(&s)
+    let c = move () => int64(owned.len())
+    return a(1) + a(2) + b(3) + b(4) + c() + c()

@@ -325,6 +325,9 @@ private:
   const checked_types &checked_;
   std::vector<function_cfg> &out_;
   cfg_builder *outer_;
+  /// False in every copy of a generic lambda but the first, so an error
+  /// about its captures is reported once rather than once per copy.
+  bool report_captures_ = true;
   function_cfg cfg_;
   std::vector<scope> scopes_;
   std::vector<implicit_capture> captures_;
@@ -759,6 +762,13 @@ private:
     if (outer_ == nullptr) {
       return;
     }
+    if (moved) {
+      const auto type = captured_type(name);
+      if (type.has_value() && movable(*type)) {
+        reject_capture_move(std::string(name), name, span);
+        moved = false;
+      }
+    }
     for (auto &capture : captures_) {
       if (capture.name == name) {
         capture.moved = capture.moved || moved;
@@ -767,6 +777,32 @@ private:
     }
     captures_.push_back(implicit_capture{
         .name = std::string(name), .moved = moved, .span = span});
+  }
+
+  /// The type of `name` in the nearest enclosing function that declares it.
+  [[nodiscard]] auto captured_type(std::string_view name) const
+      -> std::optional<type_id> {
+    for (const auto *builder = outer_; builder != nullptr;
+         builder = builder->outer_) {
+      if (const auto local = builder->lookup(name)) {
+        return builder->cfg_.locals[*local].type;
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// Rejects moving `place`, part of the capture `name`, out of this
+  /// closure's environment. The closure can be called again and still owns
+  /// its captures, so a move would give the value two owners.
+  auto reject_capture_move(std::string place, std::string_view name,
+                           source_span span) -> void {
+    if (!report_captures_) {
+      return;
+    }
+    emit(invalid_move_event{.span = span,
+                            .reason = move_block::captured,
+                            .place = std::move(place),
+                            .owner = std::string(name)});
   }
 
   // ------------------------------------------------------------------
@@ -990,6 +1026,14 @@ private:
     }
     const auto local = lookup(root->name);
     if (!local.has_value()) {
+      if (projected && kind == access_kind::move && outer_ != nullptr &&
+          captured_type(root->name).has_value() &&
+          movable(type_of(&expr))) {
+        auto steps = std::vector<place_step>{};
+        place_steps(expr, steps);
+        reject_capture_move(spell_place(root->name, steps, steps.size()),
+                            root->name, expr.span);
+      }
       note_capture(root->name, kind == access_kind::move && !projected,
                    root->span);
       return {};
@@ -1323,8 +1367,10 @@ private:
         return eval_lambda(lambda);
       }
       auto result = value{};
+      auto first = true;
       for (const auto *copy : copies->second) {
-        auto made = eval_lambda(*copy);
+        auto made = eval_lambda(*copy, first);
+        first = false;
         result.loans.insert(result.loans.end(), made.loans.begin(),
                             made.loans.end());
         result.sources.insert(result.sources.end(), made.sources.begin(),
@@ -1835,8 +1881,10 @@ private:
   /// entry borrows for as long as the closure lives. Everything else is
   /// captured by value — moved if the body (or `move`) consumes it, copied
   /// otherwise — and a captured value's own borrows travel with it.
-  auto eval_lambda(const ast::lambda_expr &lambda) -> value {
+  auto eval_lambda(const ast::lambda_expr &lambda,
+                   bool report_captures = true) -> value {
     auto nested = cfg_builder(checked_, out_, this);
+    nested.report_captures_ = report_captures_ && report_captures;
     nested.build_lambda(lambda);
 
     auto result = value{};

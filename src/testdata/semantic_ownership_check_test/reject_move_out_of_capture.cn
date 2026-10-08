@@ -1,0 +1,27 @@
+module main
+
+# A closure keeps its captures between calls, so its body cannot move one
+# out: a second call would find it gone, and both the closure and the moved-to
+# binding would drop it. Every capture mode is rejected the same way.
+
+type holder = { items: list[int64], n: int64 }
+
+def consume(xs: list[int64]) -> int64:
+    return int64(xs.len())
+
+def main() -> int64:
+    let bare: list[int64] = [1, 2, 3]
+    let implicit: list[int64] = [4]
+    let moved: list[int64] = [5]
+    let generic: list[int64] = [6]
+    let h = holder { items: [7], n: 8 }
+    let a = [bare] (x: int64) =>:
+        let t = bare
+        x
+    let b = (x: int64) => consume(implicit) + x
+    let c = move () => moved
+    let d = (x) =>:
+        let t = generic
+        x
+    let e = () => h.items
+    return a(1) + b(2) + d(3) + d(4.5) as int64 + h.n

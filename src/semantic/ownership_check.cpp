@@ -655,12 +655,24 @@ private:
                           m.owner);
       help = std::format("borrow the field instead with `&{}`", m.place);
       break;
+    case move_block::captured:
+      message = std::format("cannot move `{}` out of the closure", m.place);
+      label = std::format("`{}` is captured by this closure, which keeps it "
+                          "between calls",
+                          m.owner);
+      help = std::format("borrow it instead with `&{}`, or pass the value to "
+                         "the closure as a parameter",
+                         m.place);
+      break;
     }
     auto d = diagnostic(diagnostic_level::error, message, file_id_);
     d.with_label(m.span, label);
     d.with_note(m.reason == move_block::fill
                     ? "a value that is not `copy` has one owner, so it cannot "
                       "be in several elements at once"
+                : m.reason == move_block::captured
+                    ? "a closure can be called more than once, and every call "
+                      "uses the same captured value, so no call can take it"
                     : "moving it out would give the value two owners, and the "
                       "one it was taken from would still drop it");
     d.with_help(help);
