@@ -6888,6 +6888,10 @@ private:
     /// Set when the body this literal is in turned out to be an implicit
     /// generic (`classify_param_decls`): its instances mint their own.
     bool skip = false;
+    /// Already wired through its expected type's `from_array`, with a leaf
+    /// for the hole that type had (`fill_target_holes`). Only reported if
+    /// the leaf never settles.
+    bool report_only = false;
   };
   std::vector<pending_leaf_literal> pending_leaf_literals_;
 
@@ -7172,6 +7176,9 @@ private:
             "already known. Nothing here pinned it down. Annotate the "
             "binding — `var xs: list[int32] = []` — or start the list with "
             "the elements it should hold.");
+        continue;
+      }
+      if (leaf.report_only) {
         continue;
       }
       wire_default_list(*leaf.literal, element, leaf.count);
@@ -21732,9 +21739,9 @@ private:
   /// already inferred them (the no-expectation default-`list` path,
   /// `infer_array` below) can call this without re-inferring.
   auto resolve_array_literal_conversion(const ast::array_expr &array,
-                                        type_id target)
+                                        type_id &target)
       -> std::optional<type_id> {
-    const auto &entry = types_.entry(target);
+    const auto entry = types_.entry(target); // copy: leaves are minted below
     if (entry.kind != type_kind::struct_kind &&
         entry.kind != type_kind::sum_kind &&
         entry.kind != type_kind::opaque_kind) {
@@ -21752,6 +21759,7 @@ private:
     auto bindings = param_subst{};
     if (method->block_type_params != nullptr) {
       match_params(method->impl_target_pattern, target, bindings);
+      fill_target_holes(array, *method, bindings, target);
     }
     // `block_type_params` passed so the impl block's `T` resolves to the
     // parameter rather than to `unknown` — `substitute_solved` can bind a
@@ -21779,6 +21787,52 @@ private:
     return array_param.result;
   }
 
+  /// Gives each impl parameter the target left open its own leaf, and
+  /// rewrites `target` to carry them.
+  ///
+  /// A target with a hole is a generic callee's `xs: list[T]` with `T` not
+  /// yet solved: the argument check opens it to `list[?]`. Read as it was,
+  /// the element type came back as the impl's own `T`, and every element of
+  /// `first([5, 6])` was refused as "expected `T`, found `int32`". With a
+  /// leaf, the elements say what the list holds, and the call solves its
+  /// `T` from the `list[?a]` the literal answers with — the same path
+  /// `let xs = [5, 6]; first(xs)` already took.
+  auto fill_target_holes(const ast::array_expr &array,
+                         const method_entry &method, param_subst &bindings,
+                         type_id &target) -> void {
+    auto filled = false;
+    for (const auto &param : *method.block_type_params) {
+      if (param.is_value_param || param.name.empty()) {
+        continue;
+      }
+      const auto id = param_id(param);
+      const auto it = bindings.find(id);
+      if (it != bindings.end() && it->second != k_unknown_type) {
+        continue;
+      }
+      const auto leaf = leaf_ctxt_.fresh_type(
+          "the element type of this list literal",
+          source_location{.file_id = file_id_, .span = array.span});
+      bindings.insert_or_assign(id, leaf);
+      filled = true;
+      // Elements always solve the leaf; an empty `[]` (`count([])`) may
+      // leave it open, and the literal that minted it is where to say so.
+      if (array.elements.empty() && array.fill_value == nullptr) {
+        pending_leaf_literals_.push_back(
+            pending_leaf_literal{.literal = &array,
+                                 .element = leaf,
+                                 .span = array.span,
+                                 .file = file_id_,
+                                 .module = module_,
+                                 .current_template = current_template_,
+                                 .report_only = true});
+      }
+    }
+    if (filled) {
+      target = substitute_solved(method.impl_target_pattern, bindings);
+    }
+  }
+
   /// If `expected` is a user type implementing `std.traits.from_array`,
   /// infers the literal's elements against it and records the conversion.
   ///
@@ -21786,9 +21840,13 @@ private:
   /// The literal keeps its
   /// `array[T, n]` shape all the way through lowering; the only change is
   /// the call wrapped around it.
-  auto try_wire_from_array(const ast::array_expr &array, type_id expected)
-      -> std::optional<type_id> {
-    return resolve_array_literal_conversion(array, strip_refs(expected));
+  ///
+  /// `target` is the collection the literal answers with: `expected` without
+  /// its references, and with any hole filled (`fill_target_holes`).
+  auto try_wire_from_array(const ast::array_expr &array, type_id expected,
+                           type_id &target) -> std::optional<type_id> {
+    target = strip_refs(expected);
+    return resolve_array_literal_conversion(array, target);
   }
 
   /// The real `list[T]` (`std.list`, prelude-re-exported) instantiated at
@@ -21926,7 +21984,7 @@ private:
   /// the elements a second time.
   auto wire_default_list(const ast::array_expr &array, type_id element,
                          std::optional<uint64_t> count) -> type_id {
-    const auto target = resolve_list_type(element);
+    auto target = resolve_list_type(element);
     // `[v; n]` with a count only known at runtime. `from_array` takes an
     // `array[T, n]`, which has no meaning without a compile-time `n` — so
     // there is nothing for the constructor to be handed, and wiring one
@@ -22011,7 +22069,9 @@ private:
     // elements against its element type, then answer with the collection.
     // Done before the builtin shapes below, because `expected` being a user
     // type rules every one of them out anyway.
-    if (const auto from_array_element = try_wire_from_array(array, expected)) {
+    auto target = k_unknown_type;
+    if (const auto from_array_element =
+            try_wire_from_array(array, expected, target)) {
       // The element type is a requirement, not a hint: without the check an
       // `int64` element of a `list[int32]` was accepted and truncated, and an
       // open `list[?a]` (the second `[x]` in `[[1], [x]]`) never learned
@@ -22044,20 +22104,20 @@ private:
         array_literal_conversions_.erase(&array);
         // An open target (`[[1], [0; n]]`) cannot name its `new`/`push` yet;
         // `record_new_push_dispatch` waits for the leaf.
-        if (mentions_type_var(strip_refs(expected))) {
-          record_new_push_dispatch(array, strip_refs(expected),
+        if (mentions_type_var(target)) {
+          record_new_push_dispatch(array, target,
                                    runtime_fill_dispatches_);
-          return strip_refs(expected);
+          return target;
         }
         if (const auto dispatch =
-                resolve_new_push_dispatch(array, strip_refs(expected))) {
+                resolve_new_push_dispatch(array, target)) {
           runtime_fill_dispatches_[&array] = *dispatch;
-        } else if (!mentions_template_param(strip_refs(expected))) {
+        } else if (!mentions_template_param(target)) {
           error_with_help(
               array.span,
               std::format("`{}` cannot be built from a fill whose count is "
                           "only known at runtime",
-                          types_.display(strip_refs(expected))),
+                          types_.display(target)),
               "no way to fill this collection",
               "A `[value; count]` literal with a constant count becomes an "
               "`array`, which `from_array` accepts. With a runtime count "
@@ -22066,16 +22126,16 @@ private:
               "`push(value)`. Add those, or use a constant count.");
           return k_error_type;
         }
-        return strip_refs(expected);
+        return target;
       }
       array_literal_conversions_[&array].array_type = array_with_length(
           *from_array_element,
           count.has_value() ? types_.const_value(types_.usize_type(), *count)
                             : k_unknown_type);
       if (count.has_value()) {
-        instantiate_from_array_for(array, strip_refs(expected), *count);
+        instantiate_from_array_for(array, target, *count);
       }
-      return strip_refs(expected);
+      return target;
     }
     const auto &expected_entry = types_.entry(strip_refs(expected));
     auto element_expected = k_unknown_type;

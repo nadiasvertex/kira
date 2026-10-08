@@ -1,0 +1,9 @@
+# An empty `[]` passed straight to a generic parameter says nothing about
+# `T`. It is reported at the literal, not left for lowering to fail on.
+module infer_diag.empty_list_literal_to_generic
+
+def count[T](xs: list[T]) -> usize:
+    return xs.len()
+
+def wrong() -> usize:
+    return count([])

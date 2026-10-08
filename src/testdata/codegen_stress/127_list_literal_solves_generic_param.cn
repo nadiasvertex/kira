@@ -1,0 +1,25 @@
+module codegen_stress.list_literal_solves_generic_param
+
+# A list literal passed straight to a generic parameter (spec/todo.md item
+# 16). `first([5, 6])` checks the literal against `list[T]` with `T` not yet
+# solved; the literal's elements used to be checked against the `from_array`
+# impl's own `T` and refused ("expected `T`, found `int32`"). The literal
+# now gets a leaf for that hole, and the call solves `T` from it.
+#
+# `let b: int64 = first([...])`: the declared result type is what says the
+# elements are `int64`. The value is chosen so a 32-bit element cannot
+# produce it.
+# expect: 17
+
+def first[T](xs: list[T]) -> T where T: copy:
+    return xs[0]
+
+def count[T](xs: list[T]) -> usize:
+    return xs.len()
+
+def main() -> int32:
+    let a = first([5, 6])
+    let b: int64 = first([4294967306, 1])
+    let base: int64 = 4294967296
+    let c = count([[1, 2], [3]])
+    return a + int32(b - base) + int32(c)
