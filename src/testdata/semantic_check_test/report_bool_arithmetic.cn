@@ -1,0 +1,5 @@
+module sample
+def run() -> bool:
+    let a = true
+    let s = a + a
+    return s

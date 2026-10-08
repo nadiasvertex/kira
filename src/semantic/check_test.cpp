@@ -1625,6 +1625,38 @@ auto test_reports_mixed_numeric_types() -> void {
                     "expected mixed-numeric diagnostic");
 }
 
+/// `bool`/`char` have the comparisons primitively but no arithmetic: `+` on
+/// them is the user's mistake, reported by the checker — not a value-less
+/// node left for lowering to call a gap in the compiler.
+auto test_reports_non_numeric_builtin_arithmetic() -> void {
+  struct arithmetic_case {
+    std::string_view file;
+    std::string_view message;
+  };
+  const auto cases = std::vector<arithmetic_case>{
+      {"report_bool_arithmetic.cn",
+       "operator `+` requires numeric operands, found `bool`"},
+      {"report_char_arithmetic.cn",
+       "operator `*` requires numeric operands, found `char`"},
+      // Operand settles to `bool` per instance (`defer_operator_dispatch`).
+      {"report_bool_arithmetic_deferred.cn",
+       "operator `+` requires numeric operands, found `bool`"},
+      // Operand is an open leaf, settled by a later statement
+      // (`defer_open_arithmetic`).
+      {"report_bool_arithmetic_settled_later.cn",
+       "operator `+` requires numeric operands, found `bool`"},
+  };
+  for (const auto &item : cases) {
+    const auto analyzed = analyze_test_data_file(item.file);
+    const auto context = std::string(item.file);
+    expect(analyzed.error_count == 1,
+           "expected exactly one error for " + context);
+    expect_diagnostic(analyzed, item.message,
+                      "expected a non-numeric operand diagnostic for " +
+                          context);
+  }
+}
+
 auto test_reports_non_bool_condition() -> void {
   const auto analyzed = analyze_test_data_file("report_non_bool_condition.cn");
   expect(analyzed.error_count > 0, "expected non-bool condition to fail");
@@ -4361,6 +4393,7 @@ auto main() -> int {
     test_accepts_wide_literal_in_generic_return();
     test_reports_generic_return_literal_overflow();
     test_reports_mixed_numeric_types();
+    test_reports_non_numeric_builtin_arithmetic();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();
     test_accepts_let_mut_reassignment();

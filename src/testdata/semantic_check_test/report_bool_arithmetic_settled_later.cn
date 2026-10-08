@@ -1,0 +1,8 @@
+module sample
+def take(xs: list[bool]) -> int32:
+    return 0
+
+def run() -> int32:
+    let xs = []
+    let s = xs[0] + xs[0]
+    return take(xs)

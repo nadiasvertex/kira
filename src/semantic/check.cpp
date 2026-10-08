@@ -11999,12 +11999,22 @@ private:
       return k_error_type;
     }
     if (entry.kind == type_kind::builtin_kind) {
-      // A builtin number, `bool`, or `char` has the operator primitively. Its
-      // `impl eq`/`impl add`/... (`traits.scalar.cn`) is written *with* that
-      // operator, so dispatching to the impl would call itself forever.
-      if (types_.is_numeric(target) || types_.is_boolean(target) ||
-          entry.name == "char") {
+      // Only comparisons reach here with `eq`/`ord`; every other trait is an
+      // arithmetic operator's (`operator_trait_for`).
+      const auto arithmetic = trait_name != "eq" && trait_name != "ord";
+      // A builtin number has every operator primitively, and `bool`/`char`
+      // have the comparisons. Their `impl eq`/`impl add`/...
+      // (`traits.scalar.cn`) are written *with* that operator, so
+      // dispatching to the impl would call itself forever.
+      if (types_.is_numeric(target)) {
         return k_unknown_type;
+      }
+      if (types_.is_boolean(target) || entry.name == "char") {
+        if (!arithmetic) {
+          return k_unknown_type;
+        }
+        report_non_numeric_arithmetic(binary, op_name, target);
+        return k_error_type;
       }
       if (wire_dispatch && binary.lhs != nullptr) {
         // Look for an extension method on the builtin type.
@@ -12032,9 +12042,36 @@ private:
           return resolve_operator_return_type(target, trait_name, *method);
         }
       }
-      return k_unknown_type; // no trait impl or extension for this builtin
+      if (arithmetic) {
+        // No impl or extension supplies the operator, and lowering has no
+        // primitive one to fall back on.
+        report_non_numeric_arithmetic(binary, op_name, target);
+        return k_error_type;
+      }
+      return k_unknown_type; // comparisons of other builtins are primitive
     }
     return k_unknown_type;
+  }
+
+  /// `true + true`, `'a' * 2`, `"a" - "b"`: an arithmetic operator on a
+  /// builtin that has neither the operator primitively nor an impl of its
+  /// trait.
+  auto report_non_numeric_arithmetic(const ast::binary_expr &binary,
+                                     std::string_view op_name, type_id operand)
+      -> void {
+    const auto shown = types_.display(operand);
+    error_with_help(
+        binary.span,
+        std::format("operator `{}` requires numeric operands, found `{}`",
+                    op_name, shown),
+        std::format("`{}` is not a number and does not implement `{}`", shown,
+                    operator_trait_for(binary.op)),
+        types_.is_boolean(operand)
+            ? std::string("Combine `bool` values with `and`/`or`/`not`, or "
+                          "convert explicitly, e.g. `int32(flag)`.")
+            : std::format("Convert the operand to a number first, e.g. "
+                          "`int32(...)`, or use a type that implements `{}`.",
+                          operator_trait_for(binary.op)));
   }
 
   /// Types an arithmetic operator (`+`, `-`, `*`, `/`, `%` and their

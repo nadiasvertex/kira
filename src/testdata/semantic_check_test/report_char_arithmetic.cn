@@ -1,0 +1,4 @@
+module sample
+def run() -> char:
+    let c = 'a'
+    return c * c

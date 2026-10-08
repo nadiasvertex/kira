@@ -1,0 +1,6 @@
+module sample
+def double(x):
+    return x + x
+
+def run() -> bool:
+    return double(true)
