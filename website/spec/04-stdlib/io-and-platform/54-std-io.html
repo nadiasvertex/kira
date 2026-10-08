@@ -171,10 +171,12 @@ module-level
 <code>open</code>/<code>stdin_handle</code>/<code>stdout_handle</code>/<code>stderr_handle</code>
 functions wrap them.</p>
 <h2 id="the-file_handle-type">The <code>file_handle</code> type</h2>
-<pre class="cinder"><code>pub type file_handle = { fd: raw_fd }</code></pre>
-<p>A handle wrapping a <code>raw_fd</code>. (Named
-<code>file_handle</code> rather than <code>file</code> because
-<code>file</code> is a reserved visibility keyword — see <a
+<pre class="cinder"><code>pub type file_handle = { fd: raw_fd, owns: bool }</code></pre>
+<p>A handle wrapping a <code>raw_fd</code>. <code>owns</code> says
+whether the handle owns the descriptor, and so whether dropping it
+closes the descriptor. (Named <code>file_handle</code> rather than
+<code>file</code> because <code>file</code> is a reserved visibility
+keyword — see <a
 href="../../01-core/12-modules-and-imports.html">Modules and
 Imports</a>.)</p>
 <pre class="cinder"><code>pub def open(path: str, opts: open_options) -&gt; result[file_handle, io_error]
@@ -183,10 +185,13 @@ pub def stdout_handle() -&gt; file_handle
 pub def stderr_handle() -&gt; file_handle</code></pre>
 <ul>
 <li><code>open</code> calls <code>rt_open</code> and wraps the resulting
-descriptor in a <code>file_handle</code>, converting any
+descriptor in a <code>file_handle</code> that owns it, converting any
 <code>io_errno</code> to <code>io_error</code>.</li>
 <li><code>stdin_handle</code>/<code>stdout_handle</code>/<code>stderr_handle</code>
-wrap the corresponding niladic intrinsic; these never fail.</li>
+wrap the corresponding niladic intrinsic in a handle that does not own
+it, so dropping one (for example the temporary in
+<code>stdout_handle().write_all(...)</code>) leaves the standard stream
+open; these never fail.</li>
 </ul>
 <h3 id="trait-implementations">Trait implementations</h3>
 <ul>
@@ -197,36 +202,23 @@ delegates to <code>rt_write</code>; <code>flush</code> delegates to
 <code>rt_flush</code>; both convert the error. <code>write_all</code> is
 inherited from the trait default.</li>
 <li><code>impl drop for file_handle</code>: calls <code>rt_close</code>
-on drop, discarding the result — a <code>file_handle</code> going out of
-scope is <em>intended</em> to close its descriptor unconditionally.
-<strong>This does not happen today:</strong> the compiler emits no
-scope-exit <code>drop</code> glue on either backend (see <a
-href="../../02-intermediate/17-shared-ownership-and-drop.html">Shared
-Ownership and Drop</a>, Implementation status), so this impl never runs.
-Until destructors land, every <code>file_handle</code> not explicitly
-<code>.close()</code>d leaks its descriptor — call <code>close</code>
-explicitly.</li>
+on drop when the handle owns its descriptor, discarding the result.</li>
 </ul>
 <h3 id="extend-file_handle"><code>extend file_handle</code></h3>
 <pre class="cinder"><code>pub def close(mut self) -&gt; result[unit, io_error]</code></pre>
 <p>Explicitly closes the handle via <code>rt_close</code>, sets
-<code>self.fd</code> to the sentinel <code>raw_fd { value: -1 }</code>,
-and returns the result (unlike <code>drop</code>, which discards it).
-Intended for callers that need to observe a close failure. A
-<code>file_handle</code> not explicitly closed is meant to be closed by
-<code>drop</code> — but destructors do not run yet (see above), so
-<code>close</code> is currently the <em>only</em> way a descriptor is
-released.</p>
+<code>self.fd</code> to the sentinel <code>raw_fd { value: -1 }</code>
+and <code>owns</code> to false, and returns the result (unlike
+<code>drop</code>, which discards it). Intended for callers that need to
+observe a close failure. A <code>file_handle</code> not explicitly
+closed is closed by <code>drop</code>.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <p>Everything in this chapter is implemented in
-<code>src/std/io.cn</code> over the <code>rt_*</code> intrinsics, with
-one exception: <strong><code>impl drop for file_handle</code> never
-runs.</strong> The impl is written and compiles, but the compiler emits
-no scope-exit destructor glue on either backend, so a descriptor is
-released only by an explicit <code>close()</code>. See <a
+<code>src/std/io.cn</code> over the <code>rt_*</code> intrinsics. A
+handle is dropped where <a
 href="../../02-intermediate/17-shared-ownership-and-drop.html">Shared
-Ownership and Drop</a>, Implementation status, and item 6 in <a
-href="../../../todo.html">todo.md</a>.</p>
+Ownership and Drop</a> says values drop; the cases that still leak are
+listed in item 6 of <a href="../../../todo.html">todo.md</a>.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="55-std-console.html"><code>std.console</code></a> —

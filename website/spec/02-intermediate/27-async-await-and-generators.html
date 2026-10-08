@@ -132,6 +132,14 @@ end-to-end</strong>, both backends: <code>hir_yield</code> plus
 machinery (<code>src/bytecode/opcodes.h</code>), and LLVM lowering. This
 is real, working compiler surface — write and run generator code
 today.</li>
+<li><strong>An abandoned generator drops what it holds</strong>, both
+backends. Dropping a generator that has not finished
+(<code>hir_generator_cancel</code>, VM <code>op_generator_cancel</code>)
+marks it cancelled and resumes it once; its body tests for that
+(<code>hir_generator_cancelled</code>) before it first runs and after
+every <code>yield</code>, and returns, dropping its live locals and
+parameters through the ordinary early-exit drops
+(<code>src/testdata/std_test/generator_drops.cn</code>).</li>
 <li><strong><code>async</code>/<code>await</code> is not implemented
 beyond parsing.</strong> Surface syntax parses (<code>async_expr</code>,
 <code>await_expr</code>, the <code>async</code> function modifier

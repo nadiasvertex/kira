@@ -75,14 +75,14 @@ rather than a supplied initial value; <code>@none</code> if the source
 is empty, since there is then no answer.</li>
 <li><strong><code>for_each[I, T](it: I, f: fn(T) -&gt; unit) -&gt; unit where I: iterator[T]</code></strong>
 — calls <code>f</code> on each element, for effects.</li>
-<li><strong><code>any[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; bool where I: iterator[T]</code></strong>
+<li><strong><code>any[I, T](it: I, pred: fn(&amp;T) -&gt; bool) -&gt; bool where I: iterator[T]</code></strong>
 — whether any element satisfies <code>pred</code>; stops at the first
 match; <code>false</code> on an empty iterator.</li>
-<li><strong><code>all[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; bool where I: iterator[T]</code></strong>
+<li><strong><code>all[I, T](it: I, pred: fn(&amp;T) -&gt; bool) -&gt; bool where I: iterator[T]</code></strong>
 — whether every element satisfies <code>pred</code>; stops at the first
 failure; <code>true</code> on an empty iterator (vacuously — no element
 fails).</li>
-<li><strong><code>find[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; option[T] where I: iterator[T]</code></strong>
+<li><strong><code>find[I, T](it: I, pred: fn(&amp;T) -&gt; bool) -&gt; option[T] where I: iterator[T]</code></strong>
 — the first element satisfying <code>pred</code>, or
 <code>@none</code>.</li>
 <li><strong><code>find_map[I, T, U](it: I, f: fn(T) -&gt; option[U]) -&gt; option[U] where I: iterator[T]</code></strong>
@@ -90,7 +90,7 @@ fails).</li>
 <code>xs.find_map(f)</code> is <code>xs.filter_map(f).next()</code>,
 avoiding doing the test-and-convert work twice as <code>find</code>
 followed by a conversion would.</li>
-<li><strong><code>position[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; option[usize] where I: iterator[T]</code></strong>
+<li><strong><code>position[I, T](it: I, pred: fn(&amp;T) -&gt; bool) -&gt; option[usize] where I: iterator[T]</code></strong>
 — the zero-based index of the first element satisfying
 <code>pred</code>. Indices count from the iterator’s <em>current</em>
 position, not from whatever it was originally built from.</li>
@@ -110,19 +110,19 @@ keep the earliest.</li>
 <li><strong><code>max[I, T](it: I) -&gt; option[T] where I: iterator[T], T: ord</code></strong>
 — the largest element, or <code>@none</code> if empty. Ties keep the
 latest — the mirror of <code>min</code>.</li>
-<li><strong><code>min_by_key[I, T, K](it: I, key: fn(T) -&gt; K) -&gt; option[T] where I: iterator[T], K: ord</code></strong>
+<li><strong><code>min_by_key[I, T, K](it: I, key: fn(&amp;T) -&gt; K) -&gt; option[T] where I: iterator[T], K: ord</code></strong>
 — the element with the smallest <code>key(element)</code>.
-<code>key</code> is called once per element, not once per comparison
-(the running best’s key is kept alongside it), which matters when
-<code>key</code> is expensive or has effects.</li>
-<li><strong><code>max_by_key[I, T, K](it: I, key: fn(T) -&gt; K) -&gt; option[T] where I: iterator[T], K: ord</code></strong>
+<code>key</code> is called twice per comparison, on the new element and
+on the running best: a key computed from <code>&amp;element</code> may
+borrow that element, so it is not kept past it.</li>
+<li><strong><code>max_by_key[I, T, K](it: I, key: fn(&amp;T) -&gt; K) -&gt; option[T] where I: iterator[T], K: ord</code></strong>
 — the element with the largest key. Ties keep the latest, matching
 <code>max</code>.</li>
-<li><strong><code>partition[I, T](it: I, pred: fn(T) -&gt; bool) -&gt; (list[T], list[T]) where I: iterator[T]</code></strong>
+<li><strong><code>partition[I, T](it: I, pred: fn(&amp;T) -&gt; bool) -&gt; (list[T], list[T]) where I: iterator[T]</code></strong>
 — splits elements into those satisfying <code>pred</code> and the rest,
 as <code>(yes, no)</code>; both halves keep the source’s relative
 order.</li>
-<li><strong><code>eq_by[I, J, T, U](it: I, other: J, pred: fn(T, U) -&gt; bool) -&gt; bool where I: iterator[T], J: iterator[U]</code></strong>
+<li><strong><code>eq_by[I, J, T, U](it: I, other: J, pred: fn(&amp;T, &amp;U) -&gt; bool) -&gt; bool where I: iterator[T], J: iterator[U]</code></strong>
 — whether two iterators yield equal elements under <code>pred</code>,
 position by position. Length is part of equality — a prefix does not
 count as equal to the whole. <code>pred</code> is not called again once
@@ -138,17 +138,17 @@ which is why <code>sum</code> returns <code>T</code> where
 <h2 id="the-comparator-taking-terminals">The comparator-taking
 terminals</h2>
 <p>These take a three-way comparator
-<code>fn(T, T) -&gt; ordering</code> rather than a <code>less</code>
-predicate, because a predicate cannot express “equal” without being
-called twice, and <code>cmp_by</code> needs that distinction to decide
-whether to inspect the next pair at all.</p>
+<code>fn(&amp;T, &amp;T) -&gt; ordering</code> rather than a
+<code>less</code> predicate, because a predicate cannot express “equal”
+without being called twice, and <code>cmp_by</code> needs that
+distinction to decide whether to inspect the next pair at all.</p>
 <ul>
-<li><strong><code>min_by[I, T](it: I, cmp: fn(T, T) -&gt; ordering) -&gt; option[T] where I: iterator[T]</code></strong>
+<li><strong><code>min_by[I, T](it: I, cmp: fn(&amp;T, &amp;T) -&gt; ordering) -&gt; option[T] where I: iterator[T]</code></strong>
 — smallest element under <code>cmp</code>; ties keep the earliest.</li>
-<li><strong><code>max_by[I, T](it: I, cmp: fn(T, T) -&gt; ordering) -&gt; option[T] where I: iterator[T]</code></strong>
+<li><strong><code>max_by[I, T](it: I, cmp: fn(&amp;T, &amp;T) -&gt; ordering) -&gt; option[T] where I: iterator[T]</code></strong>
 — largest element under <code>cmp</code>; ties keep the latest, matching
 <code>max_by_key</code>.</li>
-<li><strong><code>cmp_by[I, J, T, U](it: I, other: J, cmp: fn(T, U) -&gt; ordering) -&gt; ordering where I: iterator[T], J: iterator[U]</code></strong>
+<li><strong><code>cmp_by[I, J, T, U](it: I, other: J, cmp: fn(&amp;T, &amp;U) -&gt; ordering) -&gt; ordering where I: iterator[T], J: iterator[U]</code></strong>
 — compares two iterators lexicographically under <code>cmp</code>,
 walking both in lockstep and answering at the first unequal pair without
 drawing further from either. If one runs out first it is the smaller;

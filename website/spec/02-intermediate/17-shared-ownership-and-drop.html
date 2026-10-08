@@ -41,7 +41,14 @@ id="toc-shared-ownership-and-drop">17. Shared Ownership and Drop</a>
 <li><a href="#shared-ownership" id="toc-shared-ownership">Shared
 Ownership</a></li>
 <li><a href="#destructors-drop" id="toc-destructors-drop">Destructors:
-<code>drop</code></a></li>
+<code>drop</code></a>
+<ul>
+<li><a href="#what-needs-a-drop" id="toc-what-needs-a-drop">What needs a
+drop</a></li>
+<li><a href="#owners" id="toc-owners">Owners</a></li>
+<li><a href="#when-drops-run" id="toc-when-drops-run">When drops
+run</a></li>
+</ul></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
@@ -84,25 +91,105 @@ type file = { fd: raw_fd }
 impl drop for file:
     def drop(mut self) -&gt; unit:
         close_fd(self.fd)</code></pre>
-<p><code>drop()</code> runs when a value’s single owner goes out of
-scope, and nothing is added to types that do not implement
-<code>drop</code> (zero cost when unused). There is no Python-style
+<p>Every value is dropped exactly once, by whoever owns it when it stops
+being needed, unless it was moved away first. Nothing is added to types
+that need no drop (zero cost when unused). There is no Python-style
 <code>with</code>/context-manager protocol to opt into — a type just
 implements <code>drop</code>, and it runs at the end of <em>any</em>
 scope the value’s owner is declared in, including a bare <a
 href="../01-core/08-control-flow.html#scope"><code>scope</code></a>
-block written solely to end that lifetime early. Rules:</p>
+block written solely to end that lifetime early.</p>
+<h3 id="what-needs-a-drop">What needs a drop</h3>
+<p>A type needs a drop when it implements <code>drop</code>, or when any
+of its fields, variant payloads, or elements needs one. Dropping a value
+of such a type runs its <em>drop glue</em>: the type’s own
+<code>drop()</code> first, if it has one, then the drop glue of each
+field in declaration order (for a sum, of the payload of the variant it
+holds). A type writes <code>drop()</code> only for the resource it
+directly owns, never to recurse into its fields by hand. A
+<code>copy</code> type never needs a drop (see <a
+href="14-ownership-and-borrowing.html#copy-and-move">Ownership and
+Borrowing</a>).</p>
+<h3 id="owners">Owners</h3>
+<p>Each of these owns a value, and drops it when its lifetime ends while
+it still holds it:</p>
 <ul>
-<li>A binding that was <strong>moved from</strong> never drops —
-ownership already transferred, nothing left to release.</li>
-<li>Within one scope, values drop in <strong>reverse declaration
-order</strong>.</li>
-<li>A struct or sum type made of fields that implement <code>drop</code>
-gets an implicit field-wise drop for free: the type’s own
-<code>drop()</code> (if any) runs first, then each field drops in
-declaration order. A type writes <code>drop()</code> only for the
-resource it directly owns, never to manually recurse into its
-fields.</li>
+<li><strong>A binding.</strong> A <code>let</code>/<code>var</code>
+name, a by-value parameter, a pattern binding, and a <code>for</code>
+loop variable each own their value. A binding drops at the end of the
+scope it is declared in; a <code>for</code> loop variable drops at the
+end of each iteration.</li>
+<li><strong>A matched value.</strong> A <code>match</code>,
+<code>if let</code>, <code>while let</code> or destructuring
+<code>let</code> moves its subject only when some pattern binds a
+non-<code>copy</code> part of it by value; the bindings then own the
+parts they bind, and a <code>_</code> drops the part it skips. When the
+patterns bind only copies, a place keeps its value and its owner drops
+it. A pattern whose bindings overlap (an <code>as</code> alias, a
+<code>|</code>, or an array pattern) cannot split a value between
+owners: an alias of the whole pattern (<code>p as whole</code>) owns the
+value, any other overlapping binding must be <code>copy</code>, and an
+arm that binds only copies owns and drops a moved subject itself.</li>
+<li><strong>A loop.</strong> <code>for x in xs</code> consumes
+<code>xs</code>: the iterator the loop makes of it
+(<code>into_iter</code>), or the iterator or generator it is handed,
+belongs to the loop, which drops it when the loop ends, so it drops the
+elements the loop never reached. The loop variable owns each element it
+is given. A loop over a borrowed collection (<code>for x in r</code>
+where <code>r: &amp;list[T]</code>) cannot consume it, so it is allowed
+only when the elements are <code>copy</code>; to borrow the elements,
+iterate <code>r.iter()</code>.</li>
+<li><strong>A generator.</strong> A <code>generator def</code> owns its
+parameters and the locals its body binds. A generator dropped before it
+finishes is resumed once to return from where it is suspended, which
+drops what it still owns; one that never ran drops its parameters.</li>
+<li><strong>A field.</strong> A struct or sum value owns its fields and
+payloads, and drops them as part of its own drop glue. After a partial
+move, a binding drops only the fields it still owns.</li>
+<li><strong>An element.</strong> A collection owns its elements and
+drops each one that it still holds when it is itself dropped. A library
+collection does this with <code>drop_in_place</code> (see <a
+href="../03-advanced/38-machine-layer.html">The <code>machine</code>
+Layer</a>).</li>
+<li><strong>A temporary.</strong> A value that an expression produces
+and nothing takes ownership of, such as a call result that is discarded,
+used as a method receiver, or read for one field, drops at the end of
+the statement that produced it. The exception is a <code>let</code>
+whose initializer borrows a temporary directly
+(<code>let r = &amp;make()</code>): that temporary lives until the end
+of <code>r</code>’s scope.</li>
+</ul>
+<h3 id="when-drops-run">When drops run</h3>
+<ul>
+<li><strong>Moves.</strong> A value that was moved never drops at its
+old owner. If it was moved on some paths to a scope’s end and not on
+others, it drops on exactly the paths where it is still owned. The
+compiler keeps a hidden flag at run time when it cannot tell the paths
+apart from the program’s structure.</li>
+<li><strong>Assignment.</strong> Assigning to a binding, field, or
+element that still holds a value drops the old value, after the new
+value has been computed.</li>
+<li><strong>Temporaries.</strong> A value that no binding holds is a
+temporary: a call result that is discarded, borrowed
+(<code>make().len()</code>, <code>&amp;make()</code>), or read a field
+from (<code>make().id</code>). It drops at the end of the statement that
+made it. A field moved out of a temporary is not dropped with it; a type
+with its own <code>drop</code> does not allow that move. The condition
+of an <code>if</code> or <code>while</code>, a <code>match</code> guard,
+the right operand of <code>and</code>/<code>or</code>, a returned value,
+and the value a block ends with each count as a statement of their own,
+so their temporaries drop as soon as they are evaluated. A borrow of a
+temporary cannot outlive its statement; to keep the value, bind it with
+<code>let</code> first. A value moved into a call or a binding is not a
+temporary.</li>
+<li><strong>Order.</strong> Within one scope, bindings drop in reverse
+declaration order. Temporaries in one statement drop in reverse order of
+creation. A collection drops its elements in index order.</li>
+<li><strong>Early exits.</strong> <code>return</code>,
+<code>break</code>, <code>continue</code>, and <code>?</code> drop
+everything owned by each scope they leave, innermost scope first, after
+the temporaries of the statements they leave. A <code>while let</code>
+subject’s temporaries last one iteration.</li>
 <li><code>shared[T]</code> drops the pointee when the atomic reference
 count reaches zero, not when any single handle goes out of scope.</li>
 <li>There is no direct <code>x.drop()</code> call — calling it
@@ -113,6 +200,14 @@ which moves <code>x</code> in and drops it.</li>
 destructor on the panicking path still runs, the same as on an ordinary
 early return.</li>
 </ul>
+<pre class="cinder"><code>def demo(flag: bool) -&gt; unit:
+    var a = file.open(&quot;a&quot;)
+    let b = file.open(&quot;b&quot;)
+    if flag:
+        consume(b)               # b moves on this path only
+    a = file.open(&quot;c&quot;)           # &quot;a&quot; is closed here, after &quot;c&quot; is opened
+    file.open(&quot;d&quot;).size()        # &quot;d&quot; is closed at the end of this statement
+                                 # scope end: b is closed only if flag was false, then &quot;c&quot;</code></pre>
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
 <li><strong><code>drop</code> runs at scope exit for the common
@@ -131,24 +226,74 @@ implicit field-wise drop for a struct with no own
 <code>x.drop()</code> is rejected, as this chapter requires
 (<code>src/testdata/semantic_check_test/reject_direct_drop_call.cn</code>).
 <ul>
-<li>Not yet covered: a block or function whose tail is a real
-(non-<code>unit</code>) value skips scope-exit drop for that scope
-entirely, rather than corrupting the returned value (a documented leak,
-never a double-drop); a value-returning <code>return expr</code> does
-not drop a local <code>expr</code> only <em>borrows</em> from (a
-directly-returned local, like <code>return h</code>, is unaffected);
-match-arm/<code>for</code>-loop/destructuring-pattern bindings are not
-tracked, only a plain <code>let</code>/<code>var</code>/simple
-parameter; and a sum type’s field-wise drop (payload recursion) is not
-implemented — only its own <code>impl drop</code> runs.</li>
+<li>Pattern bindings drop in <code>match</code>, <code>if let</code>,
+<code>while let</code>, destructuring
+<code>let</code>/<code>let ... else</code>, destructuring parameters and
+<code>for</code> heads, including struct shorthand fields, a
+<code>match</code> on a field of a local, an <code>as</code> alias of
+the whole pattern, and an arm that owns a subject its <code>|</code>
+pattern binds nothing of
+(<code>src/testdata/std_test/pattern_drops.cn</code>). A
+non-<code>copy</code> binding in an overlapping pattern is rejected
+(<code>src/testdata/semantic_ownership_check_test/reject_overlapping_owned_binding.cn</code>).</li>
+<li><code>for</code> loops own their iterator and drop it after the loop
+and on every jump out of it, and the loop variable, or each binding of a
+destructuring head, owns its element; comprehension variables do too
+(<code>src/testdata/std_test/for_loop_drops.cn</code>). A consuming loop
+over a borrowed collection of non-<code>copy</code> elements is rejected
+(<code>src/testdata/semantic_ownership_check_test/reject_consuming_loop_over_borrow.cn</code>).</li>
+<li>Generators drop their locals as any function does, and a generator
+dropped before it finishes is cancelled
+(<code>hir_generator_cancel</code>): resumed with its
+<code>finished</code> slot set to <code>2</code>, its body returns from
+its start or the <code>yield</code> it is suspended at
+(<code>src/testdata/std_test/generator_drops.cn</code>).</li>
+<li>A partly moved binding drops the fields it still owns, one by one
+(<code>pending_drop::moved_paths</code>,
+<code>src/hir/drop_schedule.h</code>).</li>
+<li>Assigning over a value drops the old one first, for a local, a field
+of one, and a field or <code>*r</code> reached through a reference
+(<code>semantic::ownership::drop_facts_of</code>,
+<code>src/semantic/ownership_check.cpp</code>).</li>
+<li>Run-time drop flags: a <code>let</code>/<code>var</code> binding or
+single-name parameter, or a field of one, moved on some paths only is
+dropped under a flag that the move clears and an assignment sets again
+(<code>drop_schedule::binding_flags</code>/<code>move_clears</code>,
+<code>src/testdata/std_test/drop_flags.cn</code>). Pattern bindings and
+<code>for</code> loop variables get flags the same way.</li>
+<li>Temporaries drop at the end of their statement
+(<code>hir::make_references_explicit</code>,
+<code>src/hir/reference_check.cpp</code>), and the ownership checker
+ends them at the same points, so a borrow that outlives one is rejected
+(<code>src/testdata/std_test/temporary_drops.cn</code>,
+<code>src/testdata/semantic_ownership_check_test/reject_temporary_outlived.cn</code>).
+A <code>return</code>, <code>break</code>, <code>continue</code> or
+<code>?</code> that leaves a statement early drops the temporaries it
+has made so far under run-time live flags, and a <code>while let</code>
+subject’s temporaries drop every iteration
+(<code>src/testdata/std_test/early_exit_drops.cn</code>). The failure
+path of <code>?</code> drops the function’s locals too.</li>
+<li><code>list</code> drops its elements
+(<code>std.mem.drop_in_place</code>/<code>drop_range</code>), as do
+<code>clear</code>, <code>set</code> and <code>v[i] = x</code>;
+<code>list_into_iter</code> drops the elements it has not yielded
+(<code>src/testdata/std_test/list_element_drops.cn</code>).</li>
+<li><code>needs_drop[T]()</code> answers from the same drop plans scope
+exit reads, and <code>if</code> branches whose condition lowers to a
+literal <code>false</code> are not lowered
+(<code>src/testdata/std_test/needs_drop.cn</code>). It is a prelude
+query like <code>size_of</code>, usable in ordinary <code>if</code>
+conditions but not in <code>static if</code> or compile-time functions,
+since drop plans exist only after checking ends.</li>
+<li><strong>Not yet unified:</strong> the drop decisions are split
+between the ownership checker and the lowerer, which have to agree
+through shared helper functions; it is tracked in <a
+href="../../todo.html">todo.md</a>.</li>
 <li>Unwinding through drops on panic is moot: this compiler has no stack
 unwinding at all (<code>panic</code> traps/aborts).</li>
-<li>The prelude <code>drop(x)</code> free function still does not exist.
-A call to it is accepted by the checker anyway and then fails in
-lowering with “no concrete checked type is available for this node” — a
-compiler-gap diagnostic for what is really an undefined name. (The
-<code>drop</code> <em>trait</em> is correctly prelude-reachable:
-<code>impl drop for T</code> needs no <code>use</code>.)</li>
+<li>The prelude <code>drop(x)</code> function exists
+(<code>src/std/traits.cn</code>) and drops <code>x</code> when it
+returns (<code>src/testdata/std_test/swap_replace_drop.cn</code>).</li>
 <li>The ownership checker (<code>src/semantic/ownership_check.h</code>)
 rejects any use after a move; <code>hir::compute_drop_schedule</code> is
 a separate, HIR-oriented walker that decides where drops go, and keeps

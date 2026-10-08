@@ -71,18 +71,31 @@ traits.</p>
 <code>let v: my_type = [1, 2, 3]</code> work — the operators that used
 to be reserved for the built-in sequences. <code>index_mut</code> is
 declared but not yet wired (<code>../../todo.md</code> item 19).</p>
-<p><strong>Concepts:</strong> <code>send</code>, <code>share</code>.</p>
+<p><strong>Concepts:</strong> <code>copy</code>, <code>send</code>,
+<code>share</code>. <code>copy</code> is satisfied by the types listed
+in <a
+href="../02-intermediate/14-ownership-and-borrowing.html#copy-and-move">Ownership
+and Borrowing</a>. It is declared in <code>std.traits</code> and
+answered by the checker, not by its body.</p>
 <p><strong>Functions:</strong> <code>println</code>, <code>print</code>,
 <code>panic</code>, <code>assert</code>, <code>size_of</code>,
 <code>align_of</code>, <code>ptr_cast</code>, <code>uninit</code>,
-<code>args</code>, <code>env</code>, <code>drop</code>.</p>
-<p><code>drop</code> is the one entry here that does not exist: no
-<code>def drop</code> is defined outside the <code>drop</code> trait
-itself, and a call to <code>drop(x)</code> type-checks but then fails to
-lower (see <a
-href="../02-intermediate/17-shared-ownership-and-drop.html">Shared
-Ownership and Drop</a>, Implementation status). The <code>drop</code>
-<em>trait</em> listed above is genuinely prelude-reachable.</p>
+<code>args</code>, <code>env</code>, <code>drop</code>,
+<code>swap</code>, <code>replace</code>.</p>
+<p>The three ownership functions exist so that a value can leave a place
+it cannot be moved out of (see <a
+href="../02-intermediate/14-ownership-and-borrowing.html#moving-out-of-places">Ownership
+and Borrowing</a>):</p>
+<pre class="cinder"><code>def drop[T](x: T) -&gt; unit                    # takes x and drops it now
+def swap[T](a: &amp;mut T, b: &amp;mut T) -&gt; unit    # exchanges the two values
+def replace[T](dest: &amp;mut T, value: T) -&gt; T  # stores value, returns the old one</code></pre>
+<p>All three are in <code>std.traits</code>
+(<code>src/std/traits.cn</code>). <code>swap</code> and
+<code>replace</code> move values with raw reads and writes through
+<code>ptr_cast</code> of the references, so neither value is dropped;
+<code>drop(x)</code> is an empty function whose by-value parameter drops
+when it returns. Tested by
+<code>src/testdata/std_test/swap_replace_drop.cn</code>.</p>
 <p>Four of these are not ordinary functions but compiler-answered forms,
 each taking its argument in brackets:</p>
 <ul>

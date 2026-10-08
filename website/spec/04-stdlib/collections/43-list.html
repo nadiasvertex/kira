@@ -89,15 +89,33 @@ growable-sequence type; the alias only lets either name be used.</li>
 <code>array</code> is spelled by asking for one
 (<code>let a: array[int32, 3] = [1, 2, 3]</code>).</p>
 <h2 id="ownership-and-drop">Ownership and <code>drop</code></h2>
-<p><code>list[T]</code> owns its storage and implements
-<code>drop</code>, which frees it at scope exit. Calling
-<code>free()</code> explicitly is allowed and makes the later
-<code>drop</code> a no-op.</p>
-<p>Elements are <strong>not</strong> dropped individually: a container
-recursing <code>drop</code> through its elements is not implemented (<a
-href="../../../todo.html"><code>todo.md</code></a> item 6). A
-<code>list</code> of resource-owning elements frees its own buffer but
-leaks what the elements own.</p>
+<p><code>list[T]</code> owns its storage and its elements. Its
+<code>drop</code> drops each element in index order, then frees the
+storage. Calling <code>free()</code> explicitly is allowed; it drops the
+elements the same way, and the later <code>drop</code> has nothing left
+to do.</p>
+<p>Because the list owns its elements, nothing else may own one while it
+is stored:</p>
+<ul>
+<li><code>v[i]</code> by value copies the element, so it requires
+<code>T: copy</code>. For any other <code>T</code>, borrow it
+(<code>&amp;v[i]</code>, <code>&amp;mut v[i]</code>, or a method call on
+<code>v[i]</code>) or take it out with <code>pop</code>.</li>
+<li><code>first</code>, <code>last</code> and <code>get</code> return
+copies, so they are available only when <code>T</code> is
+<code>copy</code>. <code>cell</code> and <code>mutable_cell</code>
+borrow for any <code>T</code>.</li>
+<li><code>v[i] = x</code>, <code>set</code>, and <code>clear</code> drop
+the elements they overwrite or remove.</li>
+<li><code>for x in v</code> consumes <code>v</code>: each element moves
+into <code>x</code>, and the elements a loop leaves unvisited (through
+<code>break</code> or <code>return</code>) drop with the iterator.</li>
+</ul>
+<p>Implemented as described, except that <code>v[i]</code> by value is
+rejected for a non-<code>copy</code> element by the ownership checker (a
+move out of an element) rather than by a bound on the <code>index</code>
+impl, so <code>v.at(i)</code> called by name still returns a bitwise
+copy.</p>
 <h2 id="operations">Operations</h2>
 <h3 id="inherent-methods">Inherent methods</h3>
 <table>
@@ -125,15 +143,15 @@ leaks what the elements own.</p>
 <tr>
 <td><code>first(self) -&gt; option[T]</code>,
 <code>last(self) -&gt; option[T]</code></td>
-<td><code>@none</code> when empty</td>
+<td><code>@none</code> when empty; <code>T: copy</code></td>
 </tr>
 <tr>
 <td><code>get(self, i) -&gt; option[T]</code></td>
-<td><code>@none</code> when out of range</td>
+<td><code>@none</code> when out of range; <code>T: copy</code></td>
 </tr>
 <tr>
 <td><code>set(mut self, i, value) -&gt; bool</code></td>
-<td><code>false</code> when out of range</td>
+<td><code>false</code> when out of range; drops the old element</td>
 </tr>
 <tr>
 <td><code>push(mut self, value: T)</code></td>
@@ -149,11 +167,13 @@ leaks what the elements own.</p>
 </tr>
 <tr>
 <td><code>clear(mut self)</code></td>
-<td>O(1); keeps capacity; elements are not dropped</td>
+<td>keeps capacity; drops the elements (O(1) when <code>T</code> needs
+no drop)</td>
 </tr>
 <tr>
 <td><code>free(mut self)</code></td>
-<td>releases the storage; the list is empty and reusable afterwards</td>
+<td>drops the elements and releases the storage; the list is empty and
+reusable afterwards</td>
 </tr>
 <tr>
 <td><code>cell(self, i) -&gt; cell[T]</code></td>
@@ -199,13 +219,13 @@ responsibility</td>
 <tr>
 <td><code>std.traits.index[usize]</code></td>
 <td><code>v[i]</code></td>
-<td>bounds-checked; out of range panics with
+<td><code>T: copy</code>; bounds-checked; out of range panics with
 <code>index out of bounds</code></td>
 </tr>
 <tr>
 <td><code>std.traits.index_set[usize]</code></td>
 <td><code>v[i] = x</code></td>
-<td>same check</td>
+<td>same check; drops the old element</td>
 </tr>
 <tr>
 <td><code>std.traits.index_ref[usize]</code></td>

@@ -179,19 +179,40 @@ checker (<code>src/semantic/ownership_cfg.cpp</code>,
 <code>eval_lambda</code>) moves each <code>by_move</code> entry out of
 the enclosing scope at the point the lambda is created, so reusing the
 original binding afterward is a use-after-move error, the same as any
-other move. Without a capture list, a name the body moves is moved into
-the closure at creation, and one it only reads is copied. Codegen-wise a
-move capture is indistinguishable from a by-value capture — both
-backends branch on <code>ast::is_reference_capture</code> rather than on
-<code>by_value</code> specifically, so <code>by_move</code> takes the
-existing value-capture path (a genuine copy at the bit level; only the
-move-checker enforces that the <em>source</em> is no longer usable).
-What remains unimplemented is the <strong>implicit</strong>-capture half
-of this chapter’s rule: an escaping closure without an explicit
-<code>move [...]</code> list is not rejected or forced to move —
-implicit capture is unconditionally by value in every lowering, and no
-escape analysis exists yet to drive the default borrow-or-move
-choice.</li>
+other move. Without a capture list or <code>move</code>, a captured name
+is copied. A closure body may not move a captured value out of its
+environment, in any capture mode: the closure can be called again and
+still owns the value, so the ownership checker rejects the move
+(<code>move_block::captured</code>) and suggests borrowing it instead.
+Codegen-wise a move capture is indistinguishable from a by-value capture
+— both backends branch on <code>ast::is_reference_capture</code> rather
+than on <code>by_value</code> specifically, so <code>by_move</code>
+takes the existing value-capture path (a genuine copy at the bit level;
+only the move-checker enforces that the <em>source</em> is no longer
+usable). What remains unimplemented is the
+<strong>implicit</strong>-capture half of this chapter’s rule: an
+escaping closure without an explicit <code>move [...]</code> list is not
+rejected or forced to move — implicit capture is unconditionally by
+value in every lowering, and no escape analysis exists yet to drive the
+default borrow-or-move choice.</li>
+<li>A closure owns the values moved into its environment (a
+<code>move</code> capture, or a capture the body consumes) and drops
+them when the closure itself is dropped, in reverse capture order. A
+<code>fn</code> value has a drop plan like any other owned type, so the
+ownership checker schedules its drop at scope exit, under a drop flag
+when it was moved on some paths, and inside whatever struct, callee, or
+other closure it was moved into. The ownership checker records which
+captures each lambda owns (<code>function_cfg::owned_captures</code>);
+lowering builds a <em>drop glue</em> lambda over the same environment
+(<code>hir_lambda::drop_glue</code>) and drops each closure value with
+<code>hir_closure_drop</code>. At run time a closure is a three-slot
+block <code>{ fn; env; drop_glue }</code> on both backends, with a null
+glue when the environment owns nothing to drop. A value captured by copy
+is not dropped by the closure; the enclosing scope still owns it. The
+environment block itself is not freed. Exercised by
+<code>src/testdata/std_test/closure_drops.cn</code> and
+<code>drop_flags.cn</code> (VM) and <code>cli_test</code>’s
+<code>test_build_closure_drops_its_captures</code> (LLVM).</li>
 <li>Explicit capture lists
 (<code>[name, &amp;name, &amp;mut name]</code>, and <code>[]</code>) are
 implemented end to end:

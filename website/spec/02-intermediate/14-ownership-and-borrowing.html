@@ -39,6 +39,10 @@
 id="toc-ownership-and-borrowing">14. Ownership and Borrowing</a>
 <ul>
 <li><a href="#ownership" id="toc-ownership">Ownership</a></li>
+<li><a href="#copy-and-move" id="toc-copy-and-move">Copy and
+move</a></li>
+<li><a href="#moving-out-of-places" id="toc-moving-out-of-places">Moving
+out of places</a></li>
 <li><a href="#borrowing" id="toc-borrowing">Borrowing</a></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
@@ -47,21 +51,21 @@ id="toc-implementation-status">Implementation status</a></li>
 </ul>
 </nav>
 <h1 id="ownership-and-borrowing">14. Ownership and Borrowing</h1>
-<p><strong>Status:</strong> Complete</p>
-<p>Ownership transfer on assignment and call,
+<p><strong>Status:</strong> Partial</p>
+<p>Ownership transfer on assignment and call, which types copy instead
+of moving, moving out of places,
 <code>&amp;</code>/<code>&amp;mut</code> borrowing, and the invariant
 that a borrow never outlives what it borrows.</p>
 <h2 id="ownership">Ownership</h2>
 <ol type="1">
 <li>Assigning a value or passing it to a function transfers ownership by
-default. The source binding is no longer accessible afterward.</li>
-<li>When the owner of a value goes out of scope, the value is freed (see
-<a href="17-shared-ownership-and-drop.html">Shared Ownership and
-Drop</a>). This rule is not yet realized: the compiler emits no
-scope-exit <code>drop</code> glue, and every heap-backed value is
-allocated from a bump arena (<code>src/runtime/arena.h</code>) that
-never reclaims anything. The move checking that <em>would</em> drive
-rule 2 is implemented; the freeing is not.</li>
+default. The source binding is no longer accessible afterward. Values of
+a <code>copy</code> type (below) are copied instead, and the source
+stays usable.</li>
+<li>Every value has exactly one owner at a time. When the owner goes out
+of scope while still holding the value, the value is dropped (see <a
+href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>).</li>
 </ol>
 <pre class="cinder"><code>def process(data: list[int32]) -&gt; int32:    # takes ownership of data
     ...
@@ -69,7 +73,94 @@ rule 2 is implemented; the freeing is not.</li>
 let numbers = [1, 2, 3]
 let result = process(numbers)
 # numbers is no longer accessible here — process owns it now</code></pre>
-<p>To use a value again after a call, copy it or lend it.</p>
+<p>To use a value again after a call, lend it instead.</p>
+<h2 id="copy-and-move">Copy and move</h2>
+<p>Whether using a value by value copies it or moves it depends only on
+its type. A type is <code>copy</code> when a bit-for-bit duplicate is an
+independent, correct value that owns nothing the original also owns.
+Every other type moves.</p>
+<p>These types are <code>copy</code>:</p>
+<ul>
+<li><p>the scalars: <code>bool</code>, <code>char</code>,
+<code>byte</code>, <code>unit</code>, and every integer and
+floating-point type</p></li>
+<li><p><code>str</code>, which is an immutable view of shared
+bytes</p></li>
+<li><p><code>&amp;T</code> for any <code>T</code>, and the raw pointers
+<code>*T</code> and <code>*mut T</code></p></li>
+<li><p>the read-only views <code>slice[T]</code> and
+<code>cell[T]</code></p></li>
+<li><p>a sum type — a user sum, <code>option[T]</code> or
+<code>result[T, E]</code> — whose every variant payload is
+<code>copy</code> and that does not implement <code>drop</code>,
+including a sum whose variants carry nothing (<code>ordering</code>). A
+sum value never changes after it is built, so sharing it is a
+copy.</p></li>
+</ul>
+<p>Every other type moves, including <code>&amp;mut T</code>,
+<code>slice_mut[T]</code>, <code>cell_mut[T]</code>, function values,
+and every struct, tuple, fixed array and <code>list</code>, whatever
+they contain: each of those can be changed in place. A type that
+implements <code>drop</code> is never <code>copy</code>.</p>
+<p><code>copy</code> is a built-in concept (see <a
+href="../03-advanced/35-concepts.html">Concepts</a>). Like any concept
+it is satisfied structurally, with no <code>impl</code>, and it can be
+used as a bound:</p>
+<pre class="cinder"><code>def larger[T: copy + ord](a: T, b: T) -&gt; T:
+    return if a &gt; b: a else: b</code></pre>
+<p>A type parameter is <code>copy</code> only under a <code>copy</code>
+bound. Without one, a value of type <code>T</code> moves, and a second
+use after a move is rejected exactly as it is for a concrete type:</p>
+<pre class="cinder"><code>def keep_if[T](x: T, pred: fn(T) -&gt; bool) -&gt; option[T]:
+    if pred(x):          # moves x into pred
+        return @some(x)  # error: `x` used after being moved
+    return @none</code></pre>
+<p>The fix is to lend the value
+(<code>pred: fn(&amp;T) -&gt; bool</code>) or to require
+<code>T: copy</code>.</p>
+<p>An array fill <code>[v; n]</code> puts the same value in every
+element, so <code>v</code> must be <code>copy</code>.</p>
+<h2 id="moving-out-of-places">Moving out of places</h2>
+<p>A place is a local, or a field, element, or dereference reached from
+one: <code>p</code>, <code>p.a.b</code>, <code>xs[i]</code>,
+<code>*r</code>. Using a place by value moves out of it unless its type
+is <code>copy</code>.</p>
+<ul>
+<li><strong>Fields of a local.</strong> Moving out of a field of a local
+the function owns is a partial move. The moved field cannot be used
+again, and neither can the whole local, until the field is assigned a
+new value. The other fields stay usable. When the local goes out of
+scope, only the fields it still owns are dropped.</li>
+<li><strong>A type with its own <code>drop</code>.</strong> A field of a
+value whose type implements <code>drop</code> cannot be moved out,
+because that type’s <code>drop</code> needs the whole value.</li>
+<li><strong>Matching.</strong> <code>match</code>, <code>if let</code>,
+<code>while let</code>, and a destructuring <code>let</code> on a field,
+element, or dereference move out of it only when a pattern binds a
+non-<code>copy</code> part by value. A pattern that binds only
+<code>copy</code> parts, or nothing, leaves the place as it was. To bind
+parts of a place that cannot be moved out of, match on a borrow of it
+(<code>match &amp;self.head</code>).</li>
+<li><strong>Elements and dereferences.</strong> Moving out of
+<code>xs[i]</code>, <code>*r</code>, or a field reached through a
+reference or through <code>self</code> is an error. The owner of that
+storage would still drop the value later, so the move would give it two
+owners. Borrow the place instead, or exchange it with <code>swap</code>,
+<code>replace</code>, or a collection method that removes the element,
+such as <code>pop</code>.</li>
+</ul>
+<pre class="cinder"><code>type job = { name: str, input: list[int32], output: list[int32] }
+
+def split(j: job) -&gt; list[int32]:
+    let out = j.output         # partial move: j.output is gone
+    println(j.name)            # fine: j.name is untouched (and copy)
+    return out                 # j.input is dropped at the end of split
+
+def first(xs: &amp;list[list[int32]]) -&gt; list[int32]:
+    return xs[0]               # error: cannot move out of `xs[0]`</code></pre>
+<p>Assigning to a place that still holds a value drops the old value,
+after the new value has been computed. Assigning to a place that was
+moved out of fills it again without dropping anything.</p>
 <h2 id="borrowing">Borrowing</h2>
 <p>A borrow lends a value without giving up ownership: the owner keeps
 it, and whoever holds the borrow may use the value but not move it. Most
@@ -156,10 +247,10 @@ so no construct is handled by a special case.</li>
 value by value, binding it, returning it, matching on it, or capturing
 it by move moves it, and any later use on <em>some</em> path is rejected
 — including the next iteration of a loop, and a use after a move in only
-one branch. Scalars, raw pointers, references and shared views copy. A
-bare argument passed to a <code>&amp;</code>/<code>&amp;mut</code>
-parameter is lent, not moved (the parameter’s passing mode is recorded
-once by the checker,
+one branch. Scalars, raw pointers, <code>&amp;T</code> references and
+shared views copy. A bare argument passed to a
+<code>&amp;</code>/<code>&amp;mut</code> parameter is lent, not moved
+(the parameter’s passing mode is recorded once by the checker,
 <code>call_argument_mapping::passing_by_param</code>).</li>
 <li><strong>Loans.</strong> A <em>loan</em> is one borrow of a local: an
 explicit <code>&amp;</code>/<code>&amp;mut</code>, an implicit autoref
@@ -203,16 +294,59 @@ result can carry a borrow
 carries every borrow its arguments and receiver made. This
 over-approximates (it can flag an alias that does not occur) but never
 misses one.</li>
+<li><strong>References are addresses.</strong> A
+<code>&amp;x</code>/<code>&amp;mut x</code> is the address of the place
+<code>x</code>, for every type, on both backends; a <code>*r</code>
+loads from it. <code>self</code> in a method on a heap-represented type
+is a <code>&amp;T</code> (<code>mut self</code>:
+<code>&amp;mut T</code>); a scalar <code>self</code> is passed by value.
+The checker still lets a <code>&amp;T</code> stand where a
+<code>T</code> is expected for heap-represented types; lowering spells
+every such borrow and deref out
+(<code>hir::make_references_explicit</code>,
+<code>src/hir/reference_check.cpp</code>), and the driver rejects any it
+missed (<code>find_implicit_references</code>) rather than run it.</li>
 <li>Not yet enforced — precision limits, not soundness gaps: borrows are
 compared at whole-variable granularity (<code>&amp;mut p.a</code> and
 <code>&amp;mut p.b</code> conflict); a returned view borrows every
-argument rather than the one it came from; a move out of a field or
-element counts as a read (partial moves are not tracked); a type
-parameter’s values are never tracked as moved (that needs to know which
-<code>T</code>s copy). <code>str</code>, though modelled as a view, is
-treated as an owned value. The source material’s <code>E0013</code>
-example is illustrative only — this compiler attaches no numeric error
-codes to diagnostics.</li>
+argument rather than the one it came from. The source material’s
+<code>E0013</code> example is illustrative only — this compiler attaches
+no numeric error codes to diagnostics.</li>
+<li><strong>Copy and move</strong> is implemented.
+<code>type_table::is_copy</code> (<code>src/semantic/types.cpp</code>)
+classifies the built-in <code>copy</code> types, and
+<code>checked_types::copy_sum_types</code> the sums whose payloads copy
+(<code>checker::value_is_copy</code>); the checker answers the
+<code>copy</code> concept (<code>src/std/traits.cn</code>) from it, and
+the ownership graph uses it to decide what moves. A type parameter moves
+unless a <code>copy</code> bound (inline or <code>where</code>) puts it
+in <code>checked_types::copy_type_params</code>. Tests:
+<code>accept_copy_values_reused.cn</code> and
+<code>reject_type_param_reused_after_move.cn</code>
+(<code>src/testdata/semantic_ownership_check_test/</code>),
+<code>report_copy_bound_unsatisfied.cn</code>
+(<code>src/testdata/semantic_check_test/</code>). A category bound
+(<code>T: integer</code>, <code>T: numeric</code>) implies
+<code>copy</code>.</li>
+<li><strong>Moving out of places</strong> is implemented in the
+ownership graph (<code>src/semantic/ownership_cfg.cpp</code>). A part of
+an owning local reached through fields alone is tracked as its own
+<code>field_path</code> local, so a partial move, a use of the whole
+afterward, and a refill by assignment are all ordinary moves and writes
+in the “maybe moved” pass. A move the rules forbid is an
+<code>invalid_move_event</code>, reported by
+<code>check_ownership</code>. A raw-pointer read is not a blocked move
+(ch. 38). Tests: <code>accept_partial_moves.cn</code> and
+<code>reject_moves_out_of_places.cn</code>
+(<code>src/testdata/semantic_ownership_check_test/</code>).
+<ul>
+<li>Not yet implemented: <code>match</code> on a whole local still moves
+it even when no pattern binds a non-<code>copy</code> part. The codegen
+corpus (<code>src/testdata/codegen_stress/</code>) is compiled without
+the ownership checker; some of those programs move a value twice or move
+out of <code>self</code>, which the checker would reject. The standard
+library is checked like user code.</li>
+</ul></li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>
