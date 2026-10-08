@@ -6049,6 +6049,19 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
         return std::unexpected(lowered_guard.error());
       }
       guard = std::move(*lowered_guard);
+      // The guard reads the arm's bindings, so their `hir_let`s run first,
+      // ahead of the guard rather than at the top of the body. A failed
+      // guard falls through to the next arm with the subject untouched.
+      if (!pending.empty()) {
+        const auto guard_span = guard->span;
+        const auto guard_type = guard->type;
+        auto stmts = std::move(pending);
+        pending.clear();
+        stmts.push_back(
+            ptr<hir_node>(make<hir_expr_stmt>(guard_span, std::move(guard))));
+        guard = ptr<hir_expr>(
+            make<hir_block>(guard_span, guard_type, std::move(stmts)));
+      }
     }
 
     auto body = ptr<hir_block>{};

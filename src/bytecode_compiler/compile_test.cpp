@@ -1176,12 +1176,9 @@ auto test_match_range_pattern() -> void {
 }
 
 auto test_match_guard_refines_a_pattern() -> void {
-  // The guard references `x` (the enclosing function parameter, already
-  // bound before the `match` starts) rather than a name the pattern itself
-  // introduces — a guard that reads a pattern-bound name is a known
-  // pre-existing lowering gap (`hir_match_arm.guard` is lowered before the
-  // pattern's synthetic `hir_let` bindings, which only live in `body`), out
-  // of scope for this increment's bytecode_compiler/llvm_codegen work.
+  // The guard references `x`, the enclosing function parameter. A guard
+  // that reads a pattern-bound name is covered by the codegen_stress corpus
+  // (`125_match_guard_reads_pattern_binding.cn`).
   auto module = compile_fixture(load_fixture("match_guard.cn"));
   const auto vm = bc::vm{module};
   const auto idx = function_index(module, "sign");

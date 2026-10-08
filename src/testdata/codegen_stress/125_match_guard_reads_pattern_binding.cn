@@ -1,0 +1,24 @@
+module codegen_stress.match_guard_reads_pattern_binding
+
+# A `match` guard reads the names its arm's pattern binds (spec/todo.md
+# item 17). The bindings' `let`s used to be placed at the top of the arm
+# body, after the guard, so the guard referenced a name with no local.
+#
+# `pick` takes each path once: guard holds, guard fails into the next arm,
+# and `@none`. `split` binds two names from a tuple and reads both in the
+# guard. Distinct weights make each result visible in the sum.
+# expect: 1264
+
+def pick(o: option[int32]) -> int32:
+    return match o:
+        @some(x) if x > 0 => x
+        @some(x) => 0 - x * 10
+        @none => 100
+
+def split(p: (int32, int32)) -> int32:
+    return match p:
+        (a, b) if a < b => b - a
+        (a, b) => a + b
+
+def main() -> int32:
+    return pick(@some(4)) + pick(@some(-3)) + pick(@none) + split((1, 1001)) + split((100, 30))

@@ -1,0 +1,21 @@
+module codegen_stress.match_first_arm_jumps
+
+# A `match` whose first arm jumps away still has the type of the arms that
+# produce a value (spec/todo.md item 22). The arms were joined starting from
+# the first arm's type, so `never` from `continue`/`break` won and `v` was
+# typed `never`. `v + 0` only type-checks if `v` is an `int32`.
+#
+# k = 1 continues, k = 2..4 add, k = 5 breaks: 2 + 3 + 4.
+# expect: 9
+
+def main() -> int32:
+    let mut k = 0
+    let mut total = 0
+    while k < 10:
+        k = k + 1
+        let v = match k:
+            1 => continue
+            5 => break
+            n => n
+        total = total + v + 0
+    return total

@@ -20295,8 +20295,13 @@ private:
   /// Joins branch value types, diagnosing genuinely conflicting branches.
   auto join_branch_type(type_id current, type_id found, source_span span,
                         std::string_view construct) -> type_id {
-    if (types_.is_unknown(current) || types_.entry(found).name == "never") {
+    // `never` is the bottom: a branch that jumps away contributes nothing,
+    // whichever position it is in.
+    if (types_.entry(found).name == "never") {
       return types_.is_unknown(current) ? found : current;
+    }
+    if (types_.is_unknown(current) || types_.entry(current).name == "never") {
+      return found;
     }
     if (types_.is_unknown(found)) {
       return current;
