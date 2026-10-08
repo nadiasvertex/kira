@@ -17,6 +17,15 @@ drop 10
 drop 11
 drop 12
 moved 12
+drop 13
+in and
+drop 14
+guarded
+drop 15
+loop 0
+drop 15
+loop 1
+drop 15
 still printing
 end
 drop 7

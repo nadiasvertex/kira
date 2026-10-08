@@ -595,7 +595,7 @@ private:
       return;
     }
     if (ends_temporaries_ != nullptr) {
-      ends_temporaries_(slot->span);
+      ends_temporaries_(*slot);
     }
     const auto span = slot->span;
     const auto type = slot->type;

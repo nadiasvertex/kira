@@ -1050,13 +1050,13 @@ private:
   /// with it (a lambda's or match arm's expression body).
   auto eval_full(const ast::expr &expr, use_mode mode = use_mode::move)
       -> value {
-    note_full_expression(expr.span);
+    note_full_expression(expr);
     open_temporaries();
     return close_temporaries(eval(expr, mode));
   }
 
-  auto note_full_expression(source_span span) -> void {
-    cfg_.full_expressions.emplace(span.start, span.end);
+  auto note_full_expression(const ast::node &node) -> void {
+    cfg_.full_expressions.insert(&node);
   }
 
   // ------------------------------------------------------------------
@@ -1889,7 +1889,7 @@ private:
           subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
       if (stmt.condition != nullptr) {
-        note_full_expression(stmt.condition->span);
+        note_full_expression(*stmt.condition);
         static_cast<void>(eval(*stmt.condition, use_mode::read));
       }
       static_cast<void>(close_temporaries());
@@ -2014,12 +2014,12 @@ private:
       const auto last = want_value && i + 1 == stmts.size();
       if (last) {
         // The block's value: its temporaries end with it.
-        note_full_expression(stmts[i]->span);
+        note_full_expression(*stmts[i]);
         if (stmts[i]->kind == ast::node_kind::expr_stmt) {
           const auto &value_expr =
               dynamic_cast<const ast::expr_stmt &>(*stmts[i]).expr;
           if (value_expr != nullptr) {
-            note_full_expression(value_expr->span);
+            note_full_expression(*value_expr);
           }
         }
       }

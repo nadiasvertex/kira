@@ -1100,6 +1100,9 @@ private:
 auto lowerer::lower_expr(const ast::expr &expr)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto lowered = lower_expr_unflagged(expr);
+  if (lowered.has_value()) {
+    (*lowered)->origin = &expr;
+  }
   const auto clears = drop_schedule_.move_clears.find(&expr);
   if (!lowered.has_value() || clears == drop_schedule_.move_clears.end()) {
     return lowered;
@@ -1115,7 +1118,9 @@ auto lowerer::lower_expr(const ast::expr &expr)
   }
   stmts.push_back(
       ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*lowered))));
-  return ok_expr(make<hir_block>(span, type, std::move(stmts)));
+  auto block = make<hir_block>(span, type, std::move(stmts));
+  block->origin = &expr;
+  return ok_expr(std::move(block));
 }
 
 auto lowerer::flag_ref(std::size_t flag, source_span span)
@@ -3782,6 +3787,9 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
         pop_scope();
         return std::unexpected(tail.error());
       }
+      if ((*tail)->origin == nullptr) {
+        (*tail)->origin = stmt_ptr.get();
+      }
       lowered_stmts.push_back(std::move(*tail));
       continue;
     }
@@ -3789,6 +3797,9 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
     if (!lowered.has_value()) {
       pop_scope();
       return std::unexpected(lowered.error());
+    }
+    if (!lowered->empty() && lowered->front()->origin == nullptr) {
+      lowered->front()->origin = stmt_ptr.get();
     }
     for (std::size_t n = 0; n < lowered->size(); ++n) {
       (*lowered)[n]->continues_statement = n > 0;
@@ -6534,14 +6545,14 @@ auto lowerer::lower_function(const ast::func_decl &decl)
           drop_failure = dropped.error();
         }
       },
-      [this](source_span span) -> void {
+      [this](const hir_expr &expr) -> void {
         // The rewriter drops temporaries here; the ownership checker must
-        // end them no later.
-        static_cast<void>(agree(
-            true,
-            drop_schedule_.full_expressions.contains(
-                std::pair{span.start, span.end}),
-            "end temporaries at a full expression", span));
+        // end them no later. A node lowering synthesized has no record.
+        if (expr.origin != nullptr) {
+          static_cast<void>(
+              agree(true, drop_schedule_.full_expressions.contains(expr.origin),
+                    "end temporaries at a full expression", expr.span));
+        }
       });
   if (drop_failure.has_value()) {
     return std::unexpected(*drop_failure);

@@ -55,10 +55,10 @@ using drop_temporary_fn =
     std::function<void(const temporary &, ptr_vec<hir_node> &)>;
 
 /// Told each time the rewriter drops temporaries at the end of a full
-/// expression, with that expression's source range. The ownership checker
-/// ends the temporaries of the same expressions
-/// (`function_cfg::full_expressions`); a consistency check compares the two.
-using full_expression_fn = std::function<void(source_span)>;
+/// expression, with that expression. The ownership checker ends the
+/// temporaries of the same expressions (`function_cfg::full_expressions`,
+/// found through `hir_node::origin`); a consistency check compares the two.
+using full_expression_fn = std::function<void(const hir_expr &)>;
 
 /// Makes every implicit reference conversion in `function` explicit, the
 /// ones `find_implicit_references` reports: a projection through a

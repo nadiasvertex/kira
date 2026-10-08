@@ -170,6 +170,12 @@ struct hir_node {
   /// makes are dropped after the last of them
   /// (`make_references_explicit`).
   bool continues_statement = false;
+  /// The AST node lowering produced this node from: the outermost
+  /// `ast::expr` for an expression, the `ast::node` for a statement's first
+  /// node. Null for a node lowering synthesized. The ownership checker's
+  /// records are keyed by AST node, and this is how passes over HIR find
+  /// them (`make_references_explicit`).
+  const void *origin = nullptr;
 
   explicit hir_node(hir_node_kind k, source_span s, type_id t = k_unknown_type)
       : kind(k), span(s), type(t) {}

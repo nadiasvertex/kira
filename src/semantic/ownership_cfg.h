@@ -221,12 +221,12 @@ struct function_cfg {
   /// Where an owning pattern leaves a droppable part unbound: its `_`
   /// patterns, and its struct patterns whose `..` skips a droppable field.
   std::set<const void *> leftover_drops;
-  /// The source ranges of the expressions whose temporaries end with them
+  /// The expressions whose temporaries end with them
   /// rather than with their statement: a condition, a match or loop guard,
   /// the right operand of `and`/`or`, a returned or yielded value, a block's
   /// value, an arm or lambda body. `hir::make_references_explicit` drops a
   /// temporary no earlier than the end of the innermost one that holds it.
-  std::set<std::pair<byte_offset, byte_offset>> full_expressions;
+  std::set<const void *> full_expressions;
   /// The top-level owning patterns whose subject is still owned by the path
   /// where the pattern misses (`let else`, `if let`, `while let`).
   std::set<const void *> unmatched_drops;

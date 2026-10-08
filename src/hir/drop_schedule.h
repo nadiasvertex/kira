@@ -2,11 +2,9 @@
 
 #include <cstddef>
 #include <optional>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include "src/parser/ast.h"
@@ -114,8 +112,8 @@ struct drop_schedule {
   std::unordered_set<const void *> owning_loops;
   std::unordered_set<const void *> loop_handles;
   std::unordered_set<const void *> consuming_calls;
-  /// `function_cfg::full_expressions`, as source ranges.
-  std::set<std::pair<byte_offset, byte_offset>> full_expressions;
+  /// `function_cfg::full_expressions`.
+  std::unordered_set<const void *> full_expressions;
 };
 
 /// Computes the drop schedule for one function body, including every lambda

@@ -69,6 +69,21 @@ def main() -> unit:
     # A value moved into a call is the callee's to drop.
     println("moved {id_of(mk(12))}")
 
+    # The right operand of `and` is a full expression of its own.
+    if true and mk(13).get() == 13:
+        println("in and")
+
+    # A match guard's temporaries drop before its arm runs.
+    match i:
+        2 if mk(14).get() == 14 => println("guarded")
+        _ => println("unguarded")
+
+    # A `while` condition's temporaries drop on each test.
+    var j = 0
+    while mk(15).get() + j < 17:
+        println("loop {j}")
+        j = j + 1
+
     # A standard stream handle does not close its stream when dropped.
     print("still ")
     println("printing")
