@@ -1672,6 +1672,18 @@ auto test_reports_mixed_numeric_types() -> void {
                     "expected mixed-numeric diagnostic");
 }
 
+/// `x += y` is `x = x + y`, so `y` must have `x`'s numeric type. It used
+/// to pass the checker and reach LLVM as an `int64` add of an `int32`.
+auto test_reports_compound_assign_mixed_numeric_types() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_compound_assign_mixed_numeric_types.cn");
+  expect(analyzed.error_count == 1,
+         "expected `total += k` with `int64` and `int32` to be one error");
+  expect_diagnostic(analyzed, "type mismatch: expected `int64`, found `int32`",
+                    "expected the compound assignment's value to be checked "
+                    "against its target's type");
+}
+
 /// `bool`/`char` have the comparisons primitively but no arithmetic: `+` on
 /// them is the user's mistake, reported by the checker — not a value-less
 /// node left for lowering to call a gap in the compiler.
@@ -4445,6 +4457,7 @@ auto main() -> int {
     test_accepts_wide_literal_in_generic_return();
     test_reports_generic_return_literal_overflow();
     test_reports_mixed_numeric_types();
+    test_reports_compound_assign_mixed_numeric_types();
     test_reports_non_numeric_builtin_arithmetic();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();

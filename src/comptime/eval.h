@@ -353,11 +353,19 @@ public:
   }
 
   /// Outcome of executing a statement sequence: whether a `return` was hit
-  /// and, if so, its value.
+  /// and, if so, its value, or whether a `break`/`continue` is unwinding to
+  /// the innermost enclosing loop.
   struct exec_result {
     bool returned = false;
     bool errored = false;
+    bool broke = false;
+    bool continued = false;
     value result = value::make_unit();
+
+    /// True when the rest of the enclosing statement sequence must not run.
+    [[nodiscard]] auto interrupts() const -> bool {
+      return returned || errored || broke || continued;
+    }
   };
 
   /// Executes a statement/body-node sequence against the current locals
@@ -675,6 +683,31 @@ private:
 
   [[nodiscard]] auto evaluate_stmt(const ast::node &node) -> exec_result;
 
+  /// Runs a `while`/`while let` loop. Each iteration's body gets its own
+  /// locals frame, so a `let` inside it does not outlive the iteration.
+  [[nodiscard]] auto evaluate_while(const ast::while_stmt &loop)
+      -> exec_result;
+
+  /// Runs a `for` loop over a compile-time range or list.
+  [[nodiscard]] auto evaluate_for(const ast::for_stmt &loop) -> exec_result;
+
+  /// Runs one loop iteration's body and folds its `break`/`continue` into
+  /// the loop. Returns the result to propagate out of the loop, or nullopt
+  /// to keep looping; sets `stop` when a `break` ends the loop normally.
+  [[nodiscard]] auto run_loop_body(const std::vector<ast::ptr<ast::node>> &body,
+                                   std::unordered_map<std::string, value> scope,
+                                   bool &stop) -> std::optional<exec_result>;
+
+  /// Counts one loop iteration against `k_max_loop_iterations`, reporting
+  /// at `span` once the budget is exhausted.
+  [[nodiscard]] auto count_loop_iteration(std::size_t &iterations,
+                                          source_span span) -> bool;
+
+  /// Applies a binary operator to two already-evaluated operands. Shared by
+  /// `eval_binary` and compound assignment (`x += 1`).
+  [[nodiscard]] auto apply_binary(ast::binary_op op, const value &lhs,
+                                  const value &rhs, source_span span) -> value;
+
   /// Executes one statement/body-node known to sit in *tail position* of a
   /// block being evaluated for its value (`evaluate_block_value`'s last
   /// non-error item), producing that block's value even when it never
@@ -780,6 +813,10 @@ private:
   /// `lookup_local` and assignment search down to.
   size_t frame_base_ = 0;
   int call_depth_ = 0;
+  /// Iterations one compile-time loop may run before evaluation gives up,
+  /// so a loop that never ends reports an error instead of hanging the
+  /// compiler.
+  static constexpr std::size_t k_max_loop_iterations = 1'000'000;
 
   /// Owns every AST node synthesized by `try_eval_expr_builder_call`
   /// (`expr.lit(...)`/`expr.ident(...)`) — unlike a quoted `` `(...)` ``

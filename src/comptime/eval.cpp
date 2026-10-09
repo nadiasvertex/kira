@@ -572,23 +572,27 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
   if (rhs.is_error()) {
     return rhs;
   }
+  return apply_binary(bin.op, lhs, rhs, bin.span);
+}
 
+auto evaluator::apply_binary(ast::binary_op op, const value &lhs,
+                             const value &rhs, source_span span) -> value {
   // Equality is defined for strings too, independent of the numeric path
   // below.
-  if (bin.op == ast::binary_op::eq_eq || bin.op == ast::binary_op::bang_eq) {
+  if (op == ast::binary_op::eq_eq || op == ast::binary_op::bang_eq) {
     if (lhs.kind == value_kind::string && rhs.kind == value_kind::string) {
       const auto equal = lhs.string == rhs.string;
-      return value::make_bool(bin.op == ast::binary_op::eq_eq ? equal : !equal);
+      return value::make_bool(op == ast::binary_op::eq_eq ? equal : !equal);
     }
     if (lhs.kind == value_kind::boolean && rhs.kind == value_kind::boolean) {
       const auto equal = lhs.boolean == rhs.boolean;
-      return value::make_bool(bin.op == ast::binary_op::eq_eq ? equal : !equal);
+      return value::make_bool(op == ast::binary_op::eq_eq ? equal : !equal);
     }
     if (lhs.kind == value_kind::variant_instance ||
         rhs.kind == value_kind::variant_instance) {
       if (lhs.kind != rhs.kind || lhs.type_name != rhs.type_name) {
         return report(
-            bin.span,
+            span,
             std::format("cannot compare `{}` and `{}` at compile time — "
                         "they are not the same sum type",
                         lhs.kind == value_kind::variant_instance
@@ -599,7 +603,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
                             : std::string("<non-variant>")));
       }
       const auto equal = variant_values_equal(lhs, rhs);
-      return value::make_bool(bin.op == ast::binary_op::eq_eq ? equal : !equal);
+      return value::make_bool(op == ast::binary_op::eq_eq ? equal : !equal);
     }
   }
 
@@ -608,7 +612,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
   const auto rhs_numeric =
       rhs.kind == value_kind::integer || rhs.kind == value_kind::floating;
   if (!lhs_numeric || !rhs_numeric) {
-    return report(bin.span, "this operator requires compile-time numeric "
+    return report(span, "this operator requires compile-time numeric "
                             "operands");
   }
 
@@ -627,7 +631,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
     pair.ri = rhs.integer;
   }
 
-  switch (bin.op) {
+  switch (op) {
   case ast::binary_op::add:
     return pair.is_float ? value::make_float(pair.lf + pair.rf)
                          : value::make_int(pair.li + pair.ri);
@@ -642,7 +646,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
       return value::make_float(pair.lf / pair.rf);
     }
     if (pair.ri == 0) {
-      return report(bin.span, "division by zero in compile-time evaluation");
+      return report(span, "division by zero in compile-time evaluation");
     }
     return value::make_int(pair.li / pair.ri);
   case ast::binary_op::mod:
@@ -650,7 +654,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
       return value::make_float(std::fmod(pair.lf, pair.rf));
     }
     if (pair.ri == 0) {
-      return report(bin.span, "division by zero in compile-time evaluation");
+      return report(span, "division by zero in compile-time evaluation");
     }
     return value::make_int(pair.li % pair.ri);
   case ast::binary_op::eq_eq:
@@ -672,7 +676,7 @@ auto evaluator::eval_binary(const ast::binary_expr &bin) -> value {
     return value::make_bool(pair.is_float ? pair.lf >= pair.rf
                                           : pair.li >= pair.ri);
   default:
-    return report(bin.span, "this operator is not yet supported in "
+    return report(span, "this operator is not yet supported in "
                             "compile-time evaluation");
   }
 }
@@ -2469,7 +2473,7 @@ auto evaluator::evaluate_iterable(const ast::expr &iterable) -> value {
     return evaluated;
   }
   if (evaluated.kind != value_kind::list) {
-    return report(iterable.span, "`static for` requires a compile-time list "
+    return report(iterable.span, "a compile-time `for` requires a list "
                                  "or range value to iterate over");
   }
   return evaluated;
@@ -2743,8 +2747,24 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     const auto &assign = dynamic_cast<const ast::assign_stmt &>(node);
     const auto *target =
         dynamic_cast<const ast::ident_expr *>(assign.target.get());
-    if (target == nullptr || assign.op != ast::assign_op::assign ||
-        assign.value == nullptr) {
+    const auto compound_op = [&] -> std::optional<ast::binary_op> {
+      switch (assign.op) {
+      case ast::assign_op::add_assign:
+        return ast::binary_op::add;
+      case ast::assign_op::sub_assign:
+        return ast::binary_op::sub;
+      case ast::assign_op::mul_assign:
+        return ast::binary_op::mul;
+      case ast::assign_op::div_assign:
+        return ast::binary_op::div;
+      case ast::assign_op::mod_assign:
+        return ast::binary_op::mod;
+      default:
+        return std::nullopt;
+      }
+    }();
+    if (target == nullptr || assign.value == nullptr ||
+        (assign.op != ast::assign_op::assign && !compound_op.has_value())) {
       report(node.span, "this assignment form is not yet supported in "
                         "compile-time evaluation");
       return exec_result{.errored = true};
@@ -2755,10 +2775,19 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     }
     for (auto &scope :
          locals_ | std::views::drop(frame_base_) | std::views::reverse) {
-      if (scope.contains(target->name)) {
-        scope.insert_or_assign(target->name, std::move(new_value));
-        return exec_result{};
+      const auto found = scope.find(target->name);
+      if (found == scope.end()) {
+        continue;
       }
+      if (compound_op.has_value()) {
+        new_value =
+            apply_binary(*compound_op, found->second, new_value, node.span);
+        if (new_value.is_error()) {
+          return exec_result{.errored = true};
+        }
+      }
+      found->second = std::move(new_value);
+      return exec_result{};
     }
     report(node.span, std::format("`{}` is not a known compile-time local "
                                   "variable",
@@ -2943,9 +2972,11 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
           }
           pop_locals();
         } else {
+          // `static for` unrolls, so a `break`/`continue` in its body
+          // belongs to an enclosing ordinary loop.
           const auto exec = evaluate_stmts(decl.for_body);
           pop_locals();
-          if (exec.errored || exec.returned) {
+          if (exec.interrupts()) {
             return exec;
           }
         }
@@ -2956,11 +2987,137 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       return exec_result{};
     }
   }
+  case ast::node_kind::while_stmt:
+    return evaluate_while(dynamic_cast<const ast::while_stmt &>(node));
+  case ast::node_kind::for_stmt:
+    return evaluate_for(dynamic_cast<const ast::for_stmt &>(node));
+  case ast::node_kind::break_stmt:
+    return exec_result{.broke = true};
+  case ast::node_kind::continue_stmt:
+    return exec_result{.continued = true};
   default:
     report(node.span, "this statement form is not yet supported in "
                       "compile-time evaluation");
     return exec_result{.errored = true};
   }
+}
+
+auto evaluator::count_loop_iteration(std::size_t &iterations, source_span span)
+    -> bool {
+  if (++iterations <= k_max_loop_iterations) {
+    return true;
+  }
+  report(span, std::format("this compile-time loop ran more than {} "
+                           "iterations — this usually means it never ends",
+                           k_max_loop_iterations));
+  return false;
+}
+
+auto evaluator::run_loop_body(const std::vector<ast::ptr<ast::node>> &body,
+                              std::unordered_map<std::string, value> scope,
+                              bool &stop) -> std::optional<exec_result> {
+  push_locals(std::move(scope));
+  auto exec = evaluate_stmts(body);
+  pop_locals();
+  if (exec.errored || exec.returned) {
+    return exec;
+  }
+  stop = exec.broke;
+  return std::nullopt;
+}
+
+auto evaluator::evaluate_while(const ast::while_stmt &loop) -> exec_result {
+  auto iterations = std::size_t{0};
+  while (true) {
+    auto scope = std::unordered_map<std::string, value>{};
+    if (loop.let_pattern != nullptr) {
+      if (loop.let_expr == nullptr) {
+        return exec_result{.errored = true};
+      }
+      auto subject = evaluate(*loop.let_expr);
+      if (subject.is_error()) {
+        return exec_result{.errored = true};
+      }
+      if (!bind_pattern(*loop.let_pattern, subject, scope)) {
+        return exec_result{};
+      }
+    } else {
+      if (loop.condition == nullptr) {
+        return exec_result{.errored = true};
+      }
+      auto condition = evaluate(*loop.condition);
+      if (condition.is_error()) {
+        return exec_result{.errored = true};
+      }
+      if (condition.kind != value_kind::boolean) {
+        report(loop.condition->span, "a compile-time `while` condition must "
+                                     "be a `bool`");
+        return exec_result{.errored = true};
+      }
+      if (!condition.boolean) {
+        return exec_result{};
+      }
+    }
+    const auto &header =
+        loop.condition != nullptr ? *loop.condition : *loop.let_expr;
+    if (!count_loop_iteration(iterations, header.span)) {
+      return exec_result{.errored = true};
+    }
+    auto stop = false;
+    if (auto exit = run_loop_body(loop.body, std::move(scope), stop)) {
+      return *exit;
+    }
+    if (stop) {
+      return exec_result{};
+    }
+  }
+}
+
+auto evaluator::evaluate_for(const ast::for_stmt &loop) -> exec_result {
+  if (loop.iterable == nullptr || loop.patterns.size() != 1 ||
+      loop.patterns[0] == nullptr) {
+    report(loop.span, "a compile-time `for` supports exactly one loop "
+                      "binding");
+    return exec_result{.errored = true};
+  }
+  auto list_value = evaluate_iterable(*loop.iterable);
+  if (list_value.is_error()) {
+    return exec_result{.errored = true};
+  }
+  auto iterations = std::size_t{0};
+  for (const auto &element : list_value.elements) {
+    if (!count_loop_iteration(iterations, loop.iterable->span)) {
+      return exec_result{.errored = true};
+    }
+    auto scope = std::unordered_map<std::string, value>{};
+    if (!bind_pattern(*loop.patterns[0], element, scope)) {
+      return exec_result{.errored = true};
+    }
+    if (loop.guard != nullptr) {
+      push_locals(scope);
+      auto guard = evaluate(*loop.guard);
+      pop_locals();
+      if (guard.is_error()) {
+        return exec_result{.errored = true};
+      }
+      if (guard.kind != value_kind::boolean) {
+        report(loop.guard->span, "a compile-time `for` guard must be a "
+                                 "`bool`");
+        return exec_result{.errored = true};
+      }
+      if (!guard.boolean) {
+        continue;
+      }
+    }
+    auto stop = false;
+    if (auto exit = run_loop_body(loop.body, std::move(scope), stop)) {
+      return *exit;
+    }
+    if (stop) {
+      break;
+    }
+  }
+  return exec_result{};
 }
 
 auto evaluator::evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
@@ -2970,7 +3127,7 @@ auto evaluator::evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
       continue;
     }
     auto result = evaluate_stmt(*item);
-    if (result.errored || result.returned) {
+    if (result.interrupts()) {
       return result;
     }
   }
@@ -3092,7 +3249,7 @@ auto evaluator::evaluate_block_value(
       return evaluate_tail(*item);
     }
     auto result = evaluate_stmt(*item);
-    if (result.errored || result.returned) {
+    if (result.interrupts()) {
       return result;
     }
   }

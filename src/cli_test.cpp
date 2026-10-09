@@ -1409,6 +1409,220 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
 #endif
 }
 
+/// Compile-time evaluation runs `while` and `for` loops, including `break`,
+/// `continue`, compound assignment, nested loops, and a `return` from inside
+/// a loop. Asserted by the computed value on both backends.
+auto test_comptime_loops_compute_static_values() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "comptime_loops_bin";
+
+  write_file(main_source, "module main\n"
+                          "def fib(n: int64) -> int64:\n"
+                          "    var a: int64 = 0\n"
+                          "    var b: int64 = 1\n"
+                          "    var i: int64 = 0\n"
+                          "    while i < n:\n"
+                          "        let t = a + b\n"
+                          "        a = b\n"
+                          "        b = t\n"
+                          "        i += 1\n"
+                          "    return a\n"
+                          "def skip_and_stop(n: int64) -> int64:\n"
+                          "    var total: int64 = 0\n"
+                          "    for i in 0..n:\n"
+                          "        if i == 7:\n"
+                          "            continue\n"
+                          "        if i == 15:\n"
+                          "            break\n"
+                          "        total += i\n"
+                          "    return total\n"
+                          "def triangle() -> int64:\n"
+                          "    var count: int64 = 0\n"
+                          "    for i in 0..5:\n"
+                          "        for j in 0..5:\n"
+                          "            if j == i:\n"
+                          "                break\n"
+                          "            count += 1\n"
+                          "    return count\n"
+                          "def first_square_over(limit: int64) -> int64:\n"
+                          "    for i in 0..100:\n"
+                          "        if i * i > limit:\n"
+                          "            return i\n"
+                          "    return 0\n"
+                          "static total: int64 = fib(10) + skip_and_stop(20) + "
+                          "triangle() + first_square_over(50)\n"
+                          "def main() -> int32:\n"
+                          "    return total as int32\n");
+
+  // 55 (fib 10) + 98 (0..14 without 7) + 10 (0+1+2+3+4) + 8 (8 * 8 > 50).
+  constexpr auto expected = 171;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected compile-time loops to evaluate: " + run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the compile-time loops program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
+/// A `static` whose initializer fails reports that failure once. A module
+/// that refers to the binding is not lowered: lowering used to see a
+/// reference with no value and blame a "gap in the compiler". The failure
+/// here is a loop that never ends, which exhausts the iteration budget.
+auto test_failed_static_initializer_blocks_lowering() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto lib_source = temp.path / "lib.cn";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(lib_source, "module lib\n"
+                         "pub def spin() -> int64:\n"
+                         "    var i: int64 = 0\n"
+                         "    while i >= 0:\n"
+                         "        i += 0\n"
+                         "    return i\n"
+                         "pub static x: int64 = spin()\n");
+  write_file(main_source, "module main\n"
+                          "use lib\n"
+                          "def main() -> int32:\n"
+                          "    return lib.x as int32\n");
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string(), lib_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 1,
+         std::format("expected exactly the initializer's error, got {}: {}",
+                     report->error_count, report->diagnostics));
+  expect(report->diagnostics.contains("this usually means it never ends"),
+         "expected the iteration-budget error: " + report->diagnostics);
+  expect(!report->diagnostics.contains("could not lower"),
+         "expected no lowering error for a failed initializer: " +
+             report->diagnostics);
+}
+
+/// A literal compared with an operand whose type is still open takes the type
+/// that operand later solves to. `i == 7` used to leave `7` as `int32` after
+/// `total + i` solved `i` to `int64`, and LLVM rejected the mismatched
+/// compare. Asserted by the computed value on both backends.
+auto test_comparison_literal_follows_later_solved_operand() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "comparison_literal_bin";
+
+  write_file(main_source, "module main\n"
+                          "def bound_later() -> int64:\n"
+                          "    var total: int64 = 0\n"
+                          "    let i = 9\n"
+                          "    if i == 7:\n"
+                          "        return 1\n"
+                          "    total = total + i\n"
+                          "    return total\n"
+                          "def loop_variable() -> int64:\n"
+                          "    var total: int64 = 0\n"
+                          "    for i in 0..20:\n"
+                          "        if i == 7:\n"
+                          "            continue\n"
+                          "        if 5 < i:\n"
+                          "            total = total + i\n"
+                          "    return total\n"
+                          "def main() -> int32:\n"
+                          "    return (bound_later() + loop_variable()) as "
+                          "int32\n");
+
+  // 9 + 168 (6..19 without 7).
+  constexpr auto expected = 177;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected the comparisons to type-check: " + run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the comparison program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
 /// `use a.b as c` imports the *module* `a.b` under the name `c`, even when
 /// no file declares `a` — the form `--test`'s synthesized runner reaches
 /// every suite through. It used to be read as a member selection on `a`
@@ -4796,6 +5010,9 @@ auto main() -> int {
     test_local_binding_shadows_same_named_module();
     test_dotted_names_through_module_values_and_root_alias();
     test_comptime_bare_names_resolve_per_module();
+    test_comptime_loops_compute_static_values();
+    test_failed_static_initializer_blocks_lowering();
+    test_comparison_literal_follows_later_solved_operand();
     test_stdlib_immune_to_user_root_module_names();
     test_aliased_import_of_parentless_module_runs();
     test_compile_sources_reports_nested_parser_errors();

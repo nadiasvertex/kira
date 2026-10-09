@@ -1244,6 +1244,11 @@ private:
   /// every later reference.
   std::unordered_map<const ast::static_decl *, std::optional<comptime::value>>
       static_binding_values_;
+  /// The `static` bindings whose initializer failed with a reported error.
+  /// A file that refers to one is marked failing (see
+  /// `ensure_static_binding_evaluated`), so lowering never sees a reference
+  /// to a binding that has no value.
+  std::unordered_set<const ast::static_decl *> failed_static_bindings_;
   /// `static` bindings whose initializer `ensure_static_binding_evaluated`
   /// is evaluating right now — its cycle guard.
   std::unordered_set<const ast::static_decl *> static_bindings_evaluating_;
@@ -11810,6 +11815,9 @@ private:
     // (`read_bare_name_for_comptime`, `read_dotted_path_for_comptime`).
     if (const auto it = static_binding_values_.find(&decl);
         it != static_binding_values_.end()) {
+      if (failed_static_bindings_.contains(&decl)) {
+        mark_error();
+      }
       return it->second.has_value() ? &*it->second : nullptr;
     }
     // A dotted path reaches this through the checker rather than the
@@ -11818,6 +11826,7 @@ private:
     if (!static_bindings_evaluating_.insert(&decl).second) {
       return nullptr;
     }
+    const auto errors_before = diag_.error_count();
     const auto evaluated = [&] -> comptime::value {
       if (owner == nullptr || owner == module_) {
         return comptime_eval_.evaluate(*decl.initializer);
@@ -11833,6 +11842,14 @@ private:
     static_bindings_evaluating_.erase(&decl);
     if (evaluated.is_error()) {
       static_binding_values_.emplace(&decl, std::nullopt);
+      // The initializer's own error already explains the failure. The file
+      // being checked (the declaring one, or the one whose reference reached
+      // the binding first) must not be lowered either: lowering would find
+      // a reference with no value and report a misleading compiler gap.
+      if (diag_.error_count() > errors_before) {
+        failed_static_bindings_.insert(&decl);
+        mark_error();
+      }
       return nullptr;
     }
     return &*static_binding_values_.emplace(&decl, evaluated).first->second;
@@ -12689,11 +12706,19 @@ private:
     const auto raw_lhs = binary.lhs != nullptr
                              ? infer_expr(*binary.lhs, k_unknown_type)
                              : k_unknown_type;
-    const auto lhs = base_shape(raw_lhs);
+    auto lhs = base_shape(raw_lhs);
     const auto raw_rhs = binary.rhs != nullptr
                              ? infer_expr(*binary.rhs, lhs)
                              : k_unknown_type;
-    const auto rhs = base_shape(raw_rhs);
+    auto rhs = base_shape(raw_rhs);
+    // The operands are one type (`i == 7` says `7` is whatever `i` is), so
+    // their leaves are tied now. A later use that solves `i` then solves the
+    // literal too, instead of leaving it at its `int32` default.
+    if (leaf_ctxt_.meta_count() != 0) {
+      solve_leaves(lhs, rhs);
+      lhs = leaf_ctxt_.zonk(lhs);
+      rhs = leaf_ctxt_.zonk(rhs);
+    }
     const auto bool_type = types_.builtin("bool");
     // A `&int32` operand is an address, and comparing it compiles a compare
     // of the address — the same trap arithmetic reports (`infer_arithmetic`).
@@ -23652,7 +23677,9 @@ private:
 
     if (stmt.value != nullptr) {
       const auto found = infer_expr(*stmt.value, stripped);
-      if (stmt.op == ast::assign_op::assign) {
+      // `x += y` is `x = x + y`: the operands must agree exactly as they do
+      // for `+`, since numbers never convert implicitly.
+      if (stmt.op == ast::assign_op::assign || types_.is_numeric(stripped)) {
         type_mismatch(stmt.value->span, stripped, found,
                       "from the assignment target", stmt.value.get());
       }

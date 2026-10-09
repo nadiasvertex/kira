@@ -1,0 +1,5 @@
+module sample
+def run(k: int32) -> int64:
+    var total: int64 = 0
+    total += k
+    return total
