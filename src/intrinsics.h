@@ -97,12 +97,45 @@ inline constexpr std::array<std::string_view, 36> known_intrinsic_names = {{
     "rt_free",
 }};
 
-/// @brief Returns whether `name` is a recognized intrinsic.
+// ==========================================================================
+//  Inline intrinsics.
+//
+//  An inline intrinsic is an `intrinsic def` that neither backend reaches
+//  through a runtime call: the VM compiles it to a dedicated opcode and the
+//  LLVM tier to a single instruction. It therefore has no `cinder_rt_*`
+//  symbol, no VM native-table slot, and no entry in the tables above —
+//  `intrinsic_index_of` deliberately does not find it. Both backends check
+//  `inline_intrinsic_of` before `intrinsic_index_of` at a call site.
+//
+//  The atomics are here because a runtime call would be the wrong shape for
+//  them: the operation is one instruction, and the memory ordering belongs
+//  to that instruction.
+// ==========================================================================
+enum class inline_intrinsic : uint8_t {
+  atomic_fetch_add, ///< `rt_atomic_fetch_add(p: *mut usize, n: usize) -> usize`
+  atomic_fetch_sub, ///< `rt_atomic_fetch_sub(p: *mut usize, n: usize) -> usize`
+};
+
+/// @brief Returns which inline intrinsic `name` is, if any.
+[[nodiscard]] inline auto inline_intrinsic_of(std::string_view name) noexcept
+    -> std::optional<inline_intrinsic> {
+  if (name == "rt_atomic_fetch_add") {
+    return inline_intrinsic::atomic_fetch_add;
+  }
+  if (name == "rt_atomic_fetch_sub") {
+    return inline_intrinsic::atomic_fetch_sub;
+  }
+  return std::nullopt;
+}
+
+/// @brief Returns whether `name` is a recognized intrinsic, runtime-called
+/// or inline.
 [[nodiscard]] inline auto is_known_intrinsic(std::string_view name) noexcept
     -> bool {
-  return std::ranges::any_of(
-      known_intrinsic_names,
-      [name](std::string_view known) { return known == name; });
+  return inline_intrinsic_of(name).has_value() ||
+         std::ranges::any_of(
+             known_intrinsic_names,
+             [name](std::string_view known) { return known == name; });
 }
 
 /// @brief Returns `name`'s index into `known_intrinsic_names`, the same

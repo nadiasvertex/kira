@@ -779,7 +779,8 @@ private:
     // A local holding a closure, or an intrinsic — both backends check for
     // the intrinsic name first, so a user function can't shadow one.
     if (state.bound.contains(ref.symbol) ||
-        cinder::intrinsic_index_of(ref.name).has_value()) {
+        cinder::intrinsic_index_of(ref.name).has_value() ||
+        cinder::inline_intrinsic_of(ref.name).has_value()) {
       return nullptr;
     }
     const auto found = templates_.find(

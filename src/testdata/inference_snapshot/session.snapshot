@@ -1,7 +1,7 @@
 # inference snapshot
-# 2265 interned types
+# 2266 interned types
 
-## node_types (30577)
+## node_types (30597)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -6921,6 +6921,12 @@ std/intrinsics.cn:168:79 [ptr_type] *mut byte
 std/intrinsics.cn:172:23 [binding_pat] *mut byte
 std/intrinsics.cn:172:37 [binding_pat] usize
 std/intrinsics.cn:172:54 [named_type] unit
+std/intrinsics.cn:189:35 [binding_pat] *mut usize
+std/intrinsics.cn:189:50 [binding_pat] usize
+std/intrinsics.cn:189:63 [named_type] usize
+std/intrinsics.cn:193:35 [binding_pat] *mut usize
+std/intrinsics.cn:193:50 [binding_pat] usize
+std/intrinsics.cn:193:63 [named_type] usize
 std/io.cn:21:14 [binding_pat] io_errno
 std/io.cn:21:30 [named_type] io_error
 std/io.cn:22:15 [module_path] int32
@@ -10519,6 +10525,20 @@ std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
+std/mem.cn:101:34 [binding_pat] *mut usize
+std/mem.cn:101:49 [binding_pat] usize
+std/mem.cn:101:62 [named_type] usize
+std/mem.cn:102:12 [ident] fn(*mut usize, usize) -> usize
+std/mem.cn:102:12 [call] usize
+std/mem.cn:102:32 [ident] *mut usize
+std/mem.cn:102:35 [ident] usize
+std/mem.cn:109:34 [binding_pat] *mut usize
+std/mem.cn:109:49 [binding_pat] usize
+std/mem.cn:109:62 [named_type] usize
+std/mem.cn:110:12 [ident] fn(*mut usize, usize) -> usize
+std/mem.cn:110:12 [call] usize
+std/mem.cn:110:32 [ident] *mut usize
+std/mem.cn:110:35 [ident] usize
 std/option.cn:23:16 [binding_pat] &option[T]
 std/option.cn:23:25 [named_type] T
 std/option.cn:24:16 [match] T
@@ -30779,7 +30799,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (801)
+## call_argument_mappings (803)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -31447,6 +31467,8 @@ std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:102:12 [call] (p=arg, n=arg)
+std/mem.cn:110:12 [call] (p=arg, n=arg)
 std/option.cn:26:22 [call] (message=arg)
 std/panic.cn:24:12 [call] (msg=arg)
 std/result.cn:21:24 [call] (message=arg)
@@ -31582,7 +31604,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (457)
+## resolved_callees (459)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -32014,6 +32036,8 @@ std/mem.cn:89:13 [call] std.mem::drop_in_place$test_case
 std/mem.cn:89:13 [call] std.mem::drop_in_place$test_suite
 std/mem.cn:89:13 [call] std.mem::drop_in_place$uint32
 std/mem.cn:89:13 [call] std.mem::drop_in_place$usize
+std/mem.cn:102:12 [call] std.intrinsics::rt_atomic_fetch_add
+std/mem.cn:110:12 [call] std.intrinsics::rt_atomic_fetch_sub
 std/option.cn:26:22 [call] std.panic::panic
 std/result.cn:21:24 [call] std.panic::panic
 std/string.cn:157:16 [call] std.unicode::to_uppercase
@@ -32743,7 +32767,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (668)
+## drop_plans (669)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -32987,6 +33011,7 @@ fn(*mut uint32, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
 fn(*mut usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize, usize) -> *mut usize own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
@@ -33413,7 +33438,7 @@ take_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1661)
+## borrow_bearing_types (1662)
 &K
 &T
 &T
@@ -34439,6 +34464,7 @@ fn(*mut uint32, usize) -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32
 fn(*mut usize) -> unit
 fn(*mut usize, usize) -> unit
+fn(*mut usize, usize) -> usize
 fn(*mut usize, usize, usize) -> *mut usize
 fn(A) -> B
 fn(A) -> B

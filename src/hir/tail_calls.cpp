@@ -277,7 +277,8 @@ is_eligible_tail_callee(const hir_expr &callee,
   // backends) — except an `intrinsic def` name, which never gets a
   // `musttail`/frame-reuse treatment (it has no HIR body/frame of its own
   // to reuse into).
-  return !cinder::intrinsic_index_of(ref.name).has_value();
+  return !cinder::intrinsic_index_of(ref.name).has_value() &&
+         !cinder::inline_intrinsic_of(ref.name).has_value();
 }
 
 auto mark_tail_block(hir_block &block,

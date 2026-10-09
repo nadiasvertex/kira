@@ -505,6 +505,13 @@ enum class opcode : uint8_t {
                         ///< sequence). Compiled form of
                         ///< `hir_str_scalar_width`; companion to
                         ///< `op_str_decode_scalar`.
+  op_atomic_fetch_add,  ///< u16 dst, u16 ptr, u16 n — atomically adds
+                        ///< reg[n] to the 8-byte word at reg[ptr], with
+                        ///< acquire-release ordering; dst = the word's
+                        ///< previous value. Compiled form of
+                        ///< `rt_atomic_fetch_add` (`src/intrinsics.h`).
+  op_atomic_fetch_sub,  ///< u16 dst, u16 ptr, u16 n — the subtracting
+                        ///< counterpart of `op_atomic_fetch_add`.
 };
 
 // ==========================================================================
@@ -688,6 +695,8 @@ struct operand_signature {
     return sig({reg, reg});
   case opcode::op_str_decode_scalar:
   case opcode::op_str_scalar_width:
+  case opcode::op_atomic_fetch_add:
+  case opcode::op_atomic_fetch_sub:
     return sig({reg, reg, reg});
   }
   return operand_signature{};

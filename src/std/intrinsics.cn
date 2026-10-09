@@ -170,3 +170,24 @@ intrinsic def rt_realloc(p: *mut byte, old_bytes: usize, new_bytes: usize) -> *m
 #: Releases a block obtained from `rt_alloc`/`rt_realloc`. A null `p` is a
 #: no-op. `bytes` must be the size the block was last allocated at.
 intrinsic def rt_free(p: *mut byte, bytes: usize) -> unit
+
+####################
+# Atomic intrinsics
+####################
+
+#: Read-modify-write operations on a `usize` in memory, each a single atomic
+#: step with acquire-release ordering. `std.mem` wraps them; a reference
+#: count (`shared[T]`) is what they exist for.
+#:
+#: Neither backend calls into the runtime for these: the VM has an opcode
+#: for each, and the LLVM tier emits one `atomicrmw` instruction
+#: (`src/intrinsics.h`, "Inline intrinsics"). `p` must be non-null and
+#: 8-byte aligned, which every `rt_alloc` block and every `usize` field is.
+
+#: Adds `n` to the `usize` at `p` and returns the value it held before.
+#: Wraps on overflow.
+intrinsic def rt_atomic_fetch_add(p: *mut usize, n: usize) -> usize
+
+#: Subtracts `n` from the `usize` at `p` and returns the value it held
+#: before. Wraps on underflow.
+intrinsic def rt_atomic_fetch_sub(p: *mut usize, n: usize) -> usize

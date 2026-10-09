@@ -27,9 +27,11 @@ Add `atomic_fetch_add` and `atomic_fetch_sub` machine-layer intrinsics on `*mut 
 - Emit `atomicrmw add` and `atomicrmw sub` with `acquire` and `release` ordering.
 
 **VM:**
-- Plain read-modify-write. The VM is single-threaded, so this is correct until a scheduler exists.
+- Add opcodes for atomic add and atomic sub with `acquire` and `release` ordering. Then emit them as needed. 
 
-**Definition:** Passes the minimal-intrinsics test (spec/CONVENTIONS.md) because Kira cannot express atomic operations.
+**Definition:** Passes the minimal-intrinsics test (spec/CONVENTIONS.md) because Cinder cannot express atomic operations.
+
+**Status:** Done. `std.mem.atomic_fetch_add`/`atomic_fetch_sub` wrap the inline intrinsics `rt_atomic_fetch_add`/`rt_atomic_fetch_sub`, which have no runtime symbol: the VM uses `op_atomic_fetch_add`/`op_atomic_fetch_sub` and LLVM emits `atomicrmw`. Both operations use `acq_rel` ordering, which covers acquire and release for either use. Test: `src/testdata/codegen_stress/132_atomic_fetch_add_sub.cn`.
 
 ## Phase 2: `clone` trait
 

@@ -1744,7 +1744,12 @@ private:
         // `intrinsic def` declarations never enter `functions_` (hir::
         // lower_module skips them — there is no body to lower), so a call
         // to a known intrinsic name is recognized here instead and compiled
-        // to `op_call_intrinsic` rather than `op_call`.
+        // to `op_call_intrinsic` rather than `op_call`. An inline intrinsic
+        // (`src/intrinsics.h`) compiles to its own opcode instead.
+        if (const auto inline_op = cinder::inline_intrinsic_of(ref.name);
+            inline_op.has_value()) {
+          return compile_inline_intrinsic(call, *inline_op, dst);
+        }
         if (const auto intrinsic_id = cinder::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
           const auto first_arg = argument_block(call.span, argc);
@@ -2319,6 +2324,40 @@ private:
     emit_alloc_slots(dst, 2);
     emit_store_slot(dst, 0, *len_reg);
     emit_store_slot(dst, 1, *data_reg);
+    return {};
+  }
+
+  /// A call to an inline intrinsic (`src/intrinsics.h`): each is one opcode
+  /// over its already-compiled arguments.
+  [[nodiscard]] auto compile_inline_intrinsic(const hir::hir_call &call,
+                                              cinder::inline_intrinsic which,
+                                              virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    if (call.args.size() != 2) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = call.span,
+          .message = "an atomic intrinsic takes a pointer and an amount"});
+    }
+    auto ptr_reg = compile_expr(*call.args[0]);
+    if (!ptr_reg.has_value()) {
+      return std::unexpected(ptr_reg.error());
+    }
+    auto n_reg = compile_expr(*call.args[1]);
+    if (!n_reg.has_value()) {
+      return std::unexpected(n_reg.error());
+    }
+    switch (which) {
+    case cinder::inline_intrinsic::atomic_fetch_add:
+      emit_op(opcode::op_atomic_fetch_add);
+      break;
+    case cinder::inline_intrinsic::atomic_fetch_sub:
+      emit_op(opcode::op_atomic_fetch_sub);
+      break;
+    }
+    emit_register(dst);
+    emit_register(*ptr_reg);
+    emit_register(*n_reg);
     return {};
   }
 

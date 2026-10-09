@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cerrno>
 #include <charconv>
@@ -1959,6 +1960,22 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
         f.registers[dst] =
             slot_value{cinder::runtime::str_scalar_width(view, offset)};
+        break;
+      }
+      case opcode::op_atomic_fetch_add:
+      case opcode::op_atomic_fetch_sub: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto ptr_reg = ops.reg();
+        const auto n_reg = ops.reg();
+        f.pc = ops.pos();
+        auto word = std::atomic_ref<uint64_t>(
+            *reinterpret_cast<uint64_t *>(raw_bytes_of(f.registers[ptr_reg])));
+        const auto n = f.registers[n_reg].u;
+        f.registers[dst] = slot_value{
+            op == opcode::op_atomic_fetch_add
+                ? word.fetch_add(n, std::memory_order_acq_rel)
+                : word.fetch_sub(n, std::memory_order_acq_rel)};
         break;
       }
       }

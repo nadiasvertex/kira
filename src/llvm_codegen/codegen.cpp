@@ -1884,6 +1884,32 @@ private:
                : current_module_name_ + "::" + ref.name;
   }
 
+  /// A call to an inline intrinsic (`src/intrinsics.h`). The atomics are one
+  /// `atomicrmw` on the 8-byte word at the pointer, acquire-release ordered.
+  [[nodiscard]] auto compile_inline_intrinsic(const hir::hir_call &call,
+                                              cinder::inline_intrinsic which)
+      -> std::expected<llvm::Value *, codegen_error> {
+    if (call.args.size() != 2) {
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = call.span,
+          .message = "an atomic intrinsic takes a pointer and an amount"});
+    }
+    auto ptr = compile_expr(*call.args[0]);
+    if (!ptr.has_value()) {
+      return std::unexpected(ptr.error());
+    }
+    auto n = compile_expr(*call.args[1]);
+    if (!n.has_value()) {
+      return std::unexpected(n.error());
+    }
+    const auto op = which == cinder::inline_intrinsic::atomic_fetch_add
+                        ? llvm::AtomicRMWInst::Add
+                        : llvm::AtomicRMWInst::Sub;
+    return builder_.CreateAtomicRMW(op, *ptr, *n, llvm::MaybeAlign(8),
+                                    llvm::AtomicOrdering::AcquireRelease);
+  }
+
   [[nodiscard]] auto compile_call(const hir::hir_call &call)
       -> std::expected<llvm::Value *, codegen_error> {
     // Direct call to a named module-level function, resolved at compile
@@ -1896,7 +1922,12 @@ private:
         // them, there is no body to lower), so a call to a known intrinsic
         // name is recognized here instead and dispatched straight to its
         // `cinder_rt_*` C-ABI symbol (declared in `compile_module`,
-        // implemented in `src/runtime/io.h`).
+        // implemented in `src/runtime/io.h`). An inline intrinsic
+        // (`src/intrinsics.h`) is a single instruction instead.
+        if (const auto inline_op = cinder::inline_intrinsic_of(ref.name);
+            inline_op.has_value()) {
+          return compile_inline_intrinsic(call, *inline_op);
+        }
         if (const auto intrinsic_id = cinder::intrinsic_index_of(ref.name);
             intrinsic_id.has_value()) {
           auto *callee = intrinsic_fns_.at(*intrinsic_id);

@@ -19,7 +19,7 @@ module std.mem
 # the allocator's guarantee, not this module's, and it holds under both
 # `CINDER_ALLOCATOR` modes.
 
-use std.intrinsics.{rt_alloc, rt_realloc, rt_free}
+use std.intrinsics.{rt_alloc, rt_realloc, rt_free, rt_atomic_fetch_add, rt_atomic_fetch_sub}
 
 #: Allocates room for `count` values of `T`, zero-filled.
 #:
@@ -88,3 +88,23 @@ pub machine def drop_range[T](p: *mut T, count: usize) -> unit:
         while i < count:
             drop_in_place(&mut p[i])
             i = i + 1
+
+#: Atomically adds `n` to the `usize` at `p` and returns the value it held
+#: before, with acquire-release ordering. Wraps on overflow.
+#:
+#: This and `atomic_fetch_sub` are the substrate for a reference count: the
+#: ordering makes every write a handle's owner made before releasing it
+#: visible to whichever owner later sees the count reach zero.
+#: Args:
+#:   p: a non-null, 8-byte-aligned `usize`.
+#:   n: the amount to add.
+pub machine def atomic_fetch_add(p: *mut usize, n: usize) -> usize:
+    return rt_atomic_fetch_add(p, n)
+
+#: Atomically subtracts `n` from the `usize` at `p` and returns the value it
+#: held before, with acquire-release ordering. Wraps on underflow.
+#: Args:
+#:   p: a non-null, 8-byte-aligned `usize`.
+#:   n: the amount to subtract.
+pub machine def atomic_fetch_sub(p: *mut usize, n: usize) -> usize:
+    return rt_atomic_fetch_sub(p, n)

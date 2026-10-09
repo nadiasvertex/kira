@@ -1,0 +1,48 @@
+module codegen_stress.atomic_fetch_add_sub
+
+# `std.mem.atomic_fetch_add`/`atomic_fetch_sub`: the VM's
+# `op_atomic_fetch_add`/`op_atomic_fetch_sub` and the LLVM tier's
+# `atomicrmw`. These two do not share an implementation, but they do share
+# the pointer they are handed, so `# expect:` checks each property directly:
+#
+# - the returned value is the word's value *before* the operation;
+# - the word itself is updated, and its neighbours are not (an operation
+#   aimed at the wrong offset, or at the wrong width, disturbs one of them);
+# - the full 64-bit width is used (an add of 2^40 survives);
+# - subtraction wraps below zero rather than trapping.
+
+use std.mem.{alloc, atomic_fetch_add, atomic_fetch_sub}
+
+machine def run() -> usize:
+    var p: *mut usize = alloc[usize](3)
+    p[0] = 100
+    p[1] = 5
+    p[2] = 200
+    let count = ptr_cast[usize](&mut p[1])
+
+    let before_add = atomic_fetch_add(count, 3)     # 5, word -> 8
+    let before_sub = atomic_fetch_sub(count, 2)     # 8, word -> 6
+    let wide: usize = 1 << 40
+    let before_wide = atomic_fetch_add(count, wide) # 6, word -> 2^40 + 6
+    let after_wide = p[1] - wide                    # 6
+    let before_back = atomic_fetch_sub(count, wide) # 2^40 + 6, word -> 6
+    let back_ok: usize = if before_back == wide + 6: 1 else: 0
+
+    p[1] = 0
+    let before_wrap = atomic_fetch_sub(count, 1)    # 0, word -> max
+    let wrapped_ok: usize = if p[1] +% 1 == 0: 1 else: 0
+    let before_unwrap = atomic_fetch_add(count, 1)  # max, word -> 0
+    let unwrapped_ok: usize = if before_unwrap +% 1 == 0 and p[1] == 0: 1 else: 0
+
+    return (before_add * 100000000 + before_sub * 10000000 +
+            before_wide * 1000000 + after_wide * 100000 +
+            back_ok * 10000 + (before_wrap + wrapped_ok) * 1000 +
+            unwrapped_ok * 100 + (p[0] - 100) + (p[2] - 200))
+
+def main() -> int32:
+    return int32(run() % 1000000007)
+
+# before_add 5, before_sub 8, before_wide 6, after_wide 6, back_ok 1,
+# before_wrap 0 + wrapped_ok 1, unwrapped_ok 1, neighbours untouched (0):
+# 500000000 + 80000000 + 6000000 + 600000 + 10000 + 1000 + 100 = 586611100
+# expect: 586611100
