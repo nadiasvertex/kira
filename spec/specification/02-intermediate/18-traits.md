@@ -56,7 +56,36 @@ type point = { x: float64, y: float64 }
 
 `deriving` generates the implementation the same way it would be written by hand. Specific methods may be overridden while the rest stay derived.
 
+## `deref`
+
+`deref` lets a handle type expose the members of the value it refers to:
+
+```cinder
+trait deref:
+    type target
+    def deref(self) -> &target
+```
+
+- Field access and method calls first look for the member on the receiver's own type. If none is found and the receiver type implements `deref`, lookup is retried on `target`.
+- A member on the receiver wins over a member of the same name on `target`.
+- Lookup through `deref` happens only once the receiver type is fully known. It is never used to guess the type of a receiver that is still being inferred.
+- `deref` returns a shared reference. There is no `deref_mut`, so a field reached through `deref` cannot be assigned and a `mut self` method on `target` cannot be called.
+- The reference returned by `deref()` borrows the receiver and cannot outlive it.
+
+## `clone`
+
+`clone` produces a second owner of a value from a reference to the first:
+
+```cinder
+trait clone:
+    def clone(self) -> Self
+```
+
+`clone` is declared in `std.traits` and is in the prelude (see [The Prelude](../04-stdlib/42-prelude.md)). `copy` types do not receive automatic `clone` implementations. `shared[T]` is the first type intended to implement it (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)).
+
 ## Implementation status
+
+`deref` and `clone` are specified here but not implemented. Neither trait exists in `src/std/traits.cn`, and the checker does not retry field or method lookup through `deref`. The plan is in [shared-t-type.md](../../shared-t-type.md).
 
 Trait declarations, `impl`, default methods, `requires` (checked as `trait_decl::requires_bound` in `src/semantic/check.cpp`, which both validates that an implementing type satisfies the required trait and lets bound code use the required trait's methods without a separate bound), and `deriving` (validated against unknown derive names, e.g. `test_reports_unknown_deriving` in `src/semantic/check_test.cpp`) are all implemented and exercised by the semantic test suite.
 

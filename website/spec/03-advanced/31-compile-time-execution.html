@@ -287,6 +287,14 @@ reference.</li>
 variants, handled in <code>check.cpp</code>
 (<code>check_static_decl</code>, <code>~15074</code>–<code>15230</code>)
 and by the evaluator (<code>src/comptime/eval.cpp</code>).</li>
+<li>Loops in compile-time code: <code>while</code>,
+<code>while let</code>, and <code>for</code> over a range or list, with
+<code>break</code>, <code>continue</code>, and the arithmetic compound
+assignments (<code>+=</code>, <code>-=</code>, <code>*=</code>,
+<code>/=</code>, <code>%=</code>). Each loop may run at most 1,000,000
+iterations; a loop that exceeds this is reported as one that never ends.
+A <code>static</code> whose initializer fails is reported once, and no
+module that refers to it is lowered.</li>
 <li>Compile-time reflection (<code>T.fields()</code>,
 <code>T.field_count()</code>, <code>T.name()</code>) —
 <code>src/comptime/reflect.cpp</code> for <code>static</code> contexts.

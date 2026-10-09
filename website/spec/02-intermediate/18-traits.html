@@ -45,6 +45,8 @@ id="toc-requires-trait-dependencies"><code>requires</code> — Trait
 Dependencies</a></li>
 <li><a href="#deriving-common-traits"
 id="toc-deriving-common-traits">Deriving Common Traits</a></li>
+<li><a href="#deref" id="toc-deref"><code>deref</code></a></li>
+<li><a href="#clone" id="toc-clone"><code>clone</code></a></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
@@ -96,7 +98,46 @@ type point = { x: float64, y: float64 }
 <p><code>deriving</code> generates the implementation the same way it
 would be written by hand. Specific methods may be overridden while the
 rest stay derived.</p>
+<h2 id="deref"><code>deref</code></h2>
+<p><code>deref</code> lets a handle type expose the members of the value
+it refers to:</p>
+<pre class="cinder"><code>trait deref:
+    type target
+    def deref(self) -&gt; &amp;target</code></pre>
+<ul>
+<li>Field access and method calls first look for the member on the
+receiver’s own type. If none is found and the receiver type implements
+<code>deref</code>, lookup is retried on <code>target</code>.</li>
+<li>A member on the receiver wins over a member of the same name on
+<code>target</code>.</li>
+<li>Lookup through <code>deref</code> happens only once the receiver
+type is fully known. It is never used to guess the type of a receiver
+that is still being inferred.</li>
+<li><code>deref</code> returns a shared reference. There is no
+<code>deref_mut</code>, so a field reached through <code>deref</code>
+cannot be assigned and a <code>mut self</code> method on
+<code>target</code> cannot be called.</li>
+<li>The reference returned by <code>deref()</code> borrows the receiver
+and cannot outlive it.</li>
+</ul>
+<h2 id="clone"><code>clone</code></h2>
+<p><code>clone</code> produces a second owner of a value from a
+reference to the first:</p>
+<pre class="cinder"><code>trait clone:
+    def clone(self) -&gt; Self</code></pre>
+<p><code>clone</code> is declared in <code>std.traits</code> and is in
+the prelude (see <a href="../04-stdlib/42-prelude.html">The
+Prelude</a>). <code>copy</code> types do not receive automatic
+<code>clone</code> implementations. <code>shared[T]</code> is the first
+type intended to implement it (see <a
+href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>).</p>
 <h2 id="implementation-status">Implementation status</h2>
+<p><code>deref</code> and <code>clone</code> are specified here but not
+implemented. Neither trait exists in <code>src/std/traits.cn</code>, and
+the checker does not retry field or method lookup through
+<code>deref</code>. The plan is in <a
+href="../../shared-t-type.html">shared-t-type.md</a>.</p>
 <p>Trait declarations, <code>impl</code>, default methods,
 <code>requires</code> (checked as
 <code>trait_decl::requires_bound</code> in

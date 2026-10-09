@@ -62,9 +62,13 @@ types (<code>int8</code>..<code>int128</code>,
 <code>hash</code>, <code>show</code>, <code>from</code>,
 <code>into</code>, <code>add</code>, <code>sub</code>, <code>mul</code>,
 <code>div</code>, <code>rem</code>, <code>neg</code>, <code>drop</code>,
-<code>index</code>, <code>index_mut</code>, <code>index_set</code>,
-<code>from_array</code>, and the remaining arithmetic operator
-traits.</p>
+<code>clone</code>, <code>deref</code>, <code>index</code>,
+<code>index_mut</code>, <code>index_set</code>, <code>from_array</code>,
+and the remaining arithmetic operator traits. <code>clone</code> and
+<code>deref</code> are specified in <a
+href="../02-intermediate/18-traits.html#deref">Traits</a> but not yet
+declared in <code>std.traits</code>, so they are not yet in the
+prelude.</p>
 <p><code>index</code>/<code>index_set</code> are what make
 <code>v[i]</code> and <code>v[i] = x</code> work on a user type, and
 <code>from_array</code> is what makes
