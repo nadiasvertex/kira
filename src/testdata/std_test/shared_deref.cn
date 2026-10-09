@@ -1,0 +1,27 @@
+module main
+
+# Field and method access through a `shared[T]` handle, and the handle's own
+# `clone` winning over the target's.
+
+use std.shared.shared
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def sum(self) -> int32:
+        return self.x + self.y
+
+# The target has a `clone` of its own; calling it on a handle must clone the
+# handle (count goes up), not the target.
+type tagged = { id: int32 }
+
+extend tagged:
+    def clone(self) -> tagged:
+        return tagged { id: self.id + 100 }
+
+def main() -> unit:
+    let p = shared[point].new(point { x: 3, y: 4 })
+    println("{p.x} {p.y} {p.sum()}")
+    let t = shared[tagged].new(tagged { id: 1 })
+    let t2 = t.clone()
+    println("id={t2.id} count={t.strong_count()}")

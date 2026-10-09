@@ -288,6 +288,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "result.cn",
                                "mem.cn",
                                "list.cn",
+                               "shared.cn",
                                "io.cn",
                                "console.cn",
                                "algo.cn",

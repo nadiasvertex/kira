@@ -582,15 +582,19 @@ auto parser::parse_module_path() -> std::vector<std::string> {
   std::vector<std::string> segments;
 
   token first;
-  if (at(token_kind::ident) || at(token_kind::kw_super)) {
+  if (at(token_kind::ident) || at(token_kind::kw_super) ||
+      at(token_kind::kw_shared)) {
     first = advance();
   } else {
     first = expect(token_kind::ident);
   }
   segments.emplace_back(first.text);
 
+  // `shared` is a keyword, but it is also the name of `std.shared` and of the
+  // type that module defines, so it is legal as a path segment.
   while (at(token_kind::dot) && (peek_at(1).is(token_kind::ident) ||
-                                 peek_at(1).is(token_kind::kw_super))) {
+                                 peek_at(1).is(token_kind::kw_super) ||
+                                 peek_at(1).is(token_kind::kw_shared))) {
     advance();            // consume `.`
     auto seg = advance(); // consume ident/`super`
     segments.emplace_back(seg.text);
@@ -1264,7 +1268,9 @@ auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
   decl->modifiers = mods;
 
   expect(token_kind::kw_type);
-  auto name_tok = expect(token_kind::ident);
+  // `shared` is a keyword, but `std.shared` declares the type of that name.
+  auto name_tok = at(token_kind::kw_shared) ? advance()
+                                            : expect(token_kind::ident);
   decl->name = std::string(name_tok.text);
 
   // Optional type parameters.
@@ -1629,6 +1635,25 @@ auto parser::parse_prim_type_expr() -> ast::ptr<ast::type_expr> {
     auto named = ast::make<ast::named_type>();
     named->span = tok.span;
     named->path.emplace_back("unit");
+    return named;
+  }
+
+  case token_kind::kw_shared: {
+    // `shared[T]` names `std.shared.shared`; `shared T` is the same type
+    // written without brackets.
+    auto tok = advance();
+    auto named = ast::make<ast::named_type>();
+    named->span = tok.span;
+    named->path.emplace_back("shared");
+    if (at(token_kind::lbracket)) {
+      parse_generic_args_suffix(*named);
+    } else if (auto inner = parse_type_expr()) {
+      ast::type_arg arg;
+      arg.span = inner->span;
+      arg.value = std::move(inner);
+      named->type_args.push_back(std::move(arg));
+    }
+    named->span.extend_to(previous_span());
     return named;
   }
 
@@ -4124,6 +4149,10 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
     return parse_static_expr();
 
   case token_kind::kw_shared: {
+    // `shared[T].new(v)` names the stdlib type's constructor.
+    if (peek_at(1).is(token_kind::lbracket)) {
+      return parse_ident_or_path_expr();
+    }
     auto tok = advance();
     auto shared = ast::make<ast::unary_expr>();
     shared->span = tok.span;

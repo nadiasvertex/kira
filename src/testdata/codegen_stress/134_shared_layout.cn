@@ -1,0 +1,28 @@
+module codegen_stress.shared_layout
+
+# `std.shared.shared` over a multi-field value: the count word and the value
+# must not overlap, every handle must read the same value, and the count must
+# follow clones and drops. Both tiers share `layout.h`, so `# expect:` checks
+# the computed value rather than leaving it to tier agreement.
+
+use std.shared.shared
+
+type triple = { a: int64, b: int64, c: int64 }
+
+def run() -> int64:
+    let h = shared[triple].new(triple { a: 10, b: 200, c: 3000 })
+    let count1 = int64(h.strong_count())
+    var total: int64 = 0
+    if true:
+        let h2 = h.clone()
+        let h3 = h2.clone()
+        total = total + int64(h.strong_count()) * 100000
+        total = total + h3.a + h3.b + h3.c
+    return total + count1 * 10000000 + int64(h.strong_count()) * 1000000
+
+def main() -> int32:
+    return int32(run() % 1000000007)
+
+# count1 = 1, three handles inside = 3, one handle afterwards = 1:
+# 1 * 10000000 + 3 * 100000 + 3210 + 1 * 1000000 = 11303210
+# expect: 11303210

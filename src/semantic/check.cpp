@@ -11612,7 +11612,7 @@ private:
            name == "needs_drop" || name == "ptr_cast" || name == "args" || name == "env" ||
            name == "min" || name == "max" || name == "cancel" ||
            name == "pool" || name == "io" || name == "cpu" ||
-           name == "channel" || name == "watch" || name == "shared" ||
+           name == "channel" || name == "watch" ||
            name == "expr" || name == "slice_from_raw_parts" ||
            name == "slice_mut_from_raw_parts";
   }

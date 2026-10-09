@@ -88,6 +88,7 @@ auto prelude_fixtures() -> std::vector<source_fixture> {
                                "result.cn",
                                "mem.cn",
                                "list.cn",
+                               "shared.cn",
                                "io.cn",
                                "console.cn",
                                "algo.cn",

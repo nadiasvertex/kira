@@ -1,0 +1,23 @@
+module main
+
+# Handles stored in a `list`: each element is its own handle, and the value
+# drops once, when the list and every other handle are gone.
+
+use std.shared.shared
+use std.list.list
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def main() -> unit:
+    let a = shared[noisy].new(noisy { id: 7 })
+    var v = list[shared[noisy]].new()
+    v.push(a.clone())
+    v.push(a.clone())
+    println("count={a.strong_count()} len={v.len()}")
+    v.clear()
+    println("cleared count={a.strong_count()}")
+    println("end")

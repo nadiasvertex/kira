@@ -1,0 +1,18 @@
+module main
+
+# `shared[T]::new` and `clone`: every handle sees the same value, and the
+# live-handle count follows clones and scope exits.
+
+use std.shared.shared
+
+type point = { x: int32, y: int32 }
+
+def main() -> unit:
+    let a = shared[point].new(point { x: 3, y: 4 })
+    println("count={a.strong_count()}")
+    let b = a.clone()
+    println("count={a.strong_count()} x={b.x} y={b.y}")
+    if true:
+        let c = b.clone()
+        println("count={c.strong_count()}")
+    println("count={a.strong_count()}")

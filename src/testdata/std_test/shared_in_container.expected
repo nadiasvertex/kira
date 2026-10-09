@@ -1,0 +1,4 @@
+count=3 len=2
+cleared count=1
+end
+drop 7

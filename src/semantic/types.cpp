@@ -35,7 +35,7 @@ struct generic_arity_entry {
 };
 
 /// Prelude container names and their allowed generic-argument arities.
-constexpr std::array<generic_arity_entry, 15> k_builtin_generic_arities = {{
+constexpr std::array<generic_arity_entry, 14> k_builtin_generic_arities = {{
     {.name = "option", .min_args = 1, .max_args = 1},
     {.name = "result", .min_args = 2, .max_args = 2},
     {.name = "box", .min_args = 1, .max_args = 1},
@@ -47,7 +47,6 @@ constexpr std::array<generic_arity_entry, 15> k_builtin_generic_arities = {{
     // `slice`/`slice_mut` above.
     {.name = "cell", .min_args = 1, .max_args = 1},
     {.name = "cell_mut", .min_args = 1, .max_args = 1},
-    {.name = "shared", .min_args = 0, .max_args = 1},
     {.name = "task", .min_args = 1, .max_args = 3},
     {.name = "channel", .min_args = 1, .max_args = 1},
     {.name = "watch", .min_args = 1, .max_args = 1},

@@ -1,0 +1,57 @@
+module std.shared
+
+# `shared[T]` — an atomically reference-counted, read-only handle to a heap
+# value, written in Cinder over `std.mem`'s allocation and atomic primitives
+# with no compiler support for the type beyond what any user struct gets.
+#
+# A handle holds one pointer to a `shared_block[T]`: the count of live
+# handles, then the value. `clone` adds a handle by incrementing the count;
+# `drop` removes one, and the handle that takes the count to zero drops the
+# value and frees the block. The value is reached through `deref`, which has
+# no mutable counterpart, so a shared value is never written through a
+# handle. Handles that form a cycle keep each other alive and leak; there is
+# no weak handle.
+
+use std.mem.{alloc, free as mem_free, drop_in_place, atomic_fetch_add, atomic_fetch_sub}
+
+#: The heap record every handle to one value points at.
+type shared_block[T] = {
+    #: How many handles are live.
+    count: usize,
+    value: T,
+}
+
+#: A shared, read-only handle to a `T`.
+pub type shared[T] = {
+    inner: *mut shared_block[T],
+}
+
+extend[T] shared[T]:
+    #: Moves `value` onto the heap and returns the first handle to it.
+    pub machine def new(value: T) -> shared[T]:
+        let block = alloc[shared_block[T]](1)
+        block[0] = shared_block[T] { count: 1, value: value }
+        return shared[T] { inner: block }
+
+    #: How many handles to this value are live.
+    pub machine def strong_count(self) -> usize:
+        return self.inner[0].count
+
+impl[T] clone for shared[T]:
+    #: Another handle to the same value; the value itself is not copied.
+    machine def clone(self) -> shared[T]:
+        atomic_fetch_add(ptr_cast[usize](&mut self.inner[0].count), 1)
+        return shared[T] { inner: self.inner }
+
+impl[T] deref for shared[T]:
+    type target = T
+    machine def deref(self) -> &T:
+        return &self.inner[0].value
+
+impl[T] drop for shared[T]:
+    #: Gives up this handle. The last one drops the value and frees the block.
+    machine def drop(mut self) -> unit:
+        let before = atomic_fetch_sub(ptr_cast[usize](&mut self.inner[0].count), 1)
+        if before == 1:
+            drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+            mem_free(self.inner, 1)

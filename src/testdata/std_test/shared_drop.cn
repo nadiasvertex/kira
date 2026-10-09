@@ -1,0 +1,41 @@
+module main
+
+# The value inside a `shared[T]` drops exactly once, when the last handle is
+# gone — through clones, moves, and an early return.
+
+use std.shared.shared
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def make() -> shared[noisy]:
+    return shared[noisy].new(noisy { id: 3 })
+
+def early(flag: bool) -> unit:
+    let h = shared[noisy].new(noisy { id: 4 })
+    let h2 = h.clone()
+    if flag:
+        println("early return")
+        return
+    println("early fallthrough")
+
+def consume(h: shared[noisy]) -> unit:
+    println("consumed count={h.strong_count()}")
+
+def main() -> unit:
+    let a = shared[noisy].new(noisy { id: 1 })
+    if true:
+        let b = a.clone()
+        println("inner count={b.strong_count()}")
+    println("outer count={a.strong_count()}")
+    let c = make()
+    println("made")
+    early(true)
+    early(false)
+    let d = c.clone()
+    consume(d)
+    println("after consume count={c.strong_count()}")
+    println("end")

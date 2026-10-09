@@ -132,7 +132,7 @@ machine type shared_block[T] = {
 - `std_test/shared_in_container.cn`: handles stored in a `list`.
 - Layout test with `# expect:` to catch addressing and stride bugs.
 
-**Status:** Type is real. Ownership and drop are integrated.
+**Status:** Done. `src/std/shared.cn` defines `shared[T]` (`new`, `strong_count`, `impl clone`, `impl deref`, `impl drop`) over `std.mem`'s `alloc` and atomic primitives, and the driver injects it with the other stdlib files. The builtin `shared` entry is gone from `k_builtin_generic_arities` and `is_prelude_value_name`. `shared` stays a keyword, but the parser now accepts it as a module-path segment, as a `type` declaration name, and in type position (`shared[T]`, `shared T`); in expression position `shared[T]` followed by a path (`shared[T].new(v)`) names the type, while `shared e` still desugars to `&e` until phase 5. Handles are not in the prelude: like `list`, they need `use std.shared.shared`. A struct stored in a raw-pointer slot is held by reference, so `new` writes the whole `shared_block` value into slot 0 rather than assigning its fields (`block[0].count = 1` on an unwritten slot stores through null). Tests: `std_test/shared_new_and_clone.cn`, `shared_deref.cn`, `shared_drop.cn`, `shared_in_container.cn`; `codegen_stress/134_shared_layout.cn` (`# expect:`, both tiers).
 
 ## Phase 5: `shared expr` syntax
 

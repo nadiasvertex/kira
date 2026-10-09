@@ -1,0 +1,12 @@
+inner count=2
+outer count=1
+made
+early return
+drop 4
+early fallthrough
+drop 4
+consumed count=2
+after consume count=1
+end
+drop 3
+drop 1

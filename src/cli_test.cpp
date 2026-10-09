@@ -932,12 +932,12 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 29,
+  expect(report->modules.size() == 30,
          "expected std.io, std.console, std.traits (across its 9 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "
-         "std.mem, std.list, and prelude to all emit metadata");
+         "std.mem, std.list, std.shared, and prelude to all emit metadata");
 }
 
 /// Verify that module-local semantic scopes reject duplicate declaration names.
