@@ -91,6 +91,8 @@ A call to `deref()` produces a borrow of the receiver. Call-result borrow proven
 - `reject_assign_through_deref.cn`: cannot assign to a field reached through deref.
 - `reject_deref_borrow_outlived.cn`: deref result cannot outlive the receiver.
 
+**Status:** Done. `pub trait deref` is in `src/std/traits.cn`; its method returns `&self.target`, the same associated-type spelling `index` uses. The checker records each implicit `deref()` in `checked_types::deref_adjustments` (keyed by the receiver expression) and `path_deref_adjustments` (per segment of a dotted path), and generic bodies resolve the steps per instance. Lowering inserts the calls; the ownership checker adds a `through_deref` place step, so moving out is rejected and a borrow keeps the handle borrowed. Tests: `std_test/deref_field_access.cn`, `deref_method_call.cn`, `deref_precedence.cn`, `deref_borrow_lifetime.cn`; `codegen_stress/133_deref_member_lookup.cn` (`# expect:`, both tiers); `semantic_check_test/reject_assign_through_deref.cn`, `reject_member_missing_through_deref.cn`; `semantic_ownership_check_test/reject_deref_borrow_outlived.cn`, `reject_move_out_through_deref.cn`. A user trait that happens to be named `deref` is treated the same as the prelude one, matching how `drop` is identified.
+
 ## Phase 4: `shared[T]` in stdlib
 
 Add a new `std.shared` module with the `shared[T]` type, replacing the builtin name.

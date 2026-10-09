@@ -970,6 +970,28 @@ auto test_return_view_of_parameter_is_accepted() -> void {
 
 } // namespace
 
+auto test_deref_borrow_outliving_handle_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_deref_borrow_outlived.cn");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `h`",
+                    "expected `return &h.x` through `deref` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot move `h` while the reference `r` to `h` is still "
+                    "in use",
+                    "expected a method result reached through `deref` to "
+                    "keep the handle borrowed");
+}
+
+auto test_move_out_through_deref_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_move_out_through_deref.cn");
+  expect_diagnostic(analyzed, "cannot move out of `h.items`",
+                    "expected a move out of a field reached through `deref` "
+                    "to be rejected");
+  expect_diagnostic(analyzed, "reached through `handle`'s `deref()`",
+                    "expected the label to name the `deref` it went through");
+}
+
 auto main() -> int {
   try {
     test_stored_borrow_is_accepted();
@@ -1052,6 +1074,8 @@ auto main() -> int {
     test_generic_lambda_moving_capture_twice_is_explained();
     test_move_out_of_capture_is_rejected();
     test_reads_of_captures_are_accepted();
+    test_deref_borrow_outliving_handle_is_rejected();
+    test_move_out_through_deref_is_rejected();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "
               << ex.what() << '\n';

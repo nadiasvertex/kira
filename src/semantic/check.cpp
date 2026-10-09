@@ -385,6 +385,20 @@ struct method_entry {
 /// `find_declared_method`. Empty means "any method with that name".
 using method_filter = std::function<bool(const method_entry &)>;
 
+/// Where a member lookup that may go through `deref` reads its receiver:
+/// a `field_expr`'s `object` (field access and method calls alike), or
+/// the prefix of a value-rooted dotted path ending before `segment`.
+struct deref_site {
+  const ast::expr *receiver = nullptr;
+  const ast::module_path_expr *path = nullptr;
+  size_t segment = 0;
+
+  [[nodiscard]] auto active() const -> bool {
+    return receiver != nullptr || path != nullptr;
+  }
+};
+
+
 // ==========================================================================
 //  checker — one instance per session run.
 // ==========================================================================
@@ -556,6 +570,20 @@ public:
         type = types_.erase_refinements(settle(type));
       }
     }
+    const auto settle_steps = [this](std::vector<deref_step> &steps) -> void {
+      for (auto &step : steps) {
+        step.callee_type = types_.erase_refinements(settle(step.callee_type));
+        step.result = types_.erase_refinements(settle(step.result));
+      }
+    };
+    for (auto &[receiver, steps] : deref_adjustments_) {
+      settle_steps(steps);
+    }
+    for (auto &[path, segments] : path_deref_adjustments_) {
+      for (auto &steps : segments) {
+        settle_steps(steps);
+      }
+    }
     for (auto &[node, dispatch] : interp_dispatches_) {
       dispatch.value_type =
           types_.erase_refinements(settle(dispatch.value_type));
@@ -646,6 +674,8 @@ public:
         .synthesized_static_structs = std::move(synthesized_static_structs_),
         .static_global_owners = std::move(static_global_owners_),
         .value_path_types = std::move(value_path_types_),
+        .deref_adjustments = std::move(deref_adjustments_),
+        .path_deref_adjustments = std::move(path_deref_adjustments_),
         .proven_in_bounds = std::move(proven_in_bounds_),
         .elided_contracts = std::move(elided_contracts_),
         .borrow_bearing_types = std::move(borrow_bearing),
@@ -1014,6 +1044,18 @@ private:
   /// `infer_value_rooted_path`.
   std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
       value_path_types_;
+  /// See `checked_types::deref_adjustments` and `path_deref_adjustments`.
+  /// Populated by `record_deref_steps`.
+  std::unordered_map<const ast::expr *, std::vector<deref_step>>
+      deref_adjustments_;
+  std::unordered_map<const ast::module_path_expr *,
+                     std::vector<std::vector<deref_step>>>
+      path_deref_adjustments_;
+  /// Calls built only to resolve an implicit `deref()` through the ordinary
+  /// method-call machinery (`resolve_deref_step`). Nothing outside the
+  /// checker refers to them; they are kept alive because instance checking
+  /// may still name one as the site that asked for an instance.
+  ast::ptr_vec<ast::expr> deref_probe_calls_;
   /// The module graph `validate_module_reference` resolves a module-rooted
   /// dotted path against. Null when `check_program` was called without
   /// them, in which case no module-rooted path is validated here.
@@ -13315,6 +13357,10 @@ private:
         if (const auto *root = assignment_root_ident(*unary.operand)) {
           invalidate_facts(root->name);
         }
+        if (const auto handle = place_through_deref(*unary.operand)) {
+          report_write_through_deref(unary.span, *handle, "mutably borrow");
+          return k_error_type;
+        }
       }
       // `&mut container[a..b]` — `infer_index`'s range-slice result is
       // always the immutable `slice[T]` (the same range-index expression
@@ -16503,6 +16549,16 @@ private:
       }
       object = strip_refs(demand(object));
     }
+    // A member the receiver lacks is looked up on its `deref` target, and
+    // the call proceeds against that target; lowering inserts the
+    // `deref()` calls in front of the receiver (`deref_adjustments`).
+    const auto handle = object;
+    const auto via_deref = lookup_through_deref(
+        deref_site{.receiver = field.object.get()}, object, field.field_name,
+        field.span);
+    if (via_deref.has_value()) {
+      object = *via_deref;
+    }
     const auto &entry = types_.entry(object);
     // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
     // suffix, which the parser has always built and the checker used to
@@ -16535,6 +16591,11 @@ private:
               "run it twice. If you need to release it early, end its "
               "scope early instead (e.g. a `scope:` block once that lands, "
               "or restructure so this is its last use).");
+          infer_call_args_loosely(call);
+          return k_error_type;
+        }
+        if (via_deref.has_value() &&
+            !method_callable_through_deref(call, field, *method, handle)) {
           infer_call_args_loosely(call);
           return k_error_type;
         }
@@ -16611,6 +16672,9 @@ private:
       if (const auto suggestion =
               best_suggestion(field.field_name, candidates)) {
         diag.with_help(std::format("did you mean `{}`?", *suggestion));
+      }
+      if (const auto searched = deref_search_note(object)) {
+        diag.with_note(*searched);
       }
       if (const auto methods = available_method_names(entry);
           !methods.empty()) {
@@ -18368,13 +18432,381 @@ private:
     return out;
   }
 
+  // ==========================================================================
+  //  Member lookup through `deref`
+  // ==========================================================================
+
+  /// Whether `type` itself provides `name` — a field, a method (declared,
+  /// trait, `extend`, or derived), or for a builtin its own method. Only
+  /// when it does not is `deref` consulted (spec ch. 18: the receiver's own
+  /// member wins). A type parameter or an existential is reported as having
+  /// it: bounds decide what those offer, and `deref` never guesses past
+  /// them.
+  auto type_has_member(type_id type, std::string_view name) -> bool {
+    const auto &entry = types_.entry(type);
+    switch (entry.kind) {
+    case type_kind::struct_kind:
+      return struct_field_type(entry, name).has_value() ||
+             find_method(entry, name, type) != nullptr ||
+             derived_method_result(entry, name).has_value();
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+      return find_method(entry, name, type) != nullptr ||
+             derived_method_result(entry, name).has_value();
+    case type_kind::tuple_kind:
+      return tuple_index_of(name).has_value();
+    case type_kind::builtin_kind:
+    case type_kind::builtin_generic_kind:
+      return !types_.is_unknown(builtin_method_result(entry, name)) ||
+             find_builtin_impl_method(entry.name, name) != nullptr ||
+             find_extend_method_for_builtin(entry, name) != nullptr;
+    case type_kind::fn_kind:
+      return find_extend_method_for_builtin(entry, name) != nullptr;
+    default:
+      return true;
+    }
+  }
+
+  /// `type`'s `std.traits.deref` method, when `type` is a struct, sum, or
+  /// opaque type that implements it.
+  auto deref_method_of(type_id type) -> const method_entry * {
+    const auto &entry = types_.entry(type);
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind &&
+        entry.kind != type_kind::opaque_kind) {
+      return nullptr;
+    }
+    return find_method(entry, "deref", type,
+                       [](const method_entry &method) -> bool {
+                         return method.trait_name == "deref";
+                       });
+  }
+
+  /// Resolves one implicit `receiver.deref()` on a receiver of type
+  /// `handle`, through the same route a written `handle.deref()` takes, so
+  /// a generic impl (`impl[T] deref for shared[T]`) gets its per-receiver
+  /// instance. The call is built only to drive that route; what it resolved
+  /// to is moved into the returned step, and nothing keyed by the probe is
+  /// left behind for lowering to find.
+  ///
+  /// Inside a template, a handle that is still written in the template's
+  /// parameters has no instance to name: only the result type is worked
+  /// out, and each instance resolves its own step (`defer_deref_steps`).
+  auto resolve_deref_step(const ast::expr &receiver, type_id handle,
+                          source_span span) -> std::optional<deref_step> {
+    const auto *method = deref_method_of(handle);
+    if (method == nullptr) {
+      return std::nullopt;
+    }
+    const auto &entry = types_.entry(handle);
+    const auto callee_type = fn_type_of(*method->decl, method->owner);
+    if (current_template_ != nullptr && mentions_template_param(handle)) {
+      auto bindings = param_subst{};
+      match_params(method->impl_target_pattern, handle, bindings);
+      return deref_step{
+          .callee = {},
+          .callee_type = callee_type,
+          .result = substitute_solved(
+              signature_return_type(*method->decl, method->owner,
+                                    method->block_type_params),
+              bindings)};
+    }
+    auto probe = std::make_unique<ast::call_expr>();
+    probe->span = span;
+    const auto &call = *probe;
+    deref_probe_calls_.push_back(std::move(probe));
+    auto result = k_unknown_type;
+    if (const auto instantiated = check_impl_generic_method_call(
+            call, *method, entry, receiver, handle)) {
+      result = *instantiated;
+    } else {
+      record_instance_method_callee(call, *method, entry.name, receiver);
+      result = signature_return_type(*method->decl, method->owner);
+    }
+    call_argument_mappings_.erase(&call);
+    const auto found = resolved_callees_.find(&call);
+    if (found == resolved_callees_.end() || result == k_error_type) {
+      if (found != resolved_callees_.end()) {
+        resolved_callees_.erase(found);
+      }
+      return std::nullopt;
+    }
+    auto callee = found->second;
+    callee.receiver = nullptr;
+    resolved_callees_.erase(found);
+    return deref_step{
+        .callee = std::move(callee), .callee_type = callee_type,
+        .result = result};
+  }
+
+  /// The `deref` steps that take a receiver of type `object` to one that
+  /// has `name`, and the type they reach — or `nullopt` when `object` has
+  /// `name` itself, or no chain of `deref` impls reaches a type that does.
+  ///
+  /// Never a guess: a receiver whose type still has open leaves is not
+  /// looked through (spec ch. 18), so a call waiting on its receiver is not
+  /// resolved against a target the receiver may turn out not to have.
+  auto deref_chain(const ast::expr &receiver, type_id object,
+                   std::string_view name, source_span span)
+      -> std::optional<std::pair<std::vector<deref_step>, type_id>> {
+    // Deep enough for a handle to a handle; a cycle of `deref` impls stops
+    // here rather than looping.
+    static constexpr size_t k_max_deref_depth = 8;
+    auto current = strip_refs(settle(object));
+    auto steps = std::vector<deref_step>{};
+    while (steps.size() < k_max_deref_depth) {
+      if (mentions_type_var(current) || type_has_member(current, name)) {
+        break;
+      }
+      auto step = resolve_deref_step(receiver, current, span);
+      if (!step.has_value()) {
+        break;
+      }
+      current = strip_refs(settle(step->result));
+      steps.push_back(std::move(*step));
+    }
+    if (steps.empty() || mentions_type_var(current) ||
+        !type_has_member(current, name)) {
+      return std::nullopt;
+    }
+    return std::pair{std::move(steps), current};
+  }
+
+  /// Stores `steps` for `site`, where lowering and the ownership checker
+  /// read them.
+  auto record_deref_steps(const deref_site &site,
+                          std::vector<deref_step> steps) -> void {
+    if (site.path != nullptr) {
+      auto &segments = path_deref_adjustments_[site.path];
+      if (segments.size() < site.path->segments.size()) {
+        segments.resize(site.path->segments.size());
+      }
+      segments[site.segment] = std::move(steps);
+      return;
+    }
+    deref_adjustments_[site.receiver] = std::move(steps);
+  }
+
+  /// The receiver a deref chain at `site` is resolved against: the
+  /// `field_expr`'s object, or the path itself for a dotted path (whose
+  /// prefix has no node of its own; the probe only needs one for spans).
+  [[nodiscard]] static auto deref_site_receiver(const deref_site &site)
+      -> const ast::expr & {
+    if (site.receiver != nullptr) {
+      return *site.receiver;
+    }
+    return *site.path;
+  }
+
+  /// Looks `name` up through `deref` from a receiver of type `object` at
+  /// `site`, recording the steps when it is found there. Returns the type
+  /// the member is found on (stripped of references), or `nullopt` when
+  /// `object` has `name` itself or `deref` does not reach it.
+  ///
+  /// In a template the steps are each instance's to resolve: the instance
+  /// is substituted from the template's records, which do not include
+  /// these (a step names a concrete `deref` instance), so the decision is
+  /// replayed against the instance's own receiver type.
+  auto lookup_through_deref(const deref_site &site, type_id object,
+                            std::string_view name, source_span span)
+      -> std::optional<type_id> {
+    if (!site.active()) {
+      return std::nullopt;
+    }
+    auto chain = deref_chain(deref_site_receiver(site), object, name, span);
+    if (current_template_ != nullptr) {
+      defer_deref_steps(site, object, std::string(name), span);
+    }
+    if (!chain.has_value()) {
+      return std::nullopt;
+    }
+    const auto target = chain->second;
+    if (current_template_ == nullptr) {
+      record_deref_steps(site, std::move(chain->first));
+    }
+    return target;
+  }
+
+  /// `lookup_through_deref`'s template half: each instance resolves the
+  /// steps against its own clone of the site.
+  auto defer_deref_steps(const deref_site &site, type_id object,
+                         std::string name, source_span span) -> void {
+    const auto *anchor = site.path != nullptr
+                             ? static_cast<const ast::node *>(site.path)
+                             : static_cast<const ast::node *>(site.receiver);
+    defer_to_instances(
+        *anchor, [this, site, object, name = std::move(name),
+                  span](instance_subst &subst) -> void {
+          auto clone = deref_site{.receiver = clone_of(subst, site.receiver),
+                                  .path = clone_of(subst, site.path),
+                                  .segment = site.segment};
+          const auto concrete = substitute_type(object, subst);
+          auto chain =
+              deref_chain(deref_site_receiver(clone), concrete, name, span);
+          if (chain.has_value()) {
+            record_deref_steps(clone, std::move(chain->first));
+          }
+        });
+  }
+
+  /// A note naming the `deref` target that was searched as well, for a
+  /// member lookup that failed on a handle type. `nullopt` when `type`
+  /// does not implement `deref`.
+  auto deref_search_note(type_id type) -> std::optional<std::string> {
+    const auto stripped = strip_refs(settle(type));
+    if (mentions_type_var(stripped)) {
+      return std::nullopt;
+    }
+    const auto *method = deref_method_of(stripped);
+    if (method == nullptr) {
+      return std::nullopt;
+    }
+    auto bindings = param_subst{};
+    match_params(method->impl_target_pattern, stripped, bindings);
+    const auto target = strip_refs(substitute_solved(
+        signature_return_type(*method->decl, method->owner,
+                              method->block_type_params),
+        bindings));
+    return std::format("`{}` implements `deref`, so its target `{}` was "
+                       "searched as well",
+                       types_.display(stripped), types_.display(target));
+  }
+
+  /// Whether the place `target` is reached through an implicit `deref()`
+  /// (`config.port`, `h.inner.x`), which only lends a shared reference.
+  /// Returns the receiver's handle type when it is.
+  auto place_through_deref(const ast::expr &target) -> std::optional<type_id> {
+    switch (target.kind) {
+    case ast::node_kind::field_expr: {
+      const auto &field = dynamic_cast<const ast::field_expr &>(target);
+      if (field.object == nullptr) {
+        return std::nullopt;
+      }
+      if (deref_adjustments_.contains(field.object.get())) {
+        const auto found = node_types_.find(field.object.get());
+        return strip_refs(settle(
+            found != node_types_.end() ? found->second : k_unknown_type));
+      }
+      return place_through_deref(*field.object);
+    }
+    case ast::node_kind::index_expr: {
+      const auto &index = dynamic_cast<const ast::index_expr &>(target);
+      return index.object != nullptr ? place_through_deref(*index.object)
+                                      : std::nullopt;
+    }
+    case ast::node_kind::group_expr: {
+      const auto &group = dynamic_cast<const ast::group_expr &>(target);
+      return group.inner != nullptr ? place_through_deref(*group.inner)
+                                    : std::nullopt;
+    }
+    case ast::node_kind::module_path_expr: {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(target);
+      const auto found = path_deref_adjustments_.find(&path);
+      const auto types = value_path_types_.find(&path);
+      if (found == path_deref_adjustments_.end() ||
+          types == value_path_types_.end()) {
+        return std::nullopt;
+      }
+      for (size_t i = 0; i < found->second.size(); ++i) {
+        if (!found->second[i].empty() && i > 0 &&
+            i - 1 < types->second.size()) {
+          return strip_refs(settle(types->second[i - 1]));
+        }
+      }
+      return std::nullopt;
+    }
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// Reports a write through `deref` (`config.port = 1`, `&mut config.port`)
+  /// — `deref` lends only a shared reference, and there is no `deref_mut`.
+  auto report_write_through_deref(source_span span, type_id handle,
+                                  std::string_view what) -> void {
+    const auto shown = types_.display(handle);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("cannot {} a value reached through `{}`'s `deref`", what,
+                    shown),
+        file_id_);
+    diag.with_label(span, "reached through `deref`, which is read-only");
+    diag.with_note(std::format(
+        "`{}` has no member by this name of its own, so it was looked up on "
+        "the target of `deref()`, which returns a shared reference",
+        shown));
+    diag.with_help(
+        "There is no `deref_mut`: what a handle like `shared[T]` refers to "
+        "may be seen by every other handle, so it is read-only through any "
+        "of them. To change a shared value, share a `mutex[T]` and change "
+        "it while holding the lock, or build a new value and replace the "
+        "handle.");
+    emit_diag(diag);
+    mark_error();
+  }
+
+  /// Whether `method`, found on the `deref` target of a receiver of type
+  /// `handle`, may be called through the shared reference `deref()` lends.
+  /// A `mut self` method would write through it, and `into_iter` would
+  /// move out of it; both are reported here.
+  auto method_callable_through_deref(const ast::call_expr &call,
+                                     const ast::field_expr &field,
+                                     const method_entry &method,
+                                     type_id handle) -> bool {
+    if (method.decl->params.empty() ||
+        param_name_of(method.decl->params.front()) != "self") {
+      return true;
+    }
+    const auto *binding = dynamic_cast<const ast::binding_pattern *>(
+        method.decl->params.front().pattern.get());
+    const auto mutates = binding != nullptr && binding->is_mut;
+    const auto consumes = method.trait_name == "into_iterator";
+    if (!mutates && !consumes) {
+      return true;
+    }
+    const auto shown = types_.display(handle);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("cannot call `{}` through `{}`'s `deref`",
+                    field.field_name, shown),
+        file_id_);
+    diag.with_label(call.span,
+                    mutates ? std::format("`{}` takes `mut self`",
+                                          field.field_name)
+                            : std::format("`{}` consumes its receiver",
+                                          field.field_name));
+    diag.with_note(std::format(
+        "`{}` has no method `{}` of its own, so it was looked up on the "
+        "target of `deref()`, which returns a shared reference",
+        shown, field.field_name));
+    diag.with_help(
+        mutates
+            ? std::string(
+                  "There is no `deref_mut`: what a handle like `shared[T]` "
+                  "refers to may be seen by every other handle, so it is "
+                  "read-only through any of them. To change a shared value, "
+                  "share a `mutex[T]` and change it while holding the lock.")
+            : std::string("A value reached through `deref` is only "
+                          "borrowed, so it cannot be moved out. Iterate a "
+                          "borrow of it instead."));
+    emit_diag(diag);
+    mark_error();
+    return false;
+  }
+
   /// Shared field-access typing for `expr.name`, whether it arrived as a
-  /// `field_expr` or as a value-rooted dotted path.
+  /// `field_expr` or as a value-rooted dotted path. `site` names the
+  /// receiver, so a field found only through `deref` can record the steps
+  /// that reach it; without one, `deref` is not consulted.
   auto field_access_type(type_id object, std::string_view name,
-                         source_span span) -> type_id {
+                         source_span span, const deref_site &site = {})
+      -> type_id {
     // A field is chosen by what kind of value this is, so a head still open
     // (the result of a call waiting on its receiver) is owed its answer now.
     const auto stripped = strip_refs(demand_shape(object));
+    if (const auto target = lookup_through_deref(site, stripped, name, span)) {
+      return field_access_type(*target, name, span);
+    }
     const auto &entry = types_.entry(stripped);
 
     switch (entry.kind) {
@@ -18393,6 +18825,9 @@ private:
       if (const auto fields = struct_field_names(entry); !fields.empty()) {
         diag.with_note(
             std::format("`{}` has the fields {}", entry.name, fields));
+      }
+      if (const auto searched = deref_search_note(stripped)) {
+        diag.with_note(*searched);
       }
       emit_diag(diag);
       mark_error();
@@ -18570,7 +19005,8 @@ private:
       return *type_constant;
     }
     const auto object = infer_expr(*field.object, k_unknown_type);
-    return field_access_type(object, field.field_name, field.span);
+    return field_access_type(object, field.field_name, field.span,
+                             deref_site{.receiver = field.object.get()});
   }
 
   /// The one rule for what `a.b.c` means — the "Dotted Names" section of
@@ -18915,7 +19351,8 @@ private:
     }
     auto segment_types = std::vector<type_id>{base};
     for (size_t i = 1; i < path.segments.size(); ++i) {
-      base = field_access_type(base, path.segments[i], path.span);
+      base = field_access_type(base, path.segments[i], path.span,
+                               deref_site{.path = &path, .segment = i});
       segment_types.push_back(base);
     }
     value_path_types_.insert_or_assign(&path, std::move(segment_types));
@@ -23612,7 +24049,12 @@ private:
       } else {
         target_type = infer_expr(*stmt.target, k_unknown_type);
         auto root_name = std::string{};
-        if (const auto *root = assignment_root_ident(*stmt.target)) {
+        if (const auto handle = place_through_deref(*stmt.target)) {
+          // The binding's mutability is beside the point: no binding makes
+          // a write through `deref` legal.
+          report_write_through_deref(stmt.target->span, *handle,
+                                     "assign to");
+        } else if (const auto *root = assignment_root_ident(*stmt.target)) {
           root_name = root->name;
         } else if (stmt.target->kind == ast::node_kind::module_path_expr) {
           const auto &path =

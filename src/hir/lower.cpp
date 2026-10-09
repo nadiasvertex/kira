@@ -411,6 +411,22 @@ private:
   //  Checked-type lookup
   // ------------------------------------------------------------------
 
+  /// The type a receiver has once `lower_receiver` has applied the `deref`
+  /// steps recorded for it: the last step's `&target`, or the receiver's own
+  /// checked type when it has none.
+  [[nodiscard]] auto receiver_type_of(const ast::expr &receiver)
+      -> std::expected<type_id, lowering_error> {
+    const auto steps = checked_.deref_adjustments.find(&receiver);
+    if (steps == checked_.deref_adjustments.end() || steps->second.empty()) {
+      return checked_type_of(receiver);
+    }
+    auto type = steps->second.back().result;
+    while (checked_.types.entry(type).kind == type_kind::ref_kind) {
+      type = checked_.types.entry(type).result;
+    }
+    return concrete_type(type, receiver.span);
+  }
+
   [[nodiscard]] auto checked_type_of(const ast::node &node)
       -> std::expected<type_id, lowering_error> {
     const auto found = checked_.node_types.find(&node);
@@ -513,6 +529,11 @@ private:
                          size_t index)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_field(const ast::field_expr &field)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto apply_deref_steps(
+      ptr<hir_expr> object, const std::vector<semantic::deref_step> &steps,
+      source_span span) -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_receiver(const ast::expr &receiver)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_module_path(const ast::module_path_expr &path)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -1869,7 +1890,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // blocks, with no `{len; ...}` header to read a count out of — their
       // length is a compile-time constant, and `hir_container_len` would
       // load whatever the first element happens to be instead.
-      const auto object_type = checked_type_of(*field.object);
+      const auto object_type = receiver_type_of(*field.object);
       if (object_type.has_value()) {
         const auto &object_entry = checked_.types.entry(*object_type);
         const auto constant_len =
@@ -1886,7 +1907,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
                                            std::to_string(*constant_len)));
         }
       }
-      auto object = lower_expr(*field.object);
+      auto object = lower_receiver(*field.object);
       if (!object.has_value()) {
         return std::unexpected(object.error());
       }
@@ -1898,7 +1919,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // `builtin_method_result` already decided whether this receiver is
       // allowed to produce a mutable pointer and typed the call accordingly;
       // both forms read the same data pointer, so they lower identically.
-      auto object = lower_expr(*field.object);
+      auto object = lower_receiver(*field.object);
       if (!object.has_value()) {
         return std::unexpected(object.error());
       }
@@ -1910,10 +1931,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // representation (`src/runtime/io.h`, and `bytes_of` in
       // `src/bytecode/vm.cpp`), so this is a pure type-level reinterpret —
       // the `str` value lowers completely unchanged.
-      return lower_expr(*field.object);
+      return lower_receiver(*field.object);
     }
     if (field.object != nullptr && field.field_name == "next") {
-      auto object_type = checked_type_of(*field.object);
+      auto object_type = receiver_type_of(*field.object);
       if (object_type.has_value()) {
         // Through a reference too: `make_references_explicit` derefs it.
         auto stripped = *object_type;
@@ -1923,7 +1944,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
         const auto &object_entry = checked_.types.entry(stripped);
         if (object_entry.kind == type_kind::builtin_generic_kind &&
             object_entry.name == "generator") {
-          auto object = lower_expr(*field.object);
+          auto object = lower_receiver(*field.object);
           if (!object.has_value()) {
             return std::unexpected(object.error());
           }
@@ -1936,12 +1957,12 @@ auto lowerer::lower_call(const ast::call_expr &call)
     // already is. No dedicated node: reuse `hir_unary(deref, ...)` verbatim.
     if (field.object != nullptr && field.field_name == "get" &&
         call.args.empty()) {
-      const auto object_type = checked_type_of(*field.object);
+      const auto object_type = receiver_type_of(*field.object);
       if (object_type.has_value()) {
         const auto &object_entry = checked_.types.entry(*object_type);
         if (object_entry.kind == type_kind::builtin_generic_kind &&
             (object_entry.name == "cell" || object_entry.name == "cell_mut")) {
-          auto object = lower_expr(*field.object);
+          auto object = lower_receiver(*field.object);
           if (!object.has_value()) {
             return std::unexpected(object.error());
           }
@@ -1953,12 +1974,12 @@ auto lowerer::lower_call(const ast::call_expr &call)
     // `c.set(v)` on a `cell_mut[T]` — see `hir_cell_set`.
     if (field.object != nullptr && field.field_name == "set" &&
         call.args.size() == 1 && call.args.front().value != nullptr) {
-      const auto object_type = checked_type_of(*field.object);
+      const auto object_type = receiver_type_of(*field.object);
       if (object_type.has_value()) {
         const auto &object_entry = checked_.types.entry(*object_type);
         if (object_entry.kind == type_kind::builtin_generic_kind &&
             object_entry.name == "cell_mut") {
-          auto object = lower_expr(*field.object);
+          auto object = lower_receiver(*field.object);
           if (!object.has_value()) {
             return std::unexpected(object.error());
           }
@@ -2070,7 +2091,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // site.
   auto receiver_arg = ptr<hir_expr>{};
   if (receiver_ast != nullptr) {
-    auto lowered_receiver = lower_expr(*receiver_ast);
+    auto lowered_receiver = lower_receiver(*receiver_ast);
     if (!lowered_receiver.has_value()) {
       return std::unexpected(lowered_receiver.error());
     }
@@ -2152,6 +2173,55 @@ auto lowerer::lower_call(const ast::call_expr &call)
                              std::move(args), target_decl));
 }
 
+/// Wraps `object` in the implicit `deref()` calls the checker recorded for
+/// it (`semantic::deref_step`): `h.x` reads `x` from `h.deref()`. Each call
+/// is an ordinary direct call of the impl's `deref`, named the way
+/// `lower_call` names any resolved method.
+auto lowerer::apply_deref_steps(ptr<hir_expr> object,
+                                const std::vector<semantic::deref_step> &steps,
+                                source_span span)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  for (const auto &step : steps) {
+    if (step.callee.decl == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, span,
+                  "internal: a member reached through `deref` has no "
+                  "resolved `deref` method");
+    }
+    auto result = concrete_type(step.result, span);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    const auto local_name =
+        step.callee.impl_target_type.empty()
+            ? step.callee.decl->name
+            : std::format("{}::{}", step.callee.impl_target_type,
+                          step.callee.decl->name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, step.callee_type, resolve_reference(local_name), local_name,
+        step.callee.owner_module));
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(std::move(object));
+    object = direct_call(span, *result, std::move(callee), std::move(args),
+                         step.callee.decl);
+  }
+  return object;
+}
+
+/// Lowers the receiver of a field access or method call, followed by any
+/// `deref()` calls member lookup went through to reach the member.
+auto lowerer::lower_receiver(const ast::expr &receiver)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  auto lowered = lower_expr(receiver);
+  if (!lowered.has_value()) {
+    return lowered;
+  }
+  const auto steps = checked_.deref_adjustments.find(&receiver);
+  if (steps == checked_.deref_adjustments.end()) {
+    return lowered;
+  }
+  return apply_deref_steps(std::move(*lowered), steps->second, receiver.span);
+}
+
 auto lowerer::lower_field(const ast::field_expr &field)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(field);
@@ -2167,7 +2237,7 @@ auto lowerer::lower_field(const ast::field_expr &field)
     return fail(lowering_error_kind::unsupported_construct, field.span,
                 "field access is missing its target expression");
   }
-  auto object = lower_expr(*field.object);
+  auto object = lower_receiver(*field.object);
   if (!object.has_value()) {
     return std::unexpected(object.error());
   }
@@ -2291,7 +2361,17 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   }
   auto chain = ptr<hir_expr>(make<hir_local_ref>(
       path.span, *root_type, *root_symbol, path.segments[0]));
+  const auto derefs = checked_.path_deref_adjustments.find(&path);
   for (size_t i = 1; i < path.segments.size(); ++i) {
+    if (derefs != checked_.path_deref_adjustments.end() &&
+        i < derefs->second.size() && !derefs->second[i].empty()) {
+      auto through = apply_deref_steps(std::move(chain), derefs->second[i],
+                                       path.span);
+      if (!through.has_value()) {
+        return std::unexpected(through.error());
+      }
+      chain = std::move(*through);
+    }
     const auto type = i + 1 == path.segments.size()
                           ? checked_type_of(path)
                           : concrete_type(segment_types[i], path.span);

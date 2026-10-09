@@ -1,0 +1,43 @@
+module main
+
+# The handle's own members win over its `deref` target's members of the same
+# name. This is what makes `clone()` on a handle clone the handle rather
+# than the value it refers to.
+
+type point = { x: int32, tag: int32 }
+
+extend point:
+    def describe(self) -> int32:
+        return 100
+
+impl clone for point:
+    def clone(self) -> point:
+        return point { x: self.x + 1000, tag: self.tag }
+
+type handle = { tag: int32, p: point }
+
+extend handle:
+    def describe(self) -> int32:
+        return 200
+
+impl clone for handle:
+    def clone(self) -> handle:
+        return handle { tag: self.tag + 1, p: point { x: self.p.x, tag: self.p.tag } }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def main() -> unit:
+    let h = handle { tag: 1, p: point { x: 5, tag: 50 } }
+    # `tag` and `describe` exist on both; the handle's are used.
+    println("{h.tag} {h.describe()}")
+    # `x` exists only on the target.
+    println("{h.x}")
+    # `clone` exists on both: the handle is cloned, not the point.
+    let c = h.clone()
+    println("{c.tag} {c.x}")
+    # Cloning the target is still possible by asking for it explicitly.
+    let q = h.deref().clone()
+    println("{q.x}")

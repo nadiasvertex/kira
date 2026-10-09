@@ -1,0 +1,46 @@
+module main
+
+# A method the handle does not have is called on the target of its `deref`
+# impl: `h.sum()` is `h.deref().sum()`. Covers a non-generic impl, a generic
+# impl (`impl[T] deref for wrap[T]`, one instance per `T`), a builtin
+# target's method, and lookup inside a generic function, where each instance
+# resolves its own `deref`.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def sum(self) -> int32:
+        return self.x + self.y
+    def scaled(self, k: int32) -> point:
+        return point { x: self.x * k, y: self.y * k }
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+type wrap[T] = { inner: T, n: int32 }
+
+impl[T] deref for wrap[T]:
+    type target = T
+    def deref(self) -> &T:
+        return &self.inner
+
+def total[T](w: &wrap[point], unused: T) -> int32:
+    return w.sum() + w.x
+
+def length[T](w: &wrap[list[T]]) -> usize:
+    return w.len()
+
+def main() -> unit:
+    let h = handle { p: point { x: 3, y: 4 } }
+    println("{h.sum()} {h.scaled(10).y}")
+    let w = wrap { inner: point { x: 5, y: 6 }, n: 7 }
+    println("{w.sum()} {w.n}")
+    let s = wrap { inner: "hello", n: 0 }
+    println("{s.len()}")
+    println("{total(&w, 1)} {total(&w, true)}")
+    let l = wrap { inner: [1, 2, 3, 4], n: 0 }
+    println("{length(&l)}")

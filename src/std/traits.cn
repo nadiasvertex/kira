@@ -21,6 +21,22 @@ pub trait clone:
     #:   a new value of the same type.
     def clone(self) -> self
 
+#: A handle that exposes the members of the value it refers to.
+#:
+#: Field access and method calls look on the handle's own type first. When
+#: the member is not there, lookup is retried on `target` through `deref()`,
+#: so `h.x` reads `h.deref().x`. There is no `deref_mut`: what is reached
+#: through `deref` is read-only.
+pub trait deref:
+    #: The type the handle refers to.
+    type target
+    #: Returns a reference to the value the handle refers to.
+    #: Args:
+    #:   self: the handle (borrowed).
+    #: Returns:
+    #:   a reference that borrows the handle.
+    def deref(self) -> &self.target
+
 #: A type whose values copy instead of moving
 #: (`spec/specification/02-intermediate/14-ownership-and-borrowing.md`, Copy
 #: and move): the builtin scalars, `str`, `&T`, the raw pointers, and the

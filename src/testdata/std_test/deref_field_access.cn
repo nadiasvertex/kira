@@ -1,0 +1,46 @@
+module main
+
+# A field the handle does not have is read from the target of its `deref`
+# impl: `h.x` is `h.deref().x`. Covers a field access, a dotted path that
+# continues past the target, a handle reached through `&`, a handle that is
+# a call's result, and a handle to a handle (two `deref` steps).
+
+type point = { x: int32, y: int32 }
+type line = { start: point, finish: point }
+
+type handle = { label: int32, p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+type line_handle = { l: line }
+
+impl deref for line_handle:
+    type target = line
+    def deref(self) -> &line:
+        return &self.l
+
+type outer = { h: handle }
+
+impl deref for outer:
+    type target = handle
+    def deref(self) -> &handle:
+        return &self.h
+
+def make(x: int32) -> handle:
+    return handle { label: 0, p: point { x: x, y: x * 2 } }
+
+def read_y(h: &handle) -> int32:
+    return h.y
+
+def main() -> unit:
+    let h = handle { label: 9, p: point { x: 3, y: 4 } }
+    println("{h.label} {h.x} {h.y}")
+    let lh = line_handle {
+        l: line { start: point { x: 1, y: 2 }, finish: point { x: 5, y: 6 } } }
+    println("{lh.start.x} {lh.finish.y}")
+    println("{read_y(&h)} {make(7).y}")
+    let o = outer { h: handle { label: 11, p: point { x: 12, y: 13 } } }
+    println("{o.label} {o.x} {o.y}")

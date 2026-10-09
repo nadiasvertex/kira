@@ -1,0 +1,31 @@
+module ownership.deref_borrow_outlived
+
+# A field or method result reached through `deref` borrows the handle, so it
+# cannot outlive it: not by being returned, and not across a move of the
+# handle.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def x_ref(self) -> &int32:
+        return &self.x
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def consume(h: handle) -> unit:
+    return
+
+def returned() -> &int32:
+    let h = handle { p: point { x: 3, y: 4 } }
+    return &h.x
+
+def moved_while_borrowed() -> int32:
+    let h = handle { p: point { x: 3, y: 4 } }
+    let r = h.x_ref()
+    consume(h)
+    return *r

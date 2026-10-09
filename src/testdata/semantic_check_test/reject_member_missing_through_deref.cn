@@ -1,0 +1,21 @@
+module sample
+
+# A member that neither the handle nor its `deref` target has is reported
+# once, against the handle, with a note that the target was searched too.
+
+type point = { x: int32, y: int32 }
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def field() -> int32:
+    let h = handle { p: point { x: 3, y: 4 } }
+    return h.z
+
+def method() -> int32:
+    let h = handle { p: point { x: 3, y: 4 } }
+    return h.length()

@@ -1,0 +1,17 @@
+module ownership.move_out_through_deref
+
+# A non-`copy` field reached through `deref` belongs to the target, which the
+# handle only lends, so it cannot be moved out.
+
+type named = { items: list[int32] }
+
+type handle = { n: named }
+
+impl deref for handle:
+    type target = named
+    def deref(self) -> &named:
+        return &self.n
+
+def take() -> list[int32]:
+    let h = handle { n: named { items: [1, 2] } }
+    return h.items

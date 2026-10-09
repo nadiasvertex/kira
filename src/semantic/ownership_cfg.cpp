@@ -159,7 +159,11 @@ struct root_name {
 /// One step from a place's root toward the place: a field, an element, or a
 /// dereference, with the type it reaches.
 struct place_step {
-  enum class kind : std::uint8_t { field, index, deref };
+  /// `through_deref` is an implicit `deref()` that member lookup inserted
+  /// (`checked_types::deref_adjustments`): `h.x` reads `x` from
+  /// `h.deref()`, so it is reached through a shared reference, but it is
+  /// spelled as written.
+  enum class kind : std::uint8_t { field, index, deref, through_deref };
   kind step = kind::field;
   std::string field; ///< For a field step.
   type_id type = k_unknown_type;
@@ -857,11 +861,16 @@ private:
     case ast::node_kind::module_path_expr: {
       const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
       const auto types = checked_.value_path_types.find(&path);
+      const auto derefs = checked_.path_deref_adjustments.find(&path);
       for (std::size_t i = 1; i < path.segments.size(); ++i) {
         const auto type = types != checked_.value_path_types.end() &&
                                   i < types->second.size()
                               ? types->second[i]
                               : k_unknown_type;
+        if (derefs != checked_.path_deref_adjustments.end() &&
+            i < derefs->second.size()) {
+          push_deref_steps(derefs->second[i], out);
+        }
         out.push_back(place_step{.step = place_step::kind::field,
                                  .field = path.segments[i],
                                  .type = type});
@@ -871,6 +880,10 @@ private:
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(expr);
       place_steps(*field.object, out);
+      if (const auto derefs = checked_.deref_adjustments.find(field.object.get());
+          derefs != checked_.deref_adjustments.end()) {
+        push_deref_steps(derefs->second, out);
+      }
       out.push_back(place_step{.step = place_step::kind::field,
                                .field = field.field_name,
                                .type = type_of(&expr)});
@@ -893,6 +906,16 @@ private:
       return;
     default:
       return;
+    }
+  }
+
+  /// One `through_deref` step per implicit `deref()` call, each typed as
+  /// the `&target` it returns.
+  static auto push_deref_steps(const std::vector<deref_step> &derefs,
+                               std::vector<place_step> &out) -> void {
+    for (const auto &step : derefs) {
+      out.push_back(place_step{.step = place_step::kind::through_deref,
+                               .type = step.result});
     }
   }
 
@@ -961,6 +984,8 @@ private:
       case place_step::kind::deref:
         out.insert(0, "*");
         break;
+      case place_step::kind::through_deref:
+        break;
       }
     }
     return out;
@@ -979,6 +1004,13 @@ private:
       reached = steps[i].type;
       if (steps[i].step == place_step::kind::field) {
         continue;
+      }
+      if (steps[i].step == place_step::kind::through_deref) {
+        return invalid_move_event{
+            .span = span,
+            .reason = move_block::through_deref,
+            .place = spell_place(root_name, steps, steps.size()),
+            .owner = checked_.types.display(through)};
       }
       // A raw read (`p[i]`, `*p`) is a bitwise copy whose ownership is the
       // `machine` code's to track (ch. 38, Raw memory and ownership).
@@ -1473,7 +1505,15 @@ private:
   /// temporary, which a type with its own `drop` does not allow.
   auto eval_field_of_value(const ast::field_expr &field, use_mode mode)
       -> value {
-    if (mode == use_mode::move && movable(type_of(&field))) {
+    if (mode == use_mode::move && movable(type_of(&field)) &&
+        field.object != nullptr &&
+        checked_.deref_adjustments.contains(field.object.get())) {
+      emit(invalid_move_event{
+          .span = field.span,
+          .reason = move_block::through_deref,
+          .place = spell_value(*field.object) + "." + field.field_name,
+          .owner = checked_.types.display(type_of(field.object.get()))});
+    } else if (mode == use_mode::move && movable(type_of(&field))) {
       auto path = "." + field.field_name;
       for (const ast::expr *at = field.object.get(); at != nullptr;) {
         if (has_own_drop(type_of(at))) {

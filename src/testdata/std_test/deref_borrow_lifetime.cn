@@ -1,0 +1,30 @@
+module main
+
+# The borrow `deref()` makes lasts only as long as the value it produced is
+# used. Once a field or method result read through it is no longer in use,
+# the handle may be moved or dropped.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def x_ref(self) -> &int32:
+        return &self.x
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def consume(h: handle) -> int32:
+    return h.p.y
+
+def main() -> unit:
+    let h = handle { p: point { x: 3, y: 4 } }
+    let r = h.x_ref()
+    let seen = *r
+    let f = &h.y
+    let also = *f
+    let moved = consume(h)
+    println("{seen} {also} {moved}")

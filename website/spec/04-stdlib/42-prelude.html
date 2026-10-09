@@ -65,10 +65,8 @@ types (<code>int8</code>..<code>int128</code>,
 <code>clone</code>, <code>deref</code>, <code>index</code>,
 <code>index_mut</code>, <code>index_set</code>, <code>from_array</code>,
 and the remaining arithmetic operator traits. <code>clone</code> and
-<code>deref</code> are specified in <a
-href="../02-intermediate/18-traits.html#deref">Traits</a> but not yet
-declared in <code>std.traits</code>, so they are not yet in the
-prelude.</p>
+<code>deref</code> are declared in <code>std.traits</code> and specified
+in <a href="../02-intermediate/18-traits.html#deref">Traits</a>.</p>
 <p><code>index</code>/<code>index_set</code> are what make
 <code>v[i]</code> and <code>v[i] = x</code> work on a user type, and
 <code>from_array</code> is what makes

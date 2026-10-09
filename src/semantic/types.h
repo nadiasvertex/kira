@@ -578,6 +578,19 @@ struct resolved_callee {
   std::string trait_name;
 };
 
+/// One implicit `deref()` call that member lookup inserted: a field or method
+/// was not found on the receiver's own type, so it was looked up on the
+/// target of the receiver type's `std.traits.deref` impl instead
+/// (`spec/specification/02-intermediate/18-traits.md`, `deref`). `callee` is
+/// that impl's `deref` method, with `receiver` unset (the receiver is
+/// whatever the step is applied to); `callee_type` is its `fn` type and
+/// `result` the `&target` it returns.
+struct deref_step {
+  resolved_callee callee;
+  type_id callee_type = 0;
+  type_id result = 0;
+};
+
 /// The resolved `next`-method dispatch for a `for x in it: ...` loop whose
 /// iterable is a user type implementing `std.iter.iterator[T]` — recorded by
 /// `check_body_node`'s `for_stmt` case (lowering has no way to redo the method
@@ -1267,6 +1280,20 @@ struct checked_types {
   /// this map is a module reference.
   std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
       value_path_types;
+  /// Every receiver of a field access or method call (`field_expr::object`)
+  /// whose member was found only through `deref` — see `deref_step`. The
+  /// steps run in order on the receiver's value before the member is
+  /// reached: `h.x` lowers as `h.deref().x`. A receiver absent here is used
+  /// as it is.
+  std::unordered_map<const ast::expr *, std::vector<deref_step>>
+      deref_adjustments;
+  /// The same, for a value-rooted dotted path (`value_path_types`): for each
+  /// segment index `i`, the steps applied to the value of the first `i`
+  /// segments before segment `i` is selected. Empty where a segment needs
+  /// none; a path absent here needs none at all.
+  std::unordered_map<const ast::module_path_expr *,
+                     std::vector<std::vector<deref_step>>>
+      path_deref_adjustments;
   /// Every `v[i]` the reasoning solver proved in bounds
   /// (`checker::check_index_in_bounds`) — an index whose safety is a
   /// *compile-time* fact, so lowering may omit the runtime bounds check

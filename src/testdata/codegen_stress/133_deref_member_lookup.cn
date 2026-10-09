@@ -1,0 +1,47 @@
+module codegen_stress.deref_member_lookup
+
+# Field and method lookup through `deref` on both tiers. The target sits at a
+# non-zero offset inside the handle, behind fields of different widths, so a
+# `deref()` call that was skipped, or a field read from the handle's own
+# layout instead of the target's, reads a neighbour instead and changes the
+# answer. Agreement alone would not catch that if both tiers skipped the
+# same call, so the value is checked with `# expect:` too.
+
+type point = { a: int64, b: int32, c: int64 }
+
+extend point:
+    def weigh(self) -> int64:
+        return self.a * 100 + int64(self.b) * 10 + self.c
+
+type handle = { pad: byte, n: int32, p: point, tail: int64 }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+type wrap[T] = { lead: int32, inner: T }
+
+impl[T] deref for wrap[T]:
+    type target = T
+    def deref(self) -> &T:
+        return &self.inner
+
+def run() -> int64:
+    let h = handle { pad: 7, n: 9, p: point { a: 1, b: 2, c: 3 }, tail: 4 }
+    let w = wrap { lead: 5,
+                   inner: handle { pad: 8, n: 6, p: point { a: 4, b: 5, c: 6 },
+                                   tail: 7 } }
+    # h.a/h.b/h.c through one step; w.n and w.tail through one, w.c through
+    # two.
+    let fields = h.a * 1000000 + int64(h.b) * 100000 + h.c * 10000
+    let chained = w.c * 1000 + int64(w.n) * 100
+    return (fields + chained + (h.weigh() - 123) + (w.weigh() - 456) +
+            h.tail + w.tail)
+
+def main() -> int32:
+    return int32(run())
+
+# fields 1000000 + 200000 + 30000, chained 6000 + 600, weighs cancel,
+# tails 4 + 7: 1236611
+# expect: 1236611

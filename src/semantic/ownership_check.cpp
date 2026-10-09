@@ -608,6 +608,16 @@ private:
              "`replace(&mut place, new_value)`, which leaves a new value "
              "behind";
       break;
+    case move_block::through_deref:
+      message = std::format("cannot move out of `{}`", m.place);
+      label = std::format("this value is reached through `{}`'s `deref()`, "
+                          "which only lends it",
+                          m.owner);
+      help = std::format("borrow it instead with `&{}`, or, if its type "
+                         "implements `clone`, make an owned copy with "
+                         "`.clone()`",
+                         m.place);
+      break;
     case move_block::borrowed:
       message = std::format("cannot move out of `{}`", m.place);
       label = m.owner == "self"

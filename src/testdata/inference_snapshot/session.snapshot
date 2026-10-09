@@ -1,7 +1,7 @@
 # inference snapshot
-# 2266 interned types
+# 2267 interned types
 
-## node_types (30599)
+## node_types (30601)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -11491,79 +11491,81 @@ std/traits.cn:10:14 [binding_pat] self
 std/traits.cn:10:27 [named_type] unit
 std/traits.cn:22:15 [binding_pat] self
 std/traits.cn:22:24 [named_type] self
-std/traits.cn:33:5 [index] fn() -> bool
-std/traits.cn:33:5 [call] bool
-std/traits.cn:33:5 [binary] bool
-std/traits.cn:33:5 [binary] bool
-std/traits.cn:33:23 [index] fn() -> bool
-std/traits.cn:33:23 [call] bool
-std/traits.cn:33:38 [index] fn() -> bool
-std/traits.cn:33:38 [call] bool
-std/traits.cn:42:17 [binding_pat] (int64, int32)
-std/traits.cn:42:17 [binding_pat] (usize, usize)
-std/traits.cn:42:17 [binding_pat] T
-std/traits.cn:42:17 [binding_pat] byte
-std/traits.cn:42:17 [binding_pat] int32
-std/traits.cn:42:17 [binding_pat] int64
-std/traits.cn:42:17 [binding_pat] money
-std/traits.cn:42:17 [binding_pat] str
-std/traits.cn:42:17 [binding_pat] test_case
-std/traits.cn:42:17 [binding_pat] test_suite
-std/traits.cn:42:17 [binding_pat] uint32
-std/traits.cn:42:17 [binding_pat] usize
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:42:26 [named_type] unit
-std/traits.cn:54:25 [binding_pat] &mut T
-std/traits.cn:54:36 [binding_pat] &mut T
-std/traits.cn:54:50 [named_type] unit
-std/traits.cn:55:9 [binding_pat] *mut T
-std/traits.cn:55:14 [ident] _
-std/traits.cn:55:14 [call] *mut T
-std/traits.cn:55:26 [ident] &mut T
-std/traits.cn:56:9 [binding_pat] *mut T
-std/traits.cn:56:14 [ident] _
-std/traits.cn:56:14 [call] *mut T
-std/traits.cn:56:26 [ident] &mut T
-std/traits.cn:57:9 [binding_pat] T
-std/traits.cn:57:16 [ident] *mut T
-std/traits.cn:57:16 [index] T
-std/traits.cn:57:19 [literal] usize
-std/traits.cn:58:5 [ident] *mut T
-std/traits.cn:58:5 [index] T
-std/traits.cn:58:8 [literal] usize
-std/traits.cn:58:13 [ident] *mut T
-std/traits.cn:58:13 [index] T
-std/traits.cn:58:16 [literal] usize
-std/traits.cn:59:5 [ident] *mut T
-std/traits.cn:59:5 [index] T
-std/traits.cn:59:8 [literal] usize
-std/traits.cn:59:13 [ident] T
-std/traits.cn:71:28 [binding_pat] &mut T
-std/traits.cn:71:42 [binding_pat] T
-std/traits.cn:71:55 [named_type] T
+std/traits.cn:38:15 [binding_pat] self
+std/traits.cn:38:24 [ref_type] &_
+std/traits.cn:49:5 [index] fn() -> bool
+std/traits.cn:49:5 [call] bool
+std/traits.cn:49:5 [binary] bool
+std/traits.cn:49:5 [binary] bool
+std/traits.cn:49:23 [index] fn() -> bool
+std/traits.cn:49:23 [call] bool
+std/traits.cn:49:38 [index] fn() -> bool
+std/traits.cn:49:38 [call] bool
+std/traits.cn:58:17 [binding_pat] (int64, int32)
+std/traits.cn:58:17 [binding_pat] (usize, usize)
+std/traits.cn:58:17 [binding_pat] T
+std/traits.cn:58:17 [binding_pat] byte
+std/traits.cn:58:17 [binding_pat] int32
+std/traits.cn:58:17 [binding_pat] int64
+std/traits.cn:58:17 [binding_pat] money
+std/traits.cn:58:17 [binding_pat] str
+std/traits.cn:58:17 [binding_pat] test_case
+std/traits.cn:58:17 [binding_pat] test_suite
+std/traits.cn:58:17 [binding_pat] uint32
+std/traits.cn:58:17 [binding_pat] usize
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:70:25 [binding_pat] &mut T
+std/traits.cn:70:36 [binding_pat] &mut T
+std/traits.cn:70:50 [named_type] unit
+std/traits.cn:71:9 [binding_pat] *mut T
+std/traits.cn:71:14 [ident] _
+std/traits.cn:71:14 [call] *mut T
+std/traits.cn:71:26 [ident] &mut T
 std/traits.cn:72:9 [binding_pat] *mut T
-std/traits.cn:72:13 [ident] _
-std/traits.cn:72:13 [call] *mut T
-std/traits.cn:72:25 [ident] &mut T
+std/traits.cn:72:14 [ident] _
+std/traits.cn:72:14 [call] *mut T
+std/traits.cn:72:26 [ident] &mut T
 std/traits.cn:73:9 [binding_pat] T
-std/traits.cn:73:15 [ident] *mut T
-std/traits.cn:73:15 [index] T
-std/traits.cn:73:17 [literal] usize
+std/traits.cn:73:16 [ident] *mut T
+std/traits.cn:73:16 [index] T
+std/traits.cn:73:19 [literal] usize
 std/traits.cn:74:5 [ident] *mut T
 std/traits.cn:74:5 [index] T
-std/traits.cn:74:7 [literal] usize
-std/traits.cn:74:12 [ident] T
-std/traits.cn:75:12 [ident] T
+std/traits.cn:74:8 [literal] usize
+std/traits.cn:74:13 [ident] *mut T
+std/traits.cn:74:13 [index] T
+std/traits.cn:74:16 [literal] usize
+std/traits.cn:75:5 [ident] *mut T
+std/traits.cn:75:5 [index] T
+std/traits.cn:75:8 [literal] usize
+std/traits.cn:75:13 [ident] T
+std/traits.cn:87:28 [binding_pat] &mut T
+std/traits.cn:87:42 [binding_pat] T
+std/traits.cn:87:55 [named_type] T
+std/traits.cn:88:9 [binding_pat] *mut T
+std/traits.cn:88:13 [ident] _
+std/traits.cn:88:13 [call] *mut T
+std/traits.cn:88:25 [ident] &mut T
+std/traits.cn:89:9 [binding_pat] T
+std/traits.cn:89:15 [ident] *mut T
+std/traits.cn:89:15 [index] T
+std/traits.cn:89:17 [literal] usize
+std/traits.cn:90:5 [ident] *mut T
+std/traits.cn:90:5 [index] T
+std/traits.cn:90:7 [literal] usize
+std/traits.cn:90:12 [ident] T
+std/traits.cn:91:12 [ident] T
 std/traits.conversion.cn:10:14 [binding_pat] T
 std/traits.conversion.cn:10:27 [named_type] self
 std/traits.conversion.cn:17:14 [binding_pat] self
@@ -31525,9 +31527,9 @@ std/traits.category.cn:120:12 [call] ()
 std/traits.category.cn:120:31 [call] ()
 std/traits.category.cn:120:47 [call] ()
 std/traits.category.cn:211:12 [call] ()
-std/traits.cn:33:5 [call] ()
-std/traits.cn:33:23 [call] ()
-std/traits.cn:33:38 [call] ()
+std/traits.cn:49:5 [call] ()
+std/traits.cn:49:23 [call] ()
+std/traits.cn:49:38 [call] ()
 std/traits.hash.cn:66:12 [call] ()
 std/traits.hash.cn:79:12 [call] (acc=arg, next=arg)
 std/traits.hash.cn:79:25 [call] ()
@@ -32595,9 +32597,9 @@ std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
-std/traits.cn:55:14 [call] *mut T
-std/traits.cn:56:14 [call] *mut T
-std/traits.cn:72:13 [call] *mut T
+std/traits.cn:71:14 [call] *mut T
+std/traits.cn:72:14 [call] *mut T
+std/traits.cn:88:13 [call] *mut T
 
 ## slice_from_raw_parts_calls (7)
 std/algo.cn:1908:16 [call] 
@@ -32769,7 +32771,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (669)
+## drop_plans (670)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33083,6 +33085,7 @@ fn(T, T) -> T own=- fields=[] glue=fn() -> unit
 fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(T, fn(T) -> option[U]) -> option[U] own=- fields=[] glue=fn() -> unit
+fn(_) -> &_ own=- fields=[] glue=fn() -> unit
 fn(_) -> *_ own=- fields=[] glue=fn() -> unit
 fn(_) -> *mut _ own=- fields=[] glue=fn() -> unit
 fn(_) -> U own=- fields=[] glue=fn() -> unit
@@ -33440,7 +33443,7 @@ take_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1662)
+## borrow_bearing_types (1663)
 &K
 &T
 &T
@@ -34537,6 +34540,7 @@ fn(T, T) -> T
 fn(T, bool) -> usize
 fn(T, bool) -> usize
 fn(T, fn(T) -> option[U]) -> option[U]
+fn(_) -> &_
 fn(_) -> *_
 fn(_) -> *mut _
 fn(_) -> B

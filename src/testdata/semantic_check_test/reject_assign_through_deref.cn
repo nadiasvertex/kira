@@ -1,0 +1,30 @@
+module sample
+
+# `deref` lends only a shared reference, so nothing reached through it can be
+# written: not by assignment, not by `&mut`, and not by a `mut self` method.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def bump(mut self) -> unit:
+        self.x = self.x + 1
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def assign() -> unit:
+    var h = handle { p: point { x: 3, y: 4 } }
+    h.x = 1
+
+def borrow_mut() -> int32:
+    var h = handle { p: point { x: 3, y: 4 } }
+    let r = &mut h.y
+    return 0
+
+def call_mut() -> unit:
+    var h = handle { p: point { x: 3, y: 4 } }
+    h.bump()

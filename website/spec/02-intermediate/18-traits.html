@@ -133,11 +133,20 @@ type intended to implement it (see <a
 href="17-shared-ownership-and-drop.html">Shared Ownership and
 Drop</a>).</p>
 <h2 id="implementation-status">Implementation status</h2>
-<p><code>deref</code> and <code>clone</code> are specified here but not
-implemented. Neither trait exists in <code>src/std/traits.cn</code>, and
-the checker does not retry field or method lookup through
-<code>deref</code>. The plan is in <a
-href="../../shared-t-type.html">shared-t-type.md</a>.</p>
+<p><code>deref</code> and <code>clone</code> are implemented. Both are
+declared in <code>src/std/traits.cn</code>. The checker retries field
+access, dotted paths, and method calls through <code>deref</code> when
+the receiver’s own type lacks the member, records the steps it took
+(<code>checked_types::deref_adjustments</code>), and lowering inserts
+the <code>deref()</code> calls. Writing through <code>deref</code>
+(assignment, <code>&amp;mut</code>, a <code>mut self</code> method) is
+rejected with a dedicated diagnostic, and the ownership checker treats a
+member reached through <code>deref</code> as borrowed from the handle,
+so it cannot be moved out or outlive the handle. Only struct, sum, and
+opaque handle types are looked through, and a receiver whose type is
+still being inferred is never looked through. No standard library type
+implements <code>deref</code> yet; <code>shared[T]</code> will (see <a
+href="../../shared-t-type.html">shared-t-type.md</a>).</p>
 <p>Trait declarations, <code>impl</code>, default methods,
 <code>requires</code> (checked as
 <code>trait_decl::requires_bound</code> in

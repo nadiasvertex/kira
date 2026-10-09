@@ -148,6 +148,7 @@ struct access_event {
 enum class move_block : std::uint8_t {
   element,  ///< `xs[i]`: the collection still owns it.
   deref,    ///< `*r`: it is behind a pointer or reference.
+  through_deref, ///< `h.x` found through `deref()`: only lent by the handle.
   borrowed, ///< The root only borrows its value (`self`, a reference).
   own_drop, ///< A field of a type with its own `drop`.
   fill,     ///< `[v; n]` duplicates `v`, which is not `copy`.

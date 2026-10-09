@@ -4333,9 +4333,49 @@ auto test_generic_struct_literal_wrong_type_arg_count() -> void {
 
 } // namespace
 
+auto test_reports_write_through_deref() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_assign_through_deref.cn");
+  expect(analyzed.error_count == 3,
+         "expected the assignment, the `&mut`, and the `mut self` call "
+         "through `deref` each to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "cannot assign to a value reached through `handle`'s "
+                    "`deref`",
+                    "expected `h.x = 1` through `deref` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot mutably borrow a value reached through "
+                    "`handle`'s `deref`",
+                    "expected `&mut h.y` through `deref` to be rejected");
+  expect_diagnostic(analyzed, "cannot call `bump` through `handle`'s `deref`",
+                    "expected a `mut self` method through `deref` to be "
+                    "rejected");
+  expect_diagnostic(analyzed, "share a `mutex[T]`",
+                    "expected the help to point at `mutex[T]`");
+}
+
+auto test_reports_member_missing_through_deref() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_member_missing_through_deref.cn");
+  expect(analyzed.error_count == 2,
+         "expected one error per missing member:\n" + analyzed.diagnostics);
+  expect_diagnostic(analyzed, "no field `z` on struct `handle`",
+                    "expected the missing field to be reported on the handle");
+  expect_diagnostic(analyzed, "no method `length` on type `handle`",
+                    "expected the missing method to be reported on the "
+                    "handle");
+  expect_diagnostic(analyzed,
+                    "`handle` implements `deref`, so its target `point` was "
+                    "searched as well",
+                    "expected the note to say the target was searched");
+}
+
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
+    test_reports_write_through_deref();
+    test_reports_member_missing_through_deref();
     test_reports_copy_bound_unsatisfied();
     test_reports_fn_value_reference_mismatch();
     test_accepts_try_from_conversion();
