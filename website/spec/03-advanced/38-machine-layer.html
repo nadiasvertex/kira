@@ -43,6 +43,8 @@
 <ul>
 <li><a href="#raw-memory-and-ownership"
 id="toc-raw-memory-and-ownership">Raw memory and ownership</a></li>
+<li><a href="#atomic-operations" id="toc-atomic-operations">Atomic
+operations</a></li>
 <li><a href="#packed-struct-layout"
 id="toc-packed-struct-layout"><code>packed</code> struct layout</a></li>
 </ul></li>
@@ -153,6 +155,15 @@ slot empty. It does nothing for a type that needs no drop.</li>
 folds to a constant, so a loop guarded by it disappears for a type that
 needs none.</li>
 </ul>
+<h3 id="atomic-operations">Atomic operations</h3>
+<p><code>std.mem.atomic_fetch_add(p: *mut usize, n: usize) -&gt; usize</code>
+and
+<code>std.mem.atomic_fetch_sub(p: *mut usize, n: usize) -&gt; usize</code>
+update the <code>usize</code> at <code>p</code> in one atomic step and
+return the value it held before. Both use acquire-release ordering and
+wrap on overflow. <code>p</code> must be non-null and 8-byte aligned.
+They exist so that a reference count, such as the one in
+<code>shared[T]</code>, can be written in Cinder.</p>
 <p>A collection built on raw memory uses these to meet <a
 href="../02-intermediate/17-shared-ownership-and-drop.html#owners">the
 element rule</a>: its <code>drop</code> calls <code>drop_in_place</code>
@@ -245,6 +256,12 @@ element-counted form by <a
 href="../04-stdlib/collections/43-list.html"><code>std.mem</code></a>.
 The allocator is selectable at run time
 (<code>CINDER_ALLOCATOR=system|arena</code>).</li>
+<li><code>std.mem.atomic_fetch_add</code>/<code>atomic_fetch_sub</code>,
+over the inline intrinsics
+<code>rt_atomic_fetch_add</code>/<code>rt_atomic_fetch_sub</code>
+(<code>src/intrinsics.h</code>). The VM has an opcode for each; the LLVM
+tier emits one <code>atomicrmw</code> with <code>acq_rel</code>
+ordering. Neither calls into the runtime.</li>
 </ul></li>
 <li><strong>Not implemented:</strong>
 <ul>

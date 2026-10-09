@@ -44,7 +44,7 @@ Add `trait clone` to the stdlib. This trait is a precondition for phase 3 and 4.
 
 **Tests:** Basic call and type-checking of clone. Deferred: `shared` instances.
 
-**Status:** Trait exists; only `shared` implements it for now.
+**Status:** Done. `pub trait clone` is in `src/std/traits.cn` and reaches the prelude through `std.traits`, which is already re-exported (the return type is written `self`, lowercase, like the other traits). Test: `src/testdata/std_test/clone_trait.cn` (user impl, direct call, and a `where T: clone` bound). No stdlib type implements it yet; `shared` does in phase 4.
 
 ## Phase 3: `deref` trait and auto-deref resolution
 

@@ -1,7 +1,7 @@
 # inference snapshot
 # 2266 interned types
 
-## node_types (30597)
+## node_types (30599)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -11489,79 +11489,81 @@ std/traits.category.cn:239:9 [wildcard_pat] _
 std/traits.category.cn:239:21 [ident] type_category
 std/traits.cn:10:14 [binding_pat] self
 std/traits.cn:10:27 [named_type] unit
-std/traits.cn:21:5 [index] fn() -> bool
-std/traits.cn:21:5 [call] bool
-std/traits.cn:21:5 [binary] bool
-std/traits.cn:21:5 [binary] bool
-std/traits.cn:21:23 [index] fn() -> bool
-std/traits.cn:21:23 [call] bool
-std/traits.cn:21:38 [index] fn() -> bool
-std/traits.cn:21:38 [call] bool
-std/traits.cn:30:17 [binding_pat] (int64, int32)
-std/traits.cn:30:17 [binding_pat] (usize, usize)
-std/traits.cn:30:17 [binding_pat] T
-std/traits.cn:30:17 [binding_pat] byte
-std/traits.cn:30:17 [binding_pat] int32
-std/traits.cn:30:17 [binding_pat] int64
-std/traits.cn:30:17 [binding_pat] money
-std/traits.cn:30:17 [binding_pat] str
-std/traits.cn:30:17 [binding_pat] test_case
-std/traits.cn:30:17 [binding_pat] test_suite
-std/traits.cn:30:17 [binding_pat] uint32
-std/traits.cn:30:17 [binding_pat] usize
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:30:26 [named_type] unit
-std/traits.cn:42:25 [binding_pat] &mut T
-std/traits.cn:42:36 [binding_pat] &mut T
-std/traits.cn:42:50 [named_type] unit
-std/traits.cn:43:9 [binding_pat] *mut T
-std/traits.cn:43:14 [ident] _
-std/traits.cn:43:14 [call] *mut T
-std/traits.cn:43:26 [ident] &mut T
-std/traits.cn:44:9 [binding_pat] *mut T
-std/traits.cn:44:14 [ident] _
-std/traits.cn:44:14 [call] *mut T
-std/traits.cn:44:26 [ident] &mut T
-std/traits.cn:45:9 [binding_pat] T
-std/traits.cn:45:16 [ident] *mut T
-std/traits.cn:45:16 [index] T
-std/traits.cn:45:19 [literal] usize
-std/traits.cn:46:5 [ident] *mut T
-std/traits.cn:46:5 [index] T
-std/traits.cn:46:8 [literal] usize
-std/traits.cn:46:13 [ident] *mut T
-std/traits.cn:46:13 [index] T
-std/traits.cn:46:16 [literal] usize
-std/traits.cn:47:5 [ident] *mut T
-std/traits.cn:47:5 [index] T
-std/traits.cn:47:8 [literal] usize
-std/traits.cn:47:13 [ident] T
-std/traits.cn:59:28 [binding_pat] &mut T
-std/traits.cn:59:42 [binding_pat] T
-std/traits.cn:59:55 [named_type] T
-std/traits.cn:60:9 [binding_pat] *mut T
-std/traits.cn:60:13 [ident] _
-std/traits.cn:60:13 [call] *mut T
-std/traits.cn:60:25 [ident] &mut T
-std/traits.cn:61:9 [binding_pat] T
-std/traits.cn:61:15 [ident] *mut T
-std/traits.cn:61:15 [index] T
-std/traits.cn:61:17 [literal] usize
-std/traits.cn:62:5 [ident] *mut T
-std/traits.cn:62:5 [index] T
-std/traits.cn:62:7 [literal] usize
-std/traits.cn:62:12 [ident] T
-std/traits.cn:63:12 [ident] T
+std/traits.cn:22:15 [binding_pat] self
+std/traits.cn:22:24 [named_type] self
+std/traits.cn:33:5 [index] fn() -> bool
+std/traits.cn:33:5 [call] bool
+std/traits.cn:33:5 [binary] bool
+std/traits.cn:33:5 [binary] bool
+std/traits.cn:33:23 [index] fn() -> bool
+std/traits.cn:33:23 [call] bool
+std/traits.cn:33:38 [index] fn() -> bool
+std/traits.cn:33:38 [call] bool
+std/traits.cn:42:17 [binding_pat] (int64, int32)
+std/traits.cn:42:17 [binding_pat] (usize, usize)
+std/traits.cn:42:17 [binding_pat] T
+std/traits.cn:42:17 [binding_pat] byte
+std/traits.cn:42:17 [binding_pat] int32
+std/traits.cn:42:17 [binding_pat] int64
+std/traits.cn:42:17 [binding_pat] money
+std/traits.cn:42:17 [binding_pat] str
+std/traits.cn:42:17 [binding_pat] test_case
+std/traits.cn:42:17 [binding_pat] test_suite
+std/traits.cn:42:17 [binding_pat] uint32
+std/traits.cn:42:17 [binding_pat] usize
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:42:26 [named_type] unit
+std/traits.cn:54:25 [binding_pat] &mut T
+std/traits.cn:54:36 [binding_pat] &mut T
+std/traits.cn:54:50 [named_type] unit
+std/traits.cn:55:9 [binding_pat] *mut T
+std/traits.cn:55:14 [ident] _
+std/traits.cn:55:14 [call] *mut T
+std/traits.cn:55:26 [ident] &mut T
+std/traits.cn:56:9 [binding_pat] *mut T
+std/traits.cn:56:14 [ident] _
+std/traits.cn:56:14 [call] *mut T
+std/traits.cn:56:26 [ident] &mut T
+std/traits.cn:57:9 [binding_pat] T
+std/traits.cn:57:16 [ident] *mut T
+std/traits.cn:57:16 [index] T
+std/traits.cn:57:19 [literal] usize
+std/traits.cn:58:5 [ident] *mut T
+std/traits.cn:58:5 [index] T
+std/traits.cn:58:8 [literal] usize
+std/traits.cn:58:13 [ident] *mut T
+std/traits.cn:58:13 [index] T
+std/traits.cn:58:16 [literal] usize
+std/traits.cn:59:5 [ident] *mut T
+std/traits.cn:59:5 [index] T
+std/traits.cn:59:8 [literal] usize
+std/traits.cn:59:13 [ident] T
+std/traits.cn:71:28 [binding_pat] &mut T
+std/traits.cn:71:42 [binding_pat] T
+std/traits.cn:71:55 [named_type] T
+std/traits.cn:72:9 [binding_pat] *mut T
+std/traits.cn:72:13 [ident] _
+std/traits.cn:72:13 [call] *mut T
+std/traits.cn:72:25 [ident] &mut T
+std/traits.cn:73:9 [binding_pat] T
+std/traits.cn:73:15 [ident] *mut T
+std/traits.cn:73:15 [index] T
+std/traits.cn:73:17 [literal] usize
+std/traits.cn:74:5 [ident] *mut T
+std/traits.cn:74:5 [index] T
+std/traits.cn:74:7 [literal] usize
+std/traits.cn:74:12 [ident] T
+std/traits.cn:75:12 [ident] T
 std/traits.conversion.cn:10:14 [binding_pat] T
 std/traits.conversion.cn:10:27 [named_type] self
 std/traits.conversion.cn:17:14 [binding_pat] self
@@ -31523,9 +31525,9 @@ std/traits.category.cn:120:12 [call] ()
 std/traits.category.cn:120:31 [call] ()
 std/traits.category.cn:120:47 [call] ()
 std/traits.category.cn:211:12 [call] ()
-std/traits.cn:21:5 [call] ()
-std/traits.cn:21:23 [call] ()
-std/traits.cn:21:38 [call] ()
+std/traits.cn:33:5 [call] ()
+std/traits.cn:33:23 [call] ()
+std/traits.cn:33:38 [call] ()
 std/traits.hash.cn:66:12 [call] ()
 std/traits.hash.cn:79:12 [call] (acc=arg, next=arg)
 std/traits.hash.cn:79:25 [call] ()
@@ -32593,9 +32595,9 @@ std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
-std/traits.cn:43:14 [call] *mut T
-std/traits.cn:44:14 [call] *mut T
-std/traits.cn:60:13 [call] *mut T
+std/traits.cn:55:14 [call] *mut T
+std/traits.cn:56:14 [call] *mut T
+std/traits.cn:72:13 [call] *mut T
 
 ## slice_from_raw_parts_calls (7)
 std/algo.cn:1908:16 [call] 

@@ -9,6 +9,18 @@ pub trait drop:
     #:   unit (nothing).
     def drop(mut self) -> unit
 
+#: A value that can produce an independent duplicate of itself.
+#:
+#: Unlike `copy`, cloning is explicit: `x.clone()`. A handle type such as
+#: `shared[T]` implements it to share its target rather than duplicate it.
+pub trait clone:
+    #: Produces a duplicate of this value.
+    #: Args:
+    #:   self: the value to duplicate (borrowed).
+    #: Returns:
+    #:   a new value of the same type.
+    def clone(self) -> self
+
 #: A type whose values copy instead of moving
 #: (`spec/specification/02-intermediate/14-ownership-and-borrowing.md`, Copy
 #: and move): the builtin scalars, `str`, `&T`, the raw pointers, and the
