@@ -1,0 +1,41 @@
+module sample
+type inner = { a: int32 } deriving hash
+type point = { x: int32, y: int32 } deriving hash
+type named = { tag: str, n: int32 } deriving hash
+type nested = { i: inner, z: int32 } deriving hash
+type empty = { } deriving hash
+type shape = @dot | @spot | @line(int32) | @seg(int32) deriving hash
+def bit(cond: bool, weight: int32) -> int32:
+    if cond:
+        return weight
+    return 0
+def main() -> int32:
+    var total: int32 = 0
+    let a: point = { x: 1, y: 2 }
+    let b: point = { x: 1, y: 2 }
+    let c: point = { x: 2, y: 1 }
+    total = total + bit(a.hash() == b.hash(), 1)
+    total = total + bit(a.hash() != c.hash(), 2)
+    let d: point = { x: 2, y: 1 }
+    total = total + bit(c.hash() == d.hash() and a.hash() != d.hash(),
+                        4)
+    let e: empty = { }
+    total = total + bit(e.hash() == hash_seed(), 8)
+    let p: point = { x: 3, y: 4 }
+    total = total + bit(p.hash() == 4914197620444624338, 16)
+    let s1: named = { tag: "abc", n: 1 }
+    let s2: named = { tag: "abd", n: 1 }
+    total = total + bit(s1.hash() != s2.hash() and
+                        s1.hash() == 5766848232050225266, 32)
+    let n1: nested = { i: { a: 1 }, z: 9 }
+    let n2: nested = { i: { a: 2 }, z: 9 }
+    total = total + bit(n1.hash() != n2.hash(), 64)
+    let v1: shape = @dot
+    let v2: shape = @spot
+    let v3: shape = @line(1)
+    let v4: shape = @line(2)
+    let v5: shape = @seg(1)
+    total = total + bit(v1.hash() != v2.hash() and
+                        v3.hash() != v4.hash() and
+                        v3.hash() != v5.hash(), 128)
+    return total

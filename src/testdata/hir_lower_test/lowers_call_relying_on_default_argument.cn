@@ -1,0 +1,5 @@
+module sample
+def greet(name: str, greeting: str = "hello") -> str:
+    return greeting
+def caller(name: str) -> str:
+    return greet(name)

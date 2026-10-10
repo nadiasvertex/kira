@@ -1,0 +1,4 @@
+module sample
+
+def run():
+  let result = 300 as T

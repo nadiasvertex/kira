@@ -1,0 +1,7 @@
+module main
+
+def main() -> int32:
+    let pairs = [(1, 10)]
+    for k, v, w in pairs:
+        let x = k
+    return 0

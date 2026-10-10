@@ -16,6 +16,19 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/hir_captures_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("hir_captures_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -94,10 +107,8 @@ auto lower_first_lambda(const checked_fixture &fixture,
 }
 
 auto test_non_capturing_lambda_has_no_free_variables() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def make() -> fn(int32) -> int32:\n"
-                               "    let f = pure (x: int32) -> int32 => x * 2\n"
-                               "    return f\n");
+  auto fixture = check_fixture(
+      read_program("non_capturing_lambda_has_no_free_variables.cn"));
   const auto lowered = lower_first_lambda(fixture, "make");
   const auto free = hir::free_variables(*lowered.lambda);
   expect(free.empty(), "expected a lambda using only its own parameter to "
@@ -106,10 +117,7 @@ auto test_non_capturing_lambda_has_no_free_variables() -> void {
 
 auto test_lambda_captures_an_outer_parameter() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
-                    "    let f = pure (x: int32) -> int32 => x + n\n"
-                    "    return f\n");
+      check_fixture(read_program("lambda_captures_an_outer_parameter.cn"));
   const auto lowered = lower_first_lambda(fixture, "make_adder");
 
   const auto free = hir::free_variables(*lowered.lambda);
@@ -125,12 +133,7 @@ auto test_lambda_captures_an_outer_parameter() -> void {
 
 auto test_locally_bound_names_are_not_captured() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
-                    "    let f = pure (x: int32) -> int32 =>:\n"
-                    "        let y = x + 1\n"
-                    "        y + n\n"
-                    "    return f\n");
+      check_fixture(read_program("locally_bound_names_are_not_captured.cn"));
   const auto lowered = lower_first_lambda(fixture, "make_adder");
   const auto free = hir::free_variables(*lowered.lambda);
   expect(free.size() == 1,
@@ -140,10 +143,7 @@ auto test_locally_bound_names_are_not_captured() -> void {
 
 auto test_capture_plan_falls_back_to_free_variables() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def make_adder(n: int32) -> fn(int32) -> int32:\n"
-                    "    let f = pure (x: int32) -> int32 => x + n\n"
-                    "    return f\n");
+      check_fixture(read_program("lambda_captures_an_outer_parameter.cn"));
   const auto lowered = lower_first_lambda(fixture, "make_adder");
   expect(!lowered.lambda->captures.has_value(),
          "expected a lambda with no capture list to leave `captures` unset");
@@ -160,11 +160,8 @@ auto test_capture_plan_uses_the_explicit_list_verbatim() -> void {
   // Written out of source order relative to the body's use order (`b` is
   // read first) so the assertion below distinguishes "the list, in source
   // order" from "whatever `free_variables` happened to report".
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def make(a: int32, b: int32) -> fn(int32) -> int32:\n"
-                    "    let f = [a, b] (x: int32) -> int32 => x + b + a\n"
-                    "    return f\n");
+  auto fixture = check_fixture(
+      read_program("capture_plan_uses_the_explicit_list_verbatim.cn"));
   const auto lowered = lower_first_lambda(fixture, "make");
   expect(lowered.lambda->captures.has_value(),
          "expected the explicit list to survive lowering");
@@ -179,10 +176,8 @@ auto test_capture_plan_uses_the_explicit_list_verbatim() -> void {
 }
 
 auto test_capture_plan_distinguishes_empty_list_from_no_list() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def make() -> fn(int32) -> int32:\n"
-                               "    let f = [] (x: int32) -> int32 => x * 2\n"
-                               "    return f\n");
+  auto fixture = check_fixture(
+      read_program("capture_plan_distinguishes_empty_list_from_no_list.cn"));
   const auto lowered = lower_first_lambda(fixture, "make");
   expect(lowered.lambda->captures.has_value(),
          "expected `[]` to lower as a present-but-empty list, not as an "
@@ -195,14 +190,7 @@ auto test_capture_plan_distinguishes_empty_list_from_no_list() -> void {
 
 auto test_ref_captured_symbols_finds_by_reference_captures() -> void {
   auto fixture = check_fixture(
-      "module sample\n"
-      "def run() -> int32:\n"
-      "    var total = 0\n"
-      "    let by_value = 1\n"
-      "    let f = [&mut total, by_value] (x: int32) -> int32 =>:\n"
-      "        total = total + x + by_value\n"
-      "        return total\n"
-      "    return f(1)\n");
+      read_program("ref_captured_symbols_finds_by_reference_captures.cn"));
   const auto &decl = find_func(*fixture.ast_file, "run");
   auto lowered = hir::lower_function(decl, fixture.checked);
   expect(lowered.has_value(), "expected the fixture function to lower");

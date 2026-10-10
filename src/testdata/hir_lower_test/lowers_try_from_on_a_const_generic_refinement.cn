@@ -1,0 +1,9 @@
+module sample
+type index[n: usize] = usize where self < n
+def at[n: usize](v: array[int32, n], raw: usize) -> int32:
+    if let @some(i) = index[n].try_from(raw):
+        return v[i]
+    return -1
+def main() -> int32:
+    let a: array[int32, 4] = [1, 2, 3, 4]
+    return at(a, 2)

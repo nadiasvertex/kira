@@ -1,0 +1,10 @@
+module main
+
+use subprec.inner
+
+module inner:
+    pub type holder = { local: int32 }
+
+def main() -> int32:
+    let h: inner.holder = inner.holder { imported: 7 }
+    return h.imported

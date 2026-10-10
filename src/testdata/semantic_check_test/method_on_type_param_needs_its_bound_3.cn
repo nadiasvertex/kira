@@ -1,0 +1,17 @@
+module main
+
+type point = { x: int32 }
+
+impl show for point:
+    def show(self) -> str:
+        return "point"
+
+def describe[T](x: T) -> str where T: show:
+    return x.show()
+
+def inline_bound[T: show](x: T) -> str:
+    return x.show()
+
+def main() -> int32:
+    let a = describe(point { x: 1 })
+    return 0

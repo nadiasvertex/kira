@@ -1,0 +1,6 @@
+module sample
+
+type shape =
+    | @circle(float64)
+    @rect(float64, float64)
+    | @point

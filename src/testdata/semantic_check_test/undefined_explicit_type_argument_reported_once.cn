@@ -1,0 +1,7 @@
+module main
+
+def make[T]() -> int32:
+    return 1
+
+def main() -> int32:
+    return make[Q]()

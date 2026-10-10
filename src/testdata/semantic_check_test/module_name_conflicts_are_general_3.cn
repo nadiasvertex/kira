@@ -1,0 +1,6 @@
+module main
+
+use pkg
+
+trait pkg:
+    def get(self) -> int32

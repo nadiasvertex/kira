@@ -1,0 +1,9 @@
+module app
+pub trait from[T]:
+    def from(value: T) -> self
+pub type wrapper = { pub value: int32 }
+impl from[int32] for wrapper:
+    def from(x: int32) -> wrapper:
+        return wrapper{ value: x }
+pub def run() -> wrapper:
+    return wrapper.from(5)

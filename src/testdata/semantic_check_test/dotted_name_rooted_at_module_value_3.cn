@@ -1,0 +1,7 @@
+module main
+
+use geo.{origin}
+
+def main() -> int32:
+    let a: bool = origin.x
+    return 0

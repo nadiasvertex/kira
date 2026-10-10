@@ -1,0 +1,3 @@
+module geometry
+pub def root() -> int32:
+  return 1

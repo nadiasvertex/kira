@@ -1,0 +1,11 @@
+module main
+
+type tag = { id: int32 }
+
+pub def label(t: tag, prefix: str) -> str:
+    return prefix
+
+def main() -> int32:
+    let t = tag{id: 1}
+    let s: str = t.label("n=")
+    return 0

@@ -1,0 +1,9 @@
+module main
+
+use std.traits.is_float
+use std.limits.bits
+
+def wide[T]() -> T where T: numeric:
+    static if is_float[T]() and bits[T]() <= 64:
+        return 1.5
+    return 0

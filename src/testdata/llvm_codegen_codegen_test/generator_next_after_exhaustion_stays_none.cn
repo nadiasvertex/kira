@@ -1,0 +1,12 @@
+module sample
+generator def counter() -> some iterator[int32]:
+  yield 1
+def main() -> int32:
+  let g = counter()
+  var total = 0
+  while let @some(x) = g.next():
+    total = total + x
+  var extra = 0
+  while let @some(x) = g.next():
+    extra = extra + 1000
+  return total + extra

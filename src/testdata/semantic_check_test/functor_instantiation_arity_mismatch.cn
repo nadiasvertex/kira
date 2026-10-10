@@ -1,0 +1,13 @@
+module main
+
+signature backend:
+    type conn
+
+module postgres:
+    pub type conn = int32
+
+module audited[DB: backend]:
+    pub def go() -> unit:
+        unit
+
+use main.audited[main.postgres, main.postgres] as db

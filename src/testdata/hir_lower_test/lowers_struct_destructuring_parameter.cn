@@ -1,0 +1,4 @@
+module sample
+type container = { pub value: int32 }
+def read_value({ value }: container) -> int32:
+    return value

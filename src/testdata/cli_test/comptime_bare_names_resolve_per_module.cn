@@ -1,0 +1,22 @@
+module main
+static limit: int32 = 3
+static def scale(n: int32) -> int32:
+    return n * limit
+static let parent_total: int32 = scale(limit)
+module inner:
+    static limit: int32 = 4
+    static def scale(n: int32) -> int32:
+        return n * limit + 1
+    pub static def boxed(n: int32) -> int32:
+        return scale(n)
+    pub static let total: int32 = scale(limit)
+static let via_inner: int32 = inner.boxed(2)
+static shadow: int32 = 5
+static def peek() -> int32:
+    return shadow
+static def caller() -> int32:
+    let shadow = 100
+    return peek() + shadow
+static let scoped: int32 = caller()
+def main() -> int32:
+    return parent_total + inner.total + via_inner + scoped

@@ -1,0 +1,5 @@
+module sample
+def compute(v: int32) -> int32:
+    return (a + b) where:
+        a = v + 1
+        b = v + 2

@@ -1,0 +1,4 @@
+module sample
+intrinsic def rt_panic(msg: str) -> never
+def boom(msg: str) -> never:
+    return rt_panic(msg)

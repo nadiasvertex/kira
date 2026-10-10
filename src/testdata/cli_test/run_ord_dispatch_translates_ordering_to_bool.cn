@@ -1,0 +1,31 @@
+module sample
+type point = { mag: int32 } deriving eq
+impl ord for point:
+    def cmp(self, other: &point) -> ordering:
+        if self.mag < other.mag:
+            return @less
+        elif self.mag > other.mag:
+            return @greater
+        return @equal
+def main() -> int32:
+    let a = point { mag: 3 }
+    let b = point { mag: 7 }
+    let c = point { mag: 3 }
+    var score = 0
+    if a < b:
+        score = score + 1
+    if a <= b:
+        score = score + 10
+    if b > a:
+        score = score + 100
+    if b >= a:
+        score = score + 1000
+    if a <= c:
+        score = score + 10000
+    if a >= c:
+        score = score + 100000
+    if a < c:
+        score = score + 1000000
+    if a > c:
+        score = score + 10000000
+    return score

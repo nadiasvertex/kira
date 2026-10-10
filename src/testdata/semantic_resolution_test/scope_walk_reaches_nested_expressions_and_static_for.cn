@@ -1,0 +1,7 @@
+module sample
+def apply(f: fn(int32) -> int32, x: int32) -> int32:
+  return f(x)
+def run(bound: int32) -> int32:
+  return apply(k => k + bound, 1)
+static for step in [1, 2]:
+  static assert step.value > 0, "positive"

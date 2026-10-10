@@ -1,0 +1,5 @@
+module sample
+def run():
+  let a = "{total :.2f}"
+  let b = "{val :{width}.{prec}f}"
+  let c = "{total=}"

@@ -1,0 +1,4 @@
+module main
+
+def big[T]() -> T where T: numeric:
+    return 300

@@ -1,0 +1,4 @@
+module sample
+type container = { pub value: int32 }
+def wrap(value: int32) -> container:
+    return { value }

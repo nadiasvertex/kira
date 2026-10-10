@@ -1,0 +1,20 @@
+module main
+
+module inner:
+    pub type holder = { cur: int32 }
+
+    pub def make(n: int32) -> holder:
+        return holder { cur: n }
+
+def qualified(h: main.inner.holder) -> int32:
+    return h.cur
+
+def relative(h: inner.holder) -> int32:
+    return h.cur
+
+def main() -> int32:
+    let a: main.inner.holder = main.inner.holder { cur: 1 }
+    let b: inner.holder = inner.holder { cur: 2 }
+    let c: int32 = main.inner.make(3).cur
+    let d: int32 = inner.make(4).cur
+    return qualified(a) + relative(b) + c + d

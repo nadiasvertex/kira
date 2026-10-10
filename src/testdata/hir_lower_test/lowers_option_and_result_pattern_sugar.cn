@@ -1,0 +1,5 @@
+module sample
+def unwrap_or_zero(x: option[int32]) -> int32:
+    return match x:
+        @some(v) => v
+        @none => 0

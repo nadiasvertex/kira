@@ -1,0 +1,12 @@
+module sample
+generator def early() -> some iterator[int32]:
+  yield 1
+  yield 2
+  return
+  yield 3
+def count_items() -> int32:
+  let g = early()
+  var count = 0
+  while let @some(x) = g.next():
+    count = count + 1
+  return count

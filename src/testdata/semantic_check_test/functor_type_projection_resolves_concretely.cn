@@ -1,0 +1,16 @@
+module main
+
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+
+module postgres:
+    pub type conn = int32
+    pub def connect(url: str) -> conn:
+        0
+
+module audited[DB: backend]:
+    pub def bad() -> DB.conn:
+        "not an int"
+
+use main.audited[main.postgres] as db

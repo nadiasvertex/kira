@@ -1,0 +1,17 @@
+module sample
+type noisy = { id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+def plain(n: int32) -> int32:
+    if needs_drop[int32]():
+        var x = n
+        while x > 0:
+            x = x - 1
+    return n
+def owned(n: int32) -> int32:
+    if needs_drop[noisy]():
+        var x = n
+        while x > 0:
+            x = x - 1
+    return n

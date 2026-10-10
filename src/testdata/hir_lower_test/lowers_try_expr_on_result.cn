@@ -1,0 +1,4 @@
+module sample
+def parse(v: result[int32, str]) -> result[int32, str]:
+    let n = v?
+    return @ok(n)

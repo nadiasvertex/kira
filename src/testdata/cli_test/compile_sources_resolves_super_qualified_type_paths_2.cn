@@ -1,0 +1,3 @@
+module geometry.transform
+pub def rotate(p: super.shapes.circle) -> super.shapes.circle:
+  return p

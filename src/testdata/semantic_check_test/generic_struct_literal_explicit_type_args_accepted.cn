@@ -1,0 +1,7 @@
+module main
+
+type holder[T] = { cur: T }
+
+def main() -> int32:
+    let h = holder[int32] { cur: 5 }
+    return h.cur

@@ -1,0 +1,17 @@
+module main
+
+use std.iter.iterator
+
+trait unit_of:
+    static def unit_of() -> self
+
+impl unit_of for int32:
+    static def unit_of() -> int32:
+        return 1
+
+def start[I, T](it: I) -> T where I: iterator[T], T: unit_of:
+    return T.unit_of()
+
+def main() -> int32:
+    let xs = [1, 2]
+    return start(xs.into_iter())

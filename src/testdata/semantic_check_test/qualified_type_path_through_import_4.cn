@@ -1,0 +1,7 @@
+module main
+
+use qpath.inner
+
+def main() -> int32:
+    let h: inner.absent[int32] = 0
+    return 0

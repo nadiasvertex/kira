@@ -1,0 +1,6 @@
+module sample
+trait drop:
+  def drop(mut self) -> unit
+def run():
+  let mut count = 0
+  count = count + 1

@@ -1,0 +1,5 @@
+module split
+
+module part:
+    pub def one() -> int32:
+        return 1

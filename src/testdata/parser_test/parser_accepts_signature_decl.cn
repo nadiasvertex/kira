@@ -1,0 +1,7 @@
+module sample
+
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+    def query(c: &conn, sql: str) -> conn
+    static default_port: int32

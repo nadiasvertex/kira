@@ -1,0 +1,10 @@
+module sample.tools
+no_prelude
+use std.io
+dep sqlite:
+  version = "3.45"
+#: Runs the tool.
+#: Returns an exit code.
+pub def run() -> int32:
+  return 1
+type person = { name: str }

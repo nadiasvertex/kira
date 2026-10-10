@@ -1,0 +1,3 @@
+module sample.math
+pub def add() -> int32:
+  return 2

@@ -1,0 +1,7 @@
+module main
+
+def greet(name: str) -> unit:
+    println("Hi, {name}")
+
+let who = "cinder"
+greet(who)

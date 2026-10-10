@@ -1,0 +1,4 @@
+module main
+
+def zero[T]() -> T:
+    return 0

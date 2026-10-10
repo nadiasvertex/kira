@@ -1,0 +1,4 @@
+module package.other
+use package.tools.secret
+pub def run() -> int32:
+  return 2

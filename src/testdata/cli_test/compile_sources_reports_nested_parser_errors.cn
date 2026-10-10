@@ -1,0 +1,4 @@
+module sample
+module util:
+  pub def shared() -> int32:
+    return 1

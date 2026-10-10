@@ -1,0 +1,18 @@
+module main
+def bound_later() -> int64:
+    var total: int64 = 0
+    let i = 9
+    if i == 7:
+        return 1
+    total = total + i
+    return total
+def loop_variable() -> int64:
+    var total: int64 = 0
+    for i in 0..20:
+        if i == 7:
+            continue
+        if 5 < i:
+            total = total + i
+    return total
+def main() -> int32:
+    return (bound_later() + loop_variable()) as int32

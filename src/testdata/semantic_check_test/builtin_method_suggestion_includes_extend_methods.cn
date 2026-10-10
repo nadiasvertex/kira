@@ -1,0 +1,10 @@
+module main
+
+extend str:
+    def shout(self) -> str:
+        return self
+
+def main() -> int32:
+    let noise = "hi".shout()
+    let bad = "hi".shou()
+    return 0

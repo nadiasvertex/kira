@@ -1,0 +1,14 @@
+module app.geometry
+use std.test.{assert_eq, assert_true, test_failure}
+pub def area(w: float64, h: float64) -> float64:
+    return w * h
+module tests:
+    def before_all() -> result[unit, test_failure]:
+        println("geometry suite starting")
+        return @ok(unit)
+    def test_area() -> result[unit, test_failure]:
+        return assert_eq(super.area(2.0, 3.0), 6.0)
+    def test_zero_area() -> result[unit, test_failure]:
+        return assert_eq(super.area(0.0, 5.0), 0.0)
+    def skip_negative() -> result[unit, test_failure]:
+        return assert_true(super.area(-1.0, 5.0) >= 0.0, "negative width should not underflow")

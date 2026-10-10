@@ -1,0 +1,3 @@
+module sample.tools
+pub def first() -> int32:
+  return 1

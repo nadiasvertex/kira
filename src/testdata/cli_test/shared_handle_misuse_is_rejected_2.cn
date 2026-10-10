@@ -1,0 +1,3 @@
+def main() -> unit:
+  let p = shared[point].new(point { x: 1, y: 2 })
+  p.x = 5

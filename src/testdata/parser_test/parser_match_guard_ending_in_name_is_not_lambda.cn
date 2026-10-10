@@ -1,0 +1,7 @@
+module sample
+
+def pick(o, k):
+  return match o:
+    @held(n) if (n.id == k) => 1
+    @some(m) if k => 2
+    _ => 3

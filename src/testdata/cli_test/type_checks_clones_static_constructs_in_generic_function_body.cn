@@ -1,0 +1,8 @@
+module sample
+static width: int32 = 20
+def scale[T](x: T) -> int32:
+    static factor: int32 = 2
+    static assert width == 20, "width must be 20"
+    return static width * 2 + 2
+def main() -> int32:
+    return scale(0) + scale("ignored")

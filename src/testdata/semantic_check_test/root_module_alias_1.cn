@@ -1,0 +1,6 @@
+module pkg
+
+pub type holder = { value: int32 }
+
+pub def seven() -> int32:
+    return 7

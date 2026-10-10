@@ -1,0 +1,11 @@
+module main
+use geo as g
+use geo.{origin}
+type bin = { w: int32 }
+static let local_box: bin = bin { w: 7000 }
+static def pick(g: g.point) -> int32:
+  return g.y * 10
+static let folded: int32 = g.far + g.origin.y + pick(g.point { x: 1, y: 2 })
+def main() -> int32:
+  let local = local_box.w - 7000
+  return folded + origin.x + g.unit_seg.b.y + local

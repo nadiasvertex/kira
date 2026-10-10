@@ -1,0 +1,4 @@
+module main
+
+def leak[T](x: T) -> int32:
+    return x

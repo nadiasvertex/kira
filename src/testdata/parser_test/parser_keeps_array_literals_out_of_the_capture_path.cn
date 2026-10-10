@@ -1,0 +1,9 @@
+module sample
+def run():
+  let a = [1, 2, 3]
+  let b = [0; 4]
+  let c = []
+  let d = a[0]
+  let e = [a][0]
+  for v in [1, 2, 3]:
+    let q = v

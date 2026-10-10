@@ -1,0 +1,6 @@
+module hidden.lib
+
+pub type token = { id: int32 }
+
+def unwrap(t: token) -> int32:
+    return t.id

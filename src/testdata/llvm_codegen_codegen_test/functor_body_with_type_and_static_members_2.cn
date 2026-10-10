@@ -1,0 +1,15 @@
+module app
+use postgres
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+    def ping(c: conn) -> int32
+module audited[DB: backend]:
+    type row = DB.conn
+    static bump: int32 = 5
+    pub def open_and_bump(url: str) -> int32:
+        let c: row = DB.connect(url)
+        return DB.ping(c) + bump
+use audited[postgres] as db
+pub def main() -> int32:
+    return db.open_and_bump("localhost")

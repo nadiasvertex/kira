@@ -1,0 +1,5 @@
+module inner
+def target() -> int32:
+  7
+def twice(x: int32) -> int32:
+  x * 2

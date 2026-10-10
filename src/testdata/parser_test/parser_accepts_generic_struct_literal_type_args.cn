@@ -1,0 +1,5 @@
+module sample
+def run() -> int32:
+  let a = box[int32] { cur: 0 }
+  let b = values[0]
+  return 0

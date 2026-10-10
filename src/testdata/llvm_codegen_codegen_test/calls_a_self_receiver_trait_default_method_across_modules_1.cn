@@ -1,0 +1,12 @@
+module lib
+pub type counter = { n: int32 }
+pub trait bumpable:
+    def peek(mut self) -> int32
+
+    def bump(mut self) -> int32:
+        return self.peek() + 1
+impl bumpable for counter:
+    def peek(mut self) -> int32:
+        return self.n
+pub def make(start: int32) -> counter:
+    return counter { n: start }

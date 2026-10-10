@@ -1,0 +1,10 @@
+module sample
+type point = { x: int32, y: int32 } deriving show, eq, debug
+def main() -> int32:
+  let a: point = { x: 3, y: 4 }
+  let b: point = { x: 3, y: 4 }
+  let c: point = { x: 3, y: 5 }
+  println(a.debug())
+  if a.eq(&b) and not a.eq(&c):
+    return 42
+  return 0

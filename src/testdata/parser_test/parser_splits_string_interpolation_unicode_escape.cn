@@ -1,0 +1,4 @@
+module sample
+def run():
+  let a = "\u{1F600}"
+  let b = "emoji \u{1F600} and {name}"

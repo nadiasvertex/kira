@@ -1,0 +1,12 @@
+module sample
+
+def classify(t):
+  var score = 0
+  let m = match t:
+    0 => "zero"
+    _ => "other"
+  if m == "zero":
+    score = 1
+  else:
+    score = 2
+  return score

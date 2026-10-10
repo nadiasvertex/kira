@@ -1,0 +1,10 @@
+module sample
+
+def safe_div(a: int32, b: int32) -> option[int32]:
+    if b == 0:
+        return @none
+    return @some(a / b)
+
+def main() -> int32:
+    let r = safe_div(84, 2)
+    return 0

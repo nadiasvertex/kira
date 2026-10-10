@@ -16,6 +16,18 @@
 
 namespace {
 
+// Cinder programs used by this file are stored in
+// src/testdata/semantic_check_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("semantic_check_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
+
+namespace {
+
 using cinder::testing::expect;
 using cinder::testing::fail;
 
@@ -358,10 +370,7 @@ auto test_value_module_name_conflicts() -> void {
 auto test_module_name_conflicts_are_general() -> void {
   const auto pkg = source_fixture{
       .path = "pkg.cn",
-      .text = "module pkg\n"
-              "\n"
-              "pub def seven() -> int32:\n"
-              "    return 7\n",
+      .text = read_program("module_name_conflicts_are_general_1.cn"),
   };
   const auto expect_one = [&](std::string_view main_text,
                               std::string_view needle,
@@ -376,46 +385,22 @@ auto test_module_name_conflicts_are_general() -> void {
                        what, analyzed.diagnostics));
   };
 
-  expect_one("module main\n"
-             "\n"
-             "use pkg\n"
-             "\n"
-             "type pkg = { x: int32 }\n",
+  expect_one(read_program("module_name_conflicts_are_general_2.cn"),
              "`pkg` names both a type and the module `pkg` visible in `main`",
              "a type named like an imported module");
-  expect_one("module main\n"
-             "\n"
-             "use pkg\n"
-             "\n"
-             "trait pkg:\n"
-             "    def get(self) -> int32\n",
+  expect_one(read_program("module_name_conflicts_are_general_3.cn"),
              "`pkg` names both a trait and the module `pkg` visible in `main`",
              "a trait named like an imported module");
-  expect_one("module main\n"
-             "\n"
-             "use pkg.{seven as inner}\n"
-             "\n"
-             "module inner:\n"
-             "    pub def one() -> int32:\n"
-             "        return 1\n",
+  expect_one(read_program("module_name_conflicts_are_general_4.cn"),
              "`inner` names both an import of `pkg.seven` and the module "
              "`main.inner`",
              "an imported member named like a declared child module");
-  expect_one("module main\n"
-             "\n"
-             "use pkg as seven\n"
-             "use pkg.{seven}\n",
+  expect_one(read_program("module_name_conflicts_are_general_5.cn"),
              "`seven` names both an import of `pkg.seven` and the module "
              "`pkg`",
              "a member import and a module import binding one name");
 
-  expect_one("module main\n"
-             "\n"
-             "use pkg.*\n"
-             "\n"
-             "module seven:\n"
-             "    pub def one() -> int32:\n"
-             "        return 1\n",
+  expect_one(read_program("module_name_conflicts_are_general_6.cn"),
              "`seven` names both an import of `pkg.seven` (through `pkg.*`) "
              "and the module `main.seven`",
              "a wildcard-imported name matching a declared child module");
@@ -423,16 +408,12 @@ auto test_module_name_conflicts_are_general() -> void {
   // Across the files of one module: the per-file duplicate-declaration
   // check can't see a `type` in one file and the `module` in another.
   const auto split = analyze_sources({
-      source_fixture{.path = "split_a.cn",
-                     .text = "module split\n"
-                             "\n"
-                             "module part:\n"
-                             "    pub def one() -> int32:\n"
-                             "        return 1\n"},
-      source_fixture{.path = "split_b.cn",
-                     .text = "module split\n"
-                             "\n"
-                             "type part = { x: int32 }\n"},
+      source_fixture{
+          .path = "split_a.cn",
+          .text = read_program("module_name_conflicts_are_general_7.cn")},
+      source_fixture{
+          .path = "split_b.cn",
+          .text = read_program("module_name_conflicts_are_general_8.cn")},
   });
   expect_diagnostic(split,
                     "`part` names both a type and the module `split.part`",
@@ -447,35 +428,19 @@ auto test_module_name_conflicts_are_general() -> void {
 auto test_root_module_alias() -> void {
   const auto pkg = source_fixture{
       .path = "pkg.cn",
-      .text = "module pkg\n"
-              "\n"
-              "pub type holder = { value: int32 }\n"
-              "\n"
-              "pub def seven() -> int32:\n"
-              "    return 7\n",
+      .text = read_program("root_module_alias_1.cn"),
   };
-  expect_clean(analyze_sources({pkg,
-                                source_fixture{
-                                    .path = "main.cn",
-                                    .text = "module main\n"
-                                            "\n"
-                                            "use pkg as p\n"
-                                            "\n"
-                                            "def main() -> int32:\n"
-                                            "    let h: p.holder = "
-                                            "p.holder { value: p.seven() }\n"
-                                            "    return h.value\n",
-                                }}),
-               "expected `use pkg as p` to make `p.seven()` and `p.holder` "
-               "resolve");
+  expect_clean(
+      analyze_sources({pkg,
+                       source_fixture{
+                           .path = "main.cn",
+                           .text = read_program("root_module_alias_2.cn"),
+                       }}),
+      "expected `use pkg as p` to make `p.seven()` and `p.holder` "
+      "resolve");
   const auto hidden = analyze_sources(
       {pkg, source_fixture{.path = "main.cn",
-                           .text = "module main\n"
-                                   "\n"
-                                   "use pkg as p\n"
-                                   "\n"
-                                   "def main() -> int32:\n"
-                                   "    return pkg.seven()\n"}});
+                           .text = read_program("root_module_alias_3.cn")}});
   expect_diagnostic(hidden, "imports `pkg` under the name `p`",
                     "expected the original name of a renamed import to be "
                     "reported with a pointer at the rename");
@@ -488,50 +453,25 @@ auto test_root_module_alias() -> void {
 auto test_dotted_name_rooted_at_module_value() -> void {
   const auto geo = source_fixture{
       .path = "geo.cn",
-      .text = "module geo\n"
-              "\n"
-              "pub type point = { x: int32, y: int32 }\n"
-              "\n"
-              "pub static let origin: point = point { x: 3, y: 4 }\n",
+      .text = read_program("dotted_name_rooted_at_module_value_1.cn"),
   };
-  expect_clean(analyze_sources({geo,
-                                source_fixture{
-                                    .path = "main.cn",
-                                    .text = "module main\n"
-                                            "\n"
-                                            "use geo\n"
-                                            "use geo.{origin}\n"
-                                            "\n"
-                                            "static let mine: geo.point = "
-                                            "geo.point { x: 1, y: 2 }\n"
-                                            "\n"
-                                            "def main() -> int32:\n"
-                                            "    let a: int32 = mine.y\n"
-                                            "    let b: int32 = origin.x\n"
-                                            "    let c: int32 = geo.origin.y\n"
-                                            "    return a + b + c\n",
-                                }}),
-               "expected field access on module-level statics to type-check");
+  expect_clean(
+      analyze_sources(
+          {geo,
+           source_fixture{
+               .path = "main.cn",
+               .text = read_program("dotted_name_rooted_at_module_value_2.cn"),
+           }}),
+      "expected field access on module-level statics to type-check");
   const auto wrong = analyze_sources(
       {geo, source_fixture{.path = "main.cn",
-                           .text = "module main\n"
-                                   "\n"
-                                   "use geo.{origin}\n"
-                                   "\n"
-                                   "def main() -> int32:\n"
-                                   "    let a: bool = origin.x\n"
-                                   "    return 0\n"}});
+                           .text = read_program(
+                               "dotted_name_rooted_at_module_value_3.cn")}});
   expect_diagnostic(wrong, "expected `bool`, found `int32`",
                     "expected `origin.x` to be typed as the field's type");
-  const auto fn_root =
-      analyze_sources({source_fixture{.path = "main.cn",
-                                      .text = "module main\n"
-                                              "\n"
-                                              "def helper() -> int32:\n"
-                                              "    return 1\n"
-                                              "\n"
-                                              "def main() -> int32:\n"
-                                              "    return helper.x\n"}});
+  const auto fn_root = analyze_sources({source_fixture{
+      .path = "main.cn",
+      .text = read_program("dotted_name_rooted_at_module_value_4.cn")}});
   expect(fn_root.error_count > 0 &&
              fn_root.diagnostics.find("module") == std::string::npos,
          "expected `helper.x` on a function to be a field error, not a module "
@@ -742,23 +682,7 @@ auto test_reports_extend_method_arity_mismatch() -> void {
 auto test_finds_static_on_primitive_through_impl() -> void {
   const auto analyzed = analyze_sources({{
       .path = "primitive_static_impl.cn",
-      .text = "module main\n"
-              "\n"
-              "use std.iter.iterator\n"
-              "\n"
-              "trait unit_of:\n"
-              "    static def unit_of() -> self\n"
-              "\n"
-              "impl unit_of for int32:\n"
-              "    static def unit_of() -> int32:\n"
-              "        return 1\n"
-              "\n"
-              "def start[I, T](it: I) -> T where I: iterator[T], T: unit_of:\n"
-              "    return T.unit_of()\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let xs = [1, 2]\n"
-              "    return start(xs.into_iter())\n",
+      .text = read_program("finds_static_on_primitive_through_impl.cn"),
   }});
   expect_clean(
       analyzed,
@@ -768,23 +692,7 @@ auto test_finds_static_on_primitive_through_impl() -> void {
 auto test_finds_static_on_primitive_through_extend() -> void {
   const auto analyzed = analyze_sources({{
       .path = "primitive_static_extend.cn",
-      .text = "module main\n"
-              "\n"
-              "use std.iter.iterator\n"
-              "\n"
-              "trait unit_of:\n"
-              "    static def unit_of() -> self\n"
-              "\n"
-              "impl unit_of for int32:\n"
-              "    static def unit_of() -> int32:\n"
-              "        return 1\n"
-              "\n"
-              "def start[I, T](it: I) -> T where I: iterator[T], T: unit_of:\n"
-              "    return T.unit_of()\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let xs = [1, 2]\n"
-              "    return start(xs.into_iter())\n",
+      .text = read_program("finds_static_on_primitive_through_impl.cn"),
   }});
   expect_clean(analyzed,
                "expected `impl unit_of for int32:` to satisfy `T: unit_of` and "
@@ -794,15 +702,7 @@ auto test_finds_static_on_primitive_through_extend() -> void {
 auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
   const auto analyzed = analyze_sources({{
       .path = "derived_cmp.cn",
-      .text = "module main\n"
-              "\n"
-              "type point = { x: int32 } deriving ord\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let a = point { x: 1 }\n"
-              "    let b = point { x: 2 }\n"
-              "    let n: int32 = a.cmp(b)\n"
-              "    return n\n",
+      .text = read_program("derived_cmp_returns_the_ordering_sum_type.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected `cmp`'s result to be rejected where an `int32` is wanted");
@@ -823,25 +723,7 @@ auto test_derived_cmp_returns_the_ordering_sum_type() -> void {
 auto test_ordering_variants_are_prelude_reachable() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ordering_variants.cn",
-      .text = "module main\n"
-              "\n"
-              "def sign(n: int32) -> ordering:\n"
-              "    if n < 0:\n"
-              "        return @less\n"
-              "    if n > 0:\n"
-              "        return @greater\n"
-              "    return @equal\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let o = @less\n"
-              "    let _ = match o:\n"
-              "        @less => 1\n"
-              "        @equal => 2\n"
-              "        @greater => 3\n"
-              "    return match sign(3):\n"
-              "        @less => 1\n"
-              "        @equal => 2\n"
-              "        @greater => 3\n",
+      .text = read_program("ordering_variants_are_prelude_reachable.cn"),
   }});
   expect_clean(
       analyzed,
@@ -851,16 +733,7 @@ auto test_ordering_variants_are_prelude_reachable() -> void {
 auto test_reports_extend_on_unapplied_generic() -> void {
   const auto analyzed = analyze_sources({{
       .path = "extend_unapplied.cn",
-      .text = "module main\n"
-              "\n"
-              "type gen[T] = { v: T }\n"
-              "\n"
-              "extend gen:\n"
-              "    def doubled(self) -> int32:\n"
-              "        return self.v * 2\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    return 0\n",
+      .text = read_program("reports_extend_on_unapplied_generic.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected `extend` on an unapplied generic to be diagnosed");
@@ -887,28 +760,15 @@ auto test_generic_method_body_sees_its_own_imports() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "xmod_helper.cn",
-          .text = "module xmod.helper\n"
-                  "\n"
-                  "pub def twice(n: int32) -> int32:\n"
-                  "    return n * 2\n",
+          .text = read_program("generic_method_body_sees_its_own_imports_1.cn"),
       },
       {
           .path = "xmod_methods.cn",
-          .text = "module xmod.methods\n"
-                  "\n"
-                  "use xmod.helper.twice\n"
-                  "\n"
-                  "extend[T] option[T]:\n"
-                  "    def doubled(self) -> int32:\n"
-                  "        return twice(5)\n",
+          .text = read_program("generic_method_body_sees_its_own_imports_2.cn"),
       },
       {
           .path = "xmod_caller.cn",
-          .text = "module main\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let o: option[int32] = @some(1)\n"
-                  "    return o.doubled()\n",
+          .text = read_program("generic_method_body_sees_its_own_imports_3.cn"),
       },
   });
   expect_clean(analyzed,
@@ -923,20 +783,11 @@ auto test_qualified_type_path_through_import() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "qpath_inner.cn",
-          .text = "module qpath.inner\n"
-                  "\n"
-                  "pub type holder[T] = { value: T }\n",
+          .text = read_program("qualified_type_path_through_import_1.cn"),
       },
       {
           .path = "qpath_app.cn",
-          .text = "module main\n"
-                  "\n"
-                  "use qpath.inner\n"
-                  "use qpath.inner.holder\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let h: inner.holder[int32] = holder { value: 7 }\n"
-                  "    return h.value\n",
+          .text = read_program("qualified_type_path_through_import_2.cn"),
       },
   });
   expect_clean(analyzed,
@@ -949,19 +800,11 @@ auto test_qualified_type_path_through_import() -> void {
   const auto missing = analyze_sources({
       {
           .path = "qpath_inner_missing.cn",
-          .text = "module qpath.inner\n"
-                  "\n"
-                  "pub type holder[T] = { value: T }\n",
+          .text = read_program("qualified_type_path_through_import_1.cn"),
       },
       {
           .path = "qpath_app_missing.cn",
-          .text = "module main\n"
-                  "\n"
-                  "use qpath.inner\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let h: inner.absent[int32] = 0\n"
-                  "    return 0\n",
+          .text = read_program("qualified_type_path_through_import_4.cn"),
       },
   });
   expect(missing.error_count > 0,
@@ -979,27 +822,7 @@ auto test_inline_submodule_paths_resolve() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "submod_app.cn",
-          .text =
-              "module main\n"
-              "\n"
-              "module inner:\n"
-              "    pub type holder = { cur: int32 }\n"
-              "\n"
-              "    pub def make(n: int32) -> holder:\n"
-              "        return holder { cur: n }\n"
-              "\n"
-              "def qualified(h: main.inner.holder) -> int32:\n"
-              "    return h.cur\n"
-              "\n"
-              "def relative(h: inner.holder) -> int32:\n"
-              "    return h.cur\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let a: main.inner.holder = main.inner.holder { cur: 1 }\n"
-              "    let b: inner.holder = inner.holder { cur: 2 }\n"
-              "    let c: int32 = main.inner.make(3).cur\n"
-              "    let d: int32 = inner.make(4).cur\n"
-              "    return qualified(a) + relative(b) + c + d\n",
+          .text = read_program("inline_submodule_paths_resolve_1.cn"),
       },
   });
   expect_clean(analyzed,
@@ -1013,16 +836,7 @@ auto test_inline_submodule_paths_resolve() -> void {
   const auto missing = analyze_sources({
       {
           .path = "submod_missing.cn",
-          .text = "module main\n"
-                  "\n"
-                  "type holder = { cur: int32 }\n"
-                  "\n"
-                  "module inner:\n"
-                  "    pub type present = { cur: int32 }\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let a: inner.absent = inner.absent { cur: 1 }\n"
-                  "    return 0\n",
+          .text = read_program("inline_submodule_paths_resolve_2.cn"),
       },
   });
   expect(missing.error_count > 0,
@@ -1035,16 +849,7 @@ auto test_inline_submodule_paths_resolve() -> void {
   const auto undeclared = analyze_sources({
       {
           .path = "submod_undeclared.cn",
-          .text = "module main\n"
-                  "\n"
-                  "type holder = { cur: int32 }\n"
-                  "\n"
-                  "module inner:\n"
-                  "    pub type present = { cur: int32 }\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let b: nosuch.holder = nosuch.holder { cur: 2 }\n"
-                  "    return b.cur\n",
+          .text = read_program("inline_submodule_paths_resolve_3.cn"),
       },
   });
   expect(undeclared.error_count > 0,
@@ -1062,22 +867,11 @@ auto test_import_conflicts_with_inline_submodule() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "subprec_inner.cn",
-          .text = "module subprec.inner\n"
-                  "\n"
-                  "pub type holder = { imported: int32 }\n",
+          .text = read_program("import_conflicts_with_inline_submodule_1.cn"),
       },
       {
           .path = "subprec_app.cn",
-          .text = "module main\n"
-                  "\n"
-                  "use subprec.inner\n"
-                  "\n"
-                  "module inner:\n"
-                  "    pub type holder = { local: int32 }\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let h: inner.holder = inner.holder { imported: 7 }\n"
-                  "    return h.imported\n",
+          .text = read_program("import_conflicts_with_inline_submodule_2.cn"),
       },
   });
   expect(analyzed.error_count == 1,
@@ -1092,18 +886,7 @@ auto test_import_conflicts_with_inline_submodule() -> void {
 auto test_accepts_parameterized_extend() -> void {
   const auto analyzed = analyze_sources({{
       .path = "extend_parameterized.cn",
-      .text = "module main\n"
-              "\n"
-              "type gen[T] = { v: T }\n"
-              "\n"
-              "extend[T] gen[T]:\n"
-              "    def get(self) -> T:\n"
-              "        return self.v\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let g = gen{v: 7}\n"
-              "    let n: int32 = g.get()\n"
-              "    return n\n",
+      .text = read_program("accepts_parameterized_extend_1.cn"),
   }});
   expect_clean(analyzed,
                "expected a parameterized extend block to check cleanly");
@@ -1115,18 +898,7 @@ auto test_accepts_parameterized_extend() -> void {
   // `int32`, and passes silently when it did not.
   const auto mismatched = analyze_sources({{
       .path = "extend_parameterized_mismatch.cn",
-      .text = "module main\n"
-              "\n"
-              "type gen[T] = { v: T }\n"
-              "\n"
-              "extend[T] gen[T]:\n"
-              "    def get(self) -> T:\n"
-              "        return self.v\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let g = gen{v: 7}\n"
-              "    let s: str = g.get()\n"
-              "    return 0\n",
+      .text = read_program("accepts_parameterized_extend_2.cn"),
   }});
   expect(mismatched.error_count > 0,
          "expected `-> T` to solve to the receiver's argument `int32`, so "
@@ -1213,13 +985,7 @@ auto test_reports_undefined_type() -> void {
 auto test_undefined_explicit_type_argument_reported_once() -> void {
   const auto analyzed = analyze_sources({{
       .path = "undefined_explicit_type_arg.cn",
-      .text = "module main\n"
-              "\n"
-              "def make[T]() -> int32:\n"
-              "    return 1\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    return make[Q]()\n",
+      .text = read_program("undefined_explicit_type_argument_reported_once.cn"),
   }});
   expect_diagnostic(analyzed, "undefined type `Q`",
                     "expected the undefined-type diagnostic");
@@ -2704,8 +2470,7 @@ auto test_reports_needs_drop_arguments() -> void {
 }
 
 auto test_reports_needs_drop_without_type() -> void {
-  const auto analyzed =
-      analyze_test_data_file("reject_needs_drop_no_type.cn");
+  const auto analyzed = analyze_test_data_file("reject_needs_drop_no_type.cn");
   expect(analyzed.error_count > 0,
          "expected `needs_drop()` with no type to be rejected");
   expect_diagnostic(analyzed, "`needs_drop` takes one type argument",
@@ -3102,20 +2867,7 @@ auto test_accepts_wellformed_signature_and_functor() -> void {
   // reports "elaboration pending", so it is checked separately below.)
   const auto analyzed = analyze_sources({{
       .path = "sig_ok.cn",
-      .text = "module sample\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def connect(url: str) -> DB.conn:\n"
-              "        DB.connect(url)\n",
+      .text = read_program("accepts_wellformed_signature_and_functor.cn"),
   }});
   expect_clean(analyzed,
                "expected a well-formed signature + satisfying module + functor "
@@ -3125,23 +2877,7 @@ auto test_accepts_wellformed_signature_and_functor() -> void {
 auto test_reports_module_missing_signature_member() -> void {
   const auto analyzed = analyze_sources({{
       .path = "sig_missing.cn",
-      .text = "module sample\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "    def close(c: conn) -> unit\n"
-              "\n"
-              "module sqlite:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "use audited[sqlite] as db\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def go() -> unit:\n"
-              "        unit\n",
+      .text = read_program("reports_module_missing_signature_member.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a module missing a required signature member to be "
@@ -3155,19 +2891,7 @@ auto test_reports_module_missing_signature_member() -> void {
 auto test_reports_signature_member_not_pub() -> void {
   const auto analyzed = analyze_sources({{
       .path = "sig_priv.cn",
-      .text = "module sample\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "\n"
-              "module mysql:\n"
-              "    type conn = int32\n"
-              "\n"
-              "use audited[mysql] as db\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def go() -> unit:\n"
-              "        unit\n",
+      .text = read_program("reports_signature_member_not_pub.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a non-`pub` signature member to be rejected");
@@ -3181,22 +2905,7 @@ auto test_reports_signature_member_type_mismatch() -> void {
   // type-equality under the abstract-type binding must reject it.
   const auto analyzed = analyze_sources({{
       .path = "sig_type_mismatch.cn",
-      .text = "module sample\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module sqlite:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: int32) -> conn:\n"
-              "        0\n"
-              "\n"
-              "use audited[sqlite] as db\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def go() -> unit:\n"
-              "        unit\n",
+      .text = read_program("reports_signature_member_type_mismatch.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a module whose member type mismatches the signature to be "
@@ -3212,22 +2921,7 @@ auto test_reports_signature_return_type_mismatch() -> void {
   // `-> conn`, the module returns `-> str`.
   const auto analyzed = analyze_sources({{
       .path = "sig_ret_mismatch.cn",
-      .text = "module sample\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module sqlite:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> str:\n"
-              "        url\n"
-              "\n"
-              "use audited[sqlite] as db\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def go() -> unit:\n"
-              "        unit\n",
+      .text = read_program("reports_signature_return_type_mismatch.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a return-type mismatch against the signature to be "
@@ -3239,9 +2933,7 @@ auto test_reports_signature_return_type_mismatch() -> void {
 auto test_reports_unknown_functor_instantiation() -> void {
   const auto analyzed = analyze_sources({{
       .path = "sig_unknown.cn",
-      .text = "module sample\n"
-              "\n"
-              "use nonexistent[postgres] as db\n",
+      .text = read_program("reports_unknown_functor_instantiation.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected instantiating an unknown functor to be rejected");
@@ -3255,25 +2947,7 @@ auto test_materializes_functor_and_resolves_alias() -> void {
   // `DB.conn` projection resolves to postgres's concrete `conn`.
   const auto analyzed = analyze_sources({{
       .path = "mat_ok.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def connect(url: str) -> DB.conn:\n"
-              "        DB.connect(url)\n"
-              "\n"
-              "use main.audited[main.postgres] as db\n"
-              "\n"
-              "def go() -> int32:\n"
-              "    db.connect(\"x\")\n",
+      .text = read_program("materializes_functor_and_resolves_alias.cn"),
   }});
   expect_clean(
       analyzed,
@@ -3288,36 +2962,7 @@ auto test_functor_body_impl_and_extend_members_check() -> void {
   // method table/coherence, and check cleanly per instantiation.
   const auto analyzed = analyze_sources({{
       .path = "mat_impl.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "trait greet:\n"
-              "    def hello(self) -> int32\n"
-              "\n"
-              "module wrap[DB: backend]:\n"
-              "    pub type widget = { value: int32 }\n"
-              "    impl greet for widget:\n"
-              "        def hello(self) -> int32:\n"
-              "            self.value\n"
-              "    extend widget:\n"
-              "        def doubled(self) -> int32:\n"
-              "            self.value + self.value\n"
-              "    pub def run() -> int32:\n"
-              "        let b = widget { value: 21 }\n"
-              "        b.hello() + b.doubled()\n"
-              "\n"
-              "use main.wrap[main.postgres] as w\n"
-              "\n"
-              "def go() -> int32:\n"
-              "    w.run()\n",
+      .text = read_program("functor_body_impl_and_extend_members_check.cn"),
   }});
   expect_clean(
       analyzed,
@@ -3333,33 +2978,8 @@ auto test_functor_body_impl_coherence_across_instantiations() -> void {
   // shared a coherence key.
   const auto analyzed = analyze_sources({{
       .path = "mat_coherence.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "module sqlite:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        1\n"
-              "\n"
-              "trait greet:\n"
-              "    def hello(self) -> int32\n"
-              "\n"
-              "module wrap[DB: backend]:\n"
-              "    pub type widget = { value: int32 }\n"
-              "    impl greet for widget:\n"
-              "        def hello(self) -> int32:\n"
-              "            self.value\n"
-              "\n"
-              "use main.wrap[main.postgres] as wp\n"
-              "use main.wrap[main.sqlite] as ws\n",
+      .text =
+          read_program("functor_body_impl_coherence_across_instantiations.cn"),
   }});
   expect_clean(
       analyzed,
@@ -3377,21 +2997,7 @@ auto test_impl_type_param_substituted_at_call_site() -> void {
   // that the mismatch is now reported.
   const auto analyzed = analyze_sources({{
       .path = "impl_type_param.cn",
-      .text = "module main\n"
-              "\n"
-              "trait get_it[T]:\n"
-              "    def get(self) -> T\n"
-              "\n"
-              "type holder[T] = { value: T }\n"
-              "\n"
-              "impl[T] get_it[T] for holder[T]:\n"
-              "    def get(self) -> T:\n"
-              "        return self.value\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let h = holder { value: 7 }\n"
-              "    let s: str = h.get()\n"
-              "    return 0\n",
+      .text = read_program("impl_type_param_substituted_at_call_site.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected `let s: str = h.get()` on a `holder[int32]` to be rejected "
@@ -3410,20 +3016,7 @@ auto test_impls_on_distinct_instantiations_are_coherent() -> void {
   // explicitly permits ("no two can apply to the same concrete type").
   const auto analyzed = analyze_sources({{
       .path = "instantiation_coherence.cn",
-      .text = "module main\n"
-              "\n"
-              "trait get_it[T]:\n"
-              "    def get(self) -> T\n"
-              "\n"
-              "type boxed[T] = { item: T }\n"
-              "\n"
-              "impl get_it[int32] for boxed[int32]:\n"
-              "    def get(self) -> int32:\n"
-              "        return self.item\n"
-              "\n"
-              "impl get_it[int64] for boxed[int64]:\n"
-              "    def get(self) -> int64:\n"
-              "        return self.item\n",
+      .text = read_program("impls_on_distinct_instantiations_are_coherent.cn"),
   }});
   expect_clean(
       analyzed,
@@ -3440,20 +3033,7 @@ auto test_overlapping_generic_impl_still_conflicts() -> void {
   // plain type-id equality and the suite would stay green.
   const auto analyzed = analyze_sources({{
       .path = "overlapping_impl.cn",
-      .text = "module main\n"
-              "\n"
-              "trait get_it[T]:\n"
-              "    def get(self) -> T\n"
-              "\n"
-              "type boxed[T] = { item: T }\n"
-              "\n"
-              "impl[T] get_it[T] for boxed[T]:\n"
-              "    def get(self) -> T:\n"
-              "        return self.item\n"
-              "\n"
-              "impl get_it[int32] for boxed[int32]:\n"
-              "    def get(self) -> int32:\n"
-              "        return self.item\n",
+      .text = read_program("overlapping_generic_impl_still_conflicts.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a blanket `impl[T] ... for boxed[T]` to conflict with a "
@@ -3472,22 +3052,7 @@ auto test_functor_type_projection_resolves_concretely() -> void {
   // projection demands an `int32` must be diagnosed.
   const auto analyzed = analyze_sources({{
       .path = "mat_proj.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def bad() -> DB.conn:\n"
-              "        \"not an int\"\n"
-              "\n"
-              "use main.audited[main.postgres] as db\n",
+      .text = read_program("functor_type_projection_resolves_concretely.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a `str` body under a `DB.conn` (int32) return to be "
@@ -3500,28 +3065,7 @@ auto test_functor_body_type_and_static_members_check() -> void {
   // required constant. All are cloned and checked per instantiation.
   const auto analyzed = analyze_sources({{
       .path = "mat_members.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "    def connect(url: str) -> conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "    pub def connect(url: str) -> conn:\n"
-              "        0\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    type row = DB.conn\n"
-              "    static bump: int32 = 5\n"
-              "    pub def open(url: str) -> int32:\n"
-              "        let c: row = DB.connect(url)\n"
-              "        c + bump\n"
-              "\n"
-              "use main.audited[main.postgres] as db\n"
-              "\n"
-              "def go() -> int32:\n"
-              "    db.open(\"x\")\n",
+      .text = read_program("functor_body_type_and_static_members_check.cn"),
   }});
   expect_clean(
       analyzed,
@@ -3531,19 +3075,7 @@ auto test_functor_body_type_and_static_members_check() -> void {
 auto test_functor_instantiation_arity_mismatch() -> void {
   const auto analyzed = analyze_sources({{
       .path = "mat_arity.cn",
-      .text = "module main\n"
-              "\n"
-              "signature backend:\n"
-              "    type conn\n"
-              "\n"
-              "module postgres:\n"
-              "    pub type conn = int32\n"
-              "\n"
-              "module audited[DB: backend]:\n"
-              "    pub def go() -> unit:\n"
-              "        unit\n"
-              "\n"
-              "use main.audited[main.postgres, main.postgres] as db\n",
+      .text = read_program("functor_instantiation_arity_mismatch.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a wrong-arity functor instantiation to be rejected");
@@ -3560,13 +3092,7 @@ auto test_functor_instantiation_arity_mismatch() -> void {
 auto test_bare_for_names_bind_tuple_components() -> void {
   const auto analyzed = analyze_sources({{
       .path = "for_bare.cn",
-      .text = "module main\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let pairs = [(1, 10)]\n"
-              "    for k, v in pairs:\n"
-              "        let s: str = v\n"
-              "    return 0\n",
+      .text = read_program("bare_for_names_bind_tuple_components.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected `v` to be bound as int32, not as an unknown type");
@@ -3577,13 +3103,7 @@ auto test_bare_for_names_bind_tuple_components() -> void {
 auto test_for_head_arity_must_match_element() -> void {
   const auto analyzed = analyze_sources({{
       .path = "for_arity.cn",
-      .text = "module main\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let pairs = [(1, 10)]\n"
-              "    for k, v, w in pairs:\n"
-              "        let x = k\n"
-              "    return 0\n",
+      .text = read_program("for_head_arity_must_match_element.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected three loop variables over a 2-tuple to be rejected");
@@ -3594,13 +3114,7 @@ auto test_for_head_arity_must_match_element() -> void {
 auto test_for_head_cannot_split_a_non_tuple() -> void {
   const auto analyzed = analyze_sources({{
       .path = "for_non_tuple.cn",
-      .text = "module main\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let nums = [1, 2, 3]\n"
-              "    for a, b in nums:\n"
-              "        let x = a\n"
-              "    return 0\n",
+      .text = read_program("for_head_cannot_split_a_non_tuple.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected splitting a non-tuple element to be rejected");
@@ -3620,17 +3134,7 @@ auto test_for_head_cannot_split_a_non_tuple() -> void {
 auto test_free_function_callable_as_method() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ufcs_basic.cn",
-      .text = "module main\n"
-              "\n"
-              "type tag = { id: int32 }\n"
-              "\n"
-              "pub def label(t: tag, prefix: str) -> str:\n"
-              "    return prefix\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let t = tag{id: 1}\n"
-              "    let s: str = t.label(\"n=\")\n"
-              "    return 0\n",
+      .text = read_program("free_function_callable_as_method.cn"),
   }});
   expect_clean(analyzed, "expected a free function to be callable as a method");
 }
@@ -3643,21 +3147,7 @@ auto test_free_function_callable_as_method() -> void {
 auto test_method_wins_over_ufcs() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ufcs_shadow.cn",
-      .text = "module main\n"
-              "\n"
-              "type counter = { value: int32 }\n"
-              "\n"
-              "extend counter:\n"
-              "    def tag(self) -> int32:\n"
-              "        return self.value\n"
-              "\n"
-              "pub def tag(c: counter) -> str:\n"
-              "    return \"free\"\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let c = counter{value: 1}\n"
-              "    let n: int32 = c.tag()\n"
-              "    return n\n",
+      .text = read_program("method_wins_over_ufcs.cn"),
   }});
   expect_clean(analyzed,
                "expected the inherent method to win over the UFCS candidate");
@@ -3669,27 +3159,15 @@ auto test_ufcs_ambiguity_is_an_error() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "amb_a.cn",
-          .text = "module amb.a\n"
-                  "\n"
-                  "pub def scale(x: int32) -> int32:\n"
-                  "    return x * 2\n",
+          .text = read_program("ufcs_ambiguity_is_an_error_1.cn"),
       },
       {
           .path = "amb_b.cn",
-          .text = "module amb.b\n"
-                  "\n"
-                  "pub def scale(x: int32) -> int32:\n"
-                  "    return x * 3\n",
+          .text = read_program("ufcs_ambiguity_is_an_error_2.cn"),
       },
       {
           .path = "amb_main.cn",
-          .text = "module main\n"
-                  "\n"
-                  "use amb.a.*\n"
-                  "use amb.b.*\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    return 5.scale()\n",
+          .text = read_program("ufcs_ambiguity_is_an_error_3.cn"),
       },
   });
   expect(analyzed.error_count > 0,
@@ -3705,16 +3183,7 @@ auto test_ufcs_ambiguity_is_an_error() -> void {
 auto test_ufcs_mut_receiver_must_be_mutable() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ufcs_mut.cn",
-      .text = "module main\n"
-              "\n"
-              "type acc = { total: int32 }\n"
-              "\n"
-              "pub def bump(a: &mut acc) -> int32:\n"
-              "    return a.total\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let box = acc{total: 1}\n"
-              "    return box.bump()\n",
+      .text = read_program("ufcs_mut_receiver_must_be_mutable.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a `&mut` UFCS receiver on a `let` binding to be rejected");
@@ -3737,12 +3206,7 @@ auto test_ufcs_mut_receiver_must_be_mutable() -> void {
 auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
   const auto analyzed = analyze_sources({{
       .path = "builtin_unknown_method.cn",
-      .text = "module main\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let nums = [1, 2, 3]\n"
-              "    let picked = nums.pusk(4)\n"
-              "    return 0\n",
+      .text = read_program("unknown_method_on_builtin_receiver_is_reported.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected an unknown method on a `list` receiver to be rejected");
@@ -3759,16 +3223,8 @@ auto test_unknown_method_on_builtin_receiver_is_reported() -> void {
 auto test_builtin_method_suggestion_includes_extend_methods() -> void {
   const auto analyzed = analyze_sources({{
       .path = "builtin_extend_suggestion.cn",
-      .text = "module main\n"
-              "\n"
-              "extend str:\n"
-              "    def shout(self) -> str:\n"
-              "        return self\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let noise = \"hi\".shout()\n"
-              "    let bad = \"hi\".shou()\n"
-              "    return 0\n",
+      .text =
+          read_program("builtin_method_suggestion_includes_extend_methods.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected an unknown method on a `str` receiver to be rejected");
@@ -3789,14 +3245,8 @@ auto test_builtin_method_suggestion_includes_extend_methods() -> void {
 auto test_unknown_method_on_generic_receiver_reports_once() -> void {
   const auto analyzed = analyze_sources({{
       .path = "generic_receiver.cn",
-      .text = "module main\n"
-              "\n"
-              "def call_it[T](x: T) -> int32:\n"
-              "    let r = x.whatever()\n"
-              "    return 0\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    return call_it(5)\n",
+      .text =
+          read_program("unknown_method_on_generic_receiver_reports_once.cn"),
   }});
   expect(analyzed.error_count == 1,
          "an unknown method in a generic body should be reported exactly "
@@ -3815,10 +3265,7 @@ auto test_unknown_method_on_generic_receiver_reports_once() -> void {
 auto test_method_on_type_param_needs_its_bound() -> void {
   const auto rejected = analyze_sources({{
       .path = "needs_bound.cn",
-      .text = "module main\n"
-              "\n"
-              "def describe[T](x: T) -> str:\n"
-              "    return x.show()\n",
+      .text = read_program("method_on_type_param_needs_its_bound_1.cn"),
   }});
   expect(rejected.error_count == 1,
          "calling `show` on an unbounded `T` should be one error");
@@ -3831,12 +3278,7 @@ auto test_method_on_type_param_needs_its_bound() -> void {
 
   const auto generic_trait = analyze_sources({{
       .path = "needs_generic_bound.cn",
-      .text = "module main\n"
-              "\n"
-              "def first_of[I](it: I) -> int32:\n"
-              "    var source = it\n"
-              "    let x = source.next()\n"
-              "    return 0\n",
+      .text = read_program("method_on_type_param_needs_its_bound_2.cn"),
   }});
   expect_diagnostic(generic_trait, "`where I: iterator[T]`",
                     "expected a generic trait to be suggested with its "
@@ -3844,23 +3286,7 @@ auto test_method_on_type_param_needs_its_bound() -> void {
 
   const auto accepted = analyze_sources({{
       .path = "has_bound.cn",
-      .text = "module main\n"
-              "\n"
-              "type point = { x: int32 }\n"
-              "\n"
-              "impl show for point:\n"
-              "    def show(self) -> str:\n"
-              "        return \"point\"\n"
-              "\n"
-              "def describe[T](x: T) -> str where T: show:\n"
-              "    return x.show()\n"
-              "\n"
-              "def inline_bound[T: show](x: T) -> str:\n"
-              "    return x.show()\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let a = describe(point { x: 1 })\n"
-              "    return 0\n",
+      .text = read_program("method_on_type_param_needs_its_bound_3.cn"),
   }});
   expect_clean(accepted, "expected `where T: show` and `[T: show]` to make "
                          "`x.show()` legal");
@@ -3871,10 +3297,7 @@ auto test_method_on_type_param_needs_its_bound() -> void {
 auto test_bound_includes_required_traits() -> void {
   const auto analyzed = analyze_sources({{
       .path = "requires_closure.cn",
-      .text = "module main\n"
-              "\n"
-              "def same[T](a: T, b: T) -> bool where T: ord:\n"
-              "    return a.eq(b)\n",
+      .text = read_program("bound_includes_required_traits.cn"),
   }});
   expect_clean(analyzed, "expected `ord`'s required `eq` to be callable "
                          "through an `ord` bound");
@@ -3885,13 +3308,7 @@ auto test_bound_includes_required_traits() -> void {
 auto test_operator_on_type_param_needs_a_bound() -> void {
   const auto rejected = analyze_sources({{
       .path = "operator_unbounded.cn",
-      .text = "module main\n"
-              "\n"
-              "def twice[T](x: T) -> T:\n"
-              "    return x + x\n"
-              "\n"
-              "def smaller[T](a: T, b: T) -> bool:\n"
-              "    return a < b\n",
+      .text = read_program("operator_on_type_param_needs_a_bound_1.cn"),
   }});
   expect(rejected.error_count == 2,
          "expected one error per unbounded operator");
@@ -3902,16 +3319,7 @@ auto test_operator_on_type_param_needs_a_bound() -> void {
 
   const auto accepted = analyze_sources({{
       .path = "operator_bounded.cn",
-      .text = "module main\n"
-              "\n"
-              "def twice[T](x: T) -> T where T: add:\n"
-              "    return x + x\n"
-              "\n"
-              "def smaller[T](a: T, b: T) -> bool where T: ord:\n"
-              "    return a < b\n"
-              "\n"
-              "def triple[T](x: T) -> T where T: numeric:\n"
-              "    return x * 3\n",
+      .text = read_program("operator_on_type_param_needs_a_bound_2.cn"),
   }});
   expect_clean(accepted, "expected `T: add`, `T: ord`, and `T: numeric` to "
                          "justify their operators");
@@ -3923,10 +3331,7 @@ auto test_operator_on_type_param_needs_a_bound() -> void {
 auto test_literal_as_type_param_follows_its_domain() -> void {
   const auto unbounded = analyze_sources({{
       .path = "literal_unbounded.cn",
-      .text = "module main\n"
-              "\n"
-              "def zero[T]() -> T:\n"
-              "    return 0\n",
+      .text = read_program("literal_as_type_param_follows_its_domain_1.cn"),
   }});
   expect_diagnostic(unbounded, "the literal `0` cannot be a `T`",
                     "expected a literal to need a bound on `T`");
@@ -3935,10 +3340,7 @@ auto test_literal_as_type_param_follows_its_domain() -> void {
 
   const auto too_wide = analyze_sources({{
       .path = "literal_too_wide.cn",
-      .text = "module main\n"
-              "\n"
-              "def big[T]() -> T where T: numeric:\n"
-              "    return 300\n",
+      .text = read_program("literal_as_type_param_follows_its_domain_2.cn"),
   }});
   expect_diagnostic(too_wide,
                     "the literal `300` cannot be a `T` when `T` is `int8`",
@@ -3947,40 +3349,21 @@ auto test_literal_as_type_param_follows_its_domain() -> void {
 
   const auto narrowed = analyze_sources({{
       .path = "literal_narrowed.cn",
-      .text = "module main\n"
-              "\n"
-              "def big[T]() -> T where T: numeric:\n"
-              "    static if T.name() == \"int64\" or T.name() == \"uint64\":\n"
-              "        return 5000000000\n"
-              "    return 0\n",
+      .text = read_program("literal_as_type_param_follows_its_domain_3.cn"),
   }});
   expect_clean(narrowed, "expected `static if T.name() == ...` to narrow `T` "
                          "so a 64-bit literal is legal in its branch");
 
   const auto flow = analyze_sources({{
       .path = "literal_flow_narrowed.cn",
-      .text = "module main\n"
-              "\n"
-              "def tiny[T]() -> T where T: signed_integer:\n"
-              "    let n = T.name()\n"
-              "    static if n == \"int8\":\n"
-              "        return 1\n"
-              "    return 300\n",
+      .text = read_program("literal_as_type_param_follows_its_domain_4.cn"),
   }});
   expect_clean(flow, "expected the code past a returning `static if` on a "
                      "`let` alias of `T.name()` to know `T` is not `int8`");
 
   const auto partial_and = analyze_sources({{
       .path = "literal_and_narrowed.cn",
-      .text = "module main\n"
-              "\n"
-              "use std.traits.is_float\n"
-              "use std.limits.bits\n"
-              "\n"
-              "def wide[T]() -> T where T: numeric:\n"
-              "    static if is_float[T]() and bits[T]() <= 64:\n"
-              "        return 1.5\n"
-              "    return 0\n",
+      .text = read_program("literal_as_type_param_follows_its_domain_5.cn"),
   }});
   expect_clean(partial_and, "expected `is_float[T]() and <anything>` to "
                             "narrow `T` to floats in the branch, even when "
@@ -3991,10 +3374,7 @@ auto test_literal_as_type_param_follows_its_domain() -> void {
 auto test_cast_with_type_param_needs_numeric() -> void {
   const auto rejected = analyze_sources({{
       .path = "cast_unbounded.cn",
-      .text = "module main\n"
-              "\n"
-              "def key[T](x: T) -> usize:\n"
-              "    return x as usize\n",
+      .text = read_program("cast_with_type_param_needs_numeric_1.cn"),
   }});
   expect(rejected.error_count == 1, "expected one error for the cast");
   expect_diagnostic(rejected, "`as` needs `T` to be a number",
@@ -4002,10 +3382,7 @@ auto test_cast_with_type_param_needs_numeric() -> void {
 
   const auto accepted = analyze_sources({{
       .path = "cast_bounded.cn",
-      .text = "module main\n"
-              "\n"
-              "def key[T](x: T) -> usize where T: integer:\n"
-              "    return x as usize\n",
+      .text = read_program("cast_with_type_param_needs_numeric_2.cn"),
   }});
   expect_clean(accepted, "expected `T: integer` to make `x as usize` legal");
 }
@@ -4017,16 +3394,7 @@ auto test_cast_with_type_param_needs_numeric() -> void {
 auto test_bounds_are_checked_at_the_call() -> void {
   const auto concrete = analyze_sources({{
       .path = "bound_concrete.cn",
-      .text = "module main\n"
-              "\n"
-              "type point = { x: int32 }\n"
-              "\n"
-              "def describe[T](x: T) -> str where T: show:\n"
-              "    return x.show()\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let s = describe(point { x: 1 })\n"
-              "    return 0\n",
+      .text = read_program("bounds_are_checked_at_the_call_1.cn"),
   }});
   expect(concrete.error_count == 1, "expected exactly one error, at the call");
   expect_diagnostic(concrete,
@@ -4040,16 +3408,7 @@ auto test_bounds_are_checked_at_the_call() -> void {
 
   const auto entailed = analyze_sources({{
       .path = "bound_entailed.cn",
-      .text = "module main\n"
-              "\n"
-              "def describe[T](x: T) -> str where T: show:\n"
-              "    return x.show()\n"
-              "\n"
-              "def outer[T](x: T) -> str:\n"
-              "    return describe(x)\n"
-              "\n"
-              "def outer_ok[T](x: T) -> str where T: show:\n"
-              "    return describe(x)\n",
+      .text = read_program("bounds_are_checked_at_the_call_2.cn"),
   }});
   expect(entailed.error_count == 1,
          "expected only the unbounded caller to be rejected");
@@ -4063,14 +3422,7 @@ auto test_bounds_are_checked_at_the_call() -> void {
 
   const auto category = analyze_sources({{
       .path = "bound_category.cn",
-      .text = "module main\n"
-              "\n"
-              "use std.limits.max\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let a: int32 = max[int32]()\n"
-              "    let b: str = max[str]()\n"
-              "    return 0\n",
+      .text = read_program("bounds_are_checked_at_the_call_3.cn"),
   }});
   expect(category.error_count == 1, "expected only `max[str]` to be rejected");
   expect_diagnostic(category,
@@ -4084,10 +3436,7 @@ auto test_bounds_are_checked_at_the_call() -> void {
 auto test_type_param_is_rigid_in_its_body() -> void {
   const auto rejected = analyze_sources({{
       .path = "rigid_mismatch.cn",
-      .text = "module main\n"
-              "\n"
-              "def leak[T](x: T) -> int32:\n"
-              "    return x\n",
+      .text = read_program("type_param_is_rigid_in_its_body_1.cn"),
   }});
   expect(rejected.error_count == 1, "expected `T` returned as `int32` to fail");
   expect_diagnostic(rejected, "expected `int32`, found `T`",
@@ -4095,18 +3444,7 @@ auto test_type_param_is_rigid_in_its_body() -> void {
 
   const auto accepted = analyze_sources({{
       .path = "rigid_through_call.cn",
-      .text = "module main\n"
-              "\n"
-              "def identity[T](x: T) -> T:\n"
-              "    return x\n"
-              "\n"
-              "def twice_identity[T](x: T) -> T:\n"
-              "    return identity(identity(x))\n"
-              "\n"
-              "def pick[T](a: T, b: T, first: bool) -> T:\n"
-              "    if first:\n"
-              "        return identity(a)\n"
-              "    return b\n",
+      .text = read_program("type_param_is_rigid_in_its_body_2.cn"),
   }});
   expect_clean(accepted, "expected a generic call inside a generic body to "
                          "yield the caller's own `T`");
@@ -4117,16 +3455,7 @@ auto test_type_param_is_rigid_in_its_body() -> void {
 auto test_method_ambiguous_between_bounds() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ambiguous.cn",
-      .text = "module main\n"
-              "\n"
-              "trait loud:\n"
-              "    def speak(self) -> str\n"
-              "\n"
-              "trait quiet:\n"
-              "    def speak(self) -> str\n"
-              "\n"
-              "def talk[T](x: T) -> str where T: loud + quiet:\n"
-              "    return x.speak()\n",
+      .text = read_program("method_ambiguous_between_bounds.cn"),
   }});
   expect(analyzed.error_count == 1, "expected one ambiguity error");
   expect_diagnostic(analyzed, "`speak` is ambiguous on `T`",
@@ -4138,13 +3467,7 @@ auto test_method_ambiguous_between_bounds() -> void {
 auto test_ufcs_reports_receiver_mismatch() -> void {
   const auto analyzed = analyze_sources({{
       .path = "ufcs_mismatch.cn",
-      .text = "module main\n"
-              "\n"
-              "pub def total_of(items: list[int32]) -> int32:\n"
-              "    return 0\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    return 5.total_of()\n",
+      .text = read_program("ufcs_reports_receiver_mismatch.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a UFCS call whose receiver does not fit to be rejected");
@@ -4162,30 +3485,14 @@ auto test_ufcs_reports_receiver_mismatch() -> void {
 auto test_ufcs_literal_receiver_takes_param_type() -> void {
   const auto ok = analyze_sources({{
       .path = "ufcs_literal.cn",
-      .text = "module main\n"
-              "\n"
-              "def id64(x: int64) -> int64:\n"
-              "    return x\n"
-              "\n"
-              "def main() -> int64:\n"
-              "    let v = 3000000000.id64()\n"
-              "    return v + 4.id64()\n",
+      .text = read_program("ufcs_literal_receiver_takes_param_type_1.cn"),
   }});
   expect(ok.error_count == 0,
          "expected a literal receiver to take the UFCS parameter's type");
 
   const auto pinned = analyze_sources({{
       .path = "ufcs_literal_pinned.cn",
-      .text = "module main\n"
-              "\n"
-              "def id64(x: int64) -> int64:\n"
-              "    return x\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let a = 5\n"
-              "    let b = a.id64()\n"
-              "    let c: int32 = a\n"
-              "    return c\n",
+      .text = read_program("ufcs_literal_receiver_takes_param_type_2.cn"),
   }});
   expect(pinned.error_count == 1,
          "expected the UFCS call to pin `a` to `int64`, so `int32` mismatches");
@@ -4206,22 +3513,13 @@ auto test_ufcs_skips_private_functions_in_other_modules() -> void {
   const auto analyzed = analyze_sources({
       {
           .path = "priv_lib.cn",
-          .text = "module hidden.lib\n"
-                  "\n"
-                  "pub type token = { id: int32 }\n"
-                  "\n"
-                  "def unwrap(t: token) -> int32:\n"
-                  "    return t.id\n",
+          .text = read_program(
+              "ufcs_skips_private_functions_in_other_modules_1.cn"),
       },
       {
           .path = "priv_main.cn",
-          .text = "module main\n"
-                  "\n"
-                  "use hidden.lib.*\n"
-                  "\n"
-                  "def main() -> int32:\n"
-                  "    let t = token{id: 1}\n"
-                  "    return t.unwrap()\n",
+          .text = read_program(
+              "ufcs_skips_private_functions_in_other_modules_2.cn"),
       },
   });
   expect(analyzed.error_count > 0,
@@ -4247,17 +3545,7 @@ auto test_ufcs_skips_private_functions_in_other_modules() -> void {
 auto test_nested_def_resolves_as_a_value() -> void {
   const auto analyzed = analyze_sources({{
       .path = "nested_def.cn",
-      .text = "module main\n"
-              "\n"
-              "def compute() -> int32:\n"
-              "    def helper(x: int32) -> int32:\n"
-              "        return x * 2\n"
-              "    let f = helper\n"
-              "    let n: int32 = f(5)\n"
-              "    return n\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    return compute()\n",
+      .text = read_program("nested_def_resolves_as_a_value.cn"),
   }});
   expect_clean(
       analyzed,
@@ -4277,13 +3565,8 @@ auto test_generic_struct_literal_explicit_type_args_drive_field_types()
     -> void {
   const auto analyzed = analyze_sources({{
       .path = "explicit_struct_type_args.cn",
-      .text = "module main\n"
-              "\n"
-              "type holder[T] = { cur: T }\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let h = holder[str] { cur: 5 }\n"
-              "    return 0\n",
+      .text = read_program(
+          "generic_struct_literal_explicit_type_args_drive_field_types.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected the explicit `str` argument to make the `int32` field "
@@ -4298,13 +3581,8 @@ auto test_generic_struct_literal_explicit_type_args_drive_field_types()
 auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
   const auto analyzed = analyze_sources({{
       .path = "explicit_struct_type_args_ok.cn",
-      .text = "module main\n"
-              "\n"
-              "type holder[T] = { cur: T }\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let h = holder[int32] { cur: 5 }\n"
-              "    return h.cur\n",
+      .text =
+          read_program("generic_struct_literal_explicit_type_args_accepted.cn"),
   }});
   expect_clean(analyzed, analyzed.diagnostics);
 }
@@ -4316,13 +3594,7 @@ auto test_generic_struct_literal_explicit_type_args_accepted() -> void {
 auto test_generic_struct_literal_wrong_type_arg_count() -> void {
   const auto analyzed = analyze_sources({{
       .path = "explicit_struct_type_args_arity.cn",
-      .text = "module main\n"
-              "\n"
-              "type holder[T] = { cur: T }\n"
-              "\n"
-              "def main() -> int32:\n"
-              "    let h = holder[int32, int32] { cur: 5 }\n"
-              "    return 0\n",
+      .text = read_program("generic_struct_literal_wrong_type_arg_count.cn"),
   }});
   expect(analyzed.error_count > 0,
          "expected a wrong-arity explicit struct-literal instantiation to "

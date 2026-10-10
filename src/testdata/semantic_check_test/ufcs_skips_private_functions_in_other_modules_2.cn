@@ -1,0 +1,7 @@
+module main
+
+use hidden.lib.*
+
+def main() -> int32:
+    let t = token{id: 1}
+    return t.unwrap()

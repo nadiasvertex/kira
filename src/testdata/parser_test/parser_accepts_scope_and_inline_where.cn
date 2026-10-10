@@ -1,0 +1,7 @@
+module sample
+
+def run() -> int:
+  scope:
+    let a = 1
+  let v = x + y where x = 1, y = x + 2
+  return v

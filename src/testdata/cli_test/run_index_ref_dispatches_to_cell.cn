@@ -1,0 +1,13 @@
+module sample
+type readable = { a: int32 }
+impl index[usize] for readable:
+  type output = int32
+  def at(self, i: usize) -> int32:
+    return self.a
+impl index_ref[usize] for readable:
+  def at_ref(self, i: usize) -> cell[int32]:
+    return &self.a
+def main() -> int32:
+  let r = readable{ a: 7 }
+  let c = &r[0]
+  return c.get() * 5

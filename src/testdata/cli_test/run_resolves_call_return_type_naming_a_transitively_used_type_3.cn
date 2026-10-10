@@ -1,0 +1,6 @@
+module main
+use factory
+def main() -> int32:
+  if let @some(p) = factory.make():
+    return p.x + p.y
+  return -1

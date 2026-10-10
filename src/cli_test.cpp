@@ -20,6 +20,17 @@
 #include "src/bytecode/panic.h"
 #include "src/module_metadata.pb.h"
 #include "src/parser/token.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in src/testdata/cli_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir = cinder::testing::find_test_data_dir("cli_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -248,16 +259,8 @@ auto test_compile_sources_writes_module_metadata() -> void {
   auto source_path = temp.path / "sample_tools.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample.tools\n"
-                          "no_prelude\n"
-                          "use std.io\n"
-                          "dep sqlite:\n"
-                          "  version = \"3.45\"\n"
-                          "#: Runs the tool.\n"
-                          "#: Returns an exit code.\n"
-                          "pub def run() -> int32:\n"
-                          "  return 1\n"
-                          "type person = { name: str }\n");
+  write_file(source_path,
+             read_program("compile_sources_writes_module_metadata.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -318,18 +321,9 @@ auto test_compile_sources_writes_functor_instantiation_metadata() -> void {
   auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module app\n"
-                          "signature backend:\n"
-                          "    type conn\n"
-                          "    def connect(url: str) -> conn\n"
-                          "module postgres:\n"
-                          "    pub type conn = int32\n"
-                          "    pub def connect(url: str) -> conn:\n"
-                          "        return 0\n"
-                          "module audited[DB: backend]:\n"
-                          "    pub def go() -> int32:\n"
-                          "        return 0\n"
-                          "use app.audited[app.postgres] as db\n");
+  write_file(
+      source_path,
+      read_program("compile_sources_writes_functor_instantiation_metadata.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -371,19 +365,9 @@ auto test_compile_sources_folds_static_if_import_selection() -> void {
   // `real_io` exposes `alpha`, `fake_io` exposes `beta`. The `static if true`
   // branch imports `real_io as io`, so `io.alpha()` must resolve; had the fold
   // wrongly selected the `else` branch, `io.alpha()` would be undefined.
-  write_file(source_path, "module app\n"
-                          "module real_io:\n"
-                          "    pub def alpha() -> int32:\n"
-                          "        return 1\n"
-                          "module fake_io:\n"
-                          "    pub def beta() -> int32:\n"
-                          "        return 2\n"
-                          "static if true:\n"
-                          "    use app.real_io as io\n"
-                          "else:\n"
-                          "    use app.fake_io as io\n"
-                          "def use_it() -> int32:\n"
-                          "    return io.alpha()\n");
+  write_file(
+      source_path,
+      read_program("compile_sources_folds_static_if_import_selection.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -409,15 +393,10 @@ auto test_compile_sources_rejects_use_gated_by_nonliteral_static_if() -> void {
   auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module app\n"
-                          "module real_io:\n"
-                          "    pub def alpha() -> int32:\n"
-                          "        return 1\n"
-                          "static let flag: bool = true\n"
-                          "static if flag:\n"
-                          "    use app.real_io as io\n"
-                          "def run() -> int32:\n"
-                          "    return 0\n");
+  write_file(
+      source_path,
+      read_program(
+          "compile_sources_rejects_use_gated_by_nonliteral_static_if.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -447,13 +426,10 @@ auto test_compile_sources_folds_static_if_top_level_type_selection() -> void {
   auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module app\n"
-                          "static if true:\n"
-                          "    type word = int64\n"
-                          "else:\n"
-                          "    type word = int32\n"
-                          "def use_it() -> word:\n"
-                          "    return 9223372036854775807\n");
+  write_file(
+      source_path,
+      read_program(
+          "compile_sources_folds_static_if_top_level_type_selection.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -480,13 +456,10 @@ auto test_compile_sources_folds_static_if_top_level_type_selection_else()
   auto source_path = temp.path / "app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module app\n"
-                          "static if false:\n"
-                          "    type word = int64\n"
-                          "else:\n"
-                          "    type word = int32\n"
-                          "def use_it() -> word:\n"
-                          "    return 9223372036854775807\n");
+  write_file(
+      source_path,
+      read_program(
+          "compile_sources_folds_static_if_top_level_type_selection_else.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -512,9 +485,8 @@ auto test_compile_sources_lowers_module_to_hir() -> void {
   auto source_path = temp.path / "sample_math.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample.math\n"
-                          "pub def add(a: int32, b: int32) -> int32:\n"
-                          "  return a + b\n");
+  write_file(source_path,
+             read_program("compile_sources_lowers_module_to_hir.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -549,13 +521,8 @@ auto test_compile_sources_records_hir_lowering_failure_without_failing_compile()
   auto source_path = temp.path / "sample_loop.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample.loop\n"
-                          "type counter = { pub value: int32 }\n"
-                          "pub def sum_counters(xs: counter) -> int32:\n"
-                          "  var total = 0\n"
-                          "  for x in xs:\n"
-                          "    total = total + x\n"
-                          "  return total\n");
+  write_file(source_path, read_program("compile_sources_records_hir_lowering_"
+                                       "failure_without_failing_compile.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -585,9 +552,8 @@ auto test_compile_sources_skips_lowering_when_parse_only() -> void {
   auto source_path = temp.path / "sample_parse_only.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample.parse_only\n"
-                          "pub def add(a: int32, b: int32) -> int32:\n"
-                          "  return a + b\n");
+  write_file(source_path,
+             read_program("compile_sources_skips_lowering_when_parse_only.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -609,8 +575,8 @@ auto test_compile_sources_reports_parser_errors() -> void {
   auto source_path = temp.path / "broken.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "def broken():\n"
-                          "  return 1\n");
+  write_file(source_path,
+             read_program("compile_sources_reports_parser_errors.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -639,10 +605,8 @@ auto test_compile_sources_reports_nested_parser_errors() -> void {
   auto source_path = temp.path / "nested_broken.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "module util:\n"
-                          "  pub def shared() -> int32:\n"
-                          "    return 1\n");
+  write_file(source_path,
+             read_program("compile_sources_reports_nested_parser_errors.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -669,12 +633,10 @@ auto test_compile_sources_handles_multiple_files() -> void {
   auto source_b = temp.path / "sample_math.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_a, "module sample.tools\n"
-                       "pub def run() -> int32:\n"
-                       "  return 1\n");
-  write_file(source_b, "module sample.math\n"
-                       "pub def add() -> int32:\n"
-                       "  return 2\n");
+  write_file(source_a,
+             read_program("compile_sources_handles_multiple_files_1.cn"));
+  write_file(source_b,
+             read_program("compile_sources_handles_multiple_files_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -706,17 +668,15 @@ auto test_compile_sources_merges_multi_file_module_declarations() -> void {
   auto consumer_source = temp.path / "consumer.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_a, "module sample.tools\n"
-                       "pub def first() -> int32:\n"
-                       "  return 1\n");
-  write_file(source_b, "module sample.tools\n"
-                       "pub def second() -> int32:\n"
-                       "  return first()\n");
-  write_file(consumer_source, "module sample.app\n"
-                              "use sample.tools\n"
-                              "pub def run() -> int32:\n"
-                              "  return sample.tools.first() + "
-                              "sample.tools.second()\n");
+  write_file(source_a,
+             read_program(
+                 "compile_sources_merges_multi_file_module_declarations_1.cn"));
+  write_file(source_b,
+             read_program(
+                 "compile_sources_merges_multi_file_module_declarations_2.cn"));
+  write_file(consumer_source,
+             read_program(
+                 "compile_sources_merges_multi_file_module_declarations_3.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -745,13 +705,12 @@ auto test_compile_sources_accepts_declared_external_submodule() -> void {
   auto child_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source, "module geometry\n"
-                            "module transform\n"
-                            "pub def root() -> int32:\n"
-                            "  return 1\n");
-  write_file(child_source, "module geometry.transform\n"
-                           "pub def rotate() -> int32:\n"
-                           "  return 2\n");
+  write_file(
+      parent_source,
+      read_program("compile_sources_accepts_declared_external_submodule_1.cn"));
+  write_file(
+      child_source,
+      read_program("compile_sources_accepts_declared_external_submodule_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -780,12 +739,13 @@ auto test_compile_sources_reports_missing_parent_submodule_declaration()
   auto child_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source, "module geometry\n"
-                            "pub def root() -> int32:\n"
-                            "  return 1\n");
-  write_file(child_source, "module geometry.transform\n"
-                           "pub def rotate() -> int32:\n"
-                           "  return 2\n");
+  write_file(
+      parent_source,
+      read_program(
+          "compile_sources_reports_missing_parent_submodule_declaration_1.cn"));
+  write_file(
+      child_source,
+      read_program("compile_sources_accepts_declared_external_submodule_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -817,12 +777,14 @@ auto test_compile_sources_reports_inline_external_submodule_conflict() -> void {
   auto child_source = temp.path / "geometry_shapes.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(parent_source, "module geometry\n"
-                            "module shapes:\n"
-                            "  pub type circle = { pub radius: float64 }\n");
-  write_file(child_source, "module geometry.shapes\n"
-                           "pub def area() -> int32:\n"
-                           "  return 3\n");
+  write_file(
+      parent_source,
+      read_program(
+          "compile_sources_reports_inline_external_submodule_conflict_1.cn"));
+  write_file(
+      child_source,
+      read_program(
+          "compile_sources_reports_inline_external_submodule_conflict_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -858,25 +820,16 @@ auto test_compile_sources_resolves_session_imports() -> void {
   auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source, "module package\n"
-                             "module tools\n");
-  write_file(tools_source, "module package.tools\n"
-                           "module util\n"
-                           "module parse\n"
-                           "module app\n"
-                           "pub def helper() -> int32:\n"
-                           "  return 1\n");
-  write_file(util_source, "module package.tools.util\n"
-                          "pub def shared_value() -> int32:\n"
-                          "  return 2\n");
-  write_file(parse_source, "module package.tools.parse\n"
-                           "pub def parse_it() -> int32:\n"
-                           "  return 3\n");
-  write_file(app_source, "module package.tools.app\n"
-                         "use package.tools\n"
-                         "use package.tools.*\n"
-                         "pub def run() -> int32:\n"
-                         "  return 4\n");
+  write_file(package_source,
+             read_program("compile_sources_resolves_session_imports_1.cn"));
+  write_file(tools_source,
+             read_program("compile_sources_resolves_session_imports_2.cn"));
+  write_file(util_source,
+             read_program("compile_sources_resolves_session_imports_3.cn"));
+  write_file(parse_source,
+             read_program("compile_sources_resolves_session_imports_4.cn"));
+  write_file(app_source,
+             read_program("compile_sources_resolves_session_imports_5.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -946,10 +899,9 @@ auto test_compile_sources_reports_duplicate_module_scope_symbol() -> void {
   auto source_path = temp.path / "duplicate_scope.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample.tools\n"
-                          "type point = int32\n"
-                          "trait point:\n"
-                          "  def show(self) -> str\n");
+  write_file(
+      source_path,
+      read_program("compile_sources_reports_duplicate_module_scope_symbol.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -982,11 +934,8 @@ auto test_compile_sources_reports_duplicate_inline_submodule_scope_symbol()
   auto source_path = temp.path / "inline_duplicate_scope.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "module shapes:\n"
-                          "  type circle = float64\n"
-                          "  concept circle[T]:\n"
-                          "    T: show\n");
+  write_file(source_path, read_program("compile_sources_reports_duplicate_"
+                                       "inline_submodule_scope_symbol.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1015,14 +964,12 @@ auto test_compile_sources_resolves_super_qualified_type_paths() -> void {
   auto transform_source = temp.path / "geometry_transform.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(geometry_source, "module geometry\n"
-                              "module shapes:\n"
-                              "  pub type circle = { pub radius: float64 }\n"
-                              "module transform\n");
-  write_file(transform_source,
-             "module geometry.transform\n"
-             "pub def rotate(p: super.shapes.circle) -> super.shapes.circle:\n"
-             "  return p\n");
+  write_file(
+      geometry_source,
+      read_program("compile_sources_resolves_super_qualified_type_paths_1.cn"));
+  write_file(
+      transform_source,
+      read_program("compile_sources_resolves_super_qualified_type_paths_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1050,13 +997,16 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
   auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source, "module package\n"
-                             "module tools\n");
-  write_file(tools_source, "module package.tools\n"
-                           "module app\n");
-  write_file(app_source, "module package.tools.app\n"
-                         "pub def run(value: package.tools.missing) -> int:\n"
-                         "  return 1\n");
+  write_file(package_source,
+             read_program("compile_sources_resolves_session_imports_1.cn"));
+  write_file(
+      tools_source,
+      read_program(
+          "compile_sources_reports_unresolved_qualified_type_path_2.cn"));
+  write_file(
+      app_source,
+      read_program(
+          "compile_sources_reports_unresolved_qualified_type_path_3.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1086,21 +1036,8 @@ auto test_compile_sources_reports_unresolved_qualified_type_path() -> void {
 auto test_ownership_error_blocks_run_and_build() -> void {
   auto temp = make_temp_dir();
   const auto programs = std::vector<std::pair<std::string, std::string>>{
-      {"borrow", "module b\n"
-                 "def dangle() -> &int32:\n"
-                 "  let a = 7\n"
-                 "  return &a\n"
-                 "def main() -> int32:\n"
-                 "  println(\"ran\")\n"
-                 "  return *dangle()\n"},
-      {"move", "module m\n"
-               "type holder = { v: list[int32] }\n"
-               "def take(h: holder) -> int32:\n"
-               "  return 1\n"
-               "def main() -> int32:\n"
-               "  let h = holder { v: [1] }\n"
-               "  let x = take(h)\n"
-               "  return take(h) + x\n"},
+      {"borrow", read_program("ownership_error_blocks_run_and_build_1.cn")},
+      {"move", read_program("ownership_error_blocks_run_and_build_2.cn")},
   };
   for (const auto &[name, text] : programs) {
     auto source = temp.path / (name + ".cn");
@@ -1147,33 +1084,20 @@ auto test_ownership_error_blocks_run_and_build() -> void {
 /// programs run with the stdlib injected.
 auto test_shared_handle_misuse_is_rejected() -> void {
   auto temp = make_temp_dir();
-  const auto prologue = std::string("module m\n"
-                                    "use std.shared.shared\n"
-                                    "type point = { x: int32, y: int32 }\n");
+  const auto prologue =
+      std::string(read_program("shared_handle_misuse_is_rejected_1.cn"));
   struct reject_case {
     std::string name;
     std::string body;
     std::string message;
   };
   const auto cases = std::vector<reject_case>{
-      {"assign_field",
-       "def main() -> unit:\n"
-       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
-       "  p.x = 5\n",
+      {"assign_field", read_program("shared_handle_misuse_is_rejected_2.cn"),
        "cannot assign to a value reached through `shared[point]`'s `deref`"},
-      {"return_borrow",
-       "def get() -> &int32:\n"
-       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
-       "  return &p.x\n"
-       "def main() -> unit:\n"
-       "  return\n",
+      {"return_borrow", read_program("shared_handle_misuse_is_rejected_3.cn"),
        "cannot return a borrow of the local `p`"},
       {"move_while_borrowed",
-       "def main() -> unit:\n"
-       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
-       "  let r = &p.x\n"
-       "  let q = p\n"
-       "  println(\"{*r}\")\n",
+       read_program("shared_handle_misuse_is_rejected_4.cn"),
        "cannot move `p` while the reference `r` to `p` is still in use"},
   };
   for (const auto &c : cases) {
@@ -1216,20 +1140,10 @@ auto test_local_binding_shadows_same_named_module() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "shadow_bin";
 
-  write_file(
-      s_source,
-      "module s\n"
-      "type inner = { value: int32 }\n"
-      "type outer = { a: inner, b: inner }\n"
-      "type color = | @red | @green deriving show\n"
-      "def main() -> int32:\n"
-      "  let s = outer { a: inner { value: 3 }, b: inner { value: 39 } }\n"
-      "  let c: color = @green\n"
-      "  println(c.show())\n"
-      "  return s.a.value + s.b.value\n");
-  write_file(v_source, "module v\n"
-                       "pub def unused() -> int32:\n"
-                       "  return 1\n");
+  write_file(s_source,
+             read_program("local_binding_shadows_same_named_module_1.cn"));
+  write_file(v_source,
+             read_program("local_binding_shadows_same_named_module_2.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -1306,28 +1220,12 @@ auto test_dotted_names_through_module_values_and_root_alias() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "dotted_bin";
 
-  write_file(geo_source,
-             "module geo\n"
-             "pub type point = { x: int32, y: int32 }\n"
-             "pub type seg = { a: point, b: point }\n"
-             "pub static let origin: point = point { x: 3, y: 4 }\n"
-             "pub static let unit_seg: seg = seg { a: point { x: 0, y: 0 }, "
-             "b: point { x: 1, y: 9 } }\n"
-             "static let hidden: point = point { x: 50, y: 0 }\n"
-             "pub static let far: int32 = hidden.x + 53\n");
-  write_file(main_source,
-             "module main\n"
-             "use geo as g\n"
-             "use geo.{origin}\n"
-             "type bin = { w: int32 }\n"
-             "static let local_box: bin = bin { w: 7000 }\n"
-             "static def pick(g: g.point) -> int32:\n"
-             "  return g.y * 10\n"
-             "static let folded: int32 = g.far + g.origin.y + "
-             "pick(g.point { x: 1, y: 2 })\n"
-             "def main() -> int32:\n"
-             "  let local = local_box.w - 7000\n"
-             "  return folded + origin.x + g.unit_seg.b.y + local\n");
+  write_file(
+      geo_source,
+      read_program("dotted_names_through_module_values_and_root_alias_1.cn"));
+  write_file(
+      main_source,
+      read_program("dotted_names_through_module_values_and_root_alias_2.cn"));
 
   // 103 (g.far) + 4 (g.origin.y) + 20 (pick) + 3 (origin.x) + 9
   // (g.unit_seg.b.y) + 0 (local_box.w - 7000).
@@ -1395,29 +1293,8 @@ auto test_comptime_bare_names_resolve_per_module() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "bare_names_bin";
 
-  write_file(main_source, "module main\n"
-                          "static limit: int32 = 3\n"
-                          "static def scale(n: int32) -> int32:\n"
-                          "    return n * limit\n"
-                          "static let parent_total: int32 = scale(limit)\n"
-                          "module inner:\n"
-                          "    static limit: int32 = 4\n"
-                          "    static def scale(n: int32) -> int32:\n"
-                          "        return n * limit + 1\n"
-                          "    pub static def boxed(n: int32) -> int32:\n"
-                          "        return scale(n)\n"
-                          "    pub static let total: int32 = scale(limit)\n"
-                          "static let via_inner: int32 = inner.boxed(2)\n"
-                          "static shadow: int32 = 5\n"
-                          "static def peek() -> int32:\n"
-                          "    return shadow\n"
-                          "static def caller() -> int32:\n"
-                          "    let shadow = 100\n"
-                          "    return peek() + shadow\n"
-                          "static let scoped: int32 = caller()\n"
-                          "def main() -> int32:\n"
-                          "    return parent_total + inner.total + via_inner + "
-                          "scoped\n");
+  write_file(main_source,
+             read_program("comptime_bare_names_resolve_per_module.cn"));
 
   // 9 (3 * 3) + 17 (4 * 4 + 1) + 9 (2 * 4 + 1) + 105 (5 + 100).
   constexpr auto expected = 140;
@@ -1476,43 +1353,8 @@ auto test_comptime_loops_compute_static_values() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "comptime_loops_bin";
 
-  write_file(main_source, "module main\n"
-                          "def fib(n: int64) -> int64:\n"
-                          "    var a: int64 = 0\n"
-                          "    var b: int64 = 1\n"
-                          "    var i: int64 = 0\n"
-                          "    while i < n:\n"
-                          "        let t = a + b\n"
-                          "        a = b\n"
-                          "        b = t\n"
-                          "        i += 1\n"
-                          "    return a\n"
-                          "def skip_and_stop(n: int64) -> int64:\n"
-                          "    var total: int64 = 0\n"
-                          "    for i in 0..n:\n"
-                          "        if i == 7:\n"
-                          "            continue\n"
-                          "        if i == 15:\n"
-                          "            break\n"
-                          "        total += i\n"
-                          "    return total\n"
-                          "def triangle() -> int64:\n"
-                          "    var count: int64 = 0\n"
-                          "    for i in 0..5:\n"
-                          "        for j in 0..5:\n"
-                          "            if j == i:\n"
-                          "                break\n"
-                          "            count += 1\n"
-                          "    return count\n"
-                          "def first_square_over(limit: int64) -> int64:\n"
-                          "    for i in 0..100:\n"
-                          "        if i * i > limit:\n"
-                          "            return i\n"
-                          "    return 0\n"
-                          "static total: int64 = fib(10) + skip_and_stop(20) + "
-                          "triangle() + first_square_over(50)\n"
-                          "def main() -> int32:\n"
-                          "    return total as int32\n");
+  write_file(main_source,
+             read_program("comptime_loops_compute_static_values.cn"));
 
   // 55 (fib 10) + 98 (0..14 without 7) + 10 (0+1+2+3+4) + 8 (8 * 8 > 50).
   constexpr auto expected = 171;
@@ -1571,17 +1413,10 @@ auto test_failed_static_initializer_blocks_lowering() -> void {
   auto lib_source = temp.path / "lib.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(lib_source, "module lib\n"
-                         "pub def spin() -> int64:\n"
-                         "    var i: int64 = 0\n"
-                         "    while i >= 0:\n"
-                         "        i += 0\n"
-                         "    return i\n"
-                         "pub static x: int64 = spin()\n");
-  write_file(main_source, "module main\n"
-                          "use lib\n"
-                          "def main() -> int32:\n"
-                          "    return lib.x as int32\n");
+  write_file(lib_source,
+             read_program("failed_static_initializer_blocks_lowering_1.cn"));
+  write_file(main_source,
+             read_program("failed_static_initializer_blocks_lowering_2.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -1614,25 +1449,9 @@ auto test_comparison_literal_follows_later_solved_operand() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "comparison_literal_bin";
 
-  write_file(main_source, "module main\n"
-                          "def bound_later() -> int64:\n"
-                          "    var total: int64 = 0\n"
-                          "    let i = 9\n"
-                          "    if i == 7:\n"
-                          "        return 1\n"
-                          "    total = total + i\n"
-                          "    return total\n"
-                          "def loop_variable() -> int64:\n"
-                          "    var total: int64 = 0\n"
-                          "    for i in 0..20:\n"
-                          "        if i == 7:\n"
-                          "            continue\n"
-                          "        if 5 < i:\n"
-                          "            total = total + i\n"
-                          "    return total\n"
-                          "def main() -> int32:\n"
-                          "    return (bound_later() + loop_variable()) as "
-                          "int32\n");
+  write_file(
+      main_source,
+      read_program("comparison_literal_follows_later_solved_operand.cn"));
 
   // 9 + 168 (6..19 without 7).
   constexpr auto expected = 177;
@@ -1692,13 +1511,10 @@ auto test_aliased_import_of_parentless_module_runs() -> void {
   auto main_source = temp.path / "main.cn";
   auto inner_source = temp.path / "outer_inner.cn";
   auto metadata_dir = temp.path / "meta";
-  write_file(main_source, "module main\n"
-                          "use outer.inner as renamed\n"
-                          "def main() -> int32:\n"
-                          "  return renamed.seven() * 6\n");
-  write_file(inner_source, "module outer.inner\n"
-                           "pub def seven() -> int32:\n"
-                           "  return 7\n");
+  write_file(main_source,
+             read_program("aliased_import_of_parentless_module_runs_1.cn"));
+  write_file(inner_source,
+             read_program("aliased_import_of_parentless_module_runs_2.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1732,9 +1548,8 @@ auto test_stdlib_immune_to_user_root_module_names() -> void {
   auto temp = make_temp_dir();
   auto main_source = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
-  write_file(main_source, "module main\n"
-                          "def main() -> int32:\n"
-                          "  return 0\n");
+  write_file(main_source,
+             read_program("stdlib_immune_to_user_root_module_names.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1813,14 +1628,14 @@ auto test_compile_sources_reports_unresolved_module_qualified_reference()
   auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source, "module package\n"
-                             "module tools\n");
-  write_file(tools_source, "module package.tools\n"
-                           "module app\n");
-  write_file(app_source, "module package.tools.app\n"
-                         "pub def run() -> int:\n"
-                         "  package.tools.missing\n"
-                         "  return 1\n");
+  write_file(package_source,
+             read_program("compile_sources_resolves_session_imports_1.cn"));
+  write_file(
+      tools_source,
+      read_program(
+          "compile_sources_reports_unresolved_qualified_type_path_2.cn"));
+  write_file(app_source, read_program("compile_sources_reports_unresolved_"
+                                      "module_qualified_reference_3.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1852,15 +1667,15 @@ auto test_compile_sources_reports_unresolved_session_import() -> void {
   auto app_source = temp.path / "package_tools_app.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source, "module package\n"
-                             "module tools\n");
-  write_file(tools_source, "module package.tools\n"
-                           "module app\n");
-  write_file(app_source, "module package.tools.app\n"
-                         "use package.tools.missing\n"
-                         "use std.io\n"
-                         "pub def run() -> int32:\n"
-                         "  return 1\n");
+  write_file(package_source,
+             read_program("compile_sources_resolves_session_imports_1.cn"));
+  write_file(
+      tools_source,
+      read_program(
+          "compile_sources_reports_unresolved_qualified_type_path_2.cn"));
+  write_file(
+      app_source,
+      read_program("compile_sources_reports_unresolved_session_import_3.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1894,18 +1709,18 @@ auto test_compile_sources_reports_inaccessible_session_import() -> void {
   auto other_source = temp.path / "package_other.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(package_source, "module package\n"
-                             "module tools\n"
-                             "module other\n");
-  write_file(tools_source, "module package.tools\n"
-                           "module secret\n");
-  write_file(secret_source, "module package.tools.secret\n"
-                            "pub def hidden() -> int32:\n"
-                            "  return 1\n");
-  write_file(other_source, "module package.other\n"
-                           "use package.tools.secret\n"
-                           "pub def run() -> int32:\n"
-                           "  return 2\n");
+  write_file(
+      package_source,
+      read_program("compile_sources_reports_inaccessible_session_import_1.cn"));
+  write_file(
+      tools_source,
+      read_program("compile_sources_reports_inaccessible_session_import_2.cn"));
+  write_file(
+      secret_source,
+      read_program("compile_sources_reports_inaccessible_session_import_3.cn"));
+  write_file(
+      other_source,
+      read_program("compile_sources_reports_inaccessible_session_import_4.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -1951,11 +1766,8 @@ auto test_build_links_and_runs_a_heap_using_program() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_struct_bin";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32, y: int32 }\n"
-                          "def main() -> int32:\n"
-                          "  let p = point { x: 1, y: 41 }\n"
-                          "  return p.x + p.y\n");
+  write_file(source_path,
+             read_program("build_links_and_runs_a_heap_using_program.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2105,30 +1917,23 @@ auto run_in_forked_child(const std::string &program) -> int {
 }
 
 auto test_out_of_bounds_index_terminates_for_every_container() -> void {
-  check_out_of_bounds_index_terminates("array",
-                                       "module sample\n"
-                                       "def main() -> int32:\n"
-                                       "  let a: array[int32, 3] = [1, 2, 3]\n"
-                                       "  var i: usize = 5\n"
-                                       "  return a[i]\n");
-  check_out_of_bounds_index_terminates("list", "module sample\n"
-                                               "def main() -> int32:\n"
-                                               "  let xs = [1, 2, 3]\n"
-                                               "  return xs[5]\n");
+  check_out_of_bounds_index_terminates(
+      "array",
+      read_program("out_of_bounds_index_terminates_for_every_container_1.cn"));
+  check_out_of_bounds_index_terminates(
+      "list",
+      read_program("out_of_bounds_index_terminates_for_every_container_2.cn"));
 
   // The same two programs through the bytecode VM, which is where the
   // fatal-vs-catchable decision actually lives (`bytecode::raise_panic`).
   for (const auto &[label, program] :
        std::vector<std::pair<std::string_view, std::string>>{
-           {"array (vm)", "module sample\n"
-                          "def main() -> int32:\n"
-                          "  let a: array[int32, 3] = [1, 2, 3]\n"
-                          "  var i: usize = 5\n"
-                          "  return a[i]\n"},
-           {"list (vm)", "module sample\n"
-                         "def main() -> int32:\n"
-                         "  let xs = [1, 2, 3]\n"
-                         "  return xs[5]\n"}}) {
+           {"array (vm)",
+            read_program(
+                "out_of_bounds_index_terminates_for_every_container_1.cn")},
+           {"list (vm)",
+            read_program(
+                "out_of_bounds_index_terminates_for_every_container_2.cn")}}) {
     const auto status = run_in_forked_child(program);
 #ifdef WEXITSTATUS
     expect(WIFEXITED(status) != 0,
@@ -2165,21 +1970,7 @@ auto test_run_index_mut_dispatches_to_cell_mut() -> void {
   auto output_path = temp.path / "sample_index_mut_bin";
 
   write_file(source_path,
-             "module sample\n"
-             "type writable = { a: int32 }\n"
-             "impl index[usize] for writable:\n"
-             "  type output = int32\n"
-             "  def at(self, i: usize) -> int32:\n"
-             "    return self.a\n"
-             "impl index_mut[usize] for writable:\n"
-             "  type output_mut = cell_mut[int32]\n"
-             "  def at_mut(mut self, i: usize) -> self.output_mut:\n"
-             "    return &mut self.a\n"
-             "def main() -> int32:\n"
-             "  let mut w = writable{ a: 10 }\n"
-             "  let c = &mut w[0]\n"
-             "  c.set(c.get() * 5)\n"
-             "  return w.a\n");
+             read_program("run_index_mut_dispatches_to_cell_mut.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -2241,19 +2032,7 @@ auto test_run_index_ref_dispatches_to_cell() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_index_ref_bin";
 
-  write_file(source_path, "module sample\n"
-                          "type readable = { a: int32 }\n"
-                          "impl index[usize] for readable:\n"
-                          "  type output = int32\n"
-                          "  def at(self, i: usize) -> int32:\n"
-                          "    return self.a\n"
-                          "impl index_ref[usize] for readable:\n"
-                          "  def at_ref(self, i: usize) -> cell[int32]:\n"
-                          "    return &self.a\n"
-                          "def main() -> int32:\n"
-                          "  let r = readable{ a: 7 }\n"
-                          "  let c = &r[0]\n"
-                          "  return c.get() * 5\n");
+  write_file(source_path, read_program("run_index_ref_dispatches_to_cell.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -2326,19 +2105,10 @@ auto test_cross_module_function_used_as_a_value() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "fn_value_bin";
 
-  write_file(inner_path, "module inner\n"
-                         "def target() -> int32:\n"
-                         "  7\n"
-                         "def twice(x: int32) -> int32:\n"
-                         "  x * 2\n");
-  write_file(main_path, "module main\n"
-                        "use inner.target\n"
-                        "use inner.twice\n"
-                        "def apply(f: fn(int32) -> int32, v: int32) -> int32:\n"
-                        "  f(v)\n"
-                        "def main() -> int32:\n"
-                        "  let g: fn() -> int32 = target\n"
-                        "  apply(twice, g())\n");
+  write_file(inner_path,
+             read_program("cross_module_function_used_as_a_value_1.cn"));
+  write_file(main_path,
+             read_program("cross_module_function_used_as_a_value_2.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -2414,18 +2184,10 @@ auto test_module_qualified_function_used_as_a_value() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "qualified_fn_value_bin";
 
-  write_file(inner_path, "module outer.inner\n"
-                         "def target() -> int32:\n"
-                         "  7\n"
-                         "def twice(x: int32) -> int32:\n"
-                         "  x * 2\n");
-  write_file(main_path, "module main\n"
-                        "use outer.inner\n"
-                        "def apply(f: fn(int32) -> int32, v: int32) -> int32:\n"
-                        "  f(v)\n"
-                        "def main() -> int32:\n"
-                        "  let g: fn() -> int32 = inner.target\n"
-                        "  apply(inner.twice, g())\n");
+  write_file(inner_path,
+             read_program("module_qualified_function_used_as_a_value_1.cn"));
+  write_file(main_path,
+             read_program("module_qualified_function_used_as_a_value_2.cn"));
 
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
@@ -2488,11 +2250,8 @@ auto test_build_at_o2_still_links_and_runs_correctly() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_struct_o2_bin";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32, y: int32 }\n"
-                          "def main() -> int32:\n"
-                          "  let p = point { x: 1, y: 41 }\n"
-                          "  return p.x + p.y\n");
+  write_file(source_path,
+             read_program("build_links_and_runs_a_heap_using_program.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2536,12 +2295,9 @@ auto test_build_links_and_runs_a_string_interpolation_program() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_interp_bin";
 
-  write_file(source_path, "module sample\n"
-                          "def main() -> int32:\n"
-                          "  let name = \"Alice\"\n"
-                          "  println(\"Hi, {name}!\")\n"
-                          "  println(\"Hex: {255 :04x}\")\n"
-                          "  return 0\n");
+  write_file(
+      source_path,
+      read_program("build_links_and_runs_a_string_interpolation_program.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2589,28 +2345,7 @@ auto test_build_closure_drops_its_captures() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_closure_drops_bin";
 
-  write_file(source_path, "module sample\n"
-                          "type noisy = { id: int32 }\n"
-                          "impl drop for noisy:\n"
-                          "  def drop(mut self) -> unit:\n"
-                          "    println(\"drop {self.id}\")\n"
-                          "def apply(f: fn() -> int32) -> int32:\n"
-                          "  return f()\n"
-                          "def one_path(take: bool) -> unit:\n"
-                          "  let n = noisy { id: 1 }\n"
-                          "  if take:\n"
-                          "    let f = move () => n.id\n"
-                          "    println(\"saw {f()}\")\n"
-                          "  println(\"done\")\n"
-                          "def passed() -> unit:\n"
-                          "  let n = noisy { id: 2 }\n"
-                          "  let f = move () => n.id\n"
-                          "  println(\"applied {apply(f)}\")\n"
-                          "def main() -> int32:\n"
-                          "  one_path(true)\n"
-                          "  one_path(false)\n"
-                          "  passed()\n"
-                          "  return 0\n");
+  write_file(source_path, read_program("build_closure_drops_its_captures.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2658,9 +2393,8 @@ auto test_run_reports_exit_code_and_silent_summary() -> void {
   auto source_path = temp.path / "sample_exit.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "def main() -> int32:\n"
-                          "  return 42\n");
+  write_file(source_path,
+             read_program("run_reports_exit_code_and_silent_summary.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2708,21 +2442,13 @@ auto test_run_resolves_call_return_type_naming_a_transitively_used_type()
   auto main_source = temp.path / "sample_main.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(shape_source, "module shapes\n"
-                           "pub type point = {\n"
-                           "  x: int32,\n"
-                           "  y: int32,\n"
-                           "}\n");
-  write_file(factory_source, "module factory\n"
-                             "use shapes.point\n"
-                             "pub def make() -> option[point]:\n"
-                             "  return @some({ x: 19, y: 23 })\n");
-  write_file(main_source, "module main\n"
-                          "use factory\n"
-                          "def main() -> int32:\n"
-                          "  if let @some(p) = factory.make():\n"
-                          "    return p.x + p.y\n"
-                          "  return -1\n");
+  write_file(shape_source, read_program("run_resolves_call_return_type_naming_"
+                                        "a_transitively_used_type_1.cn"));
+  write_file(factory_source,
+             read_program("run_resolves_call_return_type_naming_a_transitively_"
+                          "used_type_2.cn"));
+  write_file(main_source, read_program("run_resolves_call_return_type_naming_a_"
+                                       "transitively_used_type_3.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2763,17 +2489,9 @@ auto test_run_generic_bound_solves_t_over_conflicting_argument() -> void {
   auto source_path = temp.path / "sample_max_by.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "def cmp_int(a: &int32, b: &int32) -> ordering:\n"
-                          "    if *a < *b:\n"
-                          "        return @less\n"
-                          "    elif *a > *b:\n"
-                          "        return @greater\n"
-                          "    return @equal\n"
-                          "def main() -> int32:\n"
-                          "    let nums = [3, 1, 4, 1, 5]\n"
-                          "    return nums.iter().values().max_by(cmp_int)"
-                          ".unwrap()\n");
+  write_file(
+      source_path,
+      read_program("run_generic_bound_solves_t_over_conflicting_argument.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2823,37 +2541,8 @@ auto test_run_ord_dispatch_translates_ordering_to_bool() -> void {
   auto source_path = temp.path / "sample_ord.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { mag: int32 } deriving eq\n"
-                          "impl ord for point:\n"
-                          "    def cmp(self, other: &point) -> ordering:\n"
-                          "        if self.mag < other.mag:\n"
-                          "            return @less\n"
-                          "        elif self.mag > other.mag:\n"
-                          "            return @greater\n"
-                          "        return @equal\n"
-                          "def main() -> int32:\n"
-                          "    let a = point { mag: 3 }\n"
-                          "    let b = point { mag: 7 }\n"
-                          "    let c = point { mag: 3 }\n"
-                          "    var score = 0\n"
-                          "    if a < b:\n"
-                          "        score = score + 1\n"
-                          "    if a <= b:\n"
-                          "        score = score + 10\n"
-                          "    if b > a:\n"
-                          "        score = score + 100\n"
-                          "    if b >= a:\n"
-                          "        score = score + 1000\n"
-                          "    if a <= c:\n"
-                          "        score = score + 10000\n"
-                          "    if a >= c:\n"
-                          "        score = score + 100000\n"
-                          "    if a < c:\n"
-                          "        score = score + 1000000\n"
-                          "    if a > c:\n"
-                          "        score = score + 10000000\n"
-                          "    return score\n");
+  write_file(source_path,
+             read_program("run_ord_dispatch_translates_ordering_to_bool.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2895,12 +2584,9 @@ auto test_run_str_ord_dispatch_supports_lexicographic_max() -> void {
   auto source_path = temp.path / "sample_str_max.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "def main() -> int32:\n"
-             "    let words = [\"apple\", \"banana\", \"cherry\"]\n"
-             "    let winner = words.into_iter().max().unwrap()\n"
-             "    return if winner == \"cherry\": 1 else: 0\n");
+  write_file(
+      source_path,
+      read_program("run_str_ord_dispatch_supports_lexicographic_max.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -2937,14 +2623,8 @@ auto test_run_enforces_unproven_contract_unless_disabled() -> void {
 
   // `opaque` hides the argument from the reasoning solver, so the call is
   // neither proved nor refuted at compile time.
-  write_file(source_path, "module sample\n"
-                          "def opaque(x: int32) -> int32:\n"
-                          "  return x\n"
-                          "def half(x: int32) -> int32\n"
-                          "pre x >= 0, \"x must be non-negative\"\n"
-                          ": x / 2\n"
-                          "def main() -> int32:\n"
-                          "  return half(opaque(0 - 8))\n");
+  write_file(source_path,
+             read_program("run_enforces_unproven_contract_unless_disabled.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3027,10 +2707,9 @@ auto test_run_executes_spliced_builder_constructed_expression() -> void {
   auto source_path = temp.path / "sample_builder_splice.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "static let built: expr = expr.lit(42)\n"
-                          "def main() -> int32:\n"
-                          "  return ~built\n");
+  write_file(
+      source_path,
+      read_program("run_executes_spliced_builder_constructed_expression.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3116,13 +2795,8 @@ auto test_run_lambda_body_string_interpolation_captures() -> void {
   auto source_path = temp.path / "sample_lambda_interp.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "def apply(f: fn(int32) -> str, x: int32) -> int32:\n"
-                          "    return f(x).len() as int32\n"
-                          "def main() -> int32:\n"
-                          "    let prefix = \"n=\"\n"
-                          "    let g: fn(int32) -> str = k => \"{prefix}{k}\"\n"
-                          "    return apply(g, 42)\n");
+  write_file(source_path,
+             read_program("run_lambda_body_string_interpolation_captures.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3164,22 +2838,8 @@ auto test_run_for_loop_over_user_std_iterator() -> void {
   auto source_path = temp.path / "sample_user_iterator.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "use std.iter.iterator\n"
-                          "type counter = { current: int32, limit: int32 }\n"
-                          "impl iterator[int32] for counter:\n"
-                          "    def next(mut self) -> option[int32]:\n"
-                          "        if self.current >= self.limit:\n"
-                          "            return @none\n"
-                          "        let value = self.current\n"
-                          "        self.current = self.current + 1\n"
-                          "        return @some(value)\n"
-                          "def main() -> int32:\n"
-                          "    var it = counter { current: 0, limit: 5 }\n"
-                          "    var total = 0\n"
-                          "    for x in it:\n"
-                          "        total = total + x\n"
-                          "    return total\n");
+  write_file(source_path,
+             read_program("run_for_loop_over_user_std_iterator.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3213,18 +2873,7 @@ auto test_run_type_generic_free_function() -> void {
   auto source_path = temp.path / "sample_type_generic.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "def identity[T](x: T) -> T:\n"
-                          "    return x\n"
-                          "def choose[T](flag: bool, a: T, b: T) -> T:\n"
-                          "    if flag:\n"
-                          "        return a\n"
-                          "    return b\n"
-                          "def main() -> int32:\n"
-                          "    let a = identity(7)\n"
-                          "    let b = choose(true, 30, 99)\n"
-                          "    let c = choose(false, 1, 3)\n"
-                          "    return a + b + c\n");
+  write_file(source_path, read_program("run_type_generic_free_function.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3310,12 +2959,9 @@ auto test_run_reflects_struct_field_count_into_runtime_constant() -> void {
   auto source_path = temp.path / "sample_reflect.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32, y: int32, z: int32 }\n"
-                          "static let count_expr: expr = "
-                          "expr.lit(point.field_count())\n"
-                          "def main() -> int32:\n"
-                          "  return ~count_expr\n");
+  write_file(
+      source_path,
+      read_program("run_reflects_struct_field_count_into_runtime_constant.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3360,11 +3006,8 @@ auto test_run_scalar_static_let_referenced_by_name() -> void {
   auto source_path = temp.path / "sample_scalar_static_let.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32, y: int32, z: int32 }\n"
-                          "static let count: int32 = point.field_count()\n"
-                          "def main() -> int32:\n"
-                          "  return count\n");
+  write_file(source_path,
+             read_program("run_scalar_static_let_referenced_by_name.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3408,17 +3051,8 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
   auto source_path = temp.path / "sample_static_def_call.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "static def is_int32[T]() -> bool:\n"
-                          "  return T.name() == \"int32\"\n"
-                          "def classify[T](x: T) -> int32:\n"
-                          "  if is_int32[T]():\n"
-                          "    return 1\n"
-                          "  return 0\n"
-                          "def main() -> int32:\n"
-                          "  if classify(5) == 1 and classify(2.5) == 0:\n"
-                          "    return 42\n"
-                          "  return 7\n");
+  write_file(source_path,
+             read_program("run_static_def_call_from_ordinary_generic_body.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3478,15 +3112,10 @@ auto test_type_checks_clones_static_constructs_in_generic_function_body()
   auto source_path = temp.path / "sample_static_in_generic.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "static width: int32 = 20\n"
-             "def scale[T](x: T) -> int32:\n"
-             "    static factor: int32 = 2\n"
-             "    static assert width == 20, \"width must be 20\"\n"
-             "    return static width * 2 + 2\n"
-             "def main() -> int32:\n"
-             "    return scale(0) + scale(\"ignored\")\n");
+  write_file(
+      source_path,
+      read_program(
+          "type_checks_clones_static_constructs_in_generic_function_body.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3530,12 +3159,8 @@ auto test_build_derives_show_via_deriving_clause() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_show_bin";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32, y: int32 } deriving show\n"
-                          "def main() -> int32:\n"
-                          "  let p: point = { x: 3, y: 4 }\n"
-                          "  println(p.show())\n"
-                          "  return 0\n");
+  write_file(source_path,
+             read_program("build_derives_show_via_deriving_clause.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3601,16 +3226,7 @@ auto test_build_derives_eq_and_debug_via_deriving_clause() -> void {
   auto output_path = temp.path / "sample_derive_eq_debug_bin";
 
   write_file(source_path,
-             "module sample\n"
-             "type point = { x: int32, y: int32 } deriving show, eq, debug\n"
-             "def main() -> int32:\n"
-             "  let a: point = { x: 3, y: 4 }\n"
-             "  let b: point = { x: 3, y: 4 }\n"
-             "  let c: point = { x: 3, y: 5 }\n"
-             "  println(a.debug())\n"
-             "  if a.eq(&b) and not a.eq(&c):\n"
-             "    return 42\n"
-             "  return 0\n");
+             read_program("build_derives_eq_and_debug_via_deriving_clause.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3685,44 +3301,8 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
   auto source_path = temp.path / "sample_derive_ord.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type inner = { a: int32 } deriving eq, ord\n"
-      "type point = { x: int32, y: int32 } deriving eq, ord\n"
-      "type named = { tag: str, n: int32 } deriving eq, ord\n"
-      "type nested = { i: inner, z: int32 } deriving eq, ord\n"
-      "type empty = { } deriving eq, ord\n"
-      "def rank(o: ordering) -> int32:\n"
-      "    match o:\n"
-      "        @less => return -1\n"
-      "        @equal => return 0\n"
-      "        @greater => return 1\n"
-      "def bit(actual: int32, expected: int32, weight: int32) -> int32:\n"
-      "    if actual == expected:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let a: point = { x: 3, y: 4 }\n"
-      "    let b: point = { x: 3, y: 5 }\n"
-      "    let c: point = { x: 4, y: 0 }\n"
-      "    total = total + bit(rank(a.cmp(&b)), -1, 1)\n"
-      "    total = total + bit(rank(b.cmp(&a)), 1, 2)\n"
-      "    total = total + bit(rank(a.cmp(&a)), 0, 4)\n"
-      "    total = total + bit(rank(a.cmp(&c)), -1, 8)\n"
-      "    let s1: named = { tag: \"abc\", n: 1 }\n"
-      "    let s2: named = { tag: \"abd\", n: 0 }\n"
-      "    total = total + bit(rank(s1.cmp(&s2)), -1, 16)\n"
-      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
-      "    let n2: nested = { i: { a: 2 }, z: 0 }\n"
-      "    total = total + bit(rank(n1.cmp(&n2)), -1, 32)\n"
-      "    let e1: empty = { }\n"
-      "    let e2: empty = { }\n"
-      "    total = total + bit(rank(e1.cmp(&e2)), 0, 64)\n"
-      "    if a < b and b > a and a <= a and not (a >= b):\n"
-      "        total = total + 128\n"
-      "    return total\n");
+  write_file(source_path,
+             read_program("run_derives_ord_via_deriving_clause_1.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -3797,58 +3377,7 @@ auto test_run_derives_ord_via_deriving_clause() -> void {
   // of that name, which would turn every case here into a confusing
   // diagnostic about a type the test never wrote (CLAUDE.md records this
   // exact trap).
-  return "module sample\n"
-         "type wrap[T] = { value: T } deriving show, eq, ord, hash\n"
-         "type over[T] = { value: T } deriving show\n"
-         "type opt[T] = @none_of | @one_of(T) deriving show, hash\n"
-         "type buf[n: usize] = { len: usize } deriving show\n"
-         "impl show for over[int32]:\n"
-         "    def show(self) -> str:\n"
-         "        return \"hand-written\"\n"
-         "def rank(o: ordering) -> int32:\n"
-         "    match o:\n"
-         "        @less => return -1\n"
-         "        @equal => return 0\n"
-         "        @greater => return 1\n"
-         "def bit(cond: bool, weight: int32) -> int32:\n"
-         "    if cond:\n"
-         "        return weight\n"
-         "    return 0\n"
-         "def main() -> int32:\n"
-         "    var total: int32 = 0\n"
-         "    let a: wrap[int32] = { value: 5 }\n"
-         "    let b: wrap[int32] = { value: 5 }\n"
-         "    let c: wrap[int32] = { value: 6 }\n"
-         "    let s: wrap[str] = { value: \"hi\" }\n"
-         "    total = total + bit(a.show() == \"wrap \\{ value: 5 \\}\", 1)\n"
-         "    total = total + bit(s.show() == \"wrap \\{ value: hi \\}\", 2)\n"
-         "    let n: wrap[wrap[int32]] = { value: { value: 7 } }\n"
-         "    total = total + bit(\n"
-         "        n.show() == \"wrap \\{ value: wrap \\{ value: 7 \\} \\}\", "
-         "4)\n"
-         "    total = total + bit(a.eq(&b) and not a.eq(&c), 8)\n"
-         "    let lt: bool = a < c\n"
-         "    total = total + bit(rank(a.cmp(&c)) == -1 and\n"
-         "                        rank(c.cmp(&a)) == 1 and\n"
-         "                        rank(a.cmp(&b)) == 0 and lt, 16)\n"
-         "    let h_same: bool = a.hash() == b.hash()\n"
-         "    let h_diff: bool = a.hash() != c.hash()\n"
-         "    total = total + bit(h_same and h_diff, 32)\n"
-         "    let o1: opt[int32] = @one_of(3)\n"
-         "    let o2: opt[int32] = @none_of\n"
-         "    let oh: bool = o1.hash() != o2.hash()\n"
-         "    total = total + bit(o1.show() == \"one_of(3)\" and\n"
-         "                        o2.show() == \"none_of\" and oh, 64)\n"
-         "    let b4: buf[4] = { len: 4 }\n"
-         "    let b8: buf[8] = { len: 8 }\n"
-         "    let ov: over[int32] = { value: 9 }\n"
-         "    let os: over[str] = { value: \"z\" }\n"
-         "    total = total + bit(b4.show() == \"buf \\{ len: 4 \\}\" and\n"
-         "                        b8.show() == \"buf \\{ len: 8 \\}\" and\n"
-         "                        ov.show() == \"hand-written\" and\n"
-         "                        os.show() == \"over \\{ value: z \\}\", "
-         "128)\n"
-         "    return total\n";
+  return read_program("run_derives_ord_via_deriving_clause_2.cn");
 }
 
 auto test_run_derives_for_generic_types() -> void {
@@ -4052,49 +3581,8 @@ auto test_run_derives_hash_via_deriving_clause() -> void {
   auto source_path = temp.path / "sample_derive_hash.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type inner = { a: int32 } deriving hash\n"
-      "type point = { x: int32, y: int32 } deriving hash\n"
-      "type named = { tag: str, n: int32 } deriving hash\n"
-      "type nested = { i: inner, z: int32 } deriving hash\n"
-      "type empty = { } deriving hash\n"
-      "type shape = @dot | @spot | @line(int32) | @seg(int32) deriving hash\n"
-      "def bit(cond: bool, weight: int32) -> int32:\n"
-      "    if cond:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let a: point = { x: 1, y: 2 }\n"
-      "    let b: point = { x: 1, y: 2 }\n"
-      "    let c: point = { x: 2, y: 1 }\n"
-      "    total = total + bit(a.hash() == b.hash(), 1)\n"
-      "    total = total + bit(a.hash() != c.hash(), 2)\n"
-      "    let d: point = { x: 2, y: 1 }\n"
-      "    total = total + bit(c.hash() == d.hash() and a.hash() != d.hash(),\n"
-      "                        4)\n"
-      "    let e: empty = { }\n"
-      "    total = total + bit(e.hash() == hash_seed(), 8)\n"
-      "    let p: point = { x: 3, y: 4 }\n"
-      "    total = total + bit(p.hash() == 4914197620444624338, 16)\n"
-      "    let s1: named = { tag: \"abc\", n: 1 }\n"
-      "    let s2: named = { tag: \"abd\", n: 1 }\n"
-      "    total = total + bit(s1.hash() != s2.hash() and\n"
-      "                        s1.hash() == 5766848232050225266, 32)\n"
-      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
-      "    let n2: nested = { i: { a: 2 }, z: 9 }\n"
-      "    total = total + bit(n1.hash() != n2.hash(), 64)\n"
-      "    let v1: shape = @dot\n"
-      "    let v2: shape = @spot\n"
-      "    let v3: shape = @line(1)\n"
-      "    let v4: shape = @line(2)\n"
-      "    let v5: shape = @seg(1)\n"
-      "    total = total + bit(v1.hash() != v2.hash() and\n"
-      "                        v3.hash() != v4.hash() and\n"
-      "                        v3.hash() != v5.hash(), 128)\n"
-      "    return total\n");
+  write_file(source_path,
+             read_program("run_derives_hash_via_deriving_clause.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4149,49 +3637,8 @@ auto test_build_derives_hash_via_deriving_clause() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_derive_hash_build_bin";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type inner = { a: int32 } deriving hash\n"
-      "type point = { x: int32, y: int32 } deriving hash\n"
-      "type named = { tag: str, n: int32 } deriving hash\n"
-      "type nested = { i: inner, z: int32 } deriving hash\n"
-      "type empty = { } deriving hash\n"
-      "type shape = @dot | @spot | @line(int32) | @seg(int32) deriving hash\n"
-      "def bit(cond: bool, weight: int32) -> int32:\n"
-      "    if cond:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let a: point = { x: 1, y: 2 }\n"
-      "    let b: point = { x: 1, y: 2 }\n"
-      "    let c: point = { x: 2, y: 1 }\n"
-      "    total = total + bit(a.hash() == b.hash(), 1)\n"
-      "    total = total + bit(a.hash() != c.hash(), 2)\n"
-      "    let d: point = { x: 2, y: 1 }\n"
-      "    total = total + bit(c.hash() == d.hash() and a.hash() != d.hash(),\n"
-      "                        4)\n"
-      "    let e: empty = { }\n"
-      "    total = total + bit(e.hash() == hash_seed(), 8)\n"
-      "    let p: point = { x: 3, y: 4 }\n"
-      "    total = total + bit(p.hash() == 4914197620444624338, 16)\n"
-      "    let s1: named = { tag: \"abc\", n: 1 }\n"
-      "    let s2: named = { tag: \"abd\", n: 1 }\n"
-      "    total = total + bit(s1.hash() != s2.hash() and\n"
-      "                        s1.hash() == 5766848232050225266, 32)\n"
-      "    let n1: nested = { i: { a: 1 }, z: 9 }\n"
-      "    let n2: nested = { i: { a: 2 }, z: 9 }\n"
-      "    total = total + bit(n1.hash() != n2.hash(), 64)\n"
-      "    let v1: shape = @dot\n"
-      "    let v2: shape = @spot\n"
-      "    let v3: shape = @line(1)\n"
-      "    let v4: shape = @line(2)\n"
-      "    let v5: shape = @seg(1)\n"
-      "    total = total + bit(v1.hash() != v2.hash() and\n"
-      "                        v3.hash() != v4.hash() and\n"
-      "                        v3.hash() != v5.hash(), 128)\n"
-      "    return total\n");
+  write_file(source_path,
+             read_program("run_derives_hash_via_deriving_clause.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4242,35 +3689,8 @@ auto test_build_runs_std_test_suite_via_llvm_tier() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_std_test_build_bin";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "use std.test.{case, skipped, suite, run_suites, assert_eq, "
-      "assert_true, test_failure}\n"
-      "def before_all_hook() -> result[unit, test_failure]:\n"
-      "    println(\"suite starting\")\n"
-      "    return @ok(unit)\n"
-      "def after_all_hook() -> result[unit, test_failure]:\n"
-      "    println(\"suite done\")\n"
-      "    return @ok(unit)\n"
-      "def before_each_hook() -> result[unit, test_failure]:\n"
-      "    return @ok(unit)\n"
-      "def after_each_hook() -> result[unit, test_failure]:\n"
-      "    return @ok(unit)\n"
-      "def test_pass() -> result[unit, test_failure]:\n"
-      "    return assert_eq(2 + 2, 4)\n"
-      "def test_fail() -> result[unit, test_failure]:\n"
-      "    return assert_eq(2 + 2, 5)\n"
-      "def test_skip_target() -> result[unit, test_failure]:\n"
-      "    return assert_true(false, \"should never run\")\n"
-      "def main() -> int32:\n"
-      "    return run_suites([\n"
-      "        suite(\"sample\",\n"
-      "              [case(\"pass\", test_pass), case(\"fail\", test_fail), "
-      "skipped(\"skipped_case\", test_skip_target)],\n"
-      "              @some(before_all_hook), @some(after_all_hook), "
-      "@some(before_each_hook), @some(after_each_hook)),\n"
-      "    ])\n");
+  write_file(source_path,
+             read_program("build_runs_std_test_suite_via_llvm_tier.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4342,21 +3762,8 @@ auto test_build_discovers_and_runs_tests_submodule_via_llvm_tier() -> void {
   auto output_path = temp.path / "sample_discovery_build_bin";
 
   write_file(source_path,
-             "module app.geometry\n"
-             "use std.test.{assert_eq, assert_true, test_failure}\n"
-             "pub def area(w: float64, h: float64) -> float64:\n"
-             "    return w * h\n"
-             "module tests:\n"
-             "    def before_all() -> result[unit, test_failure]:\n"
-             "        println(\"geometry suite starting\")\n"
-             "        return @ok(unit)\n"
-             "    def test_area() -> result[unit, test_failure]:\n"
-             "        return assert_eq(super.area(2.0, 3.0), 6.0)\n"
-             "    def test_zero_area() -> result[unit, test_failure]:\n"
-             "        return assert_eq(super.area(0.0, 5.0), 0.0)\n"
-             "    def skip_negative() -> result[unit, test_failure]:\n"
-             "        return assert_true(super.area(-1.0, 5.0) >= 0.0, "
-             "\"negative width should not underflow\")\n");
+             read_program(
+                 "build_discovers_and_runs_tests_submodule_via_llvm_tier.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4418,14 +3825,8 @@ auto test_build_test_mode_leaves_existing_main_unchanged() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_discovery_existing_main_bin";
 
-  write_file(source_path, "module has_both\n"
-                          "use std.test.test_failure\n"
-                          "module tests:\n"
-                          "    def test_x() -> result[unit, test_failure]:\n"
-                          "        return @ok(unit)\n"
-                          "def main() -> int32:\n"
-                          "    println(\"ordinary program\")\n"
-                          "    return 7\n");
+  write_file(source_path,
+             read_program("build_test_mode_leaves_existing_main_unchanged.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4484,26 +3885,9 @@ auto test_build_discovers_nested_tests_submodules_via_llvm_tier() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_nested_discovery_build_bin";
 
-  write_file(source_path,
-             "module app\n"
-             "use std.test.{assert_eq, test_failure}\n"
-             "module geometry:\n"
-             "    pub def area(w: float64, h: float64) -> float64:\n"
-             "        return w * h\n"
-             "    module tests:\n"
-             "        def test_area() -> result[unit, test_failure]:\n"
-             "            return assert_eq(super.area(2.0, 3.0), 6.0)\n"
-             "        def skip_todo() -> result[unit, test_failure]:\n"
-             "            return assert_eq(1, 2)\n"
-             "module counter:\n"
-             "    pub def bump(n: int32) -> int32:\n"
-             "        return n + 1\n"
-             "    module tests:\n"
-             "        def test_bump() -> result[unit, test_failure]:\n"
-             "            return assert_eq(super.bump(1), 2)\n"
-             "module tests:\n"
-             "    def test_file_level() -> result[unit, test_failure]:\n"
-             "        return assert_eq(app.counter.bump(0), 1)\n");
+  write_file(
+      source_path,
+      read_program("build_discovers_nested_tests_submodules_via_llvm_tier.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4564,9 +3948,8 @@ auto test_test_mode_without_any_tests_is_an_error() -> void {
   auto source_path = temp.path / "sample_no_tests.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module app.geometry\n"
-                          "pub def area(w: float64, h: float64) -> float64:\n"
-                          "    return w * h\n");
+  write_file(source_path,
+             read_program("test_mode_without_any_tests_is_an_error.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4601,13 +3984,7 @@ auto test_test_mode_hooks_without_cases_find_no_tests() -> void {
   auto metadata_dir = temp.path / "meta";
 
   write_file(source_path,
-             "module app.geometry\n"
-             "use std.test.test_failure\n"
-             "module tests:\n"
-             "    def before_all() -> result[unit, test_failure]:\n"
-             "        return @ok(unit)\n"
-             "    def after_each() -> result[unit, test_failure]:\n"
-             "        return @ok(unit)\n");
+             read_program("test_mode_hooks_without_cases_find_no_tests.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4641,31 +4018,7 @@ auto test_build_try_applies_from_conversion() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_try_from_conversion_build_bin";
 
-  write_file(source_path,
-             "module sample\n"
-             "use std.traits.from\n"
-             "type parse_error = @bad_digit(int32) | @empty\n"
-             "type app_error = @parse(int32) | @other\n"
-             "impl from[parse_error] for app_error:\n"
-             "    def from(e: parse_error) -> app_error:\n"
-             "        match e:\n"
-             "            @bad_digit(n) => @parse(n)\n"
-             "            @empty        => @other\n"
-             "def parse_num(fail: bool) -> result[int32, parse_error]:\n"
-             "    if fail:\n"
-             "        return @err(@bad_digit(7))\n"
-             "    return @ok(42)\n"
-             "def run(fail: bool) -> result[int32, app_error]:\n"
-             "    let n = parse_num(fail)?\n"
-             "    return @ok(n)\n"
-             "def main() -> int32:\n"
-             "    match run(true):\n"
-             "        @ok(_) => return -1\n"
-             "        @err(e) => match e:\n"
-             "            @parse(n) => match run(false):\n"
-             "                @ok(m)  => return n + m\n"
-             "                @err(_) => return -2\n"
-             "            @other => return -3\n");
+  write_file(source_path, read_program("build_try_applies_from_conversion.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4733,28 +4086,7 @@ auto test_run_derives_hash_for_floats() -> void {
   auto source_path = temp.path / "sample_derive_hash_float.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path,
-             "module sample\n"
-             "type pf = { x: float64, y: float32 } deriving hash\n"
-             "def bit(cond: bool, weight: int32) -> int32:\n"
-             "    if cond:\n"
-             "        return weight\n"
-             "    return 0\n"
-             "def main() -> int32:\n"
-             "    var total: int32 = 0\n"
-             "    let a: pf = { x: 0.0, y: 0.0 as float32 }\n"
-             "    let b: pf = { x: -0.0, y: -0.0 as float32 }\n"
-             "    total = total + bit(a.hash() == b.hash(), 1)\n"
-             "    let nan1: float64 = 0.0 / 0.0\n"
-             "    let nan2: float64 = -(0.0 / 0.0)\n"
-             "    let c: pf = { x: nan1, y: nan1 as float32 }\n"
-             "    let d: pf = { x: nan2, y: nan2 as float32 }\n"
-             "    total = total + bit(c.hash() == d.hash(), 2)\n"
-             "    let e: pf = { x: 1.5, y: 2.5 as float32 }\n"
-             "    total = total + bit(a.hash() != e.hash(), 4)\n"
-             "    let f: pf = { x: 3.5, y: 4.5 as float32 }\n"
-             "    total = total + bit(f.hash() == 2985586345925076451, 8)\n"
-             "    return total\n");
+  write_file(source_path, read_program("run_derives_hash_for_floats.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4793,10 +4125,9 @@ auto test_deriving_ord_without_eq_points_at_the_deriving_clause() -> void {
   auto source_path = temp.path / "sample_derive_ord_no_eq.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(source_path, "module sample\n"
-                          "type point = { x: int32 } deriving ord\n"
-                          "def main() -> int32:\n"
-                          "    return 0\n");
+  write_file(source_path,
+             read_program(
+                 "deriving_ord_without_eq_points_at_the_deriving_clause_1.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4848,38 +4179,8 @@ auto test_run_derives_sum_type_via_deriving_clause() -> void {
   auto source_path = temp.path / "sample_derive_sum.cn";
   auto metadata_dir = temp.path / "meta";
 
-  write_file(
-      source_path,
-      "module sample\n"
-      "type color = @red | @green | @blue deriving show, eq, ord\n"
-      "type shape = @circle(int32) | @rect(int32, int32) deriving show, eq, "
-      "ord\n"
-      "def rank(o: ordering) -> int32:\n"
-      "    match o:\n"
-      "        @less => return -1\n"
-      "        @equal => return 0\n"
-      "        @greater => return 1\n"
-      "def bit(actual: bool, weight: int32) -> int32:\n"
-      "    if actual:\n"
-      "        return weight\n"
-      "    return 0\n"
-      "def main() -> int32:\n"
-      "    var total: int32 = 0\n"
-      "    let red: color = @red\n"
-      "    let green: color = @green\n"
-      "    total = total + bit(red.show() == \"red\", 1)\n"
-      "    let c1: shape = @circle(3)\n"
-      "    total = total + bit(c1.show() == \"circle(3)\", 2)\n"
-      "    total = total + bit(red.eq(&red), 4)\n"
-      "    total = total + bit(not red.eq(&green), 8)\n"
-      "    let c2: shape = @circle(3)\n"
-      "    total = total + bit(c1.eq(&c2), 16)\n"
-      "    let r1: shape = @rect(2, 4)\n"
-      "    total = total + bit(not c1.eq(&r1), 32)\n"
-      "    total = total + bit(rank(red.cmp(&green)) == -1, 64)\n"
-      "    let c3: shape = @circle(5)\n"
-      "    total = total + bit(rank(c1.cmp(&c3)) == -1, 128)\n"
-      "    return total\n");
+  write_file(source_path,
+             read_program("run_derives_sum_type_via_deriving_clause.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -4922,17 +4223,8 @@ auto test_build_runs_script_mode_implicit_main() -> void {
   auto metadata_dir = temp.path / "meta";
   auto output_path = temp.path / "sample_script_mode_bin";
 
-  write_file(source_path, "module main\n"
-                          "println(\"first\")\n"
-                          "def label(n: int32) -> str:\n"
-                          "    if n % 2 == 0:\n"
-                          "        return \"even\"\n"
-                          "    return \"odd\"\n"
-                          "var total = 0\n"
-                          "for i in 1..4:\n"
-                          "    total = total + i\n"
-                          "    println(\"{i}: {label(i)}\")\n"
-                          "println(\"total: {total}\")\n");
+  write_file(source_path,
+             read_program("build_runs_script_mode_implicit_main.cn"));
 
   cinder::driver::cli_config cfg{
       .program_name = "cinder",
@@ -5007,21 +4299,14 @@ auto test_compile_sources_enforces_frame_stack_budget() -> void {
   };
 
   const auto at_limit =
-      compile("at_limit", "module sample\n"
-                          "machine def f() -> int64:\n"
-                          "  var a = uninit[int64, 131072]()\n"
-                          "  a[0] = 1\n"
-                          "  return a[0]\n");
+      compile("at_limit",
+              read_program("compile_sources_enforces_frame_stack_budget_1.cn"));
   expect(at_limit.error_count == 0,
          "expected a frame of exactly 1 MiB of `uninit` storage to compile");
 
-  const auto over = compile("over_limit", "module sample\n"
-                                          "machine def f() -> int64:\n"
-                                          "  var a = uninit[int64, 131000]()\n"
-                                          "  var b = uninit[int64, 73]()\n"
-                                          "  a[0] = 1\n"
-                                          "  b[0] = 2\n"
-                                          "  return a[0] + b[0]\n");
+  const auto over =
+      compile("over_limit",
+              read_program("compile_sources_enforces_frame_stack_budget_2.cn"));
   expect(over.error_count == 1,
          "expected one error for a frame one slot over 1 MiB");
   expect(over.diagnostics.find("`f` needs 1048584 bytes of `uninit` stack "

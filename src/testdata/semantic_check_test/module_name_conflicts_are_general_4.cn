@@ -1,0 +1,7 @@
+module main
+
+use pkg.{seven as inner}
+
+module inner:
+    pub def one() -> int32:
+        return 1

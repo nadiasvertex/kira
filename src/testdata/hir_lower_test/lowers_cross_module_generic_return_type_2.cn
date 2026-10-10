@@ -1,0 +1,4 @@
+module wrap
+use types.holder
+pub def wrap[T](v: T) -> holder[T]:
+    return holder { value: v }

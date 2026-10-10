@@ -1,0 +1,10 @@
+module main
+
+def describe[T](x: T) -> str where T: show:
+    return x.show()
+
+def outer[T](x: T) -> str:
+    return describe(x)
+
+def outer_ok[T](x: T) -> str where T: show:
+    return describe(x)

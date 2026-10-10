@@ -1,0 +1,4 @@
+module sample
+type mixed = { pub a: bool, pub b: int32, pub c: bool }
+def main() -> mixed:
+    return { a: true, b: 1, c: false }

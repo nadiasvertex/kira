@@ -1,0 +1,5 @@
+module sample
+def parse(v: option[int32]) -> int32:
+    while let @some(n) = v:
+        return n
+    return -1

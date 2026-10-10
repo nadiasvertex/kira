@@ -1,0 +1,7 @@
+module sample
+machine def f() -> int64:
+  var a = uninit[int64, 131000]()
+  var b = uninit[int64, 73]()
+  a[0] = 1
+  b[0] = 2
+  return a[0] + b[0]

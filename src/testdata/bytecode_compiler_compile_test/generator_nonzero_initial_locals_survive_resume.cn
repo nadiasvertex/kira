@@ -1,0 +1,17 @@
+module sample
+generator def pairs(count: int32) -> some iterator[int32]:
+  var a = 1
+  var b = 100
+  var i = 0
+  while i < count:
+    yield a
+    yield b
+    a = a + 1
+    b = b + 1
+    i = i + 1
+def sum_pairs(count: int32) -> int32:
+  let g = pairs(count)
+  var total = 0
+  while let @some(x) = g.next():
+    total = total + x
+  return total

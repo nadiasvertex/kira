@@ -1,0 +1,9 @@
+module main
+
+type point = { x: int32 } deriving ord
+
+def main() -> int32:
+    let a = point { x: 1 }
+    let b = point { x: 2 }
+    let n: int32 = a.cmp(b)
+    return n

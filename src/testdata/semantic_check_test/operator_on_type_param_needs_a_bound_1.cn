@@ -1,0 +1,7 @@
+module main
+
+def twice[T](x: T) -> T:
+    return x + x
+
+def smaller[T](a: T, b: T) -> bool:
+    return a < b

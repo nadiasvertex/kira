@@ -1,0 +1,19 @@
+module sample
+
+# leading comment
+module use std.io
+file module file_only
+static search_path = ["src", "vendor"]
+
+trait monad[M[_]]:
+  def pure[A](a: A) -> M[A]
+
+impl monad[option]:
+  def pure[A](a: A) -> option[A]: @some(a)
+
+async def handle(pool, req) -> http_response:
+  let result = await on(pool):
+    expensive_computation(req.body)
+  crew c:
+    let task = c.spawn(fetch(req))
+  return result

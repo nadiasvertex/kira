@@ -1,0 +1,8 @@
+module main
+
+use std.limits.max
+
+def main() -> int32:
+    let a: int32 = max[int32]()
+    let b: str = max[str]()
+    return 0

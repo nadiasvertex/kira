@@ -1,0 +1,10 @@
+module sample
+def find_first_even(n: int32) -> int32:
+    var i: int32 = 0
+    while i < n:
+        i = i + 1
+        if i % 2 == 0:
+            return i
+    return -1
+def main() -> int32:
+    return find_first_even(7)

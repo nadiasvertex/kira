@@ -1,0 +1,6 @@
+module sample
+type point = { x: int32, y: int32 } deriving show
+def main() -> int32:
+  let p: point = { x: 3, y: 4 }
+  println(p.show())
+  return 0

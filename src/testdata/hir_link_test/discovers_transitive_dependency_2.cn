@@ -1,0 +1,4 @@
+module mid
+use leaf
+pub def relay() -> int32:
+    return leaf.value()

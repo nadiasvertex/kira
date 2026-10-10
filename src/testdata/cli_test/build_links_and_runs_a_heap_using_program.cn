@@ -1,0 +1,5 @@
+module sample
+type point = { x: int32, y: int32 }
+def main() -> int32:
+  let p = point { x: 1, y: 41 }
+  return p.x + p.y

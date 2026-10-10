@@ -1,0 +1,7 @@
+module sample
+def clamp_low(x: int32) -> int32
+post return >= 0
+:
+    if x < 0:
+        return 0 - x
+    x

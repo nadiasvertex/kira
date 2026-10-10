@@ -1,0 +1,4 @@
+module sample
+def make_adder(n: int32) -> fn(int32) -> int32:
+    let f = pure (x: int32) -> int32 => x + n
+    return f

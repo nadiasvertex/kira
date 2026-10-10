@@ -1,0 +1,12 @@
+module main
+
+type gen[T] = { v: T }
+
+extend[T] gen[T]:
+    def get(self) -> T:
+        return self.v
+
+def main() -> int32:
+    let g = gen{v: 7}
+    let n: int32 = g.get()
+    return n

@@ -1,0 +1,19 @@
+module main
+
+def sign(n: int32) -> ordering:
+    if n < 0:
+        return @less
+    if n > 0:
+        return @greater
+    return @equal
+
+def main() -> int32:
+    let o = @less
+    let _ = match o:
+        @less => 1
+        @equal => 2
+        @greater => 3
+    return match sign(3):
+        @less => 1
+        @equal => 2
+        @greater => 3

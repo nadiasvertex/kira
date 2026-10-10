@@ -29,6 +29,18 @@
 
 namespace {
 
+// Cinder programs used by this file are stored in
+// src/testdata/llvm_codegen_codegen_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("llvm_codegen_codegen_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
+
+namespace {
+
 using cinder::testing::expect;
 using cinder::testing::fail;
 namespace hir = cinder::hir;
@@ -231,13 +243,7 @@ auto count_musttail_calls_to(llvm::Module &module, std::string_view callee_name)
 
 auto test_self_recursive_tail_call_gets_musttail() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def count_down(n: int32, acc: int32) -> int32:\n"
-                    "    if n <= 0:\n"
-                    "        return acc\n"
-                    "    return count_down(n - 1, acc + 1)\n"
-                    "def main() -> int32:\n"
-                    "    return count_down(1000000, 0)\n");
+      check_fixture(read_program("self_recursive_tail_call_gets_musttail.cn"));
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -265,10 +271,8 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
   // every indirect/closure call, even one in tail position, from
   // `is_tail_call` (see hir::mark_tail_calls), so codegen has no marked
   // call here to ever emit `musttail` for.
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
-                    "    return f(x)\n");
+  auto fixture = check_fixture(
+      read_program("indirect_call_through_closure_never_gets_musttail.cn"));
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -293,10 +297,8 @@ auto test_indirect_call_through_closure_never_gets_musttail() -> void {
 }
 
 auto test_intrinsic_call_never_gets_musttail() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "intrinsic def rt_panic(msg: str) -> never\n"
-                               "def boom(msg: str) -> never:\n"
-                               "    return rt_panic(msg)\n");
+  auto fixture =
+      check_fixture(read_program("intrinsic_call_never_gets_musttail.cn"));
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected fixture to lower to HIR");
   auto compiled = lc::compile_module(**module, fixture.checked.types);
@@ -491,13 +493,8 @@ auto test_calls_another_function_in_the_same_module() -> void {
 auto test_calls_a_function_in_another_module() -> void {
   auto jf = jit_fixture_for_multi(
       {
-          {"tools", "module tools\n"
-                    "pub def double(x: int32) -> int32:\n"
-                    "    return x * 2\n"},
-          {"app", "module app\n"
-                  "use tools\n"
-                  "pub def main() -> int32:\n"
-                  "    return tools.double(21)\n"},
+          {"tools", read_program("calls_a_function_in_another_module_1.cn")},
+          {"app", read_program("calls_a_function_in_another_module_2.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -516,25 +513,11 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
   // find — proving an instantiated functor doesn't just type-check but runs.
   auto jf = jit_fixture_for_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 40\n"
-                       "pub def ping(c: conn) -> int32:\n"
-                       "    return c + 2\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "    def ping(c: conn) -> int32\n"
-                  "module audited[DB: backend]:\n"
-                  "    pub def open_and_ping(url: str) -> int32:\n"
-                  "        let c = DB.connect(url)\n"
-                  "        return DB.ping(c)\n"
-                  "use audited[postgres] as db\n"
-                  "pub def main() -> int32:\n"
-                  "    return db.open_and_ping(\"localhost\")\n"},
+          {"postgres",
+           read_program(
+               "calls_into_a_materialized_functor_instantiation_1.cn")},
+          {"app", read_program(
+                      "calls_into_a_materialized_functor_instantiation_2.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -554,27 +537,11 @@ auto test_functor_body_with_type_and_static_members() -> void {
   // uses them runs unchanged.
   auto jf = jit_fixture_for_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 40\n"
-                       "pub def ping(c: conn) -> int32:\n"
-                       "    return c + 2\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "    def ping(c: conn) -> int32\n"
-                  "module audited[DB: backend]:\n"
-                  "    type row = DB.conn\n"
-                  "    static bump: int32 = 5\n"
-                  "    pub def open_and_bump(url: str) -> int32:\n"
-                  "        let c: row = DB.connect(url)\n"
-                  "        return DB.ping(c) + bump\n"
-                  "use audited[postgres] as db\n"
-                  "pub def main() -> int32:\n"
-                  "    return db.open_and_bump(\"localhost\")\n"},
+          {"postgres",
+           read_program(
+               "calls_into_a_materialized_functor_instantiation_1.cn")},
+          {"app",
+           read_program("functor_body_with_type_and_static_members_2.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -593,31 +560,10 @@ auto test_functor_body_with_impl_and_extend_members() -> void {
   // the local type runs end-to-end.
   auto jf = jit_fixture_for_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 0\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "trait greet:\n"
-                  "    def hello(self) -> int32\n"
-                  "module wrap[DB: backend]:\n"
-                  "    pub type widget = { pub value: int32 }\n"
-                  "    impl greet for widget:\n"
-                  "        def hello(self) -> int32:\n"
-                  "            return self.value\n"
-                  "    extend widget:\n"
-                  "        def doubled(self) -> int32:\n"
-                  "            return self.value + self.value\n"
-                  "    pub def run() -> int32:\n"
-                  "        let b = widget { value: 21 }\n"
-                  "        return b.hello() + b.doubled()\n"
-                  "use wrap[postgres] as w\n"
-                  "pub def main() -> int32:\n"
-                  "    return w.run()\n"},
+          {"postgres",
+           read_program("functor_body_with_impl_and_extend_members_1.cn")},
+          {"app",
+           read_program("functor_body_with_impl_and_extend_members_2.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -630,15 +576,9 @@ auto test_functor_body_with_impl_and_extend_members() -> void {
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto jf = jit_fixture_for_multi(
       {
-          {"app", "module app\n"
-                  "pub trait from[T]:\n"
-                  "    def from(value: T) -> self\n"
-                  "pub type wrapped = { pub value: int32 }\n"
-                  "impl from[int32] for wrapped:\n"
-                  "    def from(x: int32) -> wrapped:\n"
-                  "        return wrapped{ value: x * 3 }\n"
-                  "pub def main() -> int32:\n"
-                  "    return wrapped.from(7).value\n"},
+          {"app",
+           read_program(
+               "calls_an_associated_function_via_a_type_qualified_path.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -659,23 +599,10 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
 auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
   auto jf = jit_fixture_for_multi(
       {
-          {"lib", "module lib\n"
-                  "pub type counter = { n: int32 }\n"
-                  "pub trait bumpable:\n"
-                  "    def peek(mut self) -> int32\n"
-                  "\n"
-                  "    def bump(mut self) -> int32:\n"
-                  "        return self.peek() + 1\n"
-                  "impl bumpable for counter:\n"
-                  "    def peek(mut self) -> int32:\n"
-                  "        return self.n\n"
-                  "pub def make(start: int32) -> counter:\n"
-                  "    return counter { n: start }\n"},
-          {"app", "module app\n"
-                  "use lib\n"
-                  "pub def main() -> int32:\n"
-                  "    var c = lib.make(41)\n"
-                  "    return c.bump()\n"},
+          {"lib", read_program("calls_a_self_receiver_trait_default_method_"
+                               "across_modules_1.cn")},
+          {"app", read_program("calls_a_self_receiver_trait_default_method_"
+                               "across_modules_2.cn")},
       },
       "app");
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
@@ -1014,19 +941,8 @@ auto test_non_capturing_closure_is_called_indirectly() -> void {
 // ==========================================================================
 
 auto test_generator_loop_with_yield_sums_values() -> void {
-  auto jf = jit_fixture_for(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    yield n\n"
-      "    n = n + 1\n"
-      "def main() -> int32:\n"
-      "  let g = counter(5)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+  auto jf =
+      jit_fixture_for(read_program("generator_loop_with_yield_sums_values.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 10, "expected 0+1+2+3+4 == 10, the loop-"
@@ -1035,38 +951,15 @@ auto test_generator_loop_with_yield_sums_values() -> void {
 
 auto test_generator_branch_yields_only_matching_values() -> void {
   auto jf = jit_fixture_for(
-      "module sample\n"
-      "generator def evens(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    if n % 2 == 0:\n"
-      "      yield n\n"
-      "    n = n + 1\n"
-      "def main() -> int32:\n"
-      "  let g = evens(10)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+      read_program("generator_branch_yields_only_matching_values.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 20, "expected 0+2+4+6+8 == 20");
 }
 
 auto test_generator_bare_return_exhausts_early() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "generator def early() -> some "
-                            "iterator[int32]:\n"
-                            "  yield 1\n"
-                            "  yield 2\n"
-                            "  return\n"
-                            "  yield 3\n"
-                            "def main() -> int32:\n"
-                            "  let g = early()\n"
-                            "  var count = 0\n"
-                            "  while let @some(x) = g.next():\n"
-                            "    count = count + 1\n"
-                            "  return count\n");
+  auto jf =
+      jit_fixture_for(read_program("generator_bare_return_exhausts_early.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 2,
@@ -1075,18 +968,8 @@ auto test_generator_bare_return_exhausts_early() -> void {
 }
 
 auto test_generator_next_after_exhaustion_stays_none() -> void {
-  auto jf = jit_fixture_for("module sample\n"
-                            "generator def counter() -> some iterator[int32]:\n"
-                            "  yield 1\n"
-                            "def main() -> int32:\n"
-                            "  let g = counter()\n"
-                            "  var total = 0\n"
-                            "  while let @some(x) = g.next():\n"
-                            "    total = total + x\n"
-                            "  var extra = 0\n"
-                            "  while let @some(x) = g.next():\n"
-                            "    extra = extra + 1000\n"
-                            "  return total + extra\n");
+  auto jf = jit_fixture_for(
+      read_program("generator_next_after_exhaustion_stays_none.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 1,
@@ -1099,23 +982,7 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
   // src/bytecode_compiler/compile_test.cpp's identically-named regression
   // test — see its doc comment for the bug this guards against.
   auto jf = jit_fixture_for(
-      "module sample\n"
-      "generator def pairs(count: int32) -> some iterator[int32]:\n"
-      "  var a = 1\n"
-      "  var b = 100\n"
-      "  var i = 0\n"
-      "  while i < count:\n"
-      "    yield a\n"
-      "    yield b\n"
-      "    a = a + 1\n"
-      "    b = b + 1\n"
-      "    i = i + 1\n"
-      "def main() -> int32:\n"
-      "  let g = pairs(3)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+      read_program("generator_nonzero_initial_locals_survive_resume.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 309,
@@ -1124,18 +991,8 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
 }
 
 auto test_for_loop_over_generator_sums_values() -> void {
-  auto jf = jit_fixture_for(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    yield n\n"
-      "    n = n + 1\n"
-      "def main() -> int32:\n"
-      "  var total = 0\n"
-      "  for x in counter(5):\n"
-      "    total = total + x\n"
-      "  return total\n");
+  auto jf =
+      jit_fixture_for(read_program("for_loop_over_generator_sums_values.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 10, "expected 0+1+2+3+4 == 10");
@@ -1210,14 +1067,8 @@ auto test_static_array_global_backs_two_independent_reads() -> void {
   // on this backend too — the `llvm.global_ctors`-registered
   // `__cinder_static_init` must actually run (via `jit_module::create`'s
   // `LLJIT::initialize` call) before either call site reads `TABLE`.
-  auto jf = jit_fixture_for(R"cinder(
-module sample
-static TABLE: array[int32, 4] = [10, 20, 30, 40]
-def third(i: usize) -> int32:
-    return TABLE[i]
-def main() -> int32:
-    return TABLE[3] + third(2)
-)cinder");
+  auto jf = jit_fixture_for(
+      read_program("static_array_global_backs_two_independent_reads.cn"));
   auto result = jf.jit.run("main", bc::numeric_kind::i32);
   expect(result.has_value(), "expected main() to succeed");
   expect(result->value.i == 70,

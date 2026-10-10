@@ -1,0 +1,6 @@
+module sample
+def sum_array(xs: array[int32, 3]) -> int32:
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total

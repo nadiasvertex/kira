@@ -1,0 +1,2 @@
+module tables
+pub static VALUES: array[int32, 3] = [10, 20, 30]

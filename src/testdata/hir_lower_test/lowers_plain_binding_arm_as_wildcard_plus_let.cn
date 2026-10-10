@@ -1,0 +1,4 @@
+module sample
+def echo(x: int32) -> int32:
+    return match x:
+        y => y

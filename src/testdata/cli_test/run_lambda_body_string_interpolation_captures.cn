@@ -1,0 +1,7 @@
+module sample
+def apply(f: fn(int32) -> str, x: int32) -> int32:
+    return f(x).len() as int32
+def main() -> int32:
+    let prefix = "n="
+    let g: fn(int32) -> str = k => "{prefix}{k}"
+    return apply(g, 42)

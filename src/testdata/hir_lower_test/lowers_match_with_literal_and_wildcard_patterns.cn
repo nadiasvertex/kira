@@ -1,0 +1,6 @@
+module sample
+def classify(x: int32) -> int32:
+    return match x:
+        0 => 1
+        1 => 2
+        _ => 0

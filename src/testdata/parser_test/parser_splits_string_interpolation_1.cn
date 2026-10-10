@@ -1,0 +1,4 @@
+module sample
+def run():
+  let a = "hello"
+  let b = "{{x}} stays literal"

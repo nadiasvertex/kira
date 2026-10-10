@@ -1,0 +1,4 @@
+module postgres
+pub type conn = int32
+pub def connect(url: str) -> conn:
+    return 0

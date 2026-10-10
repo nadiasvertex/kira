@@ -1,0 +1,5 @@
+module sample
+type point = { x: int32, y: int32, z: int32 }
+static let count: int32 = point.field_count()
+def main() -> int32:
+  return count

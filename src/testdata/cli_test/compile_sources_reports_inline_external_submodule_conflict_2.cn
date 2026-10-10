@@ -1,0 +1,3 @@
+module geometry.shapes
+pub def area() -> int32:
+  return 3

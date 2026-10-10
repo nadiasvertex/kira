@@ -1,0 +1,5 @@
+module sample
+
+module audited[DB: backend]:
+    pub def query(c: &DB.conn, sql: str) -> DB.conn:
+        DB.query(c, sql)

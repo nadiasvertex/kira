@@ -10,6 +10,17 @@
 
 #include "parser.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in src/testdata/parser_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir = cinder::testing::find_test_data_dir("parser_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -73,7 +84,8 @@ auto parse_source(std::string_view source) -> parsed_source {
 /// the file on a module named "" — the compiler crashed with no message
 /// instead of printing this diagnostic.
 auto test_keyword_module_name_is_a_diagnosed_error() -> void {
-  const auto parsed = parse_source("module deriving\n");
+  const auto parsed =
+      parse_source(read_program("keyword_module_name_is_a_diagnosed_error.cn"));
   expect(parsed.error_count == 1,
          "expected exactly one error for a keyword module name");
   expect(parsed.diagnostics.find("`deriving` is a Cinder keyword") !=
@@ -87,11 +99,7 @@ auto test_keyword_module_name_is_a_diagnosed_error() -> void {
 
 auto test_lexer_emits_indent_and_dedent() -> void {
   cinder::diagnostic_bag diag;
-  std::string source = "module sample\n"
-                       "\n"
-                       "def run():\n"
-                       "  let value = 1\n"
-                       "  return value\n";
+  std::string source = read_program("lexer_emits_indent_and_dedent.cn");
   cinder::lexer lexer(source, 0, diag);
   auto tokens = lexer.tokenize();
 
@@ -111,10 +119,7 @@ auto test_lexer_emits_indent_and_dedent() -> void {
 }
 
 auto test_parser_builds_type_body_nodes() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "type person = { name: str, age: int }\n"
-                             "type shape = | @circle(float64) | @point\n");
+  auto parsed = parse_source(read_program("parser_builds_type_body_nodes.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2,
@@ -156,22 +161,8 @@ auto test_parser_builds_type_body_nodes() -> void {
 /// ride on the last variant's line, and a `#:` line documents the variant
 /// beneath it.
 auto test_parser_accepts_multiline_sum_type() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "type shape =\n"
-                             "    | @circle(float64)           # radius\n"
-                             "    | @rect(float64, float64)    # w and h\n"
-                             "    | @point                     # nothing\n"
-                             "\n"
-                             "type app_error =\n"
-                             "    #: the file was missing\n"
-                             "    | @file_not_found(str)\n"
-                             "    | @parse_failed(str)\n"
-                             "    deriving eq, show\n"
-                             "\n"
-                             "type step =\n"
-                             "    | @done\n"
-                             "    | @go(int32) deriving show\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_multiline_sum_type.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 3,
@@ -229,12 +220,8 @@ auto test_parser_accepts_multiline_sum_type() -> void {
 /// through the rest of the variants rather than spilling the block's
 /// remaining lines into the top level.
 auto test_parser_reports_missing_sum_variant_pipe() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "type shape =\n"
-                             "    | @circle(float64)\n"
-                             "    @rect(float64, float64)\n"
-                             "    | @point\n");
+  auto parsed =
+      parse_source(read_program("parser_reports_missing_sum_variant_pipe.cn"));
 
   expect(parsed.error_count == 1,
          "expected exactly one diagnostic for the missing `|`");
@@ -326,21 +313,8 @@ auto test_parser_captures_doc_comments() -> void {
 }
 
 auto test_parser_preserves_associated_types_where_and_aliases() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "trait iterable:\n"
-                             "  type item = int\n"
-                             "\n"
-                             "impl iterable for int:\n"
-                             "  type item = int\n"
-                             "\n"
-                             "def evaluate(x):\n"
-                             "  let value = x where:\n"
-                             "    base = 1\n"
-                             "  let chosen = match x:\n"
-                             "    @some(item) as alias => alias\n"
-                             "    _ => value\n"
-                             "  return chosen\n");
+  auto parsed = parse_source(
+      read_program("parser_preserves_associated_types_where_and_aliases.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 3,
@@ -425,24 +399,7 @@ auto test_parser_preserves_associated_types_where_and_aliases() -> void {
 
 auto test_parser_preserves_function_signature_and_control_flow() -> void {
   auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "pub async[ctx] def compute(x: int, y = 1) -> int where int: number: 0\n"
-      "def drive(stream, entries):\n"
-      "  let branch = if x: y else: 0\n"
-      "  if x:\n"
-      "    return y\n"
-      "  elif y:\n"
-      "    return x\n"
-      "  else:\n"
-      "    return 0\n"
-      "  while let @some(item) = stream:\n"
-      "    process(item)\n"
-      "  for key, value in entries if ready:\n"
-      "    consume(key)\n"
-      "  let produced = for entry in entries if ready => entry\n"
-      "  let processed = await source as int?\n"
-      "  return y\n");
+      read_program("parser_preserves_function_signature_and_control_flow.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two function declarations");
@@ -545,18 +502,8 @@ auto test_parser_preserves_function_signature_and_control_flow() -> void {
 /// of modifiers, so the interesting cases are the ones where `def` is not the
 /// very next token.
 auto test_parser_accepts_static_def_in_member_blocks() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "trait maker:\n"
-                             "  static def make(v: int) -> self\n"
-                             "  static def build(v: int) -> self\n"
-                             "\n"
-                             "impl maker for int:\n"
-                             "  static def make(v: int) -> int: v\n"
-                             "  static def build(v: int) -> int: v\n"
-                             "\n"
-                             "extend int:\n"
-                             "  static def zero() -> int: 0\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_static_def_in_member_blocks.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
@@ -600,11 +547,8 @@ auto test_parser_accepts_static_def_in_member_blocks() -> void {
 /// a lookahead that guessed "function" too eagerly would break every existing
 /// `static counter = 0` and nothing above would notice.
 auto test_parser_still_reads_static_bindings_as_bindings() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "impl worker for int:\n"
-                             "  static counter = 0\n"
-                             "  static def make(v: int) -> int: v\n");
+  auto parsed = parse_source(
+      read_program("parser_still_reads_static_bindings_as_bindings.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
@@ -626,14 +570,8 @@ auto test_parser_still_reads_static_bindings_as_bindings() -> void {
 /// select per-instantiation behavior with a real statement rather than being
 /// limited to declarations.
 auto test_parser_accepts_statements_in_static_if_branches() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "static pure def pick[T]() -> bool:\n"
-                             "  static if T.name() == \"int32\":\n"
-                             "    let result = true\n"
-                             "    return result\n"
-                             "  else:\n"
-                             "    return false\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_statements_in_static_if_branches.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
@@ -666,13 +604,8 @@ auto test_parser_accepts_statements_in_static_if_branches() -> void {
 }
 
 auto test_parser_accepts_scope_and_inline_where() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def run() -> int:\n"
-                             "  scope:\n"
-                             "    let a = 1\n"
-                             "  let v = x + y where x = 1, y = x + 2\n"
-                             "  return v\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_scope_and_inline_where.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *func_decl = expect_node<cinder::ast::func_decl>(
       parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -695,25 +628,8 @@ auto test_parser_accepts_scope_and_inline_where() -> void {
 }
 
 auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "trait worker[T] requires runnable + sendable:\n"
-                             "  pub static helper = seed\n"
-                             "  def process(item: T) -> int: item\n"
-                             "\n"
-                             "impl worker[int] for int where int: runnable:\n"
-                             "  static counter = 0\n"
-                             "  def process(item: int) -> int: item\n"
-                             "\n"
-                             "def orchestrate(source, ctx) -> int:\n"
-                             "  let fanout = par:\n"
-                             "    source\n"
-                             "    source\n"
-                             "  let winner = race:\n"
-                             "    source\n"
-                             "    source\n"
-                             "  let handled = on(int, ctx): source\n"
-                             "  return source\n");
+  auto parsed = parse_source(
+      read_program("parser_preserves_trait_impl_and_block_expressions.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 3,
@@ -791,8 +707,8 @@ auto test_parser_preserves_trait_impl_and_block_expressions() -> void {
 }
 
 auto test_parser_reports_missing_module_and_recovers() -> void {
-  auto parsed = parse_source("def greet(name):\n"
-                             "  return name\n");
+  auto parsed = parse_source(
+      read_program("parser_reports_missing_module_and_recovers.cn"));
 
   expect(parsed.error_count > 0,
          "expected parser to diagnose missing module declaration");
@@ -814,12 +730,8 @@ auto test_parser_reports_missing_module_and_recovers() -> void {
 }
 
 auto test_parser_recovers_missing_colon_in_where_clause() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def compute(x):\n"
-                             "  let value = x where\n"
-                             "    base = 1\n"
-                             "  return value\n");
+  auto parsed = parse_source(
+      read_program("parser_recovers_missing_colon_in_where_clause.cn"));
 
   expect(parsed.error_count > 0,
          "expected malformed where clause to produce diagnostics");
@@ -850,20 +762,8 @@ auto test_parser_recovers_missing_colon_in_where_clause() -> void {
 }
 
 auto test_parser_accepts_spec_valid_regressions() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "use std.io.reader as rdr\n"
-                             "\n"
-                             "concept ready[T]:\n"
-                             "  value + 1\n"
-                             "\n"
-                             "static for item in items => item\n"
-                             "\n"
-                             "def run(flag, items):\n"
-                             "  let label = \"pass\" if flag else \"fail\"\n"
-                             "  let point = point { x: 1, y: 2 }\n"
-                             "  let produced = for item in items => item\n"
-                             "  return produced\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_spec_valid_regressions.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 4,
@@ -978,13 +878,8 @@ auto test_parser_accepts_spec_valid_regressions() -> void {
 /// A guard ending in a bare name or a parenthesized expression must not take
 /// the arm's `=>` for a lambda arrow.
 auto test_parser_match_guard_ending_in_name_is_not_lambda() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def pick(o, k):\n"
-                             "  return match o:\n"
-                             "    @held(n) if (n.id == k) => 1\n"
-                             "    @some(m) if k => 2\n"
-                             "    _ => 3\n");
+  auto parsed = parse_source(
+      read_program("parser_match_guard_ending_in_name_is_not_lambda.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *func_decl = expect_node<cinder::ast::func_decl>(
@@ -1008,18 +903,8 @@ auto test_parser_match_guard_ending_in_name_is_not_lambda() -> void {
 }
 
 auto test_parser_disambiguates_if_stmt_after_multiline_match_let() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def classify(t):\n"
-                             "  var score = 0\n"
-                             "  let m = match t:\n"
-                             "    0 => \"zero\"\n"
-                             "    _ => \"other\"\n"
-                             "  if m == \"zero\":\n"
-                             "    score = 1\n"
-                             "  else:\n"
-                             "    score = 2\n"
-                             "  return score\n");
+  auto parsed = parse_source(read_program(
+      "parser_disambiguates_if_stmt_after_multiline_match_let.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one function item");
@@ -1149,16 +1034,8 @@ auto test_parser_accepts_remaining_phase1_constructs() -> void {
 }
 
 auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def run(x: i32) -> i32:\n"
-                             "  let a = ~5\n"
-                             "  let b = ~true\n"
-                             "  let c = ~\"str\"\n"
-                             "  let d = ~-x\n"
-                             "  let e = ~foo\n"
-                             "  let f = ~foo[i32]()\n"
-                             "  return a\n");
+  auto parsed = parse_source(
+      read_program("parser_disambiguates_tilde_splice_from_bitwise_not.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected single function item");
@@ -1214,12 +1091,8 @@ auto test_parser_disambiguates_tilde_splice_from_bitwise_not() -> void {
 }
 
 auto test_parser_accepts_if_let_expression() -> void {
-  auto parsed = parse_source(
-      "module sample\n"
-      "\n"
-      "def run(v: option[int], w: option[int]) -> int:\n"
-      "  let n = if let @some(x) = v: x elif let @some(y) = w: y else: 0\n"
-      "  return n\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_if_let_expression.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1,
@@ -1257,16 +1130,8 @@ auto test_parser_accepts_if_let_expression() -> void {
 }
 
 auto test_parser_accepts_multiline_if_expression() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "def run(v: int) -> int:\n"
-                             "  let n = if v > 0:\n"
-                             "    1\n"
-                             "  elif v < 0:\n"
-                             "    -1\n"
-                             "  else:\n"
-                             "    0\n"
-                             "  return n\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_multiline_if_expression.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1,
@@ -1296,12 +1161,8 @@ auto test_parser_accepts_multiline_if_expression() -> void {
 }
 
 auto test_parser_accepts_multi_arity_higher_kinded_params() -> void {
-  auto parsed =
-      parse_source("module sample\n"
-                   "\n"
-                   "trait bifunctor[F[_, _]]:\n"
-                   "    def bimap[A, B, C, D](fab: F[A, B], f: fn(A) -> C,"
-                   " g: fn(B) -> D) -> F[C, D]\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_multi_arity_higher_kinded_params.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *trait_decl = expect_node<cinder::ast::trait_decl>(
@@ -1315,25 +1176,8 @@ auto test_parser_accepts_multi_arity_higher_kinded_params() -> void {
 }
 
 auto test_parser_accepts_phase1_audit_regressions() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "# leading comment\n"
-                             "module use std.io\n"
-                             "file module file_only\n"
-                             "static search_path = [\"src\", \"vendor\"]\n"
-                             "\n"
-                             "trait monad[M[_]]:\n"
-                             "  def pure[A](a: A) -> M[A]\n"
-                             "\n"
-                             "impl monad[option]:\n"
-                             "  def pure[A](a: A) -> option[A]: @some(a)\n"
-                             "\n"
-                             "async def handle(pool, req) -> http_response:\n"
-                             "  let result = await on(pool):\n"
-                             "    expensive_computation(req.body)\n"
-                             "  crew c:\n"
-                             "    let task = c.spawn(fetch(req))\n"
-                             "  return result\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_phase1_audit_regressions.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 6,
@@ -1387,11 +1231,8 @@ auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
   // sub_module_decl keyword share one spelling. `module inner:` (bare) must
   // parse as a default-visibility submodule; `module module inner:` (doubled)
   // must parse as an explicitly module-visible submodule.
-  auto parsed = parse_source("module sample\n"
-                             "module inner:\n"
-                             "  static x = 1\n"
-                             "module module explicit_inner:\n"
-                             "  static y = 2\n");
+  auto parsed = parse_source(read_program(
+      "parser_disambiguates_module_visibility_from_module_decl.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two submodule declarations");
@@ -1419,17 +1260,16 @@ auto test_parser_disambiguates_module_visibility_from_module_decl() -> void {
 /// item of the parent module. No diagnostic anywhere, and `inner.holder`
 /// resolved to nothing while a bare `holder` resolved fine.
 auto test_parser_rejects_non_block_module_body() -> void {
-  auto same_line = parse_source("module sample\n"
-                                "module inner: pub type holder = { cur: 1 }\n");
+  auto same_line =
+      parse_source(read_program("parser_rejects_non_block_module_body_1.cn"));
   expect(same_line.error_count > 0,
          "expected a same-line module body to be reported, not dropped");
   expect(same_line.diagnostics.find("expected an indented block after `:`") !=
              std::string::npos,
          same_line.diagnostics);
 
-  auto unindented = parse_source("module sample\n"
-                                 "module inner:\n"
-                                 "static x = 1\n");
+  auto unindented =
+      parse_source(read_program("parser_rejects_non_block_module_body_2.cn"));
   expect(unindented.error_count > 0,
          "expected `:` with no indented block to be reported");
   expect(unindented.diagnostics.find("expected an indented block after `:`") !=
@@ -1438,17 +1278,14 @@ auto test_parser_rejects_non_block_module_body() -> void {
 
   // A bodyless `module child` (contents in another file) is a different
   // construct and stays valid — the diagnostic above must not swallow it.
-  auto forward = parse_source("module sample\n"
-                              "module child\n");
+  auto forward =
+      parse_source(read_program("parser_rejects_non_block_module_body_3.cn"));
   expect(forward.error_count == 0, forward.diagnostics);
 }
 
 auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "def run(values, identity) -> int32:\n"
-                             "  let a = values[0]\n"
-                             "  let b = identity[int32](5)\n"
-                             "  return a\n");
+  auto parsed = parse_source(
+      read_program("parser_disambiguates_index_from_generic_instantiation.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
@@ -1485,11 +1322,8 @@ auto test_parser_disambiguates_index_from_generic_instantiation() -> void {
 /// the postfix machinery sees the brackets at all — see
 /// `parse_ident_or_path_expr` in parser.cpp.
 auto test_parser_accepts_generic_struct_literal_type_args() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "def run() -> int32:\n"
-                             "  let a = box[int32] { cur: 0 }\n"
-                             "  let b = values[0]\n"
-                             "  return 0\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_generic_struct_literal_type_args.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
 
@@ -1531,10 +1365,7 @@ auto test_parser_accepts_generic_struct_literal_type_args() -> void {
 }
 
 auto test_parser_accepts_extend_block() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "extend str:\n"
-                             "  def is_palindrome(self) -> bool:\n"
-                             "    self == self.reversed()\n");
+  auto parsed = parse_source(read_program("parser_accepts_extend_block.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one top-level extend item");
@@ -1555,10 +1386,8 @@ auto test_parser_accepts_extend_block() -> void {
 /// parameters sit between `extend` and the target, as on `impl`, and are what
 /// let the block name the type it is generic over (spec/todo.md items 7, 11).
 auto test_parser_accepts_parameterized_extend_block() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "extend[A, B] pair[A, B]:\n"
-                             "  def first(self) -> A:\n"
-                             "    self.a\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_parameterized_extend_block.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one top-level extend item");
@@ -1579,11 +1408,7 @@ auto test_parser_accepts_parameterized_extend_block() -> void {
 }
 
 auto test_parser_accepts_intrinsic_def() -> void {
-  auto parsed =
-      parse_source("module sample\n"
-                   "intrinsic def rt_write(fd: raw_fd, buf: slice[byte]) -> "
-                   "result[usize, io_errno]\n"
-                   "pub intrinsic def rt_stdout() -> raw_fd\n");
+  auto parsed = parse_source(read_program("parser_accepts_intrinsic_def.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2, "expected two intrinsic decls");
@@ -1609,9 +1434,8 @@ auto test_parser_accepts_intrinsic_def() -> void {
 }
 
 auto test_parser_rejects_intrinsic_def_with_body() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "intrinsic def rt_noop() -> unit:\n"
-                             "  unit\n");
+  auto parsed =
+      parse_source(read_program("parser_rejects_intrinsic_def_with_body.cn"));
 
   expect(parsed.error_count > 0,
          "expected a body on an intrinsic def to be reported as an error");
@@ -1619,16 +1443,7 @@ auto test_parser_rejects_intrinsic_def_with_body() -> void {
 
 auto test_parser_accepts_generator_def_and_yield() -> void {
   auto parsed =
-      parse_source("module sample\n"
-                   "generator def counter() -> some iterator[int32]:\n"
-                   "  yield 1\n"
-                   "  yield 2\n"
-                   "pure generator def counter2() -> some iterator[int32]:\n"
-                   "  yield 1\n"
-                   "generator pure def counter3() -> some iterator[int32]:\n"
-                   "  yield 1\n"
-                   "def check_await(source):\n"
-                   "  await yield\n");
+      parse_source(read_program("parser_accepts_generator_def_and_yield.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 4, "expected four function declarations");
@@ -1700,12 +1515,8 @@ auto test_parser_accepts_generator_def_and_yield() -> void {
 }
 
 auto test_parser_accepts_mut_binding_pattern() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "trait drop:\n"
-                             "  def drop(mut self) -> unit\n"
-                             "def run():\n"
-                             "  let mut count = 0\n"
-                             "  count = count + 1\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_mut_binding_pattern.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2,
@@ -1741,10 +1552,8 @@ auto test_parser_splits_string_interpolation() -> void {
   // Plain strings (even with a doubled `{{`/`}}` escape) stay a single
   // `literal_expr`, matching the "zero-cost by default" design goal.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let a = \"hello\"\n"
-                               "  let b = \"{{x}} stays literal\"\n");
+    auto parsed =
+        parse_source(read_program("parser_splits_string_interpolation_1.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -1769,9 +1578,8 @@ auto test_parser_splits_string_interpolation() -> void {
 
   // A basic `{expr}` interpolation with no spec.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let msg = \"Hello, {name}!\"\n");
+    auto parsed =
+        parse_source(read_program("parser_splits_string_interpolation_2.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -1803,11 +1611,8 @@ auto test_parser_splits_string_interpolation() -> void {
 
   // A format spec, a dynamic width, and self-documenting `=`.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let a = \"{total :.2f}\"\n"
-                               "  let b = \"{val :{width}.{prec}f}\"\n"
-                               "  let c = \"{total=}\"\n");
+    auto parsed =
+        parse_source(read_program("parser_splits_string_interpolation_3.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -1862,10 +1667,8 @@ auto test_parser_splits_string_interpolation() -> void {
   // A named-argument `:` inside a nested call, and a nested struct literal's
   // own `{...}`, must not be mistaken for the interpolation's own `=`/`:`.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let a = \"{f(x: 1)}\"\n"
-                               "  let b = \"{point { x: 1, y: 2 } }\"\n");
+    auto parsed =
+        parse_source(read_program("parser_splits_string_interpolation_4.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -1904,12 +1707,8 @@ auto test_parser_splits_string_interpolation() -> void {
   // mistaken for the self-documenting `expr=` marker, which only applies
   // when the `=` is immediately followed by `}` or `:`.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let a = \"{x == y}\"\n"
-                               "  let b = \"{x != y}\"\n"
-                               "  let c = \"{x <= y}\"\n"
-                               "  let d = \"{x >= y}\"\n");
+    auto parsed =
+        parse_source(read_program("parser_splits_string_interpolation_5.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -1942,10 +1741,8 @@ auto test_parser_splits_string_interpolation() -> void {
   // skip their whole `{...}` span rather than one character past the `\`,
   // or the escape's own `{` gets mistaken for a real interpolation hole.
   {
-    auto parsed = parse_source("module sample\n"
-                               "def run():\n"
-                               "  let a = \"\\u{1F600}\"\n"
-                               "  let b = \"emoji \\u{1F600} and {name}\"\n");
+    auto parsed = parse_source(
+        read_program("parser_splits_string_interpolation_unicode_escape.cn"));
     expect(parsed.error_count == 0, parsed.diagnostics);
     auto *run_func = expect_node<cinder::ast::func_decl>(
         parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
@@ -2140,13 +1937,7 @@ auto test_parser_parses_multiline_indented_paren_quote() -> void {
 }
 
 auto test_script_module_synthesizes_main() -> void {
-  auto parsed = parse_source("module main\n"
-                             "\n"
-                             "def greet(name: str) -> unit:\n"
-                             "    println(\"Hi, {name}\")\n"
-                             "\n"
-                             "let who = \"cinder\"\n"
-                             "greet(who)\n");
+  auto parsed = parse_source(read_program("script_module_synthesizes_main.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 2,
          "expected the greet declaration plus one synthesized `main`");
@@ -2172,12 +1963,8 @@ auto test_script_module_synthesizes_main() -> void {
 }
 
 auto test_script_module_rejects_statements_with_explicit_main() -> void {
-  auto parsed = parse_source("module main\n"
-                             "\n"
-                             "println(\"top level\")\n"
-                             "\n"
-                             "def main() -> unit:\n"
-                             "    println(\"explicit\")\n");
+  auto parsed = parse_source(
+      read_program("script_module_rejects_statements_with_explicit_main.cn"));
   expect(parsed.error_count == 1,
          "expected exactly one error for mixing top-level statements with an "
          "explicit `def main`");
@@ -2187,19 +1974,16 @@ auto test_script_module_rejects_statements_with_explicit_main() -> void {
 }
 
 auto test_script_module_without_statements_keeps_explicit_main() -> void {
-  auto parsed = parse_source("module main\n"
-                             "\n"
-                             "def main() -> unit:\n"
-                             "    println(\"hello\")\n");
+  auto parsed = parse_source(
+      read_program("script_module_without_statements_keeps_explicit_main.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1,
          "expected no synthesized second `main` for a declaration-only file");
 }
 
 auto test_non_main_module_rejects_top_level_statements() -> void {
-  auto parsed = parse_source("module other\n"
-                             "\n"
-                             "println(\"nope\")\n");
+  auto parsed = parse_source(
+      read_program("non_main_module_rejects_top_level_statements_1.cn"));
   expect(parsed.error_count > 0,
          "expected top-level statements outside `module main` to error");
   expect(parsed.diagnostics.find("module main") != std::string::npos,
@@ -2208,13 +1992,7 @@ auto test_non_main_module_rejects_top_level_statements() -> void {
 }
 
 auto test_parser_accepts_signature_decl() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "signature backend:\n"
-                             "    type conn\n"
-                             "    def connect(url: str) -> conn\n"
-                             "    def query(c: &conn, sql: str) -> conn\n"
-                             "    static default_port: int32\n");
+  auto parsed = parse_source(read_program("parser_accepts_signature_decl.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one signature item");
 
@@ -2233,10 +2011,8 @@ auto test_parser_accepts_signature_decl() -> void {
 }
 
 auto test_parser_rejects_signature_abstract_type_bound() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "signature backend:\n"
-                             "    type conn: comparable\n");
+  auto parsed = parse_source(
+      read_program("parser_rejects_signature_abstract_type_bound.cn"));
   expect(parsed.error_count > 0,
          "expected a bound on a signature abstract type to error");
   expect(parsed.diagnostics.find("not supported yet") != std::string::npos,
@@ -2244,12 +2020,8 @@ auto test_parser_rejects_signature_abstract_type_bound() -> void {
 }
 
 auto test_parser_accepts_parameterized_module() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "module audited[DB: backend]:\n"
-                             "    pub def query(c: &DB.conn, sql: str) -> "
-                             "DB.conn:\n"
-                             "        DB.query(c, sql)\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_parameterized_module.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one module item");
 
@@ -2266,11 +2038,8 @@ auto test_parser_accepts_parameterized_module() -> void {
 }
 
 auto test_parser_plain_submodule_is_not_functor() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "module inner:\n"
-                             "    def f() -> unit:\n"
-                             "        unit\n");
+  auto parsed =
+      parse_source(read_program("parser_plain_submodule_is_not_functor.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *mod = expect_node<cinder::ast::sub_module_decl>(
       parsed.file->items[0].get(), cinder::ast::node_kind::sub_module_decl,
@@ -2280,9 +2049,8 @@ auto test_parser_plain_submodule_is_not_functor() -> void {
 }
 
 auto test_parser_accepts_functor_instantiation_use() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "use audited[postgres] as db\n");
+  auto parsed =
+      parse_source(read_program("parser_accepts_functor_instantiation_use.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   expect(parsed.file->items.size() == 1, "expected one use item");
 
@@ -2301,9 +2069,8 @@ auto test_parser_accepts_functor_instantiation_use() -> void {
 }
 
 auto test_parser_accepts_nested_functor_instantiation() -> void {
-  auto parsed = parse_source("module sample\n"
-                             "\n"
-                             "use audited[cached[postgres]]\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_nested_functor_instantiation.cn"));
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *use = expect_node<cinder::ast::use_decl>(
       parsed.file->items[0].get(), cinder::ast::node_kind::use_decl,
@@ -2319,14 +2086,8 @@ auto test_parser_accepts_lambda_result_and_paren_params() -> void {
   // error: an unprefixed `(` reached the tuple parser, and an `ident ->`
   // head was never recognized as a lambda at all. Only `pure`/`move` got
   // routed to the lambda parser, which had handled both shapes all along.
-  auto parsed = parse_source("module sample\n"
-                             "def run():\n"
-                             "  let a = x => x + 1\n"
-                             "  let b = pure (x: int32) -> int32 => x * 2\n"
-                             "  let c = (x: int32) -> int32 => x * 3\n"
-                             "  let d = x -> int32 => x + 5\n"
-                             "  let e = (x, y) => x + y\n"
-                             "  let g = (3 + 4) * 2\n");
+  auto parsed = parse_source(
+      read_program("parser_accepts_lambda_result_and_paren_params.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *run_func = expect_node<cinder::ast::func_decl>(
@@ -2362,14 +2123,7 @@ auto test_parser_accepts_lambda_result_and_paren_params() -> void {
 
 auto test_parser_accepts_lambda_capture_lists() -> void {
   auto parsed =
-      parse_source("module sample\n"
-                   "def run():\n"
-                   "  let a = [n] x => x + n\n"
-                   "  let b = [] x => x * 2\n"
-                   "  let c = [&p, &mut q,] x => x\n"
-                   "  let d = pure move [n] (x: int32) -> int32 => x\n"
-                   "  let e = [n] (x, y) => x + y + n\n"
-                   "  let f = x => x\n");
+      parse_source(read_program("parser_accepts_lambda_capture_lists.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *run_func = expect_node<cinder::ast::func_decl>(
@@ -2425,9 +2179,8 @@ auto test_parser_accepts_lambda_capture_lists() -> void {
 auto test_parser_move_prefix_only_promotes_bare_capture_entries() -> void {
   // `move` forces every *bare* `name` entry to move; `&name`/`&mut name`
   // entries already state their own mode and must be left untouched.
-  auto parsed = parse_source("module sample\n"
-                             "def run():\n"
-                             "  let a = move [&p, q, &mut r] x => x\n");
+  auto parsed = parse_source(
+      read_program("parser_move_prefix_only_promotes_bare_capture_entries.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *run_func = expect_node<cinder::ast::func_decl>(
@@ -2454,15 +2207,8 @@ auto test_parser_move_prefix_only_promotes_bare_capture_entries() -> void {
 auto test_parser_keeps_array_literals_out_of_the_capture_path() -> void {
   // The `[`-dispatch change is the whole risk of capture lists: every one of
   // these has to stay an array, an index, or a `for` iterable.
-  auto parsed = parse_source("module sample\n"
-                             "def run():\n"
-                             "  let a = [1, 2, 3]\n"
-                             "  let b = [0; 4]\n"
-                             "  let c = []\n"
-                             "  let d = a[0]\n"
-                             "  let e = [a][0]\n"
-                             "  for v in [1, 2, 3]:\n"
-                             "    let q = v\n");
+  auto parsed = parse_source(
+      read_program("parser_keeps_array_literals_out_of_the_capture_path.cn"));
 
   expect(parsed.error_count == 0, parsed.diagnostics);
   auto *run_func = expect_node<cinder::ast::func_decl>(
@@ -2497,8 +2243,8 @@ struct named_test {
 /// (there is no base path to hang a selector off), and it parses cleanly —
 /// it used to be the diagnostic "expected `module_path.name as alias`".
 auto test_parser_accepts_root_module_alias() -> void {
-  const auto parsed = parse_source("module main\n"
-                                   "use pkg as p\n");
+  const auto parsed =
+      parse_source(read_program("parser_accepts_root_module_alias.cn"));
   expect(parsed.error_count == 0,
          "expected `use pkg as p` to parse cleanly:\n" + parsed.diagnostics);
   auto *use = expect_node<cinder::ast::use_decl>(

@@ -1,0 +1,6 @@
+module sample
+def sum_up_to(n: int32) -> int32:
+    var total = 0
+    for i in 0..n:
+        total = total + i
+    return total

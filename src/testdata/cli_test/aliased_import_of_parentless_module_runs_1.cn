@@ -1,0 +1,4 @@
+module main
+use outer.inner as renamed
+def main() -> int32:
+  return renamed.seven() * 6

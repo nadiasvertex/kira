@@ -1,0 +1,7 @@
+module lib
+pub def spin() -> int64:
+    var i: int64 = 0
+    while i >= 0:
+        i += 0
+    return i
+pub static x: int64 = spin()

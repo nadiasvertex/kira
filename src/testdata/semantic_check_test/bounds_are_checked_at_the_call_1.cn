@@ -1,0 +1,10 @@
+module main
+
+type point = { x: int32 }
+
+def describe[T](x: T) -> str where T: show:
+    return x.show()
+
+def main() -> int32:
+    let s = describe(point { x: 1 })
+    return 0

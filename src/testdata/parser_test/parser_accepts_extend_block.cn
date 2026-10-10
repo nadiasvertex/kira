@@ -1,0 +1,4 @@
+module sample
+extend str:
+  def is_palindrome(self) -> bool:
+    self == self.reversed()

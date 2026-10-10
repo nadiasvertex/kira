@@ -1,0 +1,8 @@
+module sample
+def run():
+  let a = [n] x => x + n
+  let b = [] x => x * 2
+  let c = [&p, &mut q,] x => x
+  let d = pure move [n] (x: int32) -> int32 => x
+  let e = [n] (x, y) => x + y + n
+  let f = x => x

@@ -1,0 +1,21 @@
+module sample
+type pf = { x: float64, y: float32 } deriving hash
+def bit(cond: bool, weight: int32) -> int32:
+    if cond:
+        return weight
+    return 0
+def main() -> int32:
+    var total: int32 = 0
+    let a: pf = { x: 0.0, y: 0.0 as float32 }
+    let b: pf = { x: -0.0, y: -0.0 as float32 }
+    total = total + bit(a.hash() == b.hash(), 1)
+    let nan1: float64 = 0.0 / 0.0
+    let nan2: float64 = -(0.0 / 0.0)
+    let c: pf = { x: nan1, y: nan1 as float32 }
+    let d: pf = { x: nan2, y: nan2 as float32 }
+    total = total + bit(c.hash() == d.hash(), 2)
+    let e: pf = { x: 1.5, y: 2.5 as float32 }
+    total = total + bit(a.hash() != e.hash(), 4)
+    let f: pf = { x: 3.5, y: 4.5 as float32 }
+    total = total + bit(f.hash() == 2985586345925076451, 8)
+    return total

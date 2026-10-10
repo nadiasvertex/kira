@@ -1,0 +1,8 @@
+module main
+
+def id64(x: int64) -> int64:
+    return x
+
+def main() -> int64:
+    let v = 3000000000.id64()
+    return v + 4.id64()

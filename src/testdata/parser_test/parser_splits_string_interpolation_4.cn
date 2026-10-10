@@ -1,0 +1,4 @@
+module sample
+def run():
+  let a = "{f(x: 1)}"
+  let b = "{point { x: 1, y: 2 } }"

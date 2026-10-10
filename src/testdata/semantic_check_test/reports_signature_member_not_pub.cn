@@ -1,0 +1,13 @@
+module sample
+
+signature backend:
+    type conn
+
+module mysql:
+    type conn = int32
+
+use audited[mysql] as db
+
+module audited[DB: backend]:
+    pub def go() -> unit:
+        unit

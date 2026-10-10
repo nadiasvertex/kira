@@ -1,0 +1,19 @@
+module sample
+
+trait worker[T] requires runnable + sendable:
+  pub static helper = seed
+  def process(item: T) -> int: item
+
+impl worker[int] for int where int: runnable:
+  static counter = 0
+  def process(item: int) -> int: item
+
+def orchestrate(source, ctx) -> int:
+  let fanout = par:
+    source
+    source
+  let winner = race:
+    source
+    source
+  let handled = on(int, ctx): source
+  return source

@@ -1,0 +1,5 @@
+module sample
+def helper(x: int32) -> int32:
+    return x + 1
+def caller(x: int32) -> int32:
+    return helper(helper(x))

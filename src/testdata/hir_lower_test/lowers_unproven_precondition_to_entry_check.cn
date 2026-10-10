@@ -1,0 +1,4 @@
+module sample
+def half(x: int32) -> int32
+pre x >= 0, "x must be non-negative"
+: x / 2

@@ -1,0 +1,14 @@
+module main
+
+trait get_it[T]:
+    def get(self) -> T
+
+type boxed[T] = { item: T }
+
+impl get_it[int32] for boxed[int32]:
+    def get(self) -> int32:
+        return self.item
+
+impl get_it[int64] for boxed[int64]:
+    def get(self) -> int64:
+        return self.item

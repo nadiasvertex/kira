@@ -1,0 +1,5 @@
+module package.tools.app
+use package.tools
+use package.tools.*
+pub def run() -> int32:
+  return 4

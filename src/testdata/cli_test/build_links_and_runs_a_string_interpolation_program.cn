@@ -1,0 +1,6 @@
+module sample
+def main() -> int32:
+  let name = "Alice"
+  println("Hi, {name}!")
+  println("Hex: {255 :04x}")
+  return 0

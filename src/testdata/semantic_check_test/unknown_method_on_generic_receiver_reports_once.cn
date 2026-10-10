@@ -1,0 +1,8 @@
+module main
+
+def call_it[T](x: T) -> int32:
+    let r = x.whatever()
+    return 0
+
+def main() -> int32:
+    return call_it(5)

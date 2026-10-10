@@ -1,0 +1,7 @@
+module sample
+type counter = { pub value: int32 }
+def sum_counters(xs: counter) -> int32:
+    var total = 0
+    for x in xs:
+        total = total + x
+    return total

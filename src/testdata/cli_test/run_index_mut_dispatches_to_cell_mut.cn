@@ -1,0 +1,15 @@
+module sample
+type writable = { a: int32 }
+impl index[usize] for writable:
+  type output = int32
+  def at(self, i: usize) -> int32:
+    return self.a
+impl index_mut[usize] for writable:
+  type output_mut = cell_mut[int32]
+  def at_mut(mut self, i: usize) -> self.output_mut:
+    return &mut self.a
+def main() -> int32:
+  let mut w = writable{ a: 10 }
+  let c = &mut w[0]
+  c.set(c.get() * 5)
+  return w.a

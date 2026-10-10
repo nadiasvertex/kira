@@ -1,0 +1,6 @@
+module main
+
+use pkg as p
+
+def main() -> int32:
+    return pkg.seven()

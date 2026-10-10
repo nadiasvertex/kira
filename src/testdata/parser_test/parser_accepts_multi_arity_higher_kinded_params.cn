@@ -1,0 +1,4 @@
+module sample
+
+trait bifunctor[F[_, _]]:
+    def bimap[A, B, C, D](fab: F[A, B], f: fn(A) -> C, g: fn(B) -> D) -> F[C, D]

@@ -1,0 +1,19 @@
+module main
+
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+
+module postgres:
+    pub type conn = int32
+    pub def connect(url: str) -> conn:
+        0
+
+module audited[DB: backend]:
+    pub def connect(url: str) -> DB.conn:
+        DB.connect(url)
+
+use main.audited[main.postgres] as db
+
+def go() -> int32:
+    db.connect("x")

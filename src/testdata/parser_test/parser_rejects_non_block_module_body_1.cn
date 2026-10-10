@@ -1,0 +1,2 @@
+module sample
+module inner: pub type holder = { cur: 1 }

@@ -1,0 +1,5 @@
+module sample
+type positive = int32 where self > 0
+packed type refined = { pub a: bool, pub b: positive, pub c: bool }
+def main() -> refined:
+    return { a: true, b: 1, c: false }

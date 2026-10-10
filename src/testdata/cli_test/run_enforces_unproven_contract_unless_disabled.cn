@@ -1,0 +1,8 @@
+module sample
+def opaque(x: int32) -> int32:
+  return x
+def half(x: int32) -> int32
+pre x >= 0, "x must be non-negative"
+: x / 2
+def main() -> int32:
+  return half(opaque(0 - 8))

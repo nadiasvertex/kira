@@ -1,0 +1,16 @@
+module sample
+
+type shape =
+    | @circle(float64)           # radius
+    | @rect(float64, float64)    # w and h
+    | @point                     # nothing
+
+type app_error =
+    #: the file was missing
+    | @file_not_found(str)
+    | @parse_failed(str)
+    deriving eq, show
+
+type step =
+    | @done
+    | @go(int32) deriving show

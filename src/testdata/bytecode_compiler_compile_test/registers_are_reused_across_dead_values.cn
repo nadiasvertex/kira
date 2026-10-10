@@ -1,0 +1,4 @@
+module sample
+
+def chain() -> int32:
+    var acc = 0

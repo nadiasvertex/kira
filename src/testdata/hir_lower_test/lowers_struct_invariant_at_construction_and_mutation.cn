@@ -1,0 +1,7 @@
+module sample
+type positive_int = { pub value: int32 }
+    invariant self.value > 0
+def make(n: int32) -> int32:
+    var p = positive_int{value: n}
+    p.value = n
+    return p.value

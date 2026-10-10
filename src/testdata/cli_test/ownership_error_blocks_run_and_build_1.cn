@@ -1,0 +1,7 @@
+module b
+def dangle() -> &int32:
+  let a = 7
+  return &a
+def main() -> int32:
+  println("ran")
+  return *dangle()

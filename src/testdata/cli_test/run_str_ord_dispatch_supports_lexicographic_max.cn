@@ -1,0 +1,5 @@
+module sample
+def main() -> int32:
+    let words = ["apple", "banana", "cherry"]
+    let winner = words.into_iter().max().unwrap()
+    return if winner == "cherry": 1 else: 0

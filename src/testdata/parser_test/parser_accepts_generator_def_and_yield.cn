@@ -1,0 +1,10 @@
+module sample
+generator def counter() -> some iterator[int32]:
+  yield 1
+  yield 2
+pure generator def counter2() -> some iterator[int32]:
+  yield 1
+generator pure def counter3() -> some iterator[int32]:
+  yield 1
+def check_await(source):
+  await yield

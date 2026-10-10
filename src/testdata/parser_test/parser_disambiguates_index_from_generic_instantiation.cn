@@ -1,0 +1,5 @@
+module sample
+def run(values, identity) -> int32:
+  let a = values[0]
+  let b = identity[int32](5)
+  return a

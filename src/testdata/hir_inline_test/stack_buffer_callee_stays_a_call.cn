@@ -1,0 +1,14 @@
+module sample
+
+machine def scratch() -> int64:
+    var buf = uninit[int64, 2]()
+    buf[0] = 1
+    return buf[0]
+
+machine def owner() -> int64:
+    var buf = uninit[int64, 2]()
+    buf[0] = 2
+    return scratch()
+
+def main() -> int64:
+    return scratch()

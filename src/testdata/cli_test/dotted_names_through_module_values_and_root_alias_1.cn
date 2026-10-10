@@ -1,0 +1,7 @@
+module geo
+pub type point = { x: int32, y: int32 }
+pub type seg = { a: point, b: point }
+pub static let origin: point = point { x: 3, y: 4 }
+pub static let unit_seg: seg = seg { a: point { x: 0, y: 0 }, b: point { x: 1, y: 9 } }
+static let hidden: point = point { x: 50, y: 0 }
+pub static let far: int32 = hidden.x + 53

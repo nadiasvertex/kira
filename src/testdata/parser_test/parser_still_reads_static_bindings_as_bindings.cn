@@ -1,0 +1,5 @@
+module sample
+
+impl worker for int:
+  static counter = 0
+  static def make(v: int) -> int: v

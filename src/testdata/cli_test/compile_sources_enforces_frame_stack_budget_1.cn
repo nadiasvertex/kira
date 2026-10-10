@@ -1,0 +1,5 @@
+module sample
+machine def f() -> int64:
+  var a = uninit[int64, 131072]()
+  a[0] = 1
+  return a[0]

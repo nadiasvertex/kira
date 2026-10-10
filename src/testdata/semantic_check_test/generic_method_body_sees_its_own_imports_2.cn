@@ -1,0 +1,7 @@
+module xmod.methods
+
+use xmod.helper.twice
+
+extend[T] option[T]:
+    def doubled(self) -> int32:
+        return twice(5)

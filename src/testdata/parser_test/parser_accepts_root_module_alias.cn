@@ -1,0 +1,2 @@
+module main
+use pkg as p

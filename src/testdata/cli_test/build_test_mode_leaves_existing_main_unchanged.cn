@@ -1,0 +1,8 @@
+module has_both
+use std.test.test_failure
+module tests:
+    def test_x() -> result[unit, test_failure]:
+        return @ok(unit)
+def main() -> int32:
+    println("ordinary program")
+    return 7

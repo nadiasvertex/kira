@@ -1,0 +1,4 @@
+module main
+use lib
+def main() -> int32:
+    return lib.x as int32

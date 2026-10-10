@@ -1,0 +1,6 @@
+module main
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+    let picked = nums.pusk(4)
+    return 0

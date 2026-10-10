@@ -21,6 +21,9 @@ cc_library(
 cc_test(
     name = "eval_test",
     srcs = ["eval_test.cpp"],
+    data = [
+        "//src:comptime_eval_test_files",
+    ],
     deps = [
         ":comptime",
         "//src/parser",

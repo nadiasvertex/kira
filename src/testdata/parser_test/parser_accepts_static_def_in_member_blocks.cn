@@ -1,0 +1,12 @@
+module sample
+
+trait maker:
+  static def make(v: int) -> self
+  static def build(v: int) -> self
+
+impl maker for int:
+  static def make(v: int) -> int: v
+  static def build(v: int) -> int: v
+
+extend int:
+  static def zero() -> int: 0

@@ -1,0 +1,11 @@
+module main
+println("first")
+def label(n: int32) -> str:
+    if n % 2 == 0:
+        return "even"
+    return "odd"
+var total = 0
+for i in 1..4:
+    total = total + i
+    println("{i}: {label(i)}")
+println("total: {total}")

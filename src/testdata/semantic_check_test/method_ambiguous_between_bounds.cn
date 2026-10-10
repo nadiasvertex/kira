@@ -1,0 +1,10 @@
+module main
+
+trait loud:
+    def speak(self) -> str
+
+trait quiet:
+    def speak(self) -> str
+
+def talk[T](x: T) -> str where T: loud + quiet:
+    return x.speak()

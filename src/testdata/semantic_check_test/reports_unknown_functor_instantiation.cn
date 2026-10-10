@@ -1,0 +1,3 @@
+module sample
+
+use nonexistent[postgres] as db

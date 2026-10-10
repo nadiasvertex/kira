@@ -1,0 +1,4 @@
+module sample
+def second(xs: array[int32, 3]) -> int32:
+    let [_, b, _] = xs
+    return b

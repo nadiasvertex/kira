@@ -1,0 +1,6 @@
+module sample
+def unwrap_or(v: option[int32]) -> int32:
+    if let @some(n) = v:
+        return n
+    else:
+        return -1

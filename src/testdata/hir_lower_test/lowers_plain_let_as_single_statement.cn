@@ -1,0 +1,4 @@
+module sample
+def double(x: int32) -> int32:
+    let y = x
+    return y

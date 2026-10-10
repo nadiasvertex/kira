@@ -16,6 +16,19 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/hir_live_across_yield_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("hir_live_across_yield_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -96,12 +109,8 @@ auto first_let(const hir::hir_function &fn) -> const hir::hir_let & {
 }
 
 auto test_local_bound_before_yield_and_used_after_is_live() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "generator def counter() -> some iterator[int32]:\n"
-                    "    let a = 1\n"
-                    "    yield a\n"
-                    "    yield a\n");
+  auto fixture = check_fixture(
+      read_program("local_bound_before_yield_and_used_after_is_live.cn"));
   const auto fn = lower_generator(fixture, "counter");
   const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
@@ -111,11 +120,8 @@ auto test_local_bound_before_yield_and_used_after_is_live() -> void {
 }
 
 auto test_local_used_only_before_yield_is_not_live() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "generator def counter() -> some iterator[int32]:\n"
-                    "    let a = 1\n"
-                    "    yield a\n");
+  auto fixture = check_fixture(
+      read_program("local_used_only_before_yield_is_not_live.cn"));
   const auto fn = lower_generator(fixture, "counter");
   const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
@@ -126,13 +132,8 @@ auto test_local_used_only_before_yield_is_not_live() -> void {
 
 auto test_local_bound_between_two_yields_and_used_after_later_yield_is_live()
     -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "generator def counter() -> some iterator[int32]:\n"
-                    "    yield 0\n"
-                    "    let b = 1\n"
-                    "    yield b\n"
-                    "    yield b\n");
+  auto fixture = check_fixture(read_program(
+      "local_bound_between_two_yields_and_used_after_later_yield_is_live.cn"));
   const auto fn = lower_generator(fixture, "counter");
   const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
@@ -142,13 +143,8 @@ auto test_local_bound_between_two_yields_and_used_after_later_yield_is_live()
 }
 
 auto test_loop_condition_variable_spanning_yield_is_live() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "generator def counter(limit: int32) -> some "
-                               "iterator[int32]:\n"
-                               "    var n = 0\n"
-                               "    while n < limit:\n"
-                               "        yield n\n"
-                               "        n = n + 1\n");
+  auto fixture = check_fixture(
+      read_program("loop_condition_variable_spanning_yield_is_live.cn"));
   const auto fn = lower_generator(fixture, "counter");
   const auto &let = first_let(*fn);
   const auto live = hir::live_across_yield(*fn);
@@ -159,9 +155,7 @@ auto test_loop_condition_variable_spanning_yield_is_live() -> void {
 
 auto test_no_yields_produces_empty_result() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "generator def empty() -> some iterator[int32]:\n"
-                    "    let a = 1\n");
+      check_fixture(read_program("no_yields_produces_empty_result.cn"));
   const auto fn = lower_generator(fixture, "empty");
   const auto live = hir::live_across_yield(*fn);
   expect(live.empty(),

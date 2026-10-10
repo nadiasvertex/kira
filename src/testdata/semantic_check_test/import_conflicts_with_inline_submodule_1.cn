@@ -1,0 +1,3 @@
+module subprec.inner
+
+pub type holder = { imported: int32 }

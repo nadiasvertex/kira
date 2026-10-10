@@ -1,0 +1,6 @@
+module main
+
+def big[T]() -> T where T: numeric:
+    static if T.name() == "int64" or T.name() == "uint64":
+        return 5000000000
+    return 0

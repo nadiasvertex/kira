@@ -1,0 +1,29 @@
+module sample
+type color = @red | @green | @blue deriving show, eq, ord
+type shape = @circle(int32) | @rect(int32, int32) deriving show, eq, ord
+def rank(o: ordering) -> int32:
+    match o:
+        @less => return -1
+        @equal => return 0
+        @greater => return 1
+def bit(actual: bool, weight: int32) -> int32:
+    if actual:
+        return weight
+    return 0
+def main() -> int32:
+    var total: int32 = 0
+    let red: color = @red
+    let green: color = @green
+    total = total + bit(red.show() == "red", 1)
+    let c1: shape = @circle(3)
+    total = total + bit(c1.show() == "circle(3)", 2)
+    total = total + bit(red.eq(&red), 4)
+    total = total + bit(not red.eq(&green), 8)
+    let c2: shape = @circle(3)
+    total = total + bit(c1.eq(&c2), 16)
+    let r1: shape = @rect(2, 4)
+    total = total + bit(not c1.eq(&r1), 32)
+    total = total + bit(rank(red.cmp(&green)) == -1, 64)
+    let c3: shape = @circle(5)
+    total = total + bit(rank(c1.cmp(&c3)) == -1, 128)
+    return total

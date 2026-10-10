@@ -1,0 +1,5 @@
+module sample
+def width[T](v: T) -> int32:
+    return 4
+def probe(x) -> int32:
+    return width(x)

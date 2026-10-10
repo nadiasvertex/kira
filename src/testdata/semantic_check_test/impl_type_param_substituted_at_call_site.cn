@@ -1,0 +1,15 @@
+module main
+
+trait get_it[T]:
+    def get(self) -> T
+
+type holder[T] = { value: T }
+
+impl[T] get_it[T] for holder[T]:
+    def get(self) -> T:
+        return self.value
+
+def main() -> int32:
+    let h = holder { value: 7 }
+    let s: str = h.get()
+    return 0

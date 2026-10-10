@@ -77,6 +77,78 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+filegroup(
+    name = "cli_test_files",
+    srcs = glob(["testdata/cli_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "parser_test_files",
+    srcs = glob(["testdata/parser_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_lower_test_files",
+    srcs = glob(["testdata/hir_lower_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_link_test_files",
+    srcs = glob(["testdata/hir_link_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_inline_test_files",
+    srcs = glob(["testdata/hir_inline_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_captures_test_files",
+    srcs = glob(["testdata/hir_captures_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hir_live_across_yield_test_files",
+    srcs = glob(["testdata/hir_live_across_yield_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "bytecode_compiler_compile_test_files",
+    srcs = glob(["testdata/bytecode_compiler_compile_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "llvm_codegen_codegen_test_files",
+    srcs = glob(["testdata/llvm_codegen_codegen_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "llvm_codegen_aot_test_files",
+    srcs = glob(["testdata/llvm_codegen_aot_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "comptime_eval_test_files",
+    srcs = glob(["testdata/comptime_eval_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "runtime_layout_test_files",
+    srcs = glob(["testdata/runtime_layout_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
 proto_library(
     name = "module_metadata_proto",
     srcs = ["module_metadata.proto"],
@@ -129,6 +201,7 @@ cc_test(
     srcs = ["cli_test.cpp"],
     tags = ["no-sandbox"],
     data = [
+        "//src:cli_test_files",
         ":std_sources",
         "//src/llvm_codegen:aot_runtime",
         "//src/parser:parser",
@@ -140,6 +213,7 @@ cc_test(
         ":module_metadata_cc_proto",
         "//src/bytecode:bytecode",
         "//src/driver:driver",
+        "//src/testing",
     ],
 )
 

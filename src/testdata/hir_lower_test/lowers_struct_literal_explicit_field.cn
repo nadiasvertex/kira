@@ -1,0 +1,4 @@
+module sample
+type container = { pub value: int32 }
+def make_container(v: int32) -> container:
+    return { value: v }

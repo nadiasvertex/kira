@@ -1,0 +1,3 @@
+module app
+pub def run() -> int32:
+    return 1

@@ -1,0 +1,4 @@
+module sample
+
+def main() -> int64:
+    let xs: array[int64, 70000] = [

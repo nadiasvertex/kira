@@ -6,6 +6,19 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/comptime_eval_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("comptime_eval_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -197,7 +210,7 @@ auto test_eval_global_binding_reference() -> void {
   cinder::diagnostic_bag parse_diag;
   auto sources = cinder::source_manager{};
   const auto file_id = sources.add_file(
-      "global.cn", "module sample\n\ndef run():\n  let result = limit + 1\n");
+      "global.cn", read_program("eval_global_binding_reference.cn"));
   const auto *file = sources.get(*file_id);
   auto lexer = cinder::lexer(file->source(), file->id(), parse_diag);
   auto tokens = lexer.tokenize();
@@ -266,7 +279,7 @@ auto test_eval_cast_through_bound_generic_type_param() -> void {
   auto sources = cinder::source_manager{};
   const auto file_id = sources.add_file(
       "cast_generic.cn",
-      "module sample\n\ndef run():\n  let result = 300 as T\n");
+      read_program("eval_cast_through_bound_generic_type_param.cn"));
   const auto *file = sources.get(*file_id);
   auto lexer = cinder::lexer(file->source(), file->id(), parse_diag);
   auto tokens = lexer.tokenize();

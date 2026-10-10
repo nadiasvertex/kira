@@ -36,6 +36,9 @@ cc_library(
 cc_test(
     name = "parser_test",
     srcs = ["parser_test.cpp"],
+    data = [
+        "//src:parser_test_files",
+    ],
     deps = [
         ":parser",
         "//src/testing",

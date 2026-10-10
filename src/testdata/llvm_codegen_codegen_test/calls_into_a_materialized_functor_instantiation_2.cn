@@ -1,0 +1,13 @@
+module app
+use postgres
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+    def ping(c: conn) -> int32
+module audited[DB: backend]:
+    pub def open_and_ping(url: str) -> int32:
+        let c = DB.connect(url)
+        return DB.ping(c)
+use audited[postgres] as db
+pub def main() -> int32:
+    return db.open_and_ping("localhost")

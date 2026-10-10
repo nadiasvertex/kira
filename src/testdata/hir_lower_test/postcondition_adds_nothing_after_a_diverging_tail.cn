@@ -1,0 +1,8 @@
+module sample
+def abs_val(x: int32) -> int32
+post return >= 0
+:
+    if x < 0:
+        return 0 - x
+    else:
+        return x

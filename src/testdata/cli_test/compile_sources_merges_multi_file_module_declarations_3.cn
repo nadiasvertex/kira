@@ -1,0 +1,4 @@
+module sample.app
+use sample.tools
+pub def run() -> int32:
+  return sample.tools.first() + sample.tools.second()

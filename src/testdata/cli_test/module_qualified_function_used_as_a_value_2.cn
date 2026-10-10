@@ -1,0 +1,7 @@
+module main
+use outer.inner
+def apply(f: fn(int32) -> int32, v: int32) -> int32:
+  f(v)
+def main() -> int32:
+  let g: fn() -> int32 = inner.target
+  apply(inner.twice, g())

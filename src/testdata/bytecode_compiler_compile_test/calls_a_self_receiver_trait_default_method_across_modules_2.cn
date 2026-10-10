@@ -1,0 +1,5 @@
+module app
+use lib
+pub def main() -> int32:
+    var c = lib.make(41)
+    return c.bump()

@@ -1,0 +1,4 @@
+module sample
+def make(a: int32, b: int32) -> fn(int32) -> int32:
+    let f = [a, b] (x: int32) -> int32 => x + b + a
+    return f

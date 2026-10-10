@@ -28,6 +28,18 @@
 
 namespace {
 
+// Cinder programs used by this file are stored in
+// src/testdata/bytecode_compiler_compile_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("bytecode_compiler_compile_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
+
+namespace {
+
 using cinder::testing::expect;
 using cinder::testing::fail;
 namespace hir = cinder::hir;
@@ -254,7 +266,7 @@ auto test_add_compiles_and_runs() -> void {
 auto test_registers_are_reused_across_dead_values() -> void {
   constexpr auto k_bindings = 120;
   auto source =
-      std::string{"module sample\n\ndef chain() -> int32:\n    var acc = 0\n"};
+      std::string{read_program("registers_are_reused_across_dead_values.cn")};
   auto expected = int64_t{0};
   for (auto index = 1; index <= k_bindings; ++index) {
     const auto value = (index * 7 + 3) % 11;
@@ -288,8 +300,8 @@ auto test_registers_are_reused_across_dead_values() -> void {
 /// wrapped at 65536, and a heap block capped at 64 KiB.
 auto test_huge_array_literal_compiles_and_runs() -> void {
   constexpr auto k_elements = 70000;
-  auto source = std::string{"module sample\n\ndef main() -> int64:\n"
-                            "    let xs: array[int64, 70000] = ["};
+  auto source =
+      std::string{read_program("huge_array_literal_compiles_and_runs.cn")};
   for (auto index = 0; index < k_elements; ++index) {
     source += std::to_string(index * 3);
     source += index + 1 < k_elements ? ", " : "]\n";
@@ -311,25 +323,10 @@ auto test_huge_array_literal_compiles_and_runs() -> void {
 /// the linear instruction order are unsound on their own, and where a wrong
 /// answer — not a crash — is the symptom.
 auto test_loop_carried_value_keeps_its_register() -> void {
-  auto module = compile_fixture(
-      "module sample\n"
-      "\n"
-      "def total() -> int32:\n"
-      "    var carried = 7\n"
-      "    var sum = 0\n"
-      "    var i = 0\n"
-      "    while i < 5:\n"
-      // `carried` is read here and never mentioned again in the body, so
-      // everything below is a candidate to be given its register.
-      "        sum = sum + carried\n"
-      "        let a = i * 2\n"
-      "        let b = a + 1\n"
-      "        sum = sum + b\n"
-      "        i = i + 1\n"
-      "    return sum\n"
-      "\n"
-      "def main() -> int32:\n"
-      "    return total()\n");
+  // `carried` is read in the body and never mentioned again, so the rest of
+  // the body is a candidate to be given its register.
+  auto module =
+      compile_fixture(read_program("loop_carried_value_keeps_its_register.cn"));
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
@@ -506,13 +503,8 @@ auto test_calls_another_function_in_the_same_module() -> void {
 auto test_calls_a_function_in_another_module() -> void {
   auto module = compile_fixture_multi(
       {
-          {"tools", "module tools\n"
-                    "pub def double(x: int32) -> int32:\n"
-                    "    return x * 2\n"},
-          {"app", "module app\n"
-                  "use tools\n"
-                  "pub def main() -> int32:\n"
-                  "    return tools.double(21)\n"},
+          {"tools", read_program("calls_a_function_in_another_module_1.cn")},
+          {"app", read_program("calls_a_function_in_another_module_2.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -530,25 +522,11 @@ auto test_calls_into_a_materialized_functor_instantiation() -> void {
   // finds — so an instantiated functor runs, not just type-checks.
   auto module = compile_fixture_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 40\n"
-                       "pub def ping(c: conn) -> int32:\n"
-                       "    return c + 2\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "    def ping(c: conn) -> int32\n"
-                  "module audited[DB: backend]:\n"
-                  "    pub def open_and_ping(url: str) -> int32:\n"
-                  "        let c = DB.connect(url)\n"
-                  "        return DB.ping(c)\n"
-                  "use audited[postgres] as db\n"
-                  "pub def main() -> int32:\n"
-                  "    return db.open_and_ping(\"localhost\")\n"},
+          {"postgres",
+           read_program(
+               "calls_into_a_materialized_functor_instantiation_1.cn")},
+          {"app", read_program(
+                      "calls_into_a_materialized_functor_instantiation_2.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -567,27 +545,11 @@ auto test_functor_body_with_type_and_static_members() -> void {
   // runs unchanged.
   auto module = compile_fixture_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 40\n"
-                       "pub def ping(c: conn) -> int32:\n"
-                       "    return c + 2\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "    def ping(c: conn) -> int32\n"
-                  "module audited[DB: backend]:\n"
-                  "    type row = DB.conn\n"
-                  "    static bump: int32 = 5\n"
-                  "    pub def open_and_bump(url: str) -> int32:\n"
-                  "        let c: row = DB.connect(url)\n"
-                  "        return DB.ping(c) + bump\n"
-                  "use audited[postgres] as db\n"
-                  "pub def main() -> int32:\n"
-                  "    return db.open_and_bump(\"localhost\")\n"},
+          {"postgres",
+           read_program(
+               "calls_into_a_materialized_functor_instantiation_1.cn")},
+          {"app",
+           read_program("functor_body_with_type_and_static_members_2.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -605,31 +567,10 @@ auto test_functor_body_with_impl_and_extend_members() -> void {
   // the synthetic module.
   auto module = compile_fixture_multi(
       {
-          {"postgres", "module postgres\n"
-                       "pub type conn = int32\n"
-                       "pub def connect(url: str) -> conn:\n"
-                       "    return 0\n"},
-          {"app", "module app\n"
-                  "use postgres\n"
-                  "signature backend:\n"
-                  "    type conn\n"
-                  "    def connect(url: str) -> conn\n"
-                  "trait greet:\n"
-                  "    def hello(self) -> int32\n"
-                  "module wrap[DB: backend]:\n"
-                  "    pub type widget = { pub value: int32 }\n"
-                  "    impl greet for widget:\n"
-                  "        def hello(self) -> int32:\n"
-                  "            return self.value\n"
-                  "    extend widget:\n"
-                  "        def doubled(self) -> int32:\n"
-                  "            return self.value + self.value\n"
-                  "    pub def run() -> int32:\n"
-                  "        let b = widget { value: 21 }\n"
-                  "        return b.hello() + b.doubled()\n"
-                  "use wrap[postgres] as w\n"
-                  "pub def main() -> int32:\n"
-                  "    return w.run()\n"},
+          {"postgres",
+           read_program("functor_body_with_impl_and_extend_members_1.cn")},
+          {"app",
+           read_program("functor_body_with_impl_and_extend_members_2.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -642,15 +583,9 @@ auto test_functor_body_with_impl_and_extend_members() -> void {
 auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
   auto module = compile_fixture_multi(
       {
-          {"app", "module app\n"
-                  "pub trait from[T]:\n"
-                  "    def from(value: T) -> self\n"
-                  "pub type wrapped = { pub value: int32 }\n"
-                  "impl from[int32] for wrapped:\n"
-                  "    def from(x: int32) -> wrapped:\n"
-                  "        return wrapped{ value: x * 3 }\n"
-                  "pub def main() -> int32:\n"
-                  "    return wrapped.from(7).value\n"},
+          {"app",
+           read_program(
+               "calls_an_associated_function_via_a_type_qualified_path.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -675,23 +610,10 @@ auto test_calls_an_associated_function_via_a_type_qualified_path() -> void {
 auto test_calls_a_self_receiver_trait_default_method_across_modules() -> void {
   auto module = compile_fixture_multi(
       {
-          {"lib", "module lib\n"
-                  "pub type counter = { n: int32 }\n"
-                  "pub trait bumpable:\n"
-                  "    def peek(mut self) -> int32\n"
-                  "\n"
-                  "    def bump(mut self) -> int32:\n"
-                  "        return self.peek() + 1\n"
-                  "impl bumpable for counter:\n"
-                  "    def peek(mut self) -> int32:\n"
-                  "        return self.n\n"
-                  "pub def make(start: int32) -> counter:\n"
-                  "    return counter { n: start }\n"},
-          {"app", "module app\n"
-                  "use lib\n"
-                  "pub def main() -> int32:\n"
-                  "    var c = lib.make(41)\n"
-                  "    return c.bump()\n"},
+          {"lib", read_program("calls_a_self_receiver_trait_default_method_"
+                               "across_modules_1.cn")},
+          {"app", read_program("calls_a_self_receiver_trait_default_method_"
+                               "across_modules_2.cn")},
       },
       "app");
   auto main_result = run_main(module);
@@ -1388,23 +1310,8 @@ auto test_generator_sequential_next_calls_yield_then_exhaust() -> void {
   // `step` reads one value, or -1 once the generator is exhausted. Four
   // calls give 1, 2, -1, -1, encoded as one number:
   // 1*1000 + 2*100 + (-1+2)*10 + (-1+2) = 1211.
-  auto module = compile_fixture("module sample\n"
-                                "generator def counter() -> some "
-                                "iterator[int32]:\n"
-                                "  yield 1\n"
-                                "  yield 2\n"
-                                "def step(g: &mut generator[int32]) -> int32:\n"
-                                "  match g.next():\n"
-                                "    @some(v) => return v\n"
-                                "    @none => return -1\n"
-                                "def run() -> int32:\n"
-                                "  var g = counter()\n"
-                                "  let a = step(&mut g)\n"
-                                "  let b = step(&mut g)\n"
-                                "  let c = step(&mut g)\n"
-                                "  let d = step(&mut g)\n"
-                                "  return a * 1000 + b * 100 + (c + 2) * 10 + "
-                                "(d + 2)\n");
+  auto module = compile_fixture(
+      read_program("generator_sequential_next_calls_yield_then_exhaust.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "run"), {});
   expect(result.has_value(), "expected run() to succeed");
@@ -1414,19 +1321,8 @@ auto test_generator_sequential_next_calls_yield_then_exhaust() -> void {
 }
 
 auto test_generator_loop_with_yield_sums_values() -> void {
-  auto module = compile_fixture(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    yield n\n"
-      "    n = n + 1\n"
-      "def sum_via_generator(limit: int32) -> int32:\n"
-      "  let g = counter(limit)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+  auto module =
+      compile_fixture(read_program("generator_loop_with_yield_sums_values.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_via_generator"),
                        std::array{bc::slot_value{int64_t{5}}});
@@ -1437,19 +1333,7 @@ auto test_generator_loop_with_yield_sums_values() -> void {
 
 auto test_generator_branch_yields_only_matching_values() -> void {
   auto module = compile_fixture(
-      "module sample\n"
-      "generator def evens(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    if n % 2 == 0:\n"
-      "      yield n\n"
-      "    n = n + 1\n"
-      "def sum_evens(limit: int32) -> int32:\n"
-      "  let g = evens(limit)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+      read_program("generator_branch_yields_only_matching_values.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_evens"),
                        std::array{bc::slot_value{int64_t{10}}});
@@ -1458,19 +1342,8 @@ auto test_generator_branch_yields_only_matching_values() -> void {
 }
 
 auto test_generator_bare_return_exhausts_early() -> void {
-  auto module = compile_fixture("module sample\n"
-                                "generator def early() -> some "
-                                "iterator[int32]:\n"
-                                "  yield 1\n"
-                                "  yield 2\n"
-                                "  return\n"
-                                "  yield 3\n"
-                                "def count_items() -> int32:\n"
-                                "  let g = early()\n"
-                                "  var count = 0\n"
-                                "  while let @some(x) = g.next():\n"
-                                "    count = count + 1\n"
-                                "  return count\n");
+  auto module =
+      compile_fixture(read_program("generator_bare_return_exhausts_early.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "count_items"), {});
   expect(result.has_value(), "expected count_items() to succeed");
@@ -1490,23 +1363,7 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
   // exposed this, since the correct and the (bugged) discarded-initializer
   // values were coincidentally identical.
   auto module = compile_fixture(
-      "module sample\n"
-      "generator def pairs(count: int32) -> some iterator[int32]:\n"
-      "  var a = 1\n"
-      "  var b = 100\n"
-      "  var i = 0\n"
-      "  while i < count:\n"
-      "    yield a\n"
-      "    yield b\n"
-      "    a = a + 1\n"
-      "    b = b + 1\n"
-      "    i = i + 1\n"
-      "def sum_pairs(count: int32) -> int32:\n"
-      "  let g = pairs(count)\n"
-      "  var total = 0\n"
-      "  while let @some(x) = g.next():\n"
-      "    total = total + x\n"
-      "  return total\n");
+      read_program("generator_nonzero_initial_locals_survive_resume.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_pairs"),
                        std::array{bc::slot_value{int64_t{3}}});
@@ -1518,18 +1375,8 @@ auto test_generator_nonzero_initial_locals_survive_resume() -> void {
 }
 
 auto test_for_loop_over_generator_sums_values() -> void {
-  auto module = compile_fixture(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    yield n\n"
-      "    n = n + 1\n"
-      "def sum_via_for(limit: int32) -> int32:\n"
-      "  var total = 0\n"
-      "  for x in counter(limit):\n"
-      "    total = total + x\n"
-      "  return total\n");
+  auto module =
+      compile_fixture(read_program("for_loop_over_generator_sums_values.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_via_for"),
                        std::array{bc::slot_value{int64_t{5}}});
@@ -1545,17 +1392,7 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
   // at 0 < limit, spin forever). A finite, correct sum proves the loop
   // used one single generator instance throughout.
   auto module = compile_fixture(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "  var n = 0\n"
-      "  while n < limit:\n"
-      "    yield n\n"
-      "    n = n + 1\n"
-      "def sum_via_for() -> int32:\n"
-      "  var total = 0\n"
-      "  for x in counter(4):\n"
-      "    total = total + x\n"
-      "  return total\n");
+      read_program("for_loop_over_generator_evaluates_iterable_once.cn"));
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "sum_via_for"), {});
   expect(result.has_value(), "expected sum_via_for() to succeed");
@@ -1572,14 +1409,8 @@ auto test_for_loop_over_generator_evaluates_iterable_once() -> void {
 // read of it works, and a bug that let the second reference silently
 // re-evaluate or shift the array would still pass a single-read test.
 auto test_static_array_global_backs_two_independent_reads() -> void {
-  auto module = compile_fixture(R"cinder(
-module sample
-static TABLE: array[int32, 4] = [10, 20, 30, 40]
-def third(i: usize) -> int32:
-    return TABLE[i]
-def main() -> int32:
-    return TABLE[3] + third(2)
-)cinder");
+  auto module = compile_fixture(
+      read_program("static_array_global_backs_two_independent_reads.cn"));
   expect(module.static_init_function.has_value(),
          "expected a static-init function to be synthesized for a reified "
          "array global");

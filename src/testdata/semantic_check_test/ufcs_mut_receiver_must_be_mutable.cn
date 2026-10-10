@@ -1,0 +1,10 @@
+module main
+
+type acc = { total: int32 }
+
+pub def bump(a: &mut acc) -> int32:
+    return a.total
+
+def main() -> int32:
+    let box = acc{total: 1}
+    return box.bump()

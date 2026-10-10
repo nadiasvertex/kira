@@ -1,0 +1,15 @@
+module sample
+
+trait iterable:
+  type item = int
+
+impl iterable for int:
+  type item = int
+
+def evaluate(x):
+  let value = x where:
+    base = 1
+  let chosen = match x:
+    @some(item) as alias => alias
+    _ => value
+  return chosen

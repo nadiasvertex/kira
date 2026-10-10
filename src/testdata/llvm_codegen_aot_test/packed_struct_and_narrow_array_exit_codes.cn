@@ -1,0 +1,6 @@
+module sample
+packed type header = { pub magic: uint16, pub flags: byte, pub len: uint32 }
+def main() -> int8:
+    let h: header = { magic: 7, flags: 3, len: 42 }
+    let xs: array[int16, 5] = [10, 20, 30, 40, 50]
+    return (h.flags as int8) + (xs[0] as int8) + (xs[4] as int8)

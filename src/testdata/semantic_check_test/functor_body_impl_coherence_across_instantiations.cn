@@ -1,0 +1,27 @@
+module main
+
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+
+module postgres:
+    pub type conn = int32
+    pub def connect(url: str) -> conn:
+        0
+
+module sqlite:
+    pub type conn = int32
+    pub def connect(url: str) -> conn:
+        1
+
+trait greet:
+    def hello(self) -> int32
+
+module wrap[DB: backend]:
+    pub type widget = { value: int32 }
+    impl greet for widget:
+        def hello(self) -> int32:
+            self.value
+
+use main.wrap[main.postgres] as wp
+use main.wrap[main.sqlite] as ws

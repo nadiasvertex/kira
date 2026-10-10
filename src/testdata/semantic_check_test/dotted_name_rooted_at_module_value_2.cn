@@ -1,0 +1,12 @@
+module main
+
+use geo
+use geo.{origin}
+
+static let mine: geo.point = geo.point { x: 1, y: 2 }
+
+def main() -> int32:
+    let a: int32 = mine.y
+    let b: int32 = origin.x
+    let c: int32 = geo.origin.y
+    return a + b + c

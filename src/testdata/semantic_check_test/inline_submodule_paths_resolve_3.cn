@@ -1,0 +1,10 @@
+module main
+
+type holder = { cur: int32 }
+
+module inner:
+    pub type present = { cur: int32 }
+
+def main() -> int32:
+    let b: nosuch.holder = nosuch.holder { cur: 2 }
+    return b.cur

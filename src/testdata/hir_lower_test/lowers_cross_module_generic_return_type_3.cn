@@ -1,0 +1,5 @@
+module app
+use wrap.wrap
+pub def run() -> int32:
+    let h = wrap(7)
+    return h.value

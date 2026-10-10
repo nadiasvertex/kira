@@ -1,0 +1,8 @@
+module sample
+def pick(flag: bool, v: option[int32]) -> int32:
+    if flag:
+        return 0
+    elif let @some(n) = v:
+        return n
+    else:
+        return -1

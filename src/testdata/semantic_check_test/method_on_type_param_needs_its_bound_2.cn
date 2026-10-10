@@ -1,0 +1,6 @@
+module main
+
+def first_of[I](it: I) -> int32:
+    var source = it
+    let x = source.next()
+    return 0

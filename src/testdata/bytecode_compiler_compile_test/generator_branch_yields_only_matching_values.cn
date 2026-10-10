@@ -1,0 +1,13 @@
+module sample
+generator def evens(limit: int32) -> some iterator[int32]:
+  var n = 0
+  while n < limit:
+    if n % 2 == 0:
+      yield n
+    n = n + 1
+def sum_evens(limit: int32) -> int32:
+  let g = evens(limit)
+  var total = 0
+  while let @some(x) = g.next():
+    total = total + x
+  return total

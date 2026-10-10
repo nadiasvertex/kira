@@ -1,0 +1,5 @@
+module sample
+def half(x: int32) -> int32
+pre x >= 0
+post return >= 0
+: x / 2

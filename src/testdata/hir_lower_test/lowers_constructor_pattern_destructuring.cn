@@ -1,0 +1,6 @@
+module sample
+type shape = @circle(int32) | @square(int32)
+def area_hint(s: shape) -> int32:
+    return match s:
+        @circle(r) => r
+        @square(side) => side

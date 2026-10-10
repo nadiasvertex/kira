@@ -1,0 +1,10 @@
+module main
+
+def twice[T](x: T) -> T where T: add:
+    return x + x
+
+def smaller[T](a: T, b: T) -> bool where T: ord:
+    return a < b
+
+def triple[T](x: T) -> T where T: numeric:
+    return x * 3

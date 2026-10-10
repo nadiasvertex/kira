@@ -1,0 +1,9 @@
+module sample
+
+def sq_plus(x: int32) -> int32:
+    let y = x * x
+    return y + 1
+
+def main() -> int32:
+    let n = 4
+    return sq_plus(2) + sq_plus(n)

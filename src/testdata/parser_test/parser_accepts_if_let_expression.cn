@@ -1,0 +1,5 @@
+module sample
+
+def run(v: option[int], w: option[int]) -> int:
+  let n = if let @some(x) = v: x elif let @some(y) = w: y else: 0
+  return n

@@ -1,0 +1,5 @@
+module sample
+def counter(start: int32) -> int32:
+    var total = start
+    total = start + 1
+    return total

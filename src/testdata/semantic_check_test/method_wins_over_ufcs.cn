@@ -1,0 +1,15 @@
+module main
+
+type counter = { value: int32 }
+
+extend counter:
+    def tag(self) -> int32:
+        return self.value
+
+pub def tag(c: counter) -> str:
+    return "free"
+
+def main() -> int32:
+    let c = counter{value: 1}
+    let n: int32 = c.tag()
+    return n

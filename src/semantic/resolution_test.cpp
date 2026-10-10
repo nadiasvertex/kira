@@ -15,6 +15,18 @@
 
 namespace {
 
+// Cinder programs used by this file are stored in
+// src/testdata/semantic_resolution_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("semantic_resolution_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
+
+namespace {
+
 using cinder::testing::expect;
 using cinder::testing::fail;
 
@@ -168,13 +180,8 @@ auto find_recorded_node(const cinder::semantic::semantic_session &session,
 auto test_scope_walk_reaches_nested_expressions_and_static_for() -> void {
   const auto parsed = parse_sources({source_fixture{
       .path = "walk.cn",
-      .text = "module sample\n"
-              "def apply(f: fn(int32) -> int32, x: int32) -> int32:\n"
-              "  return f(x)\n"
-              "def run(bound: int32) -> int32:\n"
-              "  return apply(k => k + bound, 1)\n"
-              "static for step in [1, 2]:\n"
-              "  static assert step.value > 0, \"positive\"\n",
+      .text = read_program(
+          "scope_walk_reaches_nested_expressions_and_static_for.cn"),
   }});
   const auto session =
       cinder::semantic::build_semantic_session(parsed.parsed_modules);

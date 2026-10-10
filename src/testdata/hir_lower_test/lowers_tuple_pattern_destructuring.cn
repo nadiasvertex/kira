@@ -1,0 +1,4 @@
+module sample
+def first(pair: (int32, str)) -> int32:
+    return match pair:
+        (a, _) => a

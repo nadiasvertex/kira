@@ -1,0 +1,11 @@
+module sample
+static def is_int32[T]() -> bool:
+  return T.name() == "int32"
+def classify[T](x: T) -> int32:
+  if is_int32[T]():
+    return 1
+  return 0
+def main() -> int32:
+  if classify(5) == 1 and classify(2.5) == 0:
+    return 42
+  return 7

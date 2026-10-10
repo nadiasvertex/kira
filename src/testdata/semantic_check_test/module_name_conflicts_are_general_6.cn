@@ -1,0 +1,7 @@
+module main
+
+use pkg.*
+
+module seven:
+    pub def one() -> int32:
+        return 1

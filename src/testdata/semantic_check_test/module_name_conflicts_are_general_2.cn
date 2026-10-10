@@ -1,0 +1,5 @@
+module main
+
+use pkg
+
+type pkg = { x: int32 }

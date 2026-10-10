@@ -1,0 +1,11 @@
+module main
+
+def compute() -> int32:
+    def helper(x: int32) -> int32:
+        return x * 2
+    let f = helper
+    let n: int32 = f(5)
+    return n
+
+def main() -> int32:
+    return compute()

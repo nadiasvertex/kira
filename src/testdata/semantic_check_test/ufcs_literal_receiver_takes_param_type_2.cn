@@ -1,0 +1,10 @@
+module main
+
+def id64(x: int64) -> int64:
+    return x
+
+def main() -> int32:
+    let a = 5
+    let b = a.id64()
+    let c: int32 = a
+    return c

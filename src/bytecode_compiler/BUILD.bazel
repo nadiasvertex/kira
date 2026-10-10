@@ -35,6 +35,7 @@ cc_test(
     name = "compile_test",
     srcs = ["compile_test.cpp"],
     data = [
+        "//src:bytecode_compiler_compile_test_files",
         "//src:codegen_test_corpus",
         "//src:std_sources",
     ],

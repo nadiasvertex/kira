@@ -77,6 +77,9 @@ cc_library(
 cc_test(
     name = "aot_test",
     srcs = ["aot_test.cpp"],
+    data = [
+        "//src:llvm_codegen_aot_test_files",
+    ],
     tags = ["no-sandbox"],
     deps = [
         ":aot",
@@ -92,6 +95,7 @@ cc_test(
     name = "codegen_test",
     srcs = ["codegen_test.cpp"],
     data = [
+        "//src:llvm_codegen_codegen_test_files",
         "//src:codegen_test_corpus",
         "//src:std_sources",
     ],

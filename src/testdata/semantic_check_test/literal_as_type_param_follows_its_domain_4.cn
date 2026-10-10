@@ -1,0 +1,7 @@
+module main
+
+def tiny[T]() -> T where T: signed_integer:
+    let n = T.name()
+    static if n == "int8":
+        return 1
+    return 300

@@ -1,0 +1,5 @@
+module sample
+
+module inner:
+    def f() -> unit:
+        unit

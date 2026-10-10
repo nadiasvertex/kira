@@ -1,0 +1,7 @@
+module main
+
+def main() -> int32:
+    let nums = [1, 2, 3]
+    for a, b in nums:
+        let x = a
+    return 0

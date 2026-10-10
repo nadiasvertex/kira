@@ -18,6 +18,17 @@
 #include "src/semantic/types.h"
 #include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in src/testdata/hir_lower_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir = cinder::testing::find_test_data_dir("hir_lower_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -146,9 +157,8 @@ auto find_func(const cinder::ast::file &file, std::string_view name)
 }
 
 auto test_lowers_fully_annotated_function() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def add(x: int32, y: int32) -> int32:\n"
-                               "    return x + y\n");
+  auto fixture =
+      check_fixture(read_program("lowers_fully_annotated_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -197,11 +207,8 @@ auto test_rejects_unannotated_parameter_with_specific_error() -> void {
   // no single body to lower, only the per-call instances the checker makes,
   // so lowering the template itself must be refused — not skipped, and not
   // lowered with a guessed type.
-  auto fixture = check_fixture("module sample\n"
-                               "def width[T](v: T) -> int32:\n"
-                               "    return 4\n"
-                               "def probe(x) -> int32:\n"
-                               "    return width(x)\n");
+  auto fixture = check_fixture(
+      read_program("rejects_unannotated_parameter_with_specific_error.cn"));
   const auto &decl = find_func(*fixture.ast_file, "probe");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -214,9 +221,8 @@ auto test_rejects_unannotated_parameter_with_specific_error() -> void {
 auto test_lowers_unannotated_parameter_the_body_pins() -> void {
   // Here the body pins `x`: `x * 2` is returned as an `int32`, so `x` is an
   // `int32` and `double` is an ordinary function.
-  auto fixture = check_fixture("module sample\n"
-                               "def double(x) -> int32:\n"
-                               "    return x * 2\n");
+  auto fixture = check_fixture(
+      read_program("lowers_unannotated_parameter_the_body_pins.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -225,9 +231,8 @@ auto test_lowers_unannotated_parameter_the_body_pins() -> void {
 }
 
 auto test_lowers_function_with_inferred_return_type() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def add(x: int32, y: int64):\n"
-                               "    return y\n");
+  auto fixture = check_fixture(
+      read_program("lowers_function_with_inferred_return_type.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -244,9 +249,8 @@ auto test_lowers_function_with_inferred_return_type() -> void {
 auto test_rejects_function_whose_return_type_cannot_be_inferred() -> void {
   // Nothing but the function's own result feeds its return, so the body says
   // nothing about what that result is.
-  auto fixture = check_fixture("module sample\n"
-                               "def forever():\n"
-                               "    return forever()\n");
+  auto fixture = check_fixture(
+      read_program("rejects_function_whose_return_type_cannot_be_inferred.cn"));
   const auto &decl = find_func(*fixture.ast_file, "forever");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -257,9 +261,8 @@ auto test_rejects_function_whose_return_type_cannot_be_inferred() -> void {
 }
 
 auto test_preserves_source_spans() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def add(x: int32, y: int32) -> int32:\n"
-                               "    return x + y\n");
+  auto fixture =
+      check_fixture(read_program("lowers_fully_annotated_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "add");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -284,8 +287,8 @@ auto test_preserves_source_spans() -> void {
 }
 
 auto test_lowers_compact_expression_body() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def identity(x: int32) -> int32: x\n");
+  auto fixture =
+      check_fixture(read_program("lowers_compact_expression_body.cn"));
   const auto &decl = find_func(*fixture.ast_file, "identity");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -299,9 +302,8 @@ auto test_lowers_compact_expression_body() -> void {
 }
 
 auto test_lowers_if_expression_and_module() -> void {
-  const auto fixture = check_fixture("module sample\n"
-                                     "def max2(a: int32, b: int32) -> int32:\n"
-                                     "    return (if a > b: a else: b)\n");
+  const auto fixture =
+      check_fixture(read_program("lowers_if_expression_and_module.cn"));
 
   auto module_result =
       hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
@@ -322,9 +324,7 @@ auto test_lowers_if_expression_and_module() -> void {
 }
 
 auto test_rejects_generic_function() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def identity[T](x: T) -> T:\n"
-                               "    return x\n");
+  auto fixture = check_fixture(read_program("rejects_generic_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "identity");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -337,15 +337,8 @@ auto test_rejects_generic_function() -> void {
 // constant it is called with. The template itself is not a function anything
 // can call — nothing passes `n` — so the module holds `get$3`, not `get`.
 auto test_lowers_const_generic_instance_per_constant() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def get[n: usize](v: array[int32, n], "
-                    "i: usize) -> int32:\n"
-                    "    return v[i]\n"
-                    "def main() -> int32:\n"
-                    "    let a: array[int32, 3] = [1, 2, 3]\n"
-                    "    let b: array[int32, 5] = [1, 2, 3, 4, 5]\n"
-                    "    return get(a, 0) + get(b, 0) + get(a, 2)\n");
+  auto fixture = check_fixture(
+      read_program("lowers_const_generic_instance_per_constant.cn"));
 
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected the module to lower");
@@ -369,17 +362,8 @@ auto test_lowers_const_generic_instance_per_constant() -> void {
 // refinement over it has a bound to compare against, so `try_from` compiles
 // into an ordinary runtime check instead of being refused.
 auto test_lowers_try_from_on_a_const_generic_refinement() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "type index[n: usize] = usize where self < n\n"
-                    "def at[n: usize](v: array[int32, n], raw: usize) "
-                    "-> int32:\n"
-                    "    if let @some(i) = index[n].try_from(raw):\n"
-                    "        return v[i]\n"
-                    "    return -1\n"
-                    "def main() -> int32:\n"
-                    "    let a: array[int32, 4] = [1, 2, 3, 4]\n"
-                    "    return at(a, 2)\n");
+  auto fixture = check_fixture(
+      read_program("lowers_try_from_on_a_const_generic_refinement.cn"));
 
   auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
   expect(module.has_value(), "expected the module to lower");
@@ -391,12 +375,8 @@ auto test_lowers_try_from_on_a_const_generic_refinement() -> void {
 }
 
 auto test_lowers_match_with_literal_and_wildcard_patterns() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def classify(x: int32) -> int32:\n"
-                               "    return match x:\n"
-                               "        0 => 1\n"
-                               "        1 => 2\n"
-                               "        _ => 0\n");
+  auto fixture = check_fixture(
+      read_program("lowers_match_with_literal_and_wildcard_patterns.cn"));
   const auto &decl = find_func(*fixture.ast_file, "classify");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -427,10 +407,8 @@ auto test_lowers_plain_binding_arm_as_wildcard_plus_let() -> void {
   // structural pattern at all, so it desugars to a wildcard pattern plus a
   // synthetic `hir_let` bound to the match subject (Decision 6, item 2),
   // instead of a dedicated binding-pattern node kind.
-  auto fixture = check_fixture("module sample\n"
-                               "def echo(x: int32) -> int32:\n"
-                               "    return match x:\n"
-                               "        y => y\n");
+  auto fixture = check_fixture(
+      read_program("lowers_plain_binding_arm_as_wildcard_plus_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "echo");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -461,11 +439,8 @@ auto test_lowers_plain_binding_arm_as_wildcard_plus_let() -> void {
 }
 
 auto test_lowers_pattern_alias_to_synthetic_let() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def classify(x: int32) -> int32:\n"
-                               "    return match x:\n"
-                               "        (0 | 1) as small => small\n"
-                               "        _ => x\n");
+  auto fixture =
+      check_fixture(read_program("lowers_pattern_alias_to_synthetic_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "classify");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -493,11 +468,8 @@ auto test_lowers_pattern_alias_to_synthetic_let() -> void {
 }
 
 auto test_rejects_binding_inside_or_pattern_alternative() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def classify(x: int32) -> int32:\n"
-                               "    return match x:\n"
-                               "        0 | y => y\n"
-                               "        _ => x\n");
+  auto fixture = check_fixture(
+      read_program("rejects_binding_inside_or_pattern_alternative.cn"));
   const auto &decl = find_func(*fixture.ast_file, "classify");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -508,11 +480,8 @@ auto test_rejects_binding_inside_or_pattern_alternative() -> void {
 }
 
 auto test_lowers_struct_pattern_field_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type container = { pub value: int32 }\n"
-                               "def unwrap(b: container) -> int32:\n"
-                               "    return match b:\n"
-                               "        { value: v } => v\n");
+  auto fixture = check_fixture(
+      read_program("lowers_struct_pattern_field_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -548,11 +517,8 @@ auto test_lowers_struct_pattern_field_destructuring() -> void {
 }
 
 auto test_lowers_struct_pattern_shorthand_field() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type container = { pub value: int32 }\n"
-                               "def unwrap(b: container) -> int32:\n"
-                               "    return match b:\n"
-                               "        { value } => value\n");
+  auto fixture =
+      check_fixture(read_program("lowers_struct_pattern_shorthand_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -577,10 +543,8 @@ auto test_lowers_struct_pattern_shorthand_field() -> void {
 }
 
 auto test_lowers_tuple_pattern_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def first(pair: (int32, str)) -> int32:\n"
-                               "    return match pair:\n"
-                               "        (a, _) => a\n");
+  auto fixture =
+      check_fixture(read_program("lowers_tuple_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -614,12 +578,8 @@ auto test_lowers_tuple_pattern_destructuring() -> void {
 }
 
 auto test_lowers_constructor_pattern_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type shape = @circle(int32) | @square(int32)\n"
-                               "def area_hint(s: shape) -> int32:\n"
-                               "    return match s:\n"
-                               "        @circle(r) => r\n"
-                               "        @square(side) => side\n");
+  auto fixture = check_fixture(
+      read_program("lowers_constructor_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "area_hint");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -658,11 +618,7 @@ auto test_lowers_constructor_pattern_destructuring() -> void {
 
 auto test_lowers_option_and_result_pattern_sugar() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def unwrap_or_zero(x: option[int32]) -> int32:\n"
-                    "    return match x:\n"
-                    "        @some(v) => v\n"
-                    "        @none => 0\n");
+      check_fixture(read_program("lowers_option_and_result_pattern_sugar.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap_or_zero");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -690,11 +646,7 @@ auto test_lowers_option_and_result_pattern_sugar() -> void {
 }
 
 auto test_lowers_range_pattern() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def bucket(x: int32) -> int32:\n"
-                               "    return match x:\n"
-                               "        0..10 => 1\n"
-                               "        _ => 0\n");
+  auto fixture = check_fixture(read_program("lowers_range_pattern.cn"));
   const auto &decl = find_func(*fixture.ast_file, "bucket");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -718,10 +670,8 @@ auto test_lowers_plain_let_as_single_statement() -> void {
   // Regression guard: a plain `let name = expr` must keep lowering to
   // exactly one `hir_let` — the fast path in the `let_stmt` case — not the
   // two-statement synthetic-subject form destructuring patterns need.
-  auto fixture = check_fixture("module sample\n"
-                               "def double(x: int32) -> int32:\n"
-                               "    let y = x\n"
-                               "    return y\n");
+  auto fixture =
+      check_fixture(read_program("lowers_plain_let_as_single_statement.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -739,10 +689,7 @@ auto test_lowers_plain_let_as_single_statement() -> void {
 
 auto test_lowers_tuple_pattern_let_destructuring() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def first_of_pair(pair: (int32, str)) -> int32:\n"
-                    "    let (n, _) = pair\n"
-                    "    return n\n");
+      check_fixture(read_program("lowers_tuple_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first_of_pair");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -777,11 +724,8 @@ auto test_lowers_tuple_pattern_let_destructuring() -> void {
 }
 
 auto test_lowers_struct_pattern_let_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type container = { pub value: int32 }\n"
-                               "def read(c: container) -> int32:\n"
-                               "    let { value } = c\n"
-                               "    return value\n");
+  auto fixture =
+      check_fixture(read_program("lowers_struct_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "read");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -800,9 +744,8 @@ auto test_lowers_struct_pattern_let_destructuring() -> void {
 }
 
 auto test_lowers_tuple_destructuring_parameter() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def first((a, _): (int32, int32)) -> int32:\n"
-                               "    return a\n");
+  auto fixture =
+      check_fixture(read_program("lowers_tuple_destructuring_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "first");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -833,10 +776,7 @@ auto test_lowers_tuple_destructuring_parameter() -> void {
 
 auto test_lowers_struct_destructuring_parameter() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "type container = { pub value: int32 }\n"
-                    "def read_value({ value }: container) -> int32:\n"
-                    "    return value\n");
+      check_fixture(read_program("lowers_struct_destructuring_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "read_value");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -859,10 +799,8 @@ auto test_lowers_array_pattern_destructuring() -> void {
   // position is always an open-ended range_pattern, never "gather the
   // rest") — so an array pattern is a plain fixed-arity structural
   // destructure, same shape as a tuple pattern.
-  auto fixture = check_fixture("module sample\n"
-                               "def head(xs: array[int32, 3]) -> int32:\n"
-                               "    return match xs:\n"
-                               "        [a, _, _] => a\n");
+  auto fixture =
+      check_fixture(read_program("lowers_array_pattern_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "head");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -897,10 +835,8 @@ auto test_lowers_array_pattern_destructuring() -> void {
 }
 
 auto test_lowers_array_pattern_let_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def second(xs: array[int32, 3]) -> int32:\n"
-                               "    let [_, b, _] = xs\n"
-                               "    return b\n");
+  auto fixture =
+      check_fixture(read_program("lowers_array_pattern_let_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "second");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -919,11 +855,8 @@ auto test_lowers_array_pattern_let_destructuring() -> void {
 }
 
 auto test_lowers_let_else_fallible_destructuring() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def parse(v: option[int32]) -> int32:\n"
-                               "    let @some(n) = v else:\n"
-                               "        return -1\n"
-                               "    return n\n");
+  auto fixture =
+      check_fixture(read_program("lowers_let_else_fallible_destructuring.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -977,11 +910,8 @@ auto test_lowers_let_else_fallible_destructuring() -> void {
 }
 
 auto test_lowers_var_and_plain_assignment() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def counter(start: int32) -> int32:\n"
-                               "    var total = start\n"
-                               "    total = start + 1\n"
-                               "    return total\n");
+  auto fixture =
+      check_fixture(read_program("lowers_var_and_plain_assignment.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1014,11 +944,7 @@ auto test_lowers_var_and_plain_assignment() -> void {
 }
 
 auto test_lowers_compound_assignment() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def counter(start: int32) -> int32:\n"
-                               "    var total = start\n"
-                               "    total += 1\n"
-                               "    return total\n");
+  auto fixture = check_fixture(read_program("lowers_compound_assignment.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1032,12 +958,7 @@ auto test_lowers_compound_assignment() -> void {
 }
 
 auto test_lowers_while_loop() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def count_down(n: int32) -> int32:\n"
-                               "    var x = n\n"
-                               "    while x > 0:\n"
-                               "        x = x - 1\n"
-                               "    return x\n");
+  auto fixture = check_fixture(read_program("lowers_while_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_down");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1060,23 +981,7 @@ auto test_lowers_while_loop() -> void {
 }
 
 auto test_needs_drop_folds_dead_branch() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type noisy = { id: int32 }\n"
-                               "impl drop for noisy:\n"
-                               "    def drop(mut self) -> unit:\n"
-                               "        return\n"
-                               "def plain(n: int32) -> int32:\n"
-                               "    if needs_drop[int32]():\n"
-                               "        var x = n\n"
-                               "        while x > 0:\n"
-                               "            x = x - 1\n"
-                               "    return n\n"
-                               "def owned(n: int32) -> int32:\n"
-                               "    if needs_drop[noisy]():\n"
-                               "        var x = n\n"
-                               "        while x > 0:\n"
-                               "            x = x - 1\n"
-                               "    return n\n");
+  auto fixture = check_fixture(read_program("needs_drop_folds_dead_branch.cn"));
 
   const auto first_if =
       [](const hir::hir_function &function) -> const hir::hir_if & {
@@ -1111,11 +1016,7 @@ auto test_needs_drop_folds_dead_branch() -> void {
 }
 
 auto test_lowers_while_let() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def parse(v: option[int32]) -> int32:\n"
-                               "    while let @some(n) = v:\n"
-                               "        return n\n"
-                               "    return -1\n");
+  auto fixture = check_fixture(read_program("lowers_while_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1148,12 +1049,7 @@ auto test_lowers_while_let() -> void {
 }
 
 auto test_lowers_if_let() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def unwrap_or(v: option[int32]) -> int32:\n"
-                               "    if let @some(n) = v:\n"
-                               "        return n\n"
-                               "    else:\n"
-                               "        return -1\n");
+  auto fixture = check_fixture(read_program("lowers_if_let.cn"));
   const auto &decl = find_func(*fixture.ast_file, "unwrap_or");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1205,15 +1101,7 @@ auto test_lowers_elif_let_chain() -> void {
   // A chain that mixes both branch forms: the leading plain `if` stays a
   // `hir_if`, and everything after it — the `elif let` and the `else` — is
   // what that `hir_if`'s else block holds.
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def pick(flag: bool, v: option[int32]) -> int32:\n"
-                    "    if flag:\n"
-                    "        return 0\n"
-                    "    elif let @some(n) = v:\n"
-                    "        return n\n"
-                    "    else:\n"
-                    "        return -1\n");
+  auto fixture = check_fixture(read_program("lowers_elif_let_chain.cn"));
   const auto &decl = find_func(*fixture.ast_file, "pick");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1248,13 +1136,8 @@ auto test_rejects_for_loop_over_user_defined_type() -> void {
   // test_lowers_list_for_loop and friends) — a user-defined iterable is
   // the one shape spec/iterator-protocol-design.md still defers, since it
   // would need a real trait-based protocol this project doesn't have yet.
-  auto fixture = check_fixture("module sample\n"
-                               "type counter = { pub value: int32 }\n"
-                               "def sum_counters(xs: counter) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for x in xs:\n"
-                               "        total = total + x\n"
-                               "    return total\n");
+  auto fixture =
+      check_fixture(read_program("rejects_for_loop_over_user_defined_type.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_counters");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1265,10 +1148,7 @@ auto test_rejects_for_loop_over_user_defined_type() -> void {
 }
 
 auto test_lowers_tuple_literal() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def make_pair(a: int32, b: int32) -> "
-                               "(int32, int32):\n"
-                               "    return (a, b)\n");
+  auto fixture = check_fixture(read_program("lowers_tuple_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_pair");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1286,10 +1166,7 @@ auto test_lowers_tuple_literal() -> void {
 }
 
 auto test_lowers_array_literal() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def make_array(a: int32, b: int32, "
-                               "c: int32) -> array[int32, 3]:\n"
-                               "    return [a, b, c]\n");
+  auto fixture = check_fixture(read_program("lowers_array_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_array");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1307,9 +1184,7 @@ auto test_lowers_array_literal() -> void {
 }
 
 auto test_lowers_array_fill_literal() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def make_filled(v: int32) -> array[int32, 3]:\n"
-                               "    return [v; 3]\n");
+  auto fixture = check_fixture(read_program("lowers_array_fill_literal.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_filled");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1330,10 +1205,8 @@ auto test_lowers_array_fill_literal() -> void {
 }
 
 auto test_lowers_struct_literal_explicit_field() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type container = { pub value: int32 }\n"
-                               "def make_container(v: int32) -> container:\n"
-                               "    return { value: v }\n");
+  auto fixture =
+      check_fixture(read_program("lowers_struct_literal_explicit_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_container");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1353,10 +1226,8 @@ auto test_lowers_struct_literal_explicit_field() -> void {
 }
 
 auto test_lowers_struct_literal_shorthand_field() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type container = { pub value: int32 }\n"
-                               "def wrap(value: int32) -> container:\n"
-                               "    return { value }\n");
+  auto fixture =
+      check_fixture(read_program("lowers_struct_literal_shorthand_field.cn"));
   const auto &decl = find_func(*fixture.ast_file, "wrap");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1382,9 +1253,7 @@ auto test_lowers_struct_literal_shorthand_field() -> void {
 }
 
 auto test_lowers_cast_expression() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def widen(x: int32) -> int64:\n"
-                               "    return x as int64\n");
+  auto fixture = check_fixture(read_program("lowers_cast_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "widen");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1407,13 +1276,7 @@ auto test_lowers_cast_expression() -> void {
 }
 
 auto test_lowers_lambda_expression() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:\n"
-      "    return f(f(x))\n"
-      "def double_value(x: int32) -> int32:\n"
-      "    let inc = pure (n: int32) -> int32 => n + 1\n"
-      "    return apply_twice(inc, x)\n");
+  auto fixture = check_fixture(read_program("lowers_lambda_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "double_value");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1453,11 +1316,7 @@ auto test_lowers_lambda_expression() -> void {
 }
 
 auto test_lowers_where_expression() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def compute(v: int32) -> int32:\n"
-                               "    return (a + b) where:\n"
-                               "        a = v + 1\n"
-                               "        b = v + 2\n");
+  auto fixture = check_fixture(read_program("lowers_where_expression.cn"));
   const auto &decl = find_func(*fixture.ast_file, "compute");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1496,11 +1355,8 @@ auto test_lowers_call_to_named_function() -> void {
   // import) straight from its declaration rather than through `infer_expr`,
   // so the callee ident's own type needs its own persistence hook — same
   // class of gap as the assignment-target and parameter-pattern fixes.
-  auto fixture = check_fixture("module sample\n"
-                               "def helper(x: int32) -> int32:\n"
-                               "    return x + 1\n"
-                               "def caller(x: int32) -> int32:\n"
-                               "    return helper(helper(x))\n");
+  auto fixture =
+      check_fixture(read_program("lowers_call_to_named_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1533,13 +1389,8 @@ auto test_lowers_call_to_named_function() -> void {
 
 auto test_lowers_module_qualified_call() -> void {
   auto fixture = check_fixture_multi({
-      {"tools.cn", "module tools\n"
-                   "pub def double(x: int32) -> int32:\n"
-                   "    return x * 2\n"},
-      {"app.cn", "module app\n"
-                 "use tools\n"
-                 "pub def run() -> int32:\n"
-                 "    return tools.double(21)\n"},
+      {"tools.cn", read_program("lowers_module_qualified_call_1.cn")},
+      {"app.cn", read_program("lowers_module_qualified_call_2.cn")},
   });
   const auto &decl = find_func(*fixture.ast_files[1], "run");
 
@@ -1567,19 +1418,12 @@ auto test_lowers_module_qualified_call() -> void {
 /// so the call reached lowering carrying no concrete type and failed there.
 auto test_lowers_cross_module_generic_return_type() -> void {
   auto fixture = check_fixture_multi({
-      {"types.cn", "module types\n"
-                   "pub type holder[T] = { pub value: T }\n"},
+      {"types.cn",
+       read_program("lowers_cross_module_generic_return_type_1.cn")},
       // The `use` below is the only thing that brings `holder` into scope for
       // `wrap`'s signature — the caller never names it.
-      {"wrap.cn", "module wrap\n"
-                  "use types.holder\n"
-                  "pub def wrap[T](v: T) -> holder[T]:\n"
-                  "    return holder { value: v }\n"},
-      {"app.cn", "module app\n"
-                 "use wrap.wrap\n"
-                 "pub def run() -> int32:\n"
-                 "    let h = wrap(7)\n"
-                 "    return h.value\n"},
+      {"wrap.cn", read_program("lowers_cross_module_generic_return_type_2.cn")},
+      {"app.cn", read_program("lowers_cross_module_generic_return_type_3.cn")},
   });
 
   auto module_result =
@@ -1610,15 +1454,8 @@ auto test_lowers_cross_module_generic_return_type() -> void {
 }
 
 auto test_lowers_type_qualified_associated_call() -> void {
-  auto fixture = check_fixture("module app\n"
-                               "pub trait from[T]:\n"
-                               "    def from(value: T) -> self\n"
-                               "pub type wrapper = { pub value: int32 }\n"
-                               "impl from[int32] for wrapper:\n"
-                               "    def from(x: int32) -> wrapper:\n"
-                               "        return wrapper{ value: x }\n"
-                               "pub def run() -> wrapper:\n"
-                               "    return wrapper.from(5)\n");
+  auto fixture =
+      check_fixture(read_program("lowers_type_qualified_associated_call.cn"));
 
   auto module_result =
       hir::lower_module(*fixture.ast_file, "app", fixture.checked);
@@ -1653,11 +1490,8 @@ auto test_lowers_type_qualified_associated_call() -> void {
 }
 
 auto test_lowers_named_call_arguments_in_declared_order() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def subtract(a: int32, b: int32) -> int32:\n"
-                               "    return a - b\n"
-                               "def caller(x: int32, y: int32) -> int32:\n"
-                               "    return subtract(b: y, a: x)\n");
+  auto fixture = check_fixture(
+      read_program("lowers_named_call_arguments_in_declared_order.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1691,11 +1525,7 @@ auto test_lowers_named_call_arguments_in_declared_order() -> void {
 /// about defaults.
 auto test_lowers_call_relying_on_default_argument() -> void {
   auto fixture =
-      check_fixture("module sample\n"
-                    "def greet(name: str, greeting: str = \"hello\") -> str:\n"
-                    "    return greeting\n"
-                    "def caller(name: str) -> str:\n"
-                    "    return greet(name)\n");
+      check_fixture(read_program("lowers_call_relying_on_default_argument.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1723,11 +1553,8 @@ auto test_lowers_call_relying_on_default_argument() -> void {
 /// evaluated in the caller's frame, and is refused rather than lowered into
 /// a reference to a binding that doesn't exist there.
 auto test_rejects_default_referring_to_another_parameter() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def f(a: int32, b: int32 = a) -> int32:\n"
-                               "    return a + b\n"
-                               "def caller() -> int32:\n"
-                               "    return f(2)\n");
+  auto fixture = check_fixture(
+      read_program("rejects_default_referring_to_another_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1740,10 +1567,8 @@ auto test_rejects_default_referring_to_another_parameter() -> void {
 }
 
 auto test_lowers_variant_construction_with_payload() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type shape = @circle(int32) | @square(int32)\n"
-                               "def make_circle(r: int32) -> shape:\n"
-                               "    return @circle(r)\n");
+  auto fixture = check_fixture(
+      read_program("lowers_variant_construction_with_payload.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make_circle");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1763,9 +1588,7 @@ auto test_lowers_variant_construction_with_payload() -> void {
 }
 
 auto test_lowers_bare_unit_variant() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def none_int() -> option[int32]:\n"
-                               "    return @none\n");
+  auto fixture = check_fixture(read_program("lowers_bare_unit_variant.cn"));
   const auto &decl = find_func(*fixture.ast_file, "none_int");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1783,11 +1606,7 @@ auto test_lowers_bare_unit_variant() -> void {
 }
 
 auto test_lowers_try_expr_on_result() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def parse(v: result[int32, str]) -> result[int32, str]:\n"
-                    "    let n = v?\n"
-                    "    return @ok(n)\n");
+  auto fixture = check_fixture(read_program("lowers_try_expr_on_result.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1843,10 +1662,7 @@ auto test_lowers_try_expr_on_result() -> void {
 }
 
 auto test_lowers_try_expr_on_option() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def parse(v: option[int32]) -> option[int32]:\n"
-                               "    let n = v?\n"
-                               "    return @some(n)\n");
+  auto fixture = check_fixture(read_program("lowers_try_expr_on_option.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1871,20 +1687,8 @@ auto test_lowers_try_expr_on_option() -> void {
 }
 
 auto test_lowers_try_expr_with_from_conversion() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "use std.traits.from\n"
-      "type parse_error = @bad_digit(str) | @empty\n"
-      "type app_error = @parse(str) | @other(str)\n"
-      "impl from[parse_error] for app_error:\n"
-      "    def from(e: parse_error) -> app_error:\n"
-      "        match e:\n"
-      "            @bad_digit(s) => @parse(s)\n"
-      "            @empty        => @parse(\"empty\")\n"
-      "def parse_num(v: result[int32, parse_error]) -> result[int32, "
-      "app_error]:\n"
-      "    let n = v?\n"
-      "    return @ok(n)\n");
+  auto fixture =
+      check_fixture(read_program("lowers_try_expr_with_from_conversion.cn"));
   const auto &decl = find_func(*fixture.ast_file, "parse_num");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1924,12 +1728,7 @@ auto test_lowers_try_expr_with_from_conversion() -> void {
 }
 
 auto test_lowers_range_for_loop() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def sum_up_to(n: int32) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for i in 0..n:\n"
-                               "        total = total + i\n"
-                               "    return total\n");
+  auto fixture = check_fixture(read_program("lowers_range_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_up_to");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -1993,12 +1792,8 @@ auto test_lowers_range_for_loop() -> void {
 }
 
 auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def count_evens(n: int32) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for i in 0..=n if i % 2 == 0:\n"
-                               "        total = total + 1\n"
-                               "    return total\n");
+  auto fixture = check_fixture(
+      read_program("lowers_inclusive_range_for_loop_with_guard.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_evens");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2039,12 +1834,7 @@ auto test_lowers_inclusive_range_for_loop_with_guard() -> void {
 /// that honest — a regression to the builtin path would still compute the
 /// right sum, and a test that only checked the sum would not notice.
 auto test_lowers_list_for_loop() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def sum_list(xs: list[int32]) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for x in xs:\n"
-                               "        total = total + x\n"
-                               "    return total\n");
+  auto fixture = check_fixture(read_program("lowers_list_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_list");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2092,12 +1882,8 @@ auto test_lowers_list_for_loop() -> void {
 }
 
 auto test_lowers_array_for_loop_with_static_length() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def sum_array(xs: array[int32, 3]) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for x in xs:\n"
-                               "        total = total + x\n"
-                               "    return total\n");
+  auto fixture = check_fixture(
+      read_program("lowers_array_for_loop_with_static_length.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_array");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2117,12 +1903,8 @@ auto test_lowers_array_for_loop_with_static_length() -> void {
 }
 
 auto test_lowers_str_for_loop_yields_char() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def count_chars(s: str) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for c in s:\n"
-                               "        total = total + 1\n"
-                               "    return total\n");
+  auto fixture =
+      check_fixture(read_program("lowers_str_for_loop_yields_char.cn"));
   const auto &decl = find_func(*fixture.ast_file, "count_chars");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2156,12 +1938,7 @@ auto test_lowers_str_for_loop_yields_char() -> void {
 }
 
 auto test_lowers_option_for_loop() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def sum_opt(o: option[int32]) -> int32:\n"
-                               "    var total = 0\n"
-                               "    for x in o:\n"
-                               "        total = total + x\n"
-                               "    return total\n");
+  auto fixture = check_fixture(read_program("lowers_option_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_opt");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2202,15 +1979,7 @@ auto test_lowers_option_for_loop() -> void {
 }
 
 auto test_lowers_generator_for_loop() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "generator def counter(limit: int32) -> some iterator[int32]:\n"
-      "    yield 1\n"
-      "def sum_gen() -> int32:\n"
-      "    var total = 0\n"
-      "    for x in counter(5):\n"
-      "        total = total + x\n"
-      "    return total\n");
+  auto fixture = check_fixture(read_program("lowers_generator_for_loop.cn"));
   const auto &decl = find_func(*fixture.ast_file, "sum_gen");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2255,9 +2024,7 @@ auto test_lowers_generator_for_loop() -> void {
 }
 
 auto test_lowers_simple_comprehension() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def squares(n: int32) -> list[int32]:\n"
-                               "    return for x in 0..n => x * x\n");
+  auto fixture = check_fixture(read_program("lowers_simple_comprehension.cn"));
   const auto &decl = find_func(*fixture.ast_file, "squares");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2343,9 +2110,8 @@ auto test_lowers_simple_comprehension() -> void {
 }
 
 auto test_lowers_comprehension_with_guard() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def evens(n: int32) -> list[int32]:\n"
-                               "    return for x in 0..n if x % 2 == 0 => x\n");
+  auto fixture =
+      check_fixture(read_program("lowers_comprehension_with_guard.cn"));
   const auto &decl = find_func(*fixture.ast_file, "evens");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2374,10 +2140,7 @@ auto test_lowers_comprehension_with_guard() -> void {
 }
 
 auto test_lowers_nested_comprehension() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def products(n: int32, m: int32) -> list[int32]:\n"
-                    "    return for x in 0..n, y in 0..m => x * y\n");
+  auto fixture = check_fixture(read_program("lowers_nested_comprehension.cn"));
   const auto &decl = find_func(*fixture.ast_file, "products");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2416,10 +2179,8 @@ auto test_lowers_nested_comprehension() -> void {
 }
 
 auto test_rejects_comprehension_over_user_defined_type() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type counter = { pub value: int32 }\n"
-                               "def values(xs: counter) -> list[int32]:\n"
-                               "    return for x in xs => x\n");
+  auto fixture = check_fixture(
+      read_program("rejects_comprehension_over_user_defined_type.cn"));
   const auto &decl = find_func(*fixture.ast_file, "values");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2430,12 +2191,7 @@ auto test_rejects_comprehension_over_user_defined_type() -> void {
 }
 
 auto test_lowers_generator_function() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "generator def counter() -> some iterator[int32]:\n"
-                    "    yield 1\n"
-                    "    if true:\n"
-                    "        yield 2\n");
+  auto fixture = check_fixture(read_program("lowers_generator_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "counter");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2494,18 +2250,8 @@ auto test_lowers_generator_function() -> void {
 // `counter` struct type (not a synthetic existential id), and a caller
 // binding the result via `let` gets that same concrete type on its local.
 auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "trait describable:\n"
-                               "    def describe(self) -> int32\n"
-                               "type counter = { pub n: int32 }\n"
-                               "impl describable for counter:\n"
-                               "    def describe(self) -> int32:\n"
-                               "        return self.n\n"
-                               "def make_thing() -> some describable:\n"
-                               "    return counter{ n: 42 }\n"
-                               "def use_thing() -> int32:\n"
-                               "    let thing = make_thing()\n"
-                               "    return thing.describe()\n");
+  auto fixture = check_fixture(read_program(
+      "lowers_existential_return_type_to_concrete_backing_type.cn"));
 
   const auto &counter_decl = find_func(*fixture.ast_file, "make_thing");
   auto producer = hir::lower_function(counter_decl, fixture.checked);
@@ -2532,10 +2278,8 @@ auto test_lowers_existential_return_type_to_concrete_backing_type() -> void {
 // An unproven `pre` becomes a check at the function's entry — before the body
 // it guards, and once per call, not once per call site.
 auto test_lowers_unproven_precondition_to_entry_check() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def half(x: int32) -> int32\n"
-                               "pre x >= 0, \"x must be non-negative\"\n"
-                               ": x / 2\n");
+  auto fixture = check_fixture(
+      read_program("lowers_unproven_precondition_to_entry_check.cn"));
   const auto &decl = find_func(*fixture.ast_file, "half");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2562,13 +2306,8 @@ auto test_lowers_unproven_precondition_to_entry_check() -> void {
 // A `post` is checked at every exit, against the value that exit returns —
 // which the condition names `return`.
 auto test_lowers_postcondition_at_each_exit() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def clamp_low(x: int32) -> int32\n"
-                               "post return >= 0\n"
-                               ":\n"
-                               "    if x < 0:\n"
-                               "        return 0 - x\n"
-                               "    x\n");
+  auto fixture =
+      check_fixture(read_program("lowers_postcondition_at_each_exit.cn"));
   const auto &decl = find_func(*fixture.ast_file, "clamp_low");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2604,14 +2343,8 @@ auto test_lowers_postcondition_at_each_exit() -> void {
 // code: it puts an instruction after a terminator, which LLVM's verifier
 // rejects outright.)
 auto test_postcondition_adds_nothing_after_a_diverging_tail() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def abs_val(x: int32) -> int32\n"
-                               "post return >= 0\n"
-                               ":\n"
-                               "    if x < 0:\n"
-                               "        return 0 - x\n"
-                               "    else:\n"
-                               "        return x\n");
+  auto fixture = check_fixture(
+      read_program("postcondition_adds_nothing_after_a_diverging_tail.cn"));
   const auto &decl = find_func(*fixture.ast_file, "abs_val");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2635,11 +2368,7 @@ auto test_postcondition_adds_nothing_after_a_diverging_tail() -> void {
 // A `pre` the checker proved from the parameters' own types is not a runtime
 // check at all — `positive`'s refinement already guarantees it on every call.
 auto test_omits_proved_precondition() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type positive = int32 where self > 0\n"
-                               "def scale(p: positive) -> int32\n"
-                               "pre p > 0\n"
-                               ": p * 2\n");
+  auto fixture = check_fixture(read_program("omits_proved_precondition.cn"));
   const auto &decl = find_func(*fixture.ast_file, "scale");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2653,11 +2382,8 @@ auto test_omits_proved_precondition() -> void {
 
 // `--no-contract-checks`: the release elision the spec allows.
 auto test_contract_checks_can_be_disabled() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def half(x: int32) -> int32\n"
-                               "pre x >= 0\n"
-                               "post return >= 0\n"
-                               ": x / 2\n");
+  auto fixture =
+      check_fixture(read_program("contract_checks_can_be_disabled.cn"));
   const auto &decl = find_func(*fixture.ast_file, "half");
 
   auto result = hir::lower_function(decl, fixture.checked,
@@ -2674,13 +2400,8 @@ auto test_contract_checks_can_be_disabled() -> void {
 // A struct invariant is checked where the value is made, and again wherever a
 // field of it is written.
 auto test_lowers_struct_invariant_at_construction_and_mutation() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type positive_int = { pub value: int32 }\n"
-                               "    invariant self.value > 0\n"
-                               "def make(n: int32) -> int32:\n"
-                               "    var p = positive_int{value: n}\n"
-                               "    p.value = n\n"
-                               "    return p.value\n");
+  auto fixture = check_fixture(
+      read_program("lowers_struct_invariant_at_construction_and_mutation.cn"));
   const auto &decl = find_func(*fixture.ast_file, "make");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2723,11 +2444,8 @@ auto test_lowers_struct_invariant_at_construction_and_mutation() -> void {
 // matching how the rest of this file exercises lowering-adjacent behavior.
 
 auto test_marks_direct_call_in_return_position_as_tail() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def helper(x: int32) -> int32:\n"
-                               "    return x + 1\n"
-                               "def caller(x: int32) -> int32:\n"
-                               "    return helper(x)\n");
+  auto fixture = check_fixture(
+      read_program("marks_direct_call_in_return_position_as_tail.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2745,11 +2463,8 @@ auto test_does_not_mark_call_nested_as_an_argument() -> void {
   // inner `helper(x)` — feeds the outer call rather than being returned
   // itself, so Decision 2's own example ("only the outermost call of
   // `f(g(x))` could be tail, and it is not") says it must stay unmarked.
-  auto fixture = check_fixture("module sample\n"
-                               "def helper(x: int32) -> int32:\n"
-                               "    return x + 1\n"
-                               "def caller(x: int32) -> int32:\n"
-                               "    return helper(helper(x))\n");
+  auto fixture =
+      check_fixture(read_program("lowers_call_to_named_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "caller");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2768,14 +2483,8 @@ auto test_does_not_mark_call_nested_as_an_argument() -> void {
 }
 
 auto test_marks_calls_in_tail_position_of_if_branches() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def base(x: int32) -> int32:\n"
-                               "    return x\n"
-                               "def dispatch(x: int32) -> int32:\n"
-                               "    if x > 0:\n"
-                               "        return base(x)\n"
-                               "    else:\n"
-                               "        return base(0)\n");
+  auto fixture = check_fixture(
+      read_program("marks_calls_in_tail_position_of_if_branches.cn"));
   const auto &decl = find_func(*fixture.ast_file, "dispatch");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2808,9 +2517,7 @@ auto test_does_not_mark_indirect_call_through_a_parameter() -> void {
   // Borrowed, so no drop of `f` follows the call and it stays in tail
   // position.
   auto fixture = check_fixture(
-      "module sample\n"
-      "def apply_twice(f: &fn(int32) -> int32, x: int32) -> int32:\n"
-      "    return f(f(x))\n");
+      read_program("does_not_mark_indirect_call_through_a_parameter.cn"));
   const auto &decl = find_func(*fixture.ast_file, "apply_twice");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2826,10 +2533,7 @@ auto test_does_not_mark_indirect_call_through_a_parameter() -> void {
 
 auto test_does_not_mark_intrinsic_call() -> void {
   // An `intrinsic def` has no HIR body/frame of its own to reuse into.
-  auto fixture = check_fixture("module sample\n"
-                               "intrinsic def rt_panic(msg: str) -> never\n"
-                               "def boom(msg: str) -> never:\n"
-                               "    return rt_panic(msg)\n");
+  auto fixture = check_fixture(read_program("does_not_mark_intrinsic_call.cn"));
   const auto &decl = find_func(*fixture.ast_file, "boom");
 
   auto result = hir::lower_function(decl, fixture.checked);
@@ -2849,13 +2553,8 @@ auto test_does_not_mark_calls_inside_a_generator_function() -> void {
   // calls near a `yield`. (Semantic analysis rejects `return <value>`
   // inside a generator body, so the tail position here is the block's
   // trailing expression statement instead of an explicit `return`.)
-  auto fixture =
-      check_fixture("module sample\n"
-                    "def helper(x: int32) -> int32:\n"
-                    "    return x + 1\n"
-                    "generator def gen(x: int32) -> some iterator[int32]:\n"
-                    "    yield x\n"
-                    "    helper(x)\n");
+  auto fixture = check_fixture(
+      read_program("does_not_mark_calls_inside_a_generator_function.cn"));
   const auto &decl = find_func(*fixture.ast_file, "gen");
 
   auto result = hir::lower_function(decl, fixture.checked);

@@ -1,0 +1,5 @@
+module shapes
+pub type point = {
+  x: int32,
+  y: int32,
+}

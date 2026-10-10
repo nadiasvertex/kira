@@ -1,0 +1,5 @@
+module geo
+
+pub type point = { x: int32, y: int32 }
+
+pub static let origin: point = point { x: 3, y: 4 }

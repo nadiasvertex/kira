@@ -34,6 +34,19 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/llvm_codegen_aot_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("llvm_codegen_aot_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -132,9 +145,8 @@ auto build_and_run(const fs::path &dir, const std::string &cinder_source)
 
 auto test_emits_links_and_runs_to_the_right_exit_code() -> void {
   auto dir = make_temp_dir();
-  const auto status = build_and_run(dir, "module sample\n"
-                                         "def main() -> int32:\n"
-                                         "    return 40 + 2\n");
+  const auto status = build_and_run(
+      dir, read_program("emits_links_and_runs_to_the_right_exit_code.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 42,
          std::format("expected exit code 42, got {}", WEXITSTATUS(status)));
@@ -142,9 +154,8 @@ auto test_emits_links_and_runs_to_the_right_exit_code() -> void {
 
 auto test_unit_returning_main_exits_zero() -> void {
   auto dir = make_temp_dir();
-  const auto status = build_and_run(dir, "module sample\n"
-                                         "def main() -> unit:\n"
-                                         "    var x = 1 + 1\n");
+  const auto status =
+      build_and_run(dir, read_program("unit_returning_main_exits_zero.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 0,
          std::format("expected exit code 0, got {}", WEXITSTATUS(status)));
@@ -152,10 +163,8 @@ auto test_unit_returning_main_exits_zero() -> void {
 
 auto test_panic_reaches_the_process_exit_code() -> void {
   auto dir = make_temp_dir();
-  const auto status = build_and_run(dir, "module sample\n"
-                                         "def main() -> int8:\n"
-                                         "    var x: int8 = 100\n"
-                                         "    return x + x\n");
+  const auto status = build_and_run(
+      dir, read_program("panic_reaches_the_process_exit_code.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   // The stub maps `panic_reason` to `100 + reason`; `integer_overflow` is
   // reason 0 (src/bytecode/panic.h), so this is exit code 100.
@@ -171,15 +180,8 @@ auto test_packed_struct_and_narrow_array_exit_codes() -> void {
   // AOT-specific coverage: everything else exercising it runs through the
   // bytecode VM or the JIT, never a real linked `cinder build` binary.
   auto dir = make_temp_dir();
-  const auto status =
-      build_and_run(dir, "module sample\n"
-                         "packed type header = { pub magic: uint16, pub "
-                         "flags: byte, pub len: uint32 }\n"
-                         "def main() -> int8:\n"
-                         "    let h: header = { magic: 7, flags: 3, len: 42 }\n"
-                         "    let xs: array[int16, 5] = [10, 20, 30, 40, 50]\n"
-                         "    return (h.flags as int8) + (xs[0] as int8) + "
-                         "(xs[4] as int8)\n");
+  const auto status = build_and_run(
+      dir, read_program("packed_struct_and_narrow_array_exit_codes.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 63,
          std::format("expected 3 (packed struct field) + 10 + 50 (narrow "
@@ -197,18 +199,7 @@ auto test_generator_drives_a_loop_to_the_right_exit_code() -> void {
   // linking could plausibly break even when the JIT agrees.
   auto dir = make_temp_dir();
   const auto status = build_and_run(
-      dir, "module sample\n"
-           "generator def counter(limit: int32) -> some iterator[int32]:\n"
-           "    var n = 0\n"
-           "    while n < limit:\n"
-           "        yield n\n"
-           "        n = n + 1\n"
-           "def main() -> int32:\n"
-           "    let g = counter(5)\n"
-           "    var total = 0\n"
-           "    while let @some(x) = g.next():\n"
-           "        total = total + x\n"
-           "    return total\n");
+      dir, read_program("generator_drives_a_loop_to_the_right_exit_code.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 10,
          std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
@@ -218,17 +209,9 @@ auto test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code()
     -> void {
   auto dir = make_temp_dir();
   const auto status = build_and_run(
-      dir, "module sample\n"
-           "generator def counter(limit: int32) -> some iterator[int32]:\n"
-           "    var n = 0\n"
-           "    while n < limit:\n"
-           "        yield n\n"
-           "        n = n + 1\n"
-           "def main() -> int32:\n"
-           "    var total = 0\n"
-           "    for x in counter(5):\n"
-           "        total = total + x\n"
-           "    return total\n");
+      dir,
+      read_program(
+          "for_loop_over_generator_drives_a_loop_to_the_right_exit_code.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 10,
          std::format("expected 0+1+2+3+4 == 10, got {}", WEXITSTATUS(status)));
@@ -252,17 +235,9 @@ auto test_for_loop_over_generator_drives_a_loop_to_the_right_exit_code()
 // catches it.
 auto test_trailing_if_without_else_in_loop_body_compiles_and_runs() -> void {
   auto dir = make_temp_dir();
-  const auto status =
-      build_and_run(dir, "module sample\n"
-                         "def find_first_even(n: int32) -> int32:\n"
-                         "    var i: int32 = 0\n"
-                         "    while i < n:\n"
-                         "        i = i + 1\n"
-                         "        if i % 2 == 0:\n"
-                         "            return i\n"
-                         "    return -1\n"
-                         "def main() -> int32:\n"
-                         "    return find_first_even(7)\n");
+  const auto status = build_and_run(
+      dir, read_program(
+               "trailing_if_without_else_in_loop_body_compiles_and_runs.cn"));
   expect(WIFEXITED(status) != 0, "expected the program to exit normally");
   expect(WEXITSTATUS(status) == 2,
          std::format("expected the first even number after 0 to be 2, got {}",

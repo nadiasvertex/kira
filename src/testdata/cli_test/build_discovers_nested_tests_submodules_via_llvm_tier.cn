@@ -1,0 +1,19 @@
+module app
+use std.test.{assert_eq, test_failure}
+module geometry:
+    pub def area(w: float64, h: float64) -> float64:
+        return w * h
+    module tests:
+        def test_area() -> result[unit, test_failure]:
+            return assert_eq(super.area(2.0, 3.0), 6.0)
+        def skip_todo() -> result[unit, test_failure]:
+            return assert_eq(1, 2)
+module counter:
+    pub def bump(n: int32) -> int32:
+        return n + 1
+    module tests:
+        def test_bump() -> result[unit, test_failure]:
+            return assert_eq(super.bump(1), 2)
+module tests:
+    def test_file_level() -> result[unit, test_failure]:
+        return assert_eq(app.counter.bump(0), 1)

@@ -1,0 +1,8 @@
+module main
+
+use qpath.inner
+use qpath.inner.holder
+
+def main() -> int32:
+    let h: inner.holder[int32] = holder { value: 7 }
+    return h.value

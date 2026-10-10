@@ -19,6 +19,19 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/hir_inline_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("hir_inline_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -174,17 +187,8 @@ auto let_initializer(const hir::hir_function &fn, std::string_view name)
 }
 
 auto test_guard_clause_becomes_if_else_value() -> void {
-  const auto program = inline_program(R"(module sample
-
-def safe_div(a: int32, b: int32) -> option[int32]:
-    if b == 0:
-        return @none
-    return @some(a / b)
-
-def main() -> int32:
-    let r = safe_div(84, 2)
-    return 0
-)");
+  const auto program =
+      inline_program(read_program("guard_clause_becomes_if_else_value.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "safe_div").empty(),
          "expected the call to `safe_div` to be inlined");
@@ -212,16 +216,8 @@ def main() -> int32:
 }
 
 auto test_copies_get_fresh_symbols() -> void {
-  const auto program = inline_program(R"(module sample
-
-def sq_plus(x: int32) -> int32:
-    let y = x * x
-    return y + 1
-
-def main() -> int32:
-    let n = 4
-    return sq_plus(2) + sq_plus(n)
-)");
+  const auto program =
+      inline_program(read_program("copies_get_fresh_symbols.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "sq_plus").empty(),
          "expected both calls to `sq_plus` to be inlined");
@@ -242,16 +238,7 @@ def main() -> int32:
 }
 
 auto test_recursion_is_bounded() -> void {
-  const auto program = inline_program(R"(module sample
-
-def fact(n: int32) -> int32:
-    if n <= 1:
-        return 1
-    return n * fact(n - 1)
-
-def main() -> int32:
-    return fact(5)
-)");
+  const auto program = inline_program(read_program("recursion_is_bounded.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "fact").size() == 1,
          "expected a recursive callee to be expanded a bounded number of "
@@ -266,15 +253,8 @@ def main() -> int32:
 }
 
 auto test_closure_parameter_stays_a_call() -> void {
-  const auto program = inline_program(R"(module sample
-
-def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:
-    return f(f(x))
-
-def main() -> int32:
-    let triple: fn(int32) -> int32 = k => k * 3
-    return apply_twice(triple, 2)
-)");
+  const auto program =
+      inline_program(read_program("closure_parameter_stays_a_call.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "apply_twice").empty(),
          "expected `apply_twice` itself to be inlined");
@@ -283,19 +263,8 @@ def main() -> int32:
 }
 
 auto test_declines_what_it_cannot_rewrite() -> void {
-  const auto program = inline_program(R"(module sample
-
-def first_over(limit: int32) -> int32:
-    var i = 0
-    while i < 100:
-        if i * i > limit:
-            return i
-        i = i + 1
-    return -1
-
-def main() -> int32:
-    return first_over(50)
-)");
+  const auto program =
+      inline_program(read_program("declines_what_it_cannot_rewrite.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "first_over").size() == 1,
          "expected a callee returning from inside a loop to stay a call");
@@ -304,22 +273,8 @@ def main() -> int32:
 }
 
 auto test_copied_function_references_name_their_module() -> void {
-  const auto program = inline_program(R"(module sample
-
-def first_over(limit: int32) -> int32:
-    var i = 0
-    while i < 100:
-        if i * i > limit:
-            return i
-        i = i + 1
-    return -1
-
-def wrapper(limit: int32) -> int32:
-    return first_over(limit) + 1
-
-def main() -> int32:
-    return wrapper(50)
-)");
+  const auto program = inline_program(
+      read_program("copied_function_references_name_their_module.cn"));
   const auto &main_fn = function_named(program, "main");
   expect(calls_to(main_fn, "wrapper").empty(),
          "expected `wrapper` to be inlined into `main`");
@@ -341,21 +296,8 @@ def main() -> int32:
 /// buffer also keeps its owner from making tail calls, since a callee may
 /// still point into it.
 auto test_stack_buffer_callee_stays_a_call() -> void {
-  const auto program = inline_program(R"(module sample
-
-machine def scratch() -> int64:
-    var buf = uninit[int64, 2]()
-    buf[0] = 1
-    return buf[0]
-
-machine def owner() -> int64:
-    var buf = uninit[int64, 2]()
-    buf[0] = 2
-    return scratch()
-
-def main() -> int64:
-    return scratch()
-)");
+  const auto program =
+      inline_program(read_program("stack_buffer_callee_stays_a_call.cn"));
   const auto main_calls = calls_to(function_named(program, "main"), "scratch");
   expect(main_calls.size() == 1,
          "expected a callee with an `uninit` buffer to stay a call");

@@ -1,0 +1,6 @@
+module main
+
+println("top level")
+
+def main() -> unit:
+    println("explicit")

@@ -1,0 +1,5 @@
+module main
+
+def main() -> int32:
+    let o: option[int32] = @some(1)
+    return o.doubled()

@@ -1,0 +1,2 @@
+module types
+pub type holder[T] = { pub value: T }

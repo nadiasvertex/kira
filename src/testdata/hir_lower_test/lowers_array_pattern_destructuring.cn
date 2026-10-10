@@ -1,0 +1,4 @@
+module sample
+def head(xs: array[int32, 3]) -> int32:
+    return match xs:
+        [a, _, _] => a

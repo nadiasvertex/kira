@@ -1,0 +1,5 @@
+module sample
+def f(a: int32, b: int32 = a) -> int32:
+    return a + b
+def caller() -> int32:
+    return f(2)

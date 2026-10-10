@@ -1,0 +1,8 @@
+module sample
+
+static pure def pick[T]() -> bool:
+  static if T.name() == "int32":
+    let result = true
+    return result
+  else:
+    return false

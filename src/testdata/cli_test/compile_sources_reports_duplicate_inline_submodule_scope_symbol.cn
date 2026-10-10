@@ -1,0 +1,5 @@
+module sample
+module shapes:
+  type circle = float64
+  concept circle[T]:
+    T: show

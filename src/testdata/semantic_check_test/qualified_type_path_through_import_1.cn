@@ -1,0 +1,3 @@
+module qpath.inner
+
+pub type holder[T] = { value: T }

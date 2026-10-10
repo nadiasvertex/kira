@@ -1,0 +1,8 @@
+module sample
+
+def apply_twice(f: fn(int32) -> int32, x: int32) -> int32:
+    return f(f(x))
+
+def main() -> int32:
+    let triple: fn(int32) -> int32 = k => k * 3
+    return apply_twice(triple, 2)

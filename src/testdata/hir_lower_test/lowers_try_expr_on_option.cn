@@ -1,0 +1,4 @@
+module sample
+def parse(v: option[int32]) -> option[int32]:
+    let n = v?
+    return @some(n)

@@ -53,7 +53,10 @@ cc_test(
 cc_test(
     name = "lower_test",
     srcs = ["lower_test.cpp"],
-    data = ["//src:std_sources"],
+    data = [
+        "//src:hir_lower_test_files",
+        "//src:std_sources",
+    ],
     deps = [
         ":hir",
         "//src/parser:parser",
@@ -66,6 +69,9 @@ cc_test(
 cc_test(
     name = "link_test",
     srcs = ["link_test.cpp"],
+    data = [
+        "//src:hir_link_test_files",
+    ],
     deps = [
         ":hir",
         "//src/parser:parser",
@@ -78,6 +84,9 @@ cc_test(
 cc_test(
     name = "inline_test",
     srcs = ["inline_test.cpp"],
+    data = [
+        "//src:hir_inline_test_files",
+    ],
     deps = [
         ":hir",
         "//src/parser:parser",
@@ -89,6 +98,9 @@ cc_test(
 cc_test(
     name = "captures_test",
     srcs = ["captures_test.cpp"],
+    data = [
+        "//src:hir_captures_test_files",
+    ],
     deps = [
         ":hir",
         "//src/parser:parser",
@@ -100,6 +112,9 @@ cc_test(
 cc_test(
     name = "live_across_yield_test",
     srcs = ["live_across_yield_test.cpp"],
+    data = [
+        "//src:hir_live_across_yield_test_files",
+    ],
     deps = [
         ":hir",
         "//src/parser:parser",

@@ -1,0 +1,5 @@
+module sample
+module inner:
+  static x = 1
+module module explicit_inner:
+  static y = 2

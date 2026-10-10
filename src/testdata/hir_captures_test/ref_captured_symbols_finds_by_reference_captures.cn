@@ -1,0 +1,8 @@
+module sample
+def run() -> int32:
+    var total = 0
+    let by_value = 1
+    let f = [&mut total, by_value] (x: int32) -> int32 =>:
+        total = total + x + by_value
+        return total
+    return f(1)

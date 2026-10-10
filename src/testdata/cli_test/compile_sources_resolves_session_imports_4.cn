@@ -1,0 +1,3 @@
+module package.tools.parse
+pub def parse_it() -> int32:
+  return 3

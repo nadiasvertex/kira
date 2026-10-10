@@ -1,0 +1,4 @@
+module sample
+type counter = { pub value: int32 }
+def values(xs: counter) -> list[int32]:
+    return for x in xs => x

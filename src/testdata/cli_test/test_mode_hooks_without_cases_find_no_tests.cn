@@ -1,0 +1,7 @@
+module app.geometry
+use std.test.test_failure
+module tests:
+    def before_all() -> result[unit, test_failure]:
+        return @ok(unit)
+    def after_each() -> result[unit, test_failure]:
+        return @ok(unit)

@@ -1,0 +1,24 @@
+module sample
+use std.test.{case, skipped, suite, run_suites, assert_eq, assert_true, test_failure}
+def before_all_hook() -> result[unit, test_failure]:
+    println("suite starting")
+    return @ok(unit)
+def after_all_hook() -> result[unit, test_failure]:
+    println("suite done")
+    return @ok(unit)
+def before_each_hook() -> result[unit, test_failure]:
+    return @ok(unit)
+def after_each_hook() -> result[unit, test_failure]:
+    return @ok(unit)
+def test_pass() -> result[unit, test_failure]:
+    return assert_eq(2 + 2, 4)
+def test_fail() -> result[unit, test_failure]:
+    return assert_eq(2 + 2, 5)
+def test_skip_target() -> result[unit, test_failure]:
+    return assert_true(false, "should never run")
+def main() -> int32:
+    return run_suites([
+        suite("sample",
+              [case("pass", test_pass), case("fail", test_fail), skipped("skipped_case", test_skip_target)],
+              @some(before_all_hook), @some(after_all_hook), @some(before_each_hook), @some(after_each_hook)),
+    ])

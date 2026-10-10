@@ -1,0 +1,13 @@
+module app
+module real_io:
+    pub def alpha() -> int32:
+        return 1
+module fake_io:
+    pub def beta() -> int32:
+        return 2
+static if true:
+    use app.real_io as io
+else:
+    use app.fake_io as io
+def use_it() -> int32:
+    return io.alpha()

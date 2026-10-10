@@ -14,6 +14,19 @@
 #include "src/semantic/check.h"
 #include "src/semantic/types.h"
 #include "src/testing/test_assert.h"
+#include "src/testing/test_data.h"
+
+namespace {
+
+// Cinder programs used by this file are stored in
+// src/testdata/runtime_layout_test/.
+auto read_program(std::string_view name) -> std::string {
+  static const auto dir =
+      cinder::testing::find_test_data_dir("runtime_layout_test");
+  return cinder::testing::load_test_data_file(dir.string(), name);
+}
+
+} // namespace
 
 namespace {
 
@@ -85,10 +98,7 @@ auto struct_or_sum_type_of_main_return(const checked_fixture &fixture)
 
 auto test_struct_field_slots_match_declaration_order() -> void {
   auto fixture = check_fixture(
-      "module sample\n"
-      "type point = { pub x: int32, pub y: int32, pub z: int32 }\n"
-      "def main() -> point:\n"
-      "    return { x: 1, y: 2, z: 3 }\n");
+      read_program("struct_field_slots_match_declaration_order.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   const auto names = runtime::struct_field_names(fixture.checked.types, id);
   expect(names.size() == 3, "expected three struct fields");
@@ -102,11 +112,8 @@ auto test_struct_field_slots_match_declaration_order() -> void {
 }
 
 auto test_sum_variant_tags_and_payload_arity() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "type shape = @circle(float64) | "
-                               "@rectangle(float64, float64) | @empty\n"
-                               "def main() -> shape:\n"
-                               "    return @circle(1.0)\n");
+  auto fixture =
+      check_fixture(read_program("sum_variant_tags_and_payload_arity.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   const auto names = runtime::sum_variant_names(fixture.checked.types, id);
   expect(names.size() == 3, "expected three variants");
@@ -133,9 +140,8 @@ auto test_option_variant_tags_and_payload_arity() -> void {
   // `builtin_generic_variants_of`) rather than reading it back from a
   // declaration the way a user sum type's variants are read. This is the
   // regression test for that hardcoded table.
-  auto fixture = check_fixture("module sample\n"
-                               "def main() -> option[int32]:\n"
-                               "    return @some(1)\n");
+  auto fixture =
+      check_fixture(read_program("option_variant_tags_and_payload_arity.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   const auto names = runtime::sum_variant_names(fixture.checked.types, id);
   expect(names.size() == 2, "expected two option variants");
@@ -156,9 +162,8 @@ auto test_option_variant_tags_and_payload_arity() -> void {
 }
 
 auto test_result_variant_tags_and_payload_arity() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def main() -> result[int32, str]:\n"
-                               "    return @ok(1)\n");
+  auto fixture =
+      check_fixture(read_program("result_variant_tags_and_payload_arity.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   const auto names = runtime::sum_variant_names(fixture.checked.types, id);
   expect(names.size() == 2, "expected two result variants");
@@ -179,9 +184,8 @@ auto test_result_variant_tags_and_payload_arity() -> void {
 }
 
 auto test_layout_of_scalar_sizes_and_alignment() -> void {
-  auto fixture = check_fixture("module sample\n"
-                               "def main() -> int32:\n"
-                               "    return 1\n");
+  auto fixture =
+      check_fixture(read_program("layout_of_scalar_sizes_and_alignment.cn"));
   auto &types = fixture.checked.types;
   const auto bool_layout = runtime::layout_of(types, types.bool_type());
   expect(bool_layout.has_value() && bool_layout->size_bytes == 1 &&
@@ -202,11 +206,7 @@ auto test_layout_of_scalar_sizes_and_alignment() -> void {
 }
 
 auto test_struct_field_offset_padded() -> void {
-  auto fixture =
-      check_fixture("module sample\n"
-                    "type mixed = { pub a: bool, pub b: int32, pub c: bool }\n"
-                    "def main() -> mixed:\n"
-                    "    return { a: true, b: 1, c: false }\n");
+  auto fixture = check_fixture(read_program("struct_field_offset_padded.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(!runtime::is_struct_packed(types, id),
@@ -224,11 +224,7 @@ auto test_struct_field_offset_padded() -> void {
 }
 
 auto test_struct_field_offset_packed() -> void {
-  auto fixture = check_fixture(
-      "module sample\n"
-      "packed type mixed = { pub a: bool, pub b: int32, pub c: bool }\n"
-      "def main() -> mixed:\n"
-      "    return { a: true, b: 1, c: false }\n");
+  auto fixture = check_fixture(read_program("struct_field_offset_packed.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(runtime::is_struct_packed(types, id),
@@ -252,12 +248,8 @@ auto test_refinement_field_lays_out_as_its_base() -> void {
   // agree with itself whatever layout it chose, but a packed one promises an
   // exact byte layout, and a refinement-typed field silently taking 8 bytes
   // instead of 4 would break that promise.
-  auto fixture = check_fixture(
-      "module sample\n"
-      "type positive = int32 where self > 0\n"
-      "packed type refined = { pub a: bool, pub b: positive, pub c: bool }\n"
-      "def main() -> refined:\n"
-      "    return { a: true, b: 1, c: false }\n");
+  auto fixture =
+      check_fixture(read_program("refinement_field_lays_out_as_its_base.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(runtime::struct_field_offset(types, id, "b") == 1,
@@ -276,9 +268,8 @@ auto test_tuple_element_offset_packs_tight_by_natural_width() -> void {
   // 0/1/8 (size 16, the trailing `int64` rounding the whole tuple up to its
   // own 8-byte alignment) — a case picked so the two schemes disagree, not
   // just so packing "looks about right".
-  auto fixture = check_fixture("module sample\n"
-                               "def main() -> (int8, int8, int64):\n"
-                               "    return (1, 2, 3)\n");
+  auto fixture = check_fixture(
+      read_program("tuple_element_offset_packs_tight_by_natural_width.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(runtime::tuple_element_offset(types, id, 0) == 0,
@@ -303,10 +294,8 @@ auto test_tuple_element_offset_sizes_a_reference_element_as_a_pointer()
   // what it refers to, so it must cost 8 bytes as a tuple element even
   // though its referent (`int32`) is only 4 — the bug this regression test
   // guards against sized it as 4, corrupting every later element's offset.
-  auto fixture = check_fixture("module sample\n"
-                               "def main() -> (usize, &int32):\n"
-                               "    let x: int32 = 1\n"
-                               "    return (0, &x)\n");
+  auto fixture = check_fixture(read_program(
+      "tuple_element_offset_sizes_a_reference_element_as_a_pointer.cn"));
   const auto id = struct_or_sum_type_of_main_return(fixture);
   auto &types = fixture.checked.types;
   expect(runtime::tuple_element_offset(types, id, 0) == 0,

@@ -1,0 +1,4 @@
+module sample
+type shape = @circle(int32) | @square(int32)
+def make_circle(r: int32) -> shape:
+    return @circle(r)

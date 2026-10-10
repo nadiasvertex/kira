@@ -1,0 +1,16 @@
+module sample
+
+signature backend:
+    type conn
+    def connect(url: str) -> conn
+
+module sqlite:
+    pub type conn = int32
+    pub def connect(url: str) -> str:
+        url
+
+use audited[sqlite] as db
+
+module audited[DB: backend]:
+    pub def go() -> unit:
+        unit

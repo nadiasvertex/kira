@@ -1,0 +1,6 @@
+module postgres
+pub type conn = int32
+pub def connect(url: str) -> conn:
+    return 40
+pub def ping(c: conn) -> int32:
+    return c + 2

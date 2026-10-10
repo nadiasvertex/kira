@@ -1,0 +1,7 @@
+module main
+
+use amb.a.*
+use amb.b.*
+
+def main() -> int32:
+    return 5.scale()

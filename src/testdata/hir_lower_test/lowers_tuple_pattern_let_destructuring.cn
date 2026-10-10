@@ -1,0 +1,4 @@
+module sample
+def first_of_pair(pair: (int32, str)) -> int32:
+    let (n, _) = pair
+    return n

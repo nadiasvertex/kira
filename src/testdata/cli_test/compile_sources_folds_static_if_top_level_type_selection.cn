@@ -1,0 +1,7 @@
+module app
+static if true:
+    type word = int64
+else:
+    type word = int32
+def use_it() -> word:
+    return 9223372036854775807

@@ -1,0 +1,50 @@
+module sample
+type wrap[T] = { value: T } deriving show, eq, ord, hash
+type over[T] = { value: T } deriving show
+type opt[T] = @none_of | @one_of(T) deriving show, hash
+type buf[n: usize] = { len: usize } deriving show
+impl show for over[int32]:
+    def show(self) -> str:
+        return "hand-written"
+def rank(o: ordering) -> int32:
+    match o:
+        @less => return -1
+        @equal => return 0
+        @greater => return 1
+def bit(cond: bool, weight: int32) -> int32:
+    if cond:
+        return weight
+    return 0
+def main() -> int32:
+    var total: int32 = 0
+    let a: wrap[int32] = { value: 5 }
+    let b: wrap[int32] = { value: 5 }
+    let c: wrap[int32] = { value: 6 }
+    let s: wrap[str] = { value: "hi" }
+    total = total + bit(a.show() == "wrap \{ value: 5 \}", 1)
+    total = total + bit(s.show() == "wrap \{ value: hi \}", 2)
+    let n: wrap[wrap[int32]] = { value: { value: 7 } }
+    total = total + bit(
+        n.show() == "wrap \{ value: wrap \{ value: 7 \} \}", 4)
+    total = total + bit(a.eq(&b) and not a.eq(&c), 8)
+    let lt: bool = a < c
+    total = total + bit(rank(a.cmp(&c)) == -1 and
+                        rank(c.cmp(&a)) == 1 and
+                        rank(a.cmp(&b)) == 0 and lt, 16)
+    let h_same: bool = a.hash() == b.hash()
+    let h_diff: bool = a.hash() != c.hash()
+    total = total + bit(h_same and h_diff, 32)
+    let o1: opt[int32] = @one_of(3)
+    let o2: opt[int32] = @none_of
+    let oh: bool = o1.hash() != o2.hash()
+    total = total + bit(o1.show() == "one_of(3)" and
+                        o2.show() == "none_of" and oh, 64)
+    let b4: buf[4] = { len: 4 }
+    let b8: buf[8] = { len: 8 }
+    let ov: over[int32] = { value: 9 }
+    let os: over[str] = { value: "z" }
+    total = total + bit(b4.show() == "buf \{ len: 4 \}" and
+                        b8.show() == "buf \{ len: 8 \}" and
+                        ov.show() == "hand-written" and
+                        os.show() == "over \{ value: z \}", 128)
+    return total

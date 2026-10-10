@@ -1,0 +1,5 @@
+module sample
+def classify(x: int32) -> int32:
+    return match x:
+        0 | y => y
+        _ => x

@@ -1,0 +1,4 @@
+module sample
+
+type person = { name: str, age: int }
+type shape = | @circle(float64) | @point

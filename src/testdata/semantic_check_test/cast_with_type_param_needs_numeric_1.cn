@@ -1,0 +1,4 @@
+module main
+
+def key[T](x: T) -> usize:
+    return x as usize

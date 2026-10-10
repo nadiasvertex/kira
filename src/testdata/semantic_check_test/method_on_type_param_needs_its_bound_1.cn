@@ -1,0 +1,4 @@
+module main
+
+def describe[T](x: T) -> str:
+    return x.show()

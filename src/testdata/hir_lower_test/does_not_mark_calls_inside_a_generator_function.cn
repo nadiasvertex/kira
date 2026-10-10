@@ -1,0 +1,6 @@
+module sample
+def helper(x: int32) -> int32:
+    return x + 1
+generator def gen(x: int32) -> some iterator[int32]:
+    yield x
+    helper(x)

@@ -1,0 +1,6 @@
+module sample
+
+def compute(x):
+  let value = x where
+    base = 1
+  return value

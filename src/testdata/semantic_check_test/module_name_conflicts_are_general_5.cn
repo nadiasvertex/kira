@@ -1,0 +1,4 @@
+module main
+
+use pkg as seven
+use pkg.{seven}

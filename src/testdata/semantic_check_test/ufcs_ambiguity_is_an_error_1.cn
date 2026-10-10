@@ -1,0 +1,4 @@
+module amb.a
+
+pub def scale(x: int32) -> int32:
+    return x * 2

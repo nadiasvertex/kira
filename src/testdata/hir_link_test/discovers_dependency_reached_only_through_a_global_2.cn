@@ -1,0 +1,4 @@
+module app
+use tables.*
+pub def run() -> int32:
+    return VALUES[1]

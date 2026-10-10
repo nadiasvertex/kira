@@ -1,0 +1,18 @@
+module sample
+
+pub async[ctx] def compute(x: int, y = 1) -> int where int: number: 0
+def drive(stream, entries):
+  let branch = if x: y else: 0
+  if x:
+    return y
+  elif y:
+    return x
+  else:
+    return 0
+  while let @some(item) = stream:
+    process(item)
+  for key, value in entries if ready:
+    consume(key)
+  let produced = for entry in entries if ready => entry
+  let processed = await source as int?
+  return y

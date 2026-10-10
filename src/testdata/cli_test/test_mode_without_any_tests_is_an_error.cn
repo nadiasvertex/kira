@@ -1,0 +1,3 @@
+module app.geometry
+pub def area(w: float64, h: float64) -> float64:
+    return w * h

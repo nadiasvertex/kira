@@ -1,0 +1,15 @@
+module sample
+generator def counter() -> some iterator[int32]:
+  yield 1
+  yield 2
+def step(g: &mut generator[int32]) -> int32:
+  match g.next():
+    @some(v) => return v
+    @none => return -1
+def run() -> int32:
+  var g = counter()
+  let a = step(&mut g)
+  let b = step(&mut g)
+  let c = step(&mut g)
+  let d = step(&mut g)
+  return a * 1000 + b * 100 + (c + 2) * 10 + (d + 2)

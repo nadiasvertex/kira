@@ -1,0 +1,4 @@
+module factory
+use shapes.point
+pub def make() -> option[point]:
+  return @some({ x: 19, y: 23 })

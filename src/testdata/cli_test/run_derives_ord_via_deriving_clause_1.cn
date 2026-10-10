@@ -1,0 +1,36 @@
+module sample
+type inner = { a: int32 } deriving eq, ord
+type point = { x: int32, y: int32 } deriving eq, ord
+type named = { tag: str, n: int32 } deriving eq, ord
+type nested = { i: inner, z: int32 } deriving eq, ord
+type empty = { } deriving eq, ord
+def rank(o: ordering) -> int32:
+    match o:
+        @less => return -1
+        @equal => return 0
+        @greater => return 1
+def bit(actual: int32, expected: int32, weight: int32) -> int32:
+    if actual == expected:
+        return weight
+    return 0
+def main() -> int32:
+    var total: int32 = 0
+    let a: point = { x: 3, y: 4 }
+    let b: point = { x: 3, y: 5 }
+    let c: point = { x: 4, y: 0 }
+    total = total + bit(rank(a.cmp(&b)), -1, 1)
+    total = total + bit(rank(b.cmp(&a)), 1, 2)
+    total = total + bit(rank(a.cmp(&a)), 0, 4)
+    total = total + bit(rank(a.cmp(&c)), -1, 8)
+    let s1: named = { tag: "abc", n: 1 }
+    let s2: named = { tag: "abd", n: 0 }
+    total = total + bit(rank(s1.cmp(&s2)), -1, 16)
+    let n1: nested = { i: { a: 1 }, z: 9 }
+    let n2: nested = { i: { a: 2 }, z: 0 }
+    total = total + bit(rank(n1.cmp(&n2)), -1, 32)
+    let e1: empty = { }
+    let e2: empty = { }
+    total = total + bit(rank(e1.cmp(&e2)), 0, 64)
+    if a < b and b > a and a <= a and not (a >= b):
+        total = total + 128
+    return total

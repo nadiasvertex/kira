@@ -1,0 +1,7 @@
+
+module sample
+static TABLE: array[int32, 4] = [10, 20, 30, 40]
+def third(i: usize) -> int32:
+    return TABLE[i]
+def main() -> int32:
+    return TABLE[3] + third(2)

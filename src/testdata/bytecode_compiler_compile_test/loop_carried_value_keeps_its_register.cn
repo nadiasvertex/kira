@@ -1,0 +1,16 @@
+module sample
+
+def total() -> int32:
+    var carried = 7
+    var sum = 0
+    var i = 0
+    while i < 5:
+        sum = sum + carried
+        let a = i * 2
+        let b = a + 1
+        sum = sum + b
+        i = i + 1
+    return sum
+
+def main() -> int32:
+    return total()

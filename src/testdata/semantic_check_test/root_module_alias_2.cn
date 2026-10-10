@@ -1,0 +1,7 @@
+module main
+
+use pkg as p
+
+def main() -> int32:
+    let h: p.holder = p.holder { value: p.seven() }
+    return h.value

@@ -1,0 +1,10 @@
+module main
+
+type gen[T] = { v: T }
+
+extend gen:
+    def doubled(self) -> int32:
+        return self.v * 2
+
+def main() -> int32:
+    return 0

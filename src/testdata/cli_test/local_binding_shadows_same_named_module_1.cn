@@ -1,0 +1,9 @@
+module s
+type inner = { value: int32 }
+type outer = { a: inner, b: inner }
+type color = | @red | @green deriving show
+def main() -> int32:
+  let s = outer { a: inner { value: 3 }, b: inner { value: 39 } }
+  let c: color = @green
+  println(c.show())
+  return s.a.value + s.b.value

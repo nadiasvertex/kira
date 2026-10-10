@@ -1,0 +1,4 @@
+module main
+
+def main() -> unit:
+    println("hello")

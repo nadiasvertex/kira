@@ -1,0 +1,10 @@
+module sample
+
+def run(v: int) -> int:
+  let n = if v > 0:
+    1
+  elif v < 0:
+    -1
+  else:
+    0
+  return n

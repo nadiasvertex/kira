@@ -1,0 +1,5 @@
+module sample
+type container = { pub value: int32 }
+def unwrap(b: container) -> int32:
+    return match b:
+        { value: v } => v

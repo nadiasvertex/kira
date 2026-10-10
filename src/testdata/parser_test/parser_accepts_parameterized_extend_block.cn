@@ -1,0 +1,4 @@
+module sample
+extend[A, B] pair[A, B]:
+  def first(self) -> A:
+    self.a

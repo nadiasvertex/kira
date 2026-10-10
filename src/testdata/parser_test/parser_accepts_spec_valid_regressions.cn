@@ -1,0 +1,14 @@
+module sample
+
+use std.io.reader as rdr
+
+concept ready[T]:
+  value + 1
+
+static for item in items => item
+
+def run(flag, items):
+  let label = "pass" if flag else "fail"
+  let point = point { x: 1, y: 2 }
+  let produced = for item in items => item
+  return produced

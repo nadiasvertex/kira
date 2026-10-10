@@ -1,0 +1,5 @@
+module package.tools.app
+use package.tools.missing
+use std.io
+pub def run() -> int32:
+  return 1

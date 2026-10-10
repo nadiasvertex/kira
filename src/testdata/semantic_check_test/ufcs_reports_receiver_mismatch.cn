@@ -1,0 +1,7 @@
+module main
+
+pub def total_of(items: list[int32]) -> int32:
+    return 0
+
+def main() -> int32:
+    return 5.total_of()

@@ -1,0 +1,9 @@
+module app
+module real_io:
+    pub def alpha() -> int32:
+        return 1
+static let flag: bool = true
+static if flag:
+    use app.real_io as io
+def run() -> int32:
+    return 0

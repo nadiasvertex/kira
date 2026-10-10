@@ -1,0 +1,10 @@
+module sample
+
+def run(x: i32) -> i32:
+  let a = ~5
+  let b = ~true
+  let c = ~"str"
+  let d = ~-x
+  let e = ~foo
+  let f = ~foo[i32]()
+  return a

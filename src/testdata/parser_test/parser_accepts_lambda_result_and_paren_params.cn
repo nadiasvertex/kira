@@ -1,0 +1,8 @@
+module sample
+def run():
+  let a = x => x + 1
+  let b = pure (x: int32) -> int32 => x * 2
+  let c = (x: int32) -> int32 => x * 3
+  let d = x -> int32 => x + 5
+  let e = (x, y) => x + y
+  let g = (3 + 4) * 2

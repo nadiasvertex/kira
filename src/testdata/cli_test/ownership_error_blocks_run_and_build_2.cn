@@ -1,0 +1,8 @@
+module m
+type holder = { v: list[int32] }
+def take(h: holder) -> int32:
+  return 1
+def main() -> int32:
+  let h = holder { v: [1] }
+  let x = take(h)
+  return take(h) + x

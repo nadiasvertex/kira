@@ -1,0 +1,5 @@
+module sample
+type positive = int32 where self > 0
+def scale(p: positive) -> int32
+pre p > 0
+: p * 2
