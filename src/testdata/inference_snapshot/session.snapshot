@@ -1,7 +1,7 @@
 # inference snapshot
-# 2302 interned types
+# 2306 interned types
 
-## node_types (30677)
+## node_types (30682)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -10617,82 +10617,87 @@ std/result.cn:32:23 [literal] bool
 std/result.cn:33:13 [result_pat] result[T, E]
 std/result.cn:33:18 [wildcard_pat] E
 std/result.cn:33:24 [literal] bool
-std/shared.cn:31:25 [binding_pat] T
-std/shared.cn:31:38 [named_type] shared[T]
-std/shared.cn:32:13 [binding_pat] *mut shared_block[T]
-std/shared.cn:32:21 [ident] _
-std/shared.cn:32:21 [index] fn(usize) -> *mut shared_block[T]
-std/shared.cn:32:21 [call] *mut shared_block[T]
-std/shared.cn:32:44 [literal] usize
-std/shared.cn:33:9 [ident] *mut shared_block[T]
-std/shared.cn:33:9 [index] shared_block[T]
-std/shared.cn:33:15 [literal] usize
-std/shared.cn:33:20 [struct_literal] shared_block[T]
-std/shared.cn:33:45 [literal] usize
-std/shared.cn:33:55 [ident] T
-std/shared.cn:34:16 [struct_literal] shared[T]
-std/shared.cn:34:35 [ident] *mut shared_block[T]
-std/shared.cn:37:34 [binding_pat] &shared[T]
-std/shared.cn:37:43 [named_type] usize
-std/shared.cn:38:16 [ident] &shared[T]
-std/shared.cn:38:16 [field] *mut shared_block[T]
-std/shared.cn:38:16 [index] shared_block[T]
-std/shared.cn:38:16 [field] usize
-std/shared.cn:38:27 [literal] usize
-std/shared.cn:42:23 [binding_pat] &shared[T]
-std/shared.cn:42:32 [named_type] shared[T]
-std/shared.cn:43:9 [ident] fn(*mut usize, usize) -> usize
-std/shared.cn:43:9 [call] usize
-std/shared.cn:43:26 [ident] _
-std/shared.cn:43:26 [call] *mut usize
-std/shared.cn:43:42 [unary] &mut usize
-std/shared.cn:43:47 [ident] &shared[T]
-std/shared.cn:43:47 [field] *mut shared_block[T]
-std/shared.cn:43:47 [index] shared_block[T]
-std/shared.cn:43:47 [field] usize
-std/shared.cn:43:58 [literal] usize
-std/shared.cn:43:69 [literal] usize
-std/shared.cn:44:16 [struct_literal] shared[T]
-std/shared.cn:44:35 [module_path] *mut shared_block[T]
-std/shared.cn:48:23 [binding_pat] &shared[T]
-std/shared.cn:48:32 [ref_type] &T
-std/shared.cn:49:16 [unary] &T
-std/shared.cn:49:17 [ident] &shared[T]
-std/shared.cn:49:17 [field] *mut shared_block[T]
-std/shared.cn:49:17 [index] shared_block[T]
-std/shared.cn:49:17 [field] T
-std/shared.cn:49:28 [literal] usize
-std/shared.cn:53:22 [binding_pat] &mut shared[T]
-std/shared.cn:53:35 [named_type] unit
-std/shared.cn:54:13 [binding_pat] usize
-std/shared.cn:54:22 [ident] fn(*mut usize, usize) -> usize
-std/shared.cn:54:22 [call] usize
-std/shared.cn:54:39 [ident] _
-std/shared.cn:54:39 [call] *mut usize
-std/shared.cn:54:55 [unary] &mut usize
-std/shared.cn:54:60 [ident] &mut shared[T]
-std/shared.cn:54:60 [field] *mut shared_block[T]
-std/shared.cn:54:60 [index] shared_block[T]
-std/shared.cn:54:60 [field] usize
-std/shared.cn:54:71 [literal] usize
-std/shared.cn:54:82 [literal] usize
-std/shared.cn:55:12 [ident] usize
-std/shared.cn:55:12 [binary] bool
-std/shared.cn:55:22 [literal] usize
-std/shared.cn:56:13 [ident] fn(*mut T) -> unit
-std/shared.cn:56:13 [call] unit
-std/shared.cn:56:27 [ident] _
-std/shared.cn:56:27 [call] *mut T
-std/shared.cn:56:39 [unary] &mut T
-std/shared.cn:56:44 [ident] &mut shared[T]
-std/shared.cn:56:44 [field] *mut shared_block[T]
-std/shared.cn:56:44 [index] shared_block[T]
-std/shared.cn:56:44 [field] T
-std/shared.cn:56:55 [literal] usize
-std/shared.cn:57:13 [ident] fn(*mut shared_block[T], usize) -> unit
-std/shared.cn:57:13 [call] unit
-std/shared.cn:57:22 [module_path] *mut shared_block[T]
-std/shared.cn:57:34 [literal] usize
+std/shared.cn:31:18 [binding_pat] T
+std/shared.cn:31:31 [named_type] shared[T]
+std/shared.cn:32:12 [field] fn(_) -> shared[_]
+std/shared.cn:32:12 [call] shared[T]
+std/shared.cn:32:26 [ident] T
+std/shared.cn:36:25 [binding_pat] T
+std/shared.cn:36:38 [named_type] shared[T]
+std/shared.cn:37:13 [binding_pat] *mut shared_block[T]
+std/shared.cn:37:21 [ident] _
+std/shared.cn:37:21 [index] fn(usize) -> *mut shared_block[T]
+std/shared.cn:37:21 [call] *mut shared_block[T]
+std/shared.cn:37:44 [literal] usize
+std/shared.cn:38:9 [ident] *mut shared_block[T]
+std/shared.cn:38:9 [index] shared_block[T]
+std/shared.cn:38:15 [literal] usize
+std/shared.cn:38:20 [struct_literal] shared_block[T]
+std/shared.cn:38:45 [literal] usize
+std/shared.cn:38:55 [ident] T
+std/shared.cn:39:16 [struct_literal] shared[T]
+std/shared.cn:39:35 [ident] *mut shared_block[T]
+std/shared.cn:42:34 [binding_pat] &shared[T]
+std/shared.cn:42:43 [named_type] usize
+std/shared.cn:43:16 [ident] &shared[T]
+std/shared.cn:43:16 [field] *mut shared_block[T]
+std/shared.cn:43:16 [index] shared_block[T]
+std/shared.cn:43:16 [field] usize
+std/shared.cn:43:27 [literal] usize
+std/shared.cn:47:23 [binding_pat] &shared[T]
+std/shared.cn:47:32 [named_type] shared[T]
+std/shared.cn:48:9 [ident] fn(*mut usize, usize) -> usize
+std/shared.cn:48:9 [call] usize
+std/shared.cn:48:26 [ident] _
+std/shared.cn:48:26 [call] *mut usize
+std/shared.cn:48:42 [unary] &mut usize
+std/shared.cn:48:47 [ident] &shared[T]
+std/shared.cn:48:47 [field] *mut shared_block[T]
+std/shared.cn:48:47 [index] shared_block[T]
+std/shared.cn:48:47 [field] usize
+std/shared.cn:48:58 [literal] usize
+std/shared.cn:48:69 [literal] usize
+std/shared.cn:49:16 [struct_literal] shared[T]
+std/shared.cn:49:35 [module_path] *mut shared_block[T]
+std/shared.cn:53:23 [binding_pat] &shared[T]
+std/shared.cn:53:32 [ref_type] &T
+std/shared.cn:54:16 [unary] &T
+std/shared.cn:54:17 [ident] &shared[T]
+std/shared.cn:54:17 [field] *mut shared_block[T]
+std/shared.cn:54:17 [index] shared_block[T]
+std/shared.cn:54:17 [field] T
+std/shared.cn:54:28 [literal] usize
+std/shared.cn:58:22 [binding_pat] &mut shared[T]
+std/shared.cn:58:35 [named_type] unit
+std/shared.cn:59:13 [binding_pat] usize
+std/shared.cn:59:22 [ident] fn(*mut usize, usize) -> usize
+std/shared.cn:59:22 [call] usize
+std/shared.cn:59:39 [ident] _
+std/shared.cn:59:39 [call] *mut usize
+std/shared.cn:59:55 [unary] &mut usize
+std/shared.cn:59:60 [ident] &mut shared[T]
+std/shared.cn:59:60 [field] *mut shared_block[T]
+std/shared.cn:59:60 [index] shared_block[T]
+std/shared.cn:59:60 [field] usize
+std/shared.cn:59:71 [literal] usize
+std/shared.cn:59:82 [literal] usize
+std/shared.cn:60:12 [ident] usize
+std/shared.cn:60:12 [binary] bool
+std/shared.cn:60:22 [literal] usize
+std/shared.cn:61:13 [ident] fn(*mut T) -> unit
+std/shared.cn:61:13 [call] unit
+std/shared.cn:61:27 [ident] _
+std/shared.cn:61:27 [call] *mut T
+std/shared.cn:61:39 [unary] &mut T
+std/shared.cn:61:44 [ident] &mut shared[T]
+std/shared.cn:61:44 [field] *mut shared_block[T]
+std/shared.cn:61:44 [index] shared_block[T]
+std/shared.cn:61:44 [field] T
+std/shared.cn:61:55 [literal] usize
+std/shared.cn:62:13 [ident] fn(*mut shared_block[T], usize) -> unit
+std/shared.cn:62:13 [call] unit
+std/shared.cn:62:22 [module_path] *mut shared_block[T]
+std/shared.cn:62:34 [literal] usize
 std/string.cn:24:25 [binding_pat] str
 std/string.cn:24:33 [binding_pat] str
 std/string.cn:24:44 [named_type] bool
@@ -30690,9 +30695,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1076 len usize
 ?:1108 len usize
 ?:1142 n int32
-?:1279 count usize
-?:1289 value T
-?:1331 inner *mut shared_block[T]
+?:1504 count usize
+?:1514 value T
+?:1556 inner *mut shared_block[T]
 ?:1662 len usize
 ?:1662 len usize
 ?:1662 len usize
@@ -30723,7 +30728,6 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1678 data *mut test_suite
 ?:1678 data *mut uint32
 ?:1678 data *mut usize
-?:1722 inner *mut shared_block[T]
 ?:1730 first U
 ?:1730 first int32
 ?:1730 first int64
@@ -30734,6 +30738,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1925 name str
 ?:1937 run fn() -> result[unit, test_failure]
 ?:1947 skip bool
+?:1947 inner *mut shared_block[T]
 ?:2133 name str
 ?:2145 run fn() -> result[unit, test_failure]
 ?:2155 skip bool
@@ -30883,7 +30888,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (808)
+## call_argument_mappings (809)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -31556,11 +31561,12 @@ std/mem.cn:110:12 [call] (p=arg, n=arg)
 std/option.cn:26:22 [call] (message=arg)
 std/panic.cn:24:12 [call] (msg=arg)
 std/result.cn:21:24 [call] (message=arg)
-std/shared.cn:32:21 [call] (count=arg)
-std/shared.cn:43:9 [call] (p=arg, n=arg)
-std/shared.cn:54:22 [call] (p=arg, n=arg)
-std/shared.cn:56:13 [call] (p=arg)
-std/shared.cn:57:13 [call] (p=arg, count=arg)
+std/shared.cn:32:12 [call] (value=arg)
+std/shared.cn:37:21 [call] (count=arg)
+std/shared.cn:48:9 [call] (p=arg, n=arg)
+std/shared.cn:59:22 [call] (p=arg, n=arg)
+std/shared.cn:61:13 [call] (p=arg)
+std/shared.cn:62:13 [call] (p=arg, count=arg)
 std/string.cn:48:16 [call] (a=arg, b=arg)
 std/string.cn:60:17 [call] (a=arg, b=arg)
 std/string.cn:77:16 [call] (a=arg, b=arg)
@@ -31693,7 +31699,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (463)
+## resolved_callees (464)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -32129,10 +32135,11 @@ std/mem.cn:102:12 [call] std.intrinsics::rt_atomic_fetch_add
 std/mem.cn:110:12 [call] std.intrinsics::rt_atomic_fetch_sub
 std/option.cn:26:22 [call] std.panic::panic
 std/result.cn:21:24 [call] std.panic::panic
-std/shared.cn:43:9 [call] std.mem::atomic_fetch_add
-std/shared.cn:54:22 [call] std.mem::atomic_fetch_sub
-std/shared.cn:56:13 [call] std.mem::drop_in_place
-std/shared.cn:57:13 [call] std.mem::free
+std/shared.cn:32:12 [call] std.shared::shared[T]::new
+std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
+std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
+std/shared.cn:61:13 [call] std.mem::drop_in_place
+std/shared.cn:62:13 [call] std.mem::free
 std/string.cn:157:16 [call] std.unicode::to_uppercase
 std/string.cn:165:16 [call] std.unicode::to_lowercase
 std/string.cn:173:16 [call] std.unicode::fold_case
@@ -32686,9 +32693,9 @@ std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
-std/shared.cn:43:26 [call] *mut usize
-std/shared.cn:54:39 [call] *mut usize
-std/shared.cn:56:27 [call] *mut T
+std/shared.cn:48:26 [call] *mut usize
+std/shared.cn:59:39 [call] *mut usize
+std/shared.cn:61:27 [call] *mut T
 std/traits.cn:71:14 [call] *mut T
 std/traits.cn:72:14 [call] *mut T
 std/traits.cn:88:13 [call] *mut T
@@ -32863,7 +32870,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (679)
+## drop_plans (680)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33532,6 +33539,7 @@ shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
+shared[T] own=std.shared::shared::drop fields=[]
 shared[_] own=std.shared::shared::drop fields=[]
 skip_while_iter own=- fields=[pred: fn(&_) -> bool]
 skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
@@ -33544,7 +33552,7 @@ take_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1695)
+## borrow_bearing_types (1699)
 &K
 &T
 &T
@@ -33861,6 +33869,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 *mut shared_block[T]
 *mut shared_block[T]
 *mut shared_block[T]
+*mut shared_block[T]
 *mut slice[T]
 *mut slice[T]
 *mut test_case
@@ -34012,6 +34021,7 @@ S
 S
 S
 S
+T
 T
 T
 T
@@ -35164,6 +35174,8 @@ shared[T]
 shared[T]
 shared[T]
 shared[T]
+shared[T]
+shared_block[T]
 shared_block[T]
 shared_block[T]
 shared_block[T]
@@ -35809,7 +35821,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 107
+synthesized_types 108
 synthesized_fragments 30
 synthesized_const_literals 63
 elided_contracts 0

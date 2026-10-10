@@ -26,6 +26,11 @@ pub type shared[T] = {
     inner: *mut shared_block[T],
 }
 
+#: `shared e`: moves `value` onto the heap and returns the first handle. The
+#: parser rewrites the `shared` prefix form into a call to this function.
+pub def share[T](value: T) -> shared[T]:
+    return shared[T].new(value)
+
 extend[T] shared[T]:
     #: Moves `value` onto the heap and returns the first handle to it.
     pub machine def new(value: T) -> shared[T]:

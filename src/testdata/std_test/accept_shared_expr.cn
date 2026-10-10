@@ -1,0 +1,18 @@
+module main
+
+# `shared e` builds a handle the same way `shared[T].new(e)` does, and the
+# handle type can be written `shared T`.
+
+use std.shared.shared
+
+type point = { x: int32, y: int32 }
+
+def make(x: int32) -> shared point:
+    return shared point { x: x, y: x + 1 }
+
+def main() -> unit:
+    let a = shared point { x: 3, y: 4 }
+    let b: shared point = a.clone()
+    let c = make(7)
+    println("count={a.strong_count()} x={b.x} y={b.y}")
+    println("c={c.x},{c.y} count={c.strong_count()}")

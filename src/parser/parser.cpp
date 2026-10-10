@@ -4153,15 +4153,29 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
     if (peek_at(1).is(token_kind::lbracket)) {
       return parse_ident_or_path_expr();
     }
+    // `shared e` is `std.shared.share(e)`: the free function infers the
+    // handle's type argument from the value, which the bare constructor
+    // `shared.new(e)` cannot.
     auto tok = advance();
-    auto shared = ast::make<ast::unary_expr>();
-    shared->span = tok.span;
-    shared->op = ast::unary_op::addr_of;
-    shared->operand = parse_expr();
-    if (shared->operand) {
-      shared->span.extend_to(shared->operand->span);
+    auto operand = parse_expr();
+    auto module = ast::make<ast::module_path_expr>();
+    module->span = tok.span;
+    module->segments = {"std", "shared"};
+    auto callee = ast::make<ast::field_expr>();
+    callee->span = tok.span;
+    callee->object = std::move(module);
+    callee->field_name = "share";
+    auto call = ast::make<ast::call_expr>();
+    call->span = tok.span;
+    call->callee = std::move(callee);
+    if (operand) {
+      call->span.extend_to(operand->span);
+      ast::call_arg arg;
+      arg.span = operand->span;
+      arg.value = std::move(operand);
+      call->args.push_back(std::move(arg));
     }
-    return shared;
+    return call;
   }
 
   default:
