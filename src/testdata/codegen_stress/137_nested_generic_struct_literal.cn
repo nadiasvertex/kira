@@ -1,0 +1,25 @@
+module codegen_stress.nested_generic_struct_literal
+
+# A generic struct literal nested inside another (spec/todo.md #10) must
+# settle the outer type parameter from the inner literal's fields.
+# `holder { w: wrap { inner: 40, n: 2 } }` used to leave `holder`'s `T` open,
+# because only fields declared as a bare `T` were read — `w: wrap[T]` was
+# skipped — and the method call then could not tell which `T` it meant.
+#
+# 40 + 2 = 42.
+# expect: 42
+
+type wrap[T] = { inner: T, n: int32 }
+
+type holder[T] = { w: wrap[T] }
+
+extend[T] holder[T]:
+    def get(self) -> &T:
+        return &self.w.inner
+
+    def first_n(self) -> int32:
+        return self.w.n
+
+def main() -> int32:
+    let h = holder { w: wrap { inner: 40, n: 2 } }
+    return *h.get() + h.first_n()
