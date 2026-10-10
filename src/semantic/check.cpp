@@ -435,6 +435,12 @@ public:
             -> std::expected<const ast::func_decl *, std::string> {
           return find_comptime_method(receiver_expr, receiver, name);
         });
+    comptime_eval_.set_generic_call_resolver(
+        [this](const ast::call_expr &call)
+            -> std::optional<
+                std::vector<std::pair<std::string, comptime::value>>> {
+          return comptime_call_type_args(call);
+        });
     comptime_eval_.set_call_context(
         [this](const ast::func_decl &fn,
                const std::function<comptime::value()> &body)
@@ -1084,6 +1090,13 @@ private:
   /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
   std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
       folded_comptime_calls_;
+  /// The type parameters each call to a comptime-only generic `static def`
+  /// solved to, recorded by `instantiate_generic_function` (in the caller's
+  /// own type parameters when the caller is generic). Compile-time code runs
+  /// the template body, so the evaluator binds these (`comptime_call_type_
+  /// args`) for `T.name()` and for a method on a `T` value to read.
+  std::unordered_map<const ast::call_expr *, type_scope>
+      comptime_call_type_slots_;
   /// See `checked_types::layout_queries`. Populated by
   /// `infer_layout_query_call`.
   std::unordered_map<const ast::call_expr *, layout_query> layout_queries_;
@@ -5651,8 +5664,8 @@ private:
         continue;
       }
       const auto &entry = types_.entry(it->second);
-      values.emplace_back(
-          param.name, comptime::value::make_type_value(entry.name, entry.decl));
+      values.emplace_back(param.name, comptime::value::make_type_value(
+                                          entry.name, entry.decl, it->second));
     }
     return values;
   }
@@ -10799,6 +10812,11 @@ private:
       if (solution->bounds_hold) {
         defer_generic_call(call, decl, owner, decl_file, *solution,
                            ufcs_receiver);
+        // Compile-time code runs this template body, not its instances, and
+        // reads these parameters through what its own call bound them to.
+        if (comptime_only_functions_.contains(&decl)) {
+          comptime_call_type_slots_[&call] = solution->type_slots;
+        }
       }
       if (result == k_unknown_type) {
         return std::nullopt;
@@ -10974,6 +10992,9 @@ private:
         /*fixed_type_params=*/nullptr);
     if (instance == nullptr) {
       return std::nullopt;
+    }
+    if (comptime_only_functions_.contains(&decl)) {
+      comptime_call_type_slots_[&call] = solution->type_slots;
     }
 
     // The instance's signature, resolved under the same substitution its body
@@ -19620,6 +19641,7 @@ private:
                it != node_types_.end()) {
       receiver_type = strip_refs(settle(it->second));
     }
+    receiver_type = substitute_comptime_type_params(receiver_type);
     if (mentions_template_param(receiver_type)) {
       return std::unexpected(std::format(
           "the receiver has the generic type `{}`, and compile-time code "
@@ -19637,6 +19659,58 @@ private:
                                          types_.display(receiver_type)));
     }
     return method->decl;
+  }
+
+  /// The compile-time evaluator's generic-call lookup
+  /// (`comptime::evaluator::generic_call_resolver_fn`): the type arguments
+  /// the checker solved for `call`. A call written inside a generic body
+  /// solves to that body's own parameters (`inner(x)` with `x: T`), which
+  /// are read through the types the running call bound them to.
+  auto comptime_call_type_args(const ast::call_expr &call)
+      -> std::optional<std::vector<std::pair<std::string, comptime::value>>> {
+    const auto it = comptime_call_type_slots_.find(&call);
+    if (it == comptime_call_type_slots_.end()) {
+      return std::nullopt;
+    }
+    auto values = std::vector<std::pair<std::string, comptime::value>>{};
+    for (const auto &[name, solved] : it->second) {
+      const auto type = substitute_comptime_type_params(settle(solved));
+      const auto &entry = types_.entry(type);
+      values.emplace_back(
+          name, comptime::value::make_type_value(entry.name, entry.decl, type));
+    }
+    return values;
+  }
+
+  /// `type` with each type parameter the running compile-time call has
+  /// bound (`comptime::evaluator::type_binding`) replaced by its binding.
+  /// Compile-time code runs a generic `static def`'s template body, whose
+  /// expressions the checker typed with the parameters themselves.
+  auto substitute_comptime_type_params(type_id type) -> type_id {
+    auto bindings = param_subst{};
+    const auto collect = [&](this const auto &self, type_id id) -> void {
+      const auto entry = types_.entry(id); // copy: callers may intern after
+      if (entry.kind == type_kind::type_param_kind) {
+        const auto *bound = comptime_eval_.type_binding(entry.name);
+        if (bound != nullptr && bound->checked_type != k_unknown_type &&
+            bound->checked_type != id) {
+          bindings.emplace(id, bound->checked_type);
+        }
+        return;
+      }
+      for (const auto arg : entry.args) {
+        self(arg);
+      }
+      if (entry.result != k_unknown_type &&
+          (entry.kind == type_kind::fn_kind ||
+           entry.kind == type_kind::ref_kind ||
+           entry.kind == type_kind::ptr_kind ||
+           entry.kind == type_kind::array_kind)) {
+        self(entry.result);
+      }
+    };
+    collect(type);
+    return substitute_solved(type, bindings);
   }
 
   /// The compile-time evaluator's view of a bare name that is none of its

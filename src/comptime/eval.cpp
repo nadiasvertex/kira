@@ -2221,9 +2221,14 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
       type_arg_exprs.size() > fn->type_params.size()) {
     return std::nullopt;
   }
-  auto type_args = std::vector<std::pair<std::string, value>>{};
-  type_args.reserve(type_arg_exprs.size());
-  for (size_t i = 0; i < type_arg_exprs.size(); ++i) {
+  // The checker's solution carries the exact types; the spellings below are
+  // read only when it recorded none.
+  auto solved =
+      generic_call_resolver_ ? generic_call_resolver_(call) : std::nullopt;
+  const auto read_spellings = !solved.has_value();
+  auto type_args = std::move(solved).value_or(
+      std::vector<std::pair<std::string, value>>{});
+  for (size_t i = 0; read_spellings && i < type_arg_exprs.size(); ++i) {
     const auto *type_arg_expr = type_arg_exprs[i];
     if (type_arg_expr->kind != ast::node_kind::ident_expr) {
       return report(call.span, "a compile-time generic call's type argument "
@@ -2600,7 +2605,16 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
     }
     args.push_back(std::move(evaluated));
   }
-  return call_function(*fn, callee_name, std::move(args), call.span);
+  // An implicit generic call (`measure(b)`) names no type arguments; the
+  // checker's solution binds them, so `T.name()` and a method on a `T`
+  // value work in the callee's body.
+  auto type_args = std::vector<std::pair<std::string, value>>{};
+  if (!fn->type_params.empty() && generic_call_resolver_) {
+    type_args = generic_call_resolver_(call).value_or(
+        std::vector<std::pair<std::string, value>>{});
+  }
+  return call_function(*fn, callee_name, std::move(args), call.span,
+                       std::move(type_args));
 }
 
 auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,

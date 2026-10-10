@@ -334,6 +334,31 @@ public:
     method_resolver_ = std::move(resolver);
   }
 
+  /// The type arguments the checker solved for the generic call `call`
+  /// (`measure(box3 { side: 2 })` binds `T` to `box3`), as `type_value`s
+  /// keyed by type-parameter name; `nullopt` when the checker recorded no
+  /// solution for it. An implicit generic call names no type arguments for
+  /// the evaluator to read, and an explicit one names them only by
+  /// spelling, without the exact type the checker solved.
+  using generic_call_resolver_fn =
+      std::function<std::optional<std::vector<std::pair<std::string, value>>>(
+          const ast::call_expr &call)>;
+
+  /// Installs the checker's generic-call lookup (see
+  /// `generic_call_resolver_fn`). Unset, an implicit generic call binds no
+  /// type arguments.
+  void set_generic_call_resolver(generic_call_resolver_fn resolver) {
+    generic_call_resolver_ = std::move(resolver);
+  }
+
+  /// The type the current call's type parameter `name` is bound to, or
+  /// `nullptr` when `name` is not a type parameter bound in this frame.
+  [[nodiscard]] auto type_binding(const std::string &name) -> const value * {
+    const auto *found = lookup_local(name);
+    return found != nullptr && found->kind == value_kind::type_value ? found
+                                                                     : nullptr;
+  }
+
   /// The registered `static def` named `name`, if any — a session-wide
   /// lookup for a caller that synthesizes a call to a known library
   /// function (`checker::evaluate_derive_call`) and needs its declaration.
@@ -866,6 +891,9 @@ private:
 
   /// See `set_method_resolver`; unset until `checker` installs it.
   method_resolver_fn method_resolver_;
+
+  /// See `set_generic_call_resolver`; unset until `checker` installs it.
+  generic_call_resolver_fn generic_call_resolver_;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   /// Index of the innermost call's first frame in `locals_` — the floor

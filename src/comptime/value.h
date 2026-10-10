@@ -110,6 +110,13 @@ struct value {
   /// rationale as `function`.
   const ast::type_decl *type_decl = nullptr;
 
+  /// For `type_value`, the checker's interned `type_id` for the bound type,
+  /// or 0 (the checker's unknown type) when the type was named without the
+  /// checker. A name and declaration alone cannot tell `pair[int32]` from
+  /// `pair[str]`, so the checker reads this to resolve a method on a value
+  /// typed with a type parameter.
+  uint32_t checked_type = 0;
+
   /// Boxed AST fragment for `expr_fragment`/`stmt_fragment`/
   /// `def_expr_fragment`/`type_expr_fragment` — always a
   /// `ast::quote_expr::parsed_body` (or a sub-node reached by tearing one
@@ -178,11 +185,13 @@ struct value {
     return value{.kind = value_kind::pattern_fragment, .fragment = fragment};
   }
   [[nodiscard]] static auto make_type_value(std::string name,
-                                            const ast::type_decl *decl)
+                                            const ast::type_decl *decl,
+                                            uint32_t checked_type = 0)
       -> value {
     return value{.kind = value_kind::type_value,
                  .type_name = std::move(name),
-                 .type_decl = decl};
+                 .type_decl = decl,
+                 .checked_type = checked_type};
   }
   [[nodiscard]] static auto make_error() -> value {
     return value{.kind = value_kind::diagnostic_marker};

@@ -1,7 +1,9 @@
 module main
 
-# A compile-time method call on a receiver typed with a type parameter says
-# that the type is generic, not that the method is missing.
+# Compile-time calls to a generic `static def` bind its type parameters to
+# the types the checker solved, so a method on a `T` value and `T.name()`
+# work in its body. `pair[int32]` and `pair[int64]` pick different impls,
+# which a type name alone could not tell apart.
 
 trait sized:
     def size(self) -> int32
@@ -10,12 +12,35 @@ type box3 = { side: int32 }
 
 impl sized for box3:
     def size(self) -> int32:
-        return self.side
+        return self.side * 3
+
+type pair[A] = { first: A, second: A }
+
+impl sized for pair[int32]:
+    def size(self) -> int32:
+        return self.first + self.second
+
+impl sized for pair[int64]:
+    def size(self) -> int32:
+        return 100
 
 static def measure[T](x: T) -> int32 where T: sized:
     return x.size()
 
-static let measured = measure(box3 { side: 2 })
+# A generic body's own call is solved in its own parameter `U`.
+static def twice[U](y: U) -> int32 where U: sized:
+    return measure(y) * 2
+
+static def named[T](x: T) -> str:
+    return T.name()
+
+static let a = measure(box3 { side: 2 })
+static let b = measure(pair[int32] { first: 3, second: 4 })
+static let c = twice(box3 { side: 5 })
+static let d = measure[box3](box3 { side: 1 })
+static let e = named(box3 { side: 1 }).len() as int32
+static let f = measure(pair[int64] { first: 3, second: 4 })
 
 def main() -> int32:
-    return measured
+    # A run-time call to a comptime-only function is folded at compile time.
+    return a + b + c + d + e + f + measure(box3 { side: 10 })
