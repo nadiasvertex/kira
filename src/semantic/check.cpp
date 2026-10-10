@@ -1296,6 +1296,9 @@ private:
   std::unordered_map<const ast::static_decl *, comprehension_dispatch>
       static_for_dispatches_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
+  /// Unannotated `static let` bindings checked ahead of file order by
+  /// `check_static_binding_early`, so file order does not check them again.
+  std::unordered_set<const ast::static_decl *> early_checked_static_bindings_;
   /// Each `static let`'s evaluated compile-time value, keyed by declaration
   /// so same-named statics in different modules stay distinct — see
   /// `ensure_static_binding_evaluated`. `nullopt` records an initializer
@@ -11906,13 +11909,27 @@ private:
     mark_error();
   }
 
-  /// Resolves and caches a `static` binding's declared type, guarding
-  /// against an initializer cycle (`static a = b` / `static b = a`) by
-  /// returning `unknown` if the declaration is already being resolved.
+  /// Resolves and caches a `static` binding's type, guarding against an
+  /// initializer cycle (`static a = b` / `static b = a`) by returning
+  /// `unknown` if the declaration is already being resolved.
+  ///
+  /// An unannotated binding's type is its initializer's, so a reference
+  /// reached before the declaration itself is checked (an earlier function,
+  /// another module) checks the declaration on demand
+  /// (`check_static_binding_early`) rather than seeing `unknown`.
   auto static_binding_type(const ast::static_decl &decl,
                            const module_members *owner) -> type_id {
     if (const auto it = static_types_.find(&decl); it != static_types_.end()) {
       return it->second;
+    }
+    if (decl.type_annotation == nullptr && decl.initializer != nullptr &&
+        !decl.initializer->has_error &&
+        !statics_in_progress_.contains(&decl)) {
+      check_static_binding_early(decl, owner);
+      if (const auto it = static_types_.find(&decl);
+          it != static_types_.end()) {
+        return it->second;
+      }
     }
     if (!statics_in_progress_.insert(&decl).second) {
       return k_unknown_type; // initializer cycle
@@ -11928,6 +11945,32 @@ private:
     statics_in_progress_.erase(&decl);
     static_types_.emplace(&decl, type);
     return type;
+  }
+
+  /// Checks an unannotated `static let` ahead of its place in file order, as
+  /// its declaration would be: in its own module and file, with none of the
+  /// body being checked right now in scope. `check_static_decl` then skips
+  /// it when file order reaches it.
+  auto check_static_binding_early(const ast::static_decl &decl,
+                                  const module_members *owner) -> void {
+    const auto &declaring = owner != nullptr ? *owner : *module_;
+    const auto listed = declaring.statics.find(decl.name);
+    const auto file = listed != declaring.statics.end() &&
+                              listed->second.decl == &decl
+                          ? listed->second.file_id
+                          : file_id_;
+    auto module_level = body_context{};
+    swap_body_context(module_level);
+    // `in_module_context` returns its body's result, so the body needs one.
+    [[maybe_unused]] const auto checked =
+        in_module_context(declaring, file, [&] -> bool {
+          push_scope();
+          check_static_decl(decl);
+          pop_scope();
+          return true;
+        });
+    swap_body_context(module_level);
+    early_checked_static_bindings_.insert(&decl);
   }
 
   /// Ensures `decl`'s compile-time value is evaluated and bound in
@@ -19588,8 +19631,7 @@ private:
     if (types_.is_unknown(receiver_type) || receiver_type == k_error_type) {
       return std::unexpected(std::string{
           "the receiver's type is not known where this compile-time code was "
-          "checked (a `static` without a type annotation, read before its own "
-          "declaration is checked, has no type yet)"});
+          "checked"});
     }
     const auto *method = find_receiver_method(receiver_type, name);
     if (method == nullptr) {
@@ -28463,13 +28505,22 @@ private:
     comptime_eval_.set_file(file_id_);
     switch (decl.decl_kind) {
     case ast::static_decl_kind::binding: {
+      // Already checked on demand by a reference that came first
+      // (`check_static_binding_early`).
+      if (early_checked_static_bindings_.contains(&decl)) {
+        return;
+      }
       auto declared = k_unknown_type;
       if (decl.type_annotation != nullptr) {
         declared = resolve_type(*decl.type_annotation, current_resolve_ctx());
       }
       auto found = k_unknown_type;
       if (decl.initializer != nullptr) {
+        // A reference to this binding from its own initializer is a cycle,
+        // not a reason to check it again on demand.
+        statics_in_progress_.insert(&decl);
         found = infer_expr(*decl.initializer, declared);
+        statics_in_progress_.erase(&decl);
         if (decl.type_annotation != nullptr) {
           type_mismatch(decl.initializer->span, declared, found,
                         "from the annotation", decl.initializer.get());

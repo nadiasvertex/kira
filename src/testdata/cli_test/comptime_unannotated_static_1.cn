@@ -1,0 +1,14 @@
+module lib
+
+# An unannotated `static let` read by compile-time code in another module,
+# which is checked first (todo item 11).
+
+pub type counter = { n: int32 }
+
+extend counter:
+    pub def bumped(self) -> counter:
+        return counter { n: self.n + 1 }
+    pub def get(self) -> int32:
+        return self.n
+
+pub static let start = counter { n: 30 }

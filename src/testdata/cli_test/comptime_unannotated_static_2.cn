@@ -1,0 +1,21 @@
+module main
+
+use lib
+
+# `lib.start` and `local` have no annotation and are read before their
+# declarations are checked, so their types come from their initializers.
+
+static def from_lib() -> int32:
+    return lib.start.bumped().get()
+
+static def from_here() -> int32:
+    return local.bumped().get()
+
+static let a = from_lib()
+static let b = from_here()
+
+def main() -> int32:
+    # 31 + 11
+    return a + b
+
+static let local = lib.counter { n: 10 }

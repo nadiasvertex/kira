@@ -1585,6 +1585,71 @@ auto test_comptime_unsupported_method_is_named() -> void {
          "expected no field-access error: " + report->diagnostics);
 }
 
+/// Compile-time code reads unannotated `static let` bindings whose own
+/// declarations are checked later, one in another module and one later in
+/// the same file (todo item 11): each takes its initializer's type, so
+/// methods can be called on it. Asserted by the computed value on both
+/// backends.
+auto test_comptime_unannotated_static_read_early() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto lib_source = temp.path / "lib.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "comptime_unannotated_static_bin";
+
+  write_file(lib_source, read_program("comptime_unannotated_static_1.cn"));
+  write_file(main_source, read_program("comptime_unannotated_static_2.cn"));
+
+  // 31 + 11.
+  constexpr auto expected = 42;
+  // `main` first, so it is checked before `lib` declares `start`.
+  const auto sources =
+      std::vector<std::string>{main_source.string(), lib_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected unannotated statics to be typed from their initializers: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the unannotated-static program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
 /// A `static` whose initializer fails reports that failure once. A module
 /// that refers to the binding is not lowered: lowering used to see a
 /// reference with no value and blame a "gap in the compiler". The failure
@@ -4605,6 +4670,7 @@ auto main() -> int {
     test_comptime_unsupported_method_is_named();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method_is_explained();
+    test_comptime_unannotated_static_read_early();
     test_failed_static_initializer_blocks_lowering();
     test_comparison_literal_follows_later_solved_operand();
     test_literal_follows_later_use_through_join_and_method();
