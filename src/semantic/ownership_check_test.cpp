@@ -983,6 +983,21 @@ auto test_deref_borrow_outliving_handle_is_rejected() -> void {
                     "keep the handle borrowed");
 }
 
+auto test_shared_borrow_outliving_handle_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_shared_borrow_outlived.cn");
+  expect_diagnostic(analyzed, "cannot return a borrow of the local `h`",
+                    "expected `return &h.x` through a `shared` handle to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot move `h` while the reference `r` to `h` is still "
+                    "in use",
+                    "expected a borrow through a `shared` handle to keep the "
+                    "handle borrowed");
+  expect_diagnostic(analyzed, "cannot move out of `h.items`",
+                    "expected a move out of a `shared` value to be rejected");
+}
+
 auto test_move_out_through_deref_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_move_out_through_deref.cn");
@@ -1087,6 +1102,7 @@ auto main() -> int {
     test_reads_of_captures_are_accepted();
     test_deref_borrow_outliving_handle_is_rejected();
     test_move_out_through_deref_is_rejected();
+    test_shared_borrow_outliving_handle_is_rejected();
     test_move_out_of_deref_operator_is_rejected();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "

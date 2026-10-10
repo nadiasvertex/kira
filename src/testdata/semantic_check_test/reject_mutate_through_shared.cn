@@ -1,0 +1,29 @@
+module sample
+
+# A `shared[T]` handle lends its value only through `deref`, so the value is
+# read-only: no assignment, no `&mut`, no `mut self` method, and no `*h = v`.
+
+use std.shared.shared
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def bump(mut self) -> unit:
+        self.x = self.x + 1
+
+def assign() -> unit:
+    var h = shared point { x: 3, y: 4 }
+    h.x = 1
+
+def borrow_mut() -> int32:
+    var h = shared point { x: 3, y: 4 }
+    let r = &mut h.y
+    return 0
+
+def call_mut() -> unit:
+    var h = shared point { x: 3, y: 4 }
+    h.bump()
+
+def assign_whole() -> unit:
+    var h = shared[int32].new(1)
+    *h = 2

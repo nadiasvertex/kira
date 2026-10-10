@@ -1,6 +1,6 @@
 # 17. Shared Ownership and Drop
 
-**Status:** Partial
+**Status:** Implemented
 
 `shared[T]` reference-counted values, and the `drop` trait's rules for destructor execution.
 
@@ -19,6 +19,25 @@ let worker_config = config.clone()
 - A `shared` handle gives **read-only** access — it never yields `&mut` — so any number of tasks may hold and read the same `shared` value at once without a data race.
 - To *mutate* data behind a `shared`, wrap it in a synchronized cell such as `mutex[T]` (see [Data-Race Freedom](30-data-race-freedom.md)).
 - `shared` carries a small runtime cost; prefer single ownership, and prefer scoped borrowing (free) whenever possible.
+- `clone()` on a handle makes another handle to the same value; it does not copy the value. The value drops when the last handle drops.
+- Handles that form a cycle keep each other alive and are never dropped. There is no weak handle.
+- `shared[T]` is an ordinary standard library type (`std.shared`). The `shared e` expression form needs no import; naming the type (`shared T` or `shared[T]`) needs `use std.shared.shared`.
+
+### Representation
+
+A handle holds one pointer to a heap block that records the number of live handles and the value:
+
+```cinder
+type shared_block[T] = { count: usize, value: T }
+pub type shared[T] = { inner: *mut shared_block[T] }
+```
+
+- `shared[T].new(v)` allocates a block, moves `v` into it, and sets the count to 1. `shared e` is the same call written as an expression, and the bare form `shared.new(e)` solves `T` from its argument.
+- `clone()` atomically increments the count and returns a second handle to the same block. `drop` atomically decrements it; the handle that takes the count to zero runs the value's drop glue and frees the block.
+- `strong_count()` reports the number of live handles.
+- A handle is one pointer wide. Its `shared_block` is held by reference like any struct, so code in `std.shared` writes the whole block into its slot instead of assigning the fields of an unwritten slot.
+- Reading through a handle uses [`deref`](18-traits.md#deref). `clone` is found on the handle before the target's own `clone`, so `h.clone()` always adds a handle and never copies the value. A target's own method of the same name is reached with `(*h).clone()`.
+- `shared` is a keyword that is also accepted as a module path segment and a type declaration name. The type name is not in the prelude and needs `use std.shared.shared`; the `shared e` expression form needs no import.
 
 ## Destructors: `drop`
 
@@ -87,14 +106,11 @@ def demo(flag: bool) -> unit:
   - Temporaries drop at the end of their statement (`hir::make_references_explicit`, `src/hir/reference_check.cpp`), and the ownership checker ends them at the same points, so a borrow that outlives one is rejected (`src/testdata/std_test/temporary_drops.cn`, `src/testdata/semantic_ownership_check_test/reject_temporary_outlived.cn`). A `return`, `break`, `continue` or `?` that leaves a statement early drops the temporaries it has made so far under run-time live flags, and a `while let` subject's temporaries drop every iteration (`src/testdata/std_test/early_exit_drops.cn`). The failure path of `?` drops the function's locals too.
   - `list` drops its elements (`std.mem.drop_in_place`/`drop_range`), as do `clear`, `set` and `v[i] = x`; `list_into_iter` drops the elements it has not yielded (`src/testdata/std_test/list_element_drops.cn`).
   - `needs_drop[T]()` answers from the same drop plans scope exit reads, and `if` branches whose condition lowers to a literal `false` are not lowered (`src/testdata/std_test/needs_drop.cn`). It is a prelude query like `size_of`, usable in ordinary `if` conditions but not in `static if` or compile-time functions, since drop plans exist only after checking ends.
-  - **Not yet unified:** the drop decisions are split between the ownership checker and the lowerer, which have to agree through shared helper functions; it is tracked in [todo.md](../../todo.md).
   - Unwinding through drops on panic is moot: this compiler has no stack unwinding at all (`panic` traps/aborts).
   - The prelude `drop(x)` function exists (`src/std/traits.cn`) and drops `x` when it returns (`src/testdata/std_test/swap_replace_drop.cn`).
   - The ownership checker (`src/semantic/ownership_check.h`) rejects any use after a move; `hir::compute_drop_schedule` is a separate, HIR-oriented walker that decides where drops go, and keeps its own record of which bindings were moved (see that file's doc comment).
-- **`shared[T]` is a name with nothing behind it.** `shared` is registered as a builtin generic (`src/semantic/types.cpp:51`) and that is the entire implementation. The `shared` expression form yields a plain reference — `let a: shared t = shared t{ id: 1 }` fails with ``expected `shared[t]`, found `&t` `` — and `shared[T]` has no methods, so `.clone()` does not resolve. No atomic reference count exists anywhere in the source tree, so neither the read-only-access guarantee nor drop-at-zero is enforced or implemented.
+- **`shared[T]` is implemented** in `src/std/shared.cn` over `std.mem`'s allocator and atomic primitives, with `clone`, `deref` and `drop` impls. Both backends run it (`src/testdata/std_test/shared_*.cn`, `accept_shared_expr.cn`; layout checked by `src/testdata/codegen_stress/134_shared_layout.cn`). Writing through a handle is rejected (`src/testdata/semantic_check_test/reject_mutate_through_shared.cn`), and so is a borrow through a handle that outlives it or a move out of the shared value (`src/testdata/semantic_ownership_check_test/reject_shared_borrow_outlived.cn`). A cycle of handles leaks; no test builds one, because a cycle needs interior mutability, which does not exist yet.
 - **`scope` blocks work** (`src/testdata/std_test/scope_block.cn`), and so do drops for `where` bindings (`src/testdata/std_test/where_inline.cn`). The block's locals drop in reverse order at its `DEDENT`; a `where` binding drops when its `let` finishes, after the initializer is evaluated.
-
-Tracked as items 6–7 in [todo.md](../../todo.md).
 
 ## See also
 

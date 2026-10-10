@@ -5,7 +5,7 @@ Ownership and borrowing, traits and generics, and async concurrency. Needed for 
 14. [Ownership and Borrowing](14-ownership-and-borrowing.md)
 15. [Views](15-views.md) — Partial
 16. [Closures and Capture](16-closures-and-capture.md) — Partial
-17. [Shared Ownership and Drop](17-shared-ownership-and-drop.md) — Partial
+17. [Shared Ownership and Drop](17-shared-ownership-and-drop.md) — Implemented
 18. [Traits](18-traits.md)
 19. [Generics and Inference](19-generics-and-inference.md)
 20. [Operator Overloading](20-operator-overloading.md)

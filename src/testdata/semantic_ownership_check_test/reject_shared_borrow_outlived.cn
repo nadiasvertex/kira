@@ -1,0 +1,29 @@
+module ownership.shared_borrow_outlived
+
+# A borrow reached through a `shared[T]` handle's `deref` borrows the handle,
+# so it cannot outlive it: not by being returned, and not across a move of
+# the handle. A non-`copy` field cannot be moved out of the shared value.
+
+use std.shared.shared
+use std.list.list
+
+type point = { x: int32, y: int32 }
+
+type named = { items: list[int32] }
+
+def consume(h: shared[point]) -> unit:
+    return
+
+def returned() -> &int32:
+    let h = shared point { x: 3, y: 4 }
+    return &h.x
+
+def moved_while_borrowed() -> int32:
+    let h = shared point { x: 3, y: 4 }
+    let r = &h.y
+    consume(h)
+    return *r
+
+def take() -> list[int32]:
+    let h = shared named { items: [1, 2] }
+    return h.items

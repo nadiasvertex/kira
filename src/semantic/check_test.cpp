@@ -4355,6 +4355,30 @@ auto test_reports_write_through_deref() -> void {
                     "expected the help to point at `mutex[T]`");
 }
 
+auto test_reports_write_through_shared() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_mutate_through_shared.cn");
+  expect(analyzed.error_count == 4,
+         "expected each write through a `shared[T]` handle to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "cannot assign to a value reached through "
+                    "`shared[point]`'s `deref`",
+                    "expected `h.x = 1` through `shared` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot mutably borrow a value reached through "
+                    "`shared[point]`'s `deref`",
+                    "expected `&mut h.y` through `shared` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot call `bump` through `shared[point]`'s `deref`",
+                    "expected a `mut self` method through `shared` to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot assign to a value reached through "
+                    "`shared[int32]`'s `deref`",
+                    "expected `*h = 2` on a `shared` handle to be rejected");
+}
+
 auto test_reports_deref_operator_misuse() -> void {
   const auto analyzed = analyze_test_data_file("reject_deref_operator.cn");
   expect(analyzed.error_count == 3,
@@ -4395,6 +4419,7 @@ auto main() -> int {
   try {
     test_accepts_typed_core_program();
     test_reports_write_through_deref();
+    test_reports_write_through_shared();
     test_reports_deref_operator_misuse();
     test_reports_member_missing_through_deref();
     test_reports_copy_bound_unsatisfied();

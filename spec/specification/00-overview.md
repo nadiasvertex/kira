@@ -44,7 +44,7 @@ Each chapter opens with a status line:
 14. [Ownership and Borrowing](02-intermediate/14-ownership-and-borrowing.md)
 15. [Views](02-intermediate/15-views.md) — Partial
 16. [Closures and Capture](02-intermediate/16-closures-and-capture.md) — Partial
-17. [Shared Ownership and Drop](02-intermediate/17-shared-ownership-and-drop.md) — Partial
+17. [Shared Ownership and Drop](02-intermediate/17-shared-ownership-and-drop.md) — Implemented
 18. [Traits](02-intermediate/18-traits.md)
 19. [Generics and Inference](02-intermediate/19-generics-and-inference.md)
 20. [Operator Overloading](02-intermediate/20-operator-overloading.md)
