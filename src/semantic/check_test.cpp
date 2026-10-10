@@ -2516,14 +2516,16 @@ auto test_reports_borrowed_number_used_as_a_number() -> void {
 auto test_reports_reference_key_for_ord_bound() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_reference_key_for_ord_bound.cn");
-  expect_diagnostic(analyzed, "`larger` needs `K: ord`, and `&int32` does not "
-                              "satisfy it",
+  expect_diagnostic(analyzed,
+                    "`larger` needs `K: ord`, and `&int32` does not "
+                    "satisfy it",
                     "expected the call whose lambda solved `K` to a "
                     "reference to be refused at the call");
   expect_diagnostic(analyzed, "write `x => *x` rather than `x => x`",
                     "expected the help to name the dereference in the lambda");
-  expect_diagnostic(analyzed, "`less` needs `K: ord`, and `&int32` does not "
-                              "satisfy it",
+  expect_diagnostic(analyzed,
+                    "`less` needs `K: ord`, and `&int32` does not "
+                    "satisfy it",
                     "expected a reference argument solving `K` to be refused "
                     "at the call");
   expect_diagnostic(analyzed, "operator `<` is not defined for `&int32`",

@@ -644,11 +644,10 @@ auto always_returns(const hir_block &block) -> bool {
     const auto &iff = dynamic_cast<const hir_if &>(expr);
     return iff.else_body != nullptr &&
            returns_pushable(iff.else_body->stmts, result) &&
-           std::ranges::all_of(iff.branches,
-                               [&](const hir_if_branch &branch) -> bool {
-                                 return returns_pushable(branch.body->stmts,
-                                                         result);
-                               });
+           std::ranges::all_of(
+               iff.branches, [&](const hir_if_branch &branch) -> bool {
+                 return returns_pushable(branch.body->stmts, result);
+               });
   }
   default:
     return true;
