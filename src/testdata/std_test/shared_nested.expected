@@ -1,0 +1,6 @@
+n count=2 o count=1
+tag=10
+o count=2
+end
+drop outer 10
+drop noisy 1

@@ -1142,6 +1142,64 @@ auto test_ownership_error_blocks_run_and_build() -> void {
   }
 }
 
+/// `shared[T]` is read-only through a handle, and a borrow made through its
+/// `deref` cannot outlive the handle. Both need the real `std.shared`, so the
+/// programs run with the stdlib injected.
+auto test_shared_handle_misuse_is_rejected() -> void {
+  auto temp = make_temp_dir();
+  const auto prologue = std::string("module m\n"
+                                    "use std.shared.shared\n"
+                                    "type point = { x: int32, y: int32 }\n");
+  struct reject_case {
+    std::string name;
+    std::string body;
+    std::string message;
+  };
+  const auto cases = std::vector<reject_case>{
+      {"assign_field",
+       "def main() -> unit:\n"
+       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
+       "  p.x = 5\n",
+       "cannot assign to a value reached through `shared[point]`'s `deref`"},
+      {"return_borrow",
+       "def get() -> &int32:\n"
+       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
+       "  return &p.x\n"
+       "def main() -> unit:\n"
+       "  return\n",
+       "cannot return a borrow of the local `p`"},
+      {"move_while_borrowed",
+       "def main() -> unit:\n"
+       "  let p = shared[point].new(point { x: 1, y: 2 })\n"
+       "  let r = &p.x\n"
+       "  let q = p\n"
+       "  println(\"{*r}\")\n",
+       "cannot move `p` while the reference `r` to `p` is still in use"},
+  };
+  for (const auto &c : cases) {
+    auto source = temp.path / (c.name + ".cn");
+    write_file(source, prologue + c.body);
+    cinder::driver::cli_config cfg{
+        .program_name = "cinder",
+        .sources = {source.string()},
+        .metadata_dir = (temp.path / "meta").string(),
+        .show_help = false,
+        .run = true,
+        .run_function = "main",
+    };
+    cinder::driver::inject_stdlib_prelude(cfg);
+    auto report = cinder::driver::compile_sources(cfg, false);
+    expect(report.has_value(), "expected compile driver to return a report");
+    expect(report->error_count > 0,
+           std::format("expected the {} misuse to be rejected", c.name));
+    expect(report->diagnostics.find(c.message) != std::string::npos,
+           std::format("expected `{}` for {}, got:\n{}", c.message, c.name,
+                       report->diagnostics));
+    expect(!report->run.has_value(),
+           std::format("expected the {} program not to run", c.name));
+  }
+}
+
 /// Todo item 10: a user root module whose name matches a local binding in
 /// a library body (`for s in suites: s.cases` in `std.test`, `static for v
 /// in T.variants(): v.name` in `std.derive`) once turned every such field
@@ -4999,6 +5057,7 @@ auto main() -> int {
     test_compile_sources_writes_functor_instantiation_metadata();
     test_compile_sources_folds_static_if_import_selection();
     test_ownership_error_blocks_run_and_build();
+    test_shared_handle_misuse_is_rejected();
     test_compile_sources_rejects_use_gated_by_nonliteral_static_if();
     test_compile_sources_folds_static_if_top_level_type_selection();
     test_compile_sources_folds_static_if_top_level_type_selection_else();

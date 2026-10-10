@@ -5669,6 +5669,30 @@ private:
                        .quiet = true};
   }
 
+  /// Makes `file_id_` the file `instance`'s declaration was written in for
+  /// the lifetime of the returned guard. Name resolution reads imports out
+  /// of `file_id_`, so a member type written with an imported name
+  /// (`inner: shared[noisy]` under `use std.shared.shared`) resolved under
+  /// whatever file the checker last stood in, often unknown, which left the
+  /// type undroppable.
+  [[nodiscard]] auto enter_declaring_file(const type_entry &instance) {
+    struct guard {
+      file_id_type &slot;
+      file_id_type saved;
+      ~guard() { slot = saved; }
+    };
+    auto result = guard{.slot = file_id_, .saved = file_id_};
+    if (instance.decl != nullptr) {
+      if (const auto *module = index_.find_module(instance.module_name)) {
+        if (const auto it = module->types.find(instance.decl->name);
+            it != module->types.end() && it->second.decl == instance.decl) {
+          file_id_ = it->second.file_id;
+        }
+      }
+    }
+    return result;
+  }
+
   /// Returns the field list of a struct-kind instance, or `nullptr` if
   /// `instance` is not a struct.
   auto struct_fields_of(const type_entry &instance)
@@ -5699,6 +5723,7 @@ private:
           return k_unknown_type;
         }
         const auto bindings = param_bindings_for_instance(instance);
+        const auto in_declaring_file = enter_declaring_file(instance);
         return resolve_type(*field.type,
                             member_resolve_ctx(instance, bindings));
       }
@@ -5743,6 +5768,7 @@ private:
     payload.reserve(variant.payload_types.size());
     const auto bindings = param_bindings_for_instance(instance);
     const auto ctx = member_resolve_ctx(instance, bindings);
+    const auto in_declaring_file = enter_declaring_file(instance);
     for (const auto &type : variant.payload_types) {
       payload.push_back(type != nullptr ? resolve_type(*type, ctx)
                                         : k_unknown_type);

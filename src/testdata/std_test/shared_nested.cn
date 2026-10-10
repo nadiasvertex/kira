@@ -1,0 +1,30 @@
+module main
+
+# Handles that own other handles: the outer value drops when its last handle
+# goes, which releases the inner handle it holds. The inner value drops only
+# once every handle to it, inside and outside the outer one, is gone.
+# (A cycle of handles would leak, but building one needs interior mutability,
+# which does not exist yet, so no test can construct it.)
+
+use std.shared.shared
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop noisy {self.id}")
+
+type outer = { inner: shared[noisy], tag: int32 }
+
+impl drop for outer:
+    def drop(mut self) -> unit:
+        println("drop outer {self.tag}")
+
+def main() -> unit:
+    let n = shared noisy { id: 1 }
+    let o = shared outer { inner: n.clone(), tag: 10 }
+    println("n count={n.strong_count()} o count={o.strong_count()}")
+    println("tag={o.tag}")
+    let o2 = o.clone()
+    println("o count={o.strong_count()}")
+    println("end")
