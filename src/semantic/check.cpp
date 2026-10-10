@@ -8363,7 +8363,7 @@ private:
       return;
     }
     const auto &entry = types_.entry(settled);
-    const auto *found = find_method(entry, method_name, settled);
+    const auto *found = find_receiver_method(settled, method_name);
     if (found == nullptr) {
       return;
     }
@@ -14479,6 +14479,53 @@ private:
     return nullptr;
   }
 
+  /// The declared method `name` on `receiver`, by the routes
+  /// `infer_method_call` tries: a declared or derived method, or, for a
+  /// builtin (which has no declaration for `find_method` to search), an impl
+  /// or `extend` method on it.
+  auto find_receiver_method(type_id receiver, std::string_view name)
+      -> const method_entry * {
+    const auto &entry = types_.entry(receiver);
+    if (const auto *found = find_method(entry, name, receiver)) {
+      return found;
+    }
+    if (entry.decl != nullptr) {
+      return nullptr;
+    }
+    if (const auto *found = find_builtin_impl_method(entry.name, name)) {
+      return found;
+    }
+    return find_extend_method_for_builtin(entry, name);
+  }
+
+  /// Whether `name` is a method `receiver`'s head already selects, declared
+  /// or builtin (`builtin_has_method`).
+  ///
+  /// The builtin routes matter because a builtin has no declaration for
+  /// `find_method` to search: without them `@some(3000000000).unwrap()` read
+  /// as a call with no method to find and defaulted the literal to `int32`
+  /// before `let w: int64 = r` could say otherwise.
+  auto receiver_has_method(type_id receiver, const std::string &name) -> bool {
+    return find_method(types_.entry(receiver), name, receiver) != nullptr ||
+           (types_.entry(receiver).decl == nullptr &&
+            builtin_has_method(receiver, name));
+  }
+
+  /// Whether `name` is one of `k_builtin_methods`' entries for `object`.
+  /// Asked by name rather than through `builtin_method_result`, whose answer
+  /// for an element-typed method is the element — an open leaf, which
+  /// `is_unknown` cannot tell from "no such method".
+  [[nodiscard]] static auto
+  has_builtin_inherent_method(const type_entry &object, std::string_view name)
+      -> bool {
+    const auto owner = builtin_method_owner(object);
+    return !owner.empty() &&
+           std::ranges::any_of(
+               k_builtin_methods, [&](const auto &method) -> bool {
+                 return method.owner == owner && method.name == name;
+               });
+  }
+
   /// Looks up an impl-provided method by name on a *prelude constructor*
   /// (`option`, `list`, ...) — the methods `impl monad for option` adds,
   /// keyed by constructor name via `impl_methods_by_builtin_`. An
@@ -14548,9 +14595,9 @@ private:
     // `iterator[?a]` a literal-element list's iterator implements solves
     // `U := ?a`, which settles when the literal does. `is_unknown` counts a
     // leaf as unknown, so it is ruled out by kind here.
-    if (pattern == concrete || (types_.is_unknown(concrete) &&
-                                types_.entry(concrete).kind !=
-                                    type_kind::type_var_kind)) {
+    if (pattern == concrete ||
+        (types_.is_unknown(concrete) &&
+         types_.entry(concrete).kind != type_kind::type_var_kind)) {
       return;
     }
     const auto matched = infer::match_pattern(types_, pattern, concrete);
@@ -16268,7 +16315,7 @@ private:
   [[nodiscard]] auto builtin_has_method(type_id receiver,
                                         const std::string &name) -> bool {
     const auto &entry = types_.entry(receiver);
-    return !types_.is_unknown(builtin_method_result(entry, name)) ||
+    return has_builtin_inherent_method(entry, name) ||
            find_builtin_impl_method(entry.name, name) != nullptr ||
            find_extend_method_for_builtin(entry, name) != nullptr;
   }
@@ -16676,8 +16723,7 @@ private:
     // where it cannot, the receiver is owed the last resort now, and the
     // lookup below runs against the answer.
     if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
-        find_method(types_.entry(object), field.field_name, object) ==
-            nullptr &&
+        !receiver_has_method(object, field.field_name) &&
         (types_.entry(settle(object)).kind == type_kind::type_var_kind ||
          field.object->kind != ast::node_kind::ident_expr ||
          collect_ufcs_candidates(field.field_name).empty())) {
@@ -16889,7 +16935,7 @@ private:
       // indexing the container itself stays unrestricted.
       const auto builtin_result =
           builtin_method_result(entry, field.field_name);
-      if (types_.is_unknown(builtin_result)) {
+      if (!has_builtin_inherent_method(entry, field.field_name)) {
         if (const auto *method =
                 find_builtin_impl_method(entry.name, field.field_name)) {
           record_expr_type(field, fn_type_of(*method->decl, method->owner));
@@ -18617,7 +18663,7 @@ private:
       return tuple_index_of(name).has_value();
     case type_kind::builtin_kind:
     case type_kind::builtin_generic_kind:
-      return !types_.is_unknown(builtin_method_result(entry, name)) ||
+      return has_builtin_inherent_method(entry, name) ||
              find_builtin_impl_method(entry.name, name) != nullptr ||
              find_extend_method_for_builtin(entry, name) != nullptr;
     case type_kind::fn_kind:
@@ -19166,7 +19212,7 @@ private:
     }
     default: {
       const auto builtin_result = builtin_method_result(entry, name);
-      if (types_.is_unknown(builtin_result)) {
+      if (!has_builtin_inherent_method(entry, name)) {
         if (const auto *method = find_extend_method_for_builtin(entry, name)) {
           return fn_type_of(*method->decl, method->owner);
         }
@@ -21608,6 +21654,16 @@ private:
     // whichever position it is in.
     if (types_.entry(found).name == "never") {
       return types_.is_unknown(current) ? found : current;
+    }
+    // The branches are one value, so their leaves are tied now. Without
+    // this, an open leaf counts as unknown below and is simply dropped for
+    // the other branch's type: `@some(v) => v` joined with `@none => 0`
+    // answered with the `0`'s leaf, and a later `let w: int64 = r` never
+    // reached `v`'s literal, which defaulted to `int32`.
+    if (leaf_ctxt_.meta_count() != 0 && types_.entry(current).name != "never") {
+      solve_leaves(current, found);
+      current = leaf_ctxt_.zonk(current);
+      found = leaf_ctxt_.zonk(found);
     }
     if (types_.is_unknown(current) || types_.entry(current).name == "never") {
       return found;

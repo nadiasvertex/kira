@@ -1,0 +1,30 @@
+module main
+def from_match() -> int64:
+    let o = @some(3000000001)
+    let r = match o:
+        @some(v) => v
+        @none => 0
+    let wide: int64 = r
+    return wide - 3000000000
+def from_if(flag: bool) -> int64:
+    let r = if flag: 3000000002 else: 0
+    let wide: int64 = r
+    return wide - 3000000000
+def from_unwrap() -> int64:
+    let r = @some(3000000004).unwrap()
+    let wide: int64 = r
+    return wide - 3000000000
+def from_unwrap_or() -> int64:
+    let o = @some(3000000008)
+    let r = o.unwrap_or(0)
+    let wide: int64 = r
+    return wide - 3000000000
+def from_list_iterator() -> int64:
+    let d = [3000000016, 1]
+    var it = d.into_iter()
+    let r = it.next().unwrap()
+    let wide: int64 = r
+    return wide - 3000000000
+def main() -> int32:
+    let total = from_match() + from_if(true) + from_unwrap() + from_unwrap_or() + from_list_iterator()
+    return total as int32

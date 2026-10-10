@@ -1,5 +1,5 @@
 # inference snapshot
-# 2291 interned types
+# 2294 interned types
 
 ## node_types (30682)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -32870,7 +32870,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (665)
+## drop_plans (663)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33342,8 +33342,6 @@ fn(int32) -> bool own=- fields=[] glue=fn() -> unit
 fn(int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(int32) -> int64 own=- fields=[] glue=fn() -> unit
 fn(int32) -> list[int32] own=- fields=[] glue=fn() -> unit
-fn(int32) -> option[B] own=- fields=[] glue=fn() -> unit
-fn(int32) -> option[_] own=- fields=[] glue=fn() -> unit
 fn(int32) -> option[int32] own=- fields=[] glue=fn() -> unit
 fn(int32) -> result[int32, app_error] own=- fields=[] glue=fn() -> unit
 fn(int32) -> result[int32, parse_error] own=- fields=[] glue=fn() -> unit
@@ -33537,7 +33535,7 @@ take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1685)
+## borrow_bearing_types (1688)
 &K
 &T
 &T
@@ -34681,7 +34679,12 @@ fn(_) -> option[&_]
 fn(_) -> option[&mut _]
 fn(_) -> option[(_, _)]
 fn(_) -> option[(usize, _)]
+fn(_) -> option[B]
 fn(_) -> option[U]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[_]
+fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[_]
@@ -34830,8 +34833,6 @@ fn(int32) -> bool
 fn(int32) -> int32
 fn(int32) -> int64
 fn(int32) -> list[int32]
-fn(int32) -> option[B]
-fn(int32) -> option[_]
 fn(int32) -> option[int32]
 fn(int32) -> result[int32, app_error]
 fn(int32) -> result[int32, parse_error]

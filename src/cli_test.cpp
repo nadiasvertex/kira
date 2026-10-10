@@ -1500,6 +1500,70 @@ auto test_comparison_literal_follows_later_solved_operand() -> void {
 #endif
 }
 
+/// A literal reached through a `match`/`if` join or a method on a builtin
+/// receiver (`option`'s `unwrap`, a `list`'s iterator) takes the type a later
+/// use gives it. The join dropped an open branch type for the other branch's,
+/// and a builtin receiver's `extend` methods were not seen before the
+/// receiver was defaulted, so each literal here was reported as not fitting
+/// in `int32` (spec/todo.md item 7). Asserted by the computed value on both
+/// backends.
+auto test_literal_follows_later_use_through_join_and_method() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "literal_later_use_bin";
+
+  write_file(
+      main_source,
+      read_program("literal_follows_later_use_through_join_and_method.cn"));
+
+  // 1 + 2 + 4 + 8 + 16, one bit per path.
+  constexpr auto expected = 31;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected every literal to take `int64`: " + run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the literal program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
 /// `use a.b as c` imports the *module* `a.b` under the name `c`, even when
 /// no file declares `a` — the form `--test`'s synthesized runner reaches
 /// every suite through. It used to be read as a member selection on `a`
@@ -4357,6 +4421,7 @@ auto main() -> int {
     test_comptime_loops_compute_static_values();
     test_failed_static_initializer_blocks_lowering();
     test_comparison_literal_follows_later_solved_operand();
+    test_literal_follows_later_use_through_join_and_method();
     test_stdlib_immune_to_user_root_module_names();
     test_aliased_import_of_parentless_module_runs();
     test_compile_sources_reports_nested_parser_errors();
