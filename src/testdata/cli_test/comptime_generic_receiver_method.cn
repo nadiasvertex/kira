@@ -1,0 +1,21 @@
+module main
+
+# A compile-time method call on a receiver typed with a type parameter says
+# that the type is generic, not that the method is missing.
+
+trait sized:
+    def size(self) -> int32
+
+type box3 = { side: int32 }
+
+impl sized for box3:
+    def size(self) -> int32:
+        return self.side
+
+static def measure[T](x: T) -> int32 where T: sized:
+    return x.size()
+
+static let measured = measure(box3 { side: 2 })
+
+def main() -> int32:
+    return measured

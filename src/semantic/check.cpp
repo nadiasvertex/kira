@@ -430,9 +430,10 @@ public:
           return read_bare_name_for_comptime(name);
         });
     comptime_eval_.set_method_resolver(
-        [this](const comptime::value &receiver,
-               const std::string &name) -> const ast::func_decl * {
-          return find_comptime_method(receiver, name);
+        [this](const ast::expr &receiver_expr, const comptime::value &receiver,
+               const std::string &name)
+            -> std::expected<const ast::func_decl *, std::string> {
+          return find_comptime_method(receiver_expr, receiver, name);
         });
     comptime_eval_.set_call_context(
         [this](const ast::func_decl &fn,
@@ -19561,25 +19562,48 @@ private:
     return std::unexpected(std::string{});
   }
 
+  /// The compile-time evaluator's method lookup
+  /// (`comptime::evaluator::method_resolver_fn`): the method ordinary code
+  /// would call on `receiver_expr`. A compile-time value does not carry the
+  /// exact type it was checked at (an integer is just an integer), so the
+  /// type comes from the receiver expression as the checker typed it. A
+  /// `str` value needs no expression type: it has only one type.
+  auto find_comptime_method(const ast::expr &receiver_expr,
+                            const comptime::value &receiver,
+                            const std::string &name)
+      -> std::expected<const ast::func_decl *, std::string> {
+    auto receiver_type = k_unknown_type;
+    if (receiver.kind == comptime::value_kind::string) {
+      receiver_type = types_.builtin("str");
+    } else if (const auto it = node_types_.find(&receiver_expr);
+               it != node_types_.end()) {
+      receiver_type = strip_refs(settle(it->second));
+    }
+    if (mentions_template_param(receiver_type)) {
+      return std::unexpected(std::format(
+          "the receiver has the generic type `{}`, and compile-time code "
+          "cannot yet tell which type it stands for",
+          types_.display(receiver_type)));
+    }
+    if (types_.is_unknown(receiver_type) || receiver_type == k_error_type) {
+      return std::unexpected(std::string{
+          "the receiver's type is not known where this compile-time code was "
+          "checked (a `static` without a type annotation, read before its own "
+          "declaration is checked, has no type yet)"});
+    }
+    const auto *method = find_receiver_method(receiver_type, name);
+    if (method == nullptr) {
+      return std::unexpected(std::format("`{}` has no method of that name",
+                                         types_.display(receiver_type)));
+    }
+    return method->decl;
+  }
+
   /// The compile-time evaluator's view of a bare name that is none of its
   /// own frame locals (`comptime::evaluator::name_resolver_fn`): the same
   /// module-scope lookup `resolve_ident` does for ordinary code — this
   /// module's `def`s and `static`s, then imported ones — in whatever module
   /// the evaluator is running in (`in_module_context`).
-  /// The compile-time evaluator's method lookup
-  /// (`comptime::evaluator::method_resolver_fn`): the method ordinary code
-  /// would call on a receiver of the value's type. Only `str` values are
-  /// answered — a compile-time integer or struct value no longer carries
-  /// the exact type it was checked at.
-  auto find_comptime_method(const comptime::value &receiver,
-                            const std::string &name) -> const ast::func_decl * {
-    if (receiver.kind != comptime::value_kind::string) {
-      return nullptr;
-    }
-    const auto *method = find_receiver_method(types_.builtin("str"), name);
-    return method != nullptr ? method->decl : nullptr;
-  }
-
   auto read_bare_name_for_comptime(const std::string &name)
       -> comptime::evaluator::bare_name_reading {
     using reading = comptime::evaluator::bare_name_reading;

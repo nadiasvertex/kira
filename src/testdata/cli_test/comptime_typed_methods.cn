@@ -1,0 +1,71 @@
+module main
+
+# Compile-time code calls methods on struct, sum-type, integer, and generic
+# instance values (todo item 10). A compile-time value does not carry its
+# exact type, so the method is found from the receiver expression's type.
+
+type point = { x: int32, y: int32 }
+
+extend point:
+    def sum(self) -> int32:
+        return self.x + self.y
+    def scaled(self, k: int32) -> point:
+        return point { x: self.x * k, y: self.y * k }
+    def doubled_sum(self) -> int32:
+        return self.scaled(2).sum()
+
+type shape = @circle(int32) | @square(int32)
+
+extend shape:
+    def area(self) -> int32:
+        return match self:
+            @circle(r) => 3 * r * r
+            @square(s) => s * s
+
+extend int32:
+    def twice(self) -> int32:
+        return self * 2
+
+type pair[T] = { a: T, b: T }
+
+extend[T] pair[T]:
+    def first(self) -> T where T: copy:
+        return self.a
+
+trait sized:
+    def size(self) -> int32
+
+type box3 = { side: int32 }
+
+impl sized for box3:
+    def size(self) -> int32:
+        return self.side * self.side * self.side
+
+static def via_struct() -> int32:
+    let p = point { x: 2, y: 3 }
+    return p.doubled_sum()
+
+static def via_sum() -> int32:
+    let s = @square(4)
+    return s.area()
+
+static def via_int() -> int32:
+    let n: int32 = -7
+    return n.twice()
+
+static def via_generic_instance() -> int32:
+    let p = pair[int32] { a: 5, b: 6 }
+    return p.first()
+
+static def via_trait() -> int32:
+    return box3 { side: 3 }.size()
+
+static let a = via_struct()
+static let b = via_sum()
+static let c = via_int()
+static let d = via_generic_instance()
+static let e = via_trait()
+
+def main() -> int32:
+    # 10 + 16 - 14 + 5 + 27
+    return a + b + c + d + e

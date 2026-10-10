@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <expected>
 #include <functional>
 #include <optional>
 #include <span>
@@ -317,11 +318,15 @@ public:
   }
 
   /// The method `name` a compile-time `receiver` value has, as the checker
-  /// finds it for the receiver's type (`receiver.name(...)`); `nullptr` when
-  /// the checker has no method of that name for it, or can't tell the
-  /// value's type.
-  using method_resolver_fn = std::function<const ast::func_decl *(
-      const value &receiver, const std::string &name)>;
+  /// finds it for the receiver's type (`receiver.name(...)`). The checker
+  /// reads that type from `receiver_expr`, the expression the value came
+  /// from, since a compile-time value does not carry its exact type (an
+  /// integer is just an integer). The error explains why there is no method
+  /// to call: the type has none of that name, or its type is not known here.
+  using method_resolver_fn =
+      std::function<std::expected<const ast::func_decl *, std::string>(
+          const ast::expr &receiver_expr, const value &receiver,
+          const std::string &name)>;
 
   /// Installs the checker's method lookup (see `method_resolver_fn`). Unset,
   /// only the evaluator's own built-in methods (`str.len()`) are callable.
@@ -709,7 +714,7 @@ private:
   /// stored in a struct field of that name, or the method the checker finds
   /// for the receiver's type, called with the receiver as `self`.
   [[nodiscard]] auto eval_method_call(const ast::call_expr &call,
-                                      const std::string &name,
+                                      const ast::field_expr &method,
                                       const value &receiver) -> value;
 
   /// Runs an `intrinsic def` the evaluator implements natively (the

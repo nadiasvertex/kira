@@ -2348,8 +2348,9 @@ auto evaluator::eval_local_push(const ast::call_expr &call,
 }
 
 auto evaluator::eval_method_call(const ast::call_expr &call,
-                                 const std::string &name, const value &receiver)
-    -> value {
+                                 const ast::field_expr &method,
+                                 const value &receiver) -> value {
+  const auto &name = method.field_name;
   auto args = std::vector<value>{};
   args.reserve(call.args.size() + 1);
   args.push_back(receiver);
@@ -2416,23 +2417,19 @@ auto evaluator::eval_method_call(const ast::call_expr &call,
                            call.span);
     }
   }
-  const auto *fn =
-      method_resolver_ ? method_resolver_(receiver, name) : nullptr;
-  if (fn == nullptr && receiver.kind == value_kind::string) {
-    return report(call.span,
-                  std::format("`str.{}` has no compile-time implementation, "
-                              "so it can only be called from code that runs "
-                              "at run time",
-                              name));
-  }
-  if (fn == nullptr) {
+  if (!method_resolver_) {
     return report(call.span,
                   std::format("the method `{}` cannot be called at compile "
-                              "time: compile-time method calls are available "
-                              "only on `str` values and lists",
+                              "time here: only built-in methods are available",
                               name));
   }
-  return call_function(*fn, name, std::move(args), call.span);
+  const auto fn = method_resolver_(*method.object, receiver, name);
+  if (!fn.has_value()) {
+    return report(call.span, std::format("the method `{}` cannot be called at "
+                                         "compile time: {}",
+                                         name, fn.error()));
+  }
+  return call_function(**fn, name, std::move(args), call.span);
 }
 
 auto evaluator::call_intrinsic(const ast::func_decl &fn,
@@ -2563,7 +2560,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
     if (receiver.is_error()) {
       return receiver;
     }
-    return eval_method_call(call, method->field_name, receiver);
+    return eval_method_call(call, *method, receiver);
   } else if (auto callee_path = qualified_callee_path(*call.callee)) {
     // `inner.scale(2)`: the checker reads the path, the same as any other
     // dotted name (`eval_module_path`).
