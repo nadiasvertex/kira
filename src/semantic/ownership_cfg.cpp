@@ -1869,6 +1869,15 @@ private:
                            receiver.span));
         break;
       case receiver_passing::mut: {
+        if (!is_place(receiver)) {
+          // A temporary receiver has no name an argument could alias, so
+          // it needs no two-phase reservation — and activating one would
+          // evaluate the receiver expression a second time.
+          stash(receiver_temp,
+                borrow_temporary(receiver, true, loan_origin::receiver,
+                                 receiver.span));
+          break;
+        }
         auto reserved =
             borrow_place(receiver, false, loan_origin::receiver, receiver.span);
         if (!reserved.loans.empty()) {

@@ -1,0 +1,13 @@
+module main
+
+# Regression for spec/todo.md item 7: a `mut self` method called on the
+# result of a consuming call borrows that temporary. Activating the
+# two-phase receiver borrow used to evaluate `d.into_iter()` a second time,
+# reporting `d` as moved at its own use.
+
+def main() -> int64:
+    let d: list[int64] = [1, 2]
+    let r = d.into_iter().next()
+    match r:
+        @some(v) => return v
+        @none => return 0

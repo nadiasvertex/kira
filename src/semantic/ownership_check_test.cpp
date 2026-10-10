@@ -613,6 +613,15 @@ auto test_reuse_after_into_iter_is_rejected() -> void {
                     "expected a use-after-move diagnostic naming `xs`");
 }
 
+auto test_mut_self_call_on_consuming_call_is_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_mut_self_call_on_consuming_call.cn");
+  expect(analyzed.error_count == 0,
+         std::string("expected a `mut self` call on `d.into_iter()` to move "
+                     "`d` once and check cleanly:\n") +
+             analyzed.diagnostics);
+}
+
 auto test_repeated_self_method_calls_are_accepted() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_repeated_self_method_calls.cn");
@@ -1060,6 +1069,7 @@ auto main() -> int {
     test_mutation_during_ref_for_loop_is_rejected();
     test_reuse_after_by_value_ufcs_call_is_rejected();
     test_reuse_after_into_iter_is_rejected();
+    test_mut_self_call_on_consuming_call_is_accepted();
     test_repeated_self_method_calls_are_accepted();
     test_repeated_borrowing_ufcs_calls_are_accepted();
     test_repeated_iter_values_chains_are_accepted();
