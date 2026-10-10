@@ -6,7 +6,7 @@ The prelude is the set of names available in every module without a `use` declar
 
 ## Contents
 
-**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `box`, `cell`, `cell_mut`.
+**Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `unique`, `cell`, `cell_mut`.
 
 **Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `clone`, `deref`, `index`, `index_mut`, `index_set`, `from_array`, and the remaining arithmetic operator traits. `clone` and `deref` are declared in `std.traits` and specified in [Traits](../02-intermediate/18-traits.md#deref).
 
@@ -34,7 +34,7 @@ Four of these are not ordinary functions but compiler-answered forms, each takin
 
 The last three are raw-memory operations and are refused outside a `machine` function — see [The `machine` Layer](../03-advanced/38-machine-layer.md). `size_of`/`align_of` are not gated: they only ask about a type.
 
-Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../01-core/02-built-in-types.md), [Traits](../02-intermediate/18-traits.md), [Error Handling](../01-core/11-error-handling.md) (`option`/`result`), [Views](../02-intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../02-intermediate/24-trait-objects.md) (`box`), and [Data-Race Freedom](../02-intermediate/30-data-race-freedom.md) (`send`/`share`).
+Each prelude type/trait/function is specified in full in its owning chapter — this list is an index, not the normative definition of any of them. See [Built-in Types](../01-core/02-built-in-types.md), [Traits](../02-intermediate/18-traits.md), [Error Handling](../01-core/11-error-handling.md) (`option`/`result`), [Views](../02-intermediate/15-views.md) (`slice`, `cell`), [Trait Objects](../02-intermediate/24-trait-objects.md) (`unique`), and [Data-Race Freedom](../02-intermediate/30-data-race-freedom.md) (`send`/`share`).
 
 ## Opting out
 

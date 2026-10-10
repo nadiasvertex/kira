@@ -46,7 +46,7 @@ def adder(n: int32) -> fn(int32) -> int32:
     return x => x + n        # returns one concrete closure, hidden behind fn(int32) -> int32
 ```
 
-`adder` returns a single closure *shape*, so `fn(int32) -> int32` names it opaquely: the caller calls it and the compiler inlines through it — nothing is boxed.
+`adder` returns a single closure *shape*, so `fn(int32) -> int32` names it opaquely: the caller calls it and the compiler inlines through it — nothing is wrapped.
 
 ## Three Ways to Vary Returned Behavior
 
@@ -67,15 +67,15 @@ def apply_op(o: op, x: int32) -> int32:
 
 A sum type is a static, matchable `variant` — dispatch is a branch on a tag, not a hidden call. Closures have anonymous types, so two different closures cannot be named to place them in a sum; modelling the behavior as data avoids the problem.
 
-3. **Chosen at runtime, from an open set** — heterogeneous callbacks stored together, plugins loaded at run time — is the one case that cannot be monomorphized. `box[fn(A) -> B]` is an owned, type-erased closure for this case only: it owns its captured environment and is called indirectly, and the cost is explicit in the type:
+3. **Chosen at runtime, from an open set** — heterogeneous callbacks stored together, plugins loaded at run time — is the one case that cannot be monomorphized. `unique[fn(A) -> B]` is an owned, type-erased closure for this case only: it owns its captured environment and is called indirectly, and the cost is explicit in the type:
 
 ```cinder
-var handlers: list[box[fn(event) -> unit]] = []
-handlers.push(box(e => log(e)))
-handlers.push(box(e => metrics.record(e)))
+var handlers: list[unique[fn(event) -> unit]] = []
+handlers.push(unique(e => log(e)))
+handlers.push(unique(e => metrics.record(e)))
 ```
 
-`box` generalizes beyond closures to any object-safe trait; see [Trait Objects](24-trait-objects.md).
+`unique` generalizes beyond closures to any object-safe trait; see [Trait Objects](24-trait-objects.md).
 
 ## Implementation status
 
@@ -88,10 +88,10 @@ handlers.push(box(e => metrics.record(e)))
   - **Modes** — `capture_plan` (`src/hir/captures.h`) is the single ordered environment plan both backends build from: the explicit list in source order when there is one, `free_variables` otherwise. A `by_value` entry copies into the environment block as before. A `&`/`&mut` entry stores the *address* of the enclosing frame's storage instead, so reads and writes inside the body reach the original binding. In `llvm_codegen` that address is the local's `alloca`; the bytecode VM has no addressable registers, so `ref_captured_symbols` drives a pre-pass that boxes each by-reference-captured local into a one-slot heap cell which both frames then read and write through.
   - **Borrows** — a `&`/`&mut` entry registers a real borrow of the named local, live for as long as the closure is, as a loan the closure value carries, exactly like a `slice`/`cell` view (`src/semantic/ownership_check.cpp`). Two closures holding `&mut x` at once is the same error as two `mut slice` views of one collection; assigning `x` while a closure capturing `&x` is still going to be called is rejected; and returning a closure that borrows one of the function's own locals is rejected as a dangling borrow.
   - Exercised by `063`–`066` in `src/testdata/codegen_stress/` (each with a stated `# expect:` value, since a by-reference capture silently degrading to a copy would degrade *identically* on both backends and satisfy a cross-backend agreement check), plus fixtures in `src/testdata/semantic_check_test/` and `src/testdata/semantic_ownership_check_test/`.
-- The three ways to vary returned behavior: the dependent-type and sum-type forms rely on ordinary generics and sum types, both implemented (see [Generics and Inference](19-generics-and-inference.md)). `box[fn(A) -> B]` does **not** work today — no trait-object/vtable dynamic dispatch exists anywhere in the compiler (no lowering for `box` was found in `src/hir/`, `src/bytecode/`, or `src/llvm_codegen/`; `box` is registered only as a bare type constructor in `src/semantic/types.cpp`). See [Trait Objects](24-trait-objects.md) for the equivalent finding on `box[trait]` generally.
+- The three ways to vary returned behavior: the dependent-type and sum-type forms rely on ordinary generics and sum types, both implemented (see [Generics and Inference](19-generics-and-inference.md)). `unique[fn(A) -> B]` does **not** work today — no trait-object/vtable dynamic dispatch exists anywhere in the compiler (no lowering for `unique` was found in `src/hir/`, `src/bytecode/`, or `src/llvm_codegen/`; `unique` is registered only as a bare type constructor in `src/semantic/types.cpp`). See [Trait Objects](24-trait-objects.md) for the equivalent finding on `unique[trait]` generally.
 
 ## See also
 
 - [Ownership and Borrowing](14-ownership-and-borrowing.md) — the borrow/move distinction closures follow.
 - [`crew`, `par`, `race`](28-crew-par-race.md) — full structured-concurrency semantics for spawn-site borrowing.
-- [Trait Objects](24-trait-objects.md) — `box[trait]` as the general form of `box[fn(A) -> B]`.
+- [Trait Objects](24-trait-objects.md) — `unique[trait]` as the general form of `unique[fn(A) -> B]`.

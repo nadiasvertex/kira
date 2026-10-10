@@ -29,7 +29,7 @@ Each predicate is a `static pure def name[T]() -> bool`, evaluated by the compil
 | `is_array[T]` | `array[_, _]` |
 | `is_slice[T]` | `slice[_]` or `mut slice[_]` |
 | `is_view[T]` | `&T'` or `&mut T'` for some `T'` (see [Views](../../02-intermediate/15-views.md)) |
-| `is_box[T]` | `box[_]` or `box[trait]` |
+| `is_unique[T]` | `unique[_]` or `unique[trait]` |
 | `is_option[T]` | `option[_]` |
 | `is_result[T]` | `result[_, _]` |
 | `is_fn[T]` | a function type `fn(...) -> _` |

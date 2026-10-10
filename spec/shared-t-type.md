@@ -182,5 +182,5 @@ Add comprehensive tests that exercise the whole feature end-to-end.
 - `mutex[T]`, `rwlock[T]`, `atomic[T]` (synchronization primitives).
 - `send` and `share` concepts (concurrency guarante tracking).
 - Weak handles (`weak[T]`).
-- Using `deref` for `box[T]` (will come in a separate implementation plan).
+- Using `deref` for `unique[T]` (will come in a separate implementation plan).
 - Automatic `clone` impls for `copy` types (defer to a later phase if needed).

@@ -101,4 +101,4 @@ Trait declarations, `impl`, default methods, `requires` (checked as `trait_decl:
 - [Generics and Inference](19-generics-and-inference.md) — bounds (`[T: show]`) built on traits.
 - [Coherence and the Orphan Rule](21-coherence-and-orphan-rule.md) — the at-most-one-impl guarantee `T: show` relies on.
 - [Extension Methods](22-extension-methods.md) — adding methods without claiming trait conformance.
-- [Trait Objects](24-trait-objects.md) — `box[trait]`, the dynamic counterpart to a generic bound.
+- [Trait Objects](24-trait-objects.md) — `unique[trait]`, the dynamic counterpart to a generic bound.

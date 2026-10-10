@@ -2,7 +2,7 @@
 
 **Status:** Partial
 
-`box[trait]`, object-safety rules, and the `some trait` opaque-return-type comparison.
+`unique[trait]`, object-safety rules, and the `some trait` opaque-return-type comparison.
 
 ## Opaque Return Types: `some trait`
 
@@ -24,54 +24,54 @@ s.draw()                    # works — s is known to implement drawable
 # s.radius                  # error — concrete type is hidden
 ```
 
-Because each call site receives a distinct monomorphized type, `some trait` values cannot be placed in a homogeneous collection without erasing them. Use a sum type (`@circle | @square`) for a closed, inspectable set of variants; use `box[trait]` when the set is open; use `some trait` when the concrete type is static but inconvenient to name.
+Because each call site receives a distinct monomorphized type, `some trait` values cannot be placed in a homogeneous collection without erasing them. Use a sum type (`@circle | @square`) for a closed, inspectable set of variants; use `unique[trait]` when the set is open; use `some trait` when the concrete type is static but inconvenient to name.
 
-## Trait Objects: `box[trait]`
+## Trait Objects: `unique[trait]`
 
-Generic bounds resolve at compile time, so `[T: show]` is monomorphized and costs nothing. But some programs must hold values whose concrete types are not known together at compile time — a `list` of user-defined shapes, handlers registered by plugins loaded at run time. That is open-world polymorphism, and it cannot be monomorphized. For it, `box[trait]` is a **trait object**: an owned, heap-allocated value whose concrete type is erased behind the trait, its methods dispatched through a vtable.
+Generic bounds resolve at compile time, so `[T: show]` is monomorphized and costs nothing. But some programs must hold values whose concrete types are not known together at compile time — a `list` of user-defined shapes, handlers registered by plugins loaded at run time. That is open-world polymorphism, and it cannot be monomorphized. For it, `unique[trait]` is a **trait object**: an owned, heap-allocated value whose concrete type is erased behind the trait, its methods dispatched through a vtable. Unlike `shared[T]`, which reference-counts many read-only handles to one value, `unique[T]` has exactly one owner and allows mutation.
 
 ```cinder
 trait drawable:
     def area(self) -> float64
 # disk and square are structs that implement drawable
 
-var shapes: list[box[drawable]] = []
-shapes.push(box(disk { radius: 1.0 }))
-shapes.push(box(square { side: 2.0 }))
+var shapes: list[unique[drawable]] = []
+shapes.push(unique(disk { radius: 1.0 }))
+shapes.push(unique(square { side: 2.0 }))
 
 let total = shapes.map(s => s.area()).sum()   # each call dispatches through the vtable
 ```
 
-`box[fn(A) -> B]` is the special case where the trait is a callable (see [Closures and Capture](16-closures-and-capture.md)). Because coherence guarantees one implementation per type, a trait object's vtable is never ambiguous.
+`unique[fn(A) -> B]` is the special case where the trait is a callable (see [Closures and Capture](16-closures-and-capture.md)). Because coherence guarantees one implementation per type, a trait object's vtable is never ambiguous.
 
 ### Object Safety
 
-A trait can be used as `box[...]` only when it is *object-safe*:
+A trait can be used as `unique[...]` only when it is *object-safe*:
 
 - Every method dispatches on `&self` or `&mut self`.
 - No method takes type parameters of its own.
 - No method takes or returns `self` by value (the concrete size is erased).
 
-`box[drawable]` and `box[show]` work; `box[add]`, whose method takes `other: self` and returns `self.output`, does not. Add `send`/`share` as extra bounds (`box[drawable + send]`) to move a trait object across tasks.
+`unique[drawable]` and `unique[show]` work; `unique[add]`, whose method takes `other: self` and returns `self.output`, does not. Add `send`/`share` as extra bounds (`unique[drawable + send]`) to move a trait object across tasks.
 
-### `some trait` vs. `box[trait]`
+### `some trait` vs. `unique[trait]`
 
-| Feature | `some trait` | `box[trait]` |
+| Feature | `some trait` | `unique[trait]` |
 |---|---|---|
 | Cost | Zero — monomorphized | Heap allocation + vtable |
 | Use case | One concrete type, just unnameable | Open set of types, runtime choice |
 | Can store in `list` | No — each call site has a different type | Yes — uniform type |
 | Escapes a function | Yes | Yes |
 
-Reach for `box` only at a genuinely open boundary. To merely *accept* any type implementing a trait, use a generic bound — monomorphized and free; `box` is for *storing or returning* values whose types are not known together.
+Reach for `unique` only at a genuinely open boundary. To merely *accept* any type implementing a trait, use a generic bound — monomorphized and free; `unique` is for *storing or returning* values whose types are not known together.
 
 ## Implementation status
 
 - `some trait` (general existential return types) **is implemented**: `semantic::type_kind::existential_kind` (`src/semantic/types.h`/`.cpp`), minted via `type_table::fresh_existential` and resolved by `resolve_existential_type`; method calls on an opaque-typed receiver are checked against the bound traits' declared methods and dispatched statically against the underlying concrete type (`infer_method_call`'s `existential_kind` case in `check.cpp`). This works for any function, not only `generator def`.
-- `box[trait]` **is not implemented**. `box` exists only as a bare unary type constructor (`{.name = "box", .min_args = 1, .max_args = 1}` in `src/semantic/types.cpp`) with no object-safety checking, no vtable construction, and no lowering: no reference to `"box"` was found in `src/hir/`, `src/bytecode/`, or `src/llvm_codegen/`. No trait-object/vtable dynamic dispatch exists anywhere in the compiler. Neither the object-safety rules nor the `some trait`/`box[trait]` comparison table above can currently be exercised end-to-end — `box[trait]` is design-only content, same as `box[fn(A) -> B]` in [Closures and Capture](16-closures-and-capture.md).
+- `unique[trait]` **is not implemented**. `unique` exists only as a bare unary type constructor registered under the name `box` (`{.name = "box", .min_args = 1, .max_args = 1}` in `src/semantic/types.cpp`) with no object-safety checking, no vtable construction, and no lowering: no reference to `"box"` or `"unique"` was found in `src/hir/`, `src/bytecode/`, or `src/llvm_codegen/`. No trait-object/vtable dynamic dispatch exists anywhere in the compiler. Neither the object-safety rules nor the `some trait`/`unique[trait]` comparison table above can currently be exercised end-to-end — `unique[trait]` is design-only content, same as `unique[fn(A) -> B]` in [Closures and Capture](16-closures-and-capture.md).
 
 ## See also
 
 - [Traits](18-traits.md) — the trait mechanism this builds on.
-- [Closures and Capture](16-closures-and-capture.md) — `box[fn(A) -> B]` as the callable special case.
+- [Closures and Capture](16-closures-and-capture.md) — `unique[fn(A) -> B]` as the callable special case.
 - [Generics and Inference](19-generics-and-inference.md) — the monomorphized alternative when the type set is closed/known.

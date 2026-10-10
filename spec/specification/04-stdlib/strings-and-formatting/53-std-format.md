@@ -68,7 +68,7 @@ fill_char   := any character except { } : = \
 
 ## Traits
 
-Five traits, each a single `def <name>(self) -> str` method — the same shape as `show`, so each is usable as a `box[trait]` object.
+Five traits, each a single `def <name>(self) -> str` method — the same shape as `show`, so each is usable as a `unique[trait]` object.
 
 ```cinder
 trait show:                  # existing (src/std/traits.cn)
