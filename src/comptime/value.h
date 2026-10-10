@@ -40,6 +40,12 @@ enum class value_kind : uint8_t {
   /// A reference to a `static def` function, callable from other
   /// compile-time expressions.
   closure,
+  /// A lambda written in compile-time code: `fragment` is its
+  /// `ast::lambda_expr`, `fields` the enclosing locals it captured (by
+  /// value, as both backends capture implicitly), and `function` the
+  /// `def` it was written in (null at module scope), whose module its body
+  /// resolves names in.
+  lambda,
   /// A quoted expression fragment ( Cinder type `expr`) — a boxed
   /// `const ast::expr *` into `fragment` (stored as `const ast::node *`
   /// since the four quote-value kinds share one storage field; the actual
@@ -163,6 +169,15 @@ struct value {
     return value{.kind = value_kind::closure,
                  .type_name = std::move(name),
                  .function = function};
+  }
+  [[nodiscard]] static auto
+  make_lambda(const ast::node *lambda,
+              std::unordered_map<std::string, value> captures,
+              const ast::func_decl *defined_in) -> value {
+    return value{.kind = value_kind::lambda,
+                 .fields = std::move(captures),
+                 .function = defined_in,
+                 .fragment = lambda};
   }
   [[nodiscard]] static auto make_expr_fragment(const ast::node *fragment)
       -> value {

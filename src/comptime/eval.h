@@ -729,6 +729,15 @@ private:
                 std::vector<std::pair<std::string, value>> type_args = {})
       -> value;
 
+  /// A lambda expression: captures the visible locals of the current frame
+  /// (or only those its explicit capture list names).
+  [[nodiscard]] auto eval_lambda(const ast::lambda_expr &lambda) -> value;
+
+  /// Calls a `value_kind::lambda` value with `args`, in a fresh frame
+  /// holding its captures and parameters.
+  [[nodiscard]] auto call_lambda(const value &callee, std::vector<value> args,
+                                 source_span span) -> value;
+
   /// `xs.push(x)` on a local `var` list: appends in place. `nullopt` for any
   /// other call, which is then an ordinary method call.
   [[nodiscard]] auto eval_local_push(const ast::call_expr &call,
@@ -899,6 +908,20 @@ private:
   /// Index of the innermost call's first frame in `locals_` — the floor
   /// `lookup_local` and assignment search down to.
   size_t frame_base_ = 0;
+  /// The `def` whose body is running (null at module scope); a lambda
+  /// records it so its body later resolves names in that `def`'s module.
+  const ast::func_decl *current_function_ = nullptr;
+  /// One compile-time call in progress: where it was written and what it
+  /// called.
+  struct call_site {
+    file_id_type file{};
+    source_span span;
+    std::string callee;
+  };
+  /// The calls in progress, outermost first. An error inside a file the
+  /// evaluation did not start in gets a note at the innermost of these
+  /// written in the file it did start in — the user's own call.
+  std::vector<call_site> call_sites_;
   int call_depth_ = 0;
   /// Iterations one compile-time loop may run before evaluation gives up,
   /// so a loop that never ends reports an error instead of hanging the

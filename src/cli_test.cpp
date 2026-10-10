@@ -1464,6 +1464,97 @@ auto test_comptime_str_methods() -> void {
 #endif
 }
 
+/// Compile-time code calls `std.unicode`'s casing (`to_uppercase`,
+/// `to_lowercase`, `fold_case`, `eq_ignore_case`) and its own lambdas, which
+/// needs `&`/`*`, prelude functions, and lambdas in the evaluator. Asserted
+/// by the computed value on both backends.
+auto test_comptime_str_casing() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "comptime_str_casing_bin";
+
+  write_file(main_source, read_program("comptime_str_casing.cn"));
+
+  // (31 + 420) % 256.
+  constexpr auto expected = 195;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected compile-time casing to evaluate: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the compile-time casing program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
+/// A compile-time error inside the standard library carries a note at the
+/// user's own call, not just the library line.
+auto test_comptime_error_names_call_site() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(main_source, read_program("comptime_error_names_call_site.cn"));
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 1,
+         std::format("expected exactly one error, got {}: {}",
+                     report->error_count, report->diagnostics));
+  expect(report->diagnostics.contains(
+             "reached from this compile-time call to `println`"),
+         "expected a note naming the call: " + report->diagnostics);
+  expect(report->diagnostics.contains("main.cn:7:5"),
+         "expected the note to point at the user's call: " +
+             report->diagnostics);
+}
+
 /// Compile-time code calls methods on struct, sum-type, integer, generic
 /// instance, and trait-impl values (todo item 10): the method is found from
 /// the receiver expression's checked type. Asserted by the computed value on
@@ -4696,6 +4787,8 @@ auto main() -> int {
     test_comptime_bare_names_resolve_per_module();
     test_comptime_loops_compute_static_values();
     test_comptime_str_methods();
+    test_comptime_str_casing();
+    test_comptime_error_names_call_site();
     test_comptime_unsupported_method_is_named();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method();

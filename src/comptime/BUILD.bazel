@@ -16,6 +16,7 @@ cc_library(
     deps = [
         "//src/parser",
         "//src/runtime:string_ops",
+        "//src/utf8",
     ],
 )
 

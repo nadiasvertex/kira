@@ -19723,6 +19723,14 @@ private:
     using reading = comptime::evaluator::bare_name_reading;
     const auto found = find_module_scope_value(name);
     if (!found.has_value()) {
+      // A prelude function (`binary_search`, `partition_point`, ...) resolves
+      // unqualified in ordinary calls, so it does here too.
+      if (const auto prelude = find_prelude_function(name)) {
+        return reading{.reading = reading::kind::function,
+                       .base = {},
+                       .function = prelude->first.decl,
+                       .reason = {}};
+      }
       return reading{};
     }
     if (found->function != nullptr) {

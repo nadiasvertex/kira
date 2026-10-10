@@ -16,6 +16,7 @@
 #include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/string_ops.h"
+#include "src/utf8/utf8.h"
 
 namespace cinder::comptime {
 namespace {
@@ -275,10 +276,26 @@ auto evaluator::resolve_pending_static(const std::string &name,
 }
 
 auto evaluator::report(source_span span, std::string message) -> value {
-  if (!diagnostics_suppressed_) {
-    diag_.emit(diagnostic(diagnostic_level::error, std::move(message), file_id_)
-                   .with_label(span, "here"));
+  if (diagnostics_suppressed_) {
+    return value::make_error();
   }
+  auto error = diagnostic(diagnostic_level::error, std::move(message), file_id_)
+                   .with_label(span, "here");
+  // An error inside a callee in another file (often the standard library)
+  // names a line the user never wrote; point at the call they did write.
+  if (!call_sites_.empty() && call_sites_.front().file != file_id_) {
+    const auto origin = call_sites_.front().file;
+    const auto site = std::ranges::find_if(
+        call_sites_ | std::views::reverse,
+        [&](const call_site &s) -> bool { return s.file == origin; });
+    error.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("reached from this compile-time call to `{}`",
+                               site->callee),
+                   site->file)
+            .with_label(site->span, "evaluated at compile time here"));
+  }
+  diag_.emit(std::move(error));
   return value::make_error();
 }
 
@@ -521,10 +538,18 @@ auto evaluator::eval_unary(const ast::unary_expr &un) -> value {
       return value::make_bool(!operand.boolean);
     }
     return report(un.span, "`not` requires a compile-time `bool` operand");
-  case ast::unary_op::bit_not:
-  case ast::unary_op::deref:
+  // Compile-time values are immutable and never aliased, so a shared
+  // reference to one reads exactly like the value itself: `&TABLE[a..b]`
+  // (how `std.unicode` hands its tables to lookups) is the sub-list, and
+  // `*r` on such a reference is `r`.
   case ast::unary_op::addr_of:
+  case ast::unary_op::deref:
+    return operand;
   case ast::unary_op::addr_of_mut:
+    return report(un.span, "`&mut` cannot be taken in compile-time "
+                           "evaluation; compile-time values cannot be "
+                           "changed through a reference");
+  case ast::unary_op::bit_not:
     return report(un.span, "this unary operator is not yet supported in "
                            "compile-time evaluation");
   }
@@ -1310,7 +1335,91 @@ auto evaluator::call_function(
     }
     return exec.returned ? exec.result : value::make_unit();
   };
+  const auto *saved_function = current_function_;
+  current_function_ = &fn;
+  call_sites_.push_back(
+      call_site{.file = file_id_, .span = span, .callee = name});
   auto result = call_context_ ? call_context_(fn, run) : run();
+  call_sites_.pop_back();
+  current_function_ = saved_function;
+  pop_locals();
+  frame_base_ = saved_frame_base;
+  --call_depth_;
+  return result;
+}
+
+auto evaluator::eval_lambda(const ast::lambda_expr &lambda) -> value {
+  auto captures = std::unordered_map<std::string, value>{};
+  if (lambda.captures.has_value()) {
+    for (const auto &capture : *lambda.captures) {
+      if (ast::is_reference_capture(capture.mode)) {
+        return report(capture.span,
+                      std::format("`{}` is captured by reference, which "
+                                  "compile-time evaluation does not support; "
+                                  "capture it by value instead",
+                                  capture.name));
+      }
+      if (const auto *local = lookup_local(capture.name); local != nullptr) {
+        captures.insert_or_assign(capture.name, *local);
+      }
+    }
+  } else {
+    // Implicit capture is by value on both backends, so a snapshot of the
+    // frame reads the same. Inner scopes shadow outer ones.
+    for (const auto &scope : locals_ | std::views::drop(frame_base_)) {
+      for (const auto &[name, local] : scope) {
+        captures.insert_or_assign(name, local);
+      }
+    }
+  }
+  return value::make_lambda(&lambda, std::move(captures), current_function_);
+}
+
+auto evaluator::call_lambda(const value &callee, std::vector<value> args,
+                            source_span span) -> value {
+  const auto &lambda = dynamic_cast<const ast::lambda_expr &>(*callee.fragment);
+  if (args.size() != lambda.params.size()) {
+    return report(span, std::format("this lambda takes {} argument(s), but {} "
+                                    "were given",
+                                    lambda.params.size(), args.size()));
+  }
+  if (call_depth_ >= k_max_call_depth) {
+    return report(span, std::format("compile-time lambda call exceeded the "
+                                    "maximum evaluation depth of {} — this "
+                                    "usually means unbounded recursion",
+                                    k_max_call_depth));
+  }
+  auto scope = callee.fields;
+  for (size_t i = 0; i < args.size(); ++i) {
+    const auto *pattern =
+        dynamic_cast<const ast::pattern *>(lambda.params[i].pattern.get());
+    if (pattern == nullptr || !bind_pattern(*pattern, args[i], scope)) {
+      return value::make_error();
+    }
+  }
+  ++call_depth_;
+  push_locals(std::move(scope));
+  const auto saved_frame_base = frame_base_;
+  frame_base_ = locals_.size() - 1;
+  const auto run = [&] -> value {
+    if (lambda.body_expr != nullptr) {
+      return evaluate(*lambda.body_expr);
+    }
+    const auto exec = evaluate_block_value(lambda.body_stmts);
+    if (exec.errored) {
+      return value::make_error();
+    }
+    return exec.returned ? exec.result : value::make_unit();
+  };
+  const auto *saved_function = current_function_;
+  current_function_ = callee.function;
+  call_sites_.push_back(
+      call_site{.file = file_id_, .span = span, .callee = "a lambda"});
+  auto result = callee.function != nullptr && call_context_
+                    ? call_context_(*callee.function, run)
+                    : run();
+  call_sites_.pop_back();
+  current_function_ = saved_function;
   pop_locals();
   frame_base_ = saved_frame_base;
   --call_depth_;
@@ -2485,6 +2594,18 @@ auto evaluator::call_intrinsic(const ast::func_decl &fn,
   if (name == "rt_str_concat" && all_strings(2)) {
     return value::make_string(args[0].string + args[1].string);
   }
+  if (name == "rt_fmt_char_from_codepoint" && args.size() == 1 &&
+      args[0].kind == value_kind::integer) {
+    const auto cp = args[0].integer;
+    if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+      return report(span, std::format("{:#x} is not a Unicode scalar value, "
+                                      "so it has no UTF-8 encoding",
+                                      cp));
+    }
+    auto out = std::string{};
+    encode_utf8_scalar(static_cast<uint32_t>(cp), out);
+    return value::make_string(std::move(out));
+  }
   return report(span, std::format("the intrinsic `{}` has no compile-time "
                                   "implementation, so it can only be called "
                                   "from code that runs at run time",
@@ -2555,6 +2676,23 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   auto callee_name = std::string{};
   if (const auto *callee_ident =
           dynamic_cast<const ast::ident_expr *>(call.callee.get())) {
+    if (const auto *local = lookup_local(callee_ident->name);
+        local != nullptr && local->kind == value_kind::lambda) {
+      const auto callee = *local;
+      auto args = std::vector<value>{};
+      args.reserve(call.args.size());
+      for (const auto &arg : call.args) {
+        if (arg.name.has_value() || arg.value == nullptr) {
+          return report(arg.span, "a lambda takes only positional arguments");
+        }
+        auto evaluated = evaluate(*arg.value);
+        if (evaluated.is_error()) {
+          return evaluated;
+        }
+        args.push_back(std::move(evaluated));
+      }
+      return call_lambda(callee, std::move(args), call.span);
+    }
     callee_name = callee_ident->name;
     fn = resolve_callee(callee_name, callee_ident->span);
   } else if (const auto *method = method_callee(*call.callee)) {
@@ -3660,6 +3798,8 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
     return eval_if(dynamic_cast<const ast::if_expr &>(expr));
   case ast::node_kind::cast_expr:
     return eval_cast(dynamic_cast<const ast::cast_expr &>(expr));
+  case ast::node_kind::lambda_expr:
+    return eval_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");
