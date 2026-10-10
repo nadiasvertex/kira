@@ -1,0 +1,20 @@
+module codegen_stress.lambda_returns_reference
+
+# A lambda whose body returns its `&int32` parameter. The return is checked
+# against the lambda's own result type, not the enclosing function's: this
+# used to be refused at lowering as "`&int32` flows where `int32` is
+# expected" because `main` returns an `int32`.
+#
+# `# expect:` because the reference is read back through `*`; the value
+# must be the number the reference points at.
+
+def apply[T, K](v: &T, key: fn(&T) -> K) -> K:
+    return key(v)
+
+def main() -> int32:
+    let a: int32 = 41
+    let f = (x: &int32) => x
+    let r = apply(&a, f)
+    return *r + 1
+
+# expect: 42

@@ -30,6 +30,7 @@ public:
       -> std::vector<reference_violation> {
     for (const auto &module : modules) {
       module_ = module->module_name;
+      file_id_ = module->file_id;
       for (const auto &function : module->functions) {
         function_ = function.get();
         for (const auto &param : function->params) {
@@ -41,6 +42,8 @@ public:
           }
         }
         symbol_types_.clear();
+        return_type_ = function->is_generator ? semantic::k_unknown_type
+                                              : function->return_type;
         if (function->body != nullptr) {
           collect_symbol_types(*function->body);
           walk(*function->body);
@@ -55,7 +58,12 @@ private:
   std::map<std::pair<std::string, std::string>, const hir_function *>
       functions_;
   std::string module_;
+  std::optional<file_id_type> file_id_;
   const hir_function *function_ = nullptr;
+  /// What a `return` here must produce: the enclosing function's, or the
+  /// innermost lambda's. Unknown for a generator, whose `return` carries no
+  /// value of the declared type.
+  type_id return_type_ = semantic::k_unknown_type;
   std::vector<reference_violation> out_;
   /// Each local's type, as its references spell it.
   std::map<symbol_id, type_id> symbol_types_;
@@ -94,6 +102,7 @@ private:
     out_.push_back(reference_violation{
         .module = module_,
         .function = function_ != nullptr ? function_->name : std::string{},
+        .file_id = file_id_,
         .span = span,
         .what = std::move(what)});
   }
@@ -208,11 +217,20 @@ private:
     }
     case hir_node_kind::hir_return: {
       const auto &ret = dynamic_cast<const hir_return &>(node);
-      if (ret.value != nullptr && function_ != nullptr &&
-          !function_->is_generator) {
-        flows(*ret.value, function_->return_type, "returned value");
+      if (ret.value != nullptr && function_ != nullptr) {
+        flows(*ret.value, return_type_, "returned value");
       }
       break;
+    }
+    case hir_node_kind::hir_lambda: {
+      // A `return` in a lambda body leaves the lambda, so it answers to the
+      // lambda's result type, not the enclosing function's.
+      const auto saved = std::exchange(
+          return_type_, dynamic_cast<const hir_lambda &>(node).return_type);
+      for_each_child(const_cast<hir_node &>(node),
+                     [this](auto &child) -> void { walk(*child); });
+      return_type_ = saved;
+      return;
     }
     case hir_node_kind::hir_let: {
       const auto &let = dynamic_cast<const hir_let &>(node);

@@ -1161,6 +1161,9 @@ struct hir_module : hir_item {
   /// alongside `functions`; empty for a module with no eligible statics
   /// (the overwhelming common case).
   std::vector<hir_static_global> statics;
+  /// The source file the module was lowered from, which its nodes' spans
+  /// index into. Set by the driver; absent for a module built in a test.
+  std::optional<file_id_type> file_id;
 
   hir_module(source_span s, std::string name, ptr_vec<hir_function> funcs)
       : hir_item(hir_node_kind::hir_module, s), module_name(std::move(name)),

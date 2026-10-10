@@ -2513,6 +2513,27 @@ auto test_reports_borrowed_number_used_as_a_number() -> void {
          "an address, and must stay free");
 }
 
+auto test_reports_reference_key_for_ord_bound() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_reference_key_for_ord_bound.cn");
+  expect_diagnostic(analyzed, "`larger` needs `K: ord`, and `&int32` does not "
+                              "satisfy it",
+                    "expected the call whose lambda solved `K` to a "
+                    "reference to be refused at the call");
+  expect_diagnostic(analyzed, "write `x => *x` rather than `x => x`",
+                    "expected the help to name the dereference in the lambda");
+  expect_diagnostic(analyzed, "`less` needs `K: ord`, and `&int32` does not "
+                              "satisfy it",
+                    "expected a reference argument solving `K` to be refused "
+                    "at the call");
+  expect_diagnostic(analyzed, "operator `<` is not defined for `&int32`",
+                    "expected the method instance, whose `where` is not "
+                    "checked at its call, to refuse the address comparison");
+  expect(analyzed.error_count == 3,
+         "expected exactly the three reference uses to be reported — the "
+         "`x => *x` call solves `K` to `int32` and must be accepted");
+}
+
 auto test_reports_index_write_without_index_set() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_index_write_without_index_set.cn");
@@ -3762,6 +3783,7 @@ auto main() -> int {
     test_reports_generic_call_conflicting_args();
     test_reports_bare_generic_static_call_unsolved();
     test_reports_borrowed_number_used_as_a_number();
+    test_reports_reference_key_for_ord_bound();
     test_reports_index_write_without_index_set();
     test_reports_index_mut_borrow_without_impl();
     test_dispatches_index_mut_borrow();

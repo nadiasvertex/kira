@@ -1,0 +1,36 @@
+module check.reference_key_for_ord_bound
+
+# A `&int32` has none of `int32`'s traits: it is an address, and a generic
+# body comparing two of them would compare the addresses. Refused three
+# ways, each through a different path:
+#
+# - a free function's bound, solved from a lambda that returns its reference
+#   parameter (`x => *x` is the fix, and must stay accepted);
+# - a free function's bound, solved from a reference argument;
+# - a method's own `where`, which is not checked at its call, so the
+#   instance's `<` refuses the operands instead.
+
+def larger[T, K](a: T, b: T, key: fn(&T) -> K) -> bool where K: ord:
+    return key(&a) < key(&b)
+
+def less[K](a: K, b: K) -> bool where K: ord:
+    return a < b
+
+type pair[K] = {
+    a: K,
+    b: K,
+}
+
+extend[K] pair[K]:
+    def ordered(self) -> bool where K: ord:
+        return self.a < self.b
+
+def main() -> int32:
+    let bad = larger(3, 7, x => x)
+    let good = larger(3, 7, x => *x)
+    let x: int32 = 9
+    let y: int32 = 1
+    let by_ref = less(&x, &y)
+    let p = pair[&int32]{a: &x, b: &y}
+    let in_method = p.ordered()
+    return 0

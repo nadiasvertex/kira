@@ -10452,6 +10452,13 @@ private:
   /// `impl` (or being a builtin number) if it is concrete.
   auto satisfies_trait(type_id subject, const ast::trait_decl &trait,
                        const std::vector<type_id> &args) -> bool {
+    // A reference is looked through below, so a `&list[T]` has its list's
+    // traits. A `&int32` does not have `int32`'s: it is an address, and a
+    // generic body comparing or adding two of them would compute with the
+    // addresses — the trap `needs_explicit_deref` refuses in direct code.
+    if (needs_explicit_deref(subject)) {
+      return false;
+    }
     const auto stripped = strip_refs(subject);
     if (types_.is_unknown(stripped) && !is_rigid_param(stripped)) {
       return true;
@@ -10701,6 +10708,22 @@ private:
           "can make `{}` one. Lend it instead (`&x` makes `{}` a `&{}`), or "
           "take the `copy` bound off `{}` so its values move.",
           subject_name, failed->param, subject_name, failed->param));
+    } else if (needs_explicit_deref(failed->subject)) {
+      // A lambda argument is the usual source: `x => x` handed a `&int32`
+      // returns it unchanged.
+      const auto has_lambda =
+          std::ranges::any_of(call.args, [](const ast::call_arg &arg) -> bool {
+            return arg.value != nullptr &&
+                   arg.value->kind == ast::node_kind::lambda_expr;
+          });
+      diag.with_help(std::format(
+          "`{}` is the address of a number, not the number, so it has none "
+          "of the number's traits. Pass the number itself by dereferencing "
+          "the reference with `*`{}.",
+          subject_name,
+          has_lambda ? " — in a lambda that returns its parameter, write "
+                       "`x => *x` rather than `x => x`"
+                     : ""));
     } else {
       diag.with_help(std::format(
           "Pass a type that implements {}, or implement it for `{}` — `impl "
@@ -12609,11 +12632,30 @@ private:
     defer_to_instances(
         binary, [this, &binary, lhs, kind](instance_subst &subst) -> void {
           const auto &clone = *clone_of(subst, &binary);
-          const auto operand = base_shape(substitute_type(lhs, subst));
+          const auto substituted = substitute_type(lhs, subst);
+          const auto operand = base_shape(substituted);
           if (types_.is_unknown(operand) || mentions_template_param(operand)) {
             return;
           }
           const auto op_name = ast::binary_op_name(clone.op);
+          // Bounds refuse a `&int32` for `T: ord` at the call, but not every
+          // instance is reached through a checked bound (a method's own
+          // `where` is not checked at its call yet). Lowered, the operator
+          // would work on the addresses, so the instance refuses it here.
+          if (needs_explicit_deref(substituted)) {
+            const auto shown = types_.display(substituted);
+            error_with_help(
+                clone.span,
+                std::format("operator `{}` is not defined for `{}`", op_name,
+                            shown),
+                std::format("this instance has `{}` operands", shown),
+                std::format("`{}` is the address of a number, and the "
+                            "operator would work on the address. Instantiate "
+                            "with the number itself: dereference the "
+                            "reference with `*` where it is produced.",
+                            shown));
+            return;
+          }
           switch (kind) {
           case operator_kind::arithmetic: {
             const auto trait_name = operator_trait_for(clone.op);

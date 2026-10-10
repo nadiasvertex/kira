@@ -16,6 +16,8 @@ namespace cinder::hir {
 struct reference_violation {
   std::string module;
   std::string function;
+  /// The file `span` indexes into, when the module records one.
+  std::optional<file_id_type> file_id;
   source_span span = source_span::dummy();
   std::string what;
 };

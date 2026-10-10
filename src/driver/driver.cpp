@@ -399,7 +399,10 @@ auto compile_sources(const cli_config &cfg, bool use_color)
           diagnostic_level::error,
           std::format("could not lower `{}` in module `{}`: {}",
                       violation.function, violation.module, violation.what),
-          0);
+          violation.file_id.value_or(0));
+      if (violation.file_id.has_value() && !violation.span.empty()) {
+        diag.with_label(violation.span, "this is where lowering stopped");
+      }
       diag.with_note("this is a gap in the compiler's lowering, not a "
                      "mistake in your program");
       append_text(report.diagnostics, lowering_renderer.render(diag));

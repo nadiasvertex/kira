@@ -170,6 +170,7 @@ auto lower_and_emit_modules(const cli_config &cfg,
                                        lowered_result.error().message,
                                        lowered_result.error().span.start)});
     if (lowered_result.has_value()) {
+      (*lowered_result)->file_id = input.file_id;
       if (check_frame_budgets(**lowered_result, input.file_id, renderer,
                               report)) {
         lowered_modules.push_back(std::move(*lowered_result));
