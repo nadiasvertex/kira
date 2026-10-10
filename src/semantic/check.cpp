@@ -17321,6 +17321,29 @@ private:
       defer();
       return return_type();
     }
+    // Solved to an argument's open leaf: `example_type.make(40)` knows its
+    // type as `example_type[?]` now, but the instance is named once the
+    // literal settles. Checking the instance against the leaf compiled a body
+    // whose own generic calls were never named.
+    if (mentions_type_var(target)) {
+      defer_method_call(
+          method.decl->name, target, std::vector<type_id>{},
+          [this, &call, &method](type_id settled) -> void {
+            const auto concrete = settle(settled);
+            if (mentions_type_var(concrete) || types_.is_unknown(concrete)) {
+              return;
+            }
+            auto solved = param_subst{};
+            if (const auto *instance = check_impl_generic_static_call(
+                    call, method, concrete, solved)) {
+              resolved_callees_[&call] =
+                  resolved_callee{.decl = instance,
+                                  .owner_module = method.owner->module_name,
+                                  .impl_target_type = ""};
+            }
+          });
+      return return_type();
+    }
     const auto *instance =
         check_impl_generic_static_call(call, method, target, bindings);
     if (instance == nullptr) {

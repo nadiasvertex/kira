@@ -1,0 +1,36 @@
+module codegen_stress.bare_generic_static_literal_arg
+
+# A static method of a generic `extend[T]` block called through the bare type
+# name with a literal argument: `T` is the literal's open leaf when the call
+# is checked, so the instance is named only once the literal settles. Naming
+# it against the leaf compiled a body whose own generic call (`echo[T]`) was
+# never named. The second call's literal is pinned to `int64` by a later
+# statement, so its instance must be `int64`, not the literal default.
+
+use std.shared.shared
+
+def echo[U](v: U) -> U:
+    return v
+
+type holder[T] = { inner: T }
+
+extend[T] holder[T]:
+    def new(value: T) -> holder[T]:
+        let kept = echo[T](value)
+        return holder[T] { inner: kept }
+
+type point = { x: int64, y: int64 }
+
+def run() -> int64:
+    let small = holder.new(7)
+    let wide = holder.new(3)
+    let big: int64 = wide.inner * 5000000000
+    let p = shared.new(point { x: 20, y: 300 })
+    let q = p.clone()
+    return int64(small.inner) + big + q.x + p.y + int64(q.strong_count()) * 1000
+
+def main() -> int32:
+    return int32(run() % 1000000007)
+
+# 7 + 15000000000 + 20 + 300 + 2000 = 15000002327, mod 1000000007:
+# expect: 2222

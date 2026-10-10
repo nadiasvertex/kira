@@ -150,7 +150,7 @@ The type form `shared T` already parses as `shared[T]` and will resolve once the
 - `parser_stress` fixture updates if needed.
 - `accept_shared_expr.cn`: construction via `shared` syntax.
 
-**Status:** Done. The parser rewrites `shared e` to `std.shared.share(e)`, a new free function in `src/std/shared.cn` that calls `shared[T].new`. A free function is used because the bare constructor `shared.new(e)` does not infer `T` from its argument (lowering fails with "no concrete checked type"); that is a checker gap, not worked around further. The call is fully qualified, so the expression form needs no import, but the type form `shared T` still needs `use std.shared.shared`. `parser_stress/091` is unchanged and passes. Test: `std_test/accept_shared_expr.cn` (expression form, annotated type form, return type, clone). The inference snapshot is regenerated.
+**Status:** Done. The parser rewrites `shared e` to `std.shared.share(e)`, a new free function in `src/std/shared.cn` that calls `shared[T].new`. The bare constructor `shared.new(e)` also works: it solves `T` from its argument (fixture `codegen_stress/135`). The call is fully qualified, so the expression form needs no import, but the type form `shared T` still needs `use std.shared.shared`. `parser_stress/091` is unchanged and passes. Test: `std_test/accept_shared_expr.cn` (expression form, annotated type form, return type, clone). The inference snapshot is regenerated.
 
 ## Phase 6: Final tests and close-out
 

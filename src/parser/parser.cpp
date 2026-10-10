@@ -4149,13 +4149,12 @@ auto parser::parse_primary_expr() -> ast::ptr<ast::expr> {
     return parse_static_expr();
 
   case token_kind::kw_shared: {
-    // `shared[T].new(v)` names the stdlib type's constructor.
-    if (peek_at(1).is(token_kind::lbracket)) {
+    // `shared[T].new(v)` and `shared.new(v)` name the stdlib type's
+    // constructor.
+    if (peek_at(1).is(token_kind::lbracket) || peek_at(1).is(token_kind::dot)) {
       return parse_ident_or_path_expr();
     }
-    // `shared e` is `std.shared.share(e)`: the free function infers the
-    // handle's type argument from the value, which the bare constructor
-    // `shared.new(e)` cannot.
+    // `shared e` is `std.shared.share(e)`.
     auto tok = advance();
     auto operand = parse_expr();
     auto module = ast::make<ast::module_path_expr>();
