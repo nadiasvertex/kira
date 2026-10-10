@@ -429,6 +429,11 @@ public:
             const std::string &name) -> comptime::evaluator::bare_name_reading {
           return read_bare_name_for_comptime(name);
         });
+    comptime_eval_.set_method_resolver(
+        [this](const comptime::value &receiver,
+               const std::string &name) -> const ast::func_decl * {
+          return find_comptime_method(receiver, name);
+        });
     comptime_eval_.set_call_context(
         [this](const ast::func_decl &fn,
                const std::function<comptime::value()> &body)
@@ -19501,8 +19506,9 @@ private:
   }
 
   /// The module and file declaring `fn`, when it is a module-level
-  /// function; `nullopt` for anything else (a method, a synthesized
-  /// declaration), which then runs in its caller's context.
+  /// function or a method of an `impl`/`extend` block; `nullopt` for
+  /// anything else (a synthesized declaration), which then runs in its
+  /// caller's context.
   auto function_owner(const ast::func_decl &fn)
       -> std::optional<std::pair<const module_members *, file_id_type>> {
     // Rescanned when the index has grown: an instantiated functor adds a
@@ -19512,6 +19518,22 @@ private:
       for (const auto &[module_name, members] : index_.modules) {
         for (const auto &[fn_name, ref] : members.functions) {
           function_owners_.emplace(ref.decl, std::pair{&members, ref.file_id});
+        }
+        // Methods too: a compile-time method call (`s.trim()`) runs its body
+        // where it was written, so `std.string`'s own `rt_str_*` resolve.
+        const auto add_methods = [&](const auto &items, file_id_type file) {
+          for (const auto &item : items) {
+            if (const auto *method =
+                    dynamic_cast<const ast::func_decl *>(item.get())) {
+              function_owners_.emplace(method, std::pair{&members, file});
+            }
+          }
+        };
+        for (const auto &ref : members.impls) {
+          add_methods(ref.decl->items, ref.file_id);
+        }
+        for (const auto &ref : members.extends) {
+          add_methods(ref.decl->items, ref.file_id);
         }
       }
     }
@@ -19544,6 +19566,20 @@ private:
   /// module-scope lookup `resolve_ident` does for ordinary code — this
   /// module's `def`s and `static`s, then imported ones — in whatever module
   /// the evaluator is running in (`in_module_context`).
+  /// The compile-time evaluator's method lookup
+  /// (`comptime::evaluator::method_resolver_fn`): the method ordinary code
+  /// would call on a receiver of the value's type. Only `str` values are
+  /// answered — a compile-time integer or struct value no longer carries
+  /// the exact type it was checked at.
+  auto find_comptime_method(const comptime::value &receiver,
+                            const std::string &name) -> const ast::func_decl * {
+    if (receiver.kind != comptime::value_kind::string) {
+      return nullptr;
+    }
+    const auto *method = find_receiver_method(types_.builtin("str"), name);
+    return method != nullptr ? method->decl : nullptr;
+  }
+
   auto read_bare_name_for_comptime(const std::string &name)
       -> comptime::evaluator::bare_name_reading {
     using reading = comptime::evaluator::bare_name_reading;
@@ -27950,19 +27986,27 @@ private:
       return std::nullopt;
     }
     const auto &entry = types_.entry(strip_refs(it->second));
-    if (entry.kind != type_kind::sum_kind) {
-      return std::nullopt;
-    }
+    auto tag = std::string{};
     if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&node)) {
-      return std::make_pair(entry.name, ident->name);
-    }
-    if (const auto *call = dynamic_cast<const ast::call_expr *>(&node)) {
+      tag = ident->name;
+    } else if (const auto *call = dynamic_cast<const ast::call_expr *>(&node)) {
       if (const auto *callee =
               dynamic_cast<const ast::ident_expr *>(call->callee.get())) {
-        return std::make_pair(entry.name, callee->name);
+        tag = callee->name;
       }
     }
-    return std::nullopt;
+    if (tag.empty()) {
+      return std::nullopt;
+    }
+    // `option`/`result` are builtin sum types with no declaration.
+    const auto builtin_variant =
+        entry.kind == type_kind::builtin_generic_kind &&
+        ((entry.name == "option" && (tag == "some" || tag == "none")) ||
+         (entry.name == "result" && (tag == "ok" || tag == "err")));
+    if (entry.kind != type_kind::sum_kind && !builtin_variant) {
+      return std::nullopt;
+    }
+    return std::make_pair(entry.name, std::move(tag));
   }
 
   /// Resolves a `static if`'s condition to a real branch selection when

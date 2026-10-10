@@ -1,0 +1,15 @@
+module main
+
+# A compile-time method call the evaluator cannot run says which method and
+# why, rather than reporting a failed field access.
+
+static def check() -> int32:
+    let xs = [1, 2, 3]
+    if xs.is_empty():
+        return 0
+    return 1
+
+static let checked = check()
+
+def main() -> int32:
+    return checked

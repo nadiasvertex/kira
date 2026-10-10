@@ -1403,6 +1403,98 @@ auto test_comptime_loops_compute_static_values() -> void {
 #endif
 }
 
+/// Compile-time code calls `str` methods: a `static for` guard on a
+/// reflected field name, and `std.string`'s methods (trim, find, split, ...)
+/// run with their real bodies. Asserted by the computed value on both
+/// backends.
+auto test_comptime_str_methods() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "comptime_str_methods_bin";
+
+  write_file(main_source, read_program("comptime_str_methods.cn"));
+
+  // (127 + 259 + 42103 + 65 + 7) % 256.
+  constexpr auto expected = 65;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected compile-time str methods to evaluate: " +
+             run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(
+      build_report.has_value() && build_report->build.has_value() &&
+          build_report->build->succeeded,
+      "expected `--build` of the compile-time str methods program to link: " +
+          (build_report.has_value() ? build_report->diagnostics
+                                    : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
+/// A method the compile-time evaluator cannot run is named in the error,
+/// instead of the old "`.` field access requires a compile-time struct
+/// value".
+auto test_comptime_unsupported_method_is_named() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(main_source, read_program("comptime_unsupported_method.cn"));
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 1,
+         std::format("expected exactly one error, got {}: {}",
+                     report->error_count, report->diagnostics));
+  expect(report->diagnostics.contains(
+             "the list method `is_empty` cannot be called at compile time"),
+         "expected the method to be named: " + report->diagnostics);
+  expect(!report->diagnostics.contains("field access"),
+         "expected no field-access error: " + report->diagnostics);
+}
+
 /// A `static` whose initializer fails reports that failure once. A module
 /// that refers to the binding is not lowered: lowering used to see a
 /// reference with no value and blame a "gap in the compiler". The failure
@@ -4419,6 +4511,8 @@ auto main() -> int {
     test_dotted_names_through_module_values_and_root_alias();
     test_comptime_bare_names_resolve_per_module();
     test_comptime_loops_compute_static_values();
+    test_comptime_str_methods();
+    test_comptime_unsupported_method_is_named();
     test_failed_static_initializer_blocks_lowering();
     test_comparison_literal_follows_later_solved_operand();
     test_literal_follows_later_use_through_join_and_method();

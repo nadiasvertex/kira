@@ -57,6 +57,8 @@ package:
       //src:cinder \
       //src/llvm_codegen:aot_runtime \
       //src/runtime:runtime \
+      //src/runtime:string_ops \
+      //src/utf8:utf8 \
       //src/semantic:semantic \
       //src/parser:parser
     cp -L "bazel-bin/src/cinder" "$tar_root/bin/cinder"
@@ -65,6 +67,8 @@ package:
     rm -f "$tar_root/lib/cinder"/*.lo "$tar_root/lib/cinder"/*.a
     cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
           "bazel-bin/src/runtime/libruntime.lo" \
+          "bazel-bin/src/runtime/libstring_ops.a" \
+          "bazel-bin/src/utf8/libutf8.a" \
           "bazel-bin/src/semantic/libsemantic.a" \
           "bazel-bin/src/parser/libparser.a" \
           "$tar_root/lib/cinder/"
@@ -106,6 +110,8 @@ package:
       # `/usr/lib/cinder/` — see the tarball packaging step above for why.
       cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
             "bazel-bin/src/runtime/libruntime.lo" \
+            "bazel-bin/src/runtime/libstring_ops.a" \
+            "bazel-bin/src/utf8/libutf8.a" \
             "bazel-bin/src/semantic/libsemantic.a" \
             "bazel-bin/src/parser/libparser.a" \
             "$deb_root/usr/lib/cinder/"
@@ -146,6 +152,8 @@ install prefix=(env('HOME') / '.cinder'):
       //src:cinder \
       //src/llvm_codegen:aot_runtime \
       //src/runtime:runtime \
+      //src/runtime:string_ops \
+      //src/utf8:utf8 \
       //src/semantic:semantic \
       //src/parser:parser
 
@@ -155,6 +163,8 @@ install prefix=(env('HOME') / '.cinder'):
     rm -f "$prefix/lib/cinder"/*.lo "$prefix/lib/cinder"/*.a
     cp -L "bazel-bin/src/llvm_codegen/libaot_runtime.lo" \
           "bazel-bin/src/runtime/libruntime.lo" \
+          "bazel-bin/src/runtime/libstring_ops.a" \
+          "bazel-bin/src/utf8/libutf8.a" \
           "bazel-bin/src/semantic/libsemantic.a" \
           "bazel-bin/src/parser/libparser.a" \
           "$prefix/lib/cinder/"

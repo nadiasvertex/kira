@@ -15,6 +15,7 @@
 
 #include "src/comptime/hygiene.h"
 #include "src/parser/text_escape.h"
+#include "src/runtime/string_ops.h"
 
 namespace cinder::comptime {
 namespace {
@@ -443,7 +444,7 @@ auto evaluator::resolve_callee(const std::string &name, source_span span)
 
 auto evaluator::eval_ident(const ast::ident_expr &ident) -> value {
   if (const auto variant = resolve_variant(ident)) {
-    return value::make_variant(variant->first->name, variant->second->name, {});
+    return value::make_variant(variant->first, variant->second, {});
   }
   if (const auto *local = lookup_local(ident.name); local != nullptr) {
     return *local;
@@ -603,6 +604,25 @@ auto evaluator::apply_binary(ast::binary_op op, const value &lhs,
       }
       const auto equal = variant_values_equal(lhs, rhs);
       return value::make_bool(op == ast::binary_op::eq_eq ? equal : !equal);
+    }
+  }
+
+  // `str`'s `ord` and `add` impls (`std.string`), on the same primitives.
+  if (lhs.kind == value_kind::string && rhs.kind == value_kind::string) {
+    const auto order = runtime::str_compare(lhs.string, rhs.string);
+    switch (op) {
+    case ast::binary_op::lt:
+      return value::make_bool(order < 0);
+    case ast::binary_op::lt_eq:
+      return value::make_bool(order <= 0);
+    case ast::binary_op::gt:
+      return value::make_bool(order > 0);
+    case ast::binary_op::gt_eq:
+      return value::make_bool(order >= 0);
+    case ast::binary_op::add:
+      return value::make_string(lhs.string + rhs.string);
+    default:
+      break;
     }
   }
 
@@ -791,6 +811,51 @@ auto evaluator::eval_index(const ast::index_expr &idx) -> value {
   auto object = evaluate(*idx.object);
   if (object.is_error()) {
     return object;
+  }
+  // `s[a .. b]` on a `str` or a list: the sub-range, with the same bounds
+  // rule the backends enforce.
+  if (const auto *range =
+          dynamic_cast<const ast::binary_expr *>(idx.index.get());
+      range != nullptr && range->lhs != nullptr && range->rhs != nullptr &&
+      (range->op == ast::binary_op::range ||
+       range->op == ast::binary_op::range_inclusive)) {
+    const auto lo = evaluate(*range->lhs);
+    if (lo.is_error()) {
+      return lo;
+    }
+    const auto hi = evaluate(*range->rhs);
+    if (hi.is_error()) {
+      return hi;
+    }
+    if (lo.kind != value_kind::integer || hi.kind != value_kind::integer) {
+      return report(idx.span, "a compile-time range index requires integer "
+                              "bounds");
+    }
+    const auto end = range->op == ast::binary_op::range_inclusive
+                         ? hi.integer + 1
+                         : hi.integer;
+    const auto size = object.kind == value_kind::string
+                          ? object.string.size()
+                          : object.elements.size();
+    if (object.kind != value_kind::string && object.kind != value_kind::list) {
+      return report(idx.span, "`[a .. b]` requires a compile-time `str` or "
+                              "list value");
+    }
+    if (lo.integer < 0 || end < lo.integer || static_cast<size_t>(end) > size) {
+      return report(idx.span,
+                    std::format("compile-time range {}..{} is out of bounds "
+                                "for a length of {}",
+                                lo.integer, end, size));
+    }
+    const auto first = static_cast<size_t>(lo.integer);
+    const auto count = static_cast<size_t>(end - lo.integer);
+    if (object.kind == value_kind::string) {
+      return value::make_string(object.string.substr(first, count));
+    }
+    const auto from =
+        object.elements.begin() + static_cast<std::ptrdiff_t>(first);
+    return value::make_list(
+        std::vector<value>(from, from + static_cast<std::ptrdiff_t>(count)));
   }
   auto index = evaluate(*idx.index);
   if (index.is_error()) {
@@ -1195,6 +1260,14 @@ auto evaluator::call_function(
     return report(span,
                   std::format("`{}` takes {} argument(s), but {} were given",
                               name, fn.params.size(), args.size()));
+  }
+  if (fn.modifiers.is_intrinsic) {
+    if (args.size() != fn.params.size()) {
+      return report(span, std::format("`{}` takes {} argument(s), but {} were "
+                                      "given",
+                                      name, fn.params.size(), args.size()));
+    }
+    return call_intrinsic(fn, args, span);
   }
   // Reported before switching into `fn`'s context: it is the call site's
   // mistake, so it belongs to the caller's file.
@@ -2071,8 +2144,8 @@ auto evaluator::unwrap_explicit_generic_callee(
   return nullptr;
 }
 
-auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
-    std::pair<const ast::type_decl *, const ast::sum_variant *>> {
+auto evaluator::resolve_variant(const ast::node &node)
+    -> std::optional<std::pair<std::string, std::string>> {
   if (!variant_resolver_) {
     return std::nullopt;
   }
@@ -2082,6 +2155,11 @@ auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
   }
   const auto type_it = pending_types_.find(resolved->first);
   if (type_it == pending_types_.end()) {
+    // A builtin sum type (`option`, `result`) has no declaration to check
+    // the tag against; the checker already did.
+    if (resolved->first == "option" || resolved->first == "result") {
+      return resolved;
+    }
     return std::nullopt;
   }
   const auto *decl = type_it->second;
@@ -2092,7 +2170,7 @@ auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
   }
   for (const auto &variant : sum_def->body.variants) {
     if (variant.name == resolved->second) {
-      return std::make_pair(decl, &variant);
+      return resolved;
     }
   }
   return std::nullopt;
@@ -2100,6 +2178,13 @@ auto evaluator::resolve_variant(const ast::node &node) -> std::optional<
 
 auto evaluator::resolve_variant_by_name(const std::string &name)
     -> std::optional<std::pair<std::string, std::string>> {
+  // The builtin `option`/`result` have no declaration in `pending_types_`.
+  if (name == "some" || name == "none") {
+    return std::make_pair(std::string{"option"}, name);
+  }
+  if (name == "ok" || name == "err") {
+    return std::make_pair(std::string{"result"}, name);
+  }
   for (const auto &[type_name, decl] : pending_types_) {
     if (decl == nullptr) {
       continue;
@@ -2197,11 +2282,229 @@ auto evaluator::qualified_callee_path(const ast::expr &callee)
   return path;
 }
 
+auto evaluator::method_callee(const ast::expr &callee)
+    -> const ast::field_expr * {
+  const auto *field = dynamic_cast<const ast::field_expr *>(&callee);
+  if (field == nullptr || field->object == nullptr) {
+    return nullptr;
+  }
+  const auto path = qualified_callee_path(callee);
+  if (!path.has_value()) {
+    // `"ab".len()`, `xs[0].len()`: no name or path for the checker to read
+    // as a module-level function, so this can only be a method call.
+    return field;
+  }
+  // `a.b.f(x)`: a method `f` on the value `a.b` unless the checker reads
+  // the whole path as naming something else (a module function, or a name
+  // with no compile-time value, which the path route reports).
+  const auto root_is_local = lookup_local(path->segments.front()) != nullptr;
+  if (!path_resolver_) {
+    return root_is_local ? field : nullptr;
+  }
+  switch (path_resolver_(*path, root_is_local).reading) {
+  case dotted_path_reading::kind::local:
+  case dotted_path_reading::kind::static_value:
+    return field;
+  case dotted_path_reading::kind::function:
+  case dotted_path_reading::kind::not_constant:
+    break;
+  }
+  return nullptr;
+}
+
+auto evaluator::eval_local_push(const ast::call_expr &call,
+                                const ast::field_expr &method)
+    -> std::optional<value> {
+  const auto *target =
+      dynamic_cast<const ast::ident_expr *>(method.object.get());
+  if (method.field_name != "push" || target == nullptr ||
+      call.args.size() != 1 || call.args.front().value == nullptr) {
+    return std::nullopt;
+  }
+  const auto find_list = [&] -> value * {
+    for (auto &scope :
+         locals_ | std::views::drop(frame_base_) | std::views::reverse) {
+      if (const auto found = scope.find(target->name); found != scope.end()) {
+        return found->second.kind == value_kind::list ? &found->second
+                                                      : nullptr;
+      }
+    }
+    return nullptr;
+  };
+  if (find_list() == nullptr) {
+    return std::nullopt;
+  }
+  auto element = evaluate(*call.args.front().value);
+  if (element.is_error()) {
+    return element;
+  }
+  // Found again: evaluating the argument may have grown `locals_`.
+  auto *list = find_list();
+  if (list == nullptr) {
+    return value::make_error();
+  }
+  list->elements.push_back(std::move(element));
+  return value::make_unit();
+}
+
+auto evaluator::eval_method_call(const ast::call_expr &call,
+                                 const std::string &name, const value &receiver)
+    -> value {
+  auto args = std::vector<value>{};
+  args.reserve(call.args.size() + 1);
+  args.push_back(receiver);
+  for (const auto &arg : call.args) {
+    if (arg.name.has_value()) {
+      return report(arg.span, "named arguments are not yet supported in "
+                              "compile-time method calls");
+    }
+    if (arg.value == nullptr) {
+      return value::make_error();
+    }
+    auto evaluated = evaluate(*arg.value);
+    if (evaluated.is_error()) {
+      return evaluated;
+    }
+    args.push_back(std::move(evaluated));
+  }
+  // `str.len()` is built into the language (`k_builtin_methods`), not an
+  // `extend str` method with a body to run. A compile-time list is the
+  // evaluator's own representation, not `std.list`'s, so its methods are
+  // built in here too (`push` in `eval_local_push`).
+  if ((receiver.kind == value_kind::string ||
+       receiver.kind == value_kind::list) &&
+      name == "len") {
+    if (args.size() != 1) {
+      return report(call.span, "`len` takes no arguments");
+    }
+    return value::make_int(static_cast<int64_t>(
+        receiver.kind == value_kind::string ? receiver.string.size()
+                                            : receiver.elements.size()));
+  }
+  // `str.as_bytes()`: a compile-time `slice[byte]` is a list of integers.
+  if (receiver.kind == value_kind::string && name == "as_bytes") {
+    if (args.size() != 1) {
+      return report(call.span, "`as_bytes` takes no arguments");
+    }
+    auto bytes = std::vector<value>{};
+    bytes.reserve(receiver.string.size());
+    for (const auto byte : receiver.string) {
+      bytes.push_back(value::make_int(static_cast<unsigned char>(byte)));
+    }
+    return value::make_list(std::move(bytes));
+  }
+  if (receiver.kind == value_kind::list) {
+    return report(call.span,
+                  std::format("the list method `{}` cannot be called at "
+                              "compile time: only `len()` and `push(x)` on a "
+                              "local `var` are available",
+                              name));
+  }
+  // A struct field holding a function value: `ops.apply(x)`.
+  if (receiver.kind == value_kind::struct_instance) {
+    if (const auto it = receiver.fields.find(name);
+        it != receiver.fields.end()) {
+      if (it->second.kind != value_kind::closure ||
+          it->second.function == nullptr) {
+        return report(call.span,
+                      std::format("field `{}` is not a function, so it "
+                                  "cannot be called",
+                                  name));
+      }
+      args.erase(args.begin());
+      return call_function(*it->second.function, name, std::move(args),
+                           call.span);
+    }
+  }
+  const auto *fn =
+      method_resolver_ ? method_resolver_(receiver, name) : nullptr;
+  if (fn == nullptr && receiver.kind == value_kind::string) {
+    return report(call.span,
+                  std::format("`str.{}` has no compile-time implementation, "
+                              "so it can only be called from code that runs "
+                              "at run time",
+                              name));
+  }
+  if (fn == nullptr) {
+    return report(call.span,
+                  std::format("the method `{}` cannot be called at compile "
+                              "time: compile-time method calls are available "
+                              "only on `str` values and lists",
+                              name));
+  }
+  return call_function(*fn, name, std::move(args), call.span);
+}
+
+auto evaluator::call_intrinsic(const ast::func_decl &fn,
+                               std::span<const value> args, source_span span)
+    -> value {
+  const auto &name = fn.name;
+  const auto all_strings = [&](size_t count) -> bool {
+    return std::ranges::all_of(args.first(std::min(count, args.size())),
+                               [](const value &arg) -> bool {
+                                 return arg.kind == value_kind::string;
+                               });
+  };
+  const auto found = [](std::optional<size_t> pos) -> value {
+    auto fields = std::unordered_map<std::string, value>{};
+    fields.insert_or_assign("found", value::make_bool(pos.has_value()));
+    fields.insert_or_assign(
+        "pos", value::make_int(static_cast<int64_t>(pos.value_or(0))));
+    return value::make_struct("find_result", std::move(fields));
+  };
+  if (name == "rt_str_eq" && all_strings(2)) {
+    return value::make_bool(runtime::str_equal(args[0].string, args[1].string));
+  }
+  if (name == "rt_str_cmp" && all_strings(2)) {
+    return value::make_int(
+        runtime::str_compare(args[0].string, args[1].string));
+  }
+  if (name == "rt_str_find" && all_strings(2) &&
+      args[2].kind == value_kind::integer && args[2].integer >= 0) {
+    return found(runtime::str_find(args[0].string, args[1].string,
+                                   static_cast<size_t>(args[2].integer)));
+  }
+  if (name == "rt_str_rfind" && all_strings(2)) {
+    return found(runtime::str_rfind(args[0].string, args[1].string));
+  }
+  if (name == "rt_str_reverse" && all_strings(1)) {
+    return value::make_string(runtime::str_reverse(args[0].string));
+  }
+  if (name == "rt_str_trim" && all_strings(1) &&
+      args[1].kind == value_kind::integer && args[1].integer >= 0 &&
+      args[1].integer <= 2) {
+    return value::make_string(std::string{runtime::str_trim(
+        args[0].string, static_cast<runtime::trim_mode>(args[1].integer))});
+  }
+  if (name == "rt_str_replace" && all_strings(3)) {
+    return value::make_string(
+        runtime::str_replace(args[0].string, args[1].string, args[2].string));
+  }
+  if (name == "rt_str_concat" && all_strings(2)) {
+    return value::make_string(args[0].string + args[1].string);
+  }
+  return report(span, std::format("the intrinsic `{}` has no compile-time "
+                                  "implementation, so it can only be called "
+                                  "from code that runs at run time",
+                                  name));
+}
+
 auto evaluator::eval_call(const ast::call_expr &call) -> value {
   if (call.callee == nullptr) {
     return value::make_error();
   }
-  if (const auto variant = resolve_variant(call)) {
+  // `some`/`ok`/`err` are keywords, so a call spelled with one is always a
+  // variant constructor, even in a body the checker has not typed yet (a
+  // method in a module checked after the one evaluating it).
+  auto variant = resolve_variant(call);
+  if (const auto *callee =
+          dynamic_cast<const ast::ident_expr *>(call.callee.get());
+      !variant && callee != nullptr &&
+      (callee->name == "some" || callee->name == "ok" ||
+       callee->name == "err")) {
+    variant = resolve_variant_by_name(callee->name);
+  }
+  if (variant) {
     auto payload = std::vector<value>{};
     payload.reserve(call.args.size());
     for (const auto &arg : call.args) {
@@ -2218,7 +2521,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
       }
       payload.push_back(std::move(arg_value));
     }
-    return value::make_variant(variant->first->name, variant->second->name,
+    return value::make_variant(variant->first, variant->second,
                                std::move(payload));
   }
   if (auto builder = try_eval_expr_builder_call(call)) {
@@ -2252,6 +2555,15 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
           dynamic_cast<const ast::ident_expr *>(call.callee.get())) {
     callee_name = callee_ident->name;
     fn = resolve_callee(callee_name, callee_ident->span);
+  } else if (const auto *method = method_callee(*call.callee)) {
+    if (auto pushed = eval_local_push(call, *method)) {
+      return *pushed;
+    }
+    auto receiver = evaluate(*method->object);
+    if (receiver.is_error()) {
+      return receiver;
+    }
+    return eval_method_call(call, method->field_name, receiver);
   } else if (auto callee_path = qualified_callee_path(*call.callee)) {
     // `inner.scale(2)`: the checker reads the path, the same as any other
     // dotted name (`eval_module_path`).
@@ -2412,6 +2724,27 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
       }
     }
     return true;
+  }
+  case ast::node_kind::option_pattern:
+  case ast::node_kind::result_pattern: {
+    // `@some(p)`, `@ok(p)`, `@err(e)`: a one-payload variant of the builtin
+    // `option`/`result`.
+    const auto kind =
+        pattern.kind == ast::node_kind::option_pattern
+            ? dynamic_cast<const ast::option_pattern &>(pattern).option_kind
+            : dynamic_cast<const ast::result_pattern &>(pattern).result_kind;
+    const auto *inner =
+        pattern.kind == ast::node_kind::option_pattern
+            ? dynamic_cast<const ast::option_pattern &>(pattern).inner.get()
+            : dynamic_cast<const ast::result_pattern &>(pattern).inner.get();
+    const auto *tag = kind == ast::option_result_kind::some ? "some"
+                      : kind == ast::option_result_kind::ok ? "ok"
+                                                            : "err";
+    if (v.kind != value_kind::variant_instance || v.variant_tag != tag ||
+        v.elements.size() != 1) {
+      return false;
+    }
+    return inner == nullptr || bind_pattern(*inner, v.elements.front(), scope);
   }
   case ast::node_kind::or_pattern: {
     const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -313,6 +314,19 @@ public:
   /// Unset, a call runs in whatever context the caller had.
   void set_call_context(call_context_fn context) {
     call_context_ = std::move(context);
+  }
+
+  /// The method `name` a compile-time `receiver` value has, as the checker
+  /// finds it for the receiver's type (`receiver.name(...)`); `nullptr` when
+  /// the checker has no method of that name for it, or can't tell the
+  /// value's type.
+  using method_resolver_fn = std::function<const ast::func_decl *(
+      const value &receiver, const std::string &name)>;
+
+  /// Installs the checker's method lookup (see `method_resolver_fn`). Unset,
+  /// only the evaluator's own built-in methods (`str.len()`) are callable.
+  void set_method_resolver(method_resolver_fn resolver) {
+    method_resolver_ = std::move(resolver);
   }
 
   /// The registered `static def` named `name`, if any — a session-wide
@@ -643,9 +657,11 @@ private:
   /// the same "must be compile-time visible" requirement
   /// `resolve_type_reference` already imposes for reflection targets. Returns
   /// `nullopt` if no resolver is installed, `node` doesn't resolve to a
-  /// sum-typed variant, or the resolved type was never registered.
-  [[nodiscard]] auto resolve_variant(const ast::node &node) -> std::optional<
-      std::pair<const ast::type_decl *, const ast::sum_variant *>>;
+  /// sum-typed variant, or the resolved type was never registered. The
+  /// builtin `option`/`result` have no declaration and are taken as the
+  /// checker resolved them. Answers the (type name, variant tag) pair.
+  [[nodiscard]] auto resolve_variant(const ast::node &node)
+      -> std::optional<std::pair<std::string, std::string>>;
 
   /// Last-resort fallback for `eval_ident` when `resolve_variant` comes back
   /// empty *and* `name` isn't bound as a local/global/pending static/pending
@@ -671,7 +687,9 @@ private:
   /// unrelated sum types sharing a variant spelling): whichever match is
   /// found first wins, which is harmless here since every consumer of the
   /// resulting `value` (`bind_pattern`'s `constructor_pattern` case) matches
-  /// by variant tag alone, never by owning type identity.
+  /// by variant tag alone, never by owning type identity. The builtin
+  /// `option`/`result` variants (`some`, `none`, `ok`, `err`) answer without
+  /// a declaration.
   [[nodiscard]] auto resolve_variant_by_name(const std::string &name)
       -> std::optional<std::pair<std::string, std::string>>;
 
@@ -680,6 +698,26 @@ private:
                 std::vector<value> args, source_span span,
                 std::vector<std::pair<std::string, value>> type_args = {})
       -> value;
+
+  /// `xs.push(x)` on a local `var` list: appends in place. `nullopt` for any
+  /// other call, which is then an ordinary method call.
+  [[nodiscard]] auto eval_local_push(const ast::call_expr &call,
+                                     const ast::field_expr &method)
+      -> std::optional<value>;
+
+  /// `receiver.name(args...)`: a built-in method on the value, a closure
+  /// stored in a struct field of that name, or the method the checker finds
+  /// for the receiver's type, called with the receiver as `self`.
+  [[nodiscard]] auto eval_method_call(const ast::call_expr &call,
+                                      const std::string &name,
+                                      const value &receiver) -> value;
+
+  /// Runs an `intrinsic def` the evaluator implements natively (the
+  /// `rt_str_*` primitives `std.string` is built from), with the same
+  /// `src/runtime/string_ops.h` code both backends use.
+  [[nodiscard]] auto call_intrinsic(const ast::func_decl &fn,
+                                    std::span<const value> args,
+                                    source_span span) -> value;
 
   [[nodiscard]] auto evaluate_stmt(const ast::node &node) -> exec_result;
 
@@ -765,6 +803,12 @@ private:
   [[nodiscard]] static auto qualified_callee_path(const ast::expr &callee)
       -> std::optional<ast::module_path_expr>;
 
+  /// `callee` as the `receiver.method` of a method call, or `nullptr` when
+  /// it is not a field access or the checker reads it as a dotted path to a
+  /// module-level function.
+  [[nodiscard]] auto method_callee(const ast::expr &callee)
+      -> const ast::field_expr *;
+
   /// The function a callee name `name` calls: a frame-local closure, else a
   /// module-level function (or a `static` bound to a closure). `nullptr` if
   /// it names neither.
@@ -814,6 +858,9 @@ private:
 
   /// See `set_call_context`; unset until `checker` installs it.
   call_context_fn call_context_;
+
+  /// See `set_method_resolver`; unset until `checker` installs it.
+  method_resolver_fn method_resolver_;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   /// Index of the innermost call's first frame in `locals_` — the floor

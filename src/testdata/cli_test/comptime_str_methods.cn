@@ -1,0 +1,68 @@
+module main
+
+# Compile-time code calls `str` methods (todo item 7): `std.string`'s own
+# bodies run in the evaluator over the same primitives the backends use.
+
+type point = { x: int32, yy: int32, zzz: int32 }
+
+# The todo's case: a guard that calls a `str` method on a reflected name.
+static def long_names[T]() -> list[str]:
+    static for f in T.fields() if f.name.len() > 1 => f.name
+
+static def joined_len() -> int32:
+    var out = ""
+    for name in long_names[point]():
+        out = out + name + ";"
+    return out.len() as int32
+
+static def flags() -> int32:
+    let t = "  hello world  ".trim()
+    var n = 0
+    if t.starts_with("hello"):
+        n = n + 1
+    if t.ends_with("world"):
+        n = n + 2
+    if t.contains("o w") and not t.contains("xyz"):
+        n = n + 4
+    if t.replace("world", "there").eq("hello there"):
+        n = n + 8
+    if "abc".reversed() == "cba":
+        n = n + 16
+    if t[0 .. 5] == "hello" and "abc" < "abd":
+        n = n + 32
+    if "".is_empty() and not t.is_empty():
+        n = n + 64
+    return n
+
+static def positions() -> int32:
+    let s = "abcabc"
+    let first = match s.find("c"):
+        @some(p) => p as int32
+        @none => 99
+    let last = match s.rfind("c"):
+        @some(p) => p as int32
+        @none => 99
+    let missing = match s.find("z"):
+        @some(p) => p as int32
+        @none => 9
+    return first * 100 + last * 10 + missing
+
+static def pieces() -> int32:
+    let xs = "ab,c,,def".split(",")
+    var n = xs.len() as int32
+    for x in xs:
+        n = n * 10 + (x.len() as int32)
+    return n
+
+static def first_byte() -> int32:
+    return "A".as_bytes()[0] as int32
+
+static let names_len = joined_len()
+static let flag_bits = flags()
+static let found = positions()
+static let split_digits = pieces()
+static let byte = first_byte()
+
+def main() -> int32:
+    # 127 + 259 + 42103 + 65 + 7 ("yy;zzz;" is 7 bytes) = 42561; mod 256 = 65.
+    return (flag_bits + found + split_digits + byte + names_len) % 256

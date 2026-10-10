@@ -113,6 +113,19 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
                    "//src:cinder` or from `bazel-bin/src/cinder` inside the "
                    "workspace that built it"};
   }
+  // `std.string`'s `rt_str_*` intrinsics (`src/runtime/string.cpp`) call
+  // into `src/runtime:string_ops`, its own target so the compile-time
+  // evaluator can share it.
+  const auto string_ops_archive =
+      find_bazel_archive(program_name, "src/runtime", "string_ops");
+  if (!string_ops_archive) {
+    return build_outcome{
+        .succeeded = false,
+        .message = "could not locate Cinder's string runtime support library "
+                   "(libstring_ops.a) — run `cinder` via `bazelisk run "
+                   "//src:cinder` or from `bazel-bin/src/cinder` inside the "
+                   "workspace that built it"};
+  }
   // `src/runtime:runtime`'s own `layout.cpp` (`struct_field_slot` and
   // friends — compile-time-only helpers `codegen.cpp` calls to compute a
   // struct/sum type's heap layout, never called by the *generated* code
@@ -163,10 +176,10 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   }
 
   const auto link_command = std::format(
-      R"(c++ "{}" "{}" "{}" "{}" "{}" "{}" -o "{}")", object_path.string(),
+      R"(c++ "{}" "{}" "{}" "{}" "{}" "{}" "{}" -o "{}")", object_path.string(),
       panic_archive->string(), heap_archive->string(),
-      semantic_archive->string(), parser_archive->string(),
-      utf8_archive->string(), output_path.string());
+      string_ops_archive->string(), semantic_archive->string(),
+      parser_archive->string(), utf8_archive->string(), output_path.string());
   const auto link_status = std::system(link_command.c_str());
   auto ec = std::error_code{};
   fs::remove(object_path, ec);

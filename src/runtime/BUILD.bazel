@@ -17,7 +17,6 @@ cc_library(
         "platform.cpp",
         "platform_query.cpp",
         "string.cpp",
-        "string_ops.cpp",
     ],
     hdrs = [
         "allocator.h",
@@ -28,14 +27,25 @@ cc_library(
         "platform.h",
         "platform_query.h",
         "string.h",
-        "string_ops.h",
     ],
     alwayslink = True,
     deps = [
+        ":string_ops",
         "//src/parser:parser",
         "//src/semantic:semantic",
         "//src/utf8",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# The UTF-8 string primitives behind `std.string`'s Layer 1 intrinsics, split
+# out so the compile-time evaluator (`//src/comptime`, below `//src/semantic`)
+# can run the same code the two backends do.
+cc_library(
+    name = "string_ops",
+    srcs = ["string_ops.cpp"],
+    hdrs = ["string_ops.h"],
+    deps = ["//src/utf8"],
     visibility = ["//visibility:public"],
 )
 
