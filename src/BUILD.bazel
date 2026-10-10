@@ -177,6 +177,7 @@ cc_binary(
     name = "cinder",
     srcs = ["main.cpp"],
     data = [
+        ":std_sources",
         "//src/llvm_codegen:aot_runtime",
         "//src/runtime",
         "//src/utf8",
