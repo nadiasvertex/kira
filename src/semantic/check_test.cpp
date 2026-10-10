@@ -1224,8 +1224,8 @@ auto test_reports_static_for_inline_unbuildable_value() -> void {
   // An inline `static for` builds its list from the values it yields, so a
   // yielded value with no literal form (a tuple) is refused at the yield
   // rather than failing later, at lowering.
-  const auto analyzed = analyze_test_data_file(
-      "report_static_for_inline_unbuildable_value.cn");
+  const auto analyzed =
+      analyze_test_data_file("report_static_for_inline_unbuildable_value.cn");
   expect(analyzed.error_count > 0,
          "expected a tuple yielded by an inline `static for` to be rejected");
   expect_diagnostic(analyzed, "cannot be built into the program",
@@ -1585,7 +1585,8 @@ auto test_reports_unknown_variant_in_pattern() -> void {
 }
 
 auto test_reports_bare_variant_spelling() -> void {
-  const auto analyzed = analyze_test_data_file("report_bare_variant_spelling.cn");
+  const auto analyzed =
+      analyze_test_data_file("report_bare_variant_spelling.cn");
   expect(analyzed.error_count >= 4, "expected each bare variant to fail");
   expect_diagnostic(analyzed, "variant `some` must be written `@some`",
                     "expected bare `some(...)` diagnostic");

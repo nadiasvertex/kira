@@ -3399,8 +3399,7 @@ auto evaluator::evaluate_for(const ast::for_stmt &loop) -> exec_result {
 }
 
 auto evaluator::evaluate_static_for(const ast::static_decl &decl,
-                                    std::vector<value> *yields)
-    -> exec_result {
+                                    std::vector<value> *yields) -> exec_result {
   // Mirrors `checker::check_static_decl`'s own top-level `static for`
   // iteration exactly (`check.cpp`) — that copy only runs for a `static
   // for` written directly as a module item; this one is what makes the

@@ -805,9 +805,10 @@ private:
   [[nodiscard]] auto lower_static_for_inline(const ast::static_decl &decl)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// A call to one of a comprehension's resolved `new`/`push` methods.
-  [[nodiscard]] auto call_list_builder(source_span span, type_id result,
-                                       const semantic::resolved_callee &resolved,
-                                       ptr_vec<hir_expr> args) -> ptr<hir_expr>;
+  [[nodiscard]] auto
+  call_list_builder(source_span span, type_id result,
+                    const semantic::resolved_callee &resolved,
+                    ptr_vec<hir_expr> args) -> ptr<hir_expr>;
   /// Recursively lowers `clauses[index:]` into nested loops, calling
   /// `innermost` at the deepest level (once every clause's loop variable
   /// is bound and in scope). `fallback_span` is used only for a diagnostic
@@ -1732,9 +1733,9 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // answer in as an ordinary string literal.
   if (const auto reflected = checked_.type_param_reflections.find(&call);
       reflected != checked_.type_param_reflections.end()) {
-    return ok_expr(make<hir_literal>(
-        call.span, *type, token_kind::string_lit,
-        encode_string_literal(reflected->second.type_name)));
+    return ok_expr(
+        make<hir_literal>(call.span, *type, token_kind::string_lit,
+                          encode_string_literal(reflected->second.type_name)));
   }
 
   // A call to a comptime-only `static def` instance, reached from ordinary
@@ -5546,11 +5547,10 @@ auto lowerer::call_list_builder(source_span span, type_id result,
   // Same convention `lower_index_dispatch`/`build_drop_calls` follow: an
   // empty `impl_target_type` means `decl` is already a monomorphized
   // instance carrying its own mangled name.
-  const auto local_name =
-      resolved.impl_target_type.empty()
-          ? resolved.decl->name
-          : std::format("{}::{}", resolved.impl_target_type,
-                        resolved.decl->name);
+  const auto local_name = resolved.impl_target_type.empty()
+                              ? resolved.decl->name
+                              : std::format("{}::{}", resolved.impl_target_type,
+                                            resolved.decl->name);
   const auto symbol = resolve_reference(local_name);
   auto callee = ptr<hir_expr>(make<hir_local_ref>(
       span, k_unknown_type, symbol, local_name, resolved.owner_module));
@@ -5590,13 +5590,12 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
         make<hir_local_ref>(span, list_type, acc_symbol, acc_name)));
     push_args.push_back(std::move(*value));
     stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, call_list_builder(span, push_result,
-                                dispatch->second.push_callee,
+        span, call_list_builder(span, push_result, dispatch->second.push_callee,
                                 std::move(push_args)))));
   }
-  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, ptr<hir_expr>(
-                make<hir_local_ref>(span, list_type, acc_symbol, acc_name)))));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(span, ptr<hir_expr>(make<hir_local_ref>(
+                                    span, list_type, acc_symbol, acc_name)))));
   return ok_expr(make<hir_block>(span, list_type, std::move(stmts)));
 }
 

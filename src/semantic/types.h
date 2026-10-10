@@ -1046,10 +1046,10 @@ struct checked_types {
       runtime_fill_dispatches;
   /// Every inline `static for pat in xs => e` in a function body, unrolled:
   /// the values it yields, computed at compile time and embedded as
-  /// literals (or struct literals of literals) in iteration order, plus the `list[T]::new`/`list[T]::push`
-  /// pair that builds the list it evaluates to. `hir::lower_stmt` builds
-  /// that list from them. A generic function's are recorded per instance,
-  /// on the instance's clone of the declaration.
+  /// literals (or struct literals of literals) in iteration order, plus the
+  /// `list[T]::new`/`list[T]::push` pair that builds the list it evaluates to.
+  /// `hir::lower_stmt` builds that list from them. A generic function's are
+  /// recorded per instance, on the instance's clone of the declaration.
   std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
       static_for_elements;
   std::unordered_map<const ast::static_decl *, comprehension_dispatch>

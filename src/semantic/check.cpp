@@ -11873,8 +11873,7 @@ private:
   auto emit_bare_variant(source_span span, std::string_view name, bool is_call)
       -> void {
     error_with_help(
-        span,
-        std::format("variant `{}` must be written `@{}`", name, name),
+        span, std::format("variant `{}` must be written `@{}`", name, name),
         "missing `@`",
         std::format("sum-type variants are always spelled with a leading "
                     "`@`, which keeps them apart from functions and values "
@@ -11923,8 +11922,7 @@ private:
       return it->second;
     }
     if (decl.type_annotation == nullptr && decl.initializer != nullptr &&
-        !decl.initializer->has_error &&
-        !statics_in_progress_.contains(&decl)) {
+        !decl.initializer->has_error && !statics_in_progress_.contains(&decl)) {
       check_static_binding_early(decl, owner);
       if (const auto it = static_types_.find(&decl);
           it != static_types_.end()) {
@@ -11955,10 +11953,10 @@ private:
                                   const module_members *owner) -> void {
     const auto &declaring = owner != nullptr ? *owner : *module_;
     const auto listed = declaring.statics.find(decl.name);
-    const auto file = listed != declaring.statics.end() &&
-                              listed->second.decl == &decl
-                          ? listed->second.file_id
-                          : file_id_;
+    const auto file =
+        listed != declaring.statics.end() && listed->second.decl == &decl
+            ? listed->second.file_id
+            : file_id_;
     auto module_level = body_context{};
     swap_body_context(module_level);
     // `in_module_context` returns its body's result, so the body needs one.
@@ -28134,11 +28132,13 @@ private:
       mark_error();
       return std::nullopt;
     }
-    const auto failed = [this]() -> std::optional<std::vector<comptime::value>> {
+    const auto failed =
+        [this]() -> std::optional<std::vector<comptime::value>> {
       mark_error();
       return std::nullopt;
     };
-    const auto list_value = comptime_eval_.evaluate_iterable(*decl.for_iterable);
+    const auto list_value =
+        comptime_eval_.evaluate_iterable(*decl.for_iterable);
     if (list_value.is_error()) {
       return failed();
     }
@@ -28231,18 +28231,20 @@ private:
       yield_type = it->second;
     }
     if (inside_unbound_generic_scope()) {
-      defer_to_instances(decl, [this, &decl, yield_type, expected_tail,
-                                file = file_id_](instance_subst &subst) -> void {
-        const auto saved_file = file_id_;
-        file_id_ = file;
-        const auto &clone = *clone_of(subst, &decl);
-        if (auto values = evaluate_static_for_inline(clone)) {
-          (void)unroll_static_for_inline(clone, *values,
-                                         substitute_type(yield_type, subst),
-                                         substitute_type(expected_tail, subst));
-        }
-        file_id_ = saved_file;
-      });
+      defer_to_instances(
+          decl,
+          [this, &decl, yield_type, expected_tail,
+           file = file_id_](instance_subst &subst) -> void {
+            const auto saved_file = file_id_;
+            file_id_ = file;
+            const auto &clone = *clone_of(subst, &decl);
+            if (auto values = evaluate_static_for_inline(clone)) {
+              (void)unroll_static_for_inline(
+                  clone, *values, substitute_type(yield_type, subst),
+                  substitute_type(expected_tail, subst));
+            }
+            file_id_ = saved_file;
+          });
       return yield_type == k_unknown_type ? k_unknown_type
                                           : resolve_list_type(yield_type);
     }
