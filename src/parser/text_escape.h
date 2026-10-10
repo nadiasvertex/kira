@@ -34,4 +34,10 @@ namespace cinder {
 [[nodiscard]] auto decode_string_body(std::string_view unquoted_text)
     -> std::optional<std::string>;
 
+/// The inverse of `decode_string_literal`: quotes `text` (UTF-8 content, no
+/// quotes) and escapes it into the raw `string_lit` spelling that decodes back
+/// to exactly `text`. For a literal the compiler synthesizes rather than
+/// reads from source.
+[[nodiscard]] auto encode_string_literal(std::string_view text) -> std::string;
+
 } // namespace cinder

@@ -24,6 +24,7 @@
 #include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
+#include "src/parser/text_escape.h"
 #include "src/semantic/infer/blame.h"
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/obligations.h"
@@ -638,6 +639,8 @@ public:
         .drop_plans = std::move(drop_plans_),
         .comprehension_dispatches = std::move(comprehension_dispatches_),
         .runtime_fill_dispatches = std::move(runtime_fill_dispatches_),
+        .static_for_elements = std::move(static_for_elements_),
+        .static_for_dispatches = std::move(static_for_dispatches_),
         .try_conversions = std::move(try_conversions_),
         .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
@@ -1277,6 +1280,15 @@ private:
   /// `static for` used as a block's tail statement reports the type it
   /// actually produces instead of `unit`.
   std::unordered_map<const ast::static_decl *, type_id> static_for_yield_types_;
+  /// What each inline `static for` yielded, evaluated by `check_static_decl`
+  /// outside a generic template — read back by `unroll_static_for_inline`.
+  std::unordered_map<const ast::static_decl *, std::vector<comptime::value>>
+      static_for_values_;
+  /// See `checked_types::static_for_elements`/`static_for_dispatches`.
+  std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
+      static_for_elements_;
+  std::unordered_map<const ast::static_decl *, comprehension_dispatch>
+      static_for_dispatches_;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
   /// Each `static let`'s evaluated compile-time value, keyed by declaration
   /// so same-named statics in different modules stay distinct — see
@@ -24905,17 +24917,11 @@ private:
       const auto &decl = dynamic_cast<const ast::static_decl &>(node);
       if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
         check_item(node, /*at_module_scope=*/false);
-        // `static for pat in iter => yield_expr` is exactly as
-        // value-producing as the expression it yields (mirrors how `if`
-        // and `static if` above report their branch type rather than a
-        // hard-coded `unit`) — otherwise this inline form used as a
-        // function's tail statement is wrongly treated as falling off the
-        // end without returning a value.
+        // `static for pat in iter => yield_expr` evaluates to the list of
+        // what it yields, like a `for ... =>` comprehension — so as a
+        // function's tail statement it is the function's value.
         if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-          if (const auto it = static_for_yield_types_.find(&decl);
-              it != static_for_yield_types_.end()) {
-            return it->second;
-          }
+          return record_static_for_inline(decl, expected_tail);
         }
         return unit;
       }
@@ -27998,6 +28004,218 @@ private:
     });
   }
 
+  /// The values an inline `static for` yields, one per iteration its guard
+  /// keeps, evaluated at compile time. `nullopt` when the iterable, the guard
+  /// or a yielded value can't be computed; that has been reported, and the
+  /// file marked as failing.
+  auto evaluate_static_for_inline(const ast::static_decl &decl)
+      -> std::optional<std::vector<comptime::value>> {
+    if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
+        decl.for_yield == nullptr || decl.for_patterns.size() != 1 ||
+        decl.for_patterns[0] == nullptr) {
+      // Already reported by the parser, or (several loop patterns) below.
+      if (decl.for_patterns.size() > 1) {
+        error_with_help(decl.span,
+                        "an inline `static for` takes one loop variable",
+                        "this loop names several",
+                        "Bind one variable and take it apart in the yielded "
+                        "expression.");
+      }
+      mark_error();
+      return std::nullopt;
+    }
+    const auto failed = [this]() -> std::optional<std::vector<comptime::value>> {
+      mark_error();
+      return std::nullopt;
+    };
+    const auto list_value = comptime_eval_.evaluate_iterable(*decl.for_iterable);
+    if (list_value.is_error()) {
+      return failed();
+    }
+    auto yielded = std::vector<comptime::value>{};
+    for (const auto &element_value : list_value.elements) {
+      auto scope = std::unordered_map<std::string, comptime::value>{};
+      if (!comptime_eval_.bind_pattern(*decl.for_patterns[0], element_value,
+                                       scope)) {
+        return failed();
+      }
+      comptime_eval_.push_locals(std::move(scope));
+      auto keep = true;
+      if (decl.for_guard != nullptr) {
+        const auto guard = comptime_eval_.evaluate(*decl.for_guard);
+        if (guard.is_error() || guard.kind != comptime::value_kind::boolean) {
+          comptime_eval_.pop_locals();
+          if (!guard.is_error()) {
+            error(decl.for_guard->span,
+                  "a `static for` guard must be `true` or `false`",
+                  "this did not evaluate to a boolean");
+          }
+          return failed();
+        }
+        keep = guard.boolean;
+      }
+      if (keep) {
+        auto value = comptime_eval_.evaluate(*decl.for_yield);
+        if (value.is_error()) {
+          comptime_eval_.pop_locals();
+          return failed();
+        }
+        yielded.push_back(std::move(value));
+      }
+      comptime_eval_.pop_locals();
+    }
+    return yielded;
+  }
+
+  /// `T` when `type` is a `list[T]`, `k_unknown_type` otherwise.
+  auto list_element_type(type_id type) -> type_id {
+    const auto &entry = types_.entry(strip_refs(settle(type)));
+    if (entry.name != "list" || entry.args.size() != 1 ||
+        entry.kind != type_kind::struct_kind) {
+      return k_unknown_type;
+    }
+    return entry.args.front();
+  }
+
+  /// The type of a list's elements, read from compile-time values alone — for
+  /// a `static for` whose yield the checker could not type (`field.name`
+  /// reads a reflection descriptor, which has no static type).
+  auto comptime_values_type(const std::vector<comptime::value> &values)
+      -> type_id {
+    auto result = k_unknown_type;
+    for (const auto &value : values) {
+      auto type = k_unknown_type;
+      switch (value.kind) {
+      case comptime::value_kind::string:
+        type = types_.builtin("str");
+        break;
+      case comptime::value_kind::boolean:
+        type = types_.builtin("bool");
+        break;
+      case comptime::value_kind::integer:
+        type = types_.builtin("int32");
+        break;
+      case comptime::value_kind::floating:
+        type = types_.builtin("float64");
+        break;
+      default:
+        return k_unknown_type;
+      }
+      if (result != k_unknown_type && result != type) {
+        return k_unknown_type;
+      }
+      result = type;
+    }
+    return result;
+  }
+
+  /// Types an inline `static for` in a function body, and unrolls it: the
+  /// list it evaluates to is built from the values it yields, each computed
+  /// at compile time. A template unrolls once per instance, with the
+  /// instance's types bound.
+  auto record_static_for_inline(const ast::static_decl &decl,
+                                type_id expected_tail) -> type_id {
+    auto yield_type = k_unknown_type;
+    if (const auto it = static_for_yield_types_.find(&decl);
+        it != static_for_yield_types_.end()) {
+      yield_type = it->second;
+    }
+    if (inside_unbound_generic_scope()) {
+      defer_to_instances(decl, [this, &decl, yield_type, expected_tail,
+                                file = file_id_](instance_subst &subst) -> void {
+        const auto saved_file = file_id_;
+        file_id_ = file;
+        const auto &clone = *clone_of(subst, &decl);
+        if (auto values = evaluate_static_for_inline(clone)) {
+          (void)unroll_static_for_inline(clone, *values,
+                                         substitute_type(yield_type, subst),
+                                         substitute_type(expected_tail, subst));
+        }
+        file_id_ = saved_file;
+      });
+      return yield_type == k_unknown_type ? k_unknown_type
+                                          : resolve_list_type(yield_type);
+    }
+    const auto values = static_for_values_.find(&decl);
+    if (values == static_for_values_.end()) {
+      return k_unknown_type;
+    }
+    return unroll_static_for_inline(decl, values->second, yield_type,
+                                    expected_tail);
+  }
+
+  /// Records `values` as the elements of the list `decl` evaluates to, and
+  /// the list's type. The element type is the yield's when the checker knows
+  /// it, else what the context expects, else what the values are.
+  auto unroll_static_for_inline(const ast::static_decl &decl,
+                                const std::vector<comptime::value> &values,
+                                type_id yield_type, type_id expected_tail)
+      -> type_id {
+    auto element = yield_type;
+    if (element == k_unknown_type) {
+      element = list_element_type(expected_tail);
+    }
+    if (element == k_unknown_type) {
+      element = comptime_values_type(values);
+    }
+    const auto span = decl.for_yield->span;
+    if (element == k_unknown_type) {
+      error_with_help(span,
+                      "cannot tell what type of list this `static for` builds",
+                      "the type of these values is not known",
+                      "Say what the list holds where it is used, for example "
+                      "with a return type such as `-> list[str]`.");
+      return k_error_type;
+    }
+    auto literals = std::vector<const ast::expr *>{};
+    literals.reserve(values.size());
+    for (const auto &value : values) {
+      const ast::expr *literal = nullptr;
+      if (value.kind == comptime::value_kind::string) {
+        literal = materialize_string_literal(value.string, span, element);
+      } else if (value.kind == comptime::value_kind::struct_instance) {
+        if (auto built = build_static_struct_expr(value, span, element)) {
+          literal = built.get();
+          synthesized_static_structs_.push_back(std::move(built));
+        }
+      } else {
+        literal = materialize_const_literal(value, span, element);
+      }
+      if (literal == nullptr) {
+        error_with_help(
+            span,
+            "this `static for` yields a value that cannot be built into "
+            "the program",
+            "each value yielded here must be a number, a boolean, a string, "
+            "or a struct of those",
+            "An inline `static for` is computed while compiling, and the "
+            "list it builds is made of the values it yields. To build a "
+            "list of other values, use an ordinary `for ... =>` "
+            "comprehension, which runs when the program runs.");
+        return k_error_type;
+      }
+      literals.push_back(literal);
+    }
+    const auto list_type = resolve_list_type(element);
+    static_for_elements_.insert_or_assign(&decl, std::move(literals));
+    record_new_push_dispatch(decl, list_type, static_for_dispatches_);
+    return list_type;
+  }
+
+  /// A string literal spelling `text`, typed `type`, owned like
+  /// `materialize_const_literal`'s.
+  auto materialize_string_literal(const std::string &text, source_span span,
+                                  type_id type) -> const ast::literal_expr * {
+    auto lit = ast::make<ast::literal_expr>();
+    lit->span = span;
+    lit->lit_kind = token_kind::string_lit;
+    lit->value = encode_string_literal(text);
+    record_expr_type(*lit, type);
+    const auto *raw = lit.get();
+    synthesized_const_literals_.push_back(std::move(lit));
+    return raw;
+  }
+
   /// A `static if` the template could not decide, decided by each instance:
   /// the branch it does not take is dead there — never elaborated, and its
   /// records dropped.
@@ -28280,6 +28498,19 @@ private:
       check_body_nodes(decl.for_body, k_unknown_type);
       pop_scope();
 
+      // The inline form's values, computed once here for code that is not
+      // generic; a template's are computed per instance instead
+      // (`record_static_for_inline`). A comptime-only function's body is run
+      // by the evaluator itself, per call.
+      if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+        if (!inside_unbound_generic_scope() && !in_comptime_only_function_) {
+          if (auto values = evaluate_static_for_inline(decl)) {
+            static_for_values_.insert_or_assign(&decl, std::move(*values));
+          }
+        }
+        return;
+      }
+
       // Real compile-time iteration, separate from the type-check pass
       // above (which only checks the body/yield once against the element
       // type). Only a single loop pattern is supported for now — multiple
@@ -28322,19 +28553,10 @@ private:
                 continue;
               }
             }
-            if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-              if (decl.for_yield != nullptr) {
-                // Evaluated for its compile-time diagnostics/effects; the
-                // resulting sequence has no consumer yet — reifying it
-                // into generated code is splice reification (M4).
-                (void)comptime_eval_.evaluate(*decl.for_yield);
-              }
-            } else {
-              const auto exec = comptime_eval_.evaluate_stmts(decl.for_body);
-              if (exec.errored) {
-                comptime_eval_.pop_locals();
-                break;
-              }
+            const auto exec = comptime_eval_.evaluate_stmts(decl.for_body);
+            if (exec.errored) {
+              comptime_eval_.pop_locals();
+              break;
             }
             comptime_eval_.pop_locals();
           }

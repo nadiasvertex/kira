@@ -1,0 +1,5 @@
+module sample
+
+def pairs() -> int32:
+    static for i in 0..2 => (i, i)
+    return 0

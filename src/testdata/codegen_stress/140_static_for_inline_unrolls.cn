@@ -1,0 +1,45 @@
+module codegen_stress.static_for_inline_unrolls
+
+# An inline `static for ... => e` in a function body evaluates to the list of
+# the values it yields, computed while compiling (todo item 6: this used to
+# fail at lowering). Covers a generic body unrolled per instance, a guard,
+# integers typed by the return type, strings with escapes, and structs.
+
+type point = { x: int32, y: int32 }
+type wide = { a: int32, the_long_name: bool, c: str }
+
+def field_names[T]() -> list[str]:
+    static for field in T.fields() => field.name
+
+def named_not_a[T]() -> list[str]:
+    static for field in T.fields() if field.name != "a" => field.name
+
+def squares() -> list[int64]:
+    static for i in 0..4 => i * i
+
+def escaped() -> list[str]:
+    static for s in ["a\"b", "c\\d\n"] => s
+
+def points() -> list[point]:
+    static for i in 0..3 => point { x: i, y: i * 10 }
+
+def total_len(names: &list[str]) -> int32:
+    var total = 0
+    for name in names:
+        total = total + name.len() as int32
+    return total
+
+def main() -> int32:
+    let p = field_names[point]()
+    let w = named_not_a[wide]()
+    var square_total: int64 = 0
+    for v in squares():
+        square_total = square_total + v
+    let e = escaped()
+    let s = points()
+    # 2 point fields, 2 kept wide fields ("the_long_name", "c": 14 bytes),
+    # squares 0+1+4+9, escaped strings of 3 and 4 bytes, s[2] = {2, 20}.
+    return (p.len() as int32 + w.len() as int32 * 10 + total_len(&w) * 100 +
+        square_total as int32 * 10000 + total_len(&e) * 1000000 + s[2].y)
+
+# expect: 7141442

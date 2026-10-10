@@ -19,6 +19,7 @@
 #include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
+#include "src/parser/text_escape.h"
 #include "src/runtime/layout.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
@@ -87,45 +88,6 @@ template <typename T>
 [[nodiscard]] auto ok_expr(ptr<T> node)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   return ptr<hir_expr>(std::move(node));
-}
-
-/// Re-encodes an already escape-decoded literal-text segment
-/// (`ast::interp_segment::literal_text`) back into the quoted, escaped
-/// source spelling `decode_string_literal` (both backends' codegen) expects
-/// a `string_lit`'s `hir_literal::value` to be — used by
-/// `lower_interpolated_string` so a literal-text segment can still ride the
-/// ordinary `hir_literal`/`compile_string_literal` path with no new HIR node
-/// kind or backend change.
-[[nodiscard]] auto quote_and_escape_for_literal(std::string_view text)
-    -> std::string {
-  auto out = std::string("\"");
-  for (const char c : text) {
-    switch (c) {
-    case '"':
-      out += "\\\"";
-      break;
-    case '\\':
-      out += "\\\\";
-      break;
-    case '\n':
-      out += "\\n";
-      break;
-    case '\t':
-      out += "\\t";
-      break;
-    case '\r':
-      out += "\\r";
-      break;
-    case '\0':
-      out += "\\0";
-      break;
-    default:
-      out.push_back(c);
-      break;
-    }
-  }
-  out += '\"';
-  return out;
 }
 
 /// Builds a `char_lit`-shaped source spelling for a single ASCII byte (a
@@ -837,6 +799,15 @@ private:
   /// spec/iterator-protocol-design.md.
   [[nodiscard]] auto lower_for_expr(const ast::for_expr &for_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Lowers an inline `static for ... => e` to the list it evaluates to,
+  /// built from the values the checker unrolled it into
+  /// (`checked_types::static_for_elements`).
+  [[nodiscard]] auto lower_static_for_inline(const ast::static_decl &decl)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// A call to one of a comprehension's resolved `new`/`push` methods.
+  [[nodiscard]] auto call_list_builder(source_span span, type_id result,
+                                       const semantic::resolved_callee &resolved,
+                                       ptr_vec<hir_expr> args) -> ptr<hir_expr>;
   /// Recursively lowers `clauses[index:]` into nested loops, calling
   /// `innermost` at the deepest level (once every clause's loop variable
   /// is bound and in scope). `fallback_span` is used only for a diagnostic
@@ -1763,7 +1734,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
       reflected != checked_.type_param_reflections.end()) {
     return ok_expr(make<hir_literal>(
         call.span, *type, token_kind::string_lit,
-        quote_and_escape_for_literal(reflected->second.type_name)));
+        encode_string_literal(reflected->second.type_name)));
   }
 
   // A call to a comptime-only `static def` instance, reached from ordinary
@@ -3571,7 +3542,7 @@ auto lowerer::lower_interpolated_string(
 
   const auto str_lit = [&](std::string_view text) -> ptr<hir_expr> {
     return {make<hir_literal>(span, str_type, token_kind::string_lit,
-                              quote_and_escape_for_literal(text))};
+                              encode_string_literal(text))};
   };
   const auto bool_lit = [&](bool v) -> ptr<hir_expr> {
     return {make<hir_literal>(span, bool_type,
@@ -4542,6 +4513,14 @@ auto lowerer::lower_stmt(const ast::node &node)
       // assert` (which `lower_module_items` likewise emits no code for) —
       // there is nothing left for a runtime backend to do here.
       return ptr_vec<hir_node>{};
+    }
+    if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+      auto list = lower_static_for_inline(decl);
+      if (!list.has_value()) {
+        return std::unexpected(list.error());
+      }
+      return one_stmt(
+          ptr<hir_node>(make<hir_expr_stmt>(decl.span, std::move(*list))));
     }
     if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
       return fail(lowering_error_kind::unsupported_construct, decl.span,
@@ -5561,6 +5540,66 @@ auto lowerer::lower_iterator_loop(
   return result;
 }
 
+auto lowerer::call_list_builder(source_span span, type_id result,
+                                const semantic::resolved_callee &resolved,
+                                ptr_vec<hir_expr> args) -> ptr<hir_expr> {
+  // Same convention `lower_index_dispatch`/`build_drop_calls` follow: an
+  // empty `impl_target_type` means `decl` is already a monomorphized
+  // instance carrying its own mangled name.
+  const auto local_name =
+      resolved.impl_target_type.empty()
+          ? resolved.decl->name
+          : std::format("{}::{}", resolved.impl_target_type,
+                        resolved.decl->name);
+  const auto symbol = resolve_reference(local_name);
+  auto callee = ptr<hir_expr>(make<hir_local_ref>(
+      span, k_unknown_type, symbol, local_name, resolved.owner_module));
+  return {direct_call(span, result, std::move(callee), std::move(args),
+                      resolved.decl)};
+}
+
+auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto elements = checked_.static_for_elements.find(&decl);
+  const auto dispatch = checked_.static_for_dispatches.find(&decl);
+  if (elements == checked_.static_for_elements.end() ||
+      dispatch == checked_.static_for_dispatches.end()) {
+    return fail(lowering_error_kind::unsupported_construct, decl.span,
+                "this `static for` was not unrolled during checking");
+  }
+  const auto span = decl.span;
+  const auto list_type = dispatch->second.list_type;
+  const auto acc_symbol = mint_symbol();
+  const auto acc_name = std::string("<static for result>");
+
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, acc_symbol, acc_name,
+      call_list_builder(span, list_type, dispatch->second.new_callee,
+                        ptr_vec<hir_expr>{}),
+      /*mut=*/true)));
+  const auto push_result =
+      drop_call_result_type(checked_, *dispatch->second.push_callee.decl);
+  for (const auto *element : elements->second) {
+    auto value = lower_expr(*element);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto push_args = ptr_vec<hir_expr>{};
+    push_args.push_back(ptr<hir_expr>(
+        make<hir_local_ref>(span, list_type, acc_symbol, acc_name)));
+    push_args.push_back(std::move(*value));
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, call_list_builder(span, push_result,
+                                dispatch->second.push_callee,
+                                std::move(push_args)))));
+  }
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, ptr<hir_expr>(
+                make<hir_local_ref>(span, list_type, acc_symbol, acc_name)))));
+  return ok_expr(make<hir_block>(span, list_type, std::move(stmts)));
+}
+
 auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   auto type = checked_type_of(for_expr);
@@ -5583,23 +5622,11 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
                 "comprehension has no iteration clauses");
   }
 
-  // Same convention `lower_index_dispatch`/`build_drop_calls` follow: an
-  // empty `impl_target_type` means `decl` is already a monomorphized
-  // instance carrying its own mangled name.
   const auto call_from_resolved =
       [this](source_span call_span, type_id result,
              const semantic::resolved_callee &resolved,
              ptr_vec<hir_expr> args) -> ptr<hir_expr> {
-    const auto local_name =
-        resolved.impl_target_type.empty()
-            ? resolved.decl->name
-            : std::format("{}::{}", resolved.impl_target_type,
-                          resolved.decl->name);
-    const auto symbol = resolve_reference(local_name);
-    auto callee = ptr<hir_expr>(make<hir_local_ref>(
-        call_span, k_unknown_type, symbol, local_name, resolved.owner_module));
-    return {direct_call(call_span, result, std::move(callee), std::move(args),
-                        resolved.decl)};
+    return call_list_builder(call_span, result, resolved, std::move(args));
   };
 
   const auto span = for_expr.span;

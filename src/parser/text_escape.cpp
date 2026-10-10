@@ -158,4 +158,35 @@ auto decode_string_literal(std::string_view text)
   return decode_string_body(text.substr(1, text.size() - 2));
 }
 
+auto encode_string_literal(std::string_view text) -> std::string {
+  auto out = std::string("\"");
+  for (const char c : text) {
+    switch (c) {
+    case '"':
+      out += "\\\"";
+      break;
+    case '\\':
+      out += "\\\\";
+      break;
+    case '\n':
+      out += "\\n";
+      break;
+    case '\t':
+      out += "\\t";
+      break;
+    case '\r':
+      out += "\\r";
+      break;
+    case '\0':
+      out += "\\0";
+      break;
+    default:
+      out.push_back(c);
+      break;
+    }
+  }
+  out += '"';
+  return out;
+}
+
 } // namespace cinder

@@ -62,6 +62,7 @@ static for field in T.fields():
 
 - The iterable must be a compile-time value (typically the result of reflection, see below). `static for` unrolls: one code path is generated per iteration, each with `field` bound to that iteration's concrete value.
 - An optional guard filters iterations: `static for x in xs if pred(x) => ...`.
+- The inline form evaluates to a `list` of the yielded values, like a `for ... =>` comprehension. In a function body it is currently computed entirely at compile time: each yielded value must be a number, boolean, string, or struct of those, and cannot use a runtime value such as a parameter (`spec/todo.md`). The element type is the yield's type, else the type the context expects (such as a `-> list[str]` return), else the type of the values.
 - `static_decl_kind::for_inline` and `static_decl_kind::for_block` are the two AST forms (`ast.h:1836`); both are handled in `check.cpp:15145`–`15211`.
 - This is the mechanism `deriving` is built from: reflect over a type's fields, unroll, and (typically combined with quoting) emit one code fragment per field.
 
