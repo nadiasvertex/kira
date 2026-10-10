@@ -7,4 +7,3 @@
 7. Unsolved type parameter in generic calls (iterator-zip)
   - a.into_iter().zip(b.into_iter()) reports "cannot tell what U is", and the later {za0} interpolations then report that T or U has no show impl.
   - This is a real inference gap: U should come from b.into_iter()'s item type.
-8. A method's own `where` bounds (`extend[K] pair[K]: def ordered(self) -> bool where K: ord`) are not checked at the method call. A violation is reported only from inside the instance body, at the operator or call that needs the trait, with an "instantiated from here" note. Free-function bounds are checked at the call (`check_call_bounds`); method calls should be too, so the error names the bound and the line that chose the type.

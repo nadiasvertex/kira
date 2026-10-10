@@ -8474,6 +8474,14 @@ private:
       carry_impl_value_slots(*item.method, block, block_solution);
       block_solution.suffix =
           std::format("${}", mangle_type_for_instance(self_type));
+      const auto saved_file = file_id_;
+      file_id_ = item.file;
+      const auto bounds_hold = check_call_bounds(
+          *item.call, decl, item.owner, item.decl_file, block_solution, &scoped);
+      file_id_ = saved_file;
+      if (!bounds_hold) {
+        return;
+      }
     }
     const auto *instance =
         item.method.has_value()
@@ -10594,11 +10602,19 @@ private:
   /// parameters to (phase 9, rule 3), and reports the first that does not
   /// hold — at the call, which is the line that chose the type. False when
   /// one failed: no instance of a function whose bounds do not hold is made.
+  ///
+  /// `fixed` carries the parameters a method inherits from its generic block
+  /// (`K` in `extend[K] pair[K]`), solved from the receiver: a method's own
+  /// `where K: ord` is about them, and is checked here like any other bound.
   auto check_call_bounds(const ast::call_expr &call, const ast::func_decl &decl,
                          const module_members *owner, file_id_type decl_file,
-                         const generic_solution &solution) -> bool {
+                         const generic_solution &solution,
+                         const type_scope *fixed = nullptr) -> bool {
     auto bindings = solution.const_slots;
     bindings.insert(solution.type_slots.begin(), solution.type_slots.end());
+    if (fixed != nullptr) {
+      bindings.insert(fixed->begin(), fixed->end());
+    }
     const auto ctx = resolve_ctx{.module = owner,
                                  .param_bindings = &bindings,
                                  .use_type_param_stack = false,
@@ -11181,6 +11197,10 @@ private:
         [this, &call, &method, target = std::string(target_type_name),
          scoped_params, self_type,
          callee](const generic_solution &settled) -> bool {
+      if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
+                             settled, &scoped_params)) {
+        return false;
+      }
       const auto *instance = find_or_check_generic_instance(
           call, *method.decl, method.owner, method.file_id, settled,
           std::format("{}::{}{}", target, method.decl->name, settled.suffix),
@@ -15506,15 +15526,27 @@ private:
                                  const ast::expr &receiver,
                                  type_id receiver_type)
       -> std::optional<type_id> {
-    defer_impl_method_call(call, receiver_type);
     auto bindings = param_subst{};
     match_params(method.impl_target_pattern, receiver_type, bindings);
     solve_impl_value_params(method, receiver_type, bindings);
     for (const auto &type_param : *method.block_type_params) {
       if (!type_param.name.empty() &&
           !bindings.contains(param_id(type_param))) {
+        defer_impl_method_call(call, receiver_type);
         return std::nullopt;
       }
+    }
+    // The method's own `where` is checked against the template's parameters
+    // the way a free function's bounds are (phase 9, rule 3): `p.ordered()`
+    // on a `pair[T]` needs `T: ord` written on this template. A failed bound
+    // is reported once, here, and its instances do not repeat it.
+    auto block_scope = method.fixed_type_params;
+    block_scope.merge(bindings_by_name(bindings));
+    auto block_solution = generic_solution{};
+    carry_impl_value_slots(method, bindings, block_solution);
+    if (check_call_bounds(call, *method.decl, method.owner, method.file_id,
+                          block_solution, &block_scope)) {
+      defer_impl_method_call(call, receiver_type);
     }
     auto params =
         signature_params(*method.decl, method.owner,
@@ -15699,6 +15731,17 @@ private:
       type_id receiver_type, const param_subst &bindings,
       const type_scope &scoped_params, const generic_solution &solution)
       -> std::optional<type_id> {
+    const auto result = substitute_solved(
+        signature_return_type(*method.decl, method.owner,
+                              method.block_type_params),
+        bindings);
+    // The method's own `where` (`def ordered(self) where K: ord`) is checked
+    // here, at the line that chose `K`, rather than surfacing later from
+    // inside the instance body. A call whose bounds fail names no instance.
+    if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
+                           solution, &scoped_params)) {
+      return result;
+    }
     const auto name = std::format("{}::{}{}", receiver_name, method.decl->name,
                                   solution.suffix);
     const auto *instance = find_or_check_generic_instance(
@@ -15713,9 +15756,7 @@ private:
                         .impl_target_type = "",
                         .receiver = &receiver,
                         .trait_name = method.trait_name};
-    return substitute_solved(signature_return_type(*method.decl, method.owner,
-                                                   method.block_type_params),
-                             bindings);
+    return result;
   }
 
   /// The static-dispatch sibling of `check_impl_generic_method_call`: a
@@ -15766,6 +15807,10 @@ private:
     const auto target_name = std::string(types_.entry(target).name);
     const auto name = std::format("{}::{}{}", target_name, method.decl->name,
                                   solution.suffix);
+    if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
+                           solution, &scoped_params)) {
+      return nullptr;
+    }
     return find_or_check_generic_instance(
         call, *method.decl, method.owner, method.file_id, solution, name,
         &scoped_params, target, method.block_type_params);

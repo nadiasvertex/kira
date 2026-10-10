@@ -1,0 +1,42 @@
+module check.method_where_bound_at_call
+
+# A method's own `where` is checked at the call that chose the type, on
+# every path a method call takes: a receiver call on a generic block, a
+# method with its own type parameter, a `static def` of a generic block, and
+# a call from a generic body (reported against the template, not each
+# instance). The int32 calls and `bounded` satisfy the bounds and must stay
+# accepted.
+
+type pair[K] = {
+    a: K,
+    b: K,
+}
+
+type opaque = {
+    x: int32,
+}
+
+extend[K] pair[K]:
+    def ordered(self) -> bool where K: ord:
+        return self.a < self.b
+    def bigger_than[U](self, u: U) -> bool where U: ord:
+        return u < u
+    static def same(a: K, b: K) -> bool where K: ord:
+        return a < b
+
+def via_generic[T](p: pair[T]) -> bool:
+    return p.ordered()
+
+def bounded[T](p: pair[T]) -> bool where T: ord:
+    return p.ordered()
+
+def main() -> int32:
+    let p = pair[opaque]{a: opaque{x: 1}, b: opaque{x: 2}}
+    let direct = p.ordered()
+    let own = p.bigger_than(opaque{x: 3})
+    let st = pair[opaque].same(opaque{x: 1}, opaque{x: 2})
+    let gen = via_generic(p)
+    let q = pair[int32]{a: 1, b: 2}
+    let fine = q.ordered() and q.bigger_than(3) and pair[int32].same(1, 2)
+    let also_fine = bounded(q)
+    return 0

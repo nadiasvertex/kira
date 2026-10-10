@@ -2528,12 +2528,38 @@ auto test_reports_reference_key_for_ord_bound() -> void {
                     "satisfy it",
                     "expected a reference argument solving `K` to be refused "
                     "at the call");
-  expect_diagnostic(analyzed, "operator `<` is not defined for `&int32`",
-                    "expected the method instance, whose `where` is not "
-                    "checked at its call, to refuse the address comparison");
+  expect_diagnostic(analyzed,
+                    "`ordered` needs `K: ord`, and `&int32` does not "
+                    "satisfy it",
+                    "expected the method's own `where` to be checked at its "
+                    "call");
+  expect(!analyzed.diagnostics.contains("operator `<` is not defined"),
+         "expected no instance of a method whose bound failed, so no error "
+         "from inside its body");
   expect(analyzed.error_count == 3,
          "expected exactly the three reference uses to be reported — the "
          "`x => *x` call solves `K` to `int32` and must be accepted");
+}
+
+auto test_reports_method_where_bound_at_call() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_method_where_bound_at_call.cn");
+  for (const auto *message :
+       {"`ordered` needs `K: ord`, and `opaque` does not satisfy it",
+        "`bigger_than` needs `U: ord`, and `opaque` does not satisfy it",
+        "`same` needs `K: ord`, and `opaque` does not satisfy it",
+        "`ordered` needs `K: ord`, and nothing says this function's `T` is "
+        "one"}) {
+    expect_diagnostic(analyzed, message,
+                      "expected each method-call path to check the method's "
+                      "own `where` at the call");
+  }
+  expect(!analyzed.diagnostics.contains("instantiated from here"),
+         "expected the generic body's call to be reported against the "
+         "template, not each instance");
+  expect(analyzed.error_count == 4,
+         "expected exactly the four unsatisfied calls to be reported — the "
+         "int32 calls and `bounded` satisfy the bounds");
 }
 
 auto test_reports_index_write_without_index_set() -> void {
@@ -3786,6 +3812,7 @@ auto main() -> int {
     test_reports_bare_generic_static_call_unsolved();
     test_reports_borrowed_number_used_as_a_number();
     test_reports_reference_key_for_ord_bound();
+    test_reports_method_where_bound_at_call();
     test_reports_index_write_without_index_set();
     test_reports_index_mut_borrow_without_impl();
     test_dispatches_index_mut_borrow();
