@@ -608,6 +608,91 @@ auto always_returns(const hir_block &block) -> bool {
   return out;
 }
 
+/// The value expression a statement list ends in: the operand of a trailing
+/// `return`, or a trailing expression statement of the function's result
+/// type. Null when the list ends in anything else.
+[[nodiscard]] auto tail_value_of(hir_node &stmt, type_id result)
+    -> ptr<hir_expr> * {
+  if (stmt.kind == hir_node_kind::hir_return) {
+    auto &ret = dynamic_cast<hir_return &>(stmt);
+    return ret.value != nullptr ? &ret.value : nullptr;
+  }
+  if (stmt.kind == hir_node_kind::hir_expr_stmt) {
+    auto &expr_stmt = dynamic_cast<hir_expr_stmt &>(stmt);
+    return expr_stmt.expr->type == result ? &expr_stmt.expr : nullptr;
+  }
+  return nullptr;
+}
+
+/// Whether `push_returns` can rewrite `stmts`: every path ends in a value of
+/// the result type, so each can become an explicit `return`.
+[[nodiscard]] auto returns_pushable(const ptr_vec<hir_node> &stmts,
+                                    type_id result) -> bool {
+  if (stmts.empty()) {
+    return false;
+  }
+  const auto *slot = tail_value_of(*stmts.back(), result);
+  if (slot == nullptr) {
+    return false;
+  }
+  const auto &expr = **slot;
+  switch (expr.kind) {
+  case hir_node_kind::hir_block:
+    return returns_pushable(dynamic_cast<const hir_block &>(expr).stmts,
+                            result);
+  case hir_node_kind::hir_if: {
+    const auto &iff = dynamic_cast<const hir_if &>(expr);
+    return iff.else_body != nullptr &&
+           returns_pushable(iff.else_body->stmts, result) &&
+           std::ranges::all_of(iff.branches,
+                               [&](const hir_if_branch &branch) -> bool {
+                                 return returns_pushable(branch.body->stmts,
+                                                         result);
+                               });
+  }
+  default:
+    return true;
+  }
+}
+
+/// Rewrites the value-position tail of `stmts` into statement form: a block
+/// is spliced in, an `if`/`match` becomes a statement whose every branch
+/// ends in `return`. Inlining leaves a callee's body as `return { ... }`;
+/// without this its final call sits inside a value, where neither backend
+/// emits a tail call, and mutual recursion through inlined callees grows the
+/// stack. Call only when `returns_pushable` holds.
+auto push_returns(ptr_vec<hir_node> &stmts, type_id result) -> void {
+  while (true) {
+    auto *slot = tail_value_of(*stmts.back(), result);
+    const auto was_return = stmts.back()->kind == hir_node_kind::hir_return;
+    const auto span = stmts.back()->span;
+    auto value = std::move(*slot);
+    if (value->kind == hir_node_kind::hir_block) {
+      auto inner = std::move(dynamic_cast<hir_block &>(*value).stmts);
+      stmts.pop_back();
+      for (auto &stmt : inner) {
+        stmts.push_back(std::move(stmt));
+      }
+      continue;
+    }
+    if (value->kind == hir_node_kind::hir_if) {
+      auto &iff = dynamic_cast<hir_if &>(*value);
+      for (auto &branch : iff.branches) {
+        push_returns(branch.body->stmts, result);
+      }
+      push_returns(iff.else_body->stmts, result);
+      stmts.back() = ptr<hir_node>(value.release());
+      return;
+    }
+    if (!was_return) {
+      stmts.back() = hir::make<hir_return>(span, std::move(value));
+    } else {
+      *slot = std::move(value);
+    }
+    return;
+  }
+}
+
 // --------------------------------------------------------------------------
 //  Callees
 // --------------------------------------------------------------------------
@@ -888,6 +973,10 @@ auto inline_small_calls(ptr_vec<hir_module> &modules, const type_table &types)
       collect_binders(*fn->body, state.bound);
       pass.rewrite(*fn->body, state, 0);
       if (state.inlined > 0) {
+        if (!fn->body->stmts.empty() && !types.is_unit(fn->return_type) &&
+            returns_pushable(fn->body->stmts, fn->return_type)) {
+          push_returns(fn->body->stmts, fn->return_type);
+        }
         mark_tail_calls(*fn);
         stats.call_sites += state.inlined;
       }

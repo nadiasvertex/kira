@@ -1,0 +1,25 @@
+module codegen_stress.mutual_tail_recursion_inlined
+
+# Mutual recursion between two small functions. Each is small enough to be
+# inlined into the other, which turns `return is_odd(n - 1)` into a `return`
+# of a block whose last call is no longer a direct return operand. The call
+# must still compile as a tail call; 1,000,000 deep overflows the stack on
+# both tiers otherwise. `# expect:` rather than agreement alone: both tiers
+# share the HIR pass that lost the mark.
+
+def is_even(n: int64) -> bool:
+    if n == 0:
+        return true
+    return is_odd(n - 1)
+
+def is_odd(n: int64) -> bool:
+    if n == 0:
+        return false
+    return is_even(n - 1)
+
+def main() -> int32:
+    if is_even(1000000) and is_odd(999999):
+        return 7
+    return 1
+
+# expect: 7
