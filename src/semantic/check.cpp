@@ -21057,25 +21057,46 @@ private:
           "default field values.");
     }
 
-    // Instantiate generic structs from fields whose declared type is a bare
-    // type parameter.
+    // Instantiate generic structs from the field values. A field declared as
+    // a bare type parameter binds it directly; any other field type that
+    // mentions a parameter (`w: wrap[T]`) is matched against the value's
+    // type with the struct's own parameters as the pattern's unknowns.
     if (entry.decl != nullptr && !entry.decl->type_params.empty() &&
         entry.args.empty()) {
+      auto pattern_bindings = type_scope{};
+      for (const auto &param : entry.decl->type_params) {
+        if (!param.name.empty() && !param.is_value_param) {
+          pattern_bindings.emplace(param.name, param_id(param));
+        }
+      }
+      const auto pattern_ctx = member_resolve_ctx(entry, pattern_bindings);
       auto args = std::vector<type_id>{};
       for (const auto &param : entry.decl->type_params) {
         auto bound = k_unknown_type;
         for (const auto &field : *fields) {
-          if (field.type != nullptr &&
-              field.type->kind == ast::node_kind::named_type) {
+          const auto it = inferred_by_field.find(field.name);
+          if (field.type == nullptr || it == inferred_by_field.end()) {
+            continue;
+          }
+          if (field.type->kind == ast::node_kind::named_type) {
             const auto &named =
                 dynamic_cast<const ast::named_type &>(*field.type);
             if (named.path.size() == 1 && named.path.front() == param.name) {
-              if (const auto it = inferred_by_field.find(field.name);
-                  it != inferred_by_field.end()) {
-                bound = it->second;
-                break;
-              }
+              bound = it->second;
+              break;
             }
+          }
+          if (param.is_value_param || it->second == k_unknown_type ||
+              it->second == k_error_type) {
+            continue;
+          }
+          const auto pattern = resolve_type(*field.type, pattern_ctx);
+          const auto matched =
+              infer::match_pattern(types_, pattern, it->second);
+          if (const auto solved = matched.bindings.find(param_id(param));
+              solved != matched.bindings.end()) {
+            bound = solved->second;
+            break;
           }
         }
         args.push_back(bound);

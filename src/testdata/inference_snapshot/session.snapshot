@@ -1,5 +1,5 @@
 # inference snapshot
-# 2306 interned types
+# 2291 interned types
 
 ## node_types (30682)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -54,7 +54,7 @@
 027_dependent_and_refinement_types.cn:17:35 [binding_pat] vec[T, m]
 027_dependent_and_refinement_types.cn:17:49 [binding_pat] vec[T, n]
 027_dependent_and_refinement_types.cn:17:66 [named_type] vec[T, m + n]
-027_dependent_and_refinement_types.cn:18:5 [struct_literal] vec[_, _]
+027_dependent_and_refinement_types.cn:18:5 [struct_literal] vec[T, _]
 027_dependent_and_refinement_types.cn:18:17 [module_path] array[T, m]
 027_dependent_and_refinement_types.cn:21:37 [binding_pat] vec[T, m]
 027_dependent_and_refinement_types.cn:21:51 [binding_pat] vec[T, n]
@@ -1015,8 +1015,8 @@
 049_generic_impl_iterator_adapter.cn:55:25 [binding_pat] fn(int32) -> int32
 049_generic_impl_iterator_adapter.cn:55:43 [named_type] map_iter[I, T, U]
 049_generic_impl_iterator_adapter.cn:55:43 [named_type] map_iter[counter, int32, int32]
-049_generic_impl_iterator_adapter.cn:56:12 [struct_literal] map_iter[I, _, _]
-049_generic_impl_iterator_adapter.cn:56:12 [struct_literal] map_iter[counter, _, _]
+049_generic_impl_iterator_adapter.cn:56:12 [struct_literal] map_iter[I, T, U]
+049_generic_impl_iterator_adapter.cn:56:12 [struct_literal] map_iter[counter, int32, int32]
 049_generic_impl_iterator_adapter.cn:56:30 [ident] I
 049_generic_impl_iterator_adapter.cn:56:30 [ident] counter
 049_generic_impl_iterator_adapter.cn:56:37 [ident] fn(T) -> U
@@ -1180,8 +1180,8 @@
 050_bound_driven_inference.cn:63:25 [binding_pat] fn(int32) -> int32
 050_bound_driven_inference.cn:63:43 [named_type] map_iter[I, T, U]
 050_bound_driven_inference.cn:63:43 [named_type] map_iter[filter_iter[counter, int32], int32, int32]
-050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[I, _, _]
-050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[filter_iter[counter, int32], _, _]
+050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[I, T, U]
+050_bound_driven_inference.cn:64:12 [struct_literal] map_iter[filter_iter[counter, int32], int32, int32]
 050_bound_driven_inference.cn:64:30 [ident] I
 050_bound_driven_inference.cn:64:30 [ident] filter_iter[counter, int32]
 050_bound_driven_inference.cn:64:37 [ident] fn(T) -> U
@@ -1192,8 +1192,8 @@
 050_bound_driven_inference.cn:66:25 [binding_pat] fn(int32) -> bool
 050_bound_driven_inference.cn:66:49 [named_type] filter_iter[I, T]
 050_bound_driven_inference.cn:66:49 [named_type] filter_iter[counter, int32]
-050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[I, _]
-050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[counter, _]
+050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[I, T]
+050_bound_driven_inference.cn:67:12 [struct_literal] filter_iter[counter, int32]
 050_bound_driven_inference.cn:67:33 [ident] I
 050_bound_driven_inference.cn:67:33 [ident] counter
 050_bound_driven_inference.cn:67:43 [ident] fn(T) -> bool
@@ -3267,13 +3267,13 @@ std/algo.cn:78:16 [ident] option[T]
 std/algo.cn:101:22 [binding_pat] I
 std/algo.cn:101:29 [binding_pat] fn(T) -> U
 std/algo.cn:101:47 [named_type] map_iter[I, T, U]
-std/algo.cn:102:12 [struct_literal] map_iter[I, _, _]
+std/algo.cn:102:12 [struct_literal] map_iter[I, T, U]
 std/algo.cn:102:30 [ident] I
 std/algo.cn:102:37 [ident] fn(T) -> U
 std/algo.cn:113:22 [binding_pat] I
 std/algo.cn:113:29 [binding_pat] fn(&T) -> bool
 std/algo.cn:113:54 [named_type] filter_iter[I, T]
-std/algo.cn:114:12 [struct_literal] filter_iter[I, _]
+std/algo.cn:114:12 [struct_literal] filter_iter[I, T]
 std/algo.cn:114:33 [ident] I
 std/algo.cn:114:43 [ident] fn(&T) -> bool
 std/algo.cn:132:14 [binding_pat] &mut take_iter[I, T]
@@ -3438,14 +3438,14 @@ std/algo.cn:333:41 [ident] usize
 std/algo.cn:344:26 [binding_pat] I
 std/algo.cn:344:33 [binding_pat] fn(&T) -> bool
 std/algo.cn:344:58 [named_type] take_while_iter[I, T]
-std/algo.cn:345:12 [struct_literal] take_while_iter[I, _]
+std/algo.cn:345:12 [struct_literal] take_while_iter[I, T]
 std/algo.cn:345:37 [ident] I
 std/algo.cn:345:47 [ident] fn(&T) -> bool
 std/algo.cn:345:59 [literal] bool
 std/algo.cn:356:26 [binding_pat] I
 std/algo.cn:356:33 [binding_pat] fn(&T) -> bool
 std/algo.cn:356:58 [named_type] skip_while_iter[I, T]
-std/algo.cn:357:12 [struct_literal] skip_while_iter[I, _]
+std/algo.cn:357:12 [struct_literal] skip_while_iter[I, T]
 std/algo.cn:357:37 [ident] I
 std/algo.cn:357:47 [ident] fn(&T) -> bool
 std/algo.cn:357:63 [literal] bool
@@ -3459,7 +3459,7 @@ std/algo.cn:369:54 [literal] bool
 std/algo.cn:385:29 [binding_pat] I
 std/algo.cn:385:36 [binding_pat] fn(T) -> option[U]
 std/algo.cn:385:62 [named_type] filter_map_iter[I, T, U]
-std/algo.cn:386:12 [struct_literal] filter_map_iter[I, _, _]
+std/algo.cn:386:12 [struct_literal] filter_map_iter[I, T, U]
 std/algo.cn:386:37 [ident] I
 std/algo.cn:386:44 [ident] fn(T) -> option[U]
 std/algo.cn:411:14 [binding_pat] &mut chain_iter[I, J, T]
@@ -3589,14 +3589,14 @@ std/algo.cn:622:23 [binding_pat] I
 std/algo.cn:622:30 [binding_pat] S
 std/algo.cn:622:39 [binding_pat] fn(S, T) -> S
 std/algo.cn:622:60 [named_type] scan_iter[I, T, S]
-std/algo.cn:623:12 [struct_literal] scan_iter[I, _, S]
+std/algo.cn:623:12 [struct_literal] scan_iter[I, T, S]
 std/algo.cn:623:31 [ident] I
 std/algo.cn:623:42 [ident] S
 std/algo.cn:623:51 [ident] fn(S, T) -> S
 std/algo.cn:639:23 [binding_pat] I
 std/algo.cn:639:30 [binding_pat] fn(&T) -> unit
 std/algo.cn:639:52 [named_type] inspect_iter[I, T]
-std/algo.cn:640:12 [struct_literal] inspect_iter[I, _]
+std/algo.cn:640:12 [struct_literal] inspect_iter[I, T]
 std/algo.cn:640:34 [ident] I
 std/algo.cn:640:41 [ident] fn(&T) -> unit
 std/algo.cn:662:14 [binding_pat] &mut zip_iter[I, J, T, U]
@@ -3735,7 +3735,7 @@ std/algo.cn:850:43 [ident] option[_]
 std/algo.cn:868:30 [binding_pat] I
 std/algo.cn:868:37 [binding_pat] fn(T) -> J
 std/algo.cn:868:55 [named_type] flat_map_iter[I, T, J, U]
-std/algo.cn:869:12 [struct_literal] flat_map_iter[I, _, _, _]
+std/algo.cn:869:12 [struct_literal] flat_map_iter[I, T, J, _]
 std/algo.cn:869:35 [ident] I
 std/algo.cn:869:42 [ident] fn(T) -> J
 std/algo.cn:869:50 [ident] option[_]
@@ -4338,7 +4338,7 @@ std/algo.cn:1412:25 [ident] T
 std/algo.cn:1413:12 [ident] T
 std/algo.cn:1431:22 [binding_pat] I
 std/algo.cn:1431:32 [named_type] map_iter[I, &T, T]
-std/algo.cn:1432:12 [struct_literal] map_iter[I, _, _]
+std/algo.cn:1432:12 [struct_literal] map_iter[I, &T, T]
 std/algo.cn:1432:30 [ident] I
 std/algo.cn:1432:37 [lambda] fn(&T) -> T
 std/algo.cn:1432:48 [unary] T
@@ -7327,8 +7327,8 @@ std/iter.cn:123:17 [binding_pat] &list[T]
 std/iter.cn:123:17 [binding_pat] &list[test_case]
 std/iter.cn:123:34 [named_type] list_iter[T]
 std/iter.cn:123:34 [named_type] list_iter[test_case]
-std/iter.cn:124:12 [struct_literal] list_iter[_]
-std/iter.cn:124:12 [struct_literal] list_iter[_]
+std/iter.cn:124:12 [struct_literal] list_iter[T]
+std/iter.cn:124:12 [struct_literal] list_iter[test_case]
 std/iter.cn:124:29 [ident] &list[T]
 std/iter.cn:124:29 [ident] &list[test_case]
 std/iter.cn:124:37 [literal] usize
@@ -7345,7 +7345,7 @@ std/iter.cn:133:9 [binding_pat] usize
 std/iter.cn:133:13 [ident] &mut list[T]
 std/iter.cn:133:13 [field] fn(_) -> usize
 std/iter.cn:133:13 [call] usize
-std/iter.cn:134:12 [struct_literal] list_iter_mut[_]
+std/iter.cn:134:12 [struct_literal] list_iter_mut[T]
 std/iter.cn:134:33 [ident] &mut list[T]
 std/iter.cn:134:41 [literal] usize
 std/iter.cn:134:49 [ident] usize
@@ -7355,7 +7355,7 @@ std/iter.cn:142:9 [binding_pat] usize
 std/iter.cn:142:13 [ident] list[T]
 std/iter.cn:142:13 [field] fn(_) -> usize
 std/iter.cn:142:13 [call] usize
-std/iter.cn:143:12 [struct_literal] list_into_iter[_]
+std/iter.cn:143:12 [struct_literal] list_into_iter[T]
 std/iter.cn:143:34 [ident] list[T]
 std/iter.cn:143:42 [literal] usize
 std/iter.cn:143:50 [ident] usize
@@ -32870,7 +32870,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (680)
+## drop_plans (665)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -32885,18 +32885,14 @@ filter_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 filter_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 filter_iter[I, T] own=- fields=[pred: fn(T) -> bool]
 filter_iter[I, T] own=- fields=[pred: fn(T) -> bool]
-filter_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
-filter_iter[I, _] own=- fields=[pred: fn(_) -> bool]
-filter_iter[counter, _] own=- fields=[pred: fn(_) -> bool]
 filter_iter[counter, int32] own=- fields=[pred: fn(int32) -> bool]
 filter_map_iter own=- fields=[f: fn(_) -> option[_]]
 filter_map_iter[I, T, U] own=- fields=[f: fn(T) -> option[U]]
 filter_map_iter[I, T, U] own=- fields=[f: fn(T) -> option[U]]
-filter_map_iter[I, _, _] own=- fields=[f: fn(_) -> option[_]]
 flat_map_iter own=- fields=[f: fn(_) -> _]
 flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
 flat_map_iter[I, T, J, U] own=- fields=[f: fn(T) -> J]
-flat_map_iter[I, _, _, _] own=- fields=[f: fn(_) -> _]
+flat_map_iter[I, T, J, _] own=- fields=[f: fn(T) -> J]
 fn(&K, &K) -> ordering own=- fields=[] glue=fn() -> unit
 fn(&T) -> K own=- fields=[] glue=fn() -> unit
 fn(&T) -> K own=- fields=[] glue=fn() -> unit
@@ -33149,7 +33145,6 @@ fn(K, K) -> ordering own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
 fn(S, T) -> S own=- fields=[] glue=fn() -> unit
-fn(S, _) -> S own=- fields=[] glue=fn() -> unit
 fn(T) -> B own=- fields=[] glue=fn() -> unit
 fn(T) -> J own=- fields=[] glue=fn() -> unit
 fn(T) -> J own=- fields=[] glue=fn() -> unit
@@ -33447,7 +33442,6 @@ fn(weight, weight) -> int32 own=- fields=[] glue=fn() -> unit
 inspect_iter own=- fields=[f: fn(&_) -> unit]
 inspect_iter[I, T] own=- fields=[f: fn(&T) -> unit]
 inspect_iter[I, T] own=- fields=[f: fn(&T) -> unit]
-inspect_iter[I, _] own=- fields=[f: fn(&_) -> unit]
 list[(int64, int32)] own=std.list::list::drop$list__int64__int32__ fields=[]
 list[(usize, usize)] own=std.list::list::drop$list__usize__usize__ fields=[]
 list[T] own=std.list::list::drop fields=[]
@@ -33520,13 +33514,7 @@ map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
 map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
 map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
 map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
-map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
-map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
-map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
-map_iter[I, _, _] own=- fields=[f: fn(_) -> _]
-map_iter[counter, _, _] own=- fields=[f: fn(_) -> _]
 map_iter[counter, int32, int32] own=- fields=[f: fn(int32) -> int32]
-map_iter[filter_iter[counter, int32], _, _] own=- fields=[inner: filter_iter[counter, int32], f: fn(_) -> _]
 map_iter[filter_iter[counter, int32], int32, int32] own=- fields=[inner: filter_iter[counter, int32], f: fn(int32) -> int32]
 option[fn() -> result[unit, test_failure]] own=- fields=[] variants=[some.0: fn() -> result[unit, test_failure]]
 option[test_suite] own=- fields=[] variants=[some.0: test_suite]
@@ -33534,7 +33522,6 @@ result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
 scan_iter own=- fields=[f: fn(_, _) -> _]
 scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
 scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
-scan_iter[I, _, S] own=- fields=[f: fn(S, _) -> S]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
@@ -33544,15 +33531,13 @@ shared[_] own=std.shared::shared::drop fields=[]
 skip_while_iter own=- fields=[pred: fn(&_) -> bool]
 skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
-skip_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
 take_while_iter own=- fields=[pred: fn(&_) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
-take_while_iter[I, _] own=- fields=[pred: fn(&_) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1699)
+## borrow_bearing_types (1685)
 &K
 &T
 &T
@@ -34299,6 +34284,8 @@ array[T, 0]
 array[T, 0]
 array[T, 0]
 array[T, 2]
+array[T, _]
+array[T, _]
 array[T, k + 1]
 array[T, k + 3]
 array[T, m + n]
@@ -34367,18 +34354,14 @@ filter_iter[I, T]
 filter_iter[I, T]
 filter_iter[I, T]
 filter_iter[I, T]
-filter_iter[I, _]
-filter_iter[I, _]
-filter_iter[counter, _]
 filter_iter[counter, int32]
 filter_map_iter
 filter_map_iter[I, T, U]
 filter_map_iter[I, T, U]
-filter_map_iter[I, _, _]
 flat_map_iter
 flat_map_iter[I, T, J, U]
 flat_map_iter[I, T, J, U]
-flat_map_iter[I, _, _, _]
+flat_map_iter[I, T, J, _]
 flatten_iter[I, J, T]
 flatten_iter[I, J, T]
 flatten_iter[I, _, _]
@@ -34634,7 +34617,6 @@ fn(K, K) -> ordering
 fn(S, T) -> S
 fn(S, T) -> S
 fn(S, T) -> S
-fn(S, _) -> S
 fn(T) -> B
 fn(T) -> J
 fn(T) -> J
@@ -34950,7 +34932,6 @@ holder[T]
 inspect_iter
 inspect_iter[I, T]
 inspect_iter[I, T]
-inspect_iter[I, _]
 k
 list[T]
 list[T]
@@ -35006,12 +34987,10 @@ list_iter[T]
 list_iter[T]
 list_iter[T]
 list_iter[T]
-list_iter[_]
 list_iter[test_case]
 list_iter_mut
 list_iter_mut[T]
 list_iter_mut[T]
-list_iter_mut[_]
 m
 m
 m
@@ -35025,13 +35004,7 @@ map_iter[I, T, U]
 map_iter[I, T, U]
 map_iter[I, T, U]
 map_iter[I, T, U]
-map_iter[I, _, _]
-map_iter[I, _, _]
-map_iter[I, _, _]
-map_iter[I, _, _]
-map_iter[counter, _, _]
 map_iter[counter, int32, int32]
-map_iter[filter_iter[counter, int32], _, _]
 map_iter[filter_iter[counter, int32], int32, int32]
 n
 n
@@ -35168,7 +35141,6 @@ rows
 scan_iter
 scan_iter[I, T, S]
 scan_iter[I, T, S]
-scan_iter[I, _, S]
 self
 shared[T]
 shared[T]
@@ -35187,7 +35159,6 @@ skip_iter[I, _]
 skip_while_iter
 skip_while_iter[I, T]
 skip_while_iter[I, T]
-skip_while_iter[I, _]
 slice[T]
 slice[T]
 slice[T]
@@ -35236,10 +35207,10 @@ take_iter[I, _]
 take_while_iter
 take_while_iter[I, T]
 take_while_iter[I, T]
-take_while_iter[I, _]
 test_case
 test_suite
 vec[T, 2]
+vec[T, _]
 vec[T, k + 1]
 vec[T, k + 3]
 vec[T, m + n]
