@@ -1,0 +1,35 @@
+module codegen_stress.deref_operator
+
+# `*h` on a type that implements `deref` reads the target `h.deref()` lends,
+# on both tiers. The target sits at a non-zero offset inside the handle, so a
+# skipped `deref()` call reads the handle's own leading bytes instead. Both
+# tiers would skip it the same way, so the value is checked with `# expect:`.
+
+type point = { a: int64, b: int32, c: int64 }
+
+type handle = { pad: byte, n: int32, p: point, tail: int64 }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+type counter = { pad: int64, value: int32 }
+
+impl deref for counter:
+    type target = int32
+    def deref(self) -> &int32:
+        return &self.value
+
+def run() -> int64:
+    let h = handle { pad: 1, n: 2, p: point { a: 3, b: 4, c: 5 }, tail: 6 }
+    let c = counter { pad: 9, value: 41 }
+    let r = &*h
+    let whole = (*h).a * 100 + int64((*h).b) * 10 + r.c
+    return whole * 1000 + int64(*c + 1)
+
+def main() -> int32:
+    return int32(run() % 1000000007)
+
+# whole = 345, *c + 1 = 42
+# expect: 345042

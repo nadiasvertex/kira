@@ -1,0 +1,17 @@
+module ownership.move_out_of_deref_operator
+
+# `*h` on a `deref` handle reads a value the handle only lends, so a non-`copy`
+# target cannot be moved out of it.
+
+type named = { items: list[int32] }
+
+type handle = { n: named }
+
+impl deref for handle:
+    type target = named
+    def deref(self) -> &named:
+        return &self.n
+
+def take() -> named:
+    let h = handle { n: named { items: [1, 2] } }
+    return *h

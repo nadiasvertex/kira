@@ -4355,6 +4355,26 @@ auto test_reports_write_through_deref() -> void {
                     "expected the help to point at `mutex[T]`");
 }
 
+auto test_reports_deref_operator_misuse() -> void {
+  const auto analyzed = analyze_test_data_file("reject_deref_operator.cn");
+  expect(analyzed.error_count == 3,
+         "expected `*` on an `int32`, an assignment to `*h`, and `&mut *h` "
+         "each to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "cannot dereference a value of type `int32`",
+                    "expected `*x` on an `int32` to be rejected");
+  expect_diagnostic(analyzed, "implement `deref`",
+                    "expected the help to mention `deref`");
+  expect_diagnostic(analyzed,
+                    "cannot assign to a value reached through `handle`'s "
+                    "`deref`",
+                    "expected `*h = ...` through `deref` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot mutably borrow a value reached through "
+                    "`handle`'s `deref`",
+                    "expected `&mut *h` through `deref` to be rejected");
+}
+
 auto test_reports_member_missing_through_deref() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_member_missing_through_deref.cn");
@@ -4375,6 +4395,7 @@ auto main() -> int {
   try {
     test_accepts_typed_core_program();
     test_reports_write_through_deref();
+    test_reports_deref_operator_misuse();
     test_reports_member_missing_through_deref();
     test_reports_copy_bound_unsatisfied();
     test_reports_fn_value_reference_mismatch();

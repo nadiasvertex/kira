@@ -1728,7 +1728,10 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
                                   std::move(*object), std::move(*idx));
     }
   }
-  auto operand = lower_expr(*un.operand);
+  // `*h` on a `deref` handle reads through the `h.deref()` the checker
+  // recorded as the operand's adjustment.
+  auto operand = un.op == ast::unary_op::deref ? lower_receiver(*un.operand)
+                                               : lower_expr(*un.operand);
   if (!operand.has_value()) {
     return std::unexpected(operand.error());
   }

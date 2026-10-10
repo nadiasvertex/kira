@@ -899,11 +899,18 @@ private:
     case ast::node_kind::group_expr:
       place_steps(*dynamic_cast<const ast::group_expr &>(expr).inner, out);
       return;
-    case ast::node_kind::unary_expr:
-      place_steps(*dynamic_cast<const ast::unary_expr &>(expr).operand, out);
+    case ast::node_kind::unary_expr: {
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      place_steps(*unary.operand, out);
+      // `*h` on a `deref` handle reads through `h.deref()`.
+      if (const auto derefs = checked_.deref_adjustments.find(unary.operand.get());
+          derefs != checked_.deref_adjustments.end()) {
+        push_deref_steps(derefs->second, out);
+      }
       out.push_back(
           place_step{.step = place_step::kind::deref, .type = type_of(&expr)});
       return;
+    }
     default:
       return;
     }

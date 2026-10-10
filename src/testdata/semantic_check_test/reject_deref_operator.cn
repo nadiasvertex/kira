@@ -1,0 +1,27 @@
+module sample
+
+# `*` reads through a reference, a raw pointer, or a `deref` handle. On any
+# other value it is an error, and a place reached by `*h` on a handle is
+# read-only like any other member reached through `deref`.
+
+type point = { x: int32, y: int32 }
+
+type handle = { p: point }
+
+impl deref for handle:
+    type target = point
+    def deref(self) -> &point:
+        return &self.p
+
+def not_a_reference() -> int32:
+    let x: int32 = 5
+    return *x
+
+def assign() -> unit:
+    var h = handle { p: point { x: 3, y: 4 } }
+    *h = point { x: 1, y: 2 }
+
+def borrow_mut() -> int32:
+    var h = handle { p: point { x: 3, y: 4 } }
+    let r = &mut *h
+    return 0

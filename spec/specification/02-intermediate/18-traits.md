@@ -71,6 +71,8 @@ trait deref:
 - Lookup through `deref` happens only once the receiver type is fully known. It is never used to guess the type of a receiver that is still being inferred.
 - `deref` returns a shared reference. There is no `deref_mut`, so a field reached through `deref` cannot be assigned and a `mut self` method on `target` cannot be called.
 - The reference returned by `deref()` borrows the receiver and cannot outlive it.
+- `*h` on a value whose type implements `deref` reads the target: it means `*h.deref()`. Like a member reached through `deref`, it is read-only, so `*h = v` and `&mut *h` are errors, and a non-`copy` target cannot be moved out of it. `&*h` borrows the target for as long as `h` lives.
+- `*` on any other value that is not a reference, raw pointer, or cell is an error.
 
 ## `clone`
 
@@ -85,7 +87,7 @@ trait clone:
 
 ## Implementation status
 
-`deref` and `clone` are implemented. Both are declared in `src/std/traits.cn`. The checker retries field access, dotted paths, and method calls through `deref` when the receiver's own type lacks the member, records the steps it took (`checked_types::deref_adjustments`), and lowering inserts the `deref()` calls. Writing through `deref` (assignment, `&mut`, a `mut self` method) is rejected with a dedicated diagnostic, and the ownership checker treats a member reached through `deref` as borrowed from the handle, so it cannot be moved out or outlive the handle. Only struct, sum, and opaque handle types are looked through, and a receiver whose type is still being inferred is never looked through. No standard library type implements `deref` yet; `shared[T]` will (see [shared-t-type.md](../../shared-t-type.md)).
+`deref` and `clone` are implemented. Both are declared in `src/std/traits.cn`. The checker retries field access, dotted paths, and method calls through `deref` when the receiver's own type lacks the member, records the steps it took (`checked_types::deref_adjustments`), and lowering inserts the `deref()` calls. The `*` operator on a handle records the same single step for its operand. Writing through `deref` (assignment, `&mut`, a `mut self` method) is rejected with a dedicated diagnostic, and the ownership checker treats a member reached through `deref` as borrowed from the handle, so it cannot be moved out or outlive the handle. Only struct, sum, and opaque handle types are looked through, and a receiver whose type is still being inferred is never looked through. `shared[T]` implements `deref` (see [shared-t-type.md](../../shared-t-type.md)).
 
 Trait declarations, `impl`, default methods, `requires` (checked as `trait_decl::requires_bound` in `src/semantic/check.cpp`, which both validates that an implementing type satisfies the required trait and lets bound code use the required trait's methods without a separate bound), and `deriving` (validated against unknown derive names, e.g. `test_reports_unknown_deriving` in `src/semantic/check_test.cpp`) are all implemented and exercised by the semantic test suite.
 

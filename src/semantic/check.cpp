@@ -13278,6 +13278,18 @@ private:
           entry.args.size() == 1) {
         return entry.args.front();
       }
+      // A handle that implements `deref` (spec ch. 18): `*h` reads the
+      // target `h.deref()` lends.
+      if (unary.operand != nullptr) {
+        if (const auto target =
+                deref_operator_target(*unary.operand, stripped, unary.span)) {
+          return *target;
+        }
+      }
+      if (cannot_be_dereferenced(entry)) {
+        report_deref_of_non_reference(unary, stripped);
+        return k_error_type;
+      }
       return k_unknown_type;
     }
     case ast::unary_op::addr_of: {
@@ -18698,6 +18710,83 @@ private:
         });
   }
 
+  /// The type `*operand` reads when `operand`'s type `handle` implements
+  /// `deref`: the target of the `&target` that `deref()` returns. Records
+  /// the one implicit `deref()` call as `operand`'s adjustment, which
+  /// lowering and the ownership checker read the same way they do for a
+  /// member found through `deref`. `nullopt` when `handle` does not
+  /// implement `deref` or is not yet known.
+  auto deref_operator_target(const ast::expr &operand, type_id handle,
+                             source_span span) -> std::optional<type_id> {
+    handle = settle(handle);
+    if (mentions_type_var(handle) || deref_method_of(handle) == nullptr) {
+      return std::nullopt;
+    }
+    auto step = resolve_deref_step(operand, handle, span);
+    if (current_template_ != nullptr) {
+      defer_to_instances(
+          operand, [this, operand = &operand, handle,
+                    span](instance_subst &subst) -> void {
+            const auto *clone = clone_of(subst, operand);
+            const auto concrete = strip_refs(substitute_type(handle, subst));
+            if (auto instance = resolve_deref_step(*clone, concrete, span)) {
+              deref_adjustments_[clone] = {std::move(*instance)};
+            }
+          });
+    }
+    if (!step.has_value()) {
+      return std::nullopt;
+    }
+    const auto result = settle(step->result);
+    if (current_template_ == nullptr) {
+      deref_adjustments_[&operand] = {std::move(*step)};
+    }
+    const auto &result_entry = types_.entry(result);
+    return result_entry.kind == type_kind::ref_kind ? result_entry.result
+                                                    : result;
+  }
+
+  /// Whether a value whose type has head `entry` is certainly not something
+  /// `*` reads through: not a reference, pointer, cell, or `deref` handle.
+  /// Heads still open, and type parameters, are left to later checks.
+  [[nodiscard]] static auto cannot_be_dereferenced(const type_entry &entry)
+      -> bool {
+    switch (entry.kind) {
+    case type_kind::builtin_kind:
+    case type_kind::builtin_generic_kind:
+    case type_kind::tuple_kind:
+    case type_kind::array_kind:
+    case type_kind::fn_kind:
+    case type_kind::struct_kind:
+    case type_kind::sum_kind:
+    case type_kind::opaque_kind:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  /// Reports `*x` where `x` is neither a reference, a raw pointer, a cell,
+  /// nor a type that implements `deref`.
+  auto report_deref_of_non_reference(const ast::unary_expr &unary,
+                                     type_id type) -> void {
+    const auto shown = types_.display(type);
+    auto diag = diagnostic(
+        diagnostic_level::error,
+        std::format("cannot dereference a value of type `{}`", shown),
+        file_id_);
+    diag.with_label(unary.span, std::format("`{}` is not a reference", shown));
+    diag.with_note(
+        "`*` reads the value a reference (`&T`, `&mut T`), a raw pointer, or "
+        "a handle that implements `deref` points to");
+    diag.with_help(std::format(
+        "A value of type `{}` is not a reference to anything; use it without "
+        "`*`. To make a type usable with `*`, implement `deref` for it.",
+        shown));
+    emit_diag(diag);
+    mark_error();
+  }
+
   /// A note naming the `deref` target that was searched as well, for a
   /// member lookup that failed on a handle type. `nullopt` when `type`
   /// does not implement `deref`.
@@ -18748,6 +18837,19 @@ private:
       return group.inner != nullptr ? place_through_deref(*group.inner)
                                     : std::nullopt;
     }
+    case ast::node_kind::unary_expr: {
+      // `*h` on a `deref` handle (`deref_operator_target`).
+      const auto &unary = dynamic_cast<const ast::unary_expr &>(target);
+      if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
+        return std::nullopt;
+      }
+      if (deref_adjustments_.contains(unary.operand.get())) {
+        const auto found = node_types_.find(unary.operand.get());
+        return strip_refs(settle(
+            found != node_types_.end() ? found->second : k_unknown_type));
+      }
+      return place_through_deref(*unary.operand);
+    }
     case ast::node_kind::module_path_expr: {
       const auto &path = dynamic_cast<const ast::module_path_expr &>(target);
       const auto found = path_deref_adjustments_.find(&path);
@@ -18781,8 +18883,8 @@ private:
         file_id_);
     diag.with_label(span, "reached through `deref`, which is read-only");
     diag.with_note(std::format(
-        "`{}` has no member by this name of its own, so it was looked up on "
-        "the target of `deref()`, which returns a shared reference",
+        "this place is part of the value `{}` lends through `deref()`, which "
+        "returns a shared reference",
         shown));
     diag.with_help(
         "There is no `deref_mut`: what a handle like `shared[T]` refers to "

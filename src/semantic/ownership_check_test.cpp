@@ -993,6 +993,16 @@ auto test_move_out_through_deref_is_rejected() -> void {
                     "expected the label to name the `deref` it went through");
 }
 
+auto test_move_out_of_deref_operator_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_move_out_of_deref_operator.cn");
+  expect_diagnostic(analyzed, "cannot move out of `*h`",
+                    "expected a move out of `*h` on a `deref` handle to be "
+                    "rejected");
+  expect_diagnostic(analyzed, "reached through `handle`'s `deref()`",
+                    "expected the label to name the `deref` it went through");
+}
+
 auto main() -> int {
   try {
     test_stored_borrow_is_accepted();
@@ -1077,6 +1087,7 @@ auto main() -> int {
     test_reads_of_captures_are_accepted();
     test_deref_borrow_outliving_handle_is_rejected();
     test_move_out_through_deref_is_rejected();
+    test_move_out_of_deref_operator_is_rejected();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "
               << ex.what() << '\n';

@@ -1,0 +1,13 @@
+module main
+
+# `*h` on a `shared[T]` handle reads the shared value.
+
+use std.shared.shared
+
+type point = { x: int32, y: int32 }
+
+def main() -> unit:
+    let n = shared[int32].new(41)
+    let p = shared[point].new(point { x: 3, y: 4 })
+    let r = &*p
+    println("{*n + 1} {(*p).x} {r.y}")
