@@ -1,0 +1,32 @@
+module codegen_stress.static_def_tail_static_for_inline
+
+# A tail inline `static for ... => e` in a `static def` body is the list of
+# the values it yields (todo item 8: the yields used to be discarded, so the
+# call gave no value). Covers a guard and a reflected field list.
+
+type point = { x: int32, y: int32, z: int32 }
+
+static def squares() -> list[int32]:
+    static for i in 0..5 if i != 2 => i * i
+
+static def field_count[T]() -> int32:
+    let names = static_names[T]()
+    var count = 0
+    for name in names:
+        count = count + 1
+    return count
+
+static def static_names[T]() -> list[str]:
+    static for f in T.fields() => f.name
+
+static def pick() -> int32:
+    let xs = squares()
+    return xs[0] + xs[1] * 10 + xs[2] * 100 + xs[3] * 1000
+
+static let picked = pick()
+static let fields = field_count[point]()
+
+def main() -> int32:
+    return picked * 10 + fields
+
+# expect: 169103

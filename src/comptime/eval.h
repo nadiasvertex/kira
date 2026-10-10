@@ -690,6 +690,14 @@ private:
   /// Runs a `for` loop over a compile-time range or list.
   [[nodiscard]] auto evaluate_for(const ast::for_stmt &loop) -> exec_result;
 
+  /// Unrolls a `static for` (inline or block form) nested in a `static def`
+  /// body. For the inline form, each yielded value is appended to `yields`
+  /// when it is non-null, so a tail `static for ... => e` can become the
+  /// list it evaluates to.
+  [[nodiscard]] auto evaluate_static_for(const ast::static_decl &decl,
+                                         std::vector<value> *yields)
+      -> exec_result;
+
   /// Runs one loop iteration's body and folds its `break`/`continue` into
   /// the loop. Returns the result to propagate out of the loop, or nullopt
   /// to keep looping; sets `stop` when a `break` ends the loop normally.

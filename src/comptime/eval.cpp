@@ -2927,61 +2927,10 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       return evaluate_stmts(condition.boolean ? decl.if_body : decl.else_body);
     }
     case ast::static_decl_kind::for_inline:
-    case ast::static_decl_kind::for_block: {
-      // Mirrors `checker::check_static_decl`'s own top-level `static for`
-      // iteration exactly (`check.cpp`) — that copy only runs for a `static
-      // for` written directly as a module item; this one is what makes the
-      // *same* construct work when nested inside a `static def`'s own body
-      // (e.g. `derive_show[T]()`'s per-field loop), which previously fell
-      // through to the `default` case below and silently did nothing. Only
-      // a single loop pattern is supported, matching the same pre-existing
-      // restriction.
-      if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
-          decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
-        return exec_result{};
-      }
-      auto list_value = evaluate_iterable(*decl.for_iterable);
-      if (list_value.is_error()) {
-        return exec_result{.errored = true};
-      }
-      for (const auto &element_value : list_value.elements) {
-        auto scope = std::unordered_map<std::string, value>{};
-        if (!bind_pattern(*decl.for_patterns[0], element_value, scope)) {
-          return exec_result{.errored = true};
-        }
-        push_locals(std::move(scope));
-        if (decl.for_guard != nullptr) {
-          auto guard = evaluate(*decl.for_guard);
-          if (guard.is_error() || guard.kind != value_kind::boolean) {
-            pop_locals();
-            return exec_result{.errored = true};
-          }
-          if (!guard.boolean) {
-            pop_locals();
-            continue;
-          }
-        }
-        if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-          if (decl.for_yield != nullptr) {
-            auto yielded = evaluate(*decl.for_yield);
-            if (yielded.is_error()) {
-              pop_locals();
-              return exec_result{.errored = true};
-            }
-          }
-          pop_locals();
-        } else {
-          // `static for` unrolls, so a `break`/`continue` in its body
-          // belongs to an enclosing ordinary loop.
-          const auto exec = evaluate_stmts(decl.for_body);
-          pop_locals();
-          if (exec.interrupts()) {
-            return exec;
-          }
-        }
-      }
-      return exec_result{};
-    }
+    case ast::static_decl_kind::for_block:
+      // An inline form outside tail position gives nothing a value, so its
+      // yields are evaluated (for their diagnostics) and dropped.
+      return evaluate_static_for(decl, nullptr);
     default:
       return exec_result{};
     }
@@ -3119,6 +3068,65 @@ auto evaluator::evaluate_for(const ast::for_stmt &loop) -> exec_result {
   return exec_result{};
 }
 
+auto evaluator::evaluate_static_for(const ast::static_decl &decl,
+                                    std::vector<value> *yields)
+    -> exec_result {
+  // Mirrors `checker::check_static_decl`'s own top-level `static for`
+  // iteration exactly (`check.cpp`) — that copy only runs for a `static
+  // for` written directly as a module item; this one is what makes the
+  // *same* construct work when nested inside a `static def`'s own body
+  // (e.g. `derive_show[T]()`'s per-field loop). Only a single loop pattern
+  // is supported, matching the same pre-existing restriction.
+  if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
+      decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
+    return exec_result{};
+  }
+  auto list_value = evaluate_iterable(*decl.for_iterable);
+  if (list_value.is_error()) {
+    return exec_result{.errored = true};
+  }
+  for (const auto &element_value : list_value.elements) {
+    auto scope = std::unordered_map<std::string, value>{};
+    if (!bind_pattern(*decl.for_patterns[0], element_value, scope)) {
+      return exec_result{.errored = true};
+    }
+    push_locals(std::move(scope));
+    if (decl.for_guard != nullptr) {
+      auto guard = evaluate(*decl.for_guard);
+      if (guard.is_error() || guard.kind != value_kind::boolean) {
+        pop_locals();
+        return exec_result{.errored = true};
+      }
+      if (!guard.boolean) {
+        pop_locals();
+        continue;
+      }
+    }
+    if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+      if (decl.for_yield != nullptr) {
+        auto yielded = evaluate(*decl.for_yield);
+        if (yielded.is_error()) {
+          pop_locals();
+          return exec_result{.errored = true};
+        }
+        if (yields != nullptr) {
+          yields->push_back(std::move(yielded));
+        }
+      }
+      pop_locals();
+    } else {
+      // `static for` unrolls, so a `break`/`continue` in its body
+      // belongs to an enclosing ordinary loop.
+      const auto exec = evaluate_stmts(decl.for_body);
+      pop_locals();
+      if (exec.interrupts()) {
+        return exec;
+      }
+    }
+  }
+  return exec_result{};
+}
+
 auto evaluator::evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
     -> exec_result {
   for (const auto &item : body) {
@@ -3223,6 +3231,17 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
       }
       return evaluate_block_value(condition.boolean ? decl.if_body
                                                     : decl.else_body);
+    }
+    if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+      // A tail inline `static for ... => e` is the block's value: the list
+      // of the values it yields.
+      auto yields = std::vector<value>{};
+      auto exec = evaluate_static_for(decl, &yields);
+      if (exec.interrupts()) {
+        return exec;
+      }
+      return exec_result{.returned = true,
+                         .result = value::make_list(std::move(yields))};
     }
     return evaluate_stmt(node);
   }
