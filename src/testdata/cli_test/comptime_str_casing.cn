@@ -1,0 +1,34 @@
+module main
+
+# Compile-time code calls `std.unicode`'s casing (todo item 9): its tables
+# are passed as `&TABLE[a..b]` and searched with a lambda predicate, so the
+# evaluator needs `&`, `*`, prelude functions and lambdas.
+
+static def casing() -> int32:
+    var n = 0
+    if "Straße".to_uppercase() == "STRASSE":
+        n = n + 1
+    if "ÀBC".to_lowercase() == "àbc":
+        n = n + 2
+    if "ΣΑΣ".to_lowercase() == "σας":
+        n = n + 4
+    if "Hello".fold_case() == "hello":
+        n = n + 8
+    if "HeLLo".eq_ignore_case("hello") and not "a".eq_ignore_case("b"):
+        n = n + 16
+    return n
+
+# A lambda written in compile-time code sees the locals it captured, by
+# value, and its own parameters.
+static def lambdas() -> int32:
+    let base = 40
+    let add = (x: int32) => x + base
+    let r = &base
+    return add(2) * 10 + *r - base
+
+static let case_bits = casing()
+static let lambda_value = lambdas()
+
+def main() -> int32:
+    # 31 + 420 = 451; mod 256 = 195.
+    return (case_bits + lambda_value) % 256

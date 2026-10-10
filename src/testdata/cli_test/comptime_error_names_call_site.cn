@@ -1,0 +1,13 @@
+module main
+
+# An error inside the standard library during compile-time evaluation gets a
+# note at the user's own call.
+
+static def shout() -> int32:
+    println("hi")
+    return 1
+
+static let n = shout()
+
+def main() -> int32:
+    return n
