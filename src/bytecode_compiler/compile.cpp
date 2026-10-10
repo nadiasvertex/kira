@@ -2426,8 +2426,8 @@ private:
         dynamic_cast<const hir::hir_unary &>(place).op ==
             ast::unary_op::deref) {
       // `&*r` is `r`.
-      return compile_expr_into(*dynamic_cast<const hir::hir_unary &>(place).operand,
-                               dst);
+      return compile_expr_into(
+          *dynamic_cast<const hir::hir_unary &>(place).operand, dst);
     }
     if (place.kind == hir_node_kind::hir_tuple_index) {
       const auto &node = dynamic_cast<const hir::hir_tuple_index &>(place);

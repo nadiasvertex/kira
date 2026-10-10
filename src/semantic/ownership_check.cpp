@@ -18,21 +18,21 @@ namespace {
 
 using ownership::access_event;
 using ownership::access_kind;
+using ownership::assign_event;
+using ownership::assign_owned;
 using ownership::block_id;
+using ownership::drop_facts;
 using ownership::event;
 using ownership::flow_event;
 using ownership::function_cfg;
 using ownership::invalid_move_event;
-using ownership::k_no_local;
 using ownership::k_no_loan;
+using ownership::k_no_local;
 using ownership::loan_id;
 using ownership::loan_info;
 using ownership::loan_origin;
 using ownership::local_id;
 using ownership::local_role;
-using ownership::assign_event;
-using ownership::assign_owned;
-using ownership::drop_facts;
 using ownership::move_block;
 using ownership::move_state;
 using ownership::moved_part;
@@ -408,8 +408,8 @@ private:
         std::format("each use of `{}` makes a closure that moves `{}`", lambda,
                     name),
         file_id_);
-    d.with_label(a.span, std::format("`{}` is moved into the closure here",
-                                     name));
+    d.with_label(a.span,
+                 std::format("`{}` is moved into the closure here", name));
     if (earlier.has_value()) {
       d.with_secondary_label(*earlier,
                              std::format("this use of `{}` makes one closure, "
@@ -538,8 +538,8 @@ private:
                         std::format("use of moved value `{}`", name), file_id_);
     d.with_label(span, std::format("`{}` used here after being moved", name));
     d.with_secondary_label(moved_at, std::format("`{}` moved here", name));
-    const auto is_param = checked_.types.entry(type).kind ==
-                          type_kind::type_param_kind;
+    const auto is_param =
+        checked_.types.entry(type).kind == type_kind::type_param_kind;
     d.with_note(
         is_param
             ? std::format("`{0}` is a `{1}`, and a type parameter's values "
@@ -650,8 +650,8 @@ private:
                          m.place);
       break;
     case move_block::overlapping:
-      message = std::format("cannot move `{}` out of the matched value",
-                            m.place);
+      message =
+          std::format("cannot move `{}` out of the matched value", m.place);
       label = std::format("`{}` is not `copy`, and a pattern with an `as` "
                           "alias, a `|` or an array pattern binds only copies",
                           m.place);
@@ -1075,8 +1075,8 @@ auto compute_must_moved(const function_cfg &cfg, const moved_facts &maybe)
   const auto locals = cfg.locals.size();
   // Every block starts at "everything moved", the top of the lattice, and
   // only falls; the entry starts with nothing moved.
-  auto in = std::vector<std::vector<bool>>(blocks,
-                                           std::vector<bool>(locals, true));
+  auto in =
+      std::vector<std::vector<bool>>(blocks, std::vector<bool>(locals, true));
   if (blocks == 0) {
     return in;
   }
@@ -1112,8 +1112,7 @@ auto state_of(local_id local, const moved_set &maybe, const moved_set &must)
   if (!maybe[local].has_value()) {
     return move_state::owned;
   }
-  return must[local].has_value() ? move_state::moved
-                                 : move_state::maybe_moved;
+  return must[local].has_value() ? move_state::moved : move_state::maybe_moved;
 }
 
 /// The topmost field paths below `local` that may have been moved, with

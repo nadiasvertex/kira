@@ -182,7 +182,7 @@ auto binding_type(const pattern_binding &binding, const checked_types &checked)
   if (binding.field != nullptr) {
     const auto found = checked.struct_pattern_field_types.find(binding.field);
     return found != checked.struct_pattern_field_types.end() ? found->second
-                                                              : k_unknown_type;
+                                                             : k_unknown_type;
   }
   const ast::node *node = binding.node;
   if (node == nullptr) {
@@ -290,11 +290,11 @@ public:
     // inferred from the use site: the lambda's `fn` type does, and
     // `hir::lowerer` reads it from there too.
     const auto fn_type = type_of(&lambda);
-    const auto *fn = fn_type != k_unknown_type &&
-                             checked_.types.entry(fn_type).kind ==
-                                 type_kind::fn_kind
-                         ? &checked_.types.entry(fn_type)
-                         : nullptr;
+    const auto *fn =
+        fn_type != k_unknown_type &&
+                checked_.types.entry(fn_type).kind == type_kind::fn_kind
+            ? &checked_.types.entry(fn_type)
+            : nullptr;
     for (std::size_t i = 0; i < lambda.params.size(); ++i) {
       const auto &param = lambda.params[i];
       if (param.pattern != nullptr) {
@@ -621,11 +621,10 @@ private:
         new_local(name, local_role::binding, type, span, movable(type));
     cfg_.locals[local].whole = whole;
     cfg_.locals[local].node = node;
-    cfg_.locals[local].owns = (whole || owns) && name != "self" &&
-                              owns_storage(type, name) &&
-                              (checked_.types.is_unknown(type) ||
-                               checked_.types.entry(type).kind !=
-                                   type_kind::ptr_kind);
+    cfg_.locals[local].owns =
+        (whole || owns) && name != "self" && owns_storage(type, name) &&
+        (checked_.types.is_unknown(type) ||
+         checked_.types.entry(type).kind != type_kind::ptr_kind);
     if (owns_storage(type, name)) {
       scopes_.back().owned.push_back(local);
     }
@@ -863,10 +862,10 @@ private:
       const auto types = checked_.value_path_types.find(&path);
       const auto derefs = checked_.path_deref_adjustments.find(&path);
       for (std::size_t i = 1; i < path.segments.size(); ++i) {
-        const auto type = types != checked_.value_path_types.end() &&
-                                  i < types->second.size()
-                              ? types->second[i]
-                              : k_unknown_type;
+        const auto type =
+            types != checked_.value_path_types.end() && i < types->second.size()
+                ? types->second[i]
+                : k_unknown_type;
         if (derefs != checked_.path_deref_adjustments.end() &&
             i < derefs->second.size()) {
           push_deref_steps(derefs->second[i], out);
@@ -880,7 +879,8 @@ private:
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(expr);
       place_steps(*field.object, out);
-      if (const auto derefs = checked_.deref_adjustments.find(field.object.get());
+      if (const auto derefs =
+              checked_.deref_adjustments.find(field.object.get());
           derefs != checked_.deref_adjustments.end()) {
         push_deref_steps(derefs->second, out);
       }
@@ -903,7 +903,8 @@ private:
       const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
       place_steps(*unary.operand, out);
       // `*h` on a `deref` handle reads through `h.deref()`.
-      if (const auto derefs = checked_.deref_adjustments.find(unary.operand.get());
+      if (const auto derefs =
+              checked_.deref_adjustments.find(unary.operand.get());
           derefs != checked_.deref_adjustments.end()) {
         push_deref_steps(derefs->second, out);
       }
@@ -962,8 +963,8 @@ private:
       return dynamic_cast<const ast::ident_expr &>(inner).name;
     case ast::node_kind::field_expr: {
       const auto &field = dynamic_cast<const ast::field_expr &>(inner);
-      return (field.object != nullptr ? spell_value(*field.object) : "") +
-             "." + field.field_name;
+      return (field.object != nullptr ? spell_value(*field.object) : "") + "." +
+             field.field_name;
     }
     case ast::node_kind::call_expr: {
       const auto &call = dynamic_cast<const ast::call_expr &>(inner);
@@ -1025,19 +1026,19 @@ private:
           checked_.types.entry(through).kind == type_kind::ptr_kind) {
         return std::nullopt;
       }
-      return invalid_move_event{
-          .span = span,
-          .reason = steps[i].step == place_step::kind::index
-                        ? move_block::element
-                        : move_block::deref,
-          .place = spell_place(root_name, steps, i + 1),
-          .owner = spell_place(root_name, steps, i)};
+      return invalid_move_event{.span = span,
+                                .reason =
+                                    steps[i].step == place_step::kind::index
+                                        ? move_block::element
+                                        : move_block::deref,
+                                .place = spell_place(root_name, steps, i + 1),
+                                .owner = spell_place(root_name, steps, i)};
     }
     if (!cfg_.locals[root].owns) {
       return invalid_move_event{.span = span,
                                 .reason = move_block::borrowed,
-                                .place = spell_place(root_name, steps,
-                                                     steps.size()),
+                                .place =
+                                    spell_place(root_name, steps, steps.size()),
                                 .owner = root_name};
     }
     auto type = cfg_.locals[root].type;
@@ -1066,8 +1067,7 @@ private:
     const auto local = lookup(root->name);
     if (!local.has_value()) {
       if (projected && kind == access_kind::move && outer_ != nullptr &&
-          captured_type(root->name).has_value() &&
-          movable(type_of(&expr))) {
+          captured_type(root->name).has_value() && movable(type_of(&expr))) {
         auto steps = std::vector<place_step>{};
         place_steps(expr, steps);
         reject_capture_move(spell_place(root->name, steps, steps.size()),
@@ -1100,8 +1100,7 @@ private:
       -> void {
     auto steps = std::vector<place_step>{};
     place_steps(expr, steps);
-    const auto moving =
-        kind == access_kind::move && movable(type_of(&expr));
+    const auto moving = kind == access_kind::move && movable(type_of(&expr));
     if (!moving && kind == access_kind::move) {
       kind = access_kind::read;
     }
@@ -1239,7 +1238,6 @@ private:
     return close_temporaries(eval(expr, mode));
   }
 
-
   // ------------------------------------------------------------------
   //  Expressions.
   // ------------------------------------------------------------------
@@ -1301,9 +1299,8 @@ private:
       stash(temp, eval_opt(binary.lhs.get(), use_mode::read));
       // The right operand of `and`/`or` runs only sometimes: a full
       // expression of its own.
-      const auto short_circuits =
-          binary.op == ast::binary_op::logical_and ||
-          binary.op == ast::binary_op::logical_or;
+      const auto short_circuits = binary.op == ast::binary_op::logical_and ||
+                                  binary.op == ast::binary_op::logical_or;
       if (short_circuits && binary.rhs != nullptr) {
         stash(temp, eval_full(*binary.rhs, use_mode::read));
       } else {
@@ -1524,11 +1521,11 @@ private:
       auto path = "." + field.field_name;
       for (const ast::expr *at = field.object.get(); at != nullptr;) {
         if (has_own_drop(type_of(at))) {
-          emit(invalid_move_event{.span = field.span,
-                                  .reason = move_block::own_drop,
-                                  .place = spell_value(*at) + path,
-                                  .owner = checked_.types.display(
-                                      type_of(at))});
+          emit(
+              invalid_move_event{.span = field.span,
+                                 .reason = move_block::own_drop,
+                                 .place = spell_value(*at) + path,
+                                 .owner = checked_.types.display(type_of(at))});
           break;
         }
         const auto &inner = strip_groups(*at);
@@ -1742,9 +1739,8 @@ private:
     if (e.result != k_unknown_type && !collect_type_params(e.result, params)) {
       return false;
     }
-    return std::ranges::all_of(e.args, [&](type_id arg) {
-      return collect_type_params(arg, params);
-    });
+    return std::ranges::all_of(
+        e.args, [&](type_id arg) { return collect_type_params(arg, params); });
   }
 
   /// Whether a parameter of type `type` can pass a borrow on to a result
@@ -1772,10 +1768,9 @@ private:
 
   /// Whether `decl`'s parameter named `name` can pass a borrow on to the
   /// call's result; true when the callee's signature does not say.
-  [[nodiscard]] auto
-  param_reaches_result(const ast::func_decl *decl, std::string_view name,
-                       const std::optional<std::unordered_set<type_id>> &flow)
-      const -> bool {
+  [[nodiscard]] auto param_reaches_result(
+      const ast::func_decl *decl, std::string_view name,
+      const std::optional<std::unordered_set<type_id>> &flow) const -> bool {
     if (!flow.has_value()) {
       return true;
     }
@@ -1808,8 +1803,8 @@ private:
       return {};
     }
     const auto &mapping = it->second;
-    for (std::size_t i = 0; i < mapping.args_by_param.size() &&
-                            i < mapping.param_names.size();
+    for (std::size_t i = 0;
+         i < mapping.args_by_param.size() && i < mapping.param_names.size();
          ++i) {
       if (mapping.args_by_param[i] == arg) {
         return mapping.param_names[i];
@@ -1869,8 +1864,9 @@ private:
         stash(receiver_temp, eval(receiver, use_mode::read));
         break;
       case receiver_passing::shared:
-        stash(receiver_temp, borrow_place(receiver, false, loan_origin::receiver,
-                                 receiver.span));
+        stash(receiver_temp,
+              borrow_place(receiver, false, loan_origin::receiver,
+                           receiver.span));
         break;
       case receiver_passing::mut: {
         auto reserved =
@@ -1906,8 +1902,9 @@ private:
       if (passing != param_passing::by_value && !is_explicit_borrow &&
           is_place(argument)) {
         // Implicit autoref: a bare place passed to a `&`/`&mut` parameter.
-        stash(arg_temp, borrow_place(argument, passing == param_passing::mut_ref,
-                                 loan_origin::borrow, argument.span));
+        stash(arg_temp,
+              borrow_place(argument, passing == param_passing::mut_ref,
+                           loan_origin::borrow, argument.span));
       } else {
         stash(arg_temp, eval(*arg.value, use_mode::move));
       }
@@ -1928,8 +1925,8 @@ private:
   /// entry borrows for as long as the closure lives. Everything else is
   /// captured by value — moved if the body (or `move`) consumes it, copied
   /// otherwise — and a captured value's own borrows travel with it.
-  auto eval_lambda(const ast::lambda_expr &lambda,
-                   bool report_captures = true) -> value {
+  auto eval_lambda(const ast::lambda_expr &lambda, bool report_captures = true)
+      -> value {
     auto nested = cfg_builder(checked_, out_, this);
     nested.report_captures_ = report_captures_ && report_captures;
     nested.build_lambda(lambda);
@@ -2046,9 +2043,8 @@ private:
     const auto *owner = owning_alias(*pat);
     if (owner == nullptr) {
       cfg_.owning_subjects.insert(pat);
-      const auto whole =
-          declare("<subject>", type_of(subject_expr), pat->span,
-                  /*whole=*/true, /*owns=*/false, pat);
+      const auto whole = declare("<subject>", type_of(subject_expr), pat->span,
+                                 /*whole=*/true, /*owns=*/false, pat);
       bind_value(whole, value{.loans = {}, .sources = {subject}});
     }
     for (const auto &binding : collect_pattern_bindings(*pat)) {
@@ -2060,18 +2056,19 @@ private:
                                 .place = binding.name,
                                 .owner = {}});
       }
-      const auto local = declare(binding.name, type, binding.span,
-                                 /*whole=*/is_owner, /*owns=*/false,
-                                 binding.key());
+      const auto local =
+          declare(binding.name, type, binding.span,
+                  /*whole=*/is_owner, /*owns=*/false, binding.key());
       bind_value(local, value{.loans = {}, .sources = {subject}});
     }
   }
 
   /// How a `match`/`if let`/`while let`/`let` subject is used: moved or
   /// read, as `subject_moves` decides.
-  [[nodiscard]] auto subject_mode(const ast::expr *subject,
-                                  const std::vector<const ast::node *> &patterns)
-      const -> use_mode {
+  [[nodiscard]] auto
+  subject_mode(const ast::expr *subject,
+               const std::vector<const ast::node *> &patterns) const
+      -> use_mode {
     return subject == nullptr || subject_moves(*subject, patterns, checked_)
                ? use_mode::move
                : use_mode::read;
@@ -2188,11 +2185,11 @@ private:
         !movable(dispatch->element_type)) {
       return;
     }
-    emit(invalid_move_event{.span = iterable->span,
-                            .reason = move_block::iterated,
-                            .place = spell_value(*iterable),
-                            .owner = checked_.types.display(
-                                type_of(iterable))});
+    emit(
+        invalid_move_event{.span = iterable->span,
+                           .reason = move_block::iterated,
+                           .place = spell_value(*iterable),
+                           .owner = checked_.types.display(type_of(iterable))});
   }
 
   auto lower_for(const ast::for_stmt &stmt) -> void {
@@ -2241,8 +2238,8 @@ private:
   /// once the loop ends, and by a jump out of it before what the enclosing
   /// scopes own.
   auto hold_loop_handle(const void *key, const ast::expr *iterable,
-                        const iterator_loop_dispatch *dispatch,
-                        local_id source) -> void {
+                        const iterator_loop_dispatch *dispatch, local_id source)
+      -> void {
     push_scope(key);
     if (const auto type = loop_handle_type(iterable, dispatch, checked_)) {
       cfg_.loop_handles.insert(key);
@@ -2290,9 +2287,9 @@ private:
                          : stmt.condition.get());
     auto subject = std::optional<local_id>{};
     if (stmt.let_expr != nullptr) {
-      subject = hold_subject(eval(
-          *stmt.let_expr,
-          subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
+      subject = hold_subject(
+          eval(*stmt.let_expr,
+               subject_mode(stmt.let_expr.get(), {stmt.let_pattern.get()})));
     } else {
       if (stmt.condition != nullptr) {
         static_cast<void>(eval(*stmt.condition, use_mode::read));
@@ -2353,8 +2350,7 @@ private:
     const auto source = start_loop_source(
         clause.iterable.get(),
         clause.iterable != nullptr ? clause.iterable->span : comp.span);
-    hold_loop_handle(&clause.iterable, clause.iterable.get(), dispatch,
-                     source);
+    hold_loop_handle(&clause.iterable, clause.iterable.get(), dispatch, source);
     const auto head = new_block();
     goto_block(head);
     current_ = head;
@@ -2551,8 +2547,9 @@ private:
   }
 
   auto lower_let(const ast::let_stmt &stmt) -> void {
-    auto v = eval_opt(stmt.initializer.get(),
-                      subject_mode(stmt.initializer.get(), {stmt.pattern.get()}));
+    auto v =
+        eval_opt(stmt.initializer.get(),
+                 subject_mode(stmt.initializer.get(), {stmt.pattern.get()}));
     if (stmt.pattern == nullptr) {
       return;
     }
@@ -2735,21 +2732,19 @@ auto loop_patterns_own(const std::vector<pattern_ptr> &patterns,
     }
     element = entry.args[0];
   }
-  return std::ranges::all_of(
-      patterns, [&](const pattern_ptr &pattern) -> bool {
-        return pattern != nullptr &&
-               owns_pattern_bindings(element, *pattern, checked);
-      });
+  return std::ranges::all_of(patterns, [&](const pattern_ptr &pattern) -> bool {
+    return pattern != nullptr &&
+           owns_pattern_bindings(element, *pattern, checked);
+  });
 }
 
 auto for_variable_owns(const ast::for_stmt &stmt, const checked_types &checked)
     -> bool {
   const auto it = checked.for_iterator_dispatches.find(&stmt);
-  return loop_patterns_own(stmt.patterns, stmt.iterable.get(),
-                           it != checked.for_iterator_dispatches.end()
-                               ? &it->second
-                               : nullptr,
-                           checked);
+  return loop_patterns_own(
+      stmt.patterns, stmt.iterable.get(),
+      it != checked.for_iterator_dispatches.end() ? &it->second : nullptr,
+      checked);
 }
 
 auto clause_variable_owns(const ast::for_expr::iter_clause &clause,
@@ -2816,11 +2811,11 @@ auto match_owns_subject(const ast::expr &subject,
   return root->name != "self" && is_local(root->name);
 }
 
-auto owns_pattern_bindings(const ast::expr &subject, const ast::pattern &pattern,
-                           const std::vector<const ast::node *> &patterns,
-                           const checked_types &checked,
-                           const std::function<bool(std::string_view)> &is_local)
-    -> bool {
+auto owns_pattern_bindings(
+    const ast::expr &subject, const ast::pattern &pattern,
+    const std::vector<const ast::node *> &patterns,
+    const checked_types &checked,
+    const std::function<bool(std::string_view)> &is_local) -> bool {
   return pattern_bindings_are_disjoint(pattern) &&
          match_owns_subject(subject, patterns, checked, is_local);
 }

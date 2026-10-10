@@ -67,8 +67,9 @@ private:
         symbol_types_.emplace(ref.symbol, ref.type);
       }
     }
-    for_each_child(const_cast<hir_node &>(node),
-                   [this](auto &child) -> void { collect_symbol_types(*child); });
+    for_each_child(const_cast<hir_node &>(node), [this](auto &child) -> void {
+      collect_symbol_types(*child);
+    });
   }
 
   [[nodiscard]] auto is_ref(type_id type) const -> bool {
@@ -111,9 +112,9 @@ private:
       return;
     }
     if (is_ref_like(want) != is_ref_like(value.type)) {
-      report(value.span, std::format("{}: `{}` flows where `{}` is expected",
-                                     where, types_.display(value.type),
-                                     types_.display(want)));
+      report(value.span,
+             std::format("{}: `{}` flows where `{}` is expected", where,
+                         types_.display(value.type), types_.display(want)));
     }
   }
 
@@ -124,8 +125,8 @@ private:
       return nullptr;
     }
     const auto &ref = dynamic_cast<const hir_local_ref &>(*call.callee);
-    const auto found =
-        functions_.find(std::pair{ref.owner_module.value_or(module_), ref.name});
+    const auto found = functions_.find(
+        std::pair{ref.owner_module.value_or(module_), ref.name});
     return found != functions_.end() ? found->second : nullptr;
   }
 
@@ -174,7 +175,8 @@ private:
                  "a string decode");
       break;
     case hir_node_kind::hir_cell_set:
-      projection(*dynamic_cast<const hir_cell_set &>(node).cell, "a cell write");
+      projection(*dynamic_cast<const hir_cell_set &>(node).cell,
+                 "a cell write");
       break;
     case hir_node_kind::hir_match:
       projection(*dynamic_cast<const hir_match &>(node).subject,
@@ -241,7 +243,8 @@ private:
 /// is not known until an instance says what it is.
 auto is_bare_param(const semantic::type_table &types, type_id type) -> bool {
   const auto kind = types.entry(type).kind;
-  return kind == type_kind::type_param_kind || kind == type_kind::param_app_kind;
+  return kind == type_kind::type_param_kind ||
+         kind == type_kind::param_app_kind;
 }
 
 [[nodiscard]] auto is_place(const hir_expr &expr) -> bool {
@@ -386,9 +389,8 @@ private:
       -> temporary * {
     if (expr.kind == hir_node_kind::hir_field) {
       const auto &field = dynamic_cast<const hir_field &>(expr);
-      auto *temp = field.object != nullptr
-                       ? temporary_root(*field.object, path)
-                       : nullptr;
+      auto *temp = field.object != nullptr ? temporary_root(*field.object, path)
+                                           : nullptr;
       if (temp != nullptr) {
         path.push_back(field.field_name);
       }
@@ -426,10 +428,10 @@ private:
 
   [[nodiscard]] auto bool_literal(source_span span, bool value) const
       -> ptr<hir_expr> {
-    return ptr<hir_expr>(hir::make<hir_literal>(
-        span, types_.bool_type(),
-        value ? token_kind::kw_true : token_kind::kw_false,
-        value ? "true" : "false"));
+    return ptr<hir_expr>(hir::make<hir_literal>(span, types_.bool_type(),
+                                                value ? token_kind::kw_true
+                                                      : token_kind::kw_false,
+                                                value ? "true" : "false"));
   }
 
   [[nodiscard]] auto live_ref(const temporary &temp, source_span span) const
@@ -440,8 +442,7 @@ private:
 
   /// Appends the drops of `temps` to `out`, last made first: under its live
   /// flag, which it clears, for a temporary that has one.
-  auto drop_all(std::vector<temporary> &temps, ptr_vec<hir_node> &out)
-      -> void {
+  auto drop_all(std::vector<temporary> &temps, ptr_vec<hir_node> &out) -> void {
     for (auto &temp : std::views::reverse(temps)) {
       auto drops = drop_one(temp);
       if (temp.live == k_invalid_symbol_id) {
@@ -466,10 +467,10 @@ private:
       body.push_back(std::move(drop));
     }
     auto branches = std::vector<hir_if_branch>{};
-    branches.push_back(hir_if_branch{
-        .condition = live_ref(temp, span),
-        .body = hir::make<hir_block>(span, semantic::k_unknown_type,
-                                     std::move(body))});
+    branches.push_back(
+        hir_if_branch{.condition = live_ref(temp, span),
+                      .body = hir::make<hir_block>(
+                          span, semantic::k_unknown_type, std::move(body))});
     return ptr<hir_node>(hir::make<hir_expr_stmt>(
         span, ptr<hir_expr>(hir::make<hir_if>(span, semantic::k_unknown_type,
                                               std::move(branches), nullptr))));
@@ -584,26 +585,22 @@ private:
   /// Removes the placeholders no temporary needed.
   static auto remove_empty_exits(hir_node &node) -> void {
     if (node.kind == hir_node_kind::hir_block) {
-      std::erase_if(dynamic_cast<hir_block &>(node).stmts,
-                    [](const ptr<hir_node> &stmt) -> bool {
-                      if (stmt->kind != hir_node_kind::hir_expr_stmt) {
-                        return false;
-                      }
-                      const auto &expr =
-                          dynamic_cast<const hir_expr_stmt &>(*stmt).expr;
-                      if (expr == nullptr ||
-                          expr->kind != hir_node_kind::hir_block) {
-                        return false;
-                      }
-                      const auto &block =
-                          dynamic_cast<const hir_block &>(*expr);
-                      return block.exit != jump_exit::none &&
-                             block.stmts.empty();
-                    });
+      std::erase_if(
+          dynamic_cast<hir_block &>(node).stmts,
+          [](const ptr<hir_node> &stmt) -> bool {
+            if (stmt->kind != hir_node_kind::hir_expr_stmt) {
+              return false;
+            }
+            const auto &expr = dynamic_cast<const hir_expr_stmt &>(*stmt).expr;
+            if (expr == nullptr || expr->kind != hir_node_kind::hir_block) {
+              return false;
+            }
+            const auto &block = dynamic_cast<const hir_block &>(*expr);
+            return block.exit != jump_exit::none && block.stmts.empty();
+          });
     }
-    for_each_child(node, [](auto &child) -> void {
-      remove_empty_exits(*child);
-    });
+    for_each_child(node,
+                   [](auto &child) -> void { remove_empty_exits(*child); });
   }
 
   /// Evaluates `slot` as a full expression: the temporaries made inside it
@@ -770,8 +767,8 @@ private:
     while (expr != nullptr && is_ref(expr->type)) {
       const auto referent = types_.entry(expr->type).result;
       const auto span = expr->span;
-      expr = ptr<hir_expr>(
-          hir::make<hir_unary>(span, referent, ast::unary_op::deref, std::move(expr)));
+      expr = ptr<hir_expr>(hir::make<hir_unary>(
+          span, referent, ast::unary_op::deref, std::move(expr)));
     }
     return expr;
   }
@@ -787,7 +784,8 @@ private:
       if (auto *temp = temporary_root(*expr, path); temp != nullptr) {
         temp->moved_paths.clear();
       }
-      return ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(expr)));
+      return ptr<hir_expr>(
+          hir::make<hir_unary>(span, want, op, std::move(expr)));
     }
     const auto symbol = mint_();
     const auto value_type = expr->type;
@@ -798,7 +796,8 @@ private:
     auto place = ptr<hir_expr>(hir::make<hir_local_ref>(
         span, value_type, symbol, std::string("<borrowed>")));
     stmts.push_back(ptr<hir_node>(hir::make<hir_expr_stmt>(
-        span, ptr<hir_expr>(hir::make<hir_unary>(span, want, op, std::move(place))))));
+        span, ptr<hir_expr>(
+                  hir::make<hir_unary>(span, want, op, std::move(place))))));
     auto block = hir::make<hir_block>(span, want, std::move(stmts));
     note_temporary(symbol, value_type, block.get(), value);
     return ptr<hir_expr>(std::move(block));

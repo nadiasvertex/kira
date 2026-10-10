@@ -133,15 +133,18 @@ auto disjoint(const ast::node *node) -> bool {
                                [](const auto &e) { return disjoint(e.get()); });
   }
   case ast::node_kind::struct_pattern: {
-    const auto &fields = dynamic_cast<const ast::struct_pattern &>(*node).fields;
+    const auto &fields =
+        dynamic_cast<const ast::struct_pattern &>(*node).fields;
     return std::ranges::all_of(fields, [](const auto &f) {
       return f.is_rest || disjoint(f.pattern.get());
     });
   }
   case ast::node_kind::option_pattern:
-    return disjoint(dynamic_cast<const ast::option_pattern &>(*node).inner.get());
+    return disjoint(
+        dynamic_cast<const ast::option_pattern &>(*node).inner.get());
   case ast::node_kind::result_pattern:
-    return disjoint(dynamic_cast<const ast::result_pattern &>(*node).inner.get());
+    return disjoint(
+        dynamic_cast<const ast::result_pattern &>(*node).inner.get());
   case ast::node_kind::group_pattern: {
     const auto &group = dynamic_cast<const ast::group_pattern &>(*node);
     return !group.alias.has_value() && disjoint(group.inner.get());

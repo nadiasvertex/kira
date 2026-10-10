@@ -3224,12 +3224,11 @@ private:
     auto *gen = *object;
     auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
-    auto *finished = builder_.CreateLoad(i64, slot_address(gen, size_t{3}),
-                                         "gen.finished");
+    auto *finished =
+        builder_.CreateLoad(i64, slot_address(gen, size_t{3}), "gen.finished");
     auto *running = builder_.CreateICmpEQ(
         finished, llvm::ConstantInt::get(i64, 0), "gen.running");
-    auto *cancel_bb =
-        llvm::BasicBlock::Create(ctx_, "gen.cancel", current_fn_);
+    auto *cancel_bb = llvm::BasicBlock::Create(ctx_, "gen.cancel", current_fn_);
     auto *done_bb =
         llvm::BasicBlock::Create(ctx_, "gen.cancel.done", current_fn_);
     builder_.CreateCondBr(running, cancel_bb, done_bb);
@@ -3241,11 +3240,12 @@ private:
         ptr_ty, slot_address(gen, size_t{0}), "gen.step_fn");
     auto *state_ptr =
         builder_.CreateLoad(ptr_ty, slot_address(gen, size_t{1}), "gen.state");
-    auto *resume_idx = builder_.CreateLoad(i64, slot_address(gen, size_t{2}),
-                                           "gen.resume");
+    auto *resume_idx =
+        builder_.CreateLoad(i64, slot_address(gen, size_t{2}), "gen.resume");
     auto *step_fn_type = llvm::FunctionType::get(ptr_ty, {ptr_ty, i64, ptr_ty},
                                                  /*isVarArg=*/false);
-    builder_.CreateCall(step_fn_type, step_fn_ptr, {state_ptr, resume_idx, gen});
+    builder_.CreateCall(step_fn_type, step_fn_ptr,
+                        {state_ptr, resume_idx, gen});
     builder_.CreateBr(done_bb);
 
     builder_.SetInsertPoint(done_bb);

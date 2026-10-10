@@ -1972,10 +1972,10 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         auto word = std::atomic_ref<uint64_t>(
             *reinterpret_cast<uint64_t *>(raw_bytes_of(f.registers[ptr_reg])));
         const auto n = f.registers[n_reg].u;
-        f.registers[dst] = slot_value{
-            op == opcode::op_atomic_fetch_add
-                ? word.fetch_add(n, std::memory_order_acq_rel)
-                : word.fetch_sub(n, std::memory_order_acq_rel)};
+        f.registers[dst] =
+            slot_value{op == opcode::op_atomic_fetch_add
+                           ? word.fetch_add(n, std::memory_order_acq_rel)
+                           : word.fetch_sub(n, std::memory_order_acq_rel)};
         break;
       }
       }

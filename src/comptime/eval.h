@@ -685,8 +685,7 @@ private:
 
   /// Runs a `while`/`while let` loop. Each iteration's body gets its own
   /// locals frame, so a `let` inside it does not outlive the iteration.
-  [[nodiscard]] auto evaluate_while(const ast::while_stmt &loop)
-      -> exec_result;
+  [[nodiscard]] auto evaluate_while(const ast::while_stmt &loop) -> exec_result;
 
   /// Runs a `for` loop over a compile-time range or list.
   [[nodiscard]] auto evaluate_for(const ast::for_stmt &loop) -> exec_result;

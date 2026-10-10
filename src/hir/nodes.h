@@ -107,24 +107,24 @@ enum class hir_node_kind : uint8_t {
   hir_slice_from_raw_parts, ///< Builds a `slice[T]`/`slice_mut[T]` view
                             ///< header from a pointer and a length; see
                             ///< `hir_slice_from_raw_parts`.
-  hir_container_len,     ///< A container's element count (`for`-loop lowering
-                         ///< only).
-  hir_generator_next,    ///< `g.next()` on a `generator[T]` value — no
-                         ///< backing `func_decl`, same rationale as
-                         ///< `hir_container_len`.
-  hir_generator_cancel,  ///< Drops a `generator[T]` value: see
-                         ///< `hir_generator_cancel`'s doc comment.
-  hir_closure_drop,      ///< Drops a `fn` value: see `hir_closure_drop`'s
-                         ///< doc comment.
+  hir_container_len,       ///< A container's element count (`for`-loop lowering
+                           ///< only).
+  hir_generator_next,      ///< `g.next()` on a `generator[T]` value — no
+                           ///< backing `func_decl`, same rationale as
+                           ///< `hir_container_len`.
+  hir_generator_cancel,    ///< Drops a `generator[T]` value: see
+                           ///< `hir_generator_cancel`'s doc comment.
+  hir_closure_drop,        ///< Drops a `fn` value: see `hir_closure_drop`'s
+                           ///< doc comment.
   hir_generator_cancelled, ///< Inside a generator's body, whether it was
                            ///< resumed only to be cancelled.
-  hir_str_decode_scalar, ///< The decoded Unicode scalar at a byte offset
-                         ///< into a `str` (`for`-loop lowering only) — see
-                         ///< `hir_str_decode_scalar`'s doc comment.
-  hir_str_scalar_width,  ///< Bytes consumed decoding the scalar at a byte
-                         ///< offset into a `str` — companion to
-                         ///< `hir_str_decode_scalar`.
-  hir_cell_set,          ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
+  hir_str_decode_scalar,   ///< The decoded Unicode scalar at a byte offset
+                           ///< into a `str` (`for`-loop lowering only) — see
+                           ///< `hir_str_decode_scalar`'s doc comment.
+  hir_str_scalar_width,    ///< Bytes consumed decoding the scalar at a byte
+                           ///< offset into a `str` — companion to
+                           ///< `hir_str_decode_scalar`.
+  hir_cell_set, ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,

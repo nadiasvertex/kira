@@ -398,7 +398,6 @@ struct deref_site {
   }
 };
 
-
 // ==========================================================================
 //  checker — one instance per session run.
 // ==========================================================================
@@ -7468,12 +7467,12 @@ private:
     return has_unannotated_param(lambda) ? &lambda : nullptr;
   }
 
-  [[nodiscard]] static auto has_unannotated_param(const ast::lambda_expr &lambda)
-      -> bool {
-    return std::ranges::any_of(
-        lambda.params, [](const ast::lambda_param &param) -> bool {
-          return param.type_annotation == nullptr;
-        });
+  [[nodiscard]] static auto
+  has_unannotated_param(const ast::lambda_expr &lambda) -> bool {
+    return std::ranges::any_of(lambda.params,
+                               [](const ast::lambda_param &param) -> bool {
+                                 return param.type_annotation == nullptr;
+                               });
   }
 
   /// A mutable binding initialized with a lambda whose parameter has no
@@ -7574,15 +7573,15 @@ private:
       }
     }
 
-    instantiation_sites_.push_back(instantiation_frame{
-        .call_span = ident.span,
-        .call_file = file_id_,
-        .instance_name = std::string(ident.name),
-        .context_solutions = {},
-        .lambda_use = true});
+    instantiation_sites_.push_back(
+        instantiation_frame{.call_span = ident.span,
+                            .call_file = file_id_,
+                            .instance_name = std::string(ident.name),
+                            .context_solutions = {},
+                            .lambda_use = true});
     swap_body_context(site.context);
-    const auto type = infer_expr(
-        copy, types_.fn_of(std::move(param_types), k_unknown_type));
+    const auto type =
+        infer_expr(copy, types_.fn_of(std::move(param_types), k_unknown_type));
     swap_body_context(site.context);
     instantiation_sites_.pop_back();
 
@@ -7605,8 +7604,8 @@ private:
     instances.push_back(&copy);
     generic_lambda_refs_[ident.node] = &copy;
     generic_lambda_uses_.insert_or_assign(
-        &copy, checked_types::generic_lambda_use{.name = std::string(ident.name),
-                                                 .span = ident.span});
+        &copy, checked_types::generic_lambda_use{
+                   .name = std::string(ident.name), .span = ident.span});
     return type;
   }
 
@@ -7633,8 +7632,7 @@ private:
     }
     auto diag = diagnostic(
         diagnostic_level::error,
-        std::format("cannot tell which type of `{}` is meant here",
-                    ident.name),
+        std::format("cannot tell which type of `{}` is meant here", ident.name),
         file_id_);
     diag.with_label(ident.span, "used as a value, not called");
     diag.with_secondary_label(binding.span, "declared here");
@@ -7699,8 +7697,9 @@ private:
     // finds in the map it just grew.
     for (auto grew = true; grew;) {
       grew = false;
-      auto added = std::vector<std::pair<const ast::lambda_expr *,
-                                         std::vector<const ast::lambda_expr *>>>{};
+      auto added =
+          std::vector<std::pair<const ast::lambda_expr *,
+                                std::vector<const ast::lambda_expr *>>>{};
       for (const auto &[tmpl, instances] : generic_lambda_instances_) {
         const auto found = merged->find(tmpl);
         if (found == merged->end()) {
@@ -8393,35 +8392,36 @@ private:
   /// the inner call's result, which is only `T` once the inner call is typed.
   auto queue_open_param_call(pending_open_param_call item) -> void {
     if (current_template_ != nullptr) {
-      defer_to_instances(*item.call, [this,
-                                      item](instance_subst &subst) -> void {
-        const auto written_in_template_params =
-            mentions_template_param(settle(item.self_type)) ||
-            std::ranges::any_of(item.call_params, [&](type_id type) -> bool {
-              return mentions_template_param(settle(type));
-            });
-        if (!written_in_template_params) {
-          // The template named this call's instance itself.
-          return;
-        }
-        auto replay = item;
-        replay.call = clone_of(subst, item.call);
-        replay.receiver = clone_of(subst, item.receiver);
-        for (auto &type : replay.call_params) {
-          if (type != k_unknown_type) {
-            type = substitute_type(type, subst);
-          }
-        }
-        if (replay.self_type != k_unknown_type) {
-          replay.self_type = substitute_type(replay.self_type, subst);
-        }
-        // The template already stated the call's types; this names only,
-        // and the call's result is the instance's.
-        replay.result_leaf = k_unknown_type;
-        replay.probe = nullptr;
-        replay.typed = true;
-        pending_open_param_calls_.push_back(std::move(replay));
-      });
+      defer_to_instances(
+          *item.call, [this, item](instance_subst &subst) -> void {
+            const auto written_in_template_params =
+                mentions_template_param(settle(item.self_type)) ||
+                std::ranges::any_of(
+                    item.call_params, [&](type_id type) -> bool {
+                      return mentions_template_param(settle(type));
+                    });
+            if (!written_in_template_params) {
+              // The template named this call's instance itself.
+              return;
+            }
+            auto replay = item;
+            replay.call = clone_of(subst, item.call);
+            replay.receiver = clone_of(subst, item.receiver);
+            for (auto &type : replay.call_params) {
+              if (type != k_unknown_type) {
+                type = substitute_type(type, subst);
+              }
+            }
+            if (replay.self_type != k_unknown_type) {
+              replay.self_type = substitute_type(replay.self_type, subst);
+            }
+            // The template already stated the call's types; this names only,
+            // and the call's result is the instance's.
+            replay.result_leaf = k_unknown_type;
+            replay.probe = nullptr;
+            replay.typed = true;
+            pending_open_param_calls_.push_back(std::move(replay));
+          });
     }
     pending_open_param_calls_.push_back(std::move(item));
   }
@@ -11592,8 +11592,8 @@ private:
     }
     for (const auto prelude :
          {"println", "print", "panic", "assert", "size_of", "align_of",
-          "needs_drop", "ptr_cast", "args", "env", "min", "max", "slice_from_raw_parts",
-          "slice_mut_from_raw_parts"}) {
+          "needs_drop", "ptr_cast", "args", "env", "min", "max",
+          "slice_from_raw_parts", "slice_mut_from_raw_parts"}) {
       candidates.emplace_back(prelude);
     }
     return candidates;
@@ -11635,10 +11635,10 @@ private:
   auto is_prelude_value_name(std::string_view name) -> bool {
     return name == "println" || name == "print" || name == "panic" ||
            name == "assert" || name == "size_of" || name == "align_of" ||
-           name == "needs_drop" || name == "ptr_cast" || name == "args" || name == "env" ||
-           name == "min" || name == "max" || name == "cancel" ||
-           name == "pool" || name == "io" || name == "cpu" ||
-           name == "channel" || name == "watch" ||
+           name == "needs_drop" || name == "ptr_cast" || name == "args" ||
+           name == "env" || name == "min" || name == "max" ||
+           name == "cancel" || name == "pool" || name == "io" ||
+           name == "cpu" || name == "channel" || name == "watch" ||
            name == "expr" || name == "slice_from_raw_parts" ||
            name == "slice_mut_from_raw_parts";
   }
@@ -12688,10 +12688,12 @@ private:
     }
     const auto lhs_final = lhs_settled;
     const auto op_name = ast::binary_op_name(binary.op);
-    if (binary.lhs != nullptr && !require_explicit_deref(*binary.lhs, raw_lhs)) {
+    if (binary.lhs != nullptr &&
+        !require_explicit_deref(*binary.lhs, raw_lhs)) {
       return k_error_type;
     }
-    if (binary.rhs != nullptr && !require_explicit_deref(*binary.rhs, raw_rhs)) {
+    if (binary.rhs != nullptr &&
+        !require_explicit_deref(*binary.rhs, raw_rhs)) {
       return k_error_type;
     }
 
@@ -12775,9 +12777,8 @@ private:
                              ? infer_expr(*binary.lhs, k_unknown_type)
                              : k_unknown_type;
     auto lhs = base_shape(raw_lhs);
-    const auto raw_rhs = binary.rhs != nullptr
-                             ? infer_expr(*binary.rhs, lhs)
-                             : k_unknown_type;
+    const auto raw_rhs =
+        binary.rhs != nullptr ? infer_expr(*binary.rhs, lhs) : k_unknown_type;
     auto rhs = base_shape(raw_rhs);
     // The operands are one type (`i == 7` says `7` is whatever `i` is), so
     // their leaves are tied now. A later use that solves `i` then solves the
@@ -12790,10 +12791,12 @@ private:
     const auto bool_type = types_.builtin("bool");
     // A `&int32` operand is an address, and comparing it compiles a compare
     // of the address — the same trap arithmetic reports (`infer_arithmetic`).
-    if (binary.lhs != nullptr && !require_explicit_deref(*binary.lhs, raw_lhs)) {
+    if (binary.lhs != nullptr &&
+        !require_explicit_deref(*binary.lhs, raw_lhs)) {
       return bool_type;
     }
-    if (binary.rhs != nullptr && !require_explicit_deref(*binary.rhs, raw_rhs)) {
+    if (binary.rhs != nullptr &&
+        !require_explicit_deref(*binary.rhs, raw_rhs)) {
       return bool_type;
     }
     defer_operator_dispatch(binary, lhs,
@@ -16209,8 +16212,10 @@ private:
     if (viable.empty()) {
       return false;
     }
-    const auto best = std::ranges::min(
-        viable, {}, [](const auto &c) -> ufcs_origin { return c.first.origin; });
+    const auto best =
+        std::ranges::min(viable, {}, [](const auto &c) -> ufcs_origin {
+          return c.first.origin;
+        });
     std::erase_if(viable, [&](const auto &c) -> bool {
       return c.first.origin != best.first.origin;
     });
@@ -16591,9 +16596,9 @@ private:
     // the call proceeds against that target; lowering inserts the
     // `deref()` calls in front of the receiver (`deref_adjustments`).
     const auto handle = object;
-    const auto via_deref = lookup_through_deref(
-        deref_site{.receiver = field.object.get()}, object, field.field_name,
-        field.span);
+    const auto via_deref =
+        lookup_through_deref(deref_site{.receiver = field.object.get()}, object,
+                             field.field_name, field.span);
     if (via_deref.has_value()) {
       object = *via_deref;
     }
@@ -17678,7 +17683,8 @@ private:
   }
 
   /// Recognizes `size_of[T]()`, `align_of[T]()` and `needs_drop[T]()`, the
-  /// type queries answered at lowering time, and records which type each asks about
+  /// type queries answered at lowering time, and records which type each asks
+  /// about
   /// (`checked_types::layout_queries`) for `hir::lower_call` to answer
   /// against `runtime::layout_of`. Both are prelude names with no
   /// declaration anywhere — `size_of` used to type-check to `usize` here and
@@ -18255,11 +18261,10 @@ private:
     if (const auto *binding = lookup_value(name)) {
       if (binding->generic_lambda != nullptr) {
         const auto copy = record_expr_type(
-            ident,
-            instantiate_generic_lambda(
-                *binding->generic_lambda,
-                {.node = &ident, .name = ident.name, .span = ident.span},
-                /*params=*/nullptr));
+            ident, instantiate_generic_lambda(
+                       *binding->generic_lambda,
+                       {.node = &ident, .name = ident.name, .span = ident.span},
+                       /*params=*/nullptr));
         if (types_.entry(copy).kind != type_kind::fn_kind) {
           infer_call_args_loosely(call);
           return k_error_type;
@@ -18564,13 +18569,12 @@ private:
     if (current_template_ != nullptr && mentions_template_param(handle)) {
       auto bindings = param_subst{};
       match_params(method->impl_target_pattern, handle, bindings);
-      return deref_step{
-          .callee = {},
-          .callee_type = callee_type,
-          .result = substitute_solved(
-              signature_return_type(*method->decl, method->owner,
-                                    method->block_type_params),
-              bindings)};
+      return deref_step{.callee = {},
+                        .callee_type = callee_type,
+                        .result = substitute_solved(
+                            signature_return_type(*method->decl, method->owner,
+                                                  method->block_type_params),
+                            bindings)};
     }
     auto probe = std::make_unique<ast::call_expr>();
     probe->span = span;
@@ -18595,9 +18599,9 @@ private:
     auto callee = found->second;
     callee.receiver = nullptr;
     resolved_callees_.erase(found);
-    return deref_step{
-        .callee = std::move(callee), .callee_type = callee_type,
-        .result = result};
+    return deref_step{.callee = std::move(callee),
+                      .callee_type = callee_type,
+                      .result = result};
   }
 
   /// The `deref` steps that take a receiver of type `object` to one that
@@ -18635,8 +18639,8 @@ private:
 
   /// Stores `steps` for `site`, where lowering and the ownership checker
   /// read them.
-  auto record_deref_steps(const deref_site &site,
-                          std::vector<deref_step> steps) -> void {
+  auto record_deref_steps(const deref_site &site, std::vector<deref_step> steps)
+      -> void {
     if (site.path != nullptr) {
       auto &segments = path_deref_adjustments_[site.path];
       if (segments.size() < site.path->segments.size()) {
@@ -18696,8 +18700,9 @@ private:
                              ? static_cast<const ast::node *>(site.path)
                              : static_cast<const ast::node *>(site.receiver);
     defer_to_instances(
-        *anchor, [this, site, object, name = std::move(name),
-                  span](instance_subst &subst) -> void {
+        *anchor,
+        [this, site, object, name = std::move(name),
+         span](instance_subst &subst) -> void {
           auto clone = deref_site{.receiver = clone_of(subst, site.receiver),
                                   .path = clone_of(subst, site.path),
                                   .segment = site.segment};
@@ -18725,8 +18730,9 @@ private:
     auto step = resolve_deref_step(operand, handle, span);
     if (current_template_ != nullptr) {
       defer_to_instances(
-          operand, [this, operand = &operand, handle,
-                    span](instance_subst &subst) -> void {
+          operand,
+          [this, operand = &operand, handle,
+           span](instance_subst &subst) -> void {
             const auto *clone = clone_of(subst, operand);
             const auto concrete = strip_refs(substitute_type(handle, subst));
             if (auto instance = resolve_deref_step(*clone, concrete, span)) {
@@ -18768,8 +18774,8 @@ private:
 
   /// Reports `*x` where `x` is neither a reference, a raw pointer, a cell,
   /// nor a type that implements `deref`.
-  auto report_deref_of_non_reference(const ast::unary_expr &unary,
-                                     type_id type) -> void {
+  auto report_deref_of_non_reference(const ast::unary_expr &unary, type_id type)
+      -> void {
     const auto shown = types_.display(type);
     auto diag = diagnostic(
         diagnostic_level::error,
@@ -18801,10 +18807,10 @@ private:
     }
     auto bindings = param_subst{};
     match_params(method->impl_target_pattern, stripped, bindings);
-    const auto target = strip_refs(substitute_solved(
-        signature_return_type(*method->decl, method->owner,
-                              method->block_type_params),
-        bindings));
+    const auto target = strip_refs(
+        substitute_solved(signature_return_type(*method->decl, method->owner,
+                                                method->block_type_params),
+                          bindings));
     return std::format("`{}` implements `deref`, so its target `{}` was "
                        "searched as well",
                        types_.display(stripped), types_.display(target));
@@ -18822,15 +18828,15 @@ private:
       }
       if (deref_adjustments_.contains(field.object.get())) {
         const auto found = node_types_.find(field.object.get());
-        return strip_refs(settle(
-            found != node_types_.end() ? found->second : k_unknown_type));
+        return strip_refs(settle(found != node_types_.end() ? found->second
+                                                            : k_unknown_type));
       }
       return place_through_deref(*field.object);
     }
     case ast::node_kind::index_expr: {
       const auto &index = dynamic_cast<const ast::index_expr &>(target);
       return index.object != nullptr ? place_through_deref(*index.object)
-                                      : std::nullopt;
+                                     : std::nullopt;
     }
     case ast::node_kind::group_expr: {
       const auto &group = dynamic_cast<const ast::group_expr &>(target);
@@ -18845,8 +18851,8 @@ private:
       }
       if (deref_adjustments_.contains(unary.operand.get())) {
         const auto found = node_types_.find(unary.operand.get());
-        return strip_refs(settle(
-            found != node_types_.end() ? found->second : k_unknown_type));
+        return strip_refs(settle(found != node_types_.end() ? found->second
+                                                            : k_unknown_type));
       }
       return place_through_deref(*unary.operand);
     }
@@ -18902,8 +18908,8 @@ private:
   /// move out of it; both are reported here.
   auto method_callable_through_deref(const ast::call_expr &call,
                                      const ast::field_expr &field,
-                                     const method_entry &method,
-                                     type_id handle) -> bool {
+                                     const method_entry &method, type_id handle)
+      -> bool {
     if (method.decl->params.empty() ||
         param_name_of(method.decl->params.front()) != "self") {
       return true;
@@ -18916,16 +18922,15 @@ private:
       return true;
     }
     const auto shown = types_.display(handle);
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("cannot call `{}` through `{}`'s `deref`",
-                    field.field_name, shown),
-        file_id_);
-    diag.with_label(call.span,
-                    mutates ? std::format("`{}` takes `mut self`",
-                                          field.field_name)
-                            : std::format("`{}` consumes its receiver",
-                                          field.field_name));
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("cannot call `{}` through `{}`'s `deref`",
+                               field.field_name, shown),
+                   file_id_);
+    diag.with_label(
+        call.span,
+        mutates ? std::format("`{}` takes `mut self`", field.field_name)
+                : std::format("`{}` consumes its receiver", field.field_name));
     diag.with_note(std::format(
         "`{}` has no method `{}` of its own, so it was looked up on the "
         "target of `deref()`, which returns a shared reference",
@@ -21020,12 +21025,12 @@ private:
                       "for this field", field.value.get());
       } else if (const auto *binding = lookup_value(field.name)) {
         // Shorthand `{name}` binds the in-scope value of the same name.
-        found = binding->generic_lambda != nullptr
-                    ? generic_lambda_value({.node = &field,
-                                            .name = field.name,
-                                            .span = field.span},
-                                           *binding, field_expected)
-                    : binding->type;
+        found =
+            binding->generic_lambda != nullptr
+                ? generic_lambda_value(
+                      {.node = &field, .name = field.name, .span = field.span},
+                      *binding, field_expected)
+                : binding->type;
         type_mismatch(field.span, field_expected, found, "for this field");
       }
       // Recorded unconditionally (even when neither branch above ran, in
@@ -23308,12 +23313,10 @@ private:
         // An open target (`[[1], [0; n]]`) cannot name its `new`/`push` yet;
         // `record_new_push_dispatch` waits for the leaf.
         if (mentions_type_var(target)) {
-          record_new_push_dispatch(array, target,
-                                   runtime_fill_dispatches_);
+          record_new_push_dispatch(array, target, runtime_fill_dispatches_);
           return target;
         }
-        if (const auto dispatch =
-                resolve_new_push_dispatch(array, target)) {
+        if (const auto dispatch = resolve_new_push_dispatch(array, target)) {
           runtime_fill_dispatches_[&array] = *dispatch;
         } else if (!mentions_template_param(target)) {
           error_with_help(
@@ -24224,8 +24227,7 @@ private:
         if (const auto handle = place_through_deref(*stmt.target)) {
           // The binding's mutability is beside the point: no binding makes
           // a write through `deref` legal.
-          report_write_through_deref(stmt.target->span, *handle,
-                                     "assign to");
+          report_write_through_deref(stmt.target->span, *handle, "assign to");
         } else if (const auto *root = assignment_root_ident(*stmt.target)) {
           root_name = root->name;
         } else if (stmt.target->kind == ast::node_kind::module_path_expr) {
@@ -26617,8 +26619,7 @@ private:
       if (declared == nullptr || declared->params.size() != fn.params.size()) {
         continue;
       }
-      const auto compare_types = trait_args_known &&
-                                 fn.type_params.empty() &&
+      const auto compare_types = trait_args_known && fn.type_params.empty() &&
                                  declared->type_params.empty();
 
       for (size_t i = 0; i < fn.params.size(); ++i) {
@@ -26665,14 +26666,13 @@ private:
                        : mode == expected_mode) {
           continue;
         }
-        const auto label_name =
-            name.empty() ? std::format("parameter {}", i + 1)
-                         : std::format("parameter `{}`", name);
-        const auto found_text = both_known ? types_.display(written_type)
-                                           : std::string(mode);
-        const auto expected_text = both_known
-                                       ? types_.display(expected_type)
-                                       : std::string(expected_mode);
+        const auto label_name = name.empty()
+                                    ? std::format("parameter {}", i + 1)
+                                    : std::format("parameter `{}`", name);
+        const auto found_text =
+            both_known ? types_.display(written_type) : std::string(mode);
+        const auto expected_text = both_known ? types_.display(expected_type)
+                                              : std::string(expected_mode);
         auto help = std::format(
             "Write `{}` here, as the trait does. Code that calls `{}` through "
             "the trait passes this argument as `{}`, so the method has to "

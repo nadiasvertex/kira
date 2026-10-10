@@ -1269,8 +1269,8 @@ auto parser::parse_type_decl(ast::visibility vis, ast::type_modifiers mods)
 
   expect(token_kind::kw_type);
   // `shared` is a keyword, but `std.shared` declares the type of that name.
-  auto name_tok = at(token_kind::kw_shared) ? advance()
-                                            : expect(token_kind::ident);
+  auto name_tok =
+      at(token_kind::kw_shared) ? advance() : expect(token_kind::ident);
   decl->name = std::string(name_tok.text);
 
   // Optional type parameters.

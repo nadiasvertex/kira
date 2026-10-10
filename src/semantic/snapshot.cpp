@@ -513,8 +513,7 @@ auto renderer::run() -> std::string {
                      : item.second.kind == layout_query_kind::align_of
                          ? "align"
                          : "needs_drop";
-                 return std::format("{} of {}", what,
-                                    ty(item.second.operand));
+                 return std::format("{} of {}", what, ty(item.second.operand));
                });
   node_section("ptr_casts", checked_.ptr_casts,
                [this](const auto &item) -> auto { return ty(item.second); });

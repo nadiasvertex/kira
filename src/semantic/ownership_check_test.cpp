@@ -236,8 +236,7 @@ auto test_generic_method_result_not_tied_to_receiver_is_accepted() -> void {
              analyzed.diagnostics);
 }
 
-auto test_returning_a_borrow_through_an_implicit_generic_is_rejected()
-    -> void {
+auto test_returning_a_borrow_through_an_implicit_generic_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file(
       "reject_return_borrow_through_implicit_generic.cn");
   expect_diagnostic(analyzed, "cannot return a borrow of the local `n`",
@@ -680,8 +679,7 @@ auto test_moves_out_of_places_are_rejected() -> void {
         "cannot move out of `g.inner`", "use of partly moved value `j`",
         "`[v; n]` needs a `copy` value"}) {
     expect(analyzed.diagnostics.find(needle) != std::string::npos,
-           std::string("expected `") + needle + "`:\n" +
-               analyzed.diagnostics);
+           std::string("expected `") + needle + "`:\n" + analyzed.diagnostics);
   }
   expect(analyzed.error_count == 6,
          std::string("expected exactly the six rejected moves:\n") +
@@ -695,8 +693,7 @@ auto test_outlived_temporaries_are_rejected() -> void {
         "`r` still borrows the temporary after the statement ends",
         "cannot move out of `make_guarded().inner`"}) {
     expect(analyzed.diagnostics.find(needle) != std::string::npos,
-           std::string("expected `") + needle + "`:\n" +
-               analyzed.diagnostics);
+           std::string("expected `") + needle + "`:\n" + analyzed.diagnostics);
   }
   expect(analyzed.error_count == 3,
          std::string("expected exactly the three rejected temporaries:\n") +
@@ -756,8 +753,7 @@ auto test_reuse_after_for_x_in_ref_is_accepted() -> void {
 auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_generic_lambda_moves_capture_twice.cn");
-  expect_diagnostic(analyzed,
-                    "each use of `f` makes a closure that moves `s`",
+  expect_diagnostic(analyzed, "each use of `f` makes a closure that moves `s`",
                     "expected two copies of a generic lambda that each move "
                     "a capture to be explained in terms of the copies");
   expect(analyzed.diagnostics.find("use of moved value") == std::string::npos,
@@ -767,7 +763,8 @@ auto test_generic_lambda_moving_capture_twice_is_explained() -> void {
 
 auto test_move_out_of_capture_is_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_move_out_of_capture.cn");
-  for (const auto *place : {"bare", "implicit", "moved", "generic", "h.items"}) {
+  for (const auto *place :
+       {"bare", "implicit", "moved", "generic", "h.items"}) {
     expect_diagnostic(analyzed,
                       std::format("cannot move `{}` out of the closure", place),
                       std::format("expected moving the capture `{}` out of "
@@ -1067,13 +1064,13 @@ auto main() -> int {
     test_repeated_borrowing_ufcs_calls_are_accepted();
     test_repeated_iter_values_chains_are_accepted();
     test_copy_values_reused_are_accepted();
-  test_type_param_reused_after_move_is_rejected();
-  test_partial_moves_are_accepted();
-  test_moves_out_of_places_are_rejected();
-  test_outlived_temporaries_are_rejected();
-  test_consuming_loop_over_borrow_is_rejected();
-  test_overlapping_owned_binding_is_rejected();
-  test_reuse_after_move_capture_is_rejected();
+    test_type_param_reused_after_move_is_rejected();
+    test_partial_moves_are_accepted();
+    test_moves_out_of_places_are_rejected();
+    test_outlived_temporaries_are_rejected();
+    test_consuming_loop_over_borrow_is_rejected();
+    test_overlapping_owned_binding_is_rejected();
+    test_reuse_after_move_capture_is_rejected();
     test_reuse_after_plain_value_capture_is_accepted();
     test_reuse_after_for_x_in_ref_is_accepted();
     test_move_in_loop_is_rejected();

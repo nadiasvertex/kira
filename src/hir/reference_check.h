@@ -32,8 +32,8 @@ struct reference_violation {
 /// the place they borrow (`spec/todo.md` item 20): the backends then
 /// compile an address-of and a deref as real operations, and an implicit
 /// conversion would silently be the wrong one.
-[[nodiscard]] auto find_implicit_references(
-    const ptr_vec<hir_module> &modules, const semantic::type_table &types)
+[[nodiscard]] auto find_implicit_references(const ptr_vec<hir_module> &modules,
+                                            const semantic::type_table &types)
     -> std::vector<reference_violation>;
 
 /// A local holding a temporary value that must be dropped: what a
@@ -90,7 +90,6 @@ auto make_references_explicit(hir_function &function,
                               const semantic::checked_types &checked,
                               const std::function<symbol_id()> &mint,
                               const drop_temporary_fn &drop_temporary,
-                              const temporary_end_fn &end_of)
-    -> void;
+                              const temporary_end_fn &end_of) -> void;
 
 } // namespace cinder::hir

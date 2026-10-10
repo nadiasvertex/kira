@@ -592,15 +592,14 @@ auto evaluator::apply_binary(ast::binary_op op, const value &lhs,
         rhs.kind == value_kind::variant_instance) {
       if (lhs.kind != rhs.kind || lhs.type_name != rhs.type_name) {
         return report(
-            span,
-            std::format("cannot compare `{}` and `{}` at compile time — "
-                        "they are not the same sum type",
-                        lhs.kind == value_kind::variant_instance
-                            ? lhs.type_name
-                            : std::string("<non-variant>"),
-                        rhs.kind == value_kind::variant_instance
-                            ? rhs.type_name
-                            : std::string("<non-variant>")));
+            span, std::format("cannot compare `{}` and `{}` at compile time — "
+                              "they are not the same sum type",
+                              lhs.kind == value_kind::variant_instance
+                                  ? lhs.type_name
+                                  : std::string("<non-variant>"),
+                              rhs.kind == value_kind::variant_instance
+                                  ? rhs.type_name
+                                  : std::string("<non-variant>")));
       }
       const auto equal = variant_values_equal(lhs, rhs);
       return value::make_bool(op == ast::binary_op::eq_eq ? equal : !equal);
@@ -613,7 +612,7 @@ auto evaluator::apply_binary(ast::binary_op op, const value &lhs,
       rhs.kind == value_kind::integer || rhs.kind == value_kind::floating;
   if (!lhs_numeric || !rhs_numeric) {
     return report(span, "this operator requires compile-time numeric "
-                            "operands");
+                        "operands");
   }
 
   auto pair = numeric_pair{};
@@ -677,7 +676,7 @@ auto evaluator::apply_binary(ast::binary_op op, const value &lhs,
                                           : pair.li >= pair.ri);
   default:
     return report(span, "this operator is not yet supported in "
-                            "compile-time evaluation");
+                        "compile-time evaluation");
   }
 }
 

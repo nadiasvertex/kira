@@ -460,20 +460,20 @@ enum class opcode : uint8_t {
             ///< suspension is synced into `state_ptr` via ordinary
             ///< `op_store_slot`s immediately before this opcode,
             ///< not by this opcode itself.
-  op_generator_next,    ///< u16 dst, u16 generator_reg — the compiled form of
-                        ///< `.next()`. If reg[generator_reg]'s `finished` slot
-                        ///< is set, writes `none` into dst directly (no frame
-                        ///< push). Otherwise pushes a frame for the
-                        ///< generator's `step_function_index`, with register 0
-                        ///< = `state_ptr`, register 1 = `resume_index`,
-                        ///< register 2 = reg[generator_reg] itself (so a
-                        ///< nested `op_yield`/fall-through-return can address
-                        ///< it), and transfers control — the step function
-                        ///< either hits an `op_yield` (writes `some(...)` into
-                        ///< dst per above) or falls off the end / hits a bare
-                        ///< `return` (compiled to build `none`, set
-                        ///< `finished=1` on the generator object, and
-                        ///< `op_return_value` it).
+  op_generator_next,   ///< u16 dst, u16 generator_reg — the compiled form of
+                       ///< `.next()`. If reg[generator_reg]'s `finished` slot
+                       ///< is set, writes `none` into dst directly (no frame
+                       ///< push). Otherwise pushes a frame for the
+                       ///< generator's `step_function_index`, with register 0
+                       ///< = `state_ptr`, register 1 = `resume_index`,
+                       ///< register 2 = reg[generator_reg] itself (so a
+                       ///< nested `op_yield`/fall-through-return can address
+                       ///< it), and transfers control — the step function
+                       ///< either hits an `op_yield` (writes `some(...)` into
+                       ///< dst per above) or falls off the end / hits a bare
+                       ///< `return` (compiled to build `none`, set
+                       ///< `finished=1` on the generator object, and
+                       ///< `op_return_value` it).
   op_generator_cancel, ///< u16 dst, u16 generator_reg — the compiled form
                        ///< of `hir_generator_cancel`. If reg[generator_reg]'s
                        ///< `finished` slot is set, does nothing. Otherwise
@@ -485,11 +485,11 @@ enum class opcode : uint8_t {
   op_generator_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
-  op_drop_closure, ///< u16 dst, u16 closure_reg — the compiled form of
-                   ///< `hir_closure_drop`. When reg[closure_reg] carries
-                   ///< drop glue, calls it with the closure's `env_ptr` as
-                   ///< its only argument; its `unit` lands in dst, unread.
-                   ///< Otherwise does nothing.
+  op_drop_closure,        ///< u16 dst, u16 closure_reg — the compiled form of
+                          ///< `hir_closure_drop`. When reg[closure_reg] carries
+  ///< drop glue, calls it with the closure's `env_ptr` as
+  ///< its only argument; its `unit` lands in dst, unread.
+  ///< Otherwise does nothing.
   op_str_decode_scalar, ///< u16 dst, u16 str_reg, u16 offset_reg — decodes
                         ///< the UTF-8 scalar starting at byte offset
                         ///< reg[offset_reg] within the `str` reg[str_reg],

@@ -14,9 +14,9 @@
 
 #include "src/hir/captures.h"
 #include "src/hir/drop_schedule.h"
-#include "src/hir/reference_check.h"
 #include "src/hir/ids.h"
 #include "src/hir/nodes.h"
+#include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
 #include "src/runtime/layout.h"
@@ -315,7 +315,8 @@ private:
     auto &scope = scopes_.back();
     scope.by_name.insert_or_assign(std::string(name), id);
     if (whole) {
-      scope.whole.push_back(lexical_scope::whole_binding{.node = node, .id = id});
+      scope.whole.push_back(
+          lexical_scope::whole_binding{.node = node, .id = id});
     }
     local_types_.emplace(id, type);
     return id;
@@ -493,8 +494,8 @@ private:
       -> std::expected<void, lowering_error>;
   /// Appends the declarations of the drop flags set where `node` binds its
   /// value (`drop_schedule::binding_flags`).
-  auto declare_flags(const void *node, source_span span,
-                     ptr_vec<hir_node> &out) -> void;
+  auto declare_flags(const void *node, source_span span, ptr_vec<hir_node> &out)
+      -> void;
   /// `body`, run only when every flag in `flags` is set.
   [[nodiscard]] auto guarded(const std::vector<std::size_t> &flags,
                              ptr_vec<hir_node> body, source_span span)
@@ -763,7 +764,8 @@ private:
       type_id iterable_type, const ast::binding_pattern &loop_var,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts,
-      bool owns_var = false) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+      bool owns_var = false)
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// The user-`iterator[T]` shape: `for x in it: ...` where `it`'s type
   /// implements `std.iter.iterator[T]`. Structurally identical to
   /// `lower_generator_loop` — evaluate the handle once, then loop `while let
@@ -777,7 +779,8 @@ private:
       const semantic::iterator_loop_dispatch &dispatch,
       const std::function<std::expected<ptr_vec<hir_node>, lowering_error>()>
           &inner_stmts,
-      bool owns_var = false) -> std::expected<ptr_vec<hir_node>, lowering_error>;
+      bool owns_var = false)
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// The two halves of a desugared `for`: the body proper, and the index
   /// increment that must run even when the body ends in a `continue`.
   struct for_loop_body {
@@ -966,8 +969,8 @@ private:
       if (!operand.has_value()) {
         return std::unexpected(operand.error());
       }
-      return ptr<hir_expr>(hir::make<hir_unary>(unary.span, unary.type, unary.op,
-                                           std::move(*operand)));
+      return ptr<hir_expr>(hir::make<hir_unary>(unary.span, unary.type,
+                                                unary.op, std::move(*operand)));
     }
     default:
       return fail(lowering_error_kind::unsupported_construct, place.span,
@@ -2368,8 +2371,8 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   for (size_t i = 1; i < path.segments.size(); ++i) {
     if (derefs != checked_.path_deref_adjustments.end() &&
         i < derefs->second.size() && !derefs->second[i].empty()) {
-      auto through = apply_deref_steps(std::move(chain), derefs->second[i],
-                                       path.span);
+      auto through =
+          apply_deref_steps(std::move(chain), derefs->second[i], path.span);
       if (!through.has_value()) {
         return std::unexpected(through.error());
       }
@@ -2457,14 +2460,13 @@ auto lowerer::lower_index(const ast::index_expr &index)
                   "internal error: the `at_ref` that reads this element in "
                   "place has no concrete result type");
     }
-    auto address =
-        lower_index_dispatch(index.span, cell, by_ref->second,
-                             std::move(*object), std::move(*idx));
+    auto address = lower_index_dispatch(index.span, cell, by_ref->second,
+                                        std::move(*object), std::move(*idx));
     if (!address.has_value()) {
       return address;
     }
     return ok_expr(hir::make<hir_unary>(index.span, *type, ast::unary_op::deref,
-                                   std::move(*address)));
+                                        std::move(*address)));
   }
   if (const auto found = checked_.index_dispatches.find(&index);
       found != checked_.index_dispatches.end()) {
@@ -2566,10 +2568,10 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
         moved_whole = !moved.flag.has_value();
         whole_flag = moved.flag;
       } else {
-        moved_below.push_back(moved_path{
-            .path = std::vector<std::string>(moved.path.begin() + 1,
-                                             moved.path.end()),
-            .flag = moved.flag});
+        moved_below.push_back(
+            moved_path{.path = std::vector<std::string>(moved.path.begin() + 1,
+                                                        moved.path.end()),
+                       .flag = moved.flag});
       }
     }
     if (moved_whole) {
@@ -2716,7 +2718,6 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
   }
   return {};
 }
-
 
 auto lowerer::emit_scope_exit_drops(const void *key, ptr_vec<hir_node> &stmts)
     -> std::expected<void, lowering_error> {
@@ -3072,8 +3073,8 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
     const auto declared = checked_.struct_literal_field_expected.find(&field);
     fields.push_back(hir_struct_init_field{
         .name = field.name,
-        .value = ptr<hir_expr>(make<hir_local_ref>(field.span, found->second,
-                                                   symbol, field.name)),
+        .value = ptr<hir_expr>(
+            make<hir_local_ref>(field.span, found->second, symbol, field.name)),
         .declared = declared != checked_.struct_literal_field_expected.end()
                         ? declared->second
                         : k_unknown_type});
@@ -4090,9 +4091,8 @@ auto lowerer::lower_stmt(const ast::node &node)
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern);
-      const auto symbol =
-          declare_local(binding.name, (*initializer)->type, /*whole=*/true,
-                        let.pattern.get());
+      const auto symbol = declare_local(binding.name, (*initializer)->type,
+                                        /*whole=*/true, let.pattern.get());
       auto result = ptr_vec<hir_node>{};
       result.push_back(ptr<hir_node>(make<hir_let>(
           let.span, symbol, binding.name, std::move(*initializer))));
@@ -4146,8 +4146,8 @@ auto lowerer::lower_stmt(const ast::node &node)
         // The pattern missed, so nothing bound the subject; drop it before
         // the diverging else body runs.
         auto drops = std::vector<ptr<hir_node>>{};
-        if (auto dropped = build_drop_calls(make_place, subj_type,
-                                            subject_span, drops);
+        if (auto dropped =
+                build_drop_calls(make_place, subj_type, subject_span, drops);
             !dropped.has_value()) {
           return std::unexpected(dropped.error());
         }
@@ -4229,8 +4229,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     // would run too early.
     auto stmts = ptr_vec<hir_node>{};
     const auto scheduled = drop_schedule_.exits.find(&node);
-    if (scheduled != drop_schedule_.exits.end() &&
-        !scheduled->second.empty() && (*value)->type != k_unknown_type) {
+    if (scheduled != drop_schedule_.exits.end() && !scheduled->second.empty() &&
+        (*value)->type != k_unknown_type) {
       const auto value_type = (*value)->type;
       const auto temp = mint_symbol();
       const auto temp_name = std::format("<return value {}>", temp);
@@ -4401,9 +4401,9 @@ auto lowerer::lower_stmt(const ast::node &node)
         return std::move(*clone_place(old_place));
       };
       auto drops = ptr_vec<hir_node>{};
-      if (auto dropped = build_drop_calls(make_place, (*target)->type,
-                                          assign.span, drops,
-                                          scheduled->second.moved_paths);
+      if (auto dropped =
+              build_drop_calls(make_place, (*target)->type, assign.span, drops,
+                               scheduled->second.moved_paths);
           !dropped.has_value()) {
         return std::unexpected(dropped.error());
       }
@@ -4417,9 +4417,8 @@ auto lowerer::lower_stmt(const ast::node &node)
       for (auto &drop : *checked_drops) {
         stmts.push_back(std::move(drop));
       }
-      value = ptr<hir_expr>(make<hir_local_ref>(assign.span, temp_type,
-                                                temp_symbol,
-                                                std::string("<assigned>")));
+      value = ptr<hir_expr>(make<hir_local_ref>(
+          assign.span, temp_type, temp_symbol, std::string("<assigned>")));
     }
     // Moving the `ptr` doesn't move the node, so `object` stays valid — it
     // points into the `hir_assign` this now owns.
@@ -4427,8 +4426,8 @@ auto lowerer::lower_stmt(const ast::node &node)
         assign.span, assign.op, std::move(*target), std::move(*value))));
     // The target holds a value again.
     if (scheduled != drop_schedule_.assignments.end()) {
-      if (auto set = set_flags(scheduled->second.sets, true, assign.span,
-                               stmts);
+      if (auto set =
+              set_flags(scheduled->second.sets, true, assign.span, stmts);
           !set.has_value()) {
         return std::unexpected(set.error());
       }
@@ -4868,16 +4867,14 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (iterable_entry.kind == type_kind::builtin_generic_kind &&
       iterable_entry.name == "generator") {
     return lower_generator_loop(for_stmt.span, &for_stmt.iterable,
-                                *for_stmt.iterable,
-                                *iterable_type, loop_var, inner_stmts,
-                                owns_element);
+                                *for_stmt.iterable, *iterable_type, loop_var,
+                                inner_stmts, owns_element);
   }
   if (const auto it = checked_.for_iterator_dispatches.find(&for_stmt);
       it != checked_.for_iterator_dispatches.end()) {
     return lower_iterator_loop(for_stmt.span, &for_stmt.iterable,
-                               *for_stmt.iterable,
-                               *iterable_type, loop_var, it->second,
-                               inner_stmts, owns_element);
+                               *for_stmt.iterable, *iterable_type, loop_var,
+                               it->second, inner_stmts, owns_element);
   }
   {
     auto stripped = *iterable_type;
@@ -5363,7 +5360,7 @@ auto lowerer::lower_generator_loop(
   const auto generator_symbol =
       drop_schedule_.loop_handles.contains(handle_scope)
           ? declare_local("<for iterator>", iterable_type, /*whole=*/true,
-                        handle_scope)
+                          handle_scope)
           : mint_symbol();
   result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, generator_symbol,
                                                std::string("<for iterator>"),
@@ -5485,11 +5482,10 @@ auto lowerer::lower_iterator_loop(
   // scopes a jump out of the body leaves. One made from a borrowed
   // collection only copies it, and owns nothing.
   push_scope();
-  const auto handle_symbol =
-      drop_schedule_.loop_handles.contains(handle_scope)
-          ? declare_local("<for iterator>", handle_type, /*whole=*/true,
-                        handle_scope)
-          : mint_symbol();
+  const auto handle_symbol = drop_schedule_.loop_handles.contains(handle_scope)
+                                 ? declare_local("<for iterator>", handle_type,
+                                                 /*whole=*/true, handle_scope)
+                                 : mint_symbol();
   result.push_back(ptr<hir_node>(make<hir_let>(iterable.span, handle_symbol,
                                                std::string("<for iterator>"),
                                                std::move(*handle_value))));
@@ -5516,8 +5512,9 @@ auto lowerer::lower_iterator_loop(
                           std::string("<for iterator>"))));
 
   const auto subject_symbol = mint_symbol();
-  auto subject = ptr<hir_expr>(direct_call(
-      span, option_type, std::move(callee), std::move(call_args), dispatch.decl));
+  auto subject =
+      ptr<hir_expr>(direct_call(span, option_type, std::move(callee),
+                                std::move(call_args), dispatch.decl));
 
   push_scope();
   const auto owned_var = owns_var && checked_.drop_plans.contains(element_type);
@@ -5774,8 +5771,7 @@ auto lowerer::lower_comprehension_clause(
   if (entry.kind == type_kind::builtin_generic_kind &&
       entry.name == "generator") {
     return lower_generator_loop(span, &clause.iterable, *clause.iterable,
-                                *iterable_type,
-                                loop_var, nested, owns_element);
+                                *iterable_type, loop_var, nested, owns_element);
   }
   // The same iterator-protocol route the statement `for` takes. A clause
   // over a `list` reaches this and not the indexed-loop fallback below,
@@ -5785,8 +5781,8 @@ auto lowerer::lower_comprehension_clause(
           static_cast<const ast::node *>(clause.iterable.get()));
       it != checked_.comprehension_iterator_dispatches.end()) {
     return lower_iterator_loop(span, &clause.iterable, *clause.iterable,
-                               *iterable_type, loop_var,
-                               it->second, nested, owns_element);
+                               *iterable_type, loop_var, it->second, nested,
+                               owns_element);
   }
   {
     auto stripped = *iterable_type;
@@ -5853,8 +5849,8 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
     // so this form is `while true: match subject: pattern => body, _ => drop
     // and break`.
     auto exit_stmts = std::vector<ptr<hir_node>>{};
-    if (auto dropped = build_drop_calls(make_place, subj_type, subject_span,
-                                        exit_stmts);
+    if (auto dropped =
+            build_drop_calls(make_place, subj_type, subject_span, exit_stmts);
         !dropped.has_value()) {
       return std::unexpected(dropped.error());
     }
@@ -5872,9 +5868,9 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
     auto loop_body = ptr_vec<hir_node>{};
     loop_body.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         while_stmt.span,
-        ptr<hir_expr>(make<hir_match>(
-            while_stmt.span, k_unknown_type, std::move(*subject_value),
-            subject_symbol, std::move(arms))))));
+        ptr<hir_expr>(make<hir_match>(while_stmt.span, k_unknown_type,
+                                      std::move(*subject_value), subject_symbol,
+                                      std::move(arms))))));
     const auto bool_type = checked_.types.bool_type();
     result.push_back(ptr<hir_node>(make<hir_while>(
         while_stmt.span,
@@ -5904,8 +5900,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     if (drop_schedule_.leftover_drops.contains(&pattern)) {
       auto place = make_place();
       const auto place_type = place->type;
-      if (auto dropped = build_drop_calls(make_place, place_type, pattern.span,
-                                          pending);
+      if (auto dropped =
+              build_drop_calls(make_place, place_type, pattern.span, pending);
           !dropped.has_value()) {
         return std::unexpected(dropped.error());
       }
@@ -6088,8 +6084,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
           plan != checked_.drop_plans.end()) {
         for (const auto &[field_name, field_type] :
              plan->second.droppable_fields) {
-          const auto mentioned = std::ranges::any_of(
-              struct_pat.fields, [&](const auto &f) {
+          const auto mentioned =
+              std::ranges::any_of(struct_pat.fields, [&](const auto &f) {
                 return !f.is_rest && f.name == field_name;
               });
           if (mentioned) {
@@ -6097,8 +6093,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
           }
           const place_fn skipped = [make_place, field_name, field_type,
                                     span = pattern.span]() -> ptr<hir_expr> {
-            return {make<hir_field>(span, field_type, make_place(),
-                                    field_name)};
+            return {
+                make<hir_field>(span, field_type, make_place(), field_name)};
           };
           if (auto dropped =
                   build_drop_calls(skipped, field_type, pattern.span, pending);
@@ -6718,8 +6714,8 @@ auto lowerer::lower_function(const ast::func_decl &decl)
         for (const auto &path : temp.moved_paths) {
           moved.push_back(moved_path{.path = path, .flag = std::nullopt});
         }
-        if (auto dropped = build_drop_calls(place, type, source_span::dummy(),
-                                            out, moved);
+        if (auto dropped =
+                build_drop_calls(place, type, source_span::dummy(), out, moved);
             !dropped.has_value() && !drop_failure.has_value()) {
           drop_failure = dropped.error();
         }
