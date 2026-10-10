@@ -41,15 +41,15 @@ Objects</a>
 <li><a href="#opaque-return-types-some-trait"
 id="toc-opaque-return-types-some-trait">Opaque Return Types:
 <code>some trait</code></a></li>
-<li><a href="#trait-objects-boxtrait"
-id="toc-trait-objects-boxtrait">Trait Objects:
-<code>box[trait]</code></a>
+<li><a href="#trait-objects-uniquetrait"
+id="toc-trait-objects-uniquetrait">Trait Objects:
+<code>unique[trait]</code></a>
 <ul>
 <li><a href="#object-safety" id="toc-object-safety">Object
 Safety</a></li>
-<li><a href="#some-trait-vs.-boxtrait"
-id="toc-some-trait-vs.-boxtrait"><code>some trait</code>
-vs. <code>box[trait]</code></a></li>
+<li><a href="#some-trait-vs.-uniquetrait"
+id="toc-some-trait-vs.-uniquetrait"><code>some trait</code>
+vs. <code>unique[trait]</code></a></li>
 </ul></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
@@ -59,7 +59,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </nav>
 <h1 id="trait-objects">24. Trait Objects</h1>
 <p><strong>Status:</strong> Partial</p>
-<p><code>box[trait]</code>, object-safety rules, and the
+<p><code>unique[trait]</code>, object-safety rules, and the
 <code>some trait</code> opaque-return-type comparison.</p>
 <h2 id="opaque-return-types-some-trait">Opaque Return Types:
 <code>some trait</code></h2>
@@ -80,34 +80,37 @@ s.draw()                    # works — s is known to implement drawable
 <code>some trait</code> values cannot be placed in a homogeneous
 collection without erasing them. Use a sum type
 (<code>@circle | @square</code>) for a closed, inspectable set of
-variants; use <code>box[trait]</code> when the set is open; use
+variants; use <code>unique[trait]</code> when the set is open; use
 <code>some trait</code> when the concrete type is static but
 inconvenient to name.</p>
-<h2 id="trait-objects-boxtrait">Trait Objects:
-<code>box[trait]</code></h2>
+<h2 id="trait-objects-uniquetrait">Trait Objects:
+<code>unique[trait]</code></h2>
 <p>Generic bounds resolve at compile time, so <code>[T: show]</code> is
 monomorphized and costs nothing. But some programs must hold values
 whose concrete types are not known together at compile time — a
 <code>list</code> of user-defined shapes, handlers registered by plugins
 loaded at run time. That is open-world polymorphism, and it cannot be
-monomorphized. For it, <code>box[trait]</code> is a <strong>trait
+monomorphized. For it, <code>unique[trait]</code> is a <strong>trait
 object</strong>: an owned, heap-allocated value whose concrete type is
-erased behind the trait, its methods dispatched through a vtable.</p>
+erased behind the trait, its methods dispatched through a vtable. Unlike
+<code>shared[T]</code>, which reference-counts many read-only handles to
+one value, <code>unique[T]</code> has exactly one owner and allows
+mutation.</p>
 <pre class="cinder"><code>trait drawable:
     def area(self) -&gt; float64
 # disk and square are structs that implement drawable
 
-var shapes: list[box[drawable]] = []
-shapes.push(box(disk { radius: 1.0 }))
-shapes.push(box(square { side: 2.0 }))
+var shapes: list[unique[drawable]] = []
+shapes.push(unique(disk { radius: 1.0 }))
+shapes.push(unique(square { side: 2.0 }))
 
 let total = shapes.map(s =&gt; s.area()).sum()   # each call dispatches through the vtable</code></pre>
-<p><code>box[fn(A) -&gt; B]</code> is the special case where the trait
-is a callable (see <a href="16-closures-and-capture.html">Closures and
-Capture</a>). Because coherence guarantees one implementation per type,
-a trait object’s vtable is never ambiguous.</p>
+<p><code>unique[fn(A) -&gt; B]</code> is the special case where the
+trait is a callable (see <a href="16-closures-and-capture.html">Closures
+and Capture</a>). Because coherence guarantees one implementation per
+type, a trait object’s vtable is never ambiguous.</p>
 <h3 id="object-safety">Object Safety</h3>
-<p>A trait can be used as <code>box[...]</code> only when it is
+<p>A trait can be used as <code>unique[...]</code> only when it is
 <em>object-safe</em>:</p>
 <ul>
 <li>Every method dispatches on <code>&amp;self</code> or
@@ -116,14 +119,14 @@ a trait object’s vtable is never ambiguous.</p>
 <li>No method takes or returns <code>self</code> by value (the concrete
 size is erased).</li>
 </ul>
-<p><code>box[drawable]</code> and <code>box[show]</code> work;
-<code>box[add]</code>, whose method takes <code>other: self</code> and
-returns <code>self.output</code>, does not. Add
+<p><code>unique[drawable]</code> and <code>unique[show]</code> work;
+<code>unique[add]</code>, whose method takes <code>other: self</code>
+and returns <code>self.output</code>, does not. Add
 <code>send</code>/<code>share</code> as extra bounds
-(<code>box[drawable + send]</code>) to move a trait object across
+(<code>unique[drawable + send]</code>) to move a trait object across
 tasks.</p>
-<h3 id="some-trait-vs.-boxtrait"><code>some trait</code>
-vs. <code>box[trait]</code></h3>
+<h3 id="some-trait-vs.-uniquetrait"><code>some trait</code>
+vs. <code>unique[trait]</code></h3>
 <table>
 <colgroup>
 <col style="width: 33%" />
@@ -134,7 +137,7 @@ vs. <code>box[trait]</code></h3>
 <tr>
 <th>Feature</th>
 <th><code>some trait</code></th>
-<th><code>box[trait]</code></th>
+<th><code>unique[trait]</code></th>
 </tr>
 </thead>
 <tbody>
@@ -160,10 +163,10 @@ vs. <code>box[trait]</code></h3>
 </tr>
 </tbody>
 </table>
-<p>Reach for <code>box</code> only at a genuinely open boundary. To
+<p>Reach for <code>unique</code> only at a genuinely open boundary. To
 merely <em>accept</em> any type implementing a trait, use a generic
-bound — monomorphized and free; <code>box</code> is for <em>storing or
-returning</em> values whose types are not known together.</p>
+bound — monomorphized and free; <code>unique</code> is for <em>storing
+or returning</em> values whose types are not known together.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
 <li><code>some trait</code> (general existential return types)
@@ -177,17 +180,19 @@ dispatched statically against the underlying concrete type
 (<code>infer_method_call</code>’s <code>existential_kind</code> case in
 <code>check.cpp</code>). This works for any function, not only
 <code>generator def</code>.</li>
-<li><code>box[trait]</code> <strong>is not implemented</strong>.
-<code>box</code> exists only as a bare unary type constructor
+<li><code>unique[trait]</code> <strong>is not implemented</strong>.
+<code>unique</code> exists only as a bare unary type constructor
+registered under the name <code>box</code>
 (<code>{.name = "box", .min_args = 1, .max_args = 1}</code> in
 <code>src/semantic/types.cpp</code>) with no object-safety checking, no
 vtable construction, and no lowering: no reference to <code>"box"</code>
-was found in <code>src/hir/</code>, <code>src/bytecode/</code>, or
-<code>src/llvm_codegen/</code>. No trait-object/vtable dynamic dispatch
-exists anywhere in the compiler. Neither the object-safety rules nor the
-<code>some trait</code>/<code>box[trait]</code> comparison table above
-can currently be exercised end-to-end — <code>box[trait]</code> is
-design-only content, same as <code>box[fn(A) -&gt; B]</code> in <a
+or <code>"unique"</code> was found in <code>src/hir/</code>,
+<code>src/bytecode/</code>, or <code>src/llvm_codegen/</code>. No
+trait-object/vtable dynamic dispatch exists anywhere in the compiler.
+Neither the object-safety rules nor the
+<code>some trait</code>/<code>unique[trait]</code> comparison table
+above can currently be exercised end-to-end — <code>unique[trait]</code>
+is design-only content, same as <code>unique[fn(A) -&gt; B]</code> in <a
 href="16-closures-and-capture.html">Closures and Capture</a>.</li>
 </ul>
 <h2 id="see-also">See also</h2>
@@ -195,7 +200,7 @@ href="16-closures-and-capture.html">Closures and Capture</a>.</li>
 <li><a href="18-traits.html">Traits</a> — the trait mechanism this
 builds on.</li>
 <li><a href="16-closures-and-capture.html">Closures and Capture</a> —
-<code>box[fn(A) -&gt; B]</code> as the callable special case.</li>
+<code>unique[fn(A) -&gt; B]</code> as the callable special case.</li>
 <li><a href="19-generics-and-inference.html">Generics and Inference</a>
 — the monomorphized alternative when the type set is closed/known.</li>
 </ul>

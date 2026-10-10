@@ -125,7 +125,7 @@ def adder(n: int32) -&gt; fn(int32) -&gt; int32:
     return x =&gt; x + n        # returns one concrete closure, hidden behind fn(int32) -&gt; int32</code></pre>
 <p><code>adder</code> returns a single closure <em>shape</em>, so
 <code>fn(int32) -&gt; int32</code> names it opaquely: the caller calls
-it and the compiler inlines through it — nothing is boxed.</p>
+it and the compiler inlines through it — nothing is wrapped.</p>
 <h2 id="three-ways-to-vary-returned-behavior">Three Ways to Vary
 Returned Behavior</h2>
 <p>To return <em>different</em> behaviors, prefer expressing the
@@ -152,15 +152,15 @@ the behavior as data avoids the problem.</p>
 <ol start="3" type="1">
 <li><strong>Chosen at runtime, from an open set</strong> — heterogeneous
 callbacks stored together, plugins loaded at run time — is the one case
-that cannot be monomorphized. <code>box[fn(A) -&gt; B]</code> is an
+that cannot be monomorphized. <code>unique[fn(A) -&gt; B]</code> is an
 owned, type-erased closure for this case only: it owns its captured
 environment and is called indirectly, and the cost is explicit in the
 type:</li>
 </ol>
-<pre class="cinder"><code>var handlers: list[box[fn(event) -&gt; unit]] = []
-handlers.push(box(e =&gt; log(e)))
-handlers.push(box(e =&gt; metrics.record(e)))</code></pre>
-<p><code>box</code> generalizes beyond closures to any object-safe
+<pre class="cinder"><code>var handlers: list[unique[fn(event) -&gt; unit]] = []
+handlers.push(unique(e =&gt; log(e)))
+handlers.push(unique(e =&gt; metrics.record(e)))</code></pre>
+<p><code>unique</code> generalizes beyond closures to any object-safe
 trait; see <a href="24-trait-objects.html">Trait Objects</a>.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <ul>
@@ -271,15 +271,15 @@ and satisfy a cross-backend agreement check), plus fixtures in
 <li>The three ways to vary returned behavior: the dependent-type and
 sum-type forms rely on ordinary generics and sum types, both implemented
 (see <a href="19-generics-and-inference.html">Generics and
-Inference</a>). <code>box[fn(A) -&gt; B]</code> does
+Inference</a>). <code>unique[fn(A) -&gt; B]</code> does
 <strong>not</strong> work today — no trait-object/vtable dynamic
 dispatch exists anywhere in the compiler (no lowering for
-<code>box</code> was found in <code>src/hir/</code>,
+<code>unique</code> was found in <code>src/hir/</code>,
 <code>src/bytecode/</code>, or <code>src/llvm_codegen/</code>;
-<code>box</code> is registered only as a bare type constructor in
+<code>unique</code> is registered only as a bare type constructor in
 <code>src/semantic/types.cpp</code>). See <a
 href="24-trait-objects.html">Trait Objects</a> for the equivalent
-finding on <code>box[trait]</code> generally.</li>
+finding on <code>unique[trait]</code> generally.</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>
@@ -289,8 +289,8 @@ Borrowing</a> — the borrow/move distinction closures follow.</li>
 <code>race</code></a> — full structured-concurrency semantics for
 spawn-site borrowing.</li>
 <li><a href="24-trait-objects.html">Trait Objects</a> —
-<code>box[trait]</code> as the general form of
-<code>box[fn(A) -&gt; B]</code>.</li>
+<code>unique[trait]</code> as the general form of
+<code>unique[fn(A) -&gt; B]</code>.</li>
 </ul>
 </body>
 </html>

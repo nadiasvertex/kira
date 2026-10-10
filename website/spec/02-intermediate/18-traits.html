@@ -119,6 +119,15 @@ cannot be assigned and a <code>mut self</code> method on
 <code>target</code> cannot be called.</li>
 <li>The reference returned by <code>deref()</code> borrows the receiver
 and cannot outlive it.</li>
+<li><code>*h</code> on a value whose type implements <code>deref</code>
+reads the target: it means <code>*h.deref()</code>. Like a member
+reached through <code>deref</code>, it is read-only, so
+<code>*h = v</code> and <code>&amp;mut *h</code> are errors, and a
+non-<code>copy</code> target cannot be moved out of it.
+<code>&amp;*h</code> borrows the target for as long as <code>h</code>
+lives.</li>
+<li><code>*</code> on any other value that is not a reference, raw
+pointer, or cell is an error.</li>
 </ul>
 <h2 id="clone"><code>clone</code></h2>
 <p><code>clone</code> produces a second owner of a value from a
@@ -138,15 +147,18 @@ declared in <code>src/std/traits.cn</code>. The checker retries field
 access, dotted paths, and method calls through <code>deref</code> when
 the receiver’s own type lacks the member, records the steps it took
 (<code>checked_types::deref_adjustments</code>), and lowering inserts
-the <code>deref()</code> calls. Writing through <code>deref</code>
-(assignment, <code>&amp;mut</code>, a <code>mut self</code> method) is
-rejected with a dedicated diagnostic, and the ownership checker treats a
-member reached through <code>deref</code> as borrowed from the handle,
-so it cannot be moved out or outlive the handle. Only struct, sum, and
-opaque handle types are looked through, and a receiver whose type is
-still being inferred is never looked through. No standard library type
-implements <code>deref</code> yet; <code>shared[T]</code> will (see <a
-href="../../shared-t-type.html">shared-t-type.md</a>).</p>
+the <code>deref()</code> calls. The <code>*</code> operator on a handle
+records the same single step for its operand. Writing through
+<code>deref</code> (assignment, <code>&amp;mut</code>, a
+<code>mut self</code> method) is rejected with a dedicated diagnostic,
+and the ownership checker treats a member reached through
+<code>deref</code> as borrowed from the handle, so it cannot be moved
+out or outlive the handle. Only struct, sum, and opaque handle types are
+looked through, and a receiver whose type is still being inferred is
+never looked through. <code>shared[T]</code> implements
+<code>deref</code> (see <a
+href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>).</p>
 <p>Trait declarations, <code>impl</code>, default methods,
 <code>requires</code> (checked as
 <code>trait_decl::requires_bound</code> in
@@ -187,7 +199,7 @@ on.</li>
 <li><a href="22-extension-methods.html">Extension Methods</a> — adding
 methods without claiming trait conformance.</li>
 <li><a href="24-trait-objects.html">Trait Objects</a> —
-<code>box[trait]</code>, the dynamic counterpart to a generic
+<code>unique[trait]</code>, the dynamic counterpart to a generic
 bound.</li>
 </ul>
 </body>

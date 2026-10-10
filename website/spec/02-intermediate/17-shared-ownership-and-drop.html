@@ -39,7 +39,11 @@
 id="toc-shared-ownership-and-drop">17. Shared Ownership and Drop</a>
 <ul>
 <li><a href="#shared-ownership" id="toc-shared-ownership">Shared
-Ownership</a></li>
+Ownership</a>
+<ul>
+<li><a href="#representation"
+id="toc-representation">Representation</a></li>
+</ul></li>
 <li><a href="#destructors-drop" id="toc-destructors-drop">Destructors:
 <code>drop</code></a>
 <ul>
@@ -56,7 +60,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </ul>
 </nav>
 <h1 id="shared-ownership-and-drop">17. Shared Ownership and Drop</h1>
-<p><strong>Status:</strong> Partial</p>
+<p><strong>Status:</strong> Implemented</p>
 <p><code>shared[T]</code> reference-counted values, and the
 <code>drop</code> trait’s rules for destructor execution.</p>
 <h2 id="shared-ownership">Shared Ownership</h2>
@@ -79,6 +83,45 @@ synchronized cell such as <code>mutex[T]</code> (see <a
 href="30-data-race-freedom.html">Data-Race Freedom</a>).</li>
 <li><code>shared</code> carries a small runtime cost; prefer single
 ownership, and prefer scoped borrowing (free) whenever possible.</li>
+<li><code>clone()</code> on a handle makes another handle to the same
+value; it does not copy the value. The value drops when the last handle
+drops.</li>
+<li>Handles that form a cycle keep each other alive and are never
+dropped. There is no weak handle.</li>
+<li><code>shared[T]</code> is an ordinary standard library type
+(<code>std.shared</code>). The <code>shared e</code> expression form
+needs no import; naming the type (<code>shared T</code> or
+<code>shared[T]</code>) needs <code>use std.shared.shared</code>.</li>
+</ul>
+<h3 id="representation">Representation</h3>
+<p>A handle holds one pointer to a heap block that records the number of
+live handles and the value:</p>
+<pre class="cinder"><code>type shared_block[T] = { count: usize, value: T }
+pub type shared[T] = { inner: *mut shared_block[T] }</code></pre>
+<ul>
+<li><code>shared[T].new(v)</code> allocates a block, moves
+<code>v</code> into it, and sets the count to 1. <code>shared e</code>
+is the same call written as an expression, and the bare form
+<code>shared.new(e)</code> solves <code>T</code> from its argument.</li>
+<li><code>clone()</code> atomically increments the count and returns a
+second handle to the same block. <code>drop</code> atomically decrements
+it; the handle that takes the count to zero runs the value’s drop glue
+and frees the block.</li>
+<li><code>strong_count()</code> reports the number of live handles.</li>
+<li>A handle is one pointer wide. Its <code>shared_block</code> is held
+by reference like any struct, so code in <code>std.shared</code> writes
+the whole block into its slot instead of assigning the fields of an
+unwritten slot.</li>
+<li>Reading through a handle uses <a
+href="18-traits.html#deref"><code>deref</code></a>. <code>clone</code>
+is found on the handle before the target’s own <code>clone</code>, so
+<code>h.clone()</code> always adds a handle and never copies the value.
+A target’s own method of the same name is reached with
+<code>(*h).clone()</code>.</li>
+<li><code>shared</code> is a keyword that is also accepted as a module
+path segment and a type declaration name. The type name is not in the
+prelude and needs <code>use std.shared.shared</code>; the
+<code>shared e</code> expression form needs no import.</li>
 </ul>
 <h2 id="destructors-drop">Destructors: <code>drop</code></h2>
 <p>A type that owns a resource — a file handle, a socket, a lock —
@@ -285,10 +328,6 @@ literal <code>false</code> are not lowered
 query like <code>size_of</code>, usable in ordinary <code>if</code>
 conditions but not in <code>static if</code> or compile-time functions,
 since drop plans exist only after checking ends.</li>
-<li><strong>Not yet unified:</strong> the drop decisions are split
-between the ownership checker and the lowerer, which have to agree
-through shared helper functions; it is tracked in <a
-href="../../todo.html">todo.md</a>.</li>
 <li>Unwinding through drops on panic is moot: this compiler has no stack
 unwinding at all (<code>panic</code> traps/aborts).</li>
 <li>The prelude <code>drop(x)</code> function exists
@@ -300,16 +339,20 @@ a separate, HIR-oriented walker that decides where drops go, and keeps
 its own record of which bindings were moved (see that file’s doc
 comment).</li>
 </ul></li>
-<li><strong><code>shared[T]</code> is a name with nothing behind
-it.</strong> <code>shared</code> is registered as a builtin generic
-(<code>src/semantic/types.cpp:51</code>) and that is the entire
-implementation. The <code>shared</code> expression form yields a plain
-reference — <code>let a: shared t = shared t{ id: 1 }</code> fails with
-<code>expected `shared[t]`, found `&amp;t`</code> — and
-<code>shared[T]</code> has no methods, so <code>.clone()</code> does not
-resolve. No atomic reference count exists anywhere in the source tree,
-so neither the read-only-access guarantee nor drop-at-zero is enforced
-or implemented.</li>
+<li><strong><code>shared[T]</code> is implemented</strong> in
+<code>src/std/shared.cn</code> over <code>std.mem</code>’s allocator and
+atomic primitives, with <code>clone</code>, <code>deref</code> and
+<code>drop</code> impls. Both backends run it
+(<code>src/testdata/std_test/shared_*.cn</code>,
+<code>accept_shared_expr.cn</code>; layout checked by
+<code>src/testdata/codegen_stress/134_shared_layout.cn</code>). Writing
+through a handle is rejected
+(<code>src/testdata/semantic_check_test/reject_mutate_through_shared.cn</code>),
+and so is a borrow through a handle that outlives it or a move out of
+the shared value
+(<code>src/testdata/semantic_ownership_check_test/reject_shared_borrow_outlived.cn</code>).
+A cycle of handles leaks; no test builds one, because a cycle needs
+interior mutability, which does not exist yet.</li>
 <li><strong><code>scope</code> blocks work</strong>
 (<code>src/testdata/std_test/scope_block.cn</code>), and so do drops for
 <code>where</code> bindings
@@ -318,7 +361,6 @@ drop in reverse order at its <code>DEDENT</code>; a <code>where</code>
 binding drops when its <code>let</code> finishes, after the initializer
 is evaluated.</li>
 </ul>
-<p>Tracked as items 6–7 in <a href="../../todo.html">todo.md</a>.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="14-ownership-and-borrowing.html">Ownership and

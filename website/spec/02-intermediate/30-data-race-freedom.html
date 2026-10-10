@@ -119,25 +119,21 @@ tracking exists to require them, and <code>crew</code> bodies type-check
 against <code>k_unknown_type</code> rather than enforcing borrow rules
 across spawned tasks (see <a
 href="26-concurrency-execution-model.html#implementation-status">The
-Execution Model</a>). <code>shared[T]</code> the <em>value</em> is not
-implemented: <code>shared</code> is only a registered type name, and the
-<code>shared</code> expression form yields a plain reference (see <a
+Execution Model</a>). <code>shared[T]</code> itself is implemented: an
+atomically reference-counted, read-only handle in
+<code>std.shared</code> (see <a
 href="17-shared-ownership-and-drop.html">Shared Ownership and Drop</a>).
-A real <code>shared[T]</code> is planned in phases
-(<code>spec/shared-t-type.md</code>): atomic reference-count primitives,
-the <code>clone</code> trait, the <code>deref</code> trait with
-auto-deref lookup, then <code>shared[T]</code> in the stdlib, then the
-<code>shared expr</code> syntax. The cross-task guarantee described
-above is aspirational until a scheduler exists. <code>mutex[T]</code>,
-<code>rwlock[T]</code>, and <code>atomic[T]</code> do not exist anywhere
-in <code>src/std/</code>, and neither runtime backend has any
-synchronization primitive. None of the “many readers or one writer”
-enforcement described in this chapter — compile-time or runtime — is
-checked by the compiler today.</p>
+The cross-task guarantee described above is aspirational until a
+scheduler exists. <code>mutex[T]</code>, <code>rwlock[T]</code>, and
+<code>atomic[T]</code> do not exist anywhere in <code>src/std/</code>,
+and neither runtime backend has any synchronization primitive. None of
+the “many readers or one writer” enforcement described in this chapter —
+compile-time or runtime — is checked by the compiler today.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="17-shared-ownership-and-drop.html">Shared Ownership and
-Drop</a> — <code>shared[T]</code>, planned; not yet implemented.</li>
+Drop</a> — <code>shared[T]</code>, the read-only reference-counted
+handle.</li>
 <li><a href="26-concurrency-execution-model.html">The Execution
 Model</a> — contexts, and where <code>send</code>/<code>share</code> are
 meant to be required.</li>
