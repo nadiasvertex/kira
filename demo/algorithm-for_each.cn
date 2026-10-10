@@ -18,5 +18,5 @@ def main() -> int32:
 
     # Print only even numbers
     println("---")
-    nums.iter().values().filter(x => x % 2 == 0).for_each(x => println("even={x}"))
+    nums.iter().values().filter(x => *x % 2 == 0).for_each(x => println("even={x}"))
     return 0

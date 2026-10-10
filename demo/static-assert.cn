@@ -23,7 +23,7 @@ static assert LIMIT <= 1_000, "LIMIT ({LIMIT}) must not exceed {1_000}"
 # `static assert false` is unreachable for a real call site but, once `T` is
 # bound, still needs a message — interpolating `T`'s reflected name says
 # exactly which type was missing.
-def max_of[T]() -> T:
+def max_of[T]() -> T where T: numeric:
     let n = T.name()
     static if n == "int8":
         return 127 as T

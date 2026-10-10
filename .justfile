@@ -237,8 +237,22 @@ demo: build
 
     fail=0
     for f in demo/*.cn; do
-      if ! out=$(bazel-bin/src/cinder "$f" 2>&1); then
-        echo "=== FAIL: $f ==="
+      # A demo's header says how it runs and how it is meant to exit:
+      # "Run it:  cinder --test ..." selects test mode, and
+      # "Exits 1" marks a demo that fails on purpose.
+      args=()
+      if grep -q '^#  Run it: *cinder --test' "$f"; then
+        args=(--test)
+      fi
+      want=0
+      if grep -q '^#  Exits 1' "$f"; then
+        want=1
+      fi
+
+      out=$(bazel-bin/src/cinder "${args[@]}" "$f" 2>&1)
+      got=$?
+      if [ "$got" -ne "$want" ]; then
+        echo "=== FAIL: $f (exit $got, expected $want) ==="
         echo "$out"
         fail=1
       fi

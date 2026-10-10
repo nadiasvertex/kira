@@ -17,11 +17,11 @@ def main() -> int32:
     let d = [1, 2]
 
     # Same elements in same order
-    println("eq_same={a.iter().values().eq_by(b.iter().values(), (x, y) => x == y)}")
+    println("eq_same={a.iter().values().eq_by(b.iter().values(), (x, y) => *x == *y)}")
 
     # Different element
-    println("eq_diff={a.iter().values().eq_by(c.iter().values(), (x, y) => x == y)}")
+    println("eq_diff={a.iter().values().eq_by(c.iter().values(), (x, y) => *x == *y)}")
 
     # Different length
-    println("eq_length={a.iter().values().eq_by(d.iter().values(), (x, y) => x == y)}")
+    println("eq_length={a.iter().values().eq_by(d.iter().values(), (x, y) => *x == *y)}")
     return 0

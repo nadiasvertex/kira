@@ -14,8 +14,8 @@ module main
 def main() -> int32:
     # Descending order.
     var nums: array[int32, 5] = [3, 1, 4, 1, 5]
-    sort_by(&mut nums[0..5], (a: int32, b: int32) =>
-        if a > b: @less elif a < b: @greater else: @equal)
+    sort_by(&mut nums[0..5], (a: &int32, b: &int32) =>
+        if *a > *b: @less elif *a < *b: @greater else: @equal)
     var i: usize = 0
     while i < 5:
         println("desc[{i}]={nums[i]}")
@@ -23,7 +23,7 @@ def main() -> int32:
 
     # Sort pairs by their first element; equal keys keep their original
     # relative order only if the caller compares just the first element.
-    let by_first = (p: (int32, int32), q: (int32, int32)) => (
+    let by_first = (p: &(int32, int32), q: &(int32, int32)) => (
         if p.0 < q.0: @less elif q.0 < p.0: @greater else: @equal)
     var pairs: list[(int32, int32)] = [(1, 10), (0, 20), (1, 30)]
     sort_by(&mut pairs[0..3], by_first)

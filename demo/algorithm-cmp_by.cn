@@ -11,10 +11,10 @@ module main
 #  Compile it:  cinder --compile -o algorithm-cmp_by demo/algorithm-cmp_by.cn
 # ==========================================================================
 
-def cmp_int(x: int32, y:int32) -> ordering:
-  if x<y:
+def cmp_int(x: &int32, y: &int32) -> ordering:
+  if *x < *y:
     @less
-  elif x>y:
+  elif *x > *y:
     @greater
   else:
     @equal

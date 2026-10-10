@@ -14,13 +14,13 @@ module main
 def main() -> int32:
     let haystack = [1, 3, 5, 7, 9]
 
-    match binary_search_by(&haystack[0..5], (x: int32) =>
-            if x < 7: @less elif x > 7: @greater else: @equal):
+    match binary_search_by(&haystack[0..5], (x: &int32) =>
+            if *x < 7: @less elif *x > 7: @greater else: @equal):
         @some(idx) => println("hit={idx}")
         @none      => println("hit=none")
 
-    match binary_search_by(&haystack[0..5], (x: int32) =>
-            if x < 4: @less elif x > 4: @greater else: @equal):
+    match binary_search_by(&haystack[0..5], (x: &int32) =>
+            if *x < 4: @less elif *x > 4: @greater else: @equal):
         @some(idx) => println("miss={idx}")
         @none      => println("miss=none")
     return 0

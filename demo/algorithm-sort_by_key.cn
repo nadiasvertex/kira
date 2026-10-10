@@ -13,7 +13,7 @@ module main
 def main() -> int32:
     # Ascending, by value.
     var nums: array[int32, 4] = [5, 2, 8, 1]
-    sort_by_key(&mut nums[0..4], (x: int32) => x)
+    sort_by_key(&mut nums[0..4], (x: &int32) => *x)
     var i: usize = 0
     while i < 4:
         println("asc[{i}]={nums[i]}")
@@ -21,7 +21,7 @@ def main() -> int32:
 
     # Descending, via a negated key.
     var nums2: array[int32, 4] = [5, 2, 8, 1]
-    sort_by_key(&mut nums2[0..4], (x: int32) => 0 - x)
+    sort_by_key(&mut nums2[0..4], (x: &int32) => 0 - *x)
     i = 0
     while i < 4:
         println("desc[{i}]={nums2[i]}")

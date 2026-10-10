@@ -14,11 +14,11 @@ def main() -> int32:
     let nums = [1, 3, -5, 4, -2]
 
     # First positive is 1
-    println("find_first_positive={nums.iter().values().find(x => x > 0).unwrap()}")
+    println("find_first_positive={nums.iter().values().find(x => *x > 0).unwrap()}")
 
     # First negative is -5
-    println("find_first_negative={nums.iter().values().find(x => x < 0).unwrap()}")
+    println("find_first_negative={nums.iter().values().find(x => *x < 0).unwrap()}")
 
     # Not finding
-    println("find_none={nums.iter().values().find(x => x > 100).is_none()}")
+    println("find_none={nums.iter().values().find(x => *x > 100).is_none()}")
     return 0

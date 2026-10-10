@@ -26,7 +26,7 @@ def main() -> int32:
 
     # Enumerate after filter: indices start where enumerate begins
     let all = [10, 20, 30, 40]
-    var filtered = all.into_iter().filter(x => x > 15).enumerate()
+    var filtered = all.into_iter().filter(x => *x > 15).enumerate()
     let (fi0, fv0) = filtered.next().unwrap()
     println("fenum={fi0}:{fv0}")
     let (fi1, fv1) = filtered.next().unwrap()

@@ -14,12 +14,12 @@ def main() -> int32:
     let nums = [2, 4, 6, 8]
 
     # All are even
-    println("all_even={nums.iter().values().all(x => x % 2 == 0)}")
+    println("all_even={nums.iter().values().all(x => *x % 2 == 0)}")
 
     # Not all are 4
-    println("all_4={nums.iter().values().all(x => x == 4)}")
+    println("all_4={nums.iter().values().all(x => *x == 4)}")
 
     # Empty iterator: all is vacuously true
     let empty: list[int32] = []
-    println("all_empty={empty.iter().values().all(x => x > 0)}")
+    println("all_empty={empty.iter().values().all(x => *x > 0)}")
     return 0

@@ -11,17 +11,17 @@ module main
 #  Compile it:  cinder --compile -o algorithm-min_by demo/algorithm-min_by.cn
 # ==========================================================================
 
-def cmp_int(a: int32, b: int32) -> ordering:
-    if a < b:
+def cmp_int(a: &int32, b: &int32) -> ordering:
+    if *a < *b:
         return @less
-    elif a > b:
+    elif *a > *b:
         return @greater
     return @equal
 
-def rcmp(a: int32, b: int32) -> ordering:
-    if a < b:
+def rcmp(a: &int32, b: &int32) -> ordering:
+    if *a < *b:
         return @greater
-    elif a > b:
+    elif *a > *b:
         return @less
     return @equal
 

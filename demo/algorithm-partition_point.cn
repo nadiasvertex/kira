@@ -13,11 +13,11 @@ def main() -> int32:
     let nums = [1, 3, 5, 7, 9]
 
     # Boundary where "less than 5" stops holding.
-    println("boundary={partition_point(&nums[0..5], (x: int32) => x < 5)}")
+    println("boundary={partition_point(&nums[0..5], (x: &int32) => *x < 5)}")
 
     # Every element satisfies the predicate.
-    println("all_match={partition_point(&nums[0..5], (x: int32) => x < 100)}")
+    println("all_match={partition_point(&nums[0..5], (x: &int32) => *x < 100)}")
 
     # No element satisfies the predicate.
-    println("none_match={partition_point(&nums[0..5], (x: int32) => x < 0)}")
+    println("none_match={partition_point(&nums[0..5], (x: &int32) => *x < 0)}")
     return 0
