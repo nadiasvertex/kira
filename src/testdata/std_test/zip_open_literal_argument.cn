@@ -1,0 +1,23 @@
+module main
+
+# `zip`'s `U` is reachable only through its `J: iterator[U]` bound. When the
+# second list is unannotated, `b.into_iter()` implements `iterator[?a]` for
+# a still-open literal leaf `?a`, and that leaf is the answer for `U`.
+# It used to be dropped, leaving `U` unsolved ("cannot tell what `U` is").
+# Both orders are checked, so the open list is once the receiver and once
+# the argument.
+
+def main() -> int32:
+    let a = [1, 2, 3]
+    let b = [10, 20, 30, 40]
+    var z = a.into_iter().zip(b.into_iter())
+    let (x0, y0) = z.next().unwrap()
+    let (x1, y1) = z.next().unwrap()
+    println("pairs={x0},{y0} {x1},{y1}")
+
+    let c = [7, 8]
+    let d = [70, 80, 90]
+    var w = d.into_iter().zip(c.into_iter())
+    let (l, r) = w.next().unwrap()
+    println("swapped={l},{r} sum={l + r}")
+    return 0

@@ -14544,7 +14544,13 @@ private:
   /// step, which is its own piece of work.
   auto match_params(type_id pattern, type_id concrete, param_subst &bindings,
                     bool allow_override = false) -> void {
-    if (pattern == concrete || types_.is_unknown(concrete)) {
+    // An open leaf is an answer, not a gap: `iterator[U]` against the
+    // `iterator[?a]` a literal-element list's iterator implements solves
+    // `U := ?a`, which settles when the literal does. `is_unknown` counts a
+    // leaf as unknown, so it is ruled out by kind here.
+    if (pattern == concrete || (types_.is_unknown(concrete) &&
+                                types_.entry(concrete).kind !=
+                                    type_kind::type_var_kind)) {
       return;
     }
     const auto matched = infer::match_pattern(types_, pattern, concrete);
