@@ -8476,8 +8476,9 @@ private:
           std::format("${}", mangle_type_for_instance(self_type));
       const auto saved_file = file_id_;
       file_id_ = item.file;
-      const auto bounds_hold = check_call_bounds(
-          *item.call, decl, item.owner, item.decl_file, block_solution, &scoped);
+      const auto bounds_hold =
+          check_call_bounds(*item.call, decl, item.owner, item.decl_file,
+                            block_solution, &scoped);
       file_id_ = saved_file;
       if (!bounds_hold) {
         return;
@@ -15731,10 +15732,10 @@ private:
       type_id receiver_type, const param_subst &bindings,
       const type_scope &scoped_params, const generic_solution &solution)
       -> std::optional<type_id> {
-    const auto result = substitute_solved(
-        signature_return_type(*method.decl, method.owner,
-                              method.block_type_params),
-        bindings);
+    const auto result =
+        substitute_solved(signature_return_type(*method.decl, method.owner,
+                                                method.block_type_params),
+                          bindings);
     // The method's own `where` (`def ordered(self) where K: ord`) is checked
     // here, at the line that chose `K`, rather than surfacing later from
     // inside the instance body. A call whose bounds fail names no instance.
