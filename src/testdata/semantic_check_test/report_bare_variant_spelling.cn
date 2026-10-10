@@ -1,0 +1,13 @@
+module report_bare_variant_spelling
+
+type shape = @circle(int64) | @point
+
+# Each variant below is missing its `@`. These used to type-check and then
+# fail in lowering with "no concrete checked type is available".
+def main() -> int32:
+    let o = some(5)
+    let w: option[int64] = o
+    let n: option[int64] = none
+    let c = circle(3)
+    let p: shape = point
+    return 0

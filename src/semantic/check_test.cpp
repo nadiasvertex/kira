@@ -1572,6 +1572,19 @@ auto test_reports_unknown_variant_in_pattern() -> void {
                     "expected unknown-variant diagnostic");
 }
 
+auto test_reports_bare_variant_spelling() -> void {
+  const auto analyzed = analyze_test_data_file("report_bare_variant_spelling.cn");
+  expect(analyzed.error_count >= 4, "expected each bare variant to fail");
+  expect_diagnostic(analyzed, "variant `some` must be written `@some`",
+                    "expected bare `some(...)` diagnostic");
+  expect_diagnostic(analyzed, "variant `none` must be written `@none`",
+                    "expected bare `none` diagnostic");
+  expect_diagnostic(analyzed, "variant `circle` must be written `@circle`",
+                    "expected bare user-variant call diagnostic");
+  expect_diagnostic(analyzed, "variant `point` must be written `@point`",
+                    "expected bare user-variant value diagnostic");
+}
+
 auto test_reports_try_in_plain_function() -> void {
   const auto analyzed =
       analyze_test_data_file("report_try_in_plain_function.cn");
@@ -3878,6 +3891,7 @@ auto main() -> int {
     test_reports_unknown_field_on_builtin_generic();
     test_reports_non_exhaustive_match();
     test_reports_unknown_variant_in_pattern();
+    test_reports_bare_variant_spelling();
     test_reports_try_in_plain_function();
     test_reports_try_with_no_from_conversion();
     test_reports_unknown_intrinsic();

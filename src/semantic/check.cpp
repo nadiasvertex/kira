@@ -11831,9 +11831,11 @@ private:
       return k_unknown_type;
     }
 
-    // Bare variant spelling without `@` (tolerated for resilience).
+    // Bare variant spelling without `@`: typed as the variant so the error
+    // doesn't cascade, but rejected — variants are always spelled `@name`.
     if (const auto variant =
             resolve_variant_value(name, nullptr, ident.span, expected)) {
+      emit_bare_variant(ident.span, name, /*is_call=*/false);
       return *variant;
     }
 
@@ -11843,6 +11845,20 @@ private:
 
     emit_undefined_name(ident.span, name);
     return k_error_type;
+  }
+
+  /// Rejects a variant spelled without its `@` (`some(5)`, `none`). The
+  /// checker can tell what was meant, so it says so and shows the fix.
+  auto emit_bare_variant(source_span span, std::string_view name, bool is_call)
+      -> void {
+    error_with_help(
+        span,
+        std::format("variant `{}` must be written `@{}`", name, name),
+        "missing `@`",
+        std::format("sum-type variants are always spelled with a leading "
+                    "`@`, which keeps them apart from functions and values "
+                    "of the same name. Write `@{}{}` here.",
+                    name, is_call ? "(...)" : ""));
   }
 
   /// Emits "unknown variant" once per distinct name per file, noting the
@@ -18567,6 +18583,7 @@ private:
 
     if (const auto variant =
             resolve_variant_value(name, &call, call.span, expected)) {
+      emit_bare_variant(ident.span, name, /*is_call=*/true);
       return *variant;
     }
 

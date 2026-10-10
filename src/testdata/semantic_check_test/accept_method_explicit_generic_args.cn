@@ -11,7 +11,7 @@ extend point:
         return v
 
 def nothing[T]() -> option[T]:
-    return none
+    return @none
 
 # The brackets agree with the argument, which is the whole point of being
 # allowed to write them.

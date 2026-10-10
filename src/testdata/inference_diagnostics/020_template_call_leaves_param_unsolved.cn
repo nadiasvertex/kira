@@ -6,7 +6,7 @@
 module infer_diag.template_call_leaves_param_unsolved
 
 def make[T]() -> option[T]:
-    return none
+    return @none
 
 def unsolved[U](x: U) -> int32:
     let y = make()

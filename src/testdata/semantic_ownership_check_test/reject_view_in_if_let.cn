@@ -6,7 +6,7 @@ def bump(v: &mut list[int32]) -> int32:
     return v[0]
 
 def pick(xs: &list[int32]) -> option[slice[int32]]:
-    return some(xs[0..2])
+    return @some(xs[0..2])
 
 def demo() -> int32:
     var xs = [1, 2, 3, 4]

@@ -6,7 +6,7 @@ module sample
 # does.
 
 def nothing[T]() -> option[T]:
-    return none
+    return @none
 
 def takes(x: option[int32]) -> unit:
     return unit
@@ -28,7 +28,7 @@ def from_argument() -> unit:
 
 # Assignment target.
 def from_assignment() -> unit:
-    var a: option[int32] = none
+    var a: option[int32] = @none
     a = nothing()
     return unit
 
@@ -44,7 +44,7 @@ def from_array_element() -> array[option[int32], 2]:
 def from_match_arm(n: int32) -> option[int32]:
     return match n:
         0 => nothing()
-        _ => none
+        _ => @none
 
 # A lambda's declared result type. This row of §2.3's table could not be
 # written down until lambdas with declared results parsed at all -- the
