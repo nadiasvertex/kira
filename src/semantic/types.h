@@ -610,6 +610,30 @@ struct array_literal_conversion {
   type_id array_type = 0;
 };
 
+/// A reified `static let`'s compile-time value, with the type of every part
+/// resolved so lowering can rebuild it without the checker's type queries.
+/// `leaf` holds a `scalar`'s number, boolean or string. `names` holds a
+/// `structure`'s field names (parallel to `parts`) or a `variant`'s tag (its
+/// only entry). A `collection` is built by handing an array of `parts` to
+/// `from_array`: `conversion` is the synthesized literal whose
+/// `checked_types::array_literal_conversions` entry names that constructor.
+struct reified_value {
+  enum class shape : uint8_t {
+    scalar,
+    array,
+    tuple,
+    collection,
+    structure,
+    variant
+  };
+  shape kind = shape::scalar;
+  type_id type = 0;
+  comptime::value leaf;
+  std::vector<std::string> names;
+  std::vector<reified_value> parts;
+  const ast::array_expr *conversion = nullptr;
+};
+
 /// What it takes to drop one value of a struct/sum type — see
 /// `checker::resolve_drop_plans` (`check.cpp`). `own_drop` is this type's own
 /// `impl drop`, if it has one; `droppable_fields` are the struct fields (in
@@ -1230,11 +1254,11 @@ struct checked_types {
   /// stride can never disagree with the stride a `*mut T` through it uses.
   std::unordered_map<const ast::call_expr *, stack_buffer_request>
       stack_buffers;
-  /// One top-level `static let` reified as real backing data — an
-  /// array/list/tuple whose elements are all scalar (integer/floating/
-  /// boolean), which `checker::materialize_const_literal` cannot inline the
-  /// way it does a single scalar (there's no one `ast::literal_expr` shape
-  /// for a whole array). `hir::lower_module_items` looks a module's own
+  /// One top-level `static let` reified as real backing data — an array,
+  /// list, tuple, variant, or struct holding one of those, which
+  /// `checker::materialize_const_literal` cannot inline the way it does a
+  /// single scalar. `value` is its compile-time value with every part typed
+  /// (see `reified_value`). `hir::lower_module_items` looks a module's own
   /// `static_decl` items up here (by declaration pointer) and lowers a
   /// matching entry into an `hir_static_global`; `name` is unique across the
   /// whole program, so every backend can key one flat global table by it
@@ -1243,7 +1267,7 @@ struct checked_types {
   struct static_global_def {
     std::string name;
     type_id type;
-    std::vector<comptime::value> elements;
+    reified_value value;
   };
   std::unordered_map<const ast::static_decl *, static_global_def>
       static_global_defs;

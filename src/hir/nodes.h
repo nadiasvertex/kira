@@ -1137,10 +1137,10 @@ struct hir_function : hir_item {
 
 /// One top-level `static let` reified as real backing data — see
 /// `semantic::checked_types::static_global_defs`'s doc comment for
-/// eligibility (an array/list/tuple of homogeneous scalar elements) and how
-/// `name` is assigned. `value` builds the global: an `hir_array_init` of one
-/// `hir_literal` per element, in source order, wrapped in a call to the
-/// collection's `from_array` when the static is not a plain array. A backend
+/// eligibility and how `name` is assigned. `value` builds the global from
+/// its compile-time value (`semantic::reified_value`): literals, array,
+/// tuple, struct and variant constructions, and a `from_array` call for each
+/// collection. A backend
 /// evaluates it exactly once (VM: a slot filled by a synthesized init
 /// routine; LLVM: a global filled by an `llvm.global_ctors` routine), keyed
 /// by `name` in one flat, program-wide table so `hir_global_ref` can resolve

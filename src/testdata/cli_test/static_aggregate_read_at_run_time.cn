@@ -1,0 +1,52 @@
+module main
+
+# Run-time code reads `static let`s holding strings, nested collections,
+# variants, tuples, and structs with list fields (todo item 8). Each global
+# is built once from its compile-time value; a reader that takes one by
+# value gets its own copy.
+
+type shape =
+    | @circle(int32)
+    | @rect(int32, int32)
+    | @empty
+
+type entry = { key: str, values: list[int32] }
+
+static def labels() -> list[str]:
+    var out: list[str] = []
+    out.push("one")
+    out.push("three")
+    return out
+
+static let names: array[str, 2] = ["a", "bc"]
+static let words = ["x", "yy", "zzz"]
+static let grid: array[array[int32, 2], 2] = [[1, 2], [3, 4]]
+static let nested = [[1, 2], [3, 4, 5]]
+static let shapes = [@circle(3), @rect(4, 5), @empty]
+static let pair = ("seven", 7)
+static let computed = labels()
+static let table: list[entry] = [{key: "a", values: [1]}, {key: "b", values: [2, 3]}]
+
+def area(s: shape) -> int32:
+    return match s:
+        @circle(r) => r * 3
+        @rect(w, h) => w * h
+        @empty => 0
+
+def main() -> int32:
+    # 2 + 3 + 4 = 9
+    var total = names[1].len() as int32 + words[2].len() as int32 + grid[1][1]
+    # + 5 + 3 = 17
+    total = total + nested[1][2] + nested[1].len() as int32
+    # + 9 + 20 + 0 = 46
+    for s in shapes:
+        total = total + area(s)
+    # + 5 + 7 = 58
+    total = total + pair.0.len() as int32 + pair.1
+    # + 1 + 3 + 2 = 64
+    total = total + table[1].key.len() as int32 + table[1].values[1] + table[1].values.len() as int32
+    # + 10 - 1 + 5 = 78; `nested[0][0]` is still 1.
+    var own = nested
+    own[0][0] = 10
+    total = total + own[0][0] - nested[0][0] + computed[1].len() as int32
+    return total

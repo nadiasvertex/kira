@@ -1638,6 +1638,64 @@ auto test_static_list_read_at_run_time() -> void {
 }
 
 /// A run-time read of a static with no run-time representation names the
+/// Run-time code reads `static let`s holding strings, nested collections,
+/// variants, tuples, and structs with list fields (todo item 8). Asserted by
+/// the computed value on both backends.
+auto test_static_aggregate_read_at_run_time() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  auto output_path = temp.path / "static_aggregate_bin";
+
+  write_file(main_source, read_program("static_aggregate_read_at_run_time.cn"));
+
+  constexpr auto expected = 78;
+  const auto sources = std::vector<std::string>{main_source.string()};
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value(), "expected compile driver to return a report");
+  expect(run_report->error_count == 0,
+         "expected aggregate statics to be readable: " + run_report->diagnostics);
+  expect(run_report->run.has_value() && run_report->run->succeeded,
+         "expected `main` to run without panicking");
+  expect(run_report->run->exit_code == expected,
+         std::format("expected {} on the VM, got {}", expected,
+                     run_report->run->exit_code));
+
+  cinder::driver::cli_config build_cfg{
+      .program_name = "cinder",
+      .sources = sources,
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(build_cfg);
+  auto build_report = cinder::driver::compile_sources(build_cfg, false);
+  expect(build_report.has_value() && build_report->build.has_value() &&
+             build_report->build->succeeded,
+         "expected `--build` of the aggregate statics program to link: " +
+             (build_report.has_value() ? build_report->diagnostics
+                                       : std::string{}));
+  const auto status = std::system(output_path.string().c_str()); // NOLINT
+#ifdef WEXITSTATUS
+  expect(WEXITSTATUS(status) == expected,
+         std::format("expected {} from the linked executable, got {}", expected,
+                     WEXITSTATUS(status)));
+#endif
+}
+
+/// A run-time read of a static with no run-time representation names the
 /// static and its type instead of calling it a bare function value.
 auto test_static_unreadable_at_run_time_is_named() -> void {
   auto temp = make_temp_dir();
@@ -1658,7 +1716,7 @@ auto test_static_unreadable_at_run_time_is_named() -> void {
   auto report = cinder::driver::compile_sources(run_cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->diagnostics.contains(
-             "`names` is a `static let` of type `array[str, 2]`"),
+             "`e` is a `static let` of type `expr`"),
          "expected the static to be named: " + report->diagnostics);
   expect(!report->diagnostics.contains("bare function value"),
          "expected no function-value wording: " + report->diagnostics);
@@ -4930,6 +4988,7 @@ auto main() -> int {
     test_comptime_str_casing();
     test_static_str_read_at_run_time();
     test_static_list_read_at_run_time();
+    test_static_aggregate_read_at_run_time();
     test_static_unreadable_at_run_time_is_named();
     test_comptime_error_names_call_site();
     test_comptime_unsupported_method_is_named();

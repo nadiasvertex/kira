@@ -224,67 +224,69 @@ template <typename T>
   return call;
 }
 
-/// Converts one homogeneous-scalar `comptime::value` element (integer/
-/// floating/boolean — see `checked_types::static_global_defs`'s eligibility)
-/// into an `hir_literal`, mirroring `semantic::checker::materialize_const_
-/// literal`'s own scalar switch exactly (that function's `default: return
-/// nullptr` case is precisely what routes an element here instead).
-auto lower_static_global_element(const comptime::value &value, source_span span,
-                                 type_id elem_type) -> ptr<hir_expr> {
-  switch (value.kind) {
-  case comptime::value_kind::integer:
-    return make<hir_literal>(span, elem_type, token_kind::int_lit,
-                             std::to_string(value.integer));
-  case comptime::value_kind::floating:
-    return make<hir_literal>(span, elem_type, token_kind::float_lit,
-                             std::to_string(value.floating));
-  case comptime::value_kind::boolean:
-    return make<hir_literal>(span, elem_type,
-                             value.boolean ? token_kind::kw_true
-                                           : token_kind::kw_false,
-                             value.boolean ? "true" : "false");
-  default:
-    // Unreachable: `reify_static_global` only ever admits these three kinds.
-    return make<hir_literal>(span, elem_type, token_kind::int_lit, "0");
-  }
-}
-
-/// The expression that builds a reified `static let`'s value at `span`: the
-/// `array[T, n]` of its elements, handed to the collection's `from_array`
-/// when the static is not a plain array (`checker::reify_static_global` only
-/// admits one of those whose initializer is a literal). `symbol_for` names
-/// that constructor in the body the expression is lowered into.
-auto lower_static_global_value(
-    const ast::static_decl &decl,
-    const semantic::checked_types::static_global_def &def,
+/// Builds one part of a reified `static let`'s value (see
+/// `semantic::reified_value`) as an expression. `symbol_for` names each
+/// `from_array` constructor in the body the expression is lowered into.
+auto lower_reified_value(
+    const semantic::reified_value &value,
     const semantic::checked_types &checked, source_span span,
     const std::function<symbol_id(std::string_view)> &symbol_for)
     -> std::expected<ptr<hir_expr>, lowering_error> {
-  const auto *literal =
-      dynamic_cast<const ast::array_expr *>(decl.initializer.get());
-  const auto conversion =
-      literal != nullptr ? checked.array_literal_conversions.find(literal)
-                         : checked.array_literal_conversions.end();
-  const auto converted = conversion != checked.array_literal_conversions.end();
-  if (!converted &&
-      checked.types.entry(def.type).kind != semantic::type_kind::array_kind) {
-    return fail(lowering_error_kind::unsupported_construct, decl.span,
-                std::format("`{}` is a `static let` that is not an array, and "
-                            "its initializer records no `from_array` "
+  using shape = semantic::reified_value::shape;
+  auto parts = ptr_vec<hir_expr>{};
+  parts.reserve(value.parts.size());
+  for (const auto &part : value.parts) {
+    auto lowered = lower_reified_value(part, checked, span, symbol_for);
+    if (!lowered.has_value()) {
+      return lowered;
+    }
+    parts.push_back(std::move(*lowered));
+  }
+  switch (value.kind) {
+  case shape::scalar:
+    switch (value.leaf.kind) {
+    case comptime::value_kind::integer:
+      return ok_expr(make<hir_literal>(span, value.type, token_kind::int_lit,
+                                       std::to_string(value.leaf.integer)));
+    case comptime::value_kind::floating:
+      return ok_expr(make<hir_literal>(span, value.type, token_kind::float_lit,
+                                       std::to_string(value.leaf.floating)));
+    case comptime::value_kind::boolean:
+      return ok_expr(make<hir_literal>(
+          span, value.type,
+          value.leaf.boolean ? token_kind::kw_true : token_kind::kw_false,
+          value.leaf.boolean ? "true" : "false"));
+    default:
+      return ok_expr(make<hir_literal>(span, value.type, token_kind::string_lit,
+                                       encode_string_literal(value.leaf.string)));
+    }
+  case shape::array:
+    return ok_expr(make<hir_array_init>(span, value.type, std::move(parts),
+                                        nullptr, nullptr));
+  case shape::tuple:
+    return ok_expr(make<hir_tuple>(span, value.type, std::move(parts)));
+  case shape::structure: {
+    auto fields = std::vector<hir_struct_init_field>{};
+    for (size_t i = 0; i < parts.size(); ++i) {
+      fields.push_back(hir_struct_init_field{.name = value.names[i],
+                                             .value = std::move(parts[i]),
+                                             .declared = value.parts[i].type});
+    }
+    return ok_expr(make<hir_struct_init>(span, value.type, std::move(fields)));
+  }
+  case shape::variant:
+    return ok_expr(make<hir_variant_init>(span, value.type, value.names.front(),
+                                          std::move(parts)));
+  case shape::collection:
+    break;
+  }
+  const auto conversion = checked.array_literal_conversions.find(value.conversion);
+  if (conversion == checked.array_literal_conversions.end() ||
+      conversion->second.callee.decl == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                std::format("a reified static's `{}` records no `from_array` "
                             "constructor to build it with",
-                            decl.name));
-  }
-  const auto array_type = converted ? conversion->second.array_type : def.type;
-  const auto elem_type = checked.types.entry(array_type).result;
-  auto elements = ptr_vec<hir_expr>{};
-  elements.reserve(def.elements.size());
-  for (const auto &element : def.elements) {
-    elements.push_back(lower_static_global_element(element, span, elem_type));
-  }
-  auto array = ptr<hir_expr>(make<hir_array_init>(
-      span, array_type, std::move(elements), nullptr, nullptr));
-  if (!converted) {
-    return ok_expr(std::move(array));
+                            checked.types.display(value.type)));
   }
   const auto &callee = conversion->second.callee;
   auto name = callee.impl_target_type.empty()
@@ -293,12 +295,22 @@ auto lower_static_global_value(
                                 callee.decl->name);
   const auto symbol = symbol_for(name);
   auto args = ptr_vec<hir_expr>{};
-  args.push_back(std::move(array));
+  args.push_back(make<hir_array_init>(span, conversion->second.array_type,
+                                      std::move(parts), nullptr, nullptr));
   return ok_expr(direct_call(
-      span, def.type,
+      span, value.type,
       make<hir_local_ref>(span, k_unknown_type, symbol, std::move(name),
                           callee.owner_module),
       std::move(args), callee.decl));
+}
+
+/// The expression that builds a reified `static let`'s value at `span`.
+auto lower_static_global_value(
+    const semantic::checked_types::static_global_def &def,
+    const semantic::checked_types &checked, source_span span,
+    const std::function<symbol_id(std::string_view)> &symbol_for)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  return lower_reified_value(def.value, checked, span, symbol_for);
 }
 
 /// Performs the AST-to-HIR walk for one function at a time. Not reusable
@@ -515,7 +527,7 @@ private:
       for (const auto &[decl, def] : checked_.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
-              *decl, def, checked_, ref.span,
+              def, checked_, ref.span,
               [this](std::string_view callee) -> symbol_id {
                 return resolve_reference(callee);
               });
@@ -535,8 +547,8 @@ private:
         std::format(
             "`{}` is a `static let` of type `{}`, and run-time code cannot "
             "read a static of that type yet — only numbers, booleans, "
-            "strings, structs of those, and arrays/lists of numbers or "
-            "booleans can be; read it from compile-time code (a `static "
+            "strings, and arrays, lists, tuples, structs, and variants built "
+            "from those can be; read it from compile-time code (a `static "
             "def`, `static if`, or another `static let`) instead, or make it "
             "an ordinary `let` inside the function (see spec/todo.md)",
             name, checked_.types.display(type)));
@@ -7037,7 +7049,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
       }
       const auto &def = found->second;
       auto value = lower_static_global_value(
-          decl, def, checked, decl.span,
+          def, checked, decl.span,
           [](std::string_view) -> symbol_id { return k_invalid_symbol_id; });
       if (!value.has_value()) {
         return std::unexpected(value.error());

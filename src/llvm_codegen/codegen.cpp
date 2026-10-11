@@ -1212,10 +1212,9 @@ private:
                 "error",
                 ref.name)});
       }
-      // Every reified global is a heap value (an array, or the collection
-      // `from_array` built from one), stored as the pointer-sized handle
-      // its initializer produces — see `compile_static_init`.
-      return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0), found->second,
+      // The slot holds whatever its initializer produced — see
+      // `compile_static_init` — at the static's own storage type.
+      return builder_.CreateLoad(found->second->getValueType(), found->second,
                                  ref.name);
     }
     case hir_node_kind::hir_binary:
@@ -4665,8 +4664,8 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   }
 
   // Every reified static global across every module, declared as an
-  // internal-linkage `llvm::GlobalVariable` (a pointer-sized slot holding
-  // the heap value `compile_static_init` builds — see
+  // internal-linkage `llvm::GlobalVariable` (a slot of the static's storage
+  // type holding the value `compile_static_init` builds — see
   // `hir_global_ref`'s `compile_expr` case), keyed by the checker's own
   // already-program-wide-unique name (`checker::reify_static_global`'s
   // `static$name$counter` scheme), no module-qualification needed — mirrors
@@ -4675,10 +4674,11 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   auto ordered_globals = std::vector<const hir::hir_static_global *>{};
   for (const auto *module : modules) {
     for (const auto &global : module->statics) {
+      auto *slot_ty = storage_llvm_type(types, ctx, global.type).value_or(ptr_ty);
       auto *var = new llvm::GlobalVariable(
-          llvm_module, ptr_ty, /*isConstant=*/false,
+          llvm_module, slot_ty, /*isConstant=*/false,
           llvm::GlobalValue::InternalLinkage,
-          llvm::ConstantPointerNull::get(ptr_ty), global.name);
+          llvm::Constant::getNullValue(slot_ty), global.name);
       global_vars.emplace(global.name, var);
       ordered_globals.push_back(&global);
     }

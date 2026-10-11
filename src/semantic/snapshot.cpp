@@ -548,7 +548,7 @@ auto renderer::run() -> std::string {
                [this](const auto &item) -> auto {
                  return std::format("{} : {} [{} element(s)]", item.second.name,
                                     ty(item.second.type),
-                                    item.second.elements.size());
+                                    item.second.value.parts.size());
                });
 
   node_section("spliced_fragments", checked_.spliced_fragments,

@@ -1,9 +1,10 @@
 module main
 
-# A static whose value has no run-time representation yet is named as such,
+# A static whose value has no run-time representation is named as such,
 # not as "a bare function value used outside of call position".
 
-static let names: array[str, 2] = ["a", "bc"]
+static let e = `(1 + 2)`
 
 def main() -> int32:
-    return names[1].len() as int32
+    let x = e
+    return 0

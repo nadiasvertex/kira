@@ -12115,11 +12115,6 @@ private:
       static_const_values_[&reference] = lit;
       return;
     }
-    if (const auto name =
-            reify_static_global(decl, *value, type, owner_module)) {
-      static_global_refs_[&reference] = *name;
-      return;
-    }
     if (value->kind == comptime::value_kind::struct_instance) {
       if (auto literal =
               build_static_struct_expr(*value, reference.span, type)) {
@@ -12128,20 +12123,22 @@ private:
         return;
       }
     }
+    if (const auto name =
+            reify_static_global(decl, *value, type, owner_module)) {
+      static_global_refs_[&reference] = *name;
+      return;
+    }
     unreadable_static_refs_[&reference] = decl.name;
   }
 
-  /// A `static let` whose value is an array/list/tuple of homogeneous scalar
-  /// (integer/floating/boolean) elements has no single-literal materialization
-  /// (`materialize_const_literal` returns `nullptr` for it), but it *can* be
-  /// reified as real backing data — one entry per element, all the same
-  /// scalar kind, is exactly what a lookup table needs. Memoized per
-  /// declaration in `static_global_defs_` (mirroring `static_binding_
-  /// values_`) so a declaration referenced many times is reified once;
-  /// returns the assigned global name on success, `nullopt` when `value`
-  /// isn't a homogeneous-scalar list (a struct, a mixed/nested list, a
-  /// string, ...) — those remain unresolvable at runtime today, exactly the
-  /// pre-existing behavior.
+  /// A `static let` whose value has no single-literal materialization (an
+  /// array, a list, a tuple, a variant, a struct holding one of those) is
+  /// reified as real backing data: a global built once from its compile-time
+  /// value. Memoized per declaration in `static_global_defs_` (mirroring
+  /// `static_binding_values_`) so a declaration referenced many times is
+  /// reified once; returns the assigned global name on success, `nullopt`
+  /// when some part of `value` has no run-time representation at its type
+  /// (see `reifiable`).
   auto reify_static_global(const ast::static_decl &decl,
                            const comptime::value &value, type_id type,
                            std::string_view owner_module)
@@ -12150,37 +12147,135 @@ private:
         it != static_global_defs_.end()) {
       return it->second.name;
     }
-    if (value.kind != comptime::value_kind::list || value.elements.empty()) {
-      return std::nullopt;
-    }
-    const auto elem_kind = value.elements.front().kind;
-    if (elem_kind != comptime::value_kind::integer &&
-        elem_kind != comptime::value_kind::floating &&
-        elem_kind != comptime::value_kind::boolean) {
-      return std::nullopt;
-    }
-    for (const auto &element : value.elements) {
-      if (element.kind != elem_kind) {
-        return std::nullopt;
-      }
-    }
-    // Anything but a plain array is built the way its literal is: the
-    // `array[T, n]` handed to the collection's `from_array`
-    // (`array_literal_conversions_`). An unannotated literal's conversion is
-    // only wired once its leaves settle, after this reference, so lowering
-    // reads it rather than this.
-    if (types_.entry(type).kind != type_kind::array_kind &&
-        dynamic_cast<const ast::array_expr *>(decl.initializer.get()) ==
-            nullptr) {
+    auto reified = reify_value(value, type, decl.span);
+    if (!reified.has_value()) {
       return std::nullopt;
     }
     auto name =
         std::format("static${}${}", decl.name, static_global_defs_.size());
     static_global_defs_.emplace(
         &decl, checked_types::static_global_def{
-                   .name = name, .type = type, .elements = value.elements});
+                   .name = name, .type = type, .value = std::move(*reified)});
     static_global_owners_.emplace(name, std::string(owner_module));
     return name;
+  }
+
+  /// `value` as a `reified_value` of `type`: a number, boolean or string; an
+  /// array, tuple, struct or variant of such values; or a collection with a
+  /// `from_array` constructor holding them. `nullopt` when some part has no
+  /// run-time representation at its type. Each collection gets a synthesized
+  /// array literal whose `array_literal_conversions_` entry names the
+  /// `from_array` instance for that collection's length — nothing in the
+  /// source spells those calls, so this is where they are requested.
+  auto reify_value(const comptime::value &value, type_id type,
+                   source_span span) -> std::optional<reified_value> {
+    using shape = reified_value::shape;
+    const auto entry = types_.entry(type); // copy: types are interned below
+    auto result = reified_value{.type = type};
+    const auto reify_parts =
+        [&](std::span<const comptime::value> items,
+            std::span<const type_id> item_types) -> bool {
+      if (items.size() != item_types.size()) {
+        return false;
+      }
+      for (size_t i = 0; i < items.size(); ++i) {
+        auto part = reify_value(items[i], item_types[i], span);
+        if (!part.has_value()) {
+          return false;
+        }
+        result.parts.push_back(std::move(*part));
+      }
+      return true;
+    };
+    switch (value.kind) {
+    case comptime::value_kind::integer:
+    case comptime::value_kind::floating:
+    case comptime::value_kind::boolean:
+    case comptime::value_kind::string:
+      if (entry.kind != type_kind::builtin_kind ||
+          (value.kind == comptime::value_kind::string) !=
+              (entry.name == "str")) {
+        return std::nullopt;
+      }
+      result.leaf = value;
+      return result;
+    case comptime::value_kind::struct_instance: {
+      const auto *decl_fields = struct_fields_of(entry);
+      if (decl_fields == nullptr ||
+          decl_fields->size() != value.fields.size()) {
+        return std::nullopt;
+      }
+      result.kind = shape::structure;
+      for (const auto &field : *decl_fields) {
+        const auto found = value.fields.find(field.name);
+        const auto field_type = struct_field_type(entry, field.name);
+        if (found == value.fields.end() || !field_type.has_value()) {
+          return std::nullopt;
+        }
+        auto part = reify_value(found->second, *field_type, span);
+        if (!part.has_value()) {
+          return std::nullopt;
+        }
+        result.names.push_back(field.name);
+        result.parts.push_back(std::move(*part));
+      }
+      return result;
+    }
+    case comptime::value_kind::variant_instance: {
+      const auto *variant = find_variant(entry, value.variant_tag);
+      if (variant == nullptr) {
+        return std::nullopt;
+      }
+      result.kind = shape::variant;
+      result.names.push_back(value.variant_tag);
+      const auto payload = variant_payload_types(entry, *variant);
+      if (!reify_parts(value.elements, payload)) {
+        return std::nullopt;
+      }
+      return result;
+    }
+    case comptime::value_kind::list:
+      break;
+    default:
+      return std::nullopt;
+    }
+    if (entry.kind == type_kind::tuple_kind) {
+      result.kind = shape::tuple;
+      if (!reify_parts(value.elements, entry.args)) {
+        return std::nullopt;
+      }
+      return result;
+    }
+    if (entry.kind == type_kind::array_kind) {
+      result.kind = shape::array;
+      const auto element_types =
+          std::vector<type_id>(value.elements.size(), entry.result);
+      if (!reify_parts(value.elements, element_types)) {
+        return std::nullopt;
+      }
+      return result;
+    }
+    auto literal = ast::make<ast::array_expr>();
+    literal->span = span;
+    auto target = type;
+    const auto element = resolve_array_literal_conversion(*literal, target);
+    if (!element.has_value() || mentions_type_var(target)) {
+      array_literal_conversions_.erase(literal.get());
+      return std::nullopt;
+    }
+    const auto length = static_cast<uint64_t>(value.elements.size());
+    array_literal_conversions_[literal.get()].array_type = array_with_length(
+        *element, types_.const_value(types_.usize_type(), length));
+    instantiate_from_array_for(*literal, target, length);
+    result.kind = shape::collection;
+    result.conversion = literal.get();
+    synthesized_static_structs_.push_back(std::move(literal));
+    const auto element_types =
+        std::vector<type_id>(value.elements.size(), *element);
+    if (!reify_parts(value.elements, element_types)) {
+      return std::nullopt;
+    }
+    return result;
   }
 
   /// Records a *value* use of a value parameter (`return n`, `for i in 0..n`)
