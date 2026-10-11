@@ -423,6 +423,25 @@ private:
     return std::nullopt;
   }
 
+  /// The error for a run-time read of a `static let` whose value has no
+  /// run-time representation yet — see `checked_types::
+  /// unreadable_static_refs`.
+  [[nodiscard]] auto fail_unreadable_static(source_span span,
+                                            const std::string &name,
+                                            type_id type) const
+      -> std::unexpected<lowering_error> {
+    return fail(
+        lowering_error_kind::unsupported_construct, span,
+        std::format(
+            "`{}` is a `static let` of type `{}`, and run-time code cannot "
+            "read a static of that type yet — only numbers, booleans, "
+            "strings, structs of those, and arrays/lists of numbers or "
+            "booleans can be; read it from compile-time code (a `static "
+            "def`, `static if`, or another `static let`) instead, or make it "
+            "an ordinary `let` inside the function (see spec/todo.md)",
+            name, checked_.types.display(type)));
+  }
+
   /// Unwraps an `existential_kind` type (`some Trait[Args]`) to its concrete
   /// backing type. Opacity is purely a checker-level view — `type_entry`'s
   /// doc comment (`semantic/types.h`) — enforced by restricting which
@@ -1374,6 +1393,10 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
     return ok_expr(make<hir_global_ref>(ident.span, *type, it->second,
                                         global_owner_of(it->second)));
   }
+  if (const auto it = checked_.unreadable_static_refs.find(&ident);
+      it != checked_.unreadable_static_refs.end()) {
+    return fail_unreadable_static(ident.span, it->second, *type);
+  }
   // A module-level function named in value position (bound to a `let`,
   // passed as an argument) rather than called — `check.cpp`'s
   // `record_fn_value_reference` resolved which declaration, and in which
@@ -2273,6 +2296,14 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     }
     return ok_expr(make<hir_global_ref>(path.span, *type, it->second,
                                         global_owner_of(it->second)));
+  }
+  if (const auto it = checked_.unreadable_static_refs.find(&path);
+      it != checked_.unreadable_static_refs.end()) {
+    auto type = checked_type_of(path);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    return fail_unreadable_static(path.span, it->second, *type);
   }
   // A module-qualified function named in value position (`a.b.f` handed to a
   // higher-order function rather than called) — `check.cpp`'s

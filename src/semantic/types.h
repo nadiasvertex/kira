@@ -1272,6 +1272,13 @@ struct checked_types {
   /// each use constructs the struct from constants.
   std::unordered_map<const ast::node *, const ast::expr *> static_struct_values;
   ast::ptr_vec<ast::expr> synthesized_static_structs;
+  /// Every `ident_expr`/`module_path_expr` that resolved to an evaluated
+  /// `static let` whose value has none of the run-time routes above (a list
+  /// of strings, a variant, ...), mapped to the static's name. Recorded
+  /// rather than reported by the checker because compile-time code may read
+  /// such a static freely; `hir::lower_ident`/`lower_module_path` report it
+  /// only when run-time code is actually lowered.
+  std::unordered_map<const ast::node *, std::string> unreadable_static_refs;
   /// Reified global name -> the module whose `static_decl` it was reified
   /// from (`reify_static_global`'s `owner` parameter). `hir::lower_ident`/
   /// `lower_module_path` consult this to fill in `hir_global_ref::

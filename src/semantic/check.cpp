@@ -686,6 +686,7 @@ public:
         .static_global_refs = std::move(static_global_refs_),
         .static_struct_values = std::move(static_struct_values_),
         .synthesized_static_structs = std::move(synthesized_static_structs_),
+        .unreadable_static_refs = std::move(unreadable_static_refs_),
         .static_global_owners = std::move(static_global_owners_),
         .value_path_types = std::move(value_path_types_),
         .deref_adjustments = std::move(deref_adjustments_),
@@ -1040,6 +1041,8 @@ private:
   std::unordered_map<const ast::node *, const ast::expr *>
       static_struct_values_;
   ast::ptr_vec<ast::expr> synthesized_static_structs_;
+  /// See `checked_types::unreadable_static_refs`'s doc comment.
+  std::unordered_map<const ast::node *, std::string> unreadable_static_refs_;
   /// See `checked_types::static_const_values`'s doc comment. Populated by
   /// `resolve_ident`.
   std::unordered_map<const ast::node *, const ast::literal_expr *>
@@ -12122,8 +12125,10 @@ private:
               build_static_struct_expr(*value, reference.span, type)) {
         static_struct_values_[&reference] = literal.get();
         synthesized_static_structs_.push_back(std::move(literal));
+        return;
       }
     }
+    unreadable_static_refs_[&reference] = decl.name;
   }
 
   /// A `static let` whose value is an array/list/tuple of homogeneous scalar
@@ -12261,6 +12266,12 @@ private:
       lit->lit_kind =
           value.boolean ? token_kind::kw_true : token_kind::kw_false;
       lit->value = value.boolean ? "true" : "false";
+      break;
+    case comptime::value_kind::string:
+      // Re-encoded exactly as a parsed string literal would be spelled, so
+      // lowering decodes it with the same `decode_string_literal` path.
+      lit->lit_kind = token_kind::string_lit;
+      lit->value = encode_string_literal(value.string);
       break;
     default:
       return nullptr;

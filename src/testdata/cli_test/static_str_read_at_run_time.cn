@@ -1,0 +1,26 @@
+module main
+
+# Run-time code reads `static let`s of type `str` (todo item 8). Each one is
+# embedded as a string literal at the reference: a plain literal, one whose
+# escapes and doubled braces must survive re-encoding, one computed by a
+# `static def`, and a `str` field of a struct-valued static.
+
+static def shout(s: str) -> str:
+    return s.to_uppercase()
+
+type pair = { label: str, n: int32 }
+
+static let s = "ab"
+static let tricky = "q\"{{x}}\\\n"
+static let loud = shout("héllo")
+static let p = pair { label: "xyz", n: 4 }
+
+def main() -> int32:
+    var total = s.len() as int32
+    # `tricky` is the 7 bytes q " { x } \ and a newline.
+    total = total * 10 + tricky.len() as int32
+    if loud == "HÉLLO":
+        total = total + 100
+    total = total + p.label.len() as int32 * 1000
+    # 3000 + 100 + 27 = 3127; mod 256 = 55.
+    return total % 256
