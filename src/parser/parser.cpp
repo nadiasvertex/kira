@@ -2884,25 +2884,7 @@ auto parser::parse_static_decl(ast::visibility vis)
   } else if (at(token_kind::kw_for)) {
     // static for vars in expr [if guard] => expr   OR
     // static for vars in expr [if guard]: block
-    advance(); // consume `for`
-    decl->for_patterns = parse_for_vars();
-    expect_with_context(token_kind::kw_in, "in `static for ... in ...`");
-    {
-      auto saved_allow_lambda = allow_lambda_expr_;
-      auto saved_allow_trailing_if = allow_trailing_if_expr_;
-      allow_lambda_expr_ = false;
-      allow_trailing_if_expr_ = false;
-      decl->for_iterable = parse_expr();
-      allow_lambda_expr_ = saved_allow_lambda;
-      allow_trailing_if_expr_ = saved_allow_trailing_if;
-    }
-
-    if (match(token_kind::kw_if)) {
-      auto saved_allow_lambda = allow_lambda_expr_;
-      allow_lambda_expr_ = false;
-      decl->for_guard = parse_expr();
-      allow_lambda_expr_ = saved_allow_lambda;
-    }
+    parse_static_for_header(*decl);
 
     if (at(token_kind::fat_arrow)) {
       // Inline form.
@@ -2947,6 +2929,28 @@ auto parser::parse_static_decl(ast::visibility vis)
 
   decl->span = start.merge(previous_span());
   return decl;
+}
+
+void parser::parse_static_for_header(ast::static_decl &decl) {
+  expect(token_kind::kw_for);
+  decl.for_patterns = parse_for_vars();
+  expect_with_context(token_kind::kw_in, "in `static for ... in ...`");
+  {
+    auto saved_allow_lambda = allow_lambda_expr_;
+    auto saved_allow_trailing_if = allow_trailing_if_expr_;
+    allow_lambda_expr_ = false;
+    allow_trailing_if_expr_ = false;
+    decl.for_iterable = parse_expr();
+    allow_lambda_expr_ = saved_allow_lambda;
+    allow_trailing_if_expr_ = saved_allow_trailing_if;
+  }
+
+  if (match(token_kind::kw_if)) {
+    auto saved_allow_lambda = allow_lambda_expr_;
+    allow_lambda_expr_ = false;
+    decl.for_guard = parse_expr();
+    allow_lambda_expr_ = saved_allow_lambda;
+  }
 }
 
 // ==========================================================================
@@ -5722,10 +5726,39 @@ auto parser::parse_splice_expr_inner() -> ast::ptr<ast::splice_expr> {
   return sexpr;
 }
 
-auto parser::parse_static_expr() -> ast::ptr<ast::static_expr> {
-  auto sexpr = ast::make<ast::static_expr>();
+auto parser::parse_static_expr() -> ast::ptr<ast::expr> {
   auto start = peek().span;
+  if (peek_at(1).is(token_kind::kw_for)) {
+    auto decl = ast::make<ast::static_decl>();
+    decl->decl_kind = ast::static_decl_kind::for_inline;
+    expect(token_kind::kw_static);
+    parse_static_for_header(*decl);
+    if (match(token_kind::fat_arrow)) {
+      decl->for_yield = parse_expr();
+    } else {
+      emit(diagnostic(diagnostic_level::error,
+                      "a `static for` used as a value needs `=> value`",
+                      file_id_)
+               .with_label(peek().span, "expected `=>` here")
+               .with_help("Write the value each iteration yields after `=>`, "
+                          "as in `static for f in T.fields() => f.name`. The "
+                          "block form `static for ...:` is a statement and "
+                          "has no value."));
+      decl->has_error = true;
+      while (!at_eof() && !at(token_kind::newline) &&
+             !at(token_kind::dedent)) {
+        advance();
+      }
+    }
+    decl->span = start.merge(previous_span());
+    auto block = ast::make<ast::block_expr>();
+    block->has_error = decl->has_error;
+    block->span = decl->span;
+    block->stmts.push_back(std::move(decl));
+    return block;
+  }
 
+  auto sexpr = ast::make<ast::static_expr>();
   expect(token_kind::kw_static);
   sexpr->operand = parse_expr();
 

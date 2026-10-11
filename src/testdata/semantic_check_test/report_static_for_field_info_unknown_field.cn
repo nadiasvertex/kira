@@ -1,0 +1,7 @@
+module sample
+
+type point = { x: int32 }
+
+def field_names[T]() -> list[str]:
+    let names = static for f in T.fields() => f.nmae
+    return names

@@ -714,6 +714,8 @@ private:
   /// Parses a `static` declaration after visibility handling.
   [[nodiscard]] auto parse_static_decl(ast::visibility vis)
       -> ast::ptr<ast::static_decl>;
+  /// Parses `vars in iterable [if guard]` after `static for`, into `decl`.
+  void parse_static_for_header(ast::static_decl &decl);
 
   /// Parses one node of a `static if`/`static else` branch body: either a
   /// declaration-only item (`trait`/`impl`/`extend`/`concept`/`signature`/
@@ -878,8 +880,10 @@ private:
   void classify_and_parse_quote_fragment(ast::quote_expr &qexpr);
   /// Parses the inner operand of a splice expression.
   [[nodiscard]] auto parse_splice_expr_inner() -> ast::ptr<ast::splice_expr>;
-  /// Parses `static expr` metaprogramming forms.
-  [[nodiscard]] auto parse_static_expr() -> ast::ptr<ast::static_expr>;
+  /// Parses `static expr` metaprogramming forms. `static for ... => e` is
+  /// the inline `static for` declaration, wrapped in a `block_expr` whose
+  /// only statement it is — the same shape as a function body ending in one.
+  [[nodiscard]] auto parse_static_expr() -> ast::ptr<ast::expr>;
   /// Parses a trailing `if` attached to an already-parsed expression.
   [[nodiscard]] auto parse_trailing_if_expr(ast::ptr<ast::expr> then_expr)
       -> ast::ptr<ast::expr>;

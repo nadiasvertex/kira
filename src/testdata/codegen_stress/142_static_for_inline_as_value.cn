@@ -1,0 +1,33 @@
+module codegen_stress.static_for_inline_as_value
+
+# An inline `static for ... => e` used as a value in the middle of a body —
+# a `let` initializer or a `for` iterable — rather than as the function's
+# tail. In a generic body its element type is the yield's, so methods on an
+# element resolve (todo item 7: `name.len()` failed with "no method `len`
+# on `T`").
+
+type point = { x: int32, yy: int32, flag: bool }
+
+def name_bytes[T]() -> int32:
+    let names = static for f in T.fields() => f.name
+    var total = 0
+    for name in names:
+        total = total + name.len() as int32
+    return total
+
+def int_name_bytes[T]() -> int32:
+    var total = 0
+    for name in static for f in T.fields() if f.type_name == "int32" => f.name:
+        total = total + name.len() as int32
+    return total
+
+def first_name_bytes() -> int32:
+    let names = static for f in point.fields() => f.name
+    return names[0].len() as int32
+
+def main() -> int32:
+    # "x" + "yy" + "flag" = 7, the int32 fields "x" + "yy" = 3, "x" = 1.
+    return (name_bytes[point]() * 100 + int_name_bytes[point]() * 10 +
+        first_name_bytes())
+
+# expect: 731

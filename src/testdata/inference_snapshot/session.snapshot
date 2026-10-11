@@ -1,5 +1,5 @@
 # inference snapshot
-# 2295 interned types
+# 2296 interned types
 
 ## node_types (30682)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -5951,7 +5951,7 @@ std/deriving.cn:30:37 [call] expr
 std/deriving.cn:30:46 [literal] str
 std/deriving.cn:31:5 [var_stmt] bool
 std/deriving.cn:31:23 [literal] bool
-std/deriving.cn:32:16 [binding_pat] _
+std/deriving.cn:32:16 [binding_pat] field_info
 std/deriving.cn:32:21 [call] _
 std/deriving.cn:33:12 [ident] bool
 std/deriving.cn:34:13 [ident] bool
@@ -5965,7 +5965,7 @@ std/deriving.cn:37:9 [ident] expr
 std/deriving.cn:37:16 [call] expr
 std/deriving.cn:37:35 [ident] expr
 std/deriving.cn:37:41 [call] expr
-std/deriving.cn:37:50 [module_path] _
+std/deriving.cn:37:50 [module_path] str
 std/deriving.cn:38:9 [ident] expr
 std/deriving.cn:38:16 [call] expr
 std/deriving.cn:38:35 [ident] expr
@@ -5977,7 +5977,7 @@ std/deriving.cn:39:35 [ident] expr
 std/deriving.cn:39:41 [call] expr
 std/deriving.cn:39:52 [call] expr
 std/deriving.cn:39:63 [literal] str
-std/deriving.cn:39:72 [module_path] _
+std/deriving.cn:39:72 [module_path] str
 std/deriving.cn:40:5 [ident] expr
 std/deriving.cn:40:12 [call] expr
 std/deriving.cn:40:31 [ident] expr
@@ -5995,7 +5995,7 @@ std/deriving.cn:55:37 [call] expr
 std/deriving.cn:55:46 [literal] str
 std/deriving.cn:56:5 [var_stmt] bool
 std/deriving.cn:56:23 [literal] bool
-std/deriving.cn:57:16 [binding_pat] _
+std/deriving.cn:57:16 [binding_pat] field_info
 std/deriving.cn:57:21 [call] _
 std/deriving.cn:58:12 [ident] bool
 std/deriving.cn:59:13 [ident] bool
@@ -6009,7 +6009,7 @@ std/deriving.cn:62:9 [ident] expr
 std/deriving.cn:62:16 [call] expr
 std/deriving.cn:62:35 [ident] expr
 std/deriving.cn:62:41 [call] expr
-std/deriving.cn:62:50 [module_path] _
+std/deriving.cn:62:50 [module_path] str
 std/deriving.cn:63:9 [ident] expr
 std/deriving.cn:63:16 [call] expr
 std/deriving.cn:63:35 [ident] expr
@@ -6022,7 +6022,7 @@ std/deriving.cn:65:19 [call] expr
 std/deriving.cn:65:30 [call] expr
 std/deriving.cn:65:41 [call] expr
 std/deriving.cn:65:52 [literal] str
-std/deriving.cn:65:61 [module_path] _
+std/deriving.cn:65:61 [module_path] str
 std/deriving.cn:66:5 [ident] expr
 std/deriving.cn:66:12 [call] expr
 std/deriving.cn:66:31 [ident] expr
@@ -6035,7 +6035,7 @@ std/deriving.cn:82:22 [call] expr
 std/deriving.cn:82:31 [literal] bool
 std/deriving.cn:83:5 [var_stmt] bool
 std/deriving.cn:83:23 [literal] bool
-std/deriving.cn:84:16 [binding_pat] _
+std/deriving.cn:84:16 [binding_pat] field_info
 std/deriving.cn:84:21 [call] _
 std/deriving.cn:85:13 [binding_pat] expr
 std/deriving.cn:85:30 [call] expr
@@ -6043,11 +6043,11 @@ std/deriving.cn:86:13 [literal] str
 std/deriving.cn:86:19 [call] expr
 std/deriving.cn:86:30 [call] expr
 std/deriving.cn:86:41 [literal] str
-std/deriving.cn:86:50 [module_path] _
+std/deriving.cn:86:50 [module_path] str
 std/deriving.cn:87:13 [call] expr
 std/deriving.cn:87:24 [call] expr
 std/deriving.cn:87:35 [literal] str
-std/deriving.cn:87:45 [module_path] _
+std/deriving.cn:87:45 [module_path] str
 std/deriving.cn:88:12 [ident] bool
 std/deriving.cn:89:13 [ident] expr
 std/deriving.cn:89:20 [ident] expr
@@ -6066,7 +6066,7 @@ std/deriving.cn:115:32 [call] expr
 std/deriving.cn:115:43 [literal] str
 std/deriving.cn:116:5 [var_stmt] bool
 std/deriving.cn:116:23 [literal] bool
-std/deriving.cn:117:16 [binding_pat] _
+std/deriving.cn:117:16 [binding_pat] field_info
 std/deriving.cn:117:21 [call] _
 std/deriving.cn:118:13 [binding_pat] expr
 std/deriving.cn:118:31 [call] expr
@@ -6075,11 +6075,11 @@ std/deriving.cn:119:24 [literal] str
 std/deriving.cn:120:13 [call] expr
 std/deriving.cn:120:24 [call] expr
 std/deriving.cn:120:35 [literal] str
-std/deriving.cn:120:44 [module_path] _
+std/deriving.cn:120:44 [module_path] str
 std/deriving.cn:121:13 [call] expr
 std/deriving.cn:121:24 [call] expr
 std/deriving.cn:121:35 [literal] str
-std/deriving.cn:121:45 [module_path] _
+std/deriving.cn:121:45 [module_path] str
 std/deriving.cn:122:12 [ident] bool
 std/deriving.cn:123:13 [ident] expr
 std/deriving.cn:123:20 [ident] expr
@@ -6348,7 +6348,7 @@ std/deriving.cn:296:5 [var_stmt] expr
 std/deriving.cn:296:22 [call] expr
 std/deriving.cn:296:32 [call] expr
 std/deriving.cn:296:43 [literal] str
-std/deriving.cn:297:16 [binding_pat] _
+std/deriving.cn:297:16 [binding_pat] field_info
 std/deriving.cn:297:21 [call] _
 std/deriving.cn:298:9 [ident] expr
 std/deriving.cn:298:16 [call] expr
@@ -6361,7 +6361,7 @@ std/deriving.cn:301:28 [literal] str
 std/deriving.cn:302:17 [call] expr
 std/deriving.cn:302:28 [call] expr
 std/deriving.cn:302:39 [literal] str
-std/deriving.cn:302:48 [module_path] _
+std/deriving.cn:302:48 [module_path] str
 std/deriving.cn:303:12 [quote] def_expr
 std/deriving.cn:318:36 [quote_type] def_expr
 std/deriving.cn:319:5 [var_stmt] expr

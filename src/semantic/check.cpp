@@ -16868,7 +16868,9 @@ private:
         // machinery for this one narrow milestone. Real per-field values
         // (`comptime::value` `struct_instance`s with `name`/`type`
         // string fields) exist at evaluation time regardless — see
-        // `comptime::try_eval_type_reflection_call` (`reflect.cpp`).
+        // `comptime::try_eval_type_reflection_call` (`reflect.cpp`). A
+        // `static for` over it types its loop variable `field_info`
+        // (`static_for_element_type`).
         return k_unknown_type;
       }
     }
@@ -19303,6 +19305,54 @@ private:
     return false;
   }
 
+  /// The type of one element of `T.fields()`: a compile-time descriptor of
+  /// one struct field, built by `comptime::make_field_descriptor`.
+  auto field_info_type() -> type_id { return types_.builtin("field_info"); }
+
+  /// The type of `info.name` on a `field_info`. `type_of` is a type
+  /// fragment, which has no checked type of its own.
+  auto field_info_member_type(std::string_view name, source_span span)
+      -> type_id {
+    if (name == "name" || name == "type_name") {
+      return types_.builtin("str");
+    }
+    if (name == "is_data_member") {
+      return types_.builtin("bool");
+    }
+    if (name == "type_of") {
+      return k_unknown_type;
+    }
+    error_with_help(
+        span, std::format("no field `{}` on a `field_info`", name),
+        "unknown field",
+        "A `field_info` from `T.fields()` has the fields `name`, `type_name`, "
+        "`type_of`, and `is_data_member`.");
+    return k_error_type;
+  }
+
+  /// The type a `static for` binds its loop variable to: `field_info` over
+  /// `T.fields()` (a type or a type parameter), else the iterable's element
+  /// type.
+  auto static_for_element_type(const ast::expr &iterable) -> type_id {
+    const auto type = infer_expr(iterable, k_unknown_type);
+    if (iterable.kind == ast::node_kind::call_expr) {
+      const auto &call = dynamic_cast<const ast::call_expr &>(iterable);
+      const auto *callee =
+          dynamic_cast<const ast::field_expr *>(call.callee.get());
+      if (callee != nullptr && callee->field_name == "fields" &&
+          callee->object != nullptr &&
+          callee->object->kind == ast::node_kind::ident_expr) {
+        const auto &name =
+            dynamic_cast<const ast::ident_expr &>(*callee->object).name;
+        if (lookup_type_param(name).has_value() ||
+            find_type_decl_by_name(name)) {
+          return field_info_type();
+        }
+      }
+    }
+    return element_type_of(type, iterable.span);
+  }
+
   /// Shared field-access typing for `expr.name`, whether it arrived as a
   /// `field_expr` or as a value-rooted dotted path. `site` names the
   /// receiver, so a field found only through `deref` can record the steps
@@ -19317,6 +19367,9 @@ private:
       return field_access_type(*target, name, span);
     }
     const auto &entry = types_.entry(stripped);
+    if (stripped == field_info_type()) {
+      return field_info_member_type(name, span);
+    }
 
     switch (entry.kind) {
     case type_kind::struct_kind: {
@@ -28803,8 +28856,7 @@ private:
       push_scope();
       auto element = k_unknown_type;
       if (decl.for_iterable != nullptr) {
-        const auto iterable = infer_expr(*decl.for_iterable, k_unknown_type);
-        element = element_type_of(iterable, decl.for_iterable->span);
+        element = static_for_element_type(*decl.for_iterable);
       }
       for (const auto &pattern : decl.for_patterns) {
         if (pattern != nullptr) {

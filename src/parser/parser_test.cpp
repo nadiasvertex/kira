@@ -97,6 +97,48 @@ auto test_keyword_module_name_is_a_diagnosed_error() -> void {
          "expected the module declaration to be marked as erroneous");
 }
 
+/// `static for ... => e` in expression position is the inline `static for`
+/// declaration, held by a `block_expr` — not `static` applied to a runtime
+/// `for` comprehension. The block form has no value and is reported once.
+auto test_static_for_inline_as_value() -> void {
+  const auto parsed = parse_source("module m\n"
+                                   "def f[T]() -> int32:\n"
+                                   "    let names = static for f in T.fields() "
+                                   "if f.name != \"a\" => f.name\n"
+                                   "    return 0\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  const auto *fn = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
+      "expected a function declaration");
+  const auto *let = expect_node<cinder::ast::let_stmt>(
+      fn->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
+      "expected a let statement");
+  const auto *block = expect_expr<cinder::ast::block_expr>(
+      let->initializer.get(), cinder::ast::node_kind::block_expr,
+      "expected `static for` as a value to be a block expression");
+  expect(block->stmts.size() == 1, "expected one statement in the block");
+  const auto *decl = expect_node<cinder::ast::static_decl>(
+      block->stmts[0].get(), cinder::ast::node_kind::static_decl,
+      "expected the block to hold a static declaration");
+  expect(decl->decl_kind == cinder::ast::static_decl_kind::for_inline,
+         "expected an inline static for");
+  expect(decl->for_guard != nullptr && decl->for_yield != nullptr,
+         "expected the guard and the yield to be parsed");
+
+  const auto block_form =
+      parse_source("module m\n"
+                   "def f() -> int32:\n"
+                   "    let names = static for f in xs: f.name\n"
+                   "    return 0\n");
+  expect(block_form.error_count == 1,
+         "expected one error for a block-form `static for` used as a value:\n" +
+             block_form.diagnostics);
+  expect(block_form.diagnostics.find(
+             "a `static for` used as a value needs `=> value`") !=
+             std::string::npos,
+         "expected the missing-`=>` diagnostic: " + block_form.diagnostics);
+}
+
 auto test_lexer_emits_indent_and_dedent() -> void {
   cinder::diagnostic_bag diag;
   std::string source = read_program("lexer_emits_indent_and_dedent.cn");
@@ -2258,9 +2300,11 @@ auto test_parser_accepts_root_module_alias() -> void {
 }
 
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 52> tests = {{
+  const std::array<named_test, 53> tests = {{
       {.name = "keyword_module_name",
        .fn = test_keyword_module_name_is_a_diagnosed_error},
+      {.name = "static_for_inline_as_value",
+       .fn = test_static_for_inline_as_value},
       {.name = "lexer_indent_dedent", .fn = test_lexer_emits_indent_and_dedent},
       {.name = "type_body_nodes", .fn = test_parser_builds_type_body_nodes},
       {.name = "multiline_sum_type",

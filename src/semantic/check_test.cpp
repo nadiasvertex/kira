@@ -1220,6 +1220,19 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
                    analyzed.diagnostics);
 }
 
+auto test_reports_static_for_field_info_unknown_field() -> void {
+  // A `static for` over `T.fields()` types its loop variable `field_info`,
+  // so a misspelled descriptor field is reported in the generic template
+  // itself, with the fields that do exist.
+  const auto analyzed =
+      analyze_test_data_file("report_static_for_field_info_unknown_field.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for an unknown `field_info` field:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "no field `nmae` on a `field_info`",
+                    "expected the unknown-descriptor-field diagnostic");
+}
+
 auto test_reports_static_for_inline_unbuildable_value() -> void {
   // An inline `static for` builds its list from the values it yields, so a
   // yielded value with no literal form (a tuple) is refused at the yield
@@ -3881,6 +3894,7 @@ auto main() -> int {
     test_reports_static_for_evaluates_each_iteration();
     test_accepts_static_for_inline_as_function_tail();
     test_reports_static_for_inline_unbuildable_value();
+    test_reports_static_for_field_info_unknown_field();
     test_reports_splice_expr_wrong_fragment_kind();
     test_reports_hygiene_prevents_spliced_binding_leak();
     test_reports_splice_requires_quote_value();
