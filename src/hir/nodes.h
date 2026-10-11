@@ -1138,16 +1138,17 @@ struct hir_function : hir_item {
 /// One top-level `static let` reified as real backing data — see
 /// `semantic::checked_types::static_global_defs`'s doc comment for
 /// eligibility (an array/list/tuple of homogeneous scalar elements) and how
-/// `name` is assigned. `elements` are the scalar values themselves, one
-/// `hir_literal` per element, in source order — a backend builds this
-/// module's global exactly once (VM: a slot filled by a synthesized
-/// init routine; LLVM: a constant/initialized global variable), keyed by
-/// `name` in one flat, program-wide table so `hir_global_ref` can resolve a
-/// reference from any module.
+/// `name` is assigned. `value` builds the global: an `hir_array_init` of one
+/// `hir_literal` per element, in source order, wrapped in a call to the
+/// collection's `from_array` when the static is not a plain array. A backend
+/// evaluates it exactly once (VM: a slot filled by a synthesized init
+/// routine; LLVM: a global filled by an `llvm.global_ctors` routine), keyed
+/// by `name` in one flat, program-wide table so `hir_global_ref` can resolve
+/// a reference from any module.
 struct hir_static_global {
   std::string name;
   type_id type = k_unknown_type;
-  ptr_vec<hir_expr> elements;
+  ptr<hir_expr> value;
 };
 
 /// Lowered module: every function lowered from one module's contributing

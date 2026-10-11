@@ -102,6 +102,8 @@ struct drop_schedule {
   std::unordered_set<const void *> consuming_calls;
   /// `function_cfg::temporary_ends`.
   std::unordered_map<const void *, const void *> temporary_ends;
+  /// `function_cfg::owned_static_reads`.
+  std::unordered_set<const void *> owned_static_reads;
   /// `function_cfg::owned_captures`: what each lambda's drop glue drops.
   std::unordered_map<const void *,
                      std::vector<semantic::ownership::owned_capture>>

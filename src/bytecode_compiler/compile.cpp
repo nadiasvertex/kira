@@ -392,10 +392,9 @@ public:
         globals_(globals) {}
 
   /// Compiles the synthesized `__cinder_static_init` routine: builds every
-  /// reified `static let`'s backing value exactly the way an ordinary
-  /// array literal builds one (`compile_static_global_value`, sharing
-  /// `compile_array_init`'s own alloc-and-store
-  /// strategy), then stores each result into its global-table slot via
+  /// reified `static let`'s backing value from its lowered initializer
+  /// (`hir_static_global::value`), then stores each result into its
+  /// global-table slot via
   /// `op_store_global`. Runs once, before the program's real entry point —
   /// see `bytecode_module::static_init_function`.
   [[nodiscard]] auto compile_static_init(
@@ -406,8 +405,7 @@ public:
       if (!dst.has_value()) {
         return std::unexpected(dst.error());
       }
-      if (auto result =
-              compile_static_global_value(global->type, global->elements, *dst);
+      if (auto result = compile_expr_into(*global->value, *dst);
           !result.has_value()) {
         return std::unexpected(result.error());
       }
@@ -2143,38 +2141,6 @@ private:
       const auto field_size = element_stride(field.value->type);
       emit_store_field(dst, static_cast<uint16_t>(*offset), *value_reg,
                        field_size);
-    }
-    return {};
-  }
-
-  /// Builds a reified static global's backing value into `dst` — the same
-  /// alloc-and-store-each-element strategy `compile_array_init` uses for
-  /// an ordinary literal, duplicated in
-  /// miniature here rather than routed through those (which take an
-  /// `hir::hir_array_init` whose `elements` they own outright — `elements`
-  /// here is instead borrowed from a `const hir::hir_static_global` that
-  /// outlives this compile and is never mutated). Only ever called with an
-  /// explicit element list: `checker::reify_static_global`'s evaluator
-  /// already expanded any `[val; count]` fill form into `count` concrete
-  /// elements before this ever runs (comptime evaluation, not lowering,
-  /// does the expansion), so there is no fill form to handle here.
-  [[nodiscard]] auto compile_static_global_value(
-      type_id container_type, const hir::ptr_vec<hir::hir_expr> &elements,
-      virtual_reg dst) -> std::expected<void, compile_error> {
-    const auto &array_entry = types_.entry(container_type);
-    const auto elem_size = element_stride(array_entry.result);
-    emit_alloc(dst, elements.size() * elem_size);
-    auto base = element_store_base{.reg = dst};
-    for (size_t i = 0; i < elements.size(); ++i) {
-      auto value_reg = compile_expr(*elements[i]);
-      if (!value_reg.has_value()) {
-        return std::unexpected(value_reg.error());
-      }
-      if (auto stored = emit_store_element(dst, base, i, *value_reg, elem_size,
-                                           elements[i]->span);
-          !stored.has_value()) {
-        return std::unexpected(stored.error());
-      }
     }
     return {};
   }

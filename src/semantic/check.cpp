@@ -12164,6 +12164,16 @@ private:
         return std::nullopt;
       }
     }
+    // Anything but a plain array is built the way its literal is: the
+    // `array[T, n]` handed to the collection's `from_array`
+    // (`array_literal_conversions_`). An unannotated literal's conversion is
+    // only wired once its leaves settle, after this reference, so lowering
+    // reads it rather than this.
+    if (types_.entry(type).kind != type_kind::array_kind &&
+        dynamic_cast<const ast::array_expr *>(decl.initializer.get()) ==
+            nullptr) {
+      return std::nullopt;
+    }
     auto name =
         std::format("static${}${}", decl.name, static_global_defs_.size());
     static_global_defs_.emplace(
@@ -28616,6 +28626,12 @@ private:
         statics_in_progress_.insert(&decl);
         found = infer_expr(*decl.initializer, declared);
         statics_in_progress_.erase(&decl);
+        // An unannotated binding's type is whatever its initializer settles
+        // to, and every reader needs that type rather than the initializer's
+        // still-open literal leaves (`[1, 2, 3]` is `array[int32, 3]`).
+        if (decl.type_annotation == nullptr) {
+          found = demand(found);
+        }
         if (decl.type_annotation != nullptr) {
           type_mismatch(decl.initializer->span, declared, found,
                         "from the annotation", decl.initializer.get());

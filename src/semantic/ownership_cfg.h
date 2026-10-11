@@ -238,6 +238,11 @@ struct function_cfg {
   /// `hir::make_references_explicit` drops it there, finding both through
   /// `hir_node::origin`.
   std::map<const void *, const void *> temporary_ends;
+  /// The references to a reified static global (`checked_types::
+  /// static_global_refs`) whose value is used by value, so the reader owns
+  /// it. `hir::lowerer` builds a fresh value for each instead of handing out
+  /// the global, which a drop would free.
+  std::set<const void *> owned_static_reads;
   /// The top-level owning patterns whose subject is still owned by the path
   /// where the pattern misses (`let else`, `if let`, `while let`).
   std::set<const void *> unmatched_drops;

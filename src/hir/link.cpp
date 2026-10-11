@@ -383,6 +383,13 @@ auto find_reachable_modules(const hir_module &entry,
         }
       }
     }
+    // A static's initializer can call into another module too: a `list`
+    // static is built by `std.list`'s `from_array`.
+    for (const auto &global : current->statics) {
+      if (global.value != nullptr) {
+        found.walk_expr(*global.value);
+      }
+    }
 
     for (const auto &module_name : found.modules) {
       visit_module_name(module_name);

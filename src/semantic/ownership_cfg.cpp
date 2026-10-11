@@ -1066,6 +1066,10 @@ private:
     }
     const auto local = lookup(root->name);
     if (!local.has_value()) {
+      if (!projected && kind == access_kind::move &&
+          checked_.static_global_refs.contains(&expr)) {
+        cfg_.owned_static_reads.insert(&expr);
+      }
       if (projected && kind == access_kind::move && outer_ != nullptr &&
           captured_type(root->name).has_value() && movable(type_of(&expr))) {
         auto steps = std::vector<place_step>{};

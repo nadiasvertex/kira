@@ -268,6 +268,9 @@ auto is_bare_param(const semantic::type_table &types, type_id type) -> bool {
 [[nodiscard]] auto is_place(const hir_expr &expr) -> bool {
   switch (expr.kind) {
   case hir_node_kind::hir_local_ref:
+  // A reified static: reading it must not move its value into a temporary
+  // that is then dropped.
+  case hir_node_kind::hir_global_ref:
   case hir_node_kind::hir_field:
   case hir_node_kind::hir_index:
   case hir_node_kind::hir_tuple_index:

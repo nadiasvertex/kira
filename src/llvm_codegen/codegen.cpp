@@ -585,7 +585,7 @@ public:
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
     builder_.SetInsertPoint(entry);
     for (const auto *global : globals) {
-      auto value = compile_static_global_value(global->type, global->elements);
+      auto value = compile_expr(*global->value);
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
@@ -1212,9 +1212,9 @@ private:
                 "error",
                 ref.name)});
       }
-      // Every reified global is a heap value (an array), stored the same
-      // pointer-sized way `compile_array_init` produces it — see
-      // `compile_static_global_value`.
+      // Every reified global is a heap value (an array, or the collection
+      // `from_array` built from one), stored as the pointer-sized handle
+      // its initializer produces — see `compile_static_init`.
       return builder_.CreateLoad(llvm::PointerType::get(ctx_, 0), found->second,
                                  ref.name);
     }
@@ -2492,33 +2492,6 @@ private:
   /// unrolled; a larger one is a loop. Same threshold as
   /// `bytecode_compiler::function_compiler::k_max_unrolled_fill`.
   static constexpr uint64_t k_max_unrolled_fill = 64;
-
-  /// Builds a reified `static let` array global's backing heap value —
-  /// the explicit-elements branch of `compile_array_init` duplicated for a
-  /// *borrowed* `hir::ptr_vec<hir::hir_expr>` (owned by the module's
-  /// `hir_static_global`, not an owned `hir_array_init` it takes by
-  /// reference), exactly mirroring
-  /// `bytecode_compiler::function_compiler::compile_static_global_value`'s
-  /// own doc comment on why this is a deliberate duplicate rather than a
-  /// shared helper. `checker::reify_static_global` only ever reifies a
-  /// homogeneous-scalar literal-elements list (never a fill form), so unlike
-  /// the original this has just the one branch.
-  [[nodiscard]] auto
-  compile_static_global_value(type_id container_type,
-                              const hir::ptr_vec<hir::hir_expr> &elements)
-      -> std::expected<llvm::Value *, codegen_error> {
-    const auto &array_entry = types_.entry(container_type);
-    const auto elem_size = element_stride(array_entry.result);
-    auto *block = compile_heap_alloc_bytes(elements.size() * elem_size);
-    for (size_t i = 0; i < elements.size(); ++i) {
-      auto value = compile_expr(*elements[i]);
-      if (!value.has_value()) {
-        return std::unexpected(value.error());
-      }
-      builder_.CreateStore(*value, byte_address(block, i * elem_size));
-    }
-    return block;
-  }
 
   /// The address of a *scalar* place — the `&x`/`&mut x` cases that can't
   /// be the no-op passthrough an aggregate operand gets. The bytecode
@@ -4693,7 +4666,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
 
   // Every reified static global across every module, declared as an
   // internal-linkage `llvm::GlobalVariable` (a pointer-sized slot holding
-  // the heap value `compile_static_global_value` builds — see
+  // the heap value `compile_static_init` builds — see
   // `hir_global_ref`'s `compile_expr` case), keyed by the checker's own
   // already-program-wide-unique name (`checker::reify_static_global`'s
   // `static$name$counter` scheme), no module-qualification needed — mirrors

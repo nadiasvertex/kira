@@ -1,0 +1,29 @@
+module main
+
+# Run-time code reads `static let`s whose type is `list[T]` (todo item 9).
+# An unannotated array literal is a `list[int32]`; the annotated one checks
+# that a wider element type keeps its width. Each global is built by
+# `std.list`'s `from_array`, so a wrong layout reads the wrong slot. Reading
+# a static many times must not drop it, and a reader that takes it by value
+# gets its own list.
+
+static let primes = [2, 3, 5, 7]
+static let wide: list[int64] = [10, 5000000000, 20]
+
+def last_prime() -> int32:
+    return primes[primes.len() - 1]
+
+def second(xs: list[int32]) -> int32:
+    return xs[1]
+
+def main() -> int32:
+    # 7 + 4 * 10 = 47.
+    var total = last_prime() + primes.len() as int32 * 10
+    if wide[1] == 5000000000:
+        total = total + 100
+    # 147 + 20 = 167.
+    total = total + wide[2] as int32
+    var own = primes
+    own[0] = 50
+    # 167 + 50 - 2 + 3 + 3 = 221; `primes[0]` is still 2.
+    return total + own[0] - primes[0] + second(primes) + second(primes)
