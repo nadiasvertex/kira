@@ -1266,10 +1266,9 @@ auto test_accepts_static_for_inline_runtime_yield() -> void {
   // compiling.
   const auto analyzed =
       analyze_test_data_file("accept_static_for_inline_runtime_yield.cn");
-  expect_clean(analyzed,
-               std::string("expected a `static for` yield reading a "
-                           "parameter to be accepted:\n") +
-                   analyzed.diagnostics);
+  expect_clean(analyzed, std::string("expected a `static for` yield reading a "
+                                     "parameter to be accepted:\n") +
+                             analyzed.diagnostics);
 }
 
 auto test_accepts_static_struct_value_evaluates() -> void {

@@ -1664,7 +1664,8 @@ auto test_static_aggregate_read_at_run_time() -> void {
   auto run_report = cinder::driver::compile_sources(run_cfg, false);
   expect(run_report.has_value(), "expected compile driver to return a report");
   expect(run_report->error_count == 0,
-         "expected aggregate statics to be readable: " + run_report->diagnostics);
+         "expected aggregate statics to be readable: " +
+             run_report->diagnostics);
   expect(run_report->run.has_value() && run_report->run->succeeded,
          "expected `main` to run without panicking");
   expect(run_report->run->exit_code == expected,
@@ -1715,8 +1716,7 @@ auto test_static_unreadable_at_run_time_is_named() -> void {
   cinder::driver::inject_stdlib_prelude(run_cfg);
   auto report = cinder::driver::compile_sources(run_cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
-  expect(report->diagnostics.contains(
-             "`e` is a `static let` of type `expr`"),
+  expect(report->diagnostics.contains("`e` is a `static let` of type `expr`"),
          "expected the static to be named: " + report->diagnostics);
   expect(!report->diagnostics.contains("bare function value"),
          "expected no function-value wording: " + report->diagnostics);

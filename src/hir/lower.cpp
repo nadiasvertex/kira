@@ -278,8 +278,9 @@ auto lower_reified_value(
           value.leaf.boolean ? token_kind::kw_true : token_kind::kw_false,
           value.leaf.boolean ? "true" : "false"));
     default:
-      return ok_expr(make<hir_literal>(span, value.type, token_kind::string_lit,
-                                       encode_string_literal(value.leaf.string)));
+      return ok_expr(
+          make<hir_literal>(span, value.type, token_kind::string_lit,
+                            encode_string_literal(value.leaf.string)));
     }
   case shape::array:
     return ok_expr(make<hir_array_init>(span, value.type, std::move(parts),
@@ -301,7 +302,8 @@ auto lower_reified_value(
   case shape::collection:
     break;
   }
-  const auto conversion = checked.array_literal_conversions.find(value.conversion);
+  const auto conversion =
+      checked.array_literal_conversions.find(value.conversion);
   if (conversion == checked.array_literal_conversions.end() ||
       conversion->second.callee.decl == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, span,
@@ -310,19 +312,19 @@ auto lower_reified_value(
                             checked.types.display(value.type)));
   }
   const auto &callee = conversion->second.callee;
-  auto name = callee.impl_target_type.empty()
-                  ? callee.decl->name
-                  : std::format("{}::{}", callee.impl_target_type,
-                                callee.decl->name);
+  auto name =
+      callee.impl_target_type.empty()
+          ? callee.decl->name
+          : std::format("{}::{}", callee.impl_target_type, callee.decl->name);
   const auto symbol = symbol_for(name);
   auto args = ptr_vec<hir_expr>{};
   args.push_back(make<hir_array_init>(span, conversion->second.array_type,
                                       std::move(parts), nullptr, nullptr));
-  return ok_expr(direct_call(
-      span, value.type,
-      make<hir_local_ref>(span, k_unknown_type, symbol, std::move(name),
-                          callee.owner_module),
-      std::move(args), callee.decl));
+  return ok_expr(
+      direct_call(span, value.type,
+                  make<hir_local_ref>(span, k_unknown_type, symbol,
+                                      std::move(name), callee.owner_module),
+                  std::move(args), callee.decl));
 }
 
 /// The expression that builds a reified `static let`'s value at `span`.
@@ -540,8 +542,7 @@ private:
   /// (`drop_schedule::owned_static_reads`) gets a fresh value, the way a
   /// struct static is rebuilt at each reference; any other reads the global
   /// in place.
-  [[nodiscard]] auto lower_static_global_ref(const ast::expr &ref,
-                                             type_id type,
+  [[nodiscard]] auto lower_static_global_ref(const ast::expr &ref, type_id type,
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
     if (drop_schedule_.owned_static_reads.contains(&ref)) {

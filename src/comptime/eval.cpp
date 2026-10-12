@@ -2335,8 +2335,8 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
   auto solved =
       generic_call_resolver_ ? generic_call_resolver_(call) : std::nullopt;
   const auto read_spellings = !solved.has_value();
-  auto type_args = std::move(solved).value_or(
-      std::vector<std::pair<std::string, value>>{});
+  auto type_args =
+      std::move(solved).value_or(std::vector<std::pair<std::string, value>>{});
   for (size_t i = 0; read_spellings && i < type_arg_exprs.size(); ++i) {
     const auto *type_arg_expr = type_arg_exprs[i];
     if (type_arg_expr->kind != ast::node_kind::ident_expr) {

@@ -4674,7 +4674,8 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   auto ordered_globals = std::vector<const hir::hir_static_global *>{};
   for (const auto *module : modules) {
     for (const auto &global : module->statics) {
-      auto *slot_ty = storage_llvm_type(types, ctx, global.type).value_or(ptr_ty);
+      auto *slot_ty =
+          storage_llvm_type(types, ctx, global.type).value_or(ptr_ty);
       auto *var = new llvm::GlobalVariable(
           llvm_module, slot_ty, /*isConstant=*/false,
           llvm::GlobalValue::InternalLinkage,

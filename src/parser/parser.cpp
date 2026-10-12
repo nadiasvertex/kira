@@ -5745,8 +5745,7 @@ auto parser::parse_static_expr() -> ast::ptr<ast::expr> {
                           "block form `static for ...:` is a statement and "
                           "has no value."));
       decl->has_error = true;
-      while (!at_eof() && !at(token_kind::newline) &&
-             !at(token_kind::dedent)) {
+      while (!at_eof() && !at(token_kind::newline) && !at(token_kind::dedent)) {
         advance();
       }
     }
