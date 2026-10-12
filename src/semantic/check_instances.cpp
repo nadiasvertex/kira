@@ -18,262 +18,64 @@ auto checker::defer_to_instances(const ast::node &site,
 
 /// `id` with every abstract parameter replaced by the instance's answer.
 auto checker::substitute_type(type_id id, instance_subst &subst) -> type_id {
-  id = settle(id);
-  if (const auto found = subst.memo.find(id); found != subst.memo.end()) {
-    return found->second;
-  }
-  const auto result = substitute_type_uncached(id, subst);
-  subst.memo.emplace(id, result);
-  return result;
+  return detail::substitute_type(
+      session_.types_, [this](type_id t) -> type_id { return settle(t); },
+      subst, id);
 }
 
-auto checker::substitute_type_uncached(type_id id, instance_subst &subst)
-    -> type_id {
-  const auto item = session_.types_.entry(id); // copy: interning below can push
-  const auto each =
-      [&](const std::vector<type_id> &args) -> std::vector<type_id> {
-    auto out = std::vector<type_id>{};
-    out.reserve(args.size());
-    for (const auto arg : args) {
-      out.push_back(substitute_type(arg, subst));
-    }
-    return out;
+/// The record tables an instance copies from its template.
+auto checker::template_records() -> template_record_tables {
+  return template_record_tables{
+      .node_types = session_.node_types_,
+      .node_files = session_.node_files_,
+      .struct_pattern_field_types = session_.struct_pattern_field_types_,
+      .struct_literal_field_types = session_.struct_literal_field_types_,
+      .struct_literal_field_expected = session_.struct_literal_field_expected_,
+      .call_expected_types = session_.call_expected_types_,
+      .call_argument_mappings = session_.call_argument_mappings_,
+      .resolved_callees = session_.resolved_callees_,
+      .resolved_fn_values = session_.resolved_fn_values_,
+      .operator_dispatches = session_.operator_dispatches_,
+      .ord_dispatch_result_types = session_.ord_dispatch_result_types_,
+      .index_dispatches = session_.index_dispatches_,
+      .index_set_dispatches = session_.index_set_dispatches_,
+      .index_mut_dispatches = session_.index_mut_dispatches_,
+      .index_ref_dispatches = session_.index_ref_dispatches_,
+      .try_conversions = session_.try_conversions_,
+      .try_conversion_types = session_.try_conversion_types_,
+      .array_literal_conversions = session_.array_literal_conversions_,
+      .interp_dispatches = session_.interp_dispatches_,
+      .type_param_reflections = session_.type_param_reflections_,
+      .for_iterator_dispatches = session_.for_iterator_dispatches_,
+      .comprehension_iterator_dispatches =
+          session_.comprehension_iterator_dispatches_,
+      .comprehension_dispatches = session_.comprehension_dispatches_,
+      .runtime_fill_dispatches = session_.runtime_fill_dispatches_,
+      .folded_comptime_calls = session_.folded_comptime_calls_,
+      .layout_queries = session_.layout_queries_,
+      .ptr_casts = session_.ptr_casts_,
+      .slice_from_raw_parts_calls = session_.slice_from_raw_parts_calls_,
+      .stack_buffers = session_.stack_buffers_,
+      .static_if_taken_branch = session_.static_if_taken_branch_,
+      .static_global_refs = session_.static_global_refs_,
+      .static_const_values = session_.static_const_values_,
+      .value_path_types = session_.value_path_types_,
+      .proven_in_bounds = session_.proven_in_bounds_,
+      .elided_contracts = session_.elided_contracts_,
+      .spliced_fragments = session_.spliced_fragments_,
   };
-  switch (item.kind) {
-  case type_kind::type_param_kind: {
-    const auto found = subst.params.find(id);
-    return found == subst.params.end() ? id : found->second;
-  }
-  case type_kind::param_app_kind: {
-    const auto found = subst.params.find(item.result);
-    if (found == subst.params.end()) {
-      return id;
-    }
-    const auto ctor = session_.types_.entry(found->second);
-    if (ctor.kind != type_kind::ctor_ref_kind) {
-      return id;
-    }
-    auto args = each(item.args);
-    return ctor.decl != nullptr
-               ? session_.types_.user_type(*ctor.decl, ctor.module_name,
-                                           std::move(args))
-               : session_.types_.builtin_generic(ctor.name, std::move(args));
-  }
-  case type_kind::symbolic_value_kind:
-    return session_.types_.symbolic_value(
-        item.result, poly_substitute(item.value, subst.values));
-  case type_kind::builtin_generic_kind:
-    return session_.types_.builtin_generic(item.name, each(item.args));
-  case type_kind::tuple_kind:
-    return session_.types_.tuple_of(each(item.args));
-  case type_kind::fn_kind:
-    return session_.types_.fn_of(each(item.args),
-                                 substitute_type(item.result, subst));
-  case type_kind::ref_kind:
-    return session_.types_.ref_to(substitute_type(item.result, subst),
-                                  item.is_mut);
-  case type_kind::ptr_kind:
-    return session_.types_.ptr_to(substitute_type(item.result, subst),
-                                  item.is_mut);
-  case type_kind::array_kind: {
-    const auto element = substitute_type(item.result, subst);
-    const auto length = item.args.empty()
-                            ? k_unknown_type
-                            : substitute_type(item.args.front(), subst);
-    const auto &length_entry = session_.types_.entry(length);
-    auto size = item.array_size;
-    if (length_entry.kind == type_kind::const_value_kind) {
-      size = static_cast<uint64_t>(length_entry.value.constant);
-    }
-    return session_.types_.array_of(element, size, length);
-  }
-  case type_kind::struct_kind:
-  case type_kind::sum_kind:
-  case type_kind::opaque_kind:
-    return item.decl != nullptr
-               ? session_.types_.user_type(*item.decl, item.module_name,
-                                           each(item.args))
-               : id;
-  case type_kind::refinement_kind:
-    return session_.types_.refinement_of(item.decl, item.name, item.module_name,
-                                         substitute_type(item.result, subst),
-                                         each(item.args), item.predicate);
-  default:
-    return id;
-  }
-}
-
-/// Whether a template node lies in a branch this instance does not take.
-auto checker::is_dead(const instance_subst &subst, source_span span) -> bool {
-  return std::ranges::any_of(subst.dead, [&](source_span range) -> bool {
-    return !span.empty() && range.start <= span.start && span.end <= range.end;
-  });
-}
-
-/// Copies one record map's template entries onto the clone's nodes.
-template <typename Map, typename Transform>
-auto checker::copy_template_records(Map &map, const instance_subst &subst,
-                                    Transform transform) -> void {
-  using key_type = typename Map::key_type;
-  auto copied = std::vector<std::pair<key_type, typename Map::mapped_type>>{};
-  for (const auto &[original, clone] : *subst.pairs) {
-    const auto found = map.find(static_cast<key_type>(original));
-    if (found != map.end()) {
-      copied.emplace_back(static_cast<key_type>(clone),
-                          transform(found->second));
-    }
-  }
-  for (auto &[key, value] : copied) {
-    map.insert_or_assign(key, std::move(value));
-  }
-}
-
-template <typename Set>
-auto checker::copy_template_members(Set &set, const instance_subst &subst)
-    -> void {
-  using key_type = typename Set::key_type;
-  auto copied = std::vector<key_type>{};
-  for (const auto &[original, clone] : *subst.pairs) {
-    if (set.contains(static_cast<key_type>(original))) {
-      copied.push_back(static_cast<key_type>(clone));
-    }
-  }
-  set.insert(copied.begin(), copied.end());
 }
 
 /// Copies every record the template made onto the instance's clone, with
 /// its types substituted.
 auto checker::copy_all_template_records(instance_subst &subst) -> void {
-  const auto type = [&](type_id id) -> type_id {
-    return substitute_type(id, subst);
-  };
-  const auto callee = [&](resolved_callee record) -> resolved_callee {
-    record.receiver = clone_of(subst, record.receiver);
-    return record;
-  };
-  const auto same = [](const auto &value) -> auto { return value; };
-  copy_template_records(session_.node_types_, subst, type);
-  copy_template_records(session_.node_files_, subst, same);
-  copy_template_records(session_.struct_pattern_field_types_, subst, type);
-  copy_template_records(session_.struct_literal_field_types_, subst, type);
-  copy_template_records(session_.struct_literal_field_expected_, subst, type);
-  copy_template_records(session_.call_expected_types_, subst, type);
   copy_template_records(
-      session_.call_argument_mappings_, subst,
-      [&](call_argument_mapping mapping) -> call_argument_mapping {
-        for (auto &arg : mapping.args_by_param) {
-          arg = clone_of(subst, arg);
-        }
-        return mapping;
-      });
-  copy_template_records(session_.resolved_callees_, subst, callee);
-  copy_template_records(session_.resolved_fn_values_, subst, callee);
-  copy_template_records(session_.operator_dispatches_, subst, callee);
-  copy_template_records(session_.ord_dispatch_result_types_, subst, type);
-  copy_template_records(session_.index_dispatches_, subst, callee);
-  copy_template_records(session_.index_set_dispatches_, subst, callee);
-  copy_template_records(session_.index_mut_dispatches_, subst, callee);
-  copy_template_records(session_.index_ref_dispatches_, subst, callee);
-  copy_template_records(session_.try_conversions_, subst, callee);
-  copy_template_records(session_.try_conversion_types_, subst, type);
-  copy_template_records(
-      session_.array_literal_conversions_, subst,
-      [&](array_literal_conversion conversion) -> array_literal_conversion {
-        conversion.callee = callee(conversion.callee);
-        conversion.array_type = type(conversion.array_type);
-        return conversion;
-      });
-  copy_template_records(session_.interp_dispatches_, subst,
-                        [&](interp_dispatch dispatch) -> interp_dispatch {
-                          dispatch.value_type = type(dispatch.value_type);
-                          return dispatch;
-                        });
-  copy_template_records(session_.type_param_reflections_, subst, same);
-  const auto loop =
-      [&](iterator_loop_dispatch dispatch) -> iterator_loop_dispatch {
-    dispatch.element_type = type(dispatch.element_type);
-    dispatch.adapter_result_type = type(dispatch.adapter_result_type);
-    return dispatch;
-  };
-  copy_template_records(session_.for_iterator_dispatches_, subst, loop);
-  copy_template_records(session_.comprehension_iterator_dispatches_, subst,
-                        loop);
-  const auto comprehension =
-      [&](comprehension_dispatch dispatch) -> comprehension_dispatch {
-    dispatch.new_callee = callee(dispatch.new_callee);
-    dispatch.push_callee = callee(dispatch.push_callee);
-    dispatch.list_type = type(dispatch.list_type);
-    return dispatch;
-  };
-  copy_template_records(session_.comprehension_dispatches_, subst,
-                        comprehension);
-  copy_template_records(session_.runtime_fill_dispatches_, subst,
-                        comprehension);
-  copy_template_records(session_.folded_comptime_calls_, subst, same);
-  copy_template_records(session_.layout_queries_, subst,
-                        [&](layout_query query) -> layout_query {
-                          query.operand = type(query.operand);
-                          return query;
-                        });
-  copy_template_records(session_.ptr_casts_, subst, type);
-  copy_template_members(session_.slice_from_raw_parts_calls_, subst);
-  copy_template_records(
-      session_.stack_buffers_, subst,
-      [&](stack_buffer_request request) -> stack_buffer_request {
-        request.element = type(request.element);
-        return request;
-      });
-  copy_template_records(session_.static_if_taken_branch_, subst, same);
-  copy_template_records(session_.static_global_refs_, subst, same);
-  copy_template_records(session_.static_const_values_, subst, same);
-  copy_template_records(
-      session_.value_path_types_, subst,
-      [&](std::vector<type_id> types) -> std::vector<type_id> {
-        for (auto &segment : types) {
-          segment = type(segment);
-        }
-        return types;
-      });
-  copy_template_members(session_.proven_in_bounds_, subst);
-  copy_template_members(session_.elided_contracts_, subst);
-  copy_template_records(session_.spliced_fragments_, subst, same);
-}
-
-/// Removes every record a dead branch's clone nodes carry.
-template <typename Map>
-auto checker::drop_dead_records(Map &map, const instance_subst &subst) -> void {
-  using key_type = typename Map::key_type;
-  for (const auto &[original, clone] : *subst.pairs) {
-    const auto *node = static_cast<key_type>(clone);
-    if (map.contains(node) && is_dead(subst, node->span)) {
-      map.erase(node);
-    }
-  }
+      template_records(), session_.types_,
+      [this](type_id t) -> type_id { return settle(t); }, subst);
 }
 
 auto checker::drop_all_dead_records(const instance_subst &subst) -> void {
-  if (subst.dead.empty()) {
-    return;
-  }
-  drop_dead_records(session_.node_types_, subst);
-  drop_dead_records(session_.call_expected_types_, subst);
-  drop_dead_records(session_.resolved_callees_, subst);
-  drop_dead_records(session_.resolved_fn_values_, subst);
-  drop_dead_records(session_.operator_dispatches_, subst);
-  drop_dead_records(session_.index_dispatches_, subst);
-  drop_dead_records(session_.index_set_dispatches_, subst);
-  drop_dead_records(session_.index_mut_dispatches_, subst);
-  drop_dead_records(session_.index_ref_dispatches_, subst);
-  drop_dead_records(session_.try_conversions_, subst);
-  drop_dead_records(session_.array_literal_conversions_, subst);
-  drop_dead_records(session_.interp_dispatches_, subst);
-  drop_dead_records(session_.type_param_reflections_, subst);
-  drop_dead_records(session_.for_iterator_dispatches_, subst);
-  drop_dead_records(session_.comprehension_iterator_dispatches_, subst);
-  drop_dead_records(session_.comprehension_dispatches_, subst);
-  drop_dead_records(session_.runtime_fill_dispatches_, subst);
-  drop_dead_records(session_.folded_comptime_calls_, subst);
-  drop_dead_records(session_.layout_queries_, subst);
+  drop_dead_records(template_records(), subst);
 }
 
 /// Each abstract parameter of `item`'s template, matched to the answer the

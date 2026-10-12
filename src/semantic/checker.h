@@ -33,6 +33,7 @@
 #include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
+#include "src/semantic/instance_substitution.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
@@ -2392,24 +2393,6 @@ private:
   //  its own substitution. This is the whole of what an instance does.
   // ------------------------------------------------------------------------
 
-  /// One instance, stated against its template.
-  struct instance_subst {
-    /// Each abstract parameter of the template (as it was interned while the
-    /// template was checked) and the instance's answer for it.
-    std::unordered_map<type_id, type_id> params;
-    /// The value parameters' constants, for open polynomials (`n + 1`).
-    std::unordered_map<std::string, linear_poly> values;
-    /// Template node to clone node.
-    const ast::clone_map *pairs = nullptr;
-    /// The template, and the instance being made from it.
-    const ast::func_decl *tmpl = nullptr;
-    const ast::func_decl *instance = nullptr;
-    /// The source ranges of `static if` branches this instance does not
-    /// take. Nothing inside one is elaborated, and its records are dropped.
-    std::vector<source_span> dead;
-    std::unordered_map<type_id, type_id> memo;
-  };
-
   /// A decision the template deferred to its instances. `span` is the
   /// template syntax that needed it, which is how a decision inside a branch
   /// the instance does not take is skipped.
@@ -2437,37 +2420,13 @@ private:
   auto defer_to_instances(const ast::node &site,
                           std::function<void(instance_subst &)> run) -> void;
 
-  /// The clone of a template node, or the node itself when it has none (it
-  /// is not part of the template body — a callee's default argument, say).
-  template <typename T>
-  [[nodiscard]] static auto clone_of(const instance_subst &subst, const T *node)
-      -> const T * {
-    if (node == nullptr || subst.pairs == nullptr) {
-      return node;
-    }
-    const auto found = subst.pairs->find(node);
-    return found == subst.pairs->end() ? node
-                                       : static_cast<const T *>(found->second);
-  }
-
+  /// `id` under `subst`; see `substitute_type` in instance_substitution.h.
   auto substitute_type(type_id id, instance_subst &subst) -> type_id;
 
-  auto substitute_type_uncached(type_id id, instance_subst &subst) -> type_id;
-
-  [[nodiscard]] static auto is_dead(const instance_subst &subst,
-                                    source_span span) -> bool;
-
-  template <typename Map, typename Transform>
-  auto copy_template_records(Map &map, const instance_subst &subst,
-                             Transform transform) -> void;
-
-  template <typename Set>
-  auto copy_template_members(Set &set, const instance_subst &subst) -> void;
+  /// The record tables an instance copies from its template.
+  auto template_records() -> template_record_tables;
 
   auto copy_all_template_records(instance_subst &subst) -> void;
-
-  template <typename Map>
-  auto drop_dead_records(Map &map, const instance_subst &subst) -> void;
 
   auto drop_all_dead_records(const instance_subst &subst) -> void;
 
