@@ -1,0 +1,12 @@
+module sample
+
+type point = { x: int32, y: int32 }
+
+def offsets(n: int32) -> list[int32]:
+    static for i in 0..3 => i + n
+
+def scaled[T](n: int32) -> list[int32]:
+    static for f in T.fields() => f.name.len() as int32 * n
+
+def main() -> int32:
+    return offsets(1)[0] + scaled[point](2)[0]

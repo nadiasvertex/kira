@@ -1,0 +1,36 @@
+module codegen_stress.static_for_inline_runtime_yield
+
+# An inline `static for ... => e` whose `e` reads a runtime value — a
+# parameter — unrolls to one copy of `e` per iteration, each with the loop
+# variable written in as that iteration's constant (todo item 6: this was
+# rejected with "`n` is not a compile-time constant"). Also covers a reflected
+# `f.name` read in a generic body, a yield with no literal form (a tuple),
+# a struct loop variable, and a guard.
+
+type point = { x: int32, yy: int32, flag: bool }
+
+def offsets(n: int32) -> list[int32]:
+    static for i in 0..3 => i * 10 + n
+
+def weighted_names[T](n: int32) -> int32:
+    var total = 0
+    for v in static for f in T.fields() => f.name.len() as int32 * n:
+        total = total + v
+    return total
+
+def pairs(n: int64) -> int64:
+    let ps = static for i in [1, 2] => (i, n)
+    return ps[1].0 as int64 * 100 + ps[0].1
+
+def shifted(dx: int32) -> int32:
+    let ps = static for p in [point { x: 1, yy: 2, flag: true }, point { x: 3, yy: 4, flag: false }] if p.x > 1 => p.x + p.yy + dx
+    return ps[0] * 10 + ps.len() as int32
+
+def main() -> int32:
+    let o = offsets(5)
+    # offsets: 5 + 15 + 25 = 45; names "x" + "yy" + "flag" = 7 bytes * 3 = 21;
+    # pairs: 2 * 100 + 4 = 204; shifted: one kept point, (3 + 4 + 6) * 10 + 1.
+    return (o[0] + o[1] + o[2] + weighted_names[point](3) * 100 +
+        pairs(4) as int32 * 10000 + shifted(6) * 10000000)
+
+# expect: 1312042145

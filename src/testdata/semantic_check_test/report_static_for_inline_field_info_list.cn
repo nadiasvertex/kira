@@ -1,0 +1,10 @@
+module sample
+
+type point = { x: int32, y: int32 }
+
+def fields_of[T]() -> int32:
+    let fs = static for f in T.fields() => f
+    return 0
+
+def main() -> int32:
+    return fields_of[point]()
