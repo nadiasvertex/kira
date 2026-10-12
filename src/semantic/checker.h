@@ -1598,19 +1598,6 @@ private:
   //  `i < n`.
   // ==========================================================================
 
-  /// Re-states a predicate about a concrete value. `values` maps each name
-  /// the predicate is written in terms of (`self`, and the declaration's
-  /// value parameters) to the polynomial that stands in for it here;
-  /// `spellings` maps the same names to their source spelling, purely so the
-  /// diagnostic can echo the goal back in the user's own words.
-  struct predicate_subst {
-    std::unordered_map<std::string, linear_poly> values;
-    std::unordered_map<std::string, std::string> spellings;
-  };
-
-  /// What a call site has pinned each of the callee's value parameters to.
-  using value_bindings = std::unordered_map<std::string, linear_poly>;
-
   // ==========================================================================
   //  check_reasoning.cpp
   // ==========================================================================
@@ -1686,11 +1673,8 @@ private:
   auto solver_poly(const ast::expr &expr, const predicate_subst &subst)
       -> std::optional<linear_poly>;
 
-  static auto negate_comparison(ast::binary_op op) -> ast::binary_op;
-
-  auto comparison_constraint(ast::binary_op op, const linear_poly &lhs,
-                             const linear_poly &rhs, std::string label)
-      -> std::optional<constraint>;
+  /// A translator that resolves bare names through `ident_var`.
+  auto translator() -> predicate_translator;
 
   auto describe(const ast::expr &expr, const predicate_subst &subst)
       -> std::string;

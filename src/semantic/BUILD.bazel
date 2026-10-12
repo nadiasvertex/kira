@@ -33,6 +33,7 @@ cc_library(
         "module_index.cpp",
         "ownership_cfg.cpp",
         "ownership_check.cpp",
+        "predicates.cpp",
         "reason.cpp",
         "resolution.cpp",
         "scopes.cpp",
@@ -58,6 +59,7 @@ cc_library(
         "module_index.h",
         "ownership_cfg.h",
         "ownership_check.h",
+        "predicates.h",
         "reason.h",
         "resolution.h",
         "scopes.h",
@@ -200,6 +202,16 @@ cc_test(
     srcs = ["infer/obligations_test.cpp"],
     deps = [
         ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "predicates_test",
+    srcs = ["predicates_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )
