@@ -35,6 +35,7 @@ cc_library(
         "ownership_check.cpp",
         "narrowing.cpp",
         "predicates.cpp",
+        "try_from_proof.cpp",
         "reason.cpp",
         "resolution.cpp",
         "scopes.cpp",
@@ -62,6 +63,7 @@ cc_library(
         "ownership_check.h",
         "narrowing.h",
         "predicates.h",
+        "try_from_proof.h",
         "reason.h",
         "resolution.h",
         "scopes.h",
@@ -221,6 +223,16 @@ cc_test(
 cc_test(
     name = "predicates_test",
     srcs = ["predicates_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "try_from_proof_test",
+    srcs = ["try_from_proof_test.cpp"],
     deps = [
         ":semantic",
         "//src/parser:parser",

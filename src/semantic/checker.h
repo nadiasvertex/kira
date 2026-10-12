@@ -3545,21 +3545,6 @@ private:
                                type_id base, type_id refined)
       -> const ast::node *;
 
-  auto specialize_predicate(
-      ast::ptr<ast::expr> &slot, const std::string &value_binding,
-      const std::unordered_map<std::string, int64_t> &parameters) -> void;
-
-  auto refinement_constants(const type_entry &entry)
-      -> std::optional<std::unordered_map<std::string, int64_t>>;
-
-  auto make_ident(std::string_view name, source_span span, bool is_variant)
-      -> ast::ptr<ast::ident_expr>;
-
-  auto make_variant_call(std::string_view variant, std::string_view binding,
-                         source_span span) -> ast::ptr<ast::expr>;
-
-  auto wrap_in_stmt(ast::ptr<ast::expr> value) -> ast::ptr<ast::node>;
-
   auto resolve_index_output(type_id target, std::string_view trait_name,
                             const method_entry &method) -> type_id;
 

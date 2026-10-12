@@ -38,6 +38,7 @@
 #include "src/semantic/predicates.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
+#include "src/semantic/try_from_proof.h"
 #include "src/semantic/types.h"
 
 namespace cinder::semantic::detail {
