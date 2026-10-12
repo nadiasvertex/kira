@@ -305,20 +305,9 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
       return k_error_type;
     }
     if (wire_dispatch && binary.lhs != nullptr) {
-      // Look for an extension method on the builtin type.
-      if (const auto *method =
-              find_extend_method_for_builtin(entry, trait_name);
-          method != nullptr && !method->decl->params.empty() &&
-          param_name_of(method->decl->params.front()) == "self") {
-        session_.operator_dispatches_[&binary] =
-            resolved_callee{.decl = method->decl,
-                            .owner_module = method->owner->module_name,
-                            .impl_target_type = entry.name,
-                            .receiver = binary.lhs.get()};
-        return resolve_operator_return_type(target, trait_name, *method);
-      }
-      // Also check builtin impl methods (e.g., `impl add for str`).
-      if (const auto *method = find_builtin_impl_method(entry.name, trait_name);
+      // An extension method on the builtin type, or an impl on it
+      // (`impl add for str`).
+      if (const auto *method = resolve_method(entry, target, trait_name).method;
           method != nullptr && !method->decl->params.empty() &&
           param_name_of(method->decl->params.front()) == "self") {
         session_.operator_dispatches_[&binary] =
@@ -711,10 +700,7 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
       entry.kind == type_kind::opaque_kind) {
     method = find_method(entry, "cmp", target);
   } else if (entry.kind == type_kind::builtin_kind) {
-    method = find_extend_method_for_builtin(entry, "cmp");
-    if (!is_self_method(method)) {
-      method = find_builtin_impl_method(entry.name, "cmp");
-    }
+    method = resolve_method(entry, target, "cmp").method;
   }
   if (!is_self_method(method)) {
     return;
@@ -749,10 +735,11 @@ auto checker::wire_str_equality_dispatch(const ast::binary_expr &binary,
       binary.lhs == nullptr) {
     return;
   }
-  const auto *method = find_extend_method_for_builtin(entry, "eq");
-  if (method == nullptr) {
+  const auto found = resolve_method(entry, strip_refs(lhs), "eq");
+  if (found.origin != method_origin::builtin_extend) {
     return;
   }
+  const auto *method = found.method;
   session_.operator_dispatches_[&binary] =
       resolved_callee{.decl = method->decl,
                       .owner_module = method->owner->module_name,

@@ -530,11 +530,8 @@ auto checker::report_unknown_builtin_method(const ast::call_expr &call,
 
   build_method_table();
   auto candidates = builtin_method_names(entry);
-  if (const auto found = cache_.extend_methods_by_builtin_.find(entry.name);
-      found != cache_.extend_methods_by_builtin_.end()) {
-    for (const auto &method : found->second) {
-      candidates.push_back(method.decl->name);
-    }
+  for (auto &declared : method_lookup().declared_names(entry)) {
+    candidates.push_back(std::move(declared));
   }
   std::ranges::sort(candidates);
   candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
@@ -597,15 +594,7 @@ auto checker::builtin_method_names(const type_entry &object)
 auto checker::available_method_name_list(const type_entry &instance)
     -> std::vector<std::string> {
   build_method_table();
-  auto names = std::vector<std::string>{};
-  if (instance.decl != nullptr) {
-    if (const auto it = cache_.methods_.find(instance.decl);
-        it != cache_.methods_.end()) {
-      for (const auto &method : it->second) {
-        names.push_back(method.decl->name);
-      }
-    }
-  }
+  auto names = method_lookup().declared_names(instance);
   std::ranges::sort(names);
   names.erase(std::ranges::unique(names).begin(), names.end());
   return names;
@@ -629,7 +618,7 @@ auto checker::available_method_names(const type_entry &instance)
 /// Records a `session_.resolved_callees_` entry for a genuine instance-method
 /// call
 /// (`object.method(args...)`, `method` a real `self`-taking declaration
-/// found via `find_method`/`find_extend_method_for_builtin`) so
+/// found via `resolve_method`) so
 /// `hir::lower_call` can rebuild the call site directly instead of
 /// mishandling `field` as plain field access — see `resolved_callee`'s
 /// doc comment (`semantic/types.h`) for why `receiver` matters. A method

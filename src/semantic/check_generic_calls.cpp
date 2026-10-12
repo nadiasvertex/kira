@@ -1216,7 +1216,7 @@ auto checker::name_impl_method_instance(const ast::call_expr &call,
     return;
   }
   const auto &entry = session_.types_.entry(settled);
-  const auto *found = find_receiver_method(settled, method_name);
+  const auto *found = resolve_method(settled, method_name).method;
   if (found == nullptr) {
     return;
   }

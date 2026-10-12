@@ -680,7 +680,7 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
     return false;
   }
   session_.derived_impl_origin_spans_[impl] = decl->span;
-  auto &methods = cache_.methods_[decl];
+  auto &methods = cache_.method_tables_.declared[decl];
   auto registered = false;
   for (const auto &item : impl->items) {
     if (item == nullptr || item->has_error ||
@@ -700,7 +700,7 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
         // The concrete instantiation, not the declaration's pattern, so
         // `find_method`'s `target_pattern_matches` admits this method for
         // `box[int32]` and not for `box[str]` — even though both share one
-        // `cache_.methods_` bucket, keyed by the `type_decl`.
+        // `cache_.method_tables_.declared` bucket, keyed by the `type_decl`.
         .impl_target_pattern = instance_id,
     });
     registered = true;

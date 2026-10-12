@@ -230,16 +230,6 @@ auto checker::check_ufcs_call(const ast::call_expr &call,
                               bindings));
 }
 
-/// Whether a builtin receiver of type `receiver` has a method `name` of its
-/// own — the arms of the builtin method ladder that run before UFCS.
-auto checker::builtin_has_method(type_id receiver, const std::string &name)
-    -> bool {
-  const auto &entry = session_.types_.entry(receiver);
-  return has_builtin_inherent_method(entry, name) ||
-         find_builtin_impl_method(entry.name, name) != nullptr ||
-         find_extend_method_for_builtin(entry, name) != nullptr;
-}
-
 /// `4.id64()` for `def id64(x: int64)`: an integer literal receiver is
 /// solved by the one free function the call can reach, as `id64(4)` is by
 /// the parameter it is passed to. Waiting would default the literal to
@@ -284,7 +274,7 @@ auto checker::pin_literal_receiver_by_ufcs(const ast::field_expr &field,
   const auto param = viable.front().second;
   const auto number = strip_refs(param);
   if (!session_.types_.is_numeric(number) ||
-      builtin_has_method(number, field.field_name)) {
+      resolve_method(number, field.field_name).found()) {
     return false;
   }
   solve_leaves(number, receiver);
@@ -645,7 +635,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
   // where it cannot, the receiver is owed the last resort now, and the
   // lookup below runs against the answer.
   if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
-      !receiver_has_method(object, field.field_name) &&
+      !resolve_method(object, field.field_name).found() &&
       (session_.types_.entry(settle(object)).kind == type_kind::type_var_kind ||
        field.object->kind != ast::node_kind::ident_expr ||
        collect_ufcs_candidates(field.field_name).empty())) {
@@ -852,52 +842,54 @@ auto checker::infer_method_call(const ast::call_expr &call,
     // user type's `machine def` equivalents are treated alike. Reading or
     // indexing the container itself stays unrestricted.
     const auto builtin_result = builtin_method_result(entry, field.field_name);
-    if (!has_builtin_inherent_method(entry, field.field_name)) {
-      if (const auto *method =
-              find_builtin_impl_method(entry.name, field.field_name)) {
-        record_expr_type(field, fn_type_of(*method->decl, method->owner));
-        if (!check_method_accepts_generic_args(field, *method->decl,
-                                               explicit_args)) {
-          infer_call_args_loosely(call);
-          return k_error_type;
-        }
-        if (receiver_fills_first_param(*method, entry)) {
-          return check_receiver_call(call, *method, entry.name, *field.object,
-                                     object, explicit_args);
-        }
-        record_instance_method_callee(call, *method, entry.name, *field.object);
-        return check_call_against_decl(call, *method->decl, method->owner,
-                                       file_.file_id_, /*skip_self=*/true);
+    const auto resolved = resolve_method(entry, object, field.field_name);
+    if (resolved.origin == method_origin::builtin_impl) {
+      const auto *method = resolved.method;
+      record_expr_type(field, fn_type_of(*method->decl, method->owner));
+      if (!check_method_accepts_generic_args(field, *method->decl,
+                                             explicit_args)) {
+        infer_call_args_loosely(call);
+        return k_error_type;
       }
-      if (const auto *method =
-              find_extend_method_for_builtin(entry, field.field_name)) {
-        record_expr_type(field, fn_type_of(*method->decl, method->owner));
-        // Same instantiation ladder the user-type path above runs. Without
-        // it an `extend[T] option[T]:` block type-checked and then compiled
-        // nothing, because the two arms below name one shared function for
-        // every element type and none was ever built.
-        if (const auto instantiated = check_generic_instance_method_call(
-                call, *method, entry.name, *field.object, object,
-                explicit_args)) {
-          return *instantiated;
-        }
-        if (const auto instantiated = check_impl_generic_method_call(
-                call, *method, entry, *field.object, object)) {
-          return *instantiated;
-        }
-        record_instance_method_callee(call, *method, entry.name, *field.object);
-        const auto site = method_call_site{.method = method,
-                                           .target_type_name = entry.name,
-                                           .receiver = field.object.get(),
-                                           .receiver_type = object};
-        return check_call_against_decl(call, *method->decl, method->owner,
-                                       file_.file_id_, /*skip_self=*/true,
-                                       /*explicit_args=*/{}, &site);
+      if (receiver_fills_first_param(*method, entry)) {
+        return check_receiver_call(call, *method, entry.name, *field.object,
+                                   object, explicit_args);
       }
+      record_instance_method_callee(call, *method, entry.name, *field.object);
+      return check_call_against_decl(call, *method->decl, method->owner,
+                                     file_.file_id_, /*skip_self=*/true);
+    }
+    if (resolved.origin == method_origin::builtin_extend) {
+      const auto *method = resolved.method;
+      record_expr_type(field, fn_type_of(*method->decl, method->owner));
+      // Same instantiation ladder the user-type path above runs. Without
+      // it an `extend[T] option[T]:` block type-checked and then compiled
+      // nothing, because the two arms below name one shared function for
+      // every element type and none was ever built.
+      if (const auto instantiated = check_generic_instance_method_call(
+              call, *method, entry.name, *field.object, object,
+              explicit_args)) {
+        return *instantiated;
+      }
+      if (const auto instantiated = check_impl_generic_method_call(
+              call, *method, entry, *field.object, object)) {
+        return *instantiated;
+      }
+      record_instance_method_callee(call, *method, entry.name, *field.object);
+      const auto site = method_call_site{.method = method,
+                                         .target_type_name = entry.name,
+                                         .receiver = field.object.get(),
+                                         .receiver_type = object};
+      return check_call_against_decl(call, *method->decl, method->owner,
+                                     file_.file_id_, /*skip_self=*/true,
+                                     /*explicit_args=*/{}, &site);
+    }
+    if (resolved.origin == method_origin::none) {
       // Same last arm as the struct/sum/opaque case above, and the one
       // that matters most for `std.algo`: the whole catalog is free
-      // functions over a builtin `list`/`slice` receiver. Inside the
-      // `is_unknown` guard, so a real builtin method still wins.
+      // functions over a builtin `list`/`slice` receiver. Only when no
+      // method of the receiver's own matched, so a real builtin method
+      // still wins.
       if (const auto ufcs = try_ufcs_call(call, field, object)) {
         return *ufcs;
       }
@@ -1099,20 +1091,10 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
                                         const std::string &fn_name)
     -> std::optional<type_id> {
   const auto &entry = session_.types_.entry(target);
-  const auto *method = find_method(entry, fn_name, target);
-  if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
-    // A builtin target (`list[int32]`) has no `type_decl` for `find_method`
-    // to key on; its impl members live in the constructor-name-keyed table.
-    method = find_builtin_impl_method(entry.name, fn_name);
-  }
-  if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
-    // `extend int32: static def zero()`. The extend table is keyed the same
-    // way but was never consulted here, so `T.zero()` with `T` solved to a
-    // primitive reported "no static `zero` on type `int32`" — whose help
-    // text told the user to write the very `extend` block that was being
-    // ignored.
-    method = find_extend_method_for_builtin(entry, fn_name);
-  }
+  // A builtin target (`list[int32]`) has no `type_decl` to key on; its impl
+  // and `extend` members (`extend int32: static def zero()`) live in the
+  // constructor-name-keyed tables, which `resolve_method` also consults.
+  const auto *method = resolve_method(entry, target, fn_name).method;
   if (method == nullptr) {
     return std::nullopt;
   }
@@ -1528,7 +1510,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
     // (`option.pure(1)` is an `option[int32]`).
     if (builtin_generic_arity(root.front()).has_value()) {
       if (const auto *method =
-              find_builtin_impl_method(root.front(), fn_name)) {
+              method_lookup().constructor_method(root.front(), fn_name)) {
         const auto has_self =
             !method->decl->params.empty() &&
             param_name_of(method->decl->params.front()) == "self";

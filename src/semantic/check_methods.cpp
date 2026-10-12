@@ -31,20 +31,6 @@ auto checker::type_key_of(const type_entry &entry) -> std::string {
   return std::format("n:{}", entry.name);
 }
 
-/// Whether `id` mentions a type parameter anywhere inside it — i.e. whether
-/// it is a *pattern* standing for many concrete types (`holder[T]`) rather
-/// than one (`holder[int32]`).
-auto checker::type_mentions_param(type_id id) -> bool {
-  const auto entry = session_.types_.entry(id);
-  if (entry.kind == type_kind::type_param_kind ||
-      entry.kind == type_kind::param_app_kind) {
-    return true;
-  }
-  return std::ranges::any_of(entry.args, [&](type_id arg) -> bool {
-    return type_mentions_param(arg);
-  });
-}
-
 /// Whether two impls of the same trait, on targets sharing a coherence key
 /// (so: on the same type declaration), actually apply to a common concrete
 /// type — the thing the reference forbids ("no two can apply to the same
@@ -67,7 +53,8 @@ auto checker::impl_targets_overlap(type_id first, type_id second) -> bool {
   if (first == second) {
     return true;
   }
-  return type_mentions_param(first) || type_mentions_param(second);
+  const auto resolver = method_lookup();
+  return resolver.mentions_param(first) || resolver.mentions_param(second);
 }
 
 /// Finds a trait declaration named `name` in the current module or
@@ -376,14 +363,14 @@ auto checker::resolve_extend_target(const extend_ref &ext) -> type_id {
   return resolve_type(*ext.decl->for_type, ctx);
 }
 
-/// Builds `cache_.methods_` once per session (idempotent via
+/// Builds `cache_.method_tables_.declared` once per session (idempotent via
 /// `cache_.methods_built_`): for every impl block in every module, records its
 /// methods against the impl's target type declaration, plus — for a trait impl
 /// — the target trait's default-bodied methods, so calling a non-overridden
 /// default method through the impl works without duplicating its body per type.
 /// Also records every `extend` block's methods, against the target's
 /// `type_decl` when it names a user type or against the target's builtin
-/// name (`cache_.extend_methods_by_builtin_`) otherwise.
+/// name (`cache_.method_tables_.extend_by_builtin`) otherwise.
 ///
 /// Trait-default monomorphization is deferred to a second pass (below,
 /// `deferred_defaults`) rather than run inline as each impl is visited:
@@ -391,7 +378,7 @@ auto checker::resolve_extend_target(const extend_ref &ext) -> type_id {
 /// and that check can itself call `find_method`/`build_method_table`
 /// reentrantly (e.g. a default `read_to_end` calling `list[byte].push`).
 /// `cache_.methods_built_` is already `true` by then, so a reentrant call would
-/// see whatever subset of `cache_.methods_`/`cache_.extend_methods_by_builtin_`
+/// see whatever subset of `cache_.method_tables_.declared`/`cache_.method_tables_.extend_by_builtin`
 /// this loop happened to have populated so far — order-dependent on
 /// `index_.modules`'s (unordered) iteration order, i.e. on which module
 /// the compile's entry point happens to be (spec/todo.md item 18). Doing
@@ -443,11 +430,11 @@ auto checker::build_method_table() -> void {
         continue;
       }
       if (target_entry.decl != nullptr) {
-        auto &methods = cache_.methods_[target_entry.decl];
+        auto &methods = cache_.method_tables_.declared[target_entry.decl];
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       } else if (!target_entry.name.empty()) {
-        auto &methods = cache_.extend_methods_by_builtin_[target_entry.name];
+        auto &methods = cache_.method_tables_.extend_by_builtin[target_entry.name];
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       }
@@ -457,14 +444,14 @@ auto checker::build_method_table() -> void {
       const auto target = strip_refs(resolve_impl_target(impl));
       const auto &target_entry = session_.types_.entry(target);
       // An impl of a higher-kinded trait for a *prelude* constructor
-      // (`impl monad for option`) has no `type_decl` to key `cache_.methods_`
+      // (`impl monad for option`) has no `type_decl` to key `cache_.method_tables_.declared`
       // by; its methods go in the constructor-name-keyed table instead.
       const auto is_builtin_ctor_target =
           target_entry.kind == type_kind::ctor_ref_kind &&
           target_entry.decl == nullptr;
       // An impl for an *applied* prelude generic (`impl from_iter[int32]
       // for list[int32]`). Like the bare-constructor case it has no
-      // `type_decl` to key `cache_.methods_` by, and it used to fall into the
+      // `type_decl` to key `cache_.method_tables_.declared` by, and it used to fall into the
       // `continue` below: the impl was parsed and coherence-checked, then
       // silently never registered, so its members did not exist as far as
       // every lookup was concerned. `collect`'s collector impls are all
@@ -487,8 +474,8 @@ auto checker::build_method_table() -> void {
       }
       auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
                        is_builtin_scalar_target)
-                          ? cache_.impl_methods_by_builtin_[target_entry.name]
-                          : cache_.methods_[target_entry.decl];
+                          ? cache_.method_tables_.impl_by_builtin[target_entry.name]
+                          : cache_.method_tables_.declared[target_entry.decl];
       auto overridden_names = std::unordered_set<std::string>{};
       // Owned copy of `target_entry.name`, taken up front: `target_entry`
       // is a reference into `type_table`'s backing store
@@ -677,200 +664,52 @@ auto checker::monomorphize_trait_default(
                          .owner_module = trait_module->module_name});
 }
 
-/// Looks up a method by name on a user-type instance. An inherent or
-/// impl-provided method always wins over a trait default with the same
-/// name; the default is only used as a fallback.
-/// Whether an impl's target *pattern* (`holder[T]`, `boxed[int64]`) applies
-/// to a concrete receiver type. A type parameter in the pattern matches
-/// anything in that position; everything else must match nominally and
-/// argument-for-argument.
-///
-/// This is what tells `impl get_it for boxed[int32]` from `impl get_it for
-/// boxed[int64]`. Both are recorded against the one `boxed` declaration,
-/// which is all method lookup used to consult — so a `boxed[int64]`
-/// receiver could resolve to the `int32` impl's body and be compiled under
-/// the wrong types.
-auto checker::target_pattern_matches(type_id pattern, type_id concrete)
-    -> bool {
-  if (pattern == concrete || session_.types_.is_unknown(pattern)) {
-    return true;
-  }
-  const auto pattern_entry = session_.types_.entry(pattern);
-  if (pattern_entry.kind == type_kind::type_param_kind ||
-      pattern_entry.kind == type_kind::param_app_kind ||
-      pattern_entry.kind == type_kind::ctor_ref_kind ||
-      pattern_entry.kind == type_kind::symbolic_value_kind) {
-    // A value-kind impl parameter embedded in the target (`buf[n]`'s `n`)
-    // interns the same way `type_param_kind` does for a type parameter —
-    // as a placeholder the receiver is free to instantiate however it
-    // likes. This is only a candidate filter; whether the receiver's
-    // actual value is one `match_value_params` can pin down
-    // is decided afterward, by `check_impl_generic_method_call`.
-    return true;
-  }
-  const auto concrete_entry = session_.types_.entry(concrete);
-  if (pattern_entry.decl != concrete_entry.decl) {
-    return false;
-  }
-  if (pattern_entry.decl == nullptr &&
-      pattern_entry.name != concrete_entry.name) {
-    return false;
-  }
-  if (pattern_entry.args.size() != concrete_entry.args.size()) {
-    return false;
-  }
-  for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-    if (!target_pattern_matches(pattern_entry.args[i],
-                                concrete_entry.args[i])) {
-      return false;
-    }
-  }
-  return true;
+auto checker::method_lookup() -> method_resolver {
+  return method_resolver{session_.types_, cache_.method_tables_,
+                         &has_builtin_inherent_method};
 }
 
-/// `instance_id` is the receiver's own `type_id`, used to pick between
-/// impls on different instantiations of one generic declaration; passing
-/// `k_unknown_type` (the default) keeps the historical declaration-level
+/// The receiver is `instance`, whose own `type_id` is `id`; `id` is used to
+/// pick between impls on different instantiations of one generic
+/// declaration, and passing `k_unknown_type` keeps the declaration-level
 /// behavior for callers that have only a `type_entry` in hand.
+auto checker::resolve_method(const type_entry &instance, type_id id,
+                             std::string_view name,
+                             const method_filter &accepts)
+    -> method_resolution {
+  build_method_table();
+  if (const auto found = method_lookup().resolve(instance, id, name, accepts);
+      found.found()) {
+    return found;
+  }
+  // Nothing provides `name` for this receiver. If the receiver is a
+  // concrete instantiation of a generic `deriving` type, this is the point
+  // at which that instantiation's methods get derived — lazily, because no
+  // earlier phase can know which instantiations exist. Ordering the two
+  // this way is what gives a hand-written `impl` priority over a derived
+  // one for free: a type that already had the method never reaches the
+  // derivation at all.
+  if (!ensure_derived_instance_impls(id, name)) {
+    return {};
+  }
+  return method_lookup().resolve(session_.types_.entry(id), id, name, accepts);
+}
+
+auto checker::resolve_method(type_id receiver, std::string_view name,
+                             const method_filter &accepts)
+    -> method_resolution {
+  // A copy: deriving can intern types, and the table may move its entries.
+  const auto entry = session_.types_.entry(receiver);
+  return resolve_method(entry, receiver, name, accepts);
+}
+
 auto checker::find_method(const type_entry &instance, std::string_view name,
                           type_id instance_id, const method_filter &accepts)
     -> const method_entry * {
-  if (const auto *found =
-          find_declared_method(instance, name, instance_id, accepts)) {
-    return found;
-  }
-  // Nothing declared provides `name` for this receiver. If the receiver is
-  // a concrete instantiation of a generic `deriving` type, this is the
-  // point at which that instantiation's methods get derived — lazily,
-  // because no earlier phase can know which instantiations exist. Ordering
-  // the two this way is what gives a hand-written `impl` priority over a
-  // derived one for free: a type that already had the method never reaches
-  // the derivation at all.
-  if (!ensure_derived_instance_impls(instance_id, name)) {
-    return nullptr;
-  }
-  return find_declared_method(session_.types_.entry(instance_id), name,
-                              instance_id, accepts);
+  const auto found = resolve_method(instance, instance_id, name, accepts);
+  return found.origin == method_origin::declared ? found.method : nullptr;
 }
 
-/// `find_method`'s search proper, over what is already in `cache_.methods_`.
-/// Separated so `find_method` can run it a second time after deriving.
-///
-/// `accepts`, when set, narrows the search past the name: a type may
-/// carry several impls of the same parameterized trait (`index[usize]`
-/// and `index[range[usize]]`), each contributing a method of the same
-/// name, and only the caller knows which one this use site means. Without
-/// it the first `at` found answers for every key type — see
-/// `check_index_key`.
-auto checker::find_declared_method(const type_entry &instance,
-                                   std::string_view name, type_id instance_id,
-                                   const method_filter &accepts)
-    -> const method_entry * {
-  build_method_table();
-  if (instance.decl == nullptr) {
-    return nullptr;
-  }
-  const auto it = cache_.methods_.find(instance.decl);
-  if (it == cache_.methods_.end()) {
-    return nullptr;
-  }
-  // Inherent/impl-provided methods take priority over trait defaults,
-  // which take priority over `extend`-block methods (the least specific).
-  // Within the first group, an impl whose target names this exact
-  // instantiation beats one that merely covers it generically.
-  const method_entry *generic_match = nullptr;
-  const method_entry *trait_fallback = nullptr;
-  const method_entry *extension_fallback = nullptr;
-  for (const auto &method : it->second) {
-    if (method.decl->name != name) {
-      continue;
-    }
-    if (accepts && !accepts(method)) {
-      continue;
-    }
-    if (method.is_extension) {
-      if (extension_fallback == nullptr) {
-        extension_fallback = &method;
-      }
-      continue;
-    }
-    const auto applies =
-        session_.types_.is_unknown(instance_id) ||
-        target_pattern_matches(method.impl_target_pattern, instance_id);
-    if (!applies) {
-      continue;
-    }
-    if (method.from_trait == nullptr) {
-      if (!type_mentions_param(method.impl_target_pattern)) {
-        return &method;
-      }
-      if (generic_match == nullptr) {
-        generic_match = &method;
-      }
-      continue;
-    }
-    if (trait_fallback == nullptr) {
-      trait_fallback = &method;
-    }
-  }
-  if (generic_match != nullptr) {
-    return generic_match;
-  }
-  return trait_fallback != nullptr ? trait_fallback : extension_fallback;
-}
-
-/// Looks up an `extend`-block method by name on a builtin instance (one
-/// with no `type_decl`, e.g. `str`), keyed by the builtin's type-entry
-/// name via `cache_.extend_methods_by_builtin_`.
-auto checker::find_extend_method_for_builtin(const type_entry &instance,
-                                             std::string_view name)
-    -> const method_entry * {
-  build_method_table();
-  const auto it = cache_.extend_methods_by_builtin_.find(instance.name);
-  if (it == cache_.extend_methods_by_builtin_.end()) {
-    return nullptr;
-  }
-  for (const auto &method : it->second) {
-    if (method.decl->name == name) {
-      return &method;
-    }
-  }
-  return nullptr;
-}
-
-/// The declared method `name` on `receiver`, by the routes
-/// `infer_method_call` tries: a declared or derived method, or, for a
-/// builtin (which has no declaration for `find_method` to search), an impl
-/// or `extend` method on it.
-auto checker::find_receiver_method(type_id receiver, std::string_view name)
-    -> const method_entry * {
-  const auto &entry = session_.types_.entry(receiver);
-  if (const auto *found = find_method(entry, name, receiver)) {
-    return found;
-  }
-  if (entry.decl != nullptr) {
-    return nullptr;
-  }
-  if (const auto *found = find_builtin_impl_method(entry.name, name)) {
-    return found;
-  }
-  return find_extend_method_for_builtin(entry, name);
-}
-
-/// Whether `name` is a method `receiver`'s head already selects, declared
-/// or builtin (`builtin_has_method`).
-///
-/// The builtin routes matter because a builtin has no declaration for
-/// `find_method` to search: without them `@some(3000000000).unwrap()` read
-/// as a call with no method to find and defaulted the literal to `int32`
-/// before `let w: int64 = r` could say otherwise.
-auto checker::receiver_has_method(type_id receiver, const std::string &name)
-    -> bool {
-  return find_method(session_.types_.entry(receiver), name, receiver) !=
-             nullptr ||
-         (session_.types_.entry(receiver).decl == nullptr &&
-          builtin_has_method(receiver, name));
-}
 
 /// Whether `name` is one of `k_builtin_methods`' entries for `object`.
 /// Asked by name rather than through `builtin_method_result`, whose answer
@@ -884,34 +723,6 @@ auto checker::has_builtin_inherent_method(const type_entry &object,
                                                  return method.owner == owner &&
                                                         method.name == name;
                                                });
-}
-
-/// Looks up an impl-provided method by name on a *prelude constructor*
-/// (`option`, `list`, ...) — the methods `impl monad for option` adds,
-/// keyed by constructor name via `cache_.impl_methods_by_builtin_`. An
-/// impl-written method wins over a monomorphized trait default, same
-/// priority rule as `find_method`.
-auto checker::find_builtin_impl_method(std::string_view type_name,
-                                       std::string_view name)
-    -> const method_entry * {
-  build_method_table();
-  const auto it = cache_.impl_methods_by_builtin_.find(std::string(type_name));
-  if (it == cache_.impl_methods_by_builtin_.end()) {
-    return nullptr;
-  }
-  const method_entry *trait_fallback = nullptr;
-  for (const auto &method : it->second) {
-    if (method.decl->name != name) {
-      continue;
-    }
-    if (method.from_trait == nullptr) {
-      return &method;
-    }
-    if (trait_fallback == nullptr) {
-      trait_fallback = &method;
-    }
-  }
-  return trait_fallback;
 }
 
 /// Rigid pattern unification (higher-kinded traits, Strategy #3): matches
@@ -1439,11 +1250,10 @@ auto checker::type_has_member(type_id type, std::string_view name) -> bool {
     return tuple_index_of(name).has_value();
   case type_kind::builtin_kind:
   case type_kind::builtin_generic_kind:
-    return has_builtin_inherent_method(entry, name) ||
-           find_builtin_impl_method(entry.name, name) != nullptr ||
-           find_extend_method_for_builtin(entry, name) != nullptr;
+    return resolve_method(entry, type, name).found();
   case type_kind::fn_kind:
-    return find_extend_method_for_builtin(entry, name) != nullptr;
+    return resolve_method(entry, type, name).origin ==
+           method_origin::builtin_extend;
   default:
     return true;
   }
@@ -2029,8 +1839,9 @@ auto checker::field_access_type(type_id object, std::string_view name,
     // `helper.x` where `helper` is a function. Used to fall through to
     // the builtin arm, which knows no methods on `fn` types and returned
     // `unknown` without a word, so the mistake type-checked.
-    if (const auto *method = find_extend_method_for_builtin(entry, name)) {
-      return fn_type_of(*method->decl, method->owner);
+    if (const auto found = resolve_method(entry, stripped, name);
+        found.origin == method_origin::builtin_extend) {
+      return fn_type_of(*found.method->decl, found.method->owner);
     }
     error_with_help(
         span,
@@ -2045,8 +1856,9 @@ auto checker::field_access_type(type_id object, std::string_view name,
   default: {
     const auto builtin_result = builtin_method_result(entry, name);
     if (!has_builtin_inherent_method(entry, name)) {
-      if (const auto *method = find_extend_method_for_builtin(entry, name)) {
-        return fn_type_of(*method->decl, method->owner);
+      if (const auto found = resolve_method(entry, stripped, name);
+          found.origin == method_origin::builtin_extend) {
+        return fn_type_of(*found.method->decl, found.method->owner);
       }
       if (const auto reported =
               report_unknown_builtin_field(name, span, entry, object)) {
@@ -2087,11 +1899,8 @@ auto checker::report_unknown_builtin_field(std::string_view name,
 
   build_method_table();
   auto candidates = builtin_method_names(entry);
-  if (const auto found = cache_.extend_methods_by_builtin_.find(entry.name);
-      found != cache_.extend_methods_by_builtin_.end()) {
-    for (const auto &method : found->second) {
-      candidates.push_back(method.decl->name);
-    }
+  for (auto &declared : method_lookup().declared_names(entry)) {
+    candidates.push_back(std::move(declared));
   }
   std::ranges::sort(candidates);
   candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
@@ -2355,7 +2164,7 @@ auto checker::find_comptime_method(const ast::expr &receiver_expr,
         "the receiver's type is not known where this compile-time code was "
         "checked"});
   }
-  const auto *method = find_receiver_method(receiver_type, name);
+  const auto *method = resolve_method(receiver_type, name).method;
   if (method == nullptr) {
     return std::unexpected(std::format("`{}` has no method of that name",
                                        session_.types_.display(receiver_type)));

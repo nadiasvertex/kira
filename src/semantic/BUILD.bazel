@@ -30,6 +30,7 @@ cc_library(
         "infer/unify.cpp",
         "infer/value_solver.cpp",
         "linear_poly.cpp",
+        "method_resolution.cpp",
         "module_index.cpp",
         "ownership_cfg.cpp",
         "ownership_check.cpp",
@@ -58,6 +59,7 @@ cc_library(
         "infer/unify.h",
         "infer/value_solver.h",
         "linear_poly.h",
+        "method_resolution.h",
         "module_index.h",
         "ownership_cfg.h",
         "ownership_check.h",
@@ -206,6 +208,16 @@ cc_test(
     srcs = ["infer/obligations_test.cpp"],
     deps = [
         ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "method_resolution_test",
+    srcs = ["method_resolution_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )

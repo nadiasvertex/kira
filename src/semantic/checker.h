@@ -39,6 +39,7 @@
 #include "src/semantic/types.h"
 
 #include "check_helpers.h"
+#include "method_resolution.h"
 
 namespace cinder::semantic::detail {
 
@@ -69,13 +70,6 @@ enum class binding_origin : uint8_t {
 /// spelling — the caller's `T` and the callee's — are two keys, so solving one
 /// never answers the other.
 using param_subst = std::unordered_map<type_id, type_id>;
-
-/// What each spelling of a type parameter refers to while resolving source
-/// written in those spellings — a signature, a body, a bound. A scope, not a
-/// solution: it answers a question about names, which is why it is keyed by
-/// them. A solution is a `param_subst`; `checker::bindings_by_name` turns one
-/// into the other where an instance body is about to be resolved under it.
-using type_scope = std::unordered_map<std::string, type_id>;
 
 /// One name bound in the current lexical scope stack, with enough
 /// information to type future references and to diagnose illegal mutation.
@@ -151,7 +145,7 @@ struct builtin_method_signature {
 /// `extend` method of the same name: this table is consulted first, and the
 /// `extend` lookup runs only when it answers nothing. `str`'s `contains`,
 /// `starts_with`, `split`, ... are genuine `extend str` methods in
-/// `std.string`, and are found by `find_extend_method_for_builtin` precisely
+/// `std.string`, and are found by `method_resolver` precisely
 /// *because* they are absent here — adding them would shadow that module.
 ///
 /// The direction of travel is toward nothing: `option`/`result`'s methods
@@ -223,55 +217,6 @@ inline constexpr auto k_builtin_methods =
          .name = "as_mut_ptr",
          .result = builtin_result_shape::mut_ptr_to_element},
     });
-
-struct method_entry {
-  const ast::func_decl *decl = nullptr; ///< The method's declaration.
-  const module_members *owner =
-      nullptr; ///< Module the method should resolve types in.
-  const ast::trait_decl *from_trait =
-      nullptr; ///< Owning trait, if this is a default method.
-  bool is_extension =
-      false; ///< Whether this method came from an `extend` block.
-  /// The trait this method implements, if any — set for both a trait's
-  /// default body (redundant with `from_trait->name`) and an impl's own
-  /// override of a required/provided trait method; empty for an `extend`
-  /// block or any other inherent method. Lets a caller identify a specific,
-  /// known-consuming trait method (`into_iterator::into_iter`) without a
-  /// general by-value-`self` convention to key off — see `receiver_mode`
-  /// in `ownership_cfg.cpp`.
-  std::string trait_name;
-  /// File the method was written in. Every per-call instance of this method
-  /// is re-checked, and name resolution reads imports out of the file being
-  /// checked — so an instance checked under the *caller's* file cannot see
-  /// anything the method's own module imported. That made a generic method
-  /// unable to call an imported function at all (`undefined name`, reported
-  /// against a line in the caller's file), which is why a generic stdlib
-  /// module could not depend on another one.
-  file_id_type file_id = 0;
-  /// Bindings that are fixed for this method independent of any call — a
-  /// higher-kinded trait default monomorphized for one impl carries its
-  /// trait's constructor parameter here (`F := option`), so re-checking a
-  /// per-call instance of it resolves `F[A]` the same way its own check did.
-  type_scope fixed_type_params;
-  /// Type parameters of the `impl` or `extend` block this method was declared
-  /// in, or null for a trait default. Needed because a block's *own* generic
-  /// parameters (`impl[T] get_it[T] for holder[T]`, `extend[T] holder[T]`)
-  /// scope the method's signature and body without appearing on the method's
-  /// `type_params` — so the method looks non-generic while being anything but.
-  /// A non-null pointer to an *empty* vector is meaningful: it marks a method
-  /// of a non-generic block over a possibly-generic target, which still needs
-  /// per-receiver instances (see `impl_needs_instance`).
-  const std::vector<ast::type_param> *block_type_params = nullptr;
-  /// The block's target as a *pattern*, with the block's own type parameters
-  /// left as `type_param` types (`holder[T]`). Rigid-unifying this against the
-  /// concrete receiver is what solves those parameters at a call site; see
-  /// `impl_generic_bindings`.
-  type_id impl_target_pattern = k_unknown_type;
-};
-
-/// An extra condition on a method lookup, past the method's name — see
-/// `find_declared_method`. Empty means "any method with that name".
-using method_filter = std::function<bool(const method_entry &)>;
 
 /// Where a member lookup that may go through `deref` reads its receiver:
 /// a `field_expr`'s `object` (field access and method calls alike), or
@@ -1115,32 +1060,10 @@ private:
 
     bool methods_built_ = false;
 
-    /// A `std::deque`, not a `std::vector`, and it has to stay one. Most of
-    /// this table is built once in `build_method_table`, but a `deriving` type
-    /// that is *generic* derives lazily, per concrete instantiation, from
-    /// inside `find_method` itself (`ensure_derived_instance_impls`) — so a
-    /// lookup can append here while a caller still holds the `const
-    /// method_entry *` an earlier lookup returned. A vector would reallocate
-    /// and leave that pointer dangling; a deque never invalidates references
-    /// to existing elements on `push_back`. Same reasoning, and the same bug
-    /// class, as `type_table::entries_`.
-    std::unordered_map<const ast::type_decl *, std::deque<method_entry>>
-        methods_;
-
-    /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
-    /// builtin's type-entry name since builtins have no `type_decl` to key
-    /// `cache_.methods_` by.
-    std::unordered_map<std::string, std::deque<method_entry>>
-        extend_methods_by_builtin_;
-
-    /// Impl-block methods whose target is a *prelude constructor* (`impl
-    /// monad for option`), keyed by the constructor's name — the prelude
-    /// generics have no `type_decl` to key `cache_.methods_` by, exactly like
-    /// `cache_.extend_methods_by_builtin_` above. Consulted for method calls on
-    /// any instantiation of the constructor (`option[int32].bind(...)`) and for
-    /// type-qualified associated calls (`option.pure(...)`).
-    std::unordered_map<std::string, std::deque<method_entry>>
-        impl_methods_by_builtin_;
+    /// Every impl, trait-default, and `extend` method, filed for
+    /// `method_resolver`. Filled by `build_method_table`, and appended to
+    /// by `ensure_derived_instance_impls` for a generic `deriving` type.
+    method_tables method_tables_;
 
     /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
     /// AST node, so the many independent `resolve_type` calls that can all
@@ -2975,7 +2898,6 @@ private:
 
   auto type_key_of(const type_entry &entry) -> std::string;
 
-  auto type_mentions_param(type_id id) -> bool;
 
   auto impl_targets_overlap(type_id first, type_id second) -> bool;
 
@@ -3040,32 +2962,32 @@ private:
                                   file_id_type trait_file_id,
                                   std::deque<method_entry> &methods) -> void;
 
-  auto target_pattern_matches(type_id pattern, type_id concrete) -> bool;
 
+  /// A view of the method tables for a lookup that needs none of the
+  /// checker's own work (no table build, no derivation).
+  auto method_lookup() -> method_resolver;
+
+  /// The one query over the method tables, for a receiver `instance` that
+  /// is the type `id` (`k_unknown_type` when the caller has only the entry).
+  /// Builds the tables first, and when nothing is declared, derives the
+  /// methods of a generic `deriving` type for this instantiation and asks
+  /// again — see `method_resolver::resolve` for the rules of the search.
+  auto resolve_method(const type_entry &instance, type_id id,
+                      std::string_view name, const method_filter &accepts = {})
+      -> method_resolution;
+
+  auto resolve_method(type_id receiver, std::string_view name,
+                      const method_filter &accepts = {}) -> method_resolution;
+
+  /// The method `resolve_method` finds when it is a declared one, which is
+  /// the only kind a user type can have. A builtin receiver answers null.
   auto find_method(const type_entry &instance, std::string_view name,
                    type_id instance_id = k_unknown_type,
                    const method_filter &accepts = {}) -> const method_entry *;
 
-  auto find_declared_method(const type_entry &instance, std::string_view name,
-                            type_id instance_id = k_unknown_type,
-                            const method_filter &accepts = {})
-      -> const method_entry *;
-
-  auto find_extend_method_for_builtin(const type_entry &instance,
-                                      std::string_view name)
-      -> const method_entry *;
-
-  auto find_receiver_method(type_id receiver, std::string_view name)
-      -> const method_entry *;
-
-  auto receiver_has_method(type_id receiver, const std::string &name) -> bool;
-
   [[nodiscard]] static auto
   has_builtin_inherent_method(const type_entry &object, std::string_view name)
       -> bool;
-
-  auto find_builtin_impl_method(std::string_view type_name,
-                                std::string_view name) -> const method_entry *;
 
   auto match_params(type_id pattern, type_id concrete, param_subst &bindings,
                     bool allow_override = false) -> void;
@@ -3267,9 +3189,6 @@ private:
   auto check_ufcs_call(const ast::call_expr &call, const ast::field_expr &field,
                        const ufcs_candidate &candidate, type_id receiver_type)
       -> type_id;
-
-  [[nodiscard]] auto builtin_has_method(type_id receiver,
-                                        const std::string &name) -> bool;
 
   auto pin_literal_receiver_by_ufcs(const ast::field_expr &field,
                                     type_id receiver) -> bool;

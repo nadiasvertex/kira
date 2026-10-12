@@ -1920,15 +1920,7 @@ auto checker::check_bound_method_call(
 /// extensions, then a builtin's constructor-keyed ones.
 auto checker::find_method_on(type_id target, std::string_view name)
     -> const method_entry * {
-  const auto entry = session_.types_.entry(target); // copy: lookup can intern
-  const auto *method = find_method(entry, name, target);
-  if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
-    method = find_builtin_impl_method(entry.name, name);
-  }
-  if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
-    method = find_extend_method_for_builtin(entry, name);
-  }
-  return method;
+  return resolve_method(target, name).method;
 }
 
 /// Pins each value parameter the arguments' recorded types determine.
