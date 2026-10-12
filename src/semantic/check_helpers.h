@@ -34,6 +34,7 @@
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/module_index.h"
+#include "src/semantic/narrowing.h"
 #include "src/semantic/predicates.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"

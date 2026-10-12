@@ -1685,26 +1685,13 @@ private:
   auto facts_from(const ast::expr &expr, const predicate_subst &subst,
                   bool negated) -> fact_set;
 
-  auto slot_poly(type_id slot) -> std::optional<linear_poly>;
-
-  auto refinement_subst(const type_entry &refinement, const linear_poly &value,
-                        std::string spelling, const value_bindings *solved)
-      -> std::optional<predicate_subst>;
-
-  auto narrowing_goal(type_id refined, const ast::expr &value,
-                      const value_bindings *solved) -> goal_form;
+  /// The narrowing engine over this function's facts. The engine reasons;
+  /// the checker words and reports what it finds.
+  auto fact_engine() -> narrowing_engine;
 
   auto known_facts_note(const goal_form &goal) -> std::optional<std::string>;
 
   auto goal_label(const goal_form &goal, std::string_view fallback)
-      -> std::string;
-
-  auto refuted_label(const goal_form &goal, std::string_view fallback)
-      -> std::string;
-
-  auto predicate_text(type_id refined, const ast::expr &value) -> std::string;
-
-  auto display_refined(type_id refined, const value_bindings *solved)
       -> std::string;
 
   auto check_narrowing(type_id expected, type_id found, const ast::expr *value,
@@ -1714,36 +1701,13 @@ private:
   auto match_value_params(type_id param, type_id argument, value_bindings &out)
       -> void;
 
-  /// Restores `function_.facts_` to its length on entry when it goes out of
-  /// scope, so a branch's path conditions and a block's local refinements are
-  /// visible exactly within the region that dominates them and nowhere else.
-  class fact_scope {
-  public:
-    explicit fact_scope(fact_set &facts)
-        : facts_(&facts), depth_(facts.size()) {}
-    fact_scope(const fact_scope &) = delete;
-    fact_scope(fact_scope &&) = delete;
-    auto operator=(const fact_scope &) -> fact_scope & = delete;
-    auto operator=(fact_scope &&) -> fact_scope & = delete;
-    ~fact_scope() { facts_->resize(depth_); }
-
-  private:
-    fact_set *facts_;
-    size_t depth_;
-  };
-
   auto assume_binding(std::string_view name, type_id type) -> void;
 
   auto assume_condition(const ast::expr *condition, bool negated) -> void;
 
-  static auto atom_mentions(std::string_view atom, std::string_view name)
-      -> bool;
-
   auto invalidate_facts(std::string_view name) -> void;
 
   auto collect_function_facts(const ast::func_decl &decl) -> void;
-
-  auto refines(type_id found, type_id expected) -> bool;
 
   auto type_name_candidates() -> std::vector<std::string>;
 

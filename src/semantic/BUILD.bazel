@@ -33,6 +33,7 @@ cc_library(
         "module_index.cpp",
         "ownership_cfg.cpp",
         "ownership_check.cpp",
+        "narrowing.cpp",
         "predicates.cpp",
         "reason.cpp",
         "resolution.cpp",
@@ -59,6 +60,7 @@ cc_library(
         "module_index.h",
         "ownership_cfg.h",
         "ownership_check.h",
+        "narrowing.h",
         "predicates.h",
         "reason.h",
         "resolution.h",
@@ -202,6 +204,16 @@ cc_test(
     srcs = ["infer/obligations_test.cpp"],
     deps = [
         ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "narrowing_test",
+    srcs = ["narrowing_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )

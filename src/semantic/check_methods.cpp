@@ -1117,7 +1117,7 @@ auto checker::substitute_solved(type_id id, const param_subst &bindings)
       if (it == bindings.end()) {
         continue;
       }
-      if (const auto poly = slot_poly(it->second)) {
+      if (const auto poly = slot_poly(session_.types_, it->second)) {
         values.emplace(term.var, *poly);
       }
     }
@@ -2663,7 +2663,7 @@ auto checker::check_index_in_bounds(const ast::index_expr &index,
   if (entry.kind != type_kind::array_kind || entry.args.empty()) {
     return;
   }
-  const auto length = slot_poly(entry.args.front());
+  const auto length = slot_poly(session_.types_, entry.args.front());
   const auto position = solver_poly(*index.index, predicate_subst{});
   if (!length.has_value() || !position.has_value()) {
     return;
