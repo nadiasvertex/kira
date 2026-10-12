@@ -73,68 +73,23 @@ auto checker::name_poly(std::string_view name, const resolve_ctx &ctx)
 /// accepted.
 auto checker::value_poly(const ast::node &node, const resolve_ctx &ctx)
     -> std::optional<linear_poly> {
-  switch (node.kind) {
-  case ast::node_kind::literal_expr: {
-    const auto &lit = dynamic_cast<const ast::literal_expr &>(node);
-    if (lit.lit_kind != token_kind::int_lit) {
-      return std::nullopt;
-    }
-    const auto value = parse_integer_literal(lit.value);
-    if (!value.has_value()) {
-      return std::nullopt;
-    }
-    return poly_constant(static_cast<int64_t>(*value));
-  }
-  case ast::node_kind::ident_expr:
-    return name_poly(dynamic_cast<const ast::ident_expr &>(node).name, ctx);
-  case ast::node_kind::named_type: {
-    const auto &named = dynamic_cast<const ast::named_type &>(node);
-    if (named.path.size() != 1 || !named.type_args.empty()) {
-      return std::nullopt;
-    }
-    return name_poly(named.path.front(), ctx);
-  }
-  case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(node);
-    if (unary.op != ast::unary_op::neg || unary.operand == nullptr) {
-      return std::nullopt;
-    }
-    const auto operand = value_poly(*unary.operand, ctx);
-    return operand.has_value() ? std::optional{poly_negate(*operand)}
-                               : std::nullopt;
-  }
-  case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(node);
-    if (binary.lhs == nullptr || binary.rhs == nullptr) {
-      return std::nullopt;
-    }
-    const auto left = value_poly(*binary.lhs, ctx);
-    const auto right = value_poly(*binary.rhs, ctx);
-    if (!left.has_value() || !right.has_value()) {
-      return std::nullopt;
-    }
-    switch (binary.op) {
-    case ast::binary_op::add:
-      return poly_add(*left, *right);
-    case ast::binary_op::sub:
-      return poly_sub(*left, *right);
-    case ast::binary_op::mul:
-      // Linear means linear: one side has to be closed, or the product
-      // isn't a polynomial we can decide anything about.
-      if (left->is_constant()) {
-        return poly_scale(*right, left->constant);
-      }
-      if (right->is_constant()) {
-        return poly_scale(*left, right->constant);
-      }
-      return std::nullopt;
-    default:
-      return std::nullopt;
-    }
-  }
-  default:
-    return std::nullopt;
-  }
+  return linear_poly_of(
+      node, [&](const ast::node &leaf) -> std::optional<linear_poly> {
+        switch (leaf.kind) {
+        case ast::node_kind::ident_expr:
+          return name_poly(dynamic_cast<const ast::ident_expr &>(leaf).name,
+                           ctx);
+        case ast::node_kind::named_type: {
+          const auto &named = dynamic_cast<const ast::named_type &>(leaf);
+          if (named.path.size() != 1 || !named.type_args.empty()) {
+            return std::nullopt;
+          }
+          return name_poly(named.path.front(), ctx);
+        }
+        default:
+          return std::nullopt;
+        }
+      });
 }
 
 /// The bare name a value-argument node spells, if it is one — the `open` in

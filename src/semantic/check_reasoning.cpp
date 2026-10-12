@@ -143,70 +143,29 @@ auto checker::atom_key(const ast::expr &expr, const predicate_subst &subst)
 /// `spec/dependent-types-design.md` §4.4.
 auto checker::solver_poly(const ast::expr &expr, const predicate_subst &subst)
     -> std::optional<linear_poly> {
-  switch (expr.kind) {
-  case ast::node_kind::literal_expr: {
-    const auto &lit = dynamic_cast<const ast::literal_expr &>(expr);
-    if (lit.lit_kind != token_kind::int_lit) {
-      return std::nullopt;
-    }
-    const auto value = parse_integer_literal(lit.value);
-    return value.has_value()
-               ? std::optional{poly_constant(static_cast<int64_t>(*value))}
-               : std::nullopt;
-  }
-  case ast::node_kind::ident_expr: {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
-    if (const auto it = subst.values.find(ident.name);
-        it != subst.values.end()) {
-      return it->second;
-    }
-    return poly_variable(ident_var(ident.name));
-  }
-  case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
-    if (unary.op != ast::unary_op::neg || unary.operand == nullptr) {
-      return std::nullopt;
-    }
-    const auto operand = solver_poly(*unary.operand, subst);
-    return operand.has_value() ? std::optional{poly_negate(*operand)}
-                               : std::nullopt;
-  }
-  case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
-    if (binary.lhs == nullptr || binary.rhs == nullptr) {
-      return std::nullopt;
-    }
-    const auto left = solver_poly(*binary.lhs, subst);
-    const auto right = solver_poly(*binary.rhs, subst);
-    if (!left.has_value() || !right.has_value()) {
-      return std::nullopt;
-    }
-    switch (binary.op) {
-    case ast::binary_op::add:
-      return poly_add(*left, *right);
-    case ast::binary_op::sub:
-      return poly_sub(*left, *right);
-    case ast::binary_op::mul:
-      if (left->is_constant()) {
-        return poly_scale(*right, left->constant);
-      }
-      if (right->is_constant()) {
-        return poly_scale(*left, right->constant);
-      }
-      return std::nullopt;
-    default:
-      return std::nullopt;
-    }
-  }
-  case ast::node_kind::field_expr:
-  case ast::node_kind::module_path_expr:
-  case ast::node_kind::call_expr: {
-    const auto key = atom_key(expr, subst);
-    return key.has_value() ? std::optional{poly_variable(*key)} : std::nullopt;
-  }
-  default:
-    return std::nullopt;
-  }
+  return linear_poly_of(
+      expr, [&](const ast::node &leaf) -> std::optional<linear_poly> {
+        switch (leaf.kind) {
+        case ast::node_kind::ident_expr: {
+          const auto &ident = dynamic_cast<const ast::ident_expr &>(leaf);
+          if (const auto it = subst.values.find(ident.name);
+              it != subst.values.end()) {
+            return it->second;
+          }
+          return poly_variable(ident_var(ident.name));
+        }
+        case ast::node_kind::field_expr:
+        case ast::node_kind::module_path_expr:
+        case ast::node_kind::call_expr: {
+          const auto key = atom_key(dynamic_cast<const ast::expr &>(leaf),
+                                    subst);
+          return key.has_value() ? std::optional{poly_variable(*key)}
+                                 : std::nullopt;
+        }
+        default:
+          return std::nullopt;
+        }
+      });
 }
 
 /// The comparison a relational operator makes, once `negated` has been
