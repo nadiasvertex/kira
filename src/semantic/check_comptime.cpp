@@ -34,11 +34,13 @@ namespace cinder::semantic::detail {
 /// meaningful, until the real per-call-site instantiation checks it with
 /// concrete types bound).
 auto checker::inside_unbound_generic_scope() -> bool {
-  return std::ranges::any_of(type_params_, [this](const auto &scope) -> bool {
-    return std::ranges::any_of(scope, [this](const auto &param) -> bool {
-      return types_.entry(param.second).kind == type_kind::type_param_kind;
-    });
-  });
+  return std::ranges::any_of(
+      function_.type_params_, [this](const auto &scope) -> bool {
+        return std::ranges::any_of(scope, [this](const auto &param) -> bool {
+          return session_.types_.entry(param.second).kind ==
+                 type_kind::type_param_kind;
+        });
+      });
 }
 
 /// The bindings of each iteration of an inline `static for` that its guard
@@ -99,7 +101,7 @@ auto checker::evaluate_static_for_inline(const ast::static_decl &decl)
 
 /// `T` when `type` is a `list[T]`, `k_unknown_type` otherwise.
 auto checker::list_element_type(type_id type) -> type_id {
-  const auto &entry = types_.entry(strip_refs(settle(type)));
+  const auto &entry = session_.types_.entry(strip_refs(settle(type)));
   if (entry.name != "list" || entry.args.size() != 1 ||
       entry.kind != type_kind::struct_kind) {
     return k_unknown_type;
@@ -117,16 +119,16 @@ auto checker::comptime_values_type(const std::vector<comptime::value> &values)
     auto type = k_unknown_type;
     switch (value.kind) {
     case comptime::value_kind::string:
-      type = types_.builtin("str");
+      type = session_.types_.builtin("str");
       break;
     case comptime::value_kind::boolean:
-      type = types_.builtin("bool");
+      type = session_.types_.builtin("bool");
       break;
     case comptime::value_kind::integer:
-      type = types_.builtin("int32");
+      type = session_.types_.builtin("int32");
       break;
     case comptime::value_kind::floating:
-      type = types_.builtin("float64");
+      type = session_.types_.builtin("float64");
       break;
     default:
       return k_unknown_type;
@@ -144,8 +146,8 @@ auto checker::comptime_values_type(const std::vector<comptime::value> &values)
 auto checker::record_static_for_inline(const ast::static_decl &decl,
                                        type_id expected_tail) -> type_id {
   auto yield_type = k_unknown_type;
-  if (const auto it = static_for_yield_types_.find(&decl);
-      it != static_for_yield_types_.end()) {
+  if (const auto it = cache_.static_for_yield_types_.find(&decl);
+      it != cache_.static_for_yield_types_.end()) {
     yield_type = it->second;
   }
   // A field descriptor exists only while compiling, so no list can hold
@@ -164,9 +166,9 @@ auto checker::record_static_for_inline(const ast::static_decl &decl,
     defer_to_instances(
         decl,
         [this, &decl, yield_type, expected_tail,
-         file = file_id_](instance_subst &subst) -> void {
-          const auto saved_file = file_id_;
-          file_id_ = file;
+         file = file_.file_id_](instance_subst &subst) -> void {
+          const auto saved_file = file_.file_id_;
+          file_.file_id_ = file;
           const auto &clone = *clone_of(subst, &decl);
           if (auto iterations = evaluate_static_for_inline(clone)) {
             (void)unroll_static_for_inline(
@@ -181,13 +183,13 @@ auto checker::record_static_for_inline(const ast::static_decl &decl,
                 *iterations, substitute_type(yield_type, subst),
                 substitute_type(expected_tail, subst));
           }
-          file_id_ = saved_file;
+          file_.file_id_ = saved_file;
         });
     return yield_type == k_unknown_type ? k_unknown_type
                                         : resolve_list_type(yield_type);
   }
-  const auto iterations = static_for_values_.find(&decl);
-  if (iterations == static_for_values_.end()) {
+  const auto iterations = cache_.static_for_values_.find(&decl);
+  if (iterations == cache_.static_for_values_.end()) {
     return k_unknown_type;
   }
   return unroll_static_for_inline(
@@ -208,11 +210,12 @@ auto checker::static_for_node_type(const static_for_unrolling &unrolling,
   if (node == nullptr) {
     return k_unknown_type;
   }
-  if (const auto found = node_types_.find(unrolling.clone(node));
-      found != node_types_.end()) {
+  if (const auto found = session_.node_types_.find(unrolling.clone(node));
+      found != session_.node_types_.end()) {
     return found->second;
   }
-  if (const auto found = node_types_.find(node); found != node_types_.end()) {
+  if (const auto found = session_.node_types_.find(node);
+      found != session_.node_types_.end()) {
     return unrolling.substitute(found->second);
   }
   return k_unknown_type;
@@ -234,7 +237,7 @@ auto checker::materialize_static_value(const comptime::value &value,
     auto built = build_static_struct_expr(value, span, type);
     const auto *raw = built.get();
     if (built != nullptr) {
-      synthesized_static_structs_.push_back(std::move(built));
+      session_.synthesized_static_structs_.push_back(std::move(built));
     }
     return raw;
   }
@@ -251,7 +254,7 @@ auto checker::unroll_static_for_inline(
     const std::vector<static_for_scope> &iterations, type_id yield_type,
     type_id expected_tail) -> type_id {
   const auto &decl = unrolling.decl;
-  const auto &reads = static_for_reads_[&unrolling.written];
+  const auto &reads = cache_.static_for_reads_[&unrolling.written];
   const auto span = decl.for_yield->span;
   auto element = yield_type;
   if (element == k_unknown_type) {
@@ -288,8 +291,10 @@ auto checker::unroll_static_for_inline(
       }
       if (literals.size() == values.size()) {
         const auto list_type = resolve_list_type(value_element);
-        static_for_elements_.insert_or_assign(&decl, std::move(literals));
-        record_new_push_dispatch(decl, list_type, static_for_dispatches_);
+        cache_.static_for_elements_.insert_or_assign(&decl,
+                                                     std::move(literals));
+        record_new_push_dispatch(decl, list_type,
+                                 cache_.static_for_dispatches_);
         return list_type;
       }
     }
@@ -350,9 +355,9 @@ auto checker::unroll_static_for_inline(
     unrolled.push_back(std::move(iteration));
   }
   const auto list_type = resolve_list_type(element);
-  static_for_elements_.erase(&decl);
-  static_for_iterations_.insert_or_assign(&decl, std::move(unrolled));
-  record_new_push_dispatch(decl, list_type, static_for_dispatches_);
+  cache_.static_for_elements_.erase(&decl);
+  cache_.static_for_iterations_.insert_or_assign(&decl, std::move(unrolled));
+  record_new_push_dispatch(decl, list_type, cache_.static_for_dispatches_);
   return list_type;
 }
 
@@ -430,7 +435,7 @@ auto checker::materialize_string_literal(const std::string &text,
   lit->value = encode_string_literal(text);
   record_expr_type(*lit, type);
   const auto *raw = lit.get();
-  synthesized_const_literals_.push_back(std::move(lit));
+  session_.synthesized_const_literals_.push_back(std::move(lit));
   return raw;
 }
 
@@ -449,7 +454,7 @@ auto checker::defer_static_if(const ast::static_decl &decl) -> void {
       return;
     }
     const auto taken = evaluated->is_true();
-    static_if_taken_branch_.insert_or_assign(&clone, taken);
+    session_.static_if_taken_branch_.insert_or_assign(&clone, taken);
     const auto &dead = taken ? decl.else_body : decl.if_body;
     auto range = std::optional<source_span>{};
     for (const auto &item : dead) {
@@ -554,19 +559,19 @@ auto checker::check_narrowed_static_if(const ast::static_decl &decl,
   if (!narrowed.has_value()) {
     return std::nullopt;
   }
-  const auto unit = types_.builtin("unit");
+  const auto unit = session_.types_.builtin("unit");
   const auto check_under =
       [&](const std::vector<ast::ptr<ast::node>> &body,
           const std::optional<type_domain> &domain) -> type_id {
     if (domain.has_value() && domain->empty()) {
-      return types_.builtin("never");
+      return session_.types_.builtin("never");
     }
     if (domain.has_value()) {
       scoped_domains_.emplace_back(narrowed->param, *domain);
     }
-    ++in_speculative_static_branch_;
+    ++function_.in_speculative_static_branch_;
     const auto result = check_body_nodes(body, expected_tail);
-    --in_speculative_static_branch_;
+    --function_.in_speculative_static_branch_;
     if (domain.has_value()) {
       scoped_domains_.pop_back();
     }
@@ -611,12 +616,12 @@ auto checker::narrowing_past(const ast::node &node)
 }
 
 auto checker::check_static_decl(const ast::static_decl &decl) -> void {
-  comptime_eval_.set_file(file_id_);
+  comptime_eval_.set_file(file_.file_id_);
   switch (decl.decl_kind) {
   case ast::static_decl_kind::binding: {
     // Already checked on demand by a reference that came first
     // (`check_static_binding_early`).
-    if (early_checked_static_bindings_.contains(&decl)) {
+    if (cache_.early_checked_static_bindings_.contains(&decl)) {
       return;
     }
     auto declared = k_unknown_type;
@@ -627,9 +632,9 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
     if (decl.initializer != nullptr) {
       // A reference to this binding from its own initializer is a cycle,
       // not a reason to check it again on demand.
-      statics_in_progress_.insert(&decl);
+      cache_.statics_in_progress_.insert(&decl);
       found = infer_expr(*decl.initializer, declared);
-      statics_in_progress_.erase(&decl);
+      cache_.statics_in_progress_.erase(&decl);
       // An unannotated binding's type is whatever its initializer settles
       // to, and every reader needs that type rather than the initializer's
       // still-open literal leaves (`[1, 2, 3]` is `array[int32, 3]`).
@@ -641,7 +646,7 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
                       "from the annotation", decl.initializer.get());
       }
     }
-    static_types_.insert_or_assign(
+    cache_.static_types_.insert_or_assign(
         &decl, decl.type_annotation != nullptr ? declared : found);
     // A forward reference from an earlier-checked `static let` (or an
     // ordinary expression that reached this name first — see
@@ -659,22 +664,23 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
       // itself, which still surfaces a genuine problem like an undefined
       // name) in three cases where "false" isn't a trustworthy verdict
       // yet: inside a `static if`'s speculative, not-known-to-be-reached
-      // fallback branch (`in_speculative_static_branch_`); anywhere in a
-      // still-abstract generic template pass (`inside_unbound_generic_
+      // fallback branch (`function_.in_speculative_static_branch_`); anywhere
+      // in a still-abstract generic template pass (`inside_unbound_generic_
       // scope`); or past a preceding sibling already known to have
-      // returned (`in_known_unreachable_code_`) — see each helper's doc
-      // comment for why an unconditional `static assert false` standing
-      // in for "no case matched" must not be judged reachable in any of
-      // them.
+      // returned (`function_.in_known_unreachable_code_`) — see each helper's
+      // doc comment for why an unconditional `static assert false` standing in
+      // for "no case matched" must not be judged reachable in any of them.
       if (!evaluated.is_error() &&
           evaluated.kind == comptime::value_kind::boolean &&
-          !evaluated.is_true() && in_speculative_static_branch_ == 0 &&
-          !in_known_unreachable_code_ && !inside_unbound_generic_scope()) {
+          !evaluated.is_true() &&
+          function_.in_speculative_static_branch_ == 0 &&
+          !function_.in_known_unreachable_code_ &&
+          !inside_unbound_generic_scope()) {
         auto diag = diagnostic(diagnostic_level::error,
                                decl.assert_message.has_value()
                                    ? *decl.assert_message
                                    : "`static assert` condition was false",
-                               file_id_)
+                               file_.file_id_)
                         .with_label(decl.assert_condition->span,
                                     "this condition evaluated to `false`");
         emit_diag(diag);
@@ -693,16 +699,16 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
       defer_static_if(decl);
     }
     if (taken_branch.has_value()) {
-      static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
+      session_.static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
       check_body_nodes(*taken_branch ? decl.if_body : decl.else_body,
                        k_unknown_type);
     } else if (check_narrowed_static_if(decl, k_unknown_type).has_value()) {
       // Checked under each branch's narrowing.
     } else {
-      ++in_speculative_static_branch_;
+      ++function_.in_speculative_static_branch_;
       check_body_nodes(decl.if_body, k_unknown_type);
       check_body_nodes(decl.else_body, k_unknown_type);
-      --in_speculative_static_branch_;
+      --function_.in_speculative_static_branch_;
     }
     return;
   }
@@ -724,12 +730,13 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
     }
     if (decl.for_yield != nullptr) {
       const auto expected_element =
-          std::exchange(static_for_expected_element_, k_unknown_type);
-      static_for_reads_.insert_or_assign(&decl, static_for_reads{});
-      static_for_yields_.emplace_back(&decl, scopes_.size() - 1);
+          std::exchange(cache_.static_for_expected_element_, k_unknown_type);
+      cache_.static_for_reads_.insert_or_assign(&decl, static_for_reads{});
+      cache_.static_for_yields_.emplace_back(&decl,
+                                             function_.scopes_.size() - 1);
       const auto yield_type = infer_expr(*decl.for_yield, expected_element);
-      static_for_yields_.pop_back();
-      static_for_yield_types_.insert_or_assign(&decl, yield_type);
+      cache_.static_for_yields_.pop_back();
+      cache_.static_for_yield_types_.insert_or_assign(&decl, yield_type);
     }
     check_body_nodes(decl.for_body, k_unknown_type);
     pop_scope();
@@ -739,9 +746,10 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
     // (`record_static_for_inline`). A comptime-only function's body is run
     // by the evaluator itself, per call.
     if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-      if (!inside_unbound_generic_scope() && !in_comptime_only_function_) {
+      if (!inside_unbound_generic_scope() &&
+          !function_.in_comptime_only_function_) {
         if (auto values = evaluate_static_for_inline(decl)) {
-          static_for_values_.insert_or_assign(&decl, std::move(*values));
+          cache_.static_for_values_.insert_or_assign(&decl, std::move(*values));
         }
       }
       return;
@@ -762,7 +770,8 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
     // happens inside `evaluator::evaluate_stmt`'s own `for_block`/
     // `for_inline` handling, run once per call with `T` actually bound.
     const auto inside_generic_scope = std::ranges::any_of(
-        type_params_, [](const auto &scope) -> bool { return !scope.empty(); });
+        function_.type_params_,
+        [](const auto &scope) -> bool { return !scope.empty(); });
     if (!inside_generic_scope && decl.for_iterable != nullptr &&
         !decl.for_iterable->has_error && decl.for_patterns.size() == 1 &&
         decl.for_patterns[0] != nullptr) {
@@ -817,7 +826,7 @@ auto checker::register_comptime_globals(
       const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
       if (fn.modifiers.is_static && !fn.name.empty()) {
         comptime_eval_.register_pending_function(fn.name, fn);
-        comptime_only_functions_.insert(&fn);
+        session_.comptime_only_functions_.insert(&fn);
       }
     } else if (item->kind == ast::node_kind::type_decl) {
       // Every `type` declaration is registered, unconditionally ( Cinder

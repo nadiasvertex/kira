@@ -35,7 +35,7 @@ auto checker::type_key_of(const type_entry &entry) -> std::string {
 /// it is a *pattern* standing for many concrete types (`holder[T]`) rather
 /// than one (`holder[int32]`).
 auto checker::type_mentions_param(type_id id) -> bool {
-  const auto entry = types_.entry(id);
+  const auto entry = session_.types_.entry(id);
   if (entry.kind == type_kind::type_param_kind ||
       entry.kind == type_kind::param_app_kind) {
     return true;
@@ -74,9 +74,9 @@ auto checker::impl_targets_overlap(type_id first, type_id second) -> bool {
 /// reachable through a non-wildcard import.
 auto checker::find_session_trait(std::string_view name)
     -> std::optional<trait_decl_ref> {
-  if (module_ != nullptr) {
-    if (const auto it = module_->traits.find(std::string(name));
-        it != module_->traits.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->traits.find(std::string(name));
+        it != file_.module_->traits.end()) {
       return it->second;
     }
   }
@@ -107,7 +107,7 @@ auto checker::find_session_trait(std::string_view name)
 /// tests), this is simply inert.
 auto checker::find_prelude_trait(std::string_view name)
     -> std::optional<trait_decl_ref> {
-  if (file_no_prelude_) {
+  if (file_.file_no_prelude_) {
     return std::nullopt;
   }
   for (const auto module_name : k_prelude_reexport_modules) {
@@ -127,7 +127,7 @@ auto checker::find_prelude_trait(std::string_view name)
 /// same way. Mirrors `find_prelude_trait`.
 auto checker::find_prelude_concept(std::string_view name)
     -> std::optional<concept_decl_ref> {
-  if (file_no_prelude_) {
+  if (file_.file_no_prelude_) {
     return std::nullopt;
   }
   for (const auto module_name : k_prelude_reexport_modules) {
@@ -148,7 +148,7 @@ auto checker::find_prelude_concept(std::string_view name)
 /// distinct from the one `cmp` returns.
 auto checker::find_prelude_type(std::string_view name)
     -> std::optional<std::pair<const ast::type_decl *, std::string>> {
-  if (file_no_prelude_) {
+  if (file_.file_no_prelude_) {
     return std::nullopt;
   }
   for (const auto module_name : k_prelude_reexport_modules) {
@@ -164,7 +164,7 @@ auto checker::find_prelude_type(std::string_view name)
 
 auto checker::find_prelude_variant(std::string_view name)
     -> std::optional<prelude_variant_ref> {
-  if (file_no_prelude_) {
+  if (file_.file_no_prelude_) {
     return std::nullopt;
   }
   for (const auto module_name : k_prelude_reexport_modules) {
@@ -192,7 +192,7 @@ auto checker::find_prelude_variant(std::string_view name)
 /// `src/driver/driver.cpp`) this depends on.
 auto checker::find_prelude_function(std::string_view name)
     -> std::optional<std::pair<func_decl_ref, const module_members *>> {
-  if (file_no_prelude_) {
+  if (file_.file_no_prelude_) {
     return std::nullopt;
   }
   // `std.iter` joins `std.console` because the iteration entry points are
@@ -282,8 +282,8 @@ auto checker::resolve_impl_trait_key(const impl_ref &impl,
   for (const auto &param : impl.decl->type_params) {
     if (!param.name.empty()) {
       param_bindings.emplace(
-          param.name,
-          types_.type_param(param.name, param.higher_kinded_arity, &param));
+          param.name, session_.types_.type_param(
+                          param.name, param.higher_kinded_arity, &param));
     }
   }
   const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
@@ -319,8 +319,8 @@ auto checker::resolve_impl_trait_argument(const impl_ref &impl) -> type_id {
   for (const auto &param : impl.decl->type_params) {
     if (!param.name.empty()) {
       param_bindings.emplace(
-          param.name,
-          types_.type_param(param.name, param.higher_kinded_arity, &param));
+          param.name, session_.types_.type_param(
+                          param.name, param.higher_kinded_arity, &param));
     }
   }
   const auto ctx = resolve_ctx{.module = index_.find_module(impl.module_name),
@@ -338,8 +338,8 @@ auto checker::resolve_impl_target(const impl_ref &impl) -> type_id {
   for (const auto &param : impl.decl->type_params) {
     if (!param.name.empty()) {
       param_bindings.emplace(
-          param.name,
-          types_.type_param(param.name, param.higher_kinded_arity, &param));
+          param.name, session_.types_.type_param(
+                          param.name, param.higher_kinded_arity, &param));
     }
   }
   const auto *home = index_.find_module(impl.module_name);
@@ -365,8 +365,8 @@ auto checker::resolve_extend_target(const extend_ref &ext) -> type_id {
   for (const auto &param : ext.decl->type_params) {
     if (!param.name.empty()) {
       param_bindings.emplace(
-          param.name,
-          types_.type_param(param.name, param.higher_kinded_arity, &param));
+          param.name, session_.types_.type_param(
+                          param.name, param.higher_kinded_arity, &param));
     }
   }
   const auto ctx = resolve_ctx{.module = index_.find_module(ext.module_name),
@@ -376,33 +376,33 @@ auto checker::resolve_extend_target(const extend_ref &ext) -> type_id {
   return resolve_type(*ext.decl->for_type, ctx);
 }
 
-/// Builds `methods_` once per session (idempotent via `methods_built_`):
-/// for every impl block in every module, records its methods against the
-/// impl's target type declaration, plus — for a trait impl — the target
-/// trait's default-bodied methods, so calling a non-overridden default
-/// method through the impl works without duplicating its body per type.
+/// Builds `cache_.methods_` once per session (idempotent via
+/// `cache_.methods_built_`): for every impl block in every module, records its
+/// methods against the impl's target type declaration, plus — for a trait impl
+/// — the target trait's default-bodied methods, so calling a non-overridden
+/// default method through the impl works without duplicating its body per type.
 /// Also records every `extend` block's methods, against the target's
 /// `type_decl` when it names a user type or against the target's builtin
-/// name (`extend_methods_by_builtin_`) otherwise.
+/// name (`cache_.extend_methods_by_builtin_`) otherwise.
 ///
 /// Trait-default monomorphization is deferred to a second pass (below,
 /// `deferred_defaults`) rather than run inline as each impl is visited:
 /// `monomorphize_trait_default` type-checks a clone of the default body,
 /// and that check can itself call `find_method`/`build_method_table`
 /// reentrantly (e.g. a default `read_to_end` calling `list[byte].push`).
-/// `methods_built_` is already `true` by then, so a reentrant call would
-/// see whatever subset of `methods_`/`extend_methods_by_builtin_` this
-/// loop happened to have populated so far — order-dependent on
+/// `cache_.methods_built_` is already `true` by then, so a reentrant call would
+/// see whatever subset of `cache_.methods_`/`cache_.extend_methods_by_builtin_`
+/// this loop happened to have populated so far — order-dependent on
 /// `index_.modules`'s (unordered) iteration order, i.e. on which module
 /// the compile's entry point happens to be (spec/todo.md item 18). Doing
 /// every extend/impl registration for every module first, then
 /// monomorphizing defaults only once that's complete, means a reentrant
 /// lookup during monomorphization always sees the fully built table.
 auto checker::build_method_table() -> void {
-  if (methods_built_) {
+  if (cache_.methods_built_) {
     return;
   }
-  methods_built_ = true;
+  cache_.methods_built_ = true;
 
   struct deferred_trait_default {
     const ast::func_decl *decl;
@@ -418,7 +418,7 @@ auto checker::build_method_table() -> void {
   for (const auto &[module_name, members] : index_.modules) {
     for (const auto &ext : members.extends) {
       const auto target = strip_refs(resolve_extend_target(ext));
-      const auto &target_entry = types_.entry(target);
+      const auto &target_entry = session_.types_.entry(target);
       auto extend_methods = std::deque<method_entry>{};
       for (const auto &item : ext.decl->items) {
         if (item == nullptr || item->has_error ||
@@ -443,11 +443,11 @@ auto checker::build_method_table() -> void {
         continue;
       }
       if (target_entry.decl != nullptr) {
-        auto &methods = methods_[target_entry.decl];
+        auto &methods = cache_.methods_[target_entry.decl];
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       } else if (!target_entry.name.empty()) {
-        auto &methods = extend_methods_by_builtin_[target_entry.name];
+        auto &methods = cache_.extend_methods_by_builtin_[target_entry.name];
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       }
@@ -455,16 +455,16 @@ auto checker::build_method_table() -> void {
 
     for (const auto &impl : members.impls) {
       const auto target = strip_refs(resolve_impl_target(impl));
-      const auto &target_entry = types_.entry(target);
+      const auto &target_entry = session_.types_.entry(target);
       // An impl of a higher-kinded trait for a *prelude* constructor
-      // (`impl monad for option`) has no `type_decl` to key `methods_`
+      // (`impl monad for option`) has no `type_decl` to key `cache_.methods_`
       // by; its methods go in the constructor-name-keyed table instead.
       const auto is_builtin_ctor_target =
           target_entry.kind == type_kind::ctor_ref_kind &&
           target_entry.decl == nullptr;
       // An impl for an *applied* prelude generic (`impl from_iter[int32]
       // for list[int32]`). Like the bare-constructor case it has no
-      // `type_decl` to key `methods_` by, and it used to fall into the
+      // `type_decl` to key `cache_.methods_` by, and it used to fall into the
       // `continue` below: the impl was parsed and coherence-checked, then
       // silently never registered, so its members did not exist as far as
       // every lookup was concerned. `collect`'s collector impls are all
@@ -487,8 +487,8 @@ auto checker::build_method_table() -> void {
       }
       auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
                        is_builtin_scalar_target)
-                          ? impl_methods_by_builtin_[target_entry.name]
-                          : methods_[target_entry.decl];
+                          ? cache_.impl_methods_by_builtin_[target_entry.name]
+                          : cache_.methods_[target_entry.decl];
       auto overridden_names = std::unordered_set<std::string>{};
       // Owned copy of `target_entry.name`, taken up front: `target_entry`
       // is a reference into `type_table`'s backing store
@@ -599,16 +599,16 @@ auto checker::build_method_table() -> void {
 }
 
 /// Clones `decl` (an unwritten trait-default method) and type-checks the
-/// clone with `self_type_` bound to `target` — the concrete impl target,
-/// e.g. `file` — instead of the trait's own abstract `self` type param
+/// clone with `function_.self_type_` bound to `target` — the concrete impl
+/// target, e.g. `file` — instead of the trait's own abstract `self` type param
 /// (`check_trait_decl` checks the trait's own copy exactly once, generic
-/// over `self`; that copy's `node_types_` entries can never resolve a
+/// over `self`; that copy's `session_.node_types_` entries can never resolve a
 /// concrete call like `self.write(buf)` against a real declaration). On
 /// success, registers the clone as an ordinary `method_entry` (so
 /// `find_method`/`record_instance_method_callee` treat it exactly like a
 /// real impl-provided method — see `infer_method_call`) and records it in
-/// `synthesized_trait_defaults_` so `hir::lower_module` lowers it into a
-/// real `hir_function`. On failure (a construct `ast::clone_func_decl`
+/// `session_.synthesized_trait_defaults_` so `hir::lower_module` lowers it into
+/// a real `hir_function`. On failure (a construct `ast::clone_func_decl`
 /// doesn't support — see its doc comment), reports a diagnostic rather
 /// than silently leaving the method uncallable through this impl.
 auto checker::monomorphize_trait_default(
@@ -631,14 +631,14 @@ auto checker::monomorphize_trait_default(
   }
 
   const auto *raw = cloned->get();
-  synthesized_decls_.push_back(std::move(*cloned));
+  session_.synthesized_decls_.push_back(std::move(*cloned));
 
-  const auto saved_module = module_;
-  const auto saved_file_id = file_id_;
-  const auto saved_self = self_type_;
-  module_ = trait_module;
-  file_id_ = trait_file_id;
-  self_type_ = target;
+  const auto saved_module = file_.module_;
+  const auto saved_file_id = file_.file_id_;
+  const auto saved_self = function_.self_type_;
+  file_.module_ = trait_module;
+  file_.file_id_ = trait_file_id;
+  function_.self_type_ = target;
   // A higher-kinded trait's default body is written against the trait's
   // constructor parameter (`F[A]`, `M[B]`); checking it for a concrete
   // impl binds that parameter to the impl's target constructor, so every
@@ -648,20 +648,20 @@ auto checker::monomorphize_trait_default(
   auto bound_trait_params = type_scope{};
   if (trait_decl != nullptr && !trait_decl->type_params.empty() &&
       trait_decl->type_params.front().higher_kinded_arity > 0 &&
-      types_.entry(target).kind == type_kind::ctor_ref_kind) {
+      session_.types_.entry(target).kind == type_kind::ctor_ref_kind) {
     bound_trait_params.emplace(trait_decl->type_params.front().name, target);
   }
   const auto pushed_trait_params = !bound_trait_params.empty();
   if (pushed_trait_params) {
-    type_params_.push_back(bound_trait_params);
+    function_.type_params_.push_back(bound_trait_params);
   }
   check_function(*raw, /*at_module_scope=*/false);
   if (pushed_trait_params) {
     pop_type_params();
   }
-  module_ = saved_module;
-  file_id_ = saved_file_id;
-  self_type_ = saved_self;
+  file_.module_ = saved_module;
+  file_.file_id_ = saved_file_id;
+  function_.self_type_ = saved_self;
 
   methods.push_back(method_entry{
       .decl = raw,
@@ -671,7 +671,7 @@ auto checker::monomorphize_trait_default(
       .file_id = trait_file_id,
       .fixed_type_params = std::move(bound_trait_params),
   });
-  synthesized_trait_defaults_.push_back(
+  session_.synthesized_trait_defaults_.push_back(
       synthesized_method{.decl = raw,
                          .target_type_name = std::string(target_type_name),
                          .owner_module = trait_module->module_name});
@@ -692,10 +692,10 @@ auto checker::monomorphize_trait_default(
 /// the wrong types.
 auto checker::target_pattern_matches(type_id pattern, type_id concrete)
     -> bool {
-  if (pattern == concrete || types_.is_unknown(pattern)) {
+  if (pattern == concrete || session_.types_.is_unknown(pattern)) {
     return true;
   }
-  const auto pattern_entry = types_.entry(pattern);
+  const auto pattern_entry = session_.types_.entry(pattern);
   if (pattern_entry.kind == type_kind::type_param_kind ||
       pattern_entry.kind == type_kind::param_app_kind ||
       pattern_entry.kind == type_kind::ctor_ref_kind ||
@@ -708,7 +708,7 @@ auto checker::target_pattern_matches(type_id pattern, type_id concrete)
     // is decided afterward, by `check_impl_generic_method_call`.
     return true;
   }
-  const auto concrete_entry = types_.entry(concrete);
+  const auto concrete_entry = session_.types_.entry(concrete);
   if (pattern_entry.decl != concrete_entry.decl) {
     return false;
   }
@@ -749,11 +749,11 @@ auto checker::find_method(const type_entry &instance, std::string_view name,
   if (!ensure_derived_instance_impls(instance_id, name)) {
     return nullptr;
   }
-  return find_declared_method(types_.entry(instance_id), name, instance_id,
-                              accepts);
+  return find_declared_method(session_.types_.entry(instance_id), name,
+                              instance_id, accepts);
 }
 
-/// `find_method`'s search proper, over what is already in `methods_`.
+/// `find_method`'s search proper, over what is already in `cache_.methods_`.
 /// Separated so `find_method` can run it a second time after deriving.
 ///
 /// `accepts`, when set, narrows the search past the name: a type may
@@ -770,8 +770,8 @@ auto checker::find_declared_method(const type_entry &instance,
   if (instance.decl == nullptr) {
     return nullptr;
   }
-  const auto it = methods_.find(instance.decl);
-  if (it == methods_.end()) {
+  const auto it = cache_.methods_.find(instance.decl);
+  if (it == cache_.methods_.end()) {
     return nullptr;
   }
   // Inherent/impl-provided methods take priority over trait defaults,
@@ -795,7 +795,7 @@ auto checker::find_declared_method(const type_entry &instance,
       continue;
     }
     const auto applies =
-        types_.is_unknown(instance_id) ||
+        session_.types_.is_unknown(instance_id) ||
         target_pattern_matches(method.impl_target_pattern, instance_id);
     if (!applies) {
       continue;
@@ -821,13 +821,13 @@ auto checker::find_declared_method(const type_entry &instance,
 
 /// Looks up an `extend`-block method by name on a builtin instance (one
 /// with no `type_decl`, e.g. `str`), keyed by the builtin's type-entry
-/// name via `extend_methods_by_builtin_`.
+/// name via `cache_.extend_methods_by_builtin_`.
 auto checker::find_extend_method_for_builtin(const type_entry &instance,
                                              std::string_view name)
     -> const method_entry * {
   build_method_table();
-  const auto it = extend_methods_by_builtin_.find(instance.name);
-  if (it == extend_methods_by_builtin_.end()) {
+  const auto it = cache_.extend_methods_by_builtin_.find(instance.name);
+  if (it == cache_.extend_methods_by_builtin_.end()) {
     return nullptr;
   }
   for (const auto &method : it->second) {
@@ -844,7 +844,7 @@ auto checker::find_extend_method_for_builtin(const type_entry &instance,
 /// or `extend` method on it.
 auto checker::find_receiver_method(type_id receiver, std::string_view name)
     -> const method_entry * {
-  const auto &entry = types_.entry(receiver);
+  const auto &entry = session_.types_.entry(receiver);
   if (const auto *found = find_method(entry, name, receiver)) {
     return found;
   }
@@ -866,8 +866,9 @@ auto checker::find_receiver_method(type_id receiver, std::string_view name)
 /// before `let w: int64 = r` could say otherwise.
 auto checker::receiver_has_method(type_id receiver, const std::string &name)
     -> bool {
-  return find_method(types_.entry(receiver), name, receiver) != nullptr ||
-         (types_.entry(receiver).decl == nullptr &&
+  return find_method(session_.types_.entry(receiver), name, receiver) !=
+             nullptr ||
+         (session_.types_.entry(receiver).decl == nullptr &&
           builtin_has_method(receiver, name));
 }
 
@@ -887,15 +888,15 @@ auto checker::has_builtin_inherent_method(const type_entry &object,
 
 /// Looks up an impl-provided method by name on a *prelude constructor*
 /// (`option`, `list`, ...) — the methods `impl monad for option` adds,
-/// keyed by constructor name via `impl_methods_by_builtin_`. An
+/// keyed by constructor name via `cache_.impl_methods_by_builtin_`. An
 /// impl-written method wins over a monomorphized trait default, same
 /// priority rule as `find_method`.
 auto checker::find_builtin_impl_method(std::string_view type_name,
                                        std::string_view name)
     -> const method_entry * {
   build_method_table();
-  const auto it = impl_methods_by_builtin_.find(std::string(type_name));
-  if (it == impl_methods_by_builtin_.end()) {
+  const auto it = cache_.impl_methods_by_builtin_.find(std::string(type_name));
+  if (it == cache_.impl_methods_by_builtin_.end()) {
     return nullptr;
   }
   const method_entry *trait_fallback = nullptr;
@@ -956,11 +957,11 @@ auto checker::match_params(type_id pattern, type_id concrete,
   // `U := ?a`, which settles when the literal does. `is_unknown` counts a
   // leaf as unknown, so it is ruled out by kind here.
   if (pattern == concrete ||
-      (types_.is_unknown(concrete) &&
-       types_.entry(concrete).kind != type_kind::type_var_kind)) {
+      (session_.types_.is_unknown(concrete) &&
+       session_.types_.entry(concrete).kind != type_kind::type_var_kind)) {
     return;
   }
-  const auto matched = infer::match_pattern(types_, pattern, concrete);
+  const auto matched = infer::match_pattern(session_.types_, pattern, concrete);
   // The failure is deliberately dropped: nearly every caller matches
   // speculatively (does this impl's target fit? what does the expected
   // type suggest?) and a miss there is an answer, not an error. The one
@@ -985,13 +986,15 @@ auto checker::match_params(type_id pattern, type_id concrete,
 /// statement will say) is an answer and `option[U]` is not.
 auto checker::mentions_abstract_type(type_id id, bool leaves_are_answers)
     -> bool {
-  if (leaves_are_answers && types_.entry(id).kind == type_kind::type_var_kind) {
+  if (leaves_are_answers &&
+      session_.types_.entry(id).kind == type_kind::type_var_kind) {
     return false;
   }
-  if (types_.is_unknown(id)) {
+  if (session_.types_.is_unknown(id)) {
     return true;
   }
-  const auto entry = types_.entry(id); // copy: callers may intern after
+  const auto entry =
+      session_.types_.entry(id); // copy: callers may intern after
   for (const auto arg : entry.args) {
     if (mentions_abstract_type(arg, leaves_are_answers)) {
       return true;
@@ -1020,7 +1023,8 @@ auto checker::mentions_abstract_type(type_id id, bool leaves_are_answers)
 /// parameter, an application of one, or an open value (`n + 1`) — and so
 /// means something different in each instance.
 auto checker::mentions_template_param(type_id id) -> bool {
-  const auto entry = types_.entry(id); // copy: callers may intern after
+  const auto entry =
+      session_.types_.entry(id); // copy: callers may intern after
   if (entry.kind == type_kind::type_param_kind ||
       entry.kind == type_kind::param_app_kind ||
       entry.kind == type_kind::symbolic_value_kind) {
@@ -1042,7 +1046,8 @@ auto checker::mentions_template_param(type_id id) -> bool {
 }
 
 auto checker::mentions_type_param(type_id id) -> bool {
-  const auto entry = types_.entry(id); // copy: callers may intern after
+  const auto entry =
+      session_.types_.entry(id); // copy: callers may intern after
   if (entry.kind == type_kind::type_param_kind ||
       entry.kind == type_kind::param_app_kind) {
     return true;
@@ -1061,12 +1066,13 @@ auto checker::mentions_type_param(type_id id) -> bool {
 }
 
 /// Whether `id` has an `unknown` anywhere inside it, not only at the top.
-/// `types_.is_unknown` answers for the outermost type alone, which reads
-/// a half-resolved `slice[_]` as resolved — it is not, and a caller that
+/// `session_.types_.is_unknown` answers for the outermost type alone, which
+/// reads a half-resolved `slice[_]` as resolved — it is not, and a caller that
 /// stops there hands lowering a type with no element in it.
 auto checker::mentions_unknown(type_id id) -> bool {
-  const auto entry = types_.entry(id); // copy: callers may intern after
-  if (types_.is_unknown(id)) {
+  const auto entry =
+      session_.types_.entry(id); // copy: callers may intern after
+  if (session_.types_.is_unknown(id)) {
     return true;
   }
   for (const auto arg : entry.args) {
@@ -1099,7 +1105,7 @@ auto checker::substitute_solved(type_id id, const param_subst &bindings)
   if (const auto it = bindings.find(id); it != bindings.end()) {
     return it->second;
   }
-  const auto item = types_.entry(id); // copy: interning below can push
+  const auto item = session_.types_.entry(id); // copy: interning below can push
   if (item.kind == type_kind::symbolic_value_kind) {
     // A value parameter lives inside a polynomial, not as a slot of its
     // own, so its binding is applied to each variable it keys.
@@ -1117,15 +1123,15 @@ auto checker::substitute_solved(type_id id, const param_subst &bindings)
     }
     return values.empty()
                ? id
-               : types_.symbolic_value(item.result,
-                                       poly_substitute(item.value, values));
+               : session_.types_.symbolic_value(
+                     item.result, poly_substitute(item.value, values));
   }
   if (item.kind == type_kind::param_app_kind) {
     const auto it = bindings.find(item.result);
     if (it == bindings.end()) {
       return id;
     }
-    const auto ctor = types_.entry(it->second);
+    const auto ctor = session_.types_.entry(it->second);
     if (ctor.kind != type_kind::ctor_ref_kind ||
         ctor.ctor_arity != item.args.size()) {
       return id;
@@ -1136,8 +1142,9 @@ auto checker::substitute_solved(type_id id, const param_subst &bindings)
       args.push_back(substitute_solved(arg, bindings));
     }
     return ctor.decl != nullptr
-               ? types_.user_type(*ctor.decl, ctor.module_name, std::move(args))
-               : types_.builtin_generic(ctor.name, std::move(args));
+               ? session_.types_.user_type(*ctor.decl, ctor.module_name,
+                                           std::move(args))
+               : session_.types_.builtin_generic(ctor.name, std::move(args));
   }
 
   auto args = std::vector<type_id>{};
@@ -1157,24 +1164,25 @@ auto checker::substitute_solved(type_id id, const param_subst &bindings)
   }
   switch (item.kind) {
   case type_kind::builtin_generic_kind:
-    return types_.builtin_generic(item.name, std::move(args));
+    return session_.types_.builtin_generic(item.name, std::move(args));
   case type_kind::tuple_kind:
-    return types_.tuple_of(std::move(args));
+    return session_.types_.tuple_of(std::move(args));
   case type_kind::fn_kind:
-    return types_.fn_of(std::move(args), result);
+    return session_.types_.fn_of(std::move(args), result);
   case type_kind::ref_kind:
-    return types_.ref_to(result, item.is_mut);
+    return session_.types_.ref_to(result, item.is_mut);
   case type_kind::ptr_kind:
-    return types_.ptr_to(result, item.is_mut);
+    return session_.types_.ptr_to(result, item.is_mut);
   case type_kind::array_kind:
-    return args.empty()
-               ? types_.array_of(result, item.array_size, k_unknown_type)
-               : array_with_length(result, args.front());
+    return args.empty() ? session_.types_.array_of(result, item.array_size,
+                                                   k_unknown_type)
+                        : array_with_length(result, args.front());
   case type_kind::struct_kind:
   case type_kind::sum_kind:
   case type_kind::opaque_kind:
     return item.decl != nullptr
-               ? types_.user_type(*item.decl, item.module_name, std::move(args))
+               ? session_.types_.user_type(*item.decl, item.module_name,
+                                           std::move(args))
                : id;
   default:
     return id;
@@ -1217,7 +1225,7 @@ auto checker::trait_args_of_impl_for(type_id concrete,
         continue;
       }
       const auto target = strip_refs(resolve_impl_target(impl));
-      if (types_.is_unknown(target)) {
+      if (session_.types_.is_unknown(target)) {
         continue;
       }
       // Rigid unification alone does not mean the impl applies —
@@ -1235,8 +1243,8 @@ auto checker::trait_args_of_impl_for(type_id concrete,
       for (const auto &param : impl.decl->type_params) {
         if (!param.name.empty()) {
           param_bindings.emplace(
-              param.name,
-              types_.type_param(param.name, param.higher_kinded_arity, &param));
+              param.name, session_.types_.type_param(
+                              param.name, param.higher_kinded_arity, &param));
         }
       }
       const auto ctx = resolve_ctx{.module = &members,
@@ -1327,7 +1335,7 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
     }
     // Only the head has to be known: `list_iter[?a]` answers
     // `iterator[&?a]`, and the leaf travels on into `T`.
-    if (types_.is_unknown(solved->second) ||
+    if (session_.types_.is_unknown(solved->second) ||
         mentions_abstract_type(solved->second,
                                /*leaves_are_answers=*/true)) {
       return;
@@ -1380,13 +1388,13 @@ auto checker::derived_method_result(const type_entry &instance,
     return type_has_trait(instance, trait_name);
   };
   if (name == "show" && has("show")) {
-    return types_.builtin("str");
+    return session_.types_.builtin("str");
   }
   if (name == "debug" && has("debug")) {
-    return types_.builtin("str");
+    return session_.types_.builtin("str");
   }
   if (name == "hash" && has("hash")) {
-    return types_.builtin("uint64");
+    return session_.types_.builtin("uint64");
   }
   if (name == "cmp" && has("ord")) {
     // `ordering` is a real sum type in `std.traits`, not a builtin scalar,
@@ -1396,12 +1404,12 @@ auto checker::derived_method_result(const type_entry &instance,
     // rather than inventing a second type with the same spelling.
     if (const auto found =
             find_type_decl_by_path({"std", "traits", "ordering"})) {
-      return types_.user_type(*found->first, found->second, {});
+      return session_.types_.user_type(*found->first, found->second, {});
     }
     return k_unknown_type;
   }
   if (name == "eq" && has("eq")) {
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
   }
   return std::nullopt;
 }
@@ -1417,7 +1425,7 @@ auto checker::derived_method_result(const type_entry &instance,
 /// it: bounds decide what those offer, and `deref` never guesses past
 /// them.
 auto checker::type_has_member(type_id type, std::string_view name) -> bool {
-  const auto &entry = types_.entry(type);
+  const auto &entry = session_.types_.entry(type);
   switch (entry.kind) {
   case type_kind::struct_kind:
     return struct_field_type(entry, name).has_value() ||
@@ -1444,7 +1452,7 @@ auto checker::type_has_member(type_id type, std::string_view name) -> bool {
 /// `type`'s `std.traits.deref` method, when `type` is a struct, sum, or
 /// opaque type that implements it.
 auto checker::deref_method_of(type_id type) -> const method_entry * {
-  const auto &entry = types_.entry(type);
+  const auto &entry = session_.types_.entry(type);
   if (entry.kind != type_kind::struct_kind &&
       entry.kind != type_kind::sum_kind &&
       entry.kind != type_kind::opaque_kind) {
@@ -1473,9 +1481,10 @@ auto checker::resolve_deref_step(const ast::expr &receiver, type_id handle,
   if (method == nullptr) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(handle);
+  const auto &entry = session_.types_.entry(handle);
   const auto callee_type = fn_type_of(*method->decl, method->owner);
-  if (current_template_ != nullptr && mentions_template_param(handle)) {
+  if (function_.current_template_ != nullptr &&
+      mentions_template_param(handle)) {
     auto bindings = param_subst{};
     match_params(method->impl_target_pattern, handle, bindings);
     return deref_step{.callee = {},
@@ -1488,7 +1497,7 @@ auto checker::resolve_deref_step(const ast::expr &receiver, type_id handle,
   auto probe = std::make_unique<ast::call_expr>();
   probe->span = span;
   const auto &call = *probe;
-  deref_probe_calls_.push_back(std::move(probe));
+  session_.deref_probe_calls_.push_back(std::move(probe));
   auto result = k_unknown_type;
   if (const auto instantiated = check_impl_generic_method_call(
           call, *method, entry, receiver, handle)) {
@@ -1497,17 +1506,17 @@ auto checker::resolve_deref_step(const ast::expr &receiver, type_id handle,
     record_instance_method_callee(call, *method, entry.name, receiver);
     result = signature_return_type(*method->decl, method->owner);
   }
-  call_argument_mappings_.erase(&call);
-  const auto found = resolved_callees_.find(&call);
-  if (found == resolved_callees_.end() || result == k_error_type) {
-    if (found != resolved_callees_.end()) {
-      resolved_callees_.erase(found);
+  session_.call_argument_mappings_.erase(&call);
+  const auto found = session_.resolved_callees_.find(&call);
+  if (found == session_.resolved_callees_.end() || result == k_error_type) {
+    if (found != session_.resolved_callees_.end()) {
+      session_.resolved_callees_.erase(found);
     }
     return std::nullopt;
   }
   auto callee = found->second;
   callee.receiver = nullptr;
-  resolved_callees_.erase(found);
+  session_.resolved_callees_.erase(found);
   return deref_step{.callee = std::move(callee),
                     .callee_type = callee_type,
                     .result = result};
@@ -1551,14 +1560,14 @@ auto checker::deref_chain(const ast::expr &receiver, type_id object,
 auto checker::record_deref_steps(const deref_site &site,
                                  std::vector<deref_step> steps) -> void {
   if (site.path != nullptr) {
-    auto &segments = path_deref_adjustments_[site.path];
+    auto &segments = session_.path_deref_adjustments_[site.path];
     if (segments.size() < site.path->segments.size()) {
       segments.resize(site.path->segments.size());
     }
     segments[site.segment] = std::move(steps);
     return;
   }
-  deref_adjustments_[site.receiver] = std::move(steps);
+  session_.deref_adjustments_[site.receiver] = std::move(steps);
 }
 
 /// The receiver a deref chain at `site` is resolved against: the
@@ -1587,14 +1596,14 @@ auto checker::lookup_through_deref(const deref_site &site, type_id object,
     return std::nullopt;
   }
   auto chain = deref_chain(deref_site_receiver(site), object, name, span);
-  if (current_template_ != nullptr) {
+  if (function_.current_template_ != nullptr) {
     defer_deref_steps(site, object, std::string(name), span);
   }
   if (!chain.has_value()) {
     return std::nullopt;
   }
   const auto target = chain->second;
-  if (current_template_ == nullptr) {
+  if (function_.current_template_ == nullptr) {
     record_deref_steps(site, std::move(chain->first));
   }
   return target;
@@ -1637,7 +1646,7 @@ auto checker::deref_operator_target(const ast::expr &operand, type_id handle,
     return std::nullopt;
   }
   auto step = resolve_deref_step(operand, handle, span);
-  if (current_template_ != nullptr) {
+  if (function_.current_template_ != nullptr) {
     defer_to_instances(
         operand,
         [this, operand = &operand, handle,
@@ -1645,7 +1654,7 @@ auto checker::deref_operator_target(const ast::expr &operand, type_id handle,
           const auto *clone = clone_of(subst, operand);
           const auto concrete = strip_refs(substitute_type(handle, subst));
           if (auto instance = resolve_deref_step(*clone, concrete, span)) {
-            deref_adjustments_[clone] = {std::move(*instance)};
+            session_.deref_adjustments_[clone] = {std::move(*instance)};
           }
         });
   }
@@ -1653,10 +1662,10 @@ auto checker::deref_operator_target(const ast::expr &operand, type_id handle,
     return std::nullopt;
   }
   const auto result = settle(step->result);
-  if (current_template_ == nullptr) {
-    deref_adjustments_[&operand] = {std::move(*step)};
+  if (function_.current_template_ == nullptr) {
+    session_.deref_adjustments_[&operand] = {std::move(*step)};
   }
-  const auto &result_entry = types_.entry(result);
+  const auto &result_entry = session_.types_.entry(result);
   return result_entry.kind == type_kind::ref_kind ? result_entry.result
                                                   : result;
 }
@@ -1684,10 +1693,11 @@ auto checker::cannot_be_dereferenced(const type_entry &entry) -> bool {
 /// nor a type that implements `deref`.
 auto checker::report_deref_of_non_reference(const ast::unary_expr &unary,
                                             type_id type) -> void {
-  const auto shown = types_.display(type);
-  auto diag = diagnostic(
-      diagnostic_level::error,
-      std::format("cannot dereference a value of type `{}`", shown), file_id_);
+  const auto shown = session_.types_.display(type);
+  auto diag =
+      diagnostic(diagnostic_level::error,
+                 std::format("cannot dereference a value of type `{}`", shown),
+                 file_.file_id_);
   diag.with_label(unary.span, std::format("`{}` is not a reference", shown));
   diag.with_note(
       "`*` reads the value a reference (`&T`, `&mut T`), a raw pointer, or "
@@ -1720,7 +1730,8 @@ auto checker::deref_search_note(type_id type) -> std::optional<std::string> {
                         bindings));
   return std::format("`{}` implements `deref`, so its target `{}` was "
                      "searched as well",
-                     types_.display(stripped), types_.display(target));
+                     session_.types_.display(stripped),
+                     session_.types_.display(target));
 }
 
 /// Whether the place `target` is reached through an implicit `deref()`
@@ -1734,10 +1745,11 @@ auto checker::place_through_deref(const ast::expr &target)
     if (field.object == nullptr) {
       return std::nullopt;
     }
-    if (deref_adjustments_.contains(field.object.get())) {
-      const auto found = node_types_.find(field.object.get());
-      return strip_refs(
-          settle(found != node_types_.end() ? found->second : k_unknown_type));
+    if (session_.deref_adjustments_.contains(field.object.get())) {
+      const auto found = session_.node_types_.find(field.object.get());
+      return strip_refs(settle(found != session_.node_types_.end()
+                                   ? found->second
+                                   : k_unknown_type));
     }
     return place_through_deref(*field.object);
   }
@@ -1757,19 +1769,20 @@ auto checker::place_through_deref(const ast::expr &target)
     if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
       return std::nullopt;
     }
-    if (deref_adjustments_.contains(unary.operand.get())) {
-      const auto found = node_types_.find(unary.operand.get());
-      return strip_refs(
-          settle(found != node_types_.end() ? found->second : k_unknown_type));
+    if (session_.deref_adjustments_.contains(unary.operand.get())) {
+      const auto found = session_.node_types_.find(unary.operand.get());
+      return strip_refs(settle(found != session_.node_types_.end()
+                                   ? found->second
+                                   : k_unknown_type));
     }
     return place_through_deref(*unary.operand);
   }
   case ast::node_kind::module_path_expr: {
     const auto &path = dynamic_cast<const ast::module_path_expr &>(target);
-    const auto found = path_deref_adjustments_.find(&path);
-    const auto types = value_path_types_.find(&path);
-    if (found == path_deref_adjustments_.end() ||
-        types == value_path_types_.end()) {
+    const auto found = session_.path_deref_adjustments_.find(&path);
+    const auto types = session_.value_path_types_.find(&path);
+    if (found == session_.path_deref_adjustments_.end() ||
+        types == session_.value_path_types_.end()) {
       return std::nullopt;
     }
     for (size_t i = 0; i < found->second.size(); ++i) {
@@ -1788,12 +1801,12 @@ auto checker::place_through_deref(const ast::expr &target)
 /// — `deref` lends only a shared reference, and there is no `deref_mut`.
 auto checker::report_write_through_deref(source_span span, type_id handle,
                                          std::string_view what) -> void {
-  const auto shown = types_.display(handle);
+  const auto shown = session_.types_.display(handle);
   auto diag =
       diagnostic(diagnostic_level::error,
                  std::format("cannot {} a value reached through `{}`'s `deref`",
                              what, shown),
-                 file_id_);
+                 file_.file_id_);
   diag.with_label(span, "reached through `deref`, which is read-only");
   diag.with_note(std::format(
       "this place is part of the value `{}` lends through `deref()`, which "
@@ -1828,11 +1841,11 @@ auto checker::method_callable_through_deref(const ast::call_expr &call,
   if (!mutates && !consumes) {
     return true;
   }
-  const auto shown = types_.display(handle);
+  const auto shown = session_.types_.display(handle);
   auto diag = diagnostic(diagnostic_level::error,
                          std::format("cannot call `{}` through `{}`'s `deref`",
                                      field.field_name, shown),
-                         file_id_);
+                         file_.file_id_);
   diag.with_label(
       call.span,
       mutates ? std::format("`{}` takes `mut self`", field.field_name)
@@ -1858,7 +1871,7 @@ auto checker::method_callable_through_deref(const ast::call_expr &call,
 /// The type of one element of `T.fields()`: a compile-time descriptor of
 /// one struct field, built by `comptime::make_field_descriptor`.
 auto checker::field_info_type() -> type_id {
-  return types_.builtin("field_info");
+  return session_.types_.builtin("field_info");
 }
 
 /// The type of `info.name` on a `field_info`. `type_of` is a type
@@ -1866,10 +1879,10 @@ auto checker::field_info_type() -> type_id {
 auto checker::field_info_member_type(std::string_view name, source_span span)
     -> type_id {
   if (name == "name" || name == "type_name") {
-    return types_.builtin("str");
+    return session_.types_.builtin("str");
   }
   if (name == "is_data_member") {
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
   }
   if (name == "type_of") {
     return k_unknown_type;
@@ -1920,7 +1933,7 @@ auto checker::field_access_type(type_id object, std::string_view name,
   if (const auto target = lookup_through_deref(site, stripped, name, span)) {
     return field_access_type(*target, name, span);
   }
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   if (stripped == field_info_type()) {
     return field_info_member_type(name, span);
   }
@@ -1936,7 +1949,7 @@ auto checker::field_access_type(type_id object, std::string_view name,
     auto diag = diagnostic(
         diagnostic_level::error,
         std::format("no field `{}` on struct `{}`", name, entry.name),
-        file_id_);
+        file_.file_id_);
     diag.with_label(span, "unknown field");
     if (const auto fields = struct_field_names(entry); !fields.empty()) {
       diag.with_note(std::format("`{}` has the fields {}", entry.name, fields));
@@ -1987,7 +2000,7 @@ auto checker::field_access_type(type_id object, std::string_view name,
     // `t.0` — a tuple's elements are selected by position, and the parser
     // hands the position through as the field name's text (see its
     // `int_lit` case in `parse_postfix_suffix`).
-    const auto shown = types_.display(stripped);
+    const auto shown = session_.types_.display(stripped);
     const auto index = tuple_index_of(name);
     if (!index.has_value()) {
       error_with_help(
@@ -2022,7 +2035,7 @@ auto checker::field_access_type(type_id object, std::string_view name,
     error_with_help(
         span,
         std::format("no field `{}` on a function of type `{}`", name,
-                    types_.display(stripped)),
+                    session_.types_.display(stripped)),
         "a function has no fields",
         std::format("To read `{}` from what the function returns, call it "
                     "first: `f().{}`.",
@@ -2074,8 +2087,8 @@ auto checker::report_unknown_builtin_field(std::string_view name,
 
   build_method_table();
   auto candidates = builtin_method_names(entry);
-  if (const auto found = extend_methods_by_builtin_.find(entry.name);
-      found != extend_methods_by_builtin_.end()) {
+  if (const auto found = cache_.extend_methods_by_builtin_.find(entry.name);
+      found != cache_.extend_methods_by_builtin_.end()) {
     for (const auto &method : found->second) {
       candidates.push_back(method.decl->name);
     }
@@ -2083,10 +2096,10 @@ auto checker::report_unknown_builtin_field(std::string_view name,
   std::ranges::sort(candidates);
   candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
 
-  const auto display = types_.display(object);
+  const auto display = session_.types_.display(object);
   auto diag = diagnostic(
       diagnostic_level::error,
-      std::format("no field `{}` on type `{}`", name, display), file_id_);
+      std::format("no field `{}` on type `{}`", name, display), file_.file_id_);
   diag.with_label(span, "unknown field");
   if (const auto suggestion = best_suggestion(name, candidates)) {
     diag.with_help(std::format("did you mean `{}`?", *suggestion));
@@ -2162,8 +2175,9 @@ auto checker::classify_dotted_root(std::string_view root, bool root_is_local)
 /// `infer_value_rooted_path` records the answer for lowering, so no later
 /// pass decides again.
 auto checker::dotted_root_is_value(std::string_view root) -> bool {
-  const auto is_local = find_value_in_scopes(root).binding != nullptr ||
-                        (root == "self" && self_type_ != k_unknown_type);
+  const auto is_local =
+      find_value_in_scopes(root).binding != nullptr ||
+      (root == "self" && function_.self_type_ != k_unknown_type);
   return classify_dotted_root(root, is_local) != dotted_root::module;
 }
 
@@ -2176,9 +2190,10 @@ auto checker::infer_module_path(const ast::module_path_expr &path) -> type_id {
     return infer_value_rooted_path(path);
   }
   if (path.segments.size() == 2 && is_builtin_scalar_name(root)) {
-    const auto type = types_.builtin(root);
+    const auto type = session_.types_.builtin(root);
     const auto &member = path.segments.back();
-    if ((member == "max" || member == "min") && types_.is_numeric(type)) {
+    if ((member == "max" || member == "min") &&
+        session_.types_.is_numeric(type)) {
       return type;
     }
     return k_unknown_type;
@@ -2260,11 +2275,12 @@ auto checker::function_owner(const ast::func_decl &fn)
     -> std::optional<std::pair<const module_members *, file_id_type>> {
   // Rescanned when the index has grown: an instantiated functor adds a
   // module mid-session.
-  if (function_owners_modules_ != index_.modules.size()) {
-    function_owners_modules_ = index_.modules.size();
+  if (cache_.function_owners_modules_ != index_.modules.size()) {
+    cache_.function_owners_modules_ = index_.modules.size();
     for (const auto &[module_name, members] : index_.modules) {
       for (const auto &[fn_name, ref] : members.functions) {
-        function_owners_.emplace(ref.decl, std::pair{&members, ref.file_id});
+        cache_.function_owners_.emplace(ref.decl,
+                                        std::pair{&members, ref.file_id});
       }
       // Methods too: a compile-time method call (`s.trim()`) runs its body
       // where it was written, so `std.string`'s own `rt_str_*` resolve.
@@ -2272,7 +2288,7 @@ auto checker::function_owner(const ast::func_decl &fn)
         for (const auto &item : items) {
           if (const auto *method =
                   dynamic_cast<const ast::func_decl *>(item.get())) {
-            function_owners_.emplace(method, std::pair{&members, file});
+            cache_.function_owners_.emplace(method, std::pair{&members, file});
           }
         }
       };
@@ -2284,8 +2300,8 @@ auto checker::function_owner(const ast::func_decl &fn)
       }
     }
   }
-  const auto it = function_owners_.find(&fn);
-  if (it == function_owners_.end()) {
+  const auto it = cache_.function_owners_.find(&fn);
+  if (it == cache_.function_owners_.end()) {
     return std::nullopt;
   }
   return it->second;
@@ -2300,7 +2316,7 @@ auto checker::comptime_static_value(const ast::static_decl &decl,
                                     const module_members *owner,
                                     std::string cycle)
     -> std::expected<comptime::value, std::string> {
-  if (static_bindings_evaluating_.contains(&decl)) {
+  if (cache_.static_bindings_evaluating_.contains(&decl)) {
     return std::unexpected(std::move(cycle));
   }
   if (const auto *value = ensure_static_binding_evaluated(decl, owner)) {
@@ -2321,9 +2337,9 @@ auto checker::find_comptime_method(const ast::expr &receiver_expr,
     -> std::expected<const ast::func_decl *, std::string> {
   auto receiver_type = k_unknown_type;
   if (receiver.kind == comptime::value_kind::string) {
-    receiver_type = types_.builtin("str");
-  } else if (const auto it = node_types_.find(&receiver_expr);
-             it != node_types_.end()) {
+    receiver_type = session_.types_.builtin("str");
+  } else if (const auto it = session_.node_types_.find(&receiver_expr);
+             it != session_.node_types_.end()) {
     receiver_type = strip_refs(settle(it->second));
   }
   receiver_type = substitute_comptime_type_params(receiver_type);
@@ -2331,9 +2347,10 @@ auto checker::find_comptime_method(const ast::expr &receiver_expr,
     return std::unexpected(std::format(
         "the receiver has the generic type `{}`, and compile-time code "
         "cannot yet tell which type it stands for",
-        types_.display(receiver_type)));
+        session_.types_.display(receiver_type)));
   }
-  if (types_.is_unknown(receiver_type) || receiver_type == k_error_type) {
+  if (session_.types_.is_unknown(receiver_type) ||
+      receiver_type == k_error_type) {
     return std::unexpected(std::string{
         "the receiver's type is not known where this compile-time code was "
         "checked"});
@@ -2341,7 +2358,7 @@ auto checker::find_comptime_method(const ast::expr &receiver_expr,
   const auto *method = find_receiver_method(receiver_type, name);
   if (method == nullptr) {
     return std::unexpected(std::format("`{}` has no method of that name",
-                                       types_.display(receiver_type)));
+                                       session_.types_.display(receiver_type)));
   }
   return method->decl;
 }
@@ -2353,14 +2370,14 @@ auto checker::find_comptime_method(const ast::expr &receiver_expr,
 /// are read through the types the running call bound them to.
 auto checker::comptime_call_type_args(const ast::call_expr &call)
     -> std::optional<std::vector<std::pair<std::string, comptime::value>>> {
-  const auto it = comptime_call_type_slots_.find(&call);
-  if (it == comptime_call_type_slots_.end()) {
+  const auto it = session_.comptime_call_type_slots_.find(&call);
+  if (it == session_.comptime_call_type_slots_.end()) {
     return std::nullopt;
   }
   auto values = std::vector<std::pair<std::string, comptime::value>>{};
   for (const auto &[name, solved] : it->second) {
     const auto type = substitute_comptime_type_params(settle(solved));
-    const auto &entry = types_.entry(type);
+    const auto &entry = session_.types_.entry(type);
     values.emplace_back(
         name, comptime::value::make_type_value(entry.name, entry.decl, type));
   }
@@ -2374,7 +2391,8 @@ auto checker::comptime_call_type_args(const ast::call_expr &call)
 auto checker::substitute_comptime_type_params(type_id type) -> type_id {
   auto bindings = param_subst{};
   const auto collect = [&](this const auto &self, type_id id) -> void {
-    const auto entry = types_.entry(id); // copy: callers may intern after
+    const auto entry =
+        session_.types_.entry(id); // copy: callers may intern after
     if (entry.kind == type_kind::type_param_kind) {
       const auto *bound = comptime_eval_.type_binding(entry.name);
       if (bound != nullptr && bound->checked_type != k_unknown_type &&
@@ -2513,12 +2531,12 @@ auto checker::read_dotted_path_for_comptime(const ast::module_path_expr &path,
 
 /// `a.b.c` where `a` is a binding in scope, or a module-level `def`/
 /// `static`: a chain of field accesses. Records each prefix's type in
-/// `value_path_types_` — lowering builds the projection chain from exactly
-/// these, whatever the chain's length.
+/// `session_.value_path_types_` — lowering builds the projection chain from
+/// exactly these, whatever the chain's length.
 auto checker::infer_value_rooted_path(const ast::module_path_expr &path)
     -> type_id {
   const auto &root = path.segments.front();
-  auto base = self_type_;
+  auto base = function_.self_type_;
   auto module_value = std::optional<module_value_ref>{};
   if (const auto *binding = lookup_value(root)) {
     if (binding->generic_lambda != nullptr) {
@@ -2531,7 +2549,7 @@ auto checker::infer_value_rooted_path(const ast::module_path_expr &path)
   } else if (const auto *barrier = capture_barrier_blocking(root)) {
     emit_capture_not_listed(path.span, root, *barrier);
     return k_error_type;
-  } else if (root != "self" || self_type_ == k_unknown_type) {
+  } else if (root != "self" || function_.self_type_ == k_unknown_type) {
     module_value = find_module_scope_value(root);
     if (!module_value.has_value()) {
       return k_unknown_type;
@@ -2547,7 +2565,7 @@ auto checker::infer_value_rooted_path(const ast::module_path_expr &path)
                              deref_site{.path = &path, .segment = i});
     segment_types.push_back(base);
   }
-  value_path_types_.insert_or_assign(&path, std::move(segment_types));
+  session_.value_path_types_.insert_or_assign(&path, std::move(segment_types));
   if (module_value.has_value() && module_value->static_binding != nullptr) {
     fold_static_field_path(path, *module_value->static_binding,
                            module_value->owner, 1, base);
@@ -2577,28 +2595,33 @@ auto checker::fold_static_field_path(const ast::module_path_expr &path,
     return;
   }
   if (const auto *lit = materialize_const_literal(*value, path.span, type)) {
-    static_const_values_[&path] = lit;
+    session_.static_const_values_[&path] = lit;
   }
 }
 
 /// The module whose "Visible Modules" set applies to the code being
-/// checked — see `functor_owner_module_`.
+/// checked — see `session_.functor_owner_module_`.
 auto checker::visibility_module() const -> const std::string & {
-  return functor_owner_module_.empty() ? module_name_ : functor_owner_module_;
+  return session_.functor_owner_module_.empty()
+             ? file_.module_name_
+             : session_.functor_owner_module_;
 }
 
 /// Validates a module-rooted dotted path against the module graph, once
 /// per node. Returns false after reporting it.
 auto checker::validate_module_path(const ast::module_path_expr &path) -> bool {
-  if (session_index_ == nullptr || semantic_index_ == nullptr ||
-      !validated_module_paths_.insert(&path).second) {
+  if (session_.session_index_ == nullptr ||
+      session_.semantic_index_ == nullptr ||
+      !session_.validated_module_paths_.insert(&path).second) {
     return true;
   }
-  const auto aliases = file_module_aliases_.find(file_id_);
+  const auto aliases = session_.file_module_aliases_.find(file_.file_id_);
   return validate_module_reference(
-      path, visibility_module(), file_id_, *session_index_, *semantic_index_,
-      aliases != file_module_aliases_.end() ? &aliases->second : nullptr, diag_,
-      file_has_errors_);
+      path, visibility_module(), file_.file_id_, *session_.session_index_,
+      *session_.semantic_index_,
+      aliases != session_.file_module_aliases_.end() ? &aliases->second
+                                                     : nullptr,
+      diag_, file_has_errors_);
 }
 
 /// Whether an identifier in callee/index position names a function or type
@@ -2607,10 +2630,11 @@ auto checker::ident_names_callable_decl(const ast::ident_expr &ident) -> bool {
   if (lookup_value(ident.name) != nullptr) {
     return false;
   }
-  if (module_ != nullptr && (module_->functions.contains(ident.name) ||
-                             module_->types.contains(ident.name) ||
-                             module_->traits.contains(ident.name) ||
-                             module_->concepts.contains(ident.name))) {
+  if (file_.module_ != nullptr &&
+      (file_.module_->functions.contains(ident.name) ||
+       file_.module_->types.contains(ident.name) ||
+       file_.module_->traits.contains(ident.name) ||
+       file_.module_->concepts.contains(ident.name))) {
     return true;
   }
   return is_prelude_value_name(ident.name) ||
@@ -2632,10 +2656,10 @@ auto checker::ident_names_callable_decl(const ast::ident_expr &ident) -> bool {
 auto checker::check_index_in_bounds(const ast::index_expr &index,
                                     type_id object, type_id key) -> void {
   if (index.index == nullptr || index.object == nullptr ||
-      !types_.is_integer(key)) {
+      !session_.types_.is_integer(key)) {
     return;
   }
-  const auto &entry = types_.entry(object);
+  const auto &entry = session_.types_.entry(object);
   if (entry.kind != type_kind::array_kind || entry.args.empty()) {
     return;
   }
@@ -2655,20 +2679,22 @@ auto checker::check_index_in_bounds(const ast::index_expr &index,
                            length->display()),
   }}};
 
-  switch (solve(facts_, goal)) {
+  switch (solve(function_.facts_, goal)) {
   case proof_result::proved:
-    proven_in_bounds_.insert(&index);
+    session_.proven_in_bounds_.insert(&index);
     return;
   case proof_result::refuted: {
     auto diag =
         diagnostic(diagnostic_level::error,
                    std::format("index out of bounds: `{}` is never true",
                                goal_label(goal, "the index bound")),
-                   file_id_);
-    diag.with_label(index.index->span,
-                    std::format("indexing a `{}`", types_.display(object)));
+                   file_.file_id_);
+    diag.with_label(
+        index.index->span,
+        std::format("indexing a `{}`", session_.types_.display(object)));
     if (const auto known = known_facts_note(goal)) {
-      diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
+      diag.children.emplace_back(diagnostic_level::note, *known,
+                                 file_.file_id_);
     }
     diag.with_help(
         "This access is out of range on every execution that reaches it — "
@@ -2693,7 +2719,7 @@ auto checker::check_index_in_bounds(const ast::index_expr &index,
 auto checker::find_trait_anywhere(std::string_view name) -> std::optional<
     std::pair<const ast::trait_decl *, const module_members *>> {
   if (const auto found = find_session_trait(name)) {
-    const auto *owner = module_;
+    const auto *owner = file_.module_;
     // The trait may live in another module of the session.
     for (const auto &[module_name, members] : index_.modules) {
       if (const auto it = members.traits.find(std::string(name));

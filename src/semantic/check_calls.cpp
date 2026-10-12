@@ -11,10 +11,10 @@ namespace cinder::semantic::detail {
 /// constructor matters: a `&`/`&mut` parameter borrows, anything else
 /// takes its argument by value.
 auto checker::passing_of(type_id type) const -> param_passing {
-  if (types_.is_unknown(type)) {
+  if (session_.types_.is_unknown(type)) {
     return param_passing::by_value;
   }
-  const auto &entry = types_.entry(type);
+  const auto &entry = session_.types_.entry(type);
   if (entry.kind != type_kind::ref_kind) {
     return param_passing::by_value;
   }
@@ -60,8 +60,8 @@ auto checker::explicit_value_bindings(const generic_call_context *generic)
 /// inferred type is checked against its target parameter's type. Reports
 /// too many arguments, and any required parameter left unfilled. Also
 /// records the resulting argument-to-parameter assignment into
-/// `call_argument_mappings_` (see `call_argument_mapping`'s doc comment
-/// in types.h), since this is the only place that assignment is known.
+/// `session_.call_argument_mappings_` (see `call_argument_mapping`'s doc
+/// comment in types.h), since this is the only place that assignment is known.
 /// `solved_out`, when given, receives the callee's value parameters as the
 /// arguments determined them (`match_value_params`) — the same bindings the
 /// refinement obligations below are discharged under, handed back so
@@ -103,7 +103,7 @@ auto checker::check_call_args_against(
             diagnostic_level::error,
             std::format("unknown named argument `{}` in call to `{}`", arg_name,
                         callee_name),
-            file_id_);
+            file_.file_id_);
         diag.with_label(arg.span, "no parameter has this name");
         auto names = std::vector<std::string>{};
         for (const auto &param : params) {
@@ -146,7 +146,7 @@ auto checker::check_call_args_against(
     }
   }
 
-  // `call_argument_mappings_` is published before the arguments are
+  // `session_.call_argument_mappings_` is published before the arguments are
   // checked, not after, because the generic solving between the two passes
   // below reads it back to find which argument reached which parameter.
   auto defaults_by_param = std::vector<const ast::expr *>{};
@@ -160,7 +160,7 @@ auto checker::check_call_args_against(
     param_names.push_back(param.name);
     passing_by_param.push_back(passing_of(param.type));
   }
-  call_argument_mappings_[&call] =
+  session_.call_argument_mappings_[&call] =
       call_argument_mapping{.args_by_param = args_by_param,
                             .defaults_by_param = std::move(defaults_by_param),
                             .param_names = std::move(param_names),
@@ -181,9 +181,9 @@ auto checker::check_call_args_against(
                            (param.bound_or_type != nullptr &&
                             names_trait_or_concept(*param.bound_or_type));
       if (!param.name.empty() && is_type) {
-        opened.emplace(
-            types_.type_param(param.name, param.higher_kinded_arity, &param),
-            k_unknown_type);
+        opened.emplace(session_.types_.type_param(
+                           param.name, param.higher_kinded_arity, &param),
+                       k_unknown_type);
       }
     }
   }
@@ -201,10 +201,11 @@ auto checker::check_call_args_against(
     // Checked against the opened type; reported, if it fails even so,
     // against the callee's own spelling (`vec[T, n + 1]`, not `vec[_, ...]`),
     // which is what the reader can find in its signature.
-    const auto shown = !types_.compatible(settle(expected), settle(found)) &&
-                               declared != expected
-                           ? declared
-                           : expected;
+    const auto shown =
+        !session_.types_.compatible(settle(expected), settle(found)) &&
+                declared != expected
+            ? declared
+            : expected;
     // Structure is decided now; a *proof* has to wait. A refined
     // parameter's predicate is written in the callee's value parameters
     // (`index[n]`'s `n`), and which arguments pin those down isn't known
@@ -212,12 +213,12 @@ auto checker::check_call_args_against(
     // from `v`, which for a differently-ordered signature could just as
     // easily come after `i`. So the shape check runs in place and the
     // obligation is collected for the second pass below.
-    if (!types_.compatible(settle(expected), settle(found))) {
-      mismatched_argument_calls_.insert(&call);
+    if (!session_.types_.compatible(settle(expected), settle(found))) {
+      session_.mismatched_argument_calls_.insert(&call);
     }
     type_mismatch(item.value->span, shown, found, "for this argument");
     match_value_params(expected, found, solved_values);
-    if (types_.entry(expected).kind == type_kind::refinement_kind) {
+    if (session_.types_.entry(expected).kind == type_kind::refinement_kind) {
       deferred.push_back(deferred_narrowing{
           .expected = expected,
           .found = found,
@@ -278,7 +279,7 @@ auto checker::check_call_args_against(
                                            ? std::format("#{}", i + 1)
                                            : params[i].name,
                                        callee_name),
-                           file_id_);
+                           file_.file_id_);
     diag.with_label(call.span, "call is missing a required argument");
     if (decl_location.span.len() > 0) {
       diag.children.push_back(
@@ -311,7 +312,7 @@ auto checker::check_call_against_decl(
     const module_members *owner, file_id_type decl_file, bool skip_self,
     const explicit_generic_args &explicit_args,
     const method_call_site *method_site) -> type_id {
-  if (in_contract_ && !decl.modifiers.is_pure) {
+  if (function_.in_contract_ && !decl.modifiers.is_pure) {
     error_with_help(
         call.span,
         std::format("contract conditions may only call pure functions, and "
@@ -356,8 +357,8 @@ auto checker::check_call_against_decl(
         .owner = owner,
         .decl_file = is_method_call ? method_site->method->file_id : decl_file,
         .call_params = std::move(param_types),
-        .file = file_id_,
-        .module = module_,
+        .file = file_.file_id_,
+        .module = file_.module_,
         .probe = probing_decl_};
     if (is_method_call) {
       pending.receiver = method_site->receiver;
@@ -399,13 +400,13 @@ auto checker::check_call_against_decl(
   // callee's module imported (`def make() -> option[foo]` over a
   // `use other.foo`) resolves to nothing when read through the caller's
   // own imports, and the call then reaches lowering with no concrete type.
-  const auto saved_signature_file = file_id_;
-  file_id_ = decl_file;
+  const auto saved_signature_file = file_.file_id_;
+  file_.file_id_ = decl_file;
   // A generic callee reaching here was not solved (and said why): its own
   // parameters in the result stand for nothing, and must not surface in
   // the caller as a second, confusing mismatch against `T`.
   const auto result = open_foreign_params(signature_return_type(decl, owner));
-  file_id_ = saved_signature_file;
+  file_.file_id_ = saved_signature_file;
   return open_call_result(call, result);
 }
 
@@ -461,7 +462,7 @@ auto checker::builtin_method_result(const type_entry &object,
   const auto element =
       object.kind == type_kind::array_kind ? object.result
       : (object.kind == type_kind::builtin_kind && object.name == "str")
-          ? types_.builtin("byte")
+          ? session_.types_.builtin("byte")
       : object.args.empty() ? k_unknown_type
                             : object.args[0];
   for (const auto &method : k_builtin_methods) {
@@ -470,26 +471,27 @@ auto checker::builtin_method_result(const type_entry &object,
     }
     switch (method.result) {
     case builtin_result_shape::usize_result:
-      return types_.builtin("usize");
+      return session_.types_.builtin("usize");
     case builtin_result_shape::bool_result:
-      return types_.builtin("bool");
+      return session_.types_.builtin("bool");
     case builtin_result_shape::unit_result:
-      return types_.builtin("unit");
+      return session_.types_.builtin("unit");
     case builtin_result_shape::element:
       return element;
     case builtin_result_shape::option_of_element:
-      return types_.builtin_generic("option", {element});
+      return session_.types_.builtin_generic("option", {element});
     case builtin_result_shape::byte_slice:
-      return types_.builtin_generic("slice", {types_.builtin("byte")});
+      return session_.types_.builtin_generic("slice",
+                                             {session_.types_.builtin("byte")});
     case builtin_result_shape::cell_of_element:
-      return types_.builtin_generic("cell", {element});
+      return session_.types_.builtin_generic("cell", {element});
     case builtin_result_shape::option_of_mut_cell_of_element:
-      return types_.builtin_generic(
-          "option", {types_.builtin_generic("cell_mut", {element})});
+      return session_.types_.builtin_generic(
+          "option", {session_.types_.builtin_generic("cell_mut", {element})});
     case builtin_result_shape::ptr_to_element:
-      return types_.ptr_to(element, false);
+      return session_.types_.ptr_to(element, false);
     case builtin_result_shape::mut_ptr_to_element:
-      return types_.ptr_to(element, true);
+      return session_.types_.ptr_to(element, true);
     }
   }
   return k_unknown_type;
@@ -528,8 +530,8 @@ auto checker::report_unknown_builtin_method(const ast::call_expr &call,
 
   build_method_table();
   auto candidates = builtin_method_names(entry);
-  if (const auto found = extend_methods_by_builtin_.find(entry.name);
-      found != extend_methods_by_builtin_.end()) {
+  if (const auto found = cache_.extend_methods_by_builtin_.find(entry.name);
+      found != cache_.extend_methods_by_builtin_.end()) {
     for (const auto &method : found->second) {
       candidates.push_back(method.decl->name);
     }
@@ -537,11 +539,11 @@ auto checker::report_unknown_builtin_method(const ast::call_expr &call,
   std::ranges::sort(candidates);
   candidates.erase(std::ranges::unique(candidates).begin(), candidates.end());
 
-  const auto display = types_.display(object);
+  const auto display = session_.types_.display(object);
   auto diag = diagnostic(
       diagnostic_level::error,
       std::format("no method `{}` on type `{}`", field.field_name, display),
-      file_id_);
+      file_.file_id_);
   diag.with_label(field.span, "method not found");
   if (const auto suggestion = best_suggestion(field.field_name, candidates)) {
     diag.with_help(std::format("did you mean `{}`?", *suggestion));
@@ -597,7 +599,8 @@ auto checker::available_method_name_list(const type_entry &instance)
   build_method_table();
   auto names = std::vector<std::string>{};
   if (instance.decl != nullptr) {
-    if (const auto it = methods_.find(instance.decl); it != methods_.end()) {
+    if (const auto it = cache_.methods_.find(instance.decl);
+        it != cache_.methods_.end()) {
       for (const auto &method : it->second) {
         names.push_back(method.decl->name);
       }
@@ -623,7 +626,8 @@ auto checker::available_method_names(const type_entry &instance)
   return out;
 }
 
-/// Records a `resolved_callees_` entry for a genuine instance-method call
+/// Records a `session_.resolved_callees_` entry for a genuine instance-method
+/// call
 /// (`object.method(args...)`, `method` a real `self`-taking declaration
 /// found via `find_method`/`find_extend_method_for_builtin`) so
 /// `hir::lower_call` can rebuild the call site directly instead of
@@ -701,7 +705,7 @@ auto checker::record_instance_method_callee(const ast::call_expr &call,
       param_name_of(method.decl->params.front()) != "self") {
     return;
   }
-  resolved_callees_[&call] =
+  session_.resolved_callees_[&call] =
       resolved_callee{.decl = method.decl,
                       .owner_module = method.owner->module_name,
                       .impl_target_type = std::string(target_type_name),
@@ -742,7 +746,8 @@ auto checker::check_generic_instance_method_call(
   auto solved = value_bindings{};
   check_call_args_against(
       call, params, method.decl->name,
-      source_location{.file_id = file_id_, .span = method.decl->span}, &solved);
+      source_location{.file_id = file_.file_id_, .span = method.decl->span},
+      &solved);
   check_call_preconditions(call, *method.decl, params);
 
   auto bindings = param_subst{};
@@ -844,15 +849,15 @@ auto checker::solve_impl_value_params(const method_entry &method,
             value_param_underlying(type_param, method.owner)) {
       bindings.emplace(
           param_id(type_param),
-          types_.const_value(*underlying,
-                             static_cast<uint64_t>(found->second.constant)));
+          session_.types_.const_value(
+              *underlying, static_cast<uint64_t>(found->second.constant)));
     }
   }
 }
 
 /// Copies each value-kind impl-block parameter's binding from `bindings`
 /// into `solution`'s const-slots, so `find_or_check_generic_instance`
-/// also lands it in `const_param_values_` — what
+/// also lands it in `session_.const_param_values_` — what
 /// `record_const_param_reference` reads to embed `n`'s concrete value as
 /// a literal wherever the body reads it as a value — rather than only
 /// substituting it into the checked signature's types.
@@ -867,7 +872,7 @@ auto checker::carry_impl_value_slots(const method_entry &method,
     if (found == bindings.end()) {
       continue;
     }
-    const auto &entry = types_.entry(found->second);
+    const auto &entry = session_.types_.entry(found->second);
     if (entry.kind != type_kind::const_value_kind) {
       continue;
     }
@@ -971,7 +976,7 @@ auto checker::template_impl_method_call(const ast::call_expr &call,
   }
   check_call_args_against(
       call, params, method.decl->name,
-      source_location{.file_id = file_id_, .span = method.decl->span});
+      source_location{.file_id = file_.file_id_, .span = method.decl->span});
   check_call_preconditions(call, *method.decl, params);
   record_instance_method_callee(call, method, receiver_entry.name, receiver);
   return substitute_solved(signature_return_type(*method.decl, method.owner,
@@ -1050,7 +1055,7 @@ auto checker::check_impl_generic_method_call(const ast::call_expr &call,
   }
   check_call_args_against(
       call, params, method.decl->name,
-      source_location{.file_id = file_id_, .span = method.decl->span});
+      source_location{.file_id = file_.file_id_, .span = method.decl->span});
   check_call_preconditions(call, *method.decl, params);
 
   // A method with an unannotated parameter is elaborated once its body has
@@ -1068,8 +1073,8 @@ auto checker::check_impl_generic_method_call(const ast::call_expr &call,
         .owner = method.owner,
         .decl_file = method.file_id,
         .call_params = std::move(call_params),
-        .file = file_id_,
-        .module = module_,
+        .file = file_.file_id_,
+        .module = file_.module_,
         .receiver = &receiver,
         .method = method,
         .target_type_name = std::string(receiver_entry.name),
@@ -1162,7 +1167,7 @@ auto checker::finish_impl_generic_method_call(
   if (instance == nullptr) {
     return std::nullopt;
   }
-  resolved_callees_[&call] =
+  session_.resolved_callees_[&call] =
       resolved_callee{.decl = instance,
                       .owner_module = method.owner->module_name,
                       .impl_target_type = "",
@@ -1217,7 +1222,7 @@ auto checker::check_impl_generic_static_call(const ast::call_expr &call,
   solution.suffix = std::format("${}", mangle_type_for_instance(target));
   // Owned before `find_or_check_generic_instance` runs: checking the
   // instance body interns types, and this name is read after that.
-  const auto target_name = std::string(types_.entry(target).name);
+  const auto target_name = std::string(session_.types_.entry(target).name);
   const auto name =
       std::format("{}::{}{}", target_name, method.decl->name, solution.suffix);
   if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
@@ -1248,7 +1253,7 @@ auto checker::receiver_fills_first_param(const method_entry &method,
   if (params.empty()) {
     return false;
   }
-  const auto &first = types_.entry(strip_refs(params.front().type));
+  const auto &first = session_.types_.entry(strip_refs(params.front().type));
   if (first.decl != nullptr || instance.decl != nullptr) {
     return first.decl != nullptr && first.decl == instance.decl;
   }
@@ -1289,7 +1294,7 @@ auto checker::check_receiver_call(const ast::call_expr &call,
   }
   check_call_args_against(
       call, rest, method.decl->name,
-      source_location{.file_id = file_id_, .span = method.decl->span});
+      source_location{.file_id = file_.file_id_, .span = method.decl->span});
 
   // Later arguments pin parameters the receiver didn't (`bind`'s `B`
   // arrives with the function argument): read each argument's recorded
@@ -1309,7 +1314,7 @@ auto checker::check_receiver_call(const ast::call_expr &call,
                             .impl_target_type = "",
                             .receiver = &receiver},
             explicit_args) &&
-        current_template_ != nullptr) {
+        function_.current_template_ != nullptr) {
       // `o.map(f)` on an `option[T]`: the instance is each instance's.
       defer_to_instances(
           call,
@@ -1340,7 +1345,7 @@ auto checker::check_receiver_call(const ast::call_expr &call,
           });
     }
   } else {
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = method.decl,
                         .owner_module = method.owner->module_name,
                         .impl_target_type = std::string(target_type_name),

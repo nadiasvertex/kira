@@ -15,7 +15,7 @@ namespace cinder::semantic::detail {
 /// maximum, e.g. `int8` allows magnitude 128 here for `-128`).
 auto checker::check_integer_fit(const ast::literal_expr &lit, type_id target,
                                 bool negated) -> void {
-  const auto &entry = types_.entry(target);
+  const auto &entry = session_.types_.entry(target);
   if (entry.kind != type_kind::builtin_kind) {
     return;
   }
@@ -35,7 +35,7 @@ auto checker::check_integer_fit(const ast::literal_expr &lit, type_id target,
       diagnostic(diagnostic_level::error,
                  std::format("integer literal `{}{}` does not fit in `{}`",
                              negated ? "-" : "", lit.value, entry.name),
-                 file_id_);
+                 file_.file_id_);
   diag.with_label(lit.span, std::format("too large for `{}`", entry.name));
   if (is_negative_min) {
     diag.with_note(std::format("the most negative `{}` value is -{}",
@@ -68,23 +68,26 @@ auto checker::check_integer_fit(const ast::literal_expr &lit, type_id target,
 /// to be reported — so it keeps the old answer and the old message.
 auto checker::open_integer_literal(const ast::literal_expr &lit,
                                    type_id expected, bool negated) -> type_id {
-  if (!types_.is_unknown(expected)) {
-    const auto fallback = types_.builtin("int32");
+  if (!session_.types_.is_unknown(expected)) {
+    const auto fallback = session_.types_.builtin("int32");
     check_integer_fit(lit, fallback, negated);
     return fallback;
   }
   const auto leaf = leaf_ctxt_.fresh_type(
       "the type of this integer literal",
-      source_location{.file_id = file_id_, .span = lit.span});
+      source_location{.file_id = file_.file_id_, .span = lit.span});
   integer_literal_leaves_.insert(leaf);
-  pending_leaf_values_.push_back(pending_leaf_literal_value{
-      .literal = &lit, .leaf = leaf, .negated = negated, .file = file_id_});
+  pending_leaf_values_.push_back(
+      pending_leaf_literal_value{.literal = &lit,
+                                 .leaf = leaf,
+                                 .negated = negated,
+                                 .file = file_.file_id_});
   leaf_queue_.add(infer::obligation{
       .kind = infer::obligation_kind::defaulting,
       .watches = {leaf},
       .goal = std::format("a type for the integer literal `{}`", lit.value),
       .why = infer::k_no_cause,
-      .payload = static_cast<uint64_t>(types_.builtin("int32")),
+      .payload = static_cast<uint64_t>(session_.types_.builtin("int32")),
   });
   return leaf;
 }
@@ -100,11 +103,11 @@ auto checker::infer_literal(const ast::literal_expr &lit, type_id expected,
   switch (lit.lit_kind) {
   case token_kind::int_lit: {
     const auto stripped = strip_refs(expected);
-    if (types_.is_integer(stripped)) {
+    if (session_.types_.is_integer(stripped)) {
       check_integer_fit(lit, stripped, negated);
       return stripped;
     }
-    if (types_.is_float(stripped)) {
+    if (session_.types_.is_float(stripped)) {
       return stripped;
     }
     // A type parameter of the body being checked (`return 7` in a `def
@@ -122,23 +125,23 @@ auto checker::infer_literal(const ast::literal_expr &lit, type_id expected,
   }
   case token_kind::float_lit: {
     const auto stripped = strip_refs(expected);
-    if (types_.is_float(stripped)) {
+    if (session_.types_.is_float(stripped)) {
       return stripped;
     }
     if (is_rigid_param(stripped)) {
       return check_literal_as_param(lit, stripped, negated);
     }
-    return types_.builtin("float64");
+    return session_.types_.builtin("float64");
   }
   case token_kind::string_lit:
-    return types_.builtin("str");
+    return session_.types_.builtin("str");
   case token_kind::char_lit:
-    return types_.builtin("char");
+    return session_.types_.builtin("char");
   case token_kind::kw_true:
   case token_kind::kw_false:
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
   case token_kind::kw_unit:
-    return types_.builtin("unit");
+    return session_.types_.builtin("unit");
   default:
     return k_unknown_type;
   }
@@ -176,18 +179,18 @@ auto checker::operator_trait_for(ast::binary_op op) -> std::string_view {
 
 /// Resolves `method`'s return type the way it would have resolved *inside
 /// its own impl* — reinstating that impl's `self.output`-style associated
-/// type bindings (`impl_assoc_types_`, keyed by `(target, trait_name)`)
-/// around an ordinary `signature_return_type` call. Without this, a method
-/// looked up from outside its impl (an operator overload's dispatch) would
-/// see `self_assoc_types_` as whatever it happened to be left at — empty,
-/// most of the time — and `self.output` would resolve to `unknown`.
-/// `trait[arg]` as `impl_assoc_types_` files a parameterized trait's
+/// type bindings (`session_.impl_assoc_types_`, keyed by `(target,
+/// trait_name)`) around an ordinary `signature_return_type` call. Without this,
+/// a method looked up from outside its impl (an operator overload's dispatch)
+/// would see `function_.self_assoc_types_` as whatever it happened to be left
+/// at — empty, most of the time — and `self.output` would resolve to `unknown`.
+/// `trait[arg]` as `session_.impl_assoc_types_` files a parameterized trait's
 /// bindings — the key that tells two impls of the same trait apart. Built
 /// from the resolved argument types so the impl side and the use site
 /// spell it the same way regardless of how each wrote them.
 auto checker::parameterized_trait_key(std::string_view trait_name,
                                       type_id argument) -> std::string {
-  return std::format("{}[{}]", trait_name, types_.display(argument));
+  return std::format("{}[{}]", trait_name, session_.types_.display(argument));
 }
 
 /// The same key, read off an `impl trait[args] for ...` declaration.
@@ -214,18 +217,18 @@ auto checker::resolve_operator_return_type(type_id target,
                                            std::string_view trait_name,
                                            const method_entry &method)
     -> type_id {
-  const auto target_it = impl_assoc_types_.find(target);
-  if (target_it == impl_assoc_types_.end()) {
+  const auto target_it = session_.impl_assoc_types_.find(target);
+  if (target_it == session_.impl_assoc_types_.end()) {
     return signature_return_type(*method.decl, method.owner);
   }
   const auto trait_it = target_it->second.find(std::string(trait_name));
   if (trait_it == target_it->second.end()) {
     return signature_return_type(*method.decl, method.owner);
   }
-  const auto saved_assoc = self_assoc_types_;
-  self_assoc_types_ = trait_it->second;
+  const auto saved_assoc = function_.self_assoc_types_;
+  function_.self_assoc_types_ = trait_it->second;
   const auto result = signature_return_type(*method.decl, method.owner);
-  self_assoc_types_ = saved_assoc;
+  function_.self_assoc_types_ = saved_assoc;
   return result;
 }
 
@@ -233,11 +236,11 @@ auto checker::resolve_operator_return_type(type_id target,
 /// `trait_name` (reporting a missing-impl error with an `impl`/`deriving`
 /// hint otherwise); returns `unknown` for anything else. When `binary` is
 /// an arithmetic operator being dispatched to a real overload method (see
-/// `operator_trait_for`), also records an `operator_dispatches_` entry so
-/// `hir::lower_binary` emits a call to that method instead of a raw
-/// numeric opcode, and returns the method's real (impl-specific) return
-/// type rather than `unknown`. `wire_dispatch` is true for `==`/`!=` too
-/// (dispatches to `eq`), but false for ordering comparisons (`<`/`<=`/
+/// `operator_trait_for`), also records an `session_.operator_dispatches_` entry
+/// so `hir::lower_binary` emits a call to that method instead of a raw numeric
+/// opcode, and returns the method's real (impl-specific) return type rather
+/// than `unknown`. `wire_dispatch` is true for `==`/`!=` too (dispatches to
+/// `eq`), but false for ordering comparisons (`<`/`<=`/
 /// `>`/`>=`), which always yield `bool` regardless of this function's
 /// return value and have no overload-method dispatch of their own yet.
 auto checker::require_operand_trait(const ast::binary_expr &binary,
@@ -246,7 +249,7 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
                                     std::string_view op_name,
                                     bool wire_dispatch) -> type_id {
   const auto target = strip_refs(operand);
-  const auto entry = types_.entry(target);
+  const auto entry = session_.types_.entry(target);
   if (entry.kind == type_kind::struct_kind ||
       entry.kind == type_kind::sum_kind ||
       entry.kind == type_kind::opaque_kind) {
@@ -263,7 +266,7 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
           // uncompiled template.
           const auto *callee =
               instantiate_impl_method_for(binary, *method, entry, target);
-          operator_dispatches_[&binary] = resolved_callee{
+          session_.operator_dispatches_[&binary] = resolved_callee{
               .decl = callee != nullptr ? callee : method->decl,
               .owner_module = method->owner->module_name,
               .impl_target_type = callee != nullptr ? "" : entry.name,
@@ -291,10 +294,10 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
     // have the comparisons. Their `impl eq`/`impl add`/...
     // (`traits.scalar.cn`) are written *with* that operator, so
     // dispatching to the impl would call itself forever.
-    if (types_.is_numeric(target)) {
+    if (session_.types_.is_numeric(target)) {
       return k_unknown_type;
     }
-    if (types_.is_boolean(target) || entry.name == "char") {
+    if (session_.types_.is_boolean(target) || entry.name == "char") {
       if (!arithmetic) {
         return k_unknown_type;
       }
@@ -307,7 +310,7 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
               find_extend_method_for_builtin(entry, trait_name);
           method != nullptr && !method->decl->params.empty() &&
           param_name_of(method->decl->params.front()) == "self") {
-        operator_dispatches_[&binary] =
+        session_.operator_dispatches_[&binary] =
             resolved_callee{.decl = method->decl,
                             .owner_module = method->owner->module_name,
                             .impl_target_type = entry.name,
@@ -318,7 +321,7 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
       if (const auto *method = find_builtin_impl_method(entry.name, trait_name);
           method != nullptr && !method->decl->params.empty() &&
           param_name_of(method->decl->params.front()) == "self") {
-        operator_dispatches_[&binary] =
+        session_.operator_dispatches_[&binary] =
             resolved_callee{.decl = method->decl,
                             .owner_module = method->owner->module_name,
                             .impl_target_type = entry.name,
@@ -343,14 +346,14 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
 auto checker::report_non_numeric_arithmetic(const ast::binary_expr &binary,
                                             std::string_view op_name,
                                             type_id operand) -> void {
-  const auto shown = types_.display(operand);
+  const auto shown = session_.types_.display(operand);
   error_with_help(
       binary.span,
       std::format("operator `{}` requires numeric operands, found `{}`",
                   op_name, shown),
       std::format("`{}` is not a number and does not implement `{}`", shown,
                   operator_trait_for(binary.op)),
-      types_.is_boolean(operand)
+      session_.types_.is_boolean(operand)
           ? std::string("Combine `bool` values with `and`/`or`/`not`, or "
                         "convert explicitly, e.g. `int32(flag)`.")
           : std::format("Convert the operand to a number first, e.g. "
@@ -381,7 +384,8 @@ auto checker::defer_open_arithmetic(const ast::binary_expr &binary,
           defer_operator_dispatch(binary, operand, operator_kind::arithmetic);
           return;
         }
-        if (types_.is_numeric(operand) || types_.is_unknown(operand)) {
+        if (session_.types_.is_numeric(operand) ||
+            session_.types_.is_unknown(operand)) {
           return;
         }
         const auto op_name = ast::binary_op_name(binary.op);
@@ -393,7 +397,7 @@ auto checker::defer_open_arithmetic(const ast::binary_expr &binary,
         }
         error(binary.span,
               std::format("operator `{}` requires numeric operands, found `{}`",
-                          op_name, types_.display(operand)),
+                          op_name, session_.types_.display(operand)),
               "not a numeric value");
       });
   return open;
@@ -404,7 +408,7 @@ auto checker::defer_open_arithmetic(const ast::binary_expr &binary,
 /// `money` — wired by each instance for its own operand type.
 auto checker::defer_operator_dispatch(const ast::binary_expr &binary,
                                       type_id lhs, operator_kind kind) -> void {
-  if (current_template_ == nullptr || !mentions_template_param(lhs)) {
+  if (function_.current_template_ == nullptr || !mentions_template_param(lhs)) {
     return;
   }
   defer_to_instances(
@@ -412,7 +416,8 @@ auto checker::defer_operator_dispatch(const ast::binary_expr &binary,
         const auto &clone = *clone_of(subst, &binary);
         const auto substituted = substitute_type(lhs, subst);
         const auto operand = base_shape(substituted);
-        if (types_.is_unknown(operand) || mentions_template_param(operand)) {
+        if (session_.types_.is_unknown(operand) ||
+            mentions_template_param(operand)) {
           return;
         }
         const auto op_name = ast::binary_op_name(clone.op);
@@ -421,7 +426,7 @@ auto checker::defer_operator_dispatch(const ast::binary_expr &binary,
         // `where` is not checked at its call yet). Lowered, the operator
         // would work on the addresses, so the instance refuses it here.
         if (needs_explicit_deref(substituted)) {
-          const auto shown = types_.display(substituted);
+          const auto shown = session_.types_.display(substituted);
           error_with_help(
               clone.span,
               std::format("operator `{}` is not defined for `{}`", op_name,
@@ -437,7 +442,7 @@ auto checker::defer_operator_dispatch(const ast::binary_expr &binary,
         switch (kind) {
         case operator_kind::arithmetic: {
           const auto trait_name = operator_trait_for(clone.op);
-          if (!types_.is_numeric(operand) && !trait_name.empty()) {
+          if (!session_.types_.is_numeric(operand) && !trait_name.empty()) {
             (void)require_operand_trait(clone, operand, trait_name, op_name,
                                         /*wire_dispatch=*/true);
           }
@@ -473,10 +478,10 @@ auto checker::infer_arithmetic(const ast::binary_expr &binary, type_id expected)
   // operand's concrete type is exactly what solves it — see the matching
   // guard in `infer_literal`.
   const auto stripped_expected = strip_refs(expected);
-  const auto numeric_expected =
-      types_.is_numeric(stripped_expected) || is_rigid_param(stripped_expected)
-          ? base_shape(expected)
-          : k_unknown_type;
+  const auto numeric_expected = session_.types_.is_numeric(stripped_expected) ||
+                                        is_rigid_param(stripped_expected)
+                                    ? base_shape(expected)
+                                    : k_unknown_type;
   // Kept undecorated as well as stripped. `base_shape` drops the `&`, and
   // for an aggregate that is exactly right — its value already is the
   // address, so `&p + &q` is `p + q`. For a number it is not: the `&` is a
@@ -487,8 +492,8 @@ auto checker::infer_arithmetic(const ast::binary_expr &binary, type_id expected)
                            : k_unknown_type;
   const auto lhs = base_shape(raw_lhs);
   const auto rhs_expected =
-      types_.is_numeric(lhs) ||
-              types_.entry(lhs).kind == type_kind::type_param_kind
+      session_.types_.is_numeric(lhs) ||
+              session_.types_.entry(lhs).kind == type_kind::type_param_kind
           ? lhs
           : numeric_expected;
   const auto raw_rhs = binary.rhs != nullptr
@@ -530,47 +535,49 @@ auto checker::infer_arithmetic(const ast::binary_expr &binary, type_id expected)
   defer_operator_dispatch(binary, lhs_final, operator_kind::arithmetic);
   // An operand whose type is a type parameter is justified by its bounds,
   // here, rather than waiting for an instance to find out (phase 9).
-  if (types_.entry(lhs_final).kind == type_kind::type_param_kind ||
-      types_.entry(rhs).kind == type_kind::type_param_kind) {
+  if (session_.types_.entry(lhs_final).kind == type_kind::type_param_kind ||
+      session_.types_.entry(rhs).kind == type_kind::type_param_kind) {
     return check_bound_arithmetic(binary, lhs_final, rhs);
   }
-  if (types_.is_unknown(lhs_final) || types_.is_unknown(rhs)) {
-    return types_.is_numeric(lhs_final) ? lhs_final
-           : types_.is_numeric(rhs)     ? rhs
-                                        : k_unknown_type;
+  if (session_.types_.is_unknown(lhs_final) ||
+      session_.types_.is_unknown(rhs)) {
+    return session_.types_.is_numeric(lhs_final) ? lhs_final
+           : session_.types_.is_numeric(rhs)     ? rhs
+                                                 : k_unknown_type;
   }
 
   const auto trait_name = operator_trait_for(binary.op);
-  if (!types_.is_numeric(lhs_final)) {
+  if (!session_.types_.is_numeric(lhs_final)) {
     if (!trait_name.empty()) {
       return require_operand_trait(binary, lhs_final, trait_name, op_name,
                                    /*wire_dispatch=*/true);
     }
     error(binary.span,
           std::format("operator `{}` requires numeric operands, found `{}`",
-                      op_name, types_.display(lhs_final)),
+                      op_name, session_.types_.display(lhs_final)),
           "not a numeric value");
     return k_error_type;
   }
-  if (!types_.is_numeric(rhs)) {
+  if (!session_.types_.is_numeric(rhs)) {
     error(binary.rhs->span,
           std::format("operator `{}` requires numeric operands, found `{}`",
-                      op_name, types_.display(rhs)),
+                      op_name, session_.types_.display(rhs)),
           "not a numeric value");
     return k_error_type;
   }
   if (lhs_final != rhs) {
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("mismatched numeric types `{}` and `{}` in `{}` "
-                    "expression",
-                    types_.display(lhs_final), types_.display(rhs), op_name),
-        file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("mismatched numeric types `{}` and `{}` in `{}` "
+                               "expression",
+                               session_.types_.display(lhs_final),
+                               session_.types_.display(rhs), op_name),
+                   file_.file_id_);
     diag.with_label(binary.span, "operands must have the same numeric type");
     diag.with_help(std::format(
         " Cinder never converts numbers implicitly; convert one side "
         "explicitly, e.g. `{}(...)`.",
-        types_.display(lhs_final)));
+        session_.types_.display(lhs_final)));
     emit_diag(diag);
     mark_error();
     return k_error_type;
@@ -606,7 +613,7 @@ auto checker::infer_comparison(const ast::binary_expr &binary, bool is_equality)
     lhs = leaf_ctxt_.zonk(lhs);
     rhs = leaf_ctxt_.zonk(rhs);
   }
-  const auto bool_type = types_.builtin("bool");
+  const auto bool_type = session_.types_.builtin("bool");
   // A `&int32` operand is an address, and comparing it compiles a compare
   // of the address — the same trap arithmetic reports (`infer_arithmetic`).
   if (binary.lhs != nullptr && !require_explicit_deref(*binary.lhs, raw_lhs)) {
@@ -618,36 +625,42 @@ auto checker::infer_comparison(const ast::binary_expr &binary, bool is_equality)
   defer_operator_dispatch(binary, lhs,
                           is_equality ? operator_kind::equality
                                       : operator_kind::ordering);
-  const auto rigid_lhs = types_.entry(lhs).kind == type_kind::type_param_kind;
-  if (rigid_lhs || types_.entry(rhs).kind == type_kind::type_param_kind) {
+  const auto rigid_lhs =
+      session_.types_.entry(lhs).kind == type_kind::type_param_kind;
+  if (rigid_lhs ||
+      session_.types_.entry(rhs).kind == type_kind::type_param_kind) {
     const auto subject = rigid_lhs ? lhs : rhs;
     const auto other = rigid_lhs ? rhs : lhs;
     const auto op_name = ast::binary_op_name(binary.op);
     const auto builtin_comparable = domain_all(subject, [&](type_id m) -> bool {
       return is_equality
-                 ? types_.entry(m).kind == type_kind::builtin_kind
-                 : types_.is_numeric(m) || types_.entry(m).name == "char";
+                 ? session_.types_.entry(m).kind == type_kind::builtin_kind
+                 : session_.types_.is_numeric(m) ||
+                       session_.types_.entry(m).name == "char";
     });
     if (!builtin_comparable &&
         !require_bound_operator(binary.span, subject,
                                 is_equality ? "eq" : "ord", op_name)) {
       return bool_type;
     }
-    if (!types_.is_unknown(other) && other != subject) {
+    if (!session_.types_.is_unknown(other) && other != subject) {
       error(binary.span,
-            std::format("cannot compare `{}` with `{}`", types_.display(lhs),
-                        types_.display(rhs)),
+            std::format("cannot compare `{}` with `{}`",
+                        session_.types_.display(lhs),
+                        session_.types_.display(rhs)),
             "operands have different types");
     }
     return bool_type;
   }
-  if (types_.is_unknown(lhs) || types_.is_unknown(rhs)) {
+  if (session_.types_.is_unknown(lhs) || session_.types_.is_unknown(rhs)) {
     return bool_type;
   }
-  if (!types_.compatible(lhs, rhs) && !types_.compatible(rhs, lhs)) {
+  if (!session_.types_.compatible(lhs, rhs) &&
+      !session_.types_.compatible(rhs, lhs)) {
     error(binary.span,
-          std::format("cannot compare `{}` with `{}`", types_.display(lhs),
-                      types_.display(rhs)),
+          std::format("cannot compare `{}` with `{}`",
+                      session_.types_.display(lhs),
+                      session_.types_.display(rhs)),
           "operands have different types");
     return bool_type;
   }
@@ -667,11 +680,11 @@ auto checker::infer_comparison(const ast::binary_expr &binary, bool is_equality)
 /// wiring assumes the operator's own name is the method to call (true for
 /// `eq`/`add`/...), which doesn't hold for `ord`: the trait's one method
 /// is `cmp`, returning `ordering`, not a same-named boolean method. Uses
-/// the same `operator_dispatches_` map so `hir::lower_binary` needs no new
-/// bookkeeping to *find* the dispatch, only new bookkeeping to *use* it —
+/// the same `session_.operator_dispatches_` map so `hir::lower_binary` needs no
+/// new bookkeeping to *find* the dispatch, only new bookkeeping to *use* it —
 /// translating the returned `ordering` into `bool` per `binary.op` is
 /// lowering's job, so `cmp`'s resolved return type is stashed alongside it
-/// in `ord_dispatch_result_types_` (lowering has no type-resolution
+/// in `session_.ord_dispatch_result_types_` (lowering has no type-resolution
 /// machinery of its own to derive it from `method->decl->return_type`).
 auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
     -> void {
@@ -679,7 +692,7 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
     return;
   }
   const auto target = strip_refs(lhs);
-  const auto &entry = types_.entry(target);
+  const auto &entry = session_.types_.entry(target);
   const auto is_self_method = [this](const method_entry *method) -> bool {
     return method != nullptr && !method->decl->params.empty() &&
            param_name_of(method->decl->params.front()) == "self";
@@ -688,7 +701,8 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
   // A builtin number or `char` orders primitively. Its `impl ord`
   // (`traits.scalar.cn`) is written *with* `<`, so dispatching `<` to it
   // would call itself forever.
-  if (types_.is_numeric(target) || types_.is_boolean(target) ||
+  if (session_.types_.is_numeric(target) ||
+      session_.types_.is_boolean(target) ||
       (entry.kind == type_kind::builtin_kind && entry.name == "char")) {
     return;
   }
@@ -709,12 +723,12 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
   // generic target only exists once compiled for this operand type.
   const auto *callee =
       instantiate_impl_method_for(binary, *method, entry, target);
-  operator_dispatches_[&binary] =
+  session_.operator_dispatches_[&binary] =
       resolved_callee{.decl = callee != nullptr ? callee : method->decl,
                       .owner_module = method->owner->module_name,
                       .impl_target_type = callee != nullptr ? "" : entry.name,
                       .receiver = binary.lhs.get()};
-  ord_dispatch_result_types_[&binary] =
+  session_.ord_dispatch_result_types_[&binary] =
       resolve_operator_return_type(target, "ord", *method);
 }
 
@@ -723,14 +737,14 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
 /// has no scalar bytecode/LLVM representation for `==` to compare
 /// directly (see `std/string.cn`'s own `eq` doc comment: "Use this
 /// instead of `==`, which has no `str` codegen yet"). Recorded through
-/// the same `operator_dispatches_` map arithmetic operators use;
+/// the same `session_.operator_dispatches_` map arithmetic operators use;
 /// `hir::lower_binary` negates the call's result for `!=` itself (it
 /// already has `bin.op`, so no extra bookkeeping is needed here). A
 /// no-op for anything but two `str` operands — every other builtin
 /// scalar already has real `==`/`!=` codegen.
 auto checker::wire_str_equality_dispatch(const ast::binary_expr &binary,
                                          type_id lhs) -> void {
-  const auto entry = types_.entry(strip_refs(lhs));
+  const auto entry = session_.types_.entry(strip_refs(lhs));
   if (entry.kind != type_kind::builtin_kind || entry.name != "str" ||
       binary.lhs == nullptr) {
     return;
@@ -739,7 +753,7 @@ auto checker::wire_str_equality_dispatch(const ast::binary_expr &binary,
   if (method == nullptr) {
     return;
   }
-  operator_dispatches_[&binary] =
+  session_.operator_dispatches_[&binary] =
       resolved_callee{.decl = method->decl,
                       .owner_module = method->owner->module_name,
                       .impl_target_type = entry.name,
@@ -750,12 +764,14 @@ auto checker::wire_str_equality_dispatch(const ast::binary_expr &binary,
 /// Cinder has no truthiness, so every condition must be an explicit `bool`.
 auto checker::require_bool(const ast::expr &expr, std::string_view context)
     -> void {
-  const auto found = strip_refs(infer_expr(expr, types_.builtin("bool")));
-  if (!types_.is_unknown(found) && !types_.is_boolean(found)) {
+  const auto found =
+      strip_refs(infer_expr(expr, session_.types_.builtin("bool")));
+  if (!session_.types_.is_unknown(found) &&
+      !session_.types_.is_boolean(found)) {
     error_with_help(
         expr.span,
         std::format("{} must be `bool`, found `{}`", context,
-                    types_.display(found)),
+                    session_.types_.display(found)),
         "expected `bool` here",
         " Cinder has no truthiness; write an explicit comparison such as "
         "`x != 0` or `!list.is_empty()`.");
@@ -791,10 +807,10 @@ auto checker::require_quote_value(type_id raw_found, source_span span,
   // A splice operand has to be a type: `~(42)` is an integer literal that
   // nothing else constrains, so its default is owed here.
   const auto found = demand(raw_found);
-  if (types_.is_unknown(found)) {
+  if (session_.types_.is_unknown(found)) {
     return;
   }
-  const auto &entry = types_.entry(found);
+  const auto &entry = session_.types_.entry(found);
   if (entry.kind == type_kind::builtin_kind &&
       (entry.name == "expr" || entry.name == "stmt" ||
        entry.name == "def_expr" || entry.name == "type_expr")) {
@@ -804,7 +820,7 @@ auto checker::require_quote_value(type_id raw_found, source_span span,
       span,
       std::format("{} must be a quoted fragment (`expr`, `stmt`, or "
                   "`def_expr`), found `{}`",
-                  context, types_.display(found)),
+                  context, session_.types_.display(found)),
       "expected quoted syntax here",
       "`~` splices previously-captured syntax (from a backtick quote "
       "`` `(...)` ``) back into code; it does not evaluate an arbitrary "
@@ -850,7 +866,7 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
     if (binary.rhs != nullptr) {
       require_bool(*binary.rhs, "the right operand of a logical operator");
     }
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
 
   case ast::binary_op::shl:
   case ast::binary_op::shr:
@@ -864,21 +880,23 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
                          : k_unknown_type;
     for (const auto operand : {lhs, rhs}) {
       if (is_rigid_param(operand) &&
-          domain_all(operand,
-                     [&](type_id m) -> bool { return types_.is_integer(m); })) {
+          domain_all(operand, [&](type_id m) -> bool {
+            return session_.types_.is_integer(m);
+          })) {
         continue;
       }
-      if (!types_.is_unknown(operand) && !types_.is_integer(operand)) {
+      if (!session_.types_.is_unknown(operand) &&
+          !session_.types_.is_integer(operand)) {
         error(binary.span,
               std::format("operator `{}` requires integer operands, found "
                           "`{}`",
                           ast::binary_op_name(binary.op),
-                          types_.display(operand)),
+                          session_.types_.display(operand)),
               "not an integer value");
         return k_error_type;
       }
     }
-    return types_.is_integer(lhs) ? lhs : rhs;
+    return session_.types_.is_integer(lhs) ? lhs : rhs;
   }
 
   case ast::binary_op::in:
@@ -889,7 +907,7 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
     if (binary.rhs != nullptr) {
       infer_expr(*binary.rhs, k_unknown_type);
     }
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
   }
 
   case ast::binary_op::range:
@@ -907,8 +925,8 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
                          : k_unknown_type;
     const auto rhs =
         binary.rhs != nullptr
-            ? strip_refs(
-                  infer_expr(*binary.rhs, types_.is_unknown(hint) ? lhs : hint))
+            ? strip_refs(infer_expr(
+                  *binary.rhs, session_.types_.is_unknown(hint) ? lhs : hint))
             : k_unknown_type;
     // Both bounds name the one element type, so tie them before choosing:
     // `0..10` is two literal leaves that must agree, and the range is a
@@ -919,12 +937,12 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
       auto seen = std::unordered_set<type_id>{};
       return mentions_type_var(settle(type), seen);
     };
-    const auto element = types_.is_integer(hint)  ? hint
-                         : types_.is_integer(lhs) ? lhs
-                         : types_.is_integer(rhs) ? rhs
-                         : open(lhs)              ? settle(lhs)
-                         : open(rhs)              ? settle(rhs)
-                                                  : k_unknown_type;
+    const auto element = session_.types_.is_integer(hint)  ? hint
+                         : session_.types_.is_integer(lhs) ? lhs
+                         : session_.types_.is_integer(rhs) ? rhs
+                         : open(lhs)                       ? settle(lhs)
+                         : open(rhs)                       ? settle(rhs)
+                                                           : k_unknown_type;
     return resolve_range_type(element);
   }
 
@@ -936,7 +954,7 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
     const auto rhs = binary.rhs != nullptr
                          ? strip_refs(infer_expr(*binary.rhs, lhs))
                          : k_unknown_type;
-    if (types_.is_integer(lhs) && types_.is_integer(rhs)) {
+    if (session_.types_.is_integer(lhs) && session_.types_.is_integer(rhs)) {
       return lhs;
     }
     return k_unknown_type; // sum declarations, execution graphs, patterns
@@ -968,7 +986,7 @@ auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
       unary.operand->kind != ast::node_kind::index_expr) {
     return std::nullopt;
   }
-  if (const auto &expected_entry = types_.entry(expected);
+  if (const auto &expected_entry = session_.types_.entry(expected);
       expected_entry.kind == type_kind::builtin_generic_kind &&
       (expected_entry.name == "cell" || expected_entry.name == "cell_mut")) {
     return std::nullopt;
@@ -979,7 +997,7 @@ auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
   }
   const auto object =
       strip_refs(base_shape(infer_expr(*index.object, k_unknown_type)));
-  const auto &entry = types_.entry(object);
+  const auto &entry = session_.types_.entry(object);
   if (entry.kind != type_kind::ptr_kind) {
     return std::nullopt;
   }
@@ -987,7 +1005,7 @@ auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
   // `*mut T` is a `*mut T`, on a `*T` a `*T`. `&` and `&mut` agree here
   // because neither is a borrow — an address into raw memory is as
   // writable as the pointer it came from, no more and no less.
-  return types_.ptr_to(entry.result, entry.is_mut);
+  return session_.types_.ptr_to(entry.result, entry.is_mut);
 }
 
 auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
@@ -1039,10 +1057,10 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
 
   switch (unary.op) {
   case ast::unary_op::neg:
-    if (types_.entry(stripped).kind == type_kind::type_param_kind) {
+    if (session_.types_.entry(stripped).kind == type_kind::type_param_kind) {
       if (domain_all(stripped, [&](type_id m) -> bool {
-            return types_.is_float(m) ||
-                   is_signed_integer_name(types_.entry(m).name);
+            return session_.types_.is_float(m) ||
+                   is_signed_integer_name(session_.types_.entry(m).name);
           })) {
         return stripped;
       }
@@ -1054,34 +1072,37 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
       const auto output = bound_assoc_type(*fact, stripped, "output");
       return output == k_unknown_type ? stripped : output;
     }
-    if (!types_.is_unknown(stripped) && !types_.is_numeric(stripped)) {
+    if (!session_.types_.is_unknown(stripped) &&
+        !session_.types_.is_numeric(stripped)) {
       error(unary.span,
             std::format("unary `-` requires a numeric operand, found `{}`",
-                        types_.display(stripped)),
+                        session_.types_.display(stripped)),
             "not a numeric value");
       return k_error_type;
     }
     return stripped;
   case ast::unary_op::logical_not:
-    if (!types_.is_unknown(stripped) && !types_.is_boolean(stripped)) {
+    if (!session_.types_.is_unknown(stripped) &&
+        !session_.types_.is_boolean(stripped)) {
       error(unary.span,
             std::format("`not` requires a `bool` operand, found `{}`",
-                        types_.display(stripped)),
+                        session_.types_.display(stripped)),
             "expected `bool` here");
     }
-    return types_.builtin("bool");
+    return session_.types_.builtin("bool");
   case ast::unary_op::bit_not:
-    if (!types_.is_unknown(stripped) && !types_.is_integer(stripped)) {
+    if (!session_.types_.is_unknown(stripped) &&
+        !session_.types_.is_integer(stripped)) {
       error(unary.span,
             std::format("`~` requires an integer operand, found `{}`",
-                        types_.display(stripped)),
+                        session_.types_.display(stripped)),
             "not an integer value");
     }
     return stripped;
   case ast::unary_op::deref: {
     // What a deref reads is chosen by the operand's head — a borrow, a
     // pointer, a cell — so a head still open is owed its answer now.
-    const auto &entry = types_.entry(demand_shape(operand));
+    const auto &entry = session_.types_.entry(demand_shape(operand));
     if (entry.kind == type_kind::ptr_kind) {
       require_machine_context(unary.span, "dereferencing a raw pointer");
       return entry.result;
@@ -1132,7 +1153,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // `&v[a..b]` should stay a plain `&slice[T]`, not misfire into
     // `index_ref`'s single-element `at_ref` and report a bogus key-type
     // mismatch.
-    const auto &stripped_entry_for_index = types_.entry(stripped);
+    const auto &stripped_entry_for_index = session_.types_.entry(stripped);
     if (unary.operand != nullptr &&
         unary.operand->kind == ast::node_kind::index_expr &&
         !(stripped_entry_for_index.kind == type_kind::builtin_generic_kind &&
@@ -1143,7 +1164,8 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
         // elements (`dispatch_index_when_settled`).
         const auto object_type =
             demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
-        const auto &object_entry = types_.entry(strip_refs(object_type));
+        const auto &object_entry =
+            session_.types_.entry(strip_refs(object_type));
         if (object_entry.kind == type_kind::struct_kind ||
             object_entry.kind == type_kind::sum_kind ||
             object_entry.kind == type_kind::opaque_kind) {
@@ -1157,7 +1179,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
           if (type_has_trait(object_entry, "index_ref")) {
             const auto result = require_index_ref_trait(
                 index, object_type, object_entry, recorded_key_type(index));
-            if (!types_.is_unknown(result)) {
+            if (!session_.types_.is_unknown(result)) {
               record_expr_type(index, result);
               // A `cell[T]` *is* the address of the element, so it stands
               // as the whole `&v[i]` — matching `&mut v[i]`'s `cell_mut[T]`
@@ -1168,11 +1190,11 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
             error_with_help(
                 unary.span,
                 std::format("cannot borrow `{}[...]` this way",
-                            types_.display(strip_refs(object_type))),
+                            session_.types_.display(strip_refs(object_type))),
                 std::format(
                     "`{}` can be read at an index but has no `index_ref` "
                     "impl",
-                    types_.display(strip_refs(object_type))),
+                    session_.types_.display(strip_refs(object_type))),
                 std::format(
                     "Taking an interior reference is a separate capability "
                     "from reading by value. Add:\n\n    impl "
@@ -1192,13 +1214,13 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // there is nothing this would paper over — it just lets the checker
     // record the shape lowering (and the borrow checker's view tracking)
     // already expect instead of a mismatched-but-compatible `&T`.
-    const auto &expected_entry = types_.entry(expected);
+    const auto &expected_entry = session_.types_.entry(expected);
     if (expected_entry.kind == type_kind::builtin_generic_kind &&
         expected_entry.name == "cell" && expected_entry.args.size() == 1 &&
-        types_.compatible(expected_entry.args.front(), stripped)) {
+        session_.types_.compatible(expected_entry.args.front(), stripped)) {
       return expected;
     }
-    return types_.ref_to(stripped, false);
+    return session_.types_.ref_to(stripped, false);
   }
   case ast::unary_op::addr_of_mut: {
     if (const auto offset = raw_pointer_element_address(unary, expected)) {
@@ -1227,14 +1249,14 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // know about.
     if (unary.operand != nullptr &&
         unary.operand->kind == ast::node_kind::index_expr) {
-      const auto &stripped_entry = types_.entry(stripped);
+      const auto &stripped_entry = session_.types_.entry(stripped);
       if (stripped_entry.kind == type_kind::builtin_generic_kind &&
           stripped_entry.name == "slice") {
         const auto element = stripped_entry.args.empty()
                                  ? k_unknown_type
                                  : stripped_entry.args[0];
-        return types_.ref_to(types_.builtin_generic("slice_mut", {element}),
-                             true);
+        return session_.types_.ref_to(
+            session_.types_.builtin_generic("slice_mut", {element}), true);
       }
       // `&mut v[i]` on a user type: `v[i]` alone already dispatched to
       // `index`'s `at` (an ordinary read) by the `infer_expr` call above —
@@ -1250,7 +1272,8 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
         // elements (`dispatch_index_when_settled`).
         const auto object_type =
             demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
-        const auto &object_entry = types_.entry(strip_refs(object_type));
+        const auto &object_entry =
+            session_.types_.entry(strip_refs(object_type));
         if (object_entry.kind == type_kind::struct_kind ||
             object_entry.kind == type_kind::sum_kind ||
             object_entry.kind == type_kind::opaque_kind) {
@@ -1264,7 +1287,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
           if (type_has_trait(object_entry, "index_mut")) {
             const auto result = require_index_mut_trait(
                 index, object_type, object_entry, recorded_key_type(index));
-            if (!types_.is_unknown(result)) {
+            if (!session_.types_.is_unknown(result)) {
               record_expr_type(index, result);
               // A `cell_mut[T]` *is* the address of the element, so it
               // stands as the whole `&mut v[i]`. Any other view — the
@@ -1274,24 +1297,24 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
               // (`&mut slice_mut[T]`). Without this the two spellings
               // disagree and a `slice_mut[T]` argument fails to solve the
               // callee's `T` against a `&mut slice_mut[T]` parameter.
-              const auto &result_entry = types_.entry(result);
+              const auto &result_entry = session_.types_.entry(result);
               const auto is_cell =
                   result_entry.kind == type_kind::builtin_generic_kind &&
                   (result_entry.name == "cell" ||
                    result_entry.name == "cell_mut");
               return is_cell || result == k_error_type
                          ? result
-                         : types_.ref_to(result, true);
+                         : session_.types_.ref_to(result, true);
             }
           } else if (type_has_trait(object_entry, "index")) {
             error_with_help(
                 unary.span,
                 std::format("cannot borrow `{}[...]` mutably",
-                            types_.display(strip_refs(object_type))),
+                            session_.types_.display(strip_refs(object_type))),
                 std::format(
                     "`{}` can be read at an index but has no `index_mut` "
                     "impl",
-                    types_.display(strip_refs(object_type))),
+                    session_.types_.display(strip_refs(object_type))),
                 std::format("Taking a mutable interior reference is a separate "
                             "capability from reading. Add:\n\n    impl "
                             "index_mut[usize] for {}:\n"
@@ -1306,13 +1329,13 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     }
     // `&mut expr` where a `cell_mut[T]` is expected — the mutable sibling
     // of the `addr_of` case above.
-    const auto &expected_entry = types_.entry(expected);
+    const auto &expected_entry = session_.types_.entry(expected);
     if (expected_entry.kind == type_kind::builtin_generic_kind &&
         expected_entry.name == "cell_mut" && expected_entry.args.size() == 1 &&
-        types_.compatible(expected_entry.args.front(), stripped)) {
+        session_.types_.compatible(expected_entry.args.front(), stripped)) {
       return expected;
     }
-    return types_.ref_to(stripped, true);
+    return session_.types_.ref_to(stripped, true);
   }
   }
   return k_unknown_type;

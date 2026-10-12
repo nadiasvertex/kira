@@ -31,7 +31,7 @@ auto checker::trait_home(const ast::trait_decl &trait)
       return {&members, it->second.file_id};
     }
   }
-  return {module_, file_id_};
+  return {file_.module_, file_.file_id_};
 }
 
 /// The concept `name` names from the current module and file, if any —
@@ -39,9 +39,9 @@ auto checker::trait_home(const ast::trait_decl &trait)
 auto checker::find_concept_decl_by_name(std::string_view name)
     -> std::optional<concept_decl_ref> {
   const auto key = std::string(name);
-  if (module_ != nullptr) {
-    if (const auto it = module_->concepts.find(key);
-        it != module_->concepts.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->concepts.find(key);
+        it != file_.module_->concepts.end()) {
       return it->second;
     }
   }
@@ -67,17 +67,17 @@ auto checker::find_concept_decl_by_name(std::string_view name)
 template <typename Body>
 auto checker::in_scope_of(const module_members *module, file_id_type file,
                           Body body) -> decltype(body()) {
-  const auto *saved_module = module_;
-  const auto saved_file = file_id_;
-  module_ = module;
-  file_id_ = file;
+  const auto *saved_module = file_.module_;
+  const auto saved_file = file_.file_id_;
+  file_.module_ = module;
+  file_.file_id_ = file;
   struct restore {
     checker *self;
     const module_members *module;
     file_id_type file;
     ~restore() {
-      self->module_ = module;
-      self->file_id_ = file;
+      self->file_.module_ = module;
+      self->file_.file_id_ = file;
     }
   } guard{this, saved_module, saved_file};
   return body();
@@ -160,7 +160,7 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
       // A category's members are builtin scalars, so a parameter bounded
       // by one copies (ch. 14, Copy and move).
       if (std::ranges::all_of(*members, [this](type_id member) -> bool {
-            return types_.is_copy(member);
+            return session_.types_.is_copy(member);
           })) {
         copy_type_params_.insert(subject);
       }
@@ -178,7 +178,7 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
                  : (i - 1 < args.size() ? args[i - 1] : k_unknown_type);
       bindings.emplace(concept_decl.params[i].name, bound_to);
     }
-    auto home = module_;
+    auto home = file_.module_;
     for (const auto &[module_name, members] : index_.modules) {
       if (const auto it = members.concepts.find(concept_decl.name);
           it != members.concepts.end() && it->second.decl == &concept_decl) {
@@ -197,7 +197,8 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
           continue;
         }
         const auto constrained = resolve_type(*constraint.subject, concept_ctx);
-        if (types_.entry(constrained).kind == type_kind::type_param_kind) {
+        if (session_.types_.entry(constrained).kind ==
+            type_kind::type_param_kind) {
           add_bound_facts(constrained, *constraint_bound, concept_ctx);
         }
       }
@@ -232,7 +233,7 @@ auto checker::record_declared_facts(
   auto ctx = current_resolve_ctx();
   ctx.quiet = true;
   const auto rigid = [&](type_id id) -> bool {
-    return types_.entry(id).kind == type_kind::type_param_kind;
+    return session_.types_.entry(id).kind == type_kind::type_param_kind;
   };
   for (const auto &param : params) {
     // `[T: ord]` parses as a value parameter, since `[n: usize]` has the
@@ -278,7 +279,7 @@ auto checker::category_members(std::string_view category)
   auto out = type_domain{};
   const auto add = [&](const auto &names) -> auto {
     for (const auto name : names) {
-      out.push_back(types_.builtin(name));
+      out.push_back(session_.types_.builtin(name));
     }
   };
   if (category == "signed_integer" || category == "integer" ||
@@ -293,13 +294,13 @@ auto checker::category_members(std::string_view category)
     add(k_float);
   }
   if (category == "bool") {
-    out.push_back(types_.builtin("bool"));
+    out.push_back(session_.types_.builtin("bool"));
   }
   if (category == "char") {
-    out.push_back(types_.builtin("char"));
+    out.push_back(session_.types_.builtin("char"));
   }
   if (category == "str") {
-    out.push_back(types_.builtin("str"));
+    out.push_back(session_.types_.builtin("str"));
   }
   if (out.empty()) {
     return std::nullopt;
@@ -329,13 +330,15 @@ auto checker::concept_category(const ast::concept_decl &concept_decl)
 /// caller's place (`spec/todo.md` item 20). A scalar `self` is passed by
 /// value, which reads the same.
 auto checker::self_param_type(const ast::param &param) -> type_id {
-  if (types_.is_unknown(self_type_) || self_type_ == k_error_type ||
-      !types_.is_heap_represented(self_type_)) {
-    return self_type_;
+  if (session_.types_.is_unknown(function_.self_type_) ||
+      function_.self_type_ == k_error_type ||
+      !session_.types_.is_heap_represented(function_.self_type_)) {
+    return function_.self_type_;
   }
   const auto *binding =
       dynamic_cast<const ast::binding_pattern *>(param.pattern.get());
-  return types_.ref_to(self_type_, binding != nullptr && binding->is_mut);
+  return session_.types_.ref_to(function_.self_type_,
+                                binding != nullptr && binding->is_mut);
 }
 
 /// Whether `concept_decl` is `std.traits.copy`, which the checker answers
@@ -369,7 +372,7 @@ auto checker::names_copy(const ast::named_type &named) -> bool {
 /// Whether `subject` satisfies `copy`. Not through `strip_refs`: `&T` is
 /// `copy` whatever `T` is.
 auto checker::type_is_copy(type_id subject) -> bool {
-  if ((types_.is_unknown(subject) && !is_rigid_param(subject)) ||
+  if ((session_.types_.is_unknown(subject) && !is_rigid_param(subject)) ||
       subject == k_error_type) {
     return true;
   }
@@ -378,7 +381,8 @@ auto checker::type_is_copy(type_id subject) -> bool {
 
 /// A user sum, `option` or `result`.
 auto checker::is_sum_like(type_id id) const -> bool {
-  const auto &entry = types_.entry(types_.strip_refinement(id));
+  const auto &entry =
+      session_.types_.entry(session_.types_.strip_refinement(id));
   return entry.kind == type_kind::sum_kind ||
          (entry.kind == type_kind::builtin_generic_kind &&
           (entry.name == "option" || entry.name == "result"));
@@ -396,20 +400,20 @@ auto checker::value_is_copy(type_id id) -> bool {
 
 auto checker::value_is_copy(type_id id, std::unordered_set<type_id> &visiting)
     -> bool {
-  if (types_.is_copy(id) || copy_type_params_.contains(id)) {
+  if (session_.types_.is_copy(id) || copy_type_params_.contains(id)) {
     return true;
   }
-  const auto stripped = types_.strip_refinement(id);
+  const auto stripped = session_.types_.strip_refinement(id);
   if (!is_sum_like(stripped)) {
     return false;
   }
   if (!visiting.insert(stripped).second) {
     return true;
   }
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   if (entry.kind == type_kind::builtin_generic_kind) {
     return std::ranges::all_of(entry.args, [&](type_id arg) -> bool {
-      return !types_.is_unknown(arg) && value_is_copy(arg, visiting);
+      return !session_.types_.is_unknown(arg) && value_is_copy(arg, visiting);
     });
   }
   if (type_has_trait(entry, "drop")) {
@@ -421,7 +425,8 @@ auto checker::value_is_copy(type_id id, std::unordered_set<type_id> &visiting)
   }
   for (const auto &variant : *variants) {
     for (const auto payload : variant_payload_types(entry, variant)) {
-      if (types_.is_unknown(payload) || !value_is_copy(payload, visiting)) {
+      if (session_.types_.is_unknown(payload) ||
+          !value_is_copy(payload, visiting)) {
         return false;
       }
     }
@@ -470,17 +475,17 @@ auto checker::domain_of(type_id param) -> std::optional<type_domain> {
 /// to a callee's parameter showing through its signature — only the former
 /// has facts and a domain here.
 auto checker::is_rigid_param(type_id id) -> bool {
-  if (types_.entry(id).kind != type_kind::type_param_kind) {
+  if (session_.types_.entry(id).kind != type_kind::type_param_kind) {
     return false;
   }
-  return std::ranges::any_of(type_params_,
+  return std::ranges::any_of(function_.type_params_,
                              [&](const auto &scope) -> bool {
                                return std::ranges::any_of(
                                    scope, [&](const auto &entry) -> bool {
                                      return entry.second == id;
                                    });
                              }) ||
-         id == self_type_;
+         id == function_.self_type_;
 }
 
 /// A literal written where a `T` is expected (phase 9, rule 4). Legal when
@@ -490,7 +495,7 @@ auto checker::check_literal_as_param(const ast::literal_expr &lit,
                                      type_id param, bool negated) -> type_id {
   const auto is_int = lit.lit_kind == token_kind::int_lit;
   const auto domain = domain_of(param);
-  const auto name = types_.display(param);
+  const auto name = session_.types_.display(param);
   const auto spelled = std::format("{}{}", negated ? "-" : "", lit.value);
   if (!domain.has_value()) {
     error_with_help(
@@ -504,11 +509,11 @@ auto checker::check_literal_as_param(const ast::literal_expr &lit,
     return k_error_type;
   }
   for (const auto member : *domain) {
-    const auto &entry = types_.entry(member);
-    const auto accepts =
-        is_int ? types_.is_numeric(member) : types_.is_float(member);
+    const auto &entry = session_.types_.entry(member);
+    const auto accepts = is_int ? session_.types_.is_numeric(member)
+                                : session_.types_.is_float(member);
     auto fits = accepts;
-    if (accepts && is_int && types_.is_integer(member)) {
+    if (accepts && is_int && session_.types_.is_integer(member)) {
       auto max_value = integer_max_value(entry.name);
       if (max_value.has_value()) {
         if (negated && is_signed_integer_name(entry.name)) {
@@ -541,16 +546,17 @@ auto checker::check_cast_with_param(const ast::cast_expr &cast, type_id operand,
                                     type_id target) -> void {
   const auto numeric_side = [&](type_id side) -> bool {
     if (is_rigid_param(side)) {
-      return domain_all(
-          side, [&](type_id m) -> bool { return types_.is_numeric(m); });
+      return domain_all(side, [&](type_id m) -> bool {
+        return session_.types_.is_numeric(m);
+      });
     }
-    return types_.is_unknown(side) || types_.is_numeric(side);
+    return session_.types_.is_unknown(side) || session_.types_.is_numeric(side);
   };
   for (const auto side : {operand, target}) {
     if (!is_rigid_param(side) || numeric_side(side)) {
       continue;
     }
-    const auto name = types_.display(side);
+    const auto name = session_.types_.display(side);
     error_with_help(
         cast.span, std::format("`as` needs `{}` to be a number", name),
         std::format("`{}` is not known to be numeric", name),
@@ -563,7 +569,8 @@ auto checker::check_cast_with_param(const ast::cast_expr &cast, type_id operand,
   if (!numeric_side(operand) || !numeric_side(target)) {
     error(cast.span,
           std::format("`as` cannot convert `{}` to `{}`",
-                      types_.display(operand), types_.display(target)),
+                      session_.types_.display(operand),
+                      session_.types_.display(target)),
           "not a numeric conversion");
   }
 }
@@ -574,8 +581,8 @@ auto checker::reflected_name_of(const ast::expr &expr)
     -> std::optional<type_id> {
   if (expr.kind == ast::node_kind::ident_expr) {
     const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
-    if (const auto it = type_name_aliases_.find(ident.name);
-        it != type_name_aliases_.end()) {
+    if (const auto it = function_.type_name_aliases_.find(ident.name);
+        it != function_.type_name_aliases_.end()) {
       return it->second;
     }
     return std::nullopt;
@@ -615,7 +622,7 @@ auto checker::builtin_named_by(const ast::expr &expr)
   if (!is_builtin_scalar_name(text)) {
     return std::nullopt;
   }
-  return types_.builtin(text);
+  return session_.types_.builtin(text);
 }
 
 /// Completes a narrowing with its `else` domain, when one can be stated.
@@ -824,14 +831,14 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
       elements.push_back(element != nullptr ? resolve_type(*element, ctx)
                                             : k_unknown_type);
     }
-    return types_.tuple_of(std::move(elements));
+    return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::slice_type: {
     const auto &slice = dynamic_cast<const ast::slice_type &>(type);
     const auto element = slice.element != nullptr
                              ? resolve_type(*slice.element, ctx)
                              : k_unknown_type;
-    return types_.builtin_generic("slice", {element});
+    return session_.types_.builtin_generic("slice", {element});
   }
   case ast::node_kind::array_type: {
     const auto &array = dynamic_cast<const ast::array_type &>(type);
@@ -847,13 +854,13 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     const auto &ref = dynamic_cast<const ast::ref_type &>(type);
     const auto inner =
         ref.inner != nullptr ? resolve_type(*ref.inner, ctx) : k_unknown_type;
-    return types_.ref_to(inner, ref.is_mut);
+    return session_.types_.ref_to(inner, ref.is_mut);
   }
   case ast::node_kind::ptr_type: {
     const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
     const auto inner =
         ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx) : k_unknown_type;
-    return types_.ptr_to(inner, ptr.is_mut);
+    return session_.types_.ptr_to(inner, ptr.is_mut);
   }
   case ast::node_kind::mut_type:
     return resolve_mut_type(dynamic_cast<const ast::mut_type &>(type), ctx);
@@ -867,8 +874,8 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     }
     const auto result = fn.return_type != nullptr
                             ? resolve_type(*fn.return_type, ctx)
-                            : types_.builtin("unit");
-    return types_.fn_of(std::move(params), result);
+                            : session_.types_.builtin("unit");
+    return session_.types_.fn_of(std::move(params), result);
   }
   case ast::node_kind::refinement_type: {
     // An *inline* refinement (`x: int32 where self > 0`) — one written with
@@ -884,21 +891,21 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     if (predicate == nullptr || predicate->has_error) {
       return base;
     }
-    return types_.refinement_of(
-        nullptr, std::format("{} where ...", types_.display(base)),
-        module_name_, base, {}, predicate);
+    return session_.types_.refinement_of(
+        nullptr, std::format("{} where ...", session_.types_.display(base)),
+        file_.module_name_, base, {}, predicate);
   }
   case ast::node_kind::quote_type: {
     const auto &quote = dynamic_cast<const ast::quote_type &>(type);
     switch (quote.quote_kind) {
     case ast::quote_fragment_kind::expr:
-      return types_.builtin("expr");
+      return session_.types_.builtin("expr");
     case ast::quote_fragment_kind::stmt:
-      return types_.builtin("stmt");
+      return session_.types_.builtin("stmt");
     case ast::quote_fragment_kind::def_expr:
-      return types_.builtin("def_expr");
+      return session_.types_.builtin("def_expr");
     case ast::quote_fragment_kind::type_expr:
-      return types_.builtin("type_expr");
+      return session_.types_.builtin("type_expr");
     case ast::quote_fragment_kind::none:
       return k_unknown_type;
     }
@@ -917,7 +924,7 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
 
 /// Resolves `some Bound` (`existential_type`) to a fresh, nominal
 /// `existential_kind` type — one per AST node, memoized in
-/// `existential_types_` so every caller resolving the same node (a
+/// `cache_.existential_types_` so every caller resolving the same node (a
 /// function's own return-type resolution plus every external call site's
 /// `signature_return_type` view of it) agrees on the same id. Only legal
 /// in a function's return-type position (`ctx.existential_allowed`);
@@ -932,7 +939,7 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
 /// check and every external call site's `signature_return_type` view
 /// alike, since both call through here on the same AST node) — never the
 /// general opaque wrapper, which only `check_function`'s own local
-/// `return_type_` could see, not a caller resolving a call's type
+/// `function_.return_type_` could see, not a caller resolving a call's type
 /// elsewhere. Generator semantics predate, and stay fully independent of,
 /// the general existential mechanism below; this is exactly the old,
 /// pre-generalization behavior, preserved verbatim under this flag.
@@ -964,10 +971,10 @@ auto checker::resolve_existential_type(const ast::existential_type &ety,
     }
     auto args = resolve_type_args(named.type_args, ctx);
     const auto item = args.empty() ? k_unknown_type : args.front();
-    return types_.builtin_generic("generator", {item});
+    return session_.types_.builtin_generic("generator", {item});
   }
-  if (const auto found = existential_types_.find(&ety);
-      found != existential_types_.end()) {
+  if (const auto found = cache_.existential_types_.find(&ety);
+      found != cache_.existential_types_.end()) {
     return found->second;
   }
   auto bound = std::vector<bound_trait_ref>{};
@@ -998,16 +1005,16 @@ auto checker::resolve_existential_type(const ast::existential_type &ety,
         if (i != 0) {
           display_name += ", ";
         }
-        display_name += types_.display(args[i]);
+        display_name += session_.types_.display(args[i]);
       }
       display_name += ']';
     }
     bound.push_back(bound_trait_ref{.trait_name = trait_name,
                                     .trait_args = std::move(args)});
   }
-  const auto id =
-      types_.fresh_existential(std::move(display_name), std::move(bound));
-  existential_types_.emplace(&ety, id);
+  const auto id = session_.types_.fresh_existential(std::move(display_name),
+                                                    std::move(bound));
+  cache_.existential_types_.emplace(&ety, id);
   return id;
 }
 
@@ -1035,7 +1042,7 @@ auto checker::reinterpret_as_named_type(const ast::node &fragment)
   named->span = fragment.span;
   named->path = std::move(path);
   const auto *raw = named.get();
-  synthesized_types_.push_back(std::move(named));
+  session_.synthesized_types_.push_back(std::move(named));
   return raw;
 }
 
@@ -1101,7 +1108,7 @@ auto checker::builtin_has_trait(type_id member, const ast::trait_decl &trait)
   if (it == traits_module->traits.end() || it->second.decl != &trait) {
     return false;
   }
-  const auto &entry = types_.entry(member);
+  const auto &entry = session_.types_.entry(member);
   if (entry.kind != type_kind::builtin_kind || entry.name != "str") {
     return false;
   }
@@ -1122,7 +1129,7 @@ auto checker::satisfies_trait(type_id subject, const ast::trait_decl &trait,
     return false;
   }
   const auto stripped = strip_refs(subject);
-  if (types_.is_unknown(stripped) && !is_rigid_param(stripped)) {
+  if (session_.types_.is_unknown(stripped) && !is_rigid_param(stripped)) {
     return true;
   }
   if (stripped == k_error_type) {
@@ -1133,8 +1140,8 @@ auto checker::satisfies_trait(type_id subject, const ast::trait_decl &trait,
       return args.empty();
     }
     for (size_t i = 0; i < args.size(); ++i) {
-      if (args[i] != have[i] && !types_.is_unknown(args[i]) &&
-          !types_.is_unknown(have[i])) {
+      if (args[i] != have[i] && !session_.types_.is_unknown(args[i]) &&
+          !session_.types_.is_unknown(have[i])) {
         return false;
       }
     }
@@ -1151,7 +1158,7 @@ auto checker::satisfies_trait(type_id subject, const ast::trait_decl &trait,
   if (builtin_has_trait(stripped, trait)) {
     return true;
   }
-  const auto entry = types_.entry(stripped);
+  const auto entry = session_.types_.entry(stripped);
   if (!type_has_trait(entry, trait.name)) {
     return false;
   }
@@ -1170,7 +1177,7 @@ auto checker::satisfies_concept(type_id subject,
     return type_is_copy(subject);
   }
   const auto stripped = strip_refs(subject);
-  if ((types_.is_unknown(stripped) && !is_rigid_param(stripped)) ||
+  if ((session_.types_.is_unknown(stripped) && !is_rigid_param(stripped)) ||
       stripped == k_error_type) {
     return true;
   }
@@ -1185,8 +1192,8 @@ auto checker::satisfies_concept(type_id subject,
   if (!concept_decl.params.empty()) {
     bindings.emplace(concept_decl.params.front().name, subject);
   }
-  auto home = module_;
-  auto home_file = file_id_;
+  auto home = file_.module_;
+  auto home_file = file_.file_id_;
   for (const auto &[module_name, members] : index_.modules) {
     if (const auto it = members.concepts.find(concept_decl.name);
         it != members.concepts.end() && it->second.decl == &concept_decl) {
@@ -1325,7 +1332,7 @@ auto checker::check_call_bounds(const ast::call_expr &call,
   if (!failed.has_value()) {
     return true;
   }
-  const auto subject_name = types_.display(failed->subject);
+  const auto subject_name = session_.types_.display(failed->subject);
   auto listed = std::string{};
   auto joined = std::string{};
   for (const auto &name : failed->missing) {
@@ -1343,7 +1350,7 @@ auto checker::check_call_bounds(const ast::call_expr &call,
                         decl.name, failed->param, joined, subject_name)
           : std::format("`{}` needs `{}: {}`, and `{}` does not satisfy it",
                         decl.name, failed->param, joined, subject_name),
-      file_id_);
+      file_.file_id_);
   diag.with_label(call.span,
                   rigid_subject
                       ? std::format("`{}`'s `{}` is this function's `{}` here",
@@ -1352,8 +1359,8 @@ auto checker::check_call_bounds(const ast::call_expr &call,
                                     subject_name));
   // When the reader never wrote `int32` as a type argument, say where it
   // came from: the annotation the call's result was checked against.
-  if (const auto solved = expected_solved_params_.find(&call);
-      solved != expected_solved_params_.end()) {
+  if (const auto solved = session_.expected_solved_params_.find(&call);
+      solved != session_.expected_solved_params_.end()) {
     const auto prefix = std::format("`{}` was solved to", failed->param);
     for (const auto &note : solved->second) {
       if (note.starts_with(prefix)) {
@@ -1428,15 +1435,16 @@ auto checker::instantiate_generic_function(
     auto [param_types, result] =
         solved_signature(decl, owner, decl_file, *solution);
     if (call.callee != nullptr) {
-      record_expr_type(*call.callee, types_.fn_of(param_types, result));
+      record_expr_type(*call.callee,
+                       session_.types_.fn_of(param_types, result));
     }
     if (solution->bounds_hold) {
       defer_generic_call(call, decl, owner, decl_file, *solution,
                          ufcs_receiver);
       // Compile-time code runs this template body, not its instances, and
       // reads these parameters through what its own call bound them to.
-      if (comptime_only_functions_.contains(&decl)) {
-        comptime_call_type_slots_[&call] = solution->type_slots;
+      if (session_.comptime_only_functions_.contains(&decl)) {
+        session_.comptime_call_type_slots_[&call] = solution->type_slots;
       }
     }
     if (result == k_unknown_type) {
@@ -1450,10 +1458,11 @@ auto checker::instantiate_generic_function(
     if (result == k_unknown_type) {
       result = leaf_ctxt_.fresh_type(
           std::format("the result of this call to `{}`", decl.name),
-          source_location{.file_id = file_id_, .span = call.span});
+          source_location{.file_id = file_.file_id_, .span = call.span});
     }
     if (call.callee != nullptr) {
-      record_expr_type(*call.callee, types_.fn_of(param_types, result));
+      record_expr_type(*call.callee,
+                       session_.types_.fn_of(param_types, result));
     }
     // The bounds held vacuously against a leaf; they are checked again
     // against what it settles to.
@@ -1509,7 +1518,8 @@ auto checker::when_solution_settles(
     }
   }
   defer_method_call(
-      decl.name, types_.tuple_of(std::move(open)), std::vector<type_id>{},
+      decl.name, session_.types_.tuple_of(std::move(open)),
+      std::vector<type_id>{},
       [this, &decl, solution,
        name_instance = std::move(name_instance)](type_id) -> void {
         if (const auto settled = settled_solution(decl, solution)) {
@@ -1577,7 +1587,7 @@ auto checker::map_solution(const ast::func_decl &decl,
     if (const auto found = solution.const_slots.find(param.name);
         found != solution.const_slots.end()) {
       const auto value = map(found->second);
-      const auto entry = types_.entry(value);
+      const auto entry = session_.types_.entry(value);
       if (entry.kind != type_kind::const_value_kind) {
         return std::nullopt;
       }
@@ -1614,8 +1624,8 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   if (instance == nullptr) {
     return std::nullopt;
   }
-  if (comptime_only_functions_.contains(&decl)) {
-    comptime_call_type_slots_[&call] = solution->type_slots;
+  if (session_.comptime_only_functions_.contains(&decl)) {
+    session_.comptime_call_type_slots_[&call] = solution->type_slots;
   }
 
   // The instance's signature, resolved under the same substitution its body
@@ -1636,8 +1646,8 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   // to nothing when read through the caller's imports, and the call then
   // reaches lowering with no concrete type at all — the callee's own
   // signature is not the caller's to interpret.
-  const auto saved_signature_file = file_id_;
-  file_id_ = decl_file;
+  const auto saved_signature_file = file_.file_id_;
+  file_.file_id_ = decl_file;
   auto param_types = std::vector<type_id>{};
   for (const auto &param : decl.params) {
     param_types.push_back(param.type_annotation != nullptr
@@ -1645,7 +1655,7 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
                               : k_unknown_type);
   }
   // An omitted return type is inferred from `instance`'s own body
-  // (`check_function_impl`'s `inferring_return_`), but that body is
+  // (`check_function_impl`'s `function_.inferring_return_`), but that body is
   // usually still sitting in `pending_instances_` at this point — this
   // call is what requested the instance, not what checks it. Read
   // `inferred_returns_` for the rare case it was already checked (a
@@ -1664,12 +1674,12 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   } else {
     result = leaf_ctxt_.fresh_type(
         std::format("the result of this call to `{}`", decl.name),
-        source_location{.file_id = file_id_, .span = call.span});
+        source_location{.file_id = file_.file_id_, .span = call.span});
     result_pending = true;
   }
-  file_id_ = saved_signature_file;
+  file_.file_id_ = saved_signature_file;
   if (call.callee != nullptr) {
-    record_expr_type(*call.callee, types_.fn_of(param_types, result));
+    record_expr_type(*call.callee, session_.types_.fn_of(param_types, result));
   }
   if (result_pending) {
     pending_open_results_.push_back(
@@ -1677,20 +1687,20 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
                             .instance = instance,
                             .leaf = result,
                             .fn_params = std::move(param_types),
-                            .file = file_id_});
+                            .file = file_.file_id_});
   }
   // A comptime-only instance (todo item 8) has no compiled function for an
   // ordinary call site to reach — `hir::lower_module` deliberately never
-  // lowers one (`comptime_only_functions_`'s doc comment) — so, unless
+  // lowers one (`session_.comptime_only_functions_`'s doc comment) — so, unless
   // this call is itself reached from inside another comptime-only
   // function's own body (already handled directly by the evaluator when
   // *that* function runs), fold the whole call to a literal now instead of
   // recording it as an ordinary callee.
-  if (!in_comptime_only_function_ &&
-      comptime_only_functions_.contains(instance)) {
+  if (!function_.in_comptime_only_function_ &&
+      session_.comptime_only_functions_.contains(instance)) {
     if (const auto *lit = try_fold_comptime_only_call(
             call, decl, *instance, result, solution->type_slots)) {
-      folded_comptime_calls_[&call] = lit;
+      session_.folded_comptime_calls_[&call] = lit;
       return record_expr_type(call, result);
     }
   }
@@ -1698,10 +1708,11 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   // recorded the *template* as its callee on the way in
   // (`infer_qualified_call`), and lowering must emit a call to the instance,
   // which is the only one of the two that exists as a function.
-  resolved_callees_[&call] = resolved_callee{.decl = instance,
-                                             .owner_module = owner->module_name,
-                                             .impl_target_type = "",
-                                             .receiver = ufcs_receiver};
+  session_.resolved_callees_[&call] =
+      resolved_callee{.decl = instance,
+                      .owner_module = owner->module_name,
+                      .impl_target_type = "",
+                      .receiver = ufcs_receiver};
   return record_expr_type(call, result);
 }
 
@@ -1755,24 +1766,24 @@ auto checker::report_non_numeric_value_param(const ast::call_expr &call,
   const auto underlying =
       param.bound_or_type != nullptr
           ? resolve_type(*param.bound_or_type,
-                         resolve_ctx{.module = module_,
+                         resolve_ctx{.module = file_.module_,
                                      .param_bindings = nullptr,
                                      .use_type_param_stack = false,
                                      .quiet = true})
-          : types_.usize_type();
+          : session_.types_.usize_type();
   error_with_help(
       call.span,
       std::format("`{}` cannot be compiled: it is generic over the "
                   "compile-time value `{}`, which is a `{}` rather than "
                   "a number",
-                  decl.name, param.name, types_.display(underlying)),
+                  decl.name, param.name, session_.types_.display(underlying)),
       "no compiled copy can be made for this call",
       std::format("A function generic over a value is compiled once per "
                   "*constant* it is called with, and only integer values "
                   "have constants to compile for so far. Write the "
                   "state out (`{}[<state>]`) in the signature instead of "
                   "abstracting over `{}`.",
-                  types_.display(underlying), param.name));
+                  session_.types_.display(underlying), param.name));
 }
 
 /// A method call on a value whose type is a type parameter
@@ -1816,7 +1827,7 @@ auto checker::check_bound_method_call(
     }
   }
 
-  const auto receiver_name = types_.display(receiver);
+  const auto receiver_name = session_.types_.display(receiver);
   if (providers.empty()) {
     report_unbound_method(field, receiver_name, facts, static_call);
     infer_call_args_loosely(call);
@@ -1846,26 +1857,26 @@ auto checker::check_bound_method_call(
 
   const auto &chosen = providers.front();
   const auto [owner, owner_file] = trait_home(*chosen.trait);
-  const auto saved_self = self_type_;
-  const auto saved_assoc = self_assoc_types_;
-  self_type_ = receiver;
-  self_assoc_types_.clear();
+  const auto saved_self = function_.self_type_;
+  const auto saved_assoc = function_.self_assoc_types_;
+  function_.self_type_ = receiver;
+  function_.self_assoc_types_.clear();
   auto params =
       signature_params(*chosen.method, owner,
                        /*skip_self=*/!static_call, &chosen.trait->type_params);
   auto result =
       signature_return_type(*chosen.method, owner, &chosen.trait->type_params);
-  self_type_ = saved_self;
-  self_assoc_types_ = saved_assoc;
+  function_.self_type_ = saved_self;
+  function_.self_assoc_types_ = saved_assoc;
 
   auto subst = std::unordered_map<type_id, type_id>{};
   for (size_t i = 0;
        i < chosen.trait->type_params.size() && i < chosen.fact.args.size();
        ++i) {
     const auto &param = chosen.trait->type_params[i];
-    subst.emplace(
-        types_.type_param(param.name, param.higher_kinded_arity, &param),
-        chosen.fact.args[i]);
+    subst.emplace(session_.types_.type_param(param.name,
+                                             param.higher_kinded_arity, &param),
+                  chosen.fact.args[i]);
   }
   auto param_types = std::vector<type_id>{};
   for (auto &param : params) {
@@ -1873,7 +1884,8 @@ auto checker::check_bound_method_call(
     param_types.push_back(param.type);
   }
   result = substitute_solved(result, subst);
-  record_expr_type(field, types_.fn_of(std::move(param_types), result));
+  record_expr_type(field,
+                   session_.types_.fn_of(std::move(param_types), result));
   if (!check_method_accepts_generic_args(field, *chosen.method,
                                          explicit_args)) {
     infer_call_args_loosely(call);
@@ -1908,7 +1920,7 @@ auto checker::check_bound_method_call(
 /// extensions, then a builtin's constructor-keyed ones.
 auto checker::find_method_on(type_id target, std::string_view name)
     -> const method_entry * {
-  const auto entry = types_.entry(target); // copy: lookup can intern
+  const auto entry = session_.types_.entry(target); // copy: lookup can intern
   const auto *method = find_method(entry, name, target);
   if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
     method = find_builtin_impl_method(entry.name, name);
@@ -1923,8 +1935,8 @@ auto checker::find_method_on(type_id target, std::string_view name)
 auto checker::solve_values_from_argument_types(
     const ast::call_expr &call, const std::vector<fn_param_info> &params,
     value_bindings &solved) -> void {
-  const auto mapping = call_argument_mappings_.find(&call);
-  if (mapping == call_argument_mappings_.end()) {
+  const auto mapping = session_.call_argument_mappings_.find(&call);
+  if (mapping == session_.call_argument_mappings_.end()) {
     return;
   }
   const auto &args_by_param = mapping->second.args_by_param;
@@ -1932,8 +1944,8 @@ auto checker::solve_values_from_argument_types(
     if (args_by_param[i] == nullptr) {
       continue;
     }
-    const auto found = node_types_.find(args_by_param[i]);
-    if (found != node_types_.end()) {
+    const auto found = session_.node_types_.find(args_by_param[i]);
+    if (found != session_.node_types_.end()) {
       match_value_params(params[i].type, settle(found->second), solved);
     }
   }
@@ -1951,14 +1963,15 @@ auto checker::replay_open_method_call(const ast::call_expr &call,
   const auto params = signature_params(*method.decl, method.owner,
                                        /*skip_self=*/true);
   auto call_params = std::vector<type_id>{k_unknown_type};
-  const auto mapping = call_argument_mappings_.find(&call);
+  const auto mapping = session_.call_argument_mappings_.find(&call);
   for (size_t i = 0; i < params.size(); ++i) {
     auto type = k_unknown_type;
-    if (mapping != call_argument_mappings_.end() &&
+    if (mapping != session_.call_argument_mappings_.end() &&
         i < mapping->second.args_by_param.size() &&
         mapping->second.args_by_param[i] != nullptr) {
-      if (const auto found = node_types_.find(mapping->second.args_by_param[i]);
-          found != node_types_.end()) {
+      if (const auto found =
+              session_.node_types_.find(mapping->second.args_by_param[i]);
+          found != session_.node_types_.end()) {
         type = settle(found->second);
       }
     }
@@ -1970,8 +1983,8 @@ auto checker::replay_open_method_call(const ast::call_expr &call,
       .owner = method.owner,
       .decl_file = method.file_id,
       .call_params = std::move(call_params),
-      .file = file_id_,
-      .module = module_,
+      .file = file_.file_id_,
+      .module = file_.module_,
       .receiver = &receiver,
       .method = method,
       .target_type_name = std::string(receiver_name),
@@ -1995,7 +2008,7 @@ auto checker::replay_method_call(const ast::call_expr &call,
   if (method == nullptr || mentions_type_param(target)) {
     return;
   }
-  const auto entry = types_.entry(target);
+  const auto entry = session_.types_.entry(target);
   const auto generic_method = !method->decl->type_params.empty();
   if (!static_call) {
     if (field.object == nullptr) {
@@ -2046,12 +2059,12 @@ auto checker::replay_method_call(const ast::call_expr &call,
     return;
   }
 
-  const auto target_name = types_.display(target);
+  const auto target_name = session_.types_.display(target);
   if (!generic_method && impl_needs_instance(*method, entry)) {
     auto bindings = param_subst{};
     if (const auto *instance =
             check_impl_generic_static_call(call, *method, target, bindings)) {
-      resolved_callees_[&call] =
+      session_.resolved_callees_[&call] =
           resolved_callee{.decl = instance,
                           .owner_module = method->owner->module_name,
                           .impl_target_type = ""};
@@ -2059,7 +2072,7 @@ auto checker::replay_method_call(const ast::call_expr &call,
     return;
   }
   if (!generic_method) {
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = method->decl,
                         .owner_module = method->owner->module_name,
                         .impl_target_type = target_name};
@@ -2094,7 +2107,7 @@ auto checker::report_unbound_method(const ast::field_expr &field,
                          std::format("no {} `{}` on `{}`",
                                      static_call ? "static member" : "method",
                                      field.field_name, receiver_name),
-                         file_id_);
+                         file_.file_id_);
   diag.with_label(field.span, "not provided by any bound");
   if (facts.empty()) {
     diag.with_note(std::format(
@@ -2215,12 +2228,12 @@ auto checker::require_bound_operator(source_span span, type_id subject,
       return fact;
     }
   }
-  const auto subject_name = types_.display(subject);
+  const auto subject_name = session_.types_.display(subject);
   auto diag =
       diagnostic(diagnostic_level::error,
                  std::format("`{}` on `{}` needs `{}` to implement `{}`",
                              op_name, subject_name, subject_name, trait_name),
-                 file_id_);
+                 file_.file_id_);
   diag.with_label(span, "not provided by any bound");
   diag.with_note(facts_note(subject_name, facts));
   const auto builtin_has_it = trait_name != "eq";
@@ -2270,10 +2283,10 @@ auto checker::bound_assoc_type(const type_fact &fact, type_id subject,
                                  .param_bindings = &bindings,
                                  .use_type_param_stack = false,
                                  .quiet = true};
-    const auto saved_self = self_type_;
-    self_type_ = subject;
+    const auto saved_self = function_.self_type_;
+    function_.self_type_ = subject;
     const auto resolved = resolve_type(*assoc.default_type, ctx);
-    self_type_ = saved_self;
+    function_.self_type_ = saved_self;
     return resolved;
   }
   return k_unknown_type;
@@ -2285,20 +2298,23 @@ auto checker::bound_assoc_type(const type_fact &fact, type_id subject,
 /// operands must be the same type, and the result is the bound's `output`.
 auto checker::check_bound_arithmetic(const ast::binary_expr &binary,
                                      type_id lhs, type_id rhs) -> type_id {
-  const auto rigid_lhs = types_.entry(lhs).kind == type_kind::type_param_kind;
+  const auto rigid_lhs =
+      session_.types_.entry(lhs).kind == type_kind::type_param_kind;
   const auto subject = rigid_lhs ? lhs : rhs;
   const auto other = rigid_lhs ? rhs : lhs;
   const auto op_name = ast::binary_op_name(binary.op);
   const auto trait_name = operator_trait_for(binary.op);
-  const auto subject_name = types_.display(subject);
+  const auto subject_name = session_.types_.display(subject);
   // Every type a numeric domain allows has the builtin operator, and its
   // result is the operand type — no trait needed.
-  if (domain_all(subject,
-                 [&](type_id m) -> bool { return types_.is_numeric(m); })) {
-    if (!types_.is_unknown(other) && other != subject) {
+  if (domain_all(subject, [&](type_id m) -> bool {
+        return session_.types_.is_numeric(m);
+      })) {
+    if (!session_.types_.is_unknown(other) && other != subject) {
       error(binary.span,
             std::format("`{}` on `{}` needs another `{}`, found `{}`", op_name,
-                        subject_name, subject_name, types_.display(other)),
+                        subject_name, subject_name,
+                        session_.types_.display(other)),
             "operands have different types");
       return k_error_type;
     }
@@ -2309,11 +2325,11 @@ auto checker::check_bound_arithmetic(const ast::binary_expr &binary,
   if (!fact.has_value()) {
     return k_error_type;
   }
-  if (!types_.is_unknown(other) && other != subject) {
+  if (!session_.types_.is_unknown(other) && other != subject) {
     error_with_help(
         binary.span,
         std::format("`{}` on `{}` needs another `{}`, found `{}`", op_name,
-                    subject_name, subject_name, types_.display(other)),
+                    subject_name, subject_name, session_.types_.display(other)),
         "operands have different types",
         std::format("`{}` is `{}`'s method `{}(self, other: self)`, so both "
                     "operands have to be the same type.",

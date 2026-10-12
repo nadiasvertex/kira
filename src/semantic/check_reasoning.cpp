@@ -4,14 +4,15 @@ namespace cinder::semantic::detail {
 
 /// The id `param` is interned as, and so its key in a `param_subst`.
 auto checker::param_id(const ast::type_param &param) -> type_id {
-  return types_.type_param(param.name, param.higher_kinded_arity, &param);
+  return session_.types_.type_param(param.name, param.higher_kinded_arity,
+                                    &param);
 }
 
 /// The polynomial variable standing for the value parameter interned as
 /// `param` — keyed on the declaration, so a callee's `n` and its caller's
 /// `n` are two unknowns (`poly_param_var`).
 auto checker::value_var(type_id param) -> std::string {
-  return poly_param_var(types_.entry(param).name, param);
+  return poly_param_var(session_.types_.entry(param).name, param);
 }
 
 /// `id` as a value slot: a bare value parameter becomes the polynomial
@@ -19,12 +20,12 @@ auto checker::value_var(type_id param) -> std::string {
 /// else comes back unchanged. The unlabelled-slot convention applies — no
 /// declaration says what the value's type is, so it is `usize`.
 auto checker::as_value_slot(type_id id) -> type_id {
-  const auto &entry = types_.entry(id);
+  const auto &entry = session_.types_.entry(id);
   if (entry.kind != type_kind::type_param_kind || !entry.is_value_param) {
     return id;
   }
-  return types_.symbolic_value(types_.usize_type(),
-                               poly_variable(value_var(id)));
+  return session_.types_.symbolic_value(session_.types_.usize_type(),
+                                        poly_variable(value_var(id)));
 }
 
 /// The solver variable a bare name in a predicate or condition stands for:
@@ -33,7 +34,7 @@ auto checker::as_value_slot(type_id id) -> type_id {
 auto checker::ident_var(const std::string &name) -> std::string {
   if (const auto param = lookup_type_param(name);
       param.has_value() &&
-      types_.entry(*param).kind == type_kind::type_param_kind) {
+      session_.types_.entry(*param).kind == type_kind::type_param_kind) {
     return value_var(*param);
   }
   return name;
@@ -44,7 +45,7 @@ auto checker::ident_var(const std::string &name) -> std::string {
 auto checker::bindings_by_name(const param_subst &bindings) -> type_scope {
   auto scope = type_scope{};
   for (const auto &[param, solved] : bindings) {
-    scope.insert_or_assign(types_.entry(param).name, solved);
+    scope.insert_or_assign(session_.types_.entry(param).name, solved);
   }
   return scope;
 }
@@ -438,7 +439,7 @@ auto checker::facts_from(const ast::expr &expr, const predicate_subst &subst,
 /// reach its predicate: `index[n + 1]`'s `self < n` must become
 /// `self < n + 1`.
 auto checker::slot_poly(type_id slot) -> std::optional<linear_poly> {
-  const auto &entry = types_.entry(slot);
+  const auto &entry = session_.types_.entry(slot);
   switch (entry.kind) {
   case type_kind::const_value_kind:
   case type_kind::symbolic_value_kind:
@@ -500,9 +501,9 @@ auto checker::narrowing_goal(type_id refined, const ast::expr &value,
 
   auto goal = goal_form{};
   for (auto current = refined;
-       types_.entry(current).kind == type_kind::refinement_kind;
-       current = types_.entry(current).result) {
-    const auto &entry = types_.entry(current);
+       session_.types_.entry(current).kind == type_kind::refinement_kind;
+       current = session_.types_.entry(current).result) {
+    const auto &entry = session_.types_.entry(current);
     if (entry.predicate == nullptr) {
       continue;
     }
@@ -552,7 +553,7 @@ auto checker::known_facts_note(const goal_form &goal)
     return std::nullopt;
   }
   auto shown = std::vector<std::string>{};
-  for (const auto &fact : facts_) {
+  for (const auto &fact : function_.facts_) {
     if (fact.label.empty()) {
       continue;
     }
@@ -603,7 +604,8 @@ auto checker::refuted_label(const goal_form &goal, std::string_view fallback)
   for (const auto &alternative : goal) {
     for (const auto &item : alternative) {
       if (!item.label.empty() &&
-          solve(facts_, goal_form{fact_set{item}}) == proof_result::refuted) {
+          solve(function_.facts_, goal_form{fact_set{item}}) ==
+              proof_result::refuted) {
         return item.label;
       }
     }
@@ -615,9 +617,10 @@ auto checker::refuted_label(const goal_form &goal, std::string_view fallback)
 /// the honest thing to quote when the predicate is real but undecidable.
 auto checker::predicate_text(type_id refined, const ast::expr &value)
     -> std::string {
-  const auto &entry = types_.entry(refined);
+  const auto &entry = session_.types_.entry(refined);
   if (entry.predicate == nullptr) {
-    return std::format("the predicate of `{}`", types_.display(refined));
+    return std::format("the predicate of `{}`",
+                       session_.types_.display(refined));
   }
   auto subst = predicate_subst{};
   subst.spellings.emplace("self", describe(value, predicate_subst{}));
@@ -630,16 +633,16 @@ auto checker::predicate_text(type_id refined, const ast::expr &value)
 /// and quotes an `n` the reader cannot see from where they are standing.
 auto checker::display_refined(type_id refined, const value_bindings *solved)
     -> std::string {
-  const auto &entry = types_.entry(refined);
+  const auto &entry = session_.types_.entry(refined);
   if (solved == nullptr || entry.decl == nullptr || entry.args.empty()) {
-    return types_.display(refined);
+    return session_.types_.display(refined);
   }
   auto arguments = std::vector<std::string>{};
   for (const auto arg : entry.args) {
     const auto poly = slot_poly(arg);
     arguments.push_back(poly.has_value()
                             ? poly_substitute(*poly, *solved).display()
-                            : types_.display(arg));
+                            : session_.types_.display(arg));
   }
   return std::format("{}[{}]", entry.decl->name, join_strings(arguments, ", "));
 }
@@ -657,7 +660,7 @@ auto checker::check_narrowing(type_id expected, type_id found,
                               std::string_view context,
                               const value_bindings *solved) -> void {
   if (value == nullptr ||
-      types_.entry(expected).kind != type_kind::refinement_kind) {
+      session_.types_.entry(expected).kind != type_kind::refinement_kind) {
     return;
   }
   // Already at least as refined as required: no debt. `found` being the
@@ -669,19 +672,20 @@ auto checker::check_narrowing(type_id expected, type_id found,
   // A value whose type isn't even the right shape has a type error already
   // reported against it; adding an unprovable-predicate error on top would
   // be noise about a value that was never going to work.
-  if (types_.is_unknown(types_.strip_refinement(found))) {
+  if (session_.types_.is_unknown(session_.types_.strip_refinement(found))) {
     return;
   }
 
   const auto goal = narrowing_goal(expected, *value, solved);
   const auto outcome =
-      goal.empty() ? proof_result::unknown : solve(facts_, goal);
+      goal.empty() ? proof_result::unknown : solve(function_.facts_, goal);
   if (outcome == proof_result::proved) {
     return;
   }
 
   const auto refined_name = display_refined(expected, solved);
-  const auto base_name = types_.display(types_.strip_refinement(expected));
+  const auto base_name =
+      session_.types_.display(session_.types_.strip_refinement(expected));
   const auto fallback_text = predicate_text(expected, *value);
   const auto goal_text = outcome == proof_result::refuted
                              ? refuted_label(goal, fallback_text)
@@ -693,11 +697,11 @@ auto checker::check_narrowing(type_id expected, type_id found,
                         goal_text, refined_name)
           : std::format("cannot prove `{}` {}", goal_text, context);
 
-  auto diag = diagnostic(diagnostic_level::error, message, file_id_);
+  auto diag = diagnostic(diagnostic_level::error, message, file_.file_id_);
   diag.with_label(span, std::format("expected `{}`, found `{}`", refined_name,
-                                    types_.display(found)));
+                                    session_.types_.display(found)));
   if (const auto known = known_facts_note(goal)) {
-    diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
+    diag.children.emplace_back(diagnostic_level::note, *known, file_.file_id_);
   }
   if (outcome == proof_result::refuted) {
     diag.with_help(std::format(
@@ -734,7 +738,7 @@ auto checker::check_narrowing(type_id expected, type_id found,
 auto checker::match_value_params(type_id param, type_id argument,
                                  value_bindings &out) -> void {
   for (auto &[var, value] :
-       infer::match_pattern(types_, param, argument, out).values) {
+       infer::match_pattern(session_.types_, param, argument, out).values) {
     out.try_emplace(var, std::move(value));
   }
 }
@@ -749,9 +753,9 @@ auto checker::assume_binding(std::string_view name, type_id type) -> void {
 
   const auto bare = strip_refs(type);
   for (auto current = bare;
-       types_.entry(current).kind == type_kind::refinement_kind;
-       current = types_.entry(current).result) {
-    const auto &entry = types_.entry(current);
+       session_.types_.entry(current).kind == type_kind::refinement_kind;
+       current = session_.types_.entry(current).result) {
+    const auto &entry = session_.types_.entry(current);
     if (entry.predicate == nullptr) {
       continue;
     }
@@ -761,16 +765,17 @@ auto checker::assume_binding(std::string_view name, type_id type) -> void {
       continue;
     }
     for (auto &fact : facts_from(*entry.predicate, *subst, false)) {
-      facts_.push_back(std::move(fact));
+      function_.facts_.push_back(std::move(fact));
     }
   }
 
-  const auto &entry = types_.entry(types_.strip_refinement(bare));
+  const auto &entry =
+      session_.types_.entry(session_.types_.strip_refinement(bare));
   if (entry.kind == type_kind::array_kind && !entry.args.empty()) {
     if (const auto length = slot_poly(entry.args.front())) {
       auto poly =
           poly_sub(poly_variable(std::format("len({})", name)), *length);
-      facts_.push_back(constraint{
+      function_.facts_.push_back(constraint{
           .poly = std::move(poly),
           .rel = relation::eq,
           .label = std::format("len({}) == {}", name, length->display()),
@@ -789,7 +794,7 @@ auto checker::assume_binding(std::string_view name, type_id type) -> void {
     subst.values.emplace("self", value);
     subst.spellings.emplace("self", std::string(name));
     for (auto &fact : facts_from(*entry.decl->invariant, subst, false)) {
-      facts_.push_back(std::move(fact));
+      function_.facts_.push_back(std::move(fact));
     }
   }
 }
@@ -818,7 +823,7 @@ auto checker::assume_condition(const ast::expr *condition, bool negated)
     return;
   }
   for (auto &fact : facts_from(*condition, predicate_subst{}, negated)) {
-    facts_.push_back(std::move(fact));
+    function_.facts_.push_back(std::move(fact));
   }
 }
 
@@ -852,7 +857,7 @@ auto checker::invalidate_facts(std::string_view name) -> void {
   if (name.empty()) {
     return;
   }
-  std::erase_if(facts_, [&](const constraint &fact) -> bool {
+  std::erase_if(function_.facts_, [&](const constraint &fact) -> bool {
     return std::ranges::any_of(fact.poly.terms,
                                [&](const poly_term &term) -> bool {
                                  return atom_mentions(term.var, name);
@@ -873,14 +878,14 @@ auto checker::collect_function_facts(const ast::func_decl &decl) -> void {
     const auto declared =
         param.bound_or_type != nullptr
             ? resolve_type(*param.bound_or_type, current_resolve_ctx())
-            : types_.usize_type();
-    const auto &entry = types_.entry(declared);
+            : session_.types_.usize_type();
+    const auto &entry = session_.types_.entry(declared);
     const auto unsigned_domain =
         entry.kind == type_kind::builtin_kind &&
         (entry.name.starts_with("uint") || entry.name == "usize" ||
          entry.name == "byte");
     if (unsigned_domain) {
-      facts_.push_back(constraint{
+      function_.facts_.push_back(constraint{
           .poly = poly_variable(value_var(param_id(param))),
           .rel = relation::ge,
           .label = std::format("{} >= 0", param.name),
@@ -917,12 +922,13 @@ auto checker::collect_function_facts(const ast::func_decl &decl) -> void {
     }
     if (const auto goal =
             goal_from(*contract.condition, predicate_subst{}, false);
-        !goal.empty() && solve(facts_, goal) == proof_result::proved) {
-      elided_contracts_.insert(&contract);
+        !goal.empty() &&
+        solve(function_.facts_, goal) == proof_result::proved) {
+      session_.elided_contracts_.insert(&contract);
     }
     for (auto &fact :
          facts_from(*contract.condition, predicate_subst{}, false)) {
-      facts_.push_back(std::move(fact));
+      function_.facts_.push_back(std::move(fact));
     }
   }
 }
@@ -931,8 +937,8 @@ auto checker::collect_function_facts(const ast::func_decl &decl) -> void {
 /// demands — the same refinement, or one layered on top of it.
 auto checker::refines(type_id found, type_id expected) -> bool {
   for (auto current = found;
-       types_.entry(current).kind == type_kind::refinement_kind;
-       current = types_.entry(current).result) {
+       session_.types_.entry(current).kind == type_kind::refinement_kind;
+       current = session_.types_.entry(current).result) {
     if (current == expected) {
       return true;
     }
@@ -948,18 +954,18 @@ auto checker::type_name_candidates() -> std::vector<std::string> {
       "bool", "int32", "int64",  "float64", "str",   "char",
       "unit", "list",  "option", "result",  "usize", "byte",
   };
-  if (module_ != nullptr) {
-    for (const auto &[name, decl] : module_->types) {
+  if (file_.module_ != nullptr) {
+    for (const auto &[name, decl] : file_.module_->types) {
       candidates.push_back(name);
     }
-    for (const auto &[name, decl] : module_->traits) {
+    for (const auto &[name, decl] : file_.module_->traits) {
       candidates.push_back(name);
     }
-    for (const auto &[name, decl] : module_->concepts) {
+    for (const auto &[name, decl] : file_.module_->concepts) {
       candidates.push_back(name);
     }
   }
-  for (const auto &scope : type_params_) {
+  for (const auto &scope : function_.type_params_) {
     for (const auto &[name, id] : scope) {
       candidates.push_back(name);
     }
@@ -968,21 +974,24 @@ auto checker::type_name_candidates() -> std::vector<std::string> {
 }
 
 /// Emits "undefined type" once per distinct name per file (via
-/// `reported_undefined_`), with a suggestion or a declare/import hint.
+/// `function_.reported_undefined_`), with a suggestion or a declare/import
+/// hint.
 auto checker::emit_undefined_type(const ast::named_type &named,
                                   std::string_view name) -> void {
-  if (!reported_undefined_.insert(std::format("type:{}", name)).second) {
+  if (!function_.reported_undefined_.insert(std::format("type:{}", name))
+           .second) {
     return;
   }
-  auto diag = diagnostic(diagnostic_level::error,
-                         std::format("undefined type `{}`", name), file_id_);
+  auto diag =
+      diagnostic(diagnostic_level::error,
+                 std::format("undefined type `{}`", name), file_.file_id_);
   diag.with_label(named.span, "not found in this scope");
   if (const auto suggestion = best_suggestion(name, type_name_candidates())) {
     diag.with_help(std::format("did you mean `{}`?", *suggestion));
   } else {
     diag.with_help(std::format(
         "Declare `type {}` in module `{}`, or import it with `use`.", name,
-        module_name_));
+        file_.module_name_));
   }
   emit_diag(diag);
   mark_error();
@@ -1000,8 +1009,8 @@ auto checker::instantiate_user_type(const ast::type_decl &decl,
   if (named.type_args.empty() && ctx.expected_ctor_arity.has_value() &&
       !decl.type_params.empty()) {
     return check_ctor_against_expected(
-        types_.ctor_ref(decl.name, owner_module, &decl,
-                        decl.type_params.size()),
+        session_.types_.ctor_ref(decl.name, owner_module, &decl,
+                                 decl.type_params.size()),
         decl.name, decl.type_params.size(), named.span, ctx);
   }
   const auto args = resolve_type_args(named.type_args, ctx, &decl.type_params);
@@ -1014,7 +1023,7 @@ auto checker::instantiate_user_type(const ast::type_decl &decl,
                                decl.name, decl.type_params.size(),
                                decl.type_params.size() == 1 ? "" : "s",
                                named.type_args.size()),
-                   file_id_);
+                   file_.file_id_);
     diag.with_label(named.span, "wrong number of type arguments");
     emit_diag(diag);
     mark_error();
@@ -1052,10 +1061,11 @@ auto checker::make_refinement_type(const ast::type_decl &decl,
 
   auto bindings = bindings_for_decl(decl, args);
   const auto *owner = index_.find_module(owner_module);
-  const auto ctx = resolve_ctx{.module = owner != nullptr ? owner : module_,
-                               .param_bindings = &bindings,
-                               .use_type_param_stack = false,
-                               .quiet = true};
+  const auto ctx =
+      resolve_ctx{.module = owner != nullptr ? owner : file_.module_,
+                  .param_bindings = &bindings,
+                  .use_type_param_stack = false,
+                  .quiet = true};
   const auto base = refinement.base != nullptr
                         ? resolve_type(*refinement.base, ctx)
                         : k_unknown_type;
@@ -1067,14 +1077,14 @@ auto checker::make_refinement_type(const ast::type_decl &decl,
       if (i != 0) {
         display_name += ", ";
       }
-      display_name += types_.display(args[i]);
+      display_name += session_.types_.display(args[i]);
     }
     display_name += ']';
   }
 
   const auto *predicate =
       dynamic_cast<const ast::expr *>(refinement.predicate.get());
-  return types_.refinement_of(
+  return session_.types_.refinement_of(
       &decl, display_name, owner_module, base, std::move(args),
       predicate != nullptr && !predicate->has_error ? predicate : nullptr);
 }
@@ -1088,27 +1098,27 @@ auto checker::make_user_type(const ast::type_decl &decl,
       (decl.definition->kind == ast::node_kind::struct_type_def ||
        decl.definition->kind == ast::node_kind::sum_type_def);
   if (is_struct_or_sum || decl.definition == nullptr) {
-    return types_.user_type(decl, owner_module, std::move(args));
+    return session_.types_.user_type(decl, owner_module, std::move(args));
   }
 
   // A refinement declaration is a type in its own right, not an alias for
   // its base — that is the whole of Phase 2.
   if (decl.definition->kind == ast::node_kind::refinement_type) {
-    if (!aliases_in_progress_.insert(&decl).second) {
+    if (!cache_.aliases_in_progress_.insert(&decl).second) {
       return k_unknown_type; // cycle; reported by declaration checking
     }
     const auto result = make_refinement_type(decl, owner_module, args);
-    aliases_in_progress_.erase(&decl);
+    cache_.aliases_in_progress_.erase(&decl);
     return result;
   }
 
   // Alias (`type meters = float64`) — expand to the target.
-  if (!aliases_in_progress_.insert(&decl).second) {
+  if (!cache_.aliases_in_progress_.insert(&decl).second) {
     return k_unknown_type; // alias cycle; reported by declaration checking
   }
   auto param_bindings = bindings_for_decl(decl, args);
   const auto *owner = index_.find_module(owner_module);
-  auto ctx = resolve_ctx{.module = owner != nullptr ? owner : module_,
+  auto ctx = resolve_ctx{.module = owner != nullptr ? owner : file_.module_,
                          .param_bindings = &param_bindings,
                          .use_type_param_stack = false,
                          .quiet = true};
@@ -1131,7 +1141,7 @@ auto checker::make_user_type(const ast::type_decl &decl,
   default:
     break;
   }
-  aliases_in_progress_.erase(&decl);
+  cache_.aliases_in_progress_.erase(&decl);
   return resolved;
 }
 
@@ -1194,7 +1204,7 @@ auto checker::check_ctor_against_expected(type_id head, std::string_view name,
 auto checker::apply_resolved_head(type_id head, const ast::named_type &named,
                                   const resolve_ctx &ctx) -> type_id {
   // Copied, not referenced: interning below can push new entries.
-  const auto entry = types_.entry(head);
+  const auto entry = session_.types_.entry(head);
 
   if (entry.kind == type_kind::ctor_ref_kind) {
     if (named.type_args.empty()) {
@@ -1229,7 +1239,7 @@ auto checker::apply_resolved_head(type_id head, const ast::named_type &named,
       return instantiate_user_type(*entry.decl, entry.module_name, named,
                                    argument_ctx(ctx));
     }
-    return types_.builtin_generic(
+    return session_.types_.builtin_generic(
         entry.name, resolve_type_args(named.type_args, argument_ctx(ctx)));
   }
 
@@ -1286,7 +1296,7 @@ auto checker::apply_resolved_head(type_id head, const ast::named_type &named,
     }
     return ctx.quiet ? k_unknown_type : k_error_type;
   }
-  return types_.param_app(
+  return session_.types_.param_app(
       head, resolve_type_args(named.type_args, argument_ctx(ctx)));
 }
 
@@ -1305,8 +1315,8 @@ auto checker::resolve_named_type(const ast::named_type &named,
 
   if (named.path.size() == 2 && named.path.front() == "self") {
     // `self.output` — an associated-type reference, not a module path.
-    if (const auto it = self_assoc_types_.find(named.path.back());
-        it != self_assoc_types_.end()) {
+    if (const auto it = function_.self_assoc_types_.find(named.path.back());
+        it != function_.self_assoc_types_.end()) {
       return it->second;
     }
     return k_unknown_type;
@@ -1339,12 +1349,12 @@ auto checker::resolve_named_type(const ast::named_type &named,
 
   // `self` names the implementing type inside impls and traits.
   if (name == "self") {
-    return self_type_;
+    return function_.self_type_;
   }
 
   // Builtins and prelude containers.
   if (named.type_args.empty() && is_builtin_scalar_name(name)) {
-    return types_.builtin(name);
+    return session_.types_.builtin(name);
   }
   if (name == "array") {
     // `array[T, n]` through named-type syntax — the element type in the
@@ -1374,7 +1384,7 @@ auto checker::resolve_named_type(const ast::named_type &named,
       // `impl monad for option`), not an instantiation.
       if (named.type_args.empty() && ctx.expected_ctor_arity.has_value()) {
         return check_ctor_against_expected(
-            types_.ctor_ref(name, "", nullptr, arity->first), name,
+            session_.types_.ctor_ref(name, "", nullptr, arity->first), name,
             arity->first, named.span, ctx);
       }
       auto args = resolve_type_args(named.type_args, ctx);
@@ -1388,7 +1398,7 @@ auto checker::resolve_named_type(const ast::named_type &named,
               "wrong number of type arguments");
         return k_error_type;
       }
-      return types_.builtin_generic(name, std::move(args));
+      return session_.types_.builtin_generic(name, std::move(args));
     }
   }
   if (name == "fn") {
@@ -1396,8 +1406,9 @@ auto checker::resolve_named_type(const ast::named_type &named,
   }
 
   // Current module declarations (across all of the module's files).
-  const auto *members =
-      ctx.module != nullptr ? ctx.module : index_.find_module(module_name_);
+  const auto *members = ctx.module != nullptr
+                            ? ctx.module
+                            : index_.find_module(file_.module_name_);
   if (members != nullptr) {
     if (const auto it = members->types.find(name); it != members->types.end()) {
       return instantiate_user_type(*it->second.decl, members->module_name,
@@ -1449,7 +1460,7 @@ auto checker::resolve_named_type(const ast::named_type &named,
     return instantiate_user_type(*found->first, found->second, named, ctx);
   }
 
-  if (ctx.quiet || file_has_external_wildcard_) {
+  if (ctx.quiet || file_.file_has_external_wildcard_) {
     return k_unknown_type;
   }
 
@@ -1462,8 +1473,9 @@ auto checker::resolve_named_type(const ast::named_type &named,
 /// generic of the same spelling.
 auto checker::user_type_shadows_builtin(std::string_view name,
                                         const resolve_ctx &ctx) -> bool {
-  const auto *members =
-      ctx.module != nullptr ? ctx.module : index_.find_module(module_name_);
+  const auto *members = ctx.module != nullptr
+                            ? ctx.module
+                            : index_.find_module(file_.module_name_);
   if (members != nullptr && members->types.contains(std::string(name))) {
     return true;
   }
@@ -1497,7 +1509,7 @@ auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
             "wrong number of type arguments");
       return k_error_type;
     }
-    return types_.builtin_generic(mut_name, std::move(args));
+    return session_.types_.builtin_generic(mut_name, std::move(args));
   }
   if (ctx.quiet) {
     return k_error_type;
@@ -1515,15 +1527,16 @@ auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
 /// must never see through a refinement is a narrowing coercion, which is
 /// the obligation itself.
 auto checker::base_shape(type_id id) -> type_id {
-  return types_.strip_refinement(strip_refs(types_.strip_refinement(id)));
+  return session_.types_.strip_refinement(
+      strip_refs(session_.types_.strip_refinement(id)));
 }
 
 /// Follows ref types to the value type they lend.
 auto checker::strip_refs(type_id id) -> type_id {
-  const auto *entry = &types_.entry(id);
+  const auto *entry = &session_.types_.entry(id);
   while (entry->kind == type_kind::ref_kind) {
     id = entry->result;
-    entry = &types_.entry(id);
+    entry = &session_.types_.entry(id);
   }
   return id;
 }
@@ -1556,7 +1569,7 @@ auto checker::type_param_comptime_values(
     if (it == slots.end()) {
       continue;
     }
-    const auto &entry = types_.entry(it->second);
+    const auto &entry = session_.types_.entry(it->second);
     values.emplace_back(param.name, comptime::value::make_type_value(
                                         entry.name, entry.decl, it->second));
   }
@@ -1651,19 +1664,21 @@ auto checker::infer_refinement_try_from(const ast::call_expr &call)
   if (!refined.has_value()) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(*refined);
+  const auto &entry = session_.types_.entry(*refined);
   const auto base = entry.result;
-  const auto result_type = types_.builtin_generic("option", {*refined});
+  const auto result_type =
+      session_.types_.builtin_generic("option", {*refined});
 
   if (call.args.size() != 1 || call.args.front().value == nullptr) {
     error_with_help(
         call.span,
         std::format("`{}.try_from` takes exactly one argument",
-                    types_.display(*refined)),
+                    session_.types_.display(*refined)),
         "wrong number of arguments",
         std::format("Pass the `{}` you want to check, and match on the "
                     "`option[{}]` it returns.",
-                    types_.display(base), types_.display(*refined)));
+                    session_.types_.display(base),
+                    session_.types_.display(*refined)));
     return result_type;
   }
 
@@ -1679,28 +1694,29 @@ auto checker::infer_refinement_try_from(const ast::call_expr &call)
 
   // `index[n].try_from(raw)` in a template has no check to build — `n` is
   // a symbol — so each instance builds its own, against its constant.
-  if (current_template_ != nullptr && mentions_template_param(*refined)) {
-    defer_to_instances(call,
-                       [this, &call, &value,
-                        refined = *refined](instance_subst &subst) -> void {
-                         const auto concrete = substitute_type(refined, subst);
-                         const auto concrete_entry = types_.entry(concrete);
-                         if (concrete_entry.predicate == nullptr) {
-                           return;
-                         }
-                         const auto &clone = *clone_of(subst, &call);
-                         if (const auto *fragment = build_try_from_fragment(
-                                 clone, *clone_of(subst, &value),
-                                 concrete_entry, concrete_entry.result,
-                                 concrete)) {
-                           spliced_fragments_[&clone] = fragment;
-                         }
-                       });
+  if (function_.current_template_ != nullptr &&
+      mentions_template_param(*refined)) {
+    defer_to_instances(
+        call,
+        [this, &call, &value,
+         refined = *refined](instance_subst &subst) -> void {
+          const auto concrete = substitute_type(refined, subst);
+          const auto concrete_entry = session_.types_.entry(concrete);
+          if (concrete_entry.predicate == nullptr) {
+            return;
+          }
+          const auto &clone = *clone_of(subst, &call);
+          if (const auto *fragment = build_try_from_fragment(
+                  clone, *clone_of(subst, &value), concrete_entry,
+                  concrete_entry.result, concrete)) {
+            session_.spliced_fragments_[&clone] = fragment;
+          }
+        });
     return record_expr_type(call, result_type);
   }
   auto fragment = build_try_from_fragment(call, value, entry, base, *refined);
   if (fragment != nullptr) {
-    spliced_fragments_[&call] = fragment;
+    session_.spliced_fragments_[&call] = fragment;
   }
   return record_expr_type(call, result_type);
 }
@@ -1719,7 +1735,8 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
     error_with_help(
         call.span,
         std::format("`{}.try_from` cannot be compiled here: {}",
-                    types_.display(refined), predicate.error().message),
+                    session_.types_.display(refined),
+                    predicate.error().message),
         "this proof cannot be lowered",
         "A refinement's predicate has to be an ordinary expression the "
         "compiler can re-emit as the runtime check this proof compiles "
@@ -1741,21 +1758,22 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
     error_with_help(
         call.span,
         std::format("`{}.try_from` needs its parameters to be known here",
-                    types_.display(refined)),
+                    session_.types_.display(refined)),
         "this refinement is still generic",
         std::format(
             "The check this compiles into compares the value against the "
             "refinement's parameters, so they have to be real values at "
             "this point — `{}.try_from(...)` with a literal, not one "
             "written in terms of a value parameter the caller supplies.",
-            types_.display(types_.strip_refinement(refined))));
+            session_.types_.display(
+                session_.types_.strip_refinement(refined))));
     return nullptr;
   }
 
   // A name no source file can collide with, since `#` is not an identifier
   // character — this binding is the compiler's, not the user's, and must
   // never shadow something they wrote.
-  const auto temp_name = std::format("#proof{}", proof_temporaries_++);
+  const auto temp_name = std::format("#proof{}", session_.proof_temporaries_++);
   specialize_predicate(*predicate, temp_name, *parameters);
 
   auto binding = ast::make<ast::binding_pattern>();
@@ -1771,7 +1789,7 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
   // exactly once, where the user wrote it.
   auto placeholder = make_ident(temp_name, value.span, /*is_variant=*/false);
   const auto *placeholder_node = placeholder.get();
-  spliced_fragments_[placeholder_node] = &value;
+  session_.spliced_fragments_[placeholder_node] = &value;
   record_expr_type(*placeholder_node, base);
 
   auto bind = ast::make<ast::let_stmt>();
@@ -1816,7 +1834,7 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
   record_expr_type(*bound_pattern, base);
   require_bool(*predicate_expr, "a refinement predicate");
   bind_value(temp_name, refined, binding_origin::let_binding, call.span);
-  const auto result_type = types_.builtin_generic("option", {refined});
+  const auto result_type = session_.types_.builtin_generic("option", {refined});
   infer_expr(*some_expr, result_type);
   infer_expr(*none_expr, result_type);
   record_expr_type(*conditional_expr, result_type);
@@ -1824,7 +1842,7 @@ auto checker::build_try_from_fragment(const ast::call_expr &call,
   pop_scope();
 
   const auto *fragment = block.get();
-  proof_fragments_.push_back(std::move(block));
+  session_.proof_fragments_.push_back(std::move(block));
   return fragment;
 }
 
@@ -1923,7 +1941,7 @@ auto checker::refinement_constants(const type_entry &entry)
     if (!param.is_value_param || i >= entry.args.size()) {
       continue;
     }
-    const auto &slot = types_.entry(entry.args[i]);
+    const auto &slot = session_.types_.entry(entry.args[i]);
     if (slot.kind != type_kind::const_value_kind) {
       return std::nullopt;
     }
@@ -1999,8 +2017,8 @@ auto checker::wrap_in_stmt(ast::ptr<ast::expr> value) -> ast::ptr<ast::node> {
 /// adds a capability without changing any existing lowering.
 /// The element type an index impl yields for *this* receiver.
 ///
-/// `impl_assoc_types_` is keyed by the impl's target type as written, so a
-/// generic `impl[T] index[usize] for holder[T]` files its `output = T`
+/// `session_.impl_assoc_types_` is keyed by the impl's target type as written,
+/// so a generic `impl[T] index[usize] for holder[T]` files its `output = T`
 /// under `holder[T]` — with `T` still abstract — and a lookup against the
 /// concrete `holder[int32]` misses it entirely. Falling back to the
 /// pattern's own binding and substituting the receiver's arguments into it
@@ -2033,8 +2051,8 @@ auto checker::resolve_index_output(type_id target, std::string_view trait_name,
     // variable as the list's elements, so a later `let y: int64 = ...`
     // pins both. `is_unknown` counts a variable as unknown, and reading it
     // that way typed the element as `unknown` and cut it off from its list.
-    if (!types_.is_unknown(substituted) ||
-        types_.entry(substituted).kind == type_kind::type_var_kind) {
+    if (!session_.types_.is_unknown(substituted) ||
+        session_.types_.entry(substituted).kind == type_kind::type_var_kind) {
       return substituted;
     }
   }
@@ -2083,8 +2101,9 @@ auto checker::recorded_key_type(const ast::index_expr &index) -> type_id {
   if (index.index == nullptr) {
     return k_unknown_type;
   }
-  const auto it = node_types_.find(index.index.get());
-  return it == node_types_.end() ? k_unknown_type : strip_refs(it->second);
+  const auto it = session_.node_types_.find(index.index.get());
+  return it == session_.node_types_.end() ? k_unknown_type
+                                          : strip_refs(it->second);
 }
 
 /// What keeps two index impls' monomorphized methods apart. A receiver
@@ -2100,7 +2119,7 @@ auto checker::index_instance_discriminator(type_id target,
                                            const method_entry &method)
     -> std::string {
   const auto key = resolve_index_key_type(target, trait_name, method);
-  if (types_.is_unknown(key) || mentions_type_param(key)) {
+  if (session_.types_.is_unknown(key) || mentions_type_param(key)) {
     return {};
   }
   return std::format("${}", mangle_type_for_instance(key));
@@ -2120,8 +2139,9 @@ auto checker::index_key_filter(type_id target, std::string_view trait_name,
     // An unresolved or still-abstract key type is no evidence either way;
     // let the one candidate through rather than rejecting every impl and
     // reporting a type as unindexable when it plainly is not.
-    return types_.is_unknown(declared) || mentions_type_param(declared) ||
-           types_.compatible(declared, strip_refs(key));
+    return session_.types_.is_unknown(declared) ||
+           mentions_type_param(declared) ||
+           session_.types_.compatible(declared, strip_refs(key));
   };
 }
 
@@ -2134,32 +2154,39 @@ auto checker::check_index_key(const ast::index_expr &index, type_id target,
   const auto expected =
       strip_refs(resolve_index_key_type(target, trait_name, method));
   const auto found = strip_refs(key);
-  if (types_.is_unknown(expected) || types_.is_unknown(found) ||
-      expected == k_error_type || found == k_error_type ||
-      mentions_type_param(expected) || types_.compatible(expected, found)) {
+  if (session_.types_.is_unknown(expected) ||
+      session_.types_.is_unknown(found) || expected == k_error_type ||
+      found == k_error_type || mentions_type_param(expected) ||
+      session_.types_.compatible(expected, found)) {
     return true;
   }
   const auto key_span = index.index != nullptr ? index.index->span : index.span;
   const auto key_is_range = is_range_type(found);
   error_with_help(
       key_span,
-      std::format("cannot index `{}` with `{}`", types_.display(target),
-                  types_.display(found)),
-      std::format("expected an index of type `{}`", types_.display(expected)),
+      std::format("cannot index `{}` with `{}`",
+                  session_.types_.display(target),
+                  session_.types_.display(found)),
+      std::format("expected an index of type `{}`",
+                  session_.types_.display(expected)),
       key_is_range
           ? std::format(
                 "`{}` implements `{}[{}]`, which indexes one element at a "
                 "time. Indexing by a range is a separate impl with its own "
                 "`output` — a sub-view rather than an element:\n\n    impl "
                 "{}[range[{}]] for {}:\n        type output = ...\n",
-                types_.display(target), trait_name, types_.display(expected),
-                trait_name, types_.display(expected), types_.display(target))
+                session_.types_.display(target), trait_name,
+                session_.types_.display(expected), trait_name,
+                session_.types_.display(expected),
+                session_.types_.display(target))
           : std::format(
                 "`{}` implements `{}[{}]`, so `[...]` takes a `{}`. Indexing "
                 "it by another type means adding an `{}[{}]` impl of its "
                 "own.",
-                types_.display(target), trait_name, types_.display(expected),
-                types_.display(expected), trait_name, types_.display(found)));
+                session_.types_.display(target), trait_name,
+                session_.types_.display(expected),
+                session_.types_.display(expected), trait_name,
+                session_.types_.display(found)));
   return false;
 }
 
@@ -2171,7 +2198,8 @@ auto checker::dispatch_index(
     std::unordered_map<const ast::index_expr *, resolved_callee> &dispatches,
     const ast::index_expr &index, const method_entry &method, type_id target,
     std::string_view trait) -> void {
-  const auto entry = types_.entry(target); // copy: instantiating can intern
+  const auto entry =
+      session_.types_.entry(target); // copy: instantiating can intern
   const auto *callee = instantiate_impl_method_for(
       index, method, entry, target,
       index_instance_discriminator(target, trait, method));
@@ -2212,7 +2240,7 @@ auto checker::dispatch_index_when_settled(
   dispatches[&index] =
       resolved_callee{.decl = method.decl,
                       .owner_module = method.owner->module_name,
-                      .impl_target_type = types_.entry(target).name,
+                      .impl_target_type = session_.types_.entry(target).name,
                       .receiver = index.object.get()};
   defer_method_call(method.decl->name, target, std::vector<type_id>{},
                     [this, &dispatches, &index, &method,
@@ -2230,14 +2258,14 @@ auto checker::require_index_trait(const ast::index_expr &index, type_id object,
     error_with_help(
         index.span,
         std::format("`{}` cannot be indexed with `[...]`",
-                    types_.display(target)),
+                    session_.types_.display(target)),
         std::format("this is a `{}`, which has no `index` impl",
-                    types_.display(target)),
+                    session_.types_.display(target)),
         std::format("Indexing is a trait, not a builtin. Add an impl that says "
                     "what `{}[...]` means:\n\n    impl index[usize] for {}:\n"
                     "        type output = ...\n"
                     "        def at(self, i: usize) -> ...:\n            ...",
-                    types_.display(target), entry.name));
+                    session_.types_.display(target), entry.name));
     return k_error_type;
   }
   // The impl that takes *this* key, falling back to any `at` at all so a
@@ -2258,8 +2286,8 @@ auto checker::require_index_trait(const ast::index_expr &index, type_id object,
     check_index_key(index, target, "index", *any, key);
     return k_error_type;
   }
-  dispatch_index_when_settled(index_dispatches_, index, *method, target,
-                              "index");
+  dispatch_index_when_settled(session_.index_dispatches_, index, *method,
+                              target, "index");
   // A read of an element that is not `copy` cannot take it out of the
   // container (ch. 14, Moving out of places): it reads the element in
   // place, through `at_ref`'s address, so a borrow or field read of it
@@ -2271,8 +2299,8 @@ auto checker::require_index_trait(const ast::index_expr &index, type_id object,
                         index_key_filter(target, "index_ref", key));
         by_ref != nullptr && !by_ref->decl->params.empty() &&
         param_name_of(by_ref->decl->params.front()) == "self") {
-      dispatch_index_when_settled(index_ref_dispatches_, index, *by_ref, target,
-                                  "index_ref");
+      dispatch_index_when_settled(session_.index_ref_dispatches_, index,
+                                  *by_ref, target, "index_ref");
     }
   }
   // Resolved against *this* impl's bindings: a type with both
@@ -2324,8 +2352,8 @@ auto checker::require_index_ref_trait(const ast::index_expr &index,
     check_index_key(index, target, "index_ref", *any, key);
     return k_error_type;
   }
-  dispatch_index_when_settled(index_ref_dispatches_, index, *method, target,
-                              "index_ref");
+  dispatch_index_when_settled(session_.index_ref_dispatches_, index, *method,
+                              target, "index_ref");
   return resolve_index_output(
       target,
       parameterized_trait_key(
@@ -2342,15 +2370,15 @@ auto checker::require_index_ref_trait(const ast::index_expr &index,
 auto checker::resolve_index_mut_output(type_id target,
                                        std::string_view trait_key,
                                        const method_entry &method) -> type_id {
-  const auto target_it = impl_assoc_types_.find(target);
-  if (target_it != impl_assoc_types_.end()) {
+  const auto target_it = session_.impl_assoc_types_.find(target);
+  if (target_it != session_.impl_assoc_types_.end()) {
     if (const auto trait_it = target_it->second.find(std::string(trait_key));
         trait_it != target_it->second.end()) {
-      const auto saved_assoc = self_assoc_types_;
-      self_assoc_types_ = trait_it->second;
+      const auto saved_assoc = function_.self_assoc_types_;
+      function_.self_assoc_types_ = trait_it->second;
       const auto result = signature_return_type(*method.decl, method.owner);
-      self_assoc_types_ = saved_assoc;
-      if (!types_.is_unknown(result) && !mentions_type_param(result)) {
+      function_.self_assoc_types_ = saved_assoc;
+      if (!session_.types_.is_unknown(result) && !mentions_type_param(result)) {
         return result;
       }
     }
@@ -2361,7 +2389,7 @@ auto checker::resolve_index_mut_output(type_id target,
     const auto declared = signature_return_type(*method.decl, method.owner,
                                                 method.block_type_params);
     const auto substituted = substitute_solved(declared, bindings);
-    if (!types_.is_unknown(substituted)) {
+    if (!session_.types_.is_unknown(substituted)) {
       return substituted;
     }
   }
@@ -2396,8 +2424,8 @@ auto checker::require_index_mut_trait(const ast::index_expr &index,
     check_index_key(index, target, "index_mut", *any, key);
     return k_error_type;
   }
-  dispatch_index_when_settled(index_mut_dispatches_, index, *method, target,
-                              "index_mut");
+  dispatch_index_when_settled(session_.index_mut_dispatches_, index, *method,
+                              target, "index_mut");
   return resolve_index_mut_output(
       target,
       parameterized_trait_key(
@@ -2419,18 +2447,18 @@ auto checker::resolve_impl_param_types(type_id target,
                                        std::string_view trait_name,
                                        const method_entry &method)
     -> std::vector<fn_param_info> {
-  const auto target_it = impl_assoc_types_.find(target);
-  const auto trait_it = target_it == impl_assoc_types_.end()
+  const auto target_it = session_.impl_assoc_types_.find(target);
+  const auto trait_it = target_it == session_.impl_assoc_types_.end()
                             ? decltype(target_it->second.end()){}
                             : target_it->second.find(std::string(trait_name));
-  if (target_it == impl_assoc_types_.end() ||
+  if (target_it == session_.impl_assoc_types_.end() ||
       trait_it == target_it->second.end()) {
     return signature_params(*method.decl, method.owner, false);
   }
-  const auto saved_assoc = self_assoc_types_;
-  self_assoc_types_ = trait_it->second;
+  const auto saved_assoc = function_.self_assoc_types_;
+  function_.self_assoc_types_ = trait_it->second;
   auto result = signature_params(*method.decl, method.owner, false);
-  self_assoc_types_ = saved_assoc;
+  function_.self_assoc_types_ = saved_assoc;
   return result;
 }
 
@@ -2442,11 +2470,12 @@ auto checker::require_index_set_trait(const ast::index_expr &index,
     const auto reads = type_has_trait(entry, "index");
     error_with_help(
         index.span,
-        std::format("cannot assign to `{}[...]`", types_.display(target)),
+        std::format("cannot assign to `{}[...]`",
+                    session_.types_.display(target)),
         reads ? std::format("`{}` can be read at an index but not written",
-                            types_.display(target))
+                            session_.types_.display(target))
               : std::format("this is a `{}`, which has no `index_set` impl",
-                            types_.display(target)),
+                            session_.types_.display(target)),
         std::format(
             "Writing through `[...]` is a separate capability from "
             "reading it. Add:\n\n    impl index_set[usize] for {}:\n"
@@ -2468,8 +2497,8 @@ auto checker::require_index_set_trait(const ast::index_expr &index,
     check_index_key(index, target, "index_set", *any, key);
     return k_error_type;
   }
-  dispatch_index_when_settled(index_set_dispatches_, index, *method, target,
-                              "index_set");
+  dispatch_index_when_settled(session_.index_set_dispatches_, index, *method,
+                              target, "index_set");
   // The assigned value's expected type is `set_at`'s `value` parameter,
   // which is `self.output` in the trait and only resolves under the
   // impl's associated-type bindings.
@@ -2488,13 +2517,13 @@ auto checker::require_index_set_trait(const ast::index_expr &index,
   // `_`; the pattern's `T`, substituted, is the element leaf itself — the
   // thing the assigned value is about to say.
   const auto declared = params.back().type;
-  if (!mentions_type_param(declared) && !types_.is_unknown(declared)) {
+  if (!mentions_type_param(declared) && !session_.types_.is_unknown(declared)) {
     return declared;
   }
   auto pattern_params =
       resolve_impl_param_types(method->impl_target_pattern, trait_key, *method);
   if (pattern_params.size() >= 2 &&
-      types_.is_unknown(pattern_params.back().type) &&
+      session_.types_.is_unknown(pattern_params.back().type) &&
       method->block_type_params != nullptr) {
     // `value: T` written directly, which only resolves with the impl
     // block's own parameters in scope — the same two-step
@@ -2512,7 +2541,7 @@ auto checker::require_index_set_trait(const ast::index_expr &index,
 /// `usize` either way, and saying so on both bounds is what keeps `v[0..n]`
 /// from typing as `range[int32]` off its bare left literal.
 auto checker::expected_index_key(const ast::index_expr &index) -> type_id {
-  const auto usize = types_.builtin("usize");
+  const auto usize = session_.types_.builtin("usize");
   if (index.index == nullptr ||
       index.index->kind != ast::node_kind::binary_expr) {
     return usize;
@@ -2562,7 +2591,7 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
   // no concrete type (`codegen_stress/093`).
   const auto object =
       demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
-  const auto &entry = types_.entry(object);
+  const auto &entry = session_.types_.entry(object);
   const auto key =
       index.index != nullptr
           ? strip_refs(infer_expr(*index.index, expected_index_key(index)))
@@ -2572,10 +2601,11 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
 
   const auto key_span = index.index != nullptr ? index.index->span : index.span;
   const auto require_integer_key = [&] -> void {
-    if (!key_is_range && !types_.is_unknown(key) && !types_.is_integer(key)) {
+    if (!key_is_range && !session_.types_.is_unknown(key) &&
+        !session_.types_.is_integer(key)) {
       error(key_span,
             std::format("index must be an integer type, found `{}`",
-                        types_.display(key)),
+                        session_.types_.display(key)),
             "expected an integer index");
     }
   };
@@ -2598,8 +2628,9 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
     return entry.result;
   case type_kind::array_kind:
     require_integer_key();
-    return key_is_range ? types_.builtin_generic("slice", {entry.result})
-                        : entry.result;
+    return key_is_range
+               ? session_.types_.builtin_generic("slice", {entry.result})
+               : entry.result;
   case type_kind::builtin_generic_kind: {
     if (entry.name == "uninit") {
       // `buf[i]` on a `uninit[T, N]`: bounds-checked against `N` (a
@@ -2621,7 +2652,7 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
       // mutable slice is still mutable) — `slice` range-slices to a plain
       // (immutable) `slice`, same as before.
       if (key_is_range) {
-        return types_.builtin_generic(
+        return session_.types_.builtin_generic(
             entry.name == "slice_mut" ? "slice_mut" : "slice", {element});
       }
       return element;
@@ -2635,12 +2666,13 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
       // the `byte` at that position in the UTF-8 backing bytes (mirroring
       // `slice[byte]`, which the `builtin_generic_kind` arm below already
       // element-indexes to `byte`).
-      return key_is_range ? object : types_.builtin("byte");
+      return key_is_range ? object : session_.types_.builtin("byte");
     }
-    if (types_.is_numeric(object) || types_.is_boolean(object)) {
+    if (session_.types_.is_numeric(object) ||
+        session_.types_.is_boolean(object)) {
       error(index.span,
             std::format("cannot index a value of type `{}`",
-                        types_.display(object)),
+                        session_.types_.display(object)),
             "not an indexable value");
       return k_error_type;
     }
@@ -2666,7 +2698,7 @@ auto checker::display_fact(const type_fact &fact) -> std::string {
       if (i != 0) {
         out += ", ";
       }
-      out += types_.display(fact.args[i]);
+      out += session_.types_.display(fact.args[i]);
     }
     out += ']';
   }

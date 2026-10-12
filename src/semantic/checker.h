@@ -291,8 +291,8 @@ struct deref_site {
 // ==========================================================================
 
 /// Runs name resolution and type checking over a whole session. One
-/// instance is used for the entire `check_program` call: `types_` and the
-/// caches persist across files so cross-file lookups and impl coherence
+/// instance is used for the entire `check_program` call: `session_.types_` and
+/// the caches persist across files so cross-file lookups and impl coherence
 /// work, while per-file/per-function state is saved and restored around
 /// each declaration.
 class checker {
@@ -319,7 +319,6 @@ public:
   auto usize_type() -> type_id;
 
 private:
-  // --- session state ----------------------------------------------------
   // Not `const`: `resolve_item_splices` (run before `build_method_table`/
   // `validate_impl_coherence`) injects splice-synthesized impls directly
   // into `index_.modules[...].impls`, so both of those functions — which
@@ -329,82 +328,7 @@ private:
 
   diagnostic_bag &diag_;
 
-  /// Every diagnostic already emitted, keyed by level, file, message, and the
-  /// spans it points at — see `emit_diag`, which is why this exists.
-  std::unordered_set<std::string> emitted_diagnostics_;
-
   std::vector<bool> &file_has_errors_;
-
-  type_table types_;
-
-  /// Resolved type of every expression node visited by `infer_expr`
-  /// (recorded there — see its wrapper — plus every pattern node visited by
-  /// `check_pattern`). Several direct-`resolve_ident`-shaped bypasses also
-  /// record here manually, since each resolves an ident's type from a
-  /// declaration or binding directly rather than through `infer_expr`:
-  /// `check_assignment`'s two branches (an assignment target resolved from
-  /// an existing scope binding, and one resolved because no such binding
-  /// exists), and `infer_call`'s three branches for a plain-identifier
-  /// callee resolved as a real function reference (a scope binding, a
-  /// same-module function, or an imported function — the remaining
-  /// callee-name branches there are prelude magic forms like `println`/
-  /// `panic` with no real declared type to record). Handed to the caller
-  /// via `take_checked_types`.
-  std::unordered_map<const ast::node *, type_id> node_types_;
-
-  /// Written alongside `node_types_`, read only by the snapshot renderer —
-  /// see `checked_types::node_files`.
-  std::unordered_map<const ast::node *, file_id_type> node_files_;
-
-  /// Resolved type of every non-rest `ast::field_pattern` visited by
-  /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
-  /// (`{x}`), which have no sub-pattern node of their own to key `node_types_`
-  /// against. Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::field_pattern *, type_id>
-      struct_pattern_field_types_;
-
-  /// Resolved type of every non-`error` `ast::struct_field_init` shorthand
-  /// field (`{x}`, `field.value == nullptr`) visited by
-  /// `check_struct_literal` — these read an in-scope value directly rather
-  /// than through `infer_expr`, so (like `struct_pattern_field_types_`)
-  /// they need their own map. Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::struct_field_init *, type_id>
-      struct_literal_field_types_;
-
-  /// See `checked_types::struct_literal_field_expected`.
-  std::unordered_map<const ast::struct_field_init *, type_id>
-      struct_literal_field_expected_;
-
-  /// Per-call-site argument-to-parameter mapping, recorded in
-  /// `check_call_args_against` — the only place a call is matched against
-  /// a real declared parameter list (see `call_argument_mapping`'s doc
-  /// comment in types.h for why a bare `fn(...)`-typed callee never gets
-  /// an entry here). Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::call_expr *, call_argument_mapping>
-      call_argument_mappings_;
-
-  /// The expected type each call site was inferred under, recorded on the way
-  /// into `infer_call` — the *fourth* and last source of a generic solution
-  /// (`spec/generic-inference-design.md` §2). Keyed by call rather than held
-  /// in a single member because argument checking runs first and infers
-  /// nested calls of its own, which would clobber one.
-  ///
-  /// Only ever a fallback: `solve_generic_params` consults it after explicit
-  /// arguments and after unification against the arguments, and `match_params`
-  /// declines to overwrite a name already bound. So a hint can turn an
-  /// unsolvable call into a solved one and can never re-solve a call the
-  /// arguments already answered — which is what keeps `k_unknown_type`'s
-  /// unify-with-everything rule from letting an unknown context quietly
-  /// retype a well-understood call.
-  std::unordered_map<const ast::call_expr *, type_id> call_expected_types_;
-
-  /// Per call site, the type parameters `solve_from_expected_type` answered
-  /// rather than the arguments. Read only to build the second note of §5.4:
-  /// once a parameter can be solved from context, an error inside the
-  /// instance has to say *which* context, or the binding appears to come
-  /// from nowhere the user wrote.
-  std::unordered_map<const ast::node *, std::vector<std::string>>
-      expected_solved_params_;
 
   /// The chain of generic instantiations currently being checked, innermost
   /// last. `emit_diag` appends one note per frame, so a diagnostic raised
@@ -423,399 +347,472 @@ private:
     bool lambda_use = false;
   };
 
-  std::vector<instantiation_frame> instantiation_sites_;
-
-  /// Every module-qualified or type-qualified call resolved by
-  /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees_;
-
-  /// Every value-position reference to a module-level function, recorded by
-  /// `record_fn_value_reference`. Handed to the caller via
-  /// `take_checked_types` as `checked_types::resolved_fn_values`.
-  std::unordered_map<const ast::node *, resolved_callee> resolved_fn_values_;
-
-  /// Every arithmetic operator resolved against a user operand's overload
-  /// trait method, recorded by `require_operand_trait`. Handed to the
-  /// caller via `take_checked_types`.
-  std::unordered_map<const ast::binary_expr *, resolved_callee>
-      operator_dispatches_;
-
-  /// For every `<`/`<=`/`>`/`>=` entry `wire_ord_dispatch` adds to
-  /// `operator_dispatches_`, the `cmp` method's resolved return type
-  /// (`ordering`) — `hir::lower_binary` needs it to type the intermediate
-  /// `cmp(...)` call it synthesizes, and has no type-resolution machinery of
-  /// its own to derive it from `resolved_callee::decl->return_type`.
-  std::unordered_map<const ast::binary_expr *, type_id>
-      ord_dispatch_result_types_;
-
-  /// Every `v[i]` read resolved against a user type's `index` impl, and
-  /// every `v[i] = x` resolved against its `index_set` impl — recorded by
-  /// `require_index_trait`/`require_index_set_trait`. Two maps because the
-  /// same `index_expr` node means different things in the two positions.
-  std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_dispatches_;
-
-  std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_set_dispatches_;
-
-  /// Every `&mut v[i]` resolved against a user type's `index_mut` impl —
-  /// recorded by `require_index_mut_trait`, consulted by
-  /// `hir::lower_unary`.
-  std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_mut_dispatches_;
-
-  /// Every `&v[i]` resolved against a user type's `index_ref` impl —
-  /// recorded by `require_index_ref_trait`, consulted by
-  /// `hir::lower_unary`.
-  std::unordered_map<const ast::index_expr *, resolved_callee>
-      index_ref_dispatches_;
-
-  /// Sequence literals that construct a user collection through its
-  /// `from_array` impl, recorded by `try_wire_from_array`.
-  std::unordered_map<const ast::array_expr *, array_literal_conversion>
-      array_literal_conversions_;
-
-  /// Per-(target type, trait name) associated-type bindings captured while
-  /// checking that trait's impl (`check_impl_decl`) — the only place
-  /// `self_assoc_types_` is ever populated. A method resolved by
-  /// `find_method` from *outside* its own impl (an operator overload's
-  /// dispatch, say) has no `self_assoc_types_` context of its own by the
-  /// time it's looked up, since that map is scoped to the impl body's own
-  /// checking and restored afterward — so a return type mentioning
-  /// `self.output` would otherwise resolve to `unknown`. Consulted by
-  /// `resolve_operator_return_type`, which temporarily reinstates the
-  /// right impl's bindings before resolving such a method's return type.
-  std::unordered_map<type_id, std::unordered_map<std::string, type_scope>>
-      impl_assoc_types_;
-
-  /// Every interpolation segment's resolved rendering dispatch — see
-  /// `interp_dispatch`'s doc comment in types.h. Populated by
-  /// `check_interpolated_string`. Handed to the caller via
-  /// `take_checked_types`.
-  std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches_;
-
-  /// Every `T.name()` reflection call resolved against a type parameter of
-  /// the instance currently being checked — see `type_param_reflection` in
-  /// types.h. Populated by `infer_call`'s `lookup_type_param` branch, handed
-  /// to the caller via `take_checked_types`.
-  std::unordered_map<const ast::call_expr *, type_param_reflection>
-      type_param_reflections_;
-
-  /// Every free, module-level `static def` registered for compile-time
-  /// calling — see `checked_types::comptime_only_functions`'s doc comment,
-  /// the reason this exists (a plain `is_static` check can't tell such a
-  /// function apart from an ordinary static *method*). Populated
-  /// alongside `comptime_eval_.register_pending_function` in `register_
-  /// comptime_globals`, handed to the caller via `take_checked_types`.
-  std::unordered_set<const ast::func_decl *> comptime_only_functions_;
-
-  /// Every `for` loop over a user `std.iter.iterator[T]` — see
-  /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
-  /// `for_stmt` case, handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
-      for_iterator_dispatches_;
-
-  /// Comprehension clauses' iterator dispatches — see
-  /// `checked_types::comprehension_iterator_dispatches`.
-  std::unordered_map<const ast::node *, iterator_loop_dispatch>
-      comprehension_iterator_dispatches_;
-
-  /// Every struct/sum type found droppable — see `drop_plan` in types.h.
-  /// Populated once by `resolve_drop_plans`, after the main per-function
-  /// walk. Handed to the caller via `take_checked_types`.
-  std::unordered_map<type_id, drop_plan> drop_plans_;
-
-  /// `fn() -> unit`, the type of a closure's drop glue (`drop_plan`).
-  type_id closure_glue_type_ = k_unknown_type;
-
-  /// Every `for ... => yield` comprehension's resolved constructor/push
-  /// calls — see `comprehension_dispatch` in types.h. Populated by
-  /// `infer_for_expr`.
-  std::unordered_map<const ast::for_expr *, comprehension_dispatch>
-      comprehension_dispatches_;
-
-  /// `[v; n]` literals with a runtime repeat count — see
-  /// `checked_types::runtime_fill_dispatches`.
-  std::unordered_map<const ast::array_expr *, comprehension_dispatch>
-      runtime_fill_dispatches_;
-
-  /// Every `?` whose operand's error type needed a `from`-conversion to the
-  /// enclosing function's declared error type, recorded by `infer_try`.
-  /// Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::try_expr *, resolved_callee> try_conversions_;
-
-  /// Paired with `try_conversions_`: the enclosing function's full declared
-  /// return type for each entry, needed by `hir::lower_try` to type the
-  /// reconstructed `@err(...)` value. Handed to the caller via
-  /// `take_checked_types`.
-  std::unordered_map<const ast::try_expr *, type_id> try_conversion_types_;
-
-  /// Owns every trait-default method clone `build_method_table` synthesizes
-  /// (see `synthesized_method` in types.h) — lifetime must outlive
-  /// `checked_types`, so both are moved out together in
-  /// `take_checked_types`.
-  ast::ptr_vec<ast::func_decl> synthesized_decls_;
-
-  std::vector<synthesized_method> synthesized_trait_defaults_;
-
-  /// Every const-generic instance `instantiate_generic_function` produced (see
-  /// `const_generic_instance` in types.h). The clones themselves are owned by
-  /// `synthesized_decls_`, the same way trait-default clones are.
-  std::vector<const_generic_instance> const_generic_instances_;
-
-  /// The constants the const-generic instance currently being checked was
-  /// instantiated with (`n` -> the `const_value` type slot, and `n` -> the
-  /// plain integer). Empty while checking anything else, including the
-  /// template these instances come from. `push_type_params` reads the first
-  /// (so `index[n]` resolves to `index[3]` inside the instance, which is what
-  /// gives a `try_from` real parameters to compare against), and
-  /// `resolve_ident` reads the second (so a *value* use of `n` lowers to the
-  /// literal `3` — there is no runtime parameter to load it from).
-  type_scope const_param_slots_;
-
-  /// While checking a monomorphized copy of a generic *method* (higher-
-  /// kinded trait impls — `instantiate_hk_method`): each type parameter
-  /// name bound to the concrete type the call solved for it. The type
-  /// analog of `const_param_slots_`, consulted by `push_type_params`.
-  type_scope type_param_slots_;
-
-  /// The block-level type parameters of the `impl`/`extend` a method
-  /// currently being checked belongs to (`impl[n: usize] ... for buf[n]`'s
-  /// `n`), or `nullptr` outside of one. These never appear in the method's
-  /// own `decl.type_params`, so `bind_value_params(decl.type_params)` alone
-  /// never binds a value-kind one (`n`) as an ordinary value — only
-  /// `push_type_params` sees it, and only as a *type*. `check_function`
-  /// additionally runs `bind_value_params` over this list so a value-kind
-  /// block parameter reads as a value in the body (`n as int32`) exactly
-  /// like one of the method's own, in both the unresolved template check
-  /// (`check_impl_decl`/`check_extend_decl`, abstract) and a concrete
-  /// instance's check (`find_or_check_generic_instance`, resolved to
-  /// `usize` either way — the concrete value itself flows separately
-  /// through `const_param_values_`/`record_const_param_reference`).
-  const std::vector<ast::type_param> *enclosing_block_type_params_ = nullptr;
-
-  /// One monomorphized instance per (declaration, solution) — so a call made
-  /// a thousand times with `n == 3` compiles one `get$3` and not a thousand.
-  /// Shared by every instantiation path (free function, method, higher-kinded
-  /// method); see `find_or_check_generic_instance`, which also explains why
-  /// the entry is inserted *before* the clone's body is checked. Values point
-  /// into `synthesized_decls_`.
-  std::unordered_map<std::string, const ast::func_decl *> hk_instance_cache_;
-
-  std::unordered_map<std::string, int64_t> const_param_values_;
-
-  /// Nesting depth of `instantiate_generic_function`, bounding a template that
-  /// instantiates itself at an ever-changing constant (`f[n]` calling
-  /// `f[n + 1]`) — which would otherwise never stop.
-  size_t instantiation_depth_ = 0;
-
-  /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
-  /// (see its doc comment) for the whole session — stable-address (a
-  /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
-  /// same pattern as `synthesized_decls_` above.
-  ast::ptr_vec<ast::type_expr> synthesized_types_;
-
-  /// Splice-node -> resolved-fragment mapping — see `checked_types::
-  /// spliced_fragments`'s doc comment in types.h. Populated by the
-  /// `splice_expr` case in `infer_expr_impl` and the `splice_stmt` case in
-  /// `check_body_node`. Handed to the caller via `take_checked_types`.
-  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments_;
-
-  /// Every item-level splice resolved to an injected `impl` block — see
-  /// `synthesized_item_splice` in types.h. Populated by
-  /// `resolve_item_splices`, moved out via `take_checked_types` for
-  /// `hir::lower_module`.
-  std::vector<synthesized_item_splice> synthesized_item_splices_;
-
-  /// Which `(instantiation, trait)` pairs `ensure_derived_instance_impls`
-  /// has already derived, as `"<type_id>#<trait>"`. Keyed by the *applied*
-  /// type id rather than the declaration, so `box[int32]` and `box[str]`
-  /// each derive their own impl instead of the first one seen serving both.
-  std::unordered_set<std::string> derived_instances_;
-
-  /// Top-level (item-position) `splice_stmt` node -> the `impl_decl` it
-  /// resolved to, so `check_file`'s item loop knows to `check_item` the
-  /// resolved impl instead of routing the splice node itself through
-  /// `check_body_node` (which only understands statement/expression
-  /// fragments) — see `resolve_item_splices`.
-  std::unordered_map<const ast::node *, const ast::impl_decl *>
-      item_splice_impls_;
-
-  /// `type_decl` node -> every `impl_decl` `resolve_deriving_traits`
-  /// spliced in for it (one per real-derivation-backed trait named in
-  /// `deriving`, e.g. `show` *and* `eq`), so `check_file`'s item loop (and
-  /// its `sub_module_decl` counterpart) know to *also* `check_item` each
-  /// derived impl, in addition to (not instead of, unlike
-  /// `item_splice_impls_`) checking the `type_decl` itself normally — there
-  /// is no literal splice AST node for `deriving` sugar to swap in for.
-  std::unordered_map<const ast::node *, std::vector<const ast::impl_decl *>>
-      derived_trait_impls_;
-
-  /// Derived `impl_decl` -> the span of the `type ... deriving ...` that
-  /// caused it. A derived impl's own `span` points into the quote it was
-  /// built from in `src/std/deriving.cn`, so rendering a diagnostic at it
-  /// against the *user's* file id lands on an arbitrary offset in the user's
-  /// source — unreadable, and exactly the kind of message this compiler's
-  /// stated philosophy forbids. `impl_report_span` consults this so an
-  /// impl-level diagnostic about a derived impl points at the `deriving`
-  /// clause the user actually wrote. Reachable in practice through `ord`,
-  /// the first derived trait with a `requires` bound (`ord requires eq`):
-  /// `type point = {...} deriving ord` alone is a real, reportable mistake.
-  std::unordered_map<const ast::impl_decl *, source_span>
-      derived_impl_origin_spans_;
-
-  /// Owns every literal node synthesized by `materialize_const_literal` —
-  /// see `checked_types::synthesized_const_literals`'s doc comment.
-  ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
-
-  /// See `checked_types::static_struct_values`'s doc comment.
-  std::unordered_map<const ast::node *, const ast::expr *>
-      static_struct_values_;
-
-  ast::ptr_vec<ast::expr> synthesized_static_structs_;
-
-  /// See `checked_types::unreadable_static_refs`'s doc comment.
-  std::unordered_map<const ast::node *, std::string> unreadable_static_refs_;
-
-  /// See `checked_types::static_const_values`'s doc comment. Populated by
-  /// `resolve_ident`.
-  std::unordered_map<const ast::node *, const ast::literal_expr *>
-      static_const_values_;
-
-  /// See `checked_types::static_global_defs`'s doc comment. Populated by
-  /// `reify_static_global`.
-  std::unordered_map<const ast::static_decl *, checked_types::static_global_def>
-      static_global_defs_;
-
-  /// See `checked_types::static_if_taken_branch`'s doc comment. Populated by
-  /// `check_static_decl`'s `conditional_compilation` case.
-  std::unordered_map<const ast::static_decl *, bool> static_if_taken_branch_;
-
-  /// See `checked_types::static_global_refs`'s doc comment. Populated by
-  /// `record_static_const_reference`.
-  std::unordered_map<const ast::node *, std::string> static_global_refs_;
-
-  /// See `checked_types::value_path_types`. Populated by
-  /// `infer_value_rooted_path`.
-  std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
-      value_path_types_;
-
-  /// See `checked_types::deref_adjustments` and `path_deref_adjustments`.
-  /// Populated by `record_deref_steps`.
-  std::unordered_map<const ast::expr *, std::vector<deref_step>>
-      deref_adjustments_;
-
-  std::unordered_map<const ast::module_path_expr *,
-                     std::vector<std::vector<deref_step>>>
-      path_deref_adjustments_;
-
-  /// Calls built only to resolve an implicit `deref()` through the ordinary
-  /// method-call machinery (`resolve_deref_step`). Nothing outside the
-  /// checker refers to them; they are kept alive because instance checking
-  /// may still name one as the site that asked for an instance.
-  ast::ptr_vec<ast::expr> deref_probe_calls_;
-
-  /// The module graph `validate_module_reference` resolves a module-rooted
-  /// dotted path against. Null when `check_program` was called without
-  /// them, in which case no module-rooted path is validated here.
-  const module_session_index *session_index_ = nullptr;
-
-  const semantic_resolution_index *semantic_index_ = nullptr;
-
-  /// Module-rooted paths already validated, so a generic body checked once
-  /// abstractly and once per instantiation reports a bad path once.
-  std::unordered_set<const ast::module_path_expr *> validated_module_paths_;
-
-  /// Each file's module-import aliases, for `validate_module_path`.
-  std::unordered_map<file_id_type, module_alias_map> file_module_aliases_;
-
-  /// While a functor instantiation's body is checked, the module that
-  /// declared the functor: `module_name_` is then the instance's synthetic
-  /// name, which the module graph has never heard of, but the body was
-  /// written in — and sees what is visible from — the declaring module.
-  /// Empty outside a functor body.
-  std::string functor_owner_module_;
-
-  /// See `checked_types::folded_comptime_calls`'s doc comment. Populated by
-  /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
-  std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
-      folded_comptime_calls_;
-
-  /// The type parameters each call to a comptime-only generic `static def`
-  /// solved to, recorded by `instantiate_generic_function` (in the caller's
-  /// own type parameters when the caller is generic). Compile-time code runs
-  /// the template body, so the evaluator binds these (`comptime_call_type_
-  /// args`) for `T.name()` and for a method on a `T` value to read.
-  std::unordered_map<const ast::call_expr *, type_scope>
-      comptime_call_type_slots_;
-
-  /// See `checked_types::layout_queries`. Populated by
-  /// `infer_layout_query_call`.
-  std::unordered_map<const ast::call_expr *, layout_query> layout_queries_;
-
-  /// See `checked_types::ptr_casts`. Populated by `infer_ptr_cast_call`.
-  std::unordered_map<const ast::call_expr *, type_id> ptr_casts_;
-
-  std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls_;
-
-  /// Calls with an argument already reported as the wrong type. A value
-  /// parameter that argument would have fixed is left unsolved by it, and
-  /// saying so again ("cannot tell what `n` is") would only restate the
-  /// mismatch as a second, vaguer error.
-  std::unordered_set<const ast::call_expr *> mismatched_argument_calls_;
-
-  /// See `checked_types::stack_buffers`. Populated by `infer_uninit_call`.
-  std::unordered_map<const ast::call_expr *, stack_buffer_request>
-      stack_buffers_;
-
-  /// See `checked_types::static_global_owners`'s doc comment. Populated by
-  /// `reify_static_global`.
-  std::unordered_map<std::string, std::string> static_global_owners_;
-
-  /// See `checked_types::proven_in_bounds`'s doc comment. Populated by
-  /// `check_index_in_bounds`.
-  std::unordered_set<const ast::index_expr *> proven_in_bounds_;
-
-  /// Owns the desugared body of every `try_from` call — see
-  /// `build_try_from_fragment`. Handed to `checked_types::
-  /// synthesized_fragments` at the end of checking, since `spliced_fragments`
-  /// points into these and `hir::lower` runs after the checker is gone.
-  ast::ptr_vec<ast::node> proof_fragments_;
-
-  /// See `checked_types::elided_contracts`'s doc comment. Populated by
-  /// `check_call_preconditions`.
-  std::unordered_set<const ast::contract_clause *> elided_contracts_;
-
-  /// Numbers the compiler-introduced binding each `try_from` desugaring needs,
-  /// so two proofs in one function never collide.
-  size_t proof_temporaries_ = 0;
-
-  // --- current file / module context -------------------------------------
-  const module_members *module_ = nullptr;
-
-  std::string module_name_;
-
-  file_id_type file_id_ = 0;
-
-  bool file_has_external_wildcard_ = false;
-
-  bool file_no_prelude_ = false;
-
-  // --- functor instantiation (modules as compile-time values) -------------
-  /// AST nodes the checker synthesizes for functor instantiations (cloned
-  /// functor-body items), owned here so they outlive the check.
-  std::vector<ast::ptr<ast::node>> synthetic_nodes_;
-
-  /// Memoized instantiations: canonical instantiation key → the sanitized
-  /// module name its members were registered under. Guarantees one module
-  /// identity per (functor, arguments) tuple, session-wide (applicative
-  /// functor semantics, `spec/module-values-design.md` §4).
-  std::unordered_map<std::string, std::string> functor_instances_;
-
-  /// One entry per `def` cloned into a materialized functor instantiation,
-  /// each tagged with its synthetic module name — moved into
-  /// `checked_types::functor_instances` for `hir::lower_functor_modules`.
-  std::vector<functor_instance> functor_instance_decls_;
+  /// Session-wide state: the type table, the node side tables, and the
+  /// caches that persist across files and functions.
+  struct session_state {
+
+    /// Every diagnostic already emitted, keyed by level, file, message, and the
+    /// spans it points at — see `emit_diag`, which is why this exists.
+    std::unordered_set<std::string> emitted_diagnostics_;
+
+    type_table types_;
+
+    /// Resolved type of every expression node visited by `infer_expr`
+    /// (recorded there — see its wrapper — plus every pattern node visited by
+    /// `check_pattern`). Several direct-`resolve_ident`-shaped bypasses also
+    /// record here manually, since each resolves an ident's type from a
+    /// declaration or binding directly rather than through `infer_expr`:
+    /// `check_assignment`'s two branches (an assignment target resolved from
+    /// an existing scope binding, and one resolved because no such binding
+    /// exists), and `infer_call`'s three branches for a plain-identifier
+    /// callee resolved as a real function reference (a scope binding, a
+    /// same-module function, or an imported function — the remaining
+    /// callee-name branches there are prelude magic forms like `println`/
+    /// `panic` with no real declared type to record). Handed to the caller
+    /// via `take_checked_types`.
+    std::unordered_map<const ast::node *, type_id> node_types_;
+
+    /// Written alongside `session_.node_types_`, read only by the snapshot
+    /// renderer — see `checked_types::node_files`.
+    std::unordered_map<const ast::node *, file_id_type> node_files_;
+
+    /// Resolved type of every non-rest `ast::field_pattern` visited by
+    /// `check_pattern`'s `struct_pattern` case — needed for shorthand fields
+    /// (`{x}`), which have no sub-pattern node of their own to key
+    /// `session_.node_types_` against. Handed to the caller via
+    /// `take_checked_types`.
+    std::unordered_map<const ast::field_pattern *, type_id>
+        struct_pattern_field_types_;
+
+    /// Resolved type of every non-`error` `ast::struct_field_init` shorthand
+    /// field (`{x}`, `field.value == nullptr`) visited by
+    /// `check_struct_literal` — these read an in-scope value directly rather
+    /// than through `infer_expr`, so (like
+    /// `session_.struct_pattern_field_types_`) they need their own map. Handed
+    /// to the caller via `take_checked_types`.
+    std::unordered_map<const ast::struct_field_init *, type_id>
+        struct_literal_field_types_;
+
+    /// See `checked_types::struct_literal_field_expected`.
+    std::unordered_map<const ast::struct_field_init *, type_id>
+        struct_literal_field_expected_;
+
+    /// Per-call-site argument-to-parameter mapping, recorded in
+    /// `check_call_args_against` — the only place a call is matched against
+    /// a real declared parameter list (see `call_argument_mapping`'s doc
+    /// comment in types.h for why a bare `fn(...)`-typed callee never gets
+    /// an entry here). Handed to the caller via `take_checked_types`.
+    std::unordered_map<const ast::call_expr *, call_argument_mapping>
+        call_argument_mappings_;
+
+    /// The expected type each call site was inferred under, recorded on the way
+    /// into `infer_call` — the *fourth* and last source of a generic solution
+    /// (`spec/generic-inference-design.md` §2). Keyed by call rather than held
+    /// in a single member because argument checking runs first and infers
+    /// nested calls of its own, which would clobber one.
+    ///
+    /// Only ever a fallback: `solve_generic_params` consults it after explicit
+    /// arguments and after unification against the arguments, and
+    /// `match_params` declines to overwrite a name already bound. So a hint can
+    /// turn an unsolvable call into a solved one and can never re-solve a call
+    /// the arguments already answered — which is what keeps `k_unknown_type`'s
+    /// unify-with-everything rule from letting an unknown context quietly
+    /// retype a well-understood call.
+    std::unordered_map<const ast::call_expr *, type_id> call_expected_types_;
+
+    /// Per call site, the type parameters `solve_from_expected_type` answered
+    /// rather than the arguments. Read only to build the second note of §5.4:
+    /// once a parameter can be solved from context, an error inside the
+    /// instance has to say *which* context, or the binding appears to come
+    /// from nowhere the user wrote.
+    std::unordered_map<const ast::node *, std::vector<std::string>>
+        expected_solved_params_;
+
+    std::vector<instantiation_frame> instantiation_sites_;
+
+    /// Every module-qualified or type-qualified call resolved by
+    /// `infer_qualified_call`. Handed to the caller via `take_checked_types`.
+    std::unordered_map<const ast::call_expr *, resolved_callee>
+        resolved_callees_;
+
+    /// Every value-position reference to a module-level function, recorded by
+    /// `record_fn_value_reference`. Handed to the caller via
+    /// `take_checked_types` as `checked_types::resolved_fn_values`.
+    std::unordered_map<const ast::node *, resolved_callee> resolved_fn_values_;
+
+    /// Every arithmetic operator resolved against a user operand's overload
+    /// trait method, recorded by `require_operand_trait`. Handed to the
+    /// caller via `take_checked_types`.
+    std::unordered_map<const ast::binary_expr *, resolved_callee>
+        operator_dispatches_;
+
+    /// For every `<`/`<=`/`>`/`>=` entry `wire_ord_dispatch` adds to
+    /// `session_.operator_dispatches_`, the `cmp` method's resolved return type
+    /// (`ordering`) — `hir::lower_binary` needs it to type the intermediate
+    /// `cmp(...)` call it synthesizes, and has no type-resolution machinery of
+    /// its own to derive it from `resolved_callee::decl->return_type`.
+    std::unordered_map<const ast::binary_expr *, type_id>
+        ord_dispatch_result_types_;
+
+    /// Every `v[i]` read resolved against a user type's `index` impl, and
+    /// every `v[i] = x` resolved against its `index_set` impl — recorded by
+    /// `require_index_trait`/`require_index_set_trait`. Two maps because the
+    /// same `index_expr` node means different things in the two positions.
+    std::unordered_map<const ast::index_expr *, resolved_callee>
+        index_dispatches_;
+
+    std::unordered_map<const ast::index_expr *, resolved_callee>
+        index_set_dispatches_;
+
+    /// Every `&mut v[i]` resolved against a user type's `index_mut` impl —
+    /// recorded by `require_index_mut_trait`, consulted by
+    /// `hir::lower_unary`.
+    std::unordered_map<const ast::index_expr *, resolved_callee>
+        index_mut_dispatches_;
+
+    /// Every `&v[i]` resolved against a user type's `index_ref` impl —
+    /// recorded by `require_index_ref_trait`, consulted by
+    /// `hir::lower_unary`.
+    std::unordered_map<const ast::index_expr *, resolved_callee>
+        index_ref_dispatches_;
+
+    /// Sequence literals that construct a user collection through its
+    /// `from_array` impl, recorded by `try_wire_from_array`.
+    std::unordered_map<const ast::array_expr *, array_literal_conversion>
+        array_literal_conversions_;
+
+    /// Per-(target type, trait name) associated-type bindings captured while
+    /// checking that trait's impl (`check_impl_decl`) — the only place
+    /// `function_.self_assoc_types_` is ever populated. A method resolved by
+    /// `find_method` from *outside* its own impl (an operator overload's
+    /// dispatch, say) has no `function_.self_assoc_types_` context of its own
+    /// by the time it's looked up, since that map is scoped to the impl body's
+    /// own checking and restored afterward — so a return type mentioning
+    /// `self.output` would otherwise resolve to `unknown`. Consulted by
+    /// `resolve_operator_return_type`, which temporarily reinstates the
+    /// right impl's bindings before resolving such a method's return type.
+    std::unordered_map<type_id, std::unordered_map<std::string, type_scope>>
+        impl_assoc_types_;
+
+    /// Every interpolation segment's resolved rendering dispatch — see
+    /// `interp_dispatch`'s doc comment in types.h. Populated by
+    /// `check_interpolated_string`. Handed to the caller via
+    /// `take_checked_types`.
+    std::unordered_map<const ast::expr *, interp_dispatch> interp_dispatches_;
+
+    /// Every `T.name()` reflection call resolved against a type parameter of
+    /// the instance currently being checked — see `type_param_reflection` in
+    /// types.h. Populated by `infer_call`'s `lookup_type_param` branch, handed
+    /// to the caller via `take_checked_types`.
+    std::unordered_map<const ast::call_expr *, type_param_reflection>
+        type_param_reflections_;
+
+    /// Every free, module-level `static def` registered for compile-time
+    /// calling — see `checked_types::comptime_only_functions`'s doc comment,
+    /// the reason this exists (a plain `is_static` check can't tell such a
+    /// function apart from an ordinary static *method*). Populated
+    /// alongside `comptime_eval_.register_pending_function` in `register_
+    /// comptime_globals`, handed to the caller via `take_checked_types`.
+    std::unordered_set<const ast::func_decl *> comptime_only_functions_;
+
+    /// Every `for` loop over a user `std.iter.iterator[T]` — see
+    /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
+    /// `for_stmt` case, handed to the caller via `take_checked_types`.
+    std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
+        for_iterator_dispatches_;
+
+    /// Comprehension clauses' iterator dispatches — see
+    /// `checked_types::comprehension_iterator_dispatches`.
+    std::unordered_map<const ast::node *, iterator_loop_dispatch>
+        comprehension_iterator_dispatches_;
+
+    /// Every struct/sum type found droppable — see `drop_plan` in types.h.
+    /// Populated once by `resolve_drop_plans`, after the main per-function
+    /// walk. Handed to the caller via `take_checked_types`.
+    std::unordered_map<type_id, drop_plan> drop_plans_;
+
+    /// `fn() -> unit`, the type of a closure's drop glue (`drop_plan`).
+    type_id closure_glue_type_ = k_unknown_type;
+
+    /// Every `for ... => yield` comprehension's resolved constructor/push
+    /// calls — see `comprehension_dispatch` in types.h. Populated by
+    /// `infer_for_expr`.
+    std::unordered_map<const ast::for_expr *, comprehension_dispatch>
+        comprehension_dispatches_;
+
+    /// `[v; n]` literals with a runtime repeat count — see
+    /// `checked_types::runtime_fill_dispatches`.
+    std::unordered_map<const ast::array_expr *, comprehension_dispatch>
+        runtime_fill_dispatches_;
+
+    /// Every `?` whose operand's error type needed a `from`-conversion to the
+    /// enclosing function's declared error type, recorded by `infer_try`.
+    /// Handed to the caller via `take_checked_types`.
+    std::unordered_map<const ast::try_expr *, resolved_callee> try_conversions_;
+
+    /// Paired with `session_.try_conversions_`: the enclosing function's full
+    /// declared return type for each entry, needed by `hir::lower_try` to type
+    /// the reconstructed `@err(...)` value. Handed to the caller via
+    /// `take_checked_types`.
+    std::unordered_map<const ast::try_expr *, type_id> try_conversion_types_;
+
+    /// Owns every trait-default method clone `build_method_table` synthesizes
+    /// (see `synthesized_method` in types.h) — lifetime must outlive
+    /// `checked_types`, so both are moved out together in
+    /// `take_checked_types`.
+    ast::ptr_vec<ast::func_decl> synthesized_decls_;
+
+    std::vector<synthesized_method> synthesized_trait_defaults_;
+
+    /// Every const-generic instance `instantiate_generic_function` produced
+    /// (see `const_generic_instance` in types.h). The clones themselves are
+    /// owned by `session_.synthesized_decls_`, the same way trait-default
+    /// clones are.
+    std::vector<const_generic_instance> const_generic_instances_;
+
+    /// The constants the const-generic instance currently being checked was
+    /// instantiated with (`n` -> the `const_value` type slot, and `n` -> the
+    /// plain integer). Empty while checking anything else, including the
+    /// template these instances come from. `push_type_params` reads the first
+    /// (so `index[n]` resolves to `index[3]` inside the instance, which is what
+    /// gives a `try_from` real parameters to compare against), and
+    /// `resolve_ident` reads the second (so a *value* use of `n` lowers to the
+    /// literal `3` — there is no runtime parameter to load it from).
+    type_scope const_param_slots_;
+
+    /// While checking a monomorphized copy of a generic *method* (higher-
+    /// kinded trait impls — `instantiate_hk_method`): each type parameter
+    /// name bound to the concrete type the call solved for it. The type
+    /// analog of `session_.const_param_slots_`, consulted by
+    /// `push_type_params`.
+    type_scope type_param_slots_;
+
+    /// The block-level type parameters of the `impl`/`extend` a method
+    /// currently being checked belongs to (`impl[n: usize] ... for buf[n]`'s
+    /// `n`), or `nullptr` outside of one. These never appear in the method's
+    /// own `decl.type_params`, so `bind_value_params(decl.type_params)` alone
+    /// never binds a value-kind one (`n`) as an ordinary value — only
+    /// `push_type_params` sees it, and only as a *type*. `check_function`
+    /// additionally runs `bind_value_params` over this list so a value-kind
+    /// block parameter reads as a value in the body (`n as int32`) exactly
+    /// like one of the method's own, in both the unresolved template check
+    /// (`check_impl_decl`/`check_extend_decl`, abstract) and a concrete
+    /// instance's check (`find_or_check_generic_instance`, resolved to
+    /// `usize` either way — the concrete value itself flows separately
+    /// through `session_.const_param_values_`/`record_const_param_reference`).
+    const std::vector<ast::type_param> *enclosing_block_type_params_ = nullptr;
+
+    /// One monomorphized instance per (declaration, solution) — so a call made
+    /// a thousand times with `n == 3` compiles one `get$3` and not a thousand.
+    /// Shared by every instantiation path (free function, method, higher-kinded
+    /// method); see `find_or_check_generic_instance`, which also explains why
+    /// the entry is inserted *before* the clone's body is checked. Values point
+    /// into `session_.synthesized_decls_`.
+    std::unordered_map<std::string, const ast::func_decl *> hk_instance_cache_;
+
+    std::unordered_map<std::string, int64_t> const_param_values_;
+
+    /// Nesting depth of `instantiate_generic_function`, bounding a template
+    /// that instantiates itself at an ever-changing constant (`f[n]` calling
+    /// `f[n + 1]`) — which would otherwise never stop.
+    size_t instantiation_depth_ = 0;
+
+    /// Owns every `named_type` synthesized by `reinterpret_as_named_type`
+    /// (see its doc comment) for the whole session — stable-address (a
+    /// `vector<unique_ptr<T>>` only moves the pointer, never the pointee),
+    /// same pattern as `session_.synthesized_decls_` above.
+    ast::ptr_vec<ast::type_expr> synthesized_types_;
+
+    /// Splice-node -> resolved-fragment mapping — see `checked_types::
+    /// spliced_fragments`'s doc comment in types.h. Populated by the
+    /// `splice_expr` case in `infer_expr_impl` and the `splice_stmt` case in
+    /// `check_body_node`. Handed to the caller via `take_checked_types`.
+    std::unordered_map<const ast::node *, const ast::node *> spliced_fragments_;
+
+    /// Every item-level splice resolved to an injected `impl` block — see
+    /// `synthesized_item_splice` in types.h. Populated by
+    /// `resolve_item_splices`, moved out via `take_checked_types` for
+    /// `hir::lower_module`.
+    std::vector<synthesized_item_splice> synthesized_item_splices_;
+
+    /// Which `(instantiation, trait)` pairs `ensure_derived_instance_impls`
+    /// has already derived, as `"<type_id>#<trait>"`. Keyed by the *applied*
+    /// type id rather than the declaration, so `box[int32]` and `box[str]`
+    /// each derive their own impl instead of the first one seen serving both.
+    std::unordered_set<std::string> derived_instances_;
+
+    /// Top-level (item-position) `splice_stmt` node -> the `impl_decl` it
+    /// resolved to, so `check_file`'s item loop knows to `check_item` the
+    /// resolved impl instead of routing the splice node itself through
+    /// `check_body_node` (which only understands statement/expression
+    /// fragments) — see `resolve_item_splices`.
+    std::unordered_map<const ast::node *, const ast::impl_decl *>
+        item_splice_impls_;
+
+    /// `type_decl` node -> every `impl_decl` `resolve_deriving_traits`
+    /// spliced in for it (one per real-derivation-backed trait named in
+    /// `deriving`, e.g. `show` *and* `eq`), so `check_file`'s item loop (and
+    /// its `sub_module_decl` counterpart) know to *also* `check_item` each
+    /// derived impl, in addition to (not instead of, unlike
+    /// `session_.item_splice_impls_`) checking the `type_decl` itself normally
+    /// — there is no literal splice AST node for `deriving` sugar to swap in
+    /// for.
+    std::unordered_map<const ast::node *, std::vector<const ast::impl_decl *>>
+        derived_trait_impls_;
+
+    /// Derived `impl_decl` -> the span of the `type ... deriving ...` that
+    /// caused it. A derived impl's own `span` points into the quote it was
+    /// built from in `src/std/deriving.cn`, so rendering a diagnostic at it
+    /// against the *user's* file id lands on an arbitrary offset in the user's
+    /// source — unreadable, and exactly the kind of message this compiler's
+    /// stated philosophy forbids. `impl_report_span` consults this so an
+    /// impl-level diagnostic about a derived impl points at the `deriving`
+    /// clause the user actually wrote. Reachable in practice through `ord`,
+    /// the first derived trait with a `requires` bound (`ord requires eq`):
+    /// `type point = {...} deriving ord` alone is a real, reportable mistake.
+    std::unordered_map<const ast::impl_decl *, source_span>
+        derived_impl_origin_spans_;
+
+    /// Owns every literal node synthesized by `materialize_const_literal` —
+    /// see `checked_types::synthesized_const_literals`'s doc comment.
+    ast::ptr_vec<ast::literal_expr> synthesized_const_literals_;
+
+    /// See `checked_types::static_struct_values`'s doc comment.
+    std::unordered_map<const ast::node *, const ast::expr *>
+        static_struct_values_;
+
+    ast::ptr_vec<ast::expr> synthesized_static_structs_;
+
+    /// See `checked_types::unreadable_static_refs`'s doc comment.
+    std::unordered_map<const ast::node *, std::string> unreadable_static_refs_;
+
+    /// See `checked_types::static_const_values`'s doc comment. Populated by
+    /// `resolve_ident`.
+    std::unordered_map<const ast::node *, const ast::literal_expr *>
+        static_const_values_;
+
+    /// See `checked_types::static_global_defs`'s doc comment. Populated by
+    /// `reify_static_global`.
+    std::unordered_map<const ast::static_decl *,
+                       checked_types::static_global_def>
+        static_global_defs_;
+
+    /// See `checked_types::static_if_taken_branch`'s doc comment. Populated by
+    /// `check_static_decl`'s `conditional_compilation` case.
+    std::unordered_map<const ast::static_decl *, bool> static_if_taken_branch_;
+
+    /// See `checked_types::static_global_refs`'s doc comment. Populated by
+    /// `record_static_const_reference`.
+    std::unordered_map<const ast::node *, std::string> static_global_refs_;
+
+    /// See `checked_types::value_path_types`. Populated by
+    /// `infer_value_rooted_path`.
+    std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
+        value_path_types_;
+
+    /// See `checked_types::deref_adjustments` and `path_deref_adjustments`.
+    /// Populated by `record_deref_steps`.
+    std::unordered_map<const ast::expr *, std::vector<deref_step>>
+        deref_adjustments_;
+
+    std::unordered_map<const ast::module_path_expr *,
+                       std::vector<std::vector<deref_step>>>
+        path_deref_adjustments_;
+
+    /// Calls built only to resolve an implicit `deref()` through the ordinary
+    /// method-call machinery (`resolve_deref_step`). Nothing outside the
+    /// checker refers to them; they are kept alive because instance checking
+    /// may still name one as the site that asked for an instance.
+    ast::ptr_vec<ast::expr> deref_probe_calls_;
+
+    /// The module graph `validate_module_reference` resolves a module-rooted
+    /// dotted path against. Null when `check_program` was called without
+    /// them, in which case no module-rooted path is validated here.
+    const module_session_index *session_index_ = nullptr;
+
+    const semantic_resolution_index *semantic_index_ = nullptr;
+
+    /// Module-rooted paths already validated, so a generic body checked once
+    /// abstractly and once per instantiation reports a bad path once.
+    std::unordered_set<const ast::module_path_expr *> validated_module_paths_;
+
+    /// Each file's module-import aliases, for `validate_module_path`.
+    std::unordered_map<file_id_type, module_alias_map> file_module_aliases_;
+
+    /// While a functor instantiation's body is checked, the module that
+    /// declared the functor: `file_.module_name_` is then the instance's
+    /// synthetic name, which the module graph has never heard of, but the body
+    /// was written in — and sees what is visible from — the declaring module.
+    /// Empty outside a functor body.
+    std::string functor_owner_module_;
+
+    /// See `checked_types::folded_comptime_calls`'s doc comment. Populated by
+    /// `try_fold_comptime_only_call`, from `instantiate_generic_function`.
+    std::unordered_map<const ast::call_expr *, const ast::literal_expr *>
+        folded_comptime_calls_;
+
+    /// The type parameters each call to a comptime-only generic `static def`
+    /// solved to, recorded by `instantiate_generic_function` (in the caller's
+    /// own type parameters when the caller is generic). Compile-time code runs
+    /// the template body, so the evaluator binds these (`comptime_call_type_
+    /// args`) for `T.name()` and for a method on a `T` value to read.
+    std::unordered_map<const ast::call_expr *, type_scope>
+        comptime_call_type_slots_;
+
+    /// See `checked_types::layout_queries`. Populated by
+    /// `infer_layout_query_call`.
+    std::unordered_map<const ast::call_expr *, layout_query> layout_queries_;
+
+    /// See `checked_types::ptr_casts`. Populated by `infer_ptr_cast_call`.
+    std::unordered_map<const ast::call_expr *, type_id> ptr_casts_;
+
+    std::unordered_set<const ast::call_expr *> slice_from_raw_parts_calls_;
+
+    /// Calls with an argument already reported as the wrong type. A value
+    /// parameter that argument would have fixed is left unsolved by it, and
+    /// saying so again ("cannot tell what `n` is") would only restate the
+    /// mismatch as a second, vaguer error.
+    std::unordered_set<const ast::call_expr *> mismatched_argument_calls_;
+
+    /// See `checked_types::stack_buffers`. Populated by `infer_uninit_call`.
+    std::unordered_map<const ast::call_expr *, stack_buffer_request>
+        stack_buffers_;
+
+    /// See `checked_types::static_global_owners`'s doc comment. Populated by
+    /// `reify_static_global`.
+    std::unordered_map<std::string, std::string> static_global_owners_;
+
+    /// See `checked_types::proven_in_bounds`'s doc comment. Populated by
+    /// `check_index_in_bounds`.
+    std::unordered_set<const ast::index_expr *> proven_in_bounds_;
+
+    /// Owns the desugared body of every `try_from` call — see
+    /// `build_try_from_fragment`. Handed to `checked_types::
+    /// synthesized_fragments` at the end of checking, since `spliced_fragments`
+    /// points into these and `hir::lower` runs after the checker is gone.
+    ast::ptr_vec<ast::node> proof_fragments_;
+
+    /// See `checked_types::elided_contracts`'s doc comment. Populated by
+    /// `check_call_preconditions`.
+    std::unordered_set<const ast::contract_clause *> elided_contracts_;
+
+    /// Numbers the compiler-introduced binding each `try_from` desugaring
+    /// needs, so two proofs in one function never collide.
+    size_t proof_temporaries_ = 0;
+  } session_;
+
+  /// State for the file and module currently being checked.
+  struct file_state {
+    const module_members *module_ = nullptr;
+
+    std::string module_name_;
+
+    file_id_type file_id_ = 0;
+
+    bool file_has_external_wildcard_ = false;
+
+    bool file_no_prelude_ = false;
+  } file_;
 
   /// One module parameter of a functor bound to its argument module during
   /// instantiation (`DB` → `main.postgres`).
@@ -842,16 +839,31 @@ private:
     std::vector<const ast::trait_decl *> traits;
   };
 
-  std::vector<pending_functor_body> pending_functor_bodies_;
+  /// State for functor instantiation (modules as compile-time values).
+  struct functor_state {
+    /// AST nodes the checker synthesizes for functor instantiations (cloned
+    /// functor-body items), owned here so they outlive the check.
+    std::vector<ast::ptr<ast::node>> synthetic_nodes_;
 
-  // --- current function context -------------------------------------------
-  std::vector<std::unordered_map<std::string, value_binding>> scopes_;
+    /// Memoized instantiations: canonical instantiation key → the sanitized
+    /// module name its members were registered under. Guarantees one module
+    /// identity per (functor, arguments) tuple, session-wide (applicative
+    /// functor semantics, `spec/module-values-design.md` §4).
+    std::unordered_map<std::string, std::string> functor_instances_;
 
-  /// One entry per lambda currently being checked, innermost last. `scopes_`
-  /// is a flat stack with no notion of a function boundary, so this is what
-  /// records where each lambda began and, when it declared an explicit
-  /// capture list, which outer names it is allowed to reach across that
-  /// boundary. A lambda with no list pushes an entry with `allowed` unset,
+    /// One entry per `def` cloned into a materialized functor instantiation,
+    /// each tagged with its synthetic module name — moved into
+    /// `checked_types::functor_instances` for `hir::lower_functor_modules`.
+    std::vector<functor_instance> functor_instance_decls_;
+
+    std::vector<pending_functor_body> pending_functor_bodies_;
+  } functor_;
+
+  /// One entry per lambda currently being checked, innermost last.
+  /// `function_.scopes_` is a flat stack with no notion of a function boundary,
+  /// so this is what records where each lambda began and, when it declared an
+  /// explicit capture list, which outer names it is allowed to reach across
+  /// that boundary. A lambda with no list pushes an entry with `allowed` unset,
   /// so nested lambdas still compose correctly.
   struct capture_barrier {
     size_t scope_floor = 0;
@@ -864,152 +876,136 @@ private:
     std::unordered_set<std::string> invalid;
   };
 
-  std::vector<capture_barrier> capture_barriers_;
+  /// State for the function, lambda, or block currently being checked.
+  /// `check_function_impl` saves this whole value on entry and restores it
+  /// on exit.
+  struct function_state {
+    std::vector<std::unordered_map<std::string, value_binding>> scopes_;
 
-  std::vector<type_scope> type_params_;
+    std::vector<capture_barrier> capture_barriers_;
 
-  type_id self_type_ = k_unknown_type;
+    std::vector<type_scope> type_params_;
 
-  /// Associated-type names in scope for `self.<name>` references, valid
-  /// while checking a trait's or impl's own members (see `check_trait_decl`
-  /// and `check_impl_decl`).
-  type_scope self_assoc_types_;
+    type_id self_type_ = k_unknown_type;
 
-  type_id return_type_ = k_unknown_type;
+    /// Associated-type names in scope for `self.<name>` references, valid
+    /// while checking a trait's or impl's own members (see `check_trait_decl`
+    /// and `check_impl_decl`).
+    type_scope self_assoc_types_;
 
-  bool return_annotated_ = false;
+    type_id return_type_ = k_unknown_type;
 
-  /// While checking a function declared without a return type: the join of
-  /// every `return <value>` and the tail seen so far.
-  bool inferring_return_ = false;
+    bool return_annotated_ = false;
 
-  bool inferred_return_seen_ = false;
+    /// While checking a function declared without a return type: the join of
+    /// every `return <value>` and the tail seen so far.
+    bool inferring_return_ = false;
 
-  type_id inferred_return_ = k_unknown_type;
+    bool inferred_return_seen_ = false;
 
-  bool in_contract_ = false;
+    type_id inferred_return_ = k_unknown_type;
 
-  /// Whether the contract condition currently being checked is a `post` —
-  /// the only place `return` (the value the function returns, not the
-  /// statement) may be named. See `resolve_ident`.
-  bool in_postcondition_ = false;
+    bool in_contract_ = false;
 
-  /// Whether the function body currently being checked belongs to a
-  /// `generator def`; when true, `yield` is legal and its operand must
-  /// match `generator_item_type_` (see `infer_yield`/`check_function`).
-  bool in_generator_ = false;
+    /// Whether the contract condition currently being checked is a `post` —
+    /// the only place `return` (the value the function returns, not the
+    /// statement) may be named. See `resolve_ident`.
+    bool in_postcondition_ = false;
 
-  /// Whether the function body currently being checked is a comptime-only
-  /// `static def` (template or instantiated clone alike) — see
-  /// `comptime_only_functions_`'s doc comment and `check_function`, which
-  /// sets/restores this. Consulted by `try_fold_comptime_only_call` to avoid
-  /// folding a nested call from *inside* such a body: that call is already
-  /// handled by direct evaluator execution whenever this function itself is
-  /// invoked at compile time, and its own body is never lowered.
-  bool in_comptime_only_function_ = false;
+    /// Whether the function body currently being checked belongs to a
+    /// `generator def`; when true, `yield` is legal and its operand must
+    /// match `function_.generator_item_type_` (see
+    /// `infer_yield`/`check_function`).
+    bool in_generator_ = false;
 
-  /// Whether the function body currently being checked carries the `machine`
-  /// modifier. Raw-pointer operations (`as_ptr`/`as_mut_ptr`, `ptr_cast`,
-  /// indexing or dereferencing a `*T`/`*mut T`, and constructing a
-  /// `uninit[T, N]`) are permitted only where this is set — that gating is
-  /// the whole of what `machine` *means*
-  /// (spec/specification/03-advanced/38-machine-layer.md), and until it
-  /// existed the modifier was syntax with nothing behind it.
-  bool in_machine_function_ = false;
+    /// Whether the function body currently being checked is a comptime-only
+    /// `static def` (template or instantiated clone alike) — see
+    /// `session_.comptime_only_functions_`'s doc comment and `check_function`,
+    /// which sets/restores this. Consulted by `try_fold_comptime_only_call` to
+    /// avoid folding a nested call from *inside* such a body: that call is
+    /// already handled by direct evaluator execution whenever this function
+    /// itself is invoked at compile time, and its own body is never lowered.
+    bool in_comptime_only_function_ = false;
 
-  /// Nesting depth of "couldn't decide which branch, so check both" `static
-  /// if` fallbacks (`resolve_static_if_branch` returned `nullopt` — an
-  /// unresolved condition, most commonly one that depends on a still-abstract
-  /// generic type parameter in the un-instantiated template pass every
-  /// top-level function gets in addition to its per-call-site instantiation
-  /// checks). A `static assert` reached only through one of those speculative
-  /// branches has no more claim to being genuinely reached than its sibling
-  /// branch does — the fallback exists to still catch real problems (typos,
-  /// undefined names) in *both* candidates, not to certify either one as
-  /// live. Diagnosing it as an unconditional failure would be a false
-  /// positive for the extremely common "one `static if`/`static assert`
-  /// chain per possible type, with a trailing `static assert false` standing
-  /// in for the case no branch matches" pattern (`std.limits.max`): that
-  /// trailing assert is only ever actually reached when every real
-  /// instantiation's own concretely-bound condition already narrowed past
-  /// it, which the *unresolved* pass can never know. See `check_static_decl`'s
-  /// `assertion` case, the only consumer.
-  int in_speculative_static_branch_ = 0;
+    /// Whether the function body currently being checked carries the `machine`
+    /// modifier. Raw-pointer operations (`as_ptr`/`as_mut_ptr`, `ptr_cast`,
+    /// indexing or dereferencing a `*T`/`*mut T`, and constructing a
+    /// `uninit[T, N]`) are permitted only where this is set — that gating is
+    /// the whole of what `machine` *means*
+    /// (spec/specification/03-advanced/38-machine-layer.md), and until it
+    /// existed the modifier was syntax with nothing behind it.
+    bool in_machine_function_ = false;
 
-  /// Whether a preceding sibling statement in the body list `check_body_
-  /// nodes` is currently walking is already known (for the concrete
-  /// instantiation being checked right now) to have returned — see
-  /// `check_body_nodes`'s own comment for why every statement is still
-  /// visited regardless, and `stmt_definitely_returns` for what counts.
-  /// Saved/restored per `check_body_nodes` call so it never leaks into an
-  /// unrelated sibling block (a nested `static if` branch, a lambda body,
-  /// ...). Consulted by `check_static_decl`'s `assertion` case for the same
-  /// reason `in_speculative_static_branch_` is: a `static assert` reached
-  /// only past a provably-dead earlier `return` has no more claim to being
-  /// live than one reached through an unresolved branch does.
-  bool in_known_unreachable_code_ = false;
+    /// Nesting depth of "couldn't decide which branch, so check both" `static
+    /// if` fallbacks (`resolve_static_if_branch` returned `nullopt` — an
+    /// unresolved condition, most commonly one that depends on a still-abstract
+    /// generic type parameter in the un-instantiated template pass every
+    /// top-level function gets in addition to its per-call-site instantiation
+    /// checks). A `static assert` reached only through one of those speculative
+    /// branches has no more claim to being genuinely reached than its sibling
+    /// branch does — the fallback exists to still catch real problems (typos,
+    /// undefined names) in *both* candidates, not to certify either one as
+    /// live. Diagnosing it as an unconditional failure would be a false
+    /// positive for the extremely common "one `static if`/`static assert`
+    /// chain per possible type, with a trailing `static assert false` standing
+    /// in for the case no branch matches" pattern (`std.limits.max`): that
+    /// trailing assert is only ever actually reached when every real
+    /// instantiation's own concretely-bound condition already narrowed past
+    /// it, which the *unresolved* pass can never know. See
+    /// `check_static_decl`'s `assertion` case, the only consumer.
+    int in_speculative_static_branch_ = 0;
 
-  /// Enclosing `while`/`for` loops in the body currently being checked, used
-  /// to reject `break`/`continue` that have no loop to act on. Saved and
-  /// reset across every function and lambda body: a loop in the *enclosing*
-  /// function is not a loop this body can break out of.
-  unsigned loop_depth_ = 0;
+    /// Whether a preceding sibling statement in the body list `check_body_
+    /// nodes` is currently walking is already known (for the concrete
+    /// instantiation being checked right now) to have returned — see
+    /// `check_body_nodes`'s own comment for why every statement is still
+    /// visited regardless, and `stmt_definitely_returns` for what counts.
+    /// Saved/restored per `check_body_nodes` call so it never leaks into an
+    /// unrelated sibling block (a nested `static if` branch, a lambda body,
+    /// ...). Consulted by `check_static_decl`'s `assertion` case for the same
+    /// reason `function_.in_speculative_static_branch_` is: a `static assert`
+    /// reached only past a provably-dead earlier `return` has no more claim to
+    /// being live than one reached through an unresolved branch does.
+    bool in_known_unreachable_code_ = false;
 
-  type_id generator_item_type_ = k_unknown_type;
+    /// Enclosing `while`/`for` loops in the body currently being checked, used
+    /// to reject `break`/`continue` that have no loop to act on. Saved and
+    /// reset across every function and lambda body: a loop in the *enclosing*
+    /// function is not a loop this body can break out of.
+    unsigned loop_depth_ = 0;
 
-  /// Whether the function body currently being checked declares a general
-  /// `some Trait[Args]` existential return type (never true together with
-  /// `in_generator_` — a `generator def`'s `some iterator[T]` stays on its
-  /// own dedicated path, see `check_function`). While true, every
-  /// return-point's inferred type is joined into `existential_underlying_`
-  /// instead of being checked against `return_type_` directly, since
-  /// `return_type_` here is the fresh opaque id itself, not a real shape any
-  /// concrete expression could match.
-  bool checking_existential_return_ = false;
+    type_id generator_item_type_ = k_unknown_type;
 
-  type_id existential_underlying_ = k_unknown_type;
+    /// Whether the function body currently being checked declares a general
+    /// `some Trait[Args]` existential return type (never true together with
+    /// `function_.in_generator_` — a `generator def`'s `some iterator[T]` stays
+    /// on its own dedicated path, see `check_function`). While true, every
+    /// return-point's inferred type is joined into
+    /// `function_.existential_underlying_` instead of being checked against
+    /// `function_.return_type_` directly, since `function_.return_type_` here
+    /// is the fresh opaque id itself, not a real shape any concrete expression
+    /// could match.
+    bool checking_existential_return_ = false;
 
-  std::unordered_set<std::string> reported_undefined_;
+    type_id existential_underlying_ = k_unknown_type;
 
-  /// Everything known about the values in scope at the point currently being
-  /// checked — value-parameter domains, refined parameters' predicates, array
-  /// lengths, preconditions, and (inside a branch) path conditions. Rebuilt
-  /// per function by `collect_function_facts`, extended and truncated
-  /// lexically by `fact_scope`. This is the left-hand side of every proof the
-  /// compiler attempts; see `src/semantic/reason.h`.
-  fact_set facts_;
+    std::unordered_set<std::string> reported_undefined_;
 
-  // --- caches ---------------------------------------------------------------
-  std::unordered_map<const ast::static_decl *, type_id> static_types_;
+    /// Everything known about the values in scope at the point currently being
+    /// checked — value-parameter domains, refined parameters' predicates, array
+    /// lengths, preconditions, and (inside a branch) path conditions. Rebuilt
+    /// per function by `collect_function_facts`, extended and truncated
+    /// lexically by `fact_scope`. This is the left-hand side of every proof the
+    /// compiler attempts; see `src/semantic/reason.h`.
+    fact_set facts_;
 
-  /// The type inferred for `static for pat in iter => yield_expr`'s
-  /// `for_yield` expression, keyed by the enclosing `static_decl`. Populated
-  /// once in `check_static_decl` (the yield expression is type-checked a
-  /// single time against the iterable's element type, not once per
-  /// unrolled iteration); consulted by `check_body_node` so an inline
-  /// `static for` used as a block's tail statement reports the type it
-  /// actually produces instead of `unit`.
-  std::unordered_map<const ast::static_decl *, type_id> static_for_yield_types_;
+    /// Locals bound to `T.name()`, so `let n = T.name()` followed by
+    /// `static if n == "int8"` narrows `T` the same way the direct form does.
+    type_scope type_name_aliases_;
 
-  /// What each inline `static for` yielded, evaluated by `check_static_decl`
-  /// outside a generic template — read back by `unroll_static_for_inline`.
-  /// One entry per iteration its guard keeps: the loop's bindings, by name.
-  std::unordered_map<
-      const ast::static_decl *,
-      std::vector<std::unordered_map<std::string, comptime::value>>>
-      static_for_values_;
-
-  /// See `checked_types::static_for_elements`/`static_for_dispatches`/
-  /// `static_for_iterations`.
-  std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
-      static_for_elements_;
-
-  std::unordered_map<const ast::static_decl *, comprehension_dispatch>
-      static_for_dispatches_;
-
-  std::unordered_map<const ast::static_decl *,
-                     std::vector<static_for_iteration>>
-      static_for_iterations_;
+    /// The template currently being checked, or `nullptr` outside one.
+    const ast::func_decl *current_template_ = nullptr;
+  } function_;
 
   /// What an inline `static for`'s yield reads, found while checking it
   /// (keyed by the declaration as written, never an instance's clone).
@@ -1022,102 +1018,139 @@ private:
     std::vector<const ast::expr *> loop_reads;
   };
 
-  std::unordered_map<const ast::static_decl *, static_for_reads>
-      static_for_reads_;
-
-  /// The inline `static for`s whose yield is being checked, innermost last,
-  /// each with the index of the scope holding its loop bindings.
-  std::vector<std::pair<const ast::static_decl *, size_t>> static_for_yields_;
-
-  /// The element type the context expects of the inline `static for` about
-  /// to be checked as a block's statement (`check_body_node`).
-  type_id static_for_expected_element_ = k_unknown_type;
-
-  std::unordered_set<const ast::static_decl *> statics_in_progress_;
-
-  /// Unannotated `static let` bindings checked ahead of file order by
-  /// `check_static_binding_early`, so file order does not check them again.
-  std::unordered_set<const ast::static_decl *> early_checked_static_bindings_;
-
-  /// Each `static let`'s evaluated compile-time value, keyed by declaration
-  /// so same-named statics in different modules stay distinct — see
-  /// `ensure_static_binding_evaluated`. `nullopt` records an initializer
-  /// that failed to evaluate, so it is not retried (and re-diagnosed) at
-  /// every later reference.
-  std::unordered_map<const ast::static_decl *, std::optional<comptime::value>>
-      static_binding_values_;
-
-  /// The `static` bindings whose initializer failed with a reported error.
-  /// A file that refers to one is marked failing (see
-  /// `ensure_static_binding_evaluated`), so lowering never sees a reference
-  /// to a binding that has no value.
-  std::unordered_set<const ast::static_decl *> failed_static_bindings_;
-
-  /// `static` bindings whose initializer `ensure_static_binding_evaluated`
-  /// is evaluating right now — its cycle guard.
-  std::unordered_set<const ast::static_decl *> static_bindings_evaluating_;
-
-  /// Every module-level function's declaring module and file, plus each
-  /// monomorphized instance's (its template's) — see `function_owner`.
-  std::unordered_map<const ast::func_decl *,
-                     std::pair<const module_members *, file_id_type>>
-      function_owners_;
-
-  /// `index_.modules.size()` when `function_owners_` last scanned it.
-  size_t function_owners_modules_ = 0;
-
   /// Compile-time evaluator backing `static let`/`static assert`/
   /// `static if`. One instance for the whole session (parallel to
-  /// `static_types_`/`types_`) so `static let` bindings evaluated while
-  /// checking one file stay visible by name to `static` expressions in
-  /// later files — see the compile-time evaluation design plan's
+  /// `cache_.static_types_`/`session_.types_`) so `static let` bindings
+  /// evaluated while checking one file stay visible by name to `static`
+  /// expressions in later files — see the compile-time evaluation design plan's
   /// confluence requirement.
   comptime::evaluator comptime_eval_;
 
-  std::unordered_set<const ast::type_decl *> aliases_in_progress_;
+  /// Caches of compile-time results, keyed by declaration or node.
+  struct cache_state {
+    std::unordered_map<const ast::static_decl *, type_id> static_types_;
 
-  /// Cache of `param_types_for`'s result, so `check_function`'s own body
-  /// check and `signature_params`'s call-site view agree on the same
-  /// inferred types instead of independently guessing. Indices align 1:1
-  /// with `decl.params`.
-  std::unordered_map<const ast::func_decl *, std::vector<type_id>>
-      inferred_param_types_;
+    /// The type inferred for `static for pat in iter => yield_expr`'s
+    /// `for_yield` expression, keyed by the enclosing `static_decl`. Populated
+    /// once in `check_static_decl` (the yield expression is type-checked a
+    /// single time against the iterable's element type, not once per
+    /// unrolled iteration); consulted by `check_body_node` so an inline
+    /// `static for` used as a block's tail statement reports the type it
+    /// actually produces instead of `unit`.
+    std::unordered_map<const ast::static_decl *, type_id>
+        static_for_yield_types_;
 
-  bool methods_built_ = false;
+    /// What each inline `static for` yielded, evaluated by `check_static_decl`
+    /// outside a generic template — read back by `unroll_static_for_inline`.
+    /// One entry per iteration its guard keeps: the loop's bindings, by name.
+    std::unordered_map<
+        const ast::static_decl *,
+        std::vector<std::unordered_map<std::string, comptime::value>>>
+        static_for_values_;
 
-  /// A `std::deque`, not a `std::vector`, and it has to stay one. Most of
-  /// this table is built once in `build_method_table`, but a `deriving` type
-  /// that is *generic* derives lazily, per concrete instantiation, from
-  /// inside `find_method` itself (`ensure_derived_instance_impls`) — so a
-  /// lookup can append here while a caller still holds the `const
-  /// method_entry *` an earlier lookup returned. A vector would reallocate
-  /// and leave that pointer dangling; a deque never invalidates references
-  /// to existing elements on `push_back`. Same reasoning, and the same bug
-  /// class, as `type_table::entries_`.
-  std::unordered_map<const ast::type_decl *, std::deque<method_entry>> methods_;
+    /// See `checked_types::static_for_elements`/`static_for_dispatches`/
+    /// `static_for_iterations`.
+    std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
+        static_for_elements_;
 
-  /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
-  /// builtin's type-entry name since builtins have no `type_decl` to key
-  /// `methods_` by.
-  std::unordered_map<std::string, std::deque<method_entry>>
-      extend_methods_by_builtin_;
+    std::unordered_map<const ast::static_decl *, comprehension_dispatch>
+        static_for_dispatches_;
 
-  /// Impl-block methods whose target is a *prelude constructor* (`impl
-  /// monad for option`), keyed by the constructor's name — the prelude
-  /// generics have no `type_decl` to key `methods_` by, exactly like
-  /// `extend_methods_by_builtin_` above. Consulted for method calls on any
-  /// instantiation of the constructor (`option[int32].bind(...)`) and for
-  /// type-qualified associated calls (`option.pure(...)`).
-  std::unordered_map<std::string, std::deque<method_entry>>
-      impl_methods_by_builtin_;
+    std::unordered_map<const ast::static_decl *,
+                       std::vector<static_for_iteration>>
+        static_for_iterations_;
 
-  /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
-  /// AST node, so the many independent `resolve_type` calls that can all
-  /// reach the same `some Trait[Args]` node (a function's own return-type
-  /// resolution in `check_function`, plus every external caller's view of
-  /// it via `signature_return_type`) agree on one id instead of each
-  /// minting a fresh, structurally-identical-but-distinct existential type.
-  std::unordered_map<const ast::existential_type *, type_id> existential_types_;
+    std::unordered_map<const ast::static_decl *, static_for_reads>
+        static_for_reads_;
+
+    /// The inline `static for`s whose yield is being checked, innermost last,
+    /// each with the index of the scope holding its loop bindings.
+    std::vector<std::pair<const ast::static_decl *, size_t>> static_for_yields_;
+
+    /// The element type the context expects of the inline `static for` about
+    /// to be checked as a block's statement (`check_body_node`).
+    type_id static_for_expected_element_ = k_unknown_type;
+
+    std::unordered_set<const ast::static_decl *> statics_in_progress_;
+
+    /// Unannotated `static let` bindings checked ahead of file order by
+    /// `check_static_binding_early`, so file order does not check them again.
+    std::unordered_set<const ast::static_decl *> early_checked_static_bindings_;
+
+    /// Each `static let`'s evaluated compile-time value, keyed by declaration
+    /// so same-named statics in different modules stay distinct — see
+    /// `ensure_static_binding_evaluated`. `nullopt` records an initializer
+    /// that failed to evaluate, so it is not retried (and re-diagnosed) at
+    /// every later reference.
+    std::unordered_map<const ast::static_decl *, std::optional<comptime::value>>
+        static_binding_values_;
+
+    /// The `static` bindings whose initializer failed with a reported error.
+    /// A file that refers to one is marked failing (see
+    /// `ensure_static_binding_evaluated`), so lowering never sees a reference
+    /// to a binding that has no value.
+    std::unordered_set<const ast::static_decl *> failed_static_bindings_;
+
+    /// `static` bindings whose initializer `ensure_static_binding_evaluated`
+    /// is evaluating right now — its cycle guard.
+    std::unordered_set<const ast::static_decl *> static_bindings_evaluating_;
+
+    /// Every module-level function's declaring module and file, plus each
+    /// monomorphized instance's (its template's) — see `function_owner`.
+    std::unordered_map<const ast::func_decl *,
+                       std::pair<const module_members *, file_id_type>>
+        function_owners_;
+
+    /// `index_.modules.size()` when `cache_.function_owners_` last scanned it.
+    size_t function_owners_modules_ = 0;
+
+    std::unordered_set<const ast::type_decl *> aliases_in_progress_;
+
+    /// Cache of `param_types_for`'s result, so `check_function`'s own body
+    /// check and `signature_params`'s call-site view agree on the same
+    /// inferred types instead of independently guessing. Indices align 1:1
+    /// with `decl.params`.
+    std::unordered_map<const ast::func_decl *, std::vector<type_id>>
+        inferred_param_types_;
+
+    bool methods_built_ = false;
+
+    /// A `std::deque`, not a `std::vector`, and it has to stay one. Most of
+    /// this table is built once in `build_method_table`, but a `deriving` type
+    /// that is *generic* derives lazily, per concrete instantiation, from
+    /// inside `find_method` itself (`ensure_derived_instance_impls`) — so a
+    /// lookup can append here while a caller still holds the `const
+    /// method_entry *` an earlier lookup returned. A vector would reallocate
+    /// and leave that pointer dangling; a deque never invalidates references
+    /// to existing elements on `push_back`. Same reasoning, and the same bug
+    /// class, as `type_table::entries_`.
+    std::unordered_map<const ast::type_decl *, std::deque<method_entry>>
+        methods_;
+
+    /// Extend-block methods on a builtin type (e.g. `str`), keyed by the
+    /// builtin's type-entry name since builtins have no `type_decl` to key
+    /// `cache_.methods_` by.
+    std::unordered_map<std::string, std::deque<method_entry>>
+        extend_methods_by_builtin_;
+
+    /// Impl-block methods whose target is a *prelude constructor* (`impl
+    /// monad for option`), keyed by the constructor's name — the prelude
+    /// generics have no `type_decl` to key `cache_.methods_` by, exactly like
+    /// `cache_.extend_methods_by_builtin_` above. Consulted for method calls on
+    /// any instantiation of the constructor (`option[int32].bind(...)`) and for
+    /// type-qualified associated calls (`option.pure(...)`).
+    std::unordered_map<std::string, std::deque<method_entry>>
+        impl_methods_by_builtin_;
+
+    /// Memoizes `resolve_existential_type`'s minted `existential_kind` id per
+    /// AST node, so the many independent `resolve_type` calls that can all
+    /// reach the same `some Trait[Args]` node (a function's own return-type
+    /// resolution in `check_function`, plus every external caller's view of
+    /// it via `signature_return_type`) agree on one id instead of each
+    /// minting a fresh, structurally-identical-but-distinct existential type.
+    std::unordered_map<const ast::existential_type *, type_id>
+        existential_types_;
+  } cache_;
 
   // ==========================================================================
   //  check_diagnostics.cpp
@@ -1207,7 +1240,8 @@ private:
   struct scope_lookup {
     const value_binding *binding = nullptr;
     const capture_barrier *blocked_by = nullptr;
-    size_t depth = 0; ///< Index in `scopes_` the binding was found at.
+    size_t depth =
+        0; ///< Index in `function_.scopes_` the binding was found at.
   };
 
   auto find_value_in_scopes(std::string_view name) -> scope_lookup;
@@ -1289,8 +1323,9 @@ private:
   /// Ambient state for resolving a type expression: which module's members
   /// are in scope, an optional substitution for generic parameters (used
   /// when instantiating a generic declaration), and whether to also consult
-  /// the live `type_params_` scope stack (only true for types resolved in
-  /// the context of the function/type/impl currently being checked).
+  /// the live `function_.type_params_` scope stack (only true for types
+  /// resolved in the context of the function/type/impl currently being
+  /// checked).
   struct resolve_ctx {
     const module_members *module = nullptr;
     const type_scope *param_bindings = nullptr;
@@ -1471,11 +1506,6 @@ private:
   // ------------------------------------------------------------------------
   //  `static if` narrowing (phase 9, rule 5)
   // ------------------------------------------------------------------------
-
-  /// Locals bound to `T.name()`, so `let n = T.name()` followed by
-  /// `static if n == "int8"` narrows `T` the same way the direct form does.
-  /// Per function: saved and cleared in `check_function`.
-  type_scope type_name_aliases_;
 
   /// What a `static if` condition says about one type parameter: the domain
   /// in its branch, and — when the parameter's domain was already finite, so
@@ -1700,9 +1730,9 @@ private:
   auto match_value_params(type_id param, type_id argument, value_bindings &out)
       -> void;
 
-  /// Restores `facts_` to its length on entry when it goes out of scope, so a
-  /// branch's path conditions and a block's local refinements are visible
-  /// exactly within the region that dominates them and nowhere else.
+  /// Restores `function_.facts_` to its length on entry when it goes out of
+  /// scope, so a branch's path conditions and a block's local refinements are
+  /// visible exactly within the region that dominates them and nowhere else.
   class fact_scope {
   public:
     explicit fact_scope(fact_set &facts)
@@ -1919,11 +1949,11 @@ private:
   //  and the checker already had two nearly identical machines for them.
   //  They are one machine below. A parameter's answer is a constant or a
   //  concrete type; either way it becomes a binding the instance's body is
-  //  re-checked under (`const_param_slots_` / `type_param_slots_`, which
-  //  `push_type_params` consults side by side) and a segment of the
-  //  instance's name. A template mixing the two (`[n: usize, T]`) is then
-  //  not a special case at all — it is just a solution with both kinds of
-  //  binding in it.
+  //  re-checked under (`session_.const_param_slots_` /
+  //  `session_.type_param_slots_`, which `push_type_params` consults side by
+  //  side) and a segment of the instance's name. A template mixing the two
+  //  (`[n: usize, T]`) is then not a special case at all — it is just a
+  //  solution with both kinds of binding in it.
   // ------------------------------------------------------------------
 
   /// What one call pins a template's parameters down to: a constant per value
@@ -1978,9 +2008,9 @@ private:
   ///
   /// `decl_file` is the file the template was written in, and checking the
   /// instance under it is load-bearing rather than cosmetic: name resolution
-  /// reads a file's imports out of `file_id_`, so an instance checked under
-  /// the caller's file sees the caller's imports and not the template's. A
-  /// generic method calling a function its own module imported then failed
+  /// reads a file's imports out of `file_.file_id_`, so an instance checked
+  /// under the caller's file sees the caller's imports and not the template's.
+  /// A generic method calling a function its own module imported then failed
   /// with `undefined name`, against a span in a file that did not contain the
   /// call. `nullopt` leaves the current file in place, for the callers that
   /// genuinely have no better answer. `fixed_type_params`
@@ -1989,8 +2019,8 @@ private:
   ///
   /// `self_type` is the impl/extend target for a `self`-taking method, whose
   /// body names `self` without ever annotating it — `check_function` reads
-  /// that type out of `self_type_`, so an instance checked with it unset
-  /// would find no type for `self` at all. `k_unknown_type` for a free
+  /// that type out of `function_.self_type_`, so an instance checked with it
+  /// unset would find no type for `self` at all. `k_unknown_type` for a free
   /// function, which has no receiver to bind.
   /// `site` is the syntax that asked for this instance. It is a `node` rather
   /// than a `call_expr` because not every instantiation comes from a written
@@ -2010,7 +2040,8 @@ private:
   /// possible.
   struct pending_instance {
     const ast::func_decl *instance = nullptr;
-    /// The template it was cloned from, for `comptime_only_functions_`.
+    /// The template it was cloned from, for
+    /// `session_.comptime_only_functions_`.
     const ast::func_decl *tmpl = nullptr;
     const module_members *owner = nullptr;
     std::optional<file_id_type> decl_file;
@@ -2053,10 +2084,10 @@ private:
   // ------------------------------------------------------------------------
 
   /// The leaf unknowns and their solutions.
-  infer::infer_ctxt leaf_ctxt_{types_};
+  infer::infer_ctxt leaf_ctxt_{session_.types_};
 
   /// The one unifier, used to solve them where a value meets a declared type.
-  infer::unifier leaf_engine_{types_, leaf_ctxt_};
+  infer::unifier leaf_engine_{session_.types_, leaf_ctxt_};
 
   /// Empty literals whose element type is still open, with the leaf standing
   /// for it. Their `from_array` wiring is deferred to `flush_leaf_literals`,
@@ -2515,9 +2546,6 @@ private:
     source_span span;
     std::function<void(instance_subst &)> run;
   };
-
-  /// The template currently being checked, or `nullptr` outside one.
-  const ast::func_decl *current_template_ = nullptr;
 
   std::unordered_map<const ast::func_decl *, std::vector<template_elaboration>>
       template_elaborations_;
@@ -3494,24 +3522,24 @@ private:
   template <typename F>
   auto in_module_context(const module_members &owner, file_id_type file,
                          F &&body) -> decltype(body()) {
-    if (&owner == module_ && file == file_id_) {
+    if (&owner == file_.module_ && file == file_.file_id_) {
       return std::forward<F>(body)();
     }
-    const auto saved_module = module_;
-    const auto saved_module_name = module_name_;
-    const auto saved_functor_owner = functor_owner_module_;
-    const auto saved_file = file_id_;
-    module_ = &owner;
-    module_name_ = owner.module_name;
-    functor_owner_module_.clear();
-    file_id_ = file;
-    comptime_eval_.set_file(file_id_);
+    const auto saved_module = file_.module_;
+    const auto saved_module_name = file_.module_name_;
+    const auto saved_functor_owner = session_.functor_owner_module_;
+    const auto saved_file = file_.file_id_;
+    file_.module_ = &owner;
+    file_.module_name_ = owner.module_name;
+    session_.functor_owner_module_.clear();
+    file_.file_id_ = file;
+    comptime_eval_.set_file(file_.file_id_);
     auto result = std::forward<F>(body)();
-    module_ = saved_module;
-    module_name_ = saved_module_name;
-    functor_owner_module_ = saved_functor_owner;
-    file_id_ = saved_file;
-    comptime_eval_.set_file(file_id_);
+    file_.module_ = saved_module;
+    file_.module_name_ = saved_module_name;
+    session_.functor_owner_module_ = saved_functor_owner;
+    file_.file_id_ = saved_file;
+    comptime_eval_.set_file(file_.file_id_);
     return result;
   }
 
@@ -4179,7 +4207,7 @@ private:
   /// — item-level splice producing a `type`/`trait`/`def` is not
   /// implemented yet, and reports a clear diagnostic rather than silently
   /// doing nothing. Evaluates each splice's operand exactly once: the
-  /// result (found or not) is recorded in `item_splice_impls_` so
+  /// result (found or not) is recorded in `session_.item_splice_impls_` so
   /// `check_file`'s item loop never falls through to re-evaluating it via
   /// `check_body_node`.
   /// Every `deriving`-able trait with a real `static def derive_<name>[T]()`

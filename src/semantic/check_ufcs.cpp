@@ -46,10 +46,10 @@ auto checker::collect_ufcs_candidates(const std::string &name)
                                    .origin = origin});
   };
 
-  if (module_ != nullptr) {
-    if (const auto it = module_->functions.find(name);
-        it != module_->functions.end()) {
-      add(it->second, module_, ufcs_origin::this_module);
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->functions.find(name);
+        it != file_.module_->functions.end()) {
+      add(it->second, file_.module_, ufcs_origin::this_module);
     }
   }
   if (const auto *import = find_import(name)) {
@@ -78,7 +78,7 @@ auto checker::collect_ufcs_candidates(const std::string &name)
 /// mutation: the ordinary mutability checks still run on the call.
 auto checker::receiver_is_mutable_lvalue(const ast::expr &receiver,
                                          type_id receiver_type) -> bool {
-  const auto &entry = types_.entry(receiver_type);
+  const auto &entry = session_.types_.entry(receiver_type);
   if (entry.kind == type_kind::ref_kind) {
     return entry.is_mut;
   }
@@ -99,17 +99,18 @@ auto checker::receiver_is_mutable_lvalue(const ast::expr &receiver,
 /// references and all.
 auto checker::classify_receiver_fit(type_id param, type_id receiver,
                                     bool receiver_is_mutable) -> receiver_fit {
-  const auto &param_entry = types_.entry(param);
+  const auto &param_entry = session_.types_.entry(param);
   const auto bare_param = strip_refs(param);
   const auto bare_receiver = strip_refs(receiver);
 
   // An unconstrained generic first parameter (`def sum[I, T](it: I)`)
   // accepts anything — unification binds it to whatever arrived.
-  if (types_.entry(bare_param).kind == type_kind::type_param_kind) {
+  if (session_.types_.entry(bare_param).kind == type_kind::type_param_kind) {
     return receiver_fit::fits;
   }
   // The candidate's own parameters (`&list[T]`'s `T`) are not solved yet.
-  if (!types_.compatible(open_foreign_params(bare_param), bare_receiver)) {
+  if (!session_.types_.compatible(open_foreign_params(bare_param),
+                                  bare_receiver)) {
     return receiver_fit::does_not_fit;
   }
   if (param_entry.kind == type_kind::ref_kind && param_entry.is_mut) {
@@ -131,7 +132,8 @@ auto checker::describe_ufcs_candidate(const ufcs_candidate &candidate)
     if (!rendered.empty()) {
       rendered += ", ";
     }
-    rendered += std::format("{}: {}", param.name, types_.display(param.type));
+    rendered +=
+        std::format("{}: {}", param.name, session_.types_.display(param.type));
   }
   return std::format("{}.{}({})", candidate.owner->module_name,
                      candidate.decl->name, rendered);
@@ -200,8 +202,8 @@ auto checker::check_ufcs_call(const ast::call_expr &call,
                                 .owner = candidate.owner,
                                 .decl_file = candidate.file_id,
                                 .call_params = std::move(param_types),
-                                .file = file_id_,
-                                .module = module_,
+                                .file = file_.file_id_,
+                                .module = file_.module_,
                                 .receiver = field.object.get(),
                                 .probe = probing_decl_});
     mint_open_result(decl, call.span);
@@ -218,7 +220,7 @@ auto checker::check_ufcs_call(const ast::call_expr &call,
     }
   }
 
-  resolved_callees_[&call] =
+  session_.resolved_callees_[&call] =
       resolved_callee{.decl = &decl,
                       .owner_module = candidate.owner->module_name,
                       .impl_target_type = "",
@@ -232,7 +234,7 @@ auto checker::check_ufcs_call(const ast::call_expr &call,
 /// own — the arms of the builtin method ladder that run before UFCS.
 auto checker::builtin_has_method(type_id receiver, const std::string &name)
     -> bool {
-  const auto &entry = types_.entry(receiver);
+  const auto &entry = session_.types_.entry(receiver);
   return has_builtin_inherent_method(entry, name) ||
          find_builtin_impl_method(entry.name, name) != nullptr ||
          find_extend_method_for_builtin(entry, name) != nullptr;
@@ -251,7 +253,7 @@ auto checker::builtin_has_method(type_id receiver, const std::string &name)
 /// or a mismatch is still reported by `try_ufcs_call`.
 auto checker::pin_literal_receiver_by_ufcs(const ast::field_expr &field,
                                            type_id receiver) -> bool {
-  if (types_.entry(receiver).kind != type_kind::type_var_kind ||
+  if (session_.types_.entry(receiver).kind != type_kind::type_var_kind ||
       !integer_literal_leaves_.contains(leaf_ctxt_.find(receiver))) {
     return false;
   }
@@ -263,8 +265,8 @@ auto checker::pin_literal_receiver_by_ufcs(const ast::field_expr &field,
       continue;
     }
     const auto first = strip_refs(params.front().type);
-    if (types_.is_numeric(first) ||
-        types_.entry(first).kind == type_kind::type_param_kind) {
+    if (session_.types_.is_numeric(first) ||
+        session_.types_.entry(first).kind == type_kind::type_param_kind) {
       viable.emplace_back(candidate, params.front().type);
     }
   }
@@ -281,7 +283,7 @@ auto checker::pin_literal_receiver_by_ufcs(const ast::field_expr &field,
   }
   const auto param = viable.front().second;
   const auto number = strip_refs(param);
-  if (!types_.is_numeric(number) ||
+  if (!session_.types_.is_numeric(number) ||
       builtin_has_method(number, field.field_name)) {
     return false;
   }
@@ -312,7 +314,7 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
   // Nothing is lost by declining: a method on a `T` is what its bounds
   // promise (`check_bound_method_call`), and each instance names the
   // concrete method its template's call reaches.
-  if (types_.entry(receiver_type).kind == type_kind::type_param_kind) {
+  if (session_.types_.entry(receiver_type).kind == type_kind::type_param_kind) {
     return std::nullopt;
   }
   const auto candidates = collect_ufcs_candidates(field.field_name);
@@ -371,8 +373,8 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
         std::format("`{}` is ambiguous here — {} visible functions accept "
                     "`{}` as their first argument",
                     field.field_name, viable.size(),
-                    types_.display(receiver_type)),
-        file_id_);
+                    session_.types_.display(receiver_type)),
+        file_.file_id_);
     diag.with_label(field.span, "ambiguous call");
     for (const auto &candidate : viable) {
       diag.with_note(describe_ufcs_candidate(candidate));
@@ -413,11 +415,12 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
   auto diag =
       diagnostic(diagnostic_level::error,
                  std::format("`{}` cannot be called on `{}`", field.field_name,
-                             types_.display(receiver_type)),
-                 file_id_);
+                             session_.types_.display(receiver_type)),
+                 file_.file_id_);
   diag.with_label(field.span,
                   std::format("no `{}` accepts `{}` as its first argument",
-                              field.field_name, types_.display(receiver_type)));
+                              field.field_name,
+                              session_.types_.display(receiver_type)));
   // Naming each candidate's *first parameter type* is the whole value of
   // this message: the mismatch is always between that and the receiver,
   // and spelling both out is what turns "no method" into "you forgot an
@@ -429,9 +432,10 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
     diag.with_note(std::format(
         "`{}` is visible here, and wants `{}` first",
         describe_ufcs_candidate(candidate),
-        params.empty() ? "nothing" : types_.display(params.front().type)));
+        params.empty() ? "nothing"
+                       : session_.types_.display(params.front().type)));
     if (wanted.empty() && !params.empty()) {
-      wanted = types_.display(params.front().type);
+      wanted = session_.types_.display(params.front().type);
     }
   }
   diag.with_help(std::format(
@@ -440,7 +444,8 @@ auto checker::try_ufcs_call(const ast::call_expr &call,
       "receiver is `{}` — either produce a `{}` to call this on (a "
       "`list[T]` becomes an iterator with `.iter()`), or call `{}` "
       "qualified with an argument that fits.",
-      wanted, types_.display(receiver_type), wanted, field.field_name));
+      wanted, session_.types_.display(receiver_type), wanted,
+      field.field_name));
   emit_diag(diag);
   mark_error();
   infer_call_args_loosely(call);
@@ -484,7 +489,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
                       "`expr`/`pattern` quote value programmatically.");
       return k_error_type;
     }
-    return types_.builtin("expr");
+    return session_.types_.builtin("expr");
   }
 
   // `T.fields()`/`T.field_count()`/`T.name()` — compile-time reflection
@@ -505,7 +510,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
     if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
       infer_call_args_loosely(call);
       if (field.field_name == "variant_count") {
-        return types_.builtin("int32");
+        return session_.types_.builtin("int32");
       }
       if (field.field_name == "variants") {
         return k_unknown_type;
@@ -525,40 +530,40 @@ auto checker::infer_method_call(const ast::call_expr &call,
         // to fold yet, and the template itself is never lowered; each
         // instance folds its own. Only a genuinely concrete
         // instance's binding is foldable; that's what `hir::lower` needs
-        // in `type_param_reflections_` to give this call a runtime
+        // in `session_.type_param_reflections_` to give this call a runtime
         // answer (`static` contexts aside, `T.name()` has no other way
         // to produce one — see `type_param_reflection`'s doc comment).
-        const auto &bound_entry = types_.entry(*bound);
+        const auto &bound_entry = session_.types_.entry(*bound);
         if (bound_entry.kind != type_kind::type_param_kind) {
-          type_param_reflections_[&call] =
+          session_.type_param_reflections_[&call] =
               type_param_reflection{.type_name = bound_entry.name};
         } else {
           defer_to_instances(
               call,
               [this, &call, bound = *bound](instance_subst &subst) -> void {
                 const auto settled =
-                    types_.entry(substitute_type(bound, subst));
+                    session_.types_.entry(substitute_type(bound, subst));
                 if (settled.kind != type_kind::type_param_kind) {
-                  type_param_reflections_[clone_of(subst, &call)] =
+                  session_.type_param_reflections_[clone_of(subst, &call)] =
                       type_param_reflection{.type_name = settled.name};
                 }
               });
         }
-        return types_.builtin("str");
+        return session_.types_.builtin("str");
       }
       if (field.field_name == "field_count") {
-        return types_.builtin("int32");
+        return session_.types_.builtin("int32");
       }
       return k_unknown_type;
     }
     if (const auto found = find_type_decl_by_name(type_name)) {
       infer_call_args_loosely(call);
       if (field.field_name == "name") {
-        return types_.builtin("str");
+        return session_.types_.builtin("str");
       }
       if (field.field_name == "field_count" ||
           field.field_name == "variant_count") {
-        return types_.builtin("int32");
+        return session_.types_.builtin("int32");
       }
       if (field.field_name == "variants") {
         return k_unknown_type;
@@ -592,11 +597,11 @@ auto checker::infer_method_call(const ast::call_expr &call,
     if (names_reflectable_module(mod_name)) {
       infer_call_args_loosely(call);
       if (field.field_name == "name") {
-        return types_.builtin("str");
+        return session_.types_.builtin("str");
       }
       if (field.field_name == "function_count" ||
           field.field_name == "type_count") {
-        return types_.builtin("int32");
+        return session_.types_.builtin("int32");
       }
       // `functions()`/`types()` return a compile-time list of descriptors —
       // no "list of X" type to check against, so `k_unknown` (same
@@ -641,7 +646,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
   // lookup below runs against the answer.
   if (leaf_ctxt_.meta_count() != 0 && mentions_type_var(settle(object)) &&
       !receiver_has_method(object, field.field_name) &&
-      (types_.entry(settle(object)).kind == type_kind::type_var_kind ||
+      (session_.types_.entry(settle(object)).kind == type_kind::type_var_kind ||
        field.object->kind != ast::node_kind::ident_expr ||
        collect_ufcs_candidates(field.field_name).empty())) {
     if (const auto waiting = defer_open_receiver_call(call, field)) {
@@ -659,7 +664,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
   if (via_deref.has_value()) {
     object = *via_deref;
   }
-  const auto &entry = types_.entry(object);
+  const auto &entry = session_.types_.entry(object);
   // `b.take[int64](5)`: the grammar's `"." IDENT "[" type_arg_list "]"`
   // suffix, which the parser has always built and the checker used to
   // throw away (§3 — a silently wrong answer, not a missing feature).
@@ -727,7 +732,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
                                          .receiver = field.object.get(),
                                          .receiver_type = object};
       return check_call_against_decl(call, *method->decl, method->owner,
-                                     file_id_, /*skip_self=*/true,
+                                     file_.file_id_, /*skip_self=*/true,
                                      /*explicit_args=*/{}, &site);
     }
     if (const auto derived = derived_method_result(entry, field.field_name)) {
@@ -735,7 +740,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
       return *derived;
     }
     if (const auto field_type = struct_field_type(entry, field.field_name)) {
-      const auto &field_entry = types_.entry(*field_type);
+      const auto &field_entry = session_.types_.entry(*field_type);
       if (field_entry.kind == type_kind::fn_kind) {
         record_expr_type(field, *field_type);
         return check_call_against_fn_type(call, field_entry, field.field_name);
@@ -756,11 +761,11 @@ auto checker::infer_method_call(const ast::call_expr &call,
     // (`src/std/list.cn`) this arm is the one every `list` typo reaches.
     // The note and help stay on `entry.name` — an `impl` block is written
     // against the constructor, so that is the right spelling there.
-    const auto display = types_.display(object);
+    const auto display = session_.types_.display(object);
     auto diag = diagnostic(
         diagnostic_level::error,
         std::format("no method `{}` on type `{}`", field.field_name, display),
-        file_id_);
+        file_.file_id_);
     diag.with_label(field.span, "method not found");
     // A near-miss gets named outright rather than leaving the reader to
     // spot it in the list: `nums.pusk(4)` should say "did you mean
@@ -810,17 +815,18 @@ auto checker::infer_method_call(const ast::call_expr &call,
       infer_call_args_loosely(call);
       return k_error_type;
     }
-    const auto &underlying = types_.entry(entry.result);
+    const auto &underlying = session_.types_.entry(entry.result);
     if (const auto *method = find_method(underlying, field.field_name)) {
       record_expr_type(field, fn_type_of(*method->decl, method->owner));
       record_instance_method_callee(call, *method, underlying.name,
                                     *field.object);
-      const auto result = check_call_against_decl(
-          call, *method->decl, method->owner, file_id_, /*skip_self=*/true);
+      const auto result =
+          check_call_against_decl(call, *method->decl, method->owner,
+                                  file_.file_id_, /*skip_self=*/true);
       // A method that hands back the receiver's own concrete type (e.g. a
       // builder-style trait method returning `Self`) stays opaque to the
       // caller, exactly like the value that produced it.
-      return types_.compatible(entry.result, result) ? object : result;
+      return session_.types_.compatible(entry.result, result) ? object : result;
     }
     error_with_help(
         field.span,
@@ -861,7 +867,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
         }
         record_instance_method_callee(call, *method, entry.name, *field.object);
         return check_call_against_decl(call, *method->decl, method->owner,
-                                       file_id_, /*skip_self=*/true);
+                                       file_.file_id_, /*skip_self=*/true);
       }
       if (const auto *method =
               find_extend_method_for_builtin(entry, field.field_name)) {
@@ -885,7 +891,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
                                            .receiver = field.object.get(),
                                            .receiver_type = object};
         return check_call_against_decl(call, *method->decl, method->owner,
-                                       file_id_, /*skip_self=*/true,
+                                       file_.file_id_, /*skip_self=*/true,
                                        /*explicit_args=*/{}, &site);
       }
       // Same last arm as the struct/sum/opaque case above, and the one
@@ -912,7 +918,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
 /// target (`int32(2.5)` is a real conversion), and bitwise operators need
 /// an integer target.
 auto checker::is_literal_tree(const ast::expr &expr, type_id target) -> bool {
-  const auto integer_target = types_.is_integer(target);
+  const auto integer_target = session_.types_.is_integer(target);
   switch (expr.kind) {
   case ast::node_kind::literal_expr: {
     const auto kind = dynamic_cast<const ast::literal_expr &>(expr).lit_kind;
@@ -972,7 +978,7 @@ auto checker::is_literal_tree(const ast::expr &expr, type_id target) -> bool {
 /// non-boolean type and the target is numeric.
 auto checker::check_conversion_call(const ast::call_expr &call,
                                     std::string_view target_name) -> type_id {
-  const auto target = types_.builtin(target_name);
+  const auto target = session_.types_.builtin(target_name);
   if (call.args.size() != 1) {
     error(call.span,
           std::format("conversion to `{}` takes exactly one value, found {}",
@@ -991,16 +997,18 @@ auto checker::check_conversion_call(const ast::call_expr &call,
   // is `3.5`, and `uint8(300 - 100)` is rejected because `300` does not
   // fit in `uint8`.
   const auto arg_expected =
-      types_.is_numeric(target) && is_literal_tree(*arg.value, target)
+      session_.types_.is_numeric(target) && is_literal_tree(*arg.value, target)
           ? target
           : k_unknown_type;
   const auto found = strip_refs(infer_expr(*arg.value, arg_expected));
-  if (types_.is_numeric(target) && !types_.is_unknown(found) &&
-      !types_.is_numeric(found) && !types_.is_boolean(found)) {
+  if (session_.types_.is_numeric(target) &&
+      !session_.types_.is_unknown(found) &&
+      !session_.types_.is_numeric(found) &&
+      !session_.types_.is_boolean(found)) {
     error_with_help(
         arg.value->span,
-        std::format("no conversion from `{}` to `{}`", types_.display(found),
-                    target_name),
+        std::format("no conversion from `{}` to `{}`",
+                    session_.types_.display(found), target_name),
         "cannot convert this value",
         std::format("A conversion exists when `{}` provides a `from` for "
                     "the source type; the numeric types convert between "
@@ -1076,11 +1084,11 @@ auto checker::resolve_applied_type_receiver(const ast::expr &object)
   }
 
   const auto &type = *named;
-  synthesized_types_.push_back(std::move(named));
+  session_.synthesized_types_.push_back(std::move(named));
   auto ctx = current_resolve_ctx();
   ctx.quiet = true;
   const auto resolved = resolve_type(type, ctx);
-  return types_.is_unknown(resolved) || resolved == k_error_type
+  return session_.types_.is_unknown(resolved) || resolved == k_error_type
              ? std::nullopt
              : std::optional{resolved};
 }
@@ -1090,7 +1098,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
                                         type_id target,
                                         const std::string &fn_name)
     -> std::optional<type_id> {
-  const auto &entry = types_.entry(target);
+  const auto &entry = session_.types_.entry(target);
   const auto *method = find_method(entry, fn_name, target);
   if (method == nullptr && entry.decl == nullptr && !entry.name.empty()) {
     // A builtin target (`list[int32]`) has no `type_decl` for `find_method`
@@ -1116,13 +1124,13 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
   }
 
   record_expr_type(field, fn_type_of(*method->decl, method->owner));
-  const auto target_name = types_.display(target);
+  const auto target_name = session_.types_.display(target);
   const auto params = signature_params(*method->decl, method->owner,
                                        /*skip_self=*/false);
   auto solved = value_bindings{};
   check_call_args_against(
       call, params, method->decl->name,
-      source_location{.file_id = file_id_, .span = method->decl->span},
+      source_location{.file_id = file_.file_id_, .span = method->decl->span},
       &solved);
   check_call_preconditions(call, *method->decl, params);
 
@@ -1147,7 +1155,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
     if (!mentions_template_param(target)) {
       if (const auto *instance =
               check_impl_generic_static_call(call, *method, target, bindings)) {
-        resolved_callees_[&call] =
+        session_.resolved_callees_[&call] =
             resolved_callee{.decl = instance,
                             .owner_module = method->owner->module_name,
                             .impl_target_type = ""};
@@ -1166,7 +1174,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
             if (const auto *instance = check_impl_generic_static_call(
                     clone, *method, substitute_type(target, subst),
                     impl_bindings)) {
-              resolved_callees_[&clone] =
+              session_.resolved_callees_[&clone] =
                   resolved_callee{.decl = instance,
                                   .owner_module = method->owner->module_name,
                                   .impl_target_type = ""};
@@ -1176,7 +1184,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
   }
 
   if (method->decl->type_params.empty()) {
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = method->decl,
                         .owner_module = method->owner->module_name,
                         .impl_target_type = target_name};
@@ -1213,7 +1221,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
   const auto open_slot = [&](const auto &slot) -> bool {
     return mentions_template_param(slot.second);
   };
-  if (current_template_ != nullptr &&
+  if (function_.current_template_ != nullptr &&
       (mentions_template_param(target) ||
        std::ranges::any_of(bindings, open_slot) ||
        std::ranges::any_of(solved, [](const auto &slot) -> bool {
@@ -1228,7 +1236,7 @@ auto checker::resolve_type_param_static(const ast::call_expr &call,
                              substitute_type(target, subst),
                              /*static_call=*/true, clone_args);
         });
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = method->decl,
                         .owner_module = method->owner->module_name,
                         .impl_target_type = target_name};
@@ -1263,14 +1271,15 @@ auto checker::report_missing_type_param_static(const ast::field_expr &field,
   error_with_help(
       field.span,
       std::format("no static `{}` on type `{}`", fn_name,
-                  types_.display(target)),
+                  session_.types_.display(target)),
       std::format("`{}` was solved to `{}`, which provides no `{}`", param_name,
-                  types_.display(target), fn_name),
+                  session_.types_.display(target), fn_name),
       std::format("`{}` here stands for whatever type this instance solved "
                   "it to, and the call needs that type to provide a static "
                   "`{}`. Either add one in an `extend {}:` block, or use a "
                   "type for `{}` that already has one.",
-                  param_name, fn_name, types_.display(target), param_name));
+                  param_name, fn_name, session_.types_.display(target),
+                  param_name));
 }
 
 /// A static method of a generic `extend[T] example_type[T]:` block called
@@ -1330,12 +1339,13 @@ auto checker::check_bare_generic_static_call(const ast::call_expr &call,
           solve_from_argument_types(clone, params, solved);
           const auto target =
               settle(substitute_solved(method.impl_target_pattern, solved));
-          if (mentions_type_param(target) || types_.is_unknown(target)) {
+          if (mentions_type_param(target) ||
+              session_.types_.is_unknown(target)) {
             return;
           }
           if (const auto *instance = check_impl_generic_static_call(
                   clone, method, target, solved)) {
-            resolved_callees_[&clone] =
+            session_.resolved_callees_[&clone] =
                 resolved_callee{.decl = instance,
                                 .owner_module = method.owner->module_name,
                                 .impl_target_type = ""};
@@ -1349,7 +1359,7 @@ auto checker::check_bare_generic_static_call(const ast::call_expr &call,
     }
     // Called from inside its own block: the block's `T` is this body's own,
     // rigid here, and matching it against itself bound nothing.
-    if (const auto own = types_.type_param(
+    if (const auto own = session_.types_.type_param(
             type_param.name, type_param.higher_kinded_arity, &type_param);
         is_rigid_param(own)) {
       bindings.emplace(own, own);
@@ -1393,13 +1403,14 @@ auto checker::check_bare_generic_static_call(const ast::call_expr &call,
         method.decl->name, target, std::vector<type_id>{},
         [this, &call, &method](type_id settled) -> void {
           const auto concrete = settle(settled);
-          if (mentions_type_var(concrete) || types_.is_unknown(concrete)) {
+          if (mentions_type_var(concrete) ||
+              session_.types_.is_unknown(concrete)) {
             return;
           }
           auto solved = param_subst{};
           if (const auto *instance = check_impl_generic_static_call(
                   call, method, concrete, solved)) {
-            resolved_callees_[&call] =
+            session_.resolved_callees_[&call] =
                 resolved_callee{.decl = instance,
                                 .owner_module = method.owner->module_name,
                                 .impl_target_type = ""};
@@ -1412,7 +1423,7 @@ auto checker::check_bare_generic_static_call(const ast::call_expr &call,
   if (instance == nullptr) {
     return k_error_type;
   }
-  resolved_callees_[&call] =
+  session_.resolved_callees_[&call] =
       resolved_callee{.decl = instance,
                       .owner_module = method.owner->module_name,
                       .impl_target_type = ""};
@@ -1460,7 +1471,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
       [&](const ast::func_decl &decl, const module_members *owner,
           file_id_type decl_file, std::string impl_target_type) -> type_id {
     record_expr_type(field, fn_type_of(decl, owner));
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = &decl,
                         .owner_module = owner->module_name,
                         .impl_target_type = std::move(impl_target_type)};
@@ -1529,15 +1540,15 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
           // arguments determined them. Without it a `static def
           // from_array[n: usize](items: array[T, n])` never has `n`
           // solved, `solve_generic_params` finds no instance to build,
-          // and nothing is recorded in `resolved_callees_` — leaving
+          // and nothing is recorded in `session_.resolved_callees_` — leaving
           // lowering to name the uncompiled template `trio::from_array`
           // and both backends to report "could not be resolved to a
           // function in this compiled module" for correct code.
           auto solved = value_bindings{};
-          check_call_args_against(
-              call, params, method->decl->name,
-              source_location{.file_id = file_id_, .span = method->decl->span},
-              &solved);
+          check_call_args_against(call, params, method->decl->name,
+                                  source_location{.file_id = file_.file_id_,
+                                                  .span = method->decl->span},
+                                  &solved);
           auto bindings = param_subst{};
           solve_from_argument_types(call, params, bindings,
                                     /*ufcs_receiver=*/nullptr,
@@ -1550,7 +1561,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                     resolved_callee{.owner_module = method->owner->module_name,
                                     .impl_target_type = ""},
                     /*explicit_args=*/{}, solved) &&
-                current_template_ != nullptr) {
+                function_.current_template_ != nullptr) {
               // `option.pure(x)` with `x: T`: each instance solves it for
               // its own `T`, from the arguments' recorded types.
               defer_to_instances(
@@ -1573,7 +1584,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                   });
             }
           } else {
-            resolved_callees_[&call] =
+            session_.resolved_callees_[&call] =
                 resolved_callee{.decl = method->decl,
                                 .owner_module = method->owner->module_name,
                                 .impl_target_type = root.front()};
@@ -1598,7 +1609,8 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                                        method_explicit_generic_args(field),
                                        /*static_call=*/true);
       }
-      if (mentions_abstract_type(*bound) || types_.is_unknown(*bound)) {
+      if (mentions_abstract_type(*bound) ||
+          session_.types_.is_unknown(*bound)) {
         infer_call_args_loosely(call);
         return k_unknown_type;
       }
@@ -1621,7 +1633,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
     if (const auto found_type = find_type_decl_by_name(root.front())) {
       const auto type =
           make_user_type(*found_type->first, found_type->second, {});
-      const auto &entry = types_.entry(type);
+      const auto &entry = session_.types_.entry(type);
       if (const auto *method = find_method(entry, fn_name)) {
         const auto has_self = !method->decl->params.empty() &&
                               method->decl->params.front().pattern != nullptr &&
@@ -1635,7 +1647,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                   call, field, *method, found_type->first->name)) {
             return *result;
           }
-          return resolve_against(*method->decl, method->owner, file_id_,
+          return resolve_against(*method->decl, method->owner, file_.file_id_,
                                  found_type->first->name);
         }
       }
@@ -1649,11 +1661,11 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
 /// module, or one an import brings in under that name.
 auto checker::find_callable_decl(std::string_view name)
     -> std::optional<callable_lookup> {
-  if (module_ != nullptr) {
-    if (const auto it = module_->functions.find(std::string(name));
-        it != module_->functions.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->functions.find(std::string(name));
+        it != file_.module_->functions.end()) {
       return callable_lookup{.decl = it->second.decl,
-                             .owner = module_,
+                             .owner = file_.module_,
                              .file_id = it->second.file_id};
     }
   }
@@ -1747,8 +1759,8 @@ auto checker::infer_layout_query_call(const ast::call_expr &call)
 
   // `needs_drop` answers a `bool`; the two layout queries answer a `usize`.
   const auto result_type = kind == layout_query_kind::needs_drop
-                               ? types_.builtin("bool")
-                               : types_.builtin("usize");
+                               ? session_.types_.builtin("bool")
+                               : session_.types_.builtin("usize");
   auto operand = k_unknown_type;
   if (bracket_args.size() == 1) {
     // `size_of[T]()` — the type is in the brackets, and the parentheses
@@ -1781,7 +1793,8 @@ auto checker::infer_layout_query_call(const ast::call_expr &call)
     return k_error_type;
   }
 
-  layout_queries_[&call] = layout_query{.operand = operand, .kind = kind};
+  session_.layout_queries_[&call] =
+      layout_query{.operand = operand, .kind = kind};
   record_expr_type(*base, k_unknown_type);
   return record_expr_type(call, result_type);
 }
@@ -1793,7 +1806,7 @@ auto checker::infer_layout_query_call(const ast::call_expr &call)
 /// an "I don't know what this is" error.
 auto checker::require_machine_context(source_span span,
                                       std::string_view operation) -> bool {
-  if (in_machine_function_) {
+  if (function_.in_machine_function_) {
     return true;
   }
   error_with_help(
@@ -1859,15 +1872,16 @@ auto checker::infer_uninit_call(const ast::call_expr &call)
     // No definite slot count: leave the type un-sized rather than report.
     // A template body legitimately reaches here; so does a genuinely bad
     // count, and lowering reports that one with the span in hand.
-    return record_expr_type(
-        call, types_.builtin_generic("uninit", {element, k_unknown_type}));
+    return record_expr_type(call, session_.types_.builtin_generic(
+                                      "uninit", {element, k_unknown_type}));
   }
-  stack_buffers_[&call] =
+  session_.stack_buffers_[&call] =
       stack_buffer_request{.element = element, .count = *count};
   return record_expr_type(
-      call, types_.builtin_generic(
-                "uninit",
-                {element, types_.const_value(types_.usize_type(), *count)}));
+      call,
+      session_.types_.builtin_generic(
+          "uninit", {element, session_.types_.const_value(
+                                  session_.types_.usize_type(), *count)}));
 }
 
 /// Recognizes `ptr_cast[U](p)` — reinterprets a raw pointer as pointing
@@ -1912,32 +1926,32 @@ auto checker::infer_ptr_cast_call(const ast::call_expr &call)
   }
   const auto written = infer_expr(*call.args.front().value, k_unknown_type);
   const auto operand = strip_refs(written);
-  const auto &operand_entry = types_.entry(operand);
+  const auto &operand_entry = session_.types_.entry(operand);
   // A reference is the address of the place it borrows, so `ptr_cast[T]`
   // of a `&T`/`&mut T` is a raw pointer to that place: how `machine` code
   // moves a value into or out of a borrowed place (`swap`, `replace`).
   // Mutability follows the reference, as it follows a pointer operand.
   if (operand_entry.kind != type_kind::ptr_kind &&
-      !types_.is_unknown(written) && written != k_error_type &&
-      types_.entry(written).kind == type_kind::ref_kind) {
-    const auto is_mut = types_.entry(written).is_mut;
+      !session_.types_.is_unknown(written) && written != k_error_type &&
+      session_.types_.entry(written).kind == type_kind::ref_kind) {
+    const auto is_mut = session_.types_.entry(written).is_mut;
     require_machine_context(call.span, "`ptr_cast`");
     const auto target =
         explicit_type_argument(bracket_args.front()).value_or(k_unknown_type);
-    const auto result = types_.ptr_to(target, is_mut);
-    if (!types_.is_unknown(target)) {
-      ptr_casts_[&call] = result;
+    const auto result = session_.types_.ptr_to(target, is_mut);
+    if (!session_.types_.is_unknown(target)) {
+      session_.ptr_casts_[&call] = result;
     }
     return record_expr_type(call, result);
   }
   if (operand_entry.kind != type_kind::ptr_kind) {
-    if (types_.is_unknown(operand) || operand == k_error_type) {
+    if (session_.types_.is_unknown(operand) || operand == k_error_type) {
       return record_expr_type(call, k_unknown_type);
     }
     error(call.args.front().value->span,
           std::format("`ptr_cast` requires a raw pointer or a reference, "
                       "found `{}`",
-                      types_.display(operand)),
+                      session_.types_.display(operand)),
           "not a `*T`, `*mut T`, `&T` or `&mut T`");
     return k_error_type;
   }
@@ -1949,9 +1963,9 @@ auto checker::infer_ptr_cast_call(const ast::call_expr &call)
   // as `infer_layout_query_call`'s unresolved-argument case.
   const auto target =
       explicit_type_argument(bracket_args.front()).value_or(k_unknown_type);
-  const auto result = types_.ptr_to(target, operand_entry.is_mut);
-  if (!types_.is_unknown(target)) {
-    ptr_casts_[&call] = result;
+  const auto result = session_.types_.ptr_to(target, operand_entry.is_mut);
+  if (!session_.types_.is_unknown(target)) {
+    session_.ptr_casts_[&call] = result;
   }
   return record_expr_type(call, result);
 }
@@ -1996,29 +2010,29 @@ auto checker::infer_slice_from_raw_parts_call(const ast::call_expr &call)
   require_machine_context(call.span, std::format("`{}`", name));
   const auto ptr_type =
       strip_refs(infer_expr(*call.args[0].value, k_unknown_type));
-  const auto &ptr_entry = types_.entry(ptr_type);
-  infer_expr(*call.args[1].value, types_.builtin("usize"));
+  const auto &ptr_entry = session_.types_.entry(ptr_type);
+  infer_expr(*call.args[1].value, session_.types_.builtin("usize"));
   if (ptr_entry.kind != type_kind::ptr_kind) {
-    if (types_.is_unknown(ptr_type) || ptr_type == k_error_type) {
+    if (session_.types_.is_unknown(ptr_type) || ptr_type == k_error_type) {
       return record_expr_type(call, k_unknown_type);
     }
     error(call.args[0].value->span,
           std::format("`{}` requires a raw pointer, found `{}`", name,
-                      types_.display(ptr_type)),
+                      session_.types_.display(ptr_type)),
           "not a `*T` or `*mut T`");
     return record_expr_type(call, k_error_type);
   }
   if (is_mut && !ptr_entry.is_mut) {
     error(call.args[0].value->span,
           std::format("`{}` requires a `*mut T` pointer, found `{}`", name,
-                      types_.display(ptr_type)),
+                      session_.types_.display(ptr_type)),
           "this pointer is not mutable");
     return record_expr_type(call, k_error_type);
   }
   const auto element = ptr_entry.result;
-  const auto result =
-      types_.builtin_generic(is_mut ? "slice_mut" : "slice", {element});
-  slice_from_raw_parts_calls_.insert(&call);
+  const auto result = session_.types_.builtin_generic(
+      is_mut ? "slice_mut" : "slice", {element});
+  session_.slice_from_raw_parts_calls_.insert(&call);
   return record_expr_type(call, result);
 }
 
@@ -2144,7 +2158,7 @@ auto checker::infer_implements_call(const ast::call_expr &call)
     return k_error_type;
   }
   record_expr_type(*base, k_unknown_type);
-  return types_.builtin("bool");
+  return session_.types_.builtin("bool");
 }
 
 /// Checks a call, then gates the result if it hands a raw pointer back.
@@ -2161,8 +2175,8 @@ auto checker::infer_implements_call(const ast::call_expr &call)
 auto checker::infer_call(const ast::call_expr &call, type_id expected)
     -> type_id {
   const auto result = infer_call_unguarded(call, expected);
-  if (!in_machine_function_ &&
-      types_.entry(result).kind == type_kind::ptr_kind) {
+  if (!function_.in_machine_function_ &&
+      session_.types_.entry(result).kind == type_kind::ptr_kind) {
     require_machine_context(call.span, called_name_for_diagnostic(call));
   }
   return result;
@@ -2192,8 +2206,9 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     -> type_id {
   // Before anything else, including argument checking: every
   // instantiation path below reaches back for this by call node.
-  if (!types_.is_unknown(expected) && expected != k_error_type) {
-    call_expected_types_[&call] = types_.strip_refinement(expected);
+  if (!session_.types_.is_unknown(expected) && expected != k_error_type) {
+    session_.call_expected_types_[&call] =
+        session_.types_.strip_refinement(expected);
   }
   if (call.callee == nullptr) {
     infer_call_args_loosely(call);
@@ -2257,7 +2272,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
   if (call.callee->kind != ast::node_kind::ident_expr) {
     const auto callee =
         infer_expr(*call.callee, invoked_lambda_expectation(*call.callee));
-    const auto &entry = types_.entry(strip_refs(callee));
+    const auto &entry = session_.types_.entry(strip_refs(callee));
     if (entry.kind == type_kind::fn_kind) {
       return check_call_against_fn_type(call, entry, "this function value");
     }
@@ -2285,13 +2300,14 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
                      *binding->generic_lambda,
                      {.node = &ident, .name = ident.name, .span = ident.span},
                      /*params=*/nullptr));
-      if (types_.entry(copy).kind != type_kind::fn_kind) {
+      if (session_.types_.entry(copy).kind != type_kind::fn_kind) {
         infer_call_args_loosely(call);
         return k_error_type;
       }
-      return check_call_against_fn_type(call, types_.entry(copy), name);
+      return check_call_against_fn_type(call, session_.types_.entry(copy),
+                                        name);
     }
-    const auto &entry = types_.entry(strip_refs(binding->type));
+    const auto &entry = session_.types_.entry(strip_refs(binding->type));
     if (entry.kind == type_kind::fn_kind) {
       // The callee ident is resolved straight from the scope binding
       // here, not through `infer_expr`, so (like the other direct-
@@ -2300,13 +2316,14 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
       record_expr_type(ident, binding->type);
       return check_call_against_fn_type(call, entry, name);
     }
-    if (types_.is_unknown(binding->type)) {
+    if (session_.types_.is_unknown(binding->type)) {
       infer_call_args_loosely(call);
       return k_unknown_type;
     }
     error_with_help(
         call.span, std::format("`{}` is not callable", name),
-        std::format("this has type `{}`", types_.display(binding->type)),
+        std::format("this has type `{}`",
+                    session_.types_.display(binding->type)),
         "Only functions, lambdas, and callable values can be called.");
     infer_call_args_loosely(call);
     return k_error_type;
@@ -2321,11 +2338,11 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     return k_error_type;
   }
 
-  if (module_ != nullptr) {
-    if (const auto it = module_->functions.find(name);
-        it != module_->functions.end()) {
-      record_expr_type(ident, fn_type_of(*it->second.decl, module_));
-      return check_call_against_decl(call, *it->second.decl, module_,
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->functions.find(name);
+        it != file_.module_->functions.end()) {
+      record_expr_type(ident, fn_type_of(*it->second.decl, file_.module_));
+      return check_call_against_decl(call, *it->second.decl, file_.module_,
                                      it->second.file_id,
                                      /*skip_self=*/false);
     }
@@ -2339,7 +2356,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
         record_expr_type(ident, fn_type_of(*it->second.decl, source));
         // Same persistence as the prelude branch below: lowering needs
         // the owning module to rebuild this cross-module call.
-        resolved_callees_[&call] =
+        session_.resolved_callees_[&call] =
             resolved_callee{.decl = it->second.decl,
                             .owner_module = source->module_name,
                             .impl_target_type = ""};
@@ -2376,7 +2393,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     if (const auto it = source->functions.find(name);
         it != source->functions.end()) {
       record_expr_type(ident, fn_type_of(*it->second.decl, source));
-      resolved_callees_[&call] =
+      session_.resolved_callees_[&call] =
           resolved_callee{.decl = it->second.decl,
                           .owner_module = source->module_name,
                           .impl_target_type = ""};
@@ -2390,11 +2407,11 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
   // here to their real `std.console` declarations (auto-injected into
   // every session, `inject_stdlib_prelude`), exactly like the module-
   // local-function branch a few lines above, just against a module found
-  // through prelude reachability instead of `module_`/an explicit `use`.
+  // through prelude reachability instead of `file_.module_`/an explicit `use`.
   if (const auto found = find_prelude_function(name)) {
     const auto &[fn, owner] = *found;
     record_expr_type(ident, fn_type_of(*fn.decl, owner));
-    resolved_callees_[&call] =
+    session_.resolved_callees_[&call] =
         resolved_callee{.decl = fn.decl,
                         .owner_module = owner->module_name,
                         .impl_target_type = ""};
@@ -2403,7 +2420,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
   }
   if (name == "panic") {
     infer_call_args_loosely(call);
-    return types_.builtin("never");
+    return session_.types_.builtin("never");
   }
   if (name == "assert") {
     if (!call.args.empty() && call.args.front().value != nullptr) {
@@ -2414,19 +2431,20 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
         infer_expr(*call.args[i].value, k_unknown_type);
       }
     }
-    return types_.builtin("unit");
+    return session_.types_.builtin("unit");
   }
   if (name == "size_of") {
     infer_call_args_loosely(call);
-    return types_.builtin("usize");
+    return session_.types_.builtin("usize");
   }
   if (name == "args") {
     infer_call_args_loosely(call);
-    return resolve_list_type(types_.builtin("str"));
+    return resolve_list_type(session_.types_.builtin("str"));
   }
   if (name == "env") {
     infer_call_args_loosely(call);
-    return types_.builtin_generic("option", {types_.builtin("str")});
+    return session_.types_.builtin_generic("option",
+                                           {session_.types_.builtin("str")});
   }
   if (name == "min" || name == "max") {
     auto first = k_unknown_type;
@@ -2470,7 +2488,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     return k_unknown_type;
   }
 
-  if (file_has_external_wildcard_) {
+  if (file_.file_has_external_wildcard_) {
     infer_call_args_loosely(call);
     return k_unknown_type;
   }

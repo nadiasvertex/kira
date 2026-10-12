@@ -6,7 +6,7 @@ namespace cinder::semantic::detail {
 //  Diagnostics helpers
 // ==========================================================================
 
-/// Marks the file currently being checked (`file_id_`) as containing an
+/// Marks the file currently being checked (`file_.file_id_`) as containing an
 /// error, so later driver phases skip emitting metadata for it.
 auto checker::mark_error() -> void {
   // Held with the diagnostics it belongs to: `finish_param_probes` marks
@@ -14,8 +14,8 @@ auto checker::mark_error() -> void {
   if (probe_capture_ != nullptr) {
     return;
   }
-  if (static_cast<size_t>(file_id_) < file_has_errors_.size()) {
-    file_has_errors_[file_id_] = true;
+  if (static_cast<size_t>(file_.file_id_) < file_has_errors_.size()) {
+    file_has_errors_[file_.file_id_] = true;
   }
 }
 
@@ -41,7 +41,7 @@ auto checker::emit_diag(const diagnostic &diag) -> void {
   for (const auto &label : diag.labels) {
     key += std::format("|{}:{}", label.span.start, label.span.end);
   }
-  if (!emitted_diagnostics_.insert(std::move(key)).second) {
+  if (!session_.emitted_diagnostics_.insert(std::move(key)).second) {
     return;
   }
   if (diag.level == diagnostic_level::error) {
@@ -60,11 +60,12 @@ auto checker::emit_diag(const diagnostic &diag) -> void {
 /// appears to come from nowhere at all. Innermost frame first, so the
 /// nearest call is the one read first.
 auto checker::with_instantiation_notes(const diagnostic &diag) -> diagnostic {
-  if (instantiation_sites_.empty() || diag.level != diagnostic_level::error) {
+  if (session_.instantiation_sites_.empty() ||
+      diag.level != diagnostic_level::error) {
     return diag;
   }
   auto annotated = diag;
-  for (const auto &frame : std::views::reverse(instantiation_sites_)) {
+  for (const auto &frame : std::views::reverse(session_.instantiation_sites_)) {
     if (frame.lambda_use) {
       annotated.children.push_back(
           diagnostic(diagnostic_level::note,
@@ -94,7 +95,7 @@ auto checker::with_instantiation_notes(const diagnostic &diag) -> diagnostic {
 /// Emits a single-label error at `span` in the current file.
 auto checker::error(source_span span, const std::string &message,
                     const std::string &label) -> void {
-  auto diag = diagnostic(diagnostic_level::error, message, file_id_);
+  auto diag = diagnostic(diagnostic_level::error, message, file_.file_id_);
   diag.with_label(span, label);
   emit_diag(diag);
   mark_error();
@@ -104,7 +105,7 @@ auto checker::error(source_span span, const std::string &message,
 auto checker::error_with_help(source_span span, const std::string &message,
                               const std::string &label, const std::string &help)
     -> void {
-  auto diag = diagnostic(diagnostic_level::error, message, file_id_);
+  auto diag = diagnostic(diagnostic_level::error, message, file_.file_id_);
   diag.with_label(span, label);
   diag.with_help(help);
   emit_diag(diag);
@@ -120,11 +121,11 @@ auto checker::error_with_help(source_span span, const std::string &message,
 /// the mismatch isn't about a value slot, which is the common case.
 auto checker::value_slot_conflict(type_id expected, type_id found)
     -> std::optional<std::string> {
-  const auto &expected_entry = types_.entry(expected);
-  const auto &found_entry = types_.entry(found);
+  const auto &expected_entry = session_.types_.entry(expected);
+  const auto &found_entry = session_.types_.entry(found);
 
   if (is_value_kind(expected_entry.kind) && is_value_kind(found_entry.kind)) {
-    if (types_.compatible(expected, found)) {
+    if (session_.types_.compatible(expected, found)) {
       return std::nullopt;
     }
     if (expected_entry.kind == type_kind::const_variant_kind ||
@@ -148,10 +149,10 @@ auto checker::value_slot_conflict(type_id expected, type_id found)
     }
     std::ranges::sort(unknowns);
     unknowns.erase(std::ranges::unique(unknowns).begin(), unknowns.end());
-    const auto domain = types_.display(is_value_kind(expected_entry.kind) &&
-                                               expected_entry.result != 0
-                                           ? expected_entry.result
-                                           : found_entry.result);
+    const auto domain = session_.types_.display(
+        is_value_kind(expected_entry.kind) && expected_entry.result != 0
+            ? expected_entry.result
+            : found_entry.result);
     return std::format(
         "`{}` can never equal `{}` for `{}: {}` — there is no value of `{}` "
         "that would make these lengths agree.",
@@ -197,9 +198,9 @@ auto checker::settle(type_id id) -> type_id {
 /// Whether every type parameter `id` mentions is one the body currently
 /// being checked has in scope.
 ///
-/// `type_params_` is that scope stack, so this is a lookup rather than a
-/// guess: the `T` of the function being checked is in it, and the `T` of a
-/// callee whose signature is merely being matched against is not.
+/// `function_.type_params_` is that scope stack, so this is a lookup rather
+/// than a guess: the `T` of the function being checked is in it, and the `T` of
+/// a callee whose signature is merely being matched against is not.
 auto checker::type_params_in_scope(type_id id) -> bool {
   auto seen = std::unordered_set<type_id>{};
   return type_params_in_scope_impl(id, seen);
@@ -211,13 +212,14 @@ auto checker::type_params_in_scope_impl(type_id id,
   if (!seen.insert(id).second) {
     return true;
   }
-  const auto &entry = types_.entry(id);
+  const auto &entry = session_.types_.entry(id);
   if (entry.kind == type_kind::type_param_kind &&
-      !std::ranges::any_of(type_params_, [id](const auto &scope) -> bool {
-        return std::ranges::any_of(scope, [id](const auto &pair) -> bool {
-          return pair.second == id;
-        });
-      })) {
+      !std::ranges::any_of(
+          function_.type_params_, [id](const auto &scope) -> bool {
+            return std::ranges::any_of(scope, [id](const auto &pair) -> bool {
+              return pair.second == id;
+            });
+          })) {
     return false;
   }
   for (const auto arg : entry.args) {
@@ -375,7 +377,7 @@ auto checker::demand_shape(type_id id) -> type_id {
   }
   const auto settled = leaf_ctxt_.zonk(id);
   const auto head_open = [&]() -> bool {
-    return types_.entry(base_shape(leaf_ctxt_.zonk(settled))).kind ==
+    return session_.types_.entry(base_shape(leaf_ctxt_.zonk(settled))).kind ==
            type_kind::type_var_kind;
   };
   if (head_open()) {
@@ -437,12 +439,13 @@ auto checker::solve_leaves(type_id expected, type_id found) -> void {
     }
     const auto settled = settle(other);
     auto vars = std::unordered_set<type_id>{};
-    if (mentions_type_var(settled, vars) || types_.is_unknown(settled)) {
+    if (mentions_type_var(settled, vars) ||
+        session_.types_.is_unknown(settled)) {
       return false;
     }
     const auto shape = strip_refs(settled);
-    return !types_.is_numeric(shape) &&
-           types_.entry(shape).kind != type_kind::type_param_kind;
+    return !session_.types_.is_numeric(shape) &&
+           session_.types_.entry(shape).kind != type_kind::type_param_kind;
   };
   if (refuses_number(expected, found)) {
     (void)demand(expected);
@@ -465,16 +468,16 @@ auto checker::solve_leaves(type_id expected, type_id found) -> void {
 /// function that says what `out` holds.
 auto checker::agrees(type_id expected, type_id found) -> bool {
   solve_leaves(expected, found);
-  return types_.compatible(settle(expected), settle(found));
+  return session_.types_.compatible(settle(expected), settle(found));
 }
 
 /// Whether `id` is a borrow of something a load has to be spelled for —
 /// `&int32`, not `&list[T]`. The one shape where dropping the `&` silently
 /// changes what the code computes.
 auto checker::needs_explicit_deref(type_id id) -> bool {
-  const auto &entry = types_.entry(settle(id));
+  const auto &entry = session_.types_.entry(settle(id));
   return entry.kind == type_kind::ref_kind &&
-         !types_.reference_is_transparent(entry.result);
+         !session_.types_.reference_is_transparent(entry.result);
 }
 
 /// Reports the missing `*` when that is what a mismatch really is, and
@@ -492,8 +495,8 @@ auto checker::report_deref_if_missing(const ast::expr *value, type_id expected,
   // Only when the `*` is the whole story. A `&int32` where a `str` was
   // wanted is a plain mismatch, and telling the user to dereference it
   // would send them somewhere there is nothing to find.
-  const auto referent = types_.entry(settle(found)).result;
-  if (!types_.compatible(settle(expected), referent)) {
+  const auto referent = session_.types_.entry(settle(found)).result;
+  if (!session_.types_.compatible(settle(expected), referent)) {
     return false;
   }
   report_missing_deref(*value, found);
@@ -527,20 +530,21 @@ auto checker::require_explicit_deref(const ast::expr &operand, type_id raw)
 auto checker::report_missing_deref(const ast::expr &value, type_id found)
     -> void {
   const auto settled = settle(found);
-  const auto referent = types_.entry(settled).result;
+  const auto referent = session_.types_.entry(settled).result;
   error_with_help(
       value.span,
       std::format("expected `{}`, found `{}` — this is a borrow, not a "
                   "number",
-                  types_.display(referent), types_.display(settled)),
-      std::format("this is a `{}`", types_.display(settled)),
+                  session_.types_.display(referent),
+                  session_.types_.display(settled)),
+      std::format("this is a `{}`", session_.types_.display(settled)),
       std::format(
           "A borrow of a list, string, struct or tuple can be used as the "
           "value directly — such a value already *is* an address, so the "
           "`&` costs nothing. A value of type `{}` is not: `&` on one "
           "makes an address, and reading the value back out through it is "
           "a load. Write `*` in front of this to do that load.",
-          types_.display(referent)));
+          session_.types_.display(referent)));
 }
 
 auto checker::type_mismatch(source_span span, type_id expected, type_id found,
@@ -549,27 +553,29 @@ auto checker::type_mismatch(source_span span, type_id expected, type_id found,
   solve_leaves(expected, found);
   expected = settle(expected);
   found = settle(found);
-  if (types_.compatible(expected, found)) {
+  if (session_.types_.compatible(expected, found)) {
     check_narrowing(expected, found, value, span, context);
     return;
   }
   if (report_deref_if_missing(value, expected, found)) {
     return;
   }
-  auto diag =
-      diagnostic(diagnostic_level::error,
-                 std::format("type mismatch: expected `{}`, found `{}`",
-                             types_.display(expected), types_.display(found)),
-                 file_id_);
-  diag.with_label(
-      span, std::format("expected `{}` {}", types_.display(expected), context));
+  auto diag = diagnostic(diagnostic_level::error,
+                         std::format("type mismatch: expected `{}`, found `{}`",
+                                     session_.types_.display(expected),
+                                     session_.types_.display(found)),
+                         file_.file_id_);
+  diag.with_label(span,
+                  std::format("expected `{}` {}",
+                              session_.types_.display(expected), context));
   if (auto conflict = value_slot_conflict(expected, found)) {
     diag.with_help(*conflict);
-  } else if (types_.is_numeric(expected) && types_.is_numeric(found)) {
+  } else if (session_.types_.is_numeric(expected) &&
+             session_.types_.is_numeric(found)) {
     diag.with_help(std::format(" Cinder never converts numbers implicitly; "
                                "write `{}(...)` to convert "
                                "this value explicitly.",
-                               types_.display(expected)));
+                               session_.types_.display(expected)));
   }
   emit_diag(diag);
   mark_error();
@@ -578,8 +584,8 @@ auto checker::type_mismatch(source_span span, type_id expected, type_id found,
 /// Marks the file currently being checked as containing an error, guarding
 /// the index bound.
 auto checker::mark_file_error() -> void {
-  if (static_cast<size_t>(file_id_) < file_has_errors_.size()) {
-    file_has_errors_[file_id_] = true;
+  if (static_cast<size_t>(file_.file_id_) < file_has_errors_.size()) {
+    file_has_errors_[file_.file_id_] = true;
   }
 }
 

@@ -6,7 +6,7 @@ namespace cinder::semantic::detail {
 /// function/type/impl currently being checked: current module plus the
 /// live generic-parameter scope stack.
 auto checker::current_resolve_ctx() -> resolve_ctx {
-  return resolve_ctx{.module = module_,
+  return resolve_ctx{.module = file_.module_,
                      .param_bindings = nullptr,
                      .use_type_param_stack = true,
                      .quiet = false};
@@ -52,7 +52,7 @@ auto checker::name_poly(std::string_view name, const resolve_ctx &ctx)
   if (!slot.has_value()) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(*slot);
+  const auto &entry = session_.types_.entry(*slot);
   switch (entry.kind) {
   case type_kind::type_param_kind:
     return poly_variable(value_var(*slot));
@@ -164,9 +164,9 @@ auto checker::resolve_value_arg(const ast::node &node,
     -> type_id {
   const auto declared = param.bound_or_type != nullptr
                             ? resolve_type(*param.bound_or_type, quiet_ctx(ctx))
-                            : types_.usize_type();
+                            : session_.types_.usize_type();
 
-  const auto &declared_entry = types_.entry(declared);
+  const auto &declared_entry = session_.types_.entry(declared);
   if (declared_entry.kind == type_kind::sum_kind &&
       declared_entry.decl != nullptr) {
     const auto name = value_arg_name(node);
@@ -177,8 +177,8 @@ auto checker::resolve_value_arg(const ast::node &node,
         *declared_entry.decl->definition);
     for (const auto &variant : sum.body.variants) {
       if (variant.name == *name) {
-        return types_.const_variant(*declared_entry.decl,
-                                    declared_entry.module_name, *name);
+        return session_.types_.const_variant(*declared_entry.decl,
+                                             declared_entry.module_name, *name);
       }
     }
     if (!ctx.quiet) {
@@ -189,7 +189,7 @@ auto checker::resolve_value_arg(const ast::node &node,
       auto diag = diagnostic(diagnostic_level::error,
                              std::format("`{}` is not a state of `{}`", *name,
                                          declared_entry.name),
-                             file_id_);
+                             file_.file_id_);
       diag.with_label(span, "not a variant of this parameter's type");
       diag.with_help(std::format(
           "The `{}` parameter of this type ranges over `{}`, whose states "
@@ -205,7 +205,7 @@ auto checker::resolve_value_arg(const ast::node &node,
   if (!poly.has_value()) {
     return k_unknown_type;
   }
-  return types_.symbolic_value(declared, *poly);
+  return session_.types_.symbolic_value(declared, *poly);
 }
 
 /// A copy of `ctx` that reports nothing — used when resolving a type purely
@@ -222,7 +222,8 @@ auto checker::quiet_ctx(const resolve_ctx &ctx) -> resolve_ctx {
 auto checker::resolve_length_arg(const ast::node &node, const resolve_ctx &ctx)
     -> type_id {
   const auto poly = value_poly(node, ctx);
-  return poly.has_value() ? types_.symbolic_value(types_.usize_type(), *poly)
+  return poly.has_value() ? session_.types_.symbolic_value(
+                                session_.types_.usize_type(), *poly)
                           : k_unknown_type;
 }
 
@@ -230,7 +231,7 @@ auto checker::resolve_length_arg(const ast::node &node, const resolve_ctx &ctx)
 /// both backends need. `nullopt` for a symbolic length, which is a length
 /// no runtime representation can have.
 auto checker::closed_length(type_id length) -> std::optional<uint64_t> {
-  const auto &entry = types_.entry(length);
+  const auto &entry = session_.types_.entry(length);
   if (entry.kind != type_kind::const_value_kind || entry.value.constant < 0) {
     return std::nullopt;
   }
@@ -240,7 +241,7 @@ auto checker::closed_length(type_id length) -> std::optional<uint64_t> {
 /// Interns `array[T, <length>]` from a resolved length value slot, keeping
 /// the plain integer size in sync for the backends.
 auto checker::array_with_length(type_id element, type_id length) -> type_id {
-  return types_.array_of(element, closed_length(length), length);
+  return session_.types_.array_of(element, closed_length(length), length);
 }
 
 /// Resolves each generic argument slot of a named type. A slot declared as
@@ -353,9 +354,9 @@ auto checker::member_resolve_ctx(const type_entry &instance,
                      .quiet = true};
 }
 
-/// Makes `file_id_` the file `instance`'s declaration was written in for
+/// Makes `file_.file_id_` the file `instance`'s declaration was written in for
 /// the lifetime of the returned guard. Name resolution reads imports out
-/// of `file_id_`, so a member type written with an imported name
+/// of `file_.file_id_`, so a member type written with an imported name
 /// (`inner: shared[noisy]` under `use std.shared.shared`) resolved under
 /// whatever file the checker last stood in, often unknown, which left the
 /// type undroppable.
@@ -365,12 +366,12 @@ auto checker::enter_declaring_file(const type_entry &instance) {
     file_id_type saved;
     ~guard() { slot = saved; }
   };
-  auto result = guard{.slot = file_id_, .saved = file_id_};
+  auto result = guard{.slot = file_.file_id_, .saved = file_.file_id_};
   if (instance.decl != nullptr) {
     if (const auto *module = index_.find_module(instance.module_name)) {
       if (const auto it = module->types.find(instance.decl->name);
           it != module->types.end() && it->second.decl == instance.decl) {
-        file_id_ = it->second.file_id;
+        file_.file_id_ = it->second.file_id;
       }
     }
   }
@@ -472,17 +473,17 @@ auto checker::variant_payload_types(const type_entry &instance,
 auto checker::type_carries_borrow(type_id id,
                                   std::unordered_set<type_id> &visited,
                                   bool params_bear) -> bool {
-  if (types_.is_unknown(id) || id == k_error_type) {
+  if (session_.types_.is_unknown(id) || id == k_error_type) {
     return false;
   }
   if (!visited.insert(id).second) {
     return false;
   }
-  const auto &e = types_.entry(id);
+  const auto &e = session_.types_.entry(id);
   if (e.kind == type_kind::type_param_kind) {
     return params_bear;
   }
-  if (types_.is_view(id) || e.kind == type_kind::ref_kind ||
+  if (session_.types_.is_view(id) || e.kind == type_kind::ref_kind ||
       e.kind == type_kind::fn_kind || e.kind == type_kind::param_app_kind) {
     return true;
   }
@@ -578,10 +579,10 @@ auto checker::resolve_own_drop(const type_entry &entry, type_id id)
 auto checker::resolve_drop_plan(type_id id,
                                 std::unordered_set<type_id> &visiting)
     -> std::optional<drop_plan> {
-  if (types_.is_unknown(id) || id == k_error_type) {
+  if (session_.types_.is_unknown(id) || id == k_error_type) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(id);
+  const auto &entry = session_.types_.entry(id);
   if (entry.kind == type_kind::builtin_generic_kind &&
       entry.name == "generator") {
     // What a generator's body still owns depends on where it is
@@ -591,7 +592,7 @@ auto checker::resolve_drop_plan(type_id id,
   if (entry.kind == type_kind::fn_kind) {
     // What a closure's environment owns depends on the lambda that made
     // it, so every `fn` value is dropped through the glue it carries.
-    return drop_plan{.closure_glue = closure_glue_type_};
+    return drop_plan{.closure_glue = session_.closure_glue_type_};
   }
   const auto is_prelude_sum =
       entry.kind == type_kind::builtin_generic_kind &&
@@ -660,8 +661,8 @@ auto checker::resolve_drop_plan(type_id id,
   return plan;
 }
 
-/// Populates `drop_plans_` for `checked_types::drop_plans`. Run once, over
-/// the whole type table, from `take_checked_types` — mirroring `compute_
+/// Populates `session_.drop_plans_` for `checked_types::drop_plans`. Run once,
+/// over the whole type table, from `take_checked_types` — mirroring `compute_
 /// borrow_bearing_types` immediately above: a struct/sum type's droppability
 /// depends on its fields' resolved types, which needs the same per-
 /// instance generic substitution `struct_field_type` does, so this can't
@@ -680,7 +681,7 @@ auto checker::mentions_type_var(type_id id, std::unordered_set<type_id> &seen)
   if (!seen.insert(id).second) {
     return false;
   }
-  const auto entry = types_.entry(id); // copy: recursion may intern
+  const auto entry = session_.types_.entry(id); // copy: recursion may intern
   if (entry.kind == type_kind::type_var_kind) {
     return true;
   }
@@ -706,7 +707,7 @@ auto checker::collect_type_vars(type_id id, std::vector<type_id> &out,
   if (!seen.insert(id).second) {
     return;
   }
-  const auto entry = types_.entry(id); // copy: recursion may intern
+  const auto entry = session_.types_.entry(id); // copy: recursion may intern
   if (entry.kind == type_kind::type_var_kind &&
       std::ranges::find(out, id) == out.end()) {
     out.push_back(id);
@@ -720,8 +721,9 @@ auto checker::collect_type_vars(type_id id, std::vector<type_id> &out,
 }
 
 auto checker::resolve_drop_plans() -> void {
-  closure_glue_type_ = types_.fn_of({}, types_.builtin("unit"));
-  const auto snapshot = types_.count();
+  session_.closure_glue_type_ =
+      session_.types_.fn_of({}, session_.types_.builtin("unit"));
+  const auto snapshot = session_.types_.count();
   for (std::size_t raw = 0; raw < snapshot; ++raw) {
     const auto id = static_cast<type_id>(raw);
     auto scratch = std::unordered_set<type_id>{};
@@ -730,7 +732,7 @@ auto checker::resolve_drop_plans() -> void {
     }
     auto visiting = std::unordered_set<type_id>{};
     if (auto plan = resolve_drop_plan(id, visiting); plan.has_value()) {
-      drop_plans_.emplace(id, std::move(*plan));
+      session_.drop_plans_.emplace(id, std::move(*plan));
     }
   }
 }
@@ -761,11 +763,11 @@ auto checker::param_name_of(const ast::param &param) -> std::string {
 auto checker::param_types_for(const ast::func_decl &decl,
                               const module_members *owner)
     -> const std::vector<type_id> & {
-  if (const auto it = inferred_param_types_.find(&decl);
-      it != inferred_param_types_.end()) {
+  if (const auto it = cache_.inferred_param_types_.find(&decl);
+      it != cache_.inferred_param_types_.end()) {
     return it->second;
   }
-  auto &stored = inferred_param_types_
+  auto &stored = cache_.inferred_param_types_
                      .emplace(&decl, std::vector<type_id>(decl.params.size(),
                                                           k_unknown_type))
                      .first->second;
@@ -786,7 +788,7 @@ auto checker::param_types_for(const ast::func_decl &decl,
     }
     stored[i] = leaf_ctxt_.fresh_type(
         std::format("the type of parameter `{}`", name),
-        source_location{.file_id = file_id_, .span = param.span});
+        source_location{.file_id = file_.file_id_, .span = param.span});
   }
   return stored;
 }
@@ -819,10 +821,10 @@ auto checker::generic_param_bindings(
   auto bindings = type_scope{};
   const auto seed = [&](const ast::type_param &type_param) -> void {
     if (!type_param.name.empty()) {
-      bindings.emplace(type_param.name,
-                       types_.type_param(type_param.name,
-                                         type_param.higher_kinded_arity,
-                                         &type_param));
+      bindings.emplace(
+          type_param.name,
+          session_.types_.type_param(
+              type_param.name, type_param.higher_kinded_arity, &type_param));
     }
   };
   if (enclosing_block_params != nullptr) {
@@ -886,13 +888,13 @@ auto checker::signature_params(
         const auto classified = open_param_decls_.find(&decl);
         const auto generic =
             classified != open_param_decls_.end() && classified->second;
-        type =
-            !generic && !mentions_type_var(settled)
-                ? settled
-                : leaf_ctxt_.fresh_type(
-                      std::format("the type of parameter `{}` at this call",
-                                  name),
-                      source_location{.file_id = file_id_, .span = param.span});
+        type = !generic && !mentions_type_var(settled)
+                   ? settled
+                   : leaf_ctxt_.fresh_type(
+                         std::format("the type of parameter `{}` at this call",
+                                     name),
+                         source_location{.file_id = file_.file_id_,
+                                         .span = param.span});
       }
     }
     params.push_back(fn_param_info{
@@ -911,15 +913,15 @@ auto checker::signature_params(
 /// leaf to the width an earlier `return` gave it. A `never` path says
 /// nothing about the result.
 auto checker::note_inferred_return(type_id found, source_span span) -> void {
-  if (types_.entry(found).name == "never") {
+  if (session_.types_.entry(found).name == "never") {
     return;
   }
-  if (!inferred_return_seen_) {
-    inferred_return_seen_ = true;
-    inferred_return_ = found;
+  if (!function_.inferred_return_seen_) {
+    function_.inferred_return_seen_ = true;
+    function_.inferred_return_ = found;
     return;
   }
-  type_mismatch(span, inferred_return_, found,
+  type_mismatch(span, function_.inferred_return_, found,
                 "as a result of this function, like its other returns");
 }
 
@@ -949,7 +951,7 @@ auto checker::inferred_return_of(const ast::func_decl &decl,
       slot->second = leaf_ctxt_.fresh_type(
           std::format("the result of `{}`, called from its own body",
                       decl.name),
-          source_location{.file_id = file_id_, .span = decl.span});
+          source_location{.file_id = file_.file_id_, .span = decl.span});
     }
     return slot->second;
   }
@@ -958,17 +960,17 @@ auto checker::inferred_return_of(const ast::func_decl &decl,
     return k_unknown_type;
   }
   early_checked_.insert(&decl);
-  const auto saved_module = module_;
-  const auto saved_file = file_id_;
-  const auto saved_self = self_type_;
+  const auto saved_module = file_.module_;
+  const auto saved_file = file_.file_id_;
+  const auto saved_self = function_.self_type_;
   const auto saved_probe = std::exchange(probe_capture_, nullptr);
-  module_ = owner;
-  file_id_ = listed->second.file_id;
-  self_type_ = k_unknown_type;
+  file_.module_ = owner;
+  file_.file_id_ = listed->second.file_id;
+  function_.self_type_ = k_unknown_type;
   check_function(decl, /*at_module_scope=*/true);
-  module_ = saved_module;
-  file_id_ = saved_file;
-  self_type_ = saved_self;
+  file_.module_ = saved_module;
+  file_.file_id_ = saved_file;
+  function_.self_type_ = saved_self;
   probe_capture_ = saved_probe;
   const auto done = inferred_returns_.find(&decl);
   return done != inferred_returns_.end() ? done->second : k_unknown_type;
@@ -1006,9 +1008,9 @@ auto checker::fn_type_of(const ast::func_decl &decl,
   auto result = signature_return_type(decl, owner);
   if (result == k_unknown_type && decl.return_type == nullptr &&
       decl.body_expr == nullptr && decl.body_stmts.empty()) {
-    result = types_.builtin("unit");
+    result = session_.types_.builtin("unit");
   }
-  return types_.fn_of(std::move(params), result);
+  return session_.types_.fn_of(std::move(params), result);
 }
 
 /// Comma-separated `` `Trait[Args]` `` list for an existential type's

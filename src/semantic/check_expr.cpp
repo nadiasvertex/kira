@@ -18,9 +18,9 @@ auto checker::infer_type_name_member(const ast::field_expr &field)
       !is_builtin_scalar_name(ident.name)) {
     return std::nullopt;
   }
-  const auto type = types_.builtin(ident.name);
+  const auto type = session_.types_.builtin(ident.name);
   if ((field.field_name == "max" || field.field_name == "min") &&
-      types_.is_numeric(type)) {
+      session_.types_.is_numeric(type)) {
     return type;
   }
   return k_unknown_type; // other type-level members (reflection, try_from)
@@ -106,10 +106,10 @@ auto checker::find_type_decl_by_path(const std::vector<std::string> &path)
 
 auto checker::find_type_decl_by_name(std::string_view name)
     -> std::optional<std::pair<const ast::type_decl *, std::string>> {
-  if (module_ != nullptr) {
-    if (const auto it = module_->types.find(std::string(name));
-        it != module_->types.end()) {
-      return std::pair{it->second.decl, module_->module_name};
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->types.find(std::string(name));
+        it != file_.module_->types.end()) {
+      return std::pair{it->second.decl, file_.module_->module_name};
     }
   }
   if (const auto *binding = find_import(name)) {
@@ -135,9 +135,9 @@ auto checker::find_type_decl_by_name(std::string_view name)
 /// through `explicit_type_argument`'s ordinary type resolution.
 auto checker::find_trait_decl_by_name(std::string_view name)
     -> std::optional<const ast::trait_decl *> {
-  if (module_ != nullptr) {
-    if (const auto it = module_->traits.find(std::string(name));
-        it != module_->traits.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->traits.find(std::string(name));
+        it != file_.module_->traits.end()) {
       return it->second.decl;
     }
   }
@@ -182,7 +182,7 @@ auto checker::resolve_struct_literal_head(
         std::format("type `{}` expects {} type argument{}, found {}", decl.name,
                     decl.type_params.size(),
                     decl.type_params.size() == 1 ? "" : "s", type_args.size()),
-        file_id_);
+        file_.file_id_);
     diag.with_label(head_span, "wrong number of type arguments");
     emit_diag(diag);
     mark_error();
@@ -207,11 +207,12 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
       if (const auto found = find_type_decl_by_name(ident.name)) {
         target = resolve_struct_literal_head(
             *found->first, found->second, expr.type_args, expr.type_name->span);
-      } else if (!file_has_external_wildcard_ &&
+      } else if (!file_.file_has_external_wildcard_ &&
                  !is_builtin_scalar_name(ident.name) &&
                  !builtin_generic_arity(ident.name).has_value() &&
                  find_import(ident.name) == nullptr) {
-        if (reported_undefined_.insert(std::format("type:{}", ident.name))
+        if (function_.reported_undefined_
+                .insert(std::format("type:{}", ident.name))
                 .second) {
           error_with_help(
               expr.type_name->span,
@@ -240,7 +241,8 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
         // as "no concrete checked type is available for this node" — a
         // compiler-internals message for what is an ordinary typo.
         const auto spelling = join_strings(path.segments, ".");
-        if (reported_undefined_.insert(std::format("type:{}", spelling))
+        if (function_.reported_undefined_
+                .insert(std::format("type:{}", spelling))
                 .second) {
           error_with_help(
               expr.type_name->span,
@@ -257,12 +259,12 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
         target = k_error_type;
       }
     }
-  } else if (types_.entry(strip_refs(expected)).kind ==
+  } else if (session_.types_.entry(strip_refs(expected)).kind ==
              type_kind::struct_kind) {
     target = strip_refs(expected);
   }
 
-  const auto &entry = types_.entry(target);
+  const auto &entry = session_.types_.entry(target);
   const auto *fields = struct_fields_of(entry);
   if (fields == nullptr) {
     for (const auto &field : expr.fields) {
@@ -298,7 +300,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
           diagnostic_level::error,
           std::format("unknown field `{}` in struct literal for `{}`",
                       field.name, entry.name),
-          file_id_);
+          file_.file_id_);
       diag.with_label(field.span, "no such field");
       if (const auto names = struct_field_names(entry); !names.empty()) {
         diag.with_note(
@@ -331,10 +333,10 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
     }
     // Recorded unconditionally (even when neither branch above ran, in
     // which case `found` is still `k_unknown_type`) so lowering's lookup
-    // is a plain `.find` — see `struct_literal_field_types_`'s doc
+    // is a plain `.find` — see `session_.struct_literal_field_types_`'s doc
     // comment.
-    struct_literal_field_types_[&field] = found;
-    struct_literal_field_expected_[&field] = field_expected;
+    session_.struct_literal_field_types_[&field] = found;
+    session_.struct_literal_field_expected_[&field] = field_expected;
     inferred_by_field.emplace(field.name, found);
   }
 
@@ -392,7 +394,8 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
           continue;
         }
         const auto pattern = resolve_type(*field.type, pattern_ctx);
-        const auto matched = infer::match_pattern(types_, pattern, it->second);
+        const auto matched =
+            infer::match_pattern(session_.types_, pattern, it->second);
         if (const auto solved = matched.bindings.find(param_id(param));
             solved != matched.bindings.end()) {
           bound = solved->second;
@@ -416,7 +419,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
 auto checker::check_body_nodes(const std::vector<ast::ptr<ast::node>> &items,
                                type_id expected_tail) -> type_id {
   push_scope();
-  auto last = types_.builtin("unit");
+  auto last = session_.types_.builtin("unit");
   // Every statement is still visited below regardless of reachability —
   // `hir::lower` walks this same list unconditionally and needs every
   // node's type/resolution recorded, so this never skips a `check_body_
@@ -425,8 +428,8 @@ auto checker::check_body_nodes(const std::vector<ast::ptr<ast::node>> &items,
   // known (for this concrete instantiation) to have returned — see
   // `stmt_definitely_returns`'s doc comment for why a `static assert`
   // reached only past one of those must not be judged reachable.
-  const auto saved_unreachable = in_known_unreachable_code_;
-  in_known_unreachable_code_ = false;
+  const auto saved_unreachable = function_.in_known_unreachable_code_;
+  function_.in_known_unreachable_code_ = false;
   // Narrowings past a returning `static if` hold for the rest of this block
   // and no further (phase 9, rule 5).
   auto narrowed_past = size_t{0};
@@ -437,22 +440,23 @@ auto checker::check_body_nodes(const std::vector<ast::ptr<ast::node>> &items,
     const auto is_last = i + 1 == items.size();
     last = check_body_node(*items[i], is_last ? expected_tail : k_unknown_type);
     if (!is_last) {
-      last = in_known_unreachable_code_ ? types_.builtin("never")
-                                        : types_.builtin("unit");
+      last = function_.in_known_unreachable_code_
+                 ? session_.types_.builtin("never")
+                 : session_.types_.builtin("unit");
       if (stmt_definitely_returns(*items[i])) {
-        in_known_unreachable_code_ = true;
+        function_.in_known_unreachable_code_ = true;
       }
       if (const auto past = narrowing_past(*items[i])) {
         scoped_domains_.emplace_back(past->param, *past->else_domain);
         ++narrowed_past;
         if (past->else_domain->empty()) {
-          in_known_unreachable_code_ = true;
+          function_.in_known_unreachable_code_ = true;
         }
       }
     }
   }
   scoped_domains_.resize(scoped_domains_.size() - narrowed_past);
-  in_known_unreachable_code_ = saved_unreachable;
+  function_.in_known_unreachable_code_ = saved_unreachable;
   pop_scope();
   return last;
 }
@@ -484,8 +488,8 @@ auto checker::capture_allow_set(const ast::lambda_expr &lambda)
 /// without capturing it — a module member, an import, or a prelude name.
 auto checker::is_module_level_value(std::string_view name) -> bool {
   const auto key = std::string(name);
-  if (module_ != nullptr &&
-      (module_->functions.contains(key) || module_->statics.contains(key))) {
+  if (file_.module_ != nullptr && (file_.module_->functions.contains(key) ||
+                                   file_.module_->statics.contains(key))) {
     return true;
   }
   if (find_import(name) != nullptr) {
@@ -511,9 +515,10 @@ auto checker::warn_unused_captures(const ast::lambda_expr &lambda,
         barrier.invalid.contains(entry.name)) {
       continue;
     }
-    auto diag = diagnostic(
-        diagnostic_level::warning,
-        std::format("`{}` is captured but never used", entry.name), file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::warning,
+                   std::format("`{}` is captured but never used", entry.name),
+                   file_.file_id_);
     diag.with_label(entry.span, "this capture has no effect");
     diag.with_help(std::format(
         "The lambda's body never reads `{}`, so listing it only widens "
@@ -539,7 +544,7 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
       auto diag = diagnostic(
           diagnostic_level::error,
           std::format("`{}` is captured twice in this list", entry.name),
-          file_id_);
+          file_.file_id_);
       diag.with_label(entry.span, "captured again here");
       diag.with_secondary_label(it->second, "first captured here");
       diag.with_help("Each variable may appear at most once in a capture "
@@ -560,7 +565,7 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
         auto diag = diagnostic(
             diagnostic_level::error,
             std::format("`{}` does not need to be captured", entry.name),
-            file_id_);
+            file_.file_id_);
         diag.with_label(entry.span, "this is a module-level item");
         diag.with_help(std::format(
             "A capture list controls which *local* variables cross into "
@@ -573,9 +578,9 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
         invalid.insert(entry.name);
         continue;
       }
-      auto diag =
-          diagnostic(diagnostic_level::error,
-                     std::format("cannot capture `{}`", entry.name), file_id_);
+      auto diag = diagnostic(diagnostic_level::error,
+                             std::format("cannot capture `{}`", entry.name),
+                             file_.file_id_);
       diag.with_label(entry.span,
                       "no local variable with this name is in scope here");
       if (const auto suggestion =
@@ -611,7 +616,7 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
     // into the original. The by-value copy is where the chain breaks, so
     // point at it rather than letting the write silently go nowhere.
     if (ast::is_reference_capture(entry.mode)) {
-      for (const auto &barrier : capture_barriers_) {
+      for (const auto &barrier : function_.capture_barriers_) {
         if (barrier.scope_floor <= found.depth ||
             !barrier.allowed.has_value()) {
           continue;
@@ -626,7 +631,7 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
             std::format("cannot capture `{}` by reference through an "
                         "enclosing by-value capture",
                         entry.name),
-            file_id_);
+            file_.file_id_);
         diag.with_label(
             entry.span,
             std::format("this reaches `{}` by reference", entry.name));
@@ -655,7 +660,7 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
       auto diag = diagnostic(
           diagnostic_level::error,
           std::format("cannot capture `{}` by mutable reference", entry.name),
-          file_id_);
+          file_.file_id_);
       diag.with_label(entry.span,
                       std::format("`{}` is not declared mutable", entry.name));
       diag.with_secondary_label(found.binding->span, "declared here");
@@ -675,20 +680,20 @@ auto checker::check_capture_list(const ast::lambda_expr &lambda)
 
 auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
     -> type_id {
-  const auto &expected_entry = types_.entry(strip_refs(expected));
+  const auto &expected_entry = session_.types_.entry(strip_refs(expected));
   const auto expected_is_fn = expected_entry.kind == type_kind::fn_kind;
 
   // A lambda body is a separate function: a loop outside it is not one its
   // `break` could reach.
-  const auto saved_loop_depth = std::exchange(loop_depth_, 0U);
+  const auto saved_loop_depth = std::exchange(function_.loop_depth_, 0U);
 
   // Validated *before* the barrier and the body scope go up, so each entry
   // resolves against the enclosing scope the way the programmer wrote it.
   auto invalid_captures = check_capture_list(lambda);
 
   push_scope();
-  capture_barriers_.push_back(capture_barrier{
-      .scope_floor = scopes_.size() - 1,
+  function_.capture_barriers_.push_back(capture_barrier{
+      .scope_floor = function_.scopes_.size() - 1,
       .lambda = &lambda,
       .allowed = capture_allow_set(lambda),
       .invalid = std::move(invalid_captures),
@@ -741,14 +746,16 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
   // function could not `return` an `int32` even when its own declared
   // result said `int32`. (`lower_lambda` already scopes the enclosing
   // function's postconditions out for the same reason.)
-  const auto saved_return = std::exchange(return_type_, declared_result);
-  const auto saved_annotated =
-      std::exchange(return_annotated_, declared_result != k_unknown_type);
-  const auto saved_inferring = std::exchange(inferring_return_, false);
+  const auto saved_return =
+      std::exchange(function_.return_type_, declared_result);
+  const auto saved_annotated = std::exchange(function_.return_annotated_,
+                                             declared_result != k_unknown_type);
+  const auto saved_inferring =
+      std::exchange(function_.inferring_return_, false);
   const auto restore_return = [&] -> void {
-    return_type_ = saved_return;
-    return_annotated_ = saved_annotated;
-    inferring_return_ = saved_inferring;
+    function_.return_type_ = saved_return;
+    function_.return_annotated_ = saved_annotated;
+    function_.inferring_return_ = saved_inferring;
   };
 
   auto body_result = k_unknown_type;
@@ -762,10 +769,10 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
     body_result = check_body_nodes(lambda.body_stmts, body_expectation);
   }
   restore_return();
-  warn_unused_captures(lambda, capture_barriers_.back());
-  capture_barriers_.pop_back();
+  warn_unused_captures(lambda, function_.capture_barriers_.back());
+  function_.capture_barriers_.pop_back();
   pop_scope();
-  loop_depth_ = saved_loop_depth;
+  function_.loop_depth_ = saved_loop_depth;
 
   auto result =
       declared_result != k_unknown_type ? declared_result : body_result;
@@ -778,7 +785,7 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
       !mentions_abstract_type(body_result, /*leaves_are_answers=*/true)) {
     result = body_result;
   }
-  return types_.fn_of(std::move(param_types), result);
+  return session_.types_.fn_of(std::move(param_types), result);
 }
 
 /// Checks an `if`/`elif` branch's condition (requiring `bool`) or, for an
@@ -805,32 +812,36 @@ auto checker::join_branch_type(type_id current, type_id found, source_span span,
                                std::string_view construct) -> type_id {
   // `never` is the bottom: a branch that jumps away contributes nothing,
   // whichever position it is in.
-  if (types_.entry(found).name == "never") {
-    return types_.is_unknown(current) ? found : current;
+  if (session_.types_.entry(found).name == "never") {
+    return session_.types_.is_unknown(current) ? found : current;
   }
   // The branches are one value, so their leaves are tied now. Without
   // this, an open leaf counts as unknown below and is simply dropped for
   // the other branch's type: `@some(v) => v` joined with `@none => 0`
   // answered with the `0`'s leaf, and a later `let w: int64 = r` never
   // reached `v`'s literal, which defaulted to `int32`.
-  if (leaf_ctxt_.meta_count() != 0 && types_.entry(current).name != "never") {
+  if (leaf_ctxt_.meta_count() != 0 &&
+      session_.types_.entry(current).name != "never") {
     solve_leaves(current, found);
     current = leaf_ctxt_.zonk(current);
     found = leaf_ctxt_.zonk(found);
   }
-  if (types_.is_unknown(current) || types_.entry(current).name == "never") {
+  if (session_.types_.is_unknown(current) ||
+      session_.types_.entry(current).name == "never") {
     return found;
   }
-  if (types_.is_unknown(found)) {
+  if (session_.types_.is_unknown(found)) {
     return current;
   }
-  if (!types_.compatible(current, found) &&
-      !types_.compatible(found, current)) {
+  if (!session_.types_.compatible(current, found) &&
+      !session_.types_.compatible(found, current)) {
     error_with_help(
         span,
         std::format("{} branches have mismatched types: `{}` vs `{}`",
-                    construct, types_.display(current), types_.display(found)),
-        std::format("this branch produces `{}`", types_.display(found)),
+                    construct, session_.types_.display(current),
+                    session_.types_.display(found)),
+        std::format("this branch produces `{}`",
+                    session_.types_.display(found)),
         "Every branch of a value-producing conditional must produce the "
         "same type.");
     return current;
@@ -851,7 +862,7 @@ auto checker::infer_if_expr(const ast::if_expr &expr, type_id expected)
     check_if_branch_header(branch);
     // Inside a branch, its condition holds — and so does the refutation of
     // every branch before it, since reaching this one means those failed.
-    auto assumed = fact_scope(facts_);
+    auto assumed = fact_scope(function_.facts_);
     for (const auto &earlier : expr.branches) {
       if (&earlier == &branch) {
         break;
@@ -874,7 +885,7 @@ auto checker::infer_if_expr(const ast::if_expr &expr, type_id expected)
   }
   if (!expr.else_body.empty()) {
     // Reaching the `else` means every branch condition was false.
-    auto refuted = fact_scope(facts_);
+    auto refuted = fact_scope(function_.facts_);
     for (const auto &branch : expr.branches) {
       assume_condition(branch.condition.get(), /*negated=*/true);
     }
@@ -938,13 +949,14 @@ auto checker::resolve_loop_iterable(const ast::expr &iterable_expr,
 
 /// A template's loop over something written in its parameters, routed by
 /// each instance: `for x in xs` on a `list[T]` calls that instance's own
-/// `list::into_iter`. The dispatch lives in `for_iterator_dispatches_` for
-/// a `for` statement and `comprehension_iterator_dispatches_` for a
-/// comprehension clause, keyed on `site` either way.
+/// `list::into_iter`. The dispatch lives in `session_.for_iterator_dispatches_`
+/// for a `for` statement and `session_.comprehension_iterator_dispatches_` for
+/// a comprehension clause, keyed on `site` either way.
 auto checker::defer_loop_route(const ast::expr &iterable_expr,
                                const ast::node &site, type_id iterable)
     -> void {
-  if (current_template_ == nullptr || !mentions_template_param(iterable)) {
+  if (function_.current_template_ == nullptr ||
+      !mentions_template_param(iterable)) {
     return;
   }
   defer_to_instances(
@@ -962,10 +974,12 @@ auto checker::defer_loop_route(const ast::expr &iterable_expr,
           return;
         }
         if (site.kind == ast::node_kind::for_stmt) {
-          for_iterator_dispatches_[&dynamic_cast<const ast::for_stmt &>(
-              clone_site)] = std::move(routed);
+          session_
+              .for_iterator_dispatches_[&dynamic_cast<const ast::for_stmt &>(
+                  clone_site)] = std::move(routed);
         } else {
-          comprehension_iterator_dispatches_[&clone_site] = std::move(routed);
+          session_.comprehension_iterator_dispatches_[&clone_site] =
+              std::move(routed);
         }
       });
 }
@@ -1020,10 +1034,11 @@ auto checker::infer_for_expr(const ast::for_expr &expr) -> type_id {
     auto element = k_unknown_type;
     if (clause.iterable != nullptr) {
       const auto *key = static_cast<const ast::node *>(clause.iterable.get());
-      element = resolve_loop_iterable(*clause.iterable, *clause.iterable,
-                                      comprehension_iterator_dispatches_[key]);
-      if (comprehension_iterator_dispatches_[key].decl == nullptr) {
-        comprehension_iterator_dispatches_.erase(key);
+      element = resolve_loop_iterable(
+          *clause.iterable, *clause.iterable,
+          session_.comprehension_iterator_dispatches_[key]);
+      if (session_.comprehension_iterator_dispatches_[key].decl == nullptr) {
+        session_.comprehension_iterator_dispatches_.erase(key);
       }
     }
     auto patterns = std::vector<const ast::pattern *>{};
@@ -1049,9 +1064,10 @@ auto checker::infer_for_expr(const ast::for_expr &expr) -> type_id {
 /// When `operand_err` (the `?` operand's `result[_, E]` error type)
 /// differs from `fn_err` (the enclosing function's declared error type),
 /// requires an `impl from[operand_err] for fn_err` and records the
-/// resolved conversion in `try_conversions_`/`try_conversion_types_` for
+/// resolved conversion in
+/// `session_.try_conversions_`/`session_.try_conversion_types_` for
 /// `hir::lower_try` to apply — mirroring how `require_operand_trait`
-/// records `operator_dispatches_` for operator overloading. Identical
+/// records `session_.operator_dispatches_` for operator overloading. Identical
 /// error types (including two unknowns) need no conversion and are a
 /// silent no-op, matching `?`'s current same-type-only behavior.
 auto checker::maybe_wire_try_conversion(const ast::try_expr &expr,
@@ -1059,8 +1075,9 @@ auto checker::maybe_wire_try_conversion(const ast::try_expr &expr,
                                         type_id fn_return_type) -> void {
   // The conversion a template's `?` calls is each instance's to name: its
   // error types, or the `from` impl's instance, depend on the parameters.
-  if (current_template_ != nullptr && (mentions_template_param(operand_err) ||
-                                       mentions_template_param(fn_err))) {
+  if (function_.current_template_ != nullptr &&
+      (mentions_template_param(operand_err) ||
+       mentions_template_param(fn_err))) {
     defer_to_instances(expr,
                        [this, &expr, operand_err, fn_err,
                         fn_return_type](instance_subst &subst) -> void {
@@ -1074,8 +1091,8 @@ auto checker::maybe_wire_try_conversion(const ast::try_expr &expr,
   const auto stripped_operand_err = strip_refs(operand_err);
   const auto stripped_fn_err = strip_refs(fn_err);
   if (stripped_operand_err == stripped_fn_err ||
-      types_.is_unknown(stripped_operand_err) ||
-      types_.is_unknown(stripped_fn_err)) {
+      session_.types_.is_unknown(stripped_operand_err) ||
+      session_.types_.is_unknown(stripped_fn_err)) {
     return;
   }
   const auto trait_args = trait_args_of_impl_for(stripped_fn_err, "from");
@@ -1086,28 +1103,28 @@ auto checker::maybe_wire_try_conversion(const ast::try_expr &expr,
         expr.span,
         std::format("cannot propagate `{}` with `?` in a function that returns "
                     "`result[_, {}]`",
-                    types_.display(stripped_operand_err),
-                    types_.display(stripped_fn_err)),
+                    session_.types_.display(stripped_operand_err),
+                    session_.types_.display(stripped_fn_err)),
         "no conversion from this error type exists",
         std::format("Add `impl from[{}] for {}` with a `from` method to "
                     "convert between error types.",
-                    types_.display(stripped_operand_err),
-                    types_.display(stripped_fn_err)));
+                    session_.types_.display(stripped_operand_err),
+                    session_.types_.display(stripped_fn_err)));
     return;
   }
-  const auto &fn_err_entry = types_.entry(stripped_fn_err);
+  const auto &fn_err_entry = session_.types_.entry(stripped_fn_err);
   const auto *method = find_method(fn_err_entry, "from", stripped_fn_err);
   if (method == nullptr) {
     return;
   }
   const auto *callee =
       instantiate_impl_method_for(expr, *method, fn_err_entry, stripped_fn_err);
-  try_conversions_[&expr] = resolved_callee{
+  session_.try_conversions_[&expr] = resolved_callee{
       .decl = callee != nullptr ? callee : method->decl,
       .owner_module = method->owner->module_name,
       .impl_target_type = callee != nullptr ? "" : fn_err_entry.name,
       .receiver = nullptr};
-  try_conversion_types_[&expr] = fn_return_type;
+  session_.try_conversion_types_[&expr] = fn_return_type;
 }
 
 /// Types `expr?`: the operand must be `result`/`option`, and (when the
@@ -1121,32 +1138,33 @@ auto checker::infer_try(const ast::try_expr &expr) -> type_id {
     return k_unknown_type;
   }
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
-  const auto &entry = types_.entry(operand);
+  const auto &entry = session_.types_.entry(operand);
 
   const auto is_wrapper = entry.kind == type_kind::builtin_generic_kind &&
                           (entry.name == "result" || entry.name == "option");
-  if (!is_wrapper && !types_.is_unknown(operand)) {
+  if (!is_wrapper && !session_.types_.is_unknown(operand)) {
     error_with_help(
         expr.span,
         std::format("`?` requires a `result` or `option` value, found `{}`",
-                    types_.display(operand)),
+                    session_.types_.display(operand)),
         "cannot propagate from this value",
         "`?` unwraps `@ok`/`@some` and returns `@err`/`@none` early; only "
         "`result` and `option` values support it.");
     return k_error_type;
   }
 
-  if (return_annotated_) {
-    const auto return_type = strip_refs(return_type_);
-    const auto &return_entry = types_.entry(return_type);
+  if (function_.return_annotated_) {
+    const auto return_type = strip_refs(function_.return_type_);
+    const auto &return_entry = session_.types_.entry(return_type);
     const auto returns_wrapper =
         return_entry.kind == type_kind::builtin_generic_kind &&
         (return_entry.name == "result" || return_entry.name == "option");
-    if (!returns_wrapper && !types_.is_unknown(return_type_)) {
+    if (!returns_wrapper &&
+        !session_.types_.is_unknown(function_.return_type_)) {
       error_with_help(
           expr.span,
           std::format("cannot use `?` in a function that returns `{}`",
-                      types_.display(return_type_)),
+                      session_.types_.display(function_.return_type_)),
           "`?` needs a `result` or `option` return type to propagate into",
           "Change the function to return `result[T, E]` (or `option[T]`), "
           "or handle the failure here with `match`.");
@@ -1167,13 +1185,14 @@ auto checker::infer_try(const ast::try_expr &expr) -> type_id {
 /// unchanged, since full task/context typing is not yet modeled.
 auto checker::infer_await(const ast::await_expr &expr) -> type_id {
   if (expr.operand == nullptr) {
-    return types_.builtin("unit"); // `await yield`
+    return session_.types_.builtin("unit"); // `await yield`
   }
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
-  const auto &entry = types_.entry(operand);
+  const auto &entry = session_.types_.entry(operand);
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "task") {
-    if (entry.args.size() >= 2 && !types_.is_unknown(entry.args[1])) {
-      return types_.builtin_generic("result", {entry.args[0], entry.args[1]});
+    if (entry.args.size() >= 2 && !session_.types_.is_unknown(entry.args[1])) {
+      return session_.types_.builtin_generic("result",
+                                             {entry.args[0], entry.args[1]});
     }
     return entry.args.empty() ? k_unknown_type : entry.args[0];
   }
@@ -1182,28 +1201,29 @@ auto checker::infer_await(const ast::await_expr &expr) -> type_id {
 
 /// Types `yield expr` — only legal inside a `generator def` body. Checks
 /// the yielded value against the enclosing generator's item type
-/// (`generator_item_type_`), the same way a `return` statement checks
-/// against `return_type_`. A `yield` expression itself always has type
-/// `unit` — it's a statement-shaped suspension point, not a
+/// (`function_.generator_item_type_`), the same way a `return` statement checks
+/// against `function_.return_type_`. A `yield` expression itself always has
+/// type `unit` — it's a statement-shaped suspension point, not a
 /// value-producing expression, even though it's grammatically an `expr`
 /// so it can appear as an expression-statement without extra plumbing.
 auto checker::infer_yield(const ast::yield_expr &expr) -> type_id {
-  if (!in_generator_) {
+  if (!function_.in_generator_) {
     error(expr.span, "`yield` outside a `generator def` body",
           "not inside a generator");
     if (expr.value != nullptr) {
       infer_expr(*expr.value, k_unknown_type);
     }
-    return types_.builtin("unit");
+    return session_.types_.builtin("unit");
   }
-  const auto found = expr.value != nullptr
-                         ? infer_expr(*expr.value, generator_item_type_)
-                         : k_unknown_type;
-  if (!types_.is_unknown(generator_item_type_)) {
-    type_mismatch(expr.span, generator_item_type_, found,
+  const auto found =
+      expr.value != nullptr
+          ? infer_expr(*expr.value, function_.generator_item_type_)
+          : k_unknown_type;
+  if (!session_.types_.is_unknown(function_.generator_item_type_)) {
+    type_mismatch(expr.span, function_.generator_item_type_, found,
                   "as the yielded value");
   }
-  return types_.builtin("unit");
+  return session_.types_.builtin("unit");
 }
 
 /// Returns the element type yielded by iterating `iterable` (array/list/
@@ -1251,14 +1271,14 @@ auto checker::try_resolve_iter_borrow(type_id operand, bool is_mut,
     if (params.empty()) {
       continue;
     }
-    const auto &param_entry = types_.entry(params.front().type);
+    const auto &param_entry = session_.types_.entry(params.front().type);
     if (param_entry.kind != type_kind::ref_kind ||
         param_entry.is_mut != is_mut) {
       continue;
     }
     const auto bare_param = strip_refs(params.front().type);
     // The candidate's own parameters (`container[T]`'s `T`) are unsolved.
-    if (!types_.compatible(open_foreign_params(bare_param), operand)) {
+    if (!session_.types_.compatible(open_foreign_params(bare_param), operand)) {
       continue;
     }
 
@@ -1266,7 +1286,7 @@ auto checker::try_resolve_iter_borrow(type_id operand, bool is_mut,
     match_params(bare_param, operand, bindings);
     const auto ret_type = substitute_solved(
         signature_return_type(*candidate.decl, candidate.owner), bindings);
-    if (types_.is_unknown(ret_type) || ret_type == k_error_type) {
+    if (session_.types_.is_unknown(ret_type) || ret_type == k_error_type) {
       continue;
     }
 
@@ -1315,7 +1335,7 @@ auto checker::try_resolve_iter_borrow(type_id operand, bool is_mut,
 auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
     -> std::optional<iterator_loop_dispatch> {
   const auto stripped = strip_refs(iterable);
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   if (entry.decl == nullptr) {
     return std::nullopt;
   }
@@ -1335,7 +1355,7 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
       substitute_solved(signature_return_type(*method->decl, method->owner,
                                               method->block_type_params),
                         bindings);
-  if (types_.is_unknown(iter_type) || iter_type == k_error_type) {
+  if (session_.types_.is_unknown(iter_type) || iter_type == k_error_type) {
     return std::nullopt;
   }
 
@@ -1379,7 +1399,7 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
 auto checker::try_resolve_iterator(type_id iterable, const ast::node *site)
     -> std::optional<iterator_loop_dispatch> {
   const auto stripped = strip_refs(iterable);
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   if (entry.decl == nullptr) {
     return std::nullopt;
   }
@@ -1402,7 +1422,7 @@ auto checker::try_resolve_iterator(type_id iterable, const ast::node *site)
       substitute_solved(signature_return_type(*method->decl, method->owner,
                                               method->block_type_params),
                         bindings);
-  const auto &ret_entry = types_.entry(strip_refs(ret));
+  const auto &ret_entry = session_.types_.entry(strip_refs(ret));
   if (ret_entry.kind != type_kind::builtin_generic_kind ||
       ret_entry.name != "option" || ret_entry.args.empty()) {
     return std::nullopt;
@@ -1451,7 +1471,7 @@ auto checker::element_type_of(type_id iterable, source_span span) -> type_id {
   if (const auto bound = range_element_type(stripped)) {
     return *bound;
   }
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   switch (entry.kind) {
   case type_kind::array_kind:
     return entry.result;
@@ -1463,12 +1483,13 @@ auto checker::element_type_of(type_id iterable, source_span span) -> type_id {
     return k_unknown_type;
   case type_kind::builtin_kind:
     if (entry.name == "str") {
-      return types_.builtin("char");
+      return session_.types_.builtin("char");
     }
-    if (types_.is_numeric(stripped) || types_.is_boolean(stripped)) {
+    if (session_.types_.is_numeric(stripped) ||
+        session_.types_.is_boolean(stripped)) {
       error_with_help(span,
                       std::format("cannot iterate over a value of type `{}`",
-                                  types_.display(stripped)),
+                                  session_.types_.display(stripped)),
                       "not an iterable value",
                       "Iterate over a collection or a range such as `0..10`.");
       return k_error_type;
@@ -1488,16 +1509,16 @@ auto checker::element_type_of(type_id iterable, source_span span) -> type_id {
 //  Expression dispatch
 // ==========================================================================
 
-/// Records `type` as `node`'s resolved type in `node_types_` and returns
-/// it unchanged, so a call site can wrap its result in one expression.
+/// Records `type` as `node`'s resolved type in `session_.node_types_` and
+/// returns it unchanged, so a call site can wrap its result in one expression.
 auto checker::record_expr_type(const ast::node &node, type_id type) -> type_id {
-  node_types_[&node] = type;
+  session_.node_types_[&node] = type;
   // Where this node was checked, for `semantic::render_snapshot` — see
-  // `checked_types::node_files`. `file_id_` is the file the checker is
+  // `checked_types::node_files`. `file_.file_id_` is the file the checker is
   // standing in, which for a per-call method instance is the method's own
   // file rather than the caller's (`method_entry::file_id`), and that is
   // the answer a reader of the snapshot wants.
-  node_files_[&node] = file_id_;
+  session_.node_files_[&node] = file_.file_id_;
   return type;
 }
 
@@ -1506,8 +1527,8 @@ auto checker::record_expr_type(const ast::node &node, type_id type) -> type_id {
 /// arguments into a lambda, and check tail-expression compatibility),
 /// dispatching to the dedicated `infer_*`/`check_*` function for its
 /// concrete node kind. Thin wrapper around `infer_expr_impl` that records
-/// every visited expression's resolved type into `node_types_`, so this is
-/// the one place that needs to — every `infer_*` helper is reached only
+/// every visited expression's resolved type into `session_.node_types_`, so
+/// this is the one place that needs to — every `infer_*` helper is reached only
 /// through here (recursively, for nested expressions too).
 auto checker::infer_expr(const ast::expr &expr, type_id expected) -> type_id {
   // A deferred call being re-run (`defer_open_receiver_call`): its
@@ -1516,8 +1537,9 @@ auto checker::infer_expr(const ast::expr &expr, type_id expected) -> type_id {
   // to be then.
   if (const auto replayed = replayed_exprs_.find(&expr);
       replayed != replayed_exprs_.end()) {
-    if (!types_.is_unknown(expected)) {
-      solve_leaves(types_.strip_refinement(expected), replayed->second);
+    if (!session_.types_.is_unknown(expected)) {
+      solve_leaves(session_.types_.strip_refinement(expected),
+                   replayed->second);
     }
     return record_expr_type(expr, settle(replayed->second));
   }
@@ -1527,11 +1549,11 @@ auto checker::infer_expr(const ast::expr &expr, type_id expected) -> type_id {
   // unwrapped) — never by having been asked for one. Without this,
   // `needs_positive(0 - 3)` would infer its own argument *as* a `positive`
   // and the narrowing check would find nothing left to prove.
-  if (!static_for_yields_.empty()) {
+  if (!cache_.static_for_yields_.empty()) {
     note_static_for_loop_read(expr);
   }
   return record_expr_type(
-      expr, infer_expr_impl(expr, types_.strip_refinement(expected)));
+      expr, infer_expr_impl(expr, session_.types_.strip_refinement(expected)));
 }
 
 /// Records `expr` against every inline `static for` being checked whose
@@ -1545,9 +1567,9 @@ auto checker::note_static_for_loop_read(const ast::expr &expr) -> void {
   if (found.binding == nullptr) {
     return;
   }
-  for (const auto &[decl, floor] : static_for_yields_) {
+  for (const auto &[decl, floor] : cache_.static_for_yields_) {
     if (found.depth == floor) {
-      static_for_reads_[decl].loop_reads.push_back(&expr);
+      cache_.static_for_reads_[decl].loop_reads.push_back(&expr);
     }
   }
 }
@@ -1623,7 +1645,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return infer_try(dynamic_cast<const ast::try_expr &>(expr));
   case ast::node_kind::tuple_expr: {
     const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
-    const auto &expected_entry = types_.entry(strip_refs(expected));
+    const auto &expected_entry = session_.types_.entry(strip_refs(expected));
     auto elements = std::vector<type_id>{};
     elements.reserve(tuple.elements.size());
     for (size_t i = 0; i < tuple.elements.size(); ++i) {
@@ -1636,7 +1658,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
                              ? infer_expr(*tuple.elements[i], element_expected)
                              : k_unknown_type);
     }
-    return types_.tuple_of(std::move(elements));
+    return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::array_expr:
     return infer_array(dynamic_cast<const ast::array_expr &>(expr), expected);
@@ -1668,7 +1690,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
       elements.push_back(branch != nullptr ? infer_expr(*branch, k_unknown_type)
                                            : k_unknown_type);
     }
-    return types_.tuple_of(std::move(elements));
+    return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::race_expr: {
     const auto &race = dynamic_cast<const ast::race_expr &>(expr);
@@ -1702,11 +1724,11 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     const auto &quote = dynamic_cast<const ast::quote_expr &>(expr);
     switch (quote.fragment_kind) {
     case ast::quote_fragment_kind::stmt:
-      return types_.builtin("stmt");
+      return session_.types_.builtin("stmt");
     case ast::quote_fragment_kind::def_expr:
-      return types_.builtin("def_expr");
+      return session_.types_.builtin("def_expr");
     case ast::quote_fragment_kind::type_expr:
-      return types_.builtin("type_expr");
+      return session_.types_.builtin("type_expr");
     case ast::quote_fragment_kind::expr:
       // A bare name or dotted path (`` `(int32)` ``, `` `(std.foo.bar)` ``)
       // is lexically ambiguous between an expression and a type — the
@@ -1716,23 +1738,23 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
       // reinterprets as a named type, honor that instead of reporting a
       // spurious mismatch — this is the "deferred to the semantic layer"
       // disambiguation the parser punted on.
-      if (!types_.is_unknown(expected) &&
-          types_.entry(expected).kind == type_kind::builtin_kind &&
-          types_.entry(expected).name == "type_expr" &&
+      if (!session_.types_.is_unknown(expected) &&
+          session_.types_.entry(expected).kind == type_kind::builtin_kind &&
+          session_.types_.entry(expected).name == "type_expr" &&
           quote.parsed_body != nullptr &&
           reinterpret_as_named_type(*quote.parsed_body) != nullptr) {
-        return types_.builtin("type_expr");
+        return session_.types_.builtin("type_expr");
       }
-      return types_.builtin("expr");
+      return session_.types_.builtin("expr");
     case ast::quote_fragment_kind::none:
       // `none` means the parser couldn't classify the quoted content
       // (already diagnosed at parse time, or genuinely empty) — fall back
       // to `expr` rather than `unknown` so a downstream annotation
       // mismatch still gets a concrete, if possibly wrong, type to report
       // against instead of silently unifying with everything.
-      return types_.builtin("expr");
+      return session_.types_.builtin("expr");
     }
-    return types_.builtin("expr");
+    return session_.types_.builtin("expr");
   }
   case ast::node_kind::splice_expr: {
     const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
@@ -1745,8 +1767,8 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     // Reification: evaluate the operand at compile time and, if it
     // resolves to a quoted expression, graft that fragment in as this
     // splice's real content — type-checking it here (so `hir::lower` has
-    // a `node_types_` entry to look up) and recording the splice ->
-    // fragment mapping (`spliced_fragments_`) so lowering can find it.
+    // a `session_.node_types_` entry to look up) and recording the splice ->
+    // fragment mapping (`session_.spliced_fragments_`) so lowering can find it.
     // No hygiene pass yet (M5): the fragment is checked directly against
     // whatever scope is active at the splice site.
     const auto fragment_value = comptime_eval_.evaluate(*splice.operand);
@@ -1772,7 +1794,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
       return k_error_type;
     }
     const auto fragment_type = infer_expr(*fragment_expr, expected);
-    spliced_fragments_[&expr] = fragment_expr;
+    session_.spliced_fragments_[&expr] = fragment_expr;
     return fragment_type;
   }
   case ast::node_kind::static_expr: {
@@ -1816,8 +1838,8 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
 /// type, resolves the format spec's type char to a required capability
 /// (a builtin primitive or a trait), checks the `.precision`-on-integer-
 /// style and dynamic-width/precision-must-be-`usize` rules, and records
-/// how `hir::lower` should render each segment in `interp_dispatches_`.
-/// The whole node always types as `str`.
+/// how `hir::lower` should render each segment in
+/// `session_.interp_dispatches_`. The whole node always types as `str`.
 /// Resolves one interpolation segment's format dispatch once its value
 /// type is a concrete, settled type — either immediately (the common
 /// case) or later, once a deferred call-result leaf (see
@@ -1859,12 +1881,12 @@ auto checker::finish_interp_segment(const ast::interp_segment &seg,
         "\"{value :04x}\"");
   }
 
-  const auto &value_entry = types_.entry(value_type);
-  const bool is_builtin_int = types_.is_integer(value_type);
-  const bool is_builtin_float = types_.is_float(value_type);
+  const auto &value_entry = session_.types_.entry(value_type);
+  const bool is_builtin_int = session_.types_.is_integer(value_type);
+  const bool is_builtin_float = session_.types_.is_float(value_type);
   const bool is_builtin_str =
       value_entry.kind == type_kind::builtin_kind && value_entry.name == "str";
-  const bool is_builtin_bool = types_.is_boolean(value_type);
+  const bool is_builtin_bool = session_.types_.is_boolean(value_type);
   const bool is_builtin_char =
       value_entry.kind == type_kind::builtin_kind && value_entry.name == "char";
   const bool is_any_builtin = is_builtin_int || is_builtin_float ||
@@ -1897,8 +1919,9 @@ auto checker::finish_interp_segment(const ast::interp_segment &seg,
       const auto radix =
           builtin_kind_fallback == interp_dispatch::kind_t::builtin_radix;
       if (domain_all(value_type, [&](type_id m) -> bool {
-            return radix ? types_.is_integer(m)
-                         : types_.entry(m).kind == type_kind::builtin_kind;
+            return radix ? session_.types_.is_integer(m)
+                         : session_.types_.entry(m).kind ==
+                               type_kind::builtin_kind;
           })) {
         dispatch.kind = builtin_kind_fallback;
         return true;
@@ -2031,20 +2054,21 @@ auto checker::finish_interp_segment(const ast::interp_segment &seg,
   if (!ok) {
     error_with_help(
         seg.value->span,
-        std::format(
-            "`{}` does not support {} formatting", types_.display(value_type),
-            type_char == '\0' ? "the requested" : std::string(1, type_char)),
+        std::format("`{}` does not support {} formatting",
+                    session_.types_.display(value_type),
+                    type_char == '\0' ? "the requested"
+                                      : std::string(1, type_char)),
         std::format("`{}` does not implement a required trait",
-                    types_.display(value_type)),
+                    session_.types_.display(value_type)),
         std::format("`{}` supports {} — implement `{} for {}` yourself "
                     "if you want this style to mean something specific",
-                    types_.display(value_type), describe_supported(),
+                    session_.types_.display(value_type), describe_supported(),
                     trait_hint.empty() ? "show" : trait_hint,
-                    types_.display(value_type)));
+                    session_.types_.display(value_type)));
     return;
   }
 
-  interp_dispatches_[value_key] = dispatch;
+  session_.interp_dispatches_[value_key] = dispatch;
 }
 
 /// Retries dispatch for every segment `check_interpolated_string` deferred.
@@ -2062,7 +2086,7 @@ auto checker::finish_pending_interp_segments() -> void {
       pending_interp_segments_.push_back(item);
       continue;
     }
-    if (types_.is_unknown(value_type)) {
+    if (session_.types_.is_unknown(value_type)) {
       continue;
     }
     finish_interp_segment(*item.seg, value_type);
@@ -2077,8 +2101,8 @@ auto checker::reject_interpolated_reference(const ast::expr &value,
                                             type_id ref_type) -> void {
   auto diag = diagnostic(diagnostic_level::error,
                          std::format("cannot interpolate a reference (`{}`)",
-                                     types_.display(ref_type)),
-                         file_id_);
+                                     session_.types_.display(ref_type)),
+                         file_.file_id_);
   diag.with_label(value.span,
                   "this is a reference, not the value it points to");
   diag.with_help(
@@ -2093,7 +2117,7 @@ auto checker::reject_interpolated_reference(const ast::expr &value,
 
 auto checker::check_interpolated_string(
     const ast::interpolated_string_expr &node) -> type_id {
-  const auto usize_type = types_.builtin("usize");
+  const auto usize_type = session_.types_.builtin("usize");
 
   const auto check_dynamic_size =
       [&](const std::variant<std::monostate, size_t, ast::ptr<ast::expr>> &slot)
@@ -2103,10 +2127,11 @@ auto checker::check_interpolated_string(
       return;
     }
     const auto found = infer_expr(**dynamic_expr, usize_type);
-    if (!types_.is_unknown(found) && !types_.compatible(usize_type, found)) {
+    if (!session_.types_.is_unknown(found) &&
+        !session_.types_.compatible(usize_type, found)) {
       error((*dynamic_expr)->span,
             std::format("format width must be `usize`, found `{}`",
-                        types_.display(found)),
+                        session_.types_.display(found)),
             "expected usize here");
     }
   };
@@ -2121,7 +2146,7 @@ auto checker::check_interpolated_string(
     // `let c: int64 = a` formats an `int64` (phase 11, defect 2).
     const auto settled_type = settle(infer_expr(*seg.value, k_unknown_type));
 
-    if (types_.entry(settled_type).kind == type_kind::ref_kind) {
+    if (session_.types_.entry(settled_type).kind == type_kind::ref_kind) {
       // A reference's runtime representation is an address; interpolating
       // it directly would format that address instead of the value it
       // points to (spec/todo.md item 28). Reject rather than silently
@@ -2149,14 +2174,14 @@ auto checker::check_interpolated_string(
       continue;
     }
 
-    if (types_.is_unknown(value_type)) {
+    if (session_.types_.is_unknown(value_type)) {
       continue;
     }
 
     finish_interp_segment(seg, value_type);
   }
 
-  return types_.builtin("str");
+  return session_.types_.builtin("str");
 }
 
 /// Types an array literal, either the explicit-list form `[a, b, c]` or
@@ -2217,11 +2242,11 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
         });
     return;
   }
-  const auto conversion = array_literal_conversions_.find(&array);
-  if (conversion == array_literal_conversions_.end()) {
+  const auto conversion = session_.array_literal_conversions_.find(&array);
+  if (conversion == session_.array_literal_conversions_.end()) {
     return;
   }
-  const auto &entry = types_.entry(target);
+  const auto &entry = session_.types_.entry(target);
   const auto *method = find_method(entry, "from_array", target);
   if (method == nullptr || method->decl->type_params.empty()) {
     return;
@@ -2232,7 +2257,7 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
   }
 
   auto solution = generic_solution{};
-  bind_generic_constant(solution, length_param, types_.usize_type(),
+  bind_generic_constant(solution, length_param, session_.types_.usize_type(),
                         static_cast<int64_t>(length));
   auto bindings = param_subst{};
   if (method->block_type_params != nullptr) {
@@ -2265,8 +2290,8 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
 
 /// If `target` is a user type implementing `std.traits.from_array`,
 /// records the constructor this literal should be handed to
-/// (`array_literal_conversions_[&array].callee`, `.array_type` left for
-/// the caller to fill in once the literal's own length is known) and
+/// (`session_.array_literal_conversions_[&array].callee`, `.array_type` left
+/// for the caller to fill in once the literal's own length is known) and
 /// answers the element type the literal's elements must have. Pure
 /// resolution — does not itself infer the elements, so a caller that has
 /// already inferred them (the no-expectation default-`list` path,
@@ -2274,7 +2299,8 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
 auto checker::resolve_array_literal_conversion(const ast::array_expr &array,
                                                type_id &target)
     -> std::optional<type_id> {
-  const auto entry = types_.entry(target); // copy: leaves are minted below
+  const auto entry =
+      session_.types_.entry(target); // copy: leaves are minted below
   if (entry.kind != type_kind::struct_kind &&
       entry.kind != type_kind::sum_kind &&
       entry.kind != type_kind::opaque_kind) {
@@ -2306,12 +2332,12 @@ auto checker::resolve_array_literal_conversion(const ast::array_expr &array,
   if (params.empty()) {
     return std::nullopt;
   }
-  const auto &array_param = types_.entry(
+  const auto &array_param = session_.types_.entry(
       strip_refs(substitute_solved(params.front().type, bindings)));
   if (array_param.kind != type_kind::array_kind) {
     return std::nullopt;
   }
-  array_literal_conversions_[&array] = array_literal_conversion{
+  session_.array_literal_conversions_[&array] = array_literal_conversion{
       .callee = resolved_callee{.decl = method->decl,
                                 .owner_module = method->owner->module_name,
                                 .impl_target_type = std::string(entry.name)},
@@ -2346,7 +2372,7 @@ auto checker::fill_target_holes(const ast::array_expr &array,
     }
     const auto leaf = leaf_ctxt_.fresh_type(
         "the element type of this list literal",
-        source_location{.file_id = file_id_, .span = array.span});
+        source_location{.file_id = file_.file_id_, .span = array.span});
     bindings.insert_or_assign(id, leaf);
     filled = true;
     // Elements always solve the leaf; an empty `[]` (`count([])`) may
@@ -2356,9 +2382,9 @@ auto checker::fill_target_holes(const ast::array_expr &array,
           pending_leaf_literal{.literal = &array,
                                .element = leaf,
                                .span = array.span,
-                               .file = file_id_,
-                               .module = module_,
-                               .current_template = current_template_,
+                               .file = file_.file_id_,
+                               .module = file_.module_,
+                               .current_template = function_.current_template_,
                                .report_only = true});
     }
   }
@@ -2414,7 +2440,7 @@ auto checker::resolve_list_type(type_id element) -> type_id {
 auto checker::resolve_range_type(type_id element) -> type_id {
   const auto found = find_prelude_type("range");
   if (!found.has_value()) {
-    return types_.builtin_generic("range", {element});
+    return session_.types_.builtin_generic("range", {element});
   }
   return make_user_type(*found->first, found->second, {element});
 }
@@ -2423,7 +2449,7 @@ auto checker::resolve_range_type(type_id element) -> type_id {
 /// knows how a range is spelled, so the checks scattered across indexing,
 /// iteration and `in` cannot drift from what `resolve_range_type` builds.
 auto checker::range_element_type(type_id type) -> std::optional<type_id> {
-  const auto &entry = types_.entry(strip_refs(type));
+  const auto &entry = session_.types_.entry(strip_refs(type));
   if (entry.name != "range" || entry.args.size() != 1) {
     return std::nullopt;
   }
@@ -2439,14 +2465,14 @@ auto checker::is_range_type(type_id type) -> bool {
 }
 
 /// Resolves a `for ... => yield` comprehension's `list[T]::new`/
-/// `list[T]::push` calls into `comprehension_dispatches_`
+/// `list[T]::push` calls into `session_.comprehension_dispatches_`
 /// (`hir::lower_for_expr` builds the actual calls from it). Mirrors
 /// `resolve_own_drop`'s `find_method`/`instantiate_impl_method_for`
 /// pattern — the same shape whether the method takes `self` (`push`) or
 /// not (the static `new`).
 auto checker::resolve_comprehension_dispatch(const ast::for_expr &expr,
                                              type_id list_type) -> void {
-  record_new_push_dispatch(expr, list_type, comprehension_dispatches_);
+  record_new_push_dispatch(expr, list_type, session_.comprehension_dispatches_);
 }
 
 /// Resolves (and instantiates) the `new`/`push` pair for `list_type`,
@@ -2460,7 +2486,7 @@ auto checker::resolve_new_push_dispatch(const ast::node &site,
   if (mentions_template_param(list_type)) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(list_type);
+  const auto &entry = session_.types_.entry(list_type);
   const auto *new_method = find_method(entry, "new", list_type);
   const auto *push_method = find_method(entry, "push", list_type);
   if (new_method == nullptr || push_method == nullptr) {
@@ -2496,16 +2522,16 @@ auto checker::wire_default_list(const ast::array_expr &array, type_id element,
   // this compiled module"). Fill it the way a comprehension builds its
   // result instead: `new()`, then `push(v)` `n` times.
   if (array.fill_value != nullptr && !count.has_value()) {
-    record_new_push_dispatch(array, target, runtime_fill_dispatches_);
+    record_new_push_dispatch(array, target, session_.runtime_fill_dispatches_);
     return target;
   }
   if (!resolve_array_literal_conversion(array, target).has_value()) {
     return target; // `list[T]` always has `from_array` — see std.list.
   }
-  array_literal_conversions_[&array].array_type = array_with_length(
-      element, count.has_value()
-                   ? types_.const_value(types_.usize_type(), *count)
-                   : k_unknown_type);
+  session_.array_literal_conversions_[&array].array_type = array_with_length(
+      element, count.has_value() ? session_.types_.const_value(
+                                       session_.types_.usize_type(), *count)
+                                 : k_unknown_type);
   if (count.has_value()) {
     instantiate_from_array_for(array, target, *count);
   }
@@ -2527,15 +2553,17 @@ auto checker::wire_default_list(const ast::array_expr &array, type_id element,
 /// (`cannot index ... expected an index of type `usize``), because a repeat
 /// count and a subscript are the same requirement wearing different syntax.
 auto checker::check_fill_count(const ast::expr &count) -> void {
-  const auto found = strip_refs(infer_expr(count, types_.builtin("usize")));
-  const auto usize = types_.usize_type();
-  if (found == usize || types_.is_unknown(found) || found == k_error_type) {
+  const auto found =
+      strip_refs(infer_expr(count, session_.types_.builtin("usize")));
+  const auto usize = session_.types_.usize_type();
+  if (found == usize || session_.types_.is_unknown(found) ||
+      found == k_error_type) {
     return;
   }
   error_with_help(
       count.span,
       std::format("a repeat count must be a `usize`, but this one is `{}`",
-                  types_.display(found)),
+                  session_.types_.display(found)),
       "expected a count of type `usize`",
       std::format("`[v; n]` repeats `v` exactly `n` times, and a count of "
                   "things is a `usize` here the same way a subscript is. "
@@ -2561,9 +2589,9 @@ auto checker::defer_open_literal(const ast::array_expr &array, type_id element,
                            .element = element,
                            .count = count,
                            .span = array.span,
-                           .file = file_id_,
-                           .module = module_,
-                           .current_template = current_template_});
+                           .file = file_.file_id_,
+                           .module = file_.module_,
+                           .current_template = function_.current_template_});
   return true;
 }
 
@@ -2605,21 +2633,22 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
     // repeated appending instead, the same way a comprehension builds its
     // result — see `checked_types::runtime_fill_dispatches`.
     if (array.fill_value != nullptr && !count.has_value()) {
-      array_literal_conversions_.erase(&array);
+      session_.array_literal_conversions_.erase(&array);
       // An open target (`[[1], [0; n]]`) cannot name its `new`/`push` yet;
       // `record_new_push_dispatch` waits for the leaf.
       if (mentions_type_var(target)) {
-        record_new_push_dispatch(array, target, runtime_fill_dispatches_);
+        record_new_push_dispatch(array, target,
+                                 session_.runtime_fill_dispatches_);
         return target;
       }
       if (const auto dispatch = resolve_new_push_dispatch(array, target)) {
-        runtime_fill_dispatches_[&array] = *dispatch;
+        session_.runtime_fill_dispatches_[&array] = *dispatch;
       } else if (!mentions_template_param(target)) {
         error_with_help(
             array.span,
             std::format("`{}` cannot be built from a fill whose count is "
                         "only known at runtime",
-                        types_.display(target)),
+                        session_.types_.display(target)),
             "no way to fill this collection",
             "A `[value; count]` literal with a constant count becomes an "
             "`array`, which `from_array` accepts. With a runtime count "
@@ -2630,16 +2659,17 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
       }
       return target;
     }
-    array_literal_conversions_[&array].array_type = array_with_length(
+    session_.array_literal_conversions_[&array].array_type = array_with_length(
         *from_array_element,
-        count.has_value() ? types_.const_value(types_.usize_type(), *count)
-                          : k_unknown_type);
+        count.has_value()
+            ? session_.types_.const_value(session_.types_.usize_type(), *count)
+            : k_unknown_type);
     if (count.has_value()) {
       instantiate_from_array_for(array, target, *count);
     }
     return target;
   }
-  const auto &expected_entry = types_.entry(strip_refs(expected));
+  const auto &expected_entry = session_.types_.entry(strip_refs(expected));
   auto element_expected = k_unknown_type;
   auto expected_is_array = false;
   if (expected_entry.kind == type_kind::array_kind) {
@@ -2681,21 +2711,24 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
     // (`01-core/06-collections-list-array.md`: "For general-purpose code,
     // `list` is the default choice"). An `array` is spelled by asking for
     // one, which is what `expected_is_array` below serves.
-    if (!expected_is_array && types_.is_unknown(strip_refs(expected))) {
+    if (!expected_is_array &&
+        session_.types_.is_unknown(strip_refs(expected))) {
       if (defer_open_literal(array, element, count)) {
         return resolve_list_type(element);
       }
       return wire_default_list(array, element, count);
     }
-    auto length = count.has_value()
-                      ? types_.const_value(types_.usize_type(), *count)
-                      : k_unknown_type;
+    auto length =
+        count.has_value()
+            ? session_.types_.const_value(session_.types_.usize_type(), *count)
+            : k_unknown_type;
     // A template's `[0; n]` is an `array[int32, n]`: the count is a value
     // parameter, which is a length in its own right.
     if (!count.has_value() && array.fill_count != nullptr) {
       if (const auto poly =
               value_poly(*array.fill_count, current_resolve_ctx())) {
-        length = types_.symbolic_value(types_.usize_type(), *poly);
+        length =
+            session_.types_.symbolic_value(session_.types_.usize_type(), *poly);
       }
     }
     return array_with_length(element, length);
@@ -2710,8 +2743,8 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
     // A leaf element is not "nothing known yet": it is a variable the
     // remaining elements must agree with, so it is kept and unified with
     // rather than replaced by the last element's own.
-    if (types_.is_unknown(element) &&
-        types_.entry(element).kind != type_kind::type_var_kind) {
+    if (session_.types_.is_unknown(element) &&
+        session_.types_.entry(element).kind != type_kind::type_var_kind) {
       element = found;
     } else {
       type_mismatch(item->span, element, found, "for this element", item.get());
@@ -2726,13 +2759,13 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
                         "exactly {}",
                         array.elements.size(),
                         array.elements.size() == 1 ? "" : "s",
-                        types_.display(strip_refs(expected)),
+                        session_.types_.display(strip_refs(expected)),
                         *expected_entry.array_size),
             "wrong number of elements");
     }
     return array_with_length(
-        element,
-        types_.const_value(types_.usize_type(), array.elements.size()));
+        element, session_.types_.const_value(session_.types_.usize_type(),
+                                             array.elements.size()));
   }
   // `[]` with nothing to infer from. There is no element to type it by and
   // no expected type to adopt, and inference does not run backwards from a
@@ -2750,7 +2783,7 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
                          std::optional<uint64_t>{array.elements.size()})) {
     return resolve_list_type(element);
   }
-  if (array.elements.empty() && types_.is_unknown(element)) {
+  if (array.elements.empty() && session_.types_.is_unknown(element)) {
     // Phase 8: the literal stands for `list[?a]` and waits. Whatever the
     // binding later flows into — a `push`, a return, an argument — meets
     // its declared type in `type_mismatch`, which is where `?a` is solved.
@@ -2759,14 +2792,14 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
     // internals and be reported there.
     const auto leaf = leaf_ctxt_.fresh_type(
         "the element type of this `[]`",
-        source_location{.file_id = file_id_, .span = array.span});
+        source_location{.file_id = file_.file_id_, .span = array.span});
     pending_leaf_literals_.push_back(
         pending_leaf_literal{.literal = &array,
                              .element = leaf,
                              .span = array.span,
-                             .file = file_id_,
-                             .module = module_,
-                             .current_template = current_template_});
+                             .file = file_.file_id_,
+                             .module = file_.module_,
+                             .current_template = function_.current_template_});
     return resolve_list_type(leaf);
   }
   return wire_default_list(array, element, array.elements.size());

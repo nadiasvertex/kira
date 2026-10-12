@@ -91,7 +91,7 @@ auto checker::check_user_index_assignment(const ast::expr &target)
   // against the element leaf, which is often what settles it.
   const auto object =
       demand_shape(base_shape(infer_expr(*index.object, k_unknown_type)));
-  const auto &entry = types_.entry(object);
+  const auto &entry = session_.types_.entry(object);
   if (entry.kind != type_kind::struct_kind &&
       entry.kind != type_kind::sum_kind &&
       entry.kind != type_kind::opaque_kind) {
@@ -126,7 +126,7 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         // Unlike the "not found" branch below, this path resolves the
         // target straight from the scope binding rather than through
         // `infer_expr`, so it needs its own persistence hook — see
-        // `node_types_`'s doc comment.
+        // `session_.node_types_`'s doc comment.
         record_expr_type(ident, target_type);
         if (binding->origin == binding_origin::let_binding ||
             binding->origin == binding_origin::pattern_binding) {
@@ -134,14 +134,14 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
               diagnostic(diagnostic_level::error,
                          std::format("cannot assign to immutable binding `{}`",
                                      ident.name),
-                         file_id_);
+                         file_.file_id_);
           diag.with_label(ident.span, "this binding is immutable");
           diag.children.push_back(
               diagnostic(
                   diagnostic_level::note,
                   std::format("`{}` is {}", ident.name,
                               binding_origin_description(binding->origin)),
-                  file_id_)
+                  file_.file_id_)
                   .with_label(binding->span, "binding declared here"));
           diag.with_help(std::format(
               "Declare it with `var {}` to allow reassignment, or shadow "
@@ -187,8 +187,8 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         // `p`; requiring `var p` would be asking the user to declare the
         // wrong thing mutable.
         const auto &binding_entry = binding != nullptr
-                                        ? types_.entry(binding->type)
-                                        : types_.entry(k_unknown_type);
+                                        ? session_.types_.entry(binding->type)
+                                        : session_.types_.entry(k_unknown_type);
         const auto writes_through_indirection =
             binding_entry.kind == type_kind::ref_kind ||
             (binding_entry.kind == type_kind::ptr_kind && binding_entry.is_mut);
@@ -202,7 +202,7 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
           error_with_help(
               stmt.target->span,
               std::format("cannot write through `{}` — it is a `{}`", root_name,
-                          types_.display(binding->type)),
+                          session_.types_.display(binding->type)),
               "this pointer is read-only",
               "A `*T` only permits reads. Obtain a `*mut T` instead — for "
               "example with `.as_mut_ptr()` rather than `.as_ptr()`.");
@@ -222,12 +222,13 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
   }
 
   const auto stripped = strip_refs(target_type);
-  if (stmt.op != ast::assign_op::assign && !types_.is_unknown(stripped) &&
-      !types_.is_numeric(stripped)) {
+  if (stmt.op != ast::assign_op::assign &&
+      !session_.types_.is_unknown(stripped) &&
+      !session_.types_.is_numeric(stripped)) {
     error(stmt.span,
           std::format("compound assignment requires a numeric target, "
                       "found `{}`",
-                      types_.display(stripped)),
+                      session_.types_.display(stripped)),
           "not a numeric value");
   }
 
@@ -235,7 +236,8 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
     const auto found = infer_expr(*stmt.value, stripped);
     // `x += y` is `x = x + y`: the operands must agree exactly as they do
     // for `+`, since numbers never convert implicitly.
-    if (stmt.op == ast::assign_op::assign || types_.is_numeric(stripped)) {
+    if (stmt.op == ast::assign_op::assign ||
+        session_.types_.is_numeric(stripped)) {
       type_mismatch(stmt.value->span, stripped, found,
                     "from the assignment target", stmt.value.get());
     }
@@ -255,7 +257,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   if (node.has_error) {
     return k_unknown_type;
   }
-  const auto unit = types_.builtin("unit");
+  const auto unit = session_.types_.builtin("unit");
 
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
@@ -319,9 +321,10 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
             if (const auto reflected = reflected_name_of(*stmt.initializer);
                 reflected.has_value() &&
                 stmt.initializer->kind == ast::node_kind::call_expr) {
-              type_name_aliases_.insert_or_assign(binding.name, *reflected);
+              function_.type_name_aliases_.insert_or_assign(binding.name,
+                                                            *reflected);
             } else {
-              type_name_aliases_.erase(binding.name);
+              function_.type_name_aliases_.erase(binding.name);
             }
           }
           // Also make the binding available to `resolve_static_if_branch`
@@ -403,7 +406,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
 
   case ast::node_kind::return_stmt: {
     const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
-    if (in_generator_) {
+    if (function_.in_generator_) {
       // A generator's only output channel is `yield`; `return` just marks
       // exhaustion (translates to the iterator's `next()` returning
       // `none` forever after), so a value here would have nowhere to go.
@@ -415,54 +418,60 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
             "Use `yield` to hand values back to the caller, and a bare "
             "`return` to end the generator early.");
       }
-      return types_.builtin("never");
+      return session_.types_.builtin("never");
     }
     if (stmt.value != nullptr) {
-      const auto expected_for_value =
-          checking_existential_return_ ? k_unknown_type : return_type_;
+      const auto expected_for_value = function_.checking_existential_return_
+                                          ? k_unknown_type
+                                          : function_.return_type_;
       const auto found = infer_expr(*stmt.value, expected_for_value);
-      if (checking_existential_return_) {
-        existential_underlying_ =
-            join_branch_type(existential_underlying_, found, stmt.value->span,
-                             "existential return");
-      } else if (inferring_return_) {
+      if (function_.checking_existential_return_) {
+        function_.existential_underlying_ =
+            join_branch_type(function_.existential_underlying_, found,
+                             stmt.value->span, "existential return");
+      } else if (function_.inferring_return_) {
         note_inferred_return(found, stmt.value->span);
-      } else if (return_annotated_ && !agrees(return_type_, found)) {
-        if (report_deref_if_missing(stmt.value.get(), return_type_, found)) {
+      } else if (function_.return_annotated_ &&
+                 !agrees(function_.return_type_, found)) {
+        if (report_deref_if_missing(stmt.value.get(), function_.return_type_,
+                                    found)) {
           mark_error();
-          return types_.builtin("never");
+          return session_.types_.builtin("never");
         }
         auto diag = diagnostic(
             diagnostic_level::error,
             std::format("return type mismatch: expected `{}`, found `{}`",
-                        types_.display(return_type_), types_.display(found)),
-            file_id_);
-        diag.with_label(stmt.value->span, std::format("this returns `{}`",
-                                                      types_.display(found)));
+                        session_.types_.display(function_.return_type_),
+                        session_.types_.display(found)),
+            file_.file_id_);
+        diag.with_label(
+            stmt.value->span,
+            std::format("this returns `{}`", session_.types_.display(found)));
         diag.with_note(
             std::format("the enclosing function is declared to return `{}`",
-                        types_.display(return_type_)));
+                        session_.types_.display(function_.return_type_)));
         emit_diag(diag);
         mark_error();
-      } else if (return_annotated_) {
+      } else if (function_.return_annotated_) {
         // Structurally fine — but returning into a refined return type is
         // still a narrowing, and owes the same proof an argument would.
-        check_narrowing(return_type_, found, stmt.value.get(), stmt.value->span,
-                        "for this returned value");
+        check_narrowing(function_.return_type_, found, stmt.value.get(),
+                        stmt.value->span, "for this returned value");
       }
-    } else if (!checking_existential_return_ && return_annotated_ &&
-               !types_.is_unit(return_type_) &&
-               !types_.is_unknown(return_type_)) {
+    } else if (!function_.checking_existential_return_ &&
+               function_.return_annotated_ &&
+               !session_.types_.is_unit(function_.return_type_) &&
+               !session_.types_.is_unknown(function_.return_type_)) {
       error_with_help(
           stmt.span,
           std::format("bare `return` in a function that returns `{}`",
-                      types_.display(return_type_)),
+                      session_.types_.display(function_.return_type_)),
           "missing return value",
           std::format("Return a `{}` value, or change the return type to "
                       "`unit`.",
-                      types_.display(return_type_)));
+                      session_.types_.display(function_.return_type_)));
     }
-    return types_.builtin("never");
+    return session_.types_.builtin("never");
   }
 
   case ast::node_kind::if_stmt: {
@@ -482,7 +491,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
       check_if_branch_header(branch);
       // Path conditions, exactly as in `infer_if_expr` — see the section
       // comment on `assume_condition`.
-      auto assumed = fact_scope(facts_);
+      auto assumed = fact_scope(function_.facts_);
       for (const auto &earlier : stmt.branches) {
         if (&earlier == &branch) {
           break;
@@ -504,7 +513,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
                            "`if`");
     }
     if (!stmt.else_body.empty()) {
-      auto refuted = fact_scope(facts_);
+      auto refuted = fact_scope(function_.facts_);
       for (const auto &branch : stmt.branches) {
         assume_condition(branch.condition.get(), /*negated=*/true);
       }
@@ -514,7 +523,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
                                     ? stmt.else_body.back()->span
                                     : stmt.span,
                                 "`if`");
-    } else if (types_.entry(result).name == "never") {
+    } else if (session_.types_.entry(result).name == "never") {
       // No `else`: the untaken path always exists and is implicitly
       // `unit` — an `if` whose only branch(es) purely diverge (`return`/
       // `panic`/...) must not make the whole construct register as
@@ -535,7 +544,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   case ast::node_kind::continue_stmt: {
     // Both are only meaningful with a loop to act on. Outside one there is
     // nothing to exit or advance, so this is an error rather than a no-op.
-    if (loop_depth_ == 0) {
+    if (function_.loop_depth_ == 0) {
       const auto *word =
           node.kind == ast::node_kind::break_stmt ? "break" : "continue";
       error_with_help(
@@ -550,7 +559,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     }
     // `never`, like `return`: control does not fall through to whatever
     // follows, so this must not constrain a surrounding block's type.
-    return types_.builtin("never");
+    return session_.types_.builtin("never");
   }
 
   case ast::node_kind::while_stmt: {
@@ -563,9 +572,9 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
       const auto subject = infer_expr(*stmt.let_expr, k_unknown_type);
       check_pattern(*stmt.let_pattern, strip_refs(subject));
     }
-    ++loop_depth_;
+    ++function_.loop_depth_;
     check_body_nodes(stmt.body, k_unknown_type);
-    --loop_depth_;
+    --function_.loop_depth_;
     pop_scope();
     return unit;
   }
@@ -582,9 +591,9 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     auto element = k_unknown_type;
     if (stmt.iterable != nullptr) {
       element = resolve_loop_iterable(*stmt.iterable, stmt,
-                                      for_iterator_dispatches_[&stmt]);
-      if (for_iterator_dispatches_[&stmt].decl == nullptr) {
-        for_iterator_dispatches_.erase(&stmt);
+                                      session_.for_iterator_dispatches_[&stmt]);
+      if (session_.for_iterator_dispatches_[&stmt].decl == nullptr) {
+        session_.for_iterator_dispatches_.erase(&stmt);
       }
     }
     push_scope();
@@ -599,9 +608,9 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     if (stmt.guard != nullptr) {
       require_bool(*stmt.guard, "a `for` guard");
     }
-    ++loop_depth_;
+    ++function_.loop_depth_;
     check_body_nodes(stmt.body, k_unknown_type);
-    --loop_depth_;
+    --function_.loop_depth_;
     pop_scope();
     return unit;
   }
@@ -641,7 +650,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
         fragment_value.fragment != nullptr) {
       const auto fragment_type =
           check_body_node(*fragment_value.fragment, expected_tail);
-      spliced_fragments_[&node] = fragment_value.fragment;
+      session_.spliced_fragments_[&node] = fragment_value.fragment;
       return fragment_type;
     }
     if (fragment_value.kind == comptime::value_kind::expr_fragment &&
@@ -650,7 +659,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
           dynamic_cast<const ast::expr *>(fragment_value.fragment);
       if (fragment_expr != nullptr) {
         const auto fragment_type = infer_expr(*fragment_expr, expected_tail);
-        spliced_fragments_[&node] = fragment_expr;
+        session_.spliced_fragments_[&node] = fragment_expr;
         return fragment_type;
       }
     }
@@ -675,7 +684,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     const auto &decl = dynamic_cast<const ast::static_decl &>(node);
     if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
       if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-        static_for_expected_element_ = list_element_type(expected_tail);
+        cache_.static_for_expected_element_ = list_element_type(expected_tail);
       }
       check_item(node, /*at_module_scope=*/false);
       // `static for pat in iter => yield_expr` evaluates to the list of
@@ -693,7 +702,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     // both like an ordinary `if`).
     const auto taken_branch = resolve_static_if_branch(decl);
     if (taken_branch.has_value()) {
-      static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
+      session_.static_if_taken_branch_.insert_or_assign(&decl, *taken_branch);
       const auto branch_type = check_body_nodes(
           *taken_branch ? decl.if_body : decl.else_body, expected_tail);
       return branch_type != k_unknown_type ? branch_type : unit;
@@ -706,13 +715,14 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
         joined = join_branch_type(joined, narrowed->second, decl.span,
                                   "`static if`");
       }
-      if (decl.else_body.empty() && types_.entry(joined).name == "never") {
+      if (decl.else_body.empty() &&
+          session_.types_.entry(joined).name == "never") {
         joined = unit;
       }
       return joined != k_unknown_type ? joined : unit;
     }
     auto result = expected_tail;
-    ++in_speculative_static_branch_;
+    ++function_.in_speculative_static_branch_;
     const auto if_type = check_body_nodes(decl.if_body, expected_tail);
     result =
         join_branch_type(result, if_type,
@@ -728,8 +738,9 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
                                     : decl.span,
                                 "`static if`");
     }
-    --in_speculative_static_branch_;
-    if (decl.else_body.empty() && types_.entry(result).name == "never") {
+    --function_.in_speculative_static_branch_;
+    if (decl.else_body.empty() &&
+        session_.types_.entry(result).name == "never") {
       // See the identical `if_stmt` comment above: a branch-only `static
       // if` with no `else` must not make the whole construct register as
       // `never` when its one branch purely diverges, or later statements

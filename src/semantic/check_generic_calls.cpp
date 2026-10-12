@@ -55,7 +55,7 @@ auto checker::bind_generic_constant(generic_solution &solution,
     -> void {
   solution.const_slots.emplace(
       param.name,
-      types_.const_value(underlying, static_cast<uint64_t>(constant)));
+      session_.types_.const_value(underlying, static_cast<uint64_t>(constant)));
   solution.values.emplace(param.name, constant);
   // A negative constant spells its minus as `m` (`shift$m1`), keeping the
   // name to characters every backend's symbol table accepts.
@@ -136,7 +136,7 @@ auto checker::find_or_check_generic_instance(
   // parameters: `list::push$list_T_` is a function no backend can compile.
   // Each of the template's instances asks again with its own answers
   // (`defer_to_instances`).
-  if (current_template_ != nullptr &&
+  if (function_.current_template_ != nullptr &&
       (solution_mentions_template_param(solution) ||
        (fixed_type_params != nullptr &&
         std::ranges::any_of(*fixed_type_params,
@@ -147,13 +147,13 @@ auto checker::find_or_check_generic_instance(
     return nullptr;
   }
   const auto key = std::format("{}#{}", static_cast<const void *>(&decl), name);
-  if (const auto found = hk_instance_cache_.find(key);
-      found != hk_instance_cache_.end()) {
+  if (const auto found = session_.hk_instance_cache_.find(key);
+      found != session_.hk_instance_cache_.end()) {
     return found->second;
   }
 
   static constexpr size_t k_max_instantiation_depth = 32;
-  if (instantiation_depth_ >= k_max_instantiation_depth) {
+  if (session_.instantiation_depth_ >= k_max_instantiation_depth) {
     error_with_help(
         call.span, std::format("`{}` instantiates itself endlessly", decl.name),
         "generic instantiation is too deep",
@@ -177,13 +177,13 @@ auto checker::find_or_check_generic_instance(
                                "uses a construct generic instantiation "
                                "doesn't support yet",
                                decl.name),
-                   file_id_);
+                   file_.file_id_);
     diag.with_label(call.span,
                     std::format("this call needs a compiled copy of `{}`, {}",
                                 decl.name, instance_cardinality(decl)));
     diag.children.push_back(
         diagnostic(diagnostic_level::note, cloned.error().message,
-                   decl_file.value_or(file_id_))
+                   decl_file.value_or(file_.file_id_))
             .with_label(cloned.error().span, "unsupported here"));
     emit_diag(diag);
     mark_error();
@@ -192,50 +192,51 @@ auto checker::find_or_check_generic_instance(
 
   (*cloned)->name = name;
   const auto *instance = cloned->get();
-  synthesized_decls_.push_back(std::move(*cloned));
-  hk_instance_cache_.emplace(key, instance);
+  session_.synthesized_decls_.push_back(std::move(*cloned));
+  session_.hk_instance_cache_.emplace(key, instance);
   // A compile-time call into the instance runs where its template was
   // declared (`function_owner`), not where it was instantiated.
   if (owner != nullptr) {
-    function_owners_.emplace(instance,
-                             std::pair{owner, decl_file.value_or(file_id_)});
+    cache_.function_owners_.emplace(
+        instance, std::pair{owner, decl_file.value_or(file_.file_id_)});
   }
   // An instance of a function with unannotated parameters is checked
   // against the concrete types its call chose, not against leaves: seeding
   // `param_types_for`'s cache is all that takes.
   if (param_types != nullptr) {
-    inferred_param_types_[instance] = *param_types;
+    cache_.inferred_param_types_[instance] = *param_types;
   }
 
   // Recorded against the *caller's* file — the whole point of the note is
-  // to name a line the user actually wrote, and by flush time `file_id_`
+  // to name a line the user actually wrote, and by flush time `file_.file_id_`
   // is somewhere else entirely.
-  auto frame = instantiation_frame{
-      .call_span = call.span, .call_file = file_id_, .instance_name = name};
-  if (const auto solved = expected_solved_params_.find(&call);
-      solved != expected_solved_params_.end()) {
+  auto frame = instantiation_frame{.call_span = call.span,
+                                   .call_file = file_.file_id_,
+                                   .instance_name = name};
+  if (const auto solved = session_.expected_solved_params_.find(&call);
+      solved != session_.expected_solved_params_.end()) {
     frame.context_solutions = solved->second;
   }
-  auto sites = instantiation_sites_;
+  auto sites = session_.instantiation_sites_;
   sites.push_back(std::move(frame));
 
-  auto queued = pending_instance{.instance = instance,
-                                 .tmpl = &decl,
-                                 .owner = owner,
-                                 .decl_file = decl_file,
-                                 .solution = solution,
-                                 .fixed_type_params =
-                                     fixed_type_params != nullptr &&
-                                             !fixed_type_params->empty()
-                                         ? std::optional(*fixed_type_params)
-                                         : std::nullopt,
-                                 .self_type = self_type,
-                                 .block_type_params = block_type_params,
-                                 .sites = std::move(sites),
-                                 .depth = instantiation_depth_ + 1,
-                                 .enclosing_type_params = type_params_,
-                                 .clone_pairs = std::move(pairs),
-                                 .open_params = param_types != nullptr};
+  auto queued = pending_instance{
+      .instance = instance,
+      .tmpl = &decl,
+      .owner = owner,
+      .decl_file = decl_file,
+      .solution = solution,
+      .fixed_type_params =
+          fixed_type_params != nullptr && !fixed_type_params->empty()
+              ? std::optional(*fixed_type_params)
+              : std::nullopt,
+      .self_type = self_type,
+      .block_type_params = block_type_params,
+      .sites = std::move(sites),
+      .depth = session_.instantiation_depth_ + 1,
+      .enclosing_type_params = function_.type_params_,
+      .clone_pairs = std::move(pairs),
+      .open_params = param_types != nullptr};
 
   // A compile-time-only function is the one thing that cannot wait. Its
   // body is not code to compile later; it is the answer to a call being
@@ -244,7 +245,7 @@ auto checker::find_or_check_generic_instance(
   // backends as a call to a function no module compiles — which is how
   // `is_signed_integer$int32` turned up missing the first time this split
   // was tried.
-  if (comptime_only_functions_.contains(&decl)) {
+  if (session_.comptime_only_functions_.contains(&decl)) {
     check_instance(queued);
     return instance;
   }
@@ -295,17 +296,17 @@ auto checker::flush_leaf_literals() -> void {
 
   auto pending = std::vector<pending_leaf_literal>{};
   pending.swap(pending_leaf_literals_);
-  const auto saved_file = file_id_;
-  const auto *saved_module = module_;
-  const auto *saved_current_template = current_template_;
+  const auto saved_file = file_.file_id_;
+  const auto *saved_module = file_.module_;
+  const auto *saved_current_template = function_.current_template_;
   for (const auto &leaf : pending) {
     if (leaf.skip) {
       continue;
     }
     const auto element = leaf_ctxt_.zonk(leaf.element);
-    file_id_ = leaf.file;
-    module_ = leaf.module;
-    current_template_ = leaf.current_template;
+    file_.file_id_ = leaf.file;
+    file_.module_ = leaf.module;
+    function_.current_template_ = leaf.current_template;
     if (element == leaf.element) {
       error_with_help(
           leaf.span, "cannot tell what an empty `[]` is a list of",
@@ -322,9 +323,9 @@ auto checker::flush_leaf_literals() -> void {
     }
     wire_default_list(*leaf.literal, element, leaf.count);
   }
-  file_id_ = saved_file;
-  module_ = saved_module;
-  current_template_ = saved_current_template;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
+  function_.current_template_ = saved_current_template;
 }
 
 /// Records a method call whose receiver is still open, and the obligation
@@ -343,16 +344,17 @@ auto checker::defer_method_call(std::string_view name, type_id receiver_type,
                                 std::optional<std::vector<type_id>> binds,
                                 std::function<void(type_id)> finish) -> void {
   wire_leaf_queue();
-  auto goal = std::format("`{}` on `{}`", name, types_.display(receiver_type));
+  auto goal =
+      std::format("`{}` on `{}`", name, session_.types_.display(receiver_type));
   const auto payload = pending_method_calls_.size();
   pending_method_calls_.push_back(
       pending_method_call{.finish = std::move(finish),
                           .receiver_type = receiver_type,
                           .goal = goal,
-                          .file = file_id_,
-                          .module = module_,
-                          .current_template = current_template_,
-                          .sites = instantiation_sites_});
+                          .file = file_.file_id_,
+                          .module = file_.module_,
+                          .current_template = function_.current_template_,
+                          .sites = session_.instantiation_sites_});
   auto watches = std::vector<type_id>{};
   auto seen = std::unordered_set<type_id>{};
   collect_type_vars(receiver_type, watches, seen);
@@ -366,34 +368,35 @@ auto checker::defer_method_call(std::string_view name, type_id receiver_type,
 
 auto checker::capture_body_context() const -> body_context {
   return body_context{
-      .scopes = scopes_,
-      .capture_barriers = capture_barriers_,
-      .type_params = type_params_,
-      .type_param_slots = type_param_slots_,
-      .const_param_slots = const_param_slots_,
-      .self_type = self_type_,
-      .self_assoc_types = self_assoc_types_,
-      .facts = facts_,
-      .type_name_aliases = type_name_aliases_,
-      .enclosing_block_type_params = enclosing_block_type_params_,
-      .in_machine_function = in_machine_function_,
+      .scopes = function_.scopes_,
+      .capture_barriers = function_.capture_barriers_,
+      .type_params = function_.type_params_,
+      .type_param_slots = session_.type_param_slots_,
+      .const_param_slots = session_.const_param_slots_,
+      .self_type = function_.self_type_,
+      .self_assoc_types = function_.self_assoc_types_,
+      .facts = function_.facts_,
+      .type_name_aliases = function_.type_name_aliases_,
+      .enclosing_block_type_params = session_.enclosing_block_type_params_,
+      .in_machine_function = function_.in_machine_function_,
   };
 }
 
 /// Trades the body context in place for `context`; calling it again with
 /// the same `context` trades back.
 auto checker::swap_body_context(body_context &context) -> void {
-  std::swap(scopes_, context.scopes);
-  std::swap(capture_barriers_, context.capture_barriers);
-  std::swap(type_params_, context.type_params);
-  std::swap(type_param_slots_, context.type_param_slots);
-  std::swap(const_param_slots_, context.const_param_slots);
-  std::swap(self_type_, context.self_type);
-  std::swap(self_assoc_types_, context.self_assoc_types);
-  std::swap(facts_, context.facts);
-  std::swap(type_name_aliases_, context.type_name_aliases);
-  std::swap(enclosing_block_type_params_, context.enclosing_block_type_params);
-  std::swap(in_machine_function_, context.in_machine_function);
+  std::swap(function_.scopes_, context.scopes);
+  std::swap(function_.capture_barriers_, context.capture_barriers);
+  std::swap(function_.type_params_, context.type_params);
+  std::swap(session_.type_param_slots_, context.type_param_slots);
+  std::swap(session_.const_param_slots_, context.const_param_slots);
+  std::swap(function_.self_type_, context.self_type);
+  std::swap(function_.self_assoc_types_, context.self_assoc_types);
+  std::swap(function_.facts_, context.facts);
+  std::swap(function_.type_name_aliases_, context.type_name_aliases);
+  std::swap(session_.enclosing_block_type_params_,
+            context.enclosing_block_type_params);
+  std::swap(function_.in_machine_function_, context.in_machine_function);
 }
 
 /// The lambda `let name = <lambda>` binds, when that binding is a generic
@@ -465,9 +468,9 @@ auto checker::bind_generic_lambda(const ast::let_stmt &stmt,
              binding.is_mut ? binding_origin::mut_binding
                             : binding_origin::let_binding,
              binding.span);
-  if (!scopes_.empty()) {
-    if (const auto found = scopes_.back().find(binding.name);
-        found != scopes_.back().end()) {
+  if (!function_.scopes_.empty()) {
+    if (const auto found = function_.scopes_.back().find(binding.name);
+        found != function_.scopes_.back().end()) {
       found->second.generic_lambda = &lambda;
     }
   }
@@ -505,26 +508,26 @@ auto checker::instantiate_generic_lambda(const ast::lambda_expr &tmpl,
     } else {
       param_types.push_back(leaf_ctxt_.fresh_type(
           std::format("a parameter of `{}` in this use", ident.name),
-          source_location{.file_id = file_id_, .span = ident.span}));
+          source_location{.file_id = file_.file_id_, .span = ident.span}));
     }
   }
 
-  instantiation_sites_.push_back(
+  session_.instantiation_sites_.push_back(
       instantiation_frame{.call_span = ident.span,
-                          .call_file = file_id_,
+                          .call_file = file_.file_id_,
                           .instance_name = std::string(ident.name),
                           .context_solutions = {},
                           .lambda_use = true});
   swap_body_context(site.context);
-  const auto type =
-      infer_expr(copy, types_.fn_of(std::move(param_types), k_unknown_type));
+  const auto type = infer_expr(
+      copy, session_.types_.fn_of(std::move(param_types), k_unknown_type));
   swap_body_context(site.context);
-  instantiation_sites_.pop_back();
+  session_.instantiation_sites_.pop_back();
 
   // A capture list the copy used belongs to a lambda the use stands in
   // too; tell its unused-capture check what the copy read.
   for (const auto &used : site.context.capture_barriers) {
-    for (auto &live : capture_barriers_) {
+    for (auto &live : function_.capture_barriers_) {
       if (live.lambda == used.lambda) {
         live.used.insert(used.used.begin(), used.used.end());
       }
@@ -551,7 +554,7 @@ auto checker::generic_lambda_value(const generic_lambda_use &ident,
                                    const value_binding &binding,
                                    type_id expected) -> type_id {
   const auto &lambda = *binding.generic_lambda;
-  const auto &entry = types_.entry(strip_refs(expected));
+  const auto &entry = session_.types_.entry(strip_refs(expected));
   if (entry.kind == type_kind::fn_kind &&
       entry.args.size() == lambda.params.size()) {
     const auto params = entry.args;
@@ -569,7 +572,7 @@ auto checker::generic_lambda_value(const generic_lambda_use &ident,
   auto diag = diagnostic(
       diagnostic_level::error,
       std::format("cannot tell which type of `{}` is meant here", ident.name),
-      file_id_);
+      file_.file_id_);
   diag.with_label(ident.span, "used as a value, not called");
   diag.with_secondary_label(binding.span, "declared here");
   diag.with_help(std::format(
@@ -612,11 +615,11 @@ auto checker::invoked_lambda_expectation(const ast::expr &callee) -> type_id {
     params.push_back(
         param.type_annotation != nullptr
             ? k_unknown_type
-            : leaf_ctxt_.fresh_type(
-                  "a parameter of this lambda",
-                  source_location{.file_id = file_id_, .span = param.span}));
+            : leaf_ctxt_.fresh_type("a parameter of this lambda",
+                                    source_location{.file_id = file_.file_id_,
+                                                    .span = param.span}));
   }
-  return types_.fn_of(std::move(params), k_unknown_type);
+  return session_.types_.fn_of(std::move(params), k_unknown_type);
 }
 
 /// Gives an explicit generic instance its own copies of every generic
@@ -713,7 +716,7 @@ auto checker::defer_open_receiver_call(const ast::call_expr &call,
            arg.value->kind == ast::node_kind::lambda_expr;
   };
   if (std::ranges::any_of(call.args, is_lambda) &&
-      std::ranges::any_of(capture_barriers_,
+      std::ranges::any_of(function_.capture_barriers_,
                           [](const capture_barrier &barrier) -> bool {
                             return barrier.allowed.has_value();
                           })) {
@@ -726,8 +729,8 @@ auto checker::defer_open_receiver_call(const ast::call_expr &call,
   }
   auto replay = std::vector<std::pair<const ast::expr *, type_id>>{};
   const auto recorded = [this](const ast::expr &expr) -> type_id {
-    const auto found = node_types_.find(&expr);
-    return found != node_types_.end() ? found->second : k_unknown_type;
+    const auto found = session_.node_types_.find(&expr);
+    return found != session_.node_types_.end() ? found->second : k_unknown_type;
   };
   replay.emplace_back(field.object.get(), recorded(*field.object));
   for (const auto &arg : call.args) {
@@ -738,7 +741,7 @@ auto checker::defer_open_receiver_call(const ast::call_expr &call,
   const auto receiver = strip_refs(settle(replay.front().second));
   const auto result = leaf_ctxt_.fresh_type(
       std::format("the result of this call to `{}`", field.field_name),
-      source_location{.file_id = file_id_, .span = call.span});
+      source_location{.file_id = file_.file_id_, .span = call.span});
   // The re-run solves the result leaf and whatever the parameters say
   // about the arguments; a lambda argument is checked afresh and may solve
   // anything it captures.
@@ -763,7 +766,7 @@ auto checker::defer_open_receiver_call(const ast::call_expr &call,
           replayed_exprs_.erase(expr);
         }
         swap_body_context(context);
-        if (!types_.is_unknown(answer) && answer != k_error_type) {
+        if (!session_.types_.is_unknown(answer) && answer != k_error_type) {
           (void)leaf_engine_.unify(result, answer, infer::k_no_cause);
         }
       });
@@ -792,17 +795,17 @@ auto checker::resolve_deferred_method_call(pending_method_call &deferred)
     return infer::obligation_report{
         .outcome = infer::obligation_outcome::waiting,
         .detail = std::format("the receiver of {} is still `{}`", deferred.goal,
-                              types_.display(settled))};
+                              session_.types_.display(settled))};
   }
 
-  const auto saved_file = file_id_;
-  const auto *saved_module = module_;
-  file_id_ = deferred.file;
-  module_ = deferred.module;
+  const auto saved_file = file_.file_id_;
+  const auto *saved_module = file_.module_;
+  file_.file_id_ = deferred.file;
+  file_.module_ = deferred.module;
   const auto *saved_current_template =
-      std::exchange(current_template_, deferred.current_template);
+      std::exchange(function_.current_template_, deferred.current_template);
   auto saved_sites =
-      std::exchange(instantiation_sites_, std::move(deferred.sites));
+      std::exchange(session_.instantiation_sites_, std::move(deferred.sites));
 
   // Moved out first: running the call can defer another, which grows
   // `pending_method_calls_` and would free this closure while it runs.
@@ -810,10 +813,10 @@ auto checker::resolve_deferred_method_call(pending_method_call &deferred)
   const auto finish = std::move(deferred.finish);
   finish(settled);
 
-  instantiation_sites_ = std::move(saved_sites);
-  current_template_ = saved_current_template;
-  file_id_ = saved_file;
-  module_ = saved_module;
+  session_.instantiation_sites_ = std::move(saved_sites);
+  function_.current_template_ = saved_current_template;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
   return infer::obligation_report{
       .outcome = infer::obligation_outcome::discharged, .detail = {}};
 }
@@ -827,7 +830,7 @@ auto checker::mint_open_result(const ast::func_decl &decl, source_span span)
   }
   pending_open_param_calls_.back().result_leaf = leaf_ctxt_.fresh_type(
       std::format("the result of this call to `{}`", decl.name),
-      source_location{.file_id = file_id_, .span = span});
+      source_location{.file_id = file_.file_id_, .span = span});
 }
 
 /// The type a call answers with: its result leaf if it has one.
@@ -904,7 +907,7 @@ auto checker::classify_probe(
       type_group_call(call);
     }
   }
-  const auto &param_types = param_types_for(*probe.decl, module_);
+  const auto &param_types = param_types_for(*probe.decl, file_.module_);
   const auto open = has_open_param(*probe.decl, param_types);
   open_param_decls_[probe.decl] = open;
   if (!open) {
@@ -1032,8 +1035,8 @@ auto checker::resolve_open_param_calls() -> void {
 auto checker::type_open_param_call(pending_open_param_call &item) -> void {
   item.typed = true;
   const auto &decl = *item.decl;
-  const auto saved_file = std::exchange(file_id_, item.file);
-  const auto *saved_module = std::exchange(module_, item.module);
+  const auto saved_file = std::exchange(file_.file_id_, item.file);
+  const auto *saved_module = std::exchange(file_.module_, item.module);
   // A method of a generic block states its signature in the block's
   // parameters (`T`); this call's receiver says what they are.
   const auto block = open_call_block_bindings(item);
@@ -1054,14 +1057,14 @@ auto checker::type_open_param_call(pending_open_param_call &item) -> void {
             std::format("argument for `{}` has type `{}`, but `{}`'s "
                         "body needs `{}`",
                         param_name_of(decl.params[i]),
-                        types_.display(settle(item.call_params[i])), decl.name,
-                        types_.display(pinned)),
+                        session_.types_.display(settle(item.call_params[i])),
+                        decl.name, session_.types_.display(pinned)),
             "wrong type for this parameter",
             std::format("`{}` has no annotation, so its type comes from "
                         "how `{}`'s own body uses it — never from a "
                         "call. Here the body requires `{}`.",
                         param_name_of(decl.params[i]), decl.name,
-                        types_.display(pinned)));
+                        session_.types_.display(pinned)));
       }
     }
     if (item.result_leaf != k_unknown_type) {
@@ -1072,8 +1075,8 @@ auto checker::type_open_param_call(pending_open_param_call &item) -> void {
                       "as the result of this call");
       }
     }
-    file_id_ = saved_file;
-    module_ = saved_module;
+    file_.file_id_ = saved_file;
+    file_.module_ = saved_module;
     return;
   }
   const auto &signature = implicit_signatures_.at(item.decl);
@@ -1119,8 +1122,8 @@ auto checker::type_open_param_call(pending_open_param_call &item) -> void {
     (void)leaf_engine_.unify(instantiate(signature.result), item.result_leaf,
                              infer::k_no_cause);
   }
-  file_id_ = saved_file;
-  module_ = saved_module;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
 }
 
 /// Names the instance a call to an implicit generic asks for, once the
@@ -1140,22 +1143,23 @@ auto checker::name_open_param_instance(pending_open_param_call item) -> void {
   }
   // In the calling file and module, and in no template's body: the
   // queue may run the naming from anywhere.
-  const auto saved_file = std::exchange(file_id_, item.file);
-  const auto *saved_module = std::exchange(module_, item.module);
-  const auto *saved_template = std::exchange(current_template_, nullptr);
+  const auto saved_file = std::exchange(file_.file_id_, item.file);
+  const auto *saved_module = std::exchange(file_.module_, item.module);
+  const auto *saved_template =
+      std::exchange(function_.current_template_, nullptr);
   if (open.empty()) {
     instantiate_open_param_call(item, param_types_for(decl, item.owner));
   } else {
-    defer_method_call(decl.name, types_.tuple_of(std::move(open)),
+    defer_method_call(decl.name, session_.types_.tuple_of(std::move(open)),
                       std::vector<type_id>{},
                       [this, item = std::move(item)](type_id) -> void {
                         instantiate_open_param_call(
                             item, param_types_for(*item.decl, item.owner));
                       });
   }
-  current_template_ = saved_template;
-  file_id_ = saved_file;
-  module_ = saved_module;
+  function_.current_template_ = saved_template;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
 }
 
 /// The generic block's parameters, solved from the call's receiver:
@@ -1177,9 +1181,10 @@ auto checker::open_call_block_bindings(const pending_open_param_call &item)
 /// settles.
 auto checker::name_block_method_instance(const pending_open_param_call &item)
     -> void {
-  const auto saved_file = std::exchange(file_id_, item.file);
-  const auto *saved_module = std::exchange(module_, item.module);
-  const auto *saved_template = std::exchange(current_template_, nullptr);
+  const auto saved_file = std::exchange(file_.file_id_, item.file);
+  const auto *saved_module = std::exchange(file_.module_, item.module);
+  const auto *saved_template =
+      std::exchange(function_.current_template_, nullptr);
   const auto self = settle(item.self_type);
   if (mentions_type_var(self)) {
     defer_method_call(item.decl->name, self, std::vector<type_id>{},
@@ -1192,9 +1197,9 @@ auto checker::name_block_method_instance(const pending_open_param_call &item)
     name_impl_method_instance(*item.call, item.decl->name, *item.receiver,
                               self);
   }
-  current_template_ = saved_template;
-  file_id_ = saved_file;
-  module_ = saved_module;
+  function_.current_template_ = saved_template;
+  file_.file_id_ = saved_file;
+  file_.module_ = saved_module;
 }
 
 /// Names the instance of a generic block's method for a settled receiver
@@ -1210,7 +1215,7 @@ auto checker::name_impl_method_instance(const ast::call_expr &call,
     defer_impl_method_call(call, settled);
     return;
   }
-  const auto &entry = types_.entry(settled);
+  const auto &entry = session_.types_.entry(settled);
   const auto *found = find_receiver_method(settled, method_name);
   if (found == nullptr) {
     return;
@@ -1239,7 +1244,7 @@ auto checker::name_impl_method_instance(const ast::call_expr &call,
 /// leaves have settled: in `twice(twice(v))` the outer call's argument is
 /// the inner call's result, which is only `T` once the inner call is typed.
 auto checker::queue_open_param_call(pending_open_param_call item) -> void {
-  if (current_template_ != nullptr) {
+  if (function_.current_template_ != nullptr) {
     defer_to_instances(*item.call, [this, item](instance_subst &subst) -> void {
       const auto written_in_template_params =
           mentions_template_param(settle(item.self_type)) ||
@@ -1320,11 +1325,11 @@ auto checker::instantiate_open_param_call(
     carry_impl_value_slots(*item.method, block, block_solution);
     block_solution.suffix =
         std::format("${}", mangle_type_for_instance(self_type));
-    const auto saved_file = file_id_;
-    file_id_ = item.file;
+    const auto saved_file = file_.file_id_;
+    file_.file_id_ = item.file;
     const auto bounds_hold = check_call_bounds(
         *item.call, decl, item.owner, item.decl_file, block_solution, &scoped);
-    file_id_ = saved_file;
+    file_.file_id_ = saved_file;
     if (!bounds_hold) {
       return;
     }
@@ -1358,10 +1363,11 @@ auto checker::instantiate_open_param_call(
     if (item.call->callee != nullptr) {
       record_expr_type(
           *item.call->callee,
-          types_.fn_of(std::move(fn_params),
-                       substitute_solved(signature_return_type(decl, item.owner,
-                                                               block_params),
-                                         block)));
+          session_.types_.fn_of(
+              std::move(fn_params),
+              substitute_solved(
+                  signature_return_type(decl, item.owner, block_params),
+                  block)));
     }
   } else {
     // The instance's body may not have been checked yet — it is queued —
@@ -1373,7 +1379,7 @@ auto checker::instantiate_open_param_call(
                             .fn_params = std::move(fn_params),
                             .file = item.file});
   }
-  resolved_callees_[item.call] =
+  session_.resolved_callees_[item.call] =
       resolved_callee{.decl = instance,
                       .owner_module = item.owner->module_name,
                       .impl_target_type = "",
@@ -1385,7 +1391,7 @@ auto checker::instantiate_open_param_call(
 auto checker::finish_open_results(bool last) -> void {
   auto pending = std::vector<pending_open_result>{};
   pending.swap(pending_open_results_);
-  const auto saved_file = file_id_;
+  const auto saved_file = file_.file_id_;
   for (auto &item : pending) {
     const auto found = inferred_returns_.find(item.instance);
     // An instance made by substitution has no result until its template
@@ -1396,17 +1402,18 @@ auto checker::finish_open_results(bool last) -> void {
     }
     const auto result =
         found != inferred_returns_.end() ? found->second : k_unknown_type;
-    file_id_ = item.file;
+    file_.file_id_ = item.file;
     if (item.leaf != k_unknown_type && result != k_unknown_type) {
       type_mismatch(item.call->span, item.leaf, result,
                     "as the result of this call");
     }
     if (item.call->callee != nullptr) {
-      record_expr_type(*item.call->callee,
-                       types_.fn_of(std::move(item.fn_params), result));
+      record_expr_type(
+          *item.call->callee,
+          session_.types_.fn_of(std::move(item.fn_params), result));
     }
   }
-  file_id_ = saved_file;
+  file_.file_id_ = saved_file;
 }
 
 /// One annotated parameter's declared type, resolved as `signature_params`
@@ -1490,13 +1497,13 @@ auto checker::flush_deferred() -> void {
 auto checker::flush_leaf_values() -> void {
   auto pending = std::vector<pending_leaf_literal_value>{};
   pending.swap(pending_leaf_values_);
-  const auto saved_file = file_id_;
+  const auto saved_file = file_.file_id_;
   for (const auto &value : pending) {
-    file_id_ = value.file;
+    file_.file_id_ = value.file;
     check_integer_fit(*value.literal, leaf_ctxt_.zonk(value.leaf),
                       value.negated);
   }
-  file_id_ = saved_file;
+  file_.file_id_ = saved_file;
 }
 
 /// Whether `item` is checked by walking its clone rather than substituted
@@ -1507,7 +1514,7 @@ auto checker::flush_leaf_values() -> void {
 /// being checked right now and is evaluated, never compiled.
 auto checker::walks_instance(const pending_instance &item) -> bool {
   if (item.clone_pairs == nullptr || item.open_params ||
-      comptime_only_functions_.contains(item.tmpl)) {
+      session_.comptime_only_functions_.contains(item.tmpl)) {
     return true;
   }
   const auto open = open_param_decls_.find(item.tmpl);
@@ -1536,7 +1543,7 @@ auto checker::flush_substitutions() -> void {
 
 /// Registers a made instance for lowering, and the template it came from.
 auto checker::record_instance(const pending_instance &item) -> void {
-  const_generic_instances_.push_back(const_generic_instance{
+  session_.const_generic_instances_.push_back(const_generic_instance{
       .decl = item.instance, .owner_module = item.owner->module_name});
   instance_templates_[item.instance] = item.tmpl;
 }
@@ -1626,12 +1633,12 @@ auto checker::check_instance(pending_instance &item) -> void {
   record_instance(item);
   // The clone is a distinct `func_decl` from the template it came from,
   // so membership has to be propagated explicitly — see
-  // `comptime_only_functions_`'s doc comment; without this, `hir::lower`
-  // would try to lower every instantiation of a compile-time-only
+  // `session_.comptime_only_functions_`'s doc comment; without this,
+  // `hir::lower` would try to lower every instantiation of a compile-time-only
   // `static def` (e.g. `is_integer[int32]`) as if it were ordinary
   // runtime code, exactly the failure this set exists to prevent.
-  if (comptime_only_functions_.contains(item.tmpl)) {
-    comptime_only_functions_.insert(item.instance);
+  if (session_.comptime_only_functions_.contains(item.tmpl)) {
+    session_.comptime_only_functions_.insert(item.instance);
   }
 }
 
@@ -1641,58 +1648,59 @@ auto checker::check_instance(pending_instance &item) -> void {
 /// reported under. Never inside a template, whatever the caller was in.
 template <typename Body>
 auto checker::with_instance_context(pending_instance item, Body body) -> void {
-  const auto saved_module = module_;
-  const auto saved_file_id = file_id_;
-  auto saved_const_slots = std::move(const_param_slots_);
-  auto saved_values = std::move(const_param_values_);
-  auto saved_type_slots = std::move(type_param_slots_);
-  const auto saved_contract = in_contract_;
-  const auto saved_postcondition = in_postcondition_;
-  const auto saved_self_type = self_type_;
-  const auto saved_block_type_params = enclosing_block_type_params_;
-  auto saved_type_params = std::move(type_params_);
-  auto saved_sites = std::move(instantiation_sites_);
-  const auto saved_depth = instantiation_depth_;
-  const auto saved_template = std::exchange(current_template_, nullptr);
+  const auto saved_module = file_.module_;
+  const auto saved_file_id = file_.file_id_;
+  auto saved_const_slots = std::move(session_.const_param_slots_);
+  auto saved_values = std::move(session_.const_param_values_);
+  auto saved_type_slots = std::move(session_.type_param_slots_);
+  const auto saved_contract = function_.in_contract_;
+  const auto saved_postcondition = function_.in_postcondition_;
+  const auto saved_self_type = function_.self_type_;
+  const auto saved_block_type_params = session_.enclosing_block_type_params_;
+  auto saved_type_params = std::move(function_.type_params_);
+  auto saved_sites = std::move(session_.instantiation_sites_);
+  const auto saved_depth = session_.instantiation_depth_;
+  const auto saved_template =
+      std::exchange(function_.current_template_, nullptr);
 
-  enclosing_block_type_params_ = item.block_type_params;
-  module_ = item.owner;
-  if (!types_.is_unknown(item.self_type)) {
-    self_type_ = item.self_type;
+  session_.enclosing_block_type_params_ = item.block_type_params;
+  file_.module_ = item.owner;
+  if (!session_.types_.is_unknown(item.self_type)) {
+    function_.self_type_ = item.self_type;
   }
   if (item.decl_file.has_value()) {
-    file_id_ = *item.decl_file;
+    file_.file_id_ = *item.decl_file;
   }
   // Both kinds of binding go in together: `push_type_params` consults the
   // two maps side by side, so a mixed template's `n` interns as its
   // constant and its `T` as its concrete type in the same scope.
-  const_param_slots_ = item.solution.const_slots;
-  const_param_values_ = item.solution.values;
-  type_param_slots_ = item.solution.type_slots;
-  in_contract_ = false;
-  in_postcondition_ = false;
-  type_params_ = std::move(item.enclosing_type_params);
+  session_.const_param_slots_ = item.solution.const_slots;
+  session_.const_param_values_ = item.solution.values;
+  session_.type_param_slots_ = item.solution.type_slots;
+  function_.in_contract_ = false;
+  function_.in_postcondition_ = false;
+  function_.type_params_ = std::move(item.enclosing_type_params);
   if (item.fixed_type_params.has_value()) {
-    type_params_.push_back(*item.fixed_type_params);
+    function_.type_params_.push_back(*item.fixed_type_params);
   }
-  instantiation_sites_ = std::move(item.sites);
-  instantiation_depth_ = item.depth;
+  session_.instantiation_sites_ = std::move(item.sites);
+  session_.instantiation_depth_ = item.depth;
 
   body();
 
-  current_template_ = saved_template;
-  instantiation_depth_ = saved_depth;
-  instantiation_sites_ = std::move(saved_sites);
-  type_params_ = std::move(saved_type_params);
-  self_type_ = saved_self_type;
-  enclosing_block_type_params_ = saved_block_type_params;
-  in_postcondition_ = saved_postcondition;
-  in_contract_ = saved_contract;
-  type_param_slots_ = std::move(saved_type_slots);
-  const_param_values_ = std::move(saved_values);
-  const_param_slots_ = std::move(saved_const_slots);
-  file_id_ = saved_file_id;
-  module_ = saved_module;
+  function_.current_template_ = saved_template;
+  session_.instantiation_depth_ = saved_depth;
+  session_.instantiation_sites_ = std::move(saved_sites);
+  function_.type_params_ = std::move(saved_type_params);
+  function_.self_type_ = saved_self_type;
+  session_.enclosing_block_type_params_ = saved_block_type_params;
+  function_.in_postcondition_ = saved_postcondition;
+  function_.in_contract_ = saved_contract;
+  session_.type_param_slots_ = std::move(saved_type_slots);
+  session_.const_param_values_ = std::move(saved_values);
+  session_.const_param_slots_ = std::move(saved_const_slots);
+  file_.file_id_ = saved_file_id;
+  file_.module_ = saved_module;
 }
 
 } // namespace cinder::semantic::detail

@@ -83,10 +83,10 @@ checker::checker(program_index &index, diagnostic_bag &diag,
 /// reads long after the checker is gone.
 auto checker::take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
   auto fragments = comptime_eval_.take_synthesized_fragments();
-  for (auto &fragment : proof_fragments_) {
+  for (auto &fragment : session_.proof_fragments_) {
     fragments.push_back(std::move(fragment));
   }
-  proof_fragments_.clear();
+  session_.proof_fragments_.clear();
   return fragments;
 }
 
@@ -95,8 +95,8 @@ auto checker::take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
 auto checker::set_module_graph(const module_session_index &session_index,
                                const semantic_resolution_index &semantic_index)
     -> void {
-  session_index_ = &session_index;
-  semantic_index_ = &semantic_index;
+  session_.session_index_ = &session_index;
+  session_.semantic_index_ = &semantic_index;
 }
 
 auto checker::take_checked_types() -> checked_types {
@@ -132,8 +132,8 @@ auto checker::take_checked_types() -> checked_types {
   // Guarded on there having been any leaves, since zonking rebuilds a type
   // through the table's constructors and a session with none must not pay
   // that on every node it typed.
-  for (auto &[node, type] : node_types_) {
-    type = types_.erase_refinements(settle(type));
+  for (auto &[node, type] : session_.node_types_) {
+    type = session_.types_.erase_refinements(settle(type));
   }
   auto open_param_templates = std::unordered_set<const ast::func_decl *>{};
   for (const auto &[decl, open] : open_param_decls_) {
@@ -141,113 +141,122 @@ auto checker::take_checked_types() -> checked_types {
       open_param_templates.insert(decl);
     }
   }
-  for (auto &[field, type] : struct_pattern_field_types_) {
-    type = types_.erase_refinements(settle(type));
+  for (auto &[field, type] : session_.struct_pattern_field_types_) {
+    type = session_.types_.erase_refinements(settle(type));
   }
-  for (auto &[literal, conversion] : array_literal_conversions_) {
+  for (auto &[literal, conversion] : session_.array_literal_conversions_) {
     conversion.array_type =
-        types_.erase_refinements(settle(conversion.array_type));
+        session_.types_.erase_refinements(settle(conversion.array_type));
   }
-  for (auto &[field, type] : struct_literal_field_types_) {
-    type = types_.erase_refinements(settle(type));
+  for (auto &[field, type] : session_.struct_literal_field_types_) {
+    type = session_.types_.erase_refinements(settle(type));
   }
-  for (auto &[field, type] : struct_literal_field_expected_) {
-    type = types_.erase_refinements(settle(type));
+  for (auto &[field, type] : session_.struct_literal_field_expected_) {
+    type = session_.types_.erase_refinements(settle(type));
   }
-  for (auto &[node, dispatch] : for_iterator_dispatches_) {
+  for (auto &[node, dispatch] : session_.for_iterator_dispatches_) {
     dispatch.element_type =
-        types_.erase_refinements(settle(dispatch.element_type));
+        session_.types_.erase_refinements(settle(dispatch.element_type));
     dispatch.adapter_result_type =
-        types_.erase_refinements(settle(dispatch.adapter_result_type));
+        session_.types_.erase_refinements(settle(dispatch.adapter_result_type));
   }
-  for (auto &[node, dispatch] : comprehension_iterator_dispatches_) {
+  for (auto &[node, dispatch] : session_.comprehension_iterator_dispatches_) {
     dispatch.element_type =
-        types_.erase_refinements(settle(dispatch.element_type));
+        session_.types_.erase_refinements(settle(dispatch.element_type));
     dispatch.adapter_result_type =
-        types_.erase_refinements(settle(dispatch.adapter_result_type));
+        session_.types_.erase_refinements(settle(dispatch.adapter_result_type));
   }
-  for (auto &[path, segment_types] : value_path_types_) {
+  for (auto &[path, segment_types] : session_.value_path_types_) {
     for (auto &type : segment_types) {
-      type = types_.erase_refinements(settle(type));
+      type = session_.types_.erase_refinements(settle(type));
     }
   }
   const auto settle_steps = [this](std::vector<deref_step> &steps) -> void {
     for (auto &step : steps) {
-      step.callee_type = types_.erase_refinements(settle(step.callee_type));
-      step.result = types_.erase_refinements(settle(step.result));
+      step.callee_type =
+          session_.types_.erase_refinements(settle(step.callee_type));
+      step.result = session_.types_.erase_refinements(settle(step.result));
     }
   };
-  for (auto &[receiver, steps] : deref_adjustments_) {
+  for (auto &[receiver, steps] : session_.deref_adjustments_) {
     settle_steps(steps);
   }
-  for (auto &[path, segments] : path_deref_adjustments_) {
+  for (auto &[path, segments] : session_.path_deref_adjustments_) {
     for (auto &steps : segments) {
       settle_steps(steps);
     }
   }
-  for (auto &[node, dispatch] : interp_dispatches_) {
-    dispatch.value_type = types_.erase_refinements(settle(dispatch.value_type));
+  for (auto &[node, dispatch] : session_.interp_dispatches_) {
+    dispatch.value_type =
+        session_.types_.erase_refinements(settle(dispatch.value_type));
   }
   // Settling interns the solved types — a generic lambda's copy is typed
   // `fn(int64) -> int64` only now — after `resolve_drop_plans` ran. A
   // closure's plan does not depend on its signature, so every `fn` type
   // gets one here too.
-  for (std::size_t raw = 0; raw < types_.count(); ++raw) {
+  for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
     const auto id = static_cast<type_id>(raw);
     auto scratch = std::unordered_set<type_id>{};
-    if (types_.entry(id).kind == type_kind::fn_kind &&
-        !drop_plans_.contains(id) && !mentions_type_var(id, scratch)) {
-      drop_plans_.emplace(id, drop_plan{.closure_glue = closure_glue_type_});
+    if (session_.types_.entry(id).kind == type_kind::fn_kind &&
+        !session_.drop_plans_.contains(id) && !mentions_type_var(id, scratch)) {
+      session_.drop_plans_.emplace(
+          id, drop_plan{.closure_glue = session_.closure_glue_type_});
     }
   }
-  // Precompute which interned types carry a view, before `types_` is moved
-  // out below — the borrow checker reads this to track view-borrow lifetimes.
-  const auto type_count = types_.count();
+  // Precompute which interned types carry a view, before `session_.types_` is
+  // moved out below — the borrow checker reads this to track view-borrow
+  // lifetimes.
+  const auto type_count = session_.types_.count();
   auto borrow_bearing = compute_borrow_bearing_types(type_count);
   auto own_borrow_bearing =
       compute_borrow_bearing_types(type_count, /*params_bear=*/false);
   auto copy_sum_types = std::unordered_set<type_id>{};
-  for (std::size_t raw = 0; raw < types_.count(); ++raw) {
+  for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
     const auto id = static_cast<type_id>(raw);
     if (is_sum_like(id) && value_is_copy(id)) {
       copy_sum_types.insert(id);
     }
   }
   return checked_types{
-      .types = std::move(types_),
-      .node_types = std::move(node_types_),
-      .node_files = std::move(node_files_),
-      .struct_pattern_field_types = std::move(struct_pattern_field_types_),
-      .struct_literal_field_types = std::move(struct_literal_field_types_),
+      .types = std::move(session_.types_),
+      .node_types = std::move(session_.node_types_),
+      .node_files = std::move(session_.node_files_),
+      .struct_pattern_field_types =
+          std::move(session_.struct_pattern_field_types_),
+      .struct_literal_field_types =
+          std::move(session_.struct_literal_field_types_),
       .struct_literal_field_expected =
-          std::move(struct_literal_field_expected_),
-      .call_argument_mappings = std::move(call_argument_mappings_),
-      .resolved_callees = std::move(resolved_callees_),
-      .resolved_fn_values = std::move(resolved_fn_values_),
-      .operator_dispatches = std::move(operator_dispatches_),
-      .ord_dispatch_result_types = std::move(ord_dispatch_result_types_),
-      .index_dispatches = std::move(index_dispatches_),
-      .index_set_dispatches = std::move(index_set_dispatches_),
-      .index_mut_dispatches = std::move(index_mut_dispatches_),
-      .index_ref_dispatches = std::move(index_ref_dispatches_),
-      .array_literal_conversions = std::move(array_literal_conversions_),
-      .interp_dispatches = std::move(interp_dispatches_),
-      .type_param_reflections = std::move(type_param_reflections_),
-      .for_iterator_dispatches = std::move(for_iterator_dispatches_),
+          std::move(session_.struct_literal_field_expected_),
+      .call_argument_mappings = std::move(session_.call_argument_mappings_),
+      .resolved_callees = std::move(session_.resolved_callees_),
+      .resolved_fn_values = std::move(session_.resolved_fn_values_),
+      .operator_dispatches = std::move(session_.operator_dispatches_),
+      .ord_dispatch_result_types =
+          std::move(session_.ord_dispatch_result_types_),
+      .index_dispatches = std::move(session_.index_dispatches_),
+      .index_set_dispatches = std::move(session_.index_set_dispatches_),
+      .index_mut_dispatches = std::move(session_.index_mut_dispatches_),
+      .index_ref_dispatches = std::move(session_.index_ref_dispatches_),
+      .array_literal_conversions =
+          std::move(session_.array_literal_conversions_),
+      .interp_dispatches = std::move(session_.interp_dispatches_),
+      .type_param_reflections = std::move(session_.type_param_reflections_),
+      .for_iterator_dispatches = std::move(session_.for_iterator_dispatches_),
       .comprehension_iterator_dispatches =
-          std::move(comprehension_iterator_dispatches_),
-      .drop_plans = std::move(drop_plans_),
-      .comprehension_dispatches = std::move(comprehension_dispatches_),
-      .runtime_fill_dispatches = std::move(runtime_fill_dispatches_),
-      .static_for_elements = std::move(static_for_elements_),
-      .static_for_dispatches = std::move(static_for_dispatches_),
-      .static_for_iterations = std::move(static_for_iterations_),
-      .try_conversions = std::move(try_conversions_),
-      .try_conversion_types = std::move(try_conversion_types_),
+          std::move(session_.comprehension_iterator_dispatches_),
+      .drop_plans = std::move(session_.drop_plans_),
+      .comprehension_dispatches = std::move(session_.comprehension_dispatches_),
+      .runtime_fill_dispatches = std::move(session_.runtime_fill_dispatches_),
+      .static_for_elements = std::move(cache_.static_for_elements_),
+      .static_for_dispatches = std::move(cache_.static_for_dispatches_),
+      .static_for_iterations = std::move(cache_.static_for_iterations_),
+      .try_conversions = std::move(session_.try_conversions_),
+      .try_conversion_types = std::move(session_.try_conversion_types_),
       .fmt_types = fmt_types,
-      .synthesized_decls = std::move(synthesized_decls_),
-      .synthesized_trait_defaults = std::move(synthesized_trait_defaults_),
-      .const_generic_instances = std::move(const_generic_instances_),
+      .synthesized_decls = std::move(session_.synthesized_decls_),
+      .synthesized_trait_defaults =
+          std::move(session_.synthesized_trait_defaults_),
+      .const_generic_instances = std::move(session_.const_generic_instances_),
       .open_param_templates = std::move(open_param_templates),
       .generic_lambda_instances = std::move(generic_lambda_instances_),
       .generic_lambda_refs = std::move(generic_lambda_refs_),
@@ -256,32 +265,35 @@ auto checker::take_checked_types() -> checked_types {
       .implicit_signatures = std::move(implicit_signatures_),
       .instance_templates = std::move(instance_templates_),
       .inferred_return_types = std::move(inferred_returns_),
-      .comptime_only_functions = std::move(comptime_only_functions_),
-      .synthesized_functor_nodes = std::move(synthetic_nodes_),
-      .functor_instances = std::move(functor_instance_decls_),
-      .synthesized_types = std::move(synthesized_types_),
-      .spliced_fragments = std::move(spliced_fragments_),
+      .comptime_only_functions = std::move(session_.comptime_only_functions_),
+      .synthesized_functor_nodes = std::move(functor_.synthetic_nodes_),
+      .functor_instances = std::move(functor_.functor_instance_decls_),
+      .synthesized_types = std::move(session_.synthesized_types_),
+      .spliced_fragments = std::move(session_.spliced_fragments_),
       .synthesized_fragments = take_synthesized_fragments(),
-      .synthesized_item_splices = std::move(synthesized_item_splices_),
-      .synthesized_const_literals = std::move(synthesized_const_literals_),
-      .static_const_values = std::move(static_const_values_),
-      .folded_comptime_calls = std::move(folded_comptime_calls_),
-      .layout_queries = std::move(layout_queries_),
-      .ptr_casts = std::move(ptr_casts_),
-      .slice_from_raw_parts_calls = std::move(slice_from_raw_parts_calls_),
-      .stack_buffers = std::move(stack_buffers_),
-      .static_global_defs = std::move(static_global_defs_),
-      .static_if_taken_branch = std::move(static_if_taken_branch_),
-      .static_global_refs = std::move(static_global_refs_),
-      .static_struct_values = std::move(static_struct_values_),
-      .synthesized_static_structs = std::move(synthesized_static_structs_),
-      .unreadable_static_refs = std::move(unreadable_static_refs_),
-      .static_global_owners = std::move(static_global_owners_),
-      .value_path_types = std::move(value_path_types_),
-      .deref_adjustments = std::move(deref_adjustments_),
-      .path_deref_adjustments = std::move(path_deref_adjustments_),
-      .proven_in_bounds = std::move(proven_in_bounds_),
-      .elided_contracts = std::move(elided_contracts_),
+      .synthesized_item_splices = std::move(session_.synthesized_item_splices_),
+      .synthesized_const_literals =
+          std::move(session_.synthesized_const_literals_),
+      .static_const_values = std::move(session_.static_const_values_),
+      .folded_comptime_calls = std::move(session_.folded_comptime_calls_),
+      .layout_queries = std::move(session_.layout_queries_),
+      .ptr_casts = std::move(session_.ptr_casts_),
+      .slice_from_raw_parts_calls =
+          std::move(session_.slice_from_raw_parts_calls_),
+      .stack_buffers = std::move(session_.stack_buffers_),
+      .static_global_defs = std::move(session_.static_global_defs_),
+      .static_if_taken_branch = std::move(session_.static_if_taken_branch_),
+      .static_global_refs = std::move(session_.static_global_refs_),
+      .static_struct_values = std::move(session_.static_struct_values_),
+      .synthesized_static_structs =
+          std::move(session_.synthesized_static_structs_),
+      .unreadable_static_refs = std::move(session_.unreadable_static_refs_),
+      .static_global_owners = std::move(session_.static_global_owners_),
+      .value_path_types = std::move(session_.value_path_types_),
+      .deref_adjustments = std::move(session_.deref_adjustments_),
+      .path_deref_adjustments = std::move(session_.path_deref_adjustments_),
+      .proven_in_bounds = std::move(session_.proven_in_bounds_),
+      .elided_contracts = std::move(session_.elided_contracts_),
       .borrow_bearing_types = std::move(borrow_bearing),
       .own_borrow_bearing_types = std::move(own_borrow_bearing),
       .copy_type_params = std::move(copy_type_params_),
@@ -304,22 +316,23 @@ auto checker::resolve_fmt_runtime_types() -> fmt_runtime_types {
     if (it == fmt_module->types.end() || it->second.decl == nullptr) {
       return 0;
     }
-    return types_.user_type(*it->second.decl, "std.fmt", {});
+    return session_.types_.user_type(*it->second.decl, "std.fmt", {});
   };
   result.format_spec = resolve("format_spec");
   result.align_mode = resolve("align_mode");
   result.sign_mode = resolve("sign_mode");
-  result.str_type = types_.builtin("str");
-  result.int64_type = types_.builtin("int64");
-  result.uint64_type = types_.builtin("uint64");
-  result.uint32_type = types_.builtin("uint32");
-  result.uint8_type = types_.builtin("uint8");
-  result.float64_type = types_.builtin("float64");
+  result.str_type = session_.types_.builtin("str");
+  result.int64_type = session_.types_.builtin("int64");
+  result.uint64_type = session_.types_.builtin("uint64");
+  result.uint32_type = session_.types_.builtin("uint32");
+  result.uint8_type = session_.types_.builtin("uint8");
+  result.float64_type = session_.types_.builtin("float64");
   if (result.align_mode != 0) {
     result.option_align_mode =
-        types_.builtin_generic("option", {result.align_mode});
+        session_.types_.builtin_generic("option", {result.align_mode});
   }
-  result.option_usize = types_.builtin_generic("option", {usize_type()});
+  result.option_usize =
+      session_.types_.builtin_generic("option", {usize_type()});
   return result;
 }
 
@@ -327,25 +340,27 @@ auto checker::resolve_fmt_runtime_types() -> fmt_runtime_types {
 /// `resolve_fmt_runtime_types` reads the same way regardless of whether
 /// `usize` happens to already be interned (`type_table::builtin` interns
 /// lazily either way, so this is just a readable spelling).
-auto checker::usize_type() -> type_id { return types_.builtin("usize"); }
+auto checker::usize_type() -> type_id {
+  return session_.types_.builtin("usize");
+}
 
 // ==========================================================================
 //  Per-file entry
 // ==========================================================================
 
-/// Recomputes `file_has_external_wildcard_` for the file currently being
+/// Recomputes `file_.file_has_external_wildcard_` for the file currently being
 /// checked: true when it has a `use pkg.*` wildcard import whose root the
 /// session does not own, meaning some undefined-looking name might
 /// actually come from that external module.
 auto checker::compute_external_wildcard() -> void {
-  file_has_external_wildcard_ = false;
+  file_.file_has_external_wildcard_ = false;
   const auto *imports = imports_for_current_file();
   if (imports == nullptr) {
     return;
   }
   for (const auto &binding : *imports) {
     if (binding.is_wildcard && !session_owns_path_root(binding.path)) {
-      file_has_external_wildcard_ = true;
+      file_.file_has_external_wildcard_ = true;
       return;
     }
   }
@@ -357,7 +372,7 @@ auto checker::compute_external_wildcard() -> void {
 /// via `check_item`) in a fresh top-level scope.
 auto checker::check_file(const ast::file &file) -> void {
   compute_external_wildcard();
-  reported_undefined_.clear();
+  function_.reported_undefined_.clear();
 
   // A file may declare `main` or use top-level statements, not both.
   const ast::func_decl *main_decl = nullptr;
@@ -371,7 +386,7 @@ auto checker::check_file(const ast::file &file) -> void {
       if (fn.name == "main") {
         main_decl = &fn;
       }
-    } else if (item_splice_impls_.contains(item.get())) {
+    } else if (session_.item_splice_impls_.contains(item.get())) {
       // Resolved to an injected `impl` block by `resolve_item_splices` —
       // an item, not a top-level script statement.
     } else if (first_statement == nullptr &&
@@ -385,11 +400,12 @@ auto checker::check_file(const ast::file &file) -> void {
         diagnostic_level::error,
         "a file may declare `main` explicitly or use top-level statements, "
         "but not both",
-        file_id_);
+        file_.file_id_);
     diag.with_label(first_statement->span,
                     "top-level statement in a file that declares `main`");
     diag.children.push_back(
-        diagnostic(diagnostic_level::note, "`main` is declared here", file_id_)
+        diagnostic(diagnostic_level::note, "`main` is declared here",
+                   file_.file_id_)
             .with_label(main_decl->span, "explicit `main`"));
     diag.with_help("Move these statements into `main`, or delete the "
                    "explicit `main` and keep the script form.");
@@ -418,8 +434,8 @@ auto checker::check_file(const ast::file &file) -> void {
         checked_early.contains(item.get())) {
       continue;
     }
-    if (const auto it = item_splice_impls_.find(item.get());
-        it != item_splice_impls_.end()) {
+    if (const auto it = session_.item_splice_impls_.find(item.get());
+        it != session_.item_splice_impls_.end()) {
       // Already resolved by `resolve_item_splices` (before method-table/
       // coherence build) — check the injected impl itself, in place of
       // the splice node. Do not fall through to `check_body_node` below:
@@ -434,8 +450,8 @@ auto checker::check_file(const ast::file &file) -> void {
     } else {
       check_item(*item, /*at_module_scope=*/true);
     }
-    if (const auto it = derived_trait_impls_.find(item.get());
-        it != derived_trait_impls_.end()) {
+    if (const auto it = session_.derived_trait_impls_.find(item.get());
+        it != session_.derived_trait_impls_.end()) {
       for (const auto *impl : it->second) {
         check_item(*impl, /*at_module_scope=*/true);
       }
@@ -464,7 +480,7 @@ auto checker::names_reflectable_module(std::string_view name) const -> bool {
 /// `resolve_item_splices`'s own tail exactly (evaluate, extract the
 /// wrapped `impl_decl`, push into `index_.modules[...].impls`) via a
 /// synthesized call — there's no literal `splice_stmt` AST node for this
-/// sugar to key off, so nothing is recorded in `item_splice_impls_`
+/// sugar to key off, so nothing is recorded in `session_.item_splice_impls_`
 /// (nothing will ever look one up for a plain `type_decl` item). A
 /// generic type or a non-struct (sum/refinement) definition is left
 /// entirely on the old type-only path unchanged: every `derive_<trait>
@@ -475,12 +491,13 @@ auto checker::names_reflectable_module(std::string_view name) const -> bool {
 /// The span to report an impl-level diagnostic at: the impl's own span for
 /// a hand-written `impl`, and the originating `deriving` clause's span for
 /// one `resolve_deriving_traits` synthesized — see
-/// `derived_impl_origin_spans_` for why the synthesized impl's own span is
-/// not usable.
+/// `session_.derived_impl_origin_spans_` for why the synthesized impl's own
+/// span is not usable.
 auto checker::impl_report_span(const ast::impl_decl &impl) const
     -> source_span {
-  const auto it = derived_impl_origin_spans_.find(&impl);
-  return it != derived_impl_origin_spans_.end() ? it->second : impl.span;
+  const auto it = session_.derived_impl_origin_spans_.find(&impl);
+  return it != session_.derived_impl_origin_spans_.end() ? it->second
+                                                         : impl.span;
 }
 
 /// Synthesizes and evaluates `derive_<trait>[<decl.name>]()`, handing back
@@ -551,11 +568,12 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
   if (!is_sum_shaped) {
     const auto &struct_def =
         dynamic_cast<const ast::struct_type_def &>(*decl.definition);
-    const auto &instance = types_.entry(instance_id);
+    const auto &instance = session_.types_.entry(instance_id);
     for (const auto &field : struct_def.body.fields) {
       if (const auto field_type_id = struct_field_type(instance, field.name);
           field_type_id.has_value()) {
-        field_type_names.emplace(&field, types_.display(*field_type_id));
+        field_type_names.emplace(&field,
+                                 session_.types_.display(*field_type_id));
       }
     }
   }
@@ -613,9 +631,9 @@ auto checker::derive_trait_for_method(std::string_view name)
 /// concrete path: a method whose `impl_target_pattern` is an applied type
 /// satisfies `impl_needs_instance`, so `check_impl_generic_method_call`
 /// monomorphizes it through `find_or_check_generic_instance` — which
-/// checks the body with `self_type_` bound to the instantiation, names it
-/// per instance, and records it in `const_generic_instances_` for
-/// `hir::lower_module` to emit. Nothing here has to name the applied type
+/// checks the body with `function_.self_type_` bound to the instantiation,
+/// names it per instance, and records it in `session_.const_generic_instances_`
+/// for `hir::lower_module` to emit. Nothing here has to name the applied type
 /// syntactically, which is the reason the derived `impl`'s own `for_type`
 /// is left exactly as the derivation wrote it (a bare `box`) and
 /// `impl_target_pattern` carries the real target instead.
@@ -626,10 +644,10 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
                                             std::string_view method_name)
     -> bool {
   const auto trait_name = derive_trait_for_method(method_name);
-  if (trait_name.empty() || types_.is_unknown(instance_id)) {
+  if (trait_name.empty() || session_.types_.is_unknown(instance_id)) {
     return false;
   }
-  const auto &entry = types_.entry(instance_id);
+  const auto &entry = session_.types_.entry(instance_id);
   const auto *decl = entry.decl;
   // An *applied* generic: a `deriving` type with parameters, instantiated.
   // The bare template (`args` empty) has nothing concrete to reflect over,
@@ -640,7 +658,8 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
       !std::ranges::contains(k_real_derive_traits, trait_name)) {
     return false;
   }
-  if (!derived_instances_.insert(std::format("{}#{}", instance_id, trait_name))
+  if (!session_.derived_instances_
+           .insert(std::format("{}#{}", instance_id, trait_name))
            .second) {
     // Already derived for this exact (instantiation, trait) pair. The
     // key is the *instantiation*, not the declaration: deriving once per
@@ -660,8 +679,8 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
   if (impl == nullptr) {
     return false;
   }
-  derived_impl_origin_spans_[impl] = decl->span;
-  auto &methods = methods_[decl];
+  session_.derived_impl_origin_spans_[impl] = decl->span;
+  auto &methods = cache_.methods_[decl];
   auto registered = false;
   for (const auto &item : impl->items) {
     if (item == nullptr || item->has_error ||
@@ -681,7 +700,7 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
         // The concrete instantiation, not the declaration's pattern, so
         // `find_method`'s `target_pattern_matches` admits this method for
         // `box[int32]` and not for `box[str]` — even though both share one
-        // `methods_` bucket, keyed by the `type_decl`.
+        // `cache_.methods_` bucket, keyed by the `type_decl`.
         .impl_target_pattern = instance_id,
     });
     registered = true;
@@ -699,7 +718,7 @@ auto checker::resolve_deriving_traits(const ast::type_decl &decl,
     // single impl over `box[T]` is not what these derivations produce.
     return;
   }
-  const auto instance_id = make_user_type(decl, module_name_, {});
+  const auto instance_id = make_user_type(decl, file_.module_name_, {});
   for (const auto trait_name : k_real_derive_traits) {
     if (!std::ranges::contains(decl.deriving, std::string(trait_name))) {
       continue;
@@ -708,12 +727,14 @@ auto checker::resolve_deriving_traits(const ast::type_decl &decl,
     if (impl == nullptr) {
       continue;
     }
-    index_.modules[module_name_].impls.push_back(impl_ref{
-        .decl = impl, .module_name = module_name_, .file_id = owner_file});
-    synthesized_item_splices_.push_back(
-        synthesized_item_splice{.impl = impl, .owner_module = module_name_});
-    derived_trait_impls_[&decl].push_back(impl);
-    derived_impl_origin_spans_[impl] = decl.span;
+    index_.modules[file_.module_name_].impls.push_back(
+        impl_ref{.decl = impl,
+                 .module_name = file_.module_name_,
+                 .file_id = owner_file});
+    session_.synthesized_item_splices_.push_back(synthesized_item_splice{
+        .impl = impl, .owner_module = file_.module_name_});
+    session_.derived_trait_impls_[&decl].push_back(impl);
+    session_.derived_impl_origin_spans_[impl] = decl.span;
   }
 }
 
@@ -739,15 +760,15 @@ auto checker::discover_functor_instantiations(
       if (sub.items.empty() || sub.is_functor()) {
         continue; // a functor declaration itself is materialized per `use`
       }
-      const auto saved_module_name = module_name_;
-      const auto *saved_module = module_;
-      module_name_ = append_module_name(module_name_, sub.name);
-      module_ = index_.find_module(module_name_);
+      const auto saved_module_name = file_.module_name_;
+      const auto *saved_module = file_.module_;
+      file_.module_name_ = append_module_name(file_.module_name_, sub.name);
+      file_.module_ = index_.find_module(file_.module_name_);
       push_scope();
       discover_functor_instantiations(sub.items);
       pop_scope();
-      module_name_ = saved_module_name;
-      module_ = saved_module;
+      file_.module_name_ = saved_module_name;
+      file_.module_ = saved_module;
     }
   }
 }
@@ -769,15 +790,15 @@ auto checker::resolve_item_splices(
       if (sub.items.empty()) {
         continue;
       }
-      const auto saved_module_name = module_name_;
-      const auto *saved_module = module_;
-      module_name_ = append_module_name(module_name_, sub.name);
-      module_ = index_.find_module(module_name_);
+      const auto saved_module_name = file_.module_name_;
+      const auto *saved_module = file_.module_;
+      file_.module_name_ = append_module_name(file_.module_name_, sub.name);
+      file_.module_ = index_.find_module(file_.module_name_);
       push_scope();
       resolve_item_splices(sub.items, owner_file);
       pop_scope();
-      module_name_ = saved_module_name;
-      module_ = saved_module;
+      file_.module_name_ = saved_module_name;
+      file_.module_ = saved_module;
       continue;
     }
     if (item->kind != ast::node_kind::splice_stmt) {
@@ -821,11 +842,13 @@ auto checker::resolve_item_splices(
           "block instead.");
       continue;
     }
-    index_.modules[module_name_].impls.push_back(impl_ref{
-        .decl = impl, .module_name = module_name_, .file_id = owner_file});
-    item_splice_impls_[item.get()] = impl;
-    synthesized_item_splices_.push_back(
-        synthesized_item_splice{.impl = impl, .owner_module = module_name_});
+    index_.modules[file_.module_name_].impls.push_back(
+        impl_ref{.decl = impl,
+                 .module_name = file_.module_name_,
+                 .file_id = owner_file});
+    session_.item_splice_impls_[item.get()] = impl;
+    session_.synthesized_item_splices_.push_back(synthesized_item_splice{
+        .impl = impl, .owner_module = file_.module_name_});
   }
 }
 
@@ -889,13 +912,13 @@ auto checker::settle_bounded_params(
 auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
   for (const auto &input : inputs) {
     if (input.ast_file != nullptr) {
-      file_module_aliases_.emplace(input.file_id,
-                                   collect_module_aliases(*input.ast_file));
+      session_.file_module_aliases_.emplace(
+          input.file_id, collect_module_aliases(*input.ast_file));
     }
   }
   // Eagerly, before anything below can take a `const type_entry &`
   // reference into `type_table` and hold it across an expression: `find_
-  // method`'s own lazy call to this (guarded by `methods_built_`, so it
+  // method`'s own lazy call to this (guarded by `cache_.methods_built_`, so it
   // only actually runs once) interns a type for every cloned trait-
   // default body it monomorphizes, which can reallocate `type_table`'s
   // backing storage. A caller like `infer_method_call` that resolved
@@ -930,10 +953,10 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
         file_has_errors_[input.file_id]) {
       continue;
     }
-    file_id_ = input.file_id;
-    module_name_ = join_strings(input.ast_file->module_decl->path, ".");
-    module_ = index_.find_module(module_name_);
-    file_no_prelude_ = input.ast_file->no_prelude;
+    file_.file_id_ = input.file_id;
+    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+    file_.module_ = index_.find_module(file_.module_name_);
+    file_.file_no_prelude_ = input.ast_file->no_prelude;
     compute_external_wildcard();
     push_scope();
     resolve_item_splices(input.ast_file->items, input.file_id);
@@ -951,10 +974,10 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
         input.ast_file->module_decl->path.empty()) {
       continue;
     }
-    file_id_ = input.file_id;
-    module_name_ = join_strings(input.ast_file->module_decl->path, ".");
-    module_ = index_.find_module(module_name_);
-    file_no_prelude_ = input.ast_file->no_prelude;
+    file_.file_id_ = input.file_id;
+    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+    file_.module_ = index_.find_module(file_.module_name_);
+    file_.file_no_prelude_ = input.ast_file->no_prelude;
     compute_external_wildcard();
     settle_bounded_params(input.ast_file->items);
   }
@@ -974,10 +997,10 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
         file_has_errors_[input.file_id]) {
       continue;
     }
-    file_id_ = input.file_id;
-    module_name_ = join_strings(input.ast_file->module_decl->path, ".");
-    module_ = index_.find_module(module_name_);
-    file_no_prelude_ = input.ast_file->no_prelude;
+    file_.file_id_ = input.file_id;
+    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+    file_.module_ = index_.find_module(file_.module_name_);
+    file_.file_no_prelude_ = input.ast_file->no_prelude;
     compute_external_wildcard();
     push_scope();
     discover_functor_instantiations(input.ast_file->items);
@@ -1007,10 +1030,10 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
         file_has_errors_[input.file_id]) {
       continue;
     }
-    file_id_ = input.file_id;
-    module_name_ = join_strings(input.ast_file->module_decl->path, ".");
-    module_ = index_.find_module(module_name_);
-    file_no_prelude_ = input.ast_file->no_prelude;
+    file_.file_id_ = input.file_id;
+    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+    file_.module_ = index_.find_module(file_.module_name_);
+    file_.file_no_prelude_ = input.ast_file->no_prelude;
     check_file(*input.ast_file);
     // Per file rather than once at the end. The instances this file asked
     // for are checked before the next file starts, which keeps a

@@ -9,10 +9,10 @@ namespace cinder::semantic::detail {
 auto checker::defer_to_instances(const ast::node &site,
                                  std::function<void(instance_subst &)> run)
     -> void {
-  if (current_template_ == nullptr) {
+  if (function_.current_template_ == nullptr) {
     return;
   }
-  template_elaborations_[current_template_].push_back(
+  template_elaborations_[function_.current_template_].push_back(
       template_elaboration{.span = site.span, .run = std::move(run)});
 }
 
@@ -29,7 +29,7 @@ auto checker::substitute_type(type_id id, instance_subst &subst) -> type_id {
 
 auto checker::substitute_type_uncached(type_id id, instance_subst &subst)
     -> type_id {
-  const auto item = types_.entry(id); // copy: interning below can push
+  const auto item = session_.types_.entry(id); // copy: interning below can push
   const auto each =
       [&](const std::vector<type_id> &args) -> std::vector<type_id> {
     auto out = std::vector<type_id>{};
@@ -49,50 +49,55 @@ auto checker::substitute_type_uncached(type_id id, instance_subst &subst)
     if (found == subst.params.end()) {
       return id;
     }
-    const auto ctor = types_.entry(found->second);
+    const auto ctor = session_.types_.entry(found->second);
     if (ctor.kind != type_kind::ctor_ref_kind) {
       return id;
     }
     auto args = each(item.args);
     return ctor.decl != nullptr
-               ? types_.user_type(*ctor.decl, ctor.module_name, std::move(args))
-               : types_.builtin_generic(ctor.name, std::move(args));
+               ? session_.types_.user_type(*ctor.decl, ctor.module_name,
+                                           std::move(args))
+               : session_.types_.builtin_generic(ctor.name, std::move(args));
   }
   case type_kind::symbolic_value_kind:
-    return types_.symbolic_value(item.result,
-                                 poly_substitute(item.value, subst.values));
+    return session_.types_.symbolic_value(
+        item.result, poly_substitute(item.value, subst.values));
   case type_kind::builtin_generic_kind:
-    return types_.builtin_generic(item.name, each(item.args));
+    return session_.types_.builtin_generic(item.name, each(item.args));
   case type_kind::tuple_kind:
-    return types_.tuple_of(each(item.args));
+    return session_.types_.tuple_of(each(item.args));
   case type_kind::fn_kind:
-    return types_.fn_of(each(item.args), substitute_type(item.result, subst));
+    return session_.types_.fn_of(each(item.args),
+                                 substitute_type(item.result, subst));
   case type_kind::ref_kind:
-    return types_.ref_to(substitute_type(item.result, subst), item.is_mut);
+    return session_.types_.ref_to(substitute_type(item.result, subst),
+                                  item.is_mut);
   case type_kind::ptr_kind:
-    return types_.ptr_to(substitute_type(item.result, subst), item.is_mut);
+    return session_.types_.ptr_to(substitute_type(item.result, subst),
+                                  item.is_mut);
   case type_kind::array_kind: {
     const auto element = substitute_type(item.result, subst);
     const auto length = item.args.empty()
                             ? k_unknown_type
                             : substitute_type(item.args.front(), subst);
-    const auto &length_entry = types_.entry(length);
+    const auto &length_entry = session_.types_.entry(length);
     auto size = item.array_size;
     if (length_entry.kind == type_kind::const_value_kind) {
       size = static_cast<uint64_t>(length_entry.value.constant);
     }
-    return types_.array_of(element, size, length);
+    return session_.types_.array_of(element, size, length);
   }
   case type_kind::struct_kind:
   case type_kind::sum_kind:
   case type_kind::opaque_kind:
     return item.decl != nullptr
-               ? types_.user_type(*item.decl, item.module_name, each(item.args))
+               ? session_.types_.user_type(*item.decl, item.module_name,
+                                           each(item.args))
                : id;
   case type_kind::refinement_kind:
-    return types_.refinement_of(item.decl, item.name, item.module_name,
-                                substitute_type(item.result, subst),
-                                each(item.args), item.predicate);
+    return session_.types_.refinement_of(item.decl, item.name, item.module_name,
+                                         substitute_type(item.result, subst),
+                                         each(item.args), item.predicate);
   default:
     return id;
   }
@@ -147,51 +152,52 @@ auto checker::copy_all_template_records(instance_subst &subst) -> void {
     return record;
   };
   const auto same = [](const auto &value) -> auto { return value; };
-  copy_template_records(node_types_, subst, type);
-  copy_template_records(node_files_, subst, same);
-  copy_template_records(struct_pattern_field_types_, subst, type);
-  copy_template_records(struct_literal_field_types_, subst, type);
-  copy_template_records(struct_literal_field_expected_, subst, type);
-  copy_template_records(call_expected_types_, subst, type);
+  copy_template_records(session_.node_types_, subst, type);
+  copy_template_records(session_.node_files_, subst, same);
+  copy_template_records(session_.struct_pattern_field_types_, subst, type);
+  copy_template_records(session_.struct_literal_field_types_, subst, type);
+  copy_template_records(session_.struct_literal_field_expected_, subst, type);
+  copy_template_records(session_.call_expected_types_, subst, type);
   copy_template_records(
-      call_argument_mappings_, subst,
+      session_.call_argument_mappings_, subst,
       [&](call_argument_mapping mapping) -> call_argument_mapping {
         for (auto &arg : mapping.args_by_param) {
           arg = clone_of(subst, arg);
         }
         return mapping;
       });
-  copy_template_records(resolved_callees_, subst, callee);
-  copy_template_records(resolved_fn_values_, subst, callee);
-  copy_template_records(operator_dispatches_, subst, callee);
-  copy_template_records(ord_dispatch_result_types_, subst, type);
-  copy_template_records(index_dispatches_, subst, callee);
-  copy_template_records(index_set_dispatches_, subst, callee);
-  copy_template_records(index_mut_dispatches_, subst, callee);
-  copy_template_records(index_ref_dispatches_, subst, callee);
-  copy_template_records(try_conversions_, subst, callee);
-  copy_template_records(try_conversion_types_, subst, type);
+  copy_template_records(session_.resolved_callees_, subst, callee);
+  copy_template_records(session_.resolved_fn_values_, subst, callee);
+  copy_template_records(session_.operator_dispatches_, subst, callee);
+  copy_template_records(session_.ord_dispatch_result_types_, subst, type);
+  copy_template_records(session_.index_dispatches_, subst, callee);
+  copy_template_records(session_.index_set_dispatches_, subst, callee);
+  copy_template_records(session_.index_mut_dispatches_, subst, callee);
+  copy_template_records(session_.index_ref_dispatches_, subst, callee);
+  copy_template_records(session_.try_conversions_, subst, callee);
+  copy_template_records(session_.try_conversion_types_, subst, type);
   copy_template_records(
-      array_literal_conversions_, subst,
+      session_.array_literal_conversions_, subst,
       [&](array_literal_conversion conversion) -> array_literal_conversion {
         conversion.callee = callee(conversion.callee);
         conversion.array_type = type(conversion.array_type);
         return conversion;
       });
-  copy_template_records(interp_dispatches_, subst,
+  copy_template_records(session_.interp_dispatches_, subst,
                         [&](interp_dispatch dispatch) -> interp_dispatch {
                           dispatch.value_type = type(dispatch.value_type);
                           return dispatch;
                         });
-  copy_template_records(type_param_reflections_, subst, same);
+  copy_template_records(session_.type_param_reflections_, subst, same);
   const auto loop =
       [&](iterator_loop_dispatch dispatch) -> iterator_loop_dispatch {
     dispatch.element_type = type(dispatch.element_type);
     dispatch.adapter_result_type = type(dispatch.adapter_result_type);
     return dispatch;
   };
-  copy_template_records(for_iterator_dispatches_, subst, loop);
-  copy_template_records(comprehension_iterator_dispatches_, subst, loop);
+  copy_template_records(session_.for_iterator_dispatches_, subst, loop);
+  copy_template_records(session_.comprehension_iterator_dispatches_, subst,
+                        loop);
   const auto comprehension =
       [&](comprehension_dispatch dispatch) -> comprehension_dispatch {
     dispatch.new_callee = callee(dispatch.new_callee);
@@ -199,36 +205,38 @@ auto checker::copy_all_template_records(instance_subst &subst) -> void {
     dispatch.list_type = type(dispatch.list_type);
     return dispatch;
   };
-  copy_template_records(comprehension_dispatches_, subst, comprehension);
-  copy_template_records(runtime_fill_dispatches_, subst, comprehension);
-  copy_template_records(folded_comptime_calls_, subst, same);
-  copy_template_records(layout_queries_, subst,
+  copy_template_records(session_.comprehension_dispatches_, subst,
+                        comprehension);
+  copy_template_records(session_.runtime_fill_dispatches_, subst,
+                        comprehension);
+  copy_template_records(session_.folded_comptime_calls_, subst, same);
+  copy_template_records(session_.layout_queries_, subst,
                         [&](layout_query query) -> layout_query {
                           query.operand = type(query.operand);
                           return query;
                         });
-  copy_template_records(ptr_casts_, subst, type);
-  copy_template_members(slice_from_raw_parts_calls_, subst);
+  copy_template_records(session_.ptr_casts_, subst, type);
+  copy_template_members(session_.slice_from_raw_parts_calls_, subst);
   copy_template_records(
-      stack_buffers_, subst,
+      session_.stack_buffers_, subst,
       [&](stack_buffer_request request) -> stack_buffer_request {
         request.element = type(request.element);
         return request;
       });
-  copy_template_records(static_if_taken_branch_, subst, same);
-  copy_template_records(static_global_refs_, subst, same);
-  copy_template_records(static_const_values_, subst, same);
+  copy_template_records(session_.static_if_taken_branch_, subst, same);
+  copy_template_records(session_.static_global_refs_, subst, same);
+  copy_template_records(session_.static_const_values_, subst, same);
   copy_template_records(
-      value_path_types_, subst,
+      session_.value_path_types_, subst,
       [&](std::vector<type_id> types) -> std::vector<type_id> {
         for (auto &segment : types) {
           segment = type(segment);
         }
         return types;
       });
-  copy_template_members(proven_in_bounds_, subst);
-  copy_template_members(elided_contracts_, subst);
-  copy_template_records(spliced_fragments_, subst, same);
+  copy_template_members(session_.proven_in_bounds_, subst);
+  copy_template_members(session_.elided_contracts_, subst);
+  copy_template_records(session_.spliced_fragments_, subst, same);
 }
 
 /// Removes every record a dead branch's clone nodes carry.
@@ -247,25 +255,25 @@ auto checker::drop_all_dead_records(const instance_subst &subst) -> void {
   if (subst.dead.empty()) {
     return;
   }
-  drop_dead_records(node_types_, subst);
-  drop_dead_records(call_expected_types_, subst);
-  drop_dead_records(resolved_callees_, subst);
-  drop_dead_records(resolved_fn_values_, subst);
-  drop_dead_records(operator_dispatches_, subst);
-  drop_dead_records(index_dispatches_, subst);
-  drop_dead_records(index_set_dispatches_, subst);
-  drop_dead_records(index_mut_dispatches_, subst);
-  drop_dead_records(index_ref_dispatches_, subst);
-  drop_dead_records(try_conversions_, subst);
-  drop_dead_records(array_literal_conversions_, subst);
-  drop_dead_records(interp_dispatches_, subst);
-  drop_dead_records(type_param_reflections_, subst);
-  drop_dead_records(for_iterator_dispatches_, subst);
-  drop_dead_records(comprehension_iterator_dispatches_, subst);
-  drop_dead_records(comprehension_dispatches_, subst);
-  drop_dead_records(runtime_fill_dispatches_, subst);
-  drop_dead_records(folded_comptime_calls_, subst);
-  drop_dead_records(layout_queries_, subst);
+  drop_dead_records(session_.node_types_, subst);
+  drop_dead_records(session_.call_expected_types_, subst);
+  drop_dead_records(session_.resolved_callees_, subst);
+  drop_dead_records(session_.resolved_fn_values_, subst);
+  drop_dead_records(session_.operator_dispatches_, subst);
+  drop_dead_records(session_.index_dispatches_, subst);
+  drop_dead_records(session_.index_set_dispatches_, subst);
+  drop_dead_records(session_.index_mut_dispatches_, subst);
+  drop_dead_records(session_.index_ref_dispatches_, subst);
+  drop_dead_records(session_.try_conversions_, subst);
+  drop_dead_records(session_.array_literal_conversions_, subst);
+  drop_dead_records(session_.interp_dispatches_, subst);
+  drop_dead_records(session_.type_param_reflections_, subst);
+  drop_dead_records(session_.for_iterator_dispatches_, subst);
+  drop_dead_records(session_.comprehension_iterator_dispatches_, subst);
+  drop_dead_records(session_.comprehension_dispatches_, subst);
+  drop_dead_records(session_.runtime_fill_dispatches_, subst);
+  drop_dead_records(session_.folded_comptime_calls_, subst);
+  drop_dead_records(session_.layout_queries_, subst);
 }
 
 /// Each abstract parameter of `item`'s template, matched to the answer the
@@ -304,7 +312,7 @@ auto checker::instance_subst_for(const pending_instance &item)
   for (const auto &[name, id] : abstract->second) {
     if (const auto found = answer(name); found.has_value()) {
       subst.params.emplace(id, *found);
-      const auto &entry = types_.entry(*found);
+      const auto &entry = session_.types_.entry(*found);
       if (entry.kind == type_kind::const_value_kind) {
         subst.values.emplace(value_var(id), entry.value);
       }
@@ -325,8 +333,8 @@ auto checker::substitute_instance(pending_instance &item) -> void {
   copy_all_template_records(subst);
   // The instance's own parameters, as the compile-time values a `static
   // if` or a `let n = T.name()` evaluates against.
-  auto type_param_values =
-      type_param_comptime_values(item.instance->type_params, type_param_slots_);
+  auto type_param_values = type_param_comptime_values(
+      item.instance->type_params, session_.type_param_slots_);
   comptime_eval_.push_locals(
       {type_param_values.begin(), type_param_values.end()});
   const auto found = template_elaborations_.find(item.tmpl);
@@ -401,7 +409,7 @@ auto checker::explicit_type_argument(const explicit_generic_arg &arg,
     if (already_reported != nullptr && resolved == k_error_type) {
       *already_reported = true;
     }
-    return types_.is_unknown(resolved) || resolved == k_error_type
+    return session_.types_.is_unknown(resolved) || resolved == k_error_type
                ? std::nullopt
                : std::optional{resolved};
   };
@@ -418,7 +426,7 @@ auto checker::explicit_type_argument(const explicit_generic_arg &arg,
     return std::nullopt;
   }
   const auto &type = *named;
-  synthesized_types_.push_back(std::move(named));
+  session_.synthesized_types_.push_back(std::move(named));
   return finish(resolve_type(type, current_resolve_ctx()));
 }
 
@@ -515,7 +523,7 @@ auto checker::expr_as_named_type(const ast::expr &arg)
 auto checker::explicit_value_argument(const ast::expr &arg)
     -> std::optional<int64_t> {
   auto subst = predicate_subst{};
-  for (const auto &[name, value] : const_param_values_) {
+  for (const auto &[name, value] : session_.const_param_values_) {
     subst.values.emplace(name, poly_constant(value));
   }
   const auto poly = solver_poly(arg, subst);
@@ -539,9 +547,9 @@ auto checker::value_param_underlying(const ast::type_param &param,
                                      .param_bindings = nullptr,
                                      .use_type_param_stack = false,
                                      .quiet = true})
-          : types_.usize_type();
-  return types_.is_integer(underlying) ? std::optional{underlying}
-                                       : std::nullopt;
+          : session_.types_.usize_type();
+  return session_.types_.is_integer(underlying) ? std::optional{underlying}
+                                                : std::nullopt;
 }
 
 /// Substitutes leaf solutions into a call's solved bindings. A binding
@@ -627,7 +635,8 @@ auto checker::solve_generic_params(const ast::call_expr &call,
         if (!constant.has_value() && explicit_arg->value != nullptr) {
           const auto symbolic =
               resolve_length_arg(*explicit_arg->value, current_resolve_ctx());
-          if (types_.entry(symbolic).kind == type_kind::symbolic_value_kind) {
+          if (session_.types_.entry(symbolic).kind ==
+              type_kind::symbolic_value_kind) {
             solution.const_slots.emplace(param.name, symbolic);
             solution.suffix += "$?";
             continue;
@@ -670,11 +679,12 @@ auto checker::solve_generic_params(const ast::call_expr &call,
                                 return own.has_value() && is_rigid_param(*own);
                               })) {
         solution.const_slots.emplace(
-            param.name, types_.symbolic_value(*underlying, found->second));
+            param.name,
+            session_.types_.symbolic_value(*underlying, found->second));
         solution.suffix += "$?";
         continue;
       }
-      if (!mismatched_argument_calls_.contains(&call)) {
+      if (!session_.mismatched_argument_calls_.contains(&call)) {
         report_unsolved_value_param(call, decl, param);
       }
       return std::nullopt;
@@ -706,21 +716,22 @@ auto checker::solve_generic_params(const ast::call_expr &call,
       // instantiated at, rather than the one unification happened to find.
       if (const auto found = type_bindings.find(param_id(param));
           found != type_bindings.end() && found->second != *resolved &&
-          !types_.is_unknown(found->second) &&
+          !session_.types_.is_unknown(found->second) &&
           !mentions_abstract_type(found->second)) {
         error_with_help(
             explicit_arg->span,
             std::format("`{}`'s `{}` is given as `{}` in brackets, but the "
                         "arguments make it `{}`",
-                        decl.name, param.name, types_.display(*resolved),
-                        types_.display(found->second)),
+                        decl.name, param.name,
+                        session_.types_.display(*resolved),
+                        session_.types_.display(found->second)),
             std::format("this says `{}` is `{}`", param.name,
-                        types_.display(*resolved)),
+                        session_.types_.display(*resolved)),
             std::format("A compile-time argument in brackets pins `{}` "
                         "down, so the arguments have to agree with it. "
                         "Either pass arguments that are `{}`, or drop the "
                         "brackets and let the arguments decide.",
-                        param.name, types_.display(*resolved)));
+                        param.name, session_.types_.display(*resolved)));
         return std::nullopt;
       }
       type_bindings[param_id(param)] = *resolved;
@@ -734,7 +745,8 @@ auto checker::solve_generic_params(const ast::call_expr &call,
       bind_generic_type(solution, param, found->second);
       continue;
     }
-    if (found != type_bindings.end() && !types_.is_unknown(found->second) &&
+    if (found != type_bindings.end() &&
+        !session_.types_.is_unknown(found->second) &&
         mentions_abstract_type(found->second)) {
       // The arguments *did* determine `T` — as another type parameter that
       // is still abstract. That can only happen while checking a template:
@@ -755,14 +767,15 @@ auto checker::solve_generic_params(const ast::call_expr &call,
     // rigid in this body, and matching it against itself binds nothing.
     // The answer is that same `T`.
     if (found == type_bindings.end()) {
-      const auto own =
-          types_.type_param(param.name, param.higher_kinded_arity, &param);
+      const auto own = session_.types_.type_param(
+          param.name, param.higher_kinded_arity, &param);
       if (is_rigid_param(own)) {
         bind_generic_type(solution, param, own);
         continue;
       }
     }
-    if (found == type_bindings.end() || types_.is_unknown(found->second)) {
+    if (found == type_bindings.end() ||
+        session_.types_.is_unknown(found->second)) {
       report_unsolved_type_param(call, decl, param);
       return std::nullopt;
     }
@@ -788,8 +801,8 @@ auto checker::solve_from_argument_types(
     const ast::call_expr &call, const std::vector<fn_param_info> &params,
     param_subst &bindings, const ast::expr *ufcs_receiver, bool bind_open)
     -> void {
-  const auto mapping = call_argument_mappings_.find(&call);
-  if (mapping == call_argument_mappings_.end()) {
+  const auto mapping = session_.call_argument_mappings_.find(&call);
+  if (mapping == session_.call_argument_mappings_.end()) {
     return;
   }
   const auto &args_by_param = mapping->second.args_by_param;
@@ -800,8 +813,8 @@ auto checker::solve_from_argument_types(
     if (argument == nullptr) {
       continue;
     }
-    const auto found = node_types_.find(argument);
-    if (found == node_types_.end()) {
+    const auto found = session_.node_types_.find(argument);
+    if (found == session_.node_types_.end()) {
       continue;
     }
     // Through the leaf store: a `list[?a]` whose `?a` a `push` already
@@ -813,7 +826,7 @@ auto checker::solve_from_argument_types(
     // argument's head, so an argument whose head is still a leaf (`[5, 6]`
     // before its literal is wired) owes its shape here. A bare `x: T`
     // takes the leaf as it is.
-    if (types_.entry(strip_refs(params[i].type)).kind !=
+    if (session_.types_.entry(strip_refs(params[i].type)).kind !=
         type_kind::type_param_kind) {
       arg_types[i] = demand_shape(arg_types[i]);
     }
@@ -831,7 +844,7 @@ auto checker::solve_from_argument_types(
     auto concrete = param_subst{};
     for (size_t i = 0; i < params.size(); ++i) {
       auto seen = std::unordered_set<type_id>{};
-      if (!types_.is_unknown(arg_types[i]) &&
+      if (!session_.types_.is_unknown(arg_types[i]) &&
           !mentions_type_var(arg_types[i], seen)) {
         match_params(params[i].type, arg_types[i], concrete);
       }
@@ -850,7 +863,7 @@ auto checker::solve_from_argument_types(
   }
   for (size_t i = 0; i < params.size(); ++i) {
     auto seen = std::unordered_set<type_id>{};
-    if (types_.is_unknown(arg_types[i]) ||
+    if (session_.types_.is_unknown(arg_types[i]) ||
         mentions_type_var(arg_types[i], seen)) {
       continue;
     }
@@ -871,7 +884,7 @@ auto checker::solve_from_argument_types(
         continue;
       }
       const auto matched =
-          infer::match_pattern(types_, params[i].type, arg_types[i]);
+          infer::match_pattern(session_.types_, params[i].type, arg_types[i]);
       for (const auto &[param, solved] : matched.bindings) {
         bindings.try_emplace(param, solved);
       }
@@ -963,8 +976,8 @@ auto checker::check_args_against_solution(
     const param_subst &bindings, std::string_view callee_name,
     const ast::expr *ufcs_receiver,
     const std::unordered_set<type_id> &fixed_params) -> bool {
-  const auto mapping = call_argument_mappings_.find(&call);
-  if (mapping == call_argument_mappings_.end()) {
+  const auto mapping = session_.call_argument_mappings_.find(&call);
+  if (mapping == session_.call_argument_mappings_.end()) {
     return false;
   }
   struct mismatch {
@@ -980,8 +993,8 @@ auto checker::check_args_against_solution(
     if (argument == nullptr) {
       continue;
     }
-    const auto recorded = node_types_.find(argument);
-    if (recorded == node_types_.end()) {
+    const auto recorded = session_.node_types_.find(argument);
+    if (recorded == session_.node_types_.end()) {
       continue;
     }
     const auto declared = settle(params[i].type);
@@ -993,8 +1006,8 @@ auto checker::check_args_against_solution(
     // argument check reported. The caller's own parameters are answers,
     // not gaps, so they are compared like any other type.
     if (expected == declared || open_foreign_params(expected) != expected ||
-        types_.is_unknown(found) || found == k_error_type ||
-        !types_.compatible(open_foreign_params(declared), found) ||
+        session_.types_.is_unknown(found) || found == k_error_type ||
+        !session_.types_.compatible(open_foreign_params(declared), found) ||
         agrees(expected, found)) {
       continue;
     }
@@ -1015,7 +1028,7 @@ auto checker::check_args_against_solution(
     if (reported.contains(argument)) {
       continue;
     }
-    const auto &declared_entry = types_.entry(declared);
+    const auto &declared_entry = session_.types_.entry(declared);
     if (declared_entry.kind != type_kind::type_param_kind) {
       type_mismatch(argument->span, expected, found, "for this argument",
                     argument);
@@ -1028,15 +1041,16 @@ auto checker::check_args_against_solution(
         std::format("conflicting types for `{}` in this call to `{}`",
                     param_name, callee_name),
         std::format("this is `{}`, but `{}` is already `{}`",
-                    types_.display(found), param_name,
-                    types_.display(expected)),
+                    session_.types_.display(found), param_name,
+                    session_.types_.display(expected)),
         std::format(
             "`{}` stands for one type throughout a call to `{}`, and {} "
             "fixed it as `{}`. Every argument declared as `{}` has to be "
             "that same type: convert this one (`{}(...)`), or change {}.",
             param_name, callee_name,
             bracketed ? "the brackets" : "another argument",
-            types_.display(expected), param_name, types_.display(expected),
+            session_.types_.display(expected), param_name,
+            session_.types_.display(expected),
             bracketed ? "the brackets" : "the other"));
   }
   return !reported.empty();
@@ -1046,7 +1060,7 @@ auto checker::check_args_against_solution(
 /// as a call is concerned — a refinement and its base, a borrow and its
 /// referent where the language coerces between them.
 auto checker::interchangeable(type_id a, type_id b) const -> bool {
-  return types_.compatible(a, b) || types_.compatible(b, a);
+  return session_.types_.compatible(a, b) || session_.types_.compatible(b, a);
 }
 
 /// Reports the disagreements among a generic call's arguments that the
@@ -1087,19 +1101,19 @@ auto checker::report_argument_conflicts(
     if (argument == nullptr) {
       continue;
     }
-    const auto recorded = node_types_.find(argument);
-    if (recorded == node_types_.end()) {
+    const auto recorded = session_.node_types_.find(argument);
+    if (recorded == session_.node_types_.end()) {
       continue;
     }
     const auto declared = settle(params[i].type);
     const auto found = settle(recorded->second);
     // The same skips as the comparison that follows: nothing to match, or
     // a shape the argument check already rejected.
-    if (types_.is_unknown(found) || found == k_error_type ||
-        !types_.compatible(open_foreign_params(declared), found)) {
+    if (session_.types_.is_unknown(found) || found == k_error_type ||
+        !session_.types_.compatible(open_foreign_params(declared), found)) {
       continue;
     }
-    const auto matched = infer::match_pattern(types_, declared, found);
+    const auto matched = infer::match_pattern(session_.types_, declared, found);
     if (matched.failure.has_value() &&
         report_split_argument(*argument, declared, found, matched,
                               callee_name)) {
@@ -1107,7 +1121,7 @@ auto checker::report_argument_conflicts(
       continue;
     }
     const auto record = [&](type_id param, type_id solved) -> void {
-      if (fixed_params.contains(param) || types_.is_unknown(solved) ||
+      if (fixed_params.contains(param) || session_.types_.is_unknown(solved) ||
           solved == k_error_type) {
         return;
       }
@@ -1129,7 +1143,8 @@ auto checker::report_argument_conflicts(
     // and `str` are.
     for (const auto &[var, value] : matched.values) {
       if (const auto param = poly_var_identity(var); param.has_value()) {
-        record(*param, types_.symbolic_value(types_.usize_type(), value));
+        record(*param, session_.types_.symbolic_value(
+                           session_.types_.usize_type(), value));
       }
     }
   }
@@ -1153,7 +1168,7 @@ auto checker::report_argument_conflicts(
     if (groups.size() < 2) {
       continue;
     }
-    const auto &param_entry = types_.entry(param);
+    const auto &param_entry = session_.types_.entry(param);
     const auto is_value = param_entry.is_value_param;
     // Answered by something other than these arguments — a bound's ground
     // truth replaces an argument's guess — so none of them is the authority.
@@ -1168,7 +1183,7 @@ auto checker::report_argument_conflicts(
     }
 
     const auto param_name = std::string(param_entry.name);
-    auto ctx = infer::infer_ctxt{types_};
+    auto ctx = infer::infer_ctxt{session_.types_};
     static_cast<void>(
         ctx.adopt(param,
                   is_value                     ? infer::meta_sort::value_sort
@@ -1183,7 +1198,7 @@ auto checker::report_argument_conflicts(
                             : std::string{"this argument"};
     for (const auto &answer : given) {
       const auto why = ctx.add_cause(
-          infer::cause{.where = source_location{.file_id = file_id_,
+          infer::cause{.where = source_location{.file_id = file_.file_id_,
                                                 .span = answer.argument->span},
                        .reason = reason,
                        .expected_desc = {},
@@ -1192,7 +1207,8 @@ auto checker::report_argument_conflicts(
       static_cast<void>(graph.record(param, group_of(answer.solved), why));
       reported.insert(answer.argument);
     }
-    const auto report = infer::explain_conflict(graph, ctx, types_, param);
+    const auto report =
+        infer::explain_conflict(graph, ctx, session_.types_, param);
     if (!report.has_value()) {
       continue;
     }
@@ -1247,7 +1263,7 @@ auto checker::report_split_argument(const ast::expr &argument, type_id declared,
   if (clash == matched.bindings.end()) {
     return false;
   }
-  const auto param_name = std::string(types_.entry(clash->first).name);
+  const auto param_name = std::string(session_.types_.entry(clash->first).name);
   const auto first = clash->second;
   const auto second = first == failure.expected_part ? failure.found_part
                                                      : failure.expected_part;
@@ -1256,14 +1272,16 @@ auto checker::report_split_argument(const ast::expr &argument, type_id declared,
       std::format("conflicting types for `{}` in this call to `{}`", param_name,
                   callee_name),
       std::format("`{}` would be both `{}` and `{}` in this argument",
-                  param_name, types_.display(first), types_.display(second)),
+                  param_name, session_.types_.display(first),
+                  session_.types_.display(second)),
       std::format("`{}` declares this parameter as `{}`, and `{}` stands for "
                   "one type throughout the call. This `{}` puts `{}` in one "
                   "place and `{}` in another, so no single `{}` fits. Make "
                   "the parts agree.",
-                  callee_name, types_.display(declared), param_name,
-                  types_.display(found), types_.display(first),
-                  types_.display(second), param_name));
+                  callee_name, session_.types_.display(declared), param_name,
+                  session_.types_.display(found),
+                  session_.types_.display(first),
+                  session_.types_.display(second), param_name));
   return true;
 }
 
@@ -1288,12 +1306,12 @@ auto checker::solve_from_expected_type(
   if (decl.return_type == nullptr) {
     return;
   }
-  const auto found = call_expected_types_.find(&call);
-  if (found == call_expected_types_.end()) {
+  const auto found = session_.call_expected_types_.find(&call);
+  if (found == session_.call_expected_types_.end()) {
     return;
   }
-  const auto expected = types_.strip_refinement(found->second);
-  if (types_.is_unknown(expected) || expected == k_error_type) {
+  const auto expected = session_.types_.strip_refinement(found->second);
+  if (session_.types_.is_unknown(expected) || expected == k_error_type) {
     return;
   }
   // Resolved in the *template's* own terms — `signature_return_type` binds
@@ -1318,9 +1336,9 @@ auto checker::solve_from_expected_type(
     if (const auto solved = from_expected.find(param);
         solved != from_expected.end()) {
       bindings.emplace(param, solved->second);
-      expected_solved_params_[&call].push_back(
+      session_.expected_solved_params_[&call].push_back(
           std::format("`{}` was solved to `{}` from the type expected here",
-                      name, types_.display(solved->second)));
+                      name, session_.types_.display(solved->second)));
     }
   }
 }
@@ -1412,8 +1430,8 @@ auto checker::solved_signature(const ast::func_decl &decl,
                                .use_type_param_stack = false,
                                .quiet = true,
                                .existential_allowed = true};
-  const auto saved_signature_file = file_id_;
-  file_id_ = decl_file;
+  const auto saved_signature_file = file_.file_id_;
+  file_.file_id_ = decl_file;
   auto param_types = std::vector<type_id>{};
   for (const auto &param : decl.params) {
     param_types.push_back(param.type_annotation != nullptr
@@ -1423,7 +1441,7 @@ auto checker::solved_signature(const ast::func_decl &decl,
   const auto result = decl.return_type != nullptr
                           ? resolve_type(*decl.return_type, ctx)
                           : k_unknown_type;
-  file_id_ = saved_signature_file;
+  file_.file_id_ = saved_signature_file;
   return {std::move(param_types), result};
 }
 
@@ -1432,7 +1450,8 @@ auto checker::mentions_rigid_param(type_id id) -> bool {
   if (is_rigid_param(id)) {
     return true;
   }
-  const auto entry = types_.entry(id); // copy: callers may intern after
+  const auto entry =
+      session_.types_.entry(id); // copy: callers may intern after
   for (const auto arg : entry.args) {
     if (mentions_rigid_param(arg)) {
       return true;
@@ -1453,7 +1472,8 @@ auto checker::mentions_rigid_param(type_id id) -> bool {
 auto checker::open_foreign_params(type_id id) -> type_id {
   auto foreign = std::unordered_map<type_id, type_id>{};
   const auto collect = [&](auto &self, type_id at) -> void {
-    const auto entry = types_.entry(at); // copy: collecting never interns
+    const auto entry =
+        session_.types_.entry(at); // copy: collecting never interns
     if (entry.kind == type_kind::type_param_kind) {
       if (!is_rigid_param(at)) {
         foreign.emplace(at, k_unknown_type);
@@ -1496,7 +1516,7 @@ auto checker::solution_mentions_template_param(const generic_solution &solution)
 //  (`hir::lower_function` refuses type-generic declarations). So each call
 //  whose receiver/arguments pin every parameter down to a concrete type
 //  gets an instance: the declaration cloned, re-checked under that
-//  substitution (`type_param_slots_`), named `option::pure$int32`, and
+//  substitution (`session_.type_param_slots_`), named `option::pure$int32`, and
 //  registered exactly like a const-generic instance so lowering and both
 //  backends see only fully-applied types (Strategy #4: HKTs erase at
 //  monomorphization).
@@ -1507,7 +1527,7 @@ auto checker::solution_mentions_template_param(const generic_solution &solution)
 /// is the cache key built from the solved `type_id`s themselves.
 auto checker::mangle_type_for_instance(type_id id) -> std::string {
   auto out = std::string{};
-  for (const auto c : types_.display(id)) {
+  for (const auto c : session_.types_.display(id)) {
     out += std::isalnum(static_cast<unsigned char>(c)) != 0 ? c : '_';
   }
   return out;
@@ -1583,7 +1603,7 @@ auto checker::instantiate_hk_method(
     }
     auto named = callee;
     named.decl = instance;
-    resolved_callees_[&call] = named;
+    session_.resolved_callees_[&call] = named;
     return true;
   };
   if (!solution_is_open(*solution)) {
@@ -1620,8 +1640,8 @@ auto checker::check_call_preconditions(const ast::call_expr &call,
   if (decl.contracts.empty()) {
     return;
   }
-  const auto mapping = call_argument_mappings_.find(&call);
-  if (mapping == call_argument_mappings_.end()) {
+  const auto mapping = session_.call_argument_mappings_.find(&call);
+  if (mapping == session_.call_argument_mappings_.end()) {
     return;
   }
 
@@ -1653,7 +1673,7 @@ auto checker::check_call_preconditions(const ast::call_expr &call,
     if (goal.empty()) {
       continue;
     }
-    switch (solve(facts_, goal)) {
+    switch (solve(function_.facts_, goal)) {
     case proof_result::proved:
       // Nothing to do: this call is safe, and the callee's own entry check
       // (which every *other* call site also relies on) stays put.
@@ -1663,13 +1683,14 @@ auto checker::check_call_preconditions(const ast::call_expr &call,
           diagnostic(diagnostic_level::error,
                      std::format("precondition `{}` is never true at this call",
                                  goal_label(goal, "the precondition")),
-                     file_id_);
+                     file_.file_id_);
       diag.with_label(call.span,
                       std::format("calling `{}` here always violates its "
                                   "contract",
                                   decl.name));
       if (const auto known = known_facts_note(goal)) {
-        diag.children.emplace_back(diagnostic_level::note, *known, file_id_);
+        diag.children.emplace_back(diagnostic_level::note, *known,
+                                   file_.file_id_);
       }
       diag.with_help(
           contract.message.has_value()
@@ -1766,7 +1787,7 @@ auto checker::check_prelude_variant(std::string_view name,
                                     const ast::call_expr *call,
                                     source_span span, type_id expected)
     -> type_id {
-  const auto &expected_entry = types_.entry(expected);
+  const auto &expected_entry = session_.types_.entry(expected);
   const auto expected_is = [&](std::string_view generic) -> auto {
     return expected_entry.kind == type_kind::builtin_generic_kind &&
            expected_entry.name == generic;
@@ -1812,28 +1833,29 @@ auto checker::check_prelude_variant(std::string_view name,
   // nothing, leaving `B` unsolvable at a call that plainly determines it.
   if (expected_is("option") && (name == "some" || name == "none")) {
     if (name == "some" && !expected_entry.args.empty() &&
-        types_.is_unknown(expected_entry.args[0]) &&
-        !types_.is_unknown(payload_found)) {
-      return types_.builtin_generic("option", {payload_found});
+        session_.types_.is_unknown(expected_entry.args[0]) &&
+        !session_.types_.is_unknown(payload_found)) {
+      return session_.types_.builtin_generic("option", {payload_found});
     }
     return expected;
   }
   if (expected_is("result") && (name == "ok" || name == "err")) {
-    if (!types_.is_unknown(payload_found) && expected_entry.args.size() == 2) {
+    if (!session_.types_.is_unknown(payload_found) &&
+        expected_entry.args.size() == 2) {
       const auto slot = name == "ok" ? size_t{0} : size_t{1};
-      if (types_.is_unknown(expected_entry.args[slot])) {
+      if (session_.types_.is_unknown(expected_entry.args[slot])) {
         auto args = std::vector<type_id>{expected_entry.args[0],
                                          expected_entry.args[1]};
         args[slot] = payload_found;
-        return types_.builtin_generic("result", std::move(args));
+        return session_.types_.builtin_generic("result", std::move(args));
       }
     }
     return expected;
   }
   if (name == "some" || name == "none") {
-    return types_.builtin_generic("option", {payload_found});
+    return session_.types_.builtin_generic("option", {payload_found});
   }
-  return types_.builtin_generic(
+  return session_.types_.builtin_generic(
       "result", name == "ok"
                     ? std::vector<type_id>{payload_found, k_unknown_type}
                     : std::vector<type_id>{k_unknown_type, payload_found});
@@ -1843,11 +1865,11 @@ auto checker::check_prelude_variant(std::string_view name,
 /// or reachable through a non-wildcard import of its owning type.
 auto checker::find_module_variant(std::string_view name) -> std::optional<
     std::pair<const ast::type_decl *, const ast::sum_variant *>> {
-  if (module_ == nullptr) {
+  if (file_.module_ == nullptr) {
     return std::nullopt;
   }
-  if (const auto it = module_->variants.find(std::string(name));
-      it != module_->variants.end()) {
+  if (const auto it = file_.module_->variants.find(std::string(name));
+      it != file_.module_->variants.end()) {
     return std::pair{it->second.sum_decl, it->second.variant};
   }
   // Variants of imported sum types.
@@ -1898,7 +1920,7 @@ auto checker::resolve_variant_value(std::string_view name,
   }
 
   // Prefer a variant of the expected sum type, then module-level sums.
-  const auto expected_entry = types_.entry(strip_refs(expected));
+  const auto expected_entry = session_.types_.entry(strip_refs(expected));
   if (expected_entry.kind == type_kind::sum_kind) {
     if (const auto *variant = find_variant(expected_entry, name)) {
       if (call != nullptr) {
@@ -1920,8 +1942,8 @@ auto checker::resolve_variant_value(std::string_view name,
 
   if (const auto found = find_module_variant(name)) {
     const auto *decl = found->first;
-    const auto instance_id = make_user_type(*decl, module_name_, {});
-    const auto &instance = types_.entry(instance_id);
+    const auto instance_id = make_user_type(*decl, file_.module_name_, {});
+    const auto &instance = session_.types_.entry(instance_id);
     if (call != nullptr) {
       return check_variant_construction(*call, instance, *found->second,
                                         instance_id);
@@ -1943,7 +1965,7 @@ auto checker::resolve_variant_value(std::string_view name,
   if (const auto found = find_prelude_variant(name)) {
     const auto instance_id =
         make_user_type(*found->sum_decl, found->module_name, {});
-    const auto &instance = types_.entry(instance_id);
+    const auto &instance = session_.types_.entry(instance_id);
     if (call != nullptr) {
       return check_variant_construction(*call, instance, *found->variant,
                                         instance_id);

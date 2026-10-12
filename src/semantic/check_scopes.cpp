@@ -7,19 +7,19 @@ namespace cinder::semantic::detail {
 // ==========================================================================
 
 /// Opens a new innermost lexical scope for value bindings.
-auto checker::push_scope() -> void { scopes_.emplace_back(); }
+auto checker::push_scope() -> void { function_.scopes_.emplace_back(); }
 
 /// Closes the innermost lexical scope.
-auto checker::pop_scope() -> void { scopes_.pop_back(); }
+auto checker::pop_scope() -> void { function_.scopes_.pop_back(); }
 
 /// Introduces or shadows `name` in the innermost scope. A no-op for an
 /// empty name (e.g. `_`) or when no scope is open.
 auto checker::bind_value(std::string_view name, type_id type,
                          binding_origin origin, source_span span) -> void {
-  if (name.empty() || scopes_.empty()) {
+  if (name.empty() || function_.scopes_.empty()) {
     return;
   }
-  scopes_.back().insert_or_assign(
+  function_.scopes_.back().insert_or_assign(
       std::string(name),
       value_binding{.type = type, .origin = origin, .span = span});
 }
@@ -44,7 +44,7 @@ auto checker::lookup_value(std::string_view name) -> const value_binding * {
 /// left unmarked when the body finishes is a capture the body never used,
 /// which is worth telling the programmer about.
 auto checker::note_capture_use(std::string_view name, size_t depth) -> void {
-  for (auto &barrier : capture_barriers_) {
+  for (auto &barrier : function_.capture_barriers_) {
     if (barrier.scope_floor > depth && barrier.allowed.has_value()) {
       barrier.used.emplace(name);
     }
@@ -53,24 +53,24 @@ auto checker::note_capture_use(std::string_view name, size_t depth) -> void {
 
 auto checker::find_value_in_scopes(std::string_view name) -> scope_lookup {
   const auto key = std::string(name);
-  for (size_t depth = scopes_.size(); depth > 0; --depth) {
-    const auto &scope = scopes_[depth - 1];
+  for (size_t depth = function_.scopes_.size(); depth > 0; --depth) {
+    const auto &scope = function_.scopes_[depth - 1];
     const auto it = scope.find(key);
     if (it == scope.end()) {
       continue;
     }
     // A binding from outside an inline `static for` read by its yield makes
     // that yield run-time code.
-    for (const auto &[decl, floor] : static_for_yields_) {
+    for (const auto &[decl, floor] : cache_.static_for_yields_) {
       if (depth - 1 < floor) {
-        static_for_reads_[decl].runtime = true;
+        cache_.static_for_reads_[decl].runtime = true;
       }
     }
     // The match sits at scope index `depth - 1`; every barrier opened
     // above that index is a lambda boundary this reference crosses.
     // Report the innermost one that refuses the name, so the diagnostic
     // points at the capture list the programmer most likely meant to edit.
-    for (const auto &barrier : capture_barriers_) {
+    for (const auto &barrier : function_.capture_barriers_) {
       if (barrier.scope_floor <= depth - 1 || !barrier.allowed.has_value()) {
         continue;
       }
@@ -99,12 +99,14 @@ auto checker::capture_barrier_blocking(std::string_view name)
 /// inside this lambda.
 auto checker::emit_capture_not_listed(source_span span, std::string_view name,
                                       const capture_barrier &barrier) -> void {
-  if (!reported_undefined_.insert(std::format("capture:{}", name)).second) {
+  if (!function_.reported_undefined_.insert(std::format("capture:{}", name))
+           .second) {
     return;
   }
-  auto diag = diagnostic(
-      diagnostic_level::error,
-      std::format("`{}` is not in this lambda's capture list", name), file_id_);
+  auto diag =
+      diagnostic(diagnostic_level::error,
+                 std::format("`{}` is not in this lambda's capture list", name),
+                 file_.file_id_);
   diag.with_label(span, std::format("`{}` is not reachable here", name));
   if (barrier.lambda != nullptr) {
     diag.with_secondary_label(
@@ -148,8 +150,8 @@ auto checker::format_capture_names(
 /// Opens a new generic-parameter scope, interning each named parameter as
 /// a `type_param` type — except a value parameter the const-generic
 /// instance currently being checked has a constant for, which interns as
-/// that constant instead (`const_param_slots_`). That one substitution is
-/// the whole of monomorphization on the checker's side: with `n` bound to
+/// that constant instead (`session_.const_param_slots_`). That one substitution
+/// is the whole of monomorphization on the checker's side: with `n` bound to
 /// `3` rather than to itself, every type the body mentions resolves the way
 /// it would have if the programmer had written `3` there, and the code that
 /// needs a real number (`index[n]`'s bound, `try_from`'s check) finds one.
@@ -160,29 +162,29 @@ auto checker::push_type_params(const std::vector<ast::type_param> &params)
     if (param.name.empty()) {
       continue;
     }
-    if (const auto bound = const_param_slots_.find(param.name);
-        param.is_value_param && bound != const_param_slots_.end()) {
+    if (const auto bound = session_.const_param_slots_.find(param.name);
+        param.is_value_param && bound != session_.const_param_slots_.end()) {
       scope.emplace(param.name, bound->second);
       continue;
     }
-    // The type-parameter analog of `const_param_slots_`: while checking a
-    // monomorphized copy of a generic method (`instantiate_hk_method`),
-    // each of its *type* parameters is bound to the concrete type the call
-    // solved for it instead of an abstract `type_param`.
-    if (const auto bound = type_param_slots_.find(param.name);
-        !param.is_value_param && bound != type_param_slots_.end()) {
+    // The type-parameter analog of `session_.const_param_slots_`: while
+    // checking a monomorphized copy of a generic method
+    // (`instantiate_hk_method`), each of its *type* parameters is bound to the
+    // concrete type the call solved for it instead of an abstract `type_param`.
+    if (const auto bound = session_.type_param_slots_.find(param.name);
+        !param.is_value_param && bound != session_.type_param_slots_.end()) {
       scope.emplace(param.name, bound->second);
       continue;
     }
-    scope.emplace(
-        param.name,
-        types_.type_param(param.name, param.higher_kinded_arity, &param));
+    scope.emplace(param.name,
+                  session_.types_.type_param(
+                      param.name, param.higher_kinded_arity, &param));
   }
-  type_params_.push_back(std::move(scope));
+  function_.type_params_.push_back(std::move(scope));
 }
 
 /// Closes the innermost generic-parameter scope.
-auto checker::pop_type_params() -> void { type_params_.pop_back(); }
+auto checker::pop_type_params() -> void { function_.type_params_.pop_back(); }
 
 /// Binds each compile-time *value* parameter (`n: usize`) as an ordinary
 /// value in the current scope. A value parameter has two lives: it is a
@@ -215,9 +217,9 @@ auto checker::bind_value_params(const std::vector<ast::type_param> &params)
 /// its inputs concrete asks them (`mentions_template_param`) and defers to
 /// the instances if not.
 auto checker::in_abstract_type_param_scope() -> bool {
-  for (const auto &scope : type_params_) {
+  for (const auto &scope : function_.type_params_) {
     for (const auto &[name, id] : scope) {
-      if (types_.entry(id).kind == type_kind::type_param_kind) {
+      if (session_.types_.entry(id).kind == type_kind::type_param_kind) {
         return true;
       }
     }
@@ -229,7 +231,7 @@ auto checker::in_abstract_type_param_scope() -> bool {
 /// innermost scope outward.
 auto checker::lookup_type_param(std::string_view name)
     -> std::optional<type_id> {
-  for (auto &type_param : std::views::reverse(type_params_)) {
+  for (auto &type_param : std::views::reverse(function_.type_params_)) {
     if (const auto it = type_param.find(std::string(name));
         it != type_param.end()) {
       return it->second;
@@ -298,10 +300,10 @@ auto checker::find_visible_module_of_path(
 /// the same reading `resolution.cpp`'s `resolve_named_type_path` gives it.
 auto checker::find_submodule_of_current_module(
     const std::vector<std::string> &path) const -> const module_members * {
-  if (module_ == nullptr || path.empty()) {
+  if (file_.module_ == nullptr || path.empty()) {
     return nullptr;
   }
-  auto base = module_->module_name;
+  auto base = file_.module_->module_name;
   auto first = size_t{0};
   while (first < path.size() && path[first] == "super") {
     base = parent_module_name(base);
@@ -402,7 +404,7 @@ auto checker::session_owns_path_root(const std::vector<std::string> &path) const
 /// checked, or `nullptr` if it has none.
 auto checker::imports_for_current_file() const
     -> const std::vector<import_binding> * {
-  const auto it = index_.imports.find(file_id_);
+  const auto it = index_.imports.find(file_.file_id_);
   return it != index_.imports.end() ? &it->second : nullptr;
 }
 
@@ -447,10 +449,10 @@ auto checker::find_import(std::string_view name) const
 
 /// The session-owned modules whose members a wildcard import
 /// (`use a.b.*`) in the current file makes available for unqualified
-/// lookup. Recomputed per call because `file_id_` swaps temporarily while
+/// lookup. Recomputed per call because `file_.file_id_` swaps temporarily while
 /// checking a callee declared in another file. External-rooted wildcards
 /// never resolve here — they only suppress undefined-name errors
-/// (`file_has_external_wildcard_`).
+/// (`file_.file_has_external_wildcard_`).
 auto checker::wildcard_import_sources() const
     -> std::vector<const module_members *> {
   auto sources = std::vector<const module_members *>{};
@@ -512,9 +514,10 @@ auto checker::is_type_like_name(std::string_view name) -> bool {
       name == "array" || find_prelude_trait(name).has_value()) {
     return true;
   }
-  if (module_ != nullptr && (module_->types.contains(std::string(name)) ||
-                             module_->traits.contains(std::string(name)) ||
-                             module_->concepts.contains(std::string(name)))) {
+  if (file_.module_ != nullptr &&
+      (file_.module_->types.contains(std::string(name)) ||
+       file_.module_->traits.contains(std::string(name)) ||
+       file_.module_->concepts.contains(std::string(name)))) {
     return true;
   }
   return false;
@@ -526,19 +529,19 @@ auto checker::is_type_like_name(std::string_view name) -> bool {
 /// prelude functions.
 auto checker::value_name_candidates() -> std::vector<std::string> {
   auto candidates = std::vector<std::string>{};
-  for (const auto &scope : scopes_) {
+  for (const auto &scope : function_.scopes_) {
     for (const auto &[name, binding] : scope) {
       candidates.push_back(name);
     }
   }
-  if (module_ != nullptr) {
-    for (const auto &[name, decl] : module_->functions) {
+  if (file_.module_ != nullptr) {
+    for (const auto &[name, decl] : file_.module_->functions) {
       candidates.push_back(name);
     }
-    for (const auto &[name, decl] : module_->statics) {
+    for (const auto &[name, decl] : file_.module_->statics) {
       candidates.push_back(name);
     }
-    for (const auto &[name, decl] : module_->variants) {
+    for (const auto &[name, decl] : file_.module_->variants) {
       candidates.push_back(name);
     }
   }
@@ -555,11 +558,13 @@ auto checker::value_name_candidates() -> std::vector<std::string> {
 /// suggestion or a define/import hint.
 auto checker::emit_undefined_name(source_span span, std::string_view name)
     -> void {
-  if (!reported_undefined_.insert(std::format("value:{}", name)).second) {
+  if (!function_.reported_undefined_.insert(std::format("value:{}", name))
+           .second) {
     return;
   }
-  auto diag = diagnostic(diagnostic_level::error,
-                         std::format("undefined name `{}`", name), file_id_);
+  auto diag =
+      diagnostic(diagnostic_level::error,
+                 std::format("undefined name `{}`", name), file_.file_id_);
   diag.with_label(span, "not found in this scope");
   if (const auto *renamed = find_renamed_import(name)) {
     diag.with_help(std::format(
@@ -615,8 +620,8 @@ auto checker::find_module_scope_value(std::string_view name) const
     return std::nullopt;
   };
   const auto key = std::string(name);
-  if (module_ != nullptr) {
-    if (auto found = in(*module_, key)) {
+  if (file_.module_ != nullptr) {
+    if (auto found = in(*file_.module_, key)) {
       return found;
     }
   }
@@ -659,8 +664,8 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
   // identifier spelled `return` there) names the value the function
   // returns. It exists in a `post`, where the function has produced one,
   // and nowhere else.
-  if (name == "return" && in_contract_) {
-    if (!in_postcondition_) {
+  if (name == "return" && function_.in_contract_) {
+    if (!function_.in_postcondition_) {
       error_with_help(
           ident.span,
           "`return` names the value the function returns, so it may only "
@@ -672,7 +677,7 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
           "describes the result.");
       return k_error_type;
     }
-    if (types_.is_unit(return_type_)) {
+    if (session_.types_.is_unit(function_.return_type_)) {
       error_with_help(
           ident.span,
           "`return` names the value the function returns, and this function "
@@ -683,7 +688,7 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
           "parameter instead, or give the function a return type.");
       return k_error_type;
     }
-    return return_type_;
+    return function_.return_type_;
   }
 
   if (const auto *binding = lookup_value(name)) {
@@ -705,8 +710,8 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
     emit_capture_not_listed(ident.span, name, *barrier);
     return k_error_type;
   }
-  if (name == "self" && self_type_ != k_unknown_type) {
-    return self_type_;
+  if (name == "self" && function_.self_type_ != k_unknown_type) {
+    return function_.self_type_;
   }
 
   if (const auto value = find_module_scope_value(name)) {
@@ -736,7 +741,7 @@ auto checker::resolve_ident(const ast::ident_expr &ident, type_id expected)
     return *variant;
   }
 
-  if (file_has_external_wildcard_) {
+  if (file_.file_has_external_wildcard_) {
     return k_unknown_type;
   }
 
@@ -761,13 +766,15 @@ auto checker::emit_bare_variant(source_span span, std::string_view name,
 /// expected sum type's actual variants when one is known.
 auto checker::emit_undefined_variant(source_span span, std::string_view name,
                                      type_id expected) -> void {
-  if (!reported_undefined_.insert(std::format("variant:{}", name)).second) {
+  if (!function_.reported_undefined_.insert(std::format("variant:{}", name))
+           .second) {
     return;
   }
-  auto diag = diagnostic(diagnostic_level::error,
-                         std::format("unknown variant `@{}`", name), file_id_);
+  auto diag =
+      diagnostic(diagnostic_level::error,
+                 std::format("unknown variant `@{}`", name), file_.file_id_);
   diag.with_label(span, "no sum type in scope declares this variant");
-  const auto expected_entry = types_.entry(strip_refs(expected));
+  const auto expected_entry = session_.types_.entry(strip_refs(expected));
   if (const auto *variants = sum_variants_of(expected_entry)) {
     auto names = std::string{};
     for (const auto &variant : *variants) {
@@ -793,17 +800,20 @@ auto checker::emit_undefined_variant(source_span span, std::string_view name,
 /// (`check_static_binding_early`) rather than seeing `unknown`.
 auto checker::static_binding_type(const ast::static_decl &decl,
                                   const module_members *owner) -> type_id {
-  if (const auto it = static_types_.find(&decl); it != static_types_.end()) {
+  if (const auto it = cache_.static_types_.find(&decl);
+      it != cache_.static_types_.end()) {
     return it->second;
   }
   if (decl.type_annotation == nullptr && decl.initializer != nullptr &&
-      !decl.initializer->has_error && !statics_in_progress_.contains(&decl)) {
+      !decl.initializer->has_error &&
+      !cache_.statics_in_progress_.contains(&decl)) {
     check_static_binding_early(decl, owner);
-    if (const auto it = static_types_.find(&decl); it != static_types_.end()) {
+    if (const auto it = cache_.static_types_.find(&decl);
+        it != cache_.static_types_.end()) {
       return it->second;
     }
   }
-  if (!statics_in_progress_.insert(&decl).second) {
+  if (!cache_.statics_in_progress_.insert(&decl).second) {
     return k_unknown_type; // initializer cycle
   }
   auto type = k_unknown_type;
@@ -814,8 +824,8 @@ auto checker::static_binding_type(const ast::static_decl &decl,
                                     .use_type_param_stack = false,
                                     .quiet = true});
   }
-  statics_in_progress_.erase(&decl);
-  static_types_.emplace(&decl, type);
+  cache_.statics_in_progress_.erase(&decl);
+  cache_.static_types_.emplace(&decl, type);
   return type;
 }
 
@@ -825,12 +835,12 @@ auto checker::static_binding_type(const ast::static_decl &decl,
 /// it when file order reaches it.
 auto checker::check_static_binding_early(const ast::static_decl &decl,
                                          const module_members *owner) -> void {
-  const auto &declaring = owner != nullptr ? *owner : *module_;
+  const auto &declaring = owner != nullptr ? *owner : *file_.module_;
   const auto listed = declaring.statics.find(decl.name);
   const auto file =
       listed != declaring.statics.end() && listed->second.decl == &decl
           ? listed->second.file_id
-          : file_id_;
+          : file_.file_id_;
   auto module_level = body_context{};
   swap_body_context(module_level);
   // `in_module_context` returns its body's result, so the body needs one.
@@ -842,7 +852,7 @@ auto checker::check_static_binding_early(const ast::static_decl &decl,
         return true;
       });
   swap_body_context(module_level);
-  early_checked_static_bindings_.insert(&decl);
+  cache_.early_checked_static_bindings_.insert(&decl);
 }
 
 /// Ensures `decl`'s compile-time value is evaluated and bound in
@@ -874,9 +884,9 @@ auto checker::ensure_static_binding_evaluated(const ast::static_decl &decl,
   // an inline submodule may each declare `static limit`. Compile-time
   // code reaches this through the checker's own name lookup
   // (`read_bare_name_for_comptime`, `read_dotted_path_for_comptime`).
-  if (const auto it = static_binding_values_.find(&decl);
-      it != static_binding_values_.end()) {
-    if (failed_static_bindings_.contains(&decl)) {
+  if (const auto it = cache_.static_binding_values_.find(&decl);
+      it != cache_.static_binding_values_.end()) {
+    if (cache_.failed_static_bindings_.contains(&decl)) {
       mark_error();
     }
     return it->second.has_value() ? &*it->second : nullptr;
@@ -884,49 +894,51 @@ auto checker::ensure_static_binding_evaluated(const ast::static_decl &decl,
   // A dotted path reaches this through the checker rather than the
   // evaluator's own by-name cycle guard (`resolve_pending_static`), so a
   // self-referential `static a = a.x` needs a guard here too.
-  if (!static_bindings_evaluating_.insert(&decl).second) {
+  if (!cache_.static_bindings_evaluating_.insert(&decl).second) {
     return nullptr;
   }
   const auto errors_before = diag_.error_count();
   const auto evaluated = [&] -> comptime::value {
-    if (owner == nullptr || owner == module_) {
+    if (owner == nullptr || owner == file_.module_) {
       return comptime_eval_.evaluate(*decl.initializer);
     }
     const auto listed = owner->statics.find(decl.name);
     return in_module_context(
         *owner,
-        listed != owner->statics.end() ? listed->second.file_id : file_id_,
+        listed != owner->statics.end() ? listed->second.file_id
+                                       : file_.file_id_,
         [&] -> comptime::value {
           return comptime_eval_.evaluate(*decl.initializer);
         });
   }();
-  static_bindings_evaluating_.erase(&decl);
+  cache_.static_bindings_evaluating_.erase(&decl);
   if (evaluated.is_error()) {
-    static_binding_values_.emplace(&decl, std::nullopt);
+    cache_.static_binding_values_.emplace(&decl, std::nullopt);
     // The initializer's own error already explains the failure. The file
     // being checked (the declaring one, or the one whose reference reached
     // the binding first) must not be lowered either: lowering would find
     // a reference with no value and report a misleading compiler gap.
     if (diag_.error_count() > errors_before) {
-      failed_static_bindings_.insert(&decl);
+      cache_.failed_static_bindings_.insert(&decl);
       mark_error();
     }
     return nullptr;
   }
-  return &*static_binding_values_.emplace(&decl, evaluated).first->second;
+  return &*cache_.static_binding_values_.emplace(&decl, evaluated)
+               .first->second;
 }
 
 /// If `decl` (the `static let` a name just resolved to) evaluates to a
 /// materializable scalar, records `ident -> literal` in
-/// `static_const_values_` so `hir::lower_ident` can embed the value
+/// `session_.static_const_values_` so `hir::lower_ident` can embed the value
 /// directly instead of emitting an unresolvable `hir_local_ref` — see
 /// `ensure_static_binding_evaluated`/`materialize_const_literal`'s doc
 /// comments for why evaluation must happen here (not just at `decl`'s
 /// own declaration site) and what "materializable" means. `type` is
 /// `ident`'s already-resolved checked type (`static_binding_type`),
 /// passed in rather than recomputed so the synthesized literal can be
-/// given the exact same type in `node_types_` — lowering requires every
-/// node it visits, including one this pass synthesizes, to already have
+/// given the exact same type in `session_.node_types_` — lowering requires
+/// every node it visits, including one this pass synthesizes, to already have
 /// a recorded checked type.
 /// `reference` is the node the literal is substituted for: an
 /// `ident_expr` for a bare name, or a `module_path_expr` for a
@@ -945,7 +957,7 @@ auto checker::ensure_static_binding_evaluated(const ast::static_decl &decl,
 auto checker::record_fn_value_reference(const ast::expr &reference,
                                         const ast::func_decl &decl,
                                         std::string_view owner_module) -> void {
-  resolved_fn_values_[&reference] =
+  session_.resolved_fn_values_[&reference] =
       resolved_callee{.decl = &decl,
                       .owner_module = std::string(owner_module),
                       .impl_target_type = "",
@@ -964,28 +976,28 @@ auto checker::record_static_const_reference(const ast::expr &reference,
   }
   if (const auto *lit =
           materialize_const_literal(*value, reference.span, type)) {
-    static_const_values_[&reference] = lit;
+    session_.static_const_values_[&reference] = lit;
     return;
   }
   if (value->kind == comptime::value_kind::struct_instance) {
     if (auto literal = build_static_struct_expr(*value, reference.span, type)) {
-      static_struct_values_[&reference] = literal.get();
-      synthesized_static_structs_.push_back(std::move(literal));
+      session_.static_struct_values_[&reference] = literal.get();
+      session_.synthesized_static_structs_.push_back(std::move(literal));
       return;
     }
   }
   if (const auto name = reify_static_global(decl, *value, type, owner_module)) {
-    static_global_refs_[&reference] = *name;
+    session_.static_global_refs_[&reference] = *name;
     return;
   }
-  unreadable_static_refs_[&reference] = decl.name;
+  session_.unreadable_static_refs_[&reference] = decl.name;
 }
 
 /// A `static let` whose value has no single-literal materialization (an
 /// array, a list, a tuple, a variant, a struct holding one of those) is
 /// reified as real backing data: a global built once from its compile-time
-/// value. Memoized per declaration in `static_global_defs_` (mirroring
-/// `static_binding_values_`) so a declaration referenced many times is
+/// value. Memoized per declaration in `session_.static_global_defs_` (mirroring
+/// `cache_.static_binding_values_`) so a declaration referenced many times is
 /// reified once; returns the assigned global name on success, `nullopt`
 /// when some part of `value` has no run-time representation at its type
 /// (see `reifiable`).
@@ -993,20 +1005,20 @@ auto checker::reify_static_global(const ast::static_decl &decl,
                                   const comptime::value &value, type_id type,
                                   std::string_view owner_module)
     -> std::optional<std::string> {
-  if (const auto it = static_global_defs_.find(&decl);
-      it != static_global_defs_.end()) {
+  if (const auto it = session_.static_global_defs_.find(&decl);
+      it != session_.static_global_defs_.end()) {
     return it->second.name;
   }
   auto reified = reify_value(value, type, decl.span);
   if (!reified.has_value()) {
     return std::nullopt;
   }
-  auto name =
-      std::format("static${}${}", decl.name, static_global_defs_.size());
-  static_global_defs_.emplace(
+  auto name = std::format("static${}${}", decl.name,
+                          session_.static_global_defs_.size());
+  session_.static_global_defs_.emplace(
       &decl, checked_types::static_global_def{
                  .name = name, .type = type, .value = std::move(*reified)});
-  static_global_owners_.emplace(name, std::string(owner_module));
+  session_.static_global_owners_.emplace(name, std::string(owner_module));
   return name;
 }
 
@@ -1014,13 +1026,14 @@ auto checker::reify_static_global(const ast::static_decl &decl,
 /// array, tuple, struct or variant of such values; or a collection with a
 /// `from_array` constructor holding them. `nullopt` when some part has no
 /// run-time representation at its type. Each collection gets a synthesized
-/// array literal whose `array_literal_conversions_` entry names the
+/// array literal whose `session_.array_literal_conversions_` entry names the
 /// `from_array` instance for that collection's length — nothing in the
 /// source spells those calls, so this is where they are requested.
 auto checker::reify_value(const comptime::value &value, type_id type,
                           source_span span) -> std::optional<reified_value> {
   using shape = reified_value::shape;
-  const auto entry = types_.entry(type); // copy: types are interned below
+  const auto entry =
+      session_.types_.entry(type); // copy: types are interned below
   auto result = reified_value{.type = type};
   const auto reify_parts = [&](std::span<const comptime::value> items,
                                std::span<const type_id> item_types) -> bool {
@@ -1107,16 +1120,17 @@ auto checker::reify_value(const comptime::value &value, type_id type,
   auto target = type;
   const auto element = resolve_array_literal_conversion(*literal, target);
   if (!element.has_value() || mentions_type_var(target)) {
-    array_literal_conversions_.erase(literal.get());
+    session_.array_literal_conversions_.erase(literal.get());
     return std::nullopt;
   }
   const auto length = static_cast<uint64_t>(value.elements.size());
-  array_literal_conversions_[literal.get()].array_type = array_with_length(
-      *element, types_.const_value(types_.usize_type(), length));
+  session_.array_literal_conversions_[literal.get()].array_type =
+      array_with_length(*element, session_.types_.const_value(
+                                      session_.types_.usize_type(), length));
   instantiate_from_array_for(*literal, target, length);
   result.kind = shape::collection;
   result.conversion = literal.get();
-  synthesized_static_structs_.push_back(std::move(literal));
+  session_.synthesized_static_structs_.push_back(std::move(literal));
   const auto element_types =
       std::vector<type_id>(value.elements.size(), *element);
   if (!reify_parts(value.elements, element_types)) {
@@ -1129,18 +1143,19 @@ auto checker::reify_value(const comptime::value &value, type_id type,
 /// inside a const-generic instance as the constant that instance was made
 /// for, the same way `record_static_const_reference` records a scalar
 /// `static let`: `hir::lower_ident` finds the literal in
-/// `static_const_values_` and emits it instead of loading a local that
+/// `session_.static_const_values_` and emits it instead of loading a local that
 /// doesn't exist. It can't exist — a value parameter is passed at compile
 /// time, so nothing at runtime holds `n`. In the template (where `n` is
-/// still symbolic) `const_param_values_` is empty and this does nothing,
-/// which is correct: the template is never lowered.
+/// still symbolic) `session_.const_param_values_` is empty and this does
+/// nothing, which is correct: the template is never lowered.
 auto checker::record_const_param_reference(const ast::ident_expr &ident,
                                            type_id type) -> void {
-  const auto it = const_param_values_.find(ident.name);
-  if (it == const_param_values_.end()) {
+  const auto it = session_.const_param_values_.find(ident.name);
+  if (it == session_.const_param_values_.end()) {
     // A template's own value parameter: each instance has its constant.
-    if (current_template_ != nullptr) {
-      const auto abstract = template_abstract_params_.find(current_template_);
+    if (function_.current_template_ != nullptr) {
+      const auto abstract =
+          template_abstract_params_.find(function_.current_template_);
       if (abstract != template_abstract_params_.end() &&
           abstract->second.contains(ident.name)) {
         defer_to_instances(
@@ -1157,19 +1172,19 @@ auto checker::record_const_param_reference(const ast::ident_expr &ident,
   lit->lit_kind = token_kind::int_lit;
   lit->value = std::to_string(it->second);
   const auto *raw = lit.get();
-  synthesized_const_literals_.push_back(std::move(lit));
+  session_.synthesized_const_literals_.push_back(std::move(lit));
   record_expr_type(*raw, type);
-  static_const_values_[&ident] = raw;
+  session_.static_const_values_[&ident] = raw;
 }
 
 /// Synthesizes an `ast::literal_expr` embedding `value`'s exact
 /// compile-time content — with `span` and `type` (recorded into
-/// `node_types_`, exactly like every other checked expression) taken
+/// `session_.node_types_`, exactly like every other checked expression) taken
 /// from the reference site being replaced, since the synthesized node
 /// itself was never independently type-checked. Owned session-wide in
-/// `synthesized_const_literals_` (same stable-address
-/// `vector<unique_ptr<T>>` pattern as `synthesized_decls_`/
-/// `synthesized_types_`) — lets a scalar `static let` reference lower
+/// `session_.synthesized_const_literals_` (same stable-address
+/// `vector<unique_ptr<T>>` pattern as `session_.synthesized_decls_`/
+/// `session_.synthesized_types_`) — lets a scalar `static let` reference lower
 /// as a real literal instead of an unresolvable `hir_local_ref` (see
 /// `resolve_ident`). Deliberately narrow, mirroring `comptime::
 /// try_eval_expr_builder_call`'s own `expr.lit` scope exactly: only
@@ -1186,13 +1201,13 @@ auto checker::materialize_const_literal(const comptime::value &value,
     return nullptr;
   }
   const auto *raw = lit.get();
-  synthesized_const_literals_.push_back(std::move(lit));
+  session_.synthesized_const_literals_.push_back(std::move(lit));
   return raw;
 }
 
 /// The owned literal `materialize_const_literal` hands out, for callers
 /// (`build_static_struct_expr`) that embed it in a larger synthesized node
-/// instead of keeping it in `synthesized_const_literals_`.
+/// instead of keeping it in `session_.synthesized_const_literals_`.
 auto checker::build_const_literal(const comptime::value &value,
                                   source_span span, type_id type)
     -> ast::ptr<ast::literal_expr> {
@@ -1245,7 +1260,7 @@ auto checker::build_static_struct_expr(const comptime::value &value,
   if (value.kind != comptime::value_kind::struct_instance) {
     return build_const_literal(value, span, type);
   }
-  const auto &entry = types_.entry(type);
+  const auto &entry = session_.types_.entry(type);
   const auto *decl_fields = struct_fields_of(entry);
   if (decl_fields == nullptr || decl_fields->size() != value.fields.size()) {
     return nullptr;
@@ -1270,8 +1285,8 @@ auto checker::build_static_struct_expr(const comptime::value &value,
 }
 
 /// Attempts to fold a call to a comptime-only `static def` instance
-/// (`comptime_only_functions_`) reached from ordinary, non-comptime code —
-/// see todo item 8. `instance` has already been fully, concretely type-
+/// (`session_.comptime_only_functions_`) reached from ordinary, non-comptime
+/// code — see todo item 8. `instance` has already been fully, concretely type-
 /// checked by `find_or_check_generic_instance`, but `hir::lower_module`
 /// deliberately never lowers it (nor any comptime-only instance) to a real
 /// function, so an ordinary `hir_call` naming it would fail to resolve at

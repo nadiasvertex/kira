@@ -39,7 +39,7 @@ auto checker::check_loop_head_patterns(
   // Splitting an element is a point of demand: whether it *is* a tuple has
   // to be known to say so.
   const auto element = demand_shape(raw_element);
-  const auto element_entry = types_.entry(element);
+  const auto element_entry = session_.types_.entry(element);
   const auto is_tuple = element_entry.kind == type_kind::tuple_kind;
   // Point at the loop variables. The enclosing statement's span runs to
   // the end of the body, so using it would underline the loop's last line
@@ -58,16 +58,16 @@ auto checker::check_loop_head_patterns(
     error_with_help(
         vars_span,
         std::format("this loop binds {} names, but each element of `{}` has {}",
-                    patterns.size(), types_.display(element),
+                    patterns.size(), session_.types_.display(element),
                     element_entry.args.size()),
         "the number of loop variables must match the element's arity",
         "write one name per component, or bind the whole element with a "
         "single name and index it");
-  } else if (!is_tuple && !types_.is_unknown(element)) {
+  } else if (!is_tuple && !session_.types_.is_unknown(element)) {
     error_with_help(
         vars_span,
         std::format("this loop binds {} names, but `{}` is not a tuple",
-                    patterns.size(), types_.display(element)),
+                    patterns.size(), session_.types_.display(element)),
         "only a tuple element can be split across several loop variables",
         "use a single loop variable here");
   }
@@ -96,7 +96,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
                            ? raw_subject
                            : demand_shape(raw_subject);
   const auto stripped = strip_refs(subject);
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
   // Every pattern kind below matches against `stripped` — recording it
   // uniformly here (rather than in each branch) is what lets a later
   // lowering pass ask "what type does this pattern node match?" for any
@@ -151,7 +151,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
             std::format("tuple pattern has {} element{}, but `{}` has {}",
                         tuple.elements.size(),
                         tuple.elements.size() == 1 ? "" : "s",
-                        types_.display(stripped), entry.args.size()),
+                        session_.types_.display(stripped), entry.args.size()),
             "pattern shape does not match the value");
     } else if (entry.kind == type_kind::array_kind &&
                entry.array_size.has_value() &&
@@ -160,7 +160,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
             std::format("tuple pattern has {} element{}, but `{}` has {}",
                         tuple.elements.size(),
                         tuple.elements.size() == 1 ? "" : "s",
-                        types_.display(stripped), *entry.array_size),
+                        session_.types_.display(stripped), *entry.array_size),
             "pattern shape does not match the value");
     }
     for (size_t i = 0; i < tuple.elements.size(); ++i) {
@@ -227,9 +227,10 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
         }
       }
       // A shorthand field (`{x}`, field.pattern == nullptr) has no
-      // sub-pattern node to key `node_types_` against, so it's recorded
-      // here instead — see `struct_pattern_field_types_`'s doc comment.
-      struct_pattern_field_types_[&field] = field_type;
+      // sub-pattern node to key `session_.node_types_` against, so it's
+      // recorded here instead — see `session_.struct_pattern_field_types_`'s
+      // doc comment.
+      session_.struct_pattern_field_types_[&field] = field_type;
       if (field.pattern != nullptr) {
         check_pattern(*field.pattern, field_type);
       } else if (!field.name.empty()) {
@@ -301,7 +302,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
 /// variant or wrong destructuring arity.
 auto checker::check_constructor_pattern(const ast::constructor_pattern &ctor,
                                         type_id subject) -> void {
-  const auto &entry = types_.entry(subject);
+  const auto &entry = session_.types_.entry(subject);
 
   // Prelude option/result variants in pattern position.
   if (ctor.name == "some" || ctor.name == "none" || ctor.name == "ok" ||
@@ -332,7 +333,7 @@ auto checker::check_constructor_pattern(const ast::constructor_pattern &ctor,
           diagnostic(diagnostic_level::error,
                      std::format("unknown variant `@{}` for sum type `{}`",
                                  ctor.name, entry.name),
-                     file_id_);
+                     file_.file_id_);
       diag.with_label(ctor.span, "no such variant");
       if (const auto *variants = sum_variants_of(entry)) {
         auto names = std::string{};
@@ -488,7 +489,7 @@ auto checker::check_match_exhaustiveness(
   }
 
   const auto stripped = strip_refs(subject);
-  const auto &entry = types_.entry(stripped);
+  const auto &entry = session_.types_.entry(stripped);
 
   auto required = std::vector<std::string>{};
   if (entry.kind == type_kind::sum_kind) {
@@ -503,12 +504,13 @@ auto checker::check_match_exhaustiveness(
   } else if (entry.kind == type_kind::builtin_generic_kind &&
              entry.name == "result") {
     required = {"ok", "err"};
-  } else if (types_.is_boolean(stripped)) {
+  } else if (session_.types_.is_boolean(stripped)) {
     required = {"true", "false"};
   } else if (entry.kind == type_kind::builtin_kind) {
     error_with_help(
         span,
-        std::format("non-exhaustive match on `{}`", types_.display(stripped)),
+        std::format("non-exhaustive match on `{}`",
+                    session_.types_.display(stripped)),
         "these arms may not cover every value",
         "Add a final `_ => ...` arm to handle the remaining values.");
     return;
@@ -522,8 +524,9 @@ auto checker::check_match_exhaustiveness(
       if (!missing.empty()) {
         missing += ", ";
       }
-      missing += (types_.is_boolean(stripped) ? std::format("`{}`", name)
-                                              : std::format("`@{}`", name));
+      missing +=
+          (session_.types_.is_boolean(stripped) ? std::format("`{}`", name)
+                                                : std::format("`@{}`", name));
     }
   }
   if (missing.empty()) {
@@ -532,8 +535,8 @@ auto checker::check_match_exhaustiveness(
   auto diag =
       diagnostic(diagnostic_level::error,
                  std::format("non-exhaustive match on `{}`: {} not covered",
-                             types_.display(stripped), missing),
-                 file_id_);
+                             session_.types_.display(stripped), missing),
+                 file_.file_id_);
   diag.with_label(span, "missing match arms");
   diag.with_help(std::format(
       "Handle {} explicitly, or add a final `_ => ...` arm.", missing));
@@ -606,17 +609,17 @@ auto checker::check_match(const ast::expr *subject,
 /// whose callee is an `ident_expr` named `"other"` — the parser drops the
 /// `@` entirely, so this is the only place that distinguishes a variant
 /// reference from an ordinary identifier/call). Requires `node` to already
-/// have an entry in `node_types_`, which every caller of
+/// have an entry in `session_.node_types_`, which every caller of
 /// `comptime_eval_.evaluate(...)` on a full expression tree (`static if`/
 /// `static assert` conditions, `static let` initializers) already
 /// guarantees by calling `infer_expr`/`require_bool` first.
 auto checker::resolve_variant_tag(const ast::node &node)
     -> std::optional<std::pair<std::string, std::string>> {
-  const auto it = node_types_.find(&node);
-  if (it == node_types_.end()) {
+  const auto it = session_.node_types_.find(&node);
+  if (it == session_.node_types_.end()) {
     return std::nullopt;
   }
-  const auto &entry = types_.entry(strip_refs(it->second));
+  const auto &entry = session_.types_.entry(strip_refs(it->second));
   auto tag = std::string{};
   if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&node)) {
     tag = ident->name;

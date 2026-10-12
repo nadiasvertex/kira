@@ -29,9 +29,10 @@ auto checker::check_intrinsic_decl(const ast::func_decl &decl,
     for (const auto known : known_intrinsic_names) {
       candidates.emplace_back(known);
     }
-    auto diag = diagnostic(
-        diagnostic_level::error,
-        std::format("`{}` is not a recognized intrinsic", decl.name), file_id_);
+    auto diag =
+        diagnostic(diagnostic_level::error,
+                   std::format("`{}` is not a recognized intrinsic", decl.name),
+                   file_.file_id_);
     diag.with_label(decl.span, "no backend implements this name");
     if (const auto suggestion = best_suggestion(decl.name, candidates)) {
       diag.with_help(std::format("did you mean `{}`?", *suggestion));
@@ -145,7 +146,7 @@ auto checker::node_provides_function_value(const ast::node &node) -> bool {
 /// Checks a function/method declaration end to end: enforces the
 /// `pub`-must-annotate rule (`at_module_scope`), binds type parameters
 /// and value parameters (including a leading `self` typed from
-/// `self_type_`) into a fresh scope stack, checks contract conditions
+/// `function_.self_type_`) into a fresh scope stack, checks contract conditions
 /// under purity enforcement, and checks the body against the declared or
 /// inferred return type. Saves and restores all per-function state
 /// (scopes, return type, undefined-name dedup) so nested/sibling checks
@@ -166,7 +167,8 @@ auto checker::check_function(const ast::func_decl &decl, bool at_module_scope)
   // and they are emitted (`finish_param_probes`); if one stayed open, each
   // instance is checked against a concrete type and reports for real.
   if (decl.has_error || probe_capture_ != nullptr ||
-      decl.modifiers.is_intrinsic || inferred_param_types_.contains(&decl) ||
+      decl.modifiers.is_intrinsic ||
+      cache_.inferred_param_types_.contains(&decl) ||
       !has_unannotated_params(decl)) {
     check_function_impl(decl, at_module_scope);
     return;
@@ -185,8 +187,8 @@ auto checker::check_function(const ast::func_decl &decl, bool at_module_scope)
   mark.call_end = pending_method_calls_.size();
   unclassified_param_decls_.push_back(mark);
   if (!held.empty()) {
-    param_probes_.push_back(
-        param_probe{.decl = &decl, .diags = std::move(held), .file = file_id_});
+    param_probes_.push_back(param_probe{
+        .decl = &decl, .diags = std::move(held), .file = file_.file_id_});
   }
 }
 
@@ -195,19 +197,19 @@ auto checker::check_function(const ast::func_decl &decl, bool at_module_scope)
 auto checker::finish_param_probes() -> void {
   auto pending = std::vector<param_probe>{};
   pending.swap(param_probes_);
-  const auto saved_file = file_id_;
+  const auto saved_file = file_.file_id_;
   for (auto &probe : pending) {
     const auto found = open_param_decls_.find(probe.decl);
     if (found != open_param_decls_.end() && found->second) {
       continue;
     }
-    file_id_ = probe.file;
+    file_.file_id_ = probe.file;
     for (const auto &diag : probe.diags) {
       emit_diag(diag);
       mark_error();
     }
   }
-  file_id_ = saved_file;
+  file_.file_id_ = saved_file;
 }
 
 auto checker::check_function_impl(const ast::func_decl &decl,
@@ -240,10 +242,25 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     check_intrinsic_decl(decl, at_module_scope);
   }
 
+  // Everything a body can change is per-function state. It is moved out
+  // here and moved back on exit, so no field can be missed. What the caller
+  // set up for this body (its `Self`, its type parameters, and the contract
+  // and reachability flags) carries over into the fresh state.
+  auto outer = std::move(function_);
+  function_ = function_state{
+      .type_params_ = outer.type_params_,
+      .self_type_ = outer.self_type_,
+      .self_assoc_types_ = outer.self_assoc_types_,
+      .in_contract_ = outer.in_contract_,
+      .in_postcondition_ = outer.in_postcondition_,
+      .in_speculative_static_branch_ = outer.in_speculative_static_branch_,
+      .in_known_unreachable_code_ = outer.in_known_unreachable_code_,
+      .current_template_ = outer.current_template_,
+  };
   push_type_params(decl.type_params);
   record_declared_facts(decl.type_params, &decl.where_constraints);
   // Every call inside a comptime-only `static def`'s own body (template or
-  // instantiated clone alike — see `comptime_only_functions_`'s doc
+  // instantiated clone alike — see `session_.comptime_only_functions_`'s doc
   // comment) is already reachable through direct evaluator execution
   // (`comptime::evaluator::eval_call`/`call_function`) whenever this
   // function is actually invoked at compile time; it is never lowered
@@ -253,34 +270,33 @@ auto checker::check_function_impl(const ast::func_decl &decl,
   // template parameters or runtime locals — not something compile-time
   // evaluable on its own — and spuriously report an error. See
   // `try_fold_comptime_only_call`.
-  const auto saved_in_comptime_only_function = in_comptime_only_function_;
-  in_comptime_only_function_ = comptime_only_functions_.contains(&decl);
-  const auto saved_in_machine_function = in_machine_function_;
-  in_machine_function_ = decl.modifiers.is_machine;
+  function_.in_comptime_only_function_ =
+      session_.comptime_only_functions_.contains(&decl);
+  function_.in_machine_function_ = decl.modifiers.is_machine;
   // A parameter of this function's own with no answer in
-  // `const_param_slots_`/`type_param_slots_` is still a symbol here, so
-  // this check is its template's: an error in it means no instance of it
-  // is ever made (`failed_templates_`).
+  // `session_.const_param_slots_`/`session_.type_param_slots_` is still a
+  // symbol here, so this check is its template's: an error in it means no
+  // instance of it is ever made (`failed_templates_`).
   const auto errors_before_body = errors_emitted_;
   const auto checking_template =
       std::ranges::any_of(decl.type_params, [this](const auto &param) -> bool {
         return !param.name.empty() &&
-               !(param.is_value_param ? const_param_slots_ : type_param_slots_)
+               !(param.is_value_param ? session_.const_param_slots_
+                                      : session_.type_param_slots_)
                     .contains(param.name);
       });
   // A body with any parameter still abstract is a template: its records
   // are written in those parameters, and every decision that needs them
   // concrete is deferred to its instances (`defer_to_instances`).
-  const auto saved_current_template = current_template_;
   const auto is_template = in_abstract_type_param_scope();
   if (is_template) {
-    current_template_ = &decl;
+    function_.current_template_ = &decl;
     template_elaborations_[&decl].clear();
     auto &abstract = template_abstract_params_[&decl];
     abstract.clear();
-    for (const auto &scope : type_params_) {
+    for (const auto &scope : function_.type_params_) {
       for (const auto &[name, id] : scope) {
-        if (types_.entry(id).kind == type_kind::type_param_kind) {
+        if (session_.types_.entry(id).kind == type_kind::type_param_kind) {
           abstract.insert_or_assign(name, id);
         }
       }
@@ -291,37 +307,27 @@ auto checker::check_function_impl(const ast::func_decl &decl,
   // so a `static if`/`static assert` condition *inside this function's own
   // body* can reflect on its own type parameter (e.g. `T.name()`,
   // `is_integer[T]()`) the same way ordinary body statements already can
-  // via `type_param_reflections_` (`type_param_comptime_values`, above).
-  // Pushed/popped unconditionally (empty when this is the template pass or
-  // none of the type params are types) to keep the evaluator's locals
-  // stack symmetric with `scopes_`/`capture_barriers_` above.
+  // via `session_.type_param_reflections_` (`type_param_comptime_values`,
+  // above). Pushed/popped unconditionally (empty when this is the template pass
+  // or none of the type params are types) to keep the evaluator's locals stack
+  // symmetric with `function_.scopes_`/`function_.capture_barriers_` above.
   auto type_param_values =
-      type_param_comptime_values(decl.type_params, type_param_slots_);
+      type_param_comptime_values(decl.type_params, session_.type_param_slots_);
   comptime_eval_.push_locals(
       {type_param_values.begin(), type_param_values.end()});
-  auto saved_scopes = std::move(scopes_);
-  scopes_.clear();
-  // Barriers index into `scopes_`, so they have to travel with it: a stale
-  // `scope_floor` left behind here would refuse names in the fresh stack.
-  auto saved_barriers = std::move(capture_barriers_);
-  capture_barriers_.clear();
+  // Barriers index into `function_.scopes_`, so they have to travel with it: a
+  // stale `scope_floor` left behind here would refuse names in the fresh stack.
   push_scope();
-  auto saved_reported = std::move(reported_undefined_);
-  reported_undefined_.clear();
   // A function proves things only from what *its own* signature and body
   // establish; a sibling's facts are not in scope here any more than its
   // locals are.
-  auto saved_facts = std::move(facts_);
-  facts_.clear();
-  auto saved_name_aliases = std::move(type_name_aliases_);
-  type_name_aliases_.clear();
 
   bind_value_params(decl.type_params);
-  if (enclosing_block_type_params_ != nullptr) {
-    bind_value_params(*enclosing_block_type_params_);
+  if (session_.enclosing_block_type_params_ != nullptr) {
+    bind_value_params(*session_.enclosing_block_type_params_);
   }
 
-  const auto &inferred_types = param_types_for(decl, module_);
+  const auto &inferred_types = param_types_for(decl, file_.module_);
   for (size_t i = 0; i < decl.params.size(); ++i) {
     const auto &param = decl.params[i];
     auto type = k_unknown_type;
@@ -358,48 +364,42 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     }
   }
 
-  const auto saved_return = return_type_;
-  const auto saved_annotated = return_annotated_;
-  const auto saved_inferring = inferring_return_;
-  const auto saved_inferred = inferred_return_;
-  const auto saved_seen = inferred_return_seen_;
-  inferred_return_seen_ = false;
-  return_annotated_ = decl.return_type != nullptr;
+  function_.inferred_return_seen_ = false;
+  function_.return_annotated_ = decl.return_type != nullptr;
   // A template infers its result too, written in its own parameters
   // (`def identity[T](x: T):` returns a `T`): an instance's result is that
   // type under the instance's substitution (phase 9.7).
-  inferring_return_ = !return_annotated_ && !decl.modifiers.is_generator &&
-                      !decl.modifiers.is_intrinsic;
-  inferred_return_ = k_unknown_type;
+  function_.inferring_return_ = !function_.return_annotated_ &&
+                                !decl.modifiers.is_generator &&
+                                !decl.modifiers.is_intrinsic;
+  function_.inferred_return_ = k_unknown_type;
   auto return_ctx = current_resolve_ctx();
   return_ctx.existential_allowed = true;
   return_ctx.is_generator_return = decl.modifiers.is_generator;
-  return_type_ = return_annotated_ ? resolve_type(*decl.return_type, return_ctx)
-                                   : k_unknown_type;
+  function_.return_type_ = function_.return_annotated_
+                               ? resolve_type(*decl.return_type, return_ctx)
+                               : k_unknown_type;
   if (decl.return_type != nullptr) {
     // Same rationale as the parameter loop above: a declared return type
     // is resolved from a `type_expr`, not an expression, so it needs its
     // own persistence hook for lowering to read.
-    record_expr_type(*decl.return_type, return_type_);
+    record_expr_type(*decl.return_type, function_.return_type_);
   }
 
-  const auto saved_in_generator = in_generator_;
-  const auto saved_generator_item = generator_item_type_;
-  const auto saved_loop_depth = std::exchange(loop_depth_, 0U);
-  in_generator_ = decl.modifiers.is_generator;
-  generator_item_type_ = k_unknown_type;
-  if (in_generator_) {
+  function_.in_generator_ = decl.modifiers.is_generator;
+  function_.generator_item_type_ = k_unknown_type;
+  if (function_.in_generator_) {
     // `return_ctx.is_generator_return` (set above) already made
     // `resolve_type` resolve `some iterator[T]` straight to the concrete
     // `generator[T]` — see `resolve_existential_type`'s doc comment —
-    // so `return_type_` here is never the general opaque wrapper.
-    const auto &return_entry = types_.entry(return_type_);
+    // so `function_.return_type_` here is never the general opaque wrapper.
+    const auto &return_entry = session_.types_.entry(function_.return_type_);
     const auto is_generator_type =
-        return_annotated_ &&
+        function_.return_annotated_ &&
         return_entry.kind == type_kind::builtin_generic_kind &&
         return_entry.name == "generator" && !return_entry.args.empty();
     if (is_generator_type) {
-      generator_item_type_ = return_entry.args.front();
+      function_.generator_item_type_ = return_entry.args.front();
     } else {
       error_with_help(
           decl.span,
@@ -424,17 +424,16 @@ auto checker::check_function_impl(const ast::func_decl &decl,
   // A general `some Trait[Args]` existential return type (not the
   // generator sugar above): the body's concrete return points are
   // inferred and joined via `join_branch_type` into
-  // `existential_underlying_` rather than checked against `return_type_`
-  // directly, since `return_type_` is the fresh opaque id itself — no
-  // concrete expression could ever match it.
-  const auto saved_checking_existential = checking_existential_return_;
-  const auto saved_existential_underlying = existential_underlying_;
-  checking_existential_return_ = false;
-  existential_underlying_ = k_unknown_type;
-  const auto existential_return_id = return_type_;
-  if (!in_generator_ && return_annotated_ &&
-      types_.entry(return_type_).kind == type_kind::existential_kind) {
-    checking_existential_return_ = true;
+  // `function_.existential_underlying_` rather than checked against
+  // `function_.return_type_` directly, since `function_.return_type_` is the
+  // fresh opaque id itself — no concrete expression could ever match it.
+  function_.checking_existential_return_ = false;
+  function_.existential_underlying_ = k_unknown_type;
+  const auto existential_return_id = function_.return_type_;
+  if (!function_.in_generator_ && function_.return_annotated_ &&
+      session_.types_.entry(function_.return_type_).kind ==
+          type_kind::existential_kind) {
+    function_.checking_existential_return_ = true;
   }
 
   for (const auto &constraint : decl.where_constraints) {
@@ -446,7 +445,7 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     }
   }
 
-  in_contract_ = true;
+  function_.in_contract_ = true;
   for (const auto &contract : decl.contracts) {
     // A generator has no single exit a `post` could describe. Its body runs
     // in steps and hands values out through `yield`; `return` there means
@@ -456,7 +455,7 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     // arguments, checked once before the body starts — so only the `post`
     // face is refused, and it is refused here, where the declaration is,
     // rather than later where only the lowering is visible.
-    if (in_generator_ && !contract.is_pre) {
+    if (function_.in_generator_ && !contract.is_pre) {
       error_with_help(
           contract.span,
           std::format("a `post` condition cannot be written on the "
@@ -471,76 +470,81 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       continue;
     }
     if (contract.condition != nullptr && !contract.condition->has_error) {
-      in_postcondition_ = !contract.is_pre;
+      function_.in_postcondition_ = !contract.is_pre;
       require_bool(*contract.condition, "a contract condition");
     }
   }
-  in_postcondition_ = false;
-  in_contract_ = false;
+  function_.in_postcondition_ = false;
+  function_.in_contract_ = false;
 
   // Only now, with every parameter bound and every contract checked, is
   // there anything to assume — `assume_binding` reads the parameters' types
   // back out of the scope the loop above filled in.
   collect_function_facts(decl);
 
-  if (in_generator_) {
+  if (function_.in_generator_) {
     // A generator body's tail statement isn't a return value the way an
     // ordinary function's is — its only output channel is `yield`
     // (checked in place via `infer_yield`, which reads
-    // `generator_item_type_` directly) — so there's nothing to compare
-    // against `return_type_` here.
+    // `function_.generator_item_type_` directly) — so there's nothing to
+    // compare against `function_.return_type_` here.
     if (decl.body_expr == nullptr) {
       check_body_nodes(decl.body_stmts, k_unknown_type);
     }
   } else if (decl.body_expr != nullptr) {
     const auto expected_for_body =
-        checking_existential_return_
+        function_.checking_existential_return_
             ? k_unknown_type
-            : (return_annotated_ ? return_type_ : k_unknown_type);
+            : (function_.return_annotated_ ? function_.return_type_
+                                           : k_unknown_type);
     const auto found = infer_expr(*decl.body_expr, expected_for_body);
-    if (checking_existential_return_) {
-      existential_underlying_ =
-          join_branch_type(existential_underlying_, found, decl.body_expr->span,
-                           "existential return");
-    } else if (return_annotated_) {
-      type_mismatch(decl.body_expr->span, return_type_, found,
+    if (function_.checking_existential_return_) {
+      function_.existential_underlying_ =
+          join_branch_type(function_.existential_underlying_, found,
+                           decl.body_expr->span, "existential return");
+    } else if (function_.return_annotated_) {
+      type_mismatch(decl.body_expr->span, function_.return_type_, found,
                     "as the function result", decl.body_expr.get());
-    } else if (inferring_return_) {
+    } else if (function_.inferring_return_) {
       note_inferred_return(found, decl.body_expr->span);
     }
   } else if (!decl.body_stmts.empty()) {
     const auto expected_for_body =
-        checking_existential_return_
+        function_.checking_existential_return_
             ? k_unknown_type
-            : (return_annotated_ ? return_type_ : k_unknown_type);
+            : (function_.return_annotated_ ? function_.return_type_
+                                           : k_unknown_type);
     const auto tail = check_body_nodes(decl.body_stmts, expected_for_body);
-    if (inferring_return_ && !types_.is_unit(tail)) {
+    if (function_.inferring_return_ && !session_.types_.is_unit(tail)) {
       note_inferred_return(tail, decl.body_stmts.back() != nullptr
                                      ? decl.body_stmts.back()->span
                                      : decl.span);
     }
-    if (checking_existential_return_) {
-      if (!types_.is_unit(tail) && !types_.is_unknown(tail)) {
-        existential_underlying_ = join_branch_type(
-            existential_underlying_, tail,
+    if (function_.checking_existential_return_) {
+      if (!session_.types_.is_unit(tail) && !session_.types_.is_unknown(tail)) {
+        function_.existential_underlying_ = join_branch_type(
+            function_.existential_underlying_, tail,
             decl.body_stmts.back() != nullptr ? decl.body_stmts.back()->span
                                               : decl.span,
             "existential return");
       }
-    } else if (return_annotated_ && !types_.is_unit(return_type_) &&
-               !types_.is_unknown(return_type_) && !types_.is_unknown(tail) &&
-               tail != k_error_type) {
+    } else if (function_.return_annotated_ &&
+               !session_.types_.is_unit(function_.return_type_) &&
+               !session_.types_.is_unknown(function_.return_type_) &&
+               !session_.types_.is_unknown(tail) && tail != k_error_type) {
       const auto tail_span = decl.body_stmts.back() != nullptr
                                  ? decl.body_stmts.back()->span
                                  : decl.span;
-      if (!types_.is_unit(tail) && !agrees(return_type_, tail)) {
+      if (!session_.types_.is_unit(tail) &&
+          !agrees(function_.return_type_, tail)) {
         error(tail_span,
               std::format("function `{}` returns `{}`, but its final "
                           "expression has type `{}`",
-                          decl.name, types_.display(return_type_),
-                          types_.display(tail)),
+                          decl.name,
+                          session_.types_.display(function_.return_type_),
+                          session_.types_.display(tail)),
               "mismatched final expression");
-      } else if (types_.is_unit(tail)
+      } else if (session_.types_.is_unit(tail)
                      ? (decl.body_stmts.back() == nullptr ||
                         !is_while_true(*decl.body_stmts.back()))
                      : !block_provides_function_value(decl.body_stmts)) {
@@ -553,30 +557,32 @@ auto checker::check_function_impl(const ast::func_decl &decl,
             diagnostic_level::error,
             std::format("function `{}` is declared to return `{}`, but "
                         "not every path through its body returns a value",
-                        decl.name, types_.display(return_type_)),
-            file_id_);
+                        decl.name,
+                        session_.types_.display(function_.return_type_)),
+            file_.file_id_);
         diag.with_label(tail_span,
                         "control can reach the end of the function from "
                         "here without a value");
         if (decl.return_type != nullptr) {
           diag.with_label(
               decl.return_type->span,
-              std::format("`{}` promised here", types_.display(return_type_)));
+              std::format("`{}` promised here",
+                          session_.types_.display(function_.return_type_)));
         }
         diag.with_help(std::format(
             "Make every path produce a `{}`: add a `return`, cover the "
             "missing `else` or `match` arm, or make the final statement "
             "an expression of that type. If the function has nothing to "
             "return, change the return type to `unit`.",
-            types_.display(return_type_)));
+            session_.types_.display(function_.return_type_)));
         emit_diag(diag);
         mark_error();
       }
     }
   }
 
-  if (checking_existential_return_) {
-    if (types_.is_unknown(existential_underlying_)) {
+  if (function_.checking_existential_return_) {
+    if (session_.types_.is_unknown(function_.existential_underlying_)) {
       error_with_help(
           decl.span,
           std::format("could not infer a concrete return type for `{}`",
@@ -586,40 +592,44 @@ auto checker::check_function_impl(const ast::func_decl &decl,
           "out of the function on every path — return or produce a "
           "concrete value, not just `panic`/an infinite loop.");
     } else {
-      auto &existential_entry = types_.mutable_entry(existential_return_id);
-      if (types_.is_unknown(existential_entry.result)) {
-        existential_entry.result = existential_underlying_;
-        const auto &underlying_entry = types_.entry(existential_underlying_);
+      auto &existential_entry =
+          session_.types_.mutable_entry(existential_return_id);
+      if (session_.types_.is_unknown(existential_entry.result)) {
+        existential_entry.result = function_.existential_underlying_;
+        const auto &underlying_entry =
+            session_.types_.entry(function_.existential_underlying_);
         for (const auto &required : existential_entry.existential_bound) {
           if (!type_has_trait(underlying_entry, required.trait_name)) {
             error_with_help(
                 decl.return_type->span,
-                std::format("`{}` does not implement `{}`",
-                            types_.display(existential_underlying_),
-                            required.trait_name),
+                std::format(
+                    "`{}` does not implement `{}`",
+                    session_.types_.display(function_.existential_underlying_),
+                    required.trait_name),
                 "existential bound not satisfied",
                 std::format("Add `impl {} for {}: ...` providing the trait's "
                             "methods, or return a type that already implements "
                             "it.",
                             required.trait_name,
-                            types_.display(existential_underlying_)));
+                            session_.types_.display(
+                                function_.existential_underlying_)));
           }
         }
       }
     }
   }
 
-  if (inferring_return_) {
+  if (function_.inferring_return_) {
     // No value on any path means the function returns `unit`.
     // A literal's leaf has to be settled here: the body compiles once, so
     // nothing later can still choose its width.
     if (const auto own = recursive_returns_.find(&decl);
-        own != recursive_returns_.end() && inferred_return_seen_) {
-      solve_leaves(own->second, inferred_return_);
+        own != recursive_returns_.end() && function_.inferred_return_seen_) {
+      solve_leaves(own->second, function_.inferred_return_);
     }
-    auto result = types_.builtin("unit");
-    if (inferred_return_seen_) {
-      result = settle(inferred_return_);
+    auto result = session_.types_.builtin("unit");
+    if (function_.inferred_return_seen_) {
+      result = settle(function_.inferred_return_);
       // A result that still hangs on one of the function's own parameters
       // (`x + x` over an open `x`) is not defaulted: the parameter is what
       // makes the function generic, and each instance answers for itself.
@@ -627,9 +637,9 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       auto vars = std::vector<type_id>{};
       auto seen = std::unordered_set<type_id>{};
       collect_type_vars(result, vars, seen);
-      const auto own = inferred_param_types_.find(&decl);
+      const auto own = cache_.inferred_param_types_.find(&decl);
       const auto hangs_on_param =
-          own != inferred_param_types_.end() &&
+          own != cache_.inferred_param_types_.end() &&
           std::ranges::any_of(own->second, [&](type_id param) -> bool {
             auto param_vars = std::vector<type_id>{};
             auto param_seen = std::unordered_set<type_id>{};
@@ -652,21 +662,6 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       open_returns_[&decl] = result;
     }
   }
-  inferring_return_ = saved_inferring;
-  inferred_return_ = saved_inferred;
-  inferred_return_seen_ = saved_seen;
-  checking_existential_return_ = saved_checking_existential;
-  existential_underlying_ = saved_existential_underlying;
-  in_generator_ = saved_in_generator;
-  loop_depth_ = saved_loop_depth;
-  generator_item_type_ = saved_generator_item;
-  return_type_ = saved_return;
-  return_annotated_ = saved_annotated;
-  reported_undefined_ = std::move(saved_reported);
-  facts_ = std::move(saved_facts);
-  type_name_aliases_ = std::move(saved_name_aliases);
-  scopes_ = std::move(saved_scopes);
-  capture_barriers_ = std::move(saved_barriers);
   if (checking_template && errors_emitted_ != errors_before_body) {
     failed_templates_.insert(&decl);
   }
@@ -681,21 +676,19 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     }
     waiting_instances_.erase(waiting);
   }
-  current_template_ = saved_current_template;
-  in_comptime_only_function_ = saved_in_comptime_only_function;
-  in_machine_function_ = saved_in_machine_function;
-  comptime_eval_.pop_locals();
   pop_type_params();
+  function_ = std::move(outer);
+  comptime_eval_.pop_locals();
 
   // A `def` nested inside another function's body is invisible to
-  // `module_->functions` (only module-scope items are indexed there), so
+  // `file_.module_->functions` (only module-scope items are indexed there), so
   // without this it can never be found by name — neither by sibling
   // statements after it nor, via the borrow-checker's own walk, anywhere
   // at all. Bind it into the enclosing scope, the same way `let`/`var`
   // introduce a name, so `lookup_value` finds it exactly like any other
   // local.
   if (!at_module_scope && !decl.name.empty()) {
-    bind_value(decl.name, fn_type_of(decl, module_),
+    bind_value(decl.name, fn_type_of(decl, file_.module_),
                binding_origin::let_binding, decl.span);
   }
 }
@@ -791,8 +784,8 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
         if (const auto *predicate =
                 dynamic_cast<const ast::expr *>(refinement.predicate.get())) {
           push_scope();
-          const auto saved_self = self_type_;
-          self_type_ = base;
+          const auto saved_self = function_.self_type_;
+          function_.self_type_ = base;
           bind_value("self", base, binding_origin::parameter, decl.span);
           // The declaration's value parameters are ordinary values inside
           // its predicate — `index[n]`'s `self < n` reads `n` as a `usize`,
@@ -802,10 +795,10 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
           // A refinement predicate is a contract on a value, and lives
           // under the same purity rule as `pre`/`post`: it must be a
           // question about the value, not an action taken on the way past.
-          in_contract_ = true;
+          function_.in_contract_ = true;
           require_bool(*predicate, "a refinement predicate");
-          in_contract_ = false;
-          self_type_ = saved_self;
+          function_.in_contract_ = false;
+          function_.self_type_ = saved_self;
           pop_scope();
         }
       }
@@ -822,13 +815,14 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
 
   if (decl.invariant != nullptr && !decl.invariant->has_error) {
     push_scope();
-    const auto saved_self = self_type_;
-    self_type_ = make_user_type(decl, module_name_, {});
-    bind_value("self", self_type_, binding_origin::parameter, decl.span);
-    in_contract_ = true;
+    const auto saved_self = function_.self_type_;
+    function_.self_type_ = make_user_type(decl, file_.module_name_, {});
+    bind_value("self", function_.self_type_, binding_origin::parameter,
+               decl.span);
+    function_.in_contract_ = true;
     require_bool(*decl.invariant, "a type invariant");
-    in_contract_ = false;
-    self_type_ = saved_self;
+    function_.in_contract_ = false;
+    function_.self_type_ = saved_self;
     pop_scope();
   }
 
@@ -839,8 +833,8 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
 /// trait, validating that a name written before `for` from a type
 /// declaration rather than a trait is flagged; when the trait is known,
 /// checks member completeness/extras via `check_impl_members`; then checks
-/// every member declaration (methods, associated types) with `self_type_`
-/// bound to the impl's target.
+/// every member declaration (methods, associated types) with
+/// `function_.self_type_` bound to the impl's target.
 auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
   push_type_params(decl.type_params);
   record_declared_facts(decl.type_params, &decl.where_constraints);
@@ -864,7 +858,8 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
       if (const auto found = find_trait_anywhere(trait_name)) {
         trait_decl = found->first;
         trait_owner = found->second;
-      } else if (module_ != nullptr && module_->types.contains(trait_name)) {
+      } else if (file_.module_ != nullptr &&
+                 file_.module_->types.contains(trait_name)) {
         error_with_help(
             decl.trait_type->span,
             std::format("`{}` is a type, not a trait", trait_name),
@@ -888,19 +883,19 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
   const auto target = decl.for_type != nullptr
                           ? strip_refs(resolve_type(*decl.for_type, target_ctx))
                           : k_unknown_type;
-  const auto &target_entry = types_.entry(target);
+  const auto &target_entry = session_.types_.entry(target);
 
   // A higher-kinded trait is only implementable *for a constructor*: a
   // plain type has the wrong kind. (A wrong-arity constructor was already
   // diagnosed during resolution — `check_ctor_against_expected`.)
   if (hk_param != nullptr && decl.for_type != nullptr &&
-      !types_.is_unknown(target) &&
+      !session_.types_.is_unknown(target) &&
       target_entry.kind != type_kind::ctor_ref_kind) {
     error_with_help(
         decl.for_type->span,
         std::format("trait `{}` abstracts over a type constructor, but "
                     "`{}` is a plain type",
-                    trait_name, types_.display(target)),
+                    trait_name, session_.types_.display(target)),
         "impl target has the wrong kind",
         std::format("`{}` declares its parameter as `{}[{}]`, so it is "
                     "implemented for a name that still *takes* type "
@@ -923,10 +918,10 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
     }
   }
 
-  const auto saved_self = self_type_;
-  const auto saved_assoc = self_assoc_types_;
-  self_type_ = target;
-  self_assoc_types_.clear();
+  const auto saved_self = function_.self_type_;
+  const auto saved_assoc = function_.self_assoc_types_;
+  function_.self_type_ = target;
+  function_.self_assoc_types_.clear();
 
   // Populate `self.<name>` associated-type references (impl-defined first,
   // falling back to the trait's default) before checking any method body,
@@ -941,7 +936,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
       const auto &assoc =
           dynamic_cast<const ast::associated_type_decl_node &>(*item);
       if (assoc.value.default_type != nullptr) {
-        self_assoc_types_.emplace(
+        function_.self_assoc_types_.emplace(
             assoc.value.name,
             resolve_type(*assoc.value.default_type, current_resolve_ctx()));
       }
@@ -958,15 +953,16 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
         assoc.value.type != nullptr
             ? resolve_type(*assoc.value.type, current_resolve_ctx())
             : k_unknown_type;
-    self_assoc_types_.insert_or_assign(assoc.value.name, resolved);
+    function_.self_assoc_types_.insert_or_assign(assoc.value.name, resolved);
   }
 
   // Persist this impl's associated-type bindings under (target, trait) so
   // a method call resolved from outside the impl (an operator overload's
   // dispatch — see `resolve_operator_return_type`) can still resolve a
   // `self.output`-shaped return type correctly.
-  if (!trait_name.empty() && !types_.is_unknown(target)) {
-    impl_assoc_types_[target][trait_name] = self_assoc_types_;
+  if (!trait_name.empty() && !session_.types_.is_unknown(target)) {
+    session_.impl_assoc_types_[target][trait_name] =
+        function_.self_assoc_types_;
     // A parameterized trait can be implemented more than once for the
     // same target — `index[usize]` for elements and `index[range[usize]]`
     // for sub-views, with different `output`s. Under the bare trait name
@@ -976,18 +972,19 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
     if (const auto key =
             impl_trait_arguments_key(decl, trait_name, current_resolve_ctx());
         key != trait_name) {
-      impl_assoc_types_[target][key] = self_assoc_types_;
+      session_.impl_assoc_types_[target][key] = function_.self_assoc_types_;
     }
   }
 
-  // After `self_type_` and the associated types are bound, so the trait's
+  // After `function_.self_type_` and the associated types are bound, so the
+  // trait's
   // `&self` and `self.output` read as this impl's types.
   if (trait_decl != nullptr && hk_param == nullptr) {
     check_impl_signatures(decl, *trait_decl, trait_owner, trait_name);
   }
 
-  const auto saved_block_type_params = enclosing_block_type_params_;
-  enclosing_block_type_params_ = &decl.type_params;
+  const auto saved_block_type_params = session_.enclosing_block_type_params_;
+  session_.enclosing_block_type_params_ = &decl.type_params;
   for (const auto &item : decl.items) {
     if (item == nullptr || item->has_error) {
       continue;
@@ -1001,15 +998,15 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
       check_item(*item, /*at_module_scope=*/false);
     }
   }
-  enclosing_block_type_params_ = saved_block_type_params;
-  self_type_ = saved_self;
-  self_assoc_types_ = saved_assoc;
+  session_.enclosing_block_type_params_ = saved_block_type_params;
+  function_.self_type_ = saved_self;
+  function_.self_assoc_types_ = saved_assoc;
   pop_type_params();
 }
 
 /// Checks an `extend` block: resolves its target type and checks each
-/// method with `self_type_` bound to it. Unlike `check_impl_decl`, there
-/// is no trait to satisfy, so there is no coherence, completeness, or
+/// method with `function_.self_type_` bound to it. Unlike `check_impl_decl`,
+/// there is no trait to satisfy, so there is no coherence, completeness, or
 /// `requires` checking — `extend` makes no conformance claim, so it needs
 /// none of that bookkeeping.
 auto checker::check_extend_decl(const ast::extend_decl &decl) -> void {
@@ -1028,7 +1025,7 @@ auto checker::check_extend_decl(const ast::extend_decl &decl) -> void {
   // hold. This used to type-check and then die in lowering on the first use
   // of a field ("no concrete checked type is available for this node"),
   // which told the user nothing about the actual mistake.
-  const auto &target_entry = types_.entry(target);
+  const auto &target_entry = session_.types_.entry(target);
   const auto target_is_unapplied_ctor =
       target_entry.kind == type_kind::ctor_ref_kind ||
       (target_entry.decl != nullptr &&
@@ -1049,10 +1046,10 @@ auto checker::check_extend_decl(const ast::extend_decl &decl) -> void {
             name, name, name));
   }
 
-  const auto saved_self = self_type_;
-  self_type_ = target;
-  const auto saved_block_type_params = enclosing_block_type_params_;
-  enclosing_block_type_params_ = &decl.type_params;
+  const auto saved_self = function_.self_type_;
+  function_.self_type_ = target;
+  const auto saved_block_type_params = session_.enclosing_block_type_params_;
+  session_.enclosing_block_type_params_ = &decl.type_params;
   for (const auto &item : decl.items) {
     if (item == nullptr || item->has_error) {
       continue;
@@ -1062,8 +1059,8 @@ auto checker::check_extend_decl(const ast::extend_decl &decl) -> void {
                      /*at_module_scope=*/false);
     }
   }
-  enclosing_block_type_params_ = saved_block_type_params;
-  self_type_ = saved_self;
+  session_.enclosing_block_type_params_ = saved_block_type_params;
+  function_.self_type_ = saved_self;
   pop_type_params();
 }
 
@@ -1090,10 +1087,10 @@ auto checker::passing_mode(const ast::type_expr *type) -> std::string_view {
 /// `other: t` where the trait says `&self` would drop a value the caller
 /// still owns.
 ///
-/// Runs with `self_type_` and `self_assoc_types_` bound to the impl. Full
-/// types are compared only when both sides resolve to known types and
-/// neither method has its own type parameters; otherwise only the passing
-/// mode is compared.
+/// Runs with `function_.self_type_` and `function_.self_assoc_types_` bound to
+/// the impl. Full types are compared only when both sides resolve to known
+/// types and neither method has its own type parameters; otherwise only the
+/// passing mode is compared.
 auto checker::check_impl_signatures(const ast::impl_decl &impl,
                                     const ast::trait_decl &trait,
                                     const module_members *trait_owner,
@@ -1202,10 +1199,11 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
       const auto label_name = name.empty()
                                   ? std::format("parameter {}", i + 1)
                                   : std::format("parameter `{}`", name);
-      const auto found_text =
-          both_known ? types_.display(written_type) : std::string(mode);
-      const auto expected_text = both_known ? types_.display(expected_type)
-                                            : std::string(expected_mode);
+      const auto found_text = both_known ? session_.types_.display(written_type)
+                                         : std::string(mode);
+      const auto expected_text = both_known
+                                     ? session_.types_.display(expected_type)
+                                     : std::string(expected_mode);
       auto help = std::format(
           "Write `{}` here, as the trait does. Code that calls `{}` through "
           "the trait passes this argument as `{}`, so the method has to "
@@ -1238,13 +1236,13 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
             fn.return_type->span,
             std::format("method `{}` returns `{}`, but trait `{}` declares "
                         "it to return `{}`",
-                        fn.name, types_.display(written_type), trait_name,
-                        types_.display(expected_type)),
+                        fn.name, session_.types_.display(written_type),
+                        trait_name, session_.types_.display(expected_type)),
             "return type differs from the trait",
             std::format("Write `-> {}` here. Code that calls `{}` through "
                         "the trait reads its result as `{}`.",
-                        types_.display(expected_type), fn.name,
-                        types_.display(expected_type)));
+                        session_.types_.display(expected_type), fn.name,
+                        session_.types_.display(expected_type)));
       }
     }
   }
@@ -1310,7 +1308,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
   const auto target_name = target.decl != nullptr ? target.decl->name
                            : !target.name.empty()
                                ? target.name
-                               : types_.display(k_unknown_type);
+                               : session_.types_.display(k_unknown_type);
 
   if (!missing_methods.empty()) {
     error_with_help(
@@ -1356,7 +1354,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
                       name, fn->params.size(),
                       fn->params.size() == 1 ? "" : "s", trait_name,
                       it->second->params.size()),
-          file_id_);
+          file_.file_id_);
       diag.with_label(fn->span, "signature differs from the trait");
       emit_diag(diag);
       mark_error();
@@ -1382,7 +1380,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
       if (type_has_trait(target, required)) {
         continue;
       }
-      const auto derived = derived_impl_origin_spans_.contains(&impl);
+      const auto derived = session_.derived_impl_origin_spans_.contains(&impl);
       error_with_help(
           impl_report_span(impl),
           std::format("trait `{}` requires `{}`, but `{}` does not "
@@ -1408,10 +1406,10 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
 /// (including any default body) as an ordinary function.
 auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
   push_type_params(decl.type_params);
-  const auto saved_self = self_type_;
-  const auto saved_assoc = self_assoc_types_;
-  self_type_ = types_.type_param("self");
-  self_assoc_types_.clear();
+  const auto saved_self = function_.self_type_;
+  const auto saved_assoc = function_.self_assoc_types_;
+  function_.self_type_ = session_.types_.type_param("self");
+  function_.self_assoc_types_.clear();
   record_declared_facts(decl.type_params, nullptr);
   // Inside its own body a trait's `self` implements the trait itself, at
   // its own parameters — which is what lets a default method call its
@@ -1419,12 +1417,12 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
   {
     auto self_args = std::vector<type_id>{};
     for (const auto &param : decl.type_params) {
-      self_args.push_back(
-          types_.type_param(param.name, param.higher_kinded_arity, &param));
+      self_args.push_back(session_.types_.type_param(
+          param.name, param.higher_kinded_arity, &param));
     }
     auto self_facts = std::vector<type_fact>{};
     add_fact_closure(decl, std::move(self_args), self_facts);
-    scoped_facts_.emplace_back(self_type_, std::move(self_facts));
+    scoped_facts_.emplace_back(function_.self_type_, std::move(self_facts));
   }
 
   if (decl.requires_bound.has_value()) {
@@ -1449,11 +1447,11 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
         assoc.value.default_type != nullptr
             ? resolve_type(*assoc.value.default_type, current_resolve_ctx())
             : k_unknown_type;
-    self_assoc_types_.emplace(assoc.value.name, resolved);
+    function_.self_assoc_types_.emplace(assoc.value.name, resolved);
   }
 
-  const auto saved_block_type_params = enclosing_block_type_params_;
-  enclosing_block_type_params_ = &decl.type_params;
+  const auto saved_block_type_params = session_.enclosing_block_type_params_;
+  session_.enclosing_block_type_params_ = &decl.type_params;
   for (const auto &item : decl.items) {
     if (item == nullptr || item->has_error) {
       continue;
@@ -1463,11 +1461,11 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
                      /*at_module_scope=*/false);
     }
   }
-  enclosing_block_type_params_ = saved_block_type_params;
+  session_.enclosing_block_type_params_ = saved_block_type_params;
 
   scoped_facts_.pop_back();
-  self_type_ = saved_self;
-  self_assoc_types_ = saved_assoc;
+  function_.self_type_ = saved_self;
+  function_.self_assoc_types_ = saved_assoc;
   pop_type_params();
 }
 
@@ -1482,10 +1480,11 @@ auto checker::check_concept_decl(const ast::concept_decl &decl) -> void {
       // A concept parameter is its own node kind with no `ast::type_param`
       // to key on, so these keep the by-name identity.
       param_scope.emplace(
-          param.name, types_.type_param(param.name, param.higher_kinded_arity));
+          param.name,
+          session_.types_.type_param(param.name, param.higher_kinded_arity));
     }
   }
-  type_params_.push_back(std::move(param_scope));
+  function_.type_params_.push_back(std::move(param_scope));
 
   for (const auto &constraint : decl.constraints) {
     if (constraint.subject != nullptr) {
@@ -1526,10 +1525,10 @@ auto checker::check_signature_decl(const ast::signature_decl &decl) -> void {
         dynamic_cast<const ast::associated_type_decl_node &>(*item);
     if (!assoc.value.name.empty()) {
       param_scope.emplace(assoc.value.name,
-                          types_.type_param(assoc.value.name));
+                          session_.types_.type_param(assoc.value.name));
     }
   }
-  type_params_.push_back(std::move(param_scope));
+  function_.type_params_.push_back(std::move(param_scope));
 
   for (const auto &item : decl.items) {
     if (item == nullptr || item->has_error) {
@@ -1571,9 +1570,9 @@ auto checker::resolve_bound_signature(const ast::type_expr &bound_expr) const
   const auto &name = named->path.back();
   // A signature named in a bound is looked up in the current module first,
   // then anywhere in the session (imports make it visible unqualified).
-  if (module_ != nullptr) {
-    if (const auto it = module_->signatures.find(name);
-        it != module_->signatures.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->signatures.find(name);
+        it != file_.module_->signatures.end()) {
       return it->second.decl;
     }
   }
@@ -1605,11 +1604,11 @@ auto checker::resolve_functor(const std::vector<std::string> &path) const
       }
     }
   }
-  if (module_ != nullptr) {
-    if (const auto it = module_->functors.find(name);
-        it != module_->functors.end()) {
+  if (file_.module_ != nullptr) {
+    if (const auto it = file_.module_->functors.find(name);
+        it != file_.module_->functors.end()) {
       return resolved_functor{.ref = &it->second,
-                              .owner_module = module_->module_name};
+                              .owner_module = file_.module_->module_name};
     }
   }
   for (const auto &[mod_name, members] : index_.modules) {
@@ -1633,9 +1632,9 @@ auto checker::resolve_arg_module(const ast::named_type &nt) const
   if (const auto *m = index_.find_module(joined)) {
     return m;
   }
-  if (!module_name_.empty()) {
-    if (const auto *m =
-            index_.find_module(append_module_name(module_name_, joined))) {
+  if (!file_.module_name_.empty()) {
+    if (const auto *m = index_.find_module(
+            append_module_name(file_.module_name_, joined))) {
       return m;
     }
   }
@@ -1727,7 +1726,8 @@ auto checker::module_satisfies_signature(const module_members &mod,
             failures.push_back(std::format(
                 "function `{}` parameter {} has type `{}`, but the signature "
                 "requires `{}`",
-                fn.name, p + 1, types_.display(got), types_.display(want)));
+                fn.name, p + 1, session_.types_.display(got),
+                session_.types_.display(want)));
           }
         }
         if (fn.return_type != nullptr && have.return_type != nullptr) {
@@ -1736,7 +1736,8 @@ auto checker::module_satisfies_signature(const module_members &mod,
           if (!types_satisfy(want, got)) {
             failures.push_back(std::format(
                 "function `{}` returns `{}`, but the signature requires `{}`",
-                fn.name, types_.display(got), types_.display(want)));
+                fn.name, session_.types_.display(got),
+                session_.types_.display(want)));
           }
         }
       }
@@ -1758,7 +1759,8 @@ auto checker::module_satisfies_signature(const module_members &mod,
         if (!types_satisfy(want, got)) {
           failures.push_back(std::format(
               "constant `{}` has type `{}`, but the signature requires `{}`",
-              stat.name, types_.display(got), types_.display(want)));
+              stat.name, session_.types_.display(got),
+              session_.types_.display(want)));
         }
       }
       break;
@@ -1783,7 +1785,7 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
         diagnostic(diagnostic_level::error,
                    std::format("no parameterized module named `{}` is in scope",
                                join_strings(decl.path, ".")),
-                   file_id_);
+                   file_.file_id_);
     diag.with_label(decl.span, "instantiated here");
     diag.with_help(
         "`use path[args]` instantiates a parameterized module (a `module "
@@ -1802,7 +1804,7 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
                     "were supplied",
                     fdecl.name, fdecl.type_params.size(),
                     decl.instantiation_args.size()),
-        file_id_);
+        file_.file_id_);
     diag.with_label(decl.span, "in this instantiation");
     emit_diag(diag);
     mark_file_error();
@@ -1843,7 +1845,7 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
           std::format("argument for module parameter `{}` must be a module "
                       "satisfying signature `{}`",
                       param.name, sig->name),
-          file_id_);
+          file_.file_id_);
       diag.with_label(arg.span, "not a module");
       emit_diag(diag);
       all_ok = false;
@@ -1856,10 +1858,11 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
           diagnostic(diagnostic_level::error,
                      std::format("module `{}` does not satisfy signature `{}`",
                                  arg_mod->module_name, sig->name),
-                     file_id_);
+                     file_.file_id_);
       diag.with_label(arg.span, "used here");
       for (const auto &failure : failures) {
-        diag.children.emplace_back(diagnostic_level::note, failure, file_id_);
+        diag.children.emplace_back(diagnostic_level::note, failure,
+                                   file_.file_id_);
       }
       diag.with_help(std::format(
           "A module satisfies `{}` structurally: it must provide each "
@@ -1890,8 +1893,8 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
 
   const auto alias_name = functor_alias_name(decl, fdecl.name);
 
-  auto synth_it = functor_instances_.find(instantiation_key);
-  if (synth_it == functor_instances_.end()) {
+  auto synth_it = functor_.functor_instances_.find(instantiation_key);
+  if (synth_it == functor_.functor_instances_.end()) {
     const auto synth_name = materialize_functor(
         fdecl, *functor, module_bindings, instantiation_key, decl.span);
     if (!synth_name.has_value()) {
@@ -1900,12 +1903,14 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
       mark_file_error();
       return;
     }
-    synth_it = functor_instances_.emplace(instantiation_key, *synth_name).first;
+    synth_it =
+        functor_.functor_instances_.emplace(instantiation_key, *synth_name)
+            .first;
   }
 
   // Bind the alias in the importing file to the instantiated module so
   // `db.query(...)` resolves to its members.
-  index_.imports[file_id_].push_back(import_binding{
+  index_.imports[file_.file_id_].push_back(import_binding{
       .local_name = alias_name,
       .path = split_module_name(synth_it->second),
       .leaf_name = {},
@@ -1971,7 +1976,7 @@ auto checker::materialize_functor(
   // `type`, `static` (binding), `impl`, `extend`, and `trait` members;
   // anything else (a non-binding `static` form, an inline submodule) falls
   // back with a clear diagnostic rather than a partial module. A clone gives
-  // each instantiation distinct node identity so `node_types_` and
+  // each instantiation distinct node identity so `session_.node_types_` and
   // diagnostics stay per-instantiation, while projections through a module
   // parameter (`DB.conn`, `DB.query(...)`) resolve via the import aliases
   // bound at check time.
@@ -1981,7 +1986,7 @@ auto checker::materialize_functor(
         diagnostic(diagnostic_level::error,
                    std::format("instantiating `{}` is not supported yet: {}",
                                fdecl.name, what),
-                   file_id_);
+                   file_.file_id_);
     diag.with_label(use_span, "in this instantiation");
     diag.with_label(span, "unsupported functor-body member");
     diag.with_help(
@@ -2012,7 +2017,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_funcs.push_back(raw);
       break;
     }
@@ -2024,7 +2030,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_types.push_back(raw);
       break;
     }
@@ -2040,7 +2047,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_statics.push_back(raw);
       break;
     }
@@ -2052,7 +2060,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_impls.push_back(raw);
       break;
     }
@@ -2064,7 +2073,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_extends.push_back(raw);
       break;
     }
@@ -2076,7 +2086,8 @@ auto checker::materialize_functor(
         return std::nullopt;
       }
       auto *raw = cloned->get();
-      synthetic_nodes_.push_back(ast::ptr<ast::node>(std::move(*cloned)));
+      functor_.synthetic_nodes_.push_back(
+          ast::ptr<ast::node>(std::move(*cloned)));
       cloned_traits.push_back(raw);
       break;
     }
@@ -2125,7 +2136,7 @@ auto checker::materialize_functor(
     // with it, so a `db.f(...)` call site's cross-module dispatch finds it.
     // Only `def`s lower to runtime code; `type` members are compile-time and
     // a scalar `static` is inlined at each reference (`static_const_values`).
-    functor_instance_decls_.push_back(
+    functor_.functor_instance_decls_.push_back(
         functor_instance{.decl = fn, .owner_module = synth_name});
   }
   // Register `impl`/`extend` blocks so `build_method_table` and
@@ -2139,7 +2150,7 @@ auto checker::materialize_functor(
     const auto target = impl_target_name(id->for_type.get());
     for (const auto &member : id->items) {
       if (member != nullptr && member->kind == ast::node_kind::func_decl) {
-        functor_instance_decls_.push_back(functor_instance{
+        functor_.functor_instance_decls_.push_back(functor_instance{
             .decl = &dynamic_cast<const ast::func_decl &>(*member),
             .owner_module = synth_name,
             .impl_target = target});
@@ -2153,7 +2164,7 @@ auto checker::materialize_functor(
     const auto target = impl_target_name(ed->for_type.get());
     for (const auto &member : ed->items) {
       if (member != nullptr && member->kind == ast::node_kind::func_decl) {
-        functor_instance_decls_.push_back(functor_instance{
+        functor_.functor_instance_decls_.push_back(functor_instance{
             .decl = &dynamic_cast<const ast::func_decl &>(*member),
             .owner_module = synth_name,
             .impl_target = target});
@@ -2163,7 +2174,7 @@ auto checker::materialize_functor(
 
   // Defer body checking until after the method table and coherence build:
   // a method call inside the body must resolve against a complete table.
-  pending_functor_bodies_.push_back(
+  functor_.pending_functor_bodies_.push_back(
       pending_functor_body{.synth_name = synth_name,
                            .owner_module = functor.owner_module,
                            .functor_file = functor.ref->file_id,
@@ -2183,10 +2194,10 @@ auto checker::materialize_functor(
 /// module in the functor's own file so the cloned bodies' `DB.conn` /
 /// `DB.query(...)` projections resolve; the binding is restored afterward.
 auto checker::check_pending_functor_bodies() -> void {
-  const auto *saved_module = module_;
-  const auto saved_module_name = module_name_;
-  const auto saved_file_id = file_id_;
-  for (const auto &pending : pending_functor_bodies_) {
+  const auto *saved_module = file_.module_;
+  const auto saved_module_name = file_.module_name_;
+  const auto saved_file_id = file_.file_id_;
+  for (const auto &pending : functor_.pending_functor_bodies_) {
     const auto synth_it = index_.modules.find(pending.synth_name);
     if (synth_it == index_.modules.end()) {
       continue;
@@ -2218,10 +2229,10 @@ auto checker::check_pending_functor_bodies() -> void {
       });
     }
 
-    module_ = synth;
-    module_name_ = pending.synth_name;
-    functor_owner_module_ = pending.owner_module;
-    file_id_ = pending.functor_file;
+    file_.module_ = synth;
+    file_.module_name_ = pending.synth_name;
+    session_.functor_owner_module_ = pending.owner_module;
+    file_.file_id_ = pending.functor_file;
     for (const auto *tr : pending.traits) {
       check_trait_decl(*tr);
     }
@@ -2243,10 +2254,10 @@ auto checker::check_pending_functor_bodies() -> void {
 
     functor_imports.resize(saved_import_count);
   }
-  module_ = saved_module;
-  module_name_ = saved_module_name;
-  functor_owner_module_.clear();
-  file_id_ = saved_file_id;
+  file_.module_ = saved_module;
+  file_.module_name_ = saved_module_name;
+  session_.functor_owner_module_.clear();
+  file_.file_id_ = saved_file_id;
 }
 
 /// Checks one module/trait/impl-scope item, dispatching to the
@@ -2295,17 +2306,17 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
     if (decl.items.empty()) {
       return;
     }
-    const auto saved_module_name = module_name_;
-    const auto *saved_module = module_;
-    module_name_ = append_module_name(module_name_, decl.name);
-    module_ = index_.find_module(module_name_);
+    const auto saved_module_name = file_.module_name_;
+    const auto *saved_module = file_.module_;
+    file_.module_name_ = append_module_name(file_.module_name_, decl.name);
+    file_.module_ = index_.find_module(file_.module_name_);
     push_scope();
     for (const auto &child : decl.items) {
       if (child == nullptr || child->has_error) {
         continue;
       }
-      if (const auto it = item_splice_impls_.find(child.get());
-          it != item_splice_impls_.end()) {
+      if (const auto it = session_.item_splice_impls_.find(child.get());
+          it != session_.item_splice_impls_.end()) {
         check_item(*it->second, /*at_module_scope=*/true);
         continue;
       }
@@ -2316,16 +2327,16 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
       } else {
         check_item(*child, /*at_module_scope=*/true);
       }
-      if (const auto it = derived_trait_impls_.find(child.get());
-          it != derived_trait_impls_.end()) {
+      if (const auto it = session_.derived_trait_impls_.find(child.get());
+          it != session_.derived_trait_impls_.end()) {
         for (const auto *impl : it->second) {
           check_item(*impl, /*at_module_scope=*/true);
         }
       }
     }
     pop_scope();
-    module_name_ = saved_module_name;
-    module_ = saved_module;
+    file_.module_name_ = saved_module_name;
+    file_.module_ = saved_module;
     return;
   }
   case ast::node_kind::use_decl:
@@ -2363,8 +2374,8 @@ auto checker::validate_impl_coherence() -> void {
         continue; // inherent impls never conflict by construction
       }
       const auto target = strip_refs(resolve_impl_target(impl));
-      const auto &target_entry = types_.entry(target);
-      if (types_.is_unknown(target)) {
+      const auto &target_entry = session_.types_.entry(target);
+      if (session_.types_.is_unknown(target)) {
         continue;
       }
       const auto type_key = type_key_of(target_entry);
@@ -2420,13 +2431,14 @@ auto checker::validate_impl_coherence() -> void {
       auto duplicate = diagnostic(
           diagnostic_level::error,
           std::format("duplicate implementation of trait `{}` for `{}`",
-                      trait_name, types_.display(target)),
+                      trait_name, session_.types_.display(target)),
           impl.file_id);
       duplicate.with_label(impl.decl->span, "conflicting implementation");
       duplicate.children.push_back(
           diagnostic(diagnostic_level::note,
                      std::format("`{}` was first implemented for `{}` here",
-                                 trait_name, types_.display(clash->target)),
+                                 trait_name,
+                                 session_.types_.display(clash->target)),
                      clash->location.file_id)
               .with_label(clash->location.span, "previous implementation"));
       duplicate.with_help(
