@@ -2387,6 +2387,33 @@ private:
     pop_scope();
   }
 
+  /// An inline `static for pat in xs => e`: one copy of `e` per iteration,
+  /// so `e` is a loop body appending to the result. Its loop bindings are
+  /// constants written into each copy; they hold nothing of the function's.
+  auto lower_static_for(const ast::static_decl &decl) -> value {
+    const auto join = new_temp(local_role::join_temp);
+    const auto head = new_block();
+    goto_block(head);
+    current_ = head;
+    const auto body = new_block();
+    const auto exit = new_block();
+    fork(body, exit);
+    current_ = body;
+    push_scope(nullptr);
+    for (const auto &pattern : decl.for_patterns) {
+      if (pattern != nullptr) {
+        static_cast<void>(declare_pattern(*pattern));
+      }
+    }
+    flow(join, eval_full(*decl.for_yield), /*replace=*/false);
+    pop_scope();
+    goto_block(head);
+    current_ = exit;
+    return bears(type_of(decl.for_yield.get()))
+               ? value{.loans = {}, .sources = {join}}
+               : value{};
+  }
+
   auto lower_where(const ast::where_expr &where) -> value {
     push_scope(&where);
     for (const auto &binding : where.bindings) {
@@ -2547,6 +2574,15 @@ private:
 
     case ast::node_kind::asm_stmt:
       return {};
+
+    case ast::node_kind::static_decl: {
+      const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+      if (decl.decl_kind != ast::static_decl_kind::for_inline ||
+          decl.for_yield == nullptr) {
+        return {};
+      }
+      return lower_static_for(decl);
+    }
 
     default:
       if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {

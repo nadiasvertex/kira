@@ -676,6 +676,17 @@ struct comprehension_dispatch {
   type_id list_type = 0;
 };
 
+/// One iteration of an inline `static for` whose yield runs at run time
+/// (`checked_types::static_for_iterations`).
+struct static_for_iteration {
+  /// Each loop binding whose value has a literal form, with that literal:
+  /// lowered as a `let` in front of this iteration's copy of the yield.
+  std::vector<std::pair<std::string, const ast::expr *>> bindings;
+  /// Reads in the yield rooted at a loop binding with no literal form (a
+  /// `field_info`'s `f.name`), each replaced by the literal it evaluated to.
+  std::unordered_map<const ast::expr *, const ast::expr *> folded;
+};
+
 struct iterator_loop_dispatch {
   const ast::func_decl *decl = nullptr;
   std::string owner_module;
@@ -1078,6 +1089,15 @@ struct checked_types {
       static_for_elements;
   std::unordered_map<const ast::static_decl *, comprehension_dispatch>
       static_for_dispatches;
+  /// Every inline `static for` whose yield runs when the program runs (it
+  /// reads a runtime value such as a parameter, or yields something with no
+  /// literal form), unrolled to one copy of the yield per iteration instead
+  /// of a list of values. `hir::lower_stmt` lowers the yield once per entry,
+  /// with that iteration's loop bindings and folded reads in place, and
+  /// builds the list with the decl's `static_for_dispatches` pair.
+  std::unordered_map<const ast::static_decl *,
+                     std::vector<static_for_iteration>>
+      static_for_iterations;
   /// Every `?` (`try_expr`) whose operand's `result[_, E1]` error type
   /// differs from the enclosing function's declared `result[_, E2]` error
   /// type and resolved against a real `impl from[E1] for E2` — see

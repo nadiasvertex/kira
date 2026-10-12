@@ -25,6 +25,7 @@
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
 #include "src/parser/text_escape.h"
+#include "src/semantic/binding_walk.h"
 #include "src/semantic/infer/blame.h"
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/obligations.h"
@@ -653,6 +654,7 @@ public:
         .runtime_fill_dispatches = std::move(runtime_fill_dispatches_),
         .static_for_elements = std::move(static_for_elements_),
         .static_for_dispatches = std::move(static_for_dispatches_),
+        .static_for_iterations = std::move(static_for_iterations_),
         .try_conversions = std::move(try_conversions_),
         .try_conversion_types = std::move(try_conversion_types_),
         .fmt_types = fmt_types,
@@ -1304,13 +1306,38 @@ private:
   std::unordered_map<const ast::static_decl *, type_id> static_for_yield_types_;
   /// What each inline `static for` yielded, evaluated by `check_static_decl`
   /// outside a generic template — read back by `unroll_static_for_inline`.
-  std::unordered_map<const ast::static_decl *, std::vector<comptime::value>>
+  /// One entry per iteration its guard keeps: the loop's bindings, by name.
+  std::unordered_map<
+      const ast::static_decl *,
+      std::vector<std::unordered_map<std::string, comptime::value>>>
       static_for_values_;
-  /// See `checked_types::static_for_elements`/`static_for_dispatches`.
+  /// See `checked_types::static_for_elements`/`static_for_dispatches`/
+  /// `static_for_iterations`.
   std::unordered_map<const ast::static_decl *, std::vector<const ast::expr *>>
       static_for_elements_;
   std::unordered_map<const ast::static_decl *, comprehension_dispatch>
       static_for_dispatches_;
+  std::unordered_map<const ast::static_decl *,
+                     std::vector<static_for_iteration>>
+      static_for_iterations_;
+  /// What an inline `static for`'s yield reads, found while checking it
+  /// (keyed by the declaration as written, never an instance's clone).
+  struct static_for_reads {
+    /// The yield reads a binding from outside the `static for` (a parameter,
+    /// a local), so it must run when the program runs.
+    bool runtime = false;
+    /// Every expression in the yield rooted at one of the loop's own
+    /// bindings — the name itself, `f.name`, `p.x.y` — outermost first.
+    std::vector<const ast::expr *> loop_reads;
+  };
+  std::unordered_map<const ast::static_decl *, static_for_reads>
+      static_for_reads_;
+  /// The inline `static for`s whose yield is being checked, innermost last,
+  /// each with the index of the scope holding its loop bindings.
+  std::vector<std::pair<const ast::static_decl *, size_t>> static_for_yields_;
+  /// The element type the context expects of the inline `static for` about
+  /// to be checked as a block's statement (`check_body_node`).
+  type_id static_for_expected_element_ = k_unknown_type;
   std::unordered_set<const ast::static_decl *> statics_in_progress_;
   /// Unannotated `static let` bindings checked ahead of file order by
   /// `check_static_binding_early`, so file order does not check them again.
@@ -2028,6 +2055,13 @@ private:
       const auto it = scope.find(key);
       if (it == scope.end()) {
         continue;
+      }
+      // A binding from outside an inline `static for` read by its yield makes
+      // that yield run-time code.
+      for (const auto &[decl, floor] : static_for_yields_) {
+        if (depth - 1 < floor) {
+          static_for_reads_[decl].runtime = true;
+        }
       }
       // The match sits at scope index `depth - 1`; every barrier opened
       // above that index is a lambda boundary this reference crosses.
@@ -19350,6 +19384,10 @@ private:
         }
       }
     }
+    if (const auto element = list_element_type(type);
+        element != k_unknown_type) {
+      return element;
+    }
     return element_type_of(type, iterable.span);
   }
 
@@ -22758,8 +22796,51 @@ private:
     // unwrapped) — never by having been asked for one. Without this,
     // `needs_positive(0 - 3)` would infer its own argument *as* a `positive`
     // and the narrowing check would find nothing left to prove.
+    if (!static_for_yields_.empty()) {
+      note_static_for_loop_read(expr);
+    }
     return record_expr_type(
         expr, infer_expr_impl(expr, types_.strip_refinement(expected)));
+  }
+
+  /// Records `expr` against every inline `static for` being checked whose
+  /// loop binds the name it is rooted at (`static_for_reads::loop_reads`).
+  auto note_static_for_loop_read(const ast::expr &expr) -> void {
+    const auto *root = static_for_read_root(expr);
+    if (root == nullptr) {
+      return;
+    }
+    const auto found = find_value_in_scopes(*root);
+    if (found.binding == nullptr) {
+      return;
+    }
+    for (const auto &[decl, floor] : static_for_yields_) {
+      if (found.depth == floor) {
+        static_for_reads_[decl].loop_reads.push_back(&expr);
+      }
+    }
+  }
+
+  /// The name `expr` reads through, when it is a name or a chain of field
+  /// reads on one (`f`, `f.name`, `p.x.y`); `nullptr` otherwise.
+  [[nodiscard]] static auto static_for_read_root(const ast::expr &expr)
+      -> const std::string * {
+    const auto *current = &expr;
+    while (current->kind == ast::node_kind::field_expr) {
+      const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+      if (field.object == nullptr) {
+        return nullptr;
+      }
+      current = field.object.get();
+    }
+    if (current->kind == ast::node_kind::ident_expr) {
+      return &dynamic_cast<const ast::ident_expr &>(*current).name;
+    }
+    if (current->kind == ast::node_kind::module_path_expr) {
+      const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+      return path.segments.empty() ? nullptr : &path.segments.front();
+    }
+    return nullptr;
   }
 
   auto infer_expr_impl(const ast::expr &expr, type_id expected) -> type_id {
@@ -25267,6 +25348,9 @@ private:
     case ast::node_kind::static_decl: {
       const auto &decl = dynamic_cast<const ast::static_decl &>(node);
       if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
+        if (decl.decl_kind == ast::static_decl_kind::for_inline) {
+          static_for_expected_element_ = list_element_type(expected_tail);
+        }
         check_item(node, /*at_module_scope=*/false);
         // `static for pat in iter => yield_expr` evaluates to the list of
         // what it yields, like a `for ... =>` comprehension — so as a
@@ -28363,12 +28447,16 @@ private:
     });
   }
 
-  /// The values an inline `static for` yields, one per iteration its guard
-  /// keeps, evaluated at compile time. `nullopt` when the iterable, the guard
-  /// or a yielded value can't be computed; that has been reported, and the
-  /// file marked as failing.
+  /// The scope a loop over a compile-time list binds: each name the loop
+  /// pattern binds, with its value.
+  using static_for_scope = std::unordered_map<std::string, comptime::value>;
+
+  /// The bindings of each iteration of an inline `static for` that its guard
+  /// keeps, evaluated at compile time. `nullopt` when the iterable or the
+  /// guard can't be computed; that has been reported, and the file marked as
+  /// failing.
   auto evaluate_static_for_inline(const ast::static_decl &decl)
-      -> std::optional<std::vector<comptime::value>> {
+      -> std::optional<std::vector<static_for_scope>> {
     if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
         decl.for_yield == nullptr || decl.for_patterns.size() != 1 ||
         decl.for_patterns[0] == nullptr) {
@@ -28383,8 +28471,7 @@ private:
       mark_error();
       return std::nullopt;
     }
-    const auto failed =
-        [this]() -> std::optional<std::vector<comptime::value>> {
+    const auto failed = [this]() -> std::optional<std::vector<static_for_scope>> {
       mark_error();
       return std::nullopt;
     };
@@ -28393,19 +28480,18 @@ private:
     if (list_value.is_error()) {
       return failed();
     }
-    auto yielded = std::vector<comptime::value>{};
+    auto iterations = std::vector<static_for_scope>{};
     for (const auto &element_value : list_value.elements) {
-      auto scope = std::unordered_map<std::string, comptime::value>{};
+      auto scope = static_for_scope{};
       if (!comptime_eval_.bind_pattern(*decl.for_patterns[0], element_value,
                                        scope)) {
         return failed();
       }
-      comptime_eval_.push_locals(std::move(scope));
-      auto keep = true;
       if (decl.for_guard != nullptr) {
+        comptime_eval_.push_locals(scope);
         const auto guard = comptime_eval_.evaluate(*decl.for_guard);
+        comptime_eval_.pop_locals();
         if (guard.is_error() || guard.kind != comptime::value_kind::boolean) {
-          comptime_eval_.pop_locals();
           if (!guard.is_error()) {
             error(decl.for_guard->span,
                   "a `static for` guard must be `true` or `false`",
@@ -28413,19 +28499,13 @@ private:
           }
           return failed();
         }
-        keep = guard.boolean;
-      }
-      if (keep) {
-        auto value = comptime_eval_.evaluate(*decl.for_yield);
-        if (value.is_error()) {
-          comptime_eval_.pop_locals();
-          return failed();
+        if (!guard.boolean) {
+          continue;
         }
-        yielded.push_back(std::move(value));
       }
-      comptime_eval_.pop_locals();
+      iterations.push_back(std::move(scope));
     }
-    return yielded;
+    return iterations;
   }
 
   /// `T` when `type` is a `list[T]`, `k_unknown_type` otherwise.
@@ -28470,16 +28550,26 @@ private:
     return result;
   }
 
-  /// Types an inline `static for` in a function body, and unrolls it: the
-  /// list it evaluates to is built from the values it yields, each computed
-  /// at compile time. A template unrolls once per instance, with the
-  /// instance's types bound.
+  /// Types an inline `static for` in a function body, and unrolls it. A
+  /// template unrolls once per instance, with the instance's types bound.
   auto record_static_for_inline(const ast::static_decl &decl,
                                 type_id expected_tail) -> type_id {
     auto yield_type = k_unknown_type;
     if (const auto it = static_for_yield_types_.find(&decl);
         it != static_for_yield_types_.end()) {
       yield_type = it->second;
+    }
+    // A field descriptor exists only while compiling, so no list can hold
+    // one. Refused here, once, before a `list[field_info]` is ever made.
+    if (yield_type != k_unknown_type &&
+        strip_refs(settle(yield_type)) == field_info_type()) {
+      error_with_help(
+          decl.for_yield->span,
+          "an inline `static for` cannot build a list of `field_info`",
+          "this is a field descriptor, which exists only while compiling",
+          "Yield one of its fields instead, such as `f.name` or "
+          "`f.type_name`.");
+      return k_error_type;
     }
     if (inside_unbound_generic_scope()) {
       defer_to_instances(
@@ -28489,9 +28579,19 @@ private:
             const auto saved_file = file_id_;
             file_id_ = file;
             const auto &clone = *clone_of(subst, &decl);
-            if (auto values = evaluate_static_for_inline(clone)) {
+            if (auto iterations = evaluate_static_for_inline(clone)) {
               (void)unroll_static_for_inline(
-                  clone, *values, substitute_type(yield_type, subst),
+                  static_for_unrolling{
+                      .decl = clone,
+                      .written = decl,
+                      .clone = [&subst](const ast::node *node)
+                          -> const ast::node * {
+                        return clone_of(subst, node);
+                      },
+                      .substitute = [this, &subst](type_id type) -> type_id {
+                        return substitute_type(type, subst);
+                      }},
+                  *iterations, substitute_type(yield_type, subst),
                   substitute_type(expected_tail, subst));
             }
             file_id_ = saved_file;
@@ -28499,29 +28599,125 @@ private:
       return yield_type == k_unknown_type ? k_unknown_type
                                           : resolve_list_type(yield_type);
     }
-    const auto values = static_for_values_.find(&decl);
-    if (values == static_for_values_.end()) {
+    const auto iterations = static_for_values_.find(&decl);
+    if (iterations == static_for_values_.end()) {
       return k_unknown_type;
     }
-    return unroll_static_for_inline(decl, values->second, yield_type,
-                                    expected_tail);
+    return unroll_static_for_inline(
+        static_for_unrolling{
+            .decl = decl,
+            .written = decl,
+            .clone = [](const ast::node *node) -> const ast::node * {
+              return node;
+            },
+            .substitute = [](type_id type) -> type_id { return type; }},
+        iterations->second, yield_type, expected_tail);
   }
 
-  /// Records `values` as the elements of the list `decl` evaluates to, and
-  /// the list's type. The element type is the yield's when the checker knows
-  /// it, else what the context expects, else what the values are.
-  auto unroll_static_for_inline(const ast::static_decl &decl,
-                                const std::vector<comptime::value> &values,
+  /// The inline `static for` being unrolled: `decl` is the one lowering
+  /// reads (an instance's clone in a template), `written` the one checked,
+  /// which the records made while checking it are keyed by. `clone` and
+  /// `substitute` take a node or a type of `written` to `decl`'s.
+  struct static_for_unrolling {
+    const ast::static_decl &decl;
+    const ast::static_decl &written;
+    std::function<const ast::node *(const ast::node *)> clone;
+    std::function<type_id(type_id)> substitute;
+  };
+
+  /// The type checking gave `node` of `unrolling.written`, as it is in
+  /// `unrolling.decl`.
+  auto static_for_node_type(const static_for_unrolling &unrolling,
+                            const ast::node *node) -> type_id {
+    if (node == nullptr) {
+      return k_unknown_type;
+    }
+    if (const auto found = node_types_.find(unrolling.clone(node));
+        found != node_types_.end()) {
+      return found->second;
+    }
+    if (const auto found = node_types_.find(node); found != node_types_.end()) {
+      return unrolling.substitute(found->second);
+    }
+    return k_unknown_type;
+  }
+
+  /// A compile-time value written into the program as a literal of `type`
+  /// (a struct literal of literals for a struct); `nullptr` when it has no
+  /// such form.
+  auto materialize_static_value(const comptime::value &value, source_span span,
+                                type_id type) -> const ast::expr * {
+    if (type == k_unknown_type || type == k_error_type) {
+      return nullptr;
+    }
+    if (value.kind == comptime::value_kind::string) {
+      return materialize_string_literal(value.string, span, type);
+    }
+    if (value.kind == comptime::value_kind::struct_instance) {
+      auto built = build_static_struct_expr(value, span, type);
+      const auto *raw = built.get();
+      if (built != nullptr) {
+        synthesized_static_structs_.push_back(std::move(built));
+      }
+      return raw;
+    }
+    return materialize_const_literal(value, span, type);
+  }
+
+  /// Unrolls an inline `static for`. When its yield reads nothing from the
+  /// running program and every value it yields has a literal form, the list
+  /// is built from those values, computed now (`static_for_elements`).
+  /// Otherwise the yield is code that runs: one copy of it per iteration,
+  /// with that iteration's loop bindings in place (`static_for_iterations`).
+  auto unroll_static_for_inline(const static_for_unrolling &unrolling,
+                                const std::vector<static_for_scope> &iterations,
                                 type_id yield_type, type_id expected_tail)
       -> type_id {
+    const auto &decl = unrolling.decl;
+    const auto &reads = static_for_reads_[&unrolling.written];
+    const auto span = decl.for_yield->span;
     auto element = yield_type;
     if (element == k_unknown_type) {
       element = list_element_type(expected_tail);
     }
-    if (element == k_unknown_type) {
-      element = comptime_values_type(values);
+
+    // Computed now, when that is all it can mean.
+    const static_for_scope *failed_scope = nullptr;
+    if (!reads.runtime) {
+      auto values = std::vector<comptime::value>{};
+      for (const auto &scope : iterations) {
+        comptime_eval_.push_locals(scope);
+        auto value = comptime_eval_.try_evaluate(*decl.for_yield);
+        comptime_eval_.pop_locals();
+        if (!value.has_value()) {
+          failed_scope = &scope;
+          break;
+        }
+        values.push_back(std::move(*value));
+      }
+      const auto value_element =
+          element == k_unknown_type && failed_scope == nullptr
+              ? comptime_values_type(values)
+              : element;
+      if (failed_scope == nullptr && value_element != k_unknown_type) {
+        auto literals = std::vector<const ast::expr *>{};
+        for (const auto &value : values) {
+          const auto *literal =
+              materialize_static_value(value, span, value_element);
+          if (literal == nullptr) {
+            break;
+          }
+          literals.push_back(literal);
+        }
+        if (literals.size() == values.size()) {
+          const auto list_type = resolve_list_type(value_element);
+          static_for_elements_.insert_or_assign(&decl, std::move(literals));
+          record_new_push_dispatch(decl, list_type, static_for_dispatches_);
+          return list_type;
+        }
+      }
     }
-    const auto span = decl.for_yield->span;
+
     if (element == k_unknown_type) {
       error_with_help(span,
                       "cannot tell what type of list this `static for` builds",
@@ -28530,39 +28726,123 @@ private:
                       "with a return type such as `-> list[str]`.");
       return k_error_type;
     }
-    auto literals = std::vector<const ast::expr *>{};
-    literals.reserve(values.size());
-    for (const auto &value : values) {
-      const ast::expr *literal = nullptr;
-      if (value.kind == comptime::value_kind::string) {
-        literal = materialize_string_literal(value.string, span, element);
-      } else if (value.kind == comptime::value_kind::struct_instance) {
-        if (auto built = build_static_struct_expr(value, span, element)) {
-          literal = built.get();
-          synthesized_static_structs_.push_back(std::move(built));
-        }
-      } else {
-        literal = materialize_const_literal(value, span, element);
+    // The yield reads nothing from the running program, so the evaluator's
+    // own diagnosis of why it could not compute it is the real problem.
+    const auto report_evaluation = [&]() -> bool {
+      if (failed_scope == nullptr) {
+        return false;
       }
-      if (literal == nullptr) {
-        error_with_help(
-            span,
-            "this `static for` yields a value that cannot be built into "
-            "the program",
-            "each value yielded here must be a number, a boolean, a string, "
-            "or a struct of those",
-            "An inline `static for` is computed while compiling, and the "
-            "list it builds is made of the values it yields. To build a "
-            "list of other values, use an ordinary `for ... =>` "
-            "comprehension, which runs when the program runs.");
+      comptime_eval_.push_locals(*failed_scope);
+      static_cast<void>(comptime_eval_.evaluate(*decl.for_yield));
+      comptime_eval_.pop_locals();
+      mark_error();
+      return true;
+    };
+
+    const auto bindings = collect_pattern_bindings(*decl.for_patterns[0]);
+    const auto written_bindings =
+        collect_pattern_bindings(*unrolling.written.for_patterns[0]);
+    auto unrolled = std::vector<static_for_iteration>{};
+    unrolled.reserve(iterations.size());
+    for (const auto &scope : iterations) {
+      auto iteration = static_for_iteration{};
+      auto compile_time_only = std::unordered_set<std::string>{};
+      for (std::size_t i = 0; i < bindings.size(); ++i) {
+        const auto &binding = bindings[i];
+        const auto value = scope.find(binding.name);
+        const auto *literal =
+            value == scope.end() || i >= written_bindings.size()
+                ? nullptr
+                : materialize_static_value(
+                      value->second, binding.span,
+                      static_for_node_type(unrolling,
+                                           written_bindings[i].node));
+        if (literal == nullptr) {
+          compile_time_only.insert(binding.name);
+        } else {
+          iteration.bindings.emplace_back(binding.name, literal);
+        }
+      }
+      if (!compile_time_only.empty() &&
+          !fold_static_for_reads(unrolling, reads, scope, compile_time_only,
+                                 iteration)) {
+        if (!report_evaluation()) {
+          mark_error();
+        }
         return k_error_type;
       }
-      literals.push_back(literal);
+      unrolled.push_back(std::move(iteration));
     }
     const auto list_type = resolve_list_type(element);
-    static_for_elements_.insert_or_assign(&decl, std::move(literals));
+    static_for_elements_.erase(&decl);
+    static_for_iterations_.insert_or_assign(&decl, std::move(unrolled));
     record_new_push_dispatch(decl, list_type, static_for_dispatches_);
     return list_type;
+  }
+
+  /// Replaces each read in the yield rooted at a loop binding with no literal
+  /// form (`f.name`, for a `field_info` `f`) by the literal it evaluates to
+  /// in this iteration. False, with the problem reported, when such a binding
+  /// is used whole, or a read of it has no literal form either.
+  auto fold_static_for_reads(
+      const static_for_unrolling &unrolling, const static_for_reads &reads,
+      const static_for_scope &scope,
+      const std::unordered_set<std::string> &compile_time_only,
+      static_for_iteration &iteration) -> bool {
+    comptime_eval_.push_locals(scope);
+    auto covered = std::unordered_set<const ast::expr *>{};
+    auto ok = true;
+    for (const auto *read : reads.loop_reads) {
+      const auto *node =
+          dynamic_cast<const ast::expr *>(unrolling.clone(read));
+      const auto *root = node == nullptr ? nullptr : static_for_read_root(*node);
+      if (root == nullptr || !compile_time_only.contains(*root)) {
+        continue;
+      }
+      // A read inside one already folded (`f` in `f.name`) is gone with it.
+      const auto inside_folded = covered.contains(read);
+      if (read->kind == ast::node_kind::field_expr) {
+        covered.insert(
+            dynamic_cast<const ast::field_expr &>(*read).object.get());
+      }
+      if (inside_folded) {
+        continue;
+      }
+      if (read->kind == ast::node_kind::ident_expr) {
+        error_with_help(
+            node->span,
+            std::format("this `static for` uses `{}` in code that runs, but "
+                        "its value cannot be built into the program",
+                        *root),
+            std::format("`{}` is used whole here", *root),
+            "Inside an inline `static for`, a loop variable is a constant "
+            "written into each iteration's code, so it must be a number, a "
+            "boolean, a string, or a struct of those. Use a part of it that "
+            "is one, such as `f.name` of a field descriptor `f`.");
+        ok = false;
+        break;
+      }
+      const auto value = comptime_eval_.try_evaluate(*node);
+      const auto *literal =
+          value.has_value()
+              ? materialize_static_value(*value, node->span,
+                                         static_for_node_type(unrolling, read))
+              : nullptr;
+      if (literal == nullptr) {
+        error_with_help(
+            node->span,
+            "this `static for` reads a value that cannot be built into the "
+            "program",
+            "this is computed while compiling",
+            "A read of a compile-time loop variable used in code that runs "
+            "must be a number, a boolean, a string, or a struct of those.");
+        ok = false;
+        break;
+      }
+      iteration.folded.emplace(node, literal);
+    }
+    comptime_eval_.pop_locals();
+    return ok;
   }
 
   /// A string literal spelling `text`, typed `type`, owned like
@@ -28869,8 +29149,13 @@ private:
         require_bool(*decl.for_guard, "a `static for` guard");
       }
       if (decl.for_yield != nullptr) {
-        static_for_yield_types_.insert_or_assign(
-            &decl, infer_expr(*decl.for_yield, k_unknown_type));
+        const auto expected_element = std::exchange(
+            static_for_expected_element_, k_unknown_type);
+        static_for_reads_.insert_or_assign(&decl, static_for_reads{});
+        static_for_yields_.emplace_back(&decl, scopes_.size() - 1);
+        const auto yield_type = infer_expr(*decl.for_yield, expected_element);
+        static_for_yields_.pop_back();
+        static_for_yield_types_.insert_or_assign(&decl, yield_type);
       }
       check_body_nodes(decl.for_body, k_unknown_type);
       pop_scope();

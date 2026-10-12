@@ -90,6 +90,27 @@ template <typename T>
   return ptr<hir_expr>(std::move(node));
 }
 
+/// The name a `static for` read is rooted at (`f` in `f.name`), or empty.
+[[nodiscard]] auto static_for_read_root(const ast::expr &expr)
+    -> std::string_view {
+  const auto *current = &expr;
+  while (current->kind == ast::node_kind::field_expr) {
+    const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+    if (field.object == nullptr) {
+      return {};
+    }
+    current = field.object.get();
+  }
+  if (current->kind == ast::node_kind::ident_expr) {
+    return dynamic_cast<const ast::ident_expr &>(*current).name;
+  }
+  if (current->kind == ast::node_kind::module_path_expr) {
+    const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+    return path.segments.empty() ? std::string_view{} : path.segments.front();
+  }
+  return {};
+}
+
 /// Builds a `char_lit`-shaped source spelling for a single ASCII byte (a
 /// format spec's `fill` character or a synthesized `'0'` zero-pad digit) —
 /// same escape set as `quote_and_escape_for_literal`, single-quoted, for
@@ -1204,6 +1225,10 @@ private:
   /// consults this list to refuse such a default with a real explanation
   /// instead of minting a global reference to a name no module defines.
   const std::vector<std::string> *default_argument_params_ = nullptr;
+  /// The reads the checker folded in the iteration of an inline `static for`
+  /// whose yield is being lowered (`static_for_iteration::folded`).
+  const std::unordered_map<const ast::expr *, const ast::expr *>
+      *static_for_folds_ = nullptr;
 };
 
 auto lowerer::lower_expr(const ast::expr &expr)
@@ -1329,6 +1354,17 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (const auto *fragment =
             dynamic_cast<const ast::expr *>(rewritten->second)) {
       return lower_expr(*fragment);
+    }
+  }
+
+  // A read of a compile-time `static for` loop variable, written into this
+  // iteration's copy of the yield as the literal it evaluated to — unless a
+  // local of the yield's own shadows the variable here.
+  if (static_for_folds_ != nullptr) {
+    if (const auto folded = static_for_folds_->find(&expr);
+        folded != static_for_folds_->end() &&
+        !lookup_local(static_for_read_root(expr)).has_value()) {
+      return lower_expr(*folded->second);
     }
   }
 
@@ -5702,9 +5738,12 @@ auto lowerer::call_list_builder(source_span span, type_id result,
 auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   const auto elements = checked_.static_for_elements.find(&decl);
+  const auto iterations = checked_.static_for_iterations.find(&decl);
   const auto dispatch = checked_.static_for_dispatches.find(&decl);
-  if (elements == checked_.static_for_elements.end() ||
-      dispatch == checked_.static_for_dispatches.end()) {
+  if ((elements == checked_.static_for_elements.end() &&
+       iterations == checked_.static_for_iterations.end()) ||
+      dispatch == checked_.static_for_dispatches.end() ||
+      decl.for_yield == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
                 "this `static for` was not unrolled during checking");
   }
@@ -5721,15 +5760,51 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
       /*mut=*/true)));
   const auto push_result =
       drop_call_result_type(checked_, *dispatch->second.push_callee.decl);
-  for (const auto *element : elements->second) {
-    auto value = lower_expr(*element);
-    if (!value.has_value()) {
-      return std::unexpected(value.error());
+  // Each element: a literal computed while checking, or this iteration's
+  // copy of the yield, behind a `let` for each loop binding.
+  auto values = ptr_vec<hir_expr>{};
+  if (elements != checked_.static_for_elements.end()) {
+    for (const auto *element : elements->second) {
+      auto value = lower_expr(*element);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      values.push_back(std::move(*value));
     }
+  } else {
+    for (const auto &iteration : iterations->second) {
+      push_scope();
+      auto body = ptr_vec<hir_node>{};
+      for (const auto &[name, literal] : iteration.bindings) {
+        auto value = lower_expr(*literal);
+        if (!value.has_value()) {
+          pop_scope();
+          return std::unexpected(value.error());
+        }
+        const auto symbol = declare_local(name, (*value)->type);
+        body.push_back(ptr<hir_node>(
+            make<hir_let>(literal->span, symbol, name, std::move(*value))));
+      }
+      const auto *saved_folds =
+          std::exchange(static_for_folds_, &iteration.folded);
+      auto value = lower_expr(*decl.for_yield);
+      static_for_folds_ = saved_folds;
+      pop_scope();
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      const auto type = (*value)->type;
+      body.push_back(
+          ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*value))));
+      values.push_back(
+          ptr<hir_expr>(make<hir_block>(span, type, std::move(body))));
+    }
+  }
+  for (auto &value : values) {
     auto push_args = ptr_vec<hir_expr>{};
     push_args.push_back(ptr<hir_expr>(
         make<hir_local_ref>(span, list_type, acc_symbol, acc_name)));
-    push_args.push_back(std::move(*value));
+    push_args.push_back(std::move(value));
     stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         span, call_list_builder(span, push_result, dispatch->second.push_callee,
                                 std::move(push_args)))));

@@ -1,5 +1,4 @@
 module sample
 
-def pairs() -> int32:
-    static for i in 0..2 => (i, i)
-    return 0
+def lens(n: int64) -> list[int64]:
+    static for xs in [[1, 2], [3]] => xs.len() as int64 + n
