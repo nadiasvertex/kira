@@ -135,8 +135,11 @@ ownership CFG builder and the AST cloner use the checked casts `as` and
 leftover scan uses `for_each_child`. The cloner builds new nodes, so it keeps
 its own per-kind construction. Every `dynamic_cast` to an AST node type in
 `semantic/`, `comptime/` and the lowerer is now `ast::cast` or `ast::as`. The
-checker and compile-time evaluator still use their own recursive traversals
-and move over one pass at a time.
+compile-time evaluator's recursive helpers (`quote_body_has_nested_splice`,
+`materialize_quote`, `clone_expr_fragment`) stay as they are: they cover only
+the node kinds `materialize_quote` can rebuild, so a full walk would change
+which quotes are accepted, and step 6 removes the evaluator. The checker has
+no recursive read-only traversal of its own that was found to need the walker.
 
 ### Step 6: run compile-time code as HIR on the VM
 
