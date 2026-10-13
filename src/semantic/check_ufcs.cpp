@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -457,7 +458,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
   // happens at evaluation time (`evaluator::try_eval_expr_builder_call`);
   // this just gives the call site a concrete type to check against.
   if (field.object->kind == ast::node_kind::ident_expr &&
-      dynamic_cast<const ast::ident_expr &>(*field.object).name == "expr") {
+      ast::cast<const ast::ident_expr>(*field.object).name == "expr") {
     infer_call_args_loosely(call);
     static constexpr std::array<std::string_view, 10> k_expr_builder_names = {
         "lit",    "ident", "field",        "interp_concat", "debug",
@@ -496,7 +497,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
        field.field_name == "name" || field.field_name == "variants" ||
        field.field_name == "variant_count" || field.field_name == "kind")) {
     const auto &type_name =
-        dynamic_cast<const ast::ident_expr &>(*field.object).name;
+        ast::cast<const ast::ident_expr>(*field.object).name;
     if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
       infer_call_args_loosely(call);
       if (field.field_name == "variant_count") {
@@ -583,7 +584,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
        field.field_name == "types" || field.field_name == "function_count" ||
        field.field_name == "type_count")) {
     const auto &mod_name =
-        dynamic_cast<const ast::ident_expr &>(*field.object).name;
+        ast::cast<const ast::ident_expr>(*field.object).name;
     if (names_reflectable_module(mod_name)) {
       infer_call_args_loosely(call);
       if (field.field_name == "name") {
@@ -913,23 +914,23 @@ auto checker::is_literal_tree(const ast::expr &expr, type_id target) -> bool {
   const auto integer_target = session_.types_.is_integer(target);
   switch (expr.kind) {
   case ast::node_kind::literal_expr: {
-    const auto kind = dynamic_cast<const ast::literal_expr &>(expr).lit_kind;
+    const auto kind = ast::cast<const ast::literal_expr>(expr).lit_kind;
     return kind == token_kind::int_lit ||
            (kind == token_kind::float_lit && !integer_target);
   }
   case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+    const auto &group = ast::cast<const ast::group_expr>(expr);
     return group.inner != nullptr && is_literal_tree(*group.inner, target);
   }
   case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+    const auto &unary = ast::cast<const ast::unary_expr>(expr);
     const auto op_fits = unary.op == ast::unary_op::neg ||
                          (unary.op == ast::unary_op::bit_not && integer_target);
     return op_fits && unary.operand != nullptr &&
            is_literal_tree(*unary.operand, target);
   }
   case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+    const auto &binary = ast::cast<const ast::binary_expr>(expr);
     const auto op_fits = ast::is_arithmetic(binary.op) ||
                          (ast::is_integer_bitwise(binary.op) && integer_target);
     return op_fits && binary.lhs != nullptr && binary.rhs != nullptr &&
@@ -1396,13 +1397,13 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
   const auto fn_name = field.field_name;
   auto root = std::vector<std::string>{};
   if (object.kind == ast::node_kind::ident_expr) {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(object);
+    const auto &ident = ast::cast<const ast::ident_expr>(object);
     if (dotted_root_is_value(ident.name)) {
       return std::nullopt; // a real value, not a module/type reference
     }
     root = {ident.name};
   } else if (object.kind == ast::node_kind::module_path_expr) {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(object);
+    const auto &path = ast::cast<const ast::module_path_expr>(object);
     if (path.segments.empty()) {
       return std::nullopt;
     }
@@ -1598,7 +1599,7 @@ auto checker::infer_qualified_call(const ast::call_expr &call,
                               method->decl->params.front().pattern != nullptr &&
                               method->decl->params.front().pattern->kind ==
                                   ast::node_kind::binding_pattern &&
-                              dynamic_cast<const ast::binding_pattern &>(
+                              ast::cast<const ast::binding_pattern>(
                                   *method->decl->params.front().pattern)
                                       .name == "self";
         if (!has_self) {
@@ -1663,7 +1664,7 @@ auto checker::infer_explicit_generic_call(const ast::call_expr &call)
   }
   // A local value shadowing the name means the brackets are indexing it,
   // not instantiating anything.
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*base).name;
   if (lookup_value(name) != nullptr) {
     return std::nullopt;
   }
@@ -1702,7 +1703,7 @@ auto checker::infer_layout_query_call(const ast::call_expr &call)
   if (base == nullptr || base->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*base).name;
   const auto kind = name == "size_of"      ? layout_query_kind::size_of
                     : name == "align_of"   ? layout_query_kind::align_of
                     : name == "needs_drop" ? layout_query_kind::needs_drop
@@ -1802,7 +1803,7 @@ auto checker::infer_uninit_call(const ast::call_expr &call)
       bracket_args.size() != 2) {
     return std::nullopt;
   }
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*base).name;
   if (name != "uninit") {
     return std::nullopt;
   }
@@ -1865,7 +1866,7 @@ auto checker::infer_ptr_cast_call(const ast::call_expr &call)
       bracket_args.size() != 1) {
     return std::nullopt;
   }
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*base).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*base).name;
   if (name != "ptr_cast") {
     return std::nullopt;
   }
@@ -1947,7 +1948,7 @@ auto checker::infer_slice_from_raw_parts_call(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*call.callee).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*call.callee).name;
   const auto is_mut = name == "slice_mut_from_raw_parts";
   if (!is_mut && name != "slice_from_raw_parts") {
     return std::nullopt;
@@ -2014,7 +2015,7 @@ auto checker::infer_comptime_generic_call(const ast::call_expr &call,
     return std::nullopt;
   }
   const auto &callee_ident =
-      dynamic_cast<const ast::ident_expr &>(*index.object);
+      ast::cast<const ast::ident_expr>(*index.object);
   const auto found = find_callable_decl(callee_ident.name);
   if (!found.has_value() || !found->decl->modifiers.is_static ||
       found->decl->type_params.empty()) {
@@ -2032,7 +2033,7 @@ auto checker::infer_comptime_generic_call(const ast::call_expr &call,
     return std::nullopt;
   }
   const auto &type_arg_name =
-      dynamic_cast<const ast::ident_expr &>(*index.index).name;
+      ast::cast<const ast::ident_expr>(*index.index).name;
   if (!lookup_type_param(type_arg_name).has_value() &&
       !find_type_decl_by_name(type_arg_name).has_value()) {
     return std::nullopt;
@@ -2075,7 +2076,7 @@ auto checker::infer_implements_call(const ast::call_expr &call)
       explicit_args.size() != 2 || !call.args.empty()) {
     return std::nullopt;
   }
-  if (dynamic_cast<const ast::ident_expr &>(*base).name != "implements") {
+  if (ast::cast<const ast::ident_expr>(*base).name != "implements") {
     return std::nullopt;
   }
   const auto &t_arg = explicit_args[0];
@@ -2093,7 +2094,7 @@ auto checker::infer_implements_call(const ast::call_expr &call)
         "path, or a parameterized type.");
     return k_error_type;
   }
-  const auto &t_name = dynamic_cast<const ast::ident_expr &>(*t_arg.value).name;
+  const auto &t_name = ast::cast<const ast::ident_expr>(*t_arg.value).name;
   if (!lookup_type_param(t_name).has_value() &&
       !find_type_decl_by_name(t_name).has_value() &&
       !is_builtin_scalar_name(t_name)) {
@@ -2106,7 +2107,7 @@ auto checker::infer_implements_call(const ast::call_expr &call)
     return k_error_type;
   }
   const auto &trait_name =
-      dynamic_cast<const ast::ident_expr &>(*trait_arg.value).name;
+      ast::cast<const ast::ident_expr>(*trait_arg.value).name;
   if (!find_trait_decl_by_name(trait_name).has_value()) {
     error_with_help(
         trait_arg.span,
@@ -2151,11 +2152,11 @@ auto checker::called_name_for_diagnostic(const ast::call_expr &call)
     if (call.callee->kind == ast::node_kind::field_expr) {
       return std::format(
           "`{}`",
-          dynamic_cast<const ast::field_expr &>(*call.callee).field_name);
+          ast::cast<const ast::field_expr>(*call.callee).field_name);
     }
     if (call.callee->kind == ast::node_kind::ident_expr) {
       return std::format(
-          "`{}`", dynamic_cast<const ast::ident_expr &>(*call.callee).name);
+          "`{}`", ast::cast<const ast::ident_expr>(*call.callee).name);
     }
   }
   return "handing out a raw pointer";
@@ -2180,7 +2181,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
 
   if (call.callee->kind == ast::node_kind::field_expr) {
     return infer_method_call(
-        call, dynamic_cast<const ast::field_expr &>(*call.callee));
+        call, ast::cast<const ast::field_expr>(*call.callee));
   }
 
   // `size_of[T]()` / `align_of[T]()`. Tried before every other bracketed-
@@ -2202,7 +2203,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
 
   if (call.callee->kind == ast::node_kind::index_expr) {
     if (const auto result = infer_comptime_generic_call(
-            call, dynamic_cast<const ast::index_expr &>(*call.callee))) {
+            call, ast::cast<const ast::index_expr>(*call.callee))) {
       return *result;
     }
   }
@@ -2239,7 +2240,7 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
     return k_unknown_type;
   }
 
-  const auto &ident = dynamic_cast<const ast::ident_expr &>(*call.callee);
+  const auto &ident = ast::cast<const ast::ident_expr>(*call.callee);
   const auto &name = ident.name;
 
   if (is_variant_ident(ident)) {

@@ -84,20 +84,20 @@ private:
   auto visit_node(ast::node &node) -> void {
     switch (node.kind) {
     case ast::node_kind::let_stmt: {
-      auto &let = dynamic_cast<ast::let_stmt &>(node);
+      auto &let = ast::cast<ast::let_stmt>(node);
       if (let.initializer != nullptr) {
         visit_node(*let.initializer);
       }
       if (let.pattern != nullptr &&
           let.pattern->kind == ast::node_kind::binding_pattern) {
-        auto &binding = dynamic_cast<ast::binding_pattern &>(*let.pattern);
+        auto &binding = ast::cast<ast::binding_pattern>(*let.pattern);
         binding.name = declare(binding.name);
       }
       visit_body(let.else_body);
       return;
     }
     case ast::node_kind::var_stmt: {
-      auto &var = dynamic_cast<ast::var_stmt &>(node);
+      auto &var = ast::cast<ast::var_stmt>(node);
       if (var.initializer != nullptr) {
         visit_node(*var.initializer);
       }
@@ -105,17 +105,17 @@ private:
       return;
     }
     case ast::node_kind::if_stmt: {
-      auto &stmt = dynamic_cast<ast::if_stmt &>(node);
+      auto &stmt = ast::cast<ast::if_stmt>(node);
       visit_if_branches(stmt.branches, stmt.else_body);
       return;
     }
     case ast::node_kind::if_expr: {
-      auto &if_e = dynamic_cast<ast::if_expr &>(node);
+      auto &if_e = ast::cast<ast::if_expr>(node);
       visit_if_branches(if_e.branches, if_e.else_body);
       return;
     }
     case ast::node_kind::while_stmt: {
-      auto &stmt = dynamic_cast<ast::while_stmt &>(node);
+      auto &stmt = ast::cast<ast::while_stmt>(node);
       if (stmt.condition != nullptr) {
         visit_node(*stmt.condition);
       }
@@ -126,10 +126,10 @@ private:
       return;
     }
     case ast::node_kind::scope_stmt:
-      visit_body(dynamic_cast<ast::scope_stmt &>(node).body);
+      visit_body(ast::cast<ast::scope_stmt>(node).body);
       return;
     case ast::node_kind::for_stmt: {
-      auto &stmt = dynamic_cast<ast::for_stmt &>(node);
+      auto &stmt = ast::cast<ast::for_stmt>(node);
       if (stmt.iterable != nullptr) {
         visit_node(*stmt.iterable);
       }
@@ -140,7 +140,7 @@ private:
       return;
     }
     case ast::node_kind::match_stmt: {
-      auto &stmt = dynamic_cast<ast::match_stmt &>(node);
+      auto &stmt = ast::cast<ast::match_stmt>(node);
       if (stmt.subject != nullptr) {
         visit_node(*stmt.subject);
       }
@@ -150,7 +150,7 @@ private:
       return;
     }
     case ast::node_kind::match_expr: {
-      auto &match = dynamic_cast<ast::match_expr &>(node);
+      auto &match = ast::cast<ast::match_expr>(node);
       if (match.subject != nullptr) {
         visit_node(*match.subject);
       }
@@ -160,7 +160,7 @@ private:
       return;
     }
     case ast::node_kind::crew_stmt: {
-      auto &stmt = dynamic_cast<ast::crew_stmt &>(node);
+      auto &stmt = ast::cast<ast::crew_stmt>(node);
       scopes_.emplace_back();
       stmt.name = declare(stmt.name);
       visit_body(stmt.body);
@@ -168,7 +168,7 @@ private:
       return;
     }
     case ast::node_kind::ident_expr: {
-      auto &ident = dynamic_cast<ast::ident_expr &>(node);
+      auto &ident = ast::cast<ast::ident_expr>(node);
       if (const auto *renamed = lookup(ident.name)) {
         ident.name = *renamed;
       }
@@ -181,7 +181,7 @@ private:
       // rule 1), so the checker will read this root as that binding whatever
       // it is called — renaming it with its binding is all hygiene needs. A
       // root the fragment doesn't bind is left alone for the checker.
-      auto &path = dynamic_cast<ast::module_path_expr &>(node);
+      auto &path = ast::cast<ast::module_path_expr>(node);
       if (!path.segments.empty()) {
         if (const auto *renamed = lookup(path.segments.front())) {
           path.segments.front() = *renamed;
@@ -190,7 +190,7 @@ private:
       return;
     }
     case ast::node_kind::lambda_expr: {
-      auto &lambda = dynamic_cast<ast::lambda_expr &>(node);
+      auto &lambda = ast::cast<ast::lambda_expr>(node);
       scopes_.emplace_back();
       // Parameters are deliberately not renamed — see the doc comment.
       if (lambda.body_expr != nullptr) {
@@ -201,7 +201,7 @@ private:
       return;
     }
     case ast::node_kind::for_expr: {
-      auto &for_e = dynamic_cast<ast::for_expr &>(node);
+      auto &for_e = ast::cast<ast::for_expr>(node);
       scopes_.emplace_back();
       for (auto &clause : for_e.clauses) {
         if (clause.iterable != nullptr) {
@@ -219,10 +219,10 @@ private:
       return;
     }
     case ast::node_kind::async_expr:
-      visit_body(dynamic_cast<ast::async_expr &>(node).body);
+      visit_body(ast::cast<ast::async_expr>(node).body);
       return;
     case ast::node_kind::on_expr: {
-      auto &on = dynamic_cast<ast::on_expr &>(node);
+      auto &on = ast::cast<ast::on_expr>(node);
       if (on.sender != nullptr) {
         visit_node(*on.sender);
       }
@@ -230,10 +230,10 @@ private:
       return;
     }
     case ast::node_kind::block_expr:
-      visit_body(dynamic_cast<ast::block_expr &>(node).stmts);
+      visit_body(ast::cast<ast::block_expr>(node).stmts);
       return;
     case ast::node_kind::where_expr: {
-      auto &where = dynamic_cast<ast::where_expr &>(node);
+      auto &where = ast::cast<ast::where_expr>(node);
       scopes_.emplace_back();
       for (auto &binding : where.bindings) {
         // Not mutually recursive — each binding's own value is evaluated

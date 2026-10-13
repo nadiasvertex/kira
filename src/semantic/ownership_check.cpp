@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "src/semantic/ownership_cfg.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 namespace {
@@ -954,20 +955,20 @@ auto walk_item(const ast::node &item, const checked_types &checked,
   };
   switch (item.kind) {
   case ast::node_kind::func_decl:
-    check_decl(dynamic_cast<const ast::func_decl &>(item), checked, diag,
+    check_decl(ast::cast<const ast::func_decl>(item), checked, diag,
                file_id);
     return;
   case ast::node_kind::impl_decl:
-    walk_items(dynamic_cast<const ast::impl_decl &>(item).items);
+    walk_items(ast::cast<const ast::impl_decl>(item).items);
     return;
   case ast::node_kind::trait_decl:
-    walk_items(dynamic_cast<const ast::trait_decl &>(item).items);
+    walk_items(ast::cast<const ast::trait_decl>(item).items);
     return;
   case ast::node_kind::extend_decl:
-    walk_items(dynamic_cast<const ast::extend_decl &>(item).items);
+    walk_items(ast::cast<const ast::extend_decl>(item).items);
     return;
   case ast::node_kind::sub_module_decl:
-    walk_items(dynamic_cast<const ast::sub_module_decl &>(item).items);
+    walk_items(ast::cast<const ast::sub_module_decl>(item).items);
     return;
   default:
     return;

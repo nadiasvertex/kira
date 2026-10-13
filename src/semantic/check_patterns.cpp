@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -108,7 +109,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
   case ast::node_kind::wildcard_pattern:
     return;
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = ast::cast<const ast::binding_pattern>(pattern);
     // A binding takes the subject *unstripped*, unlike every structural
     // pattern below. Stripping exists so that destructuring can see
     // through a reference — matching a `&point` against `point { x, y }`
@@ -134,7 +135,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::literal_pattern: {
-    const auto &literal = dynamic_cast<const ast::literal_pattern &>(pattern);
+    const auto &literal = ast::cast<const ast::literal_pattern>(pattern);
     auto lit = ast::literal_expr{};
     lit.lit_kind = literal.lit_kind;
     lit.value = literal.value;
@@ -144,7 +145,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tuple = ast::cast<const ast::tuple_pattern>(pattern);
     if (entry.kind == type_kind::tuple_kind &&
         entry.args.size() != tuple.elements.size()) {
       error(tuple.span,
@@ -176,12 +177,12 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(pattern);
     check_constructor_pattern(ctor, stripped);
     return;
   }
   case ast::node_kind::option_pattern: {
-    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
+    const auto &option = ast::cast<const ast::option_pattern>(pattern);
     auto inner = k_unknown_type;
     if (entry.kind == type_kind::builtin_generic_kind &&
         entry.name == "option" && !entry.args.empty()) {
@@ -193,7 +194,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
+    const auto &result = ast::cast<const ast::result_pattern>(pattern);
     auto inner = k_unknown_type;
     if (entry.kind == type_kind::builtin_generic_kind &&
         entry.name == "result") {
@@ -210,7 +211,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
   }
   case ast::node_kind::struct_pattern: {
     const auto &struct_pattern =
-        dynamic_cast<const ast::struct_pattern &>(pattern);
+        ast::cast<const ast::struct_pattern>(pattern);
     for (const auto &field : struct_pattern.fields) {
       if (field.is_rest) {
         continue;
@@ -241,7 +242,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::array_pattern: {
-    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
+    const auto &array = ast::cast<const ast::array_pattern>(pattern);
     const auto element = element_type_of(stripped, array.span);
     for (const auto &item : array.elements) {
       if (item != nullptr) {
@@ -251,7 +252,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::range_pattern: {
-    const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
+    const auto &range = ast::cast<const ast::range_pattern>(pattern);
     if (range.start != nullptr) {
       const auto found = infer_expr(*range.start, stripped);
       type_mismatch(range.start->span, stripped, found,
@@ -264,14 +265,14 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::ref_pattern: {
-    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
+    const auto &ref = ast::cast<const ast::ref_pattern>(pattern);
     if (ref.inner != nullptr) {
       check_pattern(*ref.inner, stripped);
     }
     return;
   }
   case ast::node_kind::or_pattern: {
-    const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alternatives = ast::cast<const ast::or_pattern>(pattern);
     for (const auto &alternative : alternatives.alternatives) {
       if (alternative != nullptr) {
         check_pattern(*alternative, stripped);
@@ -280,7 +281,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(pattern);
     if (group.inner != nullptr) {
       check_pattern(*group.inner, stripped);
     }
@@ -396,11 +397,11 @@ auto checker::pattern_is_irrefutable(const ast::pattern &pattern) -> bool {
   case ast::node_kind::binding_pattern:
     return true;
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(pattern);
     return group.inner != nullptr && pattern_is_irrefutable(*group.inner);
   }
   case ast::node_kind::or_pattern: {
-    const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alternatives = ast::cast<const ast::or_pattern>(pattern);
     return std::ranges::any_of(
         alternatives.alternatives, [this](const auto &alternative) -> bool {
           return alternative != nullptr && pattern_is_irrefutable(*alternative);
@@ -420,24 +421,24 @@ auto checker::collect_covered_names(const ast::pattern &pattern,
   switch (pattern.kind) {
   case ast::node_kind::constructor_pattern:
     covered.insert(
-        dynamic_cast<const ast::constructor_pattern &>(pattern).name);
+        ast::cast<const ast::constructor_pattern>(pattern).name);
     return;
   case ast::node_kind::option_pattern:
     covered.insert(
-        dynamic_cast<const ast::option_pattern &>(pattern).option_kind ==
+        ast::cast<const ast::option_pattern>(pattern).option_kind ==
                 ast::option_result_kind::some
             ? "some"
             : "none");
     return;
   case ast::node_kind::result_pattern:
     covered.insert(
-        dynamic_cast<const ast::result_pattern &>(pattern).result_kind ==
+        ast::cast<const ast::result_pattern>(pattern).result_kind ==
                 ast::option_result_kind::err
             ? "err"
             : "ok");
     return;
   case ast::node_kind::literal_pattern: {
-    const auto &literal = dynamic_cast<const ast::literal_pattern &>(pattern);
+    const auto &literal = ast::cast<const ast::literal_pattern>(pattern);
     if (literal.lit_kind == token_kind::kw_true) {
       covered.insert("true");
     } else if (literal.lit_kind == token_kind::kw_false) {
@@ -446,7 +447,7 @@ auto checker::collect_covered_names(const ast::pattern &pattern,
     return;
   }
   case ast::node_kind::or_pattern: {
-    const auto &alternatives = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alternatives = ast::cast<const ast::or_pattern>(pattern);
     for (const auto &alternative : alternatives.alternatives) {
       if (alternative != nullptr) {
         collect_covered_names(*alternative, covered);
@@ -455,7 +456,7 @@ auto checker::collect_covered_names(const ast::pattern &pattern,
     return;
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(pattern);
     if (group.inner != nullptr) {
       collect_covered_names(*group.inner, covered);
     }
@@ -478,7 +479,7 @@ auto checker::check_match_exhaustiveness(
     if (arm.pattern == nullptr || arm.has_error) {
       continue;
     }
-    const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+    const auto &pattern = ast::cast<const ast::pattern>(*arm.pattern);
     if (arm.guard != nullptr) {
       continue; // guarded arms never guarantee coverage
     }
@@ -560,7 +561,7 @@ auto checker::check_match(const ast::expr *subject,
   for (const auto &arm : arms) {
     push_scope();
     if (arm.pattern != nullptr) {
-      check_pattern(dynamic_cast<const ast::pattern &>(*arm.pattern),
+      check_pattern(ast::cast<const ast::pattern>(*arm.pattern),
                     subject_type);
     }
     if (arm.guard != nullptr) {
@@ -621,11 +622,11 @@ auto checker::resolve_variant_tag(const ast::node &node)
   }
   const auto &entry = session_.types_.entry(strip_refs(it->second));
   auto tag = std::string{};
-  if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&node)) {
+  if (const auto *ident = ast::as<const ast::ident_expr>(&node)) {
     tag = ident->name;
-  } else if (const auto *call = dynamic_cast<const ast::call_expr *>(&node)) {
+  } else if (const auto *call = ast::as<const ast::call_expr>(&node)) {
     if (const auto *callee =
-            dynamic_cast<const ast::ident_expr *>(call->callee.get())) {
+            ast::as<const ast::ident_expr>(call->callee.get())) {
       tag = callee->name;
     }
   }

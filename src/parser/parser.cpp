@@ -11,6 +11,7 @@
 
 #include "src/parser/interp_string.h"
 #include "src/parser/text_escape.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder {
 
@@ -722,7 +723,7 @@ void parser::synthesize_script_main(ast::file &file) {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl &&
-        dynamic_cast<const ast::func_decl &>(*item).name == "main") {
+        ast::cast<const ast::func_decl>(*item).name == "main") {
       explicit_main_span = item->span;
     }
     decls.push_back(std::move(item));
@@ -4456,7 +4457,7 @@ auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
   if (at(token_kind::lbrace)) {
     auto expr = parse_brace_expr();
     if (expr && expr->kind == ast::node_kind::struct_expr) {
-      auto *struct_expr = dynamic_cast<ast::struct_expr *>(expr.get());
+      auto *struct_expr = ast::as<ast::struct_expr>(expr.get());
       struct_expr->type_name = std::move(ident);
       struct_expr->span = struct_expr->type_name->span.merge(struct_expr->span);
     }
@@ -4479,7 +4480,7 @@ auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
     if (at(token_kind::lbrace)) {
       auto expr = parse_brace_expr();
       if (expr && expr->kind == ast::node_kind::struct_expr) {
-        auto *struct_expr = dynamic_cast<ast::struct_expr *>(expr.get());
+        auto *struct_expr = ast::as<ast::struct_expr>(expr.get());
         struct_expr->type_name = std::move(ident);
         struct_expr->type_args = std::move(type_args);
         struct_expr->span =
@@ -4518,7 +4519,7 @@ auto parser::parse_ident_or_path_expr() -> ast::ptr<ast::expr> {
     if (at(token_kind::lbrace)) {
       auto expr = parse_brace_expr();
       if (expr && expr->kind == ast::node_kind::struct_expr) {
-        auto *literal = dynamic_cast<ast::struct_expr *>(expr.get());
+        auto *literal = ast::as<ast::struct_expr>(expr.get());
         literal->span = path->span.merge(literal->span);
         literal->type_name = std::move(path);
       }
@@ -5694,7 +5695,7 @@ void parser::classify_and_parse_quote_fragment(ast::quote_expr &qexpr) {
   // dedicated kind of its own), so a plain kind check isn't enough to tell
   // it apart from a real `expr_stmt` — use a pointer cast and fall back to
   // treating anything that doesn't actually downcast as a bare statement.
-  if (auto *wrapper = dynamic_cast<ast::expr_stmt *>(parsed.get());
+  if (auto *wrapper = ast::as<ast::expr_stmt>(parsed.get());
       wrapper != nullptr) {
     qexpr.fragment_kind = ast::quote_fragment_kind::expr;
     qexpr.parsed_body = std::move(wrapper->expr);

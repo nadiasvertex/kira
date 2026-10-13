@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -37,9 +38,9 @@ auto checker::assignment_root_ident(const ast::expr &target)
   while (true) {
     switch (current->kind) {
     case ast::node_kind::ident_expr:
-      return dynamic_cast<const ast::ident_expr *>(current);
+      return ast::as<const ast::ident_expr>(current);
     case ast::node_kind::field_expr: {
-      const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+      const auto &field = ast::cast<const ast::field_expr>(*current);
       if (field.object == nullptr) {
         return nullptr;
       }
@@ -47,7 +48,7 @@ auto checker::assignment_root_ident(const ast::expr &target)
       break;
     }
     case ast::node_kind::index_expr: {
-      const auto &index = dynamic_cast<const ast::index_expr &>(*current);
+      const auto &index = ast::cast<const ast::index_expr>(*current);
       if (index.object == nullptr) {
         return nullptr;
       }
@@ -55,7 +56,7 @@ auto checker::assignment_root_ident(const ast::expr &target)
       break;
     }
     case ast::node_kind::group_expr: {
-      const auto &group = dynamic_cast<const ast::group_expr &>(*current);
+      const auto &group = ast::cast<const ast::group_expr>(*current);
       if (group.inner == nullptr) {
         return nullptr;
       }
@@ -82,7 +83,7 @@ auto checker::check_user_index_assignment(const ast::expr &target)
   if (target.kind != ast::node_kind::index_expr) {
     return std::nullopt;
   }
-  const auto &index = dynamic_cast<const ast::index_expr &>(target);
+  const auto &index = ast::cast<const ast::index_expr>(target);
   if (index.object == nullptr) {
     return std::nullopt;
   }
@@ -120,7 +121,7 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
 
   if (stmt.target != nullptr) {
     if (stmt.target->kind == ast::node_kind::ident_expr) {
-      const auto &ident = dynamic_cast<const ast::ident_expr &>(*stmt.target);
+      const auto &ident = ast::cast<const ast::ident_expr>(*stmt.target);
       if (const auto *binding = lookup_value(ident.name)) {
         target_type = binding->type;
         // Unlike the "not found" branch below, this path resolves the
@@ -173,7 +174,7 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         root_name = root->name;
       } else if (stmt.target->kind == ast::node_kind::module_path_expr) {
         const auto &path =
-            dynamic_cast<const ast::module_path_expr &>(*stmt.target);
+            ast::cast<const ast::module_path_expr>(*stmt.target);
         if (!path.segments.empty()) {
           root_name = path.segments.front();
         }
@@ -261,7 +262,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
 
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
-    const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::let_stmt>(node);
     if (const auto *lambda = generic_lambda_of(stmt)) {
       bind_generic_lambda(stmt, *lambda);
       return unit;
@@ -269,7 +270,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     if (stmt.pattern != nullptr &&
         stmt.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+          ast::cast<const ast::binding_pattern>(*stmt.pattern);
       if (binding.is_mut &&
           report_mutable_generic_lambda(stmt.initializer.get(),
                                         stmt.type_annotation != nullptr,
@@ -299,7 +300,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     if (stmt.pattern != nullptr) {
       if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
         const auto &binding =
-            dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+            ast::cast<const ast::binding_pattern>(*stmt.pattern);
         // Bypasses check_pattern (which records this itself at its own
         // call site), so record explicitly: a later pass (the move
         // checker) needs every plain `let` binding's type keyed by its
@@ -364,7 +365,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::var_stmt: {
-    const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::var_stmt>(node);
     if (report_mutable_generic_lambda(stmt.initializer.get(),
                                       stmt.type_annotation != nullptr,
                                       stmt.name)) {
@@ -396,16 +397,16 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::assign_stmt:
-    check_assignment(dynamic_cast<const ast::assign_stmt &>(node));
+    check_assignment(ast::cast<const ast::assign_stmt>(node));
     return unit;
 
   case ast::node_kind::expr_stmt: {
-    const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::expr_stmt>(node);
     return stmt.expr != nullptr ? infer_expr(*stmt.expr, expected_tail) : unit;
   }
 
   case ast::node_kind::return_stmt: {
-    const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::return_stmt>(node);
     if (function_.in_generator_) {
       // A generator's only output channel is `yield`; `return` just marks
       // exhaustion (translates to the iterator's `next()` returning
@@ -484,7 +485,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     // mid-body statement, not a tail — see `check_body_nodes`, which
     // only ever passes a real `expected_tail` to the *last* item), this
     // still ends up `unit` exactly like before.
-    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::if_stmt>(node);
     auto result = expected_tail;
     for (const auto &branch : stmt.branches) {
       push_scope();
@@ -500,7 +501,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
       }
       assume_condition(branch.condition.get(), /*negated=*/false);
       if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
-        check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
+        check_pattern(ast::cast<const ast::pattern>(*branch.let_pattern),
                       k_unknown_type);
       }
       const auto branch_type = check_body_nodes(branch.body, expected_tail);
@@ -563,7 +564,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::while_stmt: {
-    const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::while_stmt>(node);
     if (stmt.condition != nullptr) {
       require_bool(*stmt.condition, "a `while` condition");
     }
@@ -580,14 +581,14 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::scope_stmt: {
-    const auto &stmt = dynamic_cast<const ast::scope_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::scope_stmt>(node);
     check_body_nodes(stmt.body, k_unknown_type);
     // Lowering wraps the body in a block and needs its (unit) type.
     return record_expr_type(stmt, unit);
   }
 
   case ast::node_kind::for_stmt: {
-    const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::for_stmt>(node);
     auto element = k_unknown_type;
     if (stmt.iterable != nullptr) {
       element = resolve_loop_iterable(*stmt.iterable, stmt,
@@ -616,13 +617,13 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::match_stmt: {
-    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::match_stmt>(node);
     check_match(stmt.subject.get(), stmt.arms, expected_tail, stmt.span);
     return expected_tail != k_unknown_type ? expected_tail : unit;
   }
 
   case ast::node_kind::crew_stmt: {
-    const auto &stmt = dynamic_cast<const ast::crew_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::crew_stmt>(node);
     push_scope();
     bind_value(stmt.name, k_unknown_type, binding_origin::synthetic, stmt.span);
     check_body_nodes(stmt.body, k_unknown_type);
@@ -631,7 +632,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
   }
 
   case ast::node_kind::splice_stmt: {
-    const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::splice_stmt>(node);
     if (stmt.expr == nullptr) {
       return unit;
     }
@@ -656,7 +657,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     if (fragment_value.kind == comptime::value_kind::expr_fragment &&
         fragment_value.fragment != nullptr) {
       const auto *fragment_expr =
-          dynamic_cast<const ast::expr *>(fragment_value.fragment);
+          ast::as<const ast::expr>(fragment_value.fragment);
       if (fragment_expr != nullptr) {
         const auto fragment_type = infer_expr(*fragment_expr, expected_tail);
         session_.spliced_fragments_[&node] = fragment_expr;
@@ -681,7 +682,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     return unit;
 
   case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    const auto &decl = ast::cast<const ast::static_decl>(node);
     if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
       if (decl.decl_kind == ast::static_decl_kind::for_inline) {
         cache_.static_for_expected_element_ = list_element_type(expected_tail);
@@ -752,7 +753,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
 
   default:
     // Nested declarations and bare expressions in statement position.
-    if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {
+    if (const auto *expr = ast::as<const ast::expr>(&node)) {
       return infer_expr(*expr, expected_tail);
     }
     check_item(node, /*at_module_scope=*/false);

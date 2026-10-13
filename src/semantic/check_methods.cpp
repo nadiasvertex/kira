@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -10,7 +11,7 @@ auto checker::trait_name_of_impl(const ast::impl_decl &impl) -> std::string {
       impl.trait_type->kind != ast::node_kind::named_type) {
     return {};
   }
-  const auto &named = dynamic_cast<const ast::named_type &>(*impl.trait_type);
+  const auto &named = ast::cast<const ast::named_type>(*impl.trait_type);
   return named.path.empty() ? std::string{} : named.path.back();
 }
 
@@ -293,12 +294,12 @@ auto checker::resolve_impl_trait_argument(const impl_ref &impl) -> type_id {
     return k_unknown_type;
   }
   const auto &named =
-      dynamic_cast<const ast::named_type &>(*impl.decl->trait_type);
+      ast::cast<const ast::named_type>(*impl.decl->trait_type);
   if (named.type_args.size() != 1) {
     return k_unknown_type;
   }
   const auto *argument =
-      dynamic_cast<const ast::type_expr *>(named.type_args.front().value.get());
+      ast::as<const ast::type_expr>(named.type_args.front().value.get());
   if (argument == nullptr) {
     return k_unknown_type;
   }
@@ -413,7 +414,7 @@ auto checker::build_method_table() -> void {
           continue;
         }
         extend_methods.push_back(method_entry{
-            .decl = dynamic_cast<const ast::func_decl *>(item.get()),
+            .decl = ast::as<const ast::func_decl>(item.get()),
             .owner = &members,
             .from_trait = nullptr,
             .is_extension = true,
@@ -500,7 +501,7 @@ auto checker::build_method_table() -> void {
             item->kind != ast::node_kind::func_decl) {
           continue;
         }
-        const auto *decl = dynamic_cast<const ast::func_decl *>(item.get());
+        const auto *decl = ast::as<const ast::func_decl>(item.get());
         overridden_names.insert(decl->name);
         methods.push_back(method_entry{
             .decl = decl,
@@ -542,7 +543,7 @@ auto checker::build_method_table() -> void {
         if (item == nullptr || item->kind != ast::node_kind::func_decl) {
           continue;
         }
-        const auto *decl = dynamic_cast<const ast::func_decl *>(item.get());
+        const auto *decl = ast::as<const ast::func_decl>(item.get());
         const auto first_param =
             decl->params.empty() ? std::string{}
                                  : param_name_of(decl->params.front());
@@ -1050,11 +1051,11 @@ auto checker::trait_args_of_impl_for(type_id concrete,
                                    .use_type_param_stack = false,
                                    .quiet = true};
       const auto &named =
-          dynamic_cast<const ast::named_type &>(*impl.decl->trait_type);
+          ast::cast<const ast::named_type>(*impl.decl->trait_type);
       auto args = std::vector<type_id>{};
       for (const auto &arg : named.type_args) {
         const auto *arg_type =
-            dynamic_cast<const ast::type_expr *>(arg.value.get());
+            ast::as<const ast::type_expr>(arg.value.get());
         args.push_back(
             arg_type != nullptr
                 ? substitute_solved(resolve_type(*arg_type, ctx), impl_bindings)
@@ -1109,14 +1110,14 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
       if (term == nullptr || term->kind != ast::node_kind::named_type) {
         return;
       }
-      const auto &named = dynamic_cast<const ast::named_type &>(*term);
+      const auto &named = ast::cast<const ast::named_type>(*term);
       if (!named.path.empty() && !named.type_args.empty()) {
         terms.push_back(&named);
       }
     };
     if (bound_expr.kind == ast::node_kind::bound_type) {
       for (const auto &term :
-           dynamic_cast<const ast::bound_type &>(bound_expr).value.terms) {
+           ast::cast<const ast::bound_type>(bound_expr).value.terms) {
         add_term(term.type.get());
       }
     } else {
@@ -1148,7 +1149,7 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
       }
       for (size_t i = 0;
            i < named.type_args.size() && i < concrete_args->size(); ++i) {
-        const auto *arg_type = dynamic_cast<const ast::type_expr *>(
+        const auto *arg_type = ast::as<const ast::type_expr>(
             named.type_args[i].value.get());
         if (arg_type == nullptr) {
           continue;
@@ -1171,7 +1172,7 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
       continue;
     }
     const auto &subject =
-        dynamic_cast<const ast::named_type &>(*constraint.subject);
+        ast::cast<const ast::named_type>(*constraint.subject);
     if (!subject.path.empty()) {
       apply(subject.path.back(), *constraint.bound_or_type);
     }
@@ -1538,7 +1539,7 @@ auto checker::place_through_deref(const ast::expr &target)
     -> std::optional<type_id> {
   switch (target.kind) {
   case ast::node_kind::field_expr: {
-    const auto &field = dynamic_cast<const ast::field_expr &>(target);
+    const auto &field = ast::cast<const ast::field_expr>(target);
     if (field.object == nullptr) {
       return std::nullopt;
     }
@@ -1551,18 +1552,18 @@ auto checker::place_through_deref(const ast::expr &target)
     return place_through_deref(*field.object);
   }
   case ast::node_kind::index_expr: {
-    const auto &index = dynamic_cast<const ast::index_expr &>(target);
+    const auto &index = ast::cast<const ast::index_expr>(target);
     return index.object != nullptr ? place_through_deref(*index.object)
                                    : std::nullopt;
   }
   case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(target);
+    const auto &group = ast::cast<const ast::group_expr>(target);
     return group.inner != nullptr ? place_through_deref(*group.inner)
                                   : std::nullopt;
   }
   case ast::node_kind::unary_expr: {
     // `*h` on a `deref` handle (`deref_operator_target`).
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(target);
+    const auto &unary = ast::cast<const ast::unary_expr>(target);
     if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
       return std::nullopt;
     }
@@ -1575,7 +1576,7 @@ auto checker::place_through_deref(const ast::expr &target)
     return place_through_deref(*unary.operand);
   }
   case ast::node_kind::module_path_expr: {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(target);
+    const auto &path = ast::cast<const ast::module_path_expr>(target);
     const auto found = session_.path_deref_adjustments_.find(&path);
     const auto types = session_.value_path_types_.find(&path);
     if (found == session_.path_deref_adjustments_.end() ||
@@ -1631,7 +1632,7 @@ auto checker::method_callable_through_deref(const ast::call_expr &call,
       param_name_of(method.decl->params.front()) != "self") {
     return true;
   }
-  const auto *binding = dynamic_cast<const ast::binding_pattern *>(
+  const auto *binding = ast::as<const ast::binding_pattern>(
       method.decl->params.front().pattern.get());
   const auto mutates = binding != nullptr && binding->is_mut;
   const auto consumes = method.trait_name == "into_iterator";
@@ -1698,14 +1699,14 @@ auto checker::field_info_member_type(std::string_view name, source_span span)
 auto checker::static_for_element_type(const ast::expr &iterable) -> type_id {
   const auto type = infer_expr(iterable, k_unknown_type);
   if (iterable.kind == ast::node_kind::call_expr) {
-    const auto &call = dynamic_cast<const ast::call_expr &>(iterable);
+    const auto &call = ast::cast<const ast::call_expr>(iterable);
     const auto *callee =
-        dynamic_cast<const ast::field_expr *>(call.callee.get());
+        ast::as<const ast::field_expr>(call.callee.get());
     if (callee != nullptr && callee->field_name == "fields" &&
         callee->object != nullptr &&
         callee->object->kind == ast::node_kind::ident_expr) {
       const auto &name =
-          dynamic_cast<const ast::ident_expr &>(*callee->object).name;
+          ast::cast<const ast::ident_expr>(*callee->object).name;
       if (lookup_type_param(name).has_value() || find_type_decl_by_name(name)) {
         return field_info_type();
       }
@@ -2083,7 +2084,7 @@ auto checker::function_owner(const ast::func_decl &fn)
       const auto add_methods = [&](const auto &items, file_id_type file) {
         for (const auto &item : items) {
           if (const auto *method =
-                  dynamic_cast<const ast::func_decl *>(item.get())) {
+                  ast::as<const ast::func_decl>(item.get())) {
             cache_.function_owners_.emplace(method, std::pair{&members, file});
           }
         }
@@ -2538,7 +2539,7 @@ auto checker::trait_declares_method(const ast::trait_decl &trait,
                                     std::string_view name) -> bool {
   for (const auto &item : trait.items) {
     if (item != nullptr && item->kind == ast::node_kind::func_decl &&
-        dynamic_cast<const ast::func_decl &>(*item).name == name) {
+        ast::cast<const ast::func_decl>(*item).name == name) {
       return true;
     }
   }

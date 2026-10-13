@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -408,11 +409,11 @@ auto checker::generic_lambda_of(const ast::let_stmt &stmt)
       stmt.pattern == nullptr ||
       stmt.pattern->kind != ast::node_kind::binding_pattern ||
       !stmt.else_body.empty() ||
-      dynamic_cast<const ast::binding_pattern &>(*stmt.pattern).is_mut) {
+      ast::cast<const ast::binding_pattern>(*stmt.pattern).is_mut) {
     return nullptr;
   }
   const auto &lambda =
-      dynamic_cast<const ast::lambda_expr &>(*stmt.initializer);
+      ast::cast<const ast::lambda_expr>(*stmt.initializer);
   return has_unannotated_param(lambda) ? &lambda : nullptr;
 }
 
@@ -433,7 +434,7 @@ auto checker::report_mutable_generic_lambda(const ast::expr *initializer,
   if (annotated || initializer == nullptr ||
       initializer->kind != ast::node_kind::lambda_expr ||
       !has_unannotated_param(
-          dynamic_cast<const ast::lambda_expr &>(*initializer))) {
+          ast::cast<const ast::lambda_expr>(*initializer))) {
     return false;
   }
   error_with_help(
@@ -458,7 +459,7 @@ auto checker::report_mutable_generic_lambda(const ast::expr *initializer,
 auto checker::bind_generic_lambda(const ast::let_stmt &stmt,
                                   const ast::lambda_expr &lambda) -> void {
   const auto &binding =
-      dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+      ast::cast<const ast::binding_pattern>(*stmt.pattern);
   generic_lambda_sites_.insert_or_assign(
       &lambda, generic_lambda_site{.context = capture_body_context(),
                                    .name = binding.name,
@@ -496,7 +497,7 @@ auto checker::instantiate_generic_lambda(const ast::lambda_expr &tmpl,
         "Annotate its parameters so it has a single type instead.");
     return k_error_type;
   }
-  const auto &copy = dynamic_cast<const ast::lambda_expr &>(**cloned);
+  const auto &copy = ast::cast<const ast::lambda_expr>(**cloned);
   synthesized_lambdas_.push_back(std::move(*cloned));
 
   auto param_types = std::vector<type_id>{};
@@ -565,7 +566,7 @@ auto checker::generic_lambda_value(const generic_lambda_use &ident,
     if (param.type_annotation == nullptr && param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
       unannotated =
-          dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
+          ast::cast<const ast::binding_pattern>(*param.pattern).name;
       break;
     }
   }
@@ -597,7 +598,7 @@ auto checker::generic_lambda_value(const generic_lambda_use &ident,
 auto checker::invoked_lambda_expectation(const ast::expr &callee) -> type_id {
   const auto *inner = &callee;
   while (inner->kind == ast::node_kind::group_expr) {
-    const auto &group = dynamic_cast<const ast::group_expr &>(*inner);
+    const auto &group = ast::cast<const ast::group_expr>(*inner);
     if (group.inner == nullptr) {
       return k_unknown_type;
     }
@@ -606,7 +607,7 @@ auto checker::invoked_lambda_expectation(const ast::expr &callee) -> type_id {
   if (inner->kind != ast::node_kind::lambda_expr) {
     return k_unknown_type;
   }
-  const auto &lambda = dynamic_cast<const ast::lambda_expr &>(*inner);
+  const auto &lambda = ast::cast<const ast::lambda_expr>(*inner);
   if (!has_unannotated_param(lambda)) {
     return k_unknown_type;
   }
@@ -655,7 +656,7 @@ auto checker::clone_generic_lambdas_for(pending_instance &item) -> void {
           continue; // the instance was itself cloned from this node
         }
         const auto *made =
-            dynamic_cast<const ast::lambda_expr *>(cloned->get());
+            ast::as<const ast::lambda_expr>(cloned->get());
         if (const auto use = generic_lambda_uses_.find(instance);
             use != generic_lambda_uses_.end()) {
           generic_lambda_uses_.insert_or_assign(made, use->second);

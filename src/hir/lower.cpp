@@ -26,6 +26,7 @@
 #include "src/semantic/ownership_cfg.h"
 #include "src/semantic/checker_results.h"
 #include "src/semantic/program_index.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::hir {
 
@@ -52,7 +53,7 @@ using semantic::type_kind;
       param.pattern->kind != ast::node_kind::binding_pattern) {
     return false;
   }
-  return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name ==
+  return ast::cast<const ast::binding_pattern>(*param.pattern).name ==
          "self";
 }
 
@@ -97,17 +98,17 @@ template <typename T>
     -> std::string_view {
   const auto *current = &expr;
   while (current->kind == ast::node_kind::field_expr) {
-    const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+    const auto &field = ast::cast<const ast::field_expr>(*current);
     if (field.object == nullptr) {
       return {};
     }
     current = field.object.get();
   }
   if (current->kind == ast::node_kind::ident_expr) {
-    return dynamic_cast<const ast::ident_expr &>(*current).name;
+    return ast::cast<const ast::ident_expr>(*current).name;
   }
   if (current->kind == ast::node_kind::module_path_expr) {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+    const auto &path = ast::cast<const ast::module_path_expr>(*current);
     return path.segments.empty() ? std::string_view{} : path.segments.front();
   }
   return {};
@@ -1355,7 +1356,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
   if (const auto rewritten = checked_.spliced_fragments.find(&expr);
       rewritten != checked_.spliced_fragments.end()) {
     if (const auto *fragment =
-            dynamic_cast<const ast::expr *>(rewritten->second)) {
+            ast::as<const ast::expr>(rewritten->second)) {
       return lower_expr(*fragment);
     }
   }
@@ -1373,7 +1374,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
 
   switch (expr.kind) {
   case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+    const auto &group = ast::cast<const ast::group_expr>(expr);
     if (group.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr.span,
                   "parenthesized expression has no inner expression");
@@ -1381,21 +1382,21 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     return lower_expr(*group.inner);
   }
   case ast::node_kind::literal_expr:
-    return lower_literal(dynamic_cast<const ast::literal_expr &>(expr));
+    return lower_literal(ast::cast<const ast::literal_expr>(expr));
   case ast::node_kind::ident_expr:
-    return lower_ident(dynamic_cast<const ast::ident_expr &>(expr));
+    return lower_ident(ast::cast<const ast::ident_expr>(expr));
   case ast::node_kind::binary_expr:
-    return lower_binary(dynamic_cast<const ast::binary_expr &>(expr));
+    return lower_binary(ast::cast<const ast::binary_expr>(expr));
   case ast::node_kind::unary_expr:
-    return lower_unary(dynamic_cast<const ast::unary_expr &>(expr));
+    return lower_unary(ast::cast<const ast::unary_expr>(expr));
   case ast::node_kind::call_expr:
-    return lower_call(dynamic_cast<const ast::call_expr &>(expr));
+    return lower_call(ast::cast<const ast::call_expr>(expr));
   case ast::node_kind::field_expr:
-    return lower_field(dynamic_cast<const ast::field_expr &>(expr));
+    return lower_field(ast::cast<const ast::field_expr>(expr));
   case ast::node_kind::index_expr:
-    return lower_index(dynamic_cast<const ast::index_expr &>(expr));
+    return lower_index(ast::cast<const ast::index_expr>(expr));
   case ast::node_kind::block_expr: {
-    const auto &block = dynamic_cast<const ast::block_expr &>(expr);
+    const auto &block = ast::cast<const ast::block_expr>(expr);
     auto type = checked_type_of(block);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -1407,7 +1408,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     return ok_expr(std::move(*lowered));
   }
   case ast::node_kind::if_expr: {
-    const auto &if_e = dynamic_cast<const ast::if_expr &>(expr);
+    const auto &if_e = ast::cast<const ast::if_expr>(expr);
     auto type = checked_type_of(if_e);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -1419,7 +1420,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     return ok_expr(std::move(*lowered));
   }
   case ast::node_kind::match_expr: {
-    const auto &match_e = dynamic_cast<const ast::match_expr &>(expr);
+    const auto &match_e = ast::cast<const ast::match_expr>(expr);
     if (match_e.subject == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, match_e.span,
                   "match expression has no subject");
@@ -1436,26 +1437,26 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     return ok_expr(std::move(*lowered));
   }
   case ast::node_kind::tuple_expr:
-    return lower_tuple(dynamic_cast<const ast::tuple_expr &>(expr));
+    return lower_tuple(ast::cast<const ast::tuple_expr>(expr));
   case ast::node_kind::array_expr:
-    return lower_array(dynamic_cast<const ast::array_expr &>(expr));
+    return lower_array(ast::cast<const ast::array_expr>(expr));
   case ast::node_kind::struct_expr:
-    return lower_struct(dynamic_cast<const ast::struct_expr &>(expr));
+    return lower_struct(ast::cast<const ast::struct_expr>(expr));
   case ast::node_kind::cast_expr:
-    return lower_cast(dynamic_cast<const ast::cast_expr &>(expr));
+    return lower_cast(ast::cast<const ast::cast_expr>(expr));
   case ast::node_kind::lambda_expr:
-    return lower_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
+    return lower_lambda(ast::cast<const ast::lambda_expr>(expr));
   case ast::node_kind::where_expr:
-    return lower_where(dynamic_cast<const ast::where_expr &>(expr));
+    return lower_where(ast::cast<const ast::where_expr>(expr));
   case ast::node_kind::try_expr:
-    return lower_try(dynamic_cast<const ast::try_expr &>(expr));
+    return lower_try(ast::cast<const ast::try_expr>(expr));
   case ast::node_kind::for_expr:
-    return lower_for_expr(dynamic_cast<const ast::for_expr &>(expr));
+    return lower_for_expr(ast::cast<const ast::for_expr>(expr));
   case ast::node_kind::module_path_expr:
-    return lower_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
+    return lower_module_path(ast::cast<const ast::module_path_expr>(expr));
   case ast::node_kind::interpolated_string_expr:
     return lower_interpolated_string(
-        dynamic_cast<const ast::interpolated_string_expr &>(expr));
+        ast::cast<const ast::interpolated_string_expr>(expr));
   case ast::node_kind::splice_expr: {
     // `checker::infer_expr`'s `splice_expr` case resolves the operand's
     // compile-time value to a real AST fragment and records it in
@@ -1469,7 +1470,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
                   "this splice did not resolve to a quoted expression during "
                   "checking");
     }
-    const auto *fragment_expr = dynamic_cast<const ast::expr *>(found->second);
+    const auto *fragment_expr = ast::as<const ast::expr>(found->second);
     if (fragment_expr == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr.span,
                   "this splice's resolved fragment is not an expression");
@@ -1618,7 +1619,7 @@ auto lowerer::range_operand(const ast::expr &expr) -> const ast::binary_expr * {
   if (expr.kind != ast::node_kind::binary_expr) {
     return nullptr;
   }
-  const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+  const auto &binary = ast::cast<const ast::binary_expr>(expr);
   return ast::is_range(binary.op) ? &binary : nullptr;
 }
 
@@ -1827,7 +1828,7 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
   // addr_of` can give it.
   if (un.op == ast::unary_op::addr_of_mut &&
       un.operand->kind == ast::node_kind::index_expr) {
-    const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
+    const auto &index = ast::cast<const ast::index_expr>(*un.operand);
     if (const auto found = checked_.lowering.index_mut_dispatches.find(&index);
         found != checked_.lowering.index_mut_dispatches.end()) {
       if (index.object == nullptr || index.index == nullptr) {
@@ -1853,7 +1854,7 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
   // it in a `hir_unary(addr_of, ...)` with no place behind it.
   if (un.op == ast::unary_op::addr_of &&
       un.operand->kind == ast::node_kind::index_expr) {
-    const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
+    const auto &index = ast::cast<const ast::index_expr>(*un.operand);
     if (const auto found = checked_.lowering.index_ref_dispatches.find(&index);
         found != checked_.lowering.index_ref_dispatches.end()) {
       if (index.object == nullptr || index.index == nullptr) {
@@ -2031,7 +2032,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // see `record_instance_method_callee`) always wins.
   if (call.callee->kind == ast::node_kind::field_expr &&
       !checked_.resolved_callees.contains(&call)) {
-    const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+    const auto &field = ast::cast<const ast::field_expr>(*call.callee);
     if (field.object != nullptr && field.field_name == "len") {
       // A fixed `array[T, N]` and a `uninit[T, N]` are their own data
       // blocks, with no `{len; ...}` header to read a count out of — their
@@ -2147,7 +2148,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // (there's no function being called, real or otherwise).
   if (call.callee->kind == ast::node_kind::ident_expr) {
     const auto &callee_ident =
-        dynamic_cast<const ast::ident_expr &>(*call.callee);
+        ast::cast<const ast::ident_expr>(*call.callee);
     if (is_variant_ident(callee_ident)) {
       auto args = ptr_vec<hir_expr>{};
       args.reserve(call.args.size());
@@ -3340,7 +3341,7 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
 
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+          ast::cast<const ast::binding_pattern>(*param.pattern);
       const auto symbol = declare_local(binding.name, ptype, /*whole=*/true,
                                         param.pattern.get());
       params.push_back(
@@ -4057,7 +4058,7 @@ auto lowerer::lower_interpolated_string(
 auto lowerer::lower_tail_control_flow_stmt(const ast::node &node, type_id type)
     -> std::expected<ptr<hir_node>, lowering_error> {
   if (node.kind == ast::node_kind::if_stmt) {
-    const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &if_s = ast::cast<const ast::if_stmt>(node);
     auto lowered = lower_if(if_s.branches, if_s.else_body, if_s.span, type);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
@@ -4065,7 +4066,7 @@ auto lowerer::lower_tail_control_flow_stmt(const ast::node &node, type_id type)
     return ptr<hir_node>(
         make<hir_expr_stmt>(if_s.span, ptr<hir_expr>(std::move(*lowered))));
   }
-  const auto &match_s = dynamic_cast<const ast::match_stmt &>(node);
+  const auto &match_s = ast::cast<const ast::match_stmt>(node);
   if (match_s.subject == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, match_s.span,
                 "match statement has no subject");
@@ -4185,7 +4186,7 @@ auto lowerer::lower_stmt(const ast::node &node)
   }
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
-    const auto &let = dynamic_cast<const ast::let_stmt &>(node);
+    const auto &let = ast::cast<const ast::let_stmt>(node);
     if (let.pattern == nullptr || let.pattern->has_error) {
       return fail(lowering_error_kind::unsupported_construct, let.span,
                   "let binding has no usable pattern");
@@ -4197,11 +4198,11 @@ auto lowerer::lower_stmt(const ast::node &node)
     // `let f = (x) => x + x`: one closure per copy the checker made for a
     // use of `f`, and none if `f` is never used.
     if (const auto copies = checked_.ownership.generic_lambda_instances.find(
-            dynamic_cast<const ast::lambda_expr *>(let.initializer.get()));
+            ast::as<const ast::lambda_expr>(let.initializer.get()));
         copies != checked_.ownership.generic_lambda_instances.end() &&
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &name =
-          dynamic_cast<const ast::binding_pattern &>(*let.pattern).name;
+          ast::cast<const ast::binding_pattern>(*let.pattern).name;
       auto result = ptr_vec<hir_node>{};
       auto group = std::vector<symbol_id>{};
       for (size_t i = 0; i < copies->second.size(); ++i) {
@@ -4238,7 +4239,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (let.else_body.empty() &&
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*let.pattern);
+          ast::cast<const ast::binding_pattern>(*let.pattern);
       const auto symbol = declare_local(binding.name, (*initializer)->type,
                                         /*whole=*/true, let.pattern.get());
       auto result = ptr_vec<hir_node>{};
@@ -4314,7 +4315,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return result;
   }
   case ast::node_kind::expr_stmt: {
-    const auto &expr_stmt = dynamic_cast<const ast::expr_stmt &>(node);
+    const auto &expr_stmt = ast::cast<const ast::expr_stmt>(node);
     if (expr_stmt.expr == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, expr_stmt.span,
                   "expression statement has no expression");
@@ -4327,7 +4328,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // `lower_expr`'s dispatch instead — see its `yield_expr` case.
     if (expr_stmt.expr->kind == ast::node_kind::yield_expr) {
       const auto &yield_ast =
-          dynamic_cast<const ast::yield_expr &>(*expr_stmt.expr);
+          ast::cast<const ast::yield_expr>(*expr_stmt.expr);
       if (yield_ast.value == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, yield_ast.span,
                     "`yield` with no value is not supported");
@@ -4355,7 +4356,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         make<hir_expr_stmt>(expr_stmt.span, std::move(*lowered))));
   }
   case ast::node_kind::return_stmt: {
-    const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
+    const auto &ret = ast::cast<const ast::return_stmt>(node);
     if (ret.value == nullptr) {
       auto stmts = ptr_vec<hir_node>{};
       if (auto result = emit_jump_drops(node, stmts); !result.has_value()) {
@@ -4416,7 +4417,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return stmts;
   }
   case ast::node_kind::if_stmt: {
-    const auto &if_s = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &if_s = ast::cast<const ast::if_stmt>(node);
     auto lowered =
         lower_if(if_s.branches, if_s.else_body, if_s.span, k_unknown_type);
     if (!lowered.has_value()) {
@@ -4425,7 +4426,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return one_stmt(ptr<hir_node>(std::move(*lowered)));
   }
   case ast::node_kind::match_stmt: {
-    const auto &match_s = dynamic_cast<const ast::match_stmt &>(node);
+    const auto &match_s = ast::cast<const ast::match_stmt>(node);
     if (match_s.subject == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, match_s.span,
                   "match statement has no subject");
@@ -4438,7 +4439,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return one_stmt(ptr<hir_node>(std::move(*lowered)));
   }
   case ast::node_kind::var_stmt: {
-    const auto &var = dynamic_cast<const ast::var_stmt &>(node);
+    const auto &var = ast::cast<const ast::var_stmt>(node);
     if (var.initializer == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, var.span,
                   "var binding has no initializer");
@@ -4456,7 +4457,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return result;
   }
   case ast::node_kind::assign_stmt: {
-    const auto &assign = dynamic_cast<const ast::assign_stmt &>(node);
+    const auto &assign = ast::cast<const ast::assign_stmt>(node);
     if (assign.target == nullptr || assign.value == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, assign.span,
                   "assignment is missing its target or value");
@@ -4466,7 +4467,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // writing at `i` means, and may have no addressable slot at all. Handled
     // before the target is lowered, because there is no place to lower.
     if (assign.target->kind == ast::node_kind::index_expr) {
-      const auto &place = dynamic_cast<const ast::index_expr &>(*assign.target);
+      const auto &place = ast::cast<const ast::index_expr>(*assign.target);
       if (const auto found = checked_.lowering.index_set_dispatches.find(&place);
           found != checked_.lowering.index_set_dispatches.end()) {
         if (assign.op != ast::assign_op::assign) {
@@ -4606,7 +4607,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return stmts;
   }
   case ast::node_kind::while_stmt: {
-    const auto &while_s = dynamic_cast<const ast::while_stmt &>(node);
+    const auto &while_s = ast::cast<const ast::while_stmt>(node);
     if (while_s.let_pattern != nullptr && while_s.let_expr != nullptr) {
       return lower_while_let_stmt(while_s);
     }
@@ -4631,7 +4632,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         while_s.span, std::move(*condition), std::move(*body))));
   }
   case ast::node_kind::scope_stmt: {
-    const auto &scope_s = dynamic_cast<const ast::scope_stmt &>(node);
+    const auto &scope_s = ast::cast<const ast::scope_stmt>(node);
     auto type = checked_type_of(scope_s);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -4644,7 +4645,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         make<hir_expr_stmt>(scope_s.span, ptr<hir_expr>(std::move(*body)))));
   }
   case ast::node_kind::for_stmt: {
-    return lower_for_stmt(dynamic_cast<const ast::for_stmt &>(node));
+    return lower_for_stmt(ast::cast<const ast::for_stmt>(node));
   }
   case ast::node_kind::splice_stmt: {
     // Mirrors the `splice_expr` case in `lower_expr` above: `checker::
@@ -4660,7 +4661,7 @@ auto lowerer::lower_stmt(const ast::node &node)
                   "checking");
     }
     if (const auto *fragment_expr =
-            dynamic_cast<const ast::expr *>(found->second)) {
+            ast::as<const ast::expr>(found->second)) {
       auto lowered = lower_expr(*fragment_expr);
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
@@ -4682,7 +4683,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // statements directly into the enclosing statement list rather than
     // nesting them in a new HIR block/scope, since the checker never pushed
     // a scope for them either.
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    const auto &decl = ast::cast<const ast::static_decl>(node);
     if (decl.decl_kind == ast::static_decl_kind::assertion) {
       // Purely compile-time: `checker::check_static_decl`'s `assertion`
       // case already evaluated and (if false) diagnosed the condition
@@ -4957,7 +4958,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   const auto *plain_var =
       for_stmt.patterns.size() == 1 &&
               for_stmt.patterns.front()->kind == ast::node_kind::binding_pattern
-          ? &dynamic_cast<const ast::binding_pattern &>(
+          ? &ast::cast<const ast::binding_pattern>(
                 *for_stmt.patterns.front())
           : nullptr;
   if (plain_var == nullptr) {
@@ -5002,7 +5003,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
 
   if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
-        dynamic_cast<const ast::binary_expr &>(*for_stmt.iterable);
+        ast::cast<const ast::binary_expr>(*for_stmt.iterable);
     if (ast::is_range(range.op)) {
       return lower_range_loop(for_stmt.span, range, loop_var, inner_stmts);
     }
@@ -5945,7 +5946,7 @@ auto lowerer::lower_comprehension_clause(
   const auto *plain_var =
       clause.patterns.size() == 1 &&
               clause.patterns.front()->kind == ast::node_kind::binding_pattern
-          ? &dynamic_cast<const ast::binding_pattern &>(
+          ? &ast::cast<const ast::binding_pattern>(
                 *clause.patterns.front())
           : nullptr;
   if (plain_var == nullptr) {
@@ -5965,7 +5966,7 @@ auto lowerer::lower_comprehension_clause(
       auto patterns = std::vector<const ast::pattern *>{};
       patterns.reserve(clauses[index].patterns.size());
       for (const auto &pattern : clauses[index].patterns) {
-        patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
+        patterns.push_back(ast::as<const ast::pattern>(pattern.get()));
       }
       auto destructured =
           destructure_loop_element(patterns, subject.name, bindings);
@@ -5992,7 +5993,7 @@ auto lowerer::lower_comprehension_clause(
 
   if (clause.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
-        dynamic_cast<const ast::binary_expr &>(*clause.iterable);
+        ast::cast<const ast::binary_expr>(*clause.iterable);
     if (ast::is_range(range.op)) {
       return lower_range_loop(span, range, loop_var, nested);
     }
@@ -6148,12 +6149,12 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::literal_pattern: {
-    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
+    const auto &lit = ast::cast<const ast::literal_pattern>(pattern);
     return ptr<hir_pattern>(
         make<hir_literal_pattern>(pattern.span, lit.lit_kind, lit.value));
   }
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = ast::cast<const ast::binding_pattern>(pattern);
     auto place = make_place();
     const auto whole = drop_schedule_.owned_bindings.contains(&pattern);
     const auto symbol =
@@ -6166,7 +6167,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     return ptr<hir_pattern>(make<hir_wildcard_pattern>(pattern.span));
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(pattern);
     if (group.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "grouped pattern has no inner pattern");
@@ -6192,7 +6193,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // `&pattern` doesn't change which value is matched at the HIR level —
     // there's no separate "place vs. reference to a place" distinction yet
     // — so this is a transparent pass-through to the inner pattern.
-    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
+    const auto &ref = ast::cast<const ast::ref_pattern>(pattern);
     if (ref.inner == nullptr) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "reference pattern has no inner pattern");
@@ -6200,7 +6201,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     return lower_pattern(*ref.inner, make_place, pending);
   }
   case ast::node_kind::or_pattern: {
-    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alt = ast::cast<const ast::or_pattern>(pattern);
     if (alt.alternatives.empty()) {
       return fail(lowering_error_kind::unsupported_construct, pattern.span,
                   "`|` pattern has no alternatives");
@@ -6229,7 +6230,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_or_pattern>(pattern.span, std::move(alternatives)));
   }
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tuple = ast::cast<const ast::tuple_pattern>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(tuple.elements.size());
     for (std::size_t i = 0; i < tuple.elements.size(); ++i) {
@@ -6258,7 +6259,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_tuple_pattern>(pattern.span, std::move(elements)));
   }
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pat = dynamic_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pat = ast::cast<const ast::struct_pattern>(pattern);
     auto fields = std::vector<hir_struct_pattern_field>{};
     fields.reserve(struct_pat.fields.size());
     for (const auto &field : struct_pat.fields) {
@@ -6347,7 +6348,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_struct_pattern>(pattern.span, std::move(fields)));
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(pattern);
     auto args = ptr_vec<hir_pattern>{};
     args.reserve(ctor.args.size());
     for (size_t i = 0; i < ctor.args.size(); ++i) {
@@ -6382,7 +6383,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // `some(inner)` — the only form `ast::option_pattern` represents
     // (`none` arrives as an ordinary zero-arg `constructor_pattern`); lowers
     // to the same `hir_constructor_pattern` shape a user sum type would.
-    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
+    const auto &option = ast::cast<const ast::option_pattern>(pattern);
     auto args = ptr_vec<hir_pattern>{};
     if (option.inner != nullptr) {
       auto inner_type = checked_type_of(*option.inner);
@@ -6406,7 +6407,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         pattern.span, std::string("some"), std::move(args)));
   }
   case ast::node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
+    const auto &result = ast::cast<const ast::result_pattern>(pattern);
     const auto variant = result.result_kind == ast::option_result_kind::err
                              ? std::string("err")
                              : std::string("ok");
@@ -6434,7 +6435,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         make<hir_constructor_pattern>(pattern.span, variant, std::move(args)));
   }
   case ast::node_kind::range_pattern: {
-    const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
+    const auto &range = ast::cast<const ast::range_pattern>(pattern);
     auto start = ptr<hir_expr>{};
     if (range.start != nullptr) {
       auto lowered = lower_expr(*range.start);
@@ -6460,7 +6461,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // comment), so an array/list/slice pattern is just a fixed-arity
     // positional destructure, reusing hir_tuple_index for element
     // projections the same way a tuple pattern does.
-    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
+    const auto &array = ast::cast<const ast::array_pattern>(pattern);
     auto elements = ptr_vec<hir_pattern>{};
     elements.reserve(array.elements.size());
     for (std::size_t i = 0; i < array.elements.size(); ++i) {
@@ -6719,7 +6720,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 
     if (param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+          ast::cast<const ast::binding_pattern>(*param.pattern);
       const auto symbol = declare_local(binding.name, *type, /*whole=*/true,
                                         param.pattern.get());
       params.push_back(
@@ -7004,7 +7005,7 @@ auto lower_function(const ast::func_decl &decl,
   if (for_type == nullptr || for_type->kind != ast::node_kind::named_type) {
     return std::nullopt;
   }
-  const auto &named = dynamic_cast<const ast::named_type &>(*for_type);
+  const auto &named = ast::cast<const ast::named_type>(*for_type);
   if (named.path.empty() || !named.type_args.empty()) {
     return std::nullopt;
   }
@@ -7036,7 +7037,7 @@ auto lower_function(const ast::func_decl &decl,
     if (item == nullptr || item->kind != ast::node_kind::func_decl) {
       continue;
     }
-    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    const auto &decl = ast::cast<const ast::func_decl>(*item);
     if (decl.modifiers.is_intrinsic ||
         checked.lowering.open_param_templates.contains(&decl)) {
       continue;
@@ -7079,7 +7080,7 @@ auto lower_function(const ast::func_decl &decl,
     if (item == nullptr || item->kind != ast::node_kind::func_decl) {
       continue;
     }
-    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    const auto &decl = ast::cast<const ast::func_decl>(*item);
     if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
       continue;
     }
@@ -7114,7 +7115,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     if (item->kind == ast::node_kind::static_decl) {
-      const auto &decl = dynamic_cast<const ast::static_decl &>(*item);
+      const auto &decl = ast::cast<const ast::static_decl>(*item);
       const auto found = checked.lowering.static_global_defs.find(&decl);
       if (found == checked.lowering.static_global_defs.end()) {
         continue;
@@ -7132,7 +7133,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
     }
     if (item->kind == ast::node_kind::impl_decl) {
       auto result = lower_impl_associated_functions(
-          dynamic_cast<const ast::impl_decl &>(*item), checked, options,
+          ast::cast<const ast::impl_decl>(*item), checked, options,
           functions);
       if (!result.has_value()) {
         return std::unexpected(result.error());
@@ -7141,7 +7142,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
     }
     if (item->kind == ast::node_kind::extend_decl) {
       auto result =
-          lower_extend_methods(dynamic_cast<const ast::extend_decl &>(*item),
+          lower_extend_methods(ast::cast<const ast::extend_decl>(*item),
                                checked, options, functions);
       if (!result.has_value()) {
         return std::unexpected(result.error());
@@ -7151,7 +7152,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
     if (item->kind != ast::node_kind::func_decl) {
       continue;
     }
-    const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
+    const auto &decl = ast::cast<const ast::func_decl>(*item);
     if (checked.lowering.open_param_templates.contains(&decl)) {
       // An unannotated parameter the body leaves open is an implicit type
       // parameter: there is no single body that serves every argument type,
@@ -7318,7 +7319,7 @@ auto lower_inline_submodules_into(const std::vector<ast::ptr<ast::node>> &items,
     if (item == nullptr || item->kind != ast::node_kind::sub_module_decl) {
       continue;
     }
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = ast::cast<const ast::sub_module_decl>(*item);
     if (decl.is_functor() || decl.items.empty()) {
       // A functor is not a module in the graph — it is instantiated per
       // argument tuple, and `lower_functor_modules` lowers those instances.

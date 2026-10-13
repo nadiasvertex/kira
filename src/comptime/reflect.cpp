@@ -2,6 +2,7 @@
 #include <format>
 
 #include "src/comptime/eval.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::comptime {
 
@@ -23,7 +24,7 @@ namespace {
   if (type->kind != ast::node_kind::named_type) {
     return "<type>";
   }
-  const auto &named = dynamic_cast<const ast::named_type &>(*type);
+  const auto &named = ast::cast<const ast::named_type>(*type);
   auto rendered = std::string{};
   for (size_t i = 0; i < named.path.size(); ++i) {
     if (i > 0) {
@@ -145,7 +146,7 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.object == nullptr ||
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
@@ -156,7 +157,7 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
     return std::nullopt;
   }
   const auto &object_ident =
-      dynamic_cast<const ast::ident_expr &>(*field.object);
+      ast::cast<const ast::ident_expr>(*field.object);
   const auto &type_name = object_ident.name;
 
   // `name`/`kind` only need a name — resolved through `resolve_generic_
@@ -198,7 +199,7 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
                       type_name, field.field_name, type_name));
     }
     const auto &sum_def =
-        dynamic_cast<const ast::sum_type_def &>(*decl.definition);
+        ast::cast<const ast::sum_type_def>(*decl.definition);
     if (field.field_name == "variant_count") {
       return value::make_int(
           static_cast<int64_t>(sum_def.body.variants.size()));
@@ -223,7 +224,7 @@ auto evaluator::try_eval_type_reflection_call(const ast::call_expr &call)
                               type_name, field.field_name, type_name));
   }
   const auto &struct_def =
-      dynamic_cast<const ast::struct_type_def &>(*decl.definition);
+      ast::cast<const ast::struct_type_def>(*decl.definition);
 
   if (field.field_name == "field_count") {
     return value::make_int(static_cast<int64_t>(struct_def.body.fields.size()));
@@ -300,7 +301,7 @@ auto evaluator::try_eval_module_reflection_call(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.object == nullptr ||
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
@@ -311,7 +312,7 @@ auto evaluator::try_eval_module_reflection_call(const ast::call_expr &call)
     return std::nullopt;
   }
   const auto &object_ident =
-      dynamic_cast<const ast::ident_expr &>(*field.object);
+      ast::cast<const ast::ident_expr>(*field.object);
   const auto it = pending_modules_.find(object_ident.name);
   if (it == pending_modules_.end()) {
     return std::nullopt; // not a registered module — let other dispatch try
@@ -361,7 +362,7 @@ auto evaluator::try_eval_trait_reflection_call(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.object == nullptr ||
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
@@ -370,7 +371,7 @@ auto evaluator::try_eval_trait_reflection_call(const ast::call_expr &call)
     return std::nullopt;
   }
   const auto &object_ident =
-      dynamic_cast<const ast::ident_expr &>(*field.object);
+      ast::cast<const ast::ident_expr>(*field.object);
 
   if (field.field_name == "traits") {
     const auto resolved_arg = resolve_generic_type_arg(object_ident);
@@ -416,7 +417,7 @@ auto evaluator::try_eval_implements_call(const ast::call_expr &call)
   if (base == nullptr || base->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &base_ident = dynamic_cast<const ast::ident_expr &>(*base);
+  const auto &base_ident = ast::cast<const ast::ident_expr>(*base);
   if (base_ident.name != "implements" || type_arg_exprs.size() != 2) {
     return std::nullopt;
   }
@@ -427,9 +428,9 @@ auto evaluator::try_eval_implements_call(const ast::call_expr &call)
                   "trait names");
   }
   const auto &t_ident =
-      dynamic_cast<const ast::ident_expr &>(*type_arg_exprs[0]);
+      ast::cast<const ast::ident_expr>(*type_arg_exprs[0]);
   const auto &trait_ident =
-      dynamic_cast<const ast::ident_expr &>(*type_arg_exprs[1]);
+      ast::cast<const ast::ident_expr>(*type_arg_exprs[1]);
   const auto resolved_t = resolve_generic_type_arg(t_ident);
   if (!resolved_t.has_value()) {
     return report(

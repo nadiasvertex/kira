@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -921,7 +922,7 @@ auto checker::method_field_of(const ast::call_expr &call,
   if (callee == nullptr || callee->kind != ast::node_kind::field_expr) {
     return nullptr;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*callee);
+  const auto &field = ast::cast<const ast::field_expr>(*callee);
   if (explicit_args.empty()) {
     explicit_args = method_explicit_generic_args(field);
   }

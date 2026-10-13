@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -170,7 +171,7 @@ auto checker::explicit_generic_callee(const ast::expr &callee,
                                       explicit_generic_args &args_out)
     -> const ast::expr * {
   if (callee.kind == ast::node_kind::index_expr) {
-    const auto &index = dynamic_cast<const ast::index_expr &>(callee);
+    const auto &index = ast::cast<const ast::index_expr>(callee);
     if (index.object == nullptr || index.index == nullptr) {
       return nullptr;
     }
@@ -179,7 +180,7 @@ auto checker::explicit_generic_callee(const ast::expr &callee,
     return index.object.get();
   }
   if (callee.kind == ast::node_kind::call_expr) {
-    const auto &applied = dynamic_cast<const ast::call_expr &>(callee);
+    const auto &applied = ast::cast<const ast::call_expr>(callee);
     if (applied.callee == nullptr) {
       return nullptr;
     }
@@ -269,15 +270,15 @@ auto checker::expr_as_named_type(const ast::expr &arg)
 
   switch (arg.kind) {
   case ast::node_kind::ident_expr:
-    named->path = {dynamic_cast<const ast::ident_expr &>(arg).name};
+    named->path = {ast::cast<const ast::ident_expr>(arg).name};
     break;
   case ast::node_kind::module_path_expr:
-    named->path = dynamic_cast<const ast::module_path_expr &>(arg).segments;
+    named->path = ast::cast<const ast::module_path_expr>(arg).segments;
     break;
   case ast::node_kind::index_expr: {
     // `list[int32]` — one bracket argument, which the parser spells as an
     // index because in expression position that is all it could be.
-    const auto &index = dynamic_cast<const ast::index_expr &>(arg);
+    const auto &index = ast::cast<const ast::index_expr>(arg);
     if (index.object == nullptr || index.index == nullptr) {
       return nullptr;
     }
@@ -294,7 +295,7 @@ auto checker::expr_as_named_type(const ast::expr &arg)
   case ast::node_kind::call_expr: {
     // `map[str, int32]` — several bracket arguments, which the parser
     // spells as an application instead.
-    const auto &applied = dynamic_cast<const ast::call_expr &>(arg);
+    const auto &applied = ast::cast<const ast::call_expr>(arg);
     if (applied.callee == nullptr) {
       return nullptr;
     }
@@ -1567,7 +1568,7 @@ auto checker::check_variant_construction(const ast::call_expr &call,
         if (payload_type != nullptr &&
             payload_type->kind == ast::node_kind::named_type) {
           const auto &named =
-              dynamic_cast<const ast::named_type &>(*payload_type);
+              ast::cast<const ast::named_type>(*payload_type);
           if (named.path.size() == 1 && named.path.front() == param.name &&
               i < inferred_args.size()) {
             bound = inferred_args[i];

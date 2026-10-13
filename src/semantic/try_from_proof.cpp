@@ -1,6 +1,7 @@
 #include "src/semantic/try_from_proof.h"
 
 #include <utility>
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -51,7 +52,7 @@ auto specialize_predicate(
   }
   switch (slot->kind) {
   case ast::node_kind::ident_expr: {
-    auto &ident = dynamic_cast<ast::ident_expr &>(*slot);
+    auto &ident = ast::cast<ast::ident_expr>(*slot);
     if (ident.name == "self") {
       ident.name = value_binding;
       return;
@@ -66,37 +67,37 @@ auto specialize_predicate(
     return;
   }
   case ast::node_kind::binary_expr: {
-    auto &binary = dynamic_cast<ast::binary_expr &>(*slot);
+    auto &binary = ast::cast<ast::binary_expr>(*slot);
     specialize_predicate(binary.lhs, value_binding, parameters);
     specialize_predicate(binary.rhs, value_binding, parameters);
     return;
   }
   case ast::node_kind::unary_expr: {
-    auto &unary = dynamic_cast<ast::unary_expr &>(*slot);
+    auto &unary = ast::cast<ast::unary_expr>(*slot);
     specialize_predicate(unary.operand, value_binding, parameters);
     return;
   }
   case ast::node_kind::field_expr: {
-    auto &field = dynamic_cast<ast::field_expr &>(*slot);
+    auto &field = ast::cast<ast::field_expr>(*slot);
     specialize_predicate(field.object, value_binding, parameters);
     return;
   }
   case ast::node_kind::module_path_expr: {
     // `self.value` is a path, not a field access — see `atom_key`.
-    auto &path = dynamic_cast<ast::module_path_expr &>(*slot);
+    auto &path = ast::cast<ast::module_path_expr>(*slot);
     if (!path.segments.empty() && path.segments.front() == "self") {
       path.segments.front() = value_binding;
     }
     return;
   }
   case ast::node_kind::index_expr: {
-    auto &index = dynamic_cast<ast::index_expr &>(*slot);
+    auto &index = ast::cast<ast::index_expr>(*slot);
     specialize_predicate(index.object, value_binding, parameters);
     specialize_predicate(index.index, value_binding, parameters);
     return;
   }
   case ast::node_kind::call_expr: {
-    auto &call = dynamic_cast<ast::call_expr &>(*slot);
+    auto &call = ast::cast<ast::call_expr>(*slot);
     specialize_predicate(call.callee, value_binding, parameters);
     for (auto &arg : call.args) {
       specialize_predicate(arg.value, value_binding, parameters);

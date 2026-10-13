@@ -3,6 +3,7 @@
 #include <string>
 
 #include "src/semantic/module_index.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 namespace {
@@ -67,7 +68,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
                         module_members &members) -> void {
   switch (item.kind) {
   case ast::node_kind::type_decl: {
-    const auto &decl = dynamic_cast<const ast::type_decl &>(item);
+    const auto &decl = ast::cast<const ast::type_decl>(item);
     if (decl.name.empty()) {
       return;
     }
@@ -76,7 +77,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     if (decl.definition != nullptr &&
         decl.definition->kind == ast::node_kind::sum_type_def) {
       const auto &sum =
-          dynamic_cast<const ast::sum_type_def &>(*decl.definition);
+          ast::cast<const ast::sum_type_def>(*decl.definition);
       for (const auto &variant : sum.body.variants) {
         if (!variant.name.empty()) {
           members.variants.emplace(
@@ -88,7 +89,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::trait_decl: {
-    const auto &decl = dynamic_cast<const ast::trait_decl &>(item);
+    const auto &decl = ast::cast<const ast::trait_decl>(item);
     if (!decl.name.empty()) {
       members.traits.emplace(decl.name,
                              trait_decl_ref{.decl = &decl, .file_id = file_id});
@@ -96,7 +97,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::concept_decl: {
-    const auto &decl = dynamic_cast<const ast::concept_decl &>(item);
+    const auto &decl = ast::cast<const ast::concept_decl>(item);
     if (!decl.name.empty()) {
       members.concepts.emplace(
           decl.name, concept_decl_ref{.decl = &decl, .file_id = file_id});
@@ -104,7 +105,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::signature_decl: {
-    const auto &decl = dynamic_cast<const ast::signature_decl &>(item);
+    const auto &decl = ast::cast<const ast::signature_decl>(item);
     if (!decl.name.empty()) {
       members.signatures.emplace(
           decl.name, signature_decl_ref{.decl = &decl, .file_id = file_id});
@@ -112,7 +113,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::func_decl: {
-    const auto &decl = dynamic_cast<const ast::func_decl &>(item);
+    const auto &decl = ast::cast<const ast::func_decl>(item);
     if (!decl.name.empty()) {
       members.functions.emplace(
           decl.name, func_decl_ref{.decl = &decl, .file_id = file_id});
@@ -120,7 +121,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(item);
+    const auto &decl = ast::cast<const ast::static_decl>(item);
     if (decl.decl_kind == ast::static_decl_kind::binding &&
         !decl.name.empty()) {
       members.statics.emplace(
@@ -129,13 +130,13 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
     return;
   }
   case ast::node_kind::impl_decl: {
-    const auto &decl = dynamic_cast<const ast::impl_decl &>(item);
+    const auto &decl = ast::cast<const ast::impl_decl>(item);
     members.impls.push_back(impl_ref{
         .decl = &decl, .module_name = members.module_name, .file_id = file_id});
     return;
   }
   case ast::node_kind::extend_decl: {
-    const auto &decl = dynamic_cast<const ast::extend_decl &>(item);
+    const auto &decl = ast::cast<const ast::extend_decl>(item);
     members.extends.push_back(extend_ref{
         .decl = &decl, .module_name = members.module_name, .file_id = file_id});
     return;
@@ -159,12 +160,12 @@ auto index_items(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     if (item->kind == ast::node_kind::use_decl) {
-      record_use_bindings(dynamic_cast<const ast::use_decl &>(*item), file_id,
+      record_use_bindings(ast::cast<const ast::use_decl>(*item), file_id,
                           index);
       continue;
     }
     if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+      const auto &decl = ast::cast<const ast::sub_module_decl>(*item);
       if (decl.is_functor()) {
         // A parameterized module is a functor: recorded on its parent so
         // instantiation can find it, but *not* indexed as a module of its own

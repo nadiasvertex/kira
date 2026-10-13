@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -77,10 +78,10 @@ auto checker::value_poly(const ast::node &node, const resolve_ctx &ctx)
       node, [&](const ast::node &leaf) -> std::optional<linear_poly> {
         switch (leaf.kind) {
         case ast::node_kind::ident_expr:
-          return name_poly(dynamic_cast<const ast::ident_expr &>(leaf).name,
+          return name_poly(ast::cast<const ast::ident_expr>(leaf).name,
                            ctx);
         case ast::node_kind::named_type: {
-          const auto &named = dynamic_cast<const ast::named_type &>(leaf);
+          const auto &named = ast::cast<const ast::named_type>(leaf);
           if (named.path.size() != 1 || !named.type_args.empty()) {
             return std::nullopt;
           }
@@ -99,10 +100,10 @@ auto checker::value_poly(const ast::node &node, const resolve_ctx &ctx)
 auto checker::value_arg_name(const ast::node &node)
     -> std::optional<std::string> {
   if (node.kind == ast::node_kind::ident_expr) {
-    return dynamic_cast<const ast::ident_expr &>(node).name;
+    return ast::cast<const ast::ident_expr>(node).name;
   }
   if (node.kind == ast::node_kind::named_type) {
-    const auto &named = dynamic_cast<const ast::named_type &>(node);
+    const auto &named = ast::cast<const ast::named_type>(node);
     if (named.path.size() == 1 && named.type_args.empty()) {
       return named.path.front();
     }
@@ -128,7 +129,7 @@ auto checker::resolve_value_arg(const ast::node &node,
     if (!name.has_value()) {
       return k_unknown_type;
     }
-    const auto &sum = dynamic_cast<const ast::sum_type_def &>(
+    const auto &sum = ast::cast<const ast::sum_type_def>(
         *declared_entry.decl->definition);
     for (const auto &variant : sum.body.variants) {
       if (variant.name == *name) {
@@ -245,17 +246,17 @@ auto checker::resolve_type_args(const std::vector<ast::type_arg> &type_args,
     case ast::node_kind::refinement_type:
     case ast::node_kind::bound_type:
       args.push_back(
-          resolve_type(dynamic_cast<const ast::type_expr &>(*arg.value), ctx));
+          resolve_type(ast::cast<const ast::type_expr>(*arg.value), ctx));
       break;
     case ast::node_kind::named_type:
       // A bare name resolves through the ordinary type path, which already
       // consults `param_bindings` and the type-parameter stack — so a slot
       // a caller has substituted a value into comes back as that value.
       args.push_back(as_value_slot(resolve_type(
-          dynamic_cast<const ast::named_type &>(*arg.value), ctx)));
+          ast::cast<const ast::named_type>(*arg.value), ctx)));
       break;
     case ast::node_kind::ident_expr: {
-      const auto &ident = dynamic_cast<const ast::ident_expr &>(*arg.value);
+      const auto &ident = ast::cast<const ast::ident_expr>(*arg.value);
       const auto slot = lookup_value_binding(ident.name, ctx);
       args.push_back(slot.has_value() ? as_value_slot(*slot) : k_unknown_type);
       break;
@@ -342,7 +343,7 @@ auto checker::struct_fields_of(const type_entry &instance)
       instance.decl->definition->kind != ast::node_kind::struct_type_def) {
     return nullptr;
   }
-  return &dynamic_cast<const ast::struct_type_def &>(*instance.decl->definition)
+  return &ast::cast<const ast::struct_type_def>(*instance.decl->definition)
               .body.fields;
 }
 
@@ -379,7 +380,7 @@ auto checker::sum_variants_of(const type_entry &instance)
       instance.decl->definition->kind != ast::node_kind::sum_type_def) {
     return nullptr;
   }
-  return &dynamic_cast<const ast::sum_type_def &>(*instance.decl->definition)
+  return &ast::cast<const ast::sum_type_def>(*instance.decl->definition)
               .body.variants;
 }
 
@@ -701,7 +702,7 @@ auto checker::resolve_drop_plans() -> void {
 auto checker::param_name_of(const ast::param &param) -> std::string {
   if (param.pattern != nullptr &&
       param.pattern->kind == ast::node_kind::binding_pattern) {
-    return dynamic_cast<const ast::binding_pattern &>(*param.pattern).name;
+    return ast::cast<const ast::binding_pattern>(*param.pattern).name;
   }
   return {};
 }

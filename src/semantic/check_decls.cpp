@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -94,12 +95,12 @@ auto checker::block_provides_function_value(
 /// never falls past, since Cinder has no `break`: the loop can only be
 /// left by `return`ing out of the enclosing function.
 auto checker::is_while_true(const ast::node &node) -> bool {
-  const auto *stmt = dynamic_cast<const ast::while_stmt *>(&node);
+  const auto *stmt = ast::as<const ast::while_stmt>(&node);
   if (stmt == nullptr) {
     return false;
   }
   const auto *condition =
-      dynamic_cast<const ast::literal_expr *>(stmt->condition.get());
+      ast::as<const ast::literal_expr>(stmt->condition.get());
   return condition != nullptr && condition->lit_kind == token_kind::kw_true;
 }
 
@@ -110,7 +111,7 @@ auto checker::node_provides_function_value(const ast::node &node) -> bool {
   case ast::node_kind::return_stmt:
     return true;
   case ast::node_kind::if_stmt: {
-    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::if_stmt>(node);
     return !stmt.else_body.empty() &&
            std::ranges::all_of(stmt.branches,
                                [](const ast::if_branch &branch) -> bool {
@@ -120,7 +121,7 @@ auto checker::node_provides_function_value(const ast::node &node) -> bool {
            block_provides_function_value(stmt.else_body);
   }
   case ast::node_kind::match_stmt: {
-    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::match_stmt>(node);
     // Compact `=> expr` arms always produce a value; recovered arms have
     // already been diagnosed.
     return std::ranges::all_of(
@@ -130,7 +131,7 @@ auto checker::node_provides_function_value(const ast::node &node) -> bool {
         });
   }
   case ast::node_kind::static_decl: {
-    const auto &stmt = dynamic_cast<const ast::static_decl &>(node);
+    const auto &stmt = ast::cast<const ast::static_decl>(node);
     if (stmt.decl_kind != ast::static_decl_kind::conditional_compilation) {
       return true;
     }
@@ -351,7 +352,7 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       record_expr_type(*param.pattern, type);
       if (param.pattern->kind == ast::node_kind::binding_pattern) {
         const auto &binding =
-            dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+            ast::cast<const ast::binding_pattern>(*param.pattern);
         bind_value(binding.name, type, binding_origin::parameter, param.span);
       } else {
         check_pattern(*param.pattern, strip_refs(type));
@@ -730,7 +731,7 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
     switch (decl.definition->kind) {
     case ast::node_kind::struct_type_def: {
       const auto &body =
-          dynamic_cast<const ast::struct_type_def &>(*decl.definition).body;
+          ast::cast<const ast::struct_type_def>(*decl.definition).body;
       auto seen = std::unordered_set<std::string>{};
       for (const auto &field : body.fields) {
         if (!field.name.empty() && !seen.insert(field.name).second) {
@@ -747,7 +748,7 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
     }
     case ast::node_kind::sum_type_def: {
       const auto &body =
-          dynamic_cast<const ast::sum_type_def &>(*decl.definition).body;
+          ast::cast<const ast::sum_type_def>(*decl.definition).body;
       auto seen = std::unordered_set<std::string>{};
       for (const auto &variant : body.variants) {
         if (!variant.name.empty() && !seen.insert(variant.name).second) {
@@ -766,14 +767,14 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
     }
     case ast::node_kind::refinement_type: {
       const auto &refinement =
-          dynamic_cast<const ast::refinement_type &>(*decl.definition);
+          ast::cast<const ast::refinement_type>(*decl.definition);
       const auto base =
           refinement.base != nullptr
               ? resolve_type(*refinement.base, current_resolve_ctx())
               : k_unknown_type;
       if (refinement.predicate != nullptr && !refinement.predicate->has_error) {
         if (const auto *predicate =
-                dynamic_cast<const ast::expr *>(refinement.predicate.get())) {
+                ast::as<const ast::expr>(refinement.predicate.get())) {
           push_scope();
           const auto saved_self = function_.self_type_;
           function_.self_type_ = base;
@@ -797,7 +798,7 @@ auto checker::check_type_decl(const ast::type_decl &decl) -> void {
     }
     default:
       if (const auto *type =
-              dynamic_cast<const ast::type_expr *>(decl.definition.get())) {
+              ast::as<const ast::type_expr>(decl.definition.get())) {
         resolve_type(*type, current_resolve_ctx());
       }
       break;
@@ -840,7 +841,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
     resolve_type(*decl.trait_type, current_resolve_ctx());
     if (decl.trait_type->kind == ast::node_kind::named_type) {
       const auto &named =
-          dynamic_cast<const ast::named_type &>(*decl.trait_type);
+          ast::cast<const ast::named_type>(*decl.trait_type);
       if (!named.path.empty()) {
         trait_name = named.path.back();
       }
@@ -925,7 +926,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
         continue;
       }
       const auto &assoc =
-          dynamic_cast<const ast::associated_type_decl_node &>(*item);
+          ast::cast<const ast::associated_type_decl_node>(*item);
       if (assoc.value.default_type != nullptr) {
         function_.self_assoc_types_.emplace(
             assoc.value.name,
@@ -939,7 +940,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
       continue;
     }
     const auto &assoc =
-        dynamic_cast<const ast::associated_type_def_node &>(*item);
+        ast::cast<const ast::associated_type_def_node>(*item);
     const auto resolved =
         assoc.value.type != nullptr
             ? resolve_type(*assoc.value.type, current_resolve_ctx())
@@ -981,7 +982,7 @@ auto checker::check_impl_decl(const ast::impl_decl &decl) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      check_function(dynamic_cast<const ast::func_decl &>(*item),
+      check_function(ast::cast<const ast::func_decl>(*item),
                      /*at_module_scope=*/false);
     } else if (item->kind == ast::node_kind::associated_type_def_node) {
       // Already resolved above.
@@ -1046,7 +1047,7 @@ auto checker::check_extend_decl(const ast::extend_decl &decl) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      check_function(dynamic_cast<const ast::func_decl &>(*item),
+      check_function(ast::cast<const ast::func_decl>(*item),
                      /*at_module_scope=*/false);
     }
   }
@@ -1062,7 +1063,7 @@ auto checker::passing_mode(const ast::type_expr *type) -> std::string_view {
     return "";
   }
   if (type->kind == ast::node_kind::ref_type) {
-    return dynamic_cast<const ast::ref_type &>(*type).is_mut ? "&mut" : "&";
+    return ast::cast<const ast::ref_type>(*type).is_mut ? "&mut" : "&";
   }
   if (type->kind == ast::node_kind::mut_type) {
     return "mut";
@@ -1092,7 +1093,7 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
     const auto *named =
         impl.trait_type != nullptr &&
                 impl.trait_type->kind == ast::node_kind::named_type
-            ? &dynamic_cast<const ast::named_type &>(*impl.trait_type)
+            ? &ast::cast<const ast::named_type>(*impl.trait_type)
             : nullptr;
     if (named == nullptr ||
         named->type_args.size() != trait.type_params.size()) {
@@ -1101,7 +1102,7 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
       auto quiet_ctx = current_resolve_ctx();
       quiet_ctx.quiet = true;
       for (size_t i = 0; i < trait.type_params.size(); ++i) {
-        const auto *argument = dynamic_cast<const ast::type_expr *>(
+        const auto *argument = ast::as<const ast::type_expr>(
             named->type_args[i].value.get());
         if (argument == nullptr) {
           trait_args_known = false;
@@ -1127,13 +1128,13 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
         item->kind != ast::node_kind::func_decl) {
       continue;
     }
-    const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+    const auto &fn = ast::cast<const ast::func_decl>(*item);
     const ast::func_decl *declared = nullptr;
     for (const auto &trait_item : trait.items) {
       if (trait_item != nullptr &&
           trait_item->kind == ast::node_kind::func_decl &&
-          dynamic_cast<const ast::func_decl &>(*trait_item).name == fn.name) {
-        declared = &dynamic_cast<const ast::func_decl &>(*trait_item);
+          ast::cast<const ast::func_decl>(*trait_item).name == fn.name) {
+        declared = &ast::cast<const ast::func_decl>(*trait_item);
         break;
       }
     }
@@ -1153,7 +1154,7 @@ auto checker::check_impl_signatures(const ast::impl_decl &impl,
         const auto is_mut_self = [](const ast::param &p) -> bool {
           return p.pattern != nullptr &&
                  p.pattern->kind == ast::node_kind::binding_pattern &&
-                 dynamic_cast<const ast::binding_pattern &>(*p.pattern).is_mut;
+                 ast::cast<const ast::binding_pattern>(*p.pattern).is_mut;
         };
         if (is_mut_self(param) != is_mut_self(expected)) {
           const auto *wrote = is_mut_self(param) ? "mut self" : "self";
@@ -1255,11 +1256,11 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       impl_methods.emplace(fn.name, &fn);
     } else if (item->kind == ast::node_kind::associated_type_def_node) {
       impl_assoc_types.insert(
-          dynamic_cast<const ast::associated_type_def_node &>(*item)
+          ast::cast<const ast::associated_type_def_node>(*item)
               .value.name);
     }
   }
@@ -1273,7 +1274,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       trait_methods.emplace(fn.name, &fn);
       const auto has_default =
           fn.body_expr != nullptr || !fn.body_stmts.empty();
@@ -1285,7 +1286,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
       }
     } else if (item->kind == ast::node_kind::associated_type_decl_node) {
       const auto &assoc =
-          dynamic_cast<const ast::associated_type_decl_node &>(*item);
+          ast::cast<const ast::associated_type_decl_node>(*item);
       if (assoc.value.default_type == nullptr &&
           !impl_assoc_types.contains(assoc.value.name)) {
         if (!missing_assoc.empty()) {
@@ -1363,7 +1364,7 @@ auto checker::check_impl_members(const ast::impl_decl &impl,
           term.type->kind != ast::node_kind::named_type) {
         continue;
       }
-      const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+      const auto &named = ast::cast<const ast::named_type>(*term.type);
       if (named.path.empty()) {
         continue;
       }
@@ -1433,7 +1434,7 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
       continue;
     }
     const auto &assoc =
-        dynamic_cast<const ast::associated_type_decl_node &>(*item);
+        ast::cast<const ast::associated_type_decl_node>(*item);
     const auto resolved =
         assoc.value.default_type != nullptr
             ? resolve_type(*assoc.value.default_type, current_resolve_ctx())
@@ -1448,7 +1449,7 @@ auto checker::check_trait_decl(const ast::trait_decl &decl) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      check_function(dynamic_cast<const ast::func_decl &>(*item),
+      check_function(ast::cast<const ast::func_decl>(*item),
                      /*at_module_scope=*/false);
     }
   }
@@ -1483,10 +1484,10 @@ auto checker::check_concept_decl(const ast::concept_decl &decl) -> void {
     }
     if (constraint.bound_or_expr != nullptr &&
         !constraint.bound_or_expr->has_error) {
-      if (const auto *type = dynamic_cast<const ast::type_expr *>(
+      if (const auto *type = ast::as<const ast::type_expr>(
               constraint.bound_or_expr.get())) {
         resolve_type(*type, current_resolve_ctx());
-      } else if (const auto *expr = dynamic_cast<const ast::expr *>(
+      } else if (const auto *expr = ast::as<const ast::expr>(
                      constraint.bound_or_expr.get())) {
         push_scope();
         infer_expr(*expr, k_unknown_type);
@@ -1513,7 +1514,7 @@ auto checker::check_signature_decl(const ast::signature_decl &decl) -> void {
       continue;
     }
     const auto &assoc =
-        dynamic_cast<const ast::associated_type_decl_node &>(*item);
+        ast::cast<const ast::associated_type_decl_node>(*item);
     if (!assoc.value.name.empty()) {
       param_scope.emplace(assoc.value.name,
                           session_.types_.type_param(assoc.value.name));
@@ -1526,10 +1527,10 @@ auto checker::check_signature_decl(const ast::signature_decl &decl) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      check_function(dynamic_cast<const ast::func_decl &>(*item),
+      check_function(ast::cast<const ast::func_decl>(*item),
                      /*at_module_scope=*/false);
     } else if (item->kind == ast::node_kind::static_decl) {
-      const auto &stat = dynamic_cast<const ast::static_decl &>(*item);
+      const auto &stat = ast::cast<const ast::static_decl>(*item);
       if (stat.type_annotation != nullptr) {
         resolve_type(*stat.type_annotation, current_resolve_ctx());
       }
@@ -1546,13 +1547,13 @@ auto checker::check_signature_decl(const ast::signature_decl &decl) -> void {
 auto checker::resolve_bound_signature(const ast::type_expr &bound_expr) const
     -> const ast::signature_decl * {
   const ast::named_type *named = nullptr;
-  if (const auto *bt = dynamic_cast<const ast::bound_type *>(&bound_expr)) {
+  if (const auto *bt = ast::as<const ast::bound_type>(&bound_expr)) {
     if (bt->value.terms.size() == 1 && bt->value.terms.front().type) {
-      named = dynamic_cast<const ast::named_type *>(
+      named = ast::as<const ast::named_type>(
           bt->value.terms.front().type.get());
     }
   } else if (const auto *nt =
-                 dynamic_cast<const ast::named_type *>(&bound_expr)) {
+                 ast::as<const ast::named_type>(&bound_expr)) {
     named = nt;
   }
   if (named == nullptr || named->path.empty()) {
@@ -1679,7 +1680,7 @@ auto checker::module_satisfies_signature(const module_members &mod,
     switch (item->kind) {
     case ast::node_kind::associated_type_decl_node: {
       const auto &assoc =
-          dynamic_cast<const ast::associated_type_decl_node &>(*item);
+          ast::cast<const ast::associated_type_decl_node>(*item);
       const auto it = mod.types.find(assoc.value.name);
       if (it == mod.types.end()) {
         failures.push_back(std::format("missing type `{}`", assoc.value.name));
@@ -1690,7 +1691,7 @@ auto checker::module_satisfies_signature(const module_members &mod,
       break;
     }
     case ast::node_kind::func_decl: {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       const auto it = mod.functions.find(fn.name);
       if (it == mod.functions.end()) {
         failures.push_back(std::format("missing function `{}`", fn.name));
@@ -1735,7 +1736,7 @@ auto checker::module_satisfies_signature(const module_members &mod,
       break;
     }
     case ast::node_kind::static_decl: {
-      const auto &stat = dynamic_cast<const ast::static_decl &>(*item);
+      const auto &stat = ast::cast<const ast::static_decl>(*item);
       const auto it = mod.statics.find(stat.name);
       if (it == mod.statics.end()) {
         failures.push_back(
@@ -1826,7 +1827,7 @@ auto checker::check_functor_instantiation(const ast::use_decl &decl) -> void {
     }
     const auto *arg_named =
         arg.value != nullptr
-            ? dynamic_cast<const ast::named_type *>(arg.value.get())
+            ? ast::as<const ast::named_type>(arg.value.get())
             : nullptr;
     const module_members *arg_mod =
         arg_named != nullptr ? resolve_arg_module(*arg_named) : nullptr;
@@ -1940,7 +1941,7 @@ auto checker::sanitize_module_name(std::string_view key) -> std::string {
 /// (`impl show for handle` → `handle`), used both as the coherence/method-
 /// table key and as the `functor_instance::impl_target` HIR lowering name.
 auto checker::impl_target_name(const ast::type_expr *for_type) -> std::string {
-  if (const auto *named = dynamic_cast<const ast::named_type *>(for_type);
+  if (const auto *named = ast::as<const ast::named_type>(for_type);
       named != nullptr && !named->path.empty()) {
     return named->path.back();
   }
@@ -2001,7 +2002,7 @@ auto checker::materialize_functor(
     case ast::node_kind::module_decl:
       continue;
     case ast::node_kind::func_decl: {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       auto cloned = ast::clone_func_decl(fn);
       if (!cloned.has_value()) {
         reject_member(fn.span, cloned.error().message);
@@ -2014,7 +2015,7 @@ auto checker::materialize_functor(
       break;
     }
     case ast::node_kind::type_decl: {
-      const auto &td = dynamic_cast<const ast::type_decl &>(*item);
+      const auto &td = ast::cast<const ast::type_decl>(*item);
       auto cloned = ast::clone_type_decl(td);
       if (!cloned.has_value()) {
         reject_member(td.span, cloned.error().message);
@@ -2027,7 +2028,7 @@ auto checker::materialize_functor(
       break;
     }
     case ast::node_kind::static_decl: {
-      const auto &sd = dynamic_cast<const ast::static_decl &>(*item);
+      const auto &sd = ast::cast<const ast::static_decl>(*item);
       if (sd.decl_kind != ast::static_decl_kind::binding) {
         reject_member(sd.span, "its body contains a non-binding `static` form");
         return std::nullopt;
@@ -2044,7 +2045,7 @@ auto checker::materialize_functor(
       break;
     }
     case ast::node_kind::impl_decl: {
-      const auto &id = dynamic_cast<const ast::impl_decl &>(*item);
+      const auto &id = ast::cast<const ast::impl_decl>(*item);
       auto cloned = ast::clone_impl_decl(id);
       if (!cloned.has_value()) {
         reject_member(id.span, cloned.error().message);
@@ -2057,7 +2058,7 @@ auto checker::materialize_functor(
       break;
     }
     case ast::node_kind::extend_decl: {
-      const auto &ed = dynamic_cast<const ast::extend_decl &>(*item);
+      const auto &ed = ast::cast<const ast::extend_decl>(*item);
       auto cloned = ast::clone_extend_decl(ed);
       if (!cloned.has_value()) {
         reject_member(ed.span, cloned.error().message);
@@ -2070,7 +2071,7 @@ auto checker::materialize_functor(
       break;
     }
     case ast::node_kind::trait_decl: {
-      const auto &tr = dynamic_cast<const ast::trait_decl &>(*item);
+      const auto &tr = ast::cast<const ast::trait_decl>(*item);
       auto cloned = ast::clone_trait_decl(tr);
       if (!cloned.has_value()) {
         reject_member(tr.span, cloned.error().message);
@@ -2106,7 +2107,7 @@ auto checker::materialize_functor(
     if (td->definition != nullptr &&
         td->definition->kind == ast::node_kind::sum_type_def) {
       const auto &sum =
-          dynamic_cast<const ast::sum_type_def &>(*td->definition);
+          ast::cast<const ast::sum_type_def>(*td->definition);
       for (const auto &variant : sum.body.variants) {
         if (!variant.name.empty()) {
           synth.variants.insert_or_assign(
@@ -2142,7 +2143,7 @@ auto checker::materialize_functor(
     for (const auto &member : id->items) {
       if (member != nullptr && member->kind == ast::node_kind::func_decl) {
         functor_.functor_instance_decls_.push_back(functor_instance{
-            .decl = &dynamic_cast<const ast::func_decl &>(*member),
+            .decl = &ast::cast<const ast::func_decl>(*member),
             .owner_module = synth_name,
             .impl_target = target});
       }
@@ -2156,7 +2157,7 @@ auto checker::materialize_functor(
     for (const auto &member : ed->items) {
       if (member != nullptr && member->kind == ast::node_kind::func_decl) {
         functor_.functor_instance_decls_.push_back(functor_instance{
-            .decl = &dynamic_cast<const ast::func_decl &>(*member),
+            .decl = &ast::cast<const ast::func_decl>(*member),
             .owner_module = synth_name,
             .impl_target = target});
       }
@@ -2262,31 +2263,31 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
   }
   switch (item.kind) {
   case ast::node_kind::func_decl:
-    check_function(dynamic_cast<const ast::func_decl &>(item), at_module_scope);
+    check_function(ast::cast<const ast::func_decl>(item), at_module_scope);
     return;
   case ast::node_kind::type_decl:
-    check_type_decl(dynamic_cast<const ast::type_decl &>(item));
+    check_type_decl(ast::cast<const ast::type_decl>(item));
     return;
   case ast::node_kind::trait_decl:
-    check_trait_decl(dynamic_cast<const ast::trait_decl &>(item));
+    check_trait_decl(ast::cast<const ast::trait_decl>(item));
     return;
   case ast::node_kind::impl_decl:
-    check_impl_decl(dynamic_cast<const ast::impl_decl &>(item));
+    check_impl_decl(ast::cast<const ast::impl_decl>(item));
     return;
   case ast::node_kind::extend_decl:
-    check_extend_decl(dynamic_cast<const ast::extend_decl &>(item));
+    check_extend_decl(ast::cast<const ast::extend_decl>(item));
     return;
   case ast::node_kind::concept_decl:
-    check_concept_decl(dynamic_cast<const ast::concept_decl &>(item));
+    check_concept_decl(ast::cast<const ast::concept_decl>(item));
     return;
   case ast::node_kind::signature_decl:
-    check_signature_decl(dynamic_cast<const ast::signature_decl &>(item));
+    check_signature_decl(ast::cast<const ast::signature_decl>(item));
     return;
   case ast::node_kind::static_decl:
-    check_static_decl(dynamic_cast<const ast::static_decl &>(item));
+    check_static_decl(ast::cast<const ast::static_decl>(item));
     return;
   case ast::node_kind::sub_module_decl: {
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(item);
+    const auto &decl = ast::cast<const ast::sub_module_decl>(item);
     if (decl.is_functor()) {
       // A functor's body is not elaborated as written — it is type-checked
       // per instantiation, after substituting the module arguments (see
@@ -2311,9 +2312,9 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
         check_item(*it->second, /*at_module_scope=*/true);
         continue;
       }
-      if (const auto *expr = dynamic_cast<const ast::expr *>(child.get());
+      if (const auto *expr = ast::as<const ast::expr>(child.get());
           expr != nullptr ||
-          dynamic_cast<const ast::stmt *>(child.get()) != nullptr) {
+          ast::as<const ast::stmt>(child.get()) != nullptr) {
         check_body_node(*child, k_unknown_type);
       } else {
         check_item(*child, /*at_module_scope=*/true);

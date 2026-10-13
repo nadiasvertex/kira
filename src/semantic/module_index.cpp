@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ranges>
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 namespace {
@@ -53,7 +54,7 @@ auto collect_submodule_declarations(
       continue;
     }
 
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = ast::cast<const ast::sub_module_decl>(*item);
     if (decl.is_functor()) {
       // A parameterized module is not a module of its own in the graph; it is
       // instantiated per argument tuple. Skip it (and its body) here.
@@ -95,7 +96,7 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
     }
 
     if (item->kind == ast::node_kind::use_decl) {
-      const auto &decl = dynamic_cast<const ast::use_decl &>(*item);
+      const auto &decl = ast::cast<const ast::use_decl>(*item);
       out.push_back(use_decl_record{
           .decl = &decl,
           .importer_module_name =
@@ -114,7 +115,7 @@ auto collect_use_declarations(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
 
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = ast::cast<const ast::sub_module_decl>(*item);
     if (decl.is_functor()) {
       continue; // functor bodies are elaborated per instantiation
     }

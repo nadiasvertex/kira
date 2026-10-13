@@ -275,7 +275,7 @@ auto validate_module_scope(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
 
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(*item);
+    const auto &decl = ast::cast<const ast::sub_module_decl>(*item);
     if (decl.is_functor()) {
       // Functor bodies are validated per instantiation, not as a module scope.
       continue;
@@ -853,7 +853,7 @@ auto collect_module_aliases(const ast::file &file) -> module_alias_map {
         item->kind != ast::node_kind::use_decl) {
       continue;
     }
-    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+    const auto &use = ast::cast<const ast::use_decl>(*item);
     // A functor instantiation binds its alias to a module the checker
     // materializes later, which is not something this pass can resolve a
     // path through; `build_import_bindings` skips these for the same reason.
@@ -1239,7 +1239,7 @@ auto collect_file_imports(const std::vector<ast::ptr<ast::node>> &items,
         item->kind != ast::node_kind::use_decl) {
       continue;
     }
-    const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+    const auto &use = ast::cast<const ast::use_decl>(*item);
     if (!use.instantiation_args.empty() || use.path.empty()) {
       continue;
     }
@@ -1352,7 +1352,7 @@ auto check_import_conflicts(const std::vector<ast::ptr<ast::node>> &items,
     if (item == nullptr || item->kind != ast::node_kind::sub_module_decl) {
       continue;
     }
-    const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+    const auto &sub = ast::cast<const ast::sub_module_decl>(*item);
     if (!sub.is_functor() && !sub.items.empty()) {
       check_import_conflicts(
           sub.items, append_module_name(module_name, sub.name), imports,

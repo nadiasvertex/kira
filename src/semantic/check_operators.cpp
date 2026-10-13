@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -176,9 +177,9 @@ auto checker::impl_trait_arguments_key(const ast::impl_decl &decl,
       decl.trait_type->kind != ast::node_kind::named_type) {
     return std::string(trait_name);
   }
-  const auto &named = dynamic_cast<const ast::named_type &>(*decl.trait_type);
+  const auto &named = ast::cast<const ast::named_type>(*decl.trait_type);
   const auto *argument = named.type_args.size() == 1
-                             ? dynamic_cast<const ast::type_expr *>(
+                             ? ast::as<const ast::type_expr>(
                                    named.type_args.front().value.get())
                              : nullptr;
   if (argument == nullptr) {
@@ -952,7 +953,7 @@ auto checker::raw_pointer_element_address(const ast::unary_expr &unary,
       (expected_entry.name == "cell" || expected_entry.name == "cell_mut")) {
     return std::nullopt;
   }
-  const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+  const auto &index = ast::cast<const ast::index_expr>(*unary.operand);
   if (index.object == nullptr) {
     return std::nullopt;
   }
@@ -978,7 +979,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
   // negation is about to apply before it runs, not after.
   if (unary.op == ast::unary_op::neg && unary.operand != nullptr) {
     if (const auto *lit =
-            dynamic_cast<const ast::literal_expr *>(unary.operand.get());
+            ast::as<const ast::literal_expr>(unary.operand.get());
         lit != nullptr && lit->lit_kind == token_kind::int_lit) {
       const auto result_type = infer_literal(*lit, expected, /*negated=*/true);
       record_expr_type(*lit, result_type);
@@ -991,10 +992,10 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // `-2147483648 as int32` as a positive-value overflow even though
     // `-2147483648` is exactly `int32::min`.
     if (const auto *cast =
-            dynamic_cast<const ast::cast_expr *>(unary.operand.get());
+            ast::as<const ast::cast_expr>(unary.operand.get());
         cast != nullptr && cast->operand != nullptr) {
       if (const auto *lit =
-              dynamic_cast<const ast::literal_expr *>(cast->operand.get());
+              ast::as<const ast::literal_expr>(cast->operand.get());
           lit != nullptr && lit->lit_kind == token_kind::int_lit) {
         const auto target =
             cast->target_type != nullptr
@@ -1119,7 +1120,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
         unary.operand->kind == ast::node_kind::index_expr &&
         !(stripped_entry_for_index.kind == type_kind::builtin_generic_kind &&
           stripped_entry_for_index.name == "slice")) {
-      const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+      const auto &index = ast::cast<const ast::index_expr>(*unary.operand);
       if (index.object != nullptr) {
         // Chosen from the head alone; the instance waits for the
         // elements (`dispatch_index_when_settled`).
@@ -1227,7 +1228,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
       // list/array/slice does). Re-dispatch here rather than in
       // `infer_index`, which has no way to know about this enclosing
       // `&mut` at the point it runs.
-      const auto &index = dynamic_cast<const ast::index_expr &>(*unary.operand);
+      const auto &index = ast::cast<const ast::index_expr>(*unary.operand);
       if (index.object != nullptr) {
         // Chosen from the head alone; the instance waits for the
         // elements (`dispatch_index_when_settled`).

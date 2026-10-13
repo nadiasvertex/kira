@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 namespace detail {
@@ -386,7 +387,7 @@ auto checker::check_file(const ast::file &file) -> void {
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       if (fn.name == "main") {
         main_decl = &fn;
       }
@@ -394,8 +395,8 @@ auto checker::check_file(const ast::file &file) -> void {
       // Resolved to an injected `impl` block by `resolve_item_splices` —
       // an item, not a top-level script statement.
     } else if (first_statement == nullptr &&
-               (dynamic_cast<const ast::stmt *>(item.get()) != nullptr ||
-                dynamic_cast<const ast::expr *>(item.get()) != nullptr)) {
+               (ast::as<const ast::stmt>(item.get()) != nullptr ||
+                ast::as<const ast::expr>(item.get()) != nullptr)) {
       first_statement = item.get();
     }
   }
@@ -428,7 +429,7 @@ auto checker::check_file(const ast::file &file) -> void {
   for (const auto &item : file.items) {
     if (item != nullptr && !item->has_error &&
         item->kind == ast::node_kind::func_decl &&
-        has_unannotated_params(dynamic_cast<const ast::func_decl &>(*item))) {
+        has_unannotated_params(ast::cast<const ast::func_decl>(*item))) {
       checked_early.insert(item.get());
       check_item(*item, /*at_module_scope=*/true);
     }
@@ -448,8 +449,8 @@ auto checker::check_file(const ast::file &file) -> void {
       check_item(*it->second, /*at_module_scope=*/true);
       continue;
     }
-    if (dynamic_cast<const ast::stmt *>(item.get()) != nullptr ||
-        dynamic_cast<const ast::expr *>(item.get()) != nullptr) {
+    if (ast::as<const ast::stmt>(item.get()) != nullptr ||
+        ast::as<const ast::expr>(item.get()) != nullptr) {
       check_body_node(*item, k_unknown_type);
     } else {
       check_item(*item, /*at_module_scope=*/true);
@@ -571,7 +572,7 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
       std::unordered_map<const ast::struct_field *, std::string>{};
   if (!is_sum_shaped) {
     const auto &struct_def =
-        dynamic_cast<const ast::struct_type_def &>(*decl.definition);
+        ast::cast<const ast::struct_type_def>(*decl.definition);
     const auto &instance = session_.types_.entry(instance_id);
     for (const auto &field : struct_def.body.fields) {
       if (const auto field_type_id = struct_field_type(instance, field.name);
@@ -591,7 +592,7 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
       fragment_value.fragment == nullptr) {
     return nullptr;
   }
-  return dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+  return ast::as<const ast::impl_decl>(fragment_value.fragment);
 }
 
 /// Whether a `type_decl` is one `derive_<trait>`/`derive_<trait>_sum` knows
@@ -692,7 +693,7 @@ auto checker::ensure_derived_instance_impls(type_id instance_id,
       continue;
     }
     methods.push_back(method_entry{
-        .decl = dynamic_cast<const ast::func_decl *>(item.get()),
+        .decl = ast::as<const ast::func_decl>(item.get()),
         .owner = owner,
         .from_trait = nullptr,
         .file_id = type_it->second.file_id,
@@ -753,14 +754,14 @@ auto checker::discover_functor_instantiations(
       continue;
     }
     if (item->kind == ast::node_kind::use_decl) {
-      const auto &use = dynamic_cast<const ast::use_decl &>(*item);
+      const auto &use = ast::cast<const ast::use_decl>(*item);
       if (!use.instantiation_args.empty()) {
         check_functor_instantiation(use);
       }
       continue;
     }
     if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+      const auto &sub = ast::cast<const ast::sub_module_decl>(*item);
       if (sub.items.empty() || sub.is_functor()) {
         continue; // a functor declaration itself is materialized per `use`
       }
@@ -785,12 +786,12 @@ auto checker::resolve_item_splices(
       continue;
     }
     if (item->kind == ast::node_kind::type_decl) {
-      resolve_deriving_traits(dynamic_cast<const ast::type_decl &>(*item),
+      resolve_deriving_traits(ast::cast<const ast::type_decl>(*item),
                               owner_file);
       continue;
     }
     if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+      const auto &sub = ast::cast<const ast::sub_module_decl>(*item);
       if (sub.items.empty()) {
         continue;
       }
@@ -808,7 +809,7 @@ auto checker::resolve_item_splices(
     if (item->kind != ast::node_kind::splice_stmt) {
       continue;
     }
-    const auto &splice = dynamic_cast<const ast::splice_stmt &>(*item);
+    const auto &splice = ast::cast<const ast::splice_stmt>(*item);
     if (splice.expr == nullptr) {
       continue;
     }
@@ -834,7 +835,7 @@ auto checker::resolve_item_splices(
       continue;
     }
     const auto *impl =
-        dynamic_cast<const ast::impl_decl *>(fragment_value.fragment);
+        ast::as<const ast::impl_decl>(fragment_value.fragment);
     if (impl == nullptr) {
       error_with_help(
           splice.expr->span,
@@ -880,32 +881,32 @@ auto checker::settle_bounded_params(
     }
     switch (item->kind) {
     case ast::node_kind::func_decl:
-      settle(dynamic_cast<const ast::func_decl &>(*item).type_params);
+      settle(ast::cast<const ast::func_decl>(*item).type_params);
       break;
     case ast::node_kind::impl_decl: {
-      const auto &impl = dynamic_cast<const ast::impl_decl &>(*item);
+      const auto &impl = ast::cast<const ast::impl_decl>(*item);
       settle(impl.type_params);
       settle_bounded_params(impl.items);
       break;
     }
     case ast::node_kind::extend_decl: {
-      const auto &extend = dynamic_cast<const ast::extend_decl &>(*item);
+      const auto &extend = ast::cast<const ast::extend_decl>(*item);
       settle(extend.type_params);
       settle_bounded_params(extend.items);
       break;
     }
     case ast::node_kind::trait_decl: {
-      const auto &trait = dynamic_cast<const ast::trait_decl &>(*item);
+      const auto &trait = ast::cast<const ast::trait_decl>(*item);
       settle(trait.type_params);
       settle_bounded_params(trait.items);
       break;
     }
     case ast::node_kind::type_decl:
-      settle(dynamic_cast<const ast::type_decl &>(*item).type_params);
+      settle(ast::cast<const ast::type_decl>(*item).type_params);
       break;
     case ast::node_kind::sub_module_decl:
       settle_bounded_params(
-          dynamic_cast<const ast::sub_module_decl &>(*item).items);
+          ast::cast<const ast::sub_module_decl>(*item).items);
       break;
     default:
       break;

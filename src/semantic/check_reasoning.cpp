@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -190,7 +191,7 @@ auto checker::collect_function_facts(const ast::func_decl &decl) -> void {
       continue;
     }
     const auto &binding =
-        dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+        ast::cast<const ast::binding_pattern>(*param.pattern);
     if (const auto *found = lookup_value(binding.name)) {
       engine.assume_binding(binding.name, found->type);
     }
@@ -338,7 +339,7 @@ auto checker::make_refinement_type(const ast::type_decl &decl,
                                    std::string_view owner_module,
                                    std::vector<type_id> args) -> type_id {
   const auto &refinement =
-      dynamic_cast<const ast::refinement_type &>(*decl.definition);
+      ast::cast<const ast::refinement_type>(*decl.definition);
 
   auto bindings = bindings_for_decl(decl, args);
   const auto *owner = index_.find_module(owner_module);
@@ -364,7 +365,7 @@ auto checker::make_refinement_type(const ast::type_decl &decl,
   }
 
   const auto *predicate =
-      dynamic_cast<const ast::expr *>(refinement.predicate.get());
+      ast::as<const ast::expr>(refinement.predicate.get());
   return session_.types_.refinement_of(
       &decl, display_name, owner_module, base, std::move(args),
       predicate != nullptr && !predicate->has_error ? predicate : nullptr);
@@ -417,7 +418,7 @@ auto checker::make_user_type(const ast::type_decl &decl,
   case ast::node_kind::refinement_type:
   case ast::node_kind::bound_type:
     resolved = resolve_type(
-        dynamic_cast<const ast::type_expr &>(*decl.definition), ctx);
+        ast::cast<const ast::type_expr>(*decl.definition), ctx);
     break;
   default:
     break;
@@ -642,7 +643,7 @@ auto checker::resolve_named_type(const ast::named_type &named,
     // first slot, the length value in the second.
     const auto *element_node = named.type_args.empty()
                                    ? nullptr
-                                   : dynamic_cast<const ast::type_expr *>(
+                                   : ast::as<const ast::type_expr>(
                                          named.type_args.front().value.get());
     const auto element = element_node != nullptr
                              ? resolve_type(*element_node, ctx)
@@ -773,7 +774,7 @@ auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
     -> type_id {
   const auto *named =
       mt.inner != nullptr
-          ? dynamic_cast<const ast::named_type *>(mt.inner.get())
+          ? ast::as<const ast::named_type>(mt.inner.get())
           : nullptr;
   if (named != nullptr && named->path.size() == 1 &&
       (named->path.front() == "slice" || named->path.front() == "cell")) {
@@ -881,7 +882,7 @@ auto checker::try_from_target(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.field_name != "try_from" || field.object == nullptr) {
     return std::nullopt;
   }
@@ -892,13 +893,13 @@ auto checker::try_from_target(const ast::call_expr &call)
   const auto *name_node = field.object.get();
   const ast::index_expr *instantiation = nullptr;
   if (name_node->kind == ast::node_kind::index_expr) {
-    instantiation = &dynamic_cast<const ast::index_expr &>(*name_node);
+    instantiation = &ast::cast<const ast::index_expr>(*name_node);
     name_node = instantiation->object.get();
   }
   if (name_node == nullptr || name_node->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &name = dynamic_cast<const ast::ident_expr &>(*name_node).name;
+  const auto &name = ast::cast<const ast::ident_expr>(*name_node).name;
 
   const auto found = find_type_decl_by_name(name);
   if (!found.has_value() || found->first == nullptr ||
@@ -1647,7 +1648,7 @@ auto checker::expected_index_key(const ast::index_expr &index) -> type_id {
       index.index->kind != ast::node_kind::binary_expr) {
     return usize;
   }
-  const auto &binary = dynamic_cast<const ast::binary_expr &>(*index.index);
+  const auto &binary = ast::cast<const ast::binary_expr>(*index.index);
   return binary.op == ast::binary_op::range ||
                  binary.op == ast::binary_op::range_inclusive
              ? resolve_range_type(usize)
@@ -1662,7 +1663,7 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
   // `size_of[usize]` / `index[n]` — generic instantiation, not indexing.
   if (index.object->kind == ast::node_kind::ident_expr &&
       ident_names_callable_decl(
-          dynamic_cast<const ast::ident_expr &>(*index.object))) {
+          ast::cast<const ast::ident_expr>(*index.object))) {
     // A bare identifier naming an in-scope generic parameter (e.g. `T` in
     // `size_of[T]()` inside a concept/generic bound) or a real declared
     // type (e.g. `point` in a compile-time generic call like
@@ -1673,10 +1674,10 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
         index.index != nullptr &&
         index.index->kind == ast::node_kind::ident_expr &&
         (lookup_type_param(
-             dynamic_cast<const ast::ident_expr &>(*index.index).name)
+             ast::cast<const ast::ident_expr>(*index.index).name)
              .has_value() ||
          find_type_decl_by_name(
-             dynamic_cast<const ast::ident_expr &>(*index.index).name)
+             ast::cast<const ast::ident_expr>(*index.index).name)
              .has_value());
     if (index.index != nullptr && !is_type_argument) {
       infer_expr(*index.index, k_unknown_type);

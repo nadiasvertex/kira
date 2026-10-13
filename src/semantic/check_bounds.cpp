@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -9,7 +10,7 @@ auto checker::bound_terms(const ast::type_expr &bound)
   auto terms = std::vector<const ast::type_expr *>{};
   if (bound.kind == ast::node_kind::bound_type) {
     for (const auto &term :
-         dynamic_cast<const ast::bound_type &>(bound).value.terms) {
+         ast::cast<const ast::bound_type>(bound).value.terms) {
       if (term.type != nullptr) {
         terms.push_back(term.type.get());
       }
@@ -113,7 +114,7 @@ auto checker::add_fact_closure(const ast::trait_decl &trait,
     if (term.type == nullptr || term.type->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+    const auto &named = ast::cast<const ast::named_type>(*term.type);
     if (named.path.empty()) {
       continue;
     }
@@ -137,7 +138,7 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
     if (term->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &named = dynamic_cast<const ast::named_type &>(*term);
+    const auto &named = ast::cast<const ast::named_type>(*term);
     if (named.path.empty()) {
       continue;
     }
@@ -191,7 +192,7 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
                                          .quiet = true};
     in_scope_of(home, concept_ref->file_id, [&] -> void {
       for (const auto &constraint : concept_decl.constraints) {
-        const auto *constraint_bound = dynamic_cast<const ast::type_expr *>(
+        const auto *constraint_bound = ast::as<const ast::type_expr>(
             constraint.bound_or_expr.get());
         if (constraint.subject == nullptr || constraint_bound == nullptr) {
           continue;
@@ -215,7 +216,7 @@ auto checker::names_trait_or_concept(const ast::type_expr &bound) -> bool {
            if (term->kind != ast::node_kind::named_type) {
              return false;
            }
-           const auto &named = dynamic_cast<const ast::named_type &>(*term);
+           const auto &named = ast::cast<const ast::named_type>(*term);
            return !named.path.empty() &&
                   (names_copy(named) ||
                    find_trait_decl_by_name(named.path.back()).has_value() ||
@@ -336,7 +337,7 @@ auto checker::self_param_type(const ast::param &param) -> type_id {
     return function_.self_type_;
   }
   const auto *binding =
-      dynamic_cast<const ast::binding_pattern *>(param.pattern.get());
+      ast::as<const ast::binding_pattern>(param.pattern.get());
   return session_.types_.ref_to(function_.self_type_,
                                 binding != nullptr && binding->is_mut);
 }
@@ -580,7 +581,7 @@ auto checker::check_cast_with_param(const ast::cast_expr &cast, type_id operand,
 auto checker::reflected_name_of(const ast::expr &expr)
     -> std::optional<type_id> {
   if (expr.kind == ast::node_kind::ident_expr) {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+    const auto &ident = ast::cast<const ast::ident_expr>(expr);
     if (const auto it = function_.type_name_aliases_.find(ident.name);
         it != function_.type_name_aliases_.end()) {
       return it->second;
@@ -590,18 +591,18 @@ auto checker::reflected_name_of(const ast::expr &expr)
   if (expr.kind != ast::node_kind::call_expr) {
     return std::nullopt;
   }
-  const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+  const auto &call = ast::cast<const ast::call_expr>(expr);
   if (!call.args.empty() || call.callee == nullptr ||
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.field_name != "name" || field.object == nullptr ||
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
   const auto param = lookup_type_param(
-      dynamic_cast<const ast::ident_expr &>(*field.object).name);
+      ast::cast<const ast::ident_expr>(*field.object).name);
   if (!param.has_value() || !is_rigid_param(*param)) {
     return std::nullopt;
   }
@@ -611,7 +612,7 @@ auto checker::reflected_name_of(const ast::expr &expr)
 /// The builtin type a string literal names, for `n == "int8"`.
 auto checker::builtin_named_by(const ast::expr &expr)
     -> std::optional<type_id> {
-  const auto *lit = dynamic_cast<const ast::literal_expr *>(&expr);
+  const auto *lit = ast::as<const ast::literal_expr>(&expr);
   if (lit == nullptr || lit->lit_kind != token_kind::string_lit) {
     return std::nullopt;
   }
@@ -645,11 +646,11 @@ auto checker::with_else(type_id param, const type_domain &then_domain)
 auto checker::narrowing_of(const ast::expr &condition)
     -> std::optional<narrowing> {
   if (condition.kind == ast::node_kind::group_expr) {
-    const auto &group = dynamic_cast<const ast::group_expr &>(condition);
+    const auto &group = ast::cast<const ast::group_expr>(condition);
     return group.inner != nullptr ? narrowing_of(*group.inner) : std::nullopt;
   }
   if (condition.kind == ast::node_kind::unary_expr) {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(condition);
+    const auto &unary = ast::cast<const ast::unary_expr>(condition);
     if (unary.op != ast::unary_op::logical_not || unary.operand == nullptr) {
       return std::nullopt;
     }
@@ -662,7 +663,7 @@ auto checker::narrowing_of(const ast::expr &condition)
                      .else_domain = inner->then_domain};
   }
   if (condition.kind == ast::node_kind::binary_expr) {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(condition);
+    const auto &binary = ast::cast<const ast::binary_expr>(condition);
     if (binary.lhs == nullptr || binary.rhs == nullptr) {
       return std::nullopt;
     }
@@ -726,21 +727,21 @@ auto checker::narrowing_of(const ast::expr &condition)
   if (condition.kind == ast::node_kind::call_expr) {
     // `is_integer[T]()`: a generic call whose one bracket argument names
     // an in-scope parameter.
-    const auto &call = dynamic_cast<const ast::call_expr &>(condition);
+    const auto &call = ast::cast<const ast::call_expr>(condition);
     if (!call.args.empty() || call.callee == nullptr ||
         call.callee->kind != ast::node_kind::index_expr) {
       return std::nullopt;
     }
-    const auto &applied = dynamic_cast<const ast::index_expr &>(*call.callee);
+    const auto &applied = ast::cast<const ast::index_expr>(*call.callee);
     if (applied.object == nullptr || applied.index == nullptr ||
         applied.object->kind != ast::node_kind::ident_expr ||
         applied.index->kind != ast::node_kind::ident_expr) {
       return std::nullopt;
     }
     const auto &predicate =
-        dynamic_cast<const ast::ident_expr &>(*applied.object).name;
+        ast::cast<const ast::ident_expr>(*applied.object).name;
     const auto param = lookup_type_param(
-        dynamic_cast<const ast::ident_expr &>(*applied.index).name);
+        ast::cast<const ast::ident_expr>(*applied.index).name);
     if (!param.has_value() || !is_rigid_param(*param) ||
         !predicate.starts_with("is_")) {
       return std::nullopt;
@@ -822,9 +823,9 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
 
   switch (type.kind) {
   case ast::node_kind::named_type:
-    return resolve_named_type(dynamic_cast<const ast::named_type &>(type), ctx);
+    return resolve_named_type(ast::cast<const ast::named_type>(type), ctx);
   case ast::node_kind::tuple_type: {
-    const auto &tuple = dynamic_cast<const ast::tuple_type &>(type);
+    const auto &tuple = ast::cast<const ast::tuple_type>(type);
     auto elements = std::vector<type_id>{};
     elements.reserve(tuple.elements.size());
     for (const auto &element : tuple.elements) {
@@ -834,14 +835,14 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::slice_type: {
-    const auto &slice = dynamic_cast<const ast::slice_type &>(type);
+    const auto &slice = ast::cast<const ast::slice_type>(type);
     const auto element = slice.element != nullptr
                              ? resolve_type(*slice.element, ctx)
                              : k_unknown_type;
     return session_.types_.builtin_generic("slice", {element});
   }
   case ast::node_kind::array_type: {
-    const auto &array = dynamic_cast<const ast::array_type &>(type);
+    const auto &array = ast::cast<const ast::array_type>(type);
     const auto element = array.element != nullptr
                              ? resolve_type(*array.element, ctx)
                              : k_unknown_type;
@@ -851,21 +852,21 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     return array_with_length(element, length);
   }
   case ast::node_kind::ref_type: {
-    const auto &ref = dynamic_cast<const ast::ref_type &>(type);
+    const auto &ref = ast::cast<const ast::ref_type>(type);
     const auto inner =
         ref.inner != nullptr ? resolve_type(*ref.inner, ctx) : k_unknown_type;
     return session_.types_.ref_to(inner, ref.is_mut);
   }
   case ast::node_kind::ptr_type: {
-    const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
+    const auto &ptr = ast::cast<const ast::ptr_type>(type);
     const auto inner =
         ptr.inner != nullptr ? resolve_type(*ptr.inner, ctx) : k_unknown_type;
     return session_.types_.ptr_to(inner, ptr.is_mut);
   }
   case ast::node_kind::mut_type:
-    return resolve_mut_type(dynamic_cast<const ast::mut_type &>(type), ctx);
+    return resolve_mut_type(ast::cast<const ast::mut_type>(type), ctx);
   case ast::node_kind::fn_type: {
-    const auto &fn = dynamic_cast<const ast::fn_type &>(type);
+    const auto &fn = ast::cast<const ast::fn_type>(type);
     auto params = std::vector<type_id>{};
     params.reserve(fn.param_types.size());
     for (const auto &param : fn.param_types) {
@@ -882,12 +883,12 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     // no declaration to name it. A refinement written as a `type`
     // declaration never reaches here; it is minted, nominally, by
     // `make_refinement_type`.
-    const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
+    const auto &refinement = ast::cast<const ast::refinement_type>(type);
     const auto base = refinement.base != nullptr
                           ? resolve_type(*refinement.base, ctx)
                           : k_unknown_type;
     const auto *predicate =
-        dynamic_cast<const ast::expr *>(refinement.predicate.get());
+        ast::as<const ast::expr>(refinement.predicate.get());
     if (predicate == nullptr || predicate->has_error) {
       return base;
     }
@@ -896,7 +897,7 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
         file_.module_name_, base, {}, predicate);
   }
   case ast::node_kind::quote_type: {
-    const auto &quote = dynamic_cast<const ast::quote_type &>(type);
+    const auto &quote = ast::cast<const ast::quote_type>(type);
     switch (quote.quote_kind) {
     case ast::quote_fragment_kind::expr:
       return session_.types_.builtin("expr");
@@ -911,12 +912,12 @@ auto checker::resolve_type(const ast::type_expr &type, const resolve_ctx &ctx)
     }
   }
   case ast::node_kind::splice_type: {
-    const auto &splice = dynamic_cast<const ast::splice_type &>(type);
+    const auto &splice = ast::cast<const ast::splice_type>(type);
     return resolve_splice_type(splice, ctx);
   }
   case ast::node_kind::existential_type:
     return resolve_existential_type(
-        dynamic_cast<const ast::existential_type &>(type), ctx);
+        ast::cast<const ast::existential_type>(type), ctx);
   default:
     return k_unknown_type;
   }
@@ -964,7 +965,7 @@ auto checker::resolve_existential_type(const ast::existential_type &ety,
       return k_unknown_type;
     }
     const auto &named =
-        dynamic_cast<const ast::named_type &>(*ety.value.terms[0].type);
+        ast::cast<const ast::named_type>(*ety.value.terms[0].type);
     if (named.path.size() != 1 || named.path.front() != "iterator" ||
         named.type_args.size() != 1) {
       return k_unknown_type;
@@ -983,7 +984,7 @@ auto checker::resolve_existential_type(const ast::existential_type &ety,
     if (term.type == nullptr || term.type->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+    const auto &named = ast::cast<const ast::named_type>(*term.type);
     if (named.path.empty()) {
       continue;
     }
@@ -1030,10 +1031,10 @@ auto checker::resolve_existential_type(const ast::existential_type &ety,
 auto checker::reinterpret_as_named_type(const ast::node &fragment)
     -> const ast::type_expr * {
   auto path = std::vector<std::string>{};
-  if (const auto *ident = dynamic_cast<const ast::ident_expr *>(&fragment)) {
+  if (const auto *ident = ast::as<const ast::ident_expr>(&fragment)) {
     path.push_back(ident->name);
   } else if (const auto *module_path =
-                 dynamic_cast<const ast::module_path_expr *>(&fragment)) {
+                 ast::as<const ast::module_path_expr>(&fragment)) {
     path = module_path->segments;
   } else {
     return nullptr;
@@ -1067,7 +1068,7 @@ auto checker::resolve_splice_type(const ast::splice_type &splice,
   if (fragment_value.kind == comptime::value_kind::type_expr_fragment &&
       fragment_value.fragment != nullptr) {
     const auto *fragment_type =
-        dynamic_cast<const ast::type_expr *>(fragment_value.fragment);
+        ast::as<const ast::type_expr>(fragment_value.fragment);
     if (fragment_type != nullptr) {
       return resolve_type(*fragment_type, ctx);
     }
@@ -1208,7 +1209,7 @@ auto checker::satisfies_concept(type_id subject,
   return in_scope_of(home, home_file, [&] -> bool {
     for (const auto &constraint : concept_decl.constraints) {
       const auto *bound =
-          dynamic_cast<const ast::type_expr *>(constraint.bound_or_expr.get());
+          ast::as<const ast::type_expr>(constraint.bound_or_expr.get());
       if (constraint.subject == nullptr || bound == nullptr) {
         continue;
       }
@@ -1231,7 +1232,7 @@ auto checker::bound_holds(type_id subject, const ast::type_expr &bound,
     if (term->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &named = dynamic_cast<const ast::named_type &>(*term);
+    const auto &named = ast::cast<const ast::named_type>(*term);
     if (named.path.empty()) {
       continue;
     }
@@ -1323,7 +1324,7 @@ auto checker::check_call_bounds(const ast::call_expr &call,
       auto spelled = std::string{};
       if (constraint.subject->kind == ast::node_kind::named_type) {
         const auto &named =
-            dynamic_cast<const ast::named_type &>(*constraint.subject);
+            ast::cast<const ast::named_type>(*constraint.subject);
         spelled = named.path.empty() ? "" : named.path.back();
       }
       check(spelled, subject, *constraint.bound_or_type);
@@ -1815,14 +1816,14 @@ auto checker::check_bound_method_call(
       if (item == nullptr || item->kind != ast::node_kind::func_decl) {
         continue;
       }
-      const auto &member = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &member = ast::cast<const ast::func_decl>(*item);
       const auto takes_self = !member.params.empty() &&
                               param_name_of(member.params.front()) == "self";
       if (member.name == field.field_name && takes_self != static_call) {
         providers.push_back(
             provider{.fact = fact,
                      .trait = trait,
-                     .method = &dynamic_cast<const ast::func_decl &>(*item)});
+                     .method = &ast::cast<const ast::func_decl>(*item)});
       }
     }
   }
@@ -2261,7 +2262,7 @@ auto checker::bound_assoc_type(const type_fact &fact, type_id subject,
       continue;
     }
     const auto &assoc =
-        dynamic_cast<const ast::associated_type_decl_node &>(*item).value;
+        ast::cast<const ast::associated_type_decl_node>(*item).value;
     if (assoc.name != name || assoc.default_type == nullptr) {
       continue;
     }

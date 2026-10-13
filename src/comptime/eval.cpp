@@ -18,6 +18,7 @@
 #include "src/parser/text_escape.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::comptime {
 namespace {
@@ -101,14 +102,14 @@ auto parse_float_literal(std::string_view text) -> std::optional<double> {
 /// only the latter is a genuine double-negation overflow.
 auto is_int_literal_operand(const ast::expr &e) -> bool {
   if (e.kind == ast::node_kind::literal_expr) {
-    return dynamic_cast<const ast::literal_expr &>(e).lit_kind ==
+    return ast::cast<const ast::literal_expr>(e).lit_kind ==
            token_kind::int_lit;
   }
   if (e.kind == ast::node_kind::cast_expr) {
-    const auto &cast = dynamic_cast<const ast::cast_expr &>(e);
+    const auto &cast = ast::cast<const ast::cast_expr>(e);
     return cast.operand != nullptr &&
            cast.operand->kind == ast::node_kind::literal_expr &&
-           dynamic_cast<const ast::literal_expr &>(*cast.operand).lit_kind ==
+           ast::cast<const ast::literal_expr>(*cast.operand).lit_kind ==
                token_kind::int_lit;
   }
   return false;
@@ -784,7 +785,7 @@ auto evaluator::eval_tuple(const ast::tuple_expr &tup) -> value {
 auto evaluator::eval_struct(const ast::struct_expr &st) -> value {
   auto type_name = std::string{};
   if (const auto *head =
-          dynamic_cast<const ast::ident_expr *>(st.type_name.get());
+          ast::as<const ast::ident_expr>(st.type_name.get());
       head != nullptr) {
     type_name = head->name;
   }
@@ -841,7 +842,7 @@ auto evaluator::eval_index(const ast::index_expr &idx) -> value {
   // `s[a .. b]` on a `str` or a list: the sub-range, with the same bounds
   // rule the backends enforce.
   if (const auto *range =
-          dynamic_cast<const ast::binary_expr *>(idx.index.get());
+          ast::as<const ast::binary_expr>(idx.index.get());
       range != nullptr && range->lhs != nullptr && range->rhs != nullptr &&
       (range->op == ast::binary_op::range ||
        range->op == ast::binary_op::range_inclusive)) {
@@ -1009,20 +1010,20 @@ auto evaluator::quote_body_has_nested_splice(const ast::node &node) -> bool {
   case ast::node_kind::splice_stmt:
     return true;
   case ast::node_kind::binary_expr: {
-    const auto &bin = dynamic_cast<const ast::binary_expr &>(node);
+    const auto &bin = ast::cast<const ast::binary_expr>(node);
     return (bin.lhs != nullptr && quote_body_has_nested_splice(*bin.lhs)) ||
            (bin.rhs != nullptr && quote_body_has_nested_splice(*bin.rhs));
   }
   case ast::node_kind::field_expr: {
-    const auto &fld = dynamic_cast<const ast::field_expr &>(node);
+    const auto &fld = ast::cast<const ast::field_expr>(node);
     return fld.object != nullptr && quote_body_has_nested_splice(*fld.object);
   }
   case ast::node_kind::return_stmt: {
-    const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
+    const auto &ret = ast::cast<const ast::return_stmt>(node);
     return ret.value != nullptr && quote_body_has_nested_splice(*ret.value);
   }
   case ast::node_kind::func_decl: {
-    const auto &fn = dynamic_cast<const ast::func_decl &>(node);
+    const auto &fn = ast::cast<const ast::func_decl>(node);
     if (fn.return_type != nullptr &&
         quote_body_has_nested_splice(*fn.return_type)) {
       return true;
@@ -1032,7 +1033,7 @@ auto evaluator::quote_body_has_nested_splice(const ast::node &node) -> bool {
     });
   }
   case ast::node_kind::impl_decl: {
-    const auto &impl = dynamic_cast<const ast::impl_decl &>(node);
+    const auto &impl = ast::cast<const ast::impl_decl>(node);
     if (impl.for_type != nullptr &&
         quote_body_has_nested_splice(*impl.for_type)) {
       return true;
@@ -1066,7 +1067,7 @@ auto evaluator::materialize_quote(const ast::node &node)
   case ast::node_kind::interpolated_string_expr:
     return clone_expr_fragment(node);
   case ast::node_kind::splice_expr: {
-    const auto &splice = dynamic_cast<const ast::splice_expr &>(node);
+    const auto &splice = ast::cast<const ast::splice_expr>(node);
     if (splice.operand == nullptr) {
       return nullptr;
     }
@@ -1083,7 +1084,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return clone_expr_fragment(*resolved.fragment);
   }
   case ast::node_kind::splice_type: {
-    const auto &splice = dynamic_cast<const ast::splice_type &>(node);
+    const auto &splice = ast::cast<const ast::splice_type>(node);
     if (splice.operand == nullptr) {
       return nullptr;
     }
@@ -1106,7 +1107,7 @@ auto evaluator::materialize_quote(const ast::node &node)
                resolved.fragment != nullptr &&
                resolved.fragment->kind == ast::node_kind::ident_expr) {
       type_name =
-          dynamic_cast<const ast::ident_expr &>(*resolved.fragment).name;
+          ast::cast<const ast::ident_expr>(*resolved.fragment).name;
     } else {
       report(node.span, "this `~` splice inside a quoted fragment's type "
                         "position must resolve to a type name");
@@ -1118,7 +1119,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return named;
   }
   case ast::node_kind::binary_expr: {
-    const auto &bin = dynamic_cast<const ast::binary_expr &>(node);
+    const auto &bin = ast::cast<const ast::binary_expr>(node);
     if (bin.lhs == nullptr || bin.rhs == nullptr) {
       return nullptr;
     }
@@ -1135,7 +1136,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::named_type: {
-    const auto &named = dynamic_cast<const ast::named_type &>(node);
+    const auto &named = ast::cast<const ast::named_type>(node);
     auto cloned = ast::make<ast::named_type>();
     cloned->span = named.span;
     cloned->path = named.path;
@@ -1146,7 +1147,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::ref_type: {
-    const auto &ref = dynamic_cast<const ast::ref_type &>(node);
+    const auto &ref = ast::cast<const ast::ref_type>(node);
     if (ref.inner == nullptr) {
       return nullptr;
     }
@@ -1161,7 +1162,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::return_stmt: {
-    const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
+    const auto &ret = ast::cast<const ast::return_stmt>(node);
     auto cloned = ast::make<ast::return_stmt>();
     cloned->span = ret.span;
     if (ret.value != nullptr) {
@@ -1174,7 +1175,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::func_decl: {
-    const auto &fn = dynamic_cast<const ast::func_decl &>(node);
+    const auto &fn = ast::cast<const ast::func_decl>(node);
     auto cloned = ast::make<ast::func_decl>();
     cloned->span = fn.span;
     cloned->visibility = fn.visibility;
@@ -1193,7 +1194,7 @@ auto evaluator::materialize_quote(const ast::node &node)
       if (orig_param.pattern != nullptr &&
           orig_param.pattern->kind == ast::node_kind::binding_pattern) {
         const auto &binding =
-            dynamic_cast<const ast::binding_pattern &>(*orig_param.pattern);
+            ast::cast<const ast::binding_pattern>(*orig_param.pattern);
         auto cloned_pattern = ast::make<ast::binding_pattern>();
         cloned_pattern->span = binding.span;
         cloned_pattern->name = binding.name;
@@ -1234,7 +1235,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::impl_decl: {
-    const auto &impl = dynamic_cast<const ast::impl_decl &>(node);
+    const auto &impl = ast::cast<const ast::impl_decl>(node);
     auto cloned = ast::make<ast::impl_decl>();
     cloned->span = impl.span;
     if (impl.trait_type != nullptr) {
@@ -1378,7 +1379,7 @@ auto evaluator::eval_lambda(const ast::lambda_expr &lambda) -> value {
 
 auto evaluator::call_lambda(const value &callee, std::vector<value> args,
                             source_span span) -> value {
-  const auto &lambda = dynamic_cast<const ast::lambda_expr &>(*callee.fragment);
+  const auto &lambda = ast::cast<const ast::lambda_expr>(*callee.fragment);
   if (args.size() != lambda.params.size()) {
     return report(span, std::format("this lambda takes {} argument(s), but {} "
                                     "were given",
@@ -1393,7 +1394,7 @@ auto evaluator::call_lambda(const value &callee, std::vector<value> args,
   auto scope = callee.fields;
   for (size_t i = 0; i < args.size(); ++i) {
     const auto *pattern =
-        dynamic_cast<const ast::pattern *>(lambda.params[i].pattern.get());
+        ast::as<const ast::pattern>(lambda.params[i].pattern.get());
     if (pattern == nullptr || !bind_pattern(*pattern, args[i], scope)) {
       return value::make_error();
     }
@@ -1436,7 +1437,7 @@ auto evaluator::clone_pattern_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(node);
+    const auto &binding = ast::cast<const ast::binding_pattern>(node);
     auto cloned = ast::make<ast::binding_pattern>();
     cloned->span = binding.span;
     cloned->name = binding.name;
@@ -1444,7 +1445,7 @@ auto evaluator::clone_pattern_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(node);
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(node);
     auto cloned = ast::make<ast::constructor_pattern>();
     cloned->span = ctor.span;
     cloned->name = ctor.name;
@@ -1469,7 +1470,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     -> ast::ptr<ast::expr> {
   switch (node.kind) {
   case ast::node_kind::match_expr: {
-    const auto &match = dynamic_cast<const ast::match_expr &>(node);
+    const auto &match = ast::cast<const ast::match_expr>(node);
     if (match.subject == nullptr) {
       return nullptr;
     }
@@ -1503,7 +1504,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::binary_expr: {
-    const auto &bin = dynamic_cast<const ast::binary_expr &>(node);
+    const auto &bin = ast::cast<const ast::binary_expr>(node);
     if (bin.lhs == nullptr || bin.rhs == nullptr) {
       return nullptr;
     }
@@ -1520,14 +1521,14 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::ident_expr: {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(node);
+    const auto &ident = ast::cast<const ast::ident_expr>(node);
     auto cloned = ast::make<ast::ident_expr>();
     cloned->span = ident.span;
     cloned->name = ident.name;
     return cloned;
   }
   case ast::node_kind::literal_expr: {
-    const auto &lit = dynamic_cast<const ast::literal_expr &>(node);
+    const auto &lit = ast::cast<const ast::literal_expr>(node);
     auto cloned = ast::make<ast::literal_expr>();
     cloned->span = lit.span;
     cloned->lit_kind = lit.lit_kind;
@@ -1535,7 +1536,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::field_expr: {
-    const auto &fld = dynamic_cast<const ast::field_expr &>(node);
+    const auto &fld = ast::cast<const ast::field_expr>(node);
     if (fld.object == nullptr) {
       return nullptr;
     }
@@ -1550,7 +1551,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::call_expr: {
-    const auto &call = dynamic_cast<const ast::call_expr &>(node);
+    const auto &call = ast::cast<const ast::call_expr>(node);
     if (call.callee == nullptr) {
       return nullptr;
     }
@@ -1577,7 +1578,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
   }
   case ast::node_kind::interpolated_string_expr: {
     const auto &interp =
-        dynamic_cast<const ast::interpolated_string_expr &>(node);
+        ast::cast<const ast::interpolated_string_expr>(node);
     auto cloned = ast::make<ast::interpolated_string_expr>();
     cloned->span = interp.span;
     for (const auto &segment : interp.segments) {
@@ -1609,7 +1610,7 @@ auto evaluator::append_interp_segments(const ast::node &fragment,
                                        std::vector<ast::interp_segment> &out)
     -> bool {
   if (fragment.kind == ast::node_kind::literal_expr) {
-    const auto &lit = dynamic_cast<const ast::literal_expr &>(fragment);
+    const auto &lit = ast::cast<const ast::literal_expr>(fragment);
     if (lit.lit_kind == token_kind::string_lit) {
       auto decoded = decode_string_literal(lit.value);
       if (!decoded.has_value()) {
@@ -1624,7 +1625,7 @@ auto evaluator::append_interp_segments(const ast::node &fragment,
   }
   if (fragment.kind == ast::node_kind::interpolated_string_expr) {
     const auto &interp =
-        dynamic_cast<const ast::interpolated_string_expr &>(fragment);
+        ast::cast<const ast::interpolated_string_expr>(fragment);
     for (const auto &segment : interp.segments) {
       auto cloned_segment = clone_interp_segment(segment);
       if (!cloned_segment.has_value()) {
@@ -1695,12 +1696,12 @@ auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
       call.callee->kind != ast::node_kind::field_expr) {
     return std::nullopt;
   }
-  const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+  const auto &field = ast::cast<const ast::field_expr>(*call.callee);
   if (field.object == nullptr ||
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  if (dynamic_cast<const ast::ident_expr &>(*field.object).name != "expr") {
+  if (ast::cast<const ast::ident_expr>(*field.object).name != "expr") {
     return std::nullopt;
   }
 
@@ -2159,7 +2160,7 @@ auto evaluator::try_eval_expr_builder_call(const ast::call_expr &call)
                     "this quoted `expr` value's syntax is too complex for "
                     "`expr.arm` to embed as an arm body");
     }
-    auto *result = dynamic_cast<ast::match_expr *>(cloned_match_value.get());
+    auto *result = ast::as<ast::match_expr>(cloned_match_value.get());
     ast::match_arm new_arm;
     new_arm.span = call.span;
     new_arm.pattern = std::move(cloned_pattern);
@@ -2231,7 +2232,7 @@ auto evaluator::unwrap_explicit_generic_callee(
     const ast::expr &callee, std::vector<const ast::expr *> &args_out)
     -> const ast::expr * {
   if (callee.kind == ast::node_kind::index_expr) {
-    const auto &index = dynamic_cast<const ast::index_expr &>(callee);
+    const auto &index = ast::cast<const ast::index_expr>(callee);
     if (index.object == nullptr || index.index == nullptr) {
       return nullptr;
     }
@@ -2239,7 +2240,7 @@ auto evaluator::unwrap_explicit_generic_callee(
     return index.object.get();
   }
   if (callee.kind == ast::node_kind::call_expr) {
-    const auto &applied = dynamic_cast<const ast::call_expr &>(callee);
+    const auto &applied = ast::cast<const ast::call_expr>(callee);
     if (applied.callee == nullptr) {
       return nullptr;
     }
@@ -2274,7 +2275,7 @@ auto evaluator::resolve_variant(const ast::node &node)
   }
   const auto *decl = type_it->second;
   const auto *sum_def =
-      dynamic_cast<const ast::sum_type_def *>(decl->definition.get());
+      ast::as<const ast::sum_type_def>(decl->definition.get());
   if (sum_def == nullptr) {
     return std::nullopt;
   }
@@ -2300,7 +2301,7 @@ auto evaluator::resolve_variant_by_name(const std::string &name)
       continue;
     }
     const auto *sum_def =
-        dynamic_cast<const ast::sum_type_def *>(decl->definition.get());
+        ast::as<const ast::sum_type_def>(decl->definition.get());
     if (sum_def == nullptr) {
       continue;
     }
@@ -2325,7 +2326,7 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
       base->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &callee_ident = dynamic_cast<const ast::ident_expr &>(*base);
+  const auto &callee_ident = ast::cast<const ast::ident_expr>(*base);
   const auto *fn = resolve_callee(callee_ident.name, callee_ident.span);
   if (fn == nullptr || fn->type_params.empty() ||
       type_arg_exprs.size() > fn->type_params.size()) {
@@ -2345,7 +2346,7 @@ auto evaluator::try_eval_comptime_generic_call(const ast::call_expr &call)
                                "must be a plain type name");
     }
     const auto &type_arg_ident =
-        dynamic_cast<const ast::ident_expr &>(*type_arg_expr);
+        ast::cast<const ast::ident_expr>(*type_arg_expr);
     auto resolved = resolve_generic_type_arg(type_arg_ident);
     if (!resolved.has_value()) {
       return report(type_arg_ident.span,
@@ -2378,16 +2379,16 @@ auto evaluator::qualified_callee_path(const ast::expr &callee)
     -> std::optional<ast::module_path_expr> {
   // The parser leaves a call's last segment off the path: `a.f(x)` is a
   // field access `f` on `a`, `a.b.f(x)` one on the path `a.b`.
-  const auto *field = dynamic_cast<const ast::field_expr *>(&callee);
+  const auto *field = ast::as<const ast::field_expr>(&callee);
   if (field == nullptr || field->object == nullptr) {
     return std::nullopt;
   }
   auto path = ast::module_path_expr{};
   path.span = callee.span;
   if (const auto *root =
-          dynamic_cast<const ast::ident_expr *>(field->object.get())) {
+          ast::as<const ast::ident_expr>(field->object.get())) {
     path.segments.push_back(root->name);
-  } else if (const auto *prefix = dynamic_cast<const ast::module_path_expr *>(
+  } else if (const auto *prefix = ast::as<const ast::module_path_expr>(
                  field->object.get())) {
     path.segments = prefix->segments;
   } else {
@@ -2399,7 +2400,7 @@ auto evaluator::qualified_callee_path(const ast::expr &callee)
 
 auto evaluator::method_callee(const ast::expr &callee)
     -> const ast::field_expr * {
-  const auto *field = dynamic_cast<const ast::field_expr *>(&callee);
+  const auto *field = ast::as<const ast::field_expr>(&callee);
   if (field == nullptr || field->object == nullptr) {
     return nullptr;
   }
@@ -2431,7 +2432,7 @@ auto evaluator::eval_local_push(const ast::call_expr &call,
                                 const ast::field_expr &method)
     -> std::optional<value> {
   const auto *target =
-      dynamic_cast<const ast::ident_expr *>(method.object.get());
+      ast::as<const ast::ident_expr>(method.object.get());
   if (method.field_name != "push" || target == nullptr ||
       call.args.size() != 1 || call.args.front().value == nullptr) {
     return std::nullopt;
@@ -2622,7 +2623,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   // method in a module checked after the one evaluating it).
   auto variant = resolve_variant(call);
   if (const auto *callee =
-          dynamic_cast<const ast::ident_expr *>(call.callee.get());
+          ast::as<const ast::ident_expr>(call.callee.get());
       !variant && callee != nullptr &&
       (callee->name == "some" || callee->name == "ok" ||
        callee->name == "err")) {
@@ -2676,7 +2677,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   const ast::func_decl *fn = nullptr;
   auto callee_name = std::string{};
   if (const auto *callee_ident =
-          dynamic_cast<const ast::ident_expr *>(call.callee.get())) {
+          ast::as<const ast::ident_expr>(call.callee.get())) {
     if (const auto *local = lookup_local(callee_ident->name);
         local != nullptr && local->kind == value_kind::lambda) {
       const auto callee = *local;
@@ -2763,7 +2764,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
   case ast::node_kind::wildcard_pattern:
     return true;
   case ast::node_kind::literal_pattern: {
-    const auto &lit = dynamic_cast<const ast::literal_pattern &>(pattern);
+    const auto &lit = ast::cast<const ast::literal_pattern>(pattern);
     switch (lit.lit_kind) {
     case token_kind::kw_true:
       return v.kind == value_kind::boolean && v.boolean;
@@ -2796,12 +2797,12 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     }
   }
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = ast::cast<const ast::binding_pattern>(pattern);
     scope.insert_or_assign(binding.name, v);
     return true;
   }
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(pattern);
     if (group.inner == nullptr || !bind_pattern(*group.inner, v, scope)) {
       return false;
     }
@@ -2811,7 +2812,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     return true;
   }
   case ast::node_kind::tuple_pattern: {
-    const auto &tup = dynamic_cast<const ast::tuple_pattern &>(pattern);
+    const auto &tup = ast::cast<const ast::tuple_pattern>(pattern);
     if (v.kind != value_kind::list ||
         v.elements.size() != tup.elements.size()) {
       report(pattern.span, "compile-time tuple pattern does not match the "
@@ -2827,7 +2828,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     return true;
   }
   case ast::node_kind::struct_pattern: {
-    const auto &st = dynamic_cast<const ast::struct_pattern &>(pattern);
+    const auto &st = ast::cast<const ast::struct_pattern>(pattern);
     if (v.kind != value_kind::struct_instance) {
       report(pattern.span, "compile-time struct pattern requires a struct "
                            "value");
@@ -2855,7 +2856,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     return true;
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(pattern);
     if (v.kind != value_kind::variant_instance || v.variant_tag != ctor.name) {
       return false;
     }
@@ -2881,12 +2882,12 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     // `option`/`result`.
     const auto kind =
         pattern.kind == ast::node_kind::option_pattern
-            ? dynamic_cast<const ast::option_pattern &>(pattern).option_kind
-            : dynamic_cast<const ast::result_pattern &>(pattern).result_kind;
+            ? ast::cast<const ast::option_pattern>(pattern).option_kind
+            : ast::cast<const ast::result_pattern>(pattern).result_kind;
     const auto *inner =
         pattern.kind == ast::node_kind::option_pattern
-            ? dynamic_cast<const ast::option_pattern &>(pattern).inner.get()
-            : dynamic_cast<const ast::result_pattern &>(pattern).inner.get();
+            ? ast::cast<const ast::option_pattern>(pattern).inner.get()
+            : ast::cast<const ast::result_pattern>(pattern).inner.get();
     const auto *tag = kind == ast::option_result_kind::some ? "some"
                       : kind == ast::option_result_kind::ok ? "ok"
                                                             : "err";
@@ -2897,7 +2898,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
     return inner == nullptr || bind_pattern(*inner, v.elements.front(), scope);
   }
   case ast::node_kind::or_pattern: {
-    const auto &alt = dynamic_cast<const ast::or_pattern &>(pattern);
+    const auto &alt = ast::cast<const ast::or_pattern>(pattern);
     for (const auto &alternative : alt.alternatives) {
       if (alternative == nullptr) {
         continue;
@@ -2924,7 +2925,7 @@ auto evaluator::bind_pattern(const ast::pattern &pattern, const value &v,
 }
 
 auto evaluator::evaluate_iterable(const ast::expr &iterable) -> value {
-  if (const auto *bin = dynamic_cast<const ast::binary_expr *>(&iterable);
+  if (const auto *bin = ast::as<const ast::binary_expr>(&iterable);
       bin != nullptr && (bin->op == ast::binary_op::range ||
                          bin->op == ast::binary_op::range_inclusive)) {
     if (bin->lhs == nullptr || bin->rhs == nullptr) {
@@ -2973,7 +2974,7 @@ auto evaluator::eval_match(const ast::match_expr &match) -> value {
     if (arm.pattern == nullptr || arm.has_error) {
       continue;
     }
-    const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+    const auto &pattern = ast::cast<const ast::pattern>(*arm.pattern);
     auto trial_scope = locals_.back();
     if (!bind_pattern(pattern, subject, trial_scope)) {
       continue;
@@ -3127,7 +3128,7 @@ auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
   }
 
   const auto *named =
-      dynamic_cast<const ast::named_type *>(cast.target_type.get());
+      ast::as<const ast::named_type>(cast.target_type.get());
   if (named == nullptr || named->path.size() != 1) {
     return report(cast.span, "this cast target is not yet supported in "
                              "compile-time evaluation");
@@ -3200,7 +3201,7 @@ auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
 auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
   switch (node.kind) {
   case ast::node_kind::let_stmt: {
-    const auto &let = dynamic_cast<const ast::let_stmt &>(node);
+    const auto &let = ast::cast<const ast::let_stmt>(node);
     if (let.initializer == nullptr || let.pattern == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3214,7 +3215,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{};
   }
   case ast::node_kind::var_stmt: {
-    const auto &var = dynamic_cast<const ast::var_stmt &>(node);
+    const auto &var = ast::cast<const ast::var_stmt>(node);
     if (var.initializer == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3226,9 +3227,9 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{};
   }
   case ast::node_kind::assign_stmt: {
-    const auto &assign = dynamic_cast<const ast::assign_stmt &>(node);
+    const auto &assign = ast::cast<const ast::assign_stmt>(node);
     const auto *target =
-        dynamic_cast<const ast::ident_expr *>(assign.target.get());
+        ast::as<const ast::ident_expr>(assign.target.get());
     const auto compound_op = ast::compound_assign_op(assign.op);
     if (target == nullptr || assign.value == nullptr ||
         (assign.op != ast::assign_op::assign && !compound_op.has_value())) {
@@ -3262,7 +3263,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{.errored = true};
   }
   case ast::node_kind::expr_stmt: {
-    const auto &wrapper = dynamic_cast<const ast::expr_stmt &>(node);
+    const auto &wrapper = ast::cast<const ast::expr_stmt>(node);
     if (wrapper.expr == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3273,7 +3274,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{};
   }
   case ast::node_kind::return_stmt: {
-    const auto &ret = dynamic_cast<const ast::return_stmt &>(node);
+    const auto &ret = ast::cast<const ast::return_stmt>(node);
     if (ret.value == nullptr) {
       return exec_result{.returned = true, .result = value::make_unit()};
     }
@@ -3284,7 +3285,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{.returned = true, .result = std::move(evaluated)};
   }
   case ast::node_kind::match_stmt: {
-    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::match_stmt>(node);
     if (stmt.subject == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3296,7 +3297,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
       if (arm.pattern == nullptr || arm.has_error) {
         continue;
       }
-      const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+      const auto &pattern = ast::cast<const ast::pattern>(*arm.pattern);
       auto trial_scope = locals_.back();
       if (!bind_pattern(pattern, subject, trial_scope)) {
         continue;
@@ -3334,7 +3335,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return exec_result{.errored = true};
   }
   case ast::node_kind::if_stmt: {
-    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::if_stmt>(node);
     for (const auto &branch : stmt.branches) {
       if (branch.condition == nullptr) {
         continue;
@@ -3355,9 +3356,9 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     return evaluate_stmts(stmt.else_body);
   }
   case ast::node_kind::scope_stmt:
-    return evaluate_stmts(dynamic_cast<const ast::scope_stmt &>(node).body);
+    return evaluate_stmts(ast::cast<const ast::scope_stmt>(node).body);
   case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    const auto &decl = ast::cast<const ast::static_decl>(node);
     switch (decl.decl_kind) {
     case ast::static_decl_kind::binding: {
       if (decl.initializer == nullptr || decl.name.empty()) {
@@ -3404,9 +3405,9 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     }
   }
   case ast::node_kind::while_stmt:
-    return evaluate_while(dynamic_cast<const ast::while_stmt &>(node));
+    return evaluate_while(ast::cast<const ast::while_stmt>(node));
   case ast::node_kind::for_stmt:
-    return evaluate_for(dynamic_cast<const ast::for_stmt &>(node));
+    return evaluate_for(ast::cast<const ast::for_stmt>(node));
   case ast::node_kind::break_stmt:
     return exec_result{.broke = true};
   case ast::node_kind::continue_stmt:
@@ -3611,7 +3612,7 @@ auto evaluator::evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body)
 auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
   switch (node.kind) {
   case ast::node_kind::expr_stmt: {
-    const auto &wrapper = dynamic_cast<const ast::expr_stmt &>(node);
+    const auto &wrapper = ast::cast<const ast::expr_stmt>(node);
     if (wrapper.expr == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3622,7 +3623,7 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
     return exec_result{.returned = true, .result = std::move(evaluated)};
   }
   case ast::node_kind::if_stmt: {
-    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::if_stmt>(node);
     for (const auto &branch : stmt.branches) {
       if (branch.condition == nullptr) {
         continue;
@@ -3643,7 +3644,7 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
     return evaluate_block_value(stmt.else_body);
   }
   case ast::node_kind::match_stmt: {
-    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+    const auto &stmt = ast::cast<const ast::match_stmt>(node);
     if (stmt.subject == nullptr) {
       return exec_result{.errored = true};
     }
@@ -3655,7 +3656,7 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
       if (arm.pattern == nullptr || arm.has_error) {
         continue;
       }
-      const auto &pattern = dynamic_cast<const ast::pattern &>(*arm.pattern);
+      const auto &pattern = ast::cast<const ast::pattern>(*arm.pattern);
       auto trial_scope = locals_.back();
       if (!bind_pattern(pattern, subject, trial_scope)) {
         continue;
@@ -3684,7 +3685,7 @@ auto evaluator::evaluate_tail(const ast::node &node) -> exec_result {
     return exec_result{.errored = true};
   }
   case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    const auto &decl = ast::cast<const ast::static_decl>(node);
     if (decl.decl_kind == ast::static_decl_kind::conditional_compilation &&
         decl.if_condition != nullptr) {
       auto condition = evaluate(*decl.if_condition);
@@ -3747,45 +3748,45 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
   }
   switch (expr.kind) {
   case ast::node_kind::literal_expr:
-    return eval_literal(dynamic_cast<const ast::literal_expr &>(expr));
+    return eval_literal(ast::cast<const ast::literal_expr>(expr));
   case ast::node_kind::ident_expr:
-    return eval_ident(dynamic_cast<const ast::ident_expr &>(expr));
+    return eval_ident(ast::cast<const ast::ident_expr>(expr));
   case ast::node_kind::binary_expr:
-    return eval_binary(dynamic_cast<const ast::binary_expr &>(expr));
+    return eval_binary(ast::cast<const ast::binary_expr>(expr));
   case ast::node_kind::unary_expr:
-    return eval_unary(dynamic_cast<const ast::unary_expr &>(expr));
+    return eval_unary(ast::cast<const ast::unary_expr>(expr));
   case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+    const auto &group = ast::cast<const ast::group_expr>(expr);
     return group.inner != nullptr ? evaluate(*group.inner)
                                   : value::make_error();
   }
   case ast::node_kind::array_expr:
-    return eval_array(dynamic_cast<const ast::array_expr &>(expr));
+    return eval_array(ast::cast<const ast::array_expr>(expr));
   case ast::node_kind::tuple_expr:
-    return eval_tuple(dynamic_cast<const ast::tuple_expr &>(expr));
+    return eval_tuple(ast::cast<const ast::tuple_expr>(expr));
   case ast::node_kind::struct_expr:
-    return eval_struct(dynamic_cast<const ast::struct_expr &>(expr));
+    return eval_struct(ast::cast<const ast::struct_expr>(expr));
   case ast::node_kind::field_expr:
-    return eval_field(dynamic_cast<const ast::field_expr &>(expr));
+    return eval_field(ast::cast<const ast::field_expr>(expr));
   case ast::node_kind::index_expr:
-    return eval_index(dynamic_cast<const ast::index_expr &>(expr));
+    return eval_index(ast::cast<const ast::index_expr>(expr));
   case ast::node_kind::call_expr:
-    return eval_call(dynamic_cast<const ast::call_expr &>(expr));
+    return eval_call(ast::cast<const ast::call_expr>(expr));
   case ast::node_kind::module_path_expr:
-    return eval_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
+    return eval_module_path(ast::cast<const ast::module_path_expr>(expr));
   case ast::node_kind::quote_expr:
-    return eval_quote(dynamic_cast<const ast::quote_expr &>(expr));
+    return eval_quote(ast::cast<const ast::quote_expr>(expr));
   case ast::node_kind::interpolated_string_expr:
     return eval_interpolated_string(
-        dynamic_cast<const ast::interpolated_string_expr &>(expr));
+        ast::cast<const ast::interpolated_string_expr>(expr));
   case ast::node_kind::match_expr:
-    return eval_match(dynamic_cast<const ast::match_expr &>(expr));
+    return eval_match(ast::cast<const ast::match_expr>(expr));
   case ast::node_kind::if_expr:
-    return eval_if(dynamic_cast<const ast::if_expr &>(expr));
+    return eval_if(ast::cast<const ast::if_expr>(expr));
   case ast::node_kind::cast_expr:
-    return eval_cast(dynamic_cast<const ast::cast_expr &>(expr));
+    return eval_cast(ast::cast<const ast::cast_expr>(expr));
   case ast::node_kind::lambda_expr:
-    return eval_lambda(dynamic_cast<const ast::lambda_expr &>(expr));
+    return eval_lambda(ast::cast<const ast::lambda_expr>(expr));
   default:
     return report(expr.span, "this expression form is not yet supported in "
                              "compile-time evaluation");

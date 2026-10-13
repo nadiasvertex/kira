@@ -6,6 +6,7 @@
 
 #include "src/parser/operators.h"
 #include "src/semantic/module_index.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -59,7 +60,7 @@ auto predicate_translator::atom_key(const ast::expr &expr,
     -> std::optional<std::string> {
   switch (expr.kind) {
   case ast::node_kind::ident_expr: {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+    const auto &ident = ast::cast<const ast::ident_expr>(expr);
     if (const auto it = subst.values.find(ident.name);
         it != subst.values.end()) {
       return it->second.atom_text();
@@ -67,7 +68,7 @@ auto predicate_translator::atom_key(const ast::expr &expr,
     return variable_for_(ident.name);
   }
   case ast::node_kind::field_expr: {
-    const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+    const auto &field = ast::cast<const ast::field_expr>(expr);
     if (field.object == nullptr) {
       return std::nullopt;
     }
@@ -84,7 +85,7 @@ auto predicate_translator::atom_key(const ast::expr &expr,
     // one, and treating it as an atom keyed on the written path is both
     // correct and exactly what makes an `invariant self.value > 0`
     // discharge a `positive` at `p.value`: the fact and the goal key alike.
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+    const auto &path = ast::cast<const ast::module_path_expr>(expr);
     if (path.segments.empty()) {
       return std::nullopt;
     }
@@ -98,14 +99,14 @@ auto predicate_translator::atom_key(const ast::expr &expr,
   case ast::node_kind::call_expr: {
     // A method call `v.len()` keys as `len(v)`, a free call `f(x)` as
     // `f(x)` — so a fact stated one way discharges a goal stated the other.
-    const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+    const auto &call = ast::cast<const ast::call_expr>(expr);
     if (call.callee == nullptr) {
       return std::nullopt;
     }
     auto name = std::string{};
     auto arguments = std::vector<std::string>{};
     if (call.callee->kind == ast::node_kind::field_expr) {
-      const auto &field = dynamic_cast<const ast::field_expr &>(*call.callee);
+      const auto &field = ast::cast<const ast::field_expr>(*call.callee);
       if (field.object == nullptr) {
         return std::nullopt;
       }
@@ -116,7 +117,7 @@ auto predicate_translator::atom_key(const ast::expr &expr,
       name = field.field_name;
       arguments.push_back(*receiver);
     } else if (call.callee->kind == ast::node_kind::ident_expr) {
-      name = dynamic_cast<const ast::ident_expr &>(*call.callee).name;
+      name = ast::cast<const ast::ident_expr>(*call.callee).name;
     } else {
       return std::nullopt;
     }
@@ -148,7 +149,7 @@ auto predicate_translator::solver_poly(const ast::expr &expr,
       expr, [&](const ast::node &leaf) -> std::optional<linear_poly> {
         switch (leaf.kind) {
         case ast::node_kind::ident_expr: {
-          const auto &ident = dynamic_cast<const ast::ident_expr &>(leaf);
+          const auto &ident = ast::cast<const ast::ident_expr>(leaf);
           if (const auto it = subst.values.find(ident.name);
               it != subst.values.end()) {
             return it->second;
@@ -159,7 +160,7 @@ auto predicate_translator::solver_poly(const ast::expr &expr,
         case ast::node_kind::module_path_expr:
         case ast::node_kind::call_expr: {
           const auto key =
-              atom_key(dynamic_cast<const ast::expr &>(leaf), subst);
+              atom_key(ast::cast<const ast::expr>(leaf), subst);
           return key.has_value() ? std::optional{poly_variable(*key)}
                                  : std::nullopt;
         }
@@ -219,9 +220,9 @@ auto predicate_translator::describe(const ast::expr &expr,
     -> std::string {
   switch (expr.kind) {
   case ast::node_kind::literal_expr:
-    return {dynamic_cast<const ast::literal_expr &>(expr).value};
+    return {ast::cast<const ast::literal_expr>(expr).value};
   case ast::node_kind::ident_expr: {
-    const auto &ident = dynamic_cast<const ast::ident_expr &>(expr);
+    const auto &ident = ast::cast<const ast::ident_expr>(expr);
     if (const auto it = subst.spellings.find(ident.name);
         it != subst.spellings.end()) {
       return it->second;
@@ -229,14 +230,14 @@ auto predicate_translator::describe(const ast::expr &expr,
     return ident.name;
   }
   case ast::node_kind::field_expr: {
-    const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+    const auto &field = ast::cast<const ast::field_expr>(expr);
     return field.object != nullptr
                ? std::format("{}.{}", describe(*field.object, subst),
                              field.field_name)
                : field.field_name;
   }
   case ast::node_kind::module_path_expr: {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+    const auto &path = ast::cast<const ast::module_path_expr>(expr);
     auto segments = path.segments;
     if (!segments.empty()) {
       if (const auto it = subst.spellings.find(segments.front());
@@ -247,7 +248,7 @@ auto predicate_translator::describe(const ast::expr &expr,
     return join_strings(segments, ".");
   }
   case ast::node_kind::call_expr: {
-    const auto &call = dynamic_cast<const ast::call_expr &>(expr);
+    const auto &call = ast::cast<const ast::call_expr>(expr);
     auto arguments = std::vector<std::string>{};
     for (const auto &arg : call.args) {
       arguments.push_back(arg.value != nullptr ? describe(*arg.value, subst)
@@ -258,7 +259,7 @@ auto predicate_translator::describe(const ast::expr &expr,
     return std::format("{}({})", callee, join_strings(arguments, ", "));
   }
   case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+    const auto &unary = ast::cast<const ast::unary_expr>(expr);
     const auto operand =
         unary.operand != nullptr ? describe(*unary.operand, subst) : "_";
     switch (unary.op) {
@@ -271,7 +272,7 @@ auto predicate_translator::describe(const ast::expr &expr,
     }
   }
   case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+    const auto &binary = ast::cast<const ast::binary_expr>(expr);
     const auto left =
         binary.lhs != nullptr ? describe(*binary.lhs, subst) : "_";
     const auto right =
@@ -291,14 +292,14 @@ auto predicate_translator::goal_from(const ast::expr &expr,
                                      bool negated) const -> goal_form {
   switch (expr.kind) {
   case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+    const auto &unary = ast::cast<const ast::unary_expr>(expr);
     if (unary.op == ast::unary_op::logical_not && unary.operand != nullptr) {
       return goal_from(*unary.operand, subst, !negated);
     }
     break;
   }
   case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+    const auto &binary = ast::cast<const ast::binary_expr>(expr);
     if (binary.lhs == nullptr || binary.rhs == nullptr) {
       break;
     }

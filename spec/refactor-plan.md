@@ -133,8 +133,10 @@ resolver's qualified-path validation, and the pattern binding collector
 ownership CFG builder and the AST cloner use the checked casts `as` and
 `cast` in place of raw `dynamic_cast`s, and the CFG builder's pattern
 leftover scan uses `for_each_child`. The cloner builds new nodes, so it keeps
-its own per-kind construction. The checker and compile-time evaluator still
-use their own traversals and move over one pass at a time.
+its own per-kind construction. Every `dynamic_cast` to an AST node type in
+`semantic/`, `comptime/` and the lowerer is now `ast::cast` or `ast::as`. The
+checker and compile-time evaluator still use their own recursive traversals
+and move over one pass at a time.
 
 ### Step 6: run compile-time code as HIR on the VM
 

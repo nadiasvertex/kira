@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -13,7 +14,7 @@ auto checker::infer_type_name_member(const ast::field_expr &field)
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &ident = dynamic_cast<const ast::ident_expr &>(*field.object);
+  const auto &ident = ast::cast<const ast::ident_expr>(*field.object);
   if (lookup_value(ident.name) != nullptr ||
       !is_builtin_scalar_name(ident.name)) {
     return std::nullopt;
@@ -203,7 +204,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
   if (expr.type_name != nullptr) {
     if (expr.type_name->kind == ast::node_kind::ident_expr) {
       const auto &ident =
-          dynamic_cast<const ast::ident_expr &>(*expr.type_name);
+          ast::cast<const ast::ident_expr>(*expr.type_name);
       if (const auto found = find_type_decl_by_name(ident.name)) {
         target = resolve_struct_literal_head(
             *found->first, found->second, expr.type_args, expr.type_name->span);
@@ -230,7 +231,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
       // is the declaration it names, looked up exactly the way the same
       // path resolves in type position.
       const auto &path =
-          dynamic_cast<const ast::module_path_expr &>(*expr.type_name);
+          ast::cast<const ast::module_path_expr>(*expr.type_name);
       if (const auto found = find_type_decl_by_path(path.segments)) {
         target = resolve_struct_literal_head(
             *found->first, found->second, expr.type_args, expr.type_name->span);
@@ -383,7 +384,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
         }
         if (field.type->kind == ast::node_kind::named_type) {
           const auto &named =
-              dynamic_cast<const ast::named_type &>(*field.type);
+              ast::cast<const ast::named_type>(*field.type);
           if (named.path.size() == 1 && named.path.front() == param.name) {
             bound = it->second;
             break;
@@ -711,10 +712,10 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
     if (param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*param.pattern);
+          ast::cast<const ast::binding_pattern>(*param.pattern);
       bind_value(binding.name, type, binding_origin::parameter, param.span);
     } else if (param.pattern != nullptr) {
-      check_pattern(dynamic_cast<const ast::pattern &>(*param.pattern), type);
+      check_pattern(ast::cast<const ast::pattern>(*param.pattern), type);
     }
   }
 
@@ -800,7 +801,7 @@ auto checker::check_if_branch_header(const ast::if_branch &branch) -> void {
   }
   if (branch.let_expr != nullptr && branch.let_pattern != nullptr) {
     const auto subject = infer_expr(*branch.let_expr, k_unknown_type);
-    check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
+    check_pattern(ast::cast<const ast::pattern>(*branch.let_pattern),
                   strip_refs(subject));
   } else if (branch.let_expr != nullptr) {
     infer_expr(*branch.let_expr, k_unknown_type);
@@ -871,7 +872,7 @@ auto checker::infer_if_expr(const ast::if_expr &expr, type_id expected)
     }
     assume_condition(branch.condition.get(), /*negated=*/false);
     if (branch.let_pattern != nullptr && branch.let_expr == nullptr) {
-      check_pattern(dynamic_cast<const ast::pattern &>(*branch.let_pattern),
+      check_pattern(ast::cast<const ast::pattern>(*branch.let_pattern),
                     k_unknown_type);
     }
     const auto branch_type = check_body_nodes(branch.body, expected);
@@ -975,7 +976,7 @@ auto checker::defer_loop_route(const ast::expr &iterable_expr,
         }
         if (site.kind == ast::node_kind::for_stmt) {
           session_
-              .for_iterator_dispatches_[&dynamic_cast<const ast::for_stmt &>(
+              .for_iterator_dispatches_[&ast::cast<const ast::for_stmt>(
                   clone_site)] = std::move(routed);
         } else {
           session_.comprehension_iterator_dispatches_[&clone_site] =
@@ -996,7 +997,7 @@ auto checker::resolve_loop_route(const ast::expr &iterable_expr,
   // else so it never falls back to `into_iterator`'s always-consuming
   // `into_iter` for a collection the caller explicitly did not want
   // moved (spec/todo.md #20).
-  const auto *borrow = dynamic_cast<const ast::unary_expr *>(&iterable_expr);
+  const auto *borrow = ast::as<const ast::unary_expr>(&iterable_expr);
   const auto is_top_level_borrow = borrow != nullptr &&
                                    borrow->operand != nullptr &&
                                    (borrow->op == ast::unary_op::addr_of ||
@@ -1044,7 +1045,7 @@ auto checker::infer_for_expr(const ast::for_expr &expr) -> type_id {
     auto patterns = std::vector<const ast::pattern *>{};
     patterns.reserve(clause.patterns.size());
     for (const auto &pattern : clause.patterns) {
-      patterns.push_back(dynamic_cast<const ast::pattern *>(pattern.get()));
+      patterns.push_back(ast::as<const ast::pattern>(pattern.get()));
     }
     check_loop_head_patterns(patterns, element);
   }
@@ -1580,17 +1581,17 @@ auto checker::static_for_read_root(const ast::expr &expr)
     -> const std::string * {
   const auto *current = &expr;
   while (current->kind == ast::node_kind::field_expr) {
-    const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+    const auto &field = ast::cast<const ast::field_expr>(*current);
     if (field.object == nullptr) {
       return nullptr;
     }
     current = field.object.get();
   }
   if (current->kind == ast::node_kind::ident_expr) {
-    return &dynamic_cast<const ast::ident_expr &>(*current).name;
+    return &ast::cast<const ast::ident_expr>(*current).name;
   }
   if (current->kind == ast::node_kind::module_path_expr) {
-    const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+    const auto &path = ast::cast<const ast::module_path_expr>(*current);
     return path.segments.empty() ? nullptr : &path.segments.front();
   }
   return nullptr;
@@ -1604,22 +1605,22 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
 
   switch (expr.kind) {
   case ast::node_kind::ident_expr:
-    return resolve_ident(dynamic_cast<const ast::ident_expr &>(expr), expected);
+    return resolve_ident(ast::cast<const ast::ident_expr>(expr), expected);
   case ast::node_kind::literal_expr:
-    return infer_literal(dynamic_cast<const ast::literal_expr &>(expr),
+    return infer_literal(ast::cast<const ast::literal_expr>(expr),
                          expected);
   case ast::node_kind::binary_expr:
-    return infer_binary(dynamic_cast<const ast::binary_expr &>(expr), expected);
+    return infer_binary(ast::cast<const ast::binary_expr>(expr), expected);
   case ast::node_kind::unary_expr:
-    return infer_unary(dynamic_cast<const ast::unary_expr &>(expr), expected);
+    return infer_unary(ast::cast<const ast::unary_expr>(expr), expected);
   case ast::node_kind::call_expr:
-    return infer_call(dynamic_cast<const ast::call_expr &>(expr), expected);
+    return infer_call(ast::cast<const ast::call_expr>(expr), expected);
   case ast::node_kind::index_expr:
-    return infer_index(dynamic_cast<const ast::index_expr &>(expr));
+    return infer_index(ast::cast<const ast::index_expr>(expr));
   case ast::node_kind::field_expr:
-    return infer_field(dynamic_cast<const ast::field_expr &>(expr));
+    return infer_field(ast::cast<const ast::field_expr>(expr));
   case ast::node_kind::cast_expr: {
-    const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
+    const auto &cast = ast::cast<const ast::cast_expr>(expr);
     const auto target =
         cast.target_type != nullptr
             ? resolve_type(*cast.target_type, current_resolve_ctx())
@@ -1632,7 +1633,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
       // `k_unknown_type`: the cast is an explicit conversion, not a
       // narrowing obligation on an already-typed expression.
       const auto *operand_lit =
-          dynamic_cast<const ast::literal_expr *>(cast.operand.get());
+          ast::as<const ast::literal_expr>(cast.operand.get());
       const auto operand = strip_refs(infer_expr(
           *cast.operand, operand_lit != nullptr ? target : k_unknown_type));
       if (is_rigid_param(operand) || is_rigid_param(target)) {
@@ -1642,9 +1643,9 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return target;
   }
   case ast::node_kind::try_expr:
-    return infer_try(dynamic_cast<const ast::try_expr &>(expr));
+    return infer_try(ast::cast<const ast::try_expr>(expr));
   case ast::node_kind::tuple_expr: {
-    const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
+    const auto &tuple = ast::cast<const ast::tuple_expr>(expr);
     const auto &expected_entry = session_.types_.entry(strip_refs(expected));
     auto elements = std::vector<type_id>{};
     elements.reserve(tuple.elements.size());
@@ -1661,30 +1662,30 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::array_expr:
-    return infer_array(dynamic_cast<const ast::array_expr &>(expr), expected);
+    return infer_array(ast::cast<const ast::array_expr>(expr), expected);
   case ast::node_kind::struct_expr:
-    return check_struct_literal(dynamic_cast<const ast::struct_expr &>(expr),
+    return check_struct_literal(ast::cast<const ast::struct_expr>(expr),
                                 expected);
   case ast::node_kind::lambda_expr:
-    return infer_lambda(dynamic_cast<const ast::lambda_expr &>(expr), expected);
+    return infer_lambda(ast::cast<const ast::lambda_expr>(expr), expected);
   case ast::node_kind::match_expr: {
-    const auto &match = dynamic_cast<const ast::match_expr &>(expr);
+    const auto &match = ast::cast<const ast::match_expr>(expr);
     return check_match(match.subject.get(), match.arms, expected, match.span);
   }
   case ast::node_kind::if_expr:
-    return infer_if_expr(dynamic_cast<const ast::if_expr &>(expr), expected);
+    return infer_if_expr(ast::cast<const ast::if_expr>(expr), expected);
   case ast::node_kind::for_expr:
-    return infer_for_expr(dynamic_cast<const ast::for_expr &>(expr));
+    return infer_for_expr(ast::cast<const ast::for_expr>(expr));
   case ast::node_kind::await_expr:
-    return infer_await(dynamic_cast<const ast::await_expr &>(expr));
+    return infer_await(ast::cast<const ast::await_expr>(expr));
   case ast::node_kind::yield_expr:
-    return infer_yield(dynamic_cast<const ast::yield_expr &>(expr));
+    return infer_yield(ast::cast<const ast::yield_expr>(expr));
   case ast::node_kind::async_expr:
-    check_body_nodes(dynamic_cast<const ast::async_expr &>(expr).body,
+    check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
                      k_unknown_type);
     return k_unknown_type;
   case ast::node_kind::par_expr: {
-    const auto &par = dynamic_cast<const ast::par_expr &>(expr);
+    const auto &par = ast::cast<const ast::par_expr>(expr);
     auto elements = std::vector<type_id>{};
     for (const auto &branch : par.branches) {
       elements.push_back(branch != nullptr ? infer_expr(*branch, k_unknown_type)
@@ -1693,7 +1694,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return session_.types_.tuple_of(std::move(elements));
   }
   case ast::node_kind::race_expr: {
-    const auto &race = dynamic_cast<const ast::race_expr &>(expr);
+    const auto &race = ast::cast<const ast::race_expr>(expr);
     auto result = k_unknown_type;
     for (const auto &branch : race.branches) {
       if (branch != nullptr) {
@@ -1703,7 +1704,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return result;
   }
   case ast::node_kind::crew_expr: {
-    const auto &crew = dynamic_cast<const ast::crew_expr &>(expr);
+    const auto &crew = ast::cast<const ast::crew_expr>(expr);
     push_scope();
     bind_value(crew.name, k_unknown_type, binding_origin::synthetic, crew.span);
     check_body_nodes(crew.body, k_unknown_type);
@@ -1711,17 +1712,17 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return k_unknown_type;
   }
   case ast::node_kind::on_expr: {
-    const auto &on = dynamic_cast<const ast::on_expr &>(expr);
+    const auto &on = ast::cast<const ast::on_expr>(expr);
     if (on.sender != nullptr) {
       infer_expr(*on.sender, k_unknown_type);
     }
     return check_body_nodes(on.body, expected);
   }
   case ast::node_kind::block_expr:
-    return check_body_nodes(dynamic_cast<const ast::block_expr &>(expr).stmts,
+    return check_body_nodes(ast::cast<const ast::block_expr>(expr).stmts,
                             expected);
   case ast::node_kind::quote_expr: {
-    const auto &quote = dynamic_cast<const ast::quote_expr &>(expr);
+    const auto &quote = ast::cast<const ast::quote_expr>(expr);
     switch (quote.fragment_kind) {
     case ast::quote_fragment_kind::stmt:
       return session_.types_.builtin("stmt");
@@ -1757,7 +1758,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return session_.types_.builtin("expr");
   }
   case ast::node_kind::splice_expr: {
-    const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
+    const auto &splice = ast::cast<const ast::splice_expr>(expr);
     if (splice.operand == nullptr) {
       return k_unknown_type;
     }
@@ -1789,7 +1790,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
       return k_error_type;
     }
     const auto *fragment_expr =
-        dynamic_cast<const ast::expr *>(fragment_value.fragment);
+        ast::as<const ast::expr>(fragment_value.fragment);
     if (fragment_expr == nullptr) {
       return k_error_type;
     }
@@ -1798,22 +1799,22 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return fragment_type;
   }
   case ast::node_kind::static_expr: {
-    const auto &inner = dynamic_cast<const ast::static_expr &>(expr);
+    const auto &inner = ast::cast<const ast::static_expr>(expr);
     return inner.operand != nullptr ? infer_expr(*inner.operand, expected)
                                     : k_unknown_type;
   }
   case ast::node_kind::module_path_expr:
-    return infer_module_path(dynamic_cast<const ast::module_path_expr &>(expr));
+    return infer_module_path(ast::cast<const ast::module_path_expr>(expr));
   case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+    const auto &group = ast::cast<const ast::group_expr>(expr);
     return group.inner != nullptr ? infer_expr(*group.inner, expected)
                                   : k_unknown_type;
   }
   case ast::node_kind::interpolated_string_expr:
     return check_interpolated_string(
-        dynamic_cast<const ast::interpolated_string_expr &>(expr));
+        ast::cast<const ast::interpolated_string_expr>(expr));
   case ast::node_kind::where_expr: {
-    const auto &where = dynamic_cast<const ast::where_expr &>(expr);
+    const auto &where = ast::cast<const ast::where_expr>(expr);
     push_scope();
     for (const auto &binding : where.bindings) {
       auto type = k_unknown_type;
@@ -2200,7 +2201,7 @@ auto checker::fill_count_of(const ast::array_expr &array)
   }
   if (array.fill_count->kind == ast::node_kind::literal_expr) {
     const auto &lit =
-        dynamic_cast<const ast::literal_expr &>(*array.fill_count);
+        ast::cast<const ast::literal_expr>(*array.fill_count);
     if (lit.lit_kind == token_kind::int_lit) {
       return parse_integer_literal(lit.value);
     }
@@ -2688,7 +2689,7 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
       check_fill_count(*array.fill_count);
       if (array.fill_count->kind == ast::node_kind::literal_expr) {
         const auto &lit =
-            dynamic_cast<const ast::literal_expr &>(*array.fill_count);
+            ast::cast<const ast::literal_expr>(*array.fill_count);
         if (lit.lit_kind == token_kind::int_lit) {
           count = parse_integer_literal(lit.value);
         }

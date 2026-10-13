@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -374,7 +375,7 @@ auto checker::fold_static_for_reads(
   auto covered = std::unordered_set<const ast::expr *>{};
   auto ok = true;
   for (const auto *read : reads.loop_reads) {
-    const auto *node = dynamic_cast<const ast::expr *>(unrolling.clone(read));
+    const auto *node = ast::as<const ast::expr>(unrolling.clone(read));
     const auto *root = node == nullptr ? nullptr : static_for_read_root(*node);
     if (root == nullptr || !compile_time_only.contains(*root)) {
       continue;
@@ -382,7 +383,7 @@ auto checker::fold_static_for_reads(
     // A read inside one already folded (`f` in `f.name`) is gone with it.
     const auto inside_folded = covered.contains(read);
     if (read->kind == ast::node_kind::field_expr) {
-      covered.insert(dynamic_cast<const ast::field_expr &>(*read).object.get());
+      covered.insert(ast::cast<const ast::field_expr>(*read).object.get());
     }
     if (inside_folded) {
       continue;
@@ -522,7 +523,7 @@ auto checker::stmt_definitely_returns(const ast::node &node) -> bool {
   case ast::node_kind::return_stmt:
     return true;
   case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+    const auto &decl = ast::cast<const ast::static_decl>(node);
     if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
       return false;
     }
@@ -593,7 +594,7 @@ auto checker::narrowing_past(const ast::node &node)
   if (node.kind != ast::node_kind::static_decl) {
     return std::nullopt;
   }
-  const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+  const auto &decl = ast::cast<const ast::static_decl>(node);
   if (decl.decl_kind != ast::static_decl_kind::conditional_compilation ||
       decl.if_condition == nullptr || !decl.else_body.empty() ||
       !inside_unbound_generic_scope()) {
@@ -823,7 +824,7 @@ auto checker::register_comptime_globals(
       continue;
     }
     if (item->kind == ast::node_kind::func_decl) {
-      const auto &fn = dynamic_cast<const ast::func_decl &>(*item);
+      const auto &fn = ast::cast<const ast::func_decl>(*item);
       if (fn.modifiers.is_static && !fn.name.empty()) {
         comptime_eval_.register_pending_function(fn.name, fn);
         session_.comptime_only_functions_.insert(&fn);
@@ -837,12 +838,12 @@ auto checker::register_comptime_globals(
       // "confluent, order-independent" shape `register_pending_static`/
       // `register_pending_function` already use for `static let`/
       // `static def`.
-      const auto &decl = dynamic_cast<const ast::type_decl &>(*item);
+      const auto &decl = ast::cast<const ast::type_decl>(*item);
       if (!decl.name.empty()) {
         comptime_eval_.register_pending_type(decl.name, decl);
       }
     } else if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &sub = dynamic_cast<const ast::sub_module_decl &>(*item);
+      const auto &sub = ast::cast<const ast::sub_module_decl>(*item);
       register_comptime_globals(sub.items);
     }
   }
@@ -903,7 +904,7 @@ auto checker::register_comptime_coherence_info() -> void {
             term.type->kind != ast::node_kind::named_type) {
           continue;
         }
-        const auto &named = dynamic_cast<const ast::named_type &>(*term.type);
+        const auto &named = ast::cast<const ast::named_type>(*term.type);
         if (!named.path.empty()) {
           supertraits.push_back(named.path.back());
         }
