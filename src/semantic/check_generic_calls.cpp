@@ -1338,8 +1338,8 @@ auto checker::instantiate_open_param_call(
       item.method.has_value()
           ? find_or_check_generic_instance(
                 *item.call, decl, item.owner, item.decl_file, block_solution,
-                std::format("{}::{}{}{}", item.target_type_name, decl.name,
-                            block_solution.suffix, suffix),
+                method_instance_name(item.target_type_name, decl.name,
+                                     block_solution.suffix + suffix),
                 &scoped, self_type, item.method->block_type_params, &seeds)
           : find_or_check_generic_instance(
                 *item.call, decl, item.owner, item.decl_file,

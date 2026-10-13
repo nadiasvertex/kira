@@ -1398,7 +1398,7 @@ auto checker::instantiate_hk_method(
     }
     const auto *instance = find_or_check_generic_instance(
         call, *method.decl, method.owner, method.file_id, settled,
-        std::format("{}::{}{}", target, method.decl->name, settled.suffix),
+        method_instance_name(target, method.decl->name, settled.suffix),
         &scoped_params, self_type);
     if (instance == nullptr) {
       return false;

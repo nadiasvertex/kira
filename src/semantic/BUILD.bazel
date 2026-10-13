@@ -32,6 +32,7 @@ cc_library(
         "instance_queue.cpp",
         "instance_substitution.cpp",
         "linear_poly.cpp",
+        "method_instances.cpp",
         "method_resolution.cpp",
         "module_index.cpp",
         "ownership_cfg.cpp",
@@ -63,6 +64,7 @@ cc_library(
         "instance_queue.h",
         "instance_substitution.h",
         "linear_poly.h",
+        "method_instances.h",
         "method_resolution.h",
         "module_index.h",
         "ownership_cfg.h",
@@ -212,6 +214,16 @@ cc_test(
     srcs = ["infer/obligations_test.cpp"],
     deps = [
         ":semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "method_instances_test",
+    srcs = ["method_instances_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
         "//src/testing",
     ],
 )

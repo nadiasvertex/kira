@@ -543,18 +543,15 @@ auto checker::build_method_table() -> void {
           continue;
         }
         const auto *decl = dynamic_cast<const ast::func_decl *>(item.get());
-        if (overridden_names.contains(decl->name)) {
+        const auto first_param =
+            decl->params.empty() ? std::string{}
+                                 : param_name_of(decl->params.front());
+        const auto action =
+            classify_trait_item(*decl, first_param, overridden_names);
+        if (action == trait_item_action::overridden) {
           continue;
         }
-        const auto has_self = !decl->params.empty() &&
-                              param_name_of(decl->params.front()) == "self";
-        const auto has_body =
-            decl->body_expr != nullptr || !decl->body_stmts.empty();
-        if (!has_self || !has_body) {
-          // No `self` receiver (an associated-function-shaped trait
-          // requirement) or no default body (a required method the impl
-          // must itself provide, already validated by
-          // `check_impl_members`) — nothing to monomorphize.
+        if (action == trait_item_action::register_as_declared) {
           methods.push_back(method_entry{
               .decl = decl,
               .owner = trait_module,
@@ -626,18 +623,8 @@ auto checker::monomorphize_trait_default(
   file_.module_ = trait_module;
   file_.file_id_ = trait_file_id;
   function_.self_type_ = target;
-  // A higher-kinded trait's default body is written against the trait's
-  // constructor parameter (`F[A]`, `M[B]`); checking it for a concrete
-  // impl binds that parameter to the impl's target constructor, so every
-  // `F[A]` in the clone re-resolves to the real applied type
-  // (`apply_resolved_head` — `option[A]`, the same interned id ordinary
-  // code gets).
-  auto bound_trait_params = type_scope{};
-  if (trait_decl != nullptr && !trait_decl->type_params.empty() &&
-      trait_decl->type_params.front().higher_kinded_arity > 0 &&
-      session_.types_.entry(target).kind == type_kind::ctor_ref_kind) {
-    bound_trait_params.emplace(trait_decl->type_params.front().name, target);
-  }
+  auto bound_trait_params =
+      trait_default_bindings(session_.types_, trait_decl, target);
   const auto pushed_trait_params = !bound_trait_params.empty();
   if (pushed_trait_params) {
     function_.type_params_.push_back(bound_trait_params);

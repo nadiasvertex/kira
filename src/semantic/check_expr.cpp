@@ -1382,8 +1382,8 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
     scoped_params.merge(bindings_by_name(bindings));
     auto solution = generic_solution{};
     solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
-    const auto name = std::format("{}::{}{}", entry.name, method->decl->name,
-                                  solution.suffix);
+    const auto name = method_instance_name(entry.name, method->decl->name,
+                                           solution.suffix);
     if (const auto *instance = find_or_check_generic_instance(
             *site, *method->decl, method->owner, method->file_id, solution,
             name, &scoped_params, stripped)) {
@@ -1448,7 +1448,7 @@ auto checker::try_resolve_iterator(type_id iterable, const ast::node *site)
   auto solution = generic_solution{};
   solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
   const auto name =
-      std::format("{}::{}{}", entry.name, method->decl->name, solution.suffix);
+      method_instance_name(entry.name, method->decl->name, solution.suffix);
   const auto *instance = find_or_check_generic_instance(
       *site, *method->decl, method->owner, method->file_id, solution, name,
       &scoped_params, stripped);
@@ -2275,7 +2275,7 @@ auto checker::instantiate_from_array_for(const ast::array_expr &array,
   // impl-method instance uses.
   solution.suffix += std::format("${}", mangle_type_for_instance(target));
   const auto name =
-      std::format("{}::{}{}", entry.name, method->decl->name, solution.suffix);
+      method_instance_name(entry.name, method->decl->name, solution.suffix);
   const auto *instance = find_or_check_generic_instance(
       array, *method->decl, method->owner, method->file_id, solution, name,
       &scoped_params, target, method->block_type_params);

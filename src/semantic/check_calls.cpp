@@ -679,8 +679,8 @@ auto checker::instantiate_impl_method_for(const ast::node &site,
   carry_impl_value_slots(method, bindings, solution);
   solution.suffix = std::format(
       "${}{}", mangle_type_for_instance(receiver_type), discriminator);
-  const auto name = std::format("{}::{}{}", receiver_entry.name,
-                                method.decl->name, solution.suffix);
+  const auto name = method_instance_name(receiver_entry.name,
+                                         method.decl->name, solution.suffix);
   return find_or_check_generic_instance(
       site, *method.decl, method.owner, method.file_id, solution, name,
       &scoped_params, receiver_type, method.block_type_params);
@@ -1148,8 +1148,8 @@ auto checker::finish_impl_generic_method_call(
                          solution, &scoped_params)) {
     return result;
   }
-  const auto name = std::format("{}::{}{}", receiver_name, method.decl->name,
-                                solution.suffix);
+  const auto name =
+      method_instance_name(receiver_name, method.decl->name, solution.suffix);
   const auto *instance = find_or_check_generic_instance(
       call, *method.decl, method.owner, method.file_id, solution, name,
       &scoped_params, receiver_type, method.block_type_params);
@@ -1213,7 +1213,7 @@ auto checker::check_impl_generic_static_call(const ast::call_expr &call,
   // instance body interns types, and this name is read after that.
   const auto target_name = std::string(session_.types_.entry(target).name);
   const auto name =
-      std::format("{}::{}{}", target_name, method.decl->name, solution.suffix);
+      method_instance_name(target_name, method.decl->name, solution.suffix);
   if (!check_call_bounds(call, *method.decl, method.owner, method.file_id,
                          solution, &scoped_params)) {
     return nullptr;

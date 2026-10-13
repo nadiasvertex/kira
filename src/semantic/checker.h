@@ -35,6 +35,7 @@
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/instance_queue.h"
 #include "src/semantic/instance_substitution.h"
+#include "src/semantic/method_instances.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
