@@ -250,7 +250,7 @@ auto checker::find_or_check_generic_instance(
     return instance;
   }
 
-  pending_instances_.push_back(std::move(queued));
+  instances_.request(std::move(queued));
   return instance;
 }
 
@@ -1447,7 +1447,7 @@ auto checker::flush_deferred() -> void {
   // checked type is available for this node".
   (void)leaf_queue_.flush();
   flush_leaf_values();
-  while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
+  while (!pending_leaf_literals_.empty() || instances_.has_walks()) {
     flush_leaf_literals();
     flush_pending_instances();
   }
@@ -1461,7 +1461,7 @@ auto checker::flush_deferred() -> void {
   if (leaf_queue_wired_) {
     (void)leaf_queue_.flush();
     // Running a call can request instances and wire literals of its own.
-    while (!pending_leaf_literals_.empty() || !pending_instances_.empty()) {
+    while (!pending_leaf_literals_.empty() || instances_.has_walks()) {
       flush_leaf_literals();
       flush_pending_instances();
     }
@@ -1471,7 +1471,7 @@ auto checker::flush_deferred() -> void {
   // Last, once every leaf any template left is settled: the instances
   // made by substitution. Their elaborations request instances of their
   // own — walked or substituted — so this drains to a fixpoint.
-  while (!substitution_queue_.empty() || !pending_instances_.empty() ||
+  while (instances_.has_substitutions() || instances_.has_walks() ||
          !pending_leaf_literals_.empty()) {
     flush_substitutions();
     // A substituted instance's call to an implicit generic is queued by
@@ -1521,24 +1521,62 @@ auto checker::walks_instance(const pending_instance &item) -> bool {
   return open != open_param_decls_.end() && open->second;
 }
 
-/// Makes every queued instance whose template is checked, by
-/// substitution; one whose template is not waits for it.
-auto checker::flush_substitutions() -> void {
-  auto processed = size_t{0};
-  while (processed < substitution_queue_.size()) {
-    // By index: substituting runs elaborations, which queue instances.
-    auto item = substitution_queue_[processed];
-    ++processed;
-    if (failed_templates_.contains(item.tmpl)) {
-      continue;
-    }
-    if (!checked_templates_.contains(item.tmpl)) {
-      waiting_instances_[item.tmpl].push_back(std::move(item));
-      continue;
-    }
-    make_instance_by_substitution(item);
+/// The checker's half of `instance_queue`.
+class checker::instance_maker final : public instance_hooks {
+public:
+  explicit instance_maker(checker &owner) : checker_(&owner) {}
+
+  auto walks(const pending_instance &item) -> bool override {
+    return checker_->walks_instance(item);
   }
-  substitution_queue_.clear();
+
+  auto answers_are_concrete(const pending_instance &item) -> bool override {
+    return checker_->instance_answers_are_concrete(item);
+  }
+
+  auto check_clone(const pending_instance &item) -> void override {
+    checker_->with_instance_context(item, [&] -> void {
+      checker_->check_function(*item.instance, /*at_module_scope=*/false);
+    });
+  }
+
+  auto check_template(const pending_instance &item) -> void override {
+    checker_->with_instance_context(item, [&] -> void {
+      checker_->check_function(*item.tmpl, /*at_module_scope=*/false);
+    });
+  }
+
+  auto substitute(pending_instance &item) -> void override {
+    checker_->with_instance_context(
+        item, [&] -> void { checker_->substitute_instance(item); });
+  }
+
+  auto record(const pending_instance &item) -> void override {
+    checker_->record_instance(item);
+  }
+
+  auto walked(const pending_instance &item) -> void override {
+    // The clone is a distinct `func_decl` from the template it came from,
+    // so membership has to be propagated explicitly — see
+    // `session_.comptime_only_functions_`'s doc comment; without this,
+    // `hir::lower` would try to lower every instantiation of a compile-time-
+    // only `static def` (e.g. `is_integer[int32]`) as if it were ordinary
+    // runtime code, exactly the failure this set exists to prevent.
+    auto &only = checker_->session_.comptime_only_functions_;
+    if (only.contains(item.tmpl)) {
+      only.insert(item.instance);
+    }
+  }
+
+private:
+  checker *checker_;
+};
+
+/// Makes every queued instance whose template is checked, by substitution;
+/// one whose template is not waits for it.
+auto checker::flush_substitutions() -> void {
+  auto maker = instance_maker{*this};
+  instances_.flush_substitutions(maker);
 }
 
 /// Registers a made instance for lowering, and the template it came from.
@@ -1546,17 +1584,6 @@ auto checker::record_instance(const pending_instance &item) -> void {
   session_.const_generic_instances_.push_back(const_generic_instance{
       .decl = item.instance, .owner_module = item.owner->module_name});
   instance_templates_[item.instance] = item.tmpl;
-}
-
-auto checker::make_instance_by_substitution(pending_instance &item) -> void {
-  // An instance asked for at a type nothing solved (`list___`) is the
-  // requester's mistake, and the requester reports it. There is nothing
-  // to compile: the template's records would come out written in `_`.
-  if (!instance_answers_are_concrete(item)) {
-    return;
-  }
-  with_instance_context(item, [&] -> void { substitute_instance(item); });
-  record_instance(item);
 }
 
 auto checker::instance_answers_are_concrete(const pending_instance &item)
@@ -1574,72 +1601,21 @@ auto checker::instance_answers_are_concrete(const pending_instance &item)
 }
 
 /// At the end of the session: instances whose template was never checked
-/// in its own right. A body that is concrete already — a method `deriving`
-/// synthesized for one instantiation — is checked once now, in its
-/// instance's context, and substituted like any other; anything else is
-/// walked, as before this phase.
+/// in its own right.
 auto checker::flush_unchecked_templates() -> void {
-  auto waiting = std::move(waiting_instances_);
-  waiting_instances_.clear();
-  for (auto &[tmpl, items] : waiting) {
-    for (auto &item : items) {
-      if (failed_templates_.contains(item.tmpl)) {
-        continue;
-      }
-      const auto concrete = item.tmpl->type_params.empty() &&
-                            (item.block_type_params == nullptr ||
-                             item.block_type_params->empty());
-      if (concrete && !checked_templates_.contains(item.tmpl)) {
-        with_instance_context(item, [&] -> void {
-          check_function(*item.tmpl, /*at_module_scope=*/false);
-        });
-      }
-      if (checked_templates_.contains(item.tmpl)) {
-        make_instance_by_substitution(item);
-        continue;
-      }
-      with_instance_context(item, [&] -> void {
-        check_function(*item.instance, /*at_module_scope=*/false);
-      });
-      record_instance(item);
-    }
-  }
+  auto maker = instance_maker{*this};
+  instances_.flush_unchecked(maker);
 }
 
 auto checker::flush_pending_instances() -> void {
-  auto processed = size_t{0};
-  while (processed < pending_instances_.size()) {
-    // By index, not by iterator or reference: checking this body appends to
-    // `pending_instances_`, which reallocates.
-    auto item = pending_instances_[processed];
-    ++processed;
-    check_instance(item);
-  }
-  pending_instances_.clear();
+  auto maker = instance_maker{*this};
+  instances_.flush_walks(maker);
 }
 
-/// Checks one instance body under the context captured at its request.
+/// Makes one instance now, under the context captured at its request.
 auto checker::check_instance(pending_instance &item) -> void {
-  if (failed_templates_.contains(item.tmpl)) {
-    return;
-  }
-  if (!walks_instance(item)) {
-    substitution_queue_.push_back(item);
-    return;
-  }
-  with_instance_context(item, [&] -> void {
-    check_function(*item.instance, /*at_module_scope=*/false);
-  });
-  record_instance(item);
-  // The clone is a distinct `func_decl` from the template it came from,
-  // so membership has to be propagated explicitly — see
-  // `session_.comptime_only_functions_`'s doc comment; without this,
-  // `hir::lower` would try to lower every instantiation of a compile-time-only
-  // `static def` (e.g. `is_integer[int32]`) as if it were ordinary
-  // runtime code, exactly the failure this set exists to prevent.
-  if (session_.comptime_only_functions_.contains(item.tmpl)) {
-    session_.comptime_only_functions_.insert(item.instance);
-  }
+  auto maker = instance_maker{*this};
+  instances_.make_now(item, maker);
 }
 
 /// Runs `body` under the checker context captured at `item`'s request:

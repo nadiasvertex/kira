@@ -33,6 +33,7 @@
 #include "src/semantic/infer/obligations.h"
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/infer/unify.h"
+#include "src/semantic/instance_queue.h"
 #include "src/semantic/instance_substitution.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
@@ -275,23 +276,6 @@ private:
   diagnostic_bag &diag_;
 
   std::vector<bool> &file_has_errors_;
-
-  /// The chain of generic instantiations currently being checked, innermost
-  /// last. `emit_diag` appends one note per frame, so a diagnostic raised
-  /// inside a monomorphized body points back at the call that asked for that
-  /// body — without which the user, who wrote an annotation and never named
-  /// the failing member at all, has nothing actionable to act on (§5.4).
-  struct instantiation_frame {
-    source_span call_span;      ///< The call that demanded this instance.
-    file_id_type call_file = 0; ///< File that call was written in.
-    std::string instance_name;  ///< e.g. `collect$list_iter_int32_$int32`.
-    /// One line per parameter solved from the expected type rather than from
-    /// an argument.
-    std::vector<std::string> context_solutions;
-    /// The frame is a use of the generic lambda `instance_name`, which
-    /// checks its own copy of the lambda (`instantiate_generic_lambda`).
-    bool lambda_use = false;
-  };
 
   /// Session-wide state: the type table, the node side tables, and the
   /// caches that persist across files and functions.
@@ -1088,13 +1072,6 @@ private:
   /// reported anything.
   size_t errors_emitted_ = 0;
 
-  /// Generic templates whose own check reported an error. Their instances are
-  /// never checked: under bounded generics a template is checked once, for
-  /// every type its signature admits, so an instance can only repeat what the
-  /// template already said — the same mistake again, now against `int32`
-  /// rather than `T`, and one level removed from the line that made it.
-  std::unordered_set<const ast::func_decl *> failed_templates_;
-
   auto with_instantiation_notes(const diagnostic &diag) -> diagnostic;
 
   auto error(source_span span, const std::string &message,
@@ -1828,28 +1805,6 @@ private:
   //  solution with both kinds of binding in it.
   // ------------------------------------------------------------------
 
-  /// What one call pins a template's parameters down to: a constant per value
-  /// parameter, a concrete type per type parameter, and the name the instance
-  /// carrying that solution is compiled under.
-  struct generic_solution {
-    /// Value parameters, as the interned `const_value` types
-    /// `push_type_params` binds them to.
-    type_scope const_slots;
-    /// Value parameters, as the raw numbers `lower_ident` embeds.
-    std::unordered_map<std::string, int64_t> values;
-    /// Type parameters, as the concrete types they solved to.
-    type_scope type_slots;
-    /// Every parameter's answer, in declaration order, as a symbol-safe
-    /// suffix — `$3`, `$int32`, `$3$int32` for a mixed template.
-    std::string suffix;
-    /// Whether every bound the callee declares holds for this solution
-    /// (phase 9, rule 3). When one does not, the call still has a result —
-    /// the solution says what it is, and reading it keeps one wrong type
-    /// argument from becoming a second error at the caller's `return` — but
-    /// no instance is made.
-    bool bounds_hold = true;
-  };
-
   auto bind_generic_constant(generic_solution &solution,
                              const ast::type_param &param, type_id underlying,
                              int64_t constant) -> void;
@@ -1900,46 +1855,6 @@ private:
   /// it needs a compiled copy of is reached from the `for` statement itself
   /// (`try_resolve_iterator`). Only the span and the map identity are used,
   /// both of which every node has.
-  /// An instance that has been cloned and named but whose body has not been
-  /// checked yet — see `find_or_check_generic_instance` and
-  /// `flush_pending_instances`.
-  ///
-  /// Everything the deferred half reads out of the checker is captured here
-  /// at *request* time, because by flush time the walk has moved on and none
-  /// of it is still standing. The one that matters most is
-  /// `enclosing_type_params`: an instance body is checked with the requester's
-  /// type-parameter scopes in place, and re-deriving them later is not
-  /// possible.
-  struct pending_instance {
-    const ast::func_decl *instance = nullptr;
-    /// The template it was cloned from, for
-    /// `session_.comptime_only_functions_`.
-    const ast::func_decl *tmpl = nullptr;
-    const module_members *owner = nullptr;
-    std::optional<file_id_type> decl_file;
-    generic_solution solution;
-    std::optional<type_scope> fixed_type_params;
-    type_id self_type = k_unknown_type;
-    const std::vector<ast::type_param> *block_type_params = nullptr;
-    /// The whole chain of frames, not just this one: the "instantiated from
-    /// here" note walks it, and a deferred body has no enclosing stack left
-    /// to read it off.
-    std::vector<instantiation_frame> sites;
-    /// This instance's own depth in that chain, so `f[n]` requesting `f[n+1]`
-    /// still bottoms out once the recursion is a worklist rather than a C++
-    /// call stack.
-    size_t depth = 0;
-    std::vector<type_scope> enclosing_type_params;
-    std::shared_ptr<const ast::clone_map> clone_pairs;
-    /// An instance of a function with unannotated parameters (phase 8b),
-    /// checked against its call's concrete types rather than substituted:
-    /// its template is a probe, not a check.
-    bool open_params = false;
-  };
-
-  /// Instances cloned but not yet checked — see `flush_pending_instances`.
-  std::vector<pending_instance> pending_instances_;
-
   // ------------------------------------------------------------------------
   //  Leaf unknowns
   //
@@ -2348,29 +2263,23 @@ private:
 
   auto flush_leaf_values() -> void;
 
-  /// Instances made by substitution, held until the end of the flush that
-  /// requested them: their templates' records have to be settled first (a
-  /// template's `[]` is `list[T]` only once its leaf is solved).
-  std::vector<pending_instance> substitution_queue_;
+  /// Decides when each generic instance is made; see instance_queue.h.
+  instance_queue instances_;
 
-  /// Instances whose template has not been checked yet, by template —
-  /// requeued the moment it is (`check_function_impl`).
-  std::unordered_map<const ast::func_decl *, std::vector<pending_instance>>
-      waiting_instances_;
+  /// The checker's half of `instance_queue`: what making one instance does.
+  class instance_maker;
 
   auto walks_instance(const pending_instance &item) -> bool;
 
-  auto flush_substitutions() -> void;
-
   auto record_instance(const pending_instance &item) -> void;
-
-  auto make_instance_by_substitution(pending_instance &item) -> void;
 
   auto instance_answers_are_concrete(const pending_instance &item) -> bool;
 
-  auto flush_unchecked_templates() -> void;
-
   auto flush_pending_instances() -> void;
+
+  auto flush_substitutions() -> void;
+
+  auto flush_unchecked_templates() -> void;
 
   auto check_instance(pending_instance &item) -> void;
 
@@ -2408,10 +2317,6 @@ private:
   /// name — what an instance's answers are matched against.
   std::unordered_map<const ast::func_decl *, type_scope>
       template_abstract_params_;
-
-  /// Templates whose check has finished. An instance of one that has not is
-  /// kept waiting in `pending_instances_`.
-  std::unordered_set<const ast::func_decl *> checked_templates_;
 
   // ==========================================================================
   //  check_instances.cpp

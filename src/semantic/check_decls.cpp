@@ -662,20 +662,11 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       open_returns_[&decl] = result;
     }
   }
-  if (checking_template && errors_emitted_ != errors_before_body) {
-    failed_templates_.insert(&decl);
-  }
   // Every checked body, not only templates: an instance of a method of
   // `impl ... for boxed[int32]` is named per receiver but has nothing to
   // substitute, so its records are the body's own, copied.
-  checked_templates_.insert(&decl);
-  if (const auto waiting = waiting_instances_.find(&decl);
-      waiting != waiting_instances_.end()) {
-    for (auto &item : waiting->second) {
-      substitution_queue_.push_back(std::move(item));
-    }
-    waiting_instances_.erase(waiting);
-  }
+  instances_.template_checked(
+      decl, checking_template && errors_emitted_ != errors_before_body);
   pop_type_params();
   function_ = std::move(outer);
   comptime_eval_.pop_locals();

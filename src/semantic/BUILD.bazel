@@ -29,6 +29,7 @@ cc_library(
         "infer/rigid_match.cpp",
         "infer/unify.cpp",
         "infer/value_solver.cpp",
+        "instance_queue.cpp",
         "instance_substitution.cpp",
         "linear_poly.cpp",
         "method_resolution.cpp",
@@ -59,6 +60,7 @@ cc_library(
         "infer/rigid_match.h",
         "infer/unify.h",
         "infer/value_solver.h",
+        "instance_queue.h",
         "instance_substitution.h",
         "linear_poly.h",
         "method_resolution.h",
@@ -217,6 +219,16 @@ cc_test(
 cc_test(
     name = "method_resolution_test",
     srcs = ["method_resolution_test.cpp"],
+    deps = [
+        ":semantic",
+        "//src/parser:parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "instance_queue_test",
+    srcs = ["instance_queue_test.cpp"],
     deps = [
         ":semantic",
         "//src/parser:parser",
