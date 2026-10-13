@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -23,6 +24,12 @@ struct vm_result {
 };
 
 /// What a hosted run (`vm::run_hosted`) may do.
+/// Performs one `op_host_call` for a hosted run: `site` says what, and
+/// `args` are its operands, typed as `site.arg_types` say. The error
+/// explains why the operation could not be done.
+using host_fn = std::function<std::expected<slot_value, std::string>(
+    const host_site &site, std::span<const slot_value> args)>;
+
 struct run_limits {
   /// Instructions the run may execute before it fails with
   /// `step_budget_exhausted`; `nullopt` for no limit.
@@ -31,6 +38,9 @@ struct run_limits {
   /// file, console and platform-query ones. Refused ones fail with
   /// `effect_refused`.
   bool allow_effects = true;
+  /// What performs `op_host_call`. Without one, the instruction fails: the
+  /// operation exists only while compiling.
+  const host_fn *host = nullptr;
 };
 
 /// One active call when a hosted run failed.

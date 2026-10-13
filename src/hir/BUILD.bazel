@@ -29,6 +29,7 @@ cc_library(
     ],
     deps = [
         "//src:intrinsics",
+        "//src/comptime",
         "//src/parser:parser",
         # `size_of[T]()`/`align_of[T]()` fold here, against the same
         # `runtime::layout_of` both backends read every field offset and

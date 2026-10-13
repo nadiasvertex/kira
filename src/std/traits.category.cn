@@ -20,6 +20,19 @@ pub type type_kind =
     | @trait_kind
     | @module_kind
 
+#: One field of a struct type, as `T.fields()` describes it: its name, its
+#: type as the compiler writes it (`list[int32]`), and `is_data_member`,
+#: which is always `true` for a field.
+pub type field_info = { name: str, type_name: str, is_data_member: bool }
+
+#: One variant of a sum type, as `T.variants()` describes it: its name and
+#: how many payload values it carries (`@some(x)` carries one).
+pub type variant_info = { name: str, payload_count: int32 }
+
+#: One `def` or `type` member of a module, as `M.functions()` and
+#: `M.types()` describe it: its name and whether it is `pub`.
+pub type member_info = { name: str, is_pub: bool }
+
 #: A single flat classification of `T`'s broad shape, folding both `T.kind()`
 #: and the builtin-name predicates below into one enum for a `match`-based
 #: dispatch, rather than testing every predicate in turn.

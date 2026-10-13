@@ -252,6 +252,7 @@ auto checker::take_checked_types() -> checked_types {
           std::move(session_.array_literal_conversions_),
       .interp_dispatches = std::move(session_.interp_dispatches_),
       .type_param_reflections = std::move(session_.type_param_reflections_),
+      .reflection_folds = std::move(session_.reflection_folds_),
       .comprehension_dispatches = std::move(session_.comprehension_dispatches_),
       .runtime_fill_dispatches = std::move(session_.runtime_fill_dispatches_),
       .static_for_elements = std::move(cache_.static_for_elements_),
@@ -287,6 +288,7 @@ auto checker::take_checked_types() -> checked_types {
       .synthesized_static_structs =
           std::move(session_.synthesized_static_structs_),
       .unreadable_static_refs = std::move(session_.unreadable_static_refs_),
+      .static_fragment_refs = std::move(session_.static_fragment_refs_),
       .static_global_owners = std::move(session_.static_global_owners_),
       .proven_in_bounds = std::move(session_.proven_in_bounds_),
       .elided_contracts = std::move(session_.elided_contracts_)};

@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime/fragments.h"
 #include "src/hir/captures.h"
 #include "src/hir/drop_schedule.h"
 #include "src/hir/ids.h"
@@ -350,7 +351,34 @@ public:
   [[nodiscard]] auto lower_function(const ast::func_decl &decl)
       -> std::expected<ptr<hir_function>, lowering_error>;
 
+  /// Refuses quoted syntax in code that runs after compiling.
+  [[nodiscard]] auto fail_compile_time_only(source_span span) const
+      -> std::unexpected<lowering_error>;
+
+  /// A quote: the compiler builds its syntax from its eagerly resolved
+  /// splices (`comptime::fragment_builder::eager_splices`), computed here.
+  [[nodiscard]] auto lower_quote(const ast::quote_expr &quote)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+
+  /// `expr.<name>(args...)`, built by the compiler from `args`.
+  [[nodiscard]] auto lower_fragment_builder(const ast::call_expr &call,
+                                            std::string_view name,
+                                            type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+
+  /// See `hir::lower_comptime_expression`.
+  [[nodiscard]] auto
+  lower_expression_function(const ast::expr &expr,
+                            std::span<const comptime_capture> captures,
+                            std::string name)
+      -> std::expected<ptr<hir_function>, lowering_error>;
+
 private:
+  /// Turns every reference the function borrows into explicit `&`/`*`
+  /// nodes and its temporaries into locals dropped where they end.
+  [[nodiscard]] auto finish_function(hir_function &function)
+      -> std::expected<void, lowering_error>;
+
   // ------------------------------------------------------------------
   //  Local identity
   //
@@ -958,6 +986,10 @@ private:
   /// Lowers an inline `static for ... => e` to the list it evaluates to,
   /// built from the values the checker unrolled it into
   /// (`checked_types::static_for_elements`).
+  /// A block `static for` in a function body: its body once per
+  /// iteration the checker recorded (`checked_types::static_for_iterations`).
+  [[nodiscard]] auto lower_static_for_block(const ast::static_decl &decl)
+      -> std::expected<ptr_vec<hir_node>, lowering_error>;
   [[nodiscard]] auto lower_static_for_inline(const ast::static_decl &decl)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// A call to one of a comprehension's resolved `new`/`push` methods.
@@ -1476,12 +1508,76 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     }
     return lower_expr(*fragment_expr);
   }
+  case ast::node_kind::quote_expr:
+    return lower_quote(ast::cast<const ast::quote_expr>(expr));
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered yet "
                             "(see spec/todo.md)",
                             static_cast<int>(expr.kind)));
   }
+}
+
+auto lowerer::fail_compile_time_only(source_span span) const
+    -> std::unexpected<lowering_error> {
+  return fail(lowering_error_kind::unsupported_construct, span,
+              "quoted syntax exists only while compiling, so run-time code "
+              "cannot build or read it; use it from compile-time code (a "
+              "`static def`, a `static let`, or a splice) instead");
+}
+
+auto lowerer::lower_quote(const ast::quote_expr &quote)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (!options_.compile_time) {
+    return fail_compile_time_only(quote.span);
+  }
+  auto type = checked_type_of(quote);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  // The splices the quote resolves as it is evaluated are computed first,
+  // as ordinary code; the compiler then builds the syntax from them.
+  auto splices = ptr_vec<hir_expr>{};
+  for (const auto *splice : comptime::fragment_builder::eager_splices(quote)) {
+    const auto *operand =
+        splice->kind == ast::node_kind::splice_expr
+            ? ast::cast<const ast::splice_expr>(*splice).operand.get()
+            : ast::cast<const ast::splice_type>(*splice).operand.get();
+    if (operand == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, splice->span,
+                  "this splice has nothing to splice");
+    }
+    auto lowered = lower_expr(*operand);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    splices.push_back(std::move(*lowered));
+  }
+  return ok_expr(hir::make<hir_host_call>(quote.span, *type, "quote", &quote,
+                                          std::move(splices)));
+}
+
+auto lowerer::lower_fragment_builder(const ast::call_expr &call,
+                                     std::string_view name, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (!options_.compile_time) {
+    return fail_compile_time_only(call.span);
+  }
+  auto args = ptr_vec<hir_expr>{};
+  for (const auto &arg : call.args) {
+    if (arg.value == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, call.span,
+                  "an argument is missing");
+    }
+    auto lowered = lower_expr(*arg.value);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    args.push_back(std::move(*lowered));
+  }
+  return ok_expr(hir::make<hir_host_call>(call.span, type,
+                                          std::format("expr.{}", name),
+                                          nullptr, std::move(args)));
 }
 
 auto lowerer::lower_literal(const ast::literal_expr &lit)
@@ -1542,6 +1638,14 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   if (const auto it = checked_.static_global_refs.find(&ident);
       it != checked_.static_global_refs.end()) {
     return lower_static_global_ref(ident, *type, it->second);
+  }
+  if (const auto it = checked_.lowering.static_fragment_refs.find(&ident);
+      it != checked_.lowering.static_fragment_refs.end()) {
+    if (!options_.compile_time) {
+      return fail_unreadable_static(ident.span, it->second->name, *type);
+    }
+    return ok_expr(hir::make<hir_host_call>(ident.span, *type, "static",
+                                            it->second, ptr_vec<hir_expr>{}));
   }
   if (const auto it = checked_.lowering.unreadable_static_refs.find(&ident);
       it != checked_.lowering.unreadable_static_refs.end()) {
@@ -1907,6 +2011,30 @@ auto lowerer::lower_call(const ast::call_expr &call)
     return ok_expr(
         make<hir_literal>(call.span, *type, token_kind::string_lit,
                           encode_string_literal(reflected->second.type_name)));
+  }
+
+  // `expr.lit(x)` and the other builders of quoted syntax: the compiler
+  // builds it, for code it runs while compiling. `expr` is not a name a
+  // program binds; the checker reads the call the same way.
+  if (const auto *field = ast::as<const ast::field_expr>(call.callee.get());
+      field != nullptr && field->object != nullptr &&
+      comptime::fragment_builder::is_builder(field->field_name)) {
+    if (const auto *object =
+            ast::as<const ast::ident_expr>(field->object.get());
+        object != nullptr && object->name == "expr") {
+      return lower_fragment_builder(call, field->field_name, *type);
+    }
+  }
+
+  // Reflection on a concrete type or module (`T.fields()`, `T.kind()`):
+  // the checker computed the answer, a constant.
+  if (const auto folded = checked_.lowering.reflection_folds.find(&call);
+      folded != checked_.lowering.reflection_folds.end()) {
+    return lower_reified_value(
+        folded->second, checked_, call.span,
+        [this](std::string_view callee) -> symbol_id {
+          return resolve_reference(callee);
+        });
   }
 
   // A call to a comptime-only `static def` instance, reached from ordinary
@@ -2442,6 +2570,18 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
       return std::unexpected(type.error());
     }
     return lower_static_global_ref(path, *type, it->second);
+  }
+  if (const auto it = checked_.lowering.static_fragment_refs.find(&path);
+      it != checked_.lowering.static_fragment_refs.end()) {
+    auto type = checked_type_of(path);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    if (!options_.compile_time) {
+      return fail_unreadable_static(path.span, it->second->name, *type);
+    }
+    return ok_expr(hir::make<hir_host_call>(path.span, *type, "static",
+                                            it->second, ptr_vec<hir_expr>{}));
   }
   if (const auto it = checked_.lowering.unreadable_static_refs.find(&path);
       it != checked_.lowering.unreadable_static_refs.end()) {
@@ -4705,6 +4845,9 @@ auto lowerer::lower_stmt(const ast::node &node)
       return one_stmt(
           ptr<hir_node>(make<hir_expr_stmt>(decl.span, std::move(*list))));
     }
+    if (decl.decl_kind == ast::static_decl_kind::for_block) {
+      return lower_static_for_block(decl);
+    }
     if (decl.decl_kind != ast::static_decl_kind::conditional_compilation) {
       return fail(lowering_error_kind::unsupported_construct, decl.span,
                   "this `static` declaration is not lowered as a function-"
@@ -5817,6 +5960,47 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
       make<hir_expr_stmt>(span, ptr<hir_expr>(make<hir_local_ref>(
                                     span, list_type, acc_symbol, acc_name)))));
   return ok_expr(make<hir_block>(span, list_type, std::move(stmts)));
+}
+
+auto lowerer::lower_static_for_block(const ast::static_decl &decl)
+    -> std::expected<ptr_vec<hir_node>, lowering_error> {
+  const auto iterations = checked_.lowering.static_for_iterations.find(&decl);
+  if (iterations == checked_.lowering.static_for_iterations.end()) {
+    return fail(lowering_error_kind::unsupported_construct, decl.span,
+                "this `static for` was not unrolled during checking");
+  }
+  // One copy of the body per iteration, each in a block of its own behind
+  // a `let` for each loop variable, holding that iteration's value.
+  auto result = ptr_vec<hir_node>{};
+  for (const auto &iteration : iterations->second) {
+    push_scope();
+    auto stmts = ptr_vec<hir_node>{};
+    for (const auto &[name, literal] : iteration.bindings) {
+      auto value = lower_expr(*literal);
+      if (!value.has_value()) {
+        pop_scope();
+        return std::unexpected(value.error());
+      }
+      const auto symbol = declare_local(name, (*value)->type);
+      stmts.push_back(ptr<hir_node>(
+          make<hir_let>(literal->span, symbol, name, std::move(*value))));
+    }
+    const auto *saved_folds =
+        std::exchange(static_for_folds_, &iteration.folded);
+    auto body = lower_block(decl.for_body, decl.span, k_unknown_type);
+    static_for_folds_ = saved_folds;
+    pop_scope();
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    const auto type = (*body)->type;
+    stmts.push_back(
+        ptr<hir_node>(make<hir_expr_stmt>(decl.span, std::move(*body))));
+    result.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        decl.span,
+        ptr<hir_expr>(make<hir_block>(decl.span, type, std::move(stmts))))));
+  }
+  return result;
 }
 
 auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
@@ -6944,9 +7128,55 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   auto function = ptr<hir_function>(make<hir_function>(
       decl.span, decl.name, std::move(params), *return_type, std::move(*body),
       decl.modifiers.is_generator, item_type));
+  if (auto finished = finish_function(*function); !finished.has_value()) {
+    return std::unexpected(finished.error());
+  }
+  return function;
+}
+
+auto lowerer::lower_expression_function(
+    const ast::expr &expr, std::span<const comptime_capture> captures,
+    std::string name) -> std::expected<ptr<hir_function>, lowering_error> {
+  // Nothing it owns is dropped: it runs once, at compile time.
+  drop_schedule_ = {};
+  flag_symbols_.clear();
+  auto return_type = checked_type_of(expr);
+  if (!return_type.has_value()) {
+    return std::unexpected(return_type.error());
+  }
+  push_scope();
+  auto params = std::vector<hir_param>{};
+  params.reserve(captures.size());
+  for (const auto &capture : captures) {
+    const auto symbol = declare_local(capture.name, capture.type);
+    params.push_back(hir_param{
+        .symbol = symbol, .name = capture.name, .type = capture.type});
+  }
+  auto value = lower_expr(expr);
+  if (!value.has_value()) {
+    pop_scope();
+    return std::unexpected(value.error());
+  }
+  auto exit = lower_return_value(expr.span, std::move(*value));
+  pop_scope();
+  if (!exit.has_value()) {
+    return std::unexpected(exit.error());
+  }
+  auto function = ptr<hir_function>(make<hir_function>(
+      expr.span, std::move(name), std::move(params), *return_type,
+      make<hir_block>(expr.span, *return_type, std::move(*exit)),
+      /*is_generator=*/false, k_unknown_type));
+  if (auto finished = finish_function(*function); !finished.has_value()) {
+    return std::unexpected(finished.error());
+  }
+  return function;
+}
+
+auto lowerer::finish_function(hir_function &function)
+    -> std::expected<void, lowering_error> {
   auto drop_failure = std::optional<lowering_error>{};
   make_references_explicit(
-      *function, checked_, [this]() -> symbol_id { return mint_symbol(); },
+      function, checked_, [this]() -> symbol_id { return mint_symbol(); },
       [this, &drop_failure](const temporary &temp,
                             ptr_vec<hir_node> &out) -> void {
         const auto symbol = temp.symbol;
@@ -6975,7 +7205,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   if (drop_failure.has_value()) {
     return std::unexpected(*drop_failure);
   }
-  return function;
+  return {};
 }
 
 } // namespace
@@ -6992,6 +7222,20 @@ auto lower_static_global(
   }
   return hir_static_global{
       .name = def.name, .type = def.type, .value = std::move(*value)};
+}
+
+auto lower_comptime_expression(const ast::expr &expr,
+                               std::span<const comptime_capture> captures,
+                               std::string name,
+                               const semantic::checked_types &checked)
+    -> std::expected<ptr<hir_function>, lowering_error> {
+  auto walker = lowerer(checked, lowering_options{.compile_time = true});
+  auto result =
+      walker.lower_expression_function(expr, captures, std::move(name));
+  if (result.has_value()) {
+    mark_tail_calls(**result);
+  }
+  return result;
 }
 
 auto lower_function(const ast::func_decl &decl,

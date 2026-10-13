@@ -25,6 +25,10 @@ auto numeric_kind_of(const type_table &types, type_id id)
       {"uint32", numeric_kind::u32},   {"uint64", numeric_kind::u64},
       {"usize", numeric_kind::u64},    {"float32", numeric_kind::f32},
       {"float64", numeric_kind::f64},
+      // Quoted syntax, held by compile-time code as a handle the compiler
+      // hands out (`hir_host_call`).
+      {"expr", numeric_kind::u64},     {"stmt", numeric_kind::u64},
+      {"def_expr", numeric_kind::u64}, {"type_expr", numeric_kind::u64},
   };
 
   if (auto it = map.find(entry.name); it != map.end()) {

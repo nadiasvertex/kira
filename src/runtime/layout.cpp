@@ -239,6 +239,11 @@ namespace {
       name == "usize" || name == "float64") {
     return layout_info{.size_bytes = 8, .align_bytes = 8};
   }
+  // Quoted syntax: a handle, in compile-time code only.
+  if (name == "expr" || name == "stmt" || name == "def_expr" ||
+      name == "type_expr") {
+    return layout_info{.size_bytes = 8, .align_bytes = 8};
+  }
   if (name == "float32") {
     return layout_info{.size_bytes = 4, .align_bytes = 4};
   }

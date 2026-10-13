@@ -1690,6 +1690,32 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         break;
       }
 
+      case opcode::op_host_call: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto site = ops.imm16();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
+        const auto &described = f.function->host_sites.at(site);
+        if (limits.host == nullptr) {
+          throw panic_error(
+              panic_reason::host_failed,
+              std::format("`{}` works on quoted syntax, which exists only "
+                          "while compiling",
+                          described.operation));
+        }
+        const std::span<const slot_value> call_args(
+            f.registers.data() + first_arg, argc);
+        auto result = (*limits.host)(described, call_args);
+        if (!result.has_value()) {
+          throw panic_error(panic_reason::host_failed,
+                            std::move(result.error()));
+        }
+        f.registers[dst] = *result;
+        break;
+      }
+
       case opcode::op_stack_alloc: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();

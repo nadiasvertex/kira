@@ -1341,6 +1341,16 @@ private:
           dynamic_cast<const hir::hir_str_scalar_width &>(expr));
     case hir_node_kind::hir_cell_set:
       return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr));
+    case hir_node_kind::hir_host_call:
+      // Quoted syntax exists only while compiling.
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = expr.span,
+          .message = std::format(
+              "`{}` works on quoted syntax, which exists only while "
+              "compiling; run it from compile-time code (a `static def`, "
+              "`static let`, or splice) instead",
+              dynamic_cast<const hir::hir_host_call &>(expr).operation)});
     case hir_node_kind::hir_block: {
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — mirrors

@@ -500,21 +500,6 @@ auto checker::infer_method_call(const ast::call_expr &call,
         ast::cast<const ast::ident_expr>(*field.object).name;
     if (const auto bound = lookup_type_param(type_name); bound.has_value()) {
       infer_call_args_loosely(call);
-      if (field.field_name == "variant_count") {
-        return session_.types_.builtin("int32");
-      }
-      if (field.field_name == "variants") {
-        return k_unknown_type;
-      }
-      if (field.field_name == "kind") {
-        // Same non-cascading `k_unknown_type` role as `variants()` above:
-        // `T.kind()` is compile-time-only here too (no `type_param_
-        // reflections_` fold the way `name()` gets below), consumed via
-        // `static if`/`static assert`/an ordinary generic body's `if`
-        // whose *taken* branch alone gets lowered — not a `match`
-        // consumed at runtime for an as-yet-abstract `T`.
-        return k_unknown_type;
-      }
       if (field.field_name == "name") {
         // Inside the *template* (not yet instantiated), `T` is bound to
         // an abstract placeholder rather than a concrete type — nothing
@@ -542,35 +527,19 @@ auto checker::infer_method_call(const ast::call_expr &call,
         }
         return session_.types_.builtin("str");
       }
-      if (field.field_name == "field_count") {
-        return session_.types_.builtin("int32");
-      }
-      return k_unknown_type;
+      return reflect_type_call(call, field.field_name, *bound);
     }
     if (const auto found = find_type_decl_by_name(type_name)) {
       infer_call_args_loosely(call);
+      // The type the name means, with any type parameters it declares left
+      // as they are: reflecting on `pair` describes the declaration.
+      const auto reflected =
+          session_.types_.user_type(*found->first, found->second, {});
       if (field.field_name == "name") {
+        fold_type_reflection(call, field.field_name, reflected);
         return session_.types_.builtin("str");
       }
-      if (field.field_name == "field_count" ||
-          field.field_name == "variant_count") {
-        return session_.types_.builtin("int32");
-      }
-      if (field.field_name == "variants") {
-        return k_unknown_type;
-      }
-      // `fields()` returns a compile-time list of per-field descriptors
-      // — no builtin "list of X" type exists to check this against yet,
-      // so it deliberately checks as `k_unknown_type` (same "don't
-      // cascade a gap in the type system into a real error" role it
-      // plays everywhere else) rather than inventing new type-system
-      // machinery for this one narrow milestone. Real per-field values
-      // (`comptime::value` `struct_instance`s with `name`/`type`
-      // string fields) exist at evaluation time regardless — see
-      // `comptime::try_eval_type_reflection_call` (`reflect.cpp`). A
-      // `static for` over it types its loop variable `field_info`
-      // (`static_for_element_type`).
-      return k_unknown_type;
+      return reflect_type_call(call, field.field_name, reflected);
     }
   }
 
@@ -587,17 +556,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
         ast::cast<const ast::ident_expr>(*field.object).name;
     if (names_reflectable_module(mod_name)) {
       infer_call_args_loosely(call);
-      if (field.field_name == "name") {
-        return session_.types_.builtin("str");
-      }
-      if (field.field_name == "function_count" ||
-          field.field_name == "type_count") {
-        return session_.types_.builtin("int32");
-      }
-      // `functions()`/`types()` return a compile-time list of descriptors —
-      // no "list of X" type to check against, so `k_unknown` (same
-      // non-cascading role as type reflection's `fields()`).
-      return k_unknown_type;
+      return reflect_module_call(call, field.field_name, mod_name);
     }
   }
 

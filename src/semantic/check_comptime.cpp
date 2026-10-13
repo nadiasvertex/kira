@@ -47,14 +47,24 @@ auto checker::inside_unbound_generic_scope() -> bool {
 /// The bindings of each iteration of an inline `static for` that its guard
 /// keeps, evaluated at compile time. `nullopt` when the iterable or the
 /// guard can't be computed; that has been reported, and the file marked as
-/// failing.
-auto checker::evaluate_static_for_inline(const ast::static_decl &decl)
+/// failing — unless `silent`, when nothing is reported.
+auto checker::evaluate_static_for_inline(const ast::static_decl &decl,
+                                         bool silent)
     -> std::optional<std::vector<static_for_scope>> {
+  if (silent) {
+    const auto saved = comptime_eval_.set_silent(true);
+    const auto saved_errors = file_has_errors_;
+    auto result = evaluate_static_for_inline(decl, false);
+    file_has_errors_ = saved_errors;
+    comptime_eval_.set_silent(saved);
+    return result;
+  }
+  const auto inline_form = decl.decl_kind == ast::static_decl_kind::for_inline;
   if (decl.for_iterable == nullptr || decl.for_iterable->has_error ||
-      decl.for_yield == nullptr || decl.for_patterns.size() != 1 ||
-      decl.for_patterns[0] == nullptr) {
+      (inline_form && decl.for_yield == nullptr) ||
+      decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
     // Already reported by the parser, or (several loop patterns) below.
-    if (decl.for_patterns.size() > 1) {
+    if (inline_form && decl.for_patterns.size() > 1) {
       error_with_help(decl.span,
                       "an inline `static for` takes one loop variable",
                       "this loop names several",
@@ -616,7 +626,62 @@ auto checker::narrowing_past(const ast::node &node)
   return narrowed;
 }
 
-auto checker::check_static_decl(const ast::static_decl &decl) -> void {
+auto checker::record_static_for_block(const ast::static_decl &decl) -> void {
+  if (decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
+    return;
+  }
+  // In a comptime-only function the iterable may read the function's
+  // parameters, known only per call: nothing is reported then, and the
+  // call is interpreted.
+  const auto silent = function_.in_comptime_only_function_;
+  if (inside_unbound_generic_scope()) {
+    defer_to_instances(decl,
+                       [this, &decl, silent,
+                        file = file_.file_id_](instance_subst &subst) -> void {
+                         const auto saved_file = file_.file_id_;
+                         file_.file_id_ = file;
+                         unroll_static_for_block(*clone_of(subst, &decl),
+                                                 silent);
+                         file_.file_id_ = saved_file;
+                       });
+    return;
+  }
+  unroll_static_for_block(decl, silent);
+}
+
+auto checker::unroll_static_for_block(const ast::static_decl &decl,
+                                      bool silent) -> void {
+  const auto iterations = evaluate_static_for_inline(decl, silent);
+  if (!iterations.has_value()) {
+    return;
+  }
+  const auto bindings = collect_pattern_bindings(*decl.for_patterns[0]);
+  auto unrolled = std::vector<static_for_iteration>{};
+  unrolled.reserve(iterations->size());
+  for (const auto &scope : *iterations) {
+    auto iteration = static_for_iteration{};
+    for (const auto &binding : bindings) {
+      const auto value = scope.find(binding.name);
+      const auto type = session_.node_types_.find(binding.node);
+      const auto *literal =
+          value == scope.end() || type == session_.node_types_.end()
+              ? nullptr
+              : materialize_static_value(value->second, binding.span,
+                                         type->second);
+      // A loop variable with no literal form (a list) cannot be written
+      // into each copy of the body; the loop is not unrolled.
+      if (literal == nullptr) {
+        return;
+      }
+      iteration.bindings.emplace_back(binding.name, literal);
+    }
+    unrolled.push_back(std::move(iteration));
+  }
+  cache_.static_for_iterations_.insert_or_assign(&decl, std::move(unrolled));
+}
+
+auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
+    -> void {
   comptime_eval_.set_file(file_.file_id_);
   switch (decl.decl_kind) {
   case ast::static_decl_kind::binding: {
@@ -744,15 +809,23 @@ auto checker::check_static_decl(const ast::static_decl &decl) -> void {
 
     // The inline form's values, computed once here for code that is not
     // generic; a template's are computed per instance instead
-    // (`record_static_for_inline`). A comptime-only function's body is run
-    // by the evaluator itself, per call.
+    // (`record_static_for_inline`). In a comptime-only function the
+    // iterable may read the function's parameters, known only per call;
+    // then nothing is reported here, and the call is interpreted.
     if (decl.decl_kind == ast::static_decl_kind::for_inline) {
-      if (!inside_unbound_generic_scope() &&
-          !function_.in_comptime_only_function_) {
-        if (auto values = evaluate_static_for_inline(decl)) {
+      if (!inside_unbound_generic_scope()) {
+        if (auto values = evaluate_static_for_inline(
+                decl, function_.in_comptime_only_function_)) {
           cache_.static_for_values_.insert_or_assign(&decl, std::move(*values));
         }
       }
+      return;
+    }
+
+    // In a function body, the block form is code that runs, once per
+    // iteration: lowering unrolls it from the iterations recorded here.
+    if (in_body) {
+      record_static_for_block(decl);
       return;
     }
 
@@ -871,6 +944,12 @@ auto checker::register_comptime_modules() -> void {
           .is_pub = ref.decl != nullptr &&
                     ref.decl->visibility == ast::visibility::pub});
     }
+    // By name, as `reflect_module_call` lists them.
+    const auto by_name = [](const auto &a, const auto &b) -> bool {
+      return a.name < b.name;
+    };
+    std::ranges::sort(info.functions, by_name);
+    std::ranges::sort(info.types, by_name);
     // Register under the fully-qualified name and, for ergonomic
     // reflection, the leaf name (`sample.math` is reachable as `math` when
     // a reflection reference names it unqualified). Full name registered

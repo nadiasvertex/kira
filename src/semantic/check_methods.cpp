@@ -1698,6 +1698,11 @@ auto checker::field_info_member_type(std::string_view name, source_span span)
 /// type.
 auto checker::static_for_element_type(const ast::expr &iterable) -> type_id {
   const auto type = infer_expr(iterable, k_unknown_type);
+  if (const auto element = list_element_type(type); element != k_unknown_type) {
+    return element;
+  }
+  // Without the standard library, `T.fields()` has no `list[field_info]`
+  // type, and its loop variable is the builtin descriptor.
   if (iterable.kind == ast::node_kind::call_expr) {
     const auto &call = ast::cast<const ast::call_expr>(iterable);
     const auto *callee =

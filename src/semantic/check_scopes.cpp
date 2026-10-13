@@ -891,6 +891,24 @@ auto checker::ensure_static_binding_evaluated(const ast::static_decl &decl,
     }
     return it->second.has_value() ? &*it->second : nullptr;
   }
+  // The initializer runs on the VM, which lowers it from what checking it
+  // recorded, so a reference reached before file order checks the
+  // declaration checks it now. Checking it evaluates it too.
+  if (bodies_phase_ && !session_.node_types_.contains(decl.initializer.get()) &&
+      !cache_.statics_in_progress_.contains(&decl) &&
+      !cache_.early_checked_static_bindings_.contains(&decl) &&
+      !cache_.static_bindings_evaluating_.contains(&decl)) {
+    check_static_binding_early(decl, owner);
+    if (const auto it = cache_.static_binding_values_.find(&decl);
+        it != cache_.static_binding_values_.end()) {
+      // A failed initializer was reported in its own file; the file reading
+      // it must not be lowered either.
+      if (cache_.failed_static_bindings_.contains(&decl)) {
+        mark_error();
+      }
+      return it->second.has_value() ? &*it->second : nullptr;
+    }
+  }
   // A dotted path reaches this through the checker rather than the
   // evaluator's own by-name cycle guard (`resolve_pending_static`), so a
   // self-referential `static a = a.x` needs a guard here too.
@@ -988,6 +1006,11 @@ auto checker::record_static_const_reference(const ast::expr &reference,
   }
   if (const auto name = reify_static_global(decl, *value, type, owner_module)) {
     session_.static_global_refs_[&reference] = *name;
+    return;
+  }
+  // Quoted syntax has no run-time form; compile-time code asks for it.
+  if (value->fragment != nullptr) {
+    session_.static_fragment_refs_[&reference] = &decl;
     return;
   }
   session_.unreadable_static_refs_[&reference] = decl.name;

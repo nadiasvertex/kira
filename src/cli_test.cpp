@@ -1907,6 +1907,31 @@ auto test_comptime_vm_values_round_trip() -> void {
                      report->run.has_value() ? report->run->exit_code : -1));
 }
 
+/// A quote whose splice reads a value computed on the VM is built there, and
+/// the syntax it builds is spliced into run-time code.
+auto test_comptime_vm_quote() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_quote.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the quote to be built: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 42,
+         std::format("expected `apply(37)` == 42, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
 /// Compile-time code overflows exactly as run-time code does — `int8`
 /// arithmetic in a `static def` does not quietly widen — and the error points
 /// at the call and, in a note, at the operation that overflowed.
@@ -1935,6 +1960,34 @@ auto test_comptime_vm_overflow_points_into_callee() -> void {
   // `CINDER_COMPTIME_VM=compare` reports the VM's failure at the call alone.
   expect(report->diagnostics.contains("main.cn:9:16"),
          "expected the error at the call: " + report->diagnostics);
+}
+
+/// A whole compile-time expression, not just a call, runs on the VM:
+/// arithmetic in a `static assert` overflows at the declared width.
+auto test_comptime_vm_expression_overflow() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_expression_overflow.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 1,
+         std::format("expected one error, got {}: {}", report->error_count,
+                     report->diagnostics));
+  expect(report->diagnostics.contains("compile-time evaluation failed") &&
+             report->diagnostics.contains("overflowed"),
+         "expected the overflow to be named: " + report->diagnostics);
+  expect(report->diagnostics.contains("main.cn:8:15"),
+         "expected the error at the assertion: " + report->diagnostics);
 }
 
 /// A list method called at compile time runs on the VM, where the AST
@@ -5062,6 +5115,8 @@ auto main() -> int {
     test_comptime_list_method_runs();
     test_comptime_vm_values_round_trip();
     test_comptime_vm_overflow_points_into_callee();
+    test_comptime_vm_expression_overflow();
+    test_comptime_vm_quote();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method();
     test_comptime_unannotated_static_read_early();

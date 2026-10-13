@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +40,17 @@ struct compiled_program {
 /// cannot be lowered or compiled; the message says which and why.
 [[nodiscard]] auto compile_program(semantic::comptime_program &program,
                                    const semantic::comptime_function &entry)
+    -> std::expected<compiled_program, semantic::comptime_failure>;
+
+/// What `compile_expression` names the function it makes of the
+/// expression. Not a name a declaration can have.
+inline constexpr std::string_view k_expression_function = "<compile-time>";
+
+/// Lowers `expr` as a function of its own (`hir::lower_comptime_expression`)
+/// and, like `compile_program`, everything it reaches, then compiles them
+/// together.
+[[nodiscard]] auto compile_expression(semantic::comptime_program &program,
+                                      const semantic::comptime_expression &expr)
     -> std::expected<compiled_program, semantic::comptime_failure>;
 
 } // namespace cinder::comptime_vm

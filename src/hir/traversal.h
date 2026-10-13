@@ -147,6 +147,9 @@ template <typename F> auto for_each_child(hir_node &node, F &&f) -> void {
     visit(n.byte_offset);
     return;
   }
+  case hir_node_kind::hir_host_call:
+    visit_all(dynamic_cast<hir_host_call &>(node).args);
+    return;
   case hir_node_kind::hir_cell_set: {
     auto &n = dynamic_cast<hir_cell_set &>(node);
     visit(n.cell);

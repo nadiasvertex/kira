@@ -86,6 +86,11 @@ public:
     return owner_.prepare_for_lowering(fn);
   }
 
+  [[nodiscard]] auto prepare_expression(const ast::expr &expr)
+      -> std::expected<void, std::string> override {
+    return owner_.prepare_expression_for_lowering(expr);
+  }
+
   [[nodiscard]] auto find_function(std::string_view owner_module,
                                    std::string_view hir_name)
       -> std::optional<comptime_function> override {
@@ -95,6 +100,37 @@ public:
   [[nodiscard]] auto static_global(std::string_view name)
       -> const lowering_results::static_global_def * override {
     return owner_.project_static_global(name);
+  }
+
+  [[nodiscard]] auto host_call(std::string_view operation, const void *subject,
+                               std::span<const comptime::value> args,
+                               source_span span)
+      -> std::expected<comptime::value, std::string> override {
+    auto &fragments = owner_.comptime_eval_.fragments();
+    auto built = std::expected<comptime::value, comptime::fragment_error>{};
+    if (operation == "static" && subject != nullptr) {
+      const auto found = owner_.cache_.static_binding_values_.find(
+          static_cast<const ast::static_decl *>(subject));
+      if (found == owner_.cache_.static_binding_values_.end() ||
+          !found->second.has_value()) {
+        return std::unexpected(std::string("the static has no value"));
+      }
+      return *found->second;
+    }
+    if (operation == "quote" && subject != nullptr) {
+      built = fragments.quote(*static_cast<const ast::quote_expr *>(subject),
+                              args);
+    } else if (operation.starts_with("expr.")) {
+      const auto spans = std::vector<source_span>(args.size(), span);
+      built = fragments.build(operation.substr(5), args, spans, span);
+    } else {
+      return std::unexpected(
+          std::format("`{}` is not a compile-time operation", operation));
+    }
+    if (!built.has_value()) {
+      return std::unexpected(std::move(built.error().message));
+    }
+    return *std::move(built);
   }
 
   [[nodiscard]] auto file_of(const ast::func_decl &fn)
@@ -179,6 +215,10 @@ auto checker::set_comptime_backend(comptime_backend *backend,
         return run_comptime_call_on_vm(fn, args, type_args);
       },
       mode);
+  comptime_eval_.set_vm_eval(
+      [this](const ast::expr &expr) -> comptime::evaluator::vm_call_outcome {
+        return run_comptime_expr_on_vm(expr);
+      });
 }
 
 auto checker::comptime_instance(
@@ -251,14 +291,21 @@ auto checker::run_comptime_call_on_vm(
     return outcome{.outcome = outcome::kind::not_run,
                    .message = std::move(result.error().message)};
   }
-  auto failed = outcome{.outcome = outcome::kind::failed,
-                        .message = std::move(result.error().message)};
+  return outcome{.outcome = outcome::kind::failed,
+                 .result = {},
+                 .message = std::move(result.error().message),
+                 .notes = vm_failure_notes(result.error())};
+}
+
+auto checker::vm_failure_notes(const comptime_failure &failure)
+    -> std::vector<diagnostic> {
+  auto notes = std::vector<diagnostic>{};
   auto first = true;
-  for (const auto &frame : result.error().frames) {
+  for (const auto &frame : failure.frames) {
     if (!frame.file.has_value() || frame.span.empty()) {
       continue;
     }
-    failed.notes.push_back(
+    notes.push_back(
         diagnostic(diagnostic_level::note,
                    first
                        ? std::format("it failed here, in `{}`", frame.function)
@@ -267,7 +314,130 @@ auto checker::run_comptime_call_on_vm(
             .with_label(frame.span, first ? "failed here" : "called here"));
     first = false;
   }
-  return failed;
+  return notes;
+}
+
+auto checker::run_comptime_expr_on_vm(const ast::expr &expr)
+    -> comptime::evaluator::vm_call_outcome {
+  using outcome = comptime::evaluator::vm_call_outcome;
+  if (!bodies_phase_ || comptime_backend_ == nullptr ||
+      file_.module_ == nullptr) {
+    return outcome{.outcome = outcome::kind::not_run};
+  }
+  // The bindings the expression reads that only the evaluator has a value
+  // for — a `static for` loop variable, a compile-time `let` — become its
+  // parameters. A binding it has none for is known only when the program
+  // runs, so the expression cannot run now.
+  auto request = comptime_expression{.expr = &expr,
+                                     .owner_module = file_.module_->module_name,
+                                     .file = file_.file_id_,
+                                     .captures = {}};
+  auto args = std::vector<comptime::value>{};
+  auto seen = std::unordered_set<std::string>{};
+  auto blocked = std::optional<std::string>{};
+  // `at_type` is the binding's type as the expression reads it.
+  const auto read = [&](const std::string &name, type_id at_type) -> void {
+    if (blocked.has_value() || !seen.insert(name).second) {
+      return;
+    }
+    if (const auto *held = comptime_eval_.local_value(name)) {
+      // A type parameter is a type, not a value; lowering reads the types
+      // it names from the records.
+      if (held->kind == comptime::value_kind::type_value) {
+        return;
+      }
+      const auto type = lowering_type(at_type);
+      if (session_.types_.is_unknown(type)) {
+        blocked = std::format("the type of `{}` is not known", name);
+        return;
+      }
+      request.captures.emplace_back(name, type);
+      args.push_back(*held);
+      return;
+    }
+    if (find_value_in_scopes(name).binding != nullptr) {
+      blocked = std::format("`{}` is known only when the program runs", name);
+    }
+  };
+  ast::walk(expr, [&](const ast::node &node) -> bool {
+    switch (node.kind) {
+    case ast::node_kind::quote_expr:
+      return false;
+    case ast::node_kind::ident_expr: {
+      const auto found = session_.node_types_.find(&node);
+      read(ast::cast<const ast::ident_expr>(node).name,
+           found == session_.node_types_.end() ? k_unknown_type
+                                               : found->second);
+      break;
+    }
+    case ast::node_kind::module_path_expr: {
+      // A value-rooted path (`f.name`) records each segment's type, its
+      // root's first.
+      const auto &path = ast::cast<const ast::module_path_expr>(node);
+      const auto found = session_.value_path_types_.find(&path);
+      if (!path.segments.empty() && found != session_.value_path_types_.end() &&
+          !found->second.empty()) {
+        read(path.segments.front(), found->second.front());
+      }
+      break;
+    }
+    default:
+      break;
+    }
+    return true;
+  });
+  static const auto trace = std::getenv("CINDER_COMPTIME_TRACE") != nullptr;
+  if (blocked.has_value()) {
+    if (trace) {
+      std::println(stderr, "comptime vm: expression at {}: not run: {}",
+                   expr.span.start, *blocked);
+    }
+    return outcome{.outcome = outcome::kind::not_run};
+  }
+  auto result = comptime_backend_->evaluate(*vm_program_, request, args);
+  if (trace) {
+    for (const auto &[name, type] : request.captures) {
+      std::println(stderr, "comptime vm: expression at {} reads `{}`: {}",
+                   expr.span.start, name, session_.types_.display(type));
+    }
+    std::println(stderr, "comptime vm: expression at {}: {}", expr.span.start,
+                 result.has_value() ? std::string("ran")
+                 : result.error().reason == comptime_failure::kind::unsupported
+                     ? "not run: " + result.error().message
+                     : "failed: " + result.error().message);
+  }
+  if (result.has_value()) {
+    return outcome{.outcome = outcome::kind::returned,
+                   .result = *std::move(result)};
+  }
+  if (result.error().reason == comptime_failure::kind::unsupported) {
+    return outcome{.outcome = outcome::kind::not_run,
+                   .message = std::move(result.error().message)};
+  }
+  // An expression that is one call fails as that call.
+  auto what = std::string("compile-time evaluation");
+  if (const auto *call = ast::as<const ast::call_expr>(&expr);
+      call != nullptr && call->callee != nullptr) {
+    const auto &callee = *call->callee;
+    auto name = std::string{};
+    if (const auto *ident = ast::as<const ast::ident_expr>(&callee)) {
+      name = ident->name;
+    } else if (const auto *field = ast::as<const ast::field_expr>(&callee)) {
+      name = field->field_name;
+    } else if (const auto *path =
+                   ast::as<const ast::module_path_expr>(&callee);
+               path != nullptr && !path->segments.empty()) {
+      name = path->segments.back();
+    }
+    if (!name.empty()) {
+      what = std::format("compile-time call to `{}`", name);
+    }
+  }
+  return outcome{.outcome = outcome::kind::failed,
+                 .result = {},
+                 .message = std::format("{} failed: {}", what,
+                                        result.error().message),
+                 .notes = vm_failure_notes(result.error())};
 }
 
 auto checker::lowering_type(type_id id) -> type_id {
@@ -392,6 +562,35 @@ auto checker::prepare_for_lowering(const ast::func_decl &decl)
   return {};
 }
 
+auto checker::prepare_expression_for_lowering(const ast::expr &expr)
+    -> std::expected<void, std::string> {
+  default_leaves_of(expr);
+  auto &state = lowering_view_state_;
+  const auto saved_problem = std::exchange(state.problem, std::nullopt);
+  const auto saved_nodes = std::exchange(state.attempt_nodes, {});
+  const auto saved_signatures = std::exchange(state.attempt_signatures, {});
+  const auto restore = [&]() -> void {
+    state.problem = saved_problem;
+    state.attempt_nodes = saved_nodes;
+    state.attempt_signatures = saved_signatures;
+  };
+  refresh_lowering_view_tables();
+  project_subtree(expr);
+  if (state.problem.has_value()) {
+    auto problem = *std::move(state.problem);
+    for (const auto *visited : state.attempt_nodes) {
+      state.visited.erase(visited);
+    }
+    for (const auto *signature : state.attempt_signatures) {
+      state.signatures.erase(signature);
+    }
+    restore();
+    return std::unexpected(std::move(problem));
+  }
+  restore();
+  return {};
+}
+
 auto checker::project_signature(const ast::func_decl &decl) -> void {
   if (lowering_view_state_.signatures.contains(&decl)) {
     return;
@@ -458,7 +657,18 @@ auto checker::project_subtree(const ast::node &root) -> void {
     project_node(node);
     switch (node.kind) {
     case ast::node_kind::quote_expr:
-      // Quoted syntax is data, not code this function runs.
+      // Quoted syntax is data, not code this function runs — except the
+      // splices evaluating it resolves.
+      for (const auto *splice : comptime::fragment_builder::eager_splices(
+               ast::cast<const ast::quote_expr>(node))) {
+        const auto *operand =
+            splice->kind == ast::node_kind::splice_expr
+                ? ast::cast<const ast::splice_expr>(*splice).operand.get()
+                : ast::cast<const ast::splice_type>(*splice).operand.get();
+        if (operand != nullptr) {
+          project_subtree(*operand);
+        }
+      }
       return false;
     case ast::node_kind::static_decl: {
       const auto *decl = ast::as<const ast::static_decl>(&node);
@@ -536,6 +746,8 @@ auto checker::project_node(const ast::node &node) -> void {
   copy_entry(session_.static_global_refs_, view.static_global_refs, &node);
   copy_entry(session_.unreadable_static_refs_, lowered.unreadable_static_refs,
              &node);
+  copy_entry(session_.static_fragment_refs_, lowered.static_fragment_refs,
+             &node);
   copy_entry(generic_lambda_refs_, view.ownership.generic_lambda_refs,
              static_cast<const void *>(&node));
   if (const auto found = session_.spliced_fragments_.find(&node);
@@ -591,6 +803,12 @@ auto checker::project_node(const ast::node &node) -> void {
                [this](stack_buffer_request &request) -> void {
                  request.element = view_type(request.element);
                });
+    if (const auto found = session_.reflection_folds_.find(call);
+        found != session_.reflection_folds_.end()) {
+      auto value = found->second;
+      settle_reified(value);
+      lowered.reflection_folds.insert_or_assign(call, std::move(value));
+    }
     if (const auto found = session_.folded_comptime_calls_.find(call);
         found != session_.folded_comptime_calls_.end()) {
       lowered.folded_comptime_calls.insert_or_assign(call, found->second);
@@ -1100,20 +1318,20 @@ auto checker::project_static_global(std::string_view name)
     }
     auto copy = def;
     copy.type = lowering_type(copy.type);
-    const auto settle_value = [&](this const auto &self,
-                                  reified_value &value) -> void {
-      value.type = lowering_type(value.type);
-      if (value.conversion != nullptr) {
-        project_subtree(*value.conversion);
-      }
-      for (auto &part : value.parts) {
-        self(part);
-      }
-    };
-    settle_value(copy.value);
+    settle_reified(copy.value);
     return &defs.insert_or_assign(decl, std::move(copy)).first->second;
   }
   return nullptr;
+}
+
+auto checker::settle_reified(reified_value &value) -> void {
+  value.type = lowering_type(value.type);
+  if (value.conversion != nullptr) {
+    project_subtree(*value.conversion);
+  }
+  for (auto &part : value.parts) {
+    settle_reified(part);
+  }
 }
 
 auto checker::find_lowered_function(std::string_view module,

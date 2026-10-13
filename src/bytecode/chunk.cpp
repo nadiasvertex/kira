@@ -91,6 +91,11 @@ auto chunk_writer::add_string_constant(std::string text) -> uint32_t {
   return static_cast<uint32_t>(string_constants_.size() - 1);
 }
 
+auto chunk_writer::add_host_site(host_site site) -> uint16_t {
+  host_sites_.push_back(std::move(site));
+  return static_cast<uint16_t>(host_sites_.size() - 1);
+}
+
 auto chunk_writer::finish(std::string name, uint16_t param_count,
                           uint32_t register_count) && -> bytecode_function {
   return bytecode_function{.name = std::move(name),
@@ -98,7 +103,8 @@ auto chunk_writer::finish(std::string name, uint16_t param_count,
                            .register_count = register_count,
                            .code = std::move(code_),
                            .constants = std::move(constants_),
-                           .string_constants = std::move(string_constants_)};
+                           .string_constants = std::move(string_constants_),
+                           .host_sites = std::move(host_sites_)};
 }
 
 auto span_at(const bytecode_function &fn, size_t offset) -> source_span {

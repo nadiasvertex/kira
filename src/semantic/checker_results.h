@@ -558,6 +558,11 @@ struct lowering_results {
   /// which stays unsupported outside `static` contexts as before.
   std::unordered_map<const ast::call_expr *, type_param_reflection>
       type_param_reflections;
+  /// Every reflection call on a concrete type or module (`T.fields()`,
+  /// `T.kind()`, `M.functions()`, ...), mapped to its answer. Reflection
+  /// is a constant once the type is known, so lowering emits the value in
+  /// place of the call.
+  std::unordered_map<const ast::call_expr *, reified_value> reflection_folds;
   /// Every `for ... => yield` comprehension's resolved `list[T]::new`/
   /// `list[T]::push` calls — see `comprehension_dispatch`'s doc comment.
   /// Keyed by the `ast::for_expr` node.
@@ -766,6 +771,11 @@ struct lowering_results {
   /// such a static freely; `hir::lower_ident`/`lower_module_path` report it
   /// only when run-time code is actually lowered.
   std::unordered_map<const ast::node *, std::string> unreadable_static_refs;
+  /// Every `ident_expr`/`module_path_expr` that resolved to a `static let`
+  /// holding quoted syntax, mapped to the static. Compile-time code asks the
+  /// compiler for its value (`hir_host_call` `static`).
+  std::unordered_map<const ast::node *, const ast::static_decl *>
+      static_fragment_refs;
   /// Reified global name -> the module whose `static_decl` it was reified
   /// from (`reify_static_global`'s `owner` parameter). `hir::lower_ident`/
   /// `lower_module_path` consult this to fill in `hir_global_ref::

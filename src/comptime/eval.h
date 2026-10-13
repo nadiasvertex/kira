@@ -6,11 +6,13 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include "src/comptime/fragments.h"
 #include "src/comptime/value.h"
 #include "src/parser/ast.h"
 #include "src/parser/diagnostic.h"
@@ -395,6 +397,45 @@ public:
     vm_mode_ = mode;
   }
 
+  /// Runs a whole compile-time expression on the VM, reading the bindings
+  /// it uses from `local_value`. A `failed` outcome's `message` is the
+  /// whole error.
+  using vm_eval_fn = std::function<vm_call_outcome(const ast::expr &expr)>;
+
+  /// Installs the VM for whole expressions (`evaluate`, `try_evaluate`).
+  /// Unset, they are interpreted. `set_vm_call`'s mode applies.
+  void set_vm_eval(vm_eval_fn eval) { vm_eval_ = std::move(eval); }
+
+  /// The value a binding the evaluator holds has — a `static for` loop
+  /// variable, a type parameter — or `nullptr` if it holds none of that
+  /// name.
+  [[nodiscard]] auto local_value(const std::string &name) -> const value * {
+    return lookup_local(name);
+  }
+
+  /// The builder quoted syntax comes from, shared with compile-time code
+  /// the VM runs so both build the same syntax.
+  [[nodiscard]] auto fragments() -> fragment_builder & { return fragments_; }
+
+  /// Whether diagnostics are being suppressed (`try_evaluate`).
+  [[nodiscard]] auto silent() const -> bool { return diagnostics_suppressed_; }
+
+  /// Suppresses diagnostics (`on`) or not, returning whether they were, so
+  /// a caller can restore that.
+  auto set_silent(bool on) -> bool {
+    return std::exchange(diagnostics_suppressed_, on);
+  }
+
+  /// `try_evaluate` for a guess: whether an ordinary `let`'s initializer
+  /// happens to be a compile-time constant. Never runs on the VM, which
+  /// would compile and run every such initializer.
+  [[nodiscard]] auto probe(const ast::expr &expr) -> std::optional<value> {
+    const auto saved = std::exchange(probing_, true);
+    auto result = try_evaluate(expr);
+    probing_ = saved;
+    return result;
+  }
+
   /// The type the current call's type parameter `name` is bound to, or
   /// `nullptr` when `name` is not a type parameter bound in this frame.
   [[nodiscard]] auto type_binding(const std::string &name) -> const value * {
@@ -462,14 +503,13 @@ public:
   [[nodiscard]] auto
   evaluate_stmts(const std::vector<ast::ptr<ast::node>> &body) -> exec_result;
 
-  /// Moves out every AST-builder-constructed fragment (see
-  /// `synthesized_fragments_`'s doc comment) so its owner outlives this
+  /// Moves out every fragment `fragments_` built so it outlives this
   /// evaluator — `checker::take_checked_types` calls this and stores the
   /// result in `checked_types`, since `hir::lower` reads spliced fragments
   /// (via `checked_types::spliced_fragments`) after the `checker`/
   /// `evaluator` that produced them has already been destroyed.
   [[nodiscard]] auto take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
-    return std::move(synthesized_fragments_);
+    return fragments_.take_fragments();
   }
 
   /// Attempts to evaluate a whole call to `fn` (a registered `static def`)
@@ -501,6 +541,8 @@ public:
       -> std::optional<value>;
 
 private:
+  /// `evaluate` without its tracing.
+  [[nodiscard]] auto evaluate_unwrapped(const ast::expr &expr) -> value;
   [[nodiscard]] auto eval_binary(const ast::binary_expr &bin) -> value;
   [[nodiscard]] auto eval_unary(const ast::unary_expr &un) -> value;
   [[nodiscard]] auto eval_literal(const ast::literal_expr &lit) -> value;
@@ -553,75 +595,6 @@ private:
   /// dispatch.
   [[nodiscard]] auto try_eval_expr_builder_call(const ast::call_expr &call)
       -> std::optional<value>;
-
-  /// Deep-clones a fragment reached through a boxed `expr_fragment` value so
-  /// it can become an owned child of a newly synthesized node (e.g.
-  /// `expr.field`'s `object`) without aliasing a `unique_ptr` some other
-  /// node/arena already owns. Deliberately narrow — only the node shapes
-  /// reachable via the AST-builder intrinsics or a typical simple quoted
-  /// expression (`ident_expr`, `field_expr`, `literal_expr`) are supported;
-  /// returns `nullptr` for anything structurally richer, so the caller can
-  /// report a clear "too complex" diagnostic instead of guessing.
-  [[nodiscard]] auto clone_expr_fragment(const ast::node &node)
-      -> ast::ptr<ast::expr>;
-
-  /// Deep-clones a pattern reached through a boxed `pattern_fragment` value
-  /// (or nested inside a `match_expr` being re-cloned by `clone_expr_fragment`
-  /// — see its `match_expr` case) so it can become an owned child of a newly
-  /// synthesized node without aliasing another node's `unique_ptr`.
-  /// Deliberately narrow, mirroring `clone_expr_fragment`: only the shapes
-  /// `expr.ctor_pattern` itself ever builds (`wildcard_pattern`,
-  /// `binding_pattern`, `constructor_pattern`) are supported; anything else
-  /// returns `nullptr`.
-  [[nodiscard]] auto clone_pattern_fragment(const ast::node &node)
-      -> ast::ptr<ast::pattern>;
-
-  /// Deep-clones one `interp_segment` (a literal-text run, or a value
-  /// segment with its `expr` cloned via `clone_expr_fragment` and its
-  /// format spec's scalar fields copied — a dynamic `{expr}` width/
-  /// precision is dropped rather than cloned, since nothing this
-  /// milestone's callers build ever sets one). Returns `nullopt` if the
-  /// segment's value expression can't be cloned.
-  [[nodiscard]] auto clone_interp_segment(const ast::interp_segment &segment)
-      -> std::optional<ast::interp_segment>;
-
-  /// Appends the segment(s) needed to represent `fragment` inside a larger
-  /// `interpolated_string_expr` being assembled by `expr.interp_concat` —
-  /// see the `.cpp` doc comment for the exact per-shape rules. Reports and
-  /// returns `false` if `fragment`'s shape can't be represented.
-  [[nodiscard]] auto
-  append_interp_segments(const ast::node &fragment, source_span span,
-                         std::vector<ast::interp_segment> &out) -> bool;
-
-  /// Whether `node` (restricted to the structural shapes
-  /// `materialize_quote` understands — see its own doc comment) contains a
-  /// nested `~` splice anywhere beneath it, so `eval_quote` knows whether
-  /// this fragment needs eager materialization at all. Best-effort/
-  /// conservative: a node kind not specifically recognized here is assumed
-  /// splice-free, matching this quote's pre-materialization behavior (leave
-  /// it as literal syntax, resolved later at the eventual splice site)
-  /// rather than risking a clone `materialize_quote` couldn't reconstruct.
-  [[nodiscard]] auto quote_body_has_nested_splice(const ast::node &node)
-      -> bool;
-
-  /// Deep-clones `node`, resolving any nested `~` splice found along the
-  /// way *now* — while the locals/globals active at the point this quote is
-  /// being constructed are still live — instead of leaving it as literal,
-  /// unresolved syntax to be re-evaluated later at whatever scope the
-  /// eventual splice site happens to have (which, for a quote returned from
-  /// a `static def` call, is *after* that call's own locals have already
-  /// been popped — see the design plan's M7 addendum for the concrete
-  /// failure this fixes: `static def make_adder(n) -> expr:
-  /// `(x + ~(expr.lit(n)))`` couldn't resolve `n` at the eventual splice
-  /// site without this). Only called when `quote_body_has_nested_splice`
-  /// found something to resolve. Narrow, not a general AST clone: supports
-  /// exactly the node shapes needed to quote a small generated `impl`
-  /// (`impl_decl`, `func_decl`, `return_stmt`, `named_type`, `splice_type`,
-  /// `splice_expr`, plus the expr leaf kinds `clone_expr_fragment` already
-  /// handles). Returns `nullptr` (after reporting, for the cases that can
-  /// fail) for anything else.
-  [[nodiscard]] auto materialize_quote(const ast::node &node)
-      -> ast::ptr<ast::node>;
 
   /// Recognizes `T.fields()`/`T.field_count()`/`T.name()` — compile-time
   /// reflection over a registered `type` declaration's own syntax (design
@@ -969,6 +942,20 @@ private:
              source_span span, const std::function<value()> &interpret)
       -> std::optional<value>;
 
+  /// Uses what the VM did: its value, or its failure reported at `span`;
+  /// `nullopt` when it did not run. In `vm_mode::compare`, `interpret`
+  /// runs the same thing in the interpreter and a difference is reported,
+  /// naming `what` ran.
+  [[nodiscard]] auto use_vm_outcome(vm_call_outcome outcome,
+                                    std::string_view what, source_span span,
+                                    const std::function<value()> &interpret)
+      -> std::optional<value>;
+
+  /// See `set_vm_eval`.
+  vm_eval_fn vm_eval_;
+  /// While set, `evaluate` does not use `vm_eval_` (see `probe`).
+  bool probing_ = false;
+
   /// Reports a failed VM call at `span`, with `notes` saying where in the
   /// callee it failed.
   auto report_vm_failure(source_span span, std::string message,
@@ -993,33 +980,16 @@ private:
   /// written in the file it did start in — the user's own call.
   std::vector<call_site> call_sites_;
   int call_depth_ = 0;
+  /// Nesting of `evaluate` calls, so tracing names only the outermost.
+  int eval_depth_ = 0;
   /// Iterations one compile-time loop may run before evaluation gives up,
   /// so a loop that never ends reports an error instead of hanging the
   /// compiler.
   static constexpr std::size_t k_max_loop_iterations = 1'000'000;
 
-  /// Owns every AST node synthesized by `try_eval_expr_builder_call`
-  /// (`expr.lit(...)`/`expr.ident(...)`) — unlike a quoted `` `(...)` ``
-  /// fragment (an ordinary child of the file's own AST, see `ast::
-  /// quote_expr::parsed_body`'s doc comment), a programmatically
-  /// constructed fragment has no natural file owner, so it needs its own
-  /// session-lifetime storage. Stable-address: a `vector<unique_ptr<T>>`
-  /// only moves the pointer on growth, never the pointee — mirrors
-  /// `checker::synthesized_decls_`/`synthesized_types_` (`check.cpp`).
-  ast::ptr_vec<ast::node> synthesized_fragments_;
-
-  /// Monotonic counter feeding `comptime::rename_internal_bindings`'s
-  /// synthetic names — session-lifetime (not reset per fragment) so two
-  /// different quoted fragments, each with their own internal `let`, never
-  /// mint the same fresh name and collide with *each other* once both are
-  /// spliced into the same scope. See `eval_quote`'s doc comment.
-  std::uint64_t hygiene_next_id_ = 0;
-
-  /// Fragments already renamed by `eval_quote`, so evaluating the same
-  /// `quote_expr` node more than once (e.g. one written inline inside a
-  /// `static for` loop body, rather than behind a memoized `static let`)
-  /// doesn't rename its bindings again on top of already-renamed ones.
-  std::unordered_set<const ast::node *> hygiene_renamed_;
+  /// Builds every fragment quotes and the `expr.*` builders evaluate to,
+  /// and owns them (`take_synthesized_fragments`).
+  fragment_builder fragments_;
 
   /// While set, `report` returns the error sentinel without emitting into
   /// `diag_` — see `try_eval_ordinary_call`, the only setter.

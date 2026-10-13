@@ -42,6 +42,17 @@ struct span_entry {
   source_span span;
 };
 
+/// One `op_host_call` instruction's operation, as `hir_host_call` described
+/// it: what to do, the syntax it is about, and its operands' and result's
+/// types, so the host can read the operands and write the result.
+struct host_site {
+  std::string operation;
+  const void *subject = nullptr;
+  std::vector<semantic::type_id> arg_types;
+  semantic::type_id result_type = semantic::k_unknown_type;
+  source_span span;
+};
+
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;
@@ -55,6 +66,8 @@ struct bytecode_function {
   /// `str` value's data slot directly at one of these entries without
   /// copying its bytes into the arena.
   std::vector<std::string> string_constants;
+  /// Indexed by `op_host_call`'s `site` operand.
+  std::vector<host_site> host_sites;
   /// Total bytes of frame-local storage this function's `uninit[T, N]`
   /// buffers need (`op_stack_alloc`). Reserved once, on frame entry, rather
   /// than grown per allocation: a buffer's address must stay valid for the
@@ -168,6 +181,10 @@ public:
   /// `add_constant` doesn't.
   [[nodiscard]] auto add_string_constant(std::string text) -> uint32_t;
 
+  /// Appends `site` to this function's host-call table, returning its
+  /// index for `op_host_call`.
+  [[nodiscard]] auto add_host_site(host_site site) -> uint16_t;
+
   [[nodiscard]] auto current_offset() const noexcept -> size_t {
     return code_.size();
   }
@@ -181,6 +198,7 @@ private:
   std::vector<uint8_t> code_;
   std::vector<slot_value> constants_;
   std::vector<std::string> string_constants_;
+  std::vector<host_site> host_sites_;
 };
 
 } // namespace cinder::bytecode

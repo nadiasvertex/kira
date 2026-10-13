@@ -25,6 +25,10 @@ namespace {
       .frames = {}});
 }
 
+/// How compile-time code is lowered: able to work on quoted syntax.
+const auto k_compile_time =
+    hir::lowering_options{.contract_checks = true, .compile_time = true};
+
 [[nodiscard]] auto key_of(std::string_view module, std::string_view name)
     -> std::string {
   return std::format("{}::{}", module, name);
@@ -68,6 +72,9 @@ auto hir_fingerprint(hir::hir_function &fn) -> std::string {
           " op{}",
           static_cast<int>(static_cast<const hir::hir_unary &>(node).op));
       break;
+    case hir::hir_node_kind::hir_host_call:
+      out += " " + static_cast<const hir::hir_host_call &>(node).operation;
+      break;
     case hir::hir_node_kind::hir_call: {
       const auto &call = static_cast<const hir::hir_call &>(node);
       out += std::format(" ->{}{}",
@@ -83,24 +90,37 @@ auto hir_fingerprint(hir::hir_function &fn) -> std::string {
   return out;
 }
 
-auto compile_program(semantic::comptime_program &program,
-                     const semantic::comptime_function &entry)
+namespace {
+
+/// Lowers every function `entry` reaches, transitively, and compiles them
+/// with it into one module. `entry` is already lowered, named `entry_name`
+/// in `entry_module`; `entry_decl` is its declaration, if it has one.
+[[nodiscard]] auto assemble(semantic::comptime_program &program,
+                            const std::string &entry_module,
+                            const std::string &entry_name,
+                            const ast::func_decl *entry_decl,
+                            hir::ptr<hir::hir_function> entry)
     -> std::expected<compiled_program, semantic::comptime_failure> {
   auto result = compiled_program{};
+  for (const auto &param : entry->params) {
+    result.param_types.push_back(param.type);
+  }
+  result.return_type = entry->return_type;
+  if (entry_decl != nullptr) {
+    result.functions.emplace(key_of(entry_module, entry_name), entry_decl);
+    result.fingerprints.emplace(entry_decl, hir_fingerprint(*entry));
+  }
   // Lowered functions grouped by module, the entry's module first: the
   // bytecode compiler names the entry module's functions bare and every
   // other module's `module::name`, which is how lowered calls name them.
-  auto module_order = std::vector<std::string>{entry.owner_module};
+  auto module_order = std::vector<std::string>{entry_module};
   auto by_module = std::map<std::string, hir::ptr_vec<hir::hir_function>>{};
   // Functions a lowered body names but that could not be made ready, with
   // why — reported only if compiling then finds a call to one.
   auto skipped = std::map<std::string, std::string>{};
-  auto queued = std::unordered_set<std::string>{
-      key_of(entry.owner_module, entry.hir_name)};
-  auto pending = std::deque<semantic::comptime_function>{entry};
-  const auto is_entry = [&entry](const semantic::comptime_function &fn) {
-    return fn.decl == entry.decl;
-  };
+  auto queued =
+      std::unordered_set<std::string>{key_of(entry_module, entry_name)};
+  auto pending = std::deque<semantic::comptime_function>{};
 
   // Every reified `static let` the lowered code reads, built once before the
   // call runs (`bytecode_module::static_init_function`). Its value can call a
@@ -150,33 +170,26 @@ auto compile_program(semantic::comptime_program &program,
       global_failure = lowered.error().message;
       return;
     }
-    enqueue_calls(*lowered->value, entry.owner_module);
+    enqueue_calls(*lowered->value, entry_module);
     globals.push_back(std::move(*lowered));
   };
 
+  enqueue_calls(*entry->body, entry_module);
+  by_module[entry_module].push_back(std::move(entry));
   while (!pending.empty()) {
     const auto fn = std::move(pending.front());
     pending.pop_front();
-    if (fn.decl == nullptr || fn.decl->modifiers.is_intrinsic) {
+    if (fn.decl == nullptr || fn.decl->modifiers.is_intrinsic ||
+        fn.decl == entry_decl) {
       continue;
     }
     const auto key = key_of(fn.owner_module, fn.hir_name);
     if (auto ready = program.prepare(*fn.decl); !ready.has_value()) {
-      if (is_entry(fn)) {
-        return unsupported(std::format("`{}` cannot run on the VM: {}",
-                                       fn.hir_name, ready.error()));
-      }
       skipped.emplace(key, ready.error());
       continue;
     }
-    auto lowered = hir::lower_function(*fn.decl, program.view());
+    auto lowered = hir::lower_function(*fn.decl, program.view(), k_compile_time);
     if (!lowered.has_value()) {
-      if (is_entry(fn)) {
-        return unsupported(
-            std::format("`{}` cannot be lowered: {} (at bytes {}..{})",
-                        fn.hir_name, lowered.error().message,
-                        lowered.error().span.start, lowered.error().span.end));
-      }
       skipped.emplace(key, std::format("{} (at bytes {}..{})",
                                        lowered.error().message,
                                        lowered.error().span.start,
@@ -185,12 +198,6 @@ auto compile_program(semantic::comptime_program &program,
     }
     auto &function = **lowered;
     function.name = fn.hir_name;
-    if (is_entry(fn)) {
-      for (const auto &param : function.params) {
-        result.param_types.push_back(param.type);
-      }
-      result.return_type = function.return_type;
-    }
     result.functions.emplace(key, fn.decl);
     result.fingerprints.emplace(fn.decl, hir_fingerprint(function));
     enqueue_calls(*function.body, fn.owner_module);
@@ -233,16 +240,69 @@ auto compile_program(semantic::comptime_program &program,
   result.module = std::move(*compiled);
   auto found_entry = false;
   for (std::size_t i = 0; i < result.module.functions.size(); ++i) {
-    if (result.module.functions[i].name == entry.hir_name) {
+    if (result.module.functions[i].name == entry_name) {
       result.entry_index = static_cast<std::uint16_t>(i);
       found_entry = true;
       break;
     }
   }
   if (!found_entry) {
-    return unsupported(std::format("`{}` was not compiled", entry.hir_name));
+    return unsupported(std::format("`{}` was not compiled", entry_name));
   }
   return result;
+}
+
+} // namespace
+
+auto compile_program(semantic::comptime_program &program,
+                     const semantic::comptime_function &entry)
+    -> std::expected<compiled_program, semantic::comptime_failure> {
+  if (entry.decl == nullptr) {
+    return unsupported("the called function has no declaration");
+  }
+  if (auto ready = program.prepare(*entry.decl); !ready.has_value()) {
+    return unsupported(std::format("`{}` cannot run on the VM: {}",
+                                   entry.hir_name, ready.error()));
+  }
+  auto lowered = hir::lower_function(*entry.decl, program.view(), k_compile_time);
+  if (!lowered.has_value()) {
+    return unsupported(std::format(
+        "`{}` cannot be lowered: {} (at bytes {}..{})", entry.hir_name,
+        lowered.error().message, lowered.error().span.start,
+        lowered.error().span.end));
+  }
+  (*lowered)->name = entry.hir_name;
+  return assemble(program, entry.owner_module, entry.hir_name, entry.decl,
+                  std::move(*lowered));
+}
+
+auto compile_expression(semantic::comptime_program &program,
+                        const semantic::comptime_expression &expr)
+    -> std::expected<compiled_program, semantic::comptime_failure> {
+  if (expr.expr == nullptr) {
+    return unsupported("there is no expression");
+  }
+  if (auto ready = program.prepare_expression(*expr.expr);
+      !ready.has_value()) {
+    return unsupported(
+        std::format("the expression cannot run on the VM: {}", ready.error()));
+  }
+  auto captures = std::vector<hir::comptime_capture>{};
+  captures.reserve(expr.captures.size());
+  for (const auto &[name, type] : expr.captures) {
+    captures.push_back(hir::comptime_capture{.name = name, .type = type});
+  }
+  auto lowered = hir::lower_comptime_expression(
+      *expr.expr, captures, std::string(k_expression_function), program.view());
+  if (!lowered.has_value()) {
+    return unsupported(std::format(
+        "the expression cannot be lowered: {} (at bytes {}..{})",
+        lowered.error().message, lowered.error().span.start,
+        lowered.error().span.end));
+  }
+  return assemble(program, expr.owner_module,
+                  std::string(k_expression_function), nullptr,
+                  std::move(*lowered));
 }
 
 } // namespace cinder::comptime_vm

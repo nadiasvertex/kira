@@ -68,14 +68,25 @@ auto store(std::uint8_t *at, std::size_t size, slot_value slot) -> void {
 
 class converter {
 public:
-  explicit converter(semantic::comptime_program &program)
-      : program_(program), types_(program.view().types) {}
+  /// `added` receives the values `to_vm` puts in the handle table; it is
+  /// null for a converter that only reads (`from_vm`).
+  converter(semantic::comptime_program &program, const handle_table &handles,
+            handle_table *added)
+      : program_(program), types_(program.view().types), handles_(handles),
+        added_(added) {}
 
   [[nodiscard]] auto to_vm(type_id type, const comptime::value &value)
       -> std::expected<slot_value, std::string> {
     const auto &entry = types_.entry(type);
     if (types_.is_unit(type)) {
       return slot_value{};
+    }
+    if (is_handle_type(types_, type)) {
+      if (added_ == nullptr || value.fragment == nullptr) {
+        return mismatch(type);
+      }
+      added_->values.push_back(value);
+      return slot_value{std::uint64_t{added_->values.size()}};
     }
     if (const auto kind = bytecode::numeric_kind_of(types_, type)) {
       return scalar_to_vm(type, *kind, value);
@@ -132,6 +143,14 @@ public:
     const auto &entry = types_.entry(type);
     if (types_.is_unit(type)) {
       return comptime::value::make_unit();
+    }
+    if (is_handle_type(types_, type)) {
+      if (slot.u == 0 || slot.u > handles_.values.size()) {
+        return std::unexpected(
+            std::format("a `{}` value is not one the compiler made",
+                        types_.display(type)));
+      }
+      return handles_.values[slot.u - 1];
     }
     if (const auto kind = bytecode::numeric_kind_of(types_, type)) {
       return scalar_from_vm(*kind, slot);
@@ -552,20 +571,30 @@ private:
 
   semantic::comptime_program &program_;
   const semantic::type_table &types_;
+  const handle_table &handles_;
+  handle_table *added_;
 };
 
 } // namespace
 
-auto to_vm(semantic::comptime_program &program, semantic::type_id type,
-           const comptime::value &value)
-    -> std::expected<bytecode::slot_value, std::string> {
-  return converter(program).to_vm(type, value);
+auto is_handle_type(const semantic::type_table &types, semantic::type_id type)
+    -> bool {
+  const auto &entry = types.entry(type);
+  return entry.kind == type_kind::builtin_kind &&
+         (entry.name == "expr" || entry.name == "stmt" ||
+          entry.name == "def_expr" || entry.name == "type_expr");
 }
 
-auto from_vm(semantic::comptime_program &program, semantic::type_id type,
-             bytecode::slot_value slot)
+auto to_vm(semantic::comptime_program &program, handle_table &handles,
+           semantic::type_id type, const comptime::value &value)
+    -> std::expected<bytecode::slot_value, std::string> {
+  return converter(program, handles, &handles).to_vm(type, value);
+}
+
+auto from_vm(semantic::comptime_program &program, const handle_table &handles,
+             semantic::type_id type, bytecode::slot_value slot)
     -> std::expected<comptime::value, std::string> {
-  return converter(program).from_vm(type, slot);
+  return converter(program, handles, nullptr).from_vm(type, slot);
 }
 
 } // namespace cinder::comptime_vm

@@ -338,7 +338,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
           // failure — an ordinary runtime-dependent `let` simply fails to
           // resolve a name and returns `std::nullopt`, same as today.
           if (stmt.initializer != nullptr) {
-            if (auto value = comptime_eval_.try_evaluate(*stmt.initializer);
+            if (auto value = comptime_eval_.probe(*stmt.initializer);
                 value.has_value()) {
               comptime_eval_.bind_local(binding.name, std::move(*value));
             }
@@ -350,7 +350,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
                  name = binding.name](instance_subst &subst) -> void {
                   const auto *initializer =
                       clone_of(subst, stmt.initializer.get());
-                  if (auto value = comptime_eval_.try_evaluate(*initializer);
+                  if (auto value = comptime_eval_.probe(*initializer);
                       value.has_value()) {
                     comptime_eval_.bind_local(name, std::move(*value));
                   }

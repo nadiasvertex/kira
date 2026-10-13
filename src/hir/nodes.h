@@ -125,6 +125,8 @@ enum class hir_node_kind : uint8_t {
                            ///< offset into a `str` — companion to
                            ///< `hir_str_decode_scalar`.
   hir_cell_set, ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
+  hir_host_call, ///< An operation only the compiler can do, for code it runs
+                 ///< while compiling; see `hir_host_call`.
   // patterns (match arms only)
   hir_wildcard_pattern,
   hir_literal_pattern,
@@ -627,6 +629,26 @@ struct hir_str_scalar_width : hir_expr {
                        ptr<hir_expr> off)
       : hir_expr(hir_node_kind::hir_str_scalar_width, s, t),
         object(std::move(obj)), byte_offset(std::move(off)) {}
+};
+
+/// An operation the compiler performs for compile-time code, which has no
+/// run-time form: building quoted syntax (`expr.lit(x)`), a quote whose
+/// splices were just computed, a quoted value a `static` holds. Only the
+/// compile-time VM runs one, by asking the compiler to do it
+/// (`bytecode::run_limits::host`); the LLVM backend refuses it.
+///
+/// `operation` names what to do (`quote`, `expr.lit`, ...), `subject` is the
+/// syntax it is about (the quote, the static's fragment), if any, and
+/// `args` are its operands, in order.
+struct hir_host_call : hir_expr {
+  std::string operation;
+  const void *subject = nullptr;
+  ptr_vec<hir_expr> args;
+
+  hir_host_call(source_span s, type_id t, std::string op, const void *subj,
+                ptr_vec<hir_expr> a)
+      : hir_expr(hir_node_kind::hir_host_call, s, t), operation(std::move(op)),
+        subject(subj), args(std::move(a)) {}
 };
 
 /// `g.next()` on a `generator[T]` value. Same rationale as

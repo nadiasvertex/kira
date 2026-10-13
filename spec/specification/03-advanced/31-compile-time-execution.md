@@ -4,7 +4,7 @@
 
 Compile-time evaluation of `static` declarations, `static if`/`static assert`/`static for`, compile-time reflection, `pure` functions, and quoting/splicing.
 
-There is no separate template or macro language. Compile-time code is ordinary Cinder — the same functions, loops, and pattern matching — evaluated by an interpreter (`src/comptime/eval.*`) rather than compiled to machine code. See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
+There is no separate template or macro language. Compile-time code is ordinary Cinder — the same functions, loops, and pattern matching — checked, lowered and run on the bytecode VM (`src/comptime_vm`) with a step budget and no access outside the VM; constructs the VM cannot run yet fall back to an interpreter (`src/comptime/eval.*`). See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
 
 ## `static` bindings
 
@@ -62,8 +62,9 @@ static for field in T.fields():
 
 - The iterable must be a compile-time value (typically the result of reflection, see below). `static for` unrolls: one code path is generated per iteration, each with `field` bound to that iteration's concrete value.
 - An optional guard filters iterations: `static for x in xs if pred(x) => ...`.
-- The inline form evaluates to a `list` of the yielded values, like a `for ... =>` comprehension. In a function body the yield may use runtime values such as a parameter (`static for i in 0..3 => i + n`): it is unrolled to one copy per iteration, with the loop variable written in as that iteration's constant. A loop variable used this way must be a number, boolean, string, or struct of those; a `field_info` is used through its fields (`f.name`), and a list of `field_info` cannot be built. When the yield uses no runtime value and every yielded value has such a literal form, the list is computed at compile time instead. The element type is the yield's type, else the type the context expects (such as a `-> list[str]` return), else the type of the values. The inline form is also a value anywhere an expression is (`let names = static for f in T.fields() => f.name`, or a `for` iterable); the block form is a statement only.
-- A `static for` over `T.fields()` binds its loop variable to a `field_info`, whose fields are `name: str`, `type_name: str`, `is_data_member: bool`, and `type_of` (a type fragment). This is what gives `f.name` the type `str` inside a generic body, before `T` is known.
+- The inline form evaluates to a `list` of the yielded values, like a `for ... =>` comprehension. In a function body the yield may use runtime values such as a parameter (`static for i in 0..3 => i + n`): it is unrolled to one copy per iteration, with the loop variable written in as that iteration's constant. A loop variable used this way must be a number, boolean, string, or struct of those, such as a `field_info`. When the yield uses no runtime value and every yielded value has such a literal form, the list is computed at compile time instead. The element type is the yield's type, else the type the context expects (such as a `-> list[str]` return), else the type of the values. The inline form is also a value anywhere an expression is (`let names = static for f in T.fields() => f.name`, or a `for` iterable); the block form is a statement only.
+- A `static for` over `T.fields()` binds its loop variable to a `field_info` (a `std.traits` struct with fields `name: str`, `type_name: str`, `is_data_member: bool`). This is what gives `f.name` the type `str` inside a generic body, before `T` is known.
+- The block form in a function body runs its body once per iteration, with the loop variable a constant in each copy; the loop variable must have a literal form.
 - `static_decl_kind::for_inline` and `static_decl_kind::for_block` are the two AST forms (`ast.h:1836`); both are handled in `check.cpp:15145`–`15211`.
 - This is the mechanism `deriving` is built from: reflect over a type's fields, unroll, and (typically combined with quoting) emit one code fragment per field.
 
@@ -74,6 +75,8 @@ T.fields()          # list of field descriptors
 T.field_count()     # number of fields (compile-time integer)
 T.name()            # name of the type as str
 ```
+
+Each call has an ordinary type: `T.fields()` is a `list[field_info]`, `T.variants()` a `list[variant_info]`, `M.functions()` and `M.types()` a `list[member_info]`, `T.kind()` a `type_kind`, `T.name()` a `str`, and the counts `int32`. The descriptor types are structs in `std.traits`. On a concrete type each call is a constant, so its result can be kept, indexed and iterated in run-time code too.
 
 - Reflection is implemented in `src/comptime/reflect.cpp` as a read-only traversal of the type's already-parsed declaration syntax — it does not consult the type checker's `type_table`.
 - Because Cinder monomorphizes generics, the type `T` a reflective call queries is always concrete by the time it is evaluated, so the result is an ordinary compile-time constant.

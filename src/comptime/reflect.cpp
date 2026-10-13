@@ -38,31 +38,20 @@ namespace {
   return rendered;
 }
 
-/// Builds a `struct_instance` value describing one field: `{name: "x",
-/// type_name: "int32", type_of: <type_expr>, is_data_member: true}` — the
-/// shape `static for field in T.fields():` code is expected to destructure.
-/// Named `type_name`, not `type`: `type` is a reserved keyword in Cinder, so a
-/// quoted `field.type` access could never parse. `type_of` carries the
-/// field's declared `type_expr` fragment directly (splice-ready with `~`),
-/// which sidesteps `type_name`'s string-rendering precision loss for code
-/// that only needs to re-spell the type in newly generated syntax; it does
-/// *not* help a derivation that needs to make a concrete decision right now
-/// (`spec/todo.md` item 5) — inside a generic declaration, splicing `T`
-/// still splices the literal parameter name, not the instantiation's type.
+/// Builds a `std.traits.field_info` value describing one field: `{name:
+/// "x", type_name: "int32", is_data_member: true}` — the shape `static for
+/// field in T.fields():` code reads. Named `type_name`, not `type`: `type`
+/// is a reserved keyword in Cinder, so a quoted `field.type` access could
+/// never parse.
 ///
 /// `concrete_type_name`, when non-null, is `checker::evaluate_derive_call`'s
 /// pre-resolved, fully-substituted, canonically-formatted type for this
 /// exact field in the instantiation currently being derived for
-/// (`evaluator::current_field_type_name`) — this is what actually closes
-/// item 5's gap, since it is the one path that runs the checker's real
-/// generic substitution (`struct_field_type`) before rendering
-/// (`type_table::display`). Falls back to the purely syntactic
+/// (`evaluator::current_field_type_name`) — the one path that runs the
+/// checker's real generic substitution (`struct_field_type`) before
+/// rendering (`type_table::display`). Falls back to the purely syntactic
 /// `render_type_expr` when null (reflection outside a derive call, or a
-/// field whose type failed to resolve).
-///
-/// `type_name` stays for existing consumers (`src/std/deriving.cn`) that
-/// only ever read it for display. `is_data_member` is always `true` here —
-/// see `make_module_member_descriptor`'s doc comment for the `false` case.
+/// field whose type failed to resolve). `is_data_member` is always `true`.
 [[nodiscard]] auto make_field_descriptor(const ast::struct_field &field,
                                          const std::string *concrete_type_name)
     -> value {
@@ -72,9 +61,8 @@ namespace {
                  value::make_string(concrete_type_name != nullptr
                                         ? *concrete_type_name
                                         : render_type_expr(field.type.get())));
-  fields.emplace("type_of", value::make_type_expr_fragment(field.type.get()));
   fields.emplace("is_data_member", value::make_bool(true));
-  return value::make_struct("", std::move(fields));
+  return value::make_struct("field_info", std::move(fields));
 }
 
 /// Builds a `struct_instance` value describing one sum-type variant:
@@ -92,7 +80,7 @@ namespace {
   fields.emplace("name", value::make_string(variant.name));
   fields.emplace("payload_count", value::make_int(static_cast<int64_t>(
                                       variant.payload_types.size())));
-  return value::make_struct("", std::move(fields));
+  return value::make_struct("variant_info", std::move(fields));
 }
 
 /// Builds the `type_kind` value `T.kind()` returns
@@ -273,24 +261,18 @@ void evaluator::register_impl_coherence_info(impl_coherence_info info) {
 
 namespace {
 
-/// Builds a member descriptor value `{name: "...", is_pub: <bool>,
-/// is_data_member: false}` — the shape `static for m in M.functions():`
-/// code destructures. `is_pub` is exposed rather than pre-filtered so a
-/// reflection consumer can decide which members it cares about (the
-/// evaluator has no caller-module context with which to apply the "pub
-/// from outside, all from inside" rule itself). `is_data_member` is always
-/// `false` here (`M.functions()`/`M.types()` list `def`/`type` members,
-/// never a struct field — see `member.is_data_member()`,
-/// `spec/specification/04-stdlib/type-traits/60-meta-queries.md`), the
-/// counterpart to `make_field_descriptor`'s always-`true`.
+/// Builds a `std.traits.member_info` value `{name: "...", is_pub: <bool>}`
+/// — the shape `static for m in M.functions():` code reads. `is_pub` is
+/// exposed rather than pre-filtered so a reflection consumer can decide
+/// which members it cares about (the evaluator has no caller-module context
+/// with which to apply the "pub from outside, all from inside" rule itself).
 [[nodiscard]] auto
 make_module_member_descriptor(const evaluator::module_member_info &member)
     -> value {
   auto fields = std::unordered_map<std::string, value>{};
   fields.emplace("name", value::make_string(member.name));
   fields.emplace("is_pub", value::make_bool(member.is_pub));
-  fields.emplace("is_data_member", value::make_bool(false));
-  return value::make_struct("", std::move(fields));
+  return value::make_struct("member_info", std::move(fields));
 }
 
 } // namespace

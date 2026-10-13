@@ -1,0 +1,28 @@
+module codegen_stress.static_for_block_unrolls
+
+# A block `static for` in a function body runs its body once per iteration,
+# with the loop variable a constant in each copy: a field descriptor over
+# `T.fields()` in a generic body, a number over a range.
+
+type point = { x: int32, yy: int32, flag: bool }
+
+def total_name_len[T]() -> int32:
+    var total = 0
+    static for f in T.fields():
+        total = total + f.name.len() as int32 * 10
+        if f.type_name == "bool":
+            total = total + 1
+    return total
+
+def counted() -> int32:
+    var total = 0
+    static for i in 0..4:
+        total = total + i
+    return total
+
+def main() -> int32:
+    # Names "x", "yy", "flag": (1 + 2 + 4) * 10, plus 1 for the `bool`;
+    # 0 + 1 + 2 + 3 = 6.
+    return total_name_len[point]() + counted() * 100
+
+# expect: 671

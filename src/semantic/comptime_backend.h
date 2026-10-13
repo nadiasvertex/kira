@@ -34,6 +34,18 @@ struct comptime_function {
   std::string hir_name;
 };
 
+/// A compile-time expression run as a function of its own: a `static
+/// assert` condition, a `static let` initializer, a splice operand. It is
+/// written in `owner_module`, so the names it calls resolve there, and it
+/// reads each of `captures` (name and type) from where it is written — a
+/// `static for` loop variable, say — as a parameter, in order.
+struct comptime_expression {
+  const ast::expr *expr = nullptr;
+  std::string owner_module;
+  std::optional<file_id_type> file;
+  std::vector<std::pair<std::string, type_id>> captures;
+};
+
 /// The checker's side of a compile-time call: the checked functions it can
 /// make ready for lowering.
 class comptime_program {
@@ -55,6 +67,11 @@ public:
   [[nodiscard]] virtual auto prepare(const ast::func_decl &fn)
       -> std::expected<void, std::string> = 0;
 
+  /// Makes the expression `expr` ready to lower, as `prepare` does a
+  /// function's body.
+  [[nodiscard]] virtual auto prepare_expression(const ast::expr &expr)
+      -> std::expected<void, std::string> = 0;
+
   /// The function lowered code calls as `hir_name` in `owner_module`, or
   /// `nullopt` if no checked function has that name.
   [[nodiscard]] virtual auto find_function(std::string_view owner_module,
@@ -66,6 +83,15 @@ public:
   /// name.
   [[nodiscard]] virtual auto static_global(std::string_view name)
       -> const lowering_results::static_global_def * = 0;
+
+  /// Performs `operation` for compile-time code (`hir_host_call`): builds
+  /// the syntax a quote (`subject`) or an `expr.*` builder evaluates to,
+  /// from `args`. The error says why it could not.
+  [[nodiscard]] virtual auto host_call(std::string_view operation,
+                                       const void *subject,
+                                       std::span<const comptime::value> args,
+                                       source_span span)
+      -> std::expected<comptime::value, std::string> = 0;
 
   /// The file `fn` is declared in, for an error inside it.
   [[nodiscard]] virtual auto file_of(const ast::func_decl &fn)
@@ -121,6 +147,13 @@ public:
   [[nodiscard]] virtual auto call(comptime_program &program,
                                   const comptime_function &fn,
                                   std::span<const comptime::value> args)
+      -> std::expected<comptime::value, comptime_failure> = 0;
+
+  /// Runs `expr`, passing `args` for its captures in order, and returns its
+  /// value.
+  [[nodiscard]] virtual auto evaluate(comptime_program &program,
+                                      const comptime_expression &expr,
+                                      std::span<const comptime::value> args)
       -> std::expected<comptime::value, comptime_failure> = 0;
 };
 

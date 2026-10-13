@@ -512,6 +512,12 @@ enum class opcode : uint8_t {
                         ///< `rt_atomic_fetch_add` (`src/intrinsics.h`).
   op_atomic_fetch_sub,  ///< u16 dst, u16 ptr, u16 n — the subtracting
                         ///< counterpart of `op_atomic_fetch_add`.
+  op_host_call,         ///< u16 dst, u16 site, u16 first_arg_reg, u8 argc —
+                        ///< asks the host to perform the operation
+                        ///< `bytecode_function::host_sites[site]` describes,
+                        ///< on reg[first_arg_reg .. +argc]; dst = its
+                        ///< result. Compiled form of `hir_host_call`; only
+                        ///< a hosted run (`run_limits::host`) can do one.
 };
 
 // ==========================================================================
@@ -650,6 +656,8 @@ struct operand_signature {
     return sig({imm16, reg, imm8});
   case opcode::op_call_intrinsic:
     return sig({reg, imm8, reg, imm8});
+  case opcode::op_host_call:
+    return sig({reg, imm16, reg, imm8});
 
   case opcode::op_stack_alloc:
     return sig({reg, imm32});

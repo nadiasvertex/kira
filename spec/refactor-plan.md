@@ -182,7 +182,8 @@ interpreter is deleted. The comparison is only a check on the move from one
 path to the other, since a bug shared by both paths will not show up in it.
 Tests that check a computed value remain the primary check.
 
-Status: phases 1 through 3 have landed; phases 4 and 5 have not.
+Status: phases 1 through 3 have landed. Phase 4 is partly done; phase 5 has
+not started.
 
 - Phase 1. The checker keeps a lowering view (`semantic/check_lowering_view.
   cpp`): a `checked_types` holding just the functions compile-time code
@@ -204,34 +205,53 @@ Status: phases 1 through 3 have landed; phases 4 and 5 have not.
   `compare`, which runs both and reports any difference).
   `CINDER_COMPTIME_VERIFY`, on in the driver tests, re-lowers every
   function the VM ran from the final checker results and reports any that
-  lower differently. Two missing projections were found this way before it
-  existed (a callee's parameter types, and each drop plan's `drop` method):
-  both changed how an argument was passed without an error.
-  `CINDER_COMPTIME_TRACE` lists each call and why it was not run.
+  lower differently. `CINDER_COMPTIME_TRACE` lists each call and
+  expression, and why it was not run.
+- Phase 4, done so far:
+  - Whole expressions run on the VM, not just calls: a `static assert` or
+    `static if` condition, a `static let` initializer, a `static for`
+    iterable, guard or yield, a splice operand. Each is lowered as a
+    function of its own (`hir::lower_comptime_expression`) whose
+    parameters are the compile-time bindings it reads (a `static for`
+    loop variable). A `static` read before file order reaches it is
+    checked first, so its initializer has records to lower.
+  - Reflection has real types and is folded to constants on a concrete
+    type: `T.fields()` is a `list[field_info]`, `T.variants()` a
+    `list[variant_info]`, `M.functions()` a `list[member_info]` (structs in
+    `std.traits`), `T.kind()` a `type_kind`, the counts `int32`. A list of
+    field descriptors is now an ordinary run-time value. `field_info` lost
+    its `type_of` field, which nothing used.
+  - Quoted syntax is a VM value: a handle into a table each run keeps.
+    Quotes, the `expr.*` builders and reads of a static holding syntax
+    lower to `hir_host_call` / `op_host_call`, which the compiler performs
+    (`comptime::fragment_builder`, shared with the interpreter so both
+    build the same syntax). The checker now checks the splices a quote
+    resolves as it is evaluated. Run-time code and the LLVM backend refuse
+    host calls.
+  - A block `static for` in a function body is unrolled: the checker
+    records each iteration's loop-variable values (per instance in a
+    template) and lowering emits the body once per iteration. This also
+    makes it usable in run-time code, which it was not before. An inline
+    `static for` in a compile-time-only function is unrolled the same way.
+- Phase 4, not done:
+  - `deriving` and item-level splices run in a pre-pass that must finish
+    before the method table is built, because their results add `impl`
+    blocks. The VM needs checked code, and checking needs the method table,
+    so these stay interpreted. The likely fix is a method table built in
+    two stages: every written `impl` first, then the spliced ones.
+  - Every immutable `let` in ordinary code is probed with the interpreter
+    to see whether it is a compile-time constant, so a later `static if`
+    can read it. That should become a lazy evaluation of the `let`'s
+    initializer when a compile-time expression reads it.
+  - Module-level block `static for` still runs its body in the
+    interpreter.
+  - A compile-time function whose `static for` iterable reads its own
+    parameters cannot be unrolled while checking and stays interpreted.
+- Phase 5 (deleting the interpreter) depends on the items above.
 
 Phase 3 also fixed a tail-call bug it exposed: a call whose argument
 borrows a temporary (`&TABLE[0..n]`) was compiled as a tail call, which
 cleared the caller's registers the borrow pointed into.
-
-Phases 4 and 5 need design decisions beyond the plan above:
-
-- Everything the interpreter evaluates that is not a call — `static if`
-  conditions, `static assert`, `static let` initializers, `static for`
-  iterables and bodies, splice operands — has to be lowered as an
-  expression in context and run. Some of these read locals a `let` bound
-  at compile time inside an ordinary function.
-- Reflection results have no type today: `T.fields()`, `T.kind()`,
-  `T.variants()` and `M.functions()` check as the unknown type. Lowering
-  needs real types for them (a `field_info` struct, a list of it, a sum
-  for `kind()`). On a concrete type each is a constant, so the checker can
-  fold it to a reified value the way `T.name()` folds today.
-- Quoted syntax (`expr`, `stmt`, `def_expr`, `type_expr`, `pattern`), the
-  `expr.*` builders, and splices need a VM representation: opaque handles
-  into a host table, with host calls for each operation. That is a new
-  HIR node and opcode, which the LLVM backend must reject.
-- The speculative paths (`try_evaluate` on ordinary `let`s, folding a
-  comptime-only call from ordinary code) rely on evaluation failing
-  silently and cheaply.
 
 ## Risks
 

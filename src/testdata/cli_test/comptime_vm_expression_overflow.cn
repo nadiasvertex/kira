@@ -1,0 +1,11 @@
+module main
+
+# A `static assert` condition runs on the VM as a whole: `x + x` adds two
+# `int8`s, and `100 + 100` does not fit.
+
+static let x: int8 = 100
+
+static assert x + x > 0
+
+def main() -> int32:
+    return 0

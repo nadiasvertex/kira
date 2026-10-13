@@ -4,12 +4,14 @@ cc_library(
     name = "comptime",
     srcs = [
         "eval.cpp",
+        "fragments.cpp",
         "hygiene.cpp",
         "reflect.cpp",
         "value.cpp",
     ],
     hdrs = [
         "eval.h",
+        "fragments.h",
         "hygiene.h",
         "value.h",
     ],

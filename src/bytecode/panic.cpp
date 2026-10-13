@@ -29,6 +29,8 @@ auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
     return "step budget exhausted";
   case panic_reason::effect_refused:
     return "effect refused";
+  case panic_reason::host_failed:
+    return "compile-time operation failed";
   }
   return "unknown panic";
 }

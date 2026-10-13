@@ -9,6 +9,7 @@ cc_library(
         "check_bounds.cpp",
         "check_calls.cpp",
         "check_comptime.cpp",
+        "check_reflection.cpp",
         "check_decls.cpp",
         "check_diagnostics.cpp",
         "check_expr.cpp",

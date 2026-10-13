@@ -234,8 +234,9 @@ struct value {
 };
 
 /// Whether `a` and `b` are the same compile-time value: the same kind and
-/// contents, compared deeply. Two quoted fragments, closures, or types are the
-/// same only when they refer to the same thing.
+/// contents, compared deeply. Two quoted fragments are the same when they
+/// are the same syntax; two closures or types only when they refer to the
+/// same thing.
 [[nodiscard]] auto same_value(const value &a, const value &b) -> bool;
 
 /// `v` written out for a diagnostic: `3`, `"text"`, `[1, 2]`, `@some(4)`.

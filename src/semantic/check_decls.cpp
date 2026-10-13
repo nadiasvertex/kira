@@ -2280,7 +2280,8 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
     check_signature_decl(ast::cast<const ast::signature_decl>(item));
     return;
   case ast::node_kind::static_decl:
-    check_static_decl(ast::cast<const ast::static_decl>(item));
+    check_static_decl(ast::cast<const ast::static_decl>(item),
+                      /*in_body=*/!at_module_scope);
     return;
   case ast::node_kind::sub_module_decl: {
     const auto &decl = ast::cast<const ast::sub_module_decl>(item);

@@ -3,7 +3,72 @@
 #include <format>
 #include <map>
 
+#include "src/parser/ast_traversal.h"
+
 namespace cinder::comptime {
+
+namespace {
+
+/// The shape of quoted syntax as text: every node's kind and the names,
+/// literals and operators it carries. Two fragments built separately (one
+/// by the interpreter, one for the VM) are the same syntax exactly when
+/// their shapes are.
+[[nodiscard]] auto fragment_shape(const ast::node &root) -> std::string {
+  auto out = std::string{};
+  ast::walk(root, [&out](const ast::node &node) -> bool {
+    out += std::format("({}", static_cast<int>(node.kind));
+    switch (node.kind) {
+    case ast::node_kind::ident_expr:
+      out += " " + ast::cast<const ast::ident_expr>(node).name;
+      break;
+    case ast::node_kind::literal_expr: {
+      const auto &lit = ast::cast<const ast::literal_expr>(node);
+      out += std::format(" {} {}", static_cast<int>(lit.lit_kind), lit.value);
+      break;
+    }
+    case ast::node_kind::field_expr:
+      out += " ." + ast::cast<const ast::field_expr>(node).field_name;
+      break;
+    case ast::node_kind::binary_expr:
+      out += std::format(
+          " op{}", static_cast<int>(ast::cast<const ast::binary_expr>(node).op));
+      break;
+    case ast::node_kind::named_type:
+      for (const auto &segment :
+           ast::cast<const ast::named_type>(node).path) {
+        out += " " + segment;
+      }
+      break;
+    case ast::node_kind::binding_pattern:
+      out += " " + ast::cast<const ast::binding_pattern>(node).name;
+      break;
+    case ast::node_kind::constructor_pattern:
+      out += " " + ast::cast<const ast::constructor_pattern>(node).name;
+      break;
+    case ast::node_kind::func_decl:
+      out += " " + ast::cast<const ast::func_decl>(node).name;
+      break;
+    case ast::node_kind::interpolated_string_expr:
+      for (const auto &segment :
+           ast::cast<const ast::interpolated_string_expr>(node).segments) {
+        out += segment.is_literal
+                   ? std::format(" \"{}\"", segment.literal_text)
+                   : std::format(" {{:{}}}", segment.has_spec
+                                                 ? segment.spec.type_char
+                                                       .value_or(' ')
+                                                 : ' ');
+      }
+      break;
+    default:
+      break;
+    }
+    out += ")";
+    return true;
+  });
+  return out;
+}
+
+} // namespace
 
 auto same_value(const value &a, const value &b) -> bool {
   if (a.kind != b.kind) {
@@ -57,12 +122,15 @@ auto same_value(const value &a, const value &b) -> bool {
   case value_kind::type_value:
     return a.type_name == b.type_name && a.type_decl == b.type_decl;
   case value_kind::lambda:
+    return a.fragment == b.fragment;
   case value_kind::expr_fragment:
   case value_kind::stmt_fragment:
   case value_kind::def_expr_fragment:
   case value_kind::type_expr_fragment:
   case value_kind::pattern_fragment:
-    return a.fragment == b.fragment;
+    return a.fragment == b.fragment ||
+           (a.fragment != nullptr && b.fragment != nullptr &&
+            fragment_shape(*a.fragment) == fragment_shape(*b.fragment));
   }
   return false;
 }

@@ -1221,16 +1221,18 @@ auto test_accepts_static_for_inline_as_function_tail() -> void {
 }
 
 auto test_reports_static_for_field_info_unknown_field() -> void {
-  // A `static for` over `T.fields()` types its loop variable `field_info`,
-  // so a misspelled descriptor field is reported in the generic template
-  // itself, with the fields that do exist.
+  // A `static for` over `T.fields()` types its loop variable as the
+  // `std.traits.field_info` struct, so a misspelled descriptor field is
+  // reported in the generic template itself, with the fields that do exist.
   const auto analyzed =
       analyze_test_data_file("report_static_for_field_info_unknown_field.cn");
   expect(analyzed.error_count == 1,
          "expected one error for an unknown `field_info` field:\n" +
              analyzed.diagnostics);
-  expect_diagnostic(analyzed, "no field `nmae` on a `field_info`",
+  expect_diagnostic(analyzed, "no field `nmae` on struct `field_info`",
                     "expected the unknown-descriptor-field diagnostic");
+  expect_diagnostic(analyzed, "`name`, `type_name`",
+                    "expected the descriptor's fields to be listed");
 }
 
 auto test_reports_static_for_inline_unbuildable_value() -> void {
@@ -1245,19 +1247,6 @@ auto test_reports_static_for_inline_unbuildable_value() -> void {
              analyzed.diagnostics);
   expect_diagnostic(analyzed, "uses `xs` in code that runs",
                     "expected the unbuildable-loop-variable diagnostic");
-}
-
-auto test_reports_static_for_inline_field_info_list() -> void {
-  // A field descriptor has no run-time form, so yielding one is refused
-  // once, in the template, before any `list[field_info]` is made (which
-  // used to fail in `std.mem` lowering instead).
-  const auto analyzed =
-      analyze_test_data_file("report_static_for_inline_field_info_list.cn");
-  expect(analyzed.error_count == 1,
-         "expected one error for a list of `field_info`:\n" +
-             analyzed.diagnostics);
-  expect_diagnostic(analyzed, "cannot build a list of `field_info`",
-                    "expected the field_info-list diagnostic");
 }
 
 auto test_accepts_static_for_inline_runtime_yield() -> void {
@@ -3920,7 +3909,6 @@ auto main() -> int {
     test_reports_static_for_evaluates_each_iteration();
     test_accepts_static_for_inline_as_function_tail();
     test_reports_static_for_inline_unbuildable_value();
-    test_reports_static_for_inline_field_info_list();
     test_accepts_static_for_inline_runtime_yield();
     test_reports_static_for_field_info_unknown_field();
     test_reports_splice_expr_wrong_fragment_kind();

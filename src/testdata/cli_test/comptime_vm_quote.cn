@@ -1,0 +1,18 @@
+module main
+
+# Quoted syntax is built on the VM: `pick` runs there (only the VM has
+# `is_empty`), its quote's splice reads `xs[0]` as it runs, and the static
+# holding the result is spliced into `apply`.
+
+static def pick(xs: list[int32]) -> expr:
+    if xs.is_empty():
+        return `(x)`
+    return `(x + ~(expr.lit(xs[0])))`
+
+static let add5 = pick([5, 6])
+
+def apply(x: int32) -> int32:
+    return ~add5
+
+def main() -> int32:
+    return apply(37)

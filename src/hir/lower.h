@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 
 #include "src/hir/nodes.h"
@@ -44,6 +45,10 @@ struct lowering_options {
   /// `--no-contract-checks`. It is deliberately not the default: a contract
   /// that is only *believed* silently is worth less than one that is checked.
   bool contract_checks = true;
+  /// Whether the code runs while compiling, on the compile-time VM. Only
+  /// then can it work on quoted syntax (`hir_host_call`), which has no
+  /// run-time form.
+  bool compile_time = false;
 };
 
 /// Lowers one free function to HIR. Requires (Decision 1, Decision 2, and
@@ -56,6 +61,26 @@ struct lowering_options {
 [[nodiscard]] auto lower_function(const ast::func_decl &decl,
                                   const semantic::checked_types &checked,
                                   const lowering_options &options = {})
+    -> std::expected<ptr<hir_function>, lowering_error>;
+
+/// A name a compile-time expression reads from where it is written — a
+/// `static for` loop variable, say — which `lower_comptime_expression`
+/// passes in as a parameter.
+struct comptime_capture {
+  std::string name;
+  type_id type = semantic::k_unknown_type;
+};
+
+/// Lowers a compile-time expression (a `static assert` condition, a
+/// `static let` initializer, ...) as the whole body of a function of its
+/// own, named `name`, that takes each of `captures` as a parameter in order
+/// and returns the expression's value. It runs once, while compiling, so
+/// nothing it owns is dropped.
+[[nodiscard]] auto
+lower_comptime_expression(const ast::expr &expr,
+                          std::span<const comptime_capture> captures,
+                          std::string name,
+                          const semantic::checked_types &checked)
     -> std::expected<ptr<hir_function>, lowering_error>;
 
 /// Builds a reified `static let` (`lowering_results::static_global_def`) as

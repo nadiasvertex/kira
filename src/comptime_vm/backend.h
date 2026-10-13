@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -29,6 +30,11 @@ public:
                           std::span<const comptime::value> args)
       -> std::expected<comptime::value, semantic::comptime_failure> override;
 
+  [[nodiscard]] auto evaluate(semantic::comptime_program &program,
+                              const semantic::comptime_expression &expr,
+                              std::span<const comptime::value> args)
+      -> std::expected<comptime::value, semantic::comptime_failure> override;
+
   /// Checks that every function lowered for a compile-time call lowers the
   /// same from `checked`, the checker's final results, as it did from the
   /// view the checker kept while checking. A difference means the view was
@@ -38,6 +44,13 @@ public:
       -> std::vector<std::string>;
 
 private:
+  /// Runs `compiled`'s entry, which `name` names in a failure, with `args`.
+  [[nodiscard]] auto run(semantic::comptime_program &program,
+                         const compiled_program &compiled,
+                         std::string_view name,
+                         std::span<const comptime::value> args) const
+      -> std::expected<comptime::value, semantic::comptime_failure>;
+
   std::uint64_t step_budget_;
   /// Every function any compiled program lowered, with its fingerprint.
   std::unordered_map<const ast::func_decl *, std::string> fingerprints_;
@@ -46,6 +59,10 @@ private:
   /// settled, and none of that changes afterwards.
   std::unordered_map<const ast::func_decl *, std::unique_ptr<compiled_program>>
       programs_;
+  /// One compiled program per compile-time expression, by the expression
+  /// and its captures' types.
+  std::unordered_map<std::string, std::unique_ptr<compiled_program>>
+      expression_programs_;
 };
 
 } // namespace cinder::comptime_vm

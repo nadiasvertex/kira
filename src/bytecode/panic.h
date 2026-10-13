@@ -33,10 +33,11 @@ enum class panic_reason : uint8_t {
   postcondition_violated,
   invariant_violated,
   // Only a hosted run (`vm::run_hosted`, the way compile-time code runs)
-  // raises these two: it has a budget of instructions, and it may not reach
-  // outside the VM.
+  // raises these: it has a budget of instructions, it may not reach outside
+  // the VM, and an operation it asks the host to do can fail.
   step_budget_exhausted,
   effect_refused,
+  host_failed,
 };
 
 [[nodiscard]] auto panic_reason_message(panic_reason reason) noexcept

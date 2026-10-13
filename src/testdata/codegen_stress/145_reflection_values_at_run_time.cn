@@ -1,0 +1,41 @@
+module codegen_stress.reflection_values_at_run_time
+
+# Reflection results are ordinary values with real types: `T.fields()` is a
+# `list[field_info]`, `T.variants()` a `list[variant_info]`, `T.kind()` a
+# `type_kind`. On a concrete type each is a constant, so run-time code can
+# keep, index, iterate and match on them.
+
+type point = { x: int32, yy: int32, flag: bool }
+
+type shape =
+    | @circle(int32)
+    | @rect(int32, int32)
+    | @empty
+
+def field_infos[T]() -> list[field_info]:
+    return static for f in T.fields() => f
+
+def payloads[T]() -> int32:
+    var total = 0
+    for v in T.variants():
+        total = total + v.payload_count
+    return total
+
+def kind_code[T]() -> int32:
+    match T.kind():
+        @struct_kind => return 1
+        @sum_kind => return 2
+        _ => return 3
+
+def main() -> int32:
+    let fs = field_infos[point]()
+    # Three fields; the second is named "yy"; the third is a `bool`.
+    var score = fs.len() as int32 * 1000
+    score = score + fs[1].name.len() as int32 * 100
+    if fs[2].type_name == "bool":
+        score = score + 10
+    # Payloads: 1 + 2 + 0.
+    score = score + payloads[shape]()
+    return score * 10 + kind_code[shape]()
+
+# expect: 32132

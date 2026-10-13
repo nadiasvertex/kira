@@ -1,7 +1,7 @@
 # inference snapshot
-# 2296 interned types
+# 2300 interned types
 
-## node_types (30682)
+## node_types (30818)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -5952,7 +5952,7 @@ std/deriving.cn:30:46 [literal] str
 std/deriving.cn:31:5 [var_stmt] bool
 std/deriving.cn:31:23 [literal] bool
 std/deriving.cn:32:16 [binding_pat] field_info
-std/deriving.cn:32:21 [call] _
+std/deriving.cn:32:21 [call] list[field_info]
 std/deriving.cn:33:12 [ident] bool
 std/deriving.cn:34:13 [ident] bool
 std/deriving.cn:34:21 [literal] bool
@@ -5984,6 +5984,9 @@ std/deriving.cn:40:31 [ident] expr
 std/deriving.cn:40:37 [call] expr
 std/deriving.cn:40:46 [literal] str
 std/deriving.cn:41:12 [quote] def_expr
+std/deriving.cn:41:30 [call] expr
+std/deriving.cn:41:41 [call] str
+std/deriving.cn:43:21 [ident] expr
 std/deriving.cn:53:33 [quote_type] def_expr
 std/deriving.cn:54:5 [var_stmt] expr
 std/deriving.cn:54:22 [call] expr
@@ -5996,7 +5999,7 @@ std/deriving.cn:55:46 [literal] str
 std/deriving.cn:56:5 [var_stmt] bool
 std/deriving.cn:56:23 [literal] bool
 std/deriving.cn:57:16 [binding_pat] field_info
-std/deriving.cn:57:21 [call] _
+std/deriving.cn:57:21 [call] list[field_info]
 std/deriving.cn:58:12 [ident] bool
 std/deriving.cn:59:13 [ident] bool
 std/deriving.cn:59:21 [literal] bool
@@ -6029,6 +6032,9 @@ std/deriving.cn:66:31 [ident] expr
 std/deriving.cn:66:37 [call] expr
 std/deriving.cn:66:46 [literal] str
 std/deriving.cn:67:12 [quote] def_expr
+std/deriving.cn:67:31 [call] expr
+std/deriving.cn:67:42 [call] str
+std/deriving.cn:69:21 [ident] expr
 std/deriving.cn:81:30 [quote_type] def_expr
 std/deriving.cn:82:5 [var_stmt] expr
 std/deriving.cn:82:22 [call] expr
@@ -6036,7 +6042,7 @@ std/deriving.cn:82:31 [literal] bool
 std/deriving.cn:83:5 [var_stmt] bool
 std/deriving.cn:83:23 [literal] bool
 std/deriving.cn:84:16 [binding_pat] field_info
-std/deriving.cn:84:21 [call] _
+std/deriving.cn:84:21 [call] list[field_info]
 std/deriving.cn:85:13 [binding_pat] expr
 std/deriving.cn:85:30 [call] expr
 std/deriving.cn:86:13 [literal] str
@@ -6059,6 +6065,9 @@ std/deriving.cn:92:32 [literal] str
 std/deriving.cn:92:39 [ident] expr
 std/deriving.cn:92:45 [ident] expr
 std/deriving.cn:93:12 [quote] def_expr
+std/deriving.cn:93:28 [call] expr
+std/deriving.cn:93:39 [call] str
+std/deriving.cn:95:21 [ident] expr
 std/deriving.cn:114:31 [quote_type] def_expr
 std/deriving.cn:115:5 [var_stmt] expr
 std/deriving.cn:115:22 [call] expr
@@ -6067,7 +6076,7 @@ std/deriving.cn:115:43 [literal] str
 std/deriving.cn:116:5 [var_stmt] bool
 std/deriving.cn:116:23 [literal] bool
 std/deriving.cn:117:16 [binding_pat] field_info
-std/deriving.cn:117:21 [call] _
+std/deriving.cn:117:21 [call] list[field_info]
 std/deriving.cn:118:13 [binding_pat] expr
 std/deriving.cn:118:31 [call] expr
 std/deriving.cn:119:13 [call] expr
@@ -6092,17 +6101,20 @@ std/deriving.cn:126:41 [literal] str
 std/deriving.cn:126:54 [ident] expr
 std/deriving.cn:126:60 [ident] expr
 std/deriving.cn:127:12 [quote] def_expr
+std/deriving.cn:127:29 [call] expr
+std/deriving.cn:127:40 [call] str
+std/deriving.cn:129:21 [ident] expr
 std/deriving.cn:153:36 [quote_type] def_expr
 std/deriving.cn:154:5 [var_stmt] expr
 std/deriving.cn:154:22 [call] expr
 std/deriving.cn:154:36 [call] expr
 std/deriving.cn:154:47 [literal] str
-std/deriving.cn:155:16 [binding_pat] _
-std/deriving.cn:155:21 [call] _
+std/deriving.cn:155:16 [binding_pat] variant_info
+std/deriving.cn:155:21 [call] list[variant_info]
 std/deriving.cn:156:9 [var_stmt] expr
 std/deriving.cn:156:30 [call] expr
-std/deriving.cn:156:39 [module_path] _
-std/deriving.cn:157:12 [module_path] _
+std/deriving.cn:156:39 [module_path] str
+std/deriving.cn:157:12 [module_path] int32
 std/deriving.cn:157:12 [binary] bool
 std/deriving.cn:157:30 [literal] int32
 std/deriving.cn:158:13 [ident] expr
@@ -6113,7 +6125,7 @@ std/deriving.cn:158:62 [literal] str
 std/deriving.cn:159:24 [binding_pat] int32
 std/deriving.cn:159:29 [literal] int32
 std/deriving.cn:159:29 [binary] range[int32]
-std/deriving.cn:159:32 [module_path] _
+std/deriving.cn:159:32 [module_path] int32
 std/deriving.cn:160:20 [ident] int32
 std/deriving.cn:160:20 [binary] bool
 std/deriving.cn:160:24 [literal] int32
@@ -6137,22 +6149,25 @@ std/deriving.cn:164:9 [ident] expr
 std/deriving.cn:164:16 [call] expr
 std/deriving.cn:165:13 [ident] expr
 std/deriving.cn:165:19 [call] expr
-std/deriving.cn:165:37 [module_path] _
-std/deriving.cn:165:45 [module_path] _
+std/deriving.cn:165:37 [module_path] str
+std/deriving.cn:165:45 [module_path] int32
 std/deriving.cn:165:62 [literal] str
 std/deriving.cn:165:68 [ident] expr
 std/deriving.cn:166:12 [quote] def_expr
+std/deriving.cn:166:30 [call] expr
+std/deriving.cn:166:41 [call] str
+std/deriving.cn:168:21 [ident] expr
 std/deriving.cn:177:37 [quote_type] def_expr
 std/deriving.cn:178:5 [var_stmt] expr
 std/deriving.cn:178:22 [call] expr
 std/deriving.cn:178:36 [call] expr
 std/deriving.cn:178:47 [literal] str
-std/deriving.cn:179:16 [binding_pat] _
-std/deriving.cn:179:21 [call] _
+std/deriving.cn:179:16 [binding_pat] variant_info
+std/deriving.cn:179:21 [call] list[variant_info]
 std/deriving.cn:180:9 [var_stmt] expr
 std/deriving.cn:180:30 [call] expr
-std/deriving.cn:180:39 [module_path] _
-std/deriving.cn:181:12 [module_path] _
+std/deriving.cn:180:39 [module_path] str
+std/deriving.cn:181:12 [module_path] int32
 std/deriving.cn:181:12 [binary] bool
 std/deriving.cn:181:30 [literal] int32
 std/deriving.cn:182:13 [ident] expr
@@ -6163,7 +6178,7 @@ std/deriving.cn:182:62 [literal] str
 std/deriving.cn:183:24 [binding_pat] int32
 std/deriving.cn:183:29 [literal] int32
 std/deriving.cn:183:29 [binary] range[int32]
-std/deriving.cn:183:32 [module_path] _
+std/deriving.cn:183:32 [module_path] int32
 std/deriving.cn:184:20 [ident] int32
 std/deriving.cn:184:20 [binary] bool
 std/deriving.cn:184:24 [literal] int32
@@ -6188,37 +6203,40 @@ std/deriving.cn:189:9 [ident] expr
 std/deriving.cn:189:16 [call] expr
 std/deriving.cn:190:13 [ident] expr
 std/deriving.cn:190:19 [call] expr
-std/deriving.cn:190:37 [module_path] _
-std/deriving.cn:190:45 [module_path] _
+std/deriving.cn:190:37 [module_path] str
+std/deriving.cn:190:45 [module_path] int32
 std/deriving.cn:190:62 [literal] str
 std/deriving.cn:190:68 [ident] expr
 std/deriving.cn:191:12 [quote] def_expr
+std/deriving.cn:191:31 [call] expr
+std/deriving.cn:191:42 [call] str
+std/deriving.cn:193:21 [ident] expr
 std/deriving.cn:207:34 [quote_type] def_expr
 std/deriving.cn:208:5 [var_stmt] expr
 std/deriving.cn:208:22 [call] expr
 std/deriving.cn:208:36 [call] expr
 std/deriving.cn:208:47 [literal] str
-std/deriving.cn:209:16 [binding_pat] _
-std/deriving.cn:209:21 [call] _
+std/deriving.cn:209:16 [binding_pat] variant_info
+std/deriving.cn:209:21 [call] list[variant_info]
 std/deriving.cn:210:9 [var_stmt] expr
 std/deriving.cn:210:27 [call] expr
 std/deriving.cn:210:41 [call] expr
 std/deriving.cn:210:52 [literal] str
-std/deriving.cn:211:20 [binding_pat] _
-std/deriving.cn:211:25 [call] _
+std/deriving.cn:211:20 [binding_pat] variant_info
+std/deriving.cn:211:25 [call] list[variant_info]
 std/deriving.cn:212:13 [var_stmt] expr
 std/deriving.cn:212:34 [call] expr
 std/deriving.cn:212:43 [literal] bool
-std/deriving.cn:213:16 [module_path] _
+std/deriving.cn:213:16 [module_path] str
 std/deriving.cn:213:16 [binary] bool
-std/deriving.cn:213:26 [module_path] _
+std/deriving.cn:213:26 [module_path] str
 std/deriving.cn:214:17 [ident] expr
 std/deriving.cn:214:28 [call] expr
 std/deriving.cn:214:37 [literal] bool
 std/deriving.cn:215:28 [binding_pat] int32
 std/deriving.cn:215:33 [literal] int32
 std/deriving.cn:215:33 [binary] range[int32]
-std/deriving.cn:215:36 [module_path] _
+std/deriving.cn:215:36 [module_path] int32
 std/deriving.cn:216:25 [binding_pat] expr
 std/deriving.cn:216:42 [call] expr
 std/deriving.cn:217:25 [literal] str
@@ -6242,19 +6260,22 @@ std/deriving.cn:222:13 [ident] expr
 std/deriving.cn:222:21 [call] expr
 std/deriving.cn:223:17 [ident] expr
 std/deriving.cn:223:24 [call] expr
-std/deriving.cn:223:42 [module_path] _
-std/deriving.cn:223:50 [module_path] _
+std/deriving.cn:223:42 [module_path] str
+std/deriving.cn:223:50 [module_path] int32
 std/deriving.cn:223:67 [literal] str
 std/deriving.cn:224:17 [ident] expr
 std/deriving.cn:225:9 [ident] expr
 std/deriving.cn:225:16 [call] expr
 std/deriving.cn:226:13 [ident] expr
 std/deriving.cn:226:19 [call] expr
-std/deriving.cn:226:37 [module_path] _
-std/deriving.cn:226:45 [module_path] _
+std/deriving.cn:226:37 [module_path] str
+std/deriving.cn:226:45 [module_path] int32
 std/deriving.cn:226:62 [literal] str
 std/deriving.cn:226:68 [ident] expr
 std/deriving.cn:227:12 [quote] def_expr
+std/deriving.cn:227:28 [call] expr
+std/deriving.cn:227:39 [call] str
+std/deriving.cn:229:21 [ident] expr
 std/deriving.cn:245:35 [quote_type] def_expr
 std/deriving.cn:246:5 [var_stmt] expr
 std/deriving.cn:246:22 [call] expr
@@ -6262,22 +6283,22 @@ std/deriving.cn:246:36 [call] expr
 std/deriving.cn:246:47 [literal] str
 std/deriving.cn:247:5 [var_stmt] int32
 std/deriving.cn:247:29 [literal] int32
-std/deriving.cn:248:16 [binding_pat] _
-std/deriving.cn:248:21 [call] _
+std/deriving.cn:248:16 [binding_pat] variant_info
+std/deriving.cn:248:21 [call] list[variant_info]
 std/deriving.cn:249:9 [var_stmt] expr
 std/deriving.cn:249:27 [call] expr
 std/deriving.cn:249:41 [call] expr
 std/deriving.cn:249:52 [literal] str
 std/deriving.cn:250:9 [var_stmt] int32
 std/deriving.cn:250:34 [literal] int32
-std/deriving.cn:251:20 [binding_pat] _
-std/deriving.cn:251:25 [call] _
+std/deriving.cn:251:20 [binding_pat] variant_info
+std/deriving.cn:251:25 [call] list[variant_info]
 std/deriving.cn:252:13 [var_stmt] expr
 std/deriving.cn:252:34 [call] expr
 std/deriving.cn:252:43 [literal] bool
-std/deriving.cn:253:16 [module_path] _
+std/deriving.cn:253:16 [module_path] str
 std/deriving.cn:253:16 [binary] bool
-std/deriving.cn:253:26 [module_path] _
+std/deriving.cn:253:26 [module_path] str
 std/deriving.cn:254:17 [ident] expr
 std/deriving.cn:254:28 [call] expr
 std/deriving.cn:254:38 [call] expr
@@ -6285,7 +6306,7 @@ std/deriving.cn:254:49 [literal] str
 std/deriving.cn:255:28 [binding_pat] int32
 std/deriving.cn:255:33 [literal] int32
 std/deriving.cn:255:33 [binary] range[int32]
-std/deriving.cn:255:36 [module_path] _
+std/deriving.cn:255:36 [module_path] int32
 std/deriving.cn:256:25 [binding_pat] expr
 std/deriving.cn:256:43 [call] expr
 std/deriving.cn:257:25 [call] expr
@@ -6322,8 +6343,8 @@ std/deriving.cn:269:13 [ident] expr
 std/deriving.cn:269:21 [call] expr
 std/deriving.cn:270:17 [ident] expr
 std/deriving.cn:270:24 [call] expr
-std/deriving.cn:270:42 [module_path] _
-std/deriving.cn:270:50 [module_path] _
+std/deriving.cn:270:42 [module_path] str
+std/deriving.cn:270:50 [module_path] int32
 std/deriving.cn:270:67 [literal] str
 std/deriving.cn:271:17 [ident] expr
 std/deriving.cn:272:13 [ident] int32
@@ -6334,8 +6355,8 @@ std/deriving.cn:273:9 [ident] expr
 std/deriving.cn:273:16 [call] expr
 std/deriving.cn:274:13 [ident] expr
 std/deriving.cn:274:19 [call] expr
-std/deriving.cn:274:37 [module_path] _
-std/deriving.cn:274:45 [module_path] _
+std/deriving.cn:274:37 [module_path] str
+std/deriving.cn:274:45 [module_path] int32
 std/deriving.cn:274:62 [literal] str
 std/deriving.cn:274:68 [ident] expr
 std/deriving.cn:275:9 [ident] int32
@@ -6343,13 +6364,16 @@ std/deriving.cn:275:22 [ident] int32
 std/deriving.cn:275:22 [binary] int32
 std/deriving.cn:275:35 [literal] int32
 std/deriving.cn:276:12 [quote] def_expr
+std/deriving.cn:276:29 [call] expr
+std/deriving.cn:276:40 [call] str
+std/deriving.cn:278:21 [ident] expr
 std/deriving.cn:295:32 [quote_type] def_expr
 std/deriving.cn:296:5 [var_stmt] expr
 std/deriving.cn:296:22 [call] expr
 std/deriving.cn:296:32 [call] expr
 std/deriving.cn:296:43 [literal] str
 std/deriving.cn:297:16 [binding_pat] field_info
-std/deriving.cn:297:21 [call] _
+std/deriving.cn:297:21 [call] list[field_info]
 std/deriving.cn:298:9 [ident] expr
 std/deriving.cn:298:16 [call] expr
 std/deriving.cn:299:13 [call] expr
@@ -6363,6 +6387,9 @@ std/deriving.cn:302:28 [call] expr
 std/deriving.cn:302:39 [literal] str
 std/deriving.cn:302:48 [module_path] str
 std/deriving.cn:303:12 [quote] def_expr
+std/deriving.cn:303:30 [call] expr
+std/deriving.cn:303:41 [call] str
+std/deriving.cn:305:21 [ident] expr
 std/deriving.cn:318:36 [quote_type] def_expr
 std/deriving.cn:319:5 [var_stmt] expr
 std/deriving.cn:319:22 [call] expr
@@ -6370,8 +6397,8 @@ std/deriving.cn:319:36 [call] expr
 std/deriving.cn:319:47 [literal] str
 std/deriving.cn:320:5 [var_stmt] int32
 std/deriving.cn:320:24 [literal] int32
-std/deriving.cn:321:16 [binding_pat] _
-std/deriving.cn:321:21 [call] _
+std/deriving.cn:321:16 [binding_pat] variant_info
+std/deriving.cn:321:21 [call] list[variant_info]
 std/deriving.cn:322:9 [var_stmt] expr
 std/deriving.cn:322:30 [call] expr
 std/deriving.cn:323:13 [call] expr
@@ -6381,7 +6408,7 @@ std/deriving.cn:323:46 [ident] int32
 std/deriving.cn:324:20 [binding_pat] int32
 std/deriving.cn:324:25 [literal] int32
 std/deriving.cn:324:25 [binary] range[int32]
-std/deriving.cn:324:28 [module_path] _
+std/deriving.cn:324:28 [module_path] int32
 std/deriving.cn:325:13 [ident] expr
 std/deriving.cn:325:24 [call] expr
 std/deriving.cn:326:17 [call] expr
@@ -6397,8 +6424,8 @@ std/deriving.cn:328:9 [ident] expr
 std/deriving.cn:328:16 [call] expr
 std/deriving.cn:329:13 [ident] expr
 std/deriving.cn:329:19 [call] expr
-std/deriving.cn:329:37 [module_path] _
-std/deriving.cn:329:45 [module_path] _
+std/deriving.cn:329:37 [module_path] str
+std/deriving.cn:329:45 [module_path] int32
 std/deriving.cn:329:62 [literal] str
 std/deriving.cn:329:68 [ident] expr
 std/deriving.cn:330:9 [ident] int32
@@ -6406,6 +6433,9 @@ std/deriving.cn:330:17 [ident] int32
 std/deriving.cn:330:17 [binary] int32
 std/deriving.cn:330:25 [literal] int32
 std/deriving.cn:331:12 [quote] def_expr
+std/deriving.cn:331:30 [call] expr
+std/deriving.cn:331:41 [call] str
+std/deriving.cn:333:21 [ident] expr
 std/fmt.cn:31:16 [binding_pat] str
 std/fmt.cn:31:27 [named_type] usize
 std/fmt.cn:32:12 [ident] fn(str) -> usize
@@ -8657,6 +8687,7 @@ std/list.cn:186:22 [binding_pat] &mut list[(int64, int32)]
 std/list.cn:186:22 [binding_pat] &mut list[(usize, usize)]
 std/list.cn:186:22 [binding_pat] &mut list[T]
 std/list.cn:186:22 [binding_pat] &mut list[byte]
+std/list.cn:186:22 [binding_pat] &mut list[field_info]
 std/list.cn:186:22 [binding_pat] &mut list[int32]
 std/list.cn:186:22 [binding_pat] &mut list[int64]
 std/list.cn:186:22 [binding_pat] &mut list[money]
@@ -8665,6 +8696,9 @@ std/list.cn:186:22 [binding_pat] &mut list[test_case]
 std/list.cn:186:22 [binding_pat] &mut list[test_suite]
 std/list.cn:186:22 [binding_pat] &mut list[uint32]
 std/list.cn:186:22 [binding_pat] &mut list[usize]
+std/list.cn:186:22 [binding_pat] &mut list[variant_info]
+std/list.cn:186:35 [named_type] unit
+std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
 std/list.cn:186:35 [named_type] unit
@@ -8681,6 +8715,7 @@ std/list.cn:187:9 [ident] fn(*mut (int64, int32), usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut (usize, usize), usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut T, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut byte, usize) -> unit
+std/list.cn:187:9 [ident] fn(*mut field_info, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut int32, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut int64, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut money, usize) -> unit
@@ -8689,6 +8724,9 @@ std/list.cn:187:9 [ident] fn(*mut test_case, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut test_suite, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut uint32, usize) -> unit
 std/list.cn:187:9 [ident] fn(*mut usize, usize) -> unit
+std/list.cn:187:9 [ident] fn(*mut variant_info, usize) -> unit
+std/list.cn:187:9 [call] unit
+std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
 std/list.cn:187:9 [call] unit
@@ -8705,6 +8743,7 @@ std/list.cn:187:20 [module_path] *mut (int64, int32)
 std/list.cn:187:20 [module_path] *mut (usize, usize)
 std/list.cn:187:20 [module_path] *mut T
 std/list.cn:187:20 [module_path] *mut byte
+std/list.cn:187:20 [module_path] *mut field_info
 std/list.cn:187:20 [module_path] *mut int32
 std/list.cn:187:20 [module_path] *mut int64
 std/list.cn:187:20 [module_path] *mut money
@@ -8713,6 +8752,9 @@ std/list.cn:187:20 [module_path] *mut test_case
 std/list.cn:187:20 [module_path] *mut test_suite
 std/list.cn:187:20 [module_path] *mut uint32
 std/list.cn:187:20 [module_path] *mut usize
+std/list.cn:187:20 [module_path] *mut variant_info
+std/list.cn:187:31 [module_path] usize
+std/list.cn:187:31 [module_path] usize
 std/list.cn:187:31 [module_path] usize
 std/list.cn:187:31 [module_path] usize
 std/list.cn:187:31 [module_path] usize
@@ -8729,6 +8771,7 @@ std/list.cn:188:9 [ident] fn(*mut (int64, int32), usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut (usize, usize), usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut T, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut byte, usize) -> unit
+std/list.cn:188:9 [ident] fn(*mut field_info, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut int32, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut int64, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut money, usize) -> unit
@@ -8737,6 +8780,9 @@ std/list.cn:188:9 [ident] fn(*mut test_case, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut test_suite, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut uint32, usize) -> unit
 std/list.cn:188:9 [ident] fn(*mut usize, usize) -> unit
+std/list.cn:188:9 [ident] fn(*mut variant_info, usize) -> unit
+std/list.cn:188:9 [call] unit
+std/list.cn:188:9 [call] unit
 std/list.cn:188:9 [call] unit
 std/list.cn:188:9 [call] unit
 std/list.cn:188:9 [call] unit
@@ -8753,6 +8799,7 @@ std/list.cn:188:18 [module_path] *mut (int64, int32)
 std/list.cn:188:18 [module_path] *mut (usize, usize)
 std/list.cn:188:18 [module_path] *mut T
 std/list.cn:188:18 [module_path] *mut byte
+std/list.cn:188:18 [module_path] *mut field_info
 std/list.cn:188:18 [module_path] *mut int32
 std/list.cn:188:18 [module_path] *mut int64
 std/list.cn:188:18 [module_path] *mut money
@@ -8761,6 +8808,9 @@ std/list.cn:188:18 [module_path] *mut test_case
 std/list.cn:188:18 [module_path] *mut test_suite
 std/list.cn:188:18 [module_path] *mut uint32
 std/list.cn:188:18 [module_path] *mut usize
+std/list.cn:188:18 [module_path] *mut variant_info
+std/list.cn:188:29 [module_path] usize
+std/list.cn:188:29 [module_path] usize
 std/list.cn:188:29 [module_path] usize
 std/list.cn:188:29 [module_path] usize
 std/list.cn:188:29 [module_path] usize
@@ -10018,6 +10068,7 @@ std/mem.cn:54:25 [binding_pat] *mut (int64, int32)
 std/mem.cn:54:25 [binding_pat] *mut (usize, usize)
 std/mem.cn:54:25 [binding_pat] *mut T
 std/mem.cn:54:25 [binding_pat] *mut byte
+std/mem.cn:54:25 [binding_pat] *mut field_info
 std/mem.cn:54:25 [binding_pat] *mut int32
 std/mem.cn:54:25 [binding_pat] *mut int64
 std/mem.cn:54:25 [binding_pat] *mut money
@@ -10026,6 +10077,9 @@ std/mem.cn:54:25 [binding_pat] *mut test_case
 std/mem.cn:54:25 [binding_pat] *mut test_suite
 std/mem.cn:54:25 [binding_pat] *mut uint32
 std/mem.cn:54:25 [binding_pat] *mut usize
+std/mem.cn:54:25 [binding_pat] *mut variant_info
+std/mem.cn:54:36 [binding_pat] usize
+std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
 std/mem.cn:54:36 [binding_pat] usize
@@ -10050,6 +10104,10 @@ std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
 std/mem.cn:54:53 [named_type] unit
+std/mem.cn:54:53 [named_type] unit
+std/mem.cn:54:53 [named_type] unit
+std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
+std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
 std/mem.cn:55:5 [ident] fn(*mut byte, usize) -> unit
@@ -10074,6 +10132,8 @@ std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
 std/mem.cn:55:5 [call] unit
+std/mem.cn:55:5 [call] unit
+std/mem.cn:55:5 [call] unit
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
@@ -10086,6 +10146,10 @@ std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
 std/mem.cn:55:13 [ident] _
+std/mem.cn:55:13 [ident] _
+std/mem.cn:55:13 [ident] _
+std/mem.cn:55:13 [call] *mut byte
+std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
@@ -10102,6 +10166,7 @@ std/mem.cn:55:28 [ident] *mut (int64, int32)
 std/mem.cn:55:28 [ident] *mut (usize, usize)
 std/mem.cn:55:28 [ident] *mut T
 std/mem.cn:55:28 [ident] *mut byte
+std/mem.cn:55:28 [ident] *mut field_info
 std/mem.cn:55:28 [ident] *mut int32
 std/mem.cn:55:28 [ident] *mut int64
 std/mem.cn:55:28 [ident] *mut money
@@ -10110,6 +10175,9 @@ std/mem.cn:55:28 [ident] *mut test_case
 std/mem.cn:55:28 [ident] *mut test_suite
 std/mem.cn:55:28 [ident] *mut uint32
 std/mem.cn:55:28 [ident] *mut usize
+std/mem.cn:55:28 [ident] *mut variant_info
+std/mem.cn:55:32 [ident] usize
+std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
 std/mem.cn:55:32 [ident] usize
@@ -10134,6 +10202,8 @@ std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:32 [binary] usize
+std/mem.cn:55:32 [binary] usize
+std/mem.cn:55:32 [binary] usize
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
@@ -10146,6 +10216,10 @@ std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
 std/mem.cn:55:40 [ident] _
+std/mem.cn:55:40 [ident] _
+std/mem.cn:55:40 [ident] _
+std/mem.cn:55:40 [call] usize
+std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
 std/mem.cn:55:40 [call] usize
@@ -10181,6 +10255,7 @@ std/mem.cn:77:34 [binding_pat] *mut (int64, int32)
 std/mem.cn:77:34 [binding_pat] *mut (usize, usize)
 std/mem.cn:77:34 [binding_pat] *mut T
 std/mem.cn:77:34 [binding_pat] *mut byte
+std/mem.cn:77:34 [binding_pat] *mut field_info
 std/mem.cn:77:34 [binding_pat] *mut int32
 std/mem.cn:77:34 [binding_pat] *mut int64
 std/mem.cn:77:34 [binding_pat] *mut money
@@ -10189,6 +10264,9 @@ std/mem.cn:77:34 [binding_pat] *mut test_case
 std/mem.cn:77:34 [binding_pat] *mut test_suite
 std/mem.cn:77:34 [binding_pat] *mut uint32
 std/mem.cn:77:34 [binding_pat] *mut usize
+std/mem.cn:77:34 [binding_pat] *mut variant_info
+std/mem.cn:77:48 [named_type] unit
+std/mem.cn:77:48 [named_type] unit
 std/mem.cn:77:48 [named_type] unit
 std/mem.cn:77:48 [named_type] unit
 std/mem.cn:77:48 [named_type] unit
@@ -10213,6 +10291,10 @@ std/mem.cn:78:8 [ident] _
 std/mem.cn:78:8 [ident] _
 std/mem.cn:78:8 [ident] _
 std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [ident] _
+std/mem.cn:78:8 [call] bool
+std/mem.cn:78:8 [call] bool
 std/mem.cn:78:8 [call] bool
 std/mem.cn:78:8 [call] bool
 std/mem.cn:78:8 [call] bool
@@ -10229,6 +10311,7 @@ std/mem.cn:79:9 [ident] fn((int64, int32)) -> unit
 std/mem.cn:79:9 [ident] fn((usize, usize)) -> unit
 std/mem.cn:79:9 [ident] fn(T) -> unit
 std/mem.cn:79:9 [ident] fn(byte) -> unit
+std/mem.cn:79:9 [ident] fn(field_info) -> unit
 std/mem.cn:79:9 [ident] fn(int32) -> unit
 std/mem.cn:79:9 [ident] fn(int64) -> unit
 std/mem.cn:79:9 [ident] fn(money) -> unit
@@ -10237,6 +10320,9 @@ std/mem.cn:79:9 [ident] fn(test_case) -> unit
 std/mem.cn:79:9 [ident] fn(test_suite) -> unit
 std/mem.cn:79:9 [ident] fn(uint32) -> unit
 std/mem.cn:79:9 [ident] fn(usize) -> unit
+std/mem.cn:79:9 [ident] fn(variant_info) -> unit
+std/mem.cn:79:9 [call] unit
+std/mem.cn:79:9 [call] unit
 std/mem.cn:79:9 [call] unit
 std/mem.cn:79:9 [call] unit
 std/mem.cn:79:9 [call] unit
@@ -10253,6 +10339,7 @@ std/mem.cn:79:14 [ident] *mut (int64, int32)
 std/mem.cn:79:14 [ident] *mut (usize, usize)
 std/mem.cn:79:14 [ident] *mut T
 std/mem.cn:79:14 [ident] *mut byte
+std/mem.cn:79:14 [ident] *mut field_info
 std/mem.cn:79:14 [ident] *mut int32
 std/mem.cn:79:14 [ident] *mut int64
 std/mem.cn:79:14 [ident] *mut money
@@ -10261,10 +10348,12 @@ std/mem.cn:79:14 [ident] *mut test_case
 std/mem.cn:79:14 [ident] *mut test_suite
 std/mem.cn:79:14 [ident] *mut uint32
 std/mem.cn:79:14 [ident] *mut usize
+std/mem.cn:79:14 [ident] *mut variant_info
 std/mem.cn:79:14 [index] (int64, int32)
 std/mem.cn:79:14 [index] (usize, usize)
 std/mem.cn:79:14 [index] T
 std/mem.cn:79:14 [index] byte
+std/mem.cn:79:14 [index] field_info
 std/mem.cn:79:14 [index] int32
 std/mem.cn:79:14 [index] int64
 std/mem.cn:79:14 [index] money
@@ -10273,6 +10362,9 @@ std/mem.cn:79:14 [index] test_case
 std/mem.cn:79:14 [index] test_suite
 std/mem.cn:79:14 [index] uint32
 std/mem.cn:79:14 [index] usize
+std/mem.cn:79:14 [index] variant_info
+std/mem.cn:79:16 [literal] usize
+std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
 std/mem.cn:79:16 [literal] usize
@@ -10289,6 +10381,7 @@ std/mem.cn:85:31 [binding_pat] *mut (int64, int32)
 std/mem.cn:85:31 [binding_pat] *mut (usize, usize)
 std/mem.cn:85:31 [binding_pat] *mut T
 std/mem.cn:85:31 [binding_pat] *mut byte
+std/mem.cn:85:31 [binding_pat] *mut field_info
 std/mem.cn:85:31 [binding_pat] *mut int32
 std/mem.cn:85:31 [binding_pat] *mut int64
 std/mem.cn:85:31 [binding_pat] *mut money
@@ -10297,6 +10390,9 @@ std/mem.cn:85:31 [binding_pat] *mut test_case
 std/mem.cn:85:31 [binding_pat] *mut test_suite
 std/mem.cn:85:31 [binding_pat] *mut uint32
 std/mem.cn:85:31 [binding_pat] *mut usize
+std/mem.cn:85:31 [binding_pat] *mut variant_info
+std/mem.cn:85:42 [binding_pat] usize
+std/mem.cn:85:42 [binding_pat] usize
 std/mem.cn:85:42 [binding_pat] usize
 std/mem.cn:85:42 [binding_pat] usize
 std/mem.cn:85:42 [binding_pat] usize
@@ -10321,6 +10417,10 @@ std/mem.cn:85:59 [named_type] unit
 std/mem.cn:85:59 [named_type] unit
 std/mem.cn:85:59 [named_type] unit
 std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:85:59 [named_type] unit
+std/mem.cn:86:8 [ident] _
+std/mem.cn:86:8 [ident] _
 std/mem.cn:86:8 [ident] _
 std/mem.cn:86:8 [ident] _
 std/mem.cn:86:8 [ident] _
@@ -10345,6 +10445,10 @@ std/mem.cn:86:8 [call] bool
 std/mem.cn:86:8 [call] bool
 std/mem.cn:86:8 [call] bool
 std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:86:8 [call] bool
+std/mem.cn:87:9 [var_stmt] usize
+std/mem.cn:87:9 [var_stmt] usize
 std/mem.cn:87:9 [var_stmt] usize
 std/mem.cn:87:9 [var_stmt] usize
 std/mem.cn:87:9 [var_stmt] usize
@@ -10369,6 +10473,10 @@ std/mem.cn:87:24 [literal] usize
 std/mem.cn:87:24 [literal] usize
 std/mem.cn:87:24 [literal] usize
 std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:87:24 [literal] usize
+std/mem.cn:88:15 [ident] usize
+std/mem.cn:88:15 [ident] usize
 std/mem.cn:88:15 [ident] usize
 std/mem.cn:88:15 [ident] usize
 std/mem.cn:88:15 [ident] usize
@@ -10393,6 +10501,10 @@ std/mem.cn:88:15 [binary] bool
 std/mem.cn:88:15 [binary] bool
 std/mem.cn:88:15 [binary] bool
 std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:15 [binary] bool
+std/mem.cn:88:19 [ident] usize
+std/mem.cn:88:19 [ident] usize
 std/mem.cn:88:19 [ident] usize
 std/mem.cn:88:19 [ident] usize
 std/mem.cn:88:19 [ident] usize
@@ -10409,6 +10521,7 @@ std/mem.cn:89:13 [ident] fn(*mut (int64, int32)) -> unit
 std/mem.cn:89:13 [ident] fn(*mut (usize, usize)) -> unit
 std/mem.cn:89:13 [ident] fn(*mut T) -> unit
 std/mem.cn:89:13 [ident] fn(*mut byte) -> unit
+std/mem.cn:89:13 [ident] fn(*mut field_info) -> unit
 std/mem.cn:89:13 [ident] fn(*mut int32) -> unit
 std/mem.cn:89:13 [ident] fn(*mut int64) -> unit
 std/mem.cn:89:13 [ident] fn(*mut money) -> unit
@@ -10417,6 +10530,9 @@ std/mem.cn:89:13 [ident] fn(*mut test_case) -> unit
 std/mem.cn:89:13 [ident] fn(*mut test_suite) -> unit
 std/mem.cn:89:13 [ident] fn(*mut uint32) -> unit
 std/mem.cn:89:13 [ident] fn(*mut usize) -> unit
+std/mem.cn:89:13 [ident] fn(*mut variant_info) -> unit
+std/mem.cn:89:13 [call] unit
+std/mem.cn:89:13 [call] unit
 std/mem.cn:89:13 [call] unit
 std/mem.cn:89:13 [call] unit
 std/mem.cn:89:13 [call] unit
@@ -10433,6 +10549,7 @@ std/mem.cn:89:27 [unary] *mut (int64, int32)
 std/mem.cn:89:27 [unary] *mut (usize, usize)
 std/mem.cn:89:27 [unary] *mut T
 std/mem.cn:89:27 [unary] *mut byte
+std/mem.cn:89:27 [unary] *mut field_info
 std/mem.cn:89:27 [unary] *mut int32
 std/mem.cn:89:27 [unary] *mut int64
 std/mem.cn:89:27 [unary] *mut money
@@ -10441,10 +10558,12 @@ std/mem.cn:89:27 [unary] *mut test_case
 std/mem.cn:89:27 [unary] *mut test_suite
 std/mem.cn:89:27 [unary] *mut uint32
 std/mem.cn:89:27 [unary] *mut usize
+std/mem.cn:89:27 [unary] *mut variant_info
 std/mem.cn:89:32 [ident] *mut (int64, int32)
 std/mem.cn:89:32 [ident] *mut (usize, usize)
 std/mem.cn:89:32 [ident] *mut T
 std/mem.cn:89:32 [ident] *mut byte
+std/mem.cn:89:32 [ident] *mut field_info
 std/mem.cn:89:32 [ident] *mut int32
 std/mem.cn:89:32 [ident] *mut int64
 std/mem.cn:89:32 [ident] *mut money
@@ -10453,10 +10572,12 @@ std/mem.cn:89:32 [ident] *mut test_case
 std/mem.cn:89:32 [ident] *mut test_suite
 std/mem.cn:89:32 [ident] *mut uint32
 std/mem.cn:89:32 [ident] *mut usize
+std/mem.cn:89:32 [ident] *mut variant_info
 std/mem.cn:89:32 [index] (int64, int32)
 std/mem.cn:89:32 [index] (usize, usize)
 std/mem.cn:89:32 [index] T
 std/mem.cn:89:32 [index] byte
+std/mem.cn:89:32 [index] field_info
 std/mem.cn:89:32 [index] int32
 std/mem.cn:89:32 [index] int64
 std/mem.cn:89:32 [index] money
@@ -10465,6 +10586,9 @@ std/mem.cn:89:32 [index] test_case
 std/mem.cn:89:32 [index] test_suite
 std/mem.cn:89:32 [index] uint32
 std/mem.cn:89:32 [index] usize
+std/mem.cn:89:32 [index] variant_info
+std/mem.cn:89:34 [ident] usize
+std/mem.cn:89:34 [ident] usize
 std/mem.cn:89:34 [ident] usize
 std/mem.cn:89:34 [ident] usize
 std/mem.cn:89:34 [ident] usize
@@ -10489,6 +10613,10 @@ std/mem.cn:90:13 [ident] usize
 std/mem.cn:90:13 [ident] usize
 std/mem.cn:90:13 [ident] usize
 std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:13 [ident] usize
+std/mem.cn:90:17 [ident] usize
+std/mem.cn:90:17 [ident] usize
 std/mem.cn:90:17 [ident] usize
 std/mem.cn:90:17 [ident] usize
 std/mem.cn:90:17 [ident] usize
@@ -10513,6 +10641,10 @@ std/mem.cn:90:17 [binary] usize
 std/mem.cn:90:17 [binary] usize
 std/mem.cn:90:17 [binary] usize
 std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:17 [binary] usize
+std/mem.cn:90:21 [literal] usize
+std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
 std/mem.cn:90:21 [literal] usize
@@ -11253,321 +11385,321 @@ std/test.cn:182:8 [binary] bool
 std/test.cn:182:18 [literal] int32
 std/test.cn:183:16 [literal] int32
 std/test.cn:184:12 [literal] int32
-std/traits.category.cn:47:37 [named_type] bool
-std/traits.category.cn:48:12 [call] str
-std/traits.category.cn:48:12 [binary] bool
-std/traits.category.cn:48:24 [literal] str
-std/traits.category.cn:51:37 [named_type] bool
-std/traits.category.cn:52:12 [call] str
-std/traits.category.cn:52:12 [binary] bool
-std/traits.category.cn:52:24 [literal] str
-std/traits.category.cn:55:47 [named_type] bool
-std/traits.category.cn:56:9 [binding_pat] str
-std/traits.category.cn:56:13 [call] str
-std/traits.category.cn:57:12 [group] bool
-std/traits.category.cn:57:13 [ident] str
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:13 [binary] bool
-std/traits.category.cn:57:18 [literal] str
-std/traits.category.cn:57:28 [ident] str
-std/traits.category.cn:57:28 [binary] bool
-std/traits.category.cn:57:33 [literal] str
-std/traits.category.cn:57:44 [ident] str
-std/traits.category.cn:57:44 [binary] bool
-std/traits.category.cn:57:49 [literal] str
-std/traits.category.cn:57:60 [ident] str
-std/traits.category.cn:57:60 [binary] bool
-std/traits.category.cn:57:65 [literal] str
-std/traits.category.cn:58:9 [ident] str
-std/traits.category.cn:58:9 [binary] bool
-std/traits.category.cn:58:14 [literal] str
-std/traits.category.cn:58:26 [ident] str
-std/traits.category.cn:58:26 [binary] bool
-std/traits.category.cn:58:31 [literal] str
-std/traits.category.cn:61:49 [named_type] bool
-std/traits.category.cn:62:9 [binding_pat] str
-std/traits.category.cn:62:13 [call] str
-std/traits.category.cn:63:12 [group] bool
-std/traits.category.cn:63:13 [ident] str
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:13 [binary] bool
-std/traits.category.cn:63:18 [literal] str
-std/traits.category.cn:63:29 [ident] str
-std/traits.category.cn:63:29 [binary] bool
-std/traits.category.cn:63:34 [literal] str
-std/traits.category.cn:63:46 [ident] str
-std/traits.category.cn:63:46 [binary] bool
-std/traits.category.cn:63:51 [literal] str
-std/traits.category.cn:63:63 [ident] str
-std/traits.category.cn:63:63 [binary] bool
-std/traits.category.cn:63:68 [literal] str
-std/traits.category.cn:64:9 [ident] str
-std/traits.category.cn:64:9 [binary] bool
-std/traits.category.cn:64:14 [literal] str
-std/traits.category.cn:64:27 [ident] str
-std/traits.category.cn:64:27 [binary] bool
-std/traits.category.cn:64:32 [literal] str
-std/traits.category.cn:64:43 [ident] str
-std/traits.category.cn:64:43 [binary] bool
-std/traits.category.cn:64:48 [literal] str
-std/traits.category.cn:67:40 [named_type] bool
-std/traits.category.cn:68:12 [index] fn() -> bool
-std/traits.category.cn:68:12 [call] bool
-std/traits.category.cn:68:12 [binary] bool
-std/traits.category.cn:68:38 [index] fn() -> bool
-std/traits.category.cn:68:38 [call] bool
-std/traits.category.cn:71:38 [named_type] bool
-std/traits.category.cn:72:9 [binding_pat] str
-std/traits.category.cn:72:13 [call] str
-std/traits.category.cn:73:12 [ident] str
-std/traits.category.cn:73:12 [binary] bool
-std/traits.category.cn:73:12 [binary] bool
-std/traits.category.cn:73:12 [binary] bool
-std/traits.category.cn:73:17 [literal] str
-std/traits.category.cn:73:30 [ident] str
-std/traits.category.cn:73:30 [binary] bool
-std/traits.category.cn:73:35 [literal] str
-std/traits.category.cn:73:48 [ident] str
-std/traits.category.cn:73:48 [binary] bool
-std/traits.category.cn:73:53 [literal] str
-std/traits.category.cn:76:40 [named_type] bool
-std/traits.category.cn:77:12 [index] fn() -> bool
-std/traits.category.cn:77:12 [call] bool
-std/traits.category.cn:77:12 [binary] bool
-std/traits.category.cn:77:31 [index] fn() -> bool
-std/traits.category.cn:77:31 [call] bool
-std/traits.category.cn:94:5 [index] fn() -> bool
-std/traits.category.cn:94:5 [call] bool
-std/traits.category.cn:94:5 [binary] bool
-std/traits.category.cn:94:32 [call] str
-std/traits.category.cn:94:32 [binary] bool
-std/traits.category.cn:94:44 [literal] str
-std/traits.category.cn:98:5 [index] fn() -> bool
-std/traits.category.cn:98:5 [call] bool
-std/traits.category.cn:98:5 [binary] bool
-std/traits.category.cn:98:34 [call] str
-std/traits.category.cn:98:34 [binary] bool
-std/traits.category.cn:98:46 [literal] str
-std/traits.category.cn:102:5 [index] fn() -> bool
-std/traits.category.cn:102:5 [call] bool
-std/traits.category.cn:106:50 [named_type] bool
-std/traits.category.cn:107:9 [binding_pat] str
-std/traits.category.cn:107:13 [call] str
-std/traits.category.cn:108:12 [index] fn() -> bool
-std/traits.category.cn:108:12 [call] bool
-std/traits.category.cn:108:12 [binary] bool
-std/traits.category.cn:108:12 [binary] bool
-std/traits.category.cn:108:32 [ident] str
-std/traits.category.cn:108:32 [binary] bool
-std/traits.category.cn:108:37 [literal] str
-std/traits.category.cn:108:50 [ident] str
-std/traits.category.cn:108:50 [binary] bool
-std/traits.category.cn:108:55 [literal] str
-std/traits.category.cn:112:5 [index] fn() -> bool
-std/traits.category.cn:112:5 [call] bool
-std/traits.category.cn:112:5 [binary] bool
-std/traits.category.cn:112:23 [call] str
-std/traits.category.cn:112:23 [binary] bool
-std/traits.category.cn:112:35 [literal] str
-std/traits.category.cn:116:5 [index] fn() -> bool
-std/traits.category.cn:116:5 [call] bool
-std/traits.category.cn:116:5 [binary] bool
-std/traits.category.cn:116:34 [group] bool
-std/traits.category.cn:116:35 [index] fn() -> bool
-std/traits.category.cn:116:35 [call] bool
-std/traits.category.cn:116:35 [binary] bool
-std/traits.category.cn:116:53 [call] str
-std/traits.category.cn:116:53 [binary] bool
-std/traits.category.cn:116:65 [literal] str
-std/traits.category.cn:119:39 [named_type] bool
-std/traits.category.cn:120:12 [index] fn() -> bool
-std/traits.category.cn:120:12 [call] bool
-std/traits.category.cn:120:12 [binary] bool
-std/traits.category.cn:120:12 [binary] bool
-std/traits.category.cn:120:31 [index] fn() -> bool
-std/traits.category.cn:120:31 [call] bool
-std/traits.category.cn:120:47 [index] fn() -> bool
-std/traits.category.cn:120:47 [call] bool
-std/traits.category.cn:123:36 [named_type] bool
-std/traits.category.cn:124:12 [call] str
-std/traits.category.cn:124:12 [binary] bool
-std/traits.category.cn:124:24 [literal] str
-std/traits.category.cn:127:37 [named_type] bool
-std/traits.category.cn:128:12 [call] str
-std/traits.category.cn:128:12 [binary] bool
-std/traits.category.cn:128:24 [literal] str
-std/traits.category.cn:131:38 [named_type] bool
-std/traits.category.cn:132:12 [call] str
-std/traits.category.cn:132:12 [binary] bool
-std/traits.category.cn:132:24 [literal] str
-std/traits.category.cn:135:38 [named_type] bool
-std/traits.category.cn:136:9 [binding_pat] str
-std/traits.category.cn:136:13 [call] str
-std/traits.category.cn:137:12 [ident] str
+std/traits.category.cn:60:37 [named_type] bool
+std/traits.category.cn:61:12 [call] str
+std/traits.category.cn:61:12 [binary] bool
+std/traits.category.cn:61:24 [literal] str
+std/traits.category.cn:64:37 [named_type] bool
+std/traits.category.cn:65:12 [call] str
+std/traits.category.cn:65:12 [binary] bool
+std/traits.category.cn:65:24 [literal] str
+std/traits.category.cn:68:47 [named_type] bool
+std/traits.category.cn:69:9 [binding_pat] str
+std/traits.category.cn:69:13 [call] str
+std/traits.category.cn:70:12 [group] bool
+std/traits.category.cn:70:13 [ident] str
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:13 [binary] bool
+std/traits.category.cn:70:18 [literal] str
+std/traits.category.cn:70:28 [ident] str
+std/traits.category.cn:70:28 [binary] bool
+std/traits.category.cn:70:33 [literal] str
+std/traits.category.cn:70:44 [ident] str
+std/traits.category.cn:70:44 [binary] bool
+std/traits.category.cn:70:49 [literal] str
+std/traits.category.cn:70:60 [ident] str
+std/traits.category.cn:70:60 [binary] bool
+std/traits.category.cn:70:65 [literal] str
+std/traits.category.cn:71:9 [ident] str
+std/traits.category.cn:71:9 [binary] bool
+std/traits.category.cn:71:14 [literal] str
+std/traits.category.cn:71:26 [ident] str
+std/traits.category.cn:71:26 [binary] bool
+std/traits.category.cn:71:31 [literal] str
+std/traits.category.cn:74:49 [named_type] bool
+std/traits.category.cn:75:9 [binding_pat] str
+std/traits.category.cn:75:13 [call] str
+std/traits.category.cn:76:12 [group] bool
+std/traits.category.cn:76:13 [ident] str
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:13 [binary] bool
+std/traits.category.cn:76:18 [literal] str
+std/traits.category.cn:76:29 [ident] str
+std/traits.category.cn:76:29 [binary] bool
+std/traits.category.cn:76:34 [literal] str
+std/traits.category.cn:76:46 [ident] str
+std/traits.category.cn:76:46 [binary] bool
+std/traits.category.cn:76:51 [literal] str
+std/traits.category.cn:76:63 [ident] str
+std/traits.category.cn:76:63 [binary] bool
+std/traits.category.cn:76:68 [literal] str
+std/traits.category.cn:77:9 [ident] str
+std/traits.category.cn:77:9 [binary] bool
+std/traits.category.cn:77:14 [literal] str
+std/traits.category.cn:77:27 [ident] str
+std/traits.category.cn:77:27 [binary] bool
+std/traits.category.cn:77:32 [literal] str
+std/traits.category.cn:77:43 [ident] str
+std/traits.category.cn:77:43 [binary] bool
+std/traits.category.cn:77:48 [literal] str
+std/traits.category.cn:80:40 [named_type] bool
+std/traits.category.cn:81:12 [index] fn() -> bool
+std/traits.category.cn:81:12 [call] bool
+std/traits.category.cn:81:12 [binary] bool
+std/traits.category.cn:81:38 [index] fn() -> bool
+std/traits.category.cn:81:38 [call] bool
+std/traits.category.cn:84:38 [named_type] bool
+std/traits.category.cn:85:9 [binding_pat] str
+std/traits.category.cn:85:13 [call] str
+std/traits.category.cn:86:12 [ident] str
+std/traits.category.cn:86:12 [binary] bool
+std/traits.category.cn:86:12 [binary] bool
+std/traits.category.cn:86:12 [binary] bool
+std/traits.category.cn:86:17 [literal] str
+std/traits.category.cn:86:30 [ident] str
+std/traits.category.cn:86:30 [binary] bool
+std/traits.category.cn:86:35 [literal] str
+std/traits.category.cn:86:48 [ident] str
+std/traits.category.cn:86:48 [binary] bool
+std/traits.category.cn:86:53 [literal] str
+std/traits.category.cn:89:40 [named_type] bool
+std/traits.category.cn:90:12 [index] fn() -> bool
+std/traits.category.cn:90:12 [call] bool
+std/traits.category.cn:90:12 [binary] bool
+std/traits.category.cn:90:31 [index] fn() -> bool
+std/traits.category.cn:90:31 [call] bool
+std/traits.category.cn:107:5 [index] fn() -> bool
+std/traits.category.cn:107:5 [call] bool
+std/traits.category.cn:107:5 [binary] bool
+std/traits.category.cn:107:32 [call] str
+std/traits.category.cn:107:32 [binary] bool
+std/traits.category.cn:107:44 [literal] str
+std/traits.category.cn:111:5 [index] fn() -> bool
+std/traits.category.cn:111:5 [call] bool
+std/traits.category.cn:111:5 [binary] bool
+std/traits.category.cn:111:34 [call] str
+std/traits.category.cn:111:34 [binary] bool
+std/traits.category.cn:111:46 [literal] str
+std/traits.category.cn:115:5 [index] fn() -> bool
+std/traits.category.cn:115:5 [call] bool
+std/traits.category.cn:119:50 [named_type] bool
+std/traits.category.cn:120:9 [binding_pat] str
+std/traits.category.cn:120:13 [call] str
+std/traits.category.cn:121:12 [index] fn() -> bool
+std/traits.category.cn:121:12 [call] bool
+std/traits.category.cn:121:12 [binary] bool
+std/traits.category.cn:121:12 [binary] bool
+std/traits.category.cn:121:32 [ident] str
+std/traits.category.cn:121:32 [binary] bool
+std/traits.category.cn:121:37 [literal] str
+std/traits.category.cn:121:50 [ident] str
+std/traits.category.cn:121:50 [binary] bool
+std/traits.category.cn:121:55 [literal] str
+std/traits.category.cn:125:5 [index] fn() -> bool
+std/traits.category.cn:125:5 [call] bool
+std/traits.category.cn:125:5 [binary] bool
+std/traits.category.cn:125:23 [call] str
+std/traits.category.cn:125:23 [binary] bool
+std/traits.category.cn:125:35 [literal] str
+std/traits.category.cn:129:5 [index] fn() -> bool
+std/traits.category.cn:129:5 [call] bool
+std/traits.category.cn:129:5 [binary] bool
+std/traits.category.cn:129:34 [group] bool
+std/traits.category.cn:129:35 [index] fn() -> bool
+std/traits.category.cn:129:35 [call] bool
+std/traits.category.cn:129:35 [binary] bool
+std/traits.category.cn:129:53 [call] str
+std/traits.category.cn:129:53 [binary] bool
+std/traits.category.cn:129:65 [literal] str
+std/traits.category.cn:132:39 [named_type] bool
+std/traits.category.cn:133:12 [index] fn() -> bool
+std/traits.category.cn:133:12 [call] bool
+std/traits.category.cn:133:12 [binary] bool
+std/traits.category.cn:133:12 [binary] bool
+std/traits.category.cn:133:31 [index] fn() -> bool
+std/traits.category.cn:133:31 [call] bool
+std/traits.category.cn:133:47 [index] fn() -> bool
+std/traits.category.cn:133:47 [call] bool
+std/traits.category.cn:136:36 [named_type] bool
+std/traits.category.cn:137:12 [call] str
 std/traits.category.cn:137:12 [binary] bool
-std/traits.category.cn:137:12 [binary] bool
-std/traits.category.cn:137:17 [literal] str
-std/traits.category.cn:137:28 [ident] str
-std/traits.category.cn:137:28 [binary] bool
-std/traits.category.cn:137:33 [literal] str
-std/traits.category.cn:145:37 [named_type] bool
-std/traits.category.cn:146:12 [call] str
-std/traits.category.cn:146:12 [binary] bool
-std/traits.category.cn:146:24 [literal] str
-std/traits.category.cn:149:36 [named_type] bool
-std/traits.category.cn:150:12 [call] str
+std/traits.category.cn:137:24 [literal] str
+std/traits.category.cn:140:37 [named_type] bool
+std/traits.category.cn:141:12 [call] str
+std/traits.category.cn:141:12 [binary] bool
+std/traits.category.cn:141:24 [literal] str
+std/traits.category.cn:144:38 [named_type] bool
+std/traits.category.cn:145:12 [call] str
+std/traits.category.cn:145:12 [binary] bool
+std/traits.category.cn:145:24 [literal] str
+std/traits.category.cn:148:38 [named_type] bool
+std/traits.category.cn:149:9 [binding_pat] str
+std/traits.category.cn:149:13 [call] str
+std/traits.category.cn:150:12 [ident] str
 std/traits.category.cn:150:12 [binary] bool
-std/traits.category.cn:150:24 [literal] str
-std/traits.category.cn:153:39 [named_type] bool
-std/traits.category.cn:154:12 [call] str
-std/traits.category.cn:154:12 [binary] bool
-std/traits.category.cn:154:24 [literal] str
-std/traits.category.cn:157:39 [named_type] bool
-std/traits.category.cn:158:12 [call] str
-std/traits.category.cn:158:12 [binary] bool
-std/traits.category.cn:158:24 [literal] str
-std/traits.category.cn:161:35 [named_type] bool
-std/traits.category.cn:162:12 [call] str
-std/traits.category.cn:162:12 [binary] bool
-std/traits.category.cn:162:24 [literal] str
+std/traits.category.cn:150:12 [binary] bool
+std/traits.category.cn:150:17 [literal] str
+std/traits.category.cn:150:28 [ident] str
+std/traits.category.cn:150:28 [binary] bool
+std/traits.category.cn:150:33 [literal] str
+std/traits.category.cn:158:37 [named_type] bool
+std/traits.category.cn:159:12 [call] str
+std/traits.category.cn:159:12 [binary] bool
+std/traits.category.cn:159:24 [literal] str
+std/traits.category.cn:162:36 [named_type] bool
+std/traits.category.cn:163:12 [call] str
+std/traits.category.cn:163:12 [binary] bool
+std/traits.category.cn:163:24 [literal] str
+std/traits.category.cn:166:39 [named_type] bool
+std/traits.category.cn:167:12 [call] str
+std/traits.category.cn:167:12 [binary] bool
+std/traits.category.cn:167:24 [literal] str
 std/traits.category.cn:170:39 [named_type] bool
-std/traits.category.cn:171:11 [call] _
-std/traits.category.cn:172:9 [ctor_pat] _
-std/traits.category.cn:172:32 [literal] bool
-std/traits.category.cn:173:9 [wildcard_pat] _
-std/traits.category.cn:173:21 [literal] bool
-std/traits.category.cn:177:36 [named_type] bool
-std/traits.category.cn:178:11 [call] _
-std/traits.category.cn:179:9 [ctor_pat] _
-std/traits.category.cn:179:29 [literal] bool
-std/traits.category.cn:180:9 [wildcard_pat] _
-std/traits.category.cn:180:21 [literal] bool
-std/traits.category.cn:188:40 [named_type] bool
-std/traits.category.cn:189:12 [call] str
-std/traits.category.cn:189:12 [binary] bool
-std/traits.category.cn:189:24 [call] str
-std/traits.category.cn:210:51 [named_type] bool
-std/traits.category.cn:211:12 [ident] _
-std/traits.category.cn:211:12 [call] fn() -> bool
-std/traits.category.cn:211:12 [call] bool
-std/traits.category.cn:211:12 [binary] bool
-std/traits.category.cn:211:35 [ident] _
-std/traits.category.cn:211:35 [call] bool
-std/traits.category.cn:215:43 [named_type] type_category
-std/traits.category.cn:216:9 [binding_pat] str
-std/traits.category.cn:216:13 [call] str
-std/traits.category.cn:217:8 [ident] str
-std/traits.category.cn:217:8 [binary] bool
-std/traits.category.cn:217:13 [literal] str
-std/traits.category.cn:218:16 [ident] type_category
-std/traits.category.cn:219:8 [ident] str
-std/traits.category.cn:219:8 [binary] bool
-std/traits.category.cn:219:13 [literal] str
-std/traits.category.cn:220:16 [ident] type_category
-std/traits.category.cn:221:8 [group] bool
-std/traits.category.cn:221:9 [ident] str
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:9 [binary] bool
-std/traits.category.cn:221:14 [literal] str
-std/traits.category.cn:221:24 [ident] str
-std/traits.category.cn:221:24 [binary] bool
-std/traits.category.cn:221:29 [literal] str
-std/traits.category.cn:221:40 [ident] str
-std/traits.category.cn:221:40 [binary] bool
-std/traits.category.cn:221:45 [literal] str
-std/traits.category.cn:221:56 [ident] str
-std/traits.category.cn:221:56 [binary] bool
-std/traits.category.cn:221:61 [literal] str
-std/traits.category.cn:222:9 [ident] str
-std/traits.category.cn:222:9 [binary] bool
-std/traits.category.cn:222:14 [literal] str
-std/traits.category.cn:222:26 [ident] str
-std/traits.category.cn:222:26 [binary] bool
-std/traits.category.cn:222:31 [literal] str
-std/traits.category.cn:223:16 [ident] type_category
-std/traits.category.cn:224:8 [group] bool
-std/traits.category.cn:224:9 [ident] str
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:9 [binary] bool
-std/traits.category.cn:224:14 [literal] str
-std/traits.category.cn:224:25 [ident] str
-std/traits.category.cn:224:25 [binary] bool
-std/traits.category.cn:224:30 [literal] str
-std/traits.category.cn:224:42 [ident] str
-std/traits.category.cn:224:42 [binary] bool
-std/traits.category.cn:224:47 [literal] str
-std/traits.category.cn:224:59 [ident] str
-std/traits.category.cn:224:59 [binary] bool
-std/traits.category.cn:224:64 [literal] str
-std/traits.category.cn:225:9 [ident] str
-std/traits.category.cn:225:9 [binary] bool
-std/traits.category.cn:225:14 [literal] str
-std/traits.category.cn:225:27 [ident] str
-std/traits.category.cn:225:27 [binary] bool
-std/traits.category.cn:225:32 [literal] str
-std/traits.category.cn:225:43 [ident] str
-std/traits.category.cn:225:43 [binary] bool
-std/traits.category.cn:225:48 [literal] str
-std/traits.category.cn:226:16 [ident] type_category
-std/traits.category.cn:227:8 [ident] str
-std/traits.category.cn:227:8 [binary] bool
-std/traits.category.cn:227:8 [binary] bool
-std/traits.category.cn:227:8 [binary] bool
-std/traits.category.cn:227:13 [literal] str
-std/traits.category.cn:227:26 [ident] str
-std/traits.category.cn:227:26 [binary] bool
-std/traits.category.cn:227:31 [literal] str
-std/traits.category.cn:227:44 [ident] str
-std/traits.category.cn:227:44 [binary] bool
-std/traits.category.cn:227:49 [literal] str
-std/traits.category.cn:228:16 [ident] type_category
-std/traits.category.cn:229:8 [ident] str
-std/traits.category.cn:229:8 [binary] bool
-std/traits.category.cn:229:13 [literal] str
-std/traits.category.cn:230:16 [ident] type_category
-std/traits.category.cn:231:8 [ident] str
-std/traits.category.cn:231:8 [binary] bool
-std/traits.category.cn:231:8 [binary] bool
-std/traits.category.cn:231:8 [binary] bool
-std/traits.category.cn:231:13 [literal] str
-std/traits.category.cn:231:24 [ident] str
-std/traits.category.cn:231:24 [binary] bool
-std/traits.category.cn:231:29 [literal] str
-std/traits.category.cn:231:40 [ident] str
-std/traits.category.cn:231:40 [binary] bool
-std/traits.category.cn:231:45 [literal] str
-std/traits.category.cn:232:16 [ident] type_category
-std/traits.category.cn:233:8 [ident] str
-std/traits.category.cn:233:8 [binary] bool
-std/traits.category.cn:233:13 [literal] str
-std/traits.category.cn:234:16 [ident] type_category
-std/traits.category.cn:235:11 [call] _
-std/traits.category.cn:236:9 [ctor_pat] _
-std/traits.category.cn:236:32 [ident] type_category
-std/traits.category.cn:237:9 [ctor_pat] _
-std/traits.category.cn:237:29 [ident] type_category
-std/traits.category.cn:238:9 [ctor_pat] _
-std/traits.category.cn:238:28 [ident] type_category
-std/traits.category.cn:239:9 [wildcard_pat] _
-std/traits.category.cn:239:21 [ident] type_category
+std/traits.category.cn:171:12 [call] str
+std/traits.category.cn:171:12 [binary] bool
+std/traits.category.cn:171:24 [literal] str
+std/traits.category.cn:174:35 [named_type] bool
+std/traits.category.cn:175:12 [call] str
+std/traits.category.cn:175:12 [binary] bool
+std/traits.category.cn:175:24 [literal] str
+std/traits.category.cn:183:39 [named_type] bool
+std/traits.category.cn:184:11 [call] type_kind
+std/traits.category.cn:185:9 [ctor_pat] type_kind
+std/traits.category.cn:185:32 [literal] bool
+std/traits.category.cn:186:9 [wildcard_pat] type_kind
+std/traits.category.cn:186:21 [literal] bool
+std/traits.category.cn:190:36 [named_type] bool
+std/traits.category.cn:191:11 [call] type_kind
+std/traits.category.cn:192:9 [ctor_pat] type_kind
+std/traits.category.cn:192:29 [literal] bool
+std/traits.category.cn:193:9 [wildcard_pat] type_kind
+std/traits.category.cn:193:21 [literal] bool
+std/traits.category.cn:201:40 [named_type] bool
+std/traits.category.cn:202:12 [call] str
+std/traits.category.cn:202:12 [binary] bool
+std/traits.category.cn:202:24 [call] str
+std/traits.category.cn:223:51 [named_type] bool
+std/traits.category.cn:224:12 [ident] _
+std/traits.category.cn:224:12 [call] fn() -> bool
+std/traits.category.cn:224:12 [call] bool
+std/traits.category.cn:224:12 [binary] bool
+std/traits.category.cn:224:35 [ident] _
+std/traits.category.cn:224:35 [call] bool
+std/traits.category.cn:228:43 [named_type] type_category
+std/traits.category.cn:229:9 [binding_pat] str
+std/traits.category.cn:229:13 [call] str
+std/traits.category.cn:230:8 [ident] str
+std/traits.category.cn:230:8 [binary] bool
+std/traits.category.cn:230:13 [literal] str
+std/traits.category.cn:231:16 [ident] type_category
+std/traits.category.cn:232:8 [ident] str
+std/traits.category.cn:232:8 [binary] bool
+std/traits.category.cn:232:13 [literal] str
+std/traits.category.cn:233:16 [ident] type_category
+std/traits.category.cn:234:8 [group] bool
+std/traits.category.cn:234:9 [ident] str
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:9 [binary] bool
+std/traits.category.cn:234:14 [literal] str
+std/traits.category.cn:234:24 [ident] str
+std/traits.category.cn:234:24 [binary] bool
+std/traits.category.cn:234:29 [literal] str
+std/traits.category.cn:234:40 [ident] str
+std/traits.category.cn:234:40 [binary] bool
+std/traits.category.cn:234:45 [literal] str
+std/traits.category.cn:234:56 [ident] str
+std/traits.category.cn:234:56 [binary] bool
+std/traits.category.cn:234:61 [literal] str
+std/traits.category.cn:235:9 [ident] str
+std/traits.category.cn:235:9 [binary] bool
+std/traits.category.cn:235:14 [literal] str
+std/traits.category.cn:235:26 [ident] str
+std/traits.category.cn:235:26 [binary] bool
+std/traits.category.cn:235:31 [literal] str
+std/traits.category.cn:236:16 [ident] type_category
+std/traits.category.cn:237:8 [group] bool
+std/traits.category.cn:237:9 [ident] str
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:9 [binary] bool
+std/traits.category.cn:237:14 [literal] str
+std/traits.category.cn:237:25 [ident] str
+std/traits.category.cn:237:25 [binary] bool
+std/traits.category.cn:237:30 [literal] str
+std/traits.category.cn:237:42 [ident] str
+std/traits.category.cn:237:42 [binary] bool
+std/traits.category.cn:237:47 [literal] str
+std/traits.category.cn:237:59 [ident] str
+std/traits.category.cn:237:59 [binary] bool
+std/traits.category.cn:237:64 [literal] str
+std/traits.category.cn:238:9 [ident] str
+std/traits.category.cn:238:9 [binary] bool
+std/traits.category.cn:238:14 [literal] str
+std/traits.category.cn:238:27 [ident] str
+std/traits.category.cn:238:27 [binary] bool
+std/traits.category.cn:238:32 [literal] str
+std/traits.category.cn:238:43 [ident] str
+std/traits.category.cn:238:43 [binary] bool
+std/traits.category.cn:238:48 [literal] str
+std/traits.category.cn:239:16 [ident] type_category
+std/traits.category.cn:240:8 [ident] str
+std/traits.category.cn:240:8 [binary] bool
+std/traits.category.cn:240:8 [binary] bool
+std/traits.category.cn:240:8 [binary] bool
+std/traits.category.cn:240:13 [literal] str
+std/traits.category.cn:240:26 [ident] str
+std/traits.category.cn:240:26 [binary] bool
+std/traits.category.cn:240:31 [literal] str
+std/traits.category.cn:240:44 [ident] str
+std/traits.category.cn:240:44 [binary] bool
+std/traits.category.cn:240:49 [literal] str
+std/traits.category.cn:241:16 [ident] type_category
+std/traits.category.cn:242:8 [ident] str
+std/traits.category.cn:242:8 [binary] bool
+std/traits.category.cn:242:13 [literal] str
+std/traits.category.cn:243:16 [ident] type_category
+std/traits.category.cn:244:8 [ident] str
+std/traits.category.cn:244:8 [binary] bool
+std/traits.category.cn:244:8 [binary] bool
+std/traits.category.cn:244:8 [binary] bool
+std/traits.category.cn:244:13 [literal] str
+std/traits.category.cn:244:24 [ident] str
+std/traits.category.cn:244:24 [binary] bool
+std/traits.category.cn:244:29 [literal] str
+std/traits.category.cn:244:40 [ident] str
+std/traits.category.cn:244:40 [binary] bool
+std/traits.category.cn:244:45 [literal] str
+std/traits.category.cn:245:16 [ident] type_category
+std/traits.category.cn:246:8 [ident] str
+std/traits.category.cn:246:8 [binary] bool
+std/traits.category.cn:246:13 [literal] str
+std/traits.category.cn:247:16 [ident] type_category
+std/traits.category.cn:248:11 [call] type_kind
+std/traits.category.cn:249:9 [ctor_pat] type_kind
+std/traits.category.cn:249:32 [ident] type_category
+std/traits.category.cn:250:9 [ctor_pat] type_kind
+std/traits.category.cn:250:29 [ident] type_category
+std/traits.category.cn:251:9 [ctor_pat] type_kind
+std/traits.category.cn:251:28 [ident] type_category
+std/traits.category.cn:252:9 [wildcard_pat] type_kind
+std/traits.category.cn:252:21 [ident] type_category
 std/traits.cn:10:14 [binding_pat] self
 std/traits.cn:10:27 [named_type] unit
 std/traits.cn:22:15 [binding_pat] self
@@ -11586,6 +11718,7 @@ std/traits.cn:58:17 [binding_pat] (int64, int32)
 std/traits.cn:58:17 [binding_pat] (usize, usize)
 std/traits.cn:58:17 [binding_pat] T
 std/traits.cn:58:17 [binding_pat] byte
+std/traits.cn:58:17 [binding_pat] field_info
 std/traits.cn:58:17 [binding_pat] int32
 std/traits.cn:58:17 [binding_pat] int64
 std/traits.cn:58:17 [binding_pat] money
@@ -11594,6 +11727,9 @@ std/traits.cn:58:17 [binding_pat] test_case
 std/traits.cn:58:17 [binding_pat] test_suite
 std/traits.cn:58:17 [binding_pat] uint32
 std/traits.cn:58:17 [binding_pat] usize
+std/traits.cn:58:17 [binding_pat] variant_info
+std/traits.cn:58:26 [named_type] unit
+std/traits.cn:58:26 [named_type] unit
 std/traits.cn:58:26 [named_type] unit
 std/traits.cn:58:26 [named_type] unit
 std/traits.cn:58:26 [named_type] unit
@@ -30888,7 +31024,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (809)
+## call_argument_mappings (819)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -31415,6 +31551,10 @@ std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
 std/list.cn:187:9 [call] (p=arg, count=arg)
+std/list.cn:187:9 [call] (p=arg, count=arg)
+std/list.cn:187:9 [call] (p=arg, count=arg)
+std/list.cn:188:9 [call] (p=arg, count=arg)
+std/list.cn:188:9 [call] (p=arg, count=arg)
 std/list.cn:188:9 [call] (p=arg, count=arg)
 std/list.cn:188:9 [call] (p=arg, count=arg)
 std/list.cn:188:9 [call] (p=arg, count=arg)
@@ -31532,6 +31672,8 @@ std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:55:5 [call] (p=arg, bytes=arg)
+std/mem.cn:55:5 [call] (p=arg, bytes=arg)
+std/mem.cn:55:5 [call] (p=arg, bytes=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
@@ -31544,6 +31686,10 @@ std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
 std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:79:9 [call] (x=arg)
+std/mem.cn:89:13 [call] (p=arg)
+std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
@@ -31603,21 +31749,21 @@ std/test.cn:160:36 [call] (name=arg, outcome=arg)
 std/test.cn:167:36 [call] (name=arg, outcome=arg)
 std/test.cn:175:20 [call] (name=arg, outcome=arg)
 std/test.cn:181:5 [call] (s=arg)
-std/traits.category.cn:68:12 [call] ()
-std/traits.category.cn:68:38 [call] ()
-std/traits.category.cn:77:12 [call] ()
-std/traits.category.cn:77:31 [call] ()
-std/traits.category.cn:94:5 [call] ()
-std/traits.category.cn:98:5 [call] ()
-std/traits.category.cn:102:5 [call] ()
-std/traits.category.cn:108:12 [call] ()
-std/traits.category.cn:112:5 [call] ()
-std/traits.category.cn:116:5 [call] ()
-std/traits.category.cn:116:35 [call] ()
-std/traits.category.cn:120:12 [call] ()
-std/traits.category.cn:120:31 [call] ()
-std/traits.category.cn:120:47 [call] ()
-std/traits.category.cn:211:12 [call] ()
+std/traits.category.cn:81:12 [call] ()
+std/traits.category.cn:81:38 [call] ()
+std/traits.category.cn:90:12 [call] ()
+std/traits.category.cn:90:31 [call] ()
+std/traits.category.cn:107:5 [call] ()
+std/traits.category.cn:111:5 [call] ()
+std/traits.category.cn:115:5 [call] ()
+std/traits.category.cn:121:12 [call] ()
+std/traits.category.cn:125:5 [call] ()
+std/traits.category.cn:129:5 [call] ()
+std/traits.category.cn:129:35 [call] ()
+std/traits.category.cn:133:12 [call] ()
+std/traits.category.cn:133:31 [call] ()
+std/traits.category.cn:133:47 [call] ()
+std/traits.category.cn:224:12 [call] ()
 std/traits.cn:49:5 [call] ()
 std/traits.cn:49:23 [call] ()
 std/traits.cn:49:38 [call] ()
@@ -31699,7 +31845,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (464)
+## resolved_callees (474)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -31983,6 +32129,7 @@ std/list.cn:187:9 [call] std.mem::drop_range
 std/list.cn:187:9 [call] std.mem::drop_range$_int64__int32_
 std/list.cn:187:9 [call] std.mem::drop_range$_usize__usize_
 std/list.cn:187:9 [call] std.mem::drop_range$byte
+std/list.cn:187:9 [call] std.mem::drop_range$field_info
 std/list.cn:187:9 [call] std.mem::drop_range$int32
 std/list.cn:187:9 [call] std.mem::drop_range$int64
 std/list.cn:187:9 [call] std.mem::drop_range$money
@@ -31991,10 +32138,12 @@ std/list.cn:187:9 [call] std.mem::drop_range$test_case
 std/list.cn:187:9 [call] std.mem::drop_range$test_suite
 std/list.cn:187:9 [call] std.mem::drop_range$uint32
 std/list.cn:187:9 [call] std.mem::drop_range$usize
+std/list.cn:187:9 [call] std.mem::drop_range$variant_info
 std/list.cn:188:9 [call] std.mem::free
 std/list.cn:188:9 [call] std.mem::free$_int64__int32_
 std/list.cn:188:9 [call] std.mem::free$_usize__usize_
 std/list.cn:188:9 [call] std.mem::free$byte
+std/list.cn:188:9 [call] std.mem::free$field_info
 std/list.cn:188:9 [call] std.mem::free$int32
 std/list.cn:188:9 [call] std.mem::free$int64
 std/list.cn:188:9 [call] std.mem::free$money
@@ -32003,6 +32152,7 @@ std/list.cn:188:9 [call] std.mem::free$test_case
 std/list.cn:188:9 [call] std.mem::free$test_suite
 std/list.cn:188:9 [call] std.mem::free$uint32
 std/list.cn:188:9 [call] std.mem::free$usize
+std/list.cn:188:9 [call] std.mem::free$variant_info
 std/list.cn:196:13 [call] std.panic::panic
 std/list.cn:196:13 [call] std.panic::panic
 std/list.cn:196:13 [call] std.panic::panic
@@ -32108,10 +32258,13 @@ std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:55:5 [call] std.intrinsics::rt_free
+std/mem.cn:55:5 [call] std.intrinsics::rt_free
+std/mem.cn:55:5 [call] std.intrinsics::rt_free
 std/mem.cn:79:9 [call] std.traits::drop
 std/mem.cn:79:9 [call] std.traits::drop$_int64__int32_
 std/mem.cn:79:9 [call] std.traits::drop$_usize__usize_
 std/mem.cn:79:9 [call] std.traits::drop$byte
+std/mem.cn:79:9 [call] std.traits::drop$field_info
 std/mem.cn:79:9 [call] std.traits::drop$int32
 std/mem.cn:79:9 [call] std.traits::drop$int64
 std/mem.cn:79:9 [call] std.traits::drop$money
@@ -32120,9 +32273,11 @@ std/mem.cn:79:9 [call] std.traits::drop$test_case
 std/mem.cn:79:9 [call] std.traits::drop$test_suite
 std/mem.cn:79:9 [call] std.traits::drop$uint32
 std/mem.cn:79:9 [call] std.traits::drop$usize
+std/mem.cn:79:9 [call] std.traits::drop$variant_info
 std/mem.cn:89:13 [call] std.mem::drop_in_place$_int64__int32_
 std/mem.cn:89:13 [call] std.mem::drop_in_place$_usize__usize_
 std/mem.cn:89:13 [call] std.mem::drop_in_place$byte
+std/mem.cn:89:13 [call] std.mem::drop_in_place$field_info
 std/mem.cn:89:13 [call] std.mem::drop_in_place$int32
 std/mem.cn:89:13 [call] std.mem::drop_in_place$int64
 std/mem.cn:89:13 [call] std.mem::drop_in_place$money
@@ -32131,6 +32286,7 @@ std/mem.cn:89:13 [call] std.mem::drop_in_place$test_case
 std/mem.cn:89:13 [call] std.mem::drop_in_place$test_suite
 std/mem.cn:89:13 [call] std.mem::drop_in_place$uint32
 std/mem.cn:89:13 [call] std.mem::drop_in_place$usize
+std/mem.cn:89:13 [call] std.mem::drop_in_place$variant_info
 std/mem.cn:102:12 [call] std.intrinsics::rt_atomic_fetch_add
 std/mem.cn:110:12 [call] std.intrinsics::rt_atomic_fetch_sub
 std/option.cn:26:22 [call] std.panic::panic
@@ -32171,7 +32327,7 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 091_unannotated_accumulator_in_generic.cn:42:28 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i32
 091_unannotated_accumulator_in_generic.cn:43:27 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i64
 
-## operator_dispatches (99)
+## operator_dispatches (101)
 089_elaboration_snapshot_gaps.cn:72:8 [binary] codegen_stress.elaboration_snapshot_gaps::weight::cmp recv
 110_instances_by_substitution.cn:58:15 [binary] codegen_stress.instances_by_substitution::money::add recv
 110_instances_by_substitution.cn:66:12 [binary] codegen_stress.instances_by_substitution::money::cmp recv
@@ -32183,6 +32339,8 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
+std/deriving.cn:213:16 [binary] std.string::str::eq recv
+std/deriving.cn:253:16 [binary] std.string::str::eq recv
 std/limits.cn:37:15 [binary] std.string::str::eq recv
 std/limits.cn:39:15 [binary] std.string::str::eq recv
 std/limits.cn:41:15 [binary] std.string::str::eq recv
@@ -32205,64 +32363,64 @@ std/limits.cn:71:15 [binary] std.string::str::eq recv
 std/limits.cn:73:15 [binary] std.string::str::eq recv
 std/limits.cn:89:8 [binary] std.string::str::eq recv
 std/limits.cn:91:8 [binary] std.string::str::eq recv
-std/traits.category.cn:48:12 [binary] std.string::str::eq recv
-std/traits.category.cn:52:12 [binary] std.string::str::eq recv
-std/traits.category.cn:57:13 [binary] std.string::str::eq recv
-std/traits.category.cn:57:28 [binary] std.string::str::eq recv
-std/traits.category.cn:57:44 [binary] std.string::str::eq recv
-std/traits.category.cn:57:60 [binary] std.string::str::eq recv
-std/traits.category.cn:58:9 [binary] std.string::str::eq recv
-std/traits.category.cn:58:26 [binary] std.string::str::eq recv
-std/traits.category.cn:63:13 [binary] std.string::str::eq recv
-std/traits.category.cn:63:29 [binary] std.string::str::eq recv
-std/traits.category.cn:63:46 [binary] std.string::str::eq recv
-std/traits.category.cn:63:63 [binary] std.string::str::eq recv
-std/traits.category.cn:64:9 [binary] std.string::str::eq recv
-std/traits.category.cn:64:27 [binary] std.string::str::eq recv
-std/traits.category.cn:64:43 [binary] std.string::str::eq recv
-std/traits.category.cn:73:12 [binary] std.string::str::eq recv
-std/traits.category.cn:73:30 [binary] std.string::str::eq recv
-std/traits.category.cn:73:48 [binary] std.string::str::eq recv
-std/traits.category.cn:94:32 [binary] std.string::str::eq recv
-std/traits.category.cn:98:34 [binary] std.string::str::eq recv
-std/traits.category.cn:108:32 [binary] std.string::str::eq recv
-std/traits.category.cn:108:50 [binary] std.string::str::eq recv
-std/traits.category.cn:112:23 [binary] std.string::str::eq recv
-std/traits.category.cn:116:53 [binary] std.string::str::eq recv
-std/traits.category.cn:124:12 [binary] std.string::str::eq recv
-std/traits.category.cn:128:12 [binary] std.string::str::eq recv
-std/traits.category.cn:132:12 [binary] std.string::str::eq recv
+std/traits.category.cn:61:12 [binary] std.string::str::eq recv
+std/traits.category.cn:65:12 [binary] std.string::str::eq recv
+std/traits.category.cn:70:13 [binary] std.string::str::eq recv
+std/traits.category.cn:70:28 [binary] std.string::str::eq recv
+std/traits.category.cn:70:44 [binary] std.string::str::eq recv
+std/traits.category.cn:70:60 [binary] std.string::str::eq recv
+std/traits.category.cn:71:9 [binary] std.string::str::eq recv
+std/traits.category.cn:71:26 [binary] std.string::str::eq recv
+std/traits.category.cn:76:13 [binary] std.string::str::eq recv
+std/traits.category.cn:76:29 [binary] std.string::str::eq recv
+std/traits.category.cn:76:46 [binary] std.string::str::eq recv
+std/traits.category.cn:76:63 [binary] std.string::str::eq recv
+std/traits.category.cn:77:9 [binary] std.string::str::eq recv
+std/traits.category.cn:77:27 [binary] std.string::str::eq recv
+std/traits.category.cn:77:43 [binary] std.string::str::eq recv
+std/traits.category.cn:86:12 [binary] std.string::str::eq recv
+std/traits.category.cn:86:30 [binary] std.string::str::eq recv
+std/traits.category.cn:86:48 [binary] std.string::str::eq recv
+std/traits.category.cn:107:32 [binary] std.string::str::eq recv
+std/traits.category.cn:111:34 [binary] std.string::str::eq recv
+std/traits.category.cn:121:32 [binary] std.string::str::eq recv
+std/traits.category.cn:121:50 [binary] std.string::str::eq recv
+std/traits.category.cn:125:23 [binary] std.string::str::eq recv
+std/traits.category.cn:129:53 [binary] std.string::str::eq recv
 std/traits.category.cn:137:12 [binary] std.string::str::eq recv
-std/traits.category.cn:137:28 [binary] std.string::str::eq recv
-std/traits.category.cn:146:12 [binary] std.string::str::eq recv
+std/traits.category.cn:141:12 [binary] std.string::str::eq recv
+std/traits.category.cn:145:12 [binary] std.string::str::eq recv
 std/traits.category.cn:150:12 [binary] std.string::str::eq recv
-std/traits.category.cn:154:12 [binary] std.string::str::eq recv
-std/traits.category.cn:158:12 [binary] std.string::str::eq recv
-std/traits.category.cn:162:12 [binary] std.string::str::eq recv
-std/traits.category.cn:189:12 [binary] std.string::str::eq recv
-std/traits.category.cn:217:8 [binary] std.string::str::eq recv
-std/traits.category.cn:219:8 [binary] std.string::str::eq recv
-std/traits.category.cn:221:9 [binary] std.string::str::eq recv
-std/traits.category.cn:221:24 [binary] std.string::str::eq recv
-std/traits.category.cn:221:40 [binary] std.string::str::eq recv
-std/traits.category.cn:221:56 [binary] std.string::str::eq recv
-std/traits.category.cn:222:9 [binary] std.string::str::eq recv
-std/traits.category.cn:222:26 [binary] std.string::str::eq recv
-std/traits.category.cn:224:9 [binary] std.string::str::eq recv
-std/traits.category.cn:224:25 [binary] std.string::str::eq recv
-std/traits.category.cn:224:42 [binary] std.string::str::eq recv
-std/traits.category.cn:224:59 [binary] std.string::str::eq recv
-std/traits.category.cn:225:9 [binary] std.string::str::eq recv
-std/traits.category.cn:225:27 [binary] std.string::str::eq recv
-std/traits.category.cn:225:43 [binary] std.string::str::eq recv
-std/traits.category.cn:227:8 [binary] std.string::str::eq recv
-std/traits.category.cn:227:26 [binary] std.string::str::eq recv
-std/traits.category.cn:227:44 [binary] std.string::str::eq recv
-std/traits.category.cn:229:8 [binary] std.string::str::eq recv
-std/traits.category.cn:231:8 [binary] std.string::str::eq recv
-std/traits.category.cn:231:24 [binary] std.string::str::eq recv
-std/traits.category.cn:231:40 [binary] std.string::str::eq recv
-std/traits.category.cn:233:8 [binary] std.string::str::eq recv
+std/traits.category.cn:150:28 [binary] std.string::str::eq recv
+std/traits.category.cn:159:12 [binary] std.string::str::eq recv
+std/traits.category.cn:163:12 [binary] std.string::str::eq recv
+std/traits.category.cn:167:12 [binary] std.string::str::eq recv
+std/traits.category.cn:171:12 [binary] std.string::str::eq recv
+std/traits.category.cn:175:12 [binary] std.string::str::eq recv
+std/traits.category.cn:202:12 [binary] std.string::str::eq recv
+std/traits.category.cn:230:8 [binary] std.string::str::eq recv
+std/traits.category.cn:232:8 [binary] std.string::str::eq recv
+std/traits.category.cn:234:9 [binary] std.string::str::eq recv
+std/traits.category.cn:234:24 [binary] std.string::str::eq recv
+std/traits.category.cn:234:40 [binary] std.string::str::eq recv
+std/traits.category.cn:234:56 [binary] std.string::str::eq recv
+std/traits.category.cn:235:9 [binary] std.string::str::eq recv
+std/traits.category.cn:235:26 [binary] std.string::str::eq recv
+std/traits.category.cn:237:9 [binary] std.string::str::eq recv
+std/traits.category.cn:237:25 [binary] std.string::str::eq recv
+std/traits.category.cn:237:42 [binary] std.string::str::eq recv
+std/traits.category.cn:237:59 [binary] std.string::str::eq recv
+std/traits.category.cn:238:9 [binary] std.string::str::eq recv
+std/traits.category.cn:238:27 [binary] std.string::str::eq recv
+std/traits.category.cn:238:43 [binary] std.string::str::eq recv
+std/traits.category.cn:240:8 [binary] std.string::str::eq recv
+std/traits.category.cn:240:26 [binary] std.string::str::eq recv
+std/traits.category.cn:240:44 [binary] std.string::str::eq recv
+std/traits.category.cn:242:8 [binary] std.string::str::eq recv
+std/traits.category.cn:244:8 [binary] std.string::str::eq recv
+std/traits.category.cn:244:24 [binary] std.string::str::eq recv
+std/traits.category.cn:244:40 [binary] std.string::str::eq recv
+std/traits.category.cn:246:8 [binary] std.string::str::eq recv
 std/unicode.cn:119:23 [binary] std.string::str::add recv
 std/unicode.cn:121:23 [binary] std.string::str::add recv
 std/unicode.cn:123:23 [binary] std.string::str::add recv
@@ -32578,7 +32736,7 @@ std/traits.scalar.cn:297:18 [ident] debug spec='?' value=float64
 ## runtime_fill_dispatches (1)
 089_elaboration_snapshot_gaps.cn:97:18 [array] list=list[int32] new=std.list::list::new$list_int32_ push=std.list::list::push$list_int32_
 
-## layout_queries (68)
+## layout_queries (74)
 std/mem.cn:30:32 [call] size of (int64, int32)
 std/mem.cn:30:32 [call] size of (usize, usize)
 std/mem.cn:30:32 [call] size of T
@@ -32615,6 +32773,7 @@ std/mem.cn:55:40 [call] size of (int64, int32)
 std/mem.cn:55:40 [call] size of (usize, usize)
 std/mem.cn:55:40 [call] size of T
 std/mem.cn:55:40 [call] size of byte
+std/mem.cn:55:40 [call] size of field_info
 std/mem.cn:55:40 [call] size of int32
 std/mem.cn:55:40 [call] size of int64
 std/mem.cn:55:40 [call] size of money
@@ -32623,10 +32782,12 @@ std/mem.cn:55:40 [call] size of test_case
 std/mem.cn:55:40 [call] size of test_suite
 std/mem.cn:55:40 [call] size of uint32
 std/mem.cn:55:40 [call] size of usize
+std/mem.cn:55:40 [call] size of variant_info
 std/mem.cn:78:8 [call] needs_drop of (int64, int32)
 std/mem.cn:78:8 [call] needs_drop of (usize, usize)
 std/mem.cn:78:8 [call] needs_drop of T
 std/mem.cn:78:8 [call] needs_drop of byte
+std/mem.cn:78:8 [call] needs_drop of field_info
 std/mem.cn:78:8 [call] needs_drop of int32
 std/mem.cn:78:8 [call] needs_drop of int64
 std/mem.cn:78:8 [call] needs_drop of money
@@ -32635,10 +32796,12 @@ std/mem.cn:78:8 [call] needs_drop of test_case
 std/mem.cn:78:8 [call] needs_drop of test_suite
 std/mem.cn:78:8 [call] needs_drop of uint32
 std/mem.cn:78:8 [call] needs_drop of usize
+std/mem.cn:78:8 [call] needs_drop of variant_info
 std/mem.cn:86:8 [call] needs_drop of (int64, int32)
 std/mem.cn:86:8 [call] needs_drop of (usize, usize)
 std/mem.cn:86:8 [call] needs_drop of T
 std/mem.cn:86:8 [call] needs_drop of byte
+std/mem.cn:86:8 [call] needs_drop of field_info
 std/mem.cn:86:8 [call] needs_drop of int32
 std/mem.cn:86:8 [call] needs_drop of int64
 std/mem.cn:86:8 [call] needs_drop of money
@@ -32647,8 +32810,9 @@ std/mem.cn:86:8 [call] needs_drop of test_case
 std/mem.cn:86:8 [call] needs_drop of test_suite
 std/mem.cn:86:8 [call] needs_drop of uint32
 std/mem.cn:86:8 [call] needs_drop of usize
+std/mem.cn:86:8 [call] needs_drop of variant_info
 
-## ptr_casts (50)
+## ptr_casts (52)
 std/mem.cn:31:12 [call] *mut (int64, int32)
 std/mem.cn:31:12 [call] *mut (usize, usize)
 std/mem.cn:31:12 [call] *mut T
@@ -32681,6 +32845,8 @@ std/mem.cn:45:12 [call] *mut str
 std/mem.cn:45:12 [call] *mut test_suite
 std/mem.cn:45:12 [call] *mut uint32
 std/mem.cn:45:12 [call] *mut usize
+std/mem.cn:55:13 [call] *mut byte
+std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
 std/mem.cn:55:13 [call] *mut byte
@@ -32870,7 +33036,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (663)
+## drop_plans (671)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33089,6 +33255,8 @@ fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
 fn(*mut byte) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize, usize) -> *mut byte own=- fields=[] glue=fn() -> unit
+fn(*mut field_info) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut field_info, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut int32, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut int32, usize, usize) -> *mut int32 own=- fields=[] glue=fn() -> unit
@@ -33114,6 +33282,8 @@ fn(*mut usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize, usize) -> *mut usize own=- fields=[] glue=fn() -> unit
+fn(*mut variant_info) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut variant_info, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
@@ -33328,6 +33498,7 @@ fn(connection[open], int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(counter) -> int32 own=- fields=[] glue=fn() -> unit
 fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32] own=- fields=[] glue=fn() -> unit
 fn(counter, fn(int32) -> int32) -> map_iter[counter, int32, int32] own=- fields=[] glue=fn() -> unit
+fn(field_info) -> unit own=- fields=[] glue=fn() -> unit
 fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32] own=- fields=[] glue=fn() -> unit
 fn(float32) -> uint32 own=- fields=[] glue=fn() -> unit
 fn(float64) -> uint64 own=- fields=[] glue=fn() -> unit
@@ -33431,6 +33602,7 @@ fn(usize) -> *mut usize own=- fields=[] glue=fn() -> unit
 fn(usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(usize) -> usize own=- fields=[] glue=fn() -> unit
+fn(variant_info) -> unit own=- fields=[] glue=fn() -> unit
 fn(vec[T, k + 1], vec[T, 2]) -> vec[T, k + 3] own=- fields=[] glue=fn() -> unit
 fn(vec[T, m], vec[T, n]) -> vec[T, m + n] own=- fields=[] glue=fn() -> unit
 fn(vec[T, m], vec[T, n]) -> vec[T, m + n] own=- fields=[] glue=fn() -> unit
@@ -33478,6 +33650,7 @@ list[T] own=std.list::list::drop fields=[]
 list[U] own=std.list::list::drop fields=[]
 list[_] own=std.list::list::drop fields=[]
 list[byte] own=std.list::list::drop$list_byte_ fields=[]
+list[field_info] own=std.list::list::drop$list_field_info_ fields=[]
 list[int32] own=std.list::list::drop$list_int32_ fields=[]
 list[int64] own=std.list::list::drop$list_int64_ fields=[]
 list[money] own=std.list::list::drop$list_money_ fields=[]
@@ -33488,6 +33661,7 @@ list[test_case] own=std.list::list::drop$list_test_case_ fields=[]
 list[test_suite] own=std.list::list::drop$list_test_suite_ fields=[]
 list[uint32] own=std.list::list::drop$list_uint32_ fields=[]
 list[usize] own=std.list::list::drop$list_usize_ fields=[]
+list[variant_info] own=std.list::list::drop$list_variant_info_ fields=[]
 list_into_iter own=- fields=[src: list[_]]
 list_into_iter[(int64, int32)] own=std.iter::list_into_iter::drop$list_into_iter__int64__int32__ fields=[src: list[(int64, int32)]]
 list_into_iter[T] own=std.iter::list_into_iter::drop fields=[src: list[T]]
@@ -33535,7 +33709,7 @@ take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1688)
+## borrow_bearing_types (1696)
 &K
 &T
 &T
@@ -33689,6 +33863,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &mut list[_]
 &mut list[_]
 &mut list[byte]
+&mut list[field_info]
 &mut list[int32]
 &mut list[int64]
 &mut list[money]
@@ -33697,6 +33872,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &mut list[test_suite]
 &mut list[uint32]
 &mut list[usize]
+&mut list[variant_info]
 &mut list_into_iter[(int64, int32)]
 &mut list_into_iter[T]
 &mut list_into_iter[T]
@@ -34559,6 +34735,8 @@ fn(*mut T, usize, usize) -> *mut T
 fn(*mut byte) -> unit
 fn(*mut byte, usize) -> unit
 fn(*mut byte, usize, usize) -> *mut byte
+fn(*mut field_info) -> unit
+fn(*mut field_info, usize) -> unit
 fn(*mut int32) -> unit
 fn(*mut int32, usize) -> unit
 fn(*mut int32, usize, usize) -> *mut int32
@@ -34584,6 +34762,8 @@ fn(*mut usize) -> unit
 fn(*mut usize, usize) -> unit
 fn(*mut usize, usize) -> usize
 fn(*mut usize, usize, usize) -> *mut usize
+fn(*mut variant_info) -> unit
+fn(*mut variant_info, usize) -> unit
 fn(A) -> B
 fn(A) -> B
 fn(A) -> B
@@ -34819,6 +34999,7 @@ fn(connection[open], int32) -> unit
 fn(counter) -> int32
 fn(counter, fn(int32) -> bool) -> filter_iter[counter, int32]
 fn(counter, fn(int32) -> int32) -> map_iter[counter, int32, int32]
+fn(field_info) -> unit
 fn(filter_iter[counter, int32], fn(int32) -> int32) -> map_iter[filter_iter[counter, int32], int32, int32]
 fn(float32) -> uint32
 fn(float64) -> uint64
@@ -34922,6 +35103,7 @@ fn(usize) -> *mut usize
 fn(usize) -> int32
 fn(usize) -> unit
 fn(usize) -> usize
+fn(variant_info) -> unit
 fn(vec[T, k + 1], vec[T, 2]) -> vec[T, k + 3]
 fn(vec[T, m], vec[T, n]) -> vec[T, m + n]
 fn(vec[T, m], vec[T, n]) -> vec[T, m + n]
@@ -35298,7 +35480,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (240)
+## const_generic_instances (250)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -35409,6 +35591,7 @@ std.list::list::cell$list_int32_
 std.list::list::drop$list__int64__int32__
 std.list::list::drop$list__usize__usize__
 std.list::list::drop$list_byte_
+std.list::list::drop$list_field_info_
 std.list::list::drop$list_int32_
 std.list::list::drop$list_int64_
 std.list::list::drop$list_money_
@@ -35417,6 +35600,7 @@ std.list::list::drop$list_test_case_
 std.list::list::drop$list_test_suite_
 std.list::list::drop$list_uint32_
 std.list::list::drop$list_usize_
+std.list::list::drop$list_variant_info_
 std.list::list::from_array$0$list__usize__usize__
 std.list::list::from_array$0$list_int32_
 std.list::list::from_array$0$list_int64_
@@ -35486,6 +35670,7 @@ std.mem::alloc$usize
 std.mem::drop_in_place$_int64__int32_
 std.mem::drop_in_place$_usize__usize_
 std.mem::drop_in_place$byte
+std.mem::drop_in_place$field_info
 std.mem::drop_in_place$int32
 std.mem::drop_in_place$int64
 std.mem::drop_in_place$money
@@ -35494,9 +35679,11 @@ std.mem::drop_in_place$test_case
 std.mem::drop_in_place$test_suite
 std.mem::drop_in_place$uint32
 std.mem::drop_in_place$usize
+std.mem::drop_in_place$variant_info
 std.mem::drop_range$_int64__int32_
 std.mem::drop_range$_usize__usize_
 std.mem::drop_range$byte
+std.mem::drop_range$field_info
 std.mem::drop_range$int32
 std.mem::drop_range$int64
 std.mem::drop_range$money
@@ -35505,9 +35692,11 @@ std.mem::drop_range$test_case
 std.mem::drop_range$test_suite
 std.mem::drop_range$uint32
 std.mem::drop_range$usize
+std.mem::drop_range$variant_info
 std.mem::free$_int64__int32_
 std.mem::free$_usize__usize_
 std.mem::free$byte
+std.mem::free$field_info
 std.mem::free$int32
 std.mem::free$int64
 std.mem::free$money
@@ -35516,6 +35705,7 @@ std.mem::free$test_case
 std.mem::free$test_suite
 std.mem::free$uint32
 std.mem::free$usize
+std.mem::free$variant_info
 std.mem::resize$_int64__int32_
 std.mem::resize$_usize__usize_
 std.mem::resize$byte
@@ -35529,6 +35719,7 @@ std.mem::resize$usize
 std.traits::drop$_int64__int32_
 std.traits::drop$_usize__usize_
 std.traits::drop$byte
+std.traits::drop$field_info
 std.traits::drop$int32
 std.traits::drop$int64
 std.traits::drop$money
@@ -35537,6 +35728,7 @@ std.traits::drop$test_case
 std.traits::drop$test_suite
 std.traits::drop$uint32
 std.traits::drop$usize
+std.traits::drop$variant_info
 stress.dependent_types::head$int32$6
 stress.dependent_types::safe_get$int32$8
 
@@ -35546,7 +35738,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (243)
+## synthesized_decls (253)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$int32
@@ -35584,6 +35776,7 @@ doubler::next$doubler_map_iter_counter__int32__int32__
 drop$_int64__int32_
 drop$_usize__usize_
 drop$byte
+drop$field_info
 drop$int32
 drop$int64
 drop$money
@@ -35592,9 +35785,11 @@ drop$test_case
 drop$test_suite
 drop$uint32
 drop$usize
+drop$variant_info
 drop_in_place$_int64__int32_
 drop_in_place$_usize__usize_
 drop_in_place$byte
+drop_in_place$field_info
 drop_in_place$int32
 drop_in_place$int64
 drop_in_place$money
@@ -35603,9 +35798,11 @@ drop_in_place$test_case
 drop_in_place$test_suite
 drop_in_place$uint32
 drop_in_place$usize
+drop_in_place$variant_info
 drop_range$_int64__int32_
 drop_range$_usize__usize_
 drop_range$byte
+drop_range$field_info
 drop_range$int32
 drop_range$int64
 drop_range$money
@@ -35614,6 +35811,7 @@ drop_range$test_case
 drop_range$test_suite
 drop_range$uint32
 drop_range$usize
+drop_range$variant_info
 example_type::make$example_type_int32_
 filled$4$int32
 filter$counter$int32
@@ -35625,6 +35823,7 @@ framed$money
 free$_int64__int32_
 free$_usize__usize_
 free$byte
+free$field_info
 free$int32
 free$int64
 free$money
@@ -35633,6 +35832,7 @@ free$test_case
 free$test_suite
 free$uint32
 free$usize
+free$variant_info
 get$3
 get$5
 get_or$int32
@@ -35677,6 +35877,7 @@ list::cell$list_int32_
 list::drop$list__int64__int32__
 list::drop$list__usize__usize__
 list::drop$list_byte_
+list::drop$list_field_info_
 list::drop$list_int32_
 list::drop$list_int64_
 list::drop$list_money_
@@ -35685,6 +35886,7 @@ list::drop$list_test_case_
 list::drop$list_test_suite_
 list::drop$list_uint32_
 list::drop$list_usize_
+list::drop$list_variant_info_
 list::from_array$0$list__usize__usize__
 list::from_array$0$list_int32_
 list::from_array$0$list_int64_

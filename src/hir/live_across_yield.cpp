@@ -215,6 +215,11 @@ struct walker {
         walk_expr(*arg);
       }
       return;
+    case hir_node_kind::hir_host_call:
+      for (const auto &arg : dynamic_cast<const hir_host_call &>(expr).args) {
+        walk_expr(*arg);
+      }
+      return;
     case hir_node_kind::hir_stack_buffer:
       return; // a leaf: fixed size, no sub-expressions
     case hir_node_kind::hir_container_data:

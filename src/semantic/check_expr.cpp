@@ -1723,6 +1723,25 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
                             expected);
   case ast::node_kind::quote_expr: {
     const auto &quote = ast::cast<const ast::quote_expr>(expr);
+    // The splices evaluating the quote resolves are code that runs then,
+    // here, so they are checked here. A bare type parameter spliced into a
+    // type position (`~T`) names a type; it is not a value to check.
+    for (const auto *splice :
+         comptime::fragment_builder::eager_splices(quote)) {
+      const auto *operand =
+          splice->kind == ast::node_kind::splice_expr
+              ? ast::cast<const ast::splice_expr>(*splice).operand.get()
+              : ast::cast<const ast::splice_type>(*splice).operand.get();
+      if (operand == nullptr) {
+        continue;
+      }
+      if (const auto *ident = ast::as<const ast::ident_expr>(operand);
+          ident != nullptr && splice->kind == ast::node_kind::splice_type &&
+          lookup_type_param(ident->name).has_value()) {
+        continue;
+      }
+      infer_expr(*operand, k_unknown_type);
+    }
     switch (quote.fragment_kind) {
     case ast::quote_fragment_kind::stmt:
       return session_.types_.builtin("stmt");

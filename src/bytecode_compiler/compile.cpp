@@ -1470,6 +1470,9 @@ private:
     case hir_node_kind::hir_cell_set:
       return compile_cell_set(dynamic_cast<const hir::hir_cell_set &>(expr),
                               dst);
+    case hir_node_kind::hir_host_call:
+      return compile_host_call(dynamic_cast<const hir::hir_host_call &>(expr),
+                               dst);
     case hir_node_kind::hir_block:
       // A block used in expression position (e.g. a comprehension's
       // desugared accumulator block, `hir::lower_comprehension`) — its
@@ -2351,6 +2354,44 @@ private:
     emit_register(dst);
     emit_register(*object_reg);
     emit_register(*offset_reg);
+    return {};
+  }
+
+  /// Compiled form of `hir_host_call` — see `op_host_call`.
+  [[nodiscard]] auto compile_host_call(const hir::hir_host_call &call,
+                                       virtual_reg dst)
+      -> std::expected<void, compile_error> {
+    if (call.args.size() > 255) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = call.span,
+          .message = "more than 255 operands to a compile-time operation is "
+                     "not supported by this bytecode format"});
+    }
+    const auto argc = call.args.size();
+    const auto first_arg = argument_block(call.span, argc);
+    if (!first_arg.has_value()) {
+      return std::unexpected(first_arg.error());
+    }
+    auto site = bytecode::host_site{.operation = call.operation,
+                                    .subject = call.subject,
+                                    .arg_types = {},
+                                    .result_type = call.type,
+                                    .span = call.span};
+    for (size_t i = 0; i < argc; ++i) {
+      site.arg_types.push_back(call.args[i]->type);
+      if (auto result =
+              compile_expr_into(*call.args[i], nth_argument(*first_arg, i));
+          !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+    }
+    const auto index = writer_.add_host_site(std::move(site));
+    emit_op(opcode::op_host_call);
+    emit_register(dst);
+    writer_.emit_u16(index);
+    emit_register(*first_arg);
+    writer_.emit_u8(static_cast<uint8_t>(argc));
     return {};
   }
 

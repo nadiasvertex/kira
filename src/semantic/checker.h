@@ -459,6 +459,9 @@ private:
     /// to the caller via `take_checked_types`.
     std::unordered_map<const ast::call_expr *, type_param_reflection>
         type_param_reflections_;
+    /// See `lowering_results::reflection_folds`.
+    std::unordered_map<const ast::call_expr *, reified_value>
+        reflection_folds_;
 
     /// Every free, module-level `static def` registered for compile-time
     /// calling — see `checked_types::comptime_only_functions`'s doc comment,
@@ -638,6 +641,9 @@ private:
 
     /// See `checked_types::unreadable_static_refs`'s doc comment.
     std::unordered_map<const ast::node *, std::string> unreadable_static_refs_;
+    /// See `lowering_results::static_fragment_refs`.
+    std::unordered_map<const ast::node *, const ast::static_decl *>
+        static_fragment_refs_;
 
     /// See `checked_types::static_const_values`'s doc comment. Populated by
     /// `resolve_ident`.
@@ -3369,6 +3375,11 @@ private:
   auto prepare_for_lowering(const ast::func_decl &decl)
       -> std::expected<void, std::string>;
 
+  /// Projects the compile-time expression `expr` into the view — see
+  /// `comptime_program::prepare_expression`.
+  auto prepare_expression_for_lowering(const ast::expr &expr)
+      -> std::expected<void, std::string>;
+
   /// Projects the nodes a call into `decl` reads: its parameters and its
   /// return type.
   auto project_signature(const ast::func_decl &decl) -> void;
@@ -3395,6 +3406,10 @@ private:
   /// from) into the view — see `comptime_program::static_global`.
   auto project_static_global(std::string_view name)
       -> const lowering_results::static_global_def *;
+
+  /// Settles a reified value's types for the view and projects the
+  /// `from_array` conversions it is built with.
+  auto settle_reified(reified_value &value) -> void;
 
   /// The function lowered code calls as `name` in `module`.
   auto find_lowered_function(std::string_view module, std::string_view name)
@@ -3435,6 +3450,15 @@ private:
       const ast::func_decl &fn, std::span<const comptime::value> args,
       std::span<const std::pair<std::string, comptime::value>> type_args)
       -> comptime::evaluator::vm_call_outcome;
+
+  /// Runs the whole compile-time expression `expr` on `comptime_backend_`
+  /// — the evaluator's `vm_eval_fn`.
+  auto run_comptime_expr_on_vm(const ast::expr &expr)
+      -> comptime::evaluator::vm_call_outcome;
+
+  /// Turns a failed VM run into the notes saying where it failed.
+  auto vm_failure_notes(const comptime_failure &failure)
+      -> std::vector<diagnostic>;
 
   /// The instance of the generic `fn` that `type_args` (its type parameters,
   /// by name) name, if checking has made or queued one; null otherwise.
@@ -3968,7 +3992,8 @@ private:
   /// pattern binds, with its value.
   using static_for_scope = std::unordered_map<std::string, comptime::value>;
 
-  auto evaluate_static_for_inline(const ast::static_decl &decl)
+  auto evaluate_static_for_inline(const ast::static_decl &decl,
+                                  bool silent = false)
       -> std::optional<std::vector<static_for_scope>>;
 
   auto list_element_type(type_id type) -> type_id;
@@ -4023,7 +4048,19 @@ private:
 
   auto narrowing_past(const ast::node &node) -> std::optional<narrowing>;
 
-  auto check_static_decl(const ast::static_decl &decl) -> void;
+  auto check_static_decl(const ast::static_decl &decl, bool in_body = false)
+      -> void;
+
+  /// Records the iterations of a block `static for` in a function body —
+  /// each loop variable's value, as a literal — so lowering can unroll it;
+  /// in a template, per instance.
+  auto record_static_for_block(const ast::static_decl &decl) -> void;
+
+  /// `record_static_for_block` for a concrete `decl`: nothing is recorded
+  /// when the iterable cannot be computed (reported unless `silent`) or a
+  /// loop variable has no literal form.
+  auto unroll_static_for_block(const ast::static_decl &decl, bool silent)
+      -> void;
 
   // ==========================================================================
   //  check_decls.cpp
@@ -4054,6 +4091,45 @@ private:
 
   [[nodiscard]] auto names_reflectable_module(std::string_view name) const
       -> bool;
+
+  // ==========================================================================
+  //  check_reflection.cpp
+  // ==========================================================================
+
+  /// The `std.traits` type `name` (`field_info`, `type_kind`, ...), or
+  /// `k_unknown_type` in a session without the standard library.
+  auto std_traits_type(std::string_view name) -> type_id;
+
+  /// `list[element]`, where `element` is `str` or a `std.traits` type; the
+  /// unknown type when that type does not exist.
+  auto reflection_list_type(std::string_view element) -> type_id;
+
+  /// The type `T.<method>()` returns: `str` for `name`, `int32` for the
+  /// counts, `type_kind`, `list[field_info]`, `list[variant_info]`.
+  auto type_reflection_type(std::string_view method) -> type_id;
+
+  /// Types the reflection call `call` (`T.<method>()`) on `reflected`, and
+  /// records its answer (`fold_type_reflection`) — in each instance, when
+  /// `reflected` is a type parameter of the template being checked.
+  auto reflect_type_call(const ast::call_expr &call, std::string_view method,
+                         type_id reflected) -> type_id;
+
+  /// Records the constant `T.<method>()` is for the concrete type
+  /// `reflected`. Reports asking a type for what its shape does not have
+  /// (`fields()` of a sum type).
+  auto fold_type_reflection(const ast::call_expr &call,
+                            std::string_view method, type_id reflected)
+      -> void;
+
+  /// Types the module reflection call `call` (`M.<method>()`) and records
+  /// its answer.
+  auto reflect_module_call(const ast::call_expr &call, std::string_view method,
+                           std::string_view module) -> type_id;
+
+  /// Records `value`, of `type`, as what `call` evaluates to.
+  auto record_reflection_fold(const ast::call_expr &call,
+                              const comptime::value &value, type_id type)
+      -> void;
 
   // ==========================================================================
   //  check_comptime.cpp
