@@ -1016,7 +1016,7 @@ auto checker::reify_static_global(const ast::static_decl &decl,
   auto name = std::format("static${}${}", decl.name,
                           session_.static_global_defs_.size());
   session_.static_global_defs_.emplace(
-      &decl, checked_types::static_global_def{
+      &decl, lowering_results::static_global_def{
                  .name = name, .type = type, .value = std::move(*reified)});
   session_.static_global_owners_.emplace(name, std::string(owner_module));
   return name;

@@ -543,7 +543,7 @@ auto checker::instantiate_generic_lambda(const ast::lambda_expr &tmpl,
   instances.push_back(&copy);
   generic_lambda_refs_[ident.node] = &copy;
   generic_lambda_uses_.insert_or_assign(
-      &copy, checked_types::generic_lambda_use{.name = std::string(ident.name),
+      &copy, ownership_results::generic_lambda_use{.name = std::string(ident.name),
                                                .span = ident.span});
   return type;
 }

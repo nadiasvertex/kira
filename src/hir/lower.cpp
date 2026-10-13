@@ -64,7 +64,7 @@ using semantic::type_kind;
                                              const checked_types &checked)
     -> bool {
   return std::ranges::any_of(
-      checked.const_generic_instances,
+      checked.lowering.const_generic_instances,
       [&decl](const auto &instance) -> bool { return instance.decl == &decl; });
 }
 
@@ -304,8 +304,8 @@ auto lower_reified_value(
     break;
   }
   const auto conversion =
-      checked.array_literal_conversions.find(value.conversion);
-  if (conversion == checked.array_literal_conversions.end() ||
+      checked.lowering.array_literal_conversions.find(value.conversion);
+  if (conversion == checked.lowering.array_literal_conversions.end() ||
       conversion->second.callee.decl == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, span,
                 std::format("a reified static's `{}` records no `from_array` "
@@ -330,7 +330,7 @@ auto lower_reified_value(
 
 /// The expression that builds a reified `static let`'s value at `span`.
 auto lower_static_global_value(
-    const semantic::checked_types::static_global_def &def,
+    const semantic::lowering_results::static_global_def &def,
     const semantic::checked_types &checked, source_span span,
     const std::function<symbol_id(std::string_view)> &symbol_for)
     -> std::expected<ptr<hir_expr>, lowering_error> {
@@ -529,8 +529,8 @@ private:
   /// at all.
   [[nodiscard]] auto global_owner_of(const std::string &reified_name) const
       -> std::optional<std::string> {
-    if (const auto it = checked_.static_global_owners.find(reified_name);
-        it != checked_.static_global_owners.end()) {
+    if (const auto it = checked_.lowering.static_global_owners.find(reified_name);
+        it != checked_.lowering.static_global_owners.end()) {
       return it->second;
     }
     return std::nullopt;
@@ -547,7 +547,7 @@ private:
                                              const std::string &name)
       -> std::expected<ptr<hir_expr>, lowering_error> {
     if (drop_schedule_.owned_static_reads.contains(&ref)) {
-      for (const auto &[decl, def] : checked_.static_global_defs) {
+      for (const auto &[decl, def] : checked_.lowering.static_global_defs) {
         if (def.name == name) {
           return lower_static_global_value(
               def, checked_, ref.span,
@@ -979,7 +979,7 @@ private:
   //
   //  The checker has already had its say by the time these run: a contract
   //  it refuted is a compile error the program never got past, and one it
-  //  proved is in `checked_.elided_contracts` and lowers to nothing at all.
+  //  proved is in `checked_.lowering.elided_contracts` and lowers to nothing at all.
   //  What is left is the residue — conditions whose truth depends on values
   //  that don't exist until the program runs — and this is where they become
   //  code: a `hir_contract_check` the backends turn into "test it, panic if
@@ -993,7 +993,7 @@ private:
   needs_runtime_check(const ast::contract_clause &contract) const -> bool {
     return options_.contract_checks && contract.condition != nullptr &&
            !contract.condition->has_error &&
-           !checked_.elided_contracts.contains(&contract);
+           !checked_.lowering.elided_contracts.contains(&contract);
   }
 
   /// Lowers one contract condition into the check statement that enforces it.
@@ -1500,8 +1500,8 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   }
   // A use of a generic lambda: the closure made for the copy this use was
   // checked against, bound where the lambda's `let` stands.
-  if (const auto copy = checked_.generic_lambda_refs.find(&ident);
-      copy != checked_.generic_lambda_refs.end()) {
+  if (const auto copy = checked_.ownership.generic_lambda_refs.find(&ident);
+      copy != checked_.ownership.generic_lambda_refs.end()) {
     const auto symbol = generic_lambda_symbols_.find(copy->second);
     if (symbol == generic_lambda_symbols_.end()) {
       return fail(lowering_error_kind::unsupported_construct, ident.span,
@@ -1526,24 +1526,24 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   // (no `declare_local` call ever registers one for it) nor a function,
   // so falling through to the ordinary `hir_local_ref` path below would
   // produce a symbol nothing can ever resolve.
-  if (const auto it = checked_.static_const_values.find(&ident);
-      it != checked_.static_const_values.end()) {
+  if (const auto it = checked_.lowering.static_const_values.find(&ident);
+      it != checked_.lowering.static_const_values.end()) {
     return lower_literal(*it->second);
   }
   // A reference to a reified aggregate `static let` (see
-  // `checked_types::static_global_defs`) — same rationale as the scalar
+  // `lowering_results::static_global_defs`) — same rationale as the scalar
   // case above, but the value is real backing data a backend builds once,
   // not something to inline at every reference site.
-  if (const auto it = checked_.static_struct_values.find(&ident);
-      it != checked_.static_struct_values.end()) {
+  if (const auto it = checked_.lowering.static_struct_values.find(&ident);
+      it != checked_.lowering.static_struct_values.end()) {
     return lower_expr(*it->second);
   }
   if (const auto it = checked_.static_global_refs.find(&ident);
       it != checked_.static_global_refs.end()) {
     return lower_static_global_ref(ident, *type, it->second);
   }
-  if (const auto it = checked_.unreadable_static_refs.find(&ident);
-      it != checked_.unreadable_static_refs.end()) {
+  if (const auto it = checked_.lowering.unreadable_static_refs.find(&ident);
+      it != checked_.lowering.unreadable_static_refs.end()) {
     return fail_unreadable_static(ident.span, it->second, *type);
   }
   // A module-level function named in value position (bound to a `let`,
@@ -1553,8 +1553,8 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
   // the owner through is what lets both backends find the function under
   // the same key a call to it would use, and what lets
   // `find_reachable_modules` see that the declaring module is needed at all.
-  if (const auto found = checked_.resolved_fn_values.find(&ident);
-      found != checked_.resolved_fn_values.end()) {
+  if (const auto found = checked_.lowering.resolved_fn_values.find(&ident);
+      found != checked_.lowering.resolved_fn_values.end()) {
     const auto &resolved = found->second;
     const auto local_name =
         resolved.impl_target_type.empty()
@@ -1697,8 +1697,8 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   // (lhs as the hidden `self` receiver, rhs as its sole explicit argument)
   // instead of a raw `hir_binary`, exactly mirroring how `lower_call`
   // rebuilds a resolved instance-method call.
-  if (const auto found = checked_.operator_dispatches.find(&bin);
-      found != checked_.operator_dispatches.end()) {
+  if (const auto found = checked_.lowering.operator_dispatches.find(&bin);
+      found != checked_.lowering.operator_dispatches.end()) {
     const auto &resolved = found->second;
     // An empty `impl_target_type` means `decl` is already a monomorphized
     // instance carrying its own mangled name (`wrap::cmp$wrap_int32_`) — the
@@ -1725,9 +1725,9 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     // `wire_ord_dispatch` stashes `cmp`'s real return type separately since
     // this call's type has to be `ordering` for the match built below to
     // make sense of it.
-    const auto ord_result = checked_.ord_dispatch_result_types.find(&bin);
+    const auto ord_result = checked_.lowering.ord_dispatch_result_types.find(&bin);
     const auto call_type =
-        ord_result != checked_.ord_dispatch_result_types.end()
+        ord_result != checked_.lowering.ord_dispatch_result_types.end()
             ? ord_result->second
             : *type;
     auto callee = ptr<hir_expr>(make<hir_local_ref>(
@@ -1748,7 +1748,7 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
       return ok_expr(hir::make<hir_unary>(
           bin.span, *type, ast::unary_op::logical_not, std::move(call)));
     }
-    if (ord_result != checked_.ord_dispatch_result_types.end()) {
+    if (ord_result != checked_.lowering.ord_dispatch_result_types.end()) {
       return ok_expr(
           lower_ordering_comparison(bin.span, *type, bin.op, std::move(call)));
     }
@@ -1831,8 +1831,8 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
   if (un.op == ast::unary_op::addr_of_mut &&
       un.operand->kind == ast::node_kind::index_expr) {
     const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
-    if (const auto found = checked_.index_mut_dispatches.find(&index);
-        found != checked_.index_mut_dispatches.end()) {
+    if (const auto found = checked_.lowering.index_mut_dispatches.find(&index);
+        found != checked_.lowering.index_mut_dispatches.end()) {
       if (index.object == nullptr || index.index == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, index.span,
                     "index expression is missing its target or index");
@@ -1857,8 +1857,8 @@ auto lowerer::lower_unary(const ast::unary_expr &un)
   if (un.op == ast::unary_op::addr_of &&
       un.operand->kind == ast::node_kind::index_expr) {
     const auto &index = dynamic_cast<const ast::index_expr &>(*un.operand);
-    if (const auto found = checked_.index_ref_dispatches.find(&index);
-        found != checked_.index_ref_dispatches.end()) {
+    if (const auto found = checked_.lowering.index_ref_dispatches.find(&index);
+        found != checked_.lowering.index_ref_dispatches.end()) {
       if (index.object == nullptr || index.index == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, index.span,
                     "index expression is missing its target or index");
@@ -1903,8 +1903,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // checker already resolved the answer once it knew which concrete type
   // this instance was checked with, so lowering is just splicing that
   // answer in as an ordinary string literal.
-  if (const auto reflected = checked_.type_param_reflections.find(&call);
-      reflected != checked_.type_param_reflections.end()) {
+  if (const auto reflected = checked_.lowering.type_param_reflections.find(&call);
+      reflected != checked_.lowering.type_param_reflections.end()) {
     return ok_expr(
         make<hir_literal>(call.span, *type, token_kind::string_lit,
                           encode_string_literal(reflected->second.type_name)));
@@ -1916,8 +1916,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // deliberately never lowers such an instance to a real function. Splicing
   // the folded literal in is the only route this call has to a runtime
   // representation.
-  if (const auto folded = checked_.folded_comptime_calls.find(&call);
-      folded != checked_.folded_comptime_calls.end()) {
+  if (const auto folded = checked_.lowering.folded_comptime_calls.find(&call);
+      folded != checked_.lowering.folded_comptime_calls.end()) {
     return lower_literal(*folded->second);
   }
 
@@ -1925,8 +1925,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // The size comes from `runtime::layout_of`, the same function `size_of[T]`
   // and every element stride read from, so the buffer's capacity is exactly
   // `N` elements as indexed through it.
-  if (const auto buffer = checked_.stack_buffers.find(&call);
-      buffer != checked_.stack_buffers.end()) {
+  if (const auto buffer = checked_.lowering.stack_buffers.find(&call);
+      buffer != checked_.lowering.stack_buffers.end()) {
     const auto layout =
         runtime::layout_of(checked_.types, buffer->second.element);
     if (!layout.has_value()) {
@@ -1948,8 +1948,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // has to happen, though — both backends read an element stride off
   // `node.object->type` when indexing, so a node left claiming the source
   // pointee type would scale the next `p[i]` by the wrong width.
-  if (const auto cast = checked_.ptr_casts.find(&call);
-      cast != checked_.ptr_casts.end()) {
+  if (const auto cast = checked_.lowering.ptr_casts.find(&call);
+      cast != checked_.lowering.ptr_casts.end()) {
     if (call.args.empty() || call.args.front().value == nullptr) {
       return fail(lowering_error_kind::unresolved_type, call.span,
                   "`ptr_cast` has no operand to cast");
@@ -1964,7 +1964,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
 
   // `slice_from_raw_parts(p, len)` / `slice_mut_from_raw_parts(p, len)` —
   // see `checked_types::slice_from_raw_parts_calls`.
-  if (checked_.slice_from_raw_parts_calls.contains(&call)) {
+  if (checked_.lowering.slice_from_raw_parts_calls.contains(&call)) {
     if (call.args.size() != 2 || call.args[0].value == nullptr ||
         call.args[1].value == nullptr) {
       return fail(lowering_error_kind::unresolved_type, call.span,
@@ -1989,8 +1989,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // every field offset and element stride out of. Answering it here rather
   // than in the checker is what makes `size_of[T]()` agree with `T`'s real
   // stride by construction instead of by coincidence.
-  if (const auto query = checked_.layout_queries.find(&call);
-      query != checked_.layout_queries.end()) {
+  if (const auto query = checked_.lowering.layout_queries.find(&call);
+      query != checked_.lowering.layout_queries.end()) {
     if (query->second.operand == k_unknown_type ||
         query->second.operand == k_error_type) {
       return fail(lowering_error_kind::unresolved_type, call.span,
@@ -2003,10 +2003,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // disagree with what scope exit actually does.
       return ok_expr(make<hir_literal>(
           call.span, *type,
-          checked_.drop_plans.contains(query->second.operand)
+          checked_.drop.drop_plans.contains(query->second.operand)
               ? token_kind::kw_true
               : token_kind::kw_false,
-          checked_.drop_plans.contains(query->second.operand) ? "true"
+          checked_.drop.drop_plans.contains(query->second.operand) ? "true"
                                                               : "false"));
     }
     const auto layout =
@@ -2427,14 +2427,14 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   // evaluated it and recorded the literal to embed, exactly as it does for a
   // bare name in `lower_ident`. Checked before the shape rules below, since
   // such a path is a constant, not a projection out of a local.
-  if (const auto it = checked_.static_const_values.find(&path);
-      it != checked_.static_const_values.end()) {
+  if (const auto it = checked_.lowering.static_const_values.find(&path);
+      it != checked_.lowering.static_const_values.end()) {
     return lower_literal(*it->second);
   }
   // Module-qualified reference to a reified aggregate `static let` — see
   // the matching check in `lower_ident`.
-  if (const auto it = checked_.static_struct_values.find(&path);
-      it != checked_.static_struct_values.end()) {
+  if (const auto it = checked_.lowering.static_struct_values.find(&path);
+      it != checked_.lowering.static_struct_values.end()) {
     return lower_expr(*it->second);
   }
   if (const auto it = checked_.static_global_refs.find(&path);
@@ -2445,8 +2445,8 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
     }
     return lower_static_global_ref(path, *type, it->second);
   }
-  if (const auto it = checked_.unreadable_static_refs.find(&path);
-      it != checked_.unreadable_static_refs.end()) {
+  if (const auto it = checked_.lowering.unreadable_static_refs.find(&path);
+      it != checked_.lowering.unreadable_static_refs.end()) {
     auto type = checked_type_of(path);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -2458,8 +2458,8 @@ auto lowerer::lower_module_path(const ast::module_path_expr &path)
   // `infer_module_path` recorded which declaration, in which module, exactly
   // as it does for the bare-name spelling. Same treatment as `lower_ident`'s
   // branch: the owner is what both backends key their function tables on.
-  if (const auto found = checked_.resolved_fn_values.find(&path);
-      found != checked_.resolved_fn_values.end()) {
+  if (const auto found = checked_.lowering.resolved_fn_values.find(&path);
+      found != checked_.lowering.resolved_fn_values.end()) {
     auto type = checked_type_of(path);
     if (!type.has_value()) {
       return std::unexpected(type.error());
@@ -2580,7 +2580,7 @@ auto lowerer::lower_index(const ast::index_expr &index)
     return std::unexpected(object.error());
   }
   const auto *key_range = range_operand(*index.index);
-  const auto dispatched = checked_.index_dispatches.contains(&index);
+  const auto dispatched = checked_.lowering.index_dispatches.contains(&index);
   // `array`/`slice`/`str` range-indexing is addressing, not a call: both
   // backends' `compile_range_index` read the two bounds straight off a
   // `hir_binary` and never build a range at all. Only a dispatch to a
@@ -2602,8 +2602,8 @@ auto lowerer::lower_index(const ast::index_expr &index)
   // direct `hir_index` addressing below, so neither backend changes.
   // An element that is not `copy` is read in place, through `at_ref`'s
   // address, rather than copied out by `at` (ch. 14, Moving out of places).
-  if (const auto by_ref = checked_.index_ref_dispatches.find(&index);
-      by_ref != checked_.index_ref_dispatches.end() &&
+  if (const auto by_ref = checked_.lowering.index_ref_dispatches.find(&index);
+      by_ref != checked_.lowering.index_ref_dispatches.end() &&
       !checked_.is_copy(*type)) {
     const auto cell = drop_call_result_type(checked_, *by_ref->second.decl);
     if (checked_.types.is_unknown(cell)) {
@@ -2619,8 +2619,8 @@ auto lowerer::lower_index(const ast::index_expr &index)
     return ok_expr(hir::make<hir_unary>(index.span, *type, ast::unary_op::deref,
                                         std::move(*address)));
   }
-  if (const auto found = checked_.index_dispatches.find(&index);
-      found != checked_.index_dispatches.end()) {
+  if (const auto found = checked_.lowering.index_dispatches.find(&index);
+      found != checked_.lowering.index_dispatches.end()) {
     return lower_index_dispatch(index.span, *type, found->second,
                                 std::move(*object), std::move(*idx));
   }
@@ -2662,8 +2662,8 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
                                source_span span, ptr_vec<hir_node> &out,
                                const field_paths &moved_paths)
     -> std::expected<void, lowering_error> {
-  const auto found = checked_.drop_plans.find(type);
-  if (found == checked_.drop_plans.end()) {
+  const auto found = checked_.drop.drop_plans.find(type);
+  if (found == checked_.drop.drop_plans.end()) {
     return fail(lowering_error_kind::unsupported_construct, span,
                 "internal error: scope-exit drop was scheduled for a type "
                 "with no resolved drop plan — the drop-schedule pass and "
@@ -2814,7 +2814,7 @@ auto lowerer::emit_one_drop(const pending_drop &drop, ptr_vec<hir_node> &stmts)
     for (const auto copy : copies->second) {
       const auto type = local_types_.find(copy);
       if (type == local_types_.end() ||
-          !checked_.drop_plans.contains(type->second)) {
+          !checked_.drop.drop_plans.contains(type->second)) {
         continue;
       }
       const auto copy_type = type->second;
@@ -2991,16 +2991,16 @@ auto lowerer::lower_array(const ast::array_expr &array)
   // the list is filled the way a comprehension builds its result: bind
   // `new()`, then `push(v)` in a counting loop. See
   // `checked_types::runtime_fill_dispatches`.
-  if (const auto fill = checked_.runtime_fill_dispatches.find(&array);
-      fill != checked_.runtime_fill_dispatches.end()) {
+  if (const auto fill = checked_.lowering.runtime_fill_dispatches.find(&array);
+      fill != checked_.lowering.runtime_fill_dispatches.end()) {
     return lower_runtime_fill(array, *type, fill->second);
   }
   // A literal written where a user collection was expected: build the
   // `array[T, n]` exactly as before, then hand it to that collection's
   // `from_array`. The array type comes from the recorded conversion rather
   // than from `checked_type_of`, which now answers with the collection.
-  if (const auto found = checked_.array_literal_conversions.find(&array);
-      found != checked_.array_literal_conversions.end()) {
+  if (const auto found = checked_.lowering.array_literal_conversions.find(&array);
+      found != checked_.lowering.array_literal_conversions.end()) {
     const auto &conversion = found->second;
     if (conversion.array_type == k_unknown_type) {
       return fail(lowering_error_kind::unresolved_type, array.span,
@@ -3185,11 +3185,11 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
-      const auto declared = checked_.struct_literal_field_expected.find(&field);
+      const auto declared = checked_.lowering.struct_literal_field_expected.find(&field);
       fields.push_back(hir_struct_init_field{
           .name = field.name,
           .value = std::move(*lowered),
-          .declared = declared != checked_.struct_literal_field_expected.end()
+          .declared = declared != checked_.lowering.struct_literal_field_expected.end()
                           ? declared->second
                           : k_unknown_type});
       continue;
@@ -3198,8 +3198,8 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
     // `{x: x}` (see hir_struct_init's doc comment), so lowering builds the
     // implied `x` reference itself rather than recursing through
     // lower_expr on a node that doesn't exist.
-    const auto found = checked_.struct_literal_field_types.find(&field);
-    if (found == checked_.struct_literal_field_types.end() ||
+    const auto found = checked_.lowering.struct_literal_field_types.find(&field);
+    if (found == checked_.lowering.struct_literal_field_types.end() ||
         found->second == k_unknown_type || found->second == k_error_type) {
       return fail(lowering_error_kind::unresolved_type, field.span,
                   "no concrete checked type is available for this struct "
@@ -3210,8 +3210,8 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
     auto symbol = resolve_reference(field.name);
     // `{f}` for a generic lambda `f`: the closure of the copy it was
     // checked against, as for any other use (`lower_ident`).
-    if (const auto copy = checked_.generic_lambda_refs.find(&field);
-        copy != checked_.generic_lambda_refs.end()) {
+    if (const auto copy = checked_.ownership.generic_lambda_refs.find(&field);
+        copy != checked_.ownership.generic_lambda_refs.end()) {
       const auto bound = generic_lambda_symbols_.find(copy->second);
       if (bound == generic_lambda_symbols_.end()) {
         return fail(lowering_error_kind::unsupported_construct, field.span,
@@ -3221,12 +3221,12 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       }
       symbol = bound->second;
     }
-    const auto declared = checked_.struct_literal_field_expected.find(&field);
+    const auto declared = checked_.lowering.struct_literal_field_expected.find(&field);
     fields.push_back(hir_struct_init_field{
         .name = field.name,
         .value = ptr<hir_expr>(
             make<hir_local_ref>(field.span, found->second, symbol, field.name)),
-        .declared = declared != checked_.struct_literal_field_expected.end()
+        .declared = declared != checked_.lowering.struct_literal_field_expected.end()
                         ? declared->second
                         : k_unknown_type});
   }
@@ -3440,8 +3440,8 @@ auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
   if (owned == drop_schedule_.owned_captures.end()) {
     return ptr<hir_lambda>{};
   }
-  const auto plan = checked_.drop_plans.find(closure.type);
-  if (plan == checked_.drop_plans.end() ||
+  const auto plan = checked_.drop.drop_plans.find(closure.type);
+  if (plan == checked_.drop.drop_plans.end() ||
       !plan->second.closure_glue.has_value()) {
     return fail(lowering_error_kind::unsupported_construct, lambda.span,
                 "internal error: a closure owns captured values but its "
@@ -3467,7 +3467,7 @@ auto lowerer::lower_drop_glue(const ast::lambda_expr &lambda,
       for (const auto copy : group->second) {
         if (const auto type = local_types_.find(copy);
             type != local_types_.end() &&
-            checked_.drop_plans.contains(type->second)) {
+            checked_.drop.drop_plans.contains(type->second)) {
           parts.emplace_back(copy, type->second);
         }
       }
@@ -3559,7 +3559,7 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   //            @err(_)/@none  => return <x, unchanged>
   // The failure arm returns the *original* subject value unchanged, unless
   // `checker::maybe_wire_try_conversion` recorded a `from`-conversion in
-  // `checked_.try_conversions` (operand's error type differs from the
+  // `checked_.lowering.try_conversions` (operand's error type differs from the
   // enclosing function's) — then the failure arm instead binds the error
   // payload, converts it, and reconstructs `@err(<converted>)`.
   auto type = checked_type_of(try_expr);
@@ -3627,13 +3627,13 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   auto failure_stmts = ptr_vec<hir_node>{};
   auto failure_value = ptr<hir_expr>{};
   if (is_result) {
-    if (const auto found = checked_.try_conversions.find(&try_expr);
-        found != checked_.try_conversions.end()) {
+    if (const auto found = checked_.lowering.try_conversions.find(&try_expr);
+        found != checked_.lowering.try_conversions.end()) {
       const auto &resolved = found->second;
       const auto return_type_found =
-          checked_.try_conversion_types.find(&try_expr);
+          checked_.lowering.try_conversion_types.find(&try_expr);
       const auto fn_return_type =
-          return_type_found != checked_.try_conversion_types.end()
+          return_type_found != checked_.lowering.try_conversion_types.end()
               ? return_type_found->second
               : k_unknown_type;
       const auto &fn_return_entry = checked_.types.entry(fn_return_type);
@@ -3709,7 +3709,7 @@ auto lowerer::lower_interpolated_string(
     return std::unexpected(result_type.error());
   }
 
-  const auto &fmt = checked_.fmt_types;
+  const auto &fmt = checked_.lowering.fmt_types;
   if (fmt.format_spec == 0) {
     return fail(lowering_error_kind::unsupported_construct, node.span,
                 "string interpolation requires `std.fmt` to be part of the "
@@ -3866,8 +3866,8 @@ auto lowerer::lower_interpolated_string(
       pieces.push_back(str_lit(seg.source_text + "="));
     }
 
-    const auto dispatch_it = checked_.interp_dispatches.find(seg.value.get());
-    if (dispatch_it == checked_.interp_dispatches.end()) {
+    const auto dispatch_it = checked_.lowering.interp_dispatches.find(seg.value.get());
+    if (dispatch_it == checked_.lowering.interp_dispatches.end()) {
       return fail(lowering_error_kind::unresolved_type, seg.value->span,
                   "this interpolated expression was never resolved by the "
                   "capability check");
@@ -4199,9 +4199,9 @@ auto lowerer::lower_stmt(const ast::node &node)
     }
     // `let f = (x) => x + x`: one closure per copy the checker made for a
     // use of `f`, and none if `f` is never used.
-    if (const auto copies = checked_.generic_lambda_instances.find(
+    if (const auto copies = checked_.ownership.generic_lambda_instances.find(
             dynamic_cast<const ast::lambda_expr *>(let.initializer.get()));
-        copies != checked_.generic_lambda_instances.end() &&
+        copies != checked_.ownership.generic_lambda_instances.end() &&
         let.pattern->kind == ast::node_kind::binding_pattern) {
       const auto &name =
           dynamic_cast<const ast::binding_pattern &>(*let.pattern).name;
@@ -4470,8 +4470,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     // before the target is lowered, because there is no place to lower.
     if (assign.target->kind == ast::node_kind::index_expr) {
       const auto &place = dynamic_cast<const ast::index_expr &>(*assign.target);
-      if (const auto found = checked_.index_set_dispatches.find(&place);
-          found != checked_.index_set_dispatches.end()) {
+      if (const auto found = checked_.lowering.index_set_dispatches.find(&place);
+          found != checked_.lowering.index_set_dispatches.end()) {
         if (assign.op != ast::assign_op::assign) {
           return fail(lowering_error_kind::unsupported_construct, assign.span,
                       "compound assignment through an `index_set` impl is "
@@ -4538,7 +4538,7 @@ auto lowerer::lower_stmt(const ast::node &node)
                                : drop_schedule_.assignments.end();
     if (scheduled != drop_schedule_.assignments.end() &&
         scheduled->second.drop_old &&
-        checked_.drop_plans.contains((*target)->type)) {
+        checked_.drop.drop_plans.contains((*target)->type)) {
       const auto temp_type = (*value)->type;
       const auto temp_symbol = mint_symbol();
       stmts.push_back(ptr<hir_node>(make<hir_let>(assign.span, temp_symbol,
@@ -4707,8 +4707,8 @@ auto lowerer::lower_stmt(const ast::node &node)
                   "this `static` declaration is not lowered as a function-"
                   "body statement (see spec/todo.md)");
     }
-    const auto found = checked_.static_if_taken_branch.find(&decl);
-    if (found == checked_.static_if_taken_branch.end()) {
+    const auto found = checked_.lowering.static_if_taken_branch.find(&decl);
+    if (found == checked_.lowering.static_if_taken_branch.end()) {
       return fail(lowering_error_kind::unsupported_construct, decl.span,
                   "this `static if` condition was never resolved to a "
                   "concrete branch during checking");
@@ -5544,7 +5544,7 @@ auto lowerer::lower_generator_loop(
                                         std::string("<for iterator>")))));
 
   push_scope();
-  const auto owned_var = owns_var && checked_.drop_plans.contains(element_type);
+  const auto owned_var = owns_var && checked_.drop.drop_plans.contains(element_type);
   const auto loop_var_symbol =
       declare_local(loop_var.name, element_type, owned_var, &loop_var);
   auto body_stmts = ptr_vec<hir_node>{};
@@ -5676,7 +5676,7 @@ auto lowerer::lower_iterator_loop(
                                 std::move(call_args), dispatch.decl));
 
   push_scope();
-  const auto owned_var = owns_var && checked_.drop_plans.contains(element_type);
+  const auto owned_var = owns_var && checked_.drop.drop_plans.contains(element_type);
   const auto loop_var_symbol =
       declare_local(loop_var.name, element_type, owned_var, &loop_var);
   auto body_stmts = ptr_vec<hir_node>{};
@@ -5739,12 +5739,12 @@ auto lowerer::call_list_builder(source_span span, type_id result,
 
 auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
     -> std::expected<ptr<hir_expr>, lowering_error> {
-  const auto elements = checked_.static_for_elements.find(&decl);
-  const auto iterations = checked_.static_for_iterations.find(&decl);
-  const auto dispatch = checked_.static_for_dispatches.find(&decl);
-  if ((elements == checked_.static_for_elements.end() &&
-       iterations == checked_.static_for_iterations.end()) ||
-      dispatch == checked_.static_for_dispatches.end() ||
+  const auto elements = checked_.lowering.static_for_elements.find(&decl);
+  const auto iterations = checked_.lowering.static_for_iterations.find(&decl);
+  const auto dispatch = checked_.lowering.static_for_dispatches.find(&decl);
+  if ((elements == checked_.lowering.static_for_elements.end() &&
+       iterations == checked_.lowering.static_for_iterations.end()) ||
+      dispatch == checked_.lowering.static_for_dispatches.end() ||
       decl.for_yield == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
                 "this `static for` was not unrolled during checking");
@@ -5765,7 +5765,7 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
   // Each element: a literal computed while checking, or this iteration's
   // copy of the yield, behind a `let` for each loop binding.
   auto values = ptr_vec<hir_expr>{};
-  if (elements != checked_.static_for_elements.end()) {
+  if (elements != checked_.lowering.static_for_elements.end()) {
     for (const auto *element : elements->second) {
       auto value = lower_expr(*element);
       if (!value.has_value()) {
@@ -5823,8 +5823,8 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
-  const auto dispatch = checked_.comprehension_dispatches.find(&for_expr);
-  if (dispatch == checked_.comprehension_dispatches.end()) {
+  const auto dispatch = checked_.lowering.comprehension_dispatches.find(&for_expr);
+  if (dispatch == checked_.lowering.comprehension_dispatches.end()) {
     return fail(lowering_error_kind::unresolved_type, for_expr.span,
                 "internal error: comprehension has no resolved list[T]::new"
                 "/push dispatch — the checker and lowering have gotten out "
@@ -6298,8 +6298,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       // so its type lives in the dedicated `struct_pattern_field_types` map
       // instead (see checked_types's doc comment). Desugars exactly like a
       // plain binding: a wildcard structural match plus a synthetic let.
-      const auto found = checked_.struct_pattern_field_types.find(&field);
-      if (found == checked_.struct_pattern_field_types.end() ||
+      const auto found = checked_.lowering.struct_pattern_field_types.find(&field);
+      if (found == checked_.lowering.struct_pattern_field_types.end() ||
           found->second == k_unknown_type || found->second == k_error_type) {
         return fail(lowering_error_kind::unresolved_type, field_span,
                     "no concrete checked type is available for this struct "
@@ -6324,8 +6324,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
     // `..` binds nothing, so the fields it skips would never be dropped.
     const auto struct_type = make_place()->type;
     if (drop_schedule_.leftover_drops.contains(&pattern)) {
-      if (const auto plan = checked_.drop_plans.find(struct_type);
-          plan != checked_.drop_plans.end()) {
+      if (const auto plan = checked_.drop.drop_plans.find(struct_type);
+          plan != checked_.drop.drop_plans.end()) {
         for (const auto &[field_name, field_type] :
              plan->second.droppable_fields) {
           const auto mentioned =
@@ -6670,7 +6670,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 
   // An implicit generic has no body of its own to lower — only the instances
   // the checker made for each call's argument types.
-  if (checked_.open_param_templates.contains(&decl)) {
+  if (checked_.lowering.open_param_templates.contains(&decl)) {
     return fail(lowering_error_kind::unannotated_parameter, decl.span,
                 std::format("function `{}` is generic over its unannotated "
                             "parameters, so only its per-call instances can "
@@ -7043,7 +7043,7 @@ auto lower_function(const ast::func_decl &decl,
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
     if (decl.modifiers.is_intrinsic ||
-        checked.open_param_templates.contains(&decl)) {
+        checked.lowering.open_param_templates.contains(&decl)) {
       continue;
     }
     auto lowered = lower_function(decl, checked, options);
@@ -7088,7 +7088,7 @@ auto lower_function(const ast::func_decl &decl,
     if (decl.modifiers.is_intrinsic || !decl.type_params.empty()) {
       continue;
     }
-    if (checked.open_param_templates.contains(&decl)) {
+    if (checked.lowering.open_param_templates.contains(&decl)) {
       // Generic over its unannotated parameters: only the per-call instances
       // the checker made are lowered.
       continue;
@@ -7120,8 +7120,8 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
     }
     if (item->kind == ast::node_kind::static_decl) {
       const auto &decl = dynamic_cast<const ast::static_decl &>(*item);
-      const auto found = checked.static_global_defs.find(&decl);
-      if (found == checked.static_global_defs.end()) {
+      const auto found = checked.lowering.static_global_defs.find(&decl);
+      if (found == checked.lowering.static_global_defs.end()) {
         continue;
       }
       const auto &def = found->second;
@@ -7157,7 +7157,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     const auto &decl = dynamic_cast<const ast::func_decl &>(*item);
-    if (checked.open_param_templates.contains(&decl)) {
+    if (checked.lowering.open_param_templates.contains(&decl)) {
       // An unannotated parameter the body leaves open is an implicit type
       // parameter: there is no single body that serves every argument type,
       // so only the instances the checker made are lowered.
@@ -7214,7 +7214,7 @@ auto lower_module_synthesized(const std::string &module_name,
   // they have no `impl_decl`/`func_decl` item of their own in `file` to
   // walk above, so they're lowered here instead, once per module, the same
   // `TargetType::method` naming convention every other impl member uses.
-  for (const auto &synthesized : checked.synthesized_trait_defaults) {
+  for (const auto &synthesized : checked.lowering.synthesized_trait_defaults) {
     if (synthesized.owner_module != module_name) {
       continue;
     }
@@ -7232,11 +7232,11 @@ auto lower_module_synthesized(const std::string &module_name,
   // template they came from (skipped in the item walk above) is none. Each
   // instance's clone already carries its mangled name, which is the same name
   // `lower_call` emits for the call sites that asked for it.
-  for (const auto &instance : checked.const_generic_instances) {
+  for (const auto &instance : checked.lowering.const_generic_instances) {
     if (instance.owner_module != module_name || instance.decl == nullptr) {
       continue;
     }
-    if (checked.comptime_only_functions.contains(instance.decl)) {
+    if (checked.lowering.comptime_only_functions.contains(instance.decl)) {
       // Mirrors the template-level skip above (`decl.modifiers.is_static`
       // in the item walk) for a *concrete instantiation* of a free,
       // module-level `static def` — still only ever run by `comptime::
@@ -7265,7 +7265,7 @@ auto lower_module_synthesized(const std::string &module_name,
   // rather than into any file's `items` — lower them here the same way, by
   // module name, that trait defaults are lowered just above; they'd
   // otherwise never be reached by the `file.items` walk further up.
-  for (const auto &splice : checked.synthesized_item_splices) {
+  for (const auto &splice : checked.lowering.synthesized_item_splices) {
     if (splice.owner_module != module_name || splice.impl == nullptr) {
       continue;
     }
@@ -7387,7 +7387,7 @@ auto lower_functor_modules(const semantic::checked_types &checked,
   // record their callee's owner module.
   auto module_order = std::vector<std::string>{};
   auto grouped = std::unordered_map<std::string, ptr_vec<hir_function>>{};
-  for (const auto &instance : checked.functor_instances) {
+  for (const auto &instance : checked.lowering.functor_instances) {
     if (instance.decl == nullptr) {
       continue;
     }

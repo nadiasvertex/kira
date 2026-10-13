@@ -623,10 +623,10 @@ private:
     std::unordered_map<const ast::node *, const ast::literal_expr *>
         static_const_values_;
 
-    /// See `checked_types::static_global_defs`'s doc comment. Populated by
+    /// See `lowering_results::static_global_defs`'s doc comment. Populated by
     /// `reify_static_global`.
     std::unordered_map<const ast::static_decl *,
-                       checked_types::static_global_def>
+                       lowering_results::static_global_def>
         static_global_defs_;
 
     /// See `checked_types::static_if_taken_branch`'s doc comment. Populated by
@@ -2066,7 +2066,7 @@ private:
       generic_lambda_refs_;
 
   std::unordered_map<const ast::lambda_expr *,
-                     checked_types::generic_lambda_use>
+                     ownership_results::generic_lambda_use>
       generic_lambda_uses_;
 
   ast::ptr_vec<ast::expr> synthesized_lambdas_;

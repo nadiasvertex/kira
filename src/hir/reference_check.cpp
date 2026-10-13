@@ -358,7 +358,7 @@ private:
 
   [[nodiscard]] auto needs_drop(type_id type) const -> bool {
     return drop_temporary_ != nullptr && !types_.is_unknown(type) &&
-           checked_.drop_plans.contains(type);
+           checked_.drop.drop_plans.contains(type);
   }
 
   /// Notes `symbol`, a local holding the value of `value` (a temporary), to

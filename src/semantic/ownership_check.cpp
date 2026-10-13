@@ -382,21 +382,21 @@ private:
       return false;
     }
     const auto *copy = static_cast<const ast::lambda_expr *>(a.node);
-    const auto use = checked_.generic_lambda_uses.find(copy);
-    if (use == checked_.generic_lambda_uses.end()) {
+    const auto use = checked_.ownership.generic_lambda_uses.find(copy);
+    if (use == checked_.ownership.generic_lambda_uses.end()) {
       return false;
     }
     // The copy made just before this one is the closure that already took
     // the value.
     auto earlier = std::optional<source_span>{};
-    for (const auto &[tmpl, copies] : checked_.generic_lambda_instances) {
+    for (const auto &[tmpl, copies] : checked_.ownership.generic_lambda_instances) {
       const auto at = std::ranges::find(copies, copy);
       if (at == copies.end()) {
         continue;
       }
       if (at != copies.begin()) {
-        if (const auto prior = checked_.generic_lambda_uses.find(*(at - 1));
-            prior != checked_.generic_lambda_uses.end()) {
+        if (const auto prior = checked_.ownership.generic_lambda_uses.find(*(at - 1));
+            prior != checked_.ownership.generic_lambda_uses.end()) {
           earlier = prior->second.span;
         }
       }

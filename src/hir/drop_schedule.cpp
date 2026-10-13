@@ -200,7 +200,7 @@ auto compute_drop_schedule(const ast::func_decl &decl,
     for (const auto &exit : facts.exits) {
       for (const auto &group : exit.groups) {
         for (const auto &owned : group) {
-          if (!checked.drop_plans.contains(cfg.locals[owned.local].type)) {
+          if (!checked.drop.drop_plans.contains(cfg.locals[owned.local].type)) {
             continue;
           }
           if (owned.state == move_state::maybe_moved &&
@@ -276,7 +276,7 @@ auto compute_drop_schedule(const ast::func_decl &decl,
       for (const auto &group : exit.groups) {
         for (const auto &owned : group) {
           const auto &info = cfg.locals[owned.local];
-          if (!checked.drop_plans.contains(info.type) ||
+          if (!checked.drop.drop_plans.contains(info.type) ||
               owned.state == move_state::moved) {
             continue;
           }

@@ -456,27 +456,10 @@ struct stack_buffer_request {
   uint64_t count = 0;
 };
 
-struct checked_types {
-  type_table types;
-  std::unordered_map<const ast::node *, type_id> node_types;
-  /// The file each node in `node_types` was checked under, recorded at the
-  /// same moment and from the same `file_id_` the checker was standing in.
-  ///
-  /// An `ast::node` carries only a `source_span` — byte offsets with no file
-  /// — so a node pointer alone cannot say where it came from, and every file
-  /// in a session has a byte 0. Nothing in the compiler needed the answer
-  /// before: a pass that holds a node is already standing in its file.
-  /// `semantic::render_snapshot` (`snapshot.h`) is the exception — it walks
-  /// the decision maps from outside any file, and an offset with no file name
-  /// is not a reviewable diff.
-  ///
-  /// Recorded only in `record_expr_type`, which is the single funnel every
-  /// typed expression passes through. That covers the great majority of the
-  /// nodes the other decision maps key against too (a dispatch is always
-  /// recorded for an expression the checker also typed), so those maps
-  /// resolve their file by looking the node up here; a key that isn't
-  /// present renders with its offset alone rather than a guess.
-  std::unordered_map<const ast::node *, file_id_type> node_files;
+/// Decisions the checker records for HIR lowering: operator, index, and
+/// iterator dispatches, synthesized declarations and literals, instance
+/// records, and compile-time-folded values. Read by `hir::lower*`.
+struct lowering_results {
   std::unordered_map<const ast::field_pattern *, type_id>
       struct_pattern_field_types;
   std::unordered_map<const ast::struct_field_init *, type_id>
@@ -487,13 +470,6 @@ struct checked_types {
   /// field explicit (`hir::make_references_explicit`).
   std::unordered_map<const ast::struct_field_init *, type_id>
       struct_literal_field_expected;
-  std::unordered_map<const ast::call_expr *, call_argument_mapping>
-      call_argument_mappings;
-  /// Every call resolved by `infer_qualified_call` — see `resolved_callee`'s
-  /// doc comment. A node absent here was either resolved some other way
-  /// (a plain same-module/imported bare-name call, a method call) or never
-  /// resolved at all.
-  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
   /// Every `ident_expr` that names a module-level function in *value*
   /// position — bound to a `let`, passed as an argument, returned — rather
   /// than being called. `checker::resolve_ident` records the declaration and
@@ -582,27 +558,6 @@ struct checked_types {
   /// which stays unsupported outside `static` contexts as before.
   std::unordered_map<const ast::call_expr *, type_param_reflection>
       type_param_reflections;
-  /// Every `for` loop whose iterable is a user type implementing
-  /// `std.iter.iterator[T]` — see `iterator_loop_dispatch`'s doc comment.
-  /// Keyed by the `ast::for_stmt` node. Absent for range/option/generator/
-  /// indexable iterables, which lower through their own dedicated shapes.
-  std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
-      for_iterator_dispatches;
-  /// The same, for a `for ... => yield` comprehension's iteration clauses.
-  /// A clause reaches the identical loop lowerers a statement `for` does, so
-  /// it needs the identical dispatch record — without one, `for (k, v) in
-  /// pairs => k * v` over a `list` fell through to the indexed-loop shape,
-  /// which stopped applying when `list` became an ordinary stdlib type.
-  /// Keyed by the clause's own `iterable` expression node, which is unique
-  /// per clause. Absent for range/option/indexable iterables.
-  std::unordered_map<const ast::node *, iterator_loop_dispatch>
-      comprehension_iterator_dispatches;
-  /// Every struct/sum type found droppable — see `drop_plan`'s doc comment.
-  /// Populated once, after the main per-function walk, by
-  /// `checker::resolve_drop_plans` (`check.cpp`) over every type interned in
-  /// `types`. Consumed by `hir::compute_drop_schedule`/`hir::lowerer` to
-  /// build scope-exit drop calls (`spec/todo.md` item 6).
-  std::unordered_map<type_id, drop_plan> drop_plans;
   /// Every `for ... => yield` comprehension's resolved `list[T]::new`/
   /// `list[T]::push` calls — see `comprehension_dispatch`'s doc comment.
   /// Keyed by the `ast::for_expr` node.
@@ -671,44 +626,8 @@ struct checked_types {
   /// `const_generic_instances`, and `hir::lower_module` skips these
   /// templates exactly as it skips an explicit generic.
   std::unordered_set<const ast::func_decl *> open_param_templates;
-  /// Lambdas bound by `let f = (x) => ...` with an unannotated parameter.
-  /// Like an unannotated `def` parameter, that parameter is an implicit type
-  /// parameter, so the lambda written in the source has no runtime form of
-  /// its own: each use of `f` checked a copy of it for that use's types.
-  /// Maps the written lambda to those copies, in the order they were made;
-  /// `hir::lowerer` binds one closure per copy where the `let` stands, and
-  /// none at all for a lambda that is never used.
-  std::unordered_map<const ast::lambda_expr *,
-                     std::vector<const ast::lambda_expr *>>
-      generic_lambda_instances;
-  /// Each use of a generic lambda's name, to the copy it was checked against.
-  /// A use is an `ast::ident_expr` or a shorthand `ast::struct_field_init`.
-  std::unordered_map<const void *, const ast::lambda_expr *>
-      generic_lambda_refs;
-  /// Where a copy in `generic_lambda_instances` was asked for: the name of
-  /// the generic lambda and the use that needed the copy. Read by the
-  /// ownership checker to explain a capture each copy moves.
-  struct generic_lambda_use {
-    std::string name;
-    source_span span;
-  };
-  std::unordered_map<const ast::lambda_expr *, generic_lambda_use>
-      generic_lambda_uses;
   /// Owns the copies in `generic_lambda_instances`.
   ast::ptr_vec<ast::expr> synthesized_lambdas;
-  /// Each `open_param_templates` entry's signature.
-  std::unordered_map<const ast::func_decl *, implicit_signature>
-      implicit_signatures;
-  /// Each `const_generic_instances` entry's template: the generic
-  /// declaration it was made from, whose signature still names the type
-  /// parameters the instance's has substituted away.
-  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
-      instance_templates;
-
-  /// The return type the checker inferred from the body of each function
-  /// declared without one. Lowering reads it where it would read the
-  /// annotation.
-  std::unordered_map<const ast::func_decl *, type_id> inferred_return_types;
   /// Every free, module-level `static def` registered with `comptime::
   /// evaluator` for compile-time calling (`checker::register_comptime_
   /// globals`'s `register_pending_function` call) — as opposed to an
@@ -736,14 +655,6 @@ struct checked_types {
   /// is expected — see its doc comment. Owned here for the same lifetime
   /// reason as `synthesized_decls` above.
   ast::ptr_vec<ast::type_expr> synthesized_types;
-  /// Every `splice_expr`/`splice_stmt` node resolved (via compile-time
-  /// evaluation of its operand) to the exact AST fragment it should be
-  /// lowered as, keyed by the splice node itself. `hir::lower` looks a
-  /// splice node up here and lowers the resolved fragment in its place —
-  /// see `checker::infer_expr`'s `splice_expr` case and
-  /// `checker::check_body_node`'s `splice_stmt` case. Absent entries mean
-  /// the splice never resolved to usable syntax (already diagnosed).
-  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments;
   /// Owns every AST node the `comptime::evaluator` constructed
   /// programmatically (`expr.lit(...)`/`expr.ident(...)`, see `evaluator::
   /// synthesized_fragments_`'s doc comment) — moved out of the evaluator
@@ -841,12 +752,6 @@ struct checked_types {
   /// template body is never lowered directly, only its concrete
   /// instantiations are.
   std::unordered_map<const ast::static_decl *, bool> static_if_taken_branch;
-  /// Every `ident_expr`/`module_path_expr` that resolved to a reified static
-  /// global (see `static_global_defs`), mapped to that global's `name` —
-  /// `hir::lower_ident`/`lower_module_path` look this up before falling back
-  /// to `hir_local_ref`, mirroring `static_const_values` but for the
-  /// aggregate case that can't be inlined at each reference site.
-  std::unordered_map<const ast::node *, std::string> static_global_refs;
   /// Every `ident_expr`/`module_path_expr` that resolved to a struct-valued
   /// `static let`, mapped to a synthesized struct literal rebuilding its
   /// compile-time value (owned by `synthesized_static_structs`).
@@ -870,29 +775,6 @@ struct checked_types {
   /// with no functions of its own, like `std.unicode_tables`, has no other
   /// way to end up in the reachable set.
   std::unordered_map<std::string, std::string> static_global_owners;
-  /// Every `module_path_expr` the checker classified as *field access on a
-  /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
-  /// see `checker::dotted_root_is_value` — mapped to the type after each
-  /// segment: `[0]` is the root binding's type, `back()` the whole path's.
-  /// `hir::lower_module_path` builds its projection chain from this and
-  /// never re-decides what the path means; a `module_path_expr` absent from
-  /// this map is a module reference.
-  std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
-      value_path_types;
-  /// Every receiver of a field access or method call (`field_expr::object`)
-  /// whose member was found only through `deref` — see `deref_step`. The
-  /// steps run in order on the receiver's value before the member is
-  /// reached: `h.x` lowers as `h.deref().x`. A receiver absent here is used
-  /// as it is.
-  std::unordered_map<const ast::expr *, std::vector<deref_step>>
-      deref_adjustments;
-  /// The same, for a value-rooted dotted path (`value_path_types`): for each
-  /// segment index `i`, the steps applied to the value of the first `i`
-  /// segments before segment `i` is selected. Empty where a segment needs
-  /// none; a path absent here needs none at all.
-  std::unordered_map<const ast::module_path_expr *,
-                     std::vector<std::vector<deref_step>>>
-      path_deref_adjustments;
   /// Every `v[i]` the reasoning solver proved in bounds
   /// (`checker::check_index_in_bounds`) — an index whose safety is a
   /// *compile-time* fact, so lowering may omit the runtime bounds check
@@ -912,6 +794,43 @@ struct checked_types {
   /// proved, which is the ordinary case and the reason contracts have a
   /// runtime form at all.
   std::unordered_set<const ast::contract_clause *> elided_contracts;
+};
+
+/// Facts the ownership checker (`ownership_cfg`, `ownership_check`) reads:
+/// which types borrow, which types are Copy, and the template records for
+/// generic lambdas and functions.
+struct ownership_results {
+  /// Lambdas bound by `let f = (x) => ...` with an unannotated parameter.
+  /// Like an unannotated `def` parameter, that parameter is an implicit type
+  /// parameter, so the lambda written in the source has no runtime form of
+  /// its own: each use of `f` checked a copy of it for that use's types.
+  /// Maps the written lambda to those copies, in the order they were made;
+  /// `hir::lowerer` binds one closure per copy where the `let` stands, and
+  /// none at all for a lambda that is never used.
+  std::unordered_map<const ast::lambda_expr *,
+                     std::vector<const ast::lambda_expr *>>
+      generic_lambda_instances;
+  /// Each use of a generic lambda's name, to the copy it was checked against.
+  /// A use is an `ast::ident_expr` or a shorthand `ast::struct_field_init`.
+  std::unordered_map<const void *, const ast::lambda_expr *>
+      generic_lambda_refs;
+  /// Where a copy in `generic_lambda_instances` was asked for: the name of
+  /// the generic lambda and the use that needed the copy. Read by the
+  /// ownership checker to explain a capture each copy moves.
+  struct generic_lambda_use {
+    std::string name;
+    source_span span;
+  };
+  std::unordered_map<const ast::lambda_expr *, generic_lambda_use>
+      generic_lambda_uses;
+  /// Each `open_param_templates` entry's signature.
+  std::unordered_map<const ast::func_decl *, implicit_signature>
+      implicit_signatures;
+  /// Each `const_generic_instances` entry's template: the generic
+  /// declaration it was made from, whose signature still names the type
+  /// parameters the instance's has substituted away.
+  std::unordered_map<const ast::func_decl *, const ast::func_decl *>
+      instance_templates;
   /// Every interned `type_id` whose values can carry a borrow: a view
   /// (`slice`/`mut slice`, `cell`/`mut cell`), a reference (`&T`/`&mut T`),
   /// a callable (`fn(...)`, since a closure may hold `&`/`&mut` captures), or
@@ -941,12 +860,116 @@ struct checked_types {
   /// move). Computed over the whole table once checking finishes, because a
   /// generic sum's payload types need the checker's substitution.
   std::unordered_set<type_id> copy_sum_types;
+};
+
+/// Drop plans for every droppable struct and sum type. Read by
+/// `hir::compute_drop_schedule` to build scope-exit drop calls.
+struct drop_results {
+  /// Every struct/sum type found droppable — see `drop_plan`'s doc comment.
+  /// Populated once, after the main per-function walk, by
+  /// `checker::resolve_drop_plans` (`check.cpp`) over every type interned in
+  /// `types`. Consumed by `hir::compute_drop_schedule`/`hir::lowerer` to
+  /// build scope-exit drop calls (`spec/todo.md` item 6).
+  std::unordered_map<type_id, drop_plan> drop_plans;
+};
+
+struct checked_types {
+  type_table types;
+  std::unordered_map<const ast::node *, type_id> node_types;
+  /// The file each node in `node_types` was checked under, recorded at the
+  /// same moment and from the same `file_id_` the checker was standing in.
+  ///
+  /// An `ast::node` carries only a `source_span` — byte offsets with no file
+  /// — so a node pointer alone cannot say where it came from, and every file
+  /// in a session has a byte 0. Nothing in the compiler needed the answer
+  /// before: a pass that holds a node is already standing in its file.
+  /// `semantic::render_snapshot` (`snapshot.h`) is the exception — it walks
+  /// the decision maps from outside any file, and an offset with no file name
+  /// is not a reviewable diff.
+  ///
+  /// Recorded only in `record_expr_type`, which is the single funnel every
+  /// typed expression passes through. That covers the great majority of the
+  /// nodes the other decision maps key against too (a dispatch is always
+  /// recorded for an expression the checker also typed), so those maps
+  /// resolve their file by looking the node up here; a key that isn't
+  /// present renders with its offset alone rather than a guess.
+  std::unordered_map<const ast::node *, file_id_type> node_files;
+  std::unordered_map<const ast::call_expr *, call_argument_mapping>
+      call_argument_mappings;
+  /// Every call resolved by `infer_qualified_call` — see `resolved_callee`'s
+  /// doc comment. A node absent here was either resolved some other way
+  /// (a plain same-module/imported bare-name call, a method call) or never
+  /// resolved at all.
+  std::unordered_map<const ast::call_expr *, resolved_callee> resolved_callees;
+  /// Every `for` loop whose iterable is a user type implementing
+  /// `std.iter.iterator[T]` — see `iterator_loop_dispatch`'s doc comment.
+  /// Keyed by the `ast::for_stmt` node. Absent for range/option/generator/
+  /// indexable iterables, which lower through their own dedicated shapes.
+  std::unordered_map<const ast::for_stmt *, iterator_loop_dispatch>
+      for_iterator_dispatches;
+  /// The same, for a `for ... => yield` comprehension's iteration clauses.
+  /// A clause reaches the identical loop lowerers a statement `for` does, so
+  /// it needs the identical dispatch record — without one, `for (k, v) in
+  /// pairs => k * v` over a `list` fell through to the indexed-loop shape,
+  /// which stopped applying when `list` became an ordinary stdlib type.
+  /// Keyed by the clause's own `iterable` expression node, which is unique
+  /// per clause. Absent for range/option/indexable iterables.
+  std::unordered_map<const ast::node *, iterator_loop_dispatch>
+      comprehension_iterator_dispatches;
+  /// The return type the checker inferred from the body of each function
+  /// declared without one. Lowering reads it where it would read the
+  /// annotation.
+  std::unordered_map<const ast::func_decl *, type_id> inferred_return_types;
+  /// Every `splice_expr`/`splice_stmt` node resolved (via compile-time
+  /// evaluation of its operand) to the exact AST fragment it should be
+  /// lowered as, keyed by the splice node itself. `hir::lower` looks a
+  /// splice node up here and lowers the resolved fragment in its place —
+  /// see `checker::infer_expr`'s `splice_expr` case and
+  /// `checker::check_body_node`'s `splice_stmt` case. Absent entries mean
+  /// the splice never resolved to usable syntax (already diagnosed).
+  std::unordered_map<const ast::node *, const ast::node *> spliced_fragments;
+  /// Every `ident_expr`/`module_path_expr` that resolved to a reified static
+  /// global (see `static_global_defs`), mapped to that global's `name` —
+  /// `hir::lower_ident`/`lower_module_path` look this up before falling back
+  /// to `hir_local_ref`, mirroring `static_const_values` but for the
+  /// aggregate case that can't be inlined at each reference site.
+  std::unordered_map<const ast::node *, std::string> static_global_refs;
+  /// Every `module_path_expr` the checker classified as *field access on a
+  /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
+  /// see `checker::dotted_root_is_value` — mapped to the type after each
+  /// segment: `[0]` is the root binding's type, `back()` the whole path's.
+  /// `hir::lower_module_path` builds its projection chain from this and
+  /// never re-decides what the path means; a `module_path_expr` absent from
+  /// this map is a module reference.
+  std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
+      value_path_types;
+  /// Every receiver of a field access or method call (`field_expr::object`)
+  /// whose member was found only through `deref` — see `deref_step`. The
+  /// steps run in order on the receiver's value before the member is
+  /// reached: `h.x` lowers as `h.deref().x`. A receiver absent here is used
+  /// as it is.
+  std::unordered_map<const ast::expr *, std::vector<deref_step>>
+      deref_adjustments;
+  /// The same, for a value-rooted dotted path (`value_path_types`): for each
+  /// segment index `i`, the steps applied to the value of the first `i`
+  /// segments before segment `i` is selected. Empty where a segment needs
+  /// none; a path absent here needs none at all.
+  std::unordered_map<const ast::module_path_expr *,
+                     std::vector<std::vector<deref_step>>>
+      path_deref_adjustments;
+
+  /// Lowering decisions; see `lowering_results`.
+  lowering_results lowering;
+  /// Ownership facts; see `ownership_results`.
+  ownership_results ownership;
+  /// Drop plans; see `drop_results`.
+  drop_results drop;
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.
   [[nodiscard]] auto is_copy(type_id id) const -> bool {
-    return types.is_copy(id) || copy_type_params.contains(id) ||
-           copy_sum_types.contains(types.strip_refinement(id));
+    return types.is_copy(id) || ownership.copy_type_params.contains(id) ||
+           ownership.copy_sum_types.contains(types.strip_refinement(id));
   }
 };
 

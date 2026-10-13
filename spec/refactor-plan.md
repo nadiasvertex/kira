@@ -30,7 +30,7 @@ groups are not types.
 
 The checker hands its results to later stages as `checked_types`. This is a
 struct with about 60 maps and sets keyed by AST node, read by about 20 files;
-HIR lowering alone reads about 50 of them. The same header (`types.h`) also
+HIR lowering alone reads about 50 of them. The same header also
 holds the type table and the program index, which are separate concerns.
 
 ### There is duplicated logic inside the checker
@@ -108,7 +108,7 @@ can understand one component without reading the checker.
 
 ### Step 4: split the checker's output
 
-`types.h` becomes three headers: the type table, the program index, and the
+The checker's output header is split into three headers: the type table, the program index, and the
 checker results. The checker results are then grouped by the stage that reads
 them (lowering, ownership, drop scheduling, metadata), so each consumer
 depends on a smaller surface.

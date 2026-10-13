@@ -180,8 +180,8 @@ struct place_step {
 auto binding_type(const pattern_binding &binding, const checked_types &checked)
     -> type_id {
   if (binding.field != nullptr) {
-    const auto found = checked.struct_pattern_field_types.find(binding.field);
-    return found != checked.struct_pattern_field_types.end() ? found->second
+    const auto found = checked.lowering.struct_pattern_field_types.find(binding.field);
+    return found != checked.lowering.struct_pattern_field_types.end() ? found->second
                                                              : k_unknown_type;
   }
   const ast::node *node = binding.node;
@@ -504,7 +504,7 @@ private:
   /// so it is assumed to.
   [[nodiscard]] auto bears(type_id type) const -> bool {
     return checked_.types.is_unknown(type) ||
-           checked_.borrow_bearing_types.contains(type);
+           checked_.ownership.borrow_bearing_types.contains(type);
   }
 
   /// The view type behind `type`, looking through references — `&mut
@@ -643,7 +643,7 @@ private:
     };
     switch (pattern.kind) {
     case ast::node_kind::wildcard_pattern:
-      if (checked_.drop_plans.contains(type_of(&pattern))) {
+      if (checked_.drop.drop_plans.contains(type_of(&pattern))) {
         cfg_.leftover_drops.insert(&pattern);
       }
       break;
@@ -677,8 +677,8 @@ private:
       if (!std::ranges::any_of(fields, &ast::field_pattern::is_rest)) {
         break;
       }
-      const auto plan = checked_.drop_plans.find(type_of(&pattern));
-      if (plan == checked_.drop_plans.end()) {
+      const auto plan = checked_.drop.drop_plans.find(type_of(&pattern));
+      if (plan == checked_.drop.drop_plans.end()) {
         break;
       }
       for (const auto &[name, type] : plan->second.droppable_fields) {
@@ -713,7 +713,7 @@ private:
       const auto type = binding_type(binding, checked_);
       // An owned binding that needs a drop is dropped with its scope; the
       // others are left to `storage_dead`, like every pattern binding.
-      const auto whole = owned && checked_.drop_plans.contains(type);
+      const auto whole = owned && checked_.drop.drop_plans.contains(type);
       locals.push_back(declare(binding.name, type, binding.span, whole, owned,
                                binding.key()));
     }
@@ -950,8 +950,8 @@ private:
   }
 
   [[nodiscard]] auto has_own_drop(type_id type) const -> bool {
-    const auto it = checked_.drop_plans.find(type);
-    return it != checked_.drop_plans.end() && it->second.own_drop.has_value();
+    const auto it = checked_.drop.drop_plans.find(type);
+    return it != checked_.drop.drop_plans.end() && it->second.own_drop.has_value();
   }
 
   /// A short spelling of a value that is not a place, for a diagnostic:
@@ -1402,8 +1402,8 @@ private:
       const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
       // A generic lambda is never created itself: one closure per checked
       // copy is, right here (`checked_types::generic_lambda_instances`).
-      const auto copies = checked_.generic_lambda_instances.find(&lambda);
-      if (copies == checked_.generic_lambda_instances.end()) {
+      const auto copies = checked_.ownership.generic_lambda_instances.find(&lambda);
+      if (copies == checked_.ownership.generic_lambda_instances.end()) {
         return eval_lambda(lambda);
       }
       auto result = value{};
@@ -1673,8 +1673,8 @@ private:
   /// the type parameters the instance's has substituted away.
   [[nodiscard]] auto signature_decl(const ast::func_decl *decl) const
       -> const ast::func_decl * {
-    const auto it = checked_.instance_templates.find(decl);
-    return it != checked_.instance_templates.end() ? it->second : decl;
+    const auto it = checked_.ownership.instance_templates.find(decl);
+    return it != checked_.ownership.instance_templates.end() ? it->second : decl;
   }
 
   /// The type parameters through which a call to `decl` can hand back a
@@ -1691,15 +1691,15 @@ private:
     auto result = k_unknown_type;
     if (decl->return_type != nullptr) {
       result = type_of(decl->return_type.get());
-    } else if (const auto implicit = checked_.implicit_signatures.find(decl);
-               implicit != checked_.implicit_signatures.end()) {
+    } else if (const auto implicit = checked_.ownership.implicit_signatures.find(decl);
+               implicit != checked_.ownership.implicit_signatures.end()) {
       result = implicit->second.result;
     } else if (const auto it = checked_.inferred_return_types.find(decl);
                it != checked_.inferred_return_types.end()) {
       result = it->second;
     }
     if (unknown_signature_type(result) || result == k_error_type ||
-        checked_.own_borrow_bearing_types.contains(result)) {
+        checked_.ownership.own_borrow_bearing_types.contains(result)) {
       return std::nullopt;
     }
     auto params = std::unordered_set<type_id>{};
@@ -1778,7 +1778,7 @@ private:
     if (!flow.has_value()) {
       return true;
     }
-    const auto implicit = checked_.implicit_signatures.find(decl);
+    const auto implicit = checked_.ownership.implicit_signatures.find(decl);
     for (std::size_t i = 0; i < decl->params.size(); ++i) {
       const auto &param = decl->params[i];
       if (param.pattern == nullptr ||
@@ -1788,7 +1788,7 @@ private:
         continue;
       }
       auto type = type_of(param.pattern.get());
-      if (implicit != checked_.implicit_signatures.end() &&
+      if (implicit != checked_.ownership.implicit_signatures.end() &&
           i < implicit->second.params.size() &&
           implicit->second.params[i] != k_unknown_type) {
         type = implicit->second.params[i];
@@ -1956,7 +1956,7 @@ private:
       const auto moves = moved && info.movable;
       access(*local, moves ? access_kind::move : access_kind::read, span,
              k_no_loan, &lambda);
-      if (moves && checked_.drop_plans.contains(info.type)) {
+      if (moves && checked_.drop.drop_plans.contains(info.type)) {
         cfg_.owned_captures[&lambda].push_back(
             owned_capture{.name = std::string(name), .type = info.type});
       }
@@ -2048,7 +2048,7 @@ private:
       bind_pattern(pattern, subject, owned);
       // A miss leaves the subject unbound, so the path that did not match
       // drops it.
-      if (owned && checked_.drop_plans.contains(type_of(subject_expr))) {
+      if (owned && checked_.drop.drop_plans.contains(type_of(subject_expr))) {
         cfg_.unmatched_drops.insert(pattern);
       }
       return;
@@ -2749,7 +2749,7 @@ auto loop_handle_type(const ast::expr *iterable,
       return std::nullopt;
     }
   }
-  if (!checked.drop_plans.contains(type)) {
+  if (!checked.drop.drop_plans.contains(type)) {
     return std::nullopt;
   }
   return type;
@@ -2877,7 +2877,7 @@ auto arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
   const auto type_it = checked.node_types.find(&subject);
   return !pattern_bindings_are_disjoint(pattern) &&
          type_it != checked.node_types.end() &&
-         checked.drop_plans.contains(type_it->second) &&
+         checked.drop.drop_plans.contains(type_it->second) &&
          match_owns_subject(subject, patterns, checked, is_local);
 }
 

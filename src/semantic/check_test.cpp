@@ -2708,7 +2708,7 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(diag.error_count() == 0,
          "expected `&mut w[i]` against an `index_mut` impl to check cleanly");
 
-  expect(!checked.index_mut_dispatches.empty(),
+  expect(!checked.lowering.index_mut_dispatches.empty(),
          "expected `&mut w[0]` to have been recorded as an `index_mut` "
          "dispatch");
 

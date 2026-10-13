@@ -400,12 +400,12 @@ auto renderer::run() -> std::string {
                [this](const auto &item) -> auto { return ty(item.second); });
 
   span_section("struct_pattern_field_types",
-               checked_.struct_pattern_field_types,
+               checked_.lowering.struct_pattern_field_types,
                [this](const auto &item) -> auto {
                  return std::format("{} {}", item.first->name, ty(item.second));
                });
   span_section("struct_literal_field_types",
-               checked_.struct_literal_field_types,
+               checked_.lowering.struct_literal_field_types,
                [this](const auto &item) -> auto {
                  return std::format("{} {}", item.first->name, ty(item.second));
                });
@@ -436,26 +436,26 @@ auto renderer::run() -> std::string {
     return callee_text(item.second);
   };
   node_section("resolved_callees", checked_.resolved_callees, callee);
-  node_section("resolved_fn_values", checked_.resolved_fn_values, callee);
-  node_section("operator_dispatches", checked_.operator_dispatches, callee);
-  node_section("ord_dispatch_result_types", checked_.ord_dispatch_result_types,
+  node_section("resolved_fn_values", checked_.lowering.resolved_fn_values, callee);
+  node_section("operator_dispatches", checked_.lowering.operator_dispatches, callee);
+  node_section("ord_dispatch_result_types", checked_.lowering.ord_dispatch_result_types,
                [this](const auto &item) -> auto { return ty(item.second); });
-  node_section("index_dispatches", checked_.index_dispatches, callee);
-  node_section("index_set_dispatches", checked_.index_set_dispatches, callee);
-  node_section("index_mut_dispatches", checked_.index_mut_dispatches, callee);
-  node_section("index_ref_dispatches", checked_.index_ref_dispatches, callee);
-  node_section("try_conversions", checked_.try_conversions, callee);
-  node_section("try_conversion_types", checked_.try_conversion_types,
+  node_section("index_dispatches", checked_.lowering.index_dispatches, callee);
+  node_section("index_set_dispatches", checked_.lowering.index_set_dispatches, callee);
+  node_section("index_mut_dispatches", checked_.lowering.index_mut_dispatches, callee);
+  node_section("index_ref_dispatches", checked_.lowering.index_ref_dispatches, callee);
+  node_section("try_conversions", checked_.lowering.try_conversions, callee);
+  node_section("try_conversion_types", checked_.lowering.try_conversion_types,
                [this](const auto &item) -> auto { return ty(item.second); });
 
-  node_section("array_literal_conversions", checked_.array_literal_conversions,
+  node_section("array_literal_conversions", checked_.lowering.array_literal_conversions,
                [this](const auto &item) -> auto {
                  return std::format("{} from {}",
                                     callee_text(item.second.callee),
                                     ty(item.second.array_type));
                });
 
-  node_section("interp_dispatches", checked_.interp_dispatches,
+  node_section("interp_dispatches", checked_.lowering.interp_dispatches,
                [this](const auto &item) -> auto {
                  const auto &d = item.second;
                  const auto kind = [&]() -> std::string_view {
@@ -485,7 +485,7 @@ auto renderer::run() -> std::string {
                  return text;
                });
 
-  node_section("type_param_reflections", checked_.type_param_reflections,
+  node_section("type_param_reflections", checked_.lowering.type_param_reflections,
                [](const auto &item) -> auto { return item.second.type_name; });
 
   node_section("for_iterator_dispatches", checked_.for_iterator_dispatches,
@@ -497,16 +497,16 @@ auto renderer::run() -> std::string {
                [this](const auto &item) -> auto {
                  return loop_dispatch_text(item.second);
                });
-  node_section("comprehension_dispatches", checked_.comprehension_dispatches,
+  node_section("comprehension_dispatches", checked_.lowering.comprehension_dispatches,
                [this](const auto &item) -> auto {
                  return comprehension_text(item.second);
                });
-  node_section("runtime_fill_dispatches", checked_.runtime_fill_dispatches,
+  node_section("runtime_fill_dispatches", checked_.lowering.runtime_fill_dispatches,
                [this](const auto &item) -> auto {
                  return comprehension_text(item.second);
                });
 
-  node_section("layout_queries", checked_.layout_queries,
+  node_section("layout_queries", checked_.lowering.layout_queries,
                [this](const auto &item) -> auto {
                  const auto *what =
                      item.second.kind == layout_query_kind::size_of ? "size"
@@ -515,36 +515,36 @@ auto renderer::run() -> std::string {
                          : "needs_drop";
                  return std::format("{} of {}", what, ty(item.second.operand));
                });
-  node_section("ptr_casts", checked_.ptr_casts,
+  node_section("ptr_casts", checked_.lowering.ptr_casts,
                [this](const auto &item) -> auto { return ty(item.second); });
   node_section("slice_from_raw_parts_calls",
-               checked_.slice_from_raw_parts_calls,
+               checked_.lowering.slice_from_raw_parts_calls,
                [](const auto &) -> auto { return std::string{}; });
-  node_section("stack_buffers", checked_.stack_buffers,
+  node_section("stack_buffers", checked_.lowering.stack_buffers,
                [this](const auto &item) -> auto {
                  return std::format("{} x {}", ty(item.second.element),
                                     item.second.count);
                });
-  node_section("proven_in_bounds", checked_.proven_in_bounds,
+  node_section("proven_in_bounds", checked_.lowering.proven_in_bounds,
                [](const auto &) -> auto { return std::string{}; });
 
-  node_section("static_const_values", checked_.static_const_values,
+  node_section("static_const_values", checked_.lowering.static_const_values,
                [](const auto &item) -> auto {
                  return item.second == nullptr ? std::string("-")
                                                : item.second->value;
                });
-  node_section("folded_comptime_calls", checked_.folded_comptime_calls,
+  node_section("folded_comptime_calls", checked_.lowering.folded_comptime_calls,
                [](const auto &item) -> auto {
                  return item.second == nullptr ? std::string("-")
                                                : item.second->value;
                });
   node_section("static_global_refs", checked_.static_global_refs,
                [](const auto &item) -> auto { return item.second; });
-  node_section("static_if_taken_branch", checked_.static_if_taken_branch,
+  node_section("static_if_taken_branch", checked_.lowering.static_if_taken_branch,
                [](const auto &item) -> auto {
                  return std::string(item.second ? "then" : "else");
                });
-  node_section("static_global_defs", checked_.static_global_defs,
+  node_section("static_global_defs", checked_.lowering.static_global_defs,
                [this](const auto &item) -> auto {
                  return std::format("{} : {} [{} element(s)]", item.second.name,
                                     ty(item.second.type),
@@ -560,8 +560,8 @@ auto renderer::run() -> std::string {
 
   // Sections with no source site of their own.
   auto drops = std::vector<std::string>{};
-  drops.reserve(checked_.drop_plans.size());
-  for (const auto &[type, plan] : checked_.drop_plans) {
+  drops.reserve(checked_.drop.drop_plans.size());
+  for (const auto &[type, plan] : checked_.drop.drop_plans) {
     auto fields = std::string{};
     for (const auto &[name, field_type] : plan.droppable_fields) {
       if (!fields.empty()) {
@@ -587,29 +587,29 @@ auto renderer::run() -> std::string {
   text_section("drop_plans", std::move(drops));
 
   auto views = std::vector<std::string>{};
-  views.reserve(checked_.borrow_bearing_types.size());
-  for (const auto type : checked_.borrow_bearing_types) {
+  views.reserve(checked_.ownership.borrow_bearing_types.size());
+  for (const auto type : checked_.ownership.borrow_bearing_types) {
     views.push_back(ty(type));
   }
   text_section("borrow_bearing_types", std::move(views));
 
   auto owners = std::vector<std::string>{};
-  owners.reserve(checked_.static_global_owners.size());
-  for (const auto &[name, owner] : checked_.static_global_owners) {
+  owners.reserve(checked_.lowering.static_global_owners.size());
+  for (const auto &[name, owner] : checked_.lowering.static_global_owners) {
     owners.push_back(std::format("{} -> {}", name, owner));
   }
   text_section("static_global_owners", std::move(owners));
 
   auto comptime_only = std::vector<std::string>{};
-  comptime_only.reserve(checked_.comptime_only_functions.size());
-  for (const auto *decl : checked_.comptime_only_functions) {
+  comptime_only.reserve(checked_.lowering.comptime_only_functions.size());
+  for (const auto *decl : checked_.lowering.comptime_only_functions) {
     comptime_only.push_back(decl_name(decl));
   }
   text_section("comptime_only_functions", std::move(comptime_only));
 
   auto defaults = std::vector<std::string>{};
-  defaults.reserve(checked_.synthesized_trait_defaults.size());
-  for (const auto &method : checked_.synthesized_trait_defaults) {
+  defaults.reserve(checked_.lowering.synthesized_trait_defaults.size());
+  for (const auto &method : checked_.lowering.synthesized_trait_defaults) {
     defaults.push_back(std::format("{}::{}::{}", method.owner_module,
                                    method.target_type_name,
                                    decl_name(method.decl)));
@@ -617,16 +617,16 @@ auto renderer::run() -> std::string {
   text_section("synthesized_trait_defaults", std::move(defaults));
 
   auto instances = std::vector<std::string>{};
-  instances.reserve(checked_.const_generic_instances.size());
-  for (const auto &instance : checked_.const_generic_instances) {
+  instances.reserve(checked_.lowering.const_generic_instances.size());
+  for (const auto &instance : checked_.lowering.const_generic_instances) {
     instances.push_back(
         std::format("{}::{}", instance.owner_module, decl_name(instance.decl)));
   }
   text_section("const_generic_instances", std::move(instances));
 
   auto functors = std::vector<std::string>{};
-  functors.reserve(checked_.functor_instances.size());
-  for (const auto &instance : checked_.functor_instances) {
+  functors.reserve(checked_.lowering.functor_instances.size());
+  for (const auto &instance : checked_.lowering.functor_instances) {
     functors.push_back(std::format("{}::{}::{}", instance.owner_module,
                                    instance.impl_target,
                                    decl_name(instance.decl)));
@@ -634,8 +634,8 @@ auto renderer::run() -> std::string {
   text_section("functor_instances", std::move(functors));
 
   auto splices = std::vector<std::string>{};
-  splices.reserve(checked_.synthesized_item_splices.size());
-  for (const auto &splice : checked_.synthesized_item_splices) {
+  splices.reserve(checked_.lowering.synthesized_item_splices.size());
+  for (const auto &splice : checked_.lowering.synthesized_item_splices) {
     splices.push_back(
         std::format("{} impl@{}", splice.owner_module,
                     splice.impl == nullptr ? 0 : splice.impl->span.start));
@@ -643,8 +643,8 @@ auto renderer::run() -> std::string {
   text_section("synthesized_item_splices", std::move(splices));
 
   auto synthesized = std::vector<std::string>{};
-  synthesized.reserve(checked_.synthesized_decls.size());
-  for (const auto &decl : checked_.synthesized_decls) {
+  synthesized.reserve(checked_.lowering.synthesized_decls.size());
+  for (const auto &decl : checked_.lowering.synthesized_decls) {
     synthesized.push_back(decl_name(decl.get()));
   }
   text_section("synthesized_decls", std::move(synthesized));
@@ -659,13 +659,13 @@ auto renderer::run() -> std::string {
                       "synthesized_fragments {}\n"
                       "synthesized_const_literals {}\n"
                       "elided_contracts {}\n",
-                      checked_.synthesized_functor_nodes.size(),
-                      checked_.synthesized_types.size(),
-                      checked_.synthesized_fragments.size(),
-                      checked_.synthesized_const_literals.size(),
-                      checked_.elided_contracts.size());
+                      checked_.lowering.synthesized_functor_nodes.size(),
+                      checked_.lowering.synthesized_types.size(),
+                      checked_.lowering.synthesized_fragments.size(),
+                      checked_.lowering.synthesized_const_literals.size(),
+                      checked_.lowering.elided_contracts.size());
 
-  const auto &fmt = checked_.fmt_types;
+  const auto &fmt = checked_.lowering.fmt_types;
   out_ +=
       std::format("\n## fmt_runtime_types\n"
                   "format_spec {}\nalign_mode {}\nsign_mode {}\n"

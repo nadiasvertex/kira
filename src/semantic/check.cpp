@@ -217,18 +217,28 @@ auto checker::take_checked_types() -> checked_types {
       copy_sum_types.insert(id);
     }
   }
-  return checked_types{
+  auto result = checked_types{
       .types = std::move(session_.types_),
       .node_types = std::move(session_.node_types_),
       .node_files = std::move(session_.node_files_),
+      .call_argument_mappings = std::move(session_.call_argument_mappings_),
+      .resolved_callees = std::move(session_.resolved_callees_),
+      .for_iterator_dispatches = std::move(session_.for_iterator_dispatches_),
+      .comprehension_iterator_dispatches =
+          std::move(session_.comprehension_iterator_dispatches_),
+      .inferred_return_types = std::move(inferred_returns_),
+      .spliced_fragments = std::move(session_.spliced_fragments_),
+      .static_global_refs = std::move(session_.static_global_refs_),
+      .value_path_types = std::move(session_.value_path_types_),
+      .deref_adjustments = std::move(session_.deref_adjustments_),
+      .path_deref_adjustments = std::move(session_.path_deref_adjustments_)};
+  result.lowering = lowering_results{
       .struct_pattern_field_types =
           std::move(session_.struct_pattern_field_types_),
       .struct_literal_field_types =
           std::move(session_.struct_literal_field_types_),
       .struct_literal_field_expected =
           std::move(session_.struct_literal_field_expected_),
-      .call_argument_mappings = std::move(session_.call_argument_mappings_),
-      .resolved_callees = std::move(session_.resolved_callees_),
       .resolved_fn_values = std::move(session_.resolved_fn_values_),
       .operator_dispatches = std::move(session_.operator_dispatches_),
       .ord_dispatch_result_types =
@@ -241,10 +251,6 @@ auto checker::take_checked_types() -> checked_types {
           std::move(session_.array_literal_conversions_),
       .interp_dispatches = std::move(session_.interp_dispatches_),
       .type_param_reflections = std::move(session_.type_param_reflections_),
-      .for_iterator_dispatches = std::move(session_.for_iterator_dispatches_),
-      .comprehension_iterator_dispatches =
-          std::move(session_.comprehension_iterator_dispatches_),
-      .drop_plans = std::move(session_.drop_plans_),
       .comprehension_dispatches = std::move(session_.comprehension_dispatches_),
       .runtime_fill_dispatches = std::move(session_.runtime_fill_dispatches_),
       .static_for_elements = std::move(cache_.static_for_elements_),
@@ -258,18 +264,11 @@ auto checker::take_checked_types() -> checked_types {
           std::move(session_.synthesized_trait_defaults_),
       .const_generic_instances = std::move(session_.const_generic_instances_),
       .open_param_templates = std::move(open_param_templates),
-      .generic_lambda_instances = std::move(generic_lambda_instances_),
-      .generic_lambda_refs = std::move(generic_lambda_refs_),
-      .generic_lambda_uses = std::move(generic_lambda_uses_),
       .synthesized_lambdas = std::move(synthesized_lambdas_),
-      .implicit_signatures = std::move(implicit_signatures_),
-      .instance_templates = std::move(instance_templates_),
-      .inferred_return_types = std::move(inferred_returns_),
       .comptime_only_functions = std::move(session_.comptime_only_functions_),
       .synthesized_functor_nodes = std::move(functor_.synthetic_nodes_),
       .functor_instances = std::move(functor_.functor_instance_decls_),
       .synthesized_types = std::move(session_.synthesized_types_),
-      .spliced_fragments = std::move(session_.spliced_fragments_),
       .synthesized_fragments = take_synthesized_fragments(),
       .synthesized_item_splices = std::move(session_.synthesized_item_splices_),
       .synthesized_const_literals =
@@ -283,21 +282,26 @@ auto checker::take_checked_types() -> checked_types {
       .stack_buffers = std::move(session_.stack_buffers_),
       .static_global_defs = std::move(session_.static_global_defs_),
       .static_if_taken_branch = std::move(session_.static_if_taken_branch_),
-      .static_global_refs = std::move(session_.static_global_refs_),
       .static_struct_values = std::move(session_.static_struct_values_),
       .synthesized_static_structs =
           std::move(session_.synthesized_static_structs_),
       .unreadable_static_refs = std::move(session_.unreadable_static_refs_),
       .static_global_owners = std::move(session_.static_global_owners_),
-      .value_path_types = std::move(session_.value_path_types_),
-      .deref_adjustments = std::move(session_.deref_adjustments_),
-      .path_deref_adjustments = std::move(session_.path_deref_adjustments_),
       .proven_in_bounds = std::move(session_.proven_in_bounds_),
-      .elided_contracts = std::move(session_.elided_contracts_),
+      .elided_contracts = std::move(session_.elided_contracts_)};
+  result.ownership = ownership_results{
+      .generic_lambda_instances = std::move(generic_lambda_instances_),
+      .generic_lambda_refs = std::move(generic_lambda_refs_),
+      .generic_lambda_uses = std::move(generic_lambda_uses_),
+      .implicit_signatures = std::move(implicit_signatures_),
+      .instance_templates = std::move(instance_templates_),
       .borrow_bearing_types = std::move(borrow_bearing),
       .own_borrow_bearing_types = std::move(own_borrow_bearing),
       .copy_type_params = std::move(copy_type_params_),
       .copy_sum_types = std::move(copy_sum_types)};
+  result.drop = drop_results{
+      .drop_plans = std::move(session_.drop_plans_)};
+  return result;
 }
 
 /// Resolves `std.fmt`'s runtime-support types (`format_spec`, `align_mode`,
