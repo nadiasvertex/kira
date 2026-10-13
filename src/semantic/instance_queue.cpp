@@ -1,5 +1,6 @@
 #include "src/semantic/instance_queue.h"
 
+#include <optional>
 #include <utility>
 
 namespace cinder::semantic::detail {
@@ -44,6 +45,81 @@ auto instance_queue::make_now(pending_instance &item, instance_hooks &hooks)
   hooks.walked(item);
 }
 
+namespace {
+
+/// The queued item in `items` whose clone is `instance`, by index.
+[[nodiscard]] auto index_of(const std::vector<pending_instance> &items,
+                            const ast::func_decl &instance)
+    -> std::optional<size_t> {
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (items[i].instance == &instance) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+auto instance_queue::queued_template(const ast::func_decl &instance) const
+    -> const ast::func_decl * {
+  if (made_.contains(&instance)) {
+    return nullptr;
+  }
+  for (const auto *items : {&walks_, &substitutions_}) {
+    if (const auto at = index_of(*items, instance)) {
+      return (*items)[*at].tmpl;
+    }
+  }
+  for (const auto &[tmpl, items] : waiting_) {
+    if (index_of(items, instance).has_value()) {
+      return tmpl;
+    }
+  }
+  return nullptr;
+}
+
+auto instance_queue::make_queued_now(const ast::func_decl &instance,
+                                     instance_hooks &hooks) -> bool {
+  if (made_.contains(&instance)) {
+    return false;
+  }
+  // Copied out and marked made before making it, rather than erased: a
+  // flush may be iterating these vectors by index right now.
+  auto item = std::optional<pending_instance>{};
+  for (auto *items : {&walks_, &substitutions_}) {
+    if (const auto at = index_of(*items, instance)) {
+      item = (*items)[*at];
+      break;
+    }
+  }
+  if (!item.has_value()) {
+    for (auto &[tmpl, items] : waiting_) {
+      if (const auto at = index_of(items, instance)) {
+        item = items[*at];
+        break;
+      }
+    }
+  }
+  if (!item.has_value() || is_failed(*item->tmpl)) {
+    return false;
+  }
+  if (hooks.walks(*item)) {
+    made_.insert(&instance);
+    hooks.check_clone(*item);
+    hooks.record(*item);
+    hooks.walked(*item);
+    return true;
+  }
+  if (!is_checked(*item->tmpl) || !hooks.answers_are_concrete(*item)) {
+    return false;
+  }
+  made_.insert(&instance);
+  hooks.substitute(*item);
+  hooks.record(*item);
+  return true;
+}
+
 auto instance_queue::flush_walks(instance_hooks &hooks) -> void {
   auto processed = size_t{0};
   while (processed < walks_.size()) {
@@ -51,6 +127,9 @@ auto instance_queue::flush_walks(instance_hooks &hooks) -> void {
     // request more, which reallocates.
     auto item = walks_[processed];
     ++processed;
+    if (made_.contains(item.instance)) {
+      continue;
+    }
     make_now(item, hooks);
   }
   walks_.clear();
@@ -62,7 +141,7 @@ auto instance_queue::flush_substitutions(instance_hooks &hooks) -> void {
     // By index: substituting runs elaborations, which queue instances.
     auto item = substitutions_[processed];
     ++processed;
-    if (is_failed(*item.tmpl)) {
+    if (is_failed(*item.tmpl) || made_.contains(item.instance)) {
       continue;
     }
     if (!is_checked(*item.tmpl)) {
@@ -88,7 +167,7 @@ auto instance_queue::flush_unchecked(instance_hooks &hooks) -> void {
   waiting_.clear();
   for (auto &[tmpl, items] : waiting) {
     for (auto &item : items) {
-      if (is_failed(*item.tmpl)) {
+      if (is_failed(*item.tmpl) || made_.contains(item.instance)) {
         continue;
       }
       // A body that is concrete already — a method `deriving` synthesized

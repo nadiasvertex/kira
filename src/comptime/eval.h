@@ -351,6 +351,50 @@ public:
     generic_call_resolver_ = std::move(resolver);
   }
 
+  /// What happened when the VM was asked to run a compile-time call — see
+  /// `set_vm_call`.
+  struct vm_call_outcome {
+    enum class kind : std::uint8_t {
+      /// The VM cannot run this call; interpret it instead.
+      not_run,
+      /// The call ran; `result` is its value.
+      returned,
+      /// The call ran and failed; `message` says how and `notes` where.
+      failed,
+    };
+    kind outcome = kind::not_run;
+    value result;
+    std::string message;
+    std::vector<diagnostic> notes;
+  };
+
+  /// Runs a call to `fn` with `args` (already in parameter order, every
+  /// parameter supplied) on the VM. `type_args` binds a generic `fn`'s type
+  /// parameters, by name, to `type_value`s; the VM runs the instance for
+  /// them.
+  using vm_call_fn = std::function<vm_call_outcome(
+      const ast::func_decl &fn, std::span<const value> args,
+      std::span<const std::pair<std::string, value>> type_args)>;
+
+  /// How compile-time calls use the VM (`set_vm_call`).
+  enum class vm_mode : std::uint8_t {
+    /// Every call is interpreted.
+    off,
+    /// A call the VM can run runs there; any other is interpreted.
+    on,
+    /// A call the VM can run runs both ways, and a difference between the
+    /// two results is reported as an error: different values, or a failure
+    /// on the VM only. The interpreter's result is used when it has one.
+    /// For checking the move to the VM, not for ordinary builds.
+    compare,
+  };
+
+  /// Installs the VM. Unset (or `vm_mode::off`), every call is interpreted.
+  void set_vm_call(vm_call_fn call, vm_mode mode) {
+    vm_call_ = std::move(call);
+    vm_mode_ = mode;
+  }
+
   /// The type the current call's type parameter `name` is bound to, or
   /// `nullptr` when `name` is not a type parameter bound in this frame.
   [[nodiscard]] auto type_binding(const std::string &name) -> const value * {
@@ -729,6 +773,13 @@ private:
                 std::vector<std::pair<std::string, value>> type_args = {})
       -> value;
 
+  /// `call_function`'s interpreted path: runs `fn`'s body in this evaluator.
+  [[nodiscard]] auto
+  interpret_function(const ast::func_decl &fn, const std::string &name,
+                     std::vector<value> args, source_span span,
+                     std::vector<std::pair<std::string, value>> type_args)
+      -> value;
+
   /// A lambda expression: captures the visible locals of the current frame
   /// (or only those its explicit capture list names).
   [[nodiscard]] auto eval_lambda(const ast::lambda_expr &lambda) -> value;
@@ -903,6 +954,25 @@ private:
 
   /// See `set_generic_call_resolver`; unset until `checker` installs it.
   generic_call_resolver_fn generic_call_resolver_;
+
+  /// See `set_vm_call`.
+  vm_call_fn vm_call_;
+  vm_mode vm_mode_ = vm_mode::off;
+
+  /// Runs `fn` on the VM if it can (`vm_call_`), returning `nullopt` when it
+  /// cannot and the call must be interpreted. In `vm_mode::compare`,
+  /// `interpret` runs it the other way too and the two are compared.
+  [[nodiscard]] auto
+  call_on_vm(const ast::func_decl &fn, const std::string &name,
+             std::span<const value> args,
+             std::span<const std::pair<std::string, value>> type_args,
+             source_span span, const std::function<value()> &interpret)
+      -> std::optional<value>;
+
+  /// Reports a failed VM call at `span`, with `notes` saying where in the
+  /// callee it failed.
+  auto report_vm_failure(source_span span, std::string message,
+                         std::vector<diagnostic> notes) -> value;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
   /// Index of the innermost call's first frame in `locals_` — the floor

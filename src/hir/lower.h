@@ -58,6 +58,15 @@ struct lowering_options {
                                   const lowering_options &options = {})
     -> std::expected<ptr<hir_function>, lowering_error>;
 
+/// Builds a reified `static let` (`lowering_results::static_global_def`) as
+/// the global the backends initialize once before running anything — the
+/// same `hir_static_global` `lower_module` produces for one, for a caller that
+/// assembles its own module, such as compile-time execution.
+[[nodiscard]] auto
+lower_static_global(const semantic::lowering_results::static_global_def &def,
+                    const semantic::checked_types &checked, source_span span)
+    -> std::expected<hir_static_global, lowering_error>;
+
 /// Lowers every top-level free function declared directly in `file`'s item
 /// list — not one nested inside a `module`/`impl`/`extend`/`trait` block,
 /// which is out of this milestone's scope — plus every function the checker

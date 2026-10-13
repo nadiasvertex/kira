@@ -6,6 +6,7 @@ cc_library(
         "eval.cpp",
         "hygiene.cpp",
         "reflect.cpp",
+        "value.cpp",
     ],
     hdrs = [
         "eval.h",

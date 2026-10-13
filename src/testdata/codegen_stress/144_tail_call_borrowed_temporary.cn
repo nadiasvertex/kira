@@ -1,0 +1,21 @@
+module codegen_stress.tail_call_borrowed_temporary
+
+# A call in tail position whose argument borrows a temporary (`&TABLE[0..4]`
+# is a slice built in the caller's frame) must not be a tail call: a tail
+# call reuses the caller's frame, so the callee would read the slice through
+# a pointer into registers it has just cleared. It used to be marked one,
+# because only a borrow of a named local counted (found by `std.unicode`'s
+# final-sigma lookup crashing with inlining off).
+
+static TABLE: array[int32, 4] = [10, 20, 30, 40]
+
+def ends(xs: &slice[int32]) -> int32:
+    return xs[0] + xs[3]
+
+def via(bump: int32) -> int32:
+    return ends(&TABLE[0..4])
+
+def main() -> int32:
+    return via(1)
+
+# expect: 50

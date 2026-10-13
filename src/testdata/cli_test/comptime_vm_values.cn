@@ -1,0 +1,29 @@
+module main
+
+# A compile-time call builds a struct holding a string, a list and an option
+# on the VM; the compiler keeps it as a compile-time value, and a second
+# compile-time call takes it back to the VM and reads every part.
+
+type entry = { name: str, sizes: list[int32], best: option[int32] }
+
+static def build(count: int32) -> entry:
+    var sizes: list[int32] = []
+    var i = 0
+    while i < count:
+        sizes.push(i * i)
+        i = i + 1
+    let third = sizes[3]
+    return entry { name: "squares", sizes: sizes, best: @some(third) }
+
+static def score(x: entry) -> int32:
+    let best = match x.best:
+        @some(v) => v
+        @none => 0
+    # 7 + 4 * 10 + 9 + 4
+    return x.name.len() as int32 + x.sizes.len() as int32 * 10 + best + x.sizes[2]
+
+static let e = build(4)
+static let total = score(e)
+
+def main() -> int32:
+    return total

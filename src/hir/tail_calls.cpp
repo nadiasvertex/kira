@@ -404,10 +404,30 @@ auto mark_tail_block(hir_block &block,
   }
 }
 
-/// Whether the body borrows one of the frame's own locals (`&x`, `&x.f`,
-/// or a receiver lent implicitly, which `make_references_explicit` spells
-/// the same way). Same hazard as `owns_stack_buffer`: a callee may hold that
-/// address, and a tail call would reuse the frame it points into.
+/// Whether `operand`, borrowed, is storage in this frame. A local or a part
+/// of one is (`is_frame_place`); so is any value that is not a place at all
+/// — `&xs[0..n]`, `&f()` — since borrowing it first stores it in a register
+/// of this frame. Only a place reached through a pointer (`&*p`, `&p.f`
+/// where `p` is a reference) lives elsewhere.
+[[nodiscard]] auto borrow_is_in_frame(const hir_expr &operand) -> bool {
+  if (is_frame_place(operand)) {
+    return true;
+  }
+  if (operand.kind == hir_node_kind::hir_unary) {
+    return dynamic_cast<const hir_unary &>(operand).op != ast::unary_op::deref;
+  }
+  if (operand.kind == hir_node_kind::hir_field) {
+    const auto &field = dynamic_cast<const hir_field &>(operand);
+    return field.object == nullptr || borrow_is_in_frame(*field.object);
+  }
+  return true;
+}
+
+/// Whether the body borrows storage in its own frame (`&x`, `&x.f`, a
+/// borrowed temporary such as `&xs[0..n]`, or a receiver lent implicitly,
+/// which `make_references_explicit` spells the same way). Same hazard as
+/// `owns_stack_buffer`: a callee may hold that address, and a tail call
+/// would reuse the frame it points into.
 [[nodiscard]] auto borrows_a_local(hir_node &node) -> bool {
   if (node.kind == hir_node_kind::hir_lambda) {
     return false;
@@ -416,7 +436,7 @@ auto mark_tail_block(hir_block &block,
     const auto &unary = dynamic_cast<const hir_unary &>(node);
     if ((unary.op == ast::unary_op::addr_of ||
          unary.op == ast::unary_op::addr_of_mut) &&
-        unary.operand != nullptr && is_frame_place(*unary.operand)) {
+        unary.operand != nullptr && borrow_is_in_frame(*unary.operand)) {
       return true;
     }
   }

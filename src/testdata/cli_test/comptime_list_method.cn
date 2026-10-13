@@ -1,7 +1,7 @@
 module main
 
-# A compile-time method call the evaluator cannot run says which method and
-# why, rather than reporting a failed field access.
+# A list method called at compile time runs on the VM: `check` builds a list
+# and asks whether it is empty.
 
 static def check() -> int32:
     let xs = [1, 2, 3]

@@ -971,6 +971,123 @@ auto test_intrinsic_rt_open_returns_err_on_a_missing_file() -> void {
          "a nonexistent, non-`create` path");
 }
 
+/// A loop that never ends stops at the step budget instead of hanging a
+/// hosted run, and says where it was.
+auto test_hosted_run_stops_at_its_step_budget() -> void {
+  // fn() { loop: jump loop }
+  auto writer = bc::chunk_writer{};
+  const auto loop_start = writer.current_offset();
+  writer.emit_opcode(bc::opcode::op_jump);
+  const auto back = writer.emit_jump_placeholder();
+  auto function = std::move(writer).finish("spin", 0, 0);
+  // Patch the jump to land on itself: offset relative to the byte after the
+  // operand.
+  const auto offset =
+      static_cast<int32_t>(loop_start) - static_cast<int32_t>(back + 4);
+  for (size_t i = 0; i < 4; ++i) {
+    function.code[back + i] =
+        static_cast<uint8_t>((static_cast<uint32_t>(offset) >> (8 * i)) & 0xFF);
+  }
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  const auto result = bc::vm{module}.run_hosted(
+      0, {}, bc::run_limits{.step_budget = 1000, .allow_effects = true});
+  expect(!result.has_value(), "expected the budget to stop the loop");
+  expect(result.error().reason == bc::panic_reason::step_budget_exhausted,
+         "expected step_budget_exhausted");
+  expect(result.error().frames.size() == 1 &&
+             result.error().frames.front().function_index == 0 &&
+             result.error().frames.front().offset == loop_start,
+         "expected the failure to point at the looping jump");
+}
+
+/// A hosted run refuses an intrinsic that reaches outside the VM, by name.
+auto test_hosted_run_refuses_effects() -> void {
+  auto writer = bc::chunk_writer{};
+  writer.emit_opcode(bc::opcode::op_call_intrinsic);
+  writer.emit_register(0);
+  writer.emit_u8(intrinsic_id("rt_stdout"));
+  writer.emit_register(0);
+  writer.emit_u8(0);
+  writer.emit_opcode(bc::opcode::op_return_unit);
+  auto function = std::move(writer).finish("stdout_fd", 0, 1);
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(function));
+
+  const auto refused = bc::vm{module}.run_hosted(
+      0, {},
+      bc::run_limits{.step_budget = std::nullopt, .allow_effects = false});
+  expect(!refused.has_value() &&
+             refused.error().reason == bc::panic_reason::effect_refused &&
+             refused.error().message.contains("rt_stdout"),
+         "expected rt_stdout to be refused by name");
+  const auto allowed = bc::vm{module}.run_hosted(
+      0, {},
+      bc::run_limits{.step_budget = std::nullopt, .allow_effects = true});
+  expect(allowed.has_value(),
+         "expected rt_stdout to run when effects are allowed");
+}
+
+/// A fatal reason ends the process on an ordinary run; a hosted run gets it
+/// back as a failure, with the frames that were active, innermost first.
+auto test_hosted_run_returns_fatal_panics() -> void {
+  // fn caller() { callee() }   fn callee() { panic_if(true, bounds) }
+  auto callee_writer = bc::chunk_writer{};
+  const auto c_true = callee_writer.add_constant(bc::slot_value{uint64_t{1}});
+  callee_writer.emit_opcode(bc::opcode::op_load_const);
+  callee_writer.emit_register(0);
+  callee_writer.emit_u32(c_true);
+  const auto panic_at = callee_writer.current_offset();
+  callee_writer.emit_opcode(bc::opcode::op_panic_if);
+  callee_writer.emit_register(0);
+  callee_writer.emit_u8(
+      static_cast<uint8_t>(bc::panic_reason::index_out_of_bounds));
+  callee_writer.emit_opcode(bc::opcode::op_return_unit);
+  auto callee = std::move(callee_writer).finish("callee", 0, 1);
+
+  auto caller_writer = bc::chunk_writer{};
+  caller_writer.emit_opcode(bc::opcode::op_call);
+  caller_writer.emit_register(0);
+  caller_writer.emit_u16(1);
+  caller_writer.emit_register(0);
+  caller_writer.emit_u8(0);
+  caller_writer.emit_opcode(bc::opcode::op_return_unit);
+  auto caller = std::move(caller_writer).finish("caller", 0, 1);
+
+  auto module = bc::bytecode_module{.module_name = "m", .functions = {}};
+  module.functions.push_back(std::move(caller));
+  module.functions.push_back(std::move(callee));
+
+  const auto result = bc::vm{module}.run_hosted(0, {}, bc::run_limits{});
+  expect(!result.has_value() &&
+             result.error().reason == bc::panic_reason::index_out_of_bounds,
+         "expected the bounds panic back, not the end of the process");
+  const auto &frames = result.error().frames;
+  expect(frames.size() == 2 && frames[0].function_index == 1 &&
+             frames[0].offset == panic_at && frames[1].function_index == 0 &&
+             frames[1].offset < 10,
+         "expected the callee's panic and then the caller's call");
+}
+
+/// `span_at` finds the source of the run of instructions holding an offset.
+auto test_span_at_reads_the_source_map() -> void {
+  auto function = bc::bytecode_function{};
+  function.spans = {
+      bc::span_entry{.offset = 0,
+                     .span = cinder::source_span{.start = 1, .end = 2}},
+      bc::span_entry{.offset = 10,
+                     .span = cinder::source_span{.start = 5, .end = 9}},
+  };
+  expect(bc::span_at(function, 0).start == 1, "expected the first span at 0");
+  expect(bc::span_at(function, 9).start == 1, "expected the first span at 9");
+  expect(bc::span_at(function, 10).start == 5, "expected the second at 10");
+  expect(bc::span_at(function, 400).start == 5,
+         "expected the last span past it");
+  expect(bc::span_at(bc::bytecode_function{}, 3).empty(),
+         "expected no span without a source map");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -987,6 +1104,10 @@ auto main() -> int {
     test_unbounded_recursion_panics_with_stack_overflow();
     test_tail_call_reuses_frame_past_max_call_depth();
     test_explicit_panic_opcode();
+    test_hosted_run_stops_at_its_step_budget();
+    test_hosted_run_refuses_effects();
+    test_hosted_run_returns_fatal_panics();
+    test_span_at_reads_the_source_map();
     test_alloc_and_slot_roundtrip_a_two_field_heap_block();
     test_packed_struct_fields_round_trip_without_clobbering_neighbors();
     test_narrow_element_array_indexed_load_store_round_trip();

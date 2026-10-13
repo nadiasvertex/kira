@@ -14,11 +14,11 @@
 #include <utility>
 
 #include "src/comptime/hygiene.h"
+#include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
-#include "src/parser/ast_traversal.h"
 
 namespace cinder::comptime {
 namespace {
@@ -784,8 +784,7 @@ auto evaluator::eval_tuple(const ast::tuple_expr &tup) -> value {
 
 auto evaluator::eval_struct(const ast::struct_expr &st) -> value {
   auto type_name = std::string{};
-  if (const auto *head =
-          ast::as<const ast::ident_expr>(st.type_name.get());
+  if (const auto *head = ast::as<const ast::ident_expr>(st.type_name.get());
       head != nullptr) {
     type_name = head->name;
   }
@@ -841,8 +840,7 @@ auto evaluator::eval_index(const ast::index_expr &idx) -> value {
   }
   // `s[a .. b]` on a `str` or a list: the sub-range, with the same bounds
   // rule the backends enforce.
-  if (const auto *range =
-          ast::as<const ast::binary_expr>(idx.index.get());
+  if (const auto *range = ast::as<const ast::binary_expr>(idx.index.get());
       range != nullptr && range->lhs != nullptr && range->rhs != nullptr &&
       (range->op == ast::binary_op::range ||
        range->op == ast::binary_op::range_inclusive)) {
@@ -1106,8 +1104,7 @@ auto evaluator::materialize_quote(const ast::node &node)
     } else if (resolved.kind == value_kind::expr_fragment &&
                resolved.fragment != nullptr &&
                resolved.fragment->kind == ast::node_kind::ident_expr) {
-      type_name =
-          ast::cast<const ast::ident_expr>(*resolved.fragment).name;
+      type_name = ast::cast<const ast::ident_expr>(*resolved.fragment).name;
     } else {
       report(node.span, "this `~` splice inside a quoted fragment's type "
                         "position must resolve to a type name");
@@ -1274,6 +1271,97 @@ auto evaluator::materialize_quote(const ast::node &node)
 }
 
 auto evaluator::call_function(
+    const ast::func_decl &fn, const std::string &name, std::vector<value> args,
+    source_span span, std::vector<std::pair<std::string, value>> type_args)
+    -> value {
+  // A generic call runs the instance its type arguments name.
+  //
+  // Silent evaluation (`try_evaluate`) also probes ordinary code — a `let`
+  // whose initializer might be a compile-time constant — so there only a
+  // `static def` runs on the VM. An ordinary function would actually run,
+  // however long it takes, to bind a value nothing may read.
+  const auto speculative = diagnostics_suppressed_ && !fn.modifiers.is_static;
+  if (vm_call_ && vm_mode_ != vm_mode::off && !speculative &&
+      !fn.modifiers.is_intrinsic && args.size() == fn.params.size()) {
+    const auto vm_args = args;
+    const auto vm_type_args = type_args;
+    const auto interpret = [&]() -> value {
+      return interpret_function(fn, name, std::move(args), span,
+                                std::move(type_args));
+    };
+    if (auto result =
+            call_on_vm(fn, name, vm_args, vm_type_args, span, interpret)) {
+      return *std::move(result);
+    }
+  }
+  return interpret_function(fn, name, std::move(args), span,
+                            std::move(type_args));
+}
+
+auto evaluator::call_on_vm(
+    const ast::func_decl &fn, const std::string &name,
+    std::span<const value> args,
+    std::span<const std::pair<std::string, value>> type_args, source_span span,
+    const std::function<value()> &interpret) -> std::optional<value> {
+  auto outcome = vm_call_(fn, args, type_args);
+  switch (outcome.outcome) {
+  case vm_call_outcome::kind::not_run:
+    return std::nullopt;
+  case vm_call_outcome::kind::failed:
+    if (vm_mode_ == vm_mode::compare) {
+      // The interpreter decides; a failure the VM alone reports is a
+      // difference, and the interpreter's own failure reports itself.
+      auto interpreted = interpret();
+      if (!interpreted.is_error()) {
+        report(span, std::format("compile-time call to `{}` failed on the VM "
+                                 "but not in the interpreter: {}",
+                                 name, outcome.message));
+      }
+      return interpreted;
+    }
+    return report_vm_failure(span,
+                             std::format("compile-time call to `{}` failed: {}",
+                                         name, outcome.message),
+                             std::move(outcome.notes));
+  case vm_call_outcome::kind::returned:
+    break;
+  }
+  if (vm_mode_ != vm_mode::compare) {
+    return std::move(outcome.result);
+  }
+  // Silently: a call the interpreter cannot run and the VM can is the VM
+  // doing more, not a difference.
+  const auto saved_suppressed = std::exchange(diagnostics_suppressed_, true);
+  auto interpreted = interpret();
+  diagnostics_suppressed_ = saved_suppressed;
+  if (interpreted.is_error()) {
+    return std::move(outcome.result);
+  }
+  if (!same_value(interpreted, outcome.result)) {
+    report(span,
+           std::format("compile-time call to `{}` returned {} on the VM but {} "
+                       "in the interpreter",
+                       name, describe_value(outcome.result),
+                       describe_value(interpreted)));
+  }
+  return interpreted;
+}
+
+auto evaluator::report_vm_failure(source_span span, std::string message,
+                                  std::vector<diagnostic> notes) -> value {
+  if (diagnostics_suppressed_) {
+    return value::make_error();
+  }
+  auto error = diagnostic(diagnostic_level::error, std::move(message), file_id_)
+                   .with_label(span, "evaluated at compile time here");
+  for (auto &note : notes) {
+    error.children.push_back(std::move(note));
+  }
+  diag_.emit(std::move(error));
+  return value::make_error();
+}
+
+auto evaluator::interpret_function(
     const ast::func_decl &fn, const std::string &name, std::vector<value> args,
     source_span span, std::vector<std::pair<std::string, value>> type_args)
     -> value {
@@ -1577,8 +1665,7 @@ auto evaluator::clone_expr_fragment(const ast::node &node)
     return cloned;
   }
   case ast::node_kind::interpolated_string_expr: {
-    const auto &interp =
-        ast::cast<const ast::interpolated_string_expr>(node);
+    const auto &interp = ast::cast<const ast::interpolated_string_expr>(node);
     auto cloned = ast::make<ast::interpolated_string_expr>();
     cloned->span = interp.span;
     for (const auto &segment : interp.segments) {
@@ -2385,11 +2472,10 @@ auto evaluator::qualified_callee_path(const ast::expr &callee)
   }
   auto path = ast::module_path_expr{};
   path.span = callee.span;
-  if (const auto *root =
-          ast::as<const ast::ident_expr>(field->object.get())) {
+  if (const auto *root = ast::as<const ast::ident_expr>(field->object.get())) {
     path.segments.push_back(root->name);
-  } else if (const auto *prefix = ast::as<const ast::module_path_expr>(
-                 field->object.get())) {
+  } else if (const auto *prefix =
+                 ast::as<const ast::module_path_expr>(field->object.get())) {
     path.segments = prefix->segments;
   } else {
     return std::nullopt;
@@ -2431,8 +2517,7 @@ auto evaluator::method_callee(const ast::expr &callee)
 auto evaluator::eval_local_push(const ast::call_expr &call,
                                 const ast::field_expr &method)
     -> std::optional<value> {
-  const auto *target =
-      ast::as<const ast::ident_expr>(method.object.get());
+  const auto *target = ast::as<const ast::ident_expr>(method.object.get());
   if (method.field_name != "push" || target == nullptr ||
       call.args.size() != 1 || call.args.front().value == nullptr) {
     return std::nullopt;
@@ -2622,8 +2707,7 @@ auto evaluator::eval_call(const ast::call_expr &call) -> value {
   // variant constructor, even in a body the checker has not typed yet (a
   // method in a module checked after the one evaluating it).
   auto variant = resolve_variant(call);
-  if (const auto *callee =
-          ast::as<const ast::ident_expr>(call.callee.get());
+  if (const auto *callee = ast::as<const ast::ident_expr>(call.callee.get());
       !variant && callee != nullptr &&
       (callee->name == "some" || callee->name == "ok" ||
        callee->name == "err")) {
@@ -3127,8 +3211,7 @@ auto evaluator::eval_cast(const ast::cast_expr &cast) -> value {
     return operand;
   }
 
-  const auto *named =
-      ast::as<const ast::named_type>(cast.target_type.get());
+  const auto *named = ast::as<const ast::named_type>(cast.target_type.get());
   if (named == nullptr || named->path.size() != 1) {
     return report(cast.span, "this cast target is not yet supported in "
                              "compile-time evaluation");
@@ -3228,8 +3311,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
   }
   case ast::node_kind::assign_stmt: {
     const auto &assign = ast::cast<const ast::assign_stmt>(node);
-    const auto *target =
-        ast::as<const ast::ident_expr>(assign.target.get());
+    const auto *target = ast::as<const ast::ident_expr>(assign.target.get());
     const auto compound_op = ast::compound_assign_op(assign.op);
     if (target == nullptr || assign.value == nullptr ||
         (assign.op != ast::assign_op::assign && !compound_op.has_value())) {

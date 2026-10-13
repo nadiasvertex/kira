@@ -182,6 +182,57 @@ interpreter is deleted. The comparison is only a check on the move from one
 path to the other, since a bug shared by both paths will not show up in it.
 Tests that check a computed value remain the primary check.
 
+Status: phases 1 through 3 have landed; phases 4 and 5 have not.
+
+- Phase 1. The checker keeps a lowering view (`semantic/check_lowering_view.
+  cpp`): a `checked_types` holding just the functions compile-time code
+  runs, copied out of the session tables with types settled and
+  refinements erased, sharing the session's type table. Preparing a
+  function checks its item out of turn when file order has not reached it,
+  makes the generic instances it names, and settles its own literal leaves
+  and list literals. `//src/comptime_vm` lowers a function and everything
+  it reaches, compiles them into one bytecode module, and converts values
+  between the evaluator and VM memory.
+- Phase 2. `vm::run_hosted` runs with a step budget, refuses intrinsics
+  that reach outside the VM, and returns every panic (including the fatal
+  ones and `panic(...)`) with the active frames. Bytecode functions carry a
+  source map, so a failure is reported at the compile-time call with notes
+  at each line it passed through.
+- Phase 3. The evaluator runs every call it can on the VM, generic calls
+  included (as their instances), and interprets the rest. The driver
+  selects this with `CINDER_COMPTIME_VM` (`on`, the default; `off`; or
+  `compare`, which runs both and reports any difference).
+  `CINDER_COMPTIME_VERIFY`, on in the driver tests, re-lowers every
+  function the VM ran from the final checker results and reports any that
+  lower differently. Two missing projections were found this way before it
+  existed (a callee's parameter types, and each drop plan's `drop` method):
+  both changed how an argument was passed without an error.
+  `CINDER_COMPTIME_TRACE` lists each call and why it was not run.
+
+Phase 3 also fixed a tail-call bug it exposed: a call whose argument
+borrows a temporary (`&TABLE[0..n]`) was compiled as a tail call, which
+cleared the caller's registers the borrow pointed into.
+
+Phases 4 and 5 need design decisions beyond the plan above:
+
+- Everything the interpreter evaluates that is not a call — `static if`
+  conditions, `static assert`, `static let` initializers, `static for`
+  iterables and bodies, splice operands — has to be lowered as an
+  expression in context and run. Some of these read locals a `let` bound
+  at compile time inside an ordinary function.
+- Reflection results have no type today: `T.fields()`, `T.kind()`,
+  `T.variants()` and `M.functions()` check as the unknown type. Lowering
+  needs real types for them (a `field_info` struct, a list of it, a sum
+  for `kind()`). On a concrete type each is a constant, so the checker can
+  fold it to a reified value the way `T.name()` folds today.
+- Quoted syntax (`expr`, `stmt`, `def_expr`, `type_expr`, `pattern`), the
+  `expr.*` builders, and splices need a VM representation: opaque handles
+  into a host table, with host calls for each operation. That is a new
+  HIR node and opcode, which the LLVM backend must reject.
+- The speculative paths (`try_evaluate` on ordinary `let`s, folding a
+  comptime-only call from ordinary code) rely on evaluation failing
+  silently and cheaply.
+
 ## Risks
 
 Steps 1 through 5 do not change behavior. The main risk is a mechanical

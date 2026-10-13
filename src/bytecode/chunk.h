@@ -8,6 +8,7 @@
 
 #include "src/bytecode/opcodes.h"
 #include "src/bytecode/value.h"
+#include "src/parser/source_location.h"
 
 namespace cinder::bytecode {
 
@@ -34,6 +35,13 @@ namespace cinder::bytecode {
 /// straight from it, so the 256-register ceiling was never a property of
 /// the frame — only of the `u8` operand that named a register. That operand
 /// is a `u16` now (opcodes.h), which is what makes the two agree.
+/// One entry of a function's source map: the instructions from `offset` up
+/// to the next entry's were compiled from `span`.
+struct span_entry {
+  uint32_t offset = 0;
+  source_span span;
+};
+
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;
@@ -54,7 +62,20 @@ struct bytecode_function {
   /// any pointer already taken into it. Every `op_stack_alloc` therefore
   /// carries a *fixed offset* into this range, assigned at compile time.
   uint32_t stack_byte_size = 0;
+  /// Where the code came from, for reporting a failure at a source line: the
+  /// module and top-level HIR function it was compiled from (a lambda's or a
+  /// generator step's enclosing function, for one of those), and, in code
+  /// order, the source span each run of instructions was compiled from.
+  /// Spans are byte offsets into that function's file.
+  std::string source_module;
+  std::string source_function;
+  std::vector<span_entry> spans;
 };
+
+/// The span the instruction at `offset` in `fn` was compiled from, or an
+/// empty span when `fn` has no source map.
+[[nodiscard]] auto span_at(const bytecode_function &fn, size_t offset)
+    -> source_span;
 
 /// One compiled module: every function lowered from it, in an order that
 /// assigns each a stable index — `op_call`'s `function_index` operand

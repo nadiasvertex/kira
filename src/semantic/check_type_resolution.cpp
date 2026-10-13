@@ -78,8 +78,7 @@ auto checker::value_poly(const ast::node &node, const resolve_ctx &ctx)
       node, [&](const ast::node &leaf) -> std::optional<linear_poly> {
         switch (leaf.kind) {
         case ast::node_kind::ident_expr:
-          return name_poly(ast::cast<const ast::ident_expr>(leaf).name,
-                           ctx);
+          return name_poly(ast::cast<const ast::ident_expr>(leaf).name, ctx);
         case ast::node_kind::named_type: {
           const auto &named = ast::cast<const ast::named_type>(leaf);
           if (named.path.size() != 1 || !named.type_args.empty()) {
@@ -129,8 +128,8 @@ auto checker::resolve_value_arg(const ast::node &node,
     if (!name.has_value()) {
       return k_unknown_type;
     }
-    const auto &sum = ast::cast<const ast::sum_type_def>(
-        *declared_entry.decl->definition);
+    const auto &sum =
+        ast::cast<const ast::sum_type_def>(*declared_entry.decl->definition);
     for (const auto &variant : sum.body.variants) {
       if (variant.name == *name) {
         return session_.types_.const_variant(*declared_entry.decl,
@@ -252,8 +251,8 @@ auto checker::resolve_type_args(const std::vector<ast::type_arg> &type_args,
       // A bare name resolves through the ordinary type path, which already
       // consults `param_bindings` and the type-parameter stack — so a slot
       // a caller has substituted a value into comes back as that value.
-      args.push_back(as_value_slot(resolve_type(
-          ast::cast<const ast::named_type>(*arg.value), ctx)));
+      args.push_back(as_value_slot(
+          resolve_type(ast::cast<const ast::named_type>(*arg.value), ctx)));
       break;
     case ast::node_kind::ident_expr: {
       const auto &ident = ast::cast<const ast::ident_expr>(*arg.value);
@@ -676,11 +675,16 @@ auto checker::collect_type_vars(type_id id, std::vector<type_id> &out,
   }
 }
 
-auto checker::resolve_drop_plans() -> void {
+auto checker::resolve_drop_plans() -> void { resolve_drop_plans_from(0); }
+
+/// Resolves the drop plan of every type interned from `first` on — the
+/// part of the table compile-time lowering has not seen yet, when it calls
+/// this in the middle of checking.
+auto checker::resolve_drop_plans_from(std::size_t first) -> void {
   session_.closure_glue_type_ =
       session_.types_.fn_of({}, session_.types_.builtin("unit"));
   const auto snapshot = session_.types_.count();
-  for (std::size_t raw = 0; raw < snapshot; ++raw) {
+  for (std::size_t raw = first; raw < snapshot; ++raw) {
     const auto id = static_cast<type_id>(raw);
     auto scratch = std::unordered_set<type_id>{};
     if (mentions_type_var(id, scratch)) {

@@ -387,6 +387,7 @@ public:
 
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
+    source_function_ = fn.name;
     cell_promoted_ = hir::ref_captured_symbols(*fn.body);
     for (const auto &param : fn.params) {
       const auto reg = alloc_register(fn.span);
@@ -443,9 +444,7 @@ public:
       }
     }
 
-    auto step_compiler = function_compiler(
-        types_, functions_, lambda_functions_, function_table_base_,
-        entry_module_name_, current_module_name_, globals_);
+    auto step_compiler = child();
     auto step_compiled =
         step_compiler.compile_generator_step(fn, state_symbols);
     if (!step_compiled.has_value()) {
@@ -800,6 +799,9 @@ private:
           static_cast<uint8_t>((physical >> 8) & 0xFF);
     }
     function.stack_byte_size = stack_bytes_used_;
+    function.source_module = current_module_name_;
+    function.source_function = source_function_;
+    function.spans = std::move(spans_);
     if (auto layout =
             verify_operand_layout(function, input.instruction_offsets, span);
         !layout.has_value()) {
@@ -880,7 +882,48 @@ private:
   /// intervals, and is why it never has to know any opcode's operand layout.
   auto emit_op(opcode op) -> void {
     instruction_offsets_.push_back(writer_.current_offset());
+    if (!current_span_.empty() &&
+        (spans_.empty() || spans_.back().span.start != current_span_.start ||
+         spans_.back().span.end != current_span_.end)) {
+      spans_.push_back(bytecode::span_entry{
+          .offset = static_cast<uint32_t>(writer_.current_offset()),
+          .span = current_span_});
+    }
     writer_.emit_opcode(op);
+  }
+
+  /// Makes `span` the source of the instructions emitted until the returned
+  /// guard is destroyed, which restores the enclosing node's span — so an
+  /// operator emitted after its operands maps to the operator, not to the
+  /// last operand.
+  [[nodiscard]] auto source_at(source_span span) {
+    struct guard {
+      source_span &slot;
+      source_span saved;
+      guard(source_span &into, source_span previous)
+          : slot(into), saved(previous) {}
+      guard(const guard &) = delete;
+      auto operator=(const guard &) -> guard & = delete;
+      guard(guard &&) = delete;
+      auto operator=(guard &&) -> guard & = delete;
+      ~guard() { slot = saved; }
+    };
+    auto saved = current_span_;
+    if (!span.empty()) {
+      current_span_ = span;
+    }
+    return guard(current_span_, saved);
+  }
+
+  /// A compiler for a lambda body, generator step, or drop glue nested in
+  /// the function this one compiles, sharing its tables and its source.
+  [[nodiscard]] auto child() const -> function_compiler {
+    auto nested = function_compiler(types_, functions_, lambda_functions_,
+                                    function_table_base_, entry_module_name_,
+                                    current_module_name_, globals_);
+    nested.source_function_ = source_function_;
+    nested.current_span_ = current_span_;
+    return nested;
   }
 
   /// Emits a register operand as a placeholder byte, remembering its offset
@@ -1255,6 +1298,7 @@ private:
   [[nodiscard]] auto compile_expr_into(const hir::hir_expr &expr,
                                        virtual_reg dst)
       -> std::expected<void, compile_error> {
+    const auto at = source_at(expr.span);
     switch (expr.kind) {
     case hir_node_kind::hir_literal: {
       const auto &lit = dynamic_cast<const hir::hir_literal &>(expr);
@@ -1923,10 +1967,7 @@ private:
       }
     }
 
-    auto compiled = function_compiler(types_, functions_, lambda_functions_,
-                                      function_table_base_, entry_module_name_,
-                                      current_module_name_, globals_)
-                        .compile_lambda_body(lambda, plan);
+    auto compiled = child().compile_lambda_body(lambda, plan);
     if (!compiled.has_value()) {
       return std::unexpected(compiled.error());
     }
@@ -1938,10 +1979,7 @@ private:
     // the same plan.
     auto glue_index = bytecode::k_no_drop_glue;
     if (lambda.drop_glue != nullptr) {
-      auto glue = function_compiler(types_, functions_, lambda_functions_,
-                                    function_table_base_, entry_module_name_,
-                                    current_module_name_, globals_)
-                      .compile_lambda_body(*lambda.drop_glue, plan);
+      auto glue = child().compile_lambda_body(*lambda.drop_glue, plan);
       if (!glue.has_value()) {
         return std::unexpected(glue.error());
       }
@@ -3622,6 +3660,7 @@ private:
 
   [[nodiscard]] auto compile_stmt(const hir_node &node)
       -> std::expected<void, compile_error> {
+    const auto at = source_at(node.span);
     switch (node.kind) {
     case hir_node_kind::hir_let:
       return compile_let(dynamic_cast<const hir::hir_let &>(node));
@@ -4271,6 +4310,13 @@ private:
   //  registers (`resume_index`, the generator object itself) and a
   //  resume-dispatch chain patched as each `hir_yield` is compiled.
   // ------------------------------------------------------------------
+  /// The source map being built (`bytecode_function::spans`), the span of
+  /// the node being compiled, and the top-level function this code belongs
+  /// to (`bytecode_function::source_function`).
+  std::vector<bytecode::span_entry> spans_;
+  source_span current_span_;
+  std::string source_function_;
+
   bool is_generator_step_ = false;
   virtual_reg generator_state_reg_;
   virtual_reg generator_self_reg_;

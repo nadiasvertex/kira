@@ -9,7 +9,9 @@
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
+#include <format>
 #include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <unistd.h>
@@ -1366,10 +1368,26 @@ namespace platform_query = cinder::runtime::platform_query;
 [[noreturn]] auto intrinsic_rt_panic(std::span<const slot_value> args)
     -> slot_value {
   const auto text = view_of(args[0]);
+  if (panics_are_hosted()) {
+    throw panic_error(panic_reason::explicit_panic, std::string(text));
+  }
   std::fputs("panic: ", stderr);
   std::fwrite(text.data(), 1, text.size(), stderr);
   std::fputc('\n', stderr);
   std::exit(k_panic_exit_code);
+}
+
+/// Whether intrinsic `id` reaches outside the VM: the console and files, or
+/// a query about the machine the program runs on. A hosted run refuses these
+/// unless its `run_limits` allow them.
+[[nodiscard]] auto intrinsic_has_effects(uint8_t id) -> bool {
+  const auto name = cinder::known_intrinsic_names.at(id);
+  return name == "rt_stdin" || name == "rt_stdout" || name == "rt_stderr" ||
+         name == "rt_open" || name == "rt_close" || name == "rt_read" ||
+         name == "rt_write" || name == "rt_flush" || name == "rt_uname" ||
+         name == "rt_gethostname" || name == "rt_processor_name" ||
+         name == "rt_libc_version" || name == "rt_windows_version" ||
+         name == "rt_macos_version";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1425,7 +1443,29 @@ static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
 
 auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
     -> std::expected<vm_result, panic_reason> {
+  auto result = execute(function_index, args, run_limits{});
+  if (!result.has_value()) {
+    return std::unexpected(result.error().reason);
+  }
+  return *result;
+}
+
+auto vm::run_hosted(uint16_t function_index, std::span<const slot_value> args,
+                    const run_limits &limits) const
+    -> std::expected<vm_result, vm_failure> {
+  const auto hosted = hosted_panic_scope{};
+  return execute(function_index, args, limits);
+}
+
+auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
+                 const run_limits &limits) const
+    -> std::expected<vm_result, vm_failure> {
   std::vector<frame> frames;
+  auto steps = uint64_t{0};
+  // The start of the instruction running now, which is where a failure in
+  // the innermost frame points. A caller's `pc` is already past its call.
+  auto instruction_start = size_t{0};
+  const auto budget = limits.step_budget.value_or(UINT64_MAX);
 
   try {
     push_frame(frames, module_.functions.at(function_index), args, false, 0);
@@ -1435,6 +1475,10 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       const auto &code = f.function->code;
       const auto op = static_cast<opcode>(code[f.pc]);
       const size_t ip = f.pc + 1;
+      instruction_start = f.pc;
+      if (++steps > budget) {
+        throw panic_error(panic_reason::step_budget_exhausted);
+      }
 
       switch (op) {
       case opcode::op_load_const: {
@@ -1635,6 +1679,13 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
         f.pc = ops.pos();
         const std::span<const slot_value> call_args(
             f.registers.data() + first_arg, argc);
+        if (!limits.allow_effects && intrinsic_has_effects(intrinsic_id)) {
+          throw panic_error(
+              panic_reason::effect_refused,
+              std::format("`{}` reaches outside the program, which code run "
+                          "while compiling may not do",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
         f.registers[dst] = k_intrinsics.at(intrinsic_id)(call_args);
         break;
       }
@@ -1981,7 +2032,18 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
       }
     }
   } catch (const panic_error &err) {
-    return std::unexpected(err.reason());
+    auto failure = vm_failure{.reason = err.reason(), .message = err.what()};
+    for (const auto &active : std::views::reverse(frames)) {
+      const auto index =
+          static_cast<size_t>(active.function - module_.functions.data());
+      const auto innermost = failure.frames.empty();
+      failure.frames.push_back(
+          vm_frame_location{.function_index = static_cast<uint16_t>(index),
+                            .offset = innermost       ? instruction_start
+                                      : active.pc > 0 ? active.pc - 1
+                                                      : 0});
+    }
+    return std::unexpected(std::move(failure));
   }
 }
 

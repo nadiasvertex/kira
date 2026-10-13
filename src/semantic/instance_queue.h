@@ -145,6 +145,17 @@ public:
   /// Makes every queued instance, including the ones those instances ask for.
   /// An instance that is substituted rather than walked moves to the
   /// substitution queue.
+  /// Makes the queued instance whose clone is `instance` now, ahead of the
+  /// flush that would have made it — compile-time code is about to run it.
+  /// Its template must already be checked if it is made by substitution.
+  /// Returns whether it was queued, and is now made.
+  auto make_queued_now(const ast::func_decl &instance, instance_hooks &hooks)
+      -> bool;
+
+  /// The template of the queued (not yet made) instance `instance`, or null.
+  [[nodiscard]] auto queued_template(const ast::func_decl &instance) const
+      -> const ast::func_decl *;
+
   auto flush_walks(instance_hooks &hooks) -> void;
   /// Makes every queued substitution whose template is checked; one whose
   /// template is not waits for it.
@@ -170,6 +181,8 @@ private:
   /// Templates whose own check reported an error. Their instances are never
   /// made: an instance can only repeat what the template already said.
   std::unordered_set<const ast::func_decl *> failed_;
+  /// Instances `make_queued_now` made early, which the flushes skip.
+  std::unordered_set<const ast::func_decl *> made_;
 };
 
 } // namespace cinder::semantic::detail

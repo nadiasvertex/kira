@@ -200,6 +200,9 @@ cc_binary(
 
 cc_test(
     name = "cli_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
     srcs = ["cli_test.cpp"],
     tags = ["no-sandbox"],
     data = [
@@ -222,6 +225,9 @@ cc_test(
 
 cc_test(
     name = "driver_stress_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
     size = "medium",
     srcs = ["driver_stress_test.cpp"],
     data = [":parser_stress_corpus"],
@@ -231,6 +237,9 @@ cc_test(
 
 cc_test(
     name = "semantic_stress_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
     size = "medium",
     srcs = ["semantic_stress_test.cpp"],
     data = [":semantic_stress_corpus"],
@@ -240,6 +249,9 @@ cc_test(
 
 cc_test(
     name = "inference_diagnostics_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
     size = "medium",
     srcs = ["inference_diagnostics_test.cpp"],
     data = [
@@ -252,6 +264,9 @@ cc_test(
 
 cc_test(
     name = "std_test",
+    # Every function compile-time code runs on the VM is re-lowered from the
+    # final checker results and must lower identically (`vm_backend::verify`).
+    env = {"CINDER_COMPTIME_VERIFY": "1"},
     size = "medium",
     srcs = ["std_test.cpp"],
     data = [

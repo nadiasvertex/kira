@@ -3,6 +3,7 @@
 #include "check.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <charconv>
 #include <deque>
@@ -29,6 +30,8 @@
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/semantic/binding_walk.h"
+#include "src/semantic/checker_results.h"
+#include "src/semantic/comptime_backend.h"
 #include "src/semantic/infer/blame.h"
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/obligations.h"
@@ -38,10 +41,9 @@
 #include "src/semantic/instance_substitution.h"
 #include "src/semantic/method_instances.h"
 #include "src/semantic/module_index.h"
+#include "src/semantic/program_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
-#include "src/semantic/checker_results.h"
-#include "src/semantic/program_index.h"
 
 #include "check_helpers.h"
 #include "method_resolution.h"
@@ -253,6 +255,16 @@ public:
 
   checker(program_index &index, diagnostic_bag &diag,
           std::vector<bool> &file_has_errors);
+  checker(const checker &) = delete;
+  auto operator=(const checker &) -> checker & = delete;
+  checker(checker &&) = delete;
+  auto operator=(checker &&) -> checker & = delete;
+  ~checker();
+
+  /// Runs compile-time calls on `backend` where it can, instead of in the
+  /// AST evaluator, as `mode` says. `backend` must outlive the checker.
+  auto set_comptime_backend(comptime_backend *backend,
+                            comptime::evaluator::vm_mode mode) -> void;
 
   auto run(const std::vector<parsed_module> &inputs) -> void;
 
@@ -288,7 +300,15 @@ private:
     /// spans it points at — see `emit_diag`, which is why this exists.
     std::unordered_set<std::string> emitted_diagnostics_;
 
-    type_table types_;
+    /// The records lowering reads for the functions compile-time code runs
+    /// on the VM, projected out of the tables below as each function is
+    /// needed (`prepare_for_lowering`), with every type settled and its
+    /// refinements erased. Its `types` is the session's type table itself,
+    /// so the view and the checker always agree on what a `type_id` means.
+    checked_types lowering_view_;
+
+    /// The session's type table, which lives in `lowering_view_`.
+    type_table &types_ = lowering_view_.types;
 
     /// Resolved type of every expression node visited by `infer_expr`
     /// (recorded there — see its wrapper — plus every pattern node visited by
@@ -1709,6 +1729,8 @@ private:
 
   auto resolve_drop_plans() -> void;
 
+  auto resolve_drop_plans_from(std::size_t first) -> void;
+
   auto param_name_of(const ast::param &param) -> std::string;
 
   auto param_types_for(const ast::func_decl &decl, const module_members *owner)
@@ -1911,6 +1933,8 @@ private:
   };
 
   std::vector<pending_leaf_literal> pending_leaf_literals_;
+
+  auto settle_leaf_literal(const pending_leaf_literal &leaf) -> void;
 
   /// The one queue for decisions that cannot be made yet (phase 4).
   ///
@@ -2763,7 +2787,6 @@ private:
 
   auto type_key_of(const type_entry &entry) -> std::string;
 
-
   auto impl_targets_overlap(type_id first, type_id second) -> bool;
 
   auto find_session_trait(std::string_view name)
@@ -2826,7 +2849,6 @@ private:
                                   const module_members *trait_module,
                                   file_id_type trait_file_id,
                                   std::deque<method_entry> &methods) -> void;
-
 
   /// A view of the method tables for a lookup that needs none of the
   /// checker's own work (no table build, no derivation).
@@ -3300,6 +3322,138 @@ private:
       -> comptime::evaluator::dotted_path_reading;
 
   auto infer_value_rooted_path(const ast::module_path_expr &path) -> type_id;
+
+  // ==========================================================================
+  //  check_lowering_view.cpp
+  // ==========================================================================
+
+  /// What `session_.lowering_view_` holds so far, and the name index the VM
+  /// backend resolves calls against.
+  struct lowering_view_state {
+    /// Functions whose whole body has been projected into the view.
+    std::unordered_set<const ast::func_decl *> prepared;
+    /// Functions whose signature (parameter and return-type nodes) has been
+    /// projected — every callee a prepared body reaches.
+    std::unordered_set<const ast::func_decl *> signatures;
+    /// Every node whose records have been projected.
+    std::unordered_set<const ast::node *> visited;
+    /// Why the projection running now cannot be lowered, if it cannot.
+    std::optional<std::string> problem;
+    /// The nodes and signatures the projection running now added, so a
+    /// failed one can be retried once its types have settled.
+    std::vector<const ast::node *> attempt_nodes;
+    std::vector<const ast::func_decl *> attempt_signatures;
+    /// `types_.count()` when the type-wide sets (`borrow_bearing_types`, ...)
+    /// were last computed.
+    std::size_t derived_type_count = 0;
+    /// Module name -> HIR function name -> declaration. See
+    /// `find_lowered_function`.
+    std::unordered_map<std::string,
+                       std::unordered_map<std::string, const ast::func_decl *>>
+        functions_by_name;
+    /// The reverse: each indexed declaration's module and HIR name.
+    std::unordered_map<const ast::func_decl *,
+                       std::pair<std::string, std::string>>
+        names_by_decl;
+    /// The sizes of the lists `functions_by_name` was built from, so it is
+    /// rebuilt when one grows.
+    std::array<std::size_t, 5> indexed_sizes{};
+  } lowering_view_state_;
+
+  /// `id` as lowering reads it: leaves replaced by their solutions and
+  /// refinements erased, the same as `take_checked_types` does at the end.
+  auto lowering_type(type_id id) -> type_id;
+
+  /// Projects `decl`'s body into `session_.lowering_view_` — see
+  /// `comptime_program::prepare`.
+  auto prepare_for_lowering(const ast::func_decl &decl)
+      -> std::expected<void, std::string>;
+
+  /// Projects the nodes a call into `decl` reads: its parameters and its
+  /// return type.
+  auto project_signature(const ast::func_decl &decl) -> void;
+
+  /// Projects every node of `root`'s subtree, following the records that
+  /// point at nodes elsewhere (a splice's fragment, a folded literal, ...).
+  auto project_subtree(const ast::node &root) -> void;
+
+  /// Projects the records keyed by `node` alone.
+  auto project_node(const ast::node &node) -> void;
+
+  /// Projects what a call through `callee` reads of its target.
+  auto project_callee(const resolved_callee &callee) -> void;
+
+  /// Copies a type into the view, recording a problem when it is still open
+  /// (an unsolved leaf or a type parameter).
+  auto view_type(type_id id) -> type_id;
+
+  /// Refreshes the view's records that are not keyed by node: the instance
+  /// lists and the sets computed over the whole type table.
+  auto refresh_lowering_view_tables() -> void;
+
+  /// Copies the reified global `name` (and the records its value is built
+  /// from) into the view — see `comptime_program::static_global`.
+  auto project_static_global(std::string_view name)
+      -> const lowering_results::static_global_def *;
+
+  /// The function lowered code calls as `name` in `module`.
+  auto find_lowered_function(std::string_view module, std::string_view name)
+      -> std::optional<comptime_function>;
+
+  /// Rebuilds `lowering_view_state_.functions_by_name` when the lists it
+  /// reads have grown.
+  auto refresh_function_index() -> void;
+
+  /// Checks the item holding `decl` now — `decl` itself, or the `impl`/
+  /// `extend` block it is a method of — when compile-time code needs it
+  /// before file order would reach it. File order then skips the item.
+  auto check_item_for_comptime(const ast::func_decl &decl) -> void;
+
+  /// Gives every literal leaf still open in `root`'s records its default
+  /// (`int32`, `float64`), as the end-of-file flush would. Compile-time code
+  /// is about to run `root`, so its types must be final now. Leaves of other
+  /// functions are left for the flush: something later may still pin them.
+  auto default_leaves_of(const ast::node &root) -> void;
+
+  /// Makes the queued generic instance `instance` now — see
+  /// `instance_queue::make_queued_now`.
+  auto make_instance_now(const ast::func_decl &instance) -> void;
+
+  /// Every parsed file by id, for checking an item outside its file's turn.
+  std::unordered_map<file_id_type, const ast::file *> input_files_;
+
+  /// Items `check_item_for_comptime` has checked (or is checking), which
+  /// `check_item` skips in file order.
+  std::unordered_set<const ast::node *> items_checked_early_;
+
+  /// The item `check_item_for_comptime` is checking right now.
+  const ast::node *checking_item_early_ = nullptr;
+
+  /// Runs a compile-time call to `fn` on `comptime_backend_` — the
+  /// evaluator's `vm_call_fn`.
+  auto run_comptime_call_on_vm(
+      const ast::func_decl &fn, std::span<const comptime::value> args,
+      std::span<const std::pair<std::string, comptime::value>> type_args)
+      -> comptime::evaluator::vm_call_outcome;
+
+  /// The instance of the generic `fn` that `type_args` (its type parameters,
+  /// by name) name, if checking has made or queued one; null otherwise.
+  auto comptime_instance(
+      const ast::func_decl &fn,
+      std::span<const std::pair<std::string, comptime::value>> type_args)
+      -> const ast::func_decl *;
+
+  /// The checker as `comptime_program`, handed to `comptime_backend_`.
+  class vm_program;
+  friend class vm_program;
+  std::unique_ptr<comptime_program> vm_program_;
+
+  /// Runs compile-time calls on the VM, when the session has one.
+  comptime_backend *comptime_backend_ = nullptr;
+
+  /// Whether the declarations are all in place and bodies are being checked
+  /// (`run_impl`); compile-time calls before then are interpreted.
+  bool bodies_phase_ = false;
 
   auto fold_static_field_path(const ast::module_path_expr &path,
                               const ast::static_decl &decl,

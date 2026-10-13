@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Runs compile-time code on the bytecode VM. Sits above the checker: the
+# checker reaches it only through `semantic::comptime_backend`, which the
+# driver installs.
+cc_library(
+    name = "comptime_vm",
+    srcs = [
+        "backend.cpp",
+        "program.cpp",
+        "values.cpp",
+    ],
+    hdrs = [
+        "backend.h",
+        "program.h",
+        "values.h",
+    ],
+    deps = [
+        "//src:intrinsics",
+        "//src/bytecode",
+        "//src/bytecode:vm",
+        "//src/bytecode_compiler",
+        "//src/comptime",
+        "//src/hir",
+        "//src/runtime",
+        "//src/semantic",
+    ],
+    visibility = ["//visibility:public"],
+)

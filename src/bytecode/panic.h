@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace cinder::bytecode {
@@ -31,6 +32,11 @@ enum class panic_reason : uint8_t {
   precondition_violated,
   postcondition_violated,
   invariant_violated,
+  // Only a hosted run (`vm::run_hosted`, the way compile-time code runs)
+  // raises these two: it has a budget of instructions, and it may not reach
+  // outside the VM.
+  step_budget_exhausted,
+  effect_refused,
 };
 
 [[nodiscard]] auto panic_reason_message(panic_reason reason) noexcept
@@ -85,11 +91,35 @@ inline constexpr int k_panic_exit_code = 101;
 class panic_error : public std::runtime_error {
 public:
   explicit panic_error(panic_reason reason);
+  /// A panic with its own message: `panic("...")`'s text, or what a hosted
+  /// run refused.
+  panic_error(panic_reason reason, std::string message);
 
   [[nodiscard]] auto reason() const noexcept -> panic_reason { return reason_; }
 
 private:
   panic_reason reason_;
 };
+
+/// While one of these is alive on a thread, a panic on that thread never
+/// ends the process: a fatal reason (`is_fatal`) and `panic(...)` throw a
+/// `panic_error` like every other reason, for the host to report. The VM
+/// opens one for a hosted run, since a compile-time failure is a diagnostic
+/// for the program being compiled, not the end of the compiler.
+class hosted_panic_scope {
+public:
+  hosted_panic_scope();
+  hosted_panic_scope(const hosted_panic_scope &) = delete;
+  auto operator=(const hosted_panic_scope &) -> hosted_panic_scope & = delete;
+  hosted_panic_scope(hosted_panic_scope &&) = delete;
+  auto operator=(hosted_panic_scope &&) -> hosted_panic_scope & = delete;
+  ~hosted_panic_scope();
+
+private:
+  bool saved_;
+};
+
+/// Whether a `hosted_panic_scope` is alive on this thread.
+[[nodiscard]] auto panics_are_hosted() noexcept -> bool;
 
 } // namespace cinder::bytecode

@@ -301,32 +301,38 @@ auto checker::flush_leaf_literals() -> void {
   const auto *saved_module = file_.module_;
   const auto *saved_current_template = function_.current_template_;
   for (const auto &leaf : pending) {
-    if (leaf.skip) {
-      continue;
+    if (!leaf.skip) {
+      settle_leaf_literal(leaf);
     }
-    const auto element = leaf_ctxt_.zonk(leaf.element);
-    file_.file_id_ = leaf.file;
-    file_.module_ = leaf.module;
-    function_.current_template_ = leaf.current_template;
-    if (element == leaf.element) {
-      error_with_help(
-          leaf.span, "cannot tell what an empty `[]` is a list of",
-          "nothing here ever says what this list holds",
-          "An empty `[]` takes its element type from what is later done "
-          "with it — a `push`, a return, an argument whose type is "
-          "already known. Nothing here pinned it down. Annotate the "
-          "binding — `var xs: list[int32] = []` — or start the list with "
-          "the elements it should hold.");
-      continue;
-    }
-    if (leaf.report_only) {
-      continue;
-    }
-    wire_default_list(*leaf.literal, element, leaf.count);
   }
   file_.file_id_ = saved_file;
   file_.module_ = saved_module;
   function_.current_template_ = saved_current_template;
+}
+
+/// Wires one deferred sequence literal to the list its element type now
+/// says it is, or reports that nothing ever said. Runs in the literal's own
+/// context; the caller restores its own.
+auto checker::settle_leaf_literal(const pending_leaf_literal &leaf) -> void {
+  const auto element = leaf_ctxt_.zonk(leaf.element);
+  file_.file_id_ = leaf.file;
+  file_.module_ = leaf.module;
+  function_.current_template_ = leaf.current_template;
+  if (element == leaf.element) {
+    error_with_help(
+        leaf.span, "cannot tell what an empty `[]` is a list of",
+        "nothing here ever says what this list holds",
+        "An empty `[]` takes its element type from what is later done "
+        "with it — a `push`, a return, an argument whose type is "
+        "already known. Nothing here pinned it down. Annotate the "
+        "binding — `var xs: list[int32] = []` — or start the list with "
+        "the elements it should hold.");
+    return;
+  }
+  if (leaf.report_only) {
+    return;
+  }
+  wire_default_list(*leaf.literal, element, leaf.count);
 }
 
 /// Records a method call whose receiver is still open, and the obligation
@@ -412,8 +418,7 @@ auto checker::generic_lambda_of(const ast::let_stmt &stmt)
       ast::cast<const ast::binding_pattern>(*stmt.pattern).is_mut) {
     return nullptr;
   }
-  const auto &lambda =
-      ast::cast<const ast::lambda_expr>(*stmt.initializer);
+  const auto &lambda = ast::cast<const ast::lambda_expr>(*stmt.initializer);
   return has_unannotated_param(lambda) ? &lambda : nullptr;
 }
 
@@ -433,8 +438,7 @@ auto checker::report_mutable_generic_lambda(const ast::expr *initializer,
                                             std::string_view name) -> bool {
   if (annotated || initializer == nullptr ||
       initializer->kind != ast::node_kind::lambda_expr ||
-      !has_unannotated_param(
-          ast::cast<const ast::lambda_expr>(*initializer))) {
+      !has_unannotated_param(ast::cast<const ast::lambda_expr>(*initializer))) {
     return false;
   }
   error_with_help(
@@ -458,8 +462,7 @@ auto checker::report_mutable_generic_lambda(const ast::expr *initializer,
 /// that use's types.
 auto checker::bind_generic_lambda(const ast::let_stmt &stmt,
                                   const ast::lambda_expr &lambda) -> void {
-  const auto &binding =
-      ast::cast<const ast::binding_pattern>(*stmt.pattern);
+  const auto &binding = ast::cast<const ast::binding_pattern>(*stmt.pattern);
   generic_lambda_sites_.insert_or_assign(
       &lambda, generic_lambda_site{.context = capture_body_context(),
                                    .name = binding.name,
@@ -544,8 +547,8 @@ auto checker::instantiate_generic_lambda(const ast::lambda_expr &tmpl,
   instances.push_back(&copy);
   generic_lambda_refs_[ident.node] = &copy;
   generic_lambda_uses_.insert_or_assign(
-      &copy, ownership_results::generic_lambda_use{.name = std::string(ident.name),
-                                               .span = ident.span});
+      &copy, ownership_results::generic_lambda_use{
+                 .name = std::string(ident.name), .span = ident.span});
   return type;
 }
 
@@ -565,8 +568,7 @@ auto checker::generic_lambda_value(const generic_lambda_use &ident,
   for (const auto &param : lambda.params) {
     if (param.type_annotation == nullptr && param.pattern != nullptr &&
         param.pattern->kind == ast::node_kind::binding_pattern) {
-      unannotated =
-          ast::cast<const ast::binding_pattern>(*param.pattern).name;
+      unannotated = ast::cast<const ast::binding_pattern>(*param.pattern).name;
       break;
     }
   }
@@ -655,8 +657,7 @@ auto checker::clone_generic_lambdas_for(pending_instance &item) -> void {
         if (!cloned.has_value()) {
           continue; // the instance was itself cloned from this node
         }
-        const auto *made =
-            ast::as<const ast::lambda_expr>(cloned->get());
+        const auto *made = ast::as<const ast::lambda_expr>(cloned->get());
         if (const auto use = generic_lambda_uses_.find(instance);
             use != generic_lambda_uses_.end()) {
           generic_lambda_uses_.insert_or_assign(made, use->second);
@@ -1572,6 +1573,21 @@ public:
 private:
   checker *checker_;
 };
+
+/// Makes the queued instance `instance` now, for compile-time code that is
+/// about to run it, checking its template first if file order has not.
+auto checker::make_instance_now(const ast::func_decl &instance) -> void {
+  const auto *tmpl = instances_.queued_template(instance);
+  if (tmpl == nullptr) {
+    return;
+  }
+  check_item_for_comptime(*tmpl);
+  // An instance made by substitution copies its template's records, so the
+  // template's own literals must be settled first.
+  default_leaves_of(*tmpl);
+  auto maker = instance_maker{*this};
+  (void)instances_.make_queued_now(instance, maker);
+}
 
 /// Makes every queued instance whose template is checked, by substitution;
 /// one whose template is not waits for it.

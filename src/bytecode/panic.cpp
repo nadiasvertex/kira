@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <utility>
 
 namespace cinder::bytecode {
 
@@ -24,12 +25,30 @@ auto panic_reason_message(panic_reason reason) noexcept -> std::string_view {
     return "postcondition violated";
   case panic_reason::invariant_violated:
     return "invariant violated";
+  case panic_reason::step_budget_exhausted:
+    return "step budget exhausted";
+  case panic_reason::effect_refused:
+    return "effect refused";
   }
   return "unknown panic";
 }
 
+namespace {
+
+thread_local bool g_panics_hosted = false;
+
+} // namespace
+
+hosted_panic_scope::hosted_panic_scope() : saved_(g_panics_hosted) {
+  g_panics_hosted = true;
+}
+
+hosted_panic_scope::~hosted_panic_scope() { g_panics_hosted = saved_; }
+
+auto panics_are_hosted() noexcept -> bool { return g_panics_hosted; }
+
 auto raise_panic(panic_reason reason) -> void {
-  if (is_fatal(reason)) {
+  if (is_fatal(reason) && !g_panics_hosted) {
     // Matches `cinder_rt_panic`'s output (`src/runtime/io.cpp`) so a bounds
     // violation reads the same whichever container raised it and whichever
     // tier ran the program.
@@ -45,5 +64,8 @@ auto raise_panic(panic_reason reason) -> void {
 panic_error::panic_error(panic_reason reason)
     : std::runtime_error(std::string(panic_reason_message(reason))),
       reason_(reason) {}
+
+panic_error::panic_error(panic_reason reason, std::string message)
+    : std::runtime_error(std::move(message)), reason_(reason) {}
 
 } // namespace cinder::bytecode

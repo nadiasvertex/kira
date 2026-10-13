@@ -101,4 +101,15 @@ auto chunk_writer::finish(std::string name, uint16_t param_count,
                            .string_constants = std::move(string_constants_)};
 }
 
+auto span_at(const bytecode_function &fn, size_t offset) -> source_span {
+  auto found = source_span{};
+  for (const auto &entry : fn.spans) {
+    if (entry.offset > offset) {
+      break;
+    }
+    found = entry.span;
+  }
+  return found;
+}
+
 } // namespace cinder::bytecode

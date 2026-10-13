@@ -300,8 +300,7 @@ auto checker::take_checked_types() -> checked_types {
       .own_borrow_bearing_types = std::move(own_borrow_bearing),
       .copy_type_params = std::move(copy_type_params_),
       .copy_sum_types = std::move(copy_sum_types)};
-  result.drop = drop_results{
-      .drop_plans = std::move(session_.drop_plans_)};
+  result.drop = drop_results{.drop_plans = std::move(session_.drop_plans_)};
   return result;
 }
 
@@ -834,8 +833,7 @@ auto checker::resolve_item_splices(
           "belongs inside a function body instead.");
       continue;
     }
-    const auto *impl =
-        ast::as<const ast::impl_decl>(fragment_value.fragment);
+    const auto *impl = ast::as<const ast::impl_decl>(fragment_value.fragment);
     if (impl == nullptr) {
       error_with_help(
           splice.expr->span,
@@ -905,8 +903,7 @@ auto checker::settle_bounded_params(
       settle(ast::cast<const ast::type_decl>(*item).type_params);
       break;
     case ast::node_kind::sub_module_decl:
-      settle_bounded_params(
-          ast::cast<const ast::sub_module_decl>(*item).items);
+      settle_bounded_params(ast::cast<const ast::sub_module_decl>(*item).items);
       break;
     default:
       break;
@@ -917,6 +914,7 @@ auto checker::settle_bounded_params(
 auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
   for (const auto &input : inputs) {
     if (input.ast_file != nullptr) {
+      input_files_.emplace(input.file_id, input.ast_file);
       session_.file_module_aliases_.emplace(
           input.file_id, collect_module_aliases(*input.ast_file));
     }
@@ -1023,6 +1021,11 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
   // coherence` above and, like `register_comptime_modules`, before any
   // file's body (and therefore any `static`/comptime call) is checked.
   register_comptime_coherence_info();
+  // From here on every declaration the method table and coherence read is in
+  // place, so compile-time code may check functions out of turn to run them
+  // on the VM. Before this — splices resolved into new items — checking a
+  // body early would build the method table without those items.
+  bodies_phase_ = true;
   check_pending_functor_bodies();
 
   for (const auto &input : inputs) {
@@ -1081,7 +1084,8 @@ auto check_program(const std::vector<parsed_module> &inputs,
 auto check_program(const std::vector<parsed_module> &inputs,
                    const module_session_index &session_index,
                    const semantic_resolution_index &semantic_index,
-                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors,
+                   comptime_backend *comptime, comptime_vm_mode comptime_mode)
     -> checked_types {
   // Not `const`: `checker::resolve_item_splices` mutates this in place to
   // graft splice-synthesized impls in before method-table/coherence build —
@@ -1089,6 +1093,12 @@ auto check_program(const std::vector<parsed_module> &inputs,
   auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
   session_checker.set_module_graph(session_index, semantic_index);
+  if (comptime != nullptr && comptime_mode != comptime_vm_mode::off) {
+    session_checker.set_comptime_backend(
+        comptime, comptime_mode == comptime_vm_mode::compare
+                      ? comptime::evaluator::vm_mode::compare
+                      : comptime::evaluator::vm_mode::on);
+  }
   session_checker.run(inputs);
   return session_checker.take_checked_types();
 }

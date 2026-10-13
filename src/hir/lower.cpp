@@ -19,14 +19,14 @@
 #include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
+#include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/layout.h"
+#include "src/semantic/checker_results.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
-#include "src/semantic/checker_results.h"
 #include "src/semantic/program_index.h"
-#include "src/parser/ast_traversal.h"
 
 namespace cinder::hir {
 
@@ -53,8 +53,7 @@ using semantic::type_kind;
       param.pattern->kind != ast::node_kind::binding_pattern) {
     return false;
   }
-  return ast::cast<const ast::binding_pattern>(*param.pattern).name ==
-         "self";
+  return ast::cast<const ast::binding_pattern>(*param.pattern).name == "self";
 }
 
 /// Whether `decl` is one of the monomorphized copies the checker made of a
@@ -531,7 +530,8 @@ private:
   /// at all.
   [[nodiscard]] auto global_owner_of(const std::string &reified_name) const
       -> std::optional<std::string> {
-    if (const auto it = checked_.lowering.static_global_owners.find(reified_name);
+    if (const auto it =
+            checked_.lowering.static_global_owners.find(reified_name);
         it != checked_.lowering.static_global_owners.end()) {
       return it->second;
     }
@@ -981,11 +981,11 @@ private:
   //
   //  The checker has already had its say by the time these run: a contract
   //  it refuted is a compile error the program never got past, and one it
-  //  proved is in `checked_.lowering.elided_contracts` and lowers to nothing at all.
-  //  What is left is the residue — conditions whose truth depends on values
-  //  that don't exist until the program runs — and this is where they become
-  //  code: a `hir_contract_check` the backends turn into "test it, panic if
-  //  it's false".
+  //  proved is in `checked_.lowering.elided_contracts` and lowers to nothing at
+  //  all. What is left is the residue — conditions whose truth depends on
+  //  values that don't exist until the program runs — and this is where they
+  //  become code: a `hir_contract_check` the backends turn into "test it, panic
+  //  if it's false".
   // ------------------------------------------------------------------
 
   /// Whether `contract` still needs a runtime check: it has a usable
@@ -1355,8 +1355,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
   // all: record the fragment, and it lowers.
   if (const auto rewritten = checked_.spliced_fragments.find(&expr);
       rewritten != checked_.spliced_fragments.end()) {
-    if (const auto *fragment =
-            ast::as<const ast::expr>(rewritten->second)) {
+    if (const auto *fragment = ast::as<const ast::expr>(rewritten->second)) {
       return lower_expr(*fragment);
     }
   }
@@ -1723,7 +1722,8 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
     // `wire_ord_dispatch` stashes `cmp`'s real return type separately since
     // this call's type has to be `ordering` for the match built below to
     // make sense of it.
-    const auto ord_result = checked_.lowering.ord_dispatch_result_types.find(&bin);
+    const auto ord_result =
+        checked_.lowering.ord_dispatch_result_types.find(&bin);
     const auto call_type =
         ord_result != checked_.lowering.ord_dispatch_result_types.end()
             ? ord_result->second
@@ -1901,7 +1901,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // checker already resolved the answer once it knew which concrete type
   // this instance was checked with, so lowering is just splicing that
   // answer in as an ordinary string literal.
-  if (const auto reflected = checked_.lowering.type_param_reflections.find(&call);
+  if (const auto reflected =
+          checked_.lowering.type_param_reflections.find(&call);
       reflected != checked_.lowering.type_param_reflections.end()) {
     return ok_expr(
         make<hir_literal>(call.span, *type, token_kind::string_lit,
@@ -2005,7 +2006,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
               ? token_kind::kw_true
               : token_kind::kw_false,
           checked_.drop.drop_plans.contains(query->second.operand) ? "true"
-                                                              : "false"));
+                                                                   : "false"));
     }
     const auto layout =
         runtime::layout_of(checked_.types, query->second.operand);
@@ -2147,8 +2148,7 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // call, so it never goes through the callee-resolution machinery below
   // (there's no function being called, real or otherwise).
   if (call.callee->kind == ast::node_kind::ident_expr) {
-    const auto &callee_ident =
-        ast::cast<const ast::ident_expr>(*call.callee);
+    const auto &callee_ident = ast::cast<const ast::ident_expr>(*call.callee);
     if (is_variant_ident(callee_ident)) {
       auto args = ptr_vec<hir_expr>{};
       args.reserve(call.args.size());
@@ -2997,7 +2997,8 @@ auto lowerer::lower_array(const ast::array_expr &array)
   // `array[T, n]` exactly as before, then hand it to that collection's
   // `from_array`. The array type comes from the recorded conversion rather
   // than from `checked_type_of`, which now answers with the collection.
-  if (const auto found = checked_.lowering.array_literal_conversions.find(&array);
+  if (const auto found =
+          checked_.lowering.array_literal_conversions.find(&array);
       found != checked_.lowering.array_literal_conversions.end()) {
     const auto &conversion = found->second;
     if (conversion.array_type == k_unknown_type) {
@@ -3183,20 +3184,23 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
       }
-      const auto declared = checked_.lowering.struct_literal_field_expected.find(&field);
+      const auto declared =
+          checked_.lowering.struct_literal_field_expected.find(&field);
       fields.push_back(hir_struct_init_field{
           .name = field.name,
           .value = std::move(*lowered),
-          .declared = declared != checked_.lowering.struct_literal_field_expected.end()
-                          ? declared->second
-                          : k_unknown_type});
+          .declared =
+              declared != checked_.lowering.struct_literal_field_expected.end()
+                  ? declared->second
+                  : k_unknown_type});
       continue;
     }
     // Shorthand `{x}` reads the in-scope value `x` directly — desugars to
     // `{x: x}` (see hir_struct_init's doc comment), so lowering builds the
     // implied `x` reference itself rather than recursing through
     // lower_expr on a node that doesn't exist.
-    const auto found = checked_.lowering.struct_literal_field_types.find(&field);
+    const auto found =
+        checked_.lowering.struct_literal_field_types.find(&field);
     if (found == checked_.lowering.struct_literal_field_types.end() ||
         found->second == k_unknown_type || found->second == k_error_type) {
       return fail(lowering_error_kind::unresolved_type, field.span,
@@ -3219,14 +3223,16 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       }
       symbol = bound->second;
     }
-    const auto declared = checked_.lowering.struct_literal_field_expected.find(&field);
+    const auto declared =
+        checked_.lowering.struct_literal_field_expected.find(&field);
     fields.push_back(hir_struct_init_field{
         .name = field.name,
         .value = ptr<hir_expr>(
             make<hir_local_ref>(field.span, found->second, symbol, field.name)),
-        .declared = declared != checked_.lowering.struct_literal_field_expected.end()
-                        ? declared->second
-                        : k_unknown_type});
+        .declared =
+            declared != checked_.lowering.struct_literal_field_expected.end()
+                ? declared->second
+                : k_unknown_type});
   }
   auto init = ptr<hir_expr>(
       make<hir_struct_init>(literal.span, *type, std::move(fields)));
@@ -3864,7 +3870,8 @@ auto lowerer::lower_interpolated_string(
       pieces.push_back(str_lit(seg.source_text + "="));
     }
 
-    const auto dispatch_it = checked_.lowering.interp_dispatches.find(seg.value.get());
+    const auto dispatch_it =
+        checked_.lowering.interp_dispatches.find(seg.value.get());
     if (dispatch_it == checked_.lowering.interp_dispatches.end()) {
       return fail(lowering_error_kind::unresolved_type, seg.value->span,
                   "this interpolated expression was never resolved by the "
@@ -4238,8 +4245,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // there's nothing to project a sub-value out of and nothing to test.
     if (let.else_body.empty() &&
         let.pattern->kind == ast::node_kind::binding_pattern) {
-      const auto &binding =
-          ast::cast<const ast::binding_pattern>(*let.pattern);
+      const auto &binding = ast::cast<const ast::binding_pattern>(*let.pattern);
       const auto symbol = declare_local(binding.name, (*initializer)->type,
                                         /*whole=*/true, let.pattern.get());
       auto result = ptr_vec<hir_node>{};
@@ -4327,8 +4333,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     // other expression position (e.g. `let x = yield v`) is rejected by
     // `lower_expr`'s dispatch instead — see its `yield_expr` case.
     if (expr_stmt.expr->kind == ast::node_kind::yield_expr) {
-      const auto &yield_ast =
-          ast::cast<const ast::yield_expr>(*expr_stmt.expr);
+      const auto &yield_ast = ast::cast<const ast::yield_expr>(*expr_stmt.expr);
       if (yield_ast.value == nullptr) {
         return fail(lowering_error_kind::unsupported_construct, yield_ast.span,
                     "`yield` with no value is not supported");
@@ -4468,7 +4473,8 @@ auto lowerer::lower_stmt(const ast::node &node)
     // before the target is lowered, because there is no place to lower.
     if (assign.target->kind == ast::node_kind::index_expr) {
       const auto &place = ast::cast<const ast::index_expr>(*assign.target);
-      if (const auto found = checked_.lowering.index_set_dispatches.find(&place);
+      if (const auto found =
+              checked_.lowering.index_set_dispatches.find(&place);
           found != checked_.lowering.index_set_dispatches.end()) {
         if (assign.op != ast::assign_op::assign) {
           return fail(lowering_error_kind::unsupported_construct, assign.span,
@@ -4660,8 +4666,7 @@ auto lowerer::lower_stmt(const ast::node &node)
                   "this splice did not resolve to quoted syntax during "
                   "checking");
     }
-    if (const auto *fragment_expr =
-            ast::as<const ast::expr>(found->second)) {
+    if (const auto *fragment_expr = ast::as<const ast::expr>(found->second)) {
       auto lowered = lower_expr(*fragment_expr);
       if (!lowered.has_value()) {
         return std::unexpected(lowered.error());
@@ -4958,8 +4963,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   const auto *plain_var =
       for_stmt.patterns.size() == 1 &&
               for_stmt.patterns.front()->kind == ast::node_kind::binding_pattern
-          ? &ast::cast<const ast::binding_pattern>(
-                *for_stmt.patterns.front())
+          ? &ast::cast<const ast::binding_pattern>(*for_stmt.patterns.front())
           : nullptr;
   if (plain_var == nullptr) {
     // Unique per loop so nested destructuring loops don't collide: the
@@ -5002,8 +5006,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   };
 
   if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
-    const auto &range =
-        ast::cast<const ast::binary_expr>(*for_stmt.iterable);
+    const auto &range = ast::cast<const ast::binary_expr>(*for_stmt.iterable);
     if (ast::is_range(range.op)) {
       return lower_range_loop(for_stmt.span, range, loop_var, inner_stmts);
     }
@@ -5541,7 +5544,8 @@ auto lowerer::lower_generator_loop(
                                         std::string("<for iterator>")))));
 
   push_scope();
-  const auto owned_var = owns_var && checked_.drop.drop_plans.contains(element_type);
+  const auto owned_var =
+      owns_var && checked_.drop.drop_plans.contains(element_type);
   const auto loop_var_symbol =
       declare_local(loop_var.name, element_type, owned_var, &loop_var);
   auto body_stmts = ptr_vec<hir_node>{};
@@ -5673,7 +5677,8 @@ auto lowerer::lower_iterator_loop(
                                 std::move(call_args), dispatch.decl));
 
   push_scope();
-  const auto owned_var = owns_var && checked_.drop.drop_plans.contains(element_type);
+  const auto owned_var =
+      owns_var && checked_.drop.drop_plans.contains(element_type);
   const auto loop_var_symbol =
       declare_local(loop_var.name, element_type, owned_var, &loop_var);
   auto body_stmts = ptr_vec<hir_node>{};
@@ -5820,7 +5825,8 @@ auto lowerer::lower_for_expr(const ast::for_expr &for_expr)
   if (!type.has_value()) {
     return std::unexpected(type.error());
   }
-  const auto dispatch = checked_.lowering.comprehension_dispatches.find(&for_expr);
+  const auto dispatch =
+      checked_.lowering.comprehension_dispatches.find(&for_expr);
   if (dispatch == checked_.lowering.comprehension_dispatches.end()) {
     return fail(lowering_error_kind::unresolved_type, for_expr.span,
                 "internal error: comprehension has no resolved list[T]::new"
@@ -5946,8 +5952,7 @@ auto lowerer::lower_comprehension_clause(
   const auto *plain_var =
       clause.patterns.size() == 1 &&
               clause.patterns.front()->kind == ast::node_kind::binding_pattern
-          ? &ast::cast<const ast::binding_pattern>(
-                *clause.patterns.front())
+          ? &ast::cast<const ast::binding_pattern>(*clause.patterns.front())
           : nullptr;
   if (plain_var == nullptr) {
     subject.name = std::format("<for subject {}>", next_symbol_);
@@ -5992,8 +5997,7 @@ auto lowerer::lower_comprehension_clause(
   };
 
   if (clause.iterable->kind == ast::node_kind::binary_expr) {
-    const auto &range =
-        ast::cast<const ast::binary_expr>(*clause.iterable);
+    const auto &range = ast::cast<const ast::binary_expr>(*clause.iterable);
     if (ast::is_range(range.op)) {
       return lower_range_loop(span, range, loop_var, nested);
     }
@@ -6294,7 +6298,8 @@ auto lowerer::lower_pattern(const ast::node &pattern,
       // so its type lives in the dedicated `struct_pattern_field_types` map
       // instead (see checked_types's doc comment). Desugars exactly like a
       // plain binding: a wildcard structural match plus a synthetic let.
-      const auto found = checked_.lowering.struct_pattern_field_types.find(&field);
+      const auto found =
+          checked_.lowering.struct_pattern_field_types.find(&field);
       if (found == checked_.lowering.struct_pattern_field_types.end() ||
           found->second == k_unknown_type || found->second == k_error_type) {
         return fail(lowering_error_kind::unresolved_type, field_span,
@@ -6975,6 +6980,20 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 
 } // namespace
 
+auto lower_static_global(
+    const semantic::lowering_results::static_global_def &def,
+    const semantic::checked_types &checked, source_span span)
+    -> std::expected<hir_static_global, lowering_error> {
+  auto value = lower_static_global_value(
+      def, checked, span,
+      [](std::string_view) -> symbol_id { return k_invalid_symbol_id; });
+  if (!value.has_value()) {
+    return std::unexpected(value.error());
+  }
+  return hir_static_global{
+      .name = def.name, .type = def.type, .value = std::move(*value)};
+}
+
 auto lower_function(const ast::func_decl &decl,
                     const semantic::checked_types &checked,
                     const lowering_options &options)
@@ -7133,8 +7152,7 @@ auto lower_module_items(const std::vector<ast::ptr<ast::node>> &items,
     }
     if (item->kind == ast::node_kind::impl_decl) {
       auto result = lower_impl_associated_functions(
-          ast::cast<const ast::impl_decl>(*item), checked, options,
-          functions);
+          ast::cast<const ast::impl_decl>(*item), checked, options, functions);
       if (!result.has_value()) {
         return std::unexpected(result.error());
       }

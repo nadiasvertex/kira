@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <expected>
+#include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "src/bytecode/chunk.h"
@@ -18,6 +20,34 @@ namespace cinder::bytecode {
 struct vm_result {
   bool has_value = false;
   slot_value value{};
+};
+
+/// What a hosted run (`vm::run_hosted`) may do.
+struct run_limits {
+  /// Instructions the run may execute before it fails with
+  /// `step_budget_exhausted`; `nullopt` for no limit.
+  std::optional<uint64_t> step_budget;
+  /// Whether the program may call intrinsics that reach outside the VM — the
+  /// file, console and platform-query ones. Refused ones fail with
+  /// `effect_refused`.
+  bool allow_effects = true;
+};
+
+/// One active call when a hosted run failed.
+struct vm_frame_location {
+  uint16_t function_index = 0;
+  /// Offset of the instruction that was running (the call, for a caller).
+  size_t offset = 0;
+};
+
+/// Why a hosted run failed, and where.
+struct vm_failure {
+  panic_reason reason = panic_reason::explicit_panic;
+  /// The panic's own message (`panic("...")`'s text, what was refused), or
+  /// the reason's description.
+  std::string message;
+  /// The calls active at the failure, innermost first.
+  std::vector<vm_frame_location> frames;
 };
 
 /// Tier-0 bytecode interpreter (`spec/codegen-design.md` Decision 1,
@@ -52,7 +82,20 @@ public:
                          std::span<const slot_value> args) const
       -> std::expected<vm_result, panic_reason>;
 
+  /// Runs like `run`, for a host that must survive whatever the program
+  /// does: no panic ends the process (`hosted_panic_scope`), the run stops
+  /// once `limits` are exceeded, and a failure says where it happened.
+  [[nodiscard]] auto run_hosted(uint16_t function_index,
+                                std::span<const slot_value> args,
+                                const run_limits &limits) const
+      -> std::expected<vm_result, vm_failure>;
+
 private:
+  [[nodiscard]] auto execute(uint16_t function_index,
+                             std::span<const slot_value> args,
+                             const run_limits &limits) const
+      -> std::expected<vm_result, vm_failure>;
+
   const bytecode_module &module_;
   /// The module-wide global-value table `op_load_global`/`op_store_global`
   /// index into — see `bytecode_module::global_count`'s doc comment.

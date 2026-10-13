@@ -1722,8 +1722,8 @@ auto test_static_unreadable_at_run_time_is_named() -> void {
          "expected no function-value wording: " + report->diagnostics);
 }
 
-/// A compile-time error inside the standard library carries a note at the
-/// user's own call, not just the library line.
+/// A compile-time error inside the standard library is reported at the
+/// user's own call, with notes at the library lines it passed through.
 auto test_comptime_error_names_call_site() -> void {
   auto temp = make_temp_dir();
   auto main_source = temp.path / "main.cn";
@@ -1745,11 +1745,19 @@ auto test_comptime_error_names_call_site() -> void {
   expect(report->error_count == 1,
          std::format("expected exactly one error, got {}: {}",
                      report->error_count, report->diagnostics));
-  expect(report->diagnostics.contains(
-             "reached from this compile-time call to `println`"),
-         "expected a note naming the call: " + report->diagnostics);
+  // The VM reports at the outermost compile-time call (`shout()`), with a
+  // note at each line it passed through; the interpreter (which
+  // `CINDER_COMPTIME_VM=compare` reports from) reports at the library line
+  // with a note at the call.
+  expect(report->diagnostics.contains("compile-time call to `shout` failed") ||
+             report->diagnostics.contains(
+                 "reached from this compile-time call to `println`"),
+         "expected the error to name the call: " + report->diagnostics);
   expect(report->diagnostics.contains("main.cn:7:5"),
-         "expected the note to point at the user's call: " +
+         "expected the error to point at the user's call: " +
+             report->diagnostics);
+  expect(report->diagnostics.contains("io.cn"),
+         "expected the library line that failed to be shown: " +
              report->diagnostics);
 }
 
@@ -1872,16 +1880,41 @@ auto test_comptime_generic_receiver_method() -> void {
 #endif
 }
 
-/// A method the compile-time evaluator cannot run is named in the error,
-/// instead of the old "`.` field access requires a compile-time struct
-/// value".
-auto test_comptime_unsupported_method_is_named() -> void {
+/// A value built by compile-time code on the VM — a struct holding a string,
+/// a list and an option — comes back to the compiler and goes to the VM again
+/// as an argument. Asserted by the value the second call computes from every
+/// part.
+auto test_comptime_vm_values_round_trip() -> void {
   auto temp = make_temp_dir();
   auto main_source = temp.path / "main.cn";
   auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_values.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the compile-time calls to run: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 60,
+         std::format("expected `score(build(4))` == 60, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
 
-  write_file(main_source, read_program("comptime_unsupported_method.cn"));
-
+/// Compile-time code overflows exactly as run-time code does — `int8`
+/// arithmetic in a `static def` does not quietly widen — and the error points
+/// at the call and, in a note, at the operation that overflowed.
+auto test_comptime_vm_overflow_points_into_callee() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_overflow.cn"));
   cinder::driver::cli_config run_cfg{
       .program_name = "cinder",
       .sources = {main_source.string()},
@@ -1894,13 +1927,45 @@ auto test_comptime_unsupported_method_is_named() -> void {
   auto report = cinder::driver::compile_sources(run_cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");
   expect(report->error_count == 1,
-         std::format("expected exactly one error, got {}: {}",
-                     report->error_count, report->diagnostics));
-  expect(report->diagnostics.contains(
-             "the list method `is_empty` cannot be called at compile time"),
-         "expected the method to be named: " + report->diagnostics);
-  expect(!report->diagnostics.contains("field access"),
-         "expected no field-access error: " + report->diagnostics);
+         std::format("expected one error, got {}: {}", report->error_count,
+                     report->diagnostics));
+  expect(report->diagnostics.contains("compile-time call to `doubled`") &&
+             report->diagnostics.contains("overflowed"),
+         "expected the overflow to be named: " + report->diagnostics);
+  // `CINDER_COMPTIME_VM=compare` reports the VM's failure at the call alone.
+  expect(report->diagnostics.contains("main.cn:9:16"),
+         "expected the error at the call: " + report->diagnostics);
+}
+
+/// A list method called at compile time runs on the VM, where the AST
+/// interpreter could only name it in an error. Asserted by the value the
+/// compile-time call produced.
+auto test_comptime_list_method_runs() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+
+  write_file(main_source, read_program("comptime_list_method.cn"));
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected `xs.is_empty()` to run at compile time: " +
+             report->diagnostics);
+  expect(report->run.has_value() && report->run->succeeded,
+         "expected `main` to run");
+  expect(report->run->exit_code == 1,
+         std::format("expected `check()` to be 1, got {}",
+                     report->run->exit_code));
 }
 
 /// Compile-time code reads unannotated `static let` bindings whose own
@@ -1971,7 +2036,7 @@ auto test_comptime_unannotated_static_read_early() -> void {
 /// A `static` whose initializer fails reports that failure once. A module
 /// that refers to the binding is not lowered: lowering used to see a
 /// reference with no value and blame a "gap in the compiler". The failure
-/// here is a loop that never ends, which exhausts the iteration budget.
+/// here is a loop that never ends, which exhausts the step budget.
 auto test_failed_static_initializer_blocks_lowering() -> void {
   auto temp = make_temp_dir();
   auto main_source = temp.path / "main.cn";
@@ -1997,8 +2062,11 @@ auto test_failed_static_initializer_blocks_lowering() -> void {
   expect(report->error_count == 1,
          std::format("expected exactly the initializer's error, got {}: {}",
                      report->error_count, report->diagnostics));
-  expect(report->diagnostics.contains("this usually means it never ends"),
-         "expected the iteration-budget error: " + report->diagnostics);
+  // The VM's step budget or the interpreter's iteration budget, which
+  // `CINDER_COMPTIME_VM=compare` reports from.
+  expect(report->diagnostics.contains("compile-time step budget") ||
+             report->diagnostics.contains("this usually means it never ends"),
+         "expected the budget error: " + report->diagnostics);
   expect(!report->diagnostics.contains("could not lower"),
          "expected no lowering error for a failed initializer: " +
              report->diagnostics);
@@ -4991,7 +5059,9 @@ auto main() -> int {
     test_static_aggregate_read_at_run_time();
     test_static_unreadable_at_run_time_is_named();
     test_comptime_error_names_call_site();
-    test_comptime_unsupported_method_is_named();
+    test_comptime_list_method_runs();
+    test_comptime_vm_values_round_trip();
+    test_comptime_vm_overflow_points_into_callee();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method();
     test_comptime_unannotated_static_read_early();

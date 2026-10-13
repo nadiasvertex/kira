@@ -1,0 +1,12 @@
+module main
+
+# Compile-time code overflows the same way run-time code does: `doubled`
+# computes in `int8`, and `100 + 100` does not fit.
+
+static def doubled(x: int8) -> int8:
+    return x + x
+
+static let y = doubled(100)
+
+def main() -> int32:
+    return y as int32

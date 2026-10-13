@@ -14,6 +14,7 @@
 #include "lowering_stage.h"
 #include "parse_stage.h"
 #include "run_build_stage.h"
+#include "src/comptime_vm/backend.h"
 #include "src/hir/inline.h"
 #include "src/hir/reference_check.h"
 #include "src/semantic/analysis.h"
@@ -365,10 +366,42 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     });
   }
 
+  // Compile-time calls run on the VM where it can run them. The
+  // `CINDER_COMPTIME_VM` environment variable selects `off` (interpret every
+  // call) or `compare` (run both ways and report any difference), for
+  // checking the move from the interpreter to the VM.
+  auto comptime_backend = comptime_vm::vm_backend{};
+  const auto comptime_mode = [] -> semantic::comptime_vm_mode {
+    const auto *setting = std::getenv("CINDER_COMPTIME_VM");
+    if (setting == nullptr) {
+      return semantic::comptime_vm_mode::on;
+    }
+    const auto text = std::string_view(setting);
+    if (text == "off") {
+      return semantic::comptime_vm_mode::off;
+    }
+    if (text == "compare") {
+      return semantic::comptime_vm_mode::compare;
+    }
+    return semantic::comptime_vm_mode::on;
+  }();
   const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types =
-                                     !effective_cfg.parse_only});
+                                     !effective_cfg.parse_only,
+                                 .comptime = &comptime_backend,
+                                 .comptime_mode = comptime_mode});
+
+  // `CINDER_COMPTIME_VERIFY` re-lowers every function compile-time code ran
+  // on the VM from the final results and reports any difference — a check
+  // that the checker's mid-check view held every record lowering reads.
+  if (std::getenv("CINDER_COMPTIME_VERIFY") != nullptr) {
+    for (const auto &difference : comptime_backend.verify(checked)) {
+      session_diagnostics.emit(diagnostic(
+          diagnostic_level::error,
+          std::format("internal compiler error: {}", difference), 0));
+    }
+  }
 
   if (!effective_cfg.parse_only) {
     // The standard library is held to the same ownership rules as user code

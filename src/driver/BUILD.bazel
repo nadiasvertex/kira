@@ -42,6 +42,7 @@ cc_library(
       "//src/bytecode:vm",
       "//src/bytecode_compiler:bytecode_compiler",
       "//src/comptime:comptime",
+      "//src/comptime_vm",
       "//src/hir:hir",
       "//src/llvm_codegen:aot",
       "//src/semantic:semantic",
