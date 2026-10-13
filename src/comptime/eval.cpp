@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "src/comptime/hygiene.h"
+#include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
@@ -3228,22 +3229,7 @@ auto evaluator::evaluate_stmt(const ast::node &node) -> exec_result {
     const auto &assign = dynamic_cast<const ast::assign_stmt &>(node);
     const auto *target =
         dynamic_cast<const ast::ident_expr *>(assign.target.get());
-    const auto compound_op = [&] -> std::optional<ast::binary_op> {
-      switch (assign.op) {
-      case ast::assign_op::add_assign:
-        return ast::binary_op::add;
-      case ast::assign_op::sub_assign:
-        return ast::binary_op::sub;
-      case ast::assign_op::mul_assign:
-        return ast::binary_op::mul;
-      case ast::assign_op::div_assign:
-        return ast::binary_op::div;
-      case ast::assign_op::mod_assign:
-        return ast::binary_op::mod;
-      default:
-        return std::nullopt;
-      }
-    }();
+    const auto compound_op = ast::compound_assign_op(assign.op);
     if (target == nullptr || assign.value == nullptr ||
         (assign.op != ast::assign_op::assign && !compound_op.has_value())) {
       report(node.span, "this assignment form is not yet supported in "

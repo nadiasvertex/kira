@@ -2295,7 +2295,7 @@ auto checker::check_bound_arithmetic(const ast::binary_expr &binary,
   const auto subject = rigid_lhs ? lhs : rhs;
   const auto other = rigid_lhs ? rhs : lhs;
   const auto op_name = ast::binary_op_name(binary.op);
-  const auto trait_name = operator_trait_for(binary.op);
+  const auto trait_name = ast::overload_trait_of(binary.op);
   const auto subject_name = session_.types_.display(subject);
   // Every type a numeric domain allows has the builtin operator, and its
   // result is the operand type — no trait needed.

@@ -19,6 +19,7 @@
 #include "src/hir/reference_check.h"
 #include "src/hir/tail_calls.h"
 #include "src/parser/ast.h"
+#include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/layout.h"
 #include "src/semantic/module_index.h"
@@ -1618,10 +1619,7 @@ auto lowerer::range_operand(const ast::expr &expr) -> const ast::binary_expr * {
     return nullptr;
   }
   const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
-  return binary.op == ast::binary_op::range ||
-                 binary.op == ast::binary_op::range_inclusive
-             ? &binary
-             : nullptr;
+  return ast::is_range(binary.op) ? &binary : nullptr;
 }
 
 /// `a..b` kept as the `hir_binary` both backends' `compile_range_index`
@@ -1687,8 +1685,7 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   // a..b`, range-indexing an `array`/`slice`/`str`) are intercepted by
   // `lower_range_loop`/`lower_index` before this point and still lower the
   // bounds directly, so nothing that worked before gains an allocation.
-  if (bin.op == ast::binary_op::range ||
-      bin.op == ast::binary_op::range_inclusive) {
+  if (ast::is_range(bin.op)) {
     return lower_range_value(bin, *type);
   }
   // An arithmetic operator on a user struct/sum operand resolved to a real
@@ -5006,8 +5003,7 @@ auto lowerer::lower_for_stmt(const ast::for_stmt &for_stmt)
   if (for_stmt.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
         dynamic_cast<const ast::binary_expr &>(*for_stmt.iterable);
-    if (range.op == ast::binary_op::range ||
-        range.op == ast::binary_op::range_inclusive) {
+    if (ast::is_range(range.op)) {
       return lower_range_loop(for_stmt.span, range, loop_var, inner_stmts);
     }
   }
@@ -5997,8 +5993,7 @@ auto lowerer::lower_comprehension_clause(
   if (clause.iterable->kind == ast::node_kind::binary_expr) {
     const auto &range =
         dynamic_cast<const ast::binary_expr &>(*clause.iterable);
-    if (range.op == ast::binary_op::range ||
-        range.op == ast::binary_op::range_inclusive) {
+    if (ast::is_range(range.op)) {
       return lower_range_loop(span, range, loop_var, nested);
     }
   }

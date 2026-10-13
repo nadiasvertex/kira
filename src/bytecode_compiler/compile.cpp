@@ -24,6 +24,7 @@
 #include "src/hir/nodes.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast.h"
+#include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
@@ -250,43 +251,11 @@ using cinder::decode_string_literal;
 /// desugars to (`Assign` itself has none — handled separately).
 [[nodiscard]] auto compound_assign_opcode_for(ast::assign_op op)
     -> std::optional<opcode> {
-  switch (op) {
-  case ast::assign_op::add_assign:
-    return opcode::op_add;
-  case ast::assign_op::sub_assign:
-    return opcode::op_sub;
-  case ast::assign_op::mul_assign:
-    return opcode::op_mul;
-  case ast::assign_op::div_assign:
-    return opcode::op_div;
-  case ast::assign_op::mod_assign:
-    return opcode::op_mod;
-  case ast::assign_op::and_assign:
-    return opcode::op_bitand;
-  case ast::assign_op::or_assign:
-    return opcode::op_bitor;
-  case ast::assign_op::xor_assign:
-    return opcode::op_bitxor;
-  case ast::assign_op::shl_assign:
-    return opcode::op_shl;
-  case ast::assign_op::shr_assign:
-    return opcode::op_shr;
-  case ast::assign_op::add_wrap_assign:
-    return opcode::op_add_wrap;
-  case ast::assign_op::sub_wrap_assign:
-    return opcode::op_sub_wrap;
-  case ast::assign_op::mul_wrap_assign:
-    return opcode::op_mul_wrap;
-  case ast::assign_op::add_sat_assign:
-    return opcode::op_add_sat;
-  case ast::assign_op::sub_sat_assign:
-    return opcode::op_sub_sat;
-  case ast::assign_op::mul_sat_assign:
-    return opcode::op_mul_sat;
-  case ast::assign_op::assign:
+  const auto binary = ast::compound_assign_op(op);
+  if (!binary.has_value()) {
     return std::nullopt;
   }
-  return std::nullopt;
+  return binary_opcode_for(*binary);
 }
 
 // ==========================================================================

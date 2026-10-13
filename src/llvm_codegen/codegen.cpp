@@ -39,6 +39,7 @@
 #include "src/hir/live_across_yield.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast.h"
+#include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
 #include "src/runtime/layout.h"
@@ -4222,55 +4223,8 @@ private:
   compound_assign_value(const hir::hir_assign &assign, numeric_kind kind,
                         llvm::Value *current, llvm::Value *rhs)
       -> std::expected<llvm::Value *, codegen_error> {
-    using ast::assign_op;
-    ast::binary_op equivalent{};
-    switch (assign.op) {
-    case assign_op::add_assign:
-      equivalent = ast::binary_op::add;
-      break;
-    case assign_op::sub_assign:
-      equivalent = ast::binary_op::sub;
-      break;
-    case assign_op::mul_assign:
-      equivalent = ast::binary_op::mul;
-      break;
-    case assign_op::div_assign:
-      equivalent = ast::binary_op::div;
-      break;
-    case assign_op::mod_assign:
-      equivalent = ast::binary_op::mod;
-      break;
-    case assign_op::and_assign:
-      equivalent = ast::binary_op::bit_and;
-      break;
-    case assign_op::or_assign:
-      equivalent = ast::binary_op::bit_or;
-      break;
-    case assign_op::xor_assign:
-      equivalent = ast::binary_op::bit_xor;
-      break;
-    case assign_op::shl_assign:
-      equivalent = ast::binary_op::shl;
-      break;
-    case assign_op::shr_assign:
-      equivalent = ast::binary_op::shr;
-      break;
-    case assign_op::add_wrap_assign:
-      equivalent = ast::binary_op::add_wrap;
-      break;
-    case assign_op::sub_wrap_assign:
-      equivalent = ast::binary_op::sub_wrap;
-      break;
-    case assign_op::mul_wrap_assign:
-      equivalent = ast::binary_op::mul_wrap;
-      break;
-    case assign_op::add_sat_assign:
-      equivalent = ast::binary_op::add_sat;
-      break;
-    case assign_op::sub_sat_assign:
-      equivalent = ast::binary_op::sub_sat;
-      break;
-    default:
+    const auto equivalent = ast::compound_assign_op(assign.op);
+    if (!equivalent.has_value()) {
       return std::unexpected(codegen_error{
           .kind = codegen_error_kind::unsupported_construct,
           .span = assign.span,
@@ -4281,7 +4235,7 @@ private:
     // node below — building one avoids a second copy of the same opcode
     // dispatch table `compile_binary_op` already has.
     auto synthetic = hir::hir_binary(assign.span, hir::k_unknown_type,
-                                     equivalent, nullptr, nullptr);
+                                     *equivalent, nullptr, nullptr);
     return compile_binary_op(synthetic, kind, current, rhs);
   }
 

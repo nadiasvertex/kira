@@ -35,11 +35,6 @@ namespace cinder::semantic::detail {
 //  is passed in as a function.
 // ==========================================================================
 
-/// How an operator is spelled in source — used to echo a predicate back to
-/// the user in a proof diagnostic, so ``cannot prove `i < n` `` quotes the
-/// condition the way they would have written it.
-auto binary_op_spelling(ast::binary_op op) -> std::string_view;
-
 /// Parses an integer literal spelling (handles `_`, `0x`, `0o`, `0b`).
 /// Returns nullopt when the value does not fit in 64 bits.
 auto parse_integer_literal(std::string_view text) -> std::optional<uint64_t>;
@@ -163,10 +158,6 @@ public:
   [[nodiscard]] auto facts_from(const ast::expr &expr,
                                 const predicate_subst &subst,
                                 bool negated) const -> fact_set;
-
-  /// The comparison a relational operator makes once `negated` is folded in.
-  [[nodiscard]] static auto negate_comparison(ast::binary_op op)
-      -> ast::binary_op;
 
   /// Builds `lhs OP rhs` as a constraint `poly REL 0`; `nullopt` when `op`
   /// is not a relational operator.

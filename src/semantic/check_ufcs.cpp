@@ -930,31 +930,8 @@ auto checker::is_literal_tree(const ast::expr &expr, type_id target) -> bool {
   }
   case ast::node_kind::binary_expr: {
     const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
-    auto op_fits = false;
-    switch (binary.op) {
-    case ast::binary_op::add:
-    case ast::binary_op::sub:
-    case ast::binary_op::mul:
-    case ast::binary_op::div:
-    case ast::binary_op::mod:
-    case ast::binary_op::add_wrap:
-    case ast::binary_op::sub_wrap:
-    case ast::binary_op::mul_wrap:
-    case ast::binary_op::add_sat:
-    case ast::binary_op::sub_sat:
-    case ast::binary_op::mul_sat:
-      op_fits = true;
-      break;
-    case ast::binary_op::shl:
-    case ast::binary_op::shr:
-    case ast::binary_op::bit_and:
-    case ast::binary_op::bit_or:
-    case ast::binary_op::bit_xor:
-      op_fits = integer_target;
-      break;
-    default:
-      break;
-    }
+    const auto op_fits = ast::is_arithmetic(binary.op) ||
+                         (ast::is_integer_bitwise(binary.op) && integer_target);
     return op_fits && binary.lhs != nullptr && binary.rhs != nullptr &&
            is_literal_tree(*binary.lhs, target) &&
            is_literal_tree(*binary.rhs, target);

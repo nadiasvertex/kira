@@ -4,45 +4,10 @@
 #include <format>
 #include <vector>
 
+#include "src/parser/operators.h"
 #include "src/semantic/module_index.h"
 
 namespace cinder::semantic::detail {
-
-/// How an operator is spelled in source — used to echo a predicate back to
-/// the user in a proof diagnostic, so ``cannot prove `i < n` `` quotes the
-/// condition the way they would have written it.
-auto binary_op_spelling(ast::binary_op op) -> std::string_view {
-  switch (op) {
-  case ast::binary_op::eq_eq:
-    return "==";
-  case ast::binary_op::bang_eq:
-    return "!=";
-  case ast::binary_op::lt:
-    return "<";
-  case ast::binary_op::lt_eq:
-    return "<=";
-  case ast::binary_op::gt:
-    return ">";
-  case ast::binary_op::gt_eq:
-    return ">=";
-  case ast::binary_op::add:
-    return "+";
-  case ast::binary_op::sub:
-    return "-";
-  case ast::binary_op::mul:
-    return "*";
-  case ast::binary_op::div:
-    return "/";
-  case ast::binary_op::mod:
-    return "%";
-  case ast::binary_op::logical_and:
-    return "and";
-  case ast::binary_op::logical_or:
-    return "or";
-  default:
-    return "?";
-  }
-}
 
 /// Parses an integer literal spelling (handles `_`, `0x`, `0o`, `0b`).
 /// Returns nullopt when the value does not fit in 64 bits.
@@ -204,29 +169,6 @@ auto predicate_translator::solver_poly(const ast::expr &expr,
       });
 }
 
-/// The comparison a relational operator makes, once `negated` has been
-/// folded in — `not (a < b)` is `a >= b`, so negation is a rewrite of the
-/// operator, never a wrapper around the constraint.
-auto predicate_translator::negate_comparison(ast::binary_op op)
-    -> ast::binary_op {
-  switch (op) {
-  case ast::binary_op::eq_eq:
-    return ast::binary_op::bang_eq;
-  case ast::binary_op::bang_eq:
-    return ast::binary_op::eq_eq;
-  case ast::binary_op::lt:
-    return ast::binary_op::gt_eq;
-  case ast::binary_op::lt_eq:
-    return ast::binary_op::gt;
-  case ast::binary_op::gt:
-    return ast::binary_op::lt_eq;
-  case ast::binary_op::gt_eq:
-    return ast::binary_op::lt;
-  default:
-    return op;
-  }
-}
-
 /// Builds `lhs OP rhs` as a constraint `poly REL 0`. `<` and `<=` have no
 /// relation of their own — they are the same statement about the negated
 /// polynomial — and `<`/`>` shift the constant by one because the fragment
@@ -334,7 +276,7 @@ auto predicate_translator::describe(const ast::expr &expr,
         binary.lhs != nullptr ? describe(*binary.lhs, subst) : "_";
     const auto right =
         binary.rhs != nullptr ? describe(*binary.rhs, subst) : "_";
-    return std::format("{} {} {}", left, binary_op_spelling(binary.op), right);
+    return std::format("{} {} {}", left, ast::binary_op_name(binary.op), right);
   }
   default:
     return "...";
@@ -396,7 +338,7 @@ auto predicate_translator::goal_from(const ast::expr &expr,
     if (!left.has_value() || !right.has_value()) {
       return {};
     }
-    const auto op = negated ? negate_comparison(binary.op) : binary.op;
+    const auto op = negated ? ast::negated_comparison(binary.op) : binary.op;
     auto built =
         comparison_constraint(op, *left, *right, describe(expr, subst));
     if (!built.has_value()) {

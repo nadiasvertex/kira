@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "src/parser/ast_traversal.h"
 #include "src/semantic/binding_walk.h"
 
 namespace cinder::semantic::ownership {
@@ -109,7 +110,7 @@ auto owning_alias(const ast::pattern &pattern) -> const ast::group_pattern * {
   if (pattern.kind != ast::node_kind::group_pattern) {
     return nullptr;
   }
-  const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+  const auto &group = ast::cast<ast::group_pattern>(pattern);
   return group.alias.has_value() ? &group : nullptr;
 }
 
@@ -141,7 +142,7 @@ struct implicit_capture {
 auto strip_groups(const ast::expr &expr) -> const ast::expr & {
   const auto *current = &expr;
   while (current->kind == ast::node_kind::group_expr) {
-    const auto &group = dynamic_cast<const ast::group_expr &>(*current);
+    const auto &group = ast::cast<ast::group_expr>(*current);
     if (group.inner == nullptr) {
       break;
     }
@@ -180,9 +181,11 @@ struct place_step {
 auto binding_type(const pattern_binding &binding, const checked_types &checked)
     -> type_id {
   if (binding.field != nullptr) {
-    const auto found = checked.lowering.struct_pattern_field_types.find(binding.field);
-    return found != checked.lowering.struct_pattern_field_types.end() ? found->second
-                                                             : k_unknown_type;
+    const auto found =
+        checked.lowering.struct_pattern_field_types.find(binding.field);
+    return found != checked.lowering.struct_pattern_field_types.end()
+               ? found->second
+               : k_unknown_type;
   }
   const ast::node *node = binding.node;
   if (node == nullptr) {
@@ -204,11 +207,10 @@ auto place_root(const ast::expr &expr, bool &projected)
       if (current->has_error) {
         return std::nullopt;
       }
-      return root_name{.name =
-                           dynamic_cast<const ast::ident_expr &>(*current).name,
+      return root_name{.name = ast::cast<ast::ident_expr>(*current).name,
                        .span = current->span};
     case ast::node_kind::module_path_expr: {
-      const auto &path = dynamic_cast<const ast::module_path_expr &>(*current);
+      const auto &path = ast::cast<ast::module_path_expr>(*current);
       if (path.segments.empty()) {
         return std::nullopt;
       }
@@ -216,7 +218,7 @@ auto place_root(const ast::expr &expr, bool &projected)
       return root_name{.name = path.segments.front(), .span = current->span};
     }
     case ast::node_kind::field_expr: {
-      const auto &field = dynamic_cast<const ast::field_expr &>(*current);
+      const auto &field = ast::cast<ast::field_expr>(*current);
       if (field.object == nullptr) {
         return std::nullopt;
       }
@@ -225,7 +227,7 @@ auto place_root(const ast::expr &expr, bool &projected)
       break;
     }
     case ast::node_kind::index_expr: {
-      const auto &index = dynamic_cast<const ast::index_expr &>(*current);
+      const auto &index = ast::cast<ast::index_expr>(*current);
       if (index.object == nullptr) {
         return std::nullopt;
       }
@@ -234,7 +236,7 @@ auto place_root(const ast::expr &expr, bool &projected)
       break;
     }
     case ast::node_kind::group_expr: {
-      const auto &group = dynamic_cast<const ast::group_expr &>(*current);
+      const auto &group = ast::cast<ast::group_expr>(*current);
       if (group.inner == nullptr) {
         return std::nullopt;
       }
@@ -242,7 +244,7 @@ auto place_root(const ast::expr &expr, bool &projected)
       break;
     }
     case ast::node_kind::unary_expr: {
-      const auto &unary = dynamic_cast<const ast::unary_expr &>(*current);
+      const auto &unary = ast::cast<ast::unary_expr>(*current);
       if (unary.op != ast::unary_op::deref || unary.operand == nullptr) {
         return std::nullopt;
       }
@@ -636,44 +638,19 @@ private:
   /// still need a drop: a `_` at a droppable position, and the droppable
   /// fields a struct pattern's `..` skips.
   auto record_leftovers(const ast::pattern &pattern) -> void {
-    const auto recurse = [this](const ast::pattern *inner) -> void {
-      if (inner != nullptr) {
+    ast::for_each_child(pattern, [this](const ast::node &child) -> void {
+      if (const auto *inner = ast::as<ast::pattern>(&child)) {
         record_leftovers(*inner);
       }
-    };
+    });
     switch (pattern.kind) {
     case ast::node_kind::wildcard_pattern:
       if (checked_.drop.drop_plans.contains(type_of(&pattern))) {
         cfg_.leftover_drops.insert(&pattern);
       }
       break;
-    case ast::node_kind::group_pattern:
-      recurse(dynamic_cast<const ast::group_pattern &>(pattern).inner.get());
-      break;
-    case ast::node_kind::tuple_pattern:
-      for (const auto &element :
-           dynamic_cast<const ast::tuple_pattern &>(pattern).elements) {
-        recurse(element.get());
-      }
-      break;
-    case ast::node_kind::constructor_pattern:
-      for (const auto &arg :
-           dynamic_cast<const ast::constructor_pattern &>(pattern).args) {
-        recurse(arg.get());
-      }
-      break;
-    case ast::node_kind::option_pattern:
-      recurse(dynamic_cast<const ast::option_pattern &>(pattern).inner.get());
-      break;
-    case ast::node_kind::result_pattern:
-      recurse(dynamic_cast<const ast::result_pattern &>(pattern).inner.get());
-      break;
     case ast::node_kind::struct_pattern: {
-      const auto &fields =
-          dynamic_cast<const ast::struct_pattern &>(pattern).fields;
-      for (const auto &field : fields) {
-        recurse(field.pattern.get());
-      }
+      const auto &fields = ast::cast<ast::struct_pattern>(pattern).fields;
       if (!std::ranges::any_of(fields, &ast::field_pattern::is_rest)) {
         break;
       }
@@ -701,7 +678,7 @@ private:
   auto declare_pattern(const ast::node &pattern, bool owned = false)
       -> std::vector<local_id> {
     auto locals = std::vector<local_id>{};
-    const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
+    const auto *pat = ast::as<ast::pattern>(&pattern);
     if (pat == nullptr) {
       return locals;
     }
@@ -723,7 +700,7 @@ private:
   /// Declares a parameter: whole when it is a single name.
   auto declare_param(const ast::node &pattern, type_id type) -> void {
     if (pattern.kind == ast::node_kind::binding_pattern) {
-      const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+      const auto &binding = ast::cast<ast::binding_pattern>(pattern);
       declare(binding.name, type, binding.span, /*whole=*/true,
               /*owns=*/false, &pattern);
       return;
@@ -817,14 +794,14 @@ private:
   auto eval_subscripts(const ast::expr &expr) -> void {
     switch (expr.kind) {
     case ast::node_kind::field_expr: {
-      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      const auto &field = ast::cast<ast::field_expr>(expr);
       if (field.object != nullptr) {
         eval_subscripts(*field.object);
       }
       return;
     }
     case ast::node_kind::index_expr: {
-      const auto &index = dynamic_cast<const ast::index_expr &>(expr);
+      const auto &index = ast::cast<ast::index_expr>(expr);
       if (index.object != nullptr) {
         eval_subscripts(*index.object);
       }
@@ -834,14 +811,14 @@ private:
       return;
     }
     case ast::node_kind::group_expr: {
-      const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+      const auto &group = ast::cast<ast::group_expr>(expr);
       if (group.inner != nullptr) {
         eval_subscripts(*group.inner);
       }
       return;
     }
     case ast::node_kind::unary_expr: {
-      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      const auto &unary = ast::cast<ast::unary_expr>(expr);
       if (unary.operand != nullptr) {
         eval_subscripts(*unary.operand);
       }
@@ -858,7 +835,7 @@ private:
       -> void {
     switch (expr.kind) {
     case ast::node_kind::module_path_expr: {
-      const auto &path = dynamic_cast<const ast::module_path_expr &>(expr);
+      const auto &path = ast::cast<ast::module_path_expr>(expr);
       const auto types = checked_.value_path_types.find(&path);
       const auto derefs = checked_.path_deref_adjustments.find(&path);
       for (std::size_t i = 1; i < path.segments.size(); ++i) {
@@ -877,7 +854,7 @@ private:
       return;
     }
     case ast::node_kind::field_expr: {
-      const auto &field = dynamic_cast<const ast::field_expr &>(expr);
+      const auto &field = ast::cast<ast::field_expr>(expr);
       place_steps(*field.object, out);
       if (const auto derefs =
               checked_.deref_adjustments.find(field.object.get());
@@ -890,17 +867,17 @@ private:
       return;
     }
     case ast::node_kind::index_expr: {
-      const auto &index = dynamic_cast<const ast::index_expr &>(expr);
+      const auto &index = ast::cast<ast::index_expr>(expr);
       place_steps(*index.object, out);
       out.push_back(
           place_step{.step = place_step::kind::index, .type = type_of(&expr)});
       return;
     }
     case ast::node_kind::group_expr:
-      place_steps(*dynamic_cast<const ast::group_expr &>(expr).inner, out);
+      place_steps(*ast::cast<ast::group_expr>(expr).inner, out);
       return;
     case ast::node_kind::unary_expr: {
-      const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
+      const auto &unary = ast::cast<ast::unary_expr>(expr);
       place_steps(*unary.operand, out);
       // `*h` on a `deref` handle reads through `h.deref()`.
       if (const auto derefs =
@@ -951,7 +928,8 @@ private:
 
   [[nodiscard]] auto has_own_drop(type_id type) const -> bool {
     const auto it = checked_.drop.drop_plans.find(type);
-    return it != checked_.drop.drop_plans.end() && it->second.own_drop.has_value();
+    return it != checked_.drop.drop_plans.end() &&
+           it->second.own_drop.has_value();
   }
 
   /// A short spelling of a value that is not a place, for a diagnostic:
@@ -960,14 +938,14 @@ private:
     const auto &inner = strip_groups(expr);
     switch (inner.kind) {
     case ast::node_kind::ident_expr:
-      return dynamic_cast<const ast::ident_expr &>(inner).name;
+      return ast::cast<ast::ident_expr>(inner).name;
     case ast::node_kind::field_expr: {
-      const auto &field = dynamic_cast<const ast::field_expr &>(inner);
+      const auto &field = ast::cast<ast::field_expr>(inner);
       return (field.object != nullptr ? spell_value(*field.object) : "") + "." +
              field.field_name;
     }
     case ast::node_kind::call_expr: {
-      const auto &call = dynamic_cast<const ast::call_expr &>(inner);
+      const auto &call = ast::cast<ast::call_expr>(inner);
       return (call.callee != nullptr ? spell_value(*call.callee) : "") + "()";
     }
     default:
@@ -1281,24 +1259,23 @@ private:
                                                          : access_kind::read);
       }
       if (expr.kind == ast::node_kind::field_expr) {
-        return eval_field_of_value(dynamic_cast<const ast::field_expr &>(expr),
-                                   mode);
+        return eval_field_of_value(ast::cast<ast::field_expr>(expr), mode);
       }
       return {};
 
     case ast::node_kind::index_expr:
-      return eval_index(dynamic_cast<const ast::index_expr &>(expr), mode);
+      return eval_index(ast::cast<ast::index_expr>(expr), mode);
 
     case ast::node_kind::group_expr: {
-      const auto &group = dynamic_cast<const ast::group_expr &>(expr);
+      const auto &group = ast::cast<ast::group_expr>(expr);
       return eval_opt(group.inner.get(), mode);
     }
 
     case ast::node_kind::unary_expr:
-      return eval_unary(dynamic_cast<const ast::unary_expr &>(expr), mode);
+      return eval_unary(ast::cast<ast::unary_expr>(expr), mode);
 
     case ast::node_kind::binary_expr: {
-      const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
+      const auto &binary = ast::cast<ast::binary_expr>(expr);
       const auto temp = new_temp(local_role::call_temp);
       stash(temp, eval_opt(binary.lhs.get(), use_mode::read));
       // The right operand of `and`/`or` runs only sometimes: a full
@@ -1314,12 +1291,12 @@ private:
     }
 
     case ast::node_kind::cast_expr: {
-      const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
+      const auto &cast = ast::cast<ast::cast_expr>(expr);
       return eval_opt(cast.operand.get(), mode);
     }
 
     case ast::node_kind::try_expr: {
-      const auto &tri = dynamic_cast<const ast::try_expr &>(expr);
+      const auto &tri = ast::cast<ast::try_expr>(expr);
       auto result = eval_opt(tri.operand.get(), mode);
       // `?` may return from the function right here, carrying the operand.
       const auto early = new_block();
@@ -1332,10 +1309,10 @@ private:
     }
 
     case ast::node_kind::call_expr:
-      return eval_call(dynamic_cast<const ast::call_expr &>(expr));
+      return eval_call(ast::cast<ast::call_expr>(expr));
 
     case ast::node_kind::tuple_expr: {
-      const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
+      const auto &tuple = ast::cast<ast::tuple_expr>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &element : tuple.elements) {
         stash(temp, eval_opt(element.get(), use_mode::move));
@@ -1344,7 +1321,7 @@ private:
     }
 
     case ast::node_kind::array_expr: {
-      const auto &array = dynamic_cast<const ast::array_expr &>(expr);
+      const auto &array = ast::cast<ast::array_expr>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &element : array.elements) {
         stash(temp, eval_opt(element.get(), use_mode::move));
@@ -1363,7 +1340,7 @@ private:
     }
 
     case ast::node_kind::struct_expr: {
-      const auto &literal = dynamic_cast<const ast::struct_expr &>(expr);
+      const auto &literal = ast::cast<ast::struct_expr>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &field : literal.fields) {
         if (field.value != nullptr) {
@@ -1376,8 +1353,7 @@ private:
     }
 
     case ast::node_kind::interpolated_string_expr: {
-      const auto &interp =
-          dynamic_cast<const ast::interpolated_string_expr &>(expr);
+      const auto &interp = ast::cast<ast::interpolated_string_expr>(expr);
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &segment : interp.segments) {
         if (segment.is_literal) {
@@ -1399,10 +1375,11 @@ private:
     }
 
     case ast::node_kind::lambda_expr: {
-      const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
+      const auto &lambda = ast::cast<ast::lambda_expr>(expr);
       // A generic lambda is never created itself: one closure per checked
       // copy is, right here (`checked_types::generic_lambda_instances`).
-      const auto copies = checked_.ownership.generic_lambda_instances.find(&lambda);
+      const auto copies =
+          checked_.ownership.generic_lambda_instances.find(&lambda);
       if (copies == checked_.ownership.generic_lambda_instances.end()) {
         return eval_lambda(lambda);
       }
@@ -1420,34 +1397,33 @@ private:
     }
 
     case ast::node_kind::if_expr: {
-      const auto &if_e = dynamic_cast<const ast::if_expr &>(expr);
+      const auto &if_e = ast::cast<ast::if_expr>(expr);
       return lower_if(if_e.branches, if_e.else_body, /*want_value=*/true);
     }
 
     case ast::node_kind::match_expr: {
-      const auto &match_e = dynamic_cast<const ast::match_expr &>(expr);
+      const auto &match_e = ast::cast<ast::match_expr>(expr);
       return lower_match(match_e.subject.get(), match_e.arms,
                          /*want_value=*/true);
     }
 
     case ast::node_kind::block_expr:
-      return lower_scoped_body(
-          dynamic_cast<const ast::block_expr &>(expr).stmts,
-          /*want_value=*/true);
+      return lower_scoped_body(ast::cast<ast::block_expr>(expr).stmts,
+                               /*want_value=*/true);
 
     case ast::node_kind::for_expr:
-      return lower_comprehension(dynamic_cast<const ast::for_expr &>(expr));
+      return lower_comprehension(ast::cast<ast::for_expr>(expr));
 
     case ast::node_kind::where_expr:
-      return lower_where(dynamic_cast<const ast::where_expr &>(expr));
+      return lower_where(ast::cast<ast::where_expr>(expr));
 
     case ast::node_kind::await_expr: {
-      const auto &await_e = dynamic_cast<const ast::await_expr &>(expr);
+      const auto &await_e = ast::cast<ast::await_expr>(expr);
       return eval_opt(await_e.operand.get(), use_mode::move);
     }
 
     case ast::node_kind::yield_expr: {
-      const auto &yield_e = dynamic_cast<const ast::yield_expr &>(expr);
+      const auto &yield_e = ast::cast<ast::yield_expr>(expr);
       if (yield_e.value != nullptr) {
         static_cast<void>(eval_full(*yield_e.value));
       }
@@ -1459,10 +1435,9 @@ private:
 
     case ast::node_kind::par_expr:
     case ast::node_kind::race_expr: {
-      const auto &branches =
-          expr.kind == ast::node_kind::par_expr
-              ? dynamic_cast<const ast::par_expr &>(expr).branches
-              : dynamic_cast<const ast::race_expr &>(expr).branches;
+      const auto &branches = expr.kind == ast::node_kind::par_expr
+                                 ? ast::cast<ast::par_expr>(expr).branches
+                                 : ast::cast<ast::race_expr>(expr).branches;
       const auto temp = new_temp(local_role::call_temp);
       for (const auto &b : branches) {
         stash(temp, eval_opt(b.get(), use_mode::move));
@@ -1471,17 +1446,17 @@ private:
     }
 
     case ast::node_kind::async_expr:
-      static_cast<void>(lower_scoped_body(
-          dynamic_cast<const ast::async_expr &>(expr).body, false));
+      static_cast<void>(
+          lower_scoped_body(ast::cast<ast::async_expr>(expr).body, false));
       return {};
 
     case ast::node_kind::crew_expr:
-      static_cast<void>(lower_scoped_body(
-          dynamic_cast<const ast::crew_expr &>(expr).body, false));
+      static_cast<void>(
+          lower_scoped_body(ast::cast<ast::crew_expr>(expr).body, false));
       return {};
 
     case ast::node_kind::on_expr: {
-      const auto &on = dynamic_cast<const ast::on_expr &>(expr);
+      const auto &on = ast::cast<ast::on_expr>(expr);
       static_cast<void>(eval_opt(on.sender.get(), use_mode::read));
       static_cast<void>(lower_scoped_body(on.body, false));
       return {};
@@ -1490,8 +1465,7 @@ private:
     case ast::node_kind::splice_expr: {
       const auto it = checked_.spliced_fragments.find(&expr);
       if (it != checked_.spliced_fragments.end()) {
-        if (const auto *fragment =
-                dynamic_cast<const ast::expr *>(it->second)) {
+        if (const auto *fragment = ast::as<ast::expr>(it->second)) {
           return eval(*fragment, mode);
         }
       }
@@ -1536,7 +1510,7 @@ private:
         if (inner.kind != ast::node_kind::field_expr) {
           break;
         }
-        const auto &outer = dynamic_cast<const ast::field_expr &>(inner);
+        const auto &outer = ast::cast<ast::field_expr>(inner);
         path.insert(0, "." + outer.field_name);
         at = outer.object.get();
       }
@@ -1629,7 +1603,7 @@ private:
     const auto *binding =
         front.pattern != nullptr &&
                 front.pattern->kind == ast::node_kind::binding_pattern
-            ? &dynamic_cast<const ast::binding_pattern &>(*front.pattern)
+            ? &ast::cast<ast::binding_pattern>(*front.pattern)
             : nullptr;
     if (binding != nullptr && binding->name == "self") {
       // `self` is always taken by reference, except by `into_iterator`'s
@@ -1674,7 +1648,8 @@ private:
   [[nodiscard]] auto signature_decl(const ast::func_decl *decl) const
       -> const ast::func_decl * {
     const auto it = checked_.ownership.instance_templates.find(decl);
-    return it != checked_.ownership.instance_templates.end() ? it->second : decl;
+    return it != checked_.ownership.instance_templates.end() ? it->second
+                                                             : decl;
   }
 
   /// The type parameters through which a call to `decl` can hand back a
@@ -1691,7 +1666,8 @@ private:
     auto result = k_unknown_type;
     if (decl->return_type != nullptr) {
       result = type_of(decl->return_type.get());
-    } else if (const auto implicit = checked_.ownership.implicit_signatures.find(decl);
+    } else if (const auto implicit =
+                   checked_.ownership.implicit_signatures.find(decl);
                implicit != checked_.ownership.implicit_signatures.end()) {
       result = implicit->second.result;
     } else if (const auto it = checked_.inferred_return_types.find(decl);
@@ -1783,8 +1759,7 @@ private:
       const auto &param = decl->params[i];
       if (param.pattern == nullptr ||
           param.pattern->kind != ast::node_kind::binding_pattern ||
-          dynamic_cast<const ast::binding_pattern &>(*param.pattern).name !=
-              name) {
+          ast::cast<ast::binding_pattern>(*param.pattern).name != name) {
         continue;
       }
       auto type = type_of(param.pattern.get());
@@ -1853,7 +1828,7 @@ private:
                   decl->params.front().pattern != nullptr &&
                   decl->params.front().pattern->kind ==
                       ast::node_kind::binding_pattern
-              ? target_of(dynamic_cast<const ast::binding_pattern &>(
+              ? target_of(ast::cast<ast::binding_pattern>(
                               *decl->params.front().pattern)
                               .name)
               : temp;
@@ -1908,9 +1883,8 @@ private:
           target_of(argument_param_name(call, arg.value.get()));
       const auto is_explicit_borrow =
           argument.kind == ast::node_kind::unary_expr &&
-          (dynamic_cast<const ast::unary_expr &>(argument).op ==
-               ast::unary_op::addr_of ||
-           dynamic_cast<const ast::unary_expr &>(argument).op ==
+          (ast::cast<ast::unary_expr>(argument).op == ast::unary_op::addr_of ||
+           ast::cast<ast::unary_expr>(argument).op ==
                ast::unary_op::addr_of_mut);
       if (passing != param_passing::by_value && !is_explicit_borrow &&
           is_place(argument)) {
@@ -2022,7 +1996,7 @@ private:
   [[nodiscard]] auto
   binds_owned(const ast::expr *subject, const ast::node *pattern,
               const std::vector<const ast::node *> &patterns) const -> bool {
-    const auto *pat = dynamic_cast<const ast::pattern *>(pattern);
+    const auto *pat = ast::as<ast::pattern>(pattern);
     return subject != nullptr && pat != nullptr &&
            owns_pattern_bindings(*subject, *pat, patterns, checked_,
                                  [this](std::string_view name) -> bool {
@@ -2038,7 +2012,7 @@ private:
   auto bind_arm(const ast::node *pattern, local_id subject,
                 const ast::expr *subject_expr,
                 const std::vector<const ast::node *> &patterns) -> void {
-    const auto *pat = dynamic_cast<const ast::pattern *>(pattern);
+    const auto *pat = ast::as<ast::pattern>(pattern);
     if (pat == nullptr || subject_expr == nullptr ||
         !arm_owns_subject(*subject_expr, *pat, patterns, checked_,
                           [this](std::string_view name) -> bool {
@@ -2271,7 +2245,7 @@ private:
       const auto &stripped = strip_groups(*iterable);
       const auto *operand = &stripped;
       if (stripped.kind == ast::node_kind::unary_expr) {
-        const auto &unary = dynamic_cast<const ast::unary_expr &>(stripped);
+        const auto &unary = ast::cast<ast::unary_expr>(stripped);
         if (unary.operand != nullptr) {
           operand = unary.operand.get();
         }
@@ -2465,11 +2439,11 @@ private:
     }
     switch (node.kind) {
     case ast::node_kind::let_stmt:
-      lower_let(dynamic_cast<const ast::let_stmt &>(node));
+      lower_let(ast::cast<ast::let_stmt>(node));
       return {};
 
     case ast::node_kind::var_stmt: {
-      const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
+      const auto &stmt = ast::cast<ast::var_stmt>(node);
       auto v = eval_opt(stmt.initializer.get(), use_mode::move);
       const auto local =
           declare(stmt.name, type_of(&stmt), stmt.span, /*whole=*/true,
@@ -2479,11 +2453,11 @@ private:
     }
 
     case ast::node_kind::assign_stmt:
-      lower_assign(dynamic_cast<const ast::assign_stmt &>(node));
+      lower_assign(ast::cast<ast::assign_stmt>(node));
       return {};
 
     case ast::node_kind::expr_stmt: {
-      const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
+      const auto &stmt = ast::cast<ast::expr_stmt>(node);
       if (stmt.expr == nullptr) {
         return {};
       }
@@ -2500,7 +2474,7 @@ private:
     }
 
     case ast::node_kind::return_stmt: {
-      const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
+      const auto &stmt = ast::cast<ast::return_stmt>(node);
       emit_return(stmt.value != nullptr ? eval_full(*stmt.value) : value{},
                   &node);
       start_unreachable();
@@ -2525,32 +2499,31 @@ private:
     }
 
     case ast::node_kind::if_stmt: {
-      const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
+      const auto &stmt = ast::cast<ast::if_stmt>(node);
       return lower_if(stmt.branches, stmt.else_body, want_value);
     }
 
     case ast::node_kind::while_stmt:
-      lower_while(dynamic_cast<const ast::while_stmt &>(node));
+      lower_while(ast::cast<ast::while_stmt>(node));
       return {};
 
     case ast::node_kind::scope_stmt:
-      static_cast<void>(
-          lower_scoped_body(dynamic_cast<const ast::scope_stmt &>(node).body,
-                            /*want_value=*/false));
+      static_cast<void>(lower_scoped_body(ast::cast<ast::scope_stmt>(node).body,
+                                          /*want_value=*/false));
       return {};
 
     case ast::node_kind::for_stmt:
-      lower_for(dynamic_cast<const ast::for_stmt &>(node));
+      lower_for(ast::cast<ast::for_stmt>(node));
       return {};
 
     case ast::node_kind::match_stmt: {
-      const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
+      const auto &stmt = ast::cast<ast::match_stmt>(node);
       return lower_match(stmt.subject.get(), stmt.arms, want_value);
     }
 
     case ast::node_kind::crew_stmt:
-      static_cast<void>(lower_scoped_body(
-          dynamic_cast<const ast::crew_stmt &>(node).body, false));
+      static_cast<void>(
+          lower_scoped_body(ast::cast<ast::crew_stmt>(node).body, false));
       return {};
 
     case ast::node_kind::splice_stmt: {
@@ -2564,7 +2537,7 @@ private:
     case ast::node_kind::func_decl: {
       // A function nested in a body is checked on its own; it cannot
       // capture the enclosing function's locals.
-      const auto &decl = dynamic_cast<const ast::func_decl &>(node);
+      const auto &decl = ast::cast<ast::func_decl>(node);
       if (!decl.modifiers.is_intrinsic) {
         auto nested = cfg_builder(checked_, out_, nullptr);
         nested.build_function(decl);
@@ -2576,7 +2549,7 @@ private:
       return {};
 
     case ast::node_kind::static_decl: {
-      const auto &decl = dynamic_cast<const ast::static_decl &>(node);
+      const auto &decl = ast::cast<ast::static_decl>(node);
       if (decl.decl_kind != ast::static_decl_kind::for_inline ||
           decl.for_yield == nullptr) {
         return {};
@@ -2585,7 +2558,7 @@ private:
     }
 
     default:
-      if (const auto *expr = dynamic_cast<const ast::expr *>(&node)) {
+      if (const auto *expr = ast::as<ast::expr>(&node)) {
         auto v = eval(*expr, use_mode::move);
         return want_value ? v : value{};
       }
@@ -2617,8 +2590,7 @@ private:
       return;
     }
     if (stmt.pattern->kind == ast::node_kind::binding_pattern) {
-      const auto &binding =
-          dynamic_cast<const ast::binding_pattern &>(*stmt.pattern);
+      const auto &binding = ast::cast<ast::binding_pattern>(*stmt.pattern);
       const auto local =
           declare(binding.name, type_of(stmt.pattern.get()), binding.span,
                   /*whole=*/true, /*owns=*/false, stmt.pattern.get());
@@ -2704,7 +2676,7 @@ private:
 
 auto owns_pattern_bindings(type_id subject_type, const ast::node &pattern,
                            const checked_types &checked) -> bool {
-  const auto *pat = dynamic_cast<const ast::pattern *>(&pattern);
+  const auto *pat = ast::as<ast::pattern>(&pattern);
   return pat != nullptr && pattern_bindings_are_disjoint(*pat) &&
          !checked.types.is_unknown(subject_type) &&
          subject_type != k_error_type &&
@@ -2815,7 +2787,7 @@ auto subject_moves(const ast::expr &subject,
     return true;
   }
   for (const auto *node : patterns) {
-    const auto *pat = dynamic_cast<const ast::pattern *>(node);
+    const auto *pat = ast::as<ast::pattern>(node);
     if (pat == nullptr) {
       continue;
     }

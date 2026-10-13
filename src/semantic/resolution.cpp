@@ -4,6 +4,8 @@
 #include <format>
 #include <utility>
 
+#include "src/parser/ast_traversal.h"
+
 namespace cinder::semantic {
 /// Whether a path rooted at `root` may be read as absolute from
 /// `current_module_name` without any import: the module's own root (which
@@ -698,9 +700,55 @@ auto emit_non_type_qualified_path(std::string_view path_text,
   mark_file_has_error(file_has_errors, location.file_id);
 }
 
-/// Forward declaration: dispatches any AST node to the appropriate
-/// validate_* function for its concrete kind, recursing through the whole
-/// tree to find qualified type/module paths worth checking.
+/// Resolves the qualified path of a named type (when it qualifies, see
+/// `should_validate_named_type_path`) and reports an invalid `super`, an
+/// unresolved path, or a target that is not a type.
+auto validate_named_type_path(const ast::named_type &named,
+                              const semantic_walk_context &context,
+                              const semantic_resolution_index &semantic_index,
+                              const module_session_index &session_index,
+                              diagnostic_bag &diag,
+                              std::vector<bool> &file_has_errors) -> void {
+  if (!should_validate_named_type_path(named) || named.path.empty()) {
+    return;
+  }
+
+  const auto path_text = join_strings(named.path, ".");
+  const auto location = source_location{
+      .file_id = context.file_id,
+      .span = named.span,
+  };
+
+  if (named.path.front() == "super" &&
+      parent_module_name(context.module_name).empty()) {
+    emit_invalid_super_path("qualified type path", path_text, location,
+                            context.module_name, diag, file_has_errors);
+    return;
+  }
+
+  const auto resolution = resolve_named_type_path(
+      semantic_index, session_index, context.module_name, named.path,
+      file_has_errors, context.aliases);
+  if (resolution.status == qualified_path_status::blocked) {
+    return;
+  }
+  if (resolution.status != qualified_path_status::resolved) {
+    emit_unresolved_qualified_path("qualified type path", path_text, location,
+                                   context.module_name, resolution,
+                                   session_index, diag, file_has_errors);
+    return;
+  }
+  if (resolution.symbol != nullptr &&
+      !can_resolve_named_type(resolution.symbol->kind)) {
+    emit_non_type_qualified_path(path_text, location, resolution, diag,
+                                 file_has_errors);
+  }
+  return;
+}
+
+/// Walks the tree under `node` looking for qualified type paths worth
+/// checking. Only the kinds with their own rule are handled here; every
+/// other node's children come from `ast::for_each_child`.
 auto validate_ast_node(const ast::node &node,
                        const semantic_walk_context &context,
                        const semantic_resolution_index &semantic_index,
@@ -708,577 +756,53 @@ auto validate_ast_node(const ast::node &node,
                        diagnostic_bag &diag, std::vector<bool> &file_has_errors)
     -> void;
 
-/// Forward declaration: validates a type-position expression, recursing
-/// into its component types and resolving any qualified named-type path.
-auto validate_type_expr(const ast::type_expr &type,
-                        const semantic_walk_context &context,
-                        const semantic_resolution_index &semantic_index,
-                        const module_session_index &session_index,
-                        diagnostic_bag &diag,
-                        std::vector<bool> &file_has_errors) -> void;
-
-/// Forward declaration: validates a value-position expression, recursing
-/// into its subexpressions and resolving any qualified module-path
-/// reference.
-auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
-                   const semantic_resolution_index &semantic_index,
-                   const module_session_index &session_index,
-                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void;
-
-/// Forward declaration: validates a pattern, recursing into its
-/// subpatterns and any embedded range-bound expressions.
-auto validate_pattern(const ast::pattern &pattern,
-                      const semantic_walk_context &context,
-                      const semantic_resolution_index &semantic_index,
-                      const module_session_index &session_index,
-                      diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void;
-
-/// Forward declaration: validates each item in `items` in order via
-/// `validate_ast_node`, skipping null entries.
+/// Validates each item in `items` in order, skipping null entries.
 auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
                         const semantic_walk_context &context,
                         const semantic_resolution_index &semantic_index,
                         const module_session_index &session_index,
                         diagnostic_bag &diag,
-                        std::vector<bool> &file_has_errors) -> void;
-
-/// Validates each `+`-joined term of a trait/concept bound list.
-auto validate_bound(const ast::bound &bound,
-                    const semantic_walk_context &context,
-                    const semantic_resolution_index &semantic_index,
-                    const module_session_index &session_index,
-                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void {
-  for (const auto &term : bound.terms) {
-    if (term.type != nullptr) {
-      validate_type_expr(*term.type, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-  }
-}
-
-/// Validates a generic parameter's bound (for a type parameter) or value
-/// type (for a value parameter), if one was written.
-auto validate_type_param(const ast::type_param &param,
-                         const semantic_walk_context &context,
-                         const semantic_resolution_index &semantic_index,
-                         const module_session_index &session_index,
-                         diagnostic_bag &diag,
-                         std::vector<bool> &file_has_errors) -> void {
-  if (param.bound_or_type != nullptr) {
-    validate_type_expr(*param.bound_or_type, context, semantic_index,
-                       session_index, diag, file_has_errors);
-  }
-}
-
-/// Validates both sides of a `where` clause: the constrained subject and
-/// its trait bound or associated-type equality target.
-auto validate_where_constraint(const ast::where_constraint &constraint,
-                               const semantic_walk_context &context,
-                               const semantic_resolution_index &semantic_index,
-                               const module_session_index &session_index,
-                               diagnostic_bag &diag,
-                               std::vector<bool> &file_has_errors) -> void {
-  if (constraint.subject != nullptr) {
-    validate_type_expr(*constraint.subject, context, semantic_index,
-                       session_index, diag, file_has_errors);
-  }
-  if (constraint.bound_or_type != nullptr) {
-    validate_type_expr(*constraint.bound_or_type, context, semantic_index,
-                       session_index, diag, file_has_errors);
-  }
-}
-
-/// Validates a function/lambda parameter's pattern, type annotation, and
-/// default-value expression.
-auto validate_param(const ast::param &param,
-                    const semantic_walk_context &context,
-                    const semantic_resolution_index &semantic_index,
-                    const module_session_index &session_index,
-                    diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void {
-  if (param.pattern != nullptr) {
-    validate_pattern(*param.pattern, context, semantic_index, session_index,
-                     diag, file_has_errors);
-  }
-  if (param.type_annotation != nullptr) {
-    validate_type_expr(*param.type_annotation, context, semantic_index,
-                       session_index, diag, file_has_errors);
-  }
-  if (param.default_value != nullptr) {
-    validate_expr(*param.default_value, context, semantic_index, session_index,
-                  diag, file_has_errors);
-  }
-}
-
-/// Definition: recurses into a type expression's component types (tuple
-/// elements, slice/array element, ref/ptr target, fn params/return,
-/// refinement base, union alternatives), and for a qualifying named-type
-/// path (see `should_validate_named_type_path`), resolves it and reports an
-/// invalid `super`, unresolved path, or wrong-kind target.
-auto validate_type_expr(const ast::type_expr &type,
-                        const semantic_walk_context &context,
-                        const semantic_resolution_index &semantic_index,
-                        const module_session_index &session_index,
-                        diagnostic_bag &diag,
                         std::vector<bool> &file_has_errors) -> void {
-  if (type.has_error) {
+  for (const auto &item : items) {
+    if (item != nullptr) {
+      validate_ast_node(*item, context, semantic_index, session_index, diag,
+                        file_has_errors);
+    }
+  }
+}
+
+auto validate_ast_node(const ast::node &node,
+                       const semantic_walk_context &context,
+                       const semantic_resolution_index &semantic_index,
+                       const module_session_index &session_index,
+                       diagnostic_bag &diag, std::vector<bool> &file_has_errors)
+    -> void {
+  if (node.has_error) {
     return;
   }
 
-  switch (type.kind) {
+  const auto recurse = [&](const ast::node &child) -> void {
+    validate_ast_node(child, context, semantic_index, session_index, diag,
+                      file_has_errors);
+  };
+
+  switch (node.kind) {
   case ast::node_kind::named_type: {
-    const auto &named = dynamic_cast<const ast::named_type &>(type);
-    for (const auto &arg : named.type_args) {
-      if (arg.value != nullptr) {
-        validate_ast_node(*arg.value, context, semantic_index, session_index,
-                          diag, file_has_errors);
-      }
-    }
-
-    if (!should_validate_named_type_path(named) || named.path.empty()) {
-      return;
-    }
-
-    const auto path_text = join_strings(named.path, ".");
-    const auto location = source_location{
-        .file_id = context.file_id,
-        .span = named.span,
-    };
-
-    if (named.path.front() == "super" &&
-        parent_module_name(context.module_name).empty()) {
-      emit_invalid_super_path("qualified type path", path_text, location,
-                              context.module_name, diag, file_has_errors);
-      return;
-    }
-
-    const auto resolution = resolve_named_type_path(
-        semantic_index, session_index, context.module_name, named.path,
-        file_has_errors, context.aliases);
-    if (resolution.status == qualified_path_status::blocked) {
-      return;
-    }
-    if (resolution.status != qualified_path_status::resolved) {
-      emit_unresolved_qualified_path("qualified type path", path_text, location,
-                                     context.module_name, resolution,
-                                     session_index, diag, file_has_errors);
-      return;
-    }
-    if (resolution.symbol != nullptr &&
-        !can_resolve_named_type(resolution.symbol->kind)) {
-      emit_non_type_qualified_path(path_text, location, resolution, diag,
-                                   file_has_errors);
+    // Type arguments first, then the path itself.
+    ast::for_each_child(node, recurse);
+    const auto *named = ast::as<ast::named_type>(&node);
+    if (named != nullptr) {
+      validate_named_type_path(*named, context, semantic_index, session_index,
+                               diag, file_has_errors);
     }
     return;
   }
 
-  case ast::node_kind::bound_type:
-    validate_bound(dynamic_cast<const ast::bound_type &>(type).value, context,
-                   semantic_index, session_index, diag, file_has_errors);
-    return;
-
-  case ast::node_kind::tuple_type: {
-    const auto &tuple = dynamic_cast<const ast::tuple_type &>(type);
-    for (const auto &element : tuple.elements) {
-      if (element != nullptr) {
-        validate_type_expr(*element, context, semantic_index, session_index,
-                           diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::slice_type: {
-    const auto &slice = dynamic_cast<const ast::slice_type &>(type);
-    if (slice.element != nullptr) {
-      validate_type_expr(*slice.element, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::array_type: {
-    const auto &array = dynamic_cast<const ast::array_type &>(type);
-    if (array.element != nullptr) {
-      validate_type_expr(*array.element, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    if (array.size != nullptr) {
-      validate_ast_node(*array.size, context, semantic_index, session_index,
-                        diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::ref_type: {
-    const auto &ref = dynamic_cast<const ast::ref_type &>(type);
-    if (ref.inner != nullptr) {
-      validate_type_expr(*ref.inner, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::ptr_type: {
-    const auto &ptr = dynamic_cast<const ast::ptr_type &>(type);
-    if (ptr.inner != nullptr) {
-      validate_type_expr(*ptr.inner, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::mut_type: {
-    const auto &mt = dynamic_cast<const ast::mut_type &>(type);
-    if (mt.inner != nullptr) {
-      validate_type_expr(*mt.inner, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::fn_type: {
-    const auto &fn = dynamic_cast<const ast::fn_type &>(type);
-    for (const auto &param_type : fn.param_types) {
-      if (param_type != nullptr) {
-        validate_type_expr(*param_type, context, semantic_index, session_index,
-                           diag, file_has_errors);
-      }
-    }
-    if (fn.return_type != nullptr) {
-      validate_type_expr(*fn.return_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::union_type: {
-    const auto &union_type = dynamic_cast<const ast::union_type &>(type);
-    for (const auto &alternative : union_type.alternatives) {
-      if (alternative != nullptr) {
-        validate_type_expr(*alternative, context, semantic_index, session_index,
-                           diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::refinement_type: {
-    const auto &refinement = dynamic_cast<const ast::refinement_type &>(type);
-    if (refinement.base != nullptr) {
-      validate_type_expr(*refinement.base, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (refinement.predicate != nullptr) {
-      validate_ast_node(*refinement.predicate, context, semantic_index,
-                        session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  default:
-    return;
-  }
-}
-
-/// Definition: recurses into a pattern's subpatterns (constructor args,
-/// tuple/struct/array elements, option/result/ref inner patterns, or-pattern
-/// alternatives, group inner) and any range-bound expressions.
-auto validate_pattern(const ast::pattern &pattern,
-                      const semantic_walk_context &context,
-                      const semantic_resolution_index &semantic_index,
-                      const module_session_index &session_index,
-                      diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void {
-  if (pattern.has_error) {
-    return;
-  }
-
-  switch (pattern.kind) {
-  case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
-    for (const auto &arg : ctor.args) {
-      if (arg != nullptr) {
-        validate_pattern(*arg, context, semantic_index, session_index, diag,
-                         file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
-    for (const auto &element : tuple.elements) {
-      if (element != nullptr) {
-        validate_pattern(*element, context, semantic_index, session_index, diag,
-                         file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern =
-        dynamic_cast<const ast::struct_pattern &>(pattern);
-    for (const auto &field : struct_pattern.fields) {
-      if (field.pattern != nullptr) {
-        validate_pattern(*field.pattern, context, semantic_index, session_index,
-                         diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::array_pattern: {
-    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
-    for (const auto &element : array.elements) {
-      if (element != nullptr) {
-        validate_pattern(*element, context, semantic_index, session_index, diag,
-                         file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::range_pattern: {
-    const auto &range = dynamic_cast<const ast::range_pattern &>(pattern);
-    if (range.start != nullptr) {
-      validate_expr(*range.start, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    if (range.end != nullptr) {
-      validate_expr(*range.end, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::option_pattern: {
-    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
-    if (option.inner != nullptr) {
-      validate_pattern(*option.inner, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
-    if (result.inner != nullptr) {
-      validate_pattern(*result.inner, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::ref_pattern: {
-    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
-    if (ref.inner != nullptr) {
-      validate_pattern(*ref.inner, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::or_pattern: {
-    const auto &or_pattern = dynamic_cast<const ast::or_pattern &>(pattern);
-    for (const auto &alternative : or_pattern.alternatives) {
-      if (alternative != nullptr) {
-        validate_pattern(*alternative, context, semantic_index, session_index,
-                         diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
-    if (group.inner != nullptr) {
-      validate_pattern(*group.inner, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    }
-    return;
-  }
-
-  default:
-    return;
-  }
-}
-
-/// Definition: recurses into a value expression's subexpressions, and for a
-/// module-path expression that qualifies (see
-/// `should_validate_module_reference`), resolves it and reports an invalid
-/// `super`, unresolved path, or a target that cannot be referenced this way.
-auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
-                   const semantic_resolution_index &semantic_index,
-                   const module_session_index &session_index,
-                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void {
-  if (expr.has_error) {
-    return;
-  }
-
-  switch (expr.kind) {
-  case ast::node_kind::binary_expr: {
-    const auto &binary = dynamic_cast<const ast::binary_expr &>(expr);
-    if (binary.lhs != nullptr) {
-      validate_expr(*binary.lhs, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    if (binary.rhs != nullptr) {
-      validate_expr(*binary.rhs, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::unary_expr: {
-    const auto &unary = dynamic_cast<const ast::unary_expr &>(expr);
-    if (unary.operand != nullptr) {
-      validate_expr(*unary.operand, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::call_expr: {
-    const auto &call = dynamic_cast<const ast::call_expr &>(expr);
-    if (call.callee != nullptr) {
-      validate_expr(*call.callee, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    for (const auto &arg : call.args) {
-      if (arg.value != nullptr) {
-        validate_expr(*arg.value, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::index_expr: {
-    const auto &index = dynamic_cast<const ast::index_expr &>(expr);
-    if (index.object != nullptr) {
-      validate_expr(*index.object, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    if (index.index != nullptr) {
-      validate_expr(*index.index, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::field_expr: {
-    const auto &field = dynamic_cast<const ast::field_expr &>(expr);
-    if (field.object != nullptr) {
-      validate_expr(*field.object, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    for (const auto &generic_arg : field.generic_args) {
-      if (generic_arg != nullptr) {
-        validate_type_expr(*generic_arg, context, semantic_index, session_index,
-                           diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::cast_expr: {
-    const auto &cast = dynamic_cast<const ast::cast_expr &>(expr);
-    if (cast.operand != nullptr) {
-      validate_expr(*cast.operand, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    if (cast.target_type != nullptr) {
-      validate_type_expr(*cast.target_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::try_expr: {
-    const auto &try_expr = dynamic_cast<const ast::try_expr &>(expr);
-    if (try_expr.operand != nullptr) {
-      validate_expr(*try_expr.operand, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::tuple_expr: {
-    const auto &tuple = dynamic_cast<const ast::tuple_expr &>(expr);
-    for (const auto &element : tuple.elements) {
-      if (element != nullptr) {
-        validate_expr(*element, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::array_expr: {
-    const auto &array = dynamic_cast<const ast::array_expr &>(expr);
-    for (const auto &element : array.elements) {
-      if (element != nullptr) {
-        validate_expr(*element, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-    }
-    if (array.fill_value != nullptr) {
-      validate_expr(*array.fill_value, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (array.fill_count != nullptr) {
-      validate_expr(*array.fill_count, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::struct_expr: {
-    const auto &struct_expr = dynamic_cast<const ast::struct_expr &>(expr);
-    if (struct_expr.type_name != nullptr) {
-      validate_expr(*struct_expr.type_name, context, semantic_index,
-                    session_index, diag, file_has_errors);
-    }
-    for (const auto &field : struct_expr.fields) {
-      if (field.value != nullptr) {
-        validate_expr(*field.value, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::lambda_expr: {
-    const auto &lambda = dynamic_cast<const ast::lambda_expr &>(expr);
-    for (const auto &param : lambda.params) {
-      if (param.pattern != nullptr) {
-        validate_ast_node(*param.pattern, context, semantic_index,
-                          session_index, diag, file_has_errors);
-      }
-      if (param.type_annotation != nullptr) {
-        validate_type_expr(*param.type_annotation, context, semantic_index,
-                           session_index, diag, file_has_errors);
-      }
-    }
-    if (lambda.return_type != nullptr) {
-      validate_type_expr(*lambda.return_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (lambda.body_expr != nullptr) {
-      validate_expr(*lambda.body_expr, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(lambda.body_stmts, context, semantic_index,
-                       session_index, diag, file_has_errors);
-    return;
-  }
-
+  case ast::node_kind::use_decl:
+  case ast::node_kind::quote_expr:
+  case ast::node_kind::quote_type:
+    // Imports are validated by the import pass, and quoted code is not
+    // resolved until it is spliced.
   case ast::node_kind::module_path_expr:
     // Deliberately not validated here: `a.b` is field access when `a` is a
     // binding in scope and a module reference otherwise, and only the
@@ -1290,370 +814,9 @@ auto validate_expr(const ast::expr &expr, const semantic_walk_context &context,
     // is resolved by the checker's `find_type_decl_by_path`.
     return;
 
-  case ast::node_kind::group_expr: {
-    const auto &group = dynamic_cast<const ast::group_expr &>(expr);
-    if (group.inner != nullptr) {
-      validate_expr(*group.inner, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::if_expr: {
-    const auto &if_expr = dynamic_cast<const ast::if_expr &>(expr);
-    for (const auto &branch : if_expr.branches) {
-      if (branch.condition != nullptr) {
-        validate_expr(*branch.condition, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      if (branch.let_pattern != nullptr) {
-        validate_ast_node(*branch.let_pattern, context, semantic_index,
-                          session_index, diag, file_has_errors);
-      }
-      if (branch.let_expr != nullptr) {
-        validate_expr(*branch.let_expr, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      validate_node_list(branch.body, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    validate_node_list(if_expr.else_body, context, semantic_index,
-                       session_index, diag, file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::match_expr: {
-    const auto &match = dynamic_cast<const ast::match_expr &>(expr);
-    if (match.subject != nullptr) {
-      validate_expr(*match.subject, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    for (const auto &arm : match.arms) {
-      if (arm.pattern != nullptr) {
-        validate_ast_node(*arm.pattern, context, semantic_index, session_index,
-                          diag, file_has_errors);
-      }
-      if (arm.guard != nullptr) {
-        validate_expr(*arm.guard, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-      if (arm.body_expr != nullptr) {
-        validate_expr(*arm.body_expr, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      validate_node_list(arm.body_stmts, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::for_expr: {
-    const auto &for_expr = dynamic_cast<const ast::for_expr &>(expr);
-    for (const auto &clause : for_expr.clauses) {
-      for (const auto &pattern : clause.patterns) {
-        if (pattern != nullptr) {
-          validate_ast_node(*pattern, context, semantic_index, session_index,
-                            diag, file_has_errors);
-        }
-      }
-      if (clause.iterable != nullptr) {
-        validate_expr(*clause.iterable, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-    }
-    if (for_expr.guard != nullptr) {
-      validate_expr(*for_expr.guard, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (for_expr.yield_expr != nullptr) {
-      validate_expr(*for_expr.yield_expr, context, semantic_index,
-                    session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::await_expr: {
-    const auto &await = dynamic_cast<const ast::await_expr &>(expr);
-    if (await.operand != nullptr) {
-      validate_expr(*await.operand, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::async_expr:
-    validate_node_list(dynamic_cast<const ast::async_expr &>(expr).body,
-                       context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-
-  case ast::node_kind::par_expr: {
-    const auto &par = dynamic_cast<const ast::par_expr &>(expr);
-    for (const auto &branch : par.branches) {
-      if (branch != nullptr) {
-        validate_expr(*branch, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::race_expr: {
-    const auto &race = dynamic_cast<const ast::race_expr &>(expr);
-    for (const auto &branch : race.branches) {
-      if (branch != nullptr) {
-        validate_expr(*branch, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::crew_expr:
-    validate_node_list(dynamic_cast<const ast::crew_expr &>(expr).body, context,
-                       semantic_index, session_index, diag, file_has_errors);
-    return;
-
-  case ast::node_kind::on_expr: {
-    const auto &on = dynamic_cast<const ast::on_expr &>(expr);
-    if (on.context_type != nullptr) {
-      validate_type_expr(*on.context_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (on.sender != nullptr) {
-      validate_expr(*on.sender, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    validate_node_list(on.body, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::block_expr:
-    validate_node_list(dynamic_cast<const ast::block_expr &>(expr).stmts,
-                       context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-
-  case ast::node_kind::splice_expr: {
-    const auto &splice = dynamic_cast<const ast::splice_expr &>(expr);
-    if (splice.operand != nullptr) {
-      validate_expr(*splice.operand, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::static_expr: {
-    const auto &static_expr = dynamic_cast<const ast::static_expr &>(expr);
-    if (static_expr.operand != nullptr) {
-      validate_expr(*static_expr.operand, context, semantic_index,
-                    session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::where_expr: {
-    const auto &where = dynamic_cast<const ast::where_expr &>(expr);
-    if (where.inner != nullptr) {
-      validate_expr(*where.inner, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    for (const auto &binding : where.bindings) {
-      if (binding.value != nullptr) {
-        validate_expr(*binding.value, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  default:
-    return;
-  }
-}
-
-/// Definition: the top-level dispatcher of the qualified-path validation
-/// walk. Handles every declaration and statement kind directly (recursing
-/// into their type annotations, bodies, and nested items), and forwards
-/// type/expression/pattern node kinds to their dedicated validate_*
-/// function.
-auto validate_ast_node(const ast::node &node,
-                       const semantic_walk_context &context,
-                       const semantic_resolution_index &semantic_index,
-                       const module_session_index &session_index,
-                       diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> void {
-  if (node.has_error) {
-    return;
-  }
-
-  switch (node.kind) {
-  case ast::node_kind::type_decl: {
-    const auto &decl = dynamic_cast<const ast::type_decl &>(node);
-    for (const auto &param : decl.type_params) {
-      validate_type_param(param, context, semantic_index, session_index, diag,
-                          file_has_errors);
-    }
-    if (decl.definition != nullptr) {
-      validate_ast_node(*decl.definition, context, semantic_index,
-                        session_index, diag, file_has_errors);
-    }
-    if (decl.invariant != nullptr) {
-      validate_expr(*decl.invariant, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::struct_type_def: {
-    const auto &def = dynamic_cast<const ast::struct_type_def &>(node);
-    for (const auto &field : def.body.fields) {
-      if (field.type != nullptr) {
-        validate_type_expr(*field.type, context, semantic_index, session_index,
-                           diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::sum_type_def: {
-    const auto &def = dynamic_cast<const ast::sum_type_def &>(node);
-    for (const auto &variant : def.body.variants) {
-      for (const auto &payload : variant.payload_types) {
-        if (payload != nullptr) {
-          validate_type_expr(*payload, context, semantic_index, session_index,
-                             diag, file_has_errors);
-        }
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::trait_decl: {
-    const auto &decl = dynamic_cast<const ast::trait_decl &>(node);
-    for (const auto &param : decl.type_params) {
-      validate_type_param(param, context, semantic_index, session_index, diag,
-                          file_has_errors);
-    }
-    if (decl.requires_bound.has_value()) {
-      validate_bound(*decl.requires_bound, context, semantic_index,
-                     session_index, diag, file_has_errors);
-    }
-    validate_node_list(decl.items, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::associated_type_decl_node: {
-    const auto &assoc =
-        dynamic_cast<const ast::associated_type_decl_node &>(node);
-    if (assoc.value.default_type != nullptr) {
-      validate_type_expr(*assoc.value.default_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::associated_type_def_node: {
-    const auto &assoc =
-        dynamic_cast<const ast::associated_type_def_node &>(node);
-    if (assoc.value.type != nullptr) {
-      validate_type_expr(*assoc.value.type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::concept_decl: {
-    const auto &decl = dynamic_cast<const ast::concept_decl &>(node);
-    for (const auto &constraint : decl.constraints) {
-      if (constraint.subject != nullptr) {
-        validate_type_expr(*constraint.subject, context, semantic_index,
-                           session_index, diag, file_has_errors);
-      }
-      if (constraint.bound_or_expr != nullptr) {
-        validate_ast_node(*constraint.bound_or_expr, context, semantic_index,
-                          session_index, diag, file_has_errors);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::impl_decl: {
-    const auto &decl = dynamic_cast<const ast::impl_decl &>(node);
-    for (const auto &param : decl.type_params) {
-      validate_type_param(param, context, semantic_index, session_index, diag,
-                          file_has_errors);
-    }
-    if (decl.trait_type != nullptr) {
-      validate_type_expr(*decl.trait_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (decl.for_type != nullptr) {
-      validate_type_expr(*decl.for_type, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    for (const auto &constraint : decl.where_constraints) {
-      validate_where_constraint(constraint, context, semantic_index,
-                                session_index, diag, file_has_errors);
-    }
-    validate_node_list(decl.items, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::extend_decl: {
-    const auto &decl = dynamic_cast<const ast::extend_decl &>(node);
-    if (decl.for_type != nullptr) {
-      validate_type_expr(*decl.for_type, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    validate_node_list(decl.items, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::func_decl: {
-    const auto &decl = dynamic_cast<const ast::func_decl &>(node);
-    for (const auto &param : decl.type_params) {
-      validate_type_param(param, context, semantic_index, session_index, diag,
-                          file_has_errors);
-    }
-    if (decl.modifiers.async_context != nullptr) {
-      validate_type_expr(*decl.modifiers.async_context, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    for (const auto &param : decl.params) {
-      validate_param(param, context, semantic_index, session_index, diag,
-                     file_has_errors);
-    }
-    if (decl.return_type != nullptr) {
-      validate_type_expr(*decl.return_type, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    for (const auto &constraint : decl.where_constraints) {
-      validate_where_constraint(constraint, context, semantic_index,
-                                session_index, diag, file_has_errors);
-    }
-    for (const auto &contract : decl.contracts) {
-      if (contract.condition != nullptr) {
-        validate_expr(*contract.condition, context, semantic_index,
-                      session_index, diag, file_has_errors);
-      }
-    }
-    if (decl.body_expr != nullptr) {
-      validate_expr(*decl.body_expr, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(decl.body_stmts, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    return;
-  }
-
   case ast::node_kind::sub_module_decl: {
-    const auto &decl = dynamic_cast<const ast::sub_module_decl &>(node);
-    if (decl.is_functor()) {
+    const auto *decl = ast::as<ast::sub_module_decl>(&node);
+    if (decl == nullptr || decl->is_functor()) {
       // A functor's body references its module parameters (`DB.conn`), which
       // only resolve once instantiated. It is name-resolved and type-checked
       // per instantiation, so it is skipped here (see
@@ -1661,318 +824,20 @@ auto validate_ast_node(const ast::node &node,
       return;
     }
     auto child_context = semantic_walk_context{
-        .module_name = append_module_name(context.module_name, decl.name),
+        .module_name = append_module_name(context.module_name, decl->name),
         .file_id = context.file_id,
         // An inline submodule sits in the same file, and sees the same `use`
         // declarations its enclosing file wrote.
         .aliases = context.aliases,
     };
-    validate_node_list(decl.items, child_context, semantic_index, session_index,
-                       diag, file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::static_decl: {
-    const auto &decl = dynamic_cast<const ast::static_decl &>(node);
-    if (decl.type_annotation != nullptr) {
-      validate_type_expr(*decl.type_annotation, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (decl.initializer != nullptr) {
-      validate_expr(*decl.initializer, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (decl.assert_condition != nullptr) {
-      validate_expr(*decl.assert_condition, context, semantic_index,
-                    session_index, diag, file_has_errors);
-    }
-    if (decl.if_condition != nullptr) {
-      validate_expr(*decl.if_condition, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(decl.if_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    validate_node_list(decl.else_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    for (const auto &pattern : decl.for_patterns) {
-      if (pattern != nullptr) {
-        validate_pattern(*pattern, context, semantic_index, session_index, diag,
-                         file_has_errors);
-      }
-    }
-    if (decl.for_iterable != nullptr) {
-      validate_expr(*decl.for_iterable, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (decl.for_guard != nullptr) {
-      validate_expr(*decl.for_guard, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (decl.for_yield != nullptr) {
-      validate_expr(*decl.for_yield, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(decl.for_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::let_stmt: {
-    const auto &stmt = dynamic_cast<const ast::let_stmt &>(node);
-    if (stmt.pattern != nullptr) {
-      validate_pattern(*stmt.pattern, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    }
-    if (stmt.type_annotation != nullptr) {
-      validate_type_expr(*stmt.type_annotation, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (stmt.initializer != nullptr) {
-      validate_expr(*stmt.initializer, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(stmt.else_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::var_stmt: {
-    const auto &stmt = dynamic_cast<const ast::var_stmt &>(node);
-    if (stmt.type_annotation != nullptr) {
-      validate_type_expr(*stmt.type_annotation, context, semantic_index,
-                         session_index, diag, file_has_errors);
-    }
-    if (stmt.initializer != nullptr) {
-      validate_expr(*stmt.initializer, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::assign_stmt: {
-    const auto &stmt = dynamic_cast<const ast::assign_stmt &>(node);
-    if (stmt.target != nullptr) {
-      validate_expr(*stmt.target, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    if (stmt.value != nullptr) {
-      validate_expr(*stmt.value, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::expr_stmt: {
-    const auto &stmt = dynamic_cast<const ast::expr_stmt &>(node);
-    if (stmt.expr != nullptr) {
-      validate_expr(*stmt.expr, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::return_stmt: {
-    const auto &stmt = dynamic_cast<const ast::return_stmt &>(node);
-    if (stmt.value != nullptr) {
-      validate_expr(*stmt.value, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::if_stmt: {
-    const auto &stmt = dynamic_cast<const ast::if_stmt &>(node);
-    for (const auto &branch : stmt.branches) {
-      if (branch.condition != nullptr) {
-        validate_expr(*branch.condition, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      if (branch.let_pattern != nullptr) {
-        validate_ast_node(*branch.let_pattern, context, semantic_index,
-                          session_index, diag, file_has_errors);
-      }
-      if (branch.let_expr != nullptr) {
-        validate_expr(*branch.let_expr, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      validate_node_list(branch.body, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    validate_node_list(stmt.else_body, context, semantic_index, session_index,
-                       diag, file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::while_stmt: {
-    const auto &stmt = dynamic_cast<const ast::while_stmt &>(node);
-    if (stmt.condition != nullptr) {
-      validate_expr(*stmt.condition, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (stmt.let_pattern != nullptr) {
-      validate_pattern(*stmt.let_pattern, context, semantic_index,
+    validate_node_list(decl->items, child_context, semantic_index,
                        session_index, diag, file_has_errors);
-    }
-    if (stmt.let_expr != nullptr) {
-      validate_expr(*stmt.let_expr, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    validate_node_list(stmt.body, context, semantic_index, session_index, diag,
-                       file_has_errors);
     return;
   }
-
-  case ast::node_kind::scope_stmt: {
-    const auto &stmt = dynamic_cast<const ast::scope_stmt &>(node);
-    validate_node_list(stmt.body, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::for_stmt: {
-    const auto &stmt = dynamic_cast<const ast::for_stmt &>(node);
-    for (const auto &pattern : stmt.patterns) {
-      if (pattern != nullptr) {
-        validate_pattern(*pattern, context, semantic_index, session_index, diag,
-                         file_has_errors);
-      }
-    }
-    if (stmt.iterable != nullptr) {
-      validate_expr(*stmt.iterable, context, semantic_index, session_index,
-                    diag, file_has_errors);
-    }
-    if (stmt.guard != nullptr) {
-      validate_expr(*stmt.guard, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    validate_node_list(stmt.body, context, semantic_index, session_index, diag,
-                       file_has_errors);
-    return;
-  }
-
-  case ast::node_kind::match_stmt: {
-    const auto &stmt = dynamic_cast<const ast::match_stmt &>(node);
-    if (stmt.subject != nullptr) {
-      validate_expr(*stmt.subject, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    for (const auto &arm : stmt.arms) {
-      if (arm.pattern != nullptr) {
-        validate_ast_node(*arm.pattern, context, semantic_index, session_index,
-                          diag, file_has_errors);
-      }
-      if (arm.guard != nullptr) {
-        validate_expr(*arm.guard, context, semantic_index, session_index, diag,
-                      file_has_errors);
-      }
-      if (arm.body_expr != nullptr) {
-        validate_expr(*arm.body_expr, context, semantic_index, session_index,
-                      diag, file_has_errors);
-      }
-      validate_node_list(arm.body_stmts, context, semantic_index, session_index,
-                         diag, file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::crew_stmt:
-    validate_node_list(dynamic_cast<const ast::crew_stmt &>(node).body, context,
-                       semantic_index, session_index, diag, file_has_errors);
-    return;
-
-  case ast::node_kind::splice_stmt: {
-    const auto &stmt = dynamic_cast<const ast::splice_stmt &>(node);
-    if (stmt.expr != nullptr) {
-      validate_expr(*stmt.expr, context, semantic_index, session_index, diag,
-                    file_has_errors);
-    }
-    return;
-  }
-
-  case ast::node_kind::named_type:
-  case ast::node_kind::bound_type:
-  case ast::node_kind::tuple_type:
-  case ast::node_kind::slice_type:
-  case ast::node_kind::array_type:
-  case ast::node_kind::ref_type:
-  case ast::node_kind::ptr_type:
-  case ast::node_kind::mut_type:
-  case ast::node_kind::fn_type:
-  case ast::node_kind::quote_type:
-  case ast::node_kind::union_type:
-  case ast::node_kind::refinement_type:
-    validate_type_expr(dynamic_cast<const ast::type_expr &>(node), context,
-                       semantic_index, session_index, diag, file_has_errors);
-    return;
-
-  case ast::node_kind::ident_expr:
-  case ast::node_kind::literal_expr:
-  case ast::node_kind::binary_expr:
-  case ast::node_kind::unary_expr:
-  case ast::node_kind::call_expr:
-  case ast::node_kind::index_expr:
-  case ast::node_kind::field_expr:
-  case ast::node_kind::cast_expr:
-  case ast::node_kind::try_expr:
-  case ast::node_kind::tuple_expr:
-  case ast::node_kind::array_expr:
-  case ast::node_kind::struct_expr:
-  case ast::node_kind::lambda_expr:
-  case ast::node_kind::match_expr:
-  case ast::node_kind::if_expr:
-  case ast::node_kind::for_expr:
-  case ast::node_kind::await_expr:
-  case ast::node_kind::async_expr:
-  case ast::node_kind::par_expr:
-  case ast::node_kind::race_expr:
-  case ast::node_kind::crew_expr:
-  case ast::node_kind::on_expr:
-  case ast::node_kind::block_expr:
-  case ast::node_kind::quote_expr:
-  case ast::node_kind::splice_expr:
-  case ast::node_kind::static_expr:
-  case ast::node_kind::module_path_expr:
-  case ast::node_kind::group_expr:
-  case ast::node_kind::where_expr:
-    validate_expr(dynamic_cast<const ast::expr &>(node), context,
-                  semantic_index, session_index, diag, file_has_errors);
-    return;
-
-  case ast::node_kind::wildcard_pattern:
-  case ast::node_kind::literal_pattern:
-  case ast::node_kind::binding_pattern:
-  case ast::node_kind::constructor_pattern:
-  case ast::node_kind::tuple_pattern:
-  case ast::node_kind::struct_pattern:
-  case ast::node_kind::array_pattern:
-  case ast::node_kind::range_pattern:
-  case ast::node_kind::option_pattern:
-  case ast::node_kind::result_pattern:
-  case ast::node_kind::ref_pattern:
-  case ast::node_kind::or_pattern:
-  case ast::node_kind::group_pattern:
-    validate_pattern(dynamic_cast<const ast::pattern &>(node), context,
-                     semantic_index, session_index, diag, file_has_errors);
-    return;
 
   default:
+    ast::for_each_child(node, recurse);
     return;
-  }
-}
-
-/// Definition: validates each item in `items` in declaration order.
-auto validate_node_list(const std::vector<ast::ptr<ast::node>> &items,
-                        const semantic_walk_context &context,
-                        const semantic_resolution_index &semantic_index,
-                        const module_session_index &session_index,
-                        diagnostic_bag &diag,
-                        std::vector<bool> &file_has_errors) -> void {
-  for (const auto &item : items) {
-    if (item == nullptr) {
-      continue;
-    }
-    validate_ast_node(*item, context, semantic_index, session_index, diag,
-                      file_has_errors);
   }
 }
 

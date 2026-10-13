@@ -2,6 +2,8 @@
 
 #include <format>
 
+#include "ast_traversal.h"
+
 namespace cinder::ast {
 
 namespace {
@@ -61,14 +63,14 @@ template <typename T>
 /// to the cloner for whichever they are.
 [[nodiscard]] auto clone_type_arg_value(const node &n)
     -> std::expected<ptr<node>, clone_error> {
-  if (const auto *as_type = dynamic_cast<const type_expr *>(&n)) {
+  if (const auto *as_type = as<type_expr>(&n)) {
     auto cloned = clone_type_expr(*as_type);
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
     }
     return ptr<node>(std::move(*cloned));
   }
-  if (const auto *as_expr = dynamic_cast<const expr *>(&n)) {
+  if (const auto *as_expr = as<expr>(&n)) {
     auto cloned = clone_expr_impl(*as_expr);
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
@@ -94,7 +96,7 @@ template <typename T>
     -> std::expected<ptr<type_expr>, clone_error> {
   switch (t.kind) {
   case node_kind::named_type: {
-    const auto &named = dynamic_cast<const named_type &>(t);
+    const auto &named = cast<named_type>(t);
     auto cloned = make<named_type>();
     cloned->span = named.span;
     cloned->path = named.path;
@@ -109,7 +111,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::slice_type: {
-    const auto &slice = dynamic_cast<const slice_type &>(t);
+    const auto &slice = cast<slice_type>(t);
     auto element = clone_optional(slice.element);
     if (!element.has_value()) {
       return std::unexpected(element.error());
@@ -120,7 +122,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::array_type: {
-    const auto &array = dynamic_cast<const array_type &>(t);
+    const auto &array = cast<array_type>(t);
     auto element = clone_optional(array.element);
     if (!element.has_value()) {
       return std::unexpected(element.error());
@@ -136,7 +138,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::ref_type: {
-    const auto &ref = dynamic_cast<const ref_type &>(t);
+    const auto &ref = cast<ref_type>(t);
     auto inner = clone_optional(ref.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -148,7 +150,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::ptr_type: {
-    const auto &raw = dynamic_cast<const ptr_type &>(t);
+    const auto &raw = cast<ptr_type>(t);
     auto inner = clone_optional(raw.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -160,7 +162,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::mut_type: {
-    const auto &mt = dynamic_cast<const mut_type &>(t);
+    const auto &mt = cast<mut_type>(t);
     auto inner = clone_optional(mt.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -171,7 +173,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::tuple_type: {
-    const auto &tuple = dynamic_cast<const tuple_type &>(t);
+    const auto &tuple = cast<tuple_type>(t);
     auto cloned = make<tuple_type>();
     cloned->span = tuple.span;
     for (const auto &element : tuple.elements) {
@@ -184,7 +186,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::fn_type: {
-    const auto &fn = dynamic_cast<const fn_type &>(t);
+    const auto &fn = cast<fn_type>(t);
     auto cloned = make<fn_type>();
     cloned->span = fn.span;
     for (const auto &param : fn.param_types) {
@@ -202,7 +204,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::bound_type: {
-    const auto &bt = dynamic_cast<const bound_type &>(t);
+    const auto &bt = cast<bound_type>(t);
     auto value = clone_bound(bt.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -213,7 +215,7 @@ template <typename T>
     return ptr<type_expr>(std::move(cloned));
   }
   case node_kind::existential_type: {
-    const auto &et = dynamic_cast<const existential_type &>(t);
+    const auto &et = cast<existential_type>(t);
     auto value = clone_bound(et.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -263,7 +265,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::literal_pattern: {
-    const auto &lit = dynamic_cast<const literal_pattern &>(p);
+    const auto &lit = cast<literal_pattern>(p);
     auto cloned = make<literal_pattern>();
     cloned->span = lit.span;
     cloned->lit_kind = lit.lit_kind;
@@ -271,7 +273,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const binding_pattern &>(p);
+    const auto &binding = cast<binding_pattern>(p);
     auto cloned = make<binding_pattern>();
     cloned->span = binding.span;
     cloned->name = binding.name;
@@ -279,7 +281,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const constructor_pattern &>(p);
+    const auto &ctor = cast<constructor_pattern>(p);
     auto args = clone_pattern_list(ctor.args);
     if (!args.has_value()) {
       return std::unexpected(args.error());
@@ -291,7 +293,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const tuple_pattern &>(p);
+    const auto &tuple = cast<tuple_pattern>(p);
     auto elements = clone_pattern_list(tuple.elements);
     if (!elements.has_value()) {
       return std::unexpected(elements.error());
@@ -302,7 +304,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::array_pattern: {
-    const auto &array = dynamic_cast<const array_pattern &>(p);
+    const auto &array = cast<array_pattern>(p);
     auto elements = clone_pattern_list(array.elements);
     if (!elements.has_value()) {
       return std::unexpected(elements.error());
@@ -313,7 +315,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::struct_pattern: {
-    const auto &object = dynamic_cast<const struct_pattern &>(p);
+    const auto &object = cast<struct_pattern>(p);
     auto cloned = make<struct_pattern>();
     cloned->span = object.span;
     for (const auto &field : object.fields) {
@@ -332,7 +334,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::range_pattern: {
-    const auto &range = dynamic_cast<const range_pattern &>(p);
+    const auto &range = cast<range_pattern>(p);
     auto start = clone_optional(range.start);
     if (!start.has_value()) {
       return std::unexpected(start.error());
@@ -349,7 +351,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::option_pattern: {
-    const auto &option = dynamic_cast<const option_pattern &>(p);
+    const auto &option = cast<option_pattern>(p);
     auto inner = clone_optional(option.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -361,7 +363,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const result_pattern &>(p);
+    const auto &result = cast<result_pattern>(p);
     auto inner = clone_optional(result.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -373,7 +375,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::ref_pattern: {
-    const auto &ref = dynamic_cast<const ref_pattern &>(p);
+    const auto &ref = cast<ref_pattern>(p);
     auto inner = clone_optional(ref.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -384,7 +386,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::or_pattern: {
-    const auto &alt = dynamic_cast<const or_pattern &>(p);
+    const auto &alt = cast<or_pattern>(p);
     auto alternatives = clone_pattern_list(alt.alternatives);
     if (!alternatives.has_value()) {
       return std::unexpected(alternatives.error());
@@ -395,7 +397,7 @@ template <typename T>
     return ptr<pattern>(std::move(cloned));
   }
   case node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const group_pattern &>(p);
+    const auto &group = cast<group_pattern>(p);
     auto inner = clone_optional(group.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -559,20 +561,20 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
   // cast to an `ident_expr` it isn't. It is not always a parse failure: an
   // `if let` branch parks one in `if_branch::condition`, the slot its pattern
   // and scrutinee replace, so cloning any `if let` at all reaches this.
-  if (const auto *error = dynamic_cast<const error_expr *>(&e)) {
+  if (const auto *error = as<error_expr>(&e)) {
     return ptr<expr>(make<error_expr>(error->span, error->description));
   }
 
   switch (e.kind) {
   case node_kind::ident_expr: {
-    const auto &ident = dynamic_cast<const ident_expr &>(e);
+    const auto &ident = cast<ident_expr>(e);
     auto cloned = make<ident_expr>();
     cloned->span = ident.span;
     cloned->name = ident.name;
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::literal_expr: {
-    const auto &lit = dynamic_cast<const literal_expr &>(e);
+    const auto &lit = cast<literal_expr>(e);
     auto cloned = make<literal_expr>();
     cloned->span = lit.span;
     cloned->lit_kind = lit.lit_kind;
@@ -580,7 +582,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::binary_expr: {
-    const auto &bin = dynamic_cast<const binary_expr &>(e);
+    const auto &bin = cast<binary_expr>(e);
     auto lhs = clone_optional(bin.lhs);
     if (!lhs.has_value()) {
       return std::unexpected(lhs.error());
@@ -597,7 +599,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::unary_expr: {
-    const auto &un = dynamic_cast<const unary_expr &>(e);
+    const auto &un = cast<unary_expr>(e);
     auto operand = clone_optional(un.operand);
     if (!operand.has_value()) {
       return std::unexpected(operand.error());
@@ -609,7 +611,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::field_expr: {
-    const auto &field = dynamic_cast<const field_expr &>(e);
+    const auto &field = cast<field_expr>(e);
     auto object = clone_optional(field.object);
     if (!object.has_value()) {
       return std::unexpected(object.error());
@@ -628,7 +630,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::index_expr: {
-    const auto &index = dynamic_cast<const index_expr &>(e);
+    const auto &index = cast<index_expr>(e);
     auto object = clone_optional(index.object);
     if (!object.has_value()) {
       return std::unexpected(object.error());
@@ -644,7 +646,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::call_expr: {
-    const auto &call = dynamic_cast<const call_expr &>(e);
+    const auto &call = cast<call_expr>(e);
     auto callee = clone_optional(call.callee);
     if (!callee.has_value()) {
       return std::unexpected(callee.error());
@@ -660,7 +662,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::try_expr: {
-    const auto &try_e = dynamic_cast<const try_expr &>(e);
+    const auto &try_e = cast<try_expr>(e);
     auto operand = clone_optional(try_e.operand);
     if (!operand.has_value()) {
       return std::unexpected(operand.error());
@@ -671,7 +673,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::array_expr: {
-    const auto &array = dynamic_cast<const array_expr &>(e);
+    const auto &array = cast<array_expr>(e);
     auto cloned = make<array_expr>();
     cloned->span = array.span;
     for (const auto &element : array.elements) {
@@ -694,7 +696,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::tuple_expr: {
-    const auto &tuple = dynamic_cast<const tuple_expr &>(e);
+    const auto &tuple = cast<tuple_expr>(e);
     auto cloned = make<tuple_expr>();
     cloned->span = tuple.span;
     for (const auto &element : tuple.elements) {
@@ -707,7 +709,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::group_expr: {
-    const auto &group = dynamic_cast<const group_expr &>(e);
+    const auto &group = cast<group_expr>(e);
     auto inner = clone_optional(group.inner);
     if (!inner.has_value()) {
       return std::unexpected(inner.error());
@@ -718,7 +720,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::cast_expr: {
-    const auto &cast = dynamic_cast<const cast_expr &>(e);
+    const auto &cast = ast::cast<cast_expr>(e);
     auto operand = clone_optional(cast.operand);
     if (!operand.has_value()) {
       return std::unexpected(operand.error());
@@ -734,7 +736,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::struct_expr: {
-    const auto &object = dynamic_cast<const struct_expr &>(e);
+    const auto &object = cast<struct_expr>(e);
     auto type_name = clone_optional(object.type_name);
     if (!type_name.has_value()) {
       return std::unexpected(type_name.error());
@@ -756,7 +758,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::block_expr: {
-    const auto &block = dynamic_cast<const block_expr &>(e);
+    const auto &block = cast<block_expr>(e);
     auto stmts = clone_node_list(block.stmts);
     if (!stmts.has_value()) {
       return std::unexpected(stmts.error());
@@ -767,7 +769,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::if_expr: {
-    const auto &conditional = dynamic_cast<const if_expr &>(e);
+    const auto &conditional = cast<if_expr>(e);
     auto branches = clone_if_branches(conditional.branches);
     if (!branches.has_value()) {
       return std::unexpected(branches.error());
@@ -783,7 +785,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::match_expr: {
-    const auto &match = dynamic_cast<const match_expr &>(e);
+    const auto &match = cast<match_expr>(e);
     auto subject = clone_optional(match.subject);
     if (!subject.has_value()) {
       return std::unexpected(subject.error());
@@ -799,7 +801,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::interpolated_string_expr: {
-    const auto &interp = dynamic_cast<const interpolated_string_expr &>(e);
+    const auto &interp = cast<interpolated_string_expr>(e);
     auto cloned = make<interpolated_string_expr>();
     cloned->span = interp.span;
     for (const auto &segment : interp.segments) {
@@ -824,7 +826,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::lambda_expr: {
-    const auto &lambda = dynamic_cast<const lambda_expr &>(e);
+    const auto &lambda = cast<lambda_expr>(e);
     auto cloned = make<lambda_expr>();
     cloned->span = lambda.span;
     cloned->is_pure = lambda.is_pure;
@@ -864,7 +866,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::yield_expr: {
-    const auto &yield = dynamic_cast<const yield_expr &>(e);
+    const auto &yield = cast<yield_expr>(e);
     auto value = clone_optional(yield.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -875,7 +877,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::for_expr: {
-    const auto &comprehension = dynamic_cast<const for_expr &>(e);
+    const auto &comprehension = cast<for_expr>(e);
     auto cloned = make<for_expr>();
     cloned->span = comprehension.span;
     for (const auto &clause : comprehension.clauses) {
@@ -910,14 +912,14 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     // A dotted path (`self.value`, `DB.query`) the parser leaves unresolved
     // between field access and a qualified module reference — carried as bare
     // segments, so a shallow copy suffices.
-    const auto &path = dynamic_cast<const module_path_expr &>(e);
+    const auto &path = cast<module_path_expr>(e);
     auto cloned = make<module_path_expr>();
     cloned->span = path.span;
     cloned->segments = path.segments;
     return ptr<expr>(std::move(cloned));
   }
   case node_kind::static_expr: {
-    const auto &static_e = dynamic_cast<const static_expr &>(e);
+    const auto &static_e = cast<static_expr>(e);
     auto operand = clone_optional(static_e.operand);
     if (!operand.has_value()) {
       return std::unexpected(operand.error());
@@ -967,7 +969,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     -> std::expected<ptr<node>, clone_error> {
   switch (n.kind) {
   case node_kind::let_stmt: {
-    const auto &let = dynamic_cast<const let_stmt &>(n);
+    const auto &let = cast<let_stmt>(n);
     if (!let.else_body.empty()) {
       return unsupported(n, "a `let ... else` statement");
     }
@@ -991,7 +993,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::var_stmt: {
-    const auto &var = dynamic_cast<const var_stmt &>(n);
+    const auto &var = cast<var_stmt>(n);
     auto type_annotation = clone_optional(var.type_annotation);
     if (!type_annotation.has_value()) {
       return std::unexpected(type_annotation.error());
@@ -1008,7 +1010,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::assign_stmt: {
-    const auto &assign = dynamic_cast<const assign_stmt &>(n);
+    const auto &assign = cast<assign_stmt>(n);
     auto target = clone_optional(assign.target);
     if (!target.has_value()) {
       return std::unexpected(target.error());
@@ -1025,7 +1027,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::expr_stmt: {
-    const auto &stmt = dynamic_cast<const expr_stmt &>(n);
+    const auto &stmt = cast<expr_stmt>(n);
     auto value = clone_optional(stmt.expr);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -1036,7 +1038,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::return_stmt: {
-    const auto &ret = dynamic_cast<const return_stmt &>(n);
+    const auto &ret = cast<return_stmt>(n);
     auto value = clone_optional(ret.value);
     if (!value.has_value()) {
       return std::unexpected(value.error());
@@ -1047,7 +1049,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::if_stmt: {
-    const auto &if_s = dynamic_cast<const if_stmt &>(n);
+    const auto &if_s = cast<if_stmt>(n);
     auto branches = clone_if_branches(if_s.branches);
     if (!branches.has_value()) {
       return std::unexpected(branches.error());
@@ -1063,7 +1065,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::while_stmt: {
-    const auto &while_s = dynamic_cast<const while_stmt &>(n);
+    const auto &while_s = cast<while_stmt>(n);
     auto condition = clone_optional(while_s.condition);
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
@@ -1089,7 +1091,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::scope_stmt: {
-    const auto &scope_s = dynamic_cast<const scope_stmt &>(n);
+    const auto &scope_s = cast<scope_stmt>(n);
     auto body = clone_node_list(scope_s.body);
     if (!body.has_value()) {
       return std::unexpected(body.error());
@@ -1100,7 +1102,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::for_stmt: {
-    const auto &loop = dynamic_cast<const for_stmt &>(n);
+    const auto &loop = cast<for_stmt>(n);
     auto patterns = clone_pattern_list(loop.patterns);
     if (!patterns.has_value()) {
       return std::unexpected(patterns.error());
@@ -1126,7 +1128,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::match_stmt: {
-    const auto &match = dynamic_cast<const match_stmt &>(n);
+    const auto &match = cast<match_stmt>(n);
     auto subject = clone_optional(match.subject);
     if (!subject.has_value()) {
       return std::unexpected(subject.error());
@@ -1142,7 +1144,7 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::static_decl: {
-    auto cloned = clone_static_decl(dynamic_cast<const static_decl &>(n));
+    auto cloned = clone_static_decl(cast<static_decl>(n));
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
     }
@@ -1153,14 +1155,14 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     // `ptr<node>` slot rather than a block-body list (`match_arm::pattern`
     // and `if_branch::let_pattern` are patterns; `array_type::size`, a
     // fixed-array length, is an expression).
-    if (const auto *as_pattern = dynamic_cast<const pattern *>(&n)) {
+    if (const auto *as_pattern = as<pattern>(&n)) {
       auto cloned = clone_pattern(*as_pattern);
       if (!cloned.has_value()) {
         return std::unexpected(cloned.error());
       }
       return ptr<node>(std::move(*cloned));
     }
-    if (const auto *as_expr = dynamic_cast<const expr *>(&n)) {
+    if (const auto *as_expr = as<expr>(&n)) {
       auto cloned = clone_expr_impl(*as_expr);
       if (!cloned.has_value()) {
         return std::unexpected(cloned.error());
@@ -1338,7 +1340,7 @@ namespace {
     -> std::expected<ptr<node>, clone_error> {
   switch (def.kind) {
   case node_kind::struct_type_def: {
-    const auto &struct_def = dynamic_cast<const struct_type_def &>(def);
+    const auto &struct_def = cast<struct_type_def>(def);
     auto cloned = make<struct_type_def>();
     cloned->span = struct_def.span;
     cloned->body.span = struct_def.body.span;
@@ -1357,7 +1359,7 @@ namespace {
     return ptr<node>(std::move(cloned));
   }
   case node_kind::sum_type_def: {
-    const auto &sum_def = dynamic_cast<const sum_type_def &>(def);
+    const auto &sum_def = cast<sum_type_def>(def);
     auto cloned = make<sum_type_def>();
     cloned->span = sum_def.span;
     cloned->body.span = sum_def.body.span;
@@ -1378,7 +1380,7 @@ namespace {
     return ptr<node>(std::move(cloned));
   }
   case node_kind::refinement_type: {
-    const auto &refine = dynamic_cast<const refinement_type &>(def);
+    const auto &refine = cast<refinement_type>(def);
     auto base = clone_optional(refine.base);
     if (!base.has_value()) {
       return std::unexpected(base.error());
@@ -1395,7 +1397,7 @@ namespace {
   }
   default:
     // Anything else is a bare type expression used as an alias body.
-    if (const auto *as_type = dynamic_cast<const type_expr *>(&def)) {
+    if (const auto *as_type = as<type_expr>(&def)) {
       auto cloned = clone_type_expr(*as_type);
       if (!cloned.has_value()) {
         return std::unexpected(cloned.error());
@@ -1617,21 +1619,21 @@ clone_where_constraints(const std::vector<where_constraint> &constraints)
     -> std::expected<ptr<node>, clone_error> {
   switch (item.kind) {
   case node_kind::func_decl: {
-    auto cloned = clone_func_decl(dynamic_cast<const func_decl &>(item));
+    auto cloned = clone_func_decl(cast<func_decl>(item));
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
     }
     return ptr<node>(std::move(*cloned));
   }
   case node_kind::static_decl: {
-    auto cloned = clone_static_decl(dynamic_cast<const static_decl &>(item));
+    auto cloned = clone_static_decl(cast<static_decl>(item));
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
     }
     return ptr<node>(std::move(*cloned));
   }
   case node_kind::associated_type_decl_node: {
-    const auto &assoc = dynamic_cast<const associated_type_decl_node &>(item);
+    const auto &assoc = cast<associated_type_decl_node>(item);
     auto default_type = clone_optional(assoc.value.default_type);
     if (!default_type.has_value()) {
       return std::unexpected(default_type.error());
@@ -1646,7 +1648,7 @@ clone_where_constraints(const std::vector<where_constraint> &constraints)
     return ptr<node>(std::move(cloned));
   }
   case node_kind::associated_type_def_node: {
-    const auto &assoc = dynamic_cast<const associated_type_def_node &>(item);
+    const auto &assoc = cast<associated_type_def_node>(item);
     auto type = clone_optional(assoc.value.type);
     if (!type.has_value()) {
       return std::unexpected(type.error());

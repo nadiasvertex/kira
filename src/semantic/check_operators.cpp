@@ -151,32 +151,6 @@ auto checker::infer_literal(const ast::literal_expr &lit, type_id expected,
 //  Binary and unary operators
 // ==========================================================================
 
-/// Maps an arithmetic operator to the trait that overloads it on a
-/// user struct/sum type (`add`, `sub`, `mul`, `div`, `rem`); an empty
-/// string for operators with no overload trait.
-auto checker::operator_trait_for(ast::binary_op op) -> std::string_view {
-  switch (op) {
-  case ast::binary_op::add:
-  case ast::binary_op::add_wrap:
-  case ast::binary_op::add_sat:
-    return "add";
-  case ast::binary_op::sub:
-  case ast::binary_op::sub_wrap:
-  case ast::binary_op::sub_sat:
-    return "sub";
-  case ast::binary_op::mul:
-  case ast::binary_op::mul_wrap:
-  case ast::binary_op::mul_sat:
-    return "mul";
-  case ast::binary_op::div:
-    return "div";
-  case ast::binary_op::mod:
-    return "rem";
-  default:
-    return {};
-  }
-}
-
 /// Resolves `method`'s return type the way it would have resolved *inside
 /// its own impl* — reinstating that impl's `self.output`-style associated
 /// type bindings (`session_.impl_assoc_types_`, keyed by `(target,
@@ -236,7 +210,7 @@ auto checker::resolve_operator_return_type(type_id target,
 /// `trait_name` (reporting a missing-impl error with an `impl`/`deriving`
 /// hint otherwise); returns `unknown` for anything else. When `binary` is
 /// an arithmetic operator being dispatched to a real overload method (see
-/// `operator_trait_for`), also records an `session_.operator_dispatches_` entry
+/// `ast::overload_trait_of`), also records an `session_.operator_dispatches_` entry
 /// so `hir::lower_binary` emits a call to that method instead of a raw numeric
 /// opcode, and returns the method's real (impl-specific) return type rather
 /// than `unknown`. `wire_dispatch` is true for `==`/`!=` too (dispatches to
@@ -288,7 +262,7 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
   }
   if (entry.kind == type_kind::builtin_kind) {
     // Only comparisons reach here with `eq`/`ord`; every other trait is an
-    // arithmetic operator's (`operator_trait_for`).
+    // arithmetic operator's (`ast::overload_trait_of`).
     const auto arithmetic = trait_name != "eq" && trait_name != "ord";
     // A builtin number has every operator primitively, and `bool`/`char`
     // have the comparisons. Their `impl eq`/`impl add`/...
@@ -341,13 +315,13 @@ auto checker::report_non_numeric_arithmetic(const ast::binary_expr &binary,
       std::format("operator `{}` requires numeric operands, found `{}`",
                   op_name, shown),
       std::format("`{}` is not a number and does not implement `{}`", shown,
-                  operator_trait_for(binary.op)),
+                  ast::overload_trait_of(binary.op)),
       session_.types_.is_boolean(operand)
           ? std::string("Combine `bool` values with `and`/`or`/`not`, or "
                         "convert explicitly, e.g. `int32(flag)`.")
           : std::format("Convert the operand to a number first, e.g. "
                         "`int32(...)`, or use a type that implements `{}`.",
-                        operator_trait_for(binary.op)));
+                        ast::overload_trait_of(binary.op)));
 }
 
 /// Types an arithmetic operator (`+`, `-`, `*`, `/`, `%` and their
@@ -378,7 +352,7 @@ auto checker::defer_open_arithmetic(const ast::binary_expr &binary,
           return;
         }
         const auto op_name = ast::binary_op_name(binary.op);
-        const auto trait_name = operator_trait_for(binary.op);
+        const auto trait_name = ast::overload_trait_of(binary.op);
         if (!trait_name.empty()) {
           (void)require_operand_trait(binary, operand, trait_name, op_name,
                                       /*wire_dispatch=*/true);
@@ -430,7 +404,7 @@ auto checker::defer_operator_dispatch(const ast::binary_expr &binary,
         }
         switch (kind) {
         case operator_kind::arithmetic: {
-          const auto trait_name = operator_trait_for(clone.op);
+          const auto trait_name = ast::overload_trait_of(clone.op);
           if (!session_.types_.is_numeric(operand) && !trait_name.empty()) {
             (void)require_operand_trait(clone, operand, trait_name, op_name,
                                         /*wire_dispatch=*/true);
@@ -535,7 +509,7 @@ auto checker::infer_arithmetic(const ast::binary_expr &binary, type_id expected)
                                                  : k_unknown_type;
   }
 
-  const auto trait_name = operator_trait_for(binary.op);
+  const auto trait_name = ast::overload_trait_of(binary.op);
   if (!session_.types_.is_numeric(lhs_final)) {
     if (!trait_name.empty()) {
       return require_operand_trait(binary, lhs_final, trait_name, op_name,

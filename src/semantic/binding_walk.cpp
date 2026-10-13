@@ -2,44 +2,30 @@
 
 #include <algorithm>
 
+#include "src/parser/ast_traversal.h"
+
 namespace cinder::semantic {
 namespace {
 
-auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
+auto collect(const ast::node &node, std::vector<pattern_binding> &out)
     -> void {
-  switch (pattern.kind) {
+  if (!ast::is_pattern_kind(node.kind)) {
+    return;
+  }
+  switch (node.kind) {
   case ast::node_kind::binding_pattern: {
-    const auto &binding = dynamic_cast<const ast::binding_pattern &>(pattern);
+    const auto &binding = ast::cast<const ast::binding_pattern>(node);
     if (!binding.name.empty()) {
       out.push_back(pattern_binding{
-          .name = binding.name, .node = &pattern, .span = binding.span});
-    }
-    return;
-  }
-
-  case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(pattern);
-    for (const auto &element : tuple.elements) {
-      if (element != nullptr) {
-        collect(*element, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(pattern);
-    for (const auto &arg : ctor.args) {
-      if (arg != nullptr) {
-        collect(*arg, out);
-      }
+          .name = binding.name,
+          .node = &ast::cast<const ast::pattern>(node),
+          .span = binding.span});
     }
     return;
   }
 
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern =
-        dynamic_cast<const ast::struct_pattern &>(pattern);
+    const auto &struct_pattern = ast::cast<const ast::struct_pattern>(node);
     for (const auto &field : struct_pattern.fields) {
       if (field.is_rest) {
         continue;
@@ -56,52 +42,8 @@ auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
     return;
   }
 
-  case ast::node_kind::array_pattern: {
-    const auto &array = dynamic_cast<const ast::array_pattern &>(pattern);
-    for (const auto &element : array.elements) {
-      if (element != nullptr) {
-        collect(*element, out);
-      }
-    }
-    return;
-  }
-
-  case ast::node_kind::option_pattern: {
-    const auto &option = dynamic_cast<const ast::option_pattern &>(pattern);
-    if (option.inner != nullptr) {
-      collect(*option.inner, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::result_pattern: {
-    const auto &result = dynamic_cast<const ast::result_pattern &>(pattern);
-    if (result.inner != nullptr) {
-      collect(*result.inner, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::ref_pattern: {
-    const auto &ref = dynamic_cast<const ast::ref_pattern &>(pattern);
-    if (ref.inner != nullptr) {
-      collect(*ref.inner, out);
-    }
-    return;
-  }
-
-  case ast::node_kind::or_pattern: {
-    const auto &or_pattern = dynamic_cast<const ast::or_pattern &>(pattern);
-    for (const auto &alternative : or_pattern.alternatives) {
-      if (alternative != nullptr) {
-        collect(*alternative, out);
-      }
-    }
-    return;
-  }
-
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(pattern);
+    const auto &group = ast::cast<const ast::group_pattern>(node);
     if (group.inner != nullptr) {
       collect(*group.inner, out);
     }
@@ -113,6 +55,10 @@ auto collect(const ast::pattern &pattern, std::vector<pattern_binding> &out)
   }
 
   default:
+    // Tuple, constructor, array, option, result, ref and or patterns bind
+    // exactly what their sub-patterns bind.
+    ast::for_each_child(
+        node, [&out](const ast::node &child) { collect(child, out); });
     return;
   }
 }
@@ -123,30 +69,30 @@ auto disjoint(const ast::node *node) -> bool {
   }
   switch (node->kind) {
   case ast::node_kind::tuple_pattern: {
-    const auto &tuple = dynamic_cast<const ast::tuple_pattern &>(*node);
+    const auto &tuple = ast::cast<const ast::tuple_pattern>(*node);
     return std::ranges::all_of(tuple.elements,
                                [](const auto &e) { return disjoint(e.get()); });
   }
   case ast::node_kind::constructor_pattern: {
-    const auto &ctor = dynamic_cast<const ast::constructor_pattern &>(*node);
+    const auto &ctor = ast::cast<const ast::constructor_pattern>(*node);
     return std::ranges::all_of(ctor.args,
                                [](const auto &e) { return disjoint(e.get()); });
   }
   case ast::node_kind::struct_pattern: {
     const auto &fields =
-        dynamic_cast<const ast::struct_pattern &>(*node).fields;
+        ast::cast<const ast::struct_pattern>(*node).fields;
     return std::ranges::all_of(fields, [](const auto &f) {
       return f.is_rest || disjoint(f.pattern.get());
     });
   }
   case ast::node_kind::option_pattern:
     return disjoint(
-        dynamic_cast<const ast::option_pattern &>(*node).inner.get());
+        ast::cast<const ast::option_pattern>(*node).inner.get());
   case ast::node_kind::result_pattern:
     return disjoint(
-        dynamic_cast<const ast::result_pattern &>(*node).inner.get());
+        ast::cast<const ast::result_pattern>(*node).inner.get());
   case ast::node_kind::group_pattern: {
-    const auto &group = dynamic_cast<const ast::group_pattern &>(*node);
+    const auto &group = ast::cast<const ast::group_pattern>(*node);
     return !group.alias.has_value() && disjoint(group.inner.get());
   }
   case ast::node_kind::or_pattern:

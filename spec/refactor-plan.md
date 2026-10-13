@@ -121,6 +121,21 @@ modeled on `hir/traversal.h`, replaces the hand-written traversals one pass at
 a time. Passes that dispatch on node kind use the kind tag and a checked cast
 helper instead of chains of `dynamic_cast`.
 
+Status: the operator table (`parser/operators.h`) and the AST walker
+(`parser/ast_traversal.h`, with `for_each_child`, `walk`, kind-class
+predicates, and the checked cast `as`) have landed. The operator table
+replaced the duplicated spelling, overload-trait, comparison-negation,
+compound-assignment, and range switches in the checker, HIR lowering, the
+bytecode compiler, the LLVM backend, and the compile-time evaluator. The
+hygiene pass, the session scope builder (the binder-free node kinds), the
+resolver's qualified-path validation, and the pattern binding collector
+(`semantic/binding_walk.cpp`) are moved onto the walker. The
+ownership CFG builder and the AST cloner use the checked casts `as` and
+`cast` in place of raw `dynamic_cast`s, and the CFG builder's pattern
+leftover scan uses `for_each_child`. The cloner builds new nodes, so it keeps
+its own per-kind construction. The checker and compile-time evaluator still
+use their own traversals and move over one pass at a time.
+
 ### Step 6: run compile-time code as HIR on the VM
 
 Compile-time code is checked, lowered to HIR, and run on the bytecode VM, the

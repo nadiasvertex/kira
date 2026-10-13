@@ -9,9 +9,11 @@ cc_library(
     ],
     hdrs = [
         "ast.h",
+        "ast_traversal.h",
         "diagnostic.h",
         "interp_string.h",
         "lexer.h",
+        "operators.h",
         "parser.h",
         "source_location.h",
         "text_escape.h",
@@ -39,6 +41,24 @@ cc_test(
     data = [
         "//src:parser_test_files",
     ],
+    deps = [
+        ":parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "operators_test",
+    srcs = ["operators_test.cpp"],
+    deps = [
+        ":parser",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "ast_traversal_test",
+    srcs = ["ast_traversal_test.cpp"],
     deps = [
         ":parser",
         "//src/testing",

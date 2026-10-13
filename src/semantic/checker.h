@@ -26,6 +26,7 @@
 #include "src/comptime/eval.h"
 #include "src/intrinsics.h"
 #include "src/parser/ast_clone.h"
+#include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/semantic/binding_walk.h"
 #include "src/semantic/infer/blame.h"
@@ -2640,8 +2641,6 @@ private:
 
   auto infer_literal(const ast::literal_expr &lit, type_id expected,
                      bool negated = false) -> type_id;
-
-  auto operator_trait_for(ast::binary_op op) -> std::string_view;
 
   auto parameterized_trait_key(std::string_view trait_name, type_id argument)
       -> std::string;
