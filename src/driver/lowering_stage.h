@@ -5,7 +5,7 @@
 #include "driver.h"
 #include "parse_stage.h"
 #include "src/hir/nodes.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::driver {
 

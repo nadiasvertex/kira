@@ -12,7 +12,7 @@
 
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 /// The control-flow graph the ownership checker (`check_ownership`) runs its
 /// dataflow over. One `function_cfg` is built per function or lambda body,

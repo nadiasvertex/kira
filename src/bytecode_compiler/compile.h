@@ -9,7 +9,7 @@
 #include "src/bytecode/chunk.h"
 #include "src/hir/nodes.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::bytecode_compiler {
 

@@ -32,7 +32,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 

@@ -3,7 +3,7 @@
 #include <string>
 
 #include "src/parser/source_location.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::semantic {
 

@@ -5,7 +5,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/module_index.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::semantic {
 

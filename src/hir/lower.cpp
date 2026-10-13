@@ -23,7 +23,8 @@
 #include "src/runtime/layout.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
+#include "src/semantic/program_index.h"
 
 namespace cinder::hir {
 

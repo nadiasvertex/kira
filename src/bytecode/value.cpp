@@ -1,6 +1,6 @@
 #include "src/bytecode/value.h"
 
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 #include <unordered_map>
 

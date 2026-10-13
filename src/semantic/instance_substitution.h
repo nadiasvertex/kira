@@ -10,7 +10,7 @@
 #include "src/parser/ast_clone.h"
 #include "src/parser/source_location.h"
 #include "src/semantic/linear_poly.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::semantic::detail {
 

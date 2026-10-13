@@ -15,7 +15,7 @@
 
 #include "src/semantic/infer/rigid_match.h"
 #include "src/semantic/linear_poly.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 #include "src/testing/test_assert.h"
 
 namespace {

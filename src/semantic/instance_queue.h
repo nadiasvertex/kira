@@ -11,7 +11,8 @@
 #include "src/parser/ast_clone.h"
 #include "src/parser/source_location.h"
 #include "src/semantic/method_resolution.h"
-#include "src/semantic/types.h"
+#include "src/semantic/program_index.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::semantic::detail {
 

@@ -39,7 +39,8 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/reason.h"
 #include "src/semantic/resolution.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
+#include "src/semantic/program_index.h"
 
 #include "check_helpers.h"
 #include "method_resolution.h"

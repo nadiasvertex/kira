@@ -7,7 +7,7 @@
 #include "src/parser/diagnostic.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/ownership_cfg.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::semantic {
 

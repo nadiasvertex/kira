@@ -5,7 +5,7 @@
 #include "src/bytecode/chunk.h"
 #include "src/bytecode/opcodes.h"
 #include "src/bytecode/value.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 #include "src/testing/test_assert.h"
 
 namespace {

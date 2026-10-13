@@ -5,7 +5,7 @@
 
 #include "src/parser/ast.h"
 #include "src/semantic/method_resolution.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 #include "src/testing/test_assert.h"
 
 namespace {

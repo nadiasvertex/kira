@@ -15,7 +15,7 @@
 #include "src/parser/source_location.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 #include "src/testing/stdlib_fixtures.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"

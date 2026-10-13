@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::runtime {
 

@@ -6,7 +6,7 @@
 
 #include "src/bytecode/value.h"
 #include "src/hir/nodes.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::driver {
 

@@ -4,7 +4,7 @@
 
 #include "src/parser/ast.h"
 #include "src/semantic/instance_substitution.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 #include "src/testing/test_assert.h"
 
 namespace {

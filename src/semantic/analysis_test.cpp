@@ -9,7 +9,7 @@
 
 #include "analysis.h"
 #include "src/parser/parser.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 

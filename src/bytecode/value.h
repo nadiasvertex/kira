@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <optional>
 
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::bytecode {
 

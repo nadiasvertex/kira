@@ -6,7 +6,7 @@
 
 #include "src/semantic/infer/unify.h"
 #include "src/semantic/linear_poly.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::semantic::infer {
 

@@ -6,7 +6,7 @@
 #include <unordered_map>
 
 #include "src/parser/ast.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::semantic::detail {
 

@@ -10,7 +10,7 @@
 
 #include "src/semantic/infer/infer_ctxt.h"
 #include "src/semantic/infer/unify.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::semantic::infer {
 

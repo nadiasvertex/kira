@@ -43,7 +43,7 @@
 #include "src/runtime/layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 #include "src/testing/stdlib_fixtures.h"
 
 namespace {

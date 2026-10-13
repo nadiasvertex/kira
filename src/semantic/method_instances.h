@@ -6,7 +6,7 @@
 
 #include "src/parser/ast.h"
 #include "src/semantic/method_resolution.h"
-#include "src/semantic/types.h"
+#include "src/semantic/type_table.h"
 
 namespace cinder::semantic::detail {
 

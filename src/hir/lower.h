@@ -7,7 +7,7 @@
 #include "src/hir/nodes.h"
 #include "src/parser/ast.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/types.h"
+#include "src/semantic/checker_results.h"
 
 namespace cinder::hir {
 
