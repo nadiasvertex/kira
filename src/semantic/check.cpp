@@ -88,6 +88,10 @@ auto checker::take_synthesized_fragments() -> ast::ptr_vec<ast::node> {
     fragments.push_back(std::move(fragment));
   }
   session_.proof_fragments_.clear();
+  for (auto &retired : session_.retired_static_nodes_) {
+    fragments.push_back(std::move(retired));
+  }
+  session_.retired_static_nodes_.clear();
   return fragments;
 }
 

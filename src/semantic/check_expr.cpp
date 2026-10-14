@@ -439,6 +439,10 @@ auto checker::check_body_nodes(const std::vector<ast::ptr<ast::node>> &items,
       continue;
     }
     const auto is_last = i + 1 == items.size();
+    if (function_.in_comptime_only_function_) {
+      // The checker owns the rewrite of the body it is checking.
+      rewrite_call_time_static(const_cast<ast::ptr<ast::node> &>(items[i]));
+    }
     last = check_body_node(*items[i], is_last ? expected_tail : k_unknown_type);
     if (!is_last) {
       last = function_.in_known_unreachable_code_

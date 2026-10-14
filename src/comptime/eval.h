@@ -47,7 +47,7 @@ public:
   // `if` expression, `let`, or assignment — every one of those touches
   // `locals_.back()`, which is undefined behavior on an empty stack.
   evaluator(diagnostic_bag &diag, file_id_type file_id)
-      : diag_(diag), file_id_(file_id), locals_(1) {}
+      : diag_(diag), file_id_(file_id), locals_(1), lazy_locals_(1) {}
 
   /// Updates which file newly reported diagnostics are attributed to. A
   /// single `evaluator` accumulates `static let` globals across an entire
@@ -426,15 +426,12 @@ public:
     return std::exchange(diagnostics_suppressed_, on);
   }
 
-  /// `try_evaluate` for a guess: whether an ordinary `let`'s initializer
-  /// happens to be a compile-time constant. Never runs on the VM, which
-  /// would compile and run every such initializer.
-  [[nodiscard]] auto probe(const ast::expr &expr) -> std::optional<value> {
-    const auto saved = std::exchange(probing_, true);
-    auto result = try_evaluate(expr);
-    probing_ = saved;
-    return result;
-  }
+  /// Binds an ordinary immutable `let` in the current frame without
+  /// evaluating it. The first compile-time expression that reads `name`
+  /// evaluates `initializer`, silently; if that fails, `name` has no
+  /// compile-time value, as for any binding known only at run time.
+  /// `initializer` must outlive the frame.
+  void bind_lazy_local(const std::string &name, const ast::expr &initializer);
 
   /// The type the current call's type parameter `name` is bound to, or
   /// `nullptr` when `name` is not a type parameter bound in this frame.
@@ -485,9 +482,7 @@ public:
   /// binding for a scope ready up front the way `push_locals` expects.
   /// Overwrites any existing binding for `name` in that frame, matching
   /// `push_locals`' own "re-binding overwrites" behavior.
-  void bind_local(const std::string &name, value v) {
-    locals_.back().insert_or_assign(name, std::move(v));
-  }
+  void bind_local(const std::string &name, value v);
 
   /// Outcome of executing a statement sequence: whether a `return` was hit
   /// and, if so, its value, or whether a `break`/`continue` is unwinding to
@@ -961,8 +956,6 @@ private:
 
   /// See `set_vm_eval`.
   vm_eval_fn vm_eval_;
-  /// While set, `evaluate` does not use `vm_eval_` (see `probe`).
-  bool probing_ = false;
 
   /// Reports a failed VM call at `span`, with `notes` saying where in the
   /// callee it failed.
@@ -970,6 +963,22 @@ private:
                          std::vector<diagnostic> notes) -> value;
 
   std::vector<std::unordered_map<std::string, value>> locals_;
+  /// A `let` bound by `bind_lazy_local` and not yet read.
+  struct lazy_local {
+    const ast::expr *initializer = nullptr;
+    /// Set while its initializer runs, so a cycle reads no value.
+    bool running = false;
+  };
+  /// One map per frame of `locals_`, in step with it. A name is in at most
+  /// one of a frame's two maps.
+  std::vector<std::unordered_map<std::string, lazy_local>> lazy_locals_;
+  /// Evaluates the lazy `let` `name` in frame `frame` and moves it into
+  /// `locals_`, returning its value or `nullptr` if it has none.
+  auto force_lazy_local(size_t frame, const std::string &name)
+      -> const value *;
+  /// Before `name` is rebound, evaluates every visible lazy `let` whose
+  /// initializer reads it, so each sees the binding it was written against.
+  void force_lazy_readers(const std::string &name);
   /// Index of the innermost call's first frame in `locals_` — the floor
   /// `lookup_local` and assignment search down to.
   size_t frame_base_ = 0;

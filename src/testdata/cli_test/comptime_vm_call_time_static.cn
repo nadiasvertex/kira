@@ -1,0 +1,31 @@
+module main
+
+# In a `static def`, a `static for` or `static if` that reads the call's
+# parameters runs as an ordinary loop or branch when the call runs, on the
+# VM. The `static for` over `T.fields()` still unrolls while checking.
+
+type pair = { a: int32, b: int32 }
+
+static def total(xs: list[int32]) -> int32:
+    var sum = 0
+    static for x in xs:
+        static if x > 1:
+            sum = sum + x
+    return sum
+
+static def doubled(xs: list[int32]) -> list[int32]:
+    return static for x in xs if x != 2 => x * 2
+
+static def scaled_field_count[T](scale: int32) -> int32:
+    var count = 0
+    static for f in T.fields():
+        static if f.is_data_member:
+            count = count + scale
+    return count
+
+static T5 = total([1, 2, 3])
+static D = doubled([1, 2, 3])
+static S = scaled_field_count[pair](10)
+
+def main() -> int32:
+    return T5 + D[0] + D[1] + S

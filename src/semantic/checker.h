@@ -750,6 +750,18 @@ private:
     /// synthesized_fragments` at the end of checking, since `spliced_fragments`
     /// points into these and `hir::lower` runs after the checker is gone.
     ast::ptr_vec<ast::node> proof_fragments_;
+    /// The `static if`s and `static for`s a `static def` runs as ordinary
+    /// code (`rewrite_call_time_static`), kept alive in case anything still
+    /// points at them.
+    ast::ptr_vec<ast::node> retired_static_nodes_;
+    /// Where each loop variable of a `static for` that is unrolled while
+    /// checking is bound (`span_key`): a value known while checking.
+    std::set<std::pair<std::size_t, std::size_t>> static_loop_bindings_;
+    /// The initializer of each immutable `let` in a `static def`, by where
+    /// it is bound: such a `let` holds a call-time value when its
+    /// initializer reads one.
+    std::map<std::pair<std::size_t, std::size_t>, const ast::expr *>
+        comptime_let_initializers_;
 
     /// See `checked_types::elided_contracts`'s doc comment. Populated by
     /// `check_call_preconditions`.
@@ -4089,6 +4101,28 @@ private:
 
   auto unroll_static_for_block(const ast::static_decl &decl, bool silent)
       -> void;
+
+  /// Runs the compile-time declarations in a module-level block `static
+  /// for`'s body for one iteration, whose bindings the evaluator holds:
+  /// each `static assert` is evaluated and `static if` and `static for`
+  /// run the body they select. Everything else was checked once already.
+  auto run_static_for_iteration(const std::vector<ast::ptr<ast::node>> &body)
+      -> void;
+
+  /// Reports a `static assert` whose condition evaluated to `false`.
+  auto report_failed_static_assert(const ast::static_decl &decl) -> void;
+
+  /// In a `static def`, replaces a `static if` or `static for` in `slot`
+  /// whose condition or iterable reads a value known only when the call
+  /// runs (`reads_call_time_value`) by the ordinary `if`, `for` or
+  /// comprehension, which runs with the call. Returns whether it did.
+  auto rewrite_call_time_static(ast::ptr<ast::node> &slot) -> bool;
+
+  /// Whether `expr` reads a binding of the `static def` being checked whose
+  /// value is known only when the call runs: a parameter or local, except
+  /// a loop variable of a `static for` unrolled while checking, or an
+  /// immutable `let` whose initializer reads no such binding.
+  auto reads_call_time_value(const ast::expr &expr, int depth = 0) -> bool;
 
   // ==========================================================================
   //  check_decls.cpp

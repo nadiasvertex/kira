@@ -1,0 +1,20 @@
+module main
+
+# An ordinary `let` read by a `static if` is evaluated when the `static if`
+# reads it, on the VM (only the VM has `is_empty`). `b` reads the first `a`,
+# not the one that shadows it.
+
+def pick(d: int32) -> int32:
+    let empty = [1, 2].is_empty()
+    let a = 1
+    let b = a + 1
+    let a = 5
+    let runtime_only = 10 / d
+    static if empty:
+        return 0
+    static if b == 2:
+        return 40 + runtime_only - a + 2
+    return 1
+
+def main() -> int32:
+    return pick(5)

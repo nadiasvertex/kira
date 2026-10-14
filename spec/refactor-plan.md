@@ -182,8 +182,7 @@ interpreter is deleted. The comparison is only a check on the move from one
 path to the other, since a bug shared by both paths will not show up in it.
 Tests that check a computed value remain the primary check.
 
-Status: phases 1 through 3 have landed. Phase 4 is partly done; phase 5 has
-not started.
+Status: phases 1 through 4 have landed; phase 5 has not started.
 
 - Phase 1. The checker keeps a lowering view (`semantic/check_lowering_view.
   cpp`): a `checked_types` holding just the functions compile-time code
@@ -241,16 +240,29 @@ not started.
     code a splice runs does not see the `impl`s later splices produce. A
     derive runs the checked instance `derive_<trait>[T]` for the type, so
     the AST cloner now copies quotes and splices.
-- Phase 4, not done:
-  - Every immutable `let` in ordinary code is probed with the interpreter
-    to see whether it is a compile-time constant, so a later `static if`
-    can read it. That should become a lazy evaluation of the `let`'s
-    initializer when a compile-time expression reads it.
-  - Module-level block `static for` still runs its body in the
-    interpreter.
-  - A compile-time function whose `static for` iterable reads its own
-    parameters cannot be unrolled while checking and stays interpreted.
-- Phase 5 (deleting the interpreter) depends on the items above.
+  - An immutable `let` in ordinary code is evaluated only when a
+    compile-time expression reads it, as a whole expression of its own (on
+    the VM). Before, every such `let` was tried in the interpreter. A
+    `let` that shadows a name first evaluates the earlier `let`s that read
+    it.
+  - A module-level block `static for` checks its body once and then runs
+    the body's `static assert`, `static if` and nested `static for` once
+    per iteration, through the checker. Before, the interpreter ran the
+    body, and checking it also reported an error for each loop variable
+    the body read.
+  - In a `static def`, a `static if` or `static for` whose condition or
+    iterable reads a value known only when the call runs (a parameter, or
+    a local computed from one) is rewritten by the checker into the
+    ordinary `if`, `for` or comprehension before it is checked, and runs
+    with the call on the VM. One that reads only types and compile-time
+    values (`static for f in T.fields()`) is still unrolled while
+    checking. The inline form of such a `static for` did not work before
+    in either path.
+- Phase 4 leaves two cases in the test corpus on the interpreter: an
+  expression reading a struct `static` whose type has no run-time form,
+  and a compile-time call to a function whose return type is not
+  annotated.
+- Phase 5 (deleting the interpreter) depends on those two cases.
 
 Phase 3 also fixed a tail-call bug it exposed: a call whose argument
 borrows a temporary (`&TABLE[0..n]`) was compiled as a tail call, which

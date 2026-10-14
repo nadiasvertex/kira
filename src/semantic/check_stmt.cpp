@@ -328,32 +328,26 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
               function_.type_name_aliases_.erase(binding.name);
             }
           }
-          // Also make the binding available to `resolve_static_if_branch`
-          // for any `static if` later in this same function body: a
-          // pattern like `std.limits.min`'s `let n = T.name()` followed
-          // by `static if n == "int8": ...` only narrows correctly once
-          // `n` itself is a known compile-time value, not just `T`. Tried
-          // unconditionally (not gated on being inside a generic
-          // instance) since `try_evaluate` is silent and cheap on
-          // failure — an ordinary runtime-dependent `let` simply fails to
-          // resolve a name and returns `std::nullopt`, same as today.
+          // A later compile-time expression in this body may read the
+          // binding: `std.limits.min`'s `let n = T.name()` followed by
+          // `static if n == "int8": ...`. The initializer is evaluated
+          // only when one does, and the binding has no compile-time value
+          // if it cannot be.
           if (stmt.initializer != nullptr) {
-            if (auto value = comptime_eval_.probe(*stmt.initializer);
-                value.has_value()) {
-              comptime_eval_.bind_local(binding.name, std::move(*value));
+            if (function_.in_comptime_only_function_) {
+              session_.comptime_let_initializers_.insert_or_assign(
+                  std::pair{binding.span.start, binding.span.end},
+                  stmt.initializer.get());
             }
+            comptime_eval_.bind_lazy_local(binding.name, *stmt.initializer);
             // An instance knows what the template could not: `T.name()`
             // is a string there.
             defer_to_instances(
                 stmt,
                 [this, &stmt,
                  name = binding.name](instance_subst &subst) -> void {
-                  const auto *initializer =
-                      clone_of(subst, stmt.initializer.get());
-                  if (auto value = comptime_eval_.probe(*initializer);
-                      value.has_value()) {
-                    comptime_eval_.bind_local(name, std::move(*value));
-                  }
+                  comptime_eval_.bind_lazy_local(
+                      name, *clone_of(subst, stmt.initializer.get()));
                 });
           }
         }

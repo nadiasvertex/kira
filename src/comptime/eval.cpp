@@ -238,18 +238,88 @@ void evaluator::register_pending_function(std::string name,
 
 void evaluator::push_locals(std::unordered_map<std::string, value> scope) {
   locals_.push_back(std::move(scope));
+  lazy_locals_.emplace_back();
 }
 
-void evaluator::pop_locals() { locals_.pop_back(); }
+void evaluator::pop_locals() {
+  locals_.pop_back();
+  lazy_locals_.pop_back();
+}
+
+void evaluator::bind_local(const std::string &name, value v) {
+  force_lazy_readers(name);
+  lazy_locals_.back().erase(name);
+  locals_.back().insert_or_assign(name, std::move(v));
+}
+
+void evaluator::bind_lazy_local(const std::string &name,
+                                const ast::expr &initializer) {
+  force_lazy_readers(name);
+  locals_.back().erase(name);
+  lazy_locals_.back().insert_or_assign(
+      name, lazy_local{.initializer = &initializer, .running = false});
+}
 
 auto evaluator::lookup_local(const std::string &name) -> const value * {
-  for (const auto &scope :
-       locals_ | std::views::drop(frame_base_) | std::views::reverse) {
-    if (const auto found = scope.find(name); found != scope.end()) {
+  for (auto frame = locals_.size(); frame-- > frame_base_;) {
+    if (const auto found = locals_[frame].find(name);
+        found != locals_[frame].end()) {
       return &found->second;
+    }
+    if (lazy_locals_[frame].contains(name)) {
+      return force_lazy_local(frame, name);
     }
   }
   return nullptr;
+}
+
+auto evaluator::force_lazy_local(size_t frame, const std::string &name)
+    -> const value * {
+  auto &entry = lazy_locals_[frame].at(name);
+  if (entry.running) {
+    return nullptr;
+  }
+  entry.running = true;
+  const auto &initializer = *entry.initializer;
+  // Run as a whole expression of its own, on the VM when it can, however
+  // deep in another expression the read is.
+  const auto saved_depth = std::exchange(eval_depth_, 0);
+  const auto saved_silent = set_silent(true);
+  auto result = evaluate(initializer);
+  set_silent(saved_silent);
+  eval_depth_ = saved_depth;
+  lazy_locals_[frame].erase(name);
+  if (result.is_error()) {
+    return nullptr;
+  }
+  return &locals_[frame].insert_or_assign(name, std::move(result)).first->second;
+}
+
+void evaluator::force_lazy_readers(const std::string &name) {
+  auto readers = std::vector<std::pair<size_t, std::string>>{};
+  for (auto frame = frame_base_; frame < lazy_locals_.size(); ++frame) {
+    for (const auto &[lazy_name, entry] : lazy_locals_[frame]) {
+      auto reads = false;
+      ast::walk(*entry.initializer, [&](const ast::node &node) -> bool {
+        if (const auto *ident = ast::as<const ast::ident_expr>(&node)) {
+          reads = reads || ident->name == name;
+        } else if (const auto *path =
+                       ast::as<const ast::module_path_expr>(&node)) {
+          reads = reads ||
+                  (!path->segments.empty() && path->segments.front() == name);
+        }
+        return !reads;
+      });
+      if (reads) {
+        readers.emplace_back(frame, lazy_name);
+      }
+    }
+  }
+  for (const auto &[frame, reader] : readers) {
+    if (lazy_locals_[frame].contains(reader)) {
+      static_cast<void>(force_lazy_local(frame, reader));
+    }
+  }
 }
 
 auto evaluator::resolve_pending_static(const std::string &name,
@@ -1179,6 +1249,14 @@ auto evaluator::eval_lambda(const ast::lambda_expr &lambda) -> value {
       }
     }
   } else {
+    // A lazy `let` the body reads is evaluated first, so the snapshot has
+    // it.
+    ast::walk(lambda, [&](const ast::node &node) -> bool {
+      if (const auto *ident = ast::as<const ast::ident_expr>(&node)) {
+        static_cast<void>(lookup_local(ident->name));
+      }
+      return true;
+    });
     // Implicit capture is by value on both backends, so a snapshot of the
     // frame reads the same. Inner scopes shadow outer ones.
     for (const auto &scope : locals_ | std::views::drop(frame_base_)) {
@@ -2846,7 +2924,7 @@ auto evaluator::evaluate(const ast::expr &expr) -> value {
   auto result = value{};
   // A whole compile-time expression runs on the VM when it can; the parts
   // of one the interpreter is already running stay there.
-  if (vm_eval_ && vm_mode_ != vm_mode::off && !probing_ && call_depth_ == 0 &&
+  if (vm_eval_ && vm_mode_ != vm_mode::off && call_depth_ == 0 &&
       eval_depth_ == 1) {
     auto outcome = vm_eval_(expr);
     const auto interpret = [&]() -> value { return evaluate_unwrapped(expr); };

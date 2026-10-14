@@ -1957,6 +1957,58 @@ auto test_comptime_vm_item_splice() -> void {
                      report->run.has_value() ? report->run->exit_code : -1));
 }
 
+/// An ordinary `let` a `static if` reads is evaluated at that read, on the
+/// VM, against the bindings it was written against.
+auto test_comptime_vm_lazy_let() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_lazy_let.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the lazy lets to compile: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 39,
+         std::format("expected `pick(5)` == 39, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
+/// In a `static def`, a `static for` or `static if` reading the call's
+/// parameters runs with the call, on the VM; one over `T.fields()` still
+/// unrolls.
+auto test_comptime_vm_call_time_static() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_call_time_static.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the call-time static forms to compile: " +
+             report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 33,
+         std::format("expected 5 + 2 + 6 + 20 == 33, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
 /// Compile-time code overflows exactly as run-time code does — `int8`
 /// arithmetic in a `static def` does not quietly widen — and the error points
 /// at the call and, in a note, at the operation that overflowed.
@@ -5143,6 +5195,8 @@ auto main() -> int {
     test_comptime_vm_expression_overflow();
     test_comptime_vm_quote();
     test_comptime_vm_item_splice();
+    test_comptime_vm_lazy_let();
+    test_comptime_vm_call_time_static();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method();
     test_comptime_unannotated_static_read_early();

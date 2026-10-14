@@ -34,6 +34,15 @@ namespace cinder::semantic::detail {
 /// same problem: nothing about it is known to be reachable, or even
 /// meaningful, until the real per-call-site instantiation checks it with
 /// concrete types bound).
+namespace {
+
+/// A binding's place, as the checker's binding sets key it.
+auto span_key(source_span span) -> std::pair<std::size_t, std::size_t> {
+  return {span.start, span.end};
+}
+
+} // namespace
+
 auto checker::inside_unbound_generic_scope() -> bool {
   return std::ranges::any_of(
       function_.type_params_, [this](const auto &scope) -> bool {
@@ -783,14 +792,7 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
           function_.in_speculative_static_branch_ == 0 &&
           !function_.in_known_unreachable_code_ &&
           !inside_unbound_generic_scope()) {
-        auto diag = diagnostic(diagnostic_level::error,
-                               decl.assert_message.has_value()
-                                   ? *decl.assert_message
-                                   : "`static assert` condition was false",
-                               file_.file_id_)
-                        .with_label(decl.assert_condition->span,
-                                    "this condition evaluated to `false`");
-        emit_diag(diag);
+        report_failed_static_assert(decl);
       }
     }
     return;
@@ -830,6 +832,9 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       if (pattern != nullptr) {
         check_pattern(*pattern,
                       decl.for_patterns.size() == 1 ? element : k_unknown_type);
+        for (const auto &binding : collect_pattern_bindings(*pattern)) {
+          session_.static_loop_bindings_.insert(span_key(binding.span));
+        }
       }
     }
     if (decl.for_guard != nullptr) {
@@ -845,11 +850,19 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       cache_.static_for_yields_.pop_back();
       cache_.static_for_yield_types_.insert_or_assign(&decl, yield_type);
     }
-    const auto block_in_body =
-        in_body && decl.decl_kind == ast::static_decl_kind::for_block;
-    function_.static_for_block_depth_ += block_in_body ? 1 : 0;
+    const auto block_form = decl.decl_kind == ast::static_decl_kind::for_block;
+    // At module level the body is checked once here, with the loop
+    // variables unbound, and its compile-time declarations run once per
+    // iteration below; here they are not evaluated for a verdict.
+    const auto block_at_module = block_form && !in_body;
+    function_.static_for_block_depth_ += block_form ? 1 : 0;
+    function_.in_speculative_static_branch_ += block_at_module ? 1 : 0;
+    const auto saved_silent = block_at_module ? comptime_eval_.set_silent(true)
+                                              : comptime_eval_.silent();
     check_body_nodes(decl.for_body, k_unknown_type);
-    function_.static_for_block_depth_ -= block_in_body ? 1 : 0;
+    comptime_eval_.set_silent(saved_silent);
+    function_.in_speculative_static_branch_ -= block_at_module ? 1 : 0;
+    function_.static_for_block_depth_ -= block_form ? 1 : 0;
     pop_scope();
 
     // The inline form's values, computed once here for code that is not
@@ -878,52 +891,14 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       return;
     }
 
-    // Real compile-time iteration, separate from the type-check pass
-    // above (which only checks the body/yield once against the element
-    // type). Only a single loop pattern is supported for now — multiple
-    // patterns (tuple-unpacking `for a, b in ...`) still only
-    // type-check, matching the pre-existing fallback behavior. Also
-    // skipped entirely while any generic type-parameter scope is active
-    // (e.g. this `static for` sits inside a `static def derive_show[T]()`
-    // body): the iterable may depend on `T`, which has no bound value
-    // until an actual compile-time generic call (`derive_show[point]()`)
-    // provides one — evaluating it now, during ordinary declaration
-    // checking, would spuriously fail every time regardless of whether
-    // the function is ever called. Real iteration for that case instead
-    // happens inside `evaluator::evaluate_stmt`'s own `for_block`/
-    // `for_inline` handling, run once per call with `T` actually bound.
-    const auto inside_generic_scope = std::ranges::any_of(
-        function_.type_params_,
-        [](const auto &scope) -> bool { return !scope.empty(); });
-    if (!inside_generic_scope && decl.for_iterable != nullptr &&
-        !decl.for_iterable->has_error && decl.for_patterns.size() == 1 &&
-        decl.for_patterns[0] != nullptr) {
-      auto list_value = comptime_eval_.evaluate_iterable(*decl.for_iterable);
-      if (!list_value.is_error()) {
-        for (const auto &element_value : list_value.elements) {
-          auto scope = std::unordered_map<std::string, comptime::value>{};
-          if (!comptime_eval_.bind_pattern(*decl.for_patterns[0], element_value,
-                                           scope)) {
-            break;
-          }
-          comptime_eval_.push_locals(std::move(scope));
-          if (decl.for_guard != nullptr) {
-            auto guard = comptime_eval_.evaluate(*decl.for_guard);
-            if (guard.is_error() ||
-                guard.kind != comptime::value_kind::boolean) {
-              comptime_eval_.pop_locals();
-              break;
-            }
-            if (!guard.boolean) {
-              comptime_eval_.pop_locals();
-              continue;
-            }
-          }
-          const auto exec = comptime_eval_.evaluate_stmts(decl.for_body);
-          if (exec.errored) {
-            comptime_eval_.pop_locals();
-            break;
-          }
+    // At module level, the body's compile-time declarations run once per
+    // iteration. An iterable inside a generic scope (a functor body) may
+    // depend on a type parameter with no value yet.
+    if (!inside_unbound_generic_scope()) {
+      if (const auto iterations = evaluate_static_for_inline(decl, false)) {
+        for (const auto &scope : *iterations) {
+          comptime_eval_.push_locals(scope);
+          run_static_for_iteration(decl.for_body);
           comptime_eval_.pop_locals();
         }
       }
@@ -931,6 +906,165 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
     return;
   }
   }
+}
+
+auto checker::report_failed_static_assert(const ast::static_decl &decl)
+    -> void {
+  emit_diag(diagnostic(diagnostic_level::error,
+                       decl.assert_message.has_value()
+                           ? *decl.assert_message
+                           : "`static assert` condition was false",
+                       file_.file_id_)
+                .with_label(decl.assert_condition->span,
+                            "this condition evaluated to `false`"));
+}
+
+auto checker::run_static_for_iteration(
+    const std::vector<ast::ptr<ast::node>> &body) -> void {
+  for (const auto &node : body) {
+    const auto *decl = ast::as<const ast::static_decl>(node.get());
+    if (decl == nullptr || decl->has_error) {
+      continue;
+    }
+    switch (decl->decl_kind) {
+    case ast::static_decl_kind::assertion: {
+      if (decl->assert_condition == nullptr ||
+          decl->assert_condition->has_error) {
+        break;
+      }
+      const auto evaluated = comptime_eval_.evaluate(*decl->assert_condition);
+      if (!evaluated.is_error() &&
+          evaluated.kind == comptime::value_kind::boolean &&
+          !evaluated.is_true()) {
+        report_failed_static_assert(*decl);
+      }
+      break;
+    }
+    case ast::static_decl_kind::conditional_compilation: {
+      if (decl->if_condition == nullptr || decl->if_condition->has_error) {
+        break;
+      }
+      const auto evaluated = comptime_eval_.evaluate(*decl->if_condition);
+      if (!evaluated.is_error() &&
+          evaluated.kind == comptime::value_kind::boolean) {
+        run_static_for_iteration(evaluated.is_true() ? decl->if_body
+                                                     : decl->else_body);
+      }
+      break;
+    }
+    case ast::static_decl_kind::for_block: {
+      if (const auto iterations = evaluate_static_for_inline(*decl, false)) {
+        for (const auto &scope : *iterations) {
+          comptime_eval_.push_locals(scope);
+          run_static_for_iteration(decl->for_body);
+          comptime_eval_.pop_locals();
+        }
+      }
+      break;
+    }
+    default:
+      break;
+    }
+  }
+}
+
+auto checker::reads_call_time_value(const ast::expr &expr, int depth) -> bool {
+  const auto call_time = [&](const std::string &name) -> bool {
+    const auto *binding = find_value_in_scopes(name).binding;
+    if (binding == nullptr) {
+      return false;
+    }
+    const auto key = span_key(binding->span);
+    if (session_.static_loop_bindings_.contains(key)) {
+      return false;
+    }
+    if (const auto let = session_.comptime_let_initializers_.find(key);
+        let != session_.comptime_let_initializers_.end() && depth < 64) {
+      return reads_call_time_value(*let->second, depth + 1);
+    }
+    return true;
+  };
+  auto found = false;
+  ast::walk(expr, [&](const ast::node &node) -> bool {
+    if (found || node.kind == ast::node_kind::quote_expr) {
+      return false;
+    }
+    if (const auto *ident = ast::as<const ast::ident_expr>(&node)) {
+      found = call_time(ident->name);
+    } else if (const auto *path = ast::as<const ast::module_path_expr>(&node);
+               path != nullptr && !path->segments.empty()) {
+      found = call_time(path->segments.front());
+    }
+    return !found;
+  });
+  return found;
+}
+
+auto checker::rewrite_call_time_static(ast::ptr<ast::node> &slot) -> bool {
+  auto *decl = ast::as<ast::static_decl>(slot.get());
+  if (decl == nullptr || decl->has_error) {
+    return false;
+  }
+  auto replacement = ast::ptr<ast::node>{};
+  switch (decl->decl_kind) {
+  case ast::static_decl_kind::conditional_compilation: {
+    if (decl->if_condition == nullptr ||
+        !reads_call_time_value(*decl->if_condition)) {
+      return false;
+    }
+    auto stmt = ast::make<ast::if_stmt>();
+    stmt->span = decl->span;
+    stmt->branches.push_back(ast::if_branch{
+        .span = decl->span,
+        .condition = std::move(decl->if_condition),
+        .let_pattern = nullptr,
+        .let_expr = nullptr,
+        .body = std::move(decl->if_body)});
+    stmt->else_body = std::move(decl->else_body);
+    replacement = std::move(stmt);
+    break;
+  }
+  case ast::static_decl_kind::for_block: {
+    if (decl->for_iterable == nullptr ||
+        !reads_call_time_value(*decl->for_iterable)) {
+      return false;
+    }
+    auto stmt = ast::make<ast::for_stmt>();
+    stmt->span = decl->span;
+    stmt->patterns = std::move(decl->for_patterns);
+    stmt->iterable = std::move(decl->for_iterable);
+    stmt->guard = std::move(decl->for_guard);
+    stmt->body = std::move(decl->for_body);
+    replacement = std::move(stmt);
+    break;
+  }
+  case ast::static_decl_kind::for_inline: {
+    if (decl->for_iterable == nullptr || decl->for_yield == nullptr ||
+        !reads_call_time_value(*decl->for_iterable)) {
+      return false;
+    }
+    auto comprehension = ast::make<ast::for_expr>();
+    comprehension->span = decl->span;
+    auto clause = ast::for_expr::iter_clause{};
+    for (auto &pattern : decl->for_patterns) {
+      clause.patterns.push_back(std::move(pattern));
+    }
+    clause.iterable = std::move(decl->for_iterable);
+    comprehension->clauses.push_back(std::move(clause));
+    comprehension->guard = std::move(decl->for_guard);
+    comprehension->yield_expr = std::move(decl->for_yield);
+    auto stmt = ast::make<ast::expr_stmt>();
+    stmt->span = decl->span;
+    stmt->expr = std::move(comprehension);
+    replacement = std::move(stmt);
+    break;
+  }
+  default:
+    return false;
+  }
+  session_.retired_static_nodes_.push_back(std::move(slot));
+  slot = std::move(replacement);
+  return true;
 }
 
 /// Recursively registers every top-level `static def` function and `type`

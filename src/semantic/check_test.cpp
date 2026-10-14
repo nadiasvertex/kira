@@ -1197,12 +1197,17 @@ auto test_accepts_static_generic_call_casts_to_bound_type_param() -> void {
 auto test_reports_static_for_evaluates_each_iteration() -> void {
   const auto analyzed =
       analyze_test_data_file("report_static_for_evaluates_each_iteration.cn");
-  expect(analyzed.error_count > 0,
-         "expected `static for` to actually iterate and evaluate its body "
-         "per element, catching the third-element assertion failure");
+  expect(analyzed.error_count == 2,
+         "expected exactly the two failing iterations to be reported, with "
+         "no error from checking the body before the loop variable has a "
+         "value:\n" +
+             analyzed.diagnostics);
   expect_diagnostic(
       analyzed, "should fail on the third element of the list",
       "expected the per-iteration `static assert` message for n == 3");
+  expect_diagnostic(analyzed, "should fail only for n == 7",
+                    "expected a nested `static for` to run per outer "
+                    "iteration, under the selected `static if` branch");
 }
 
 auto test_accepts_static_for_inline_as_function_tail() -> void {

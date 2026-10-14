@@ -1,5 +1,5 @@
 # inference snapshot
-# 2308 interned types
+# 2307 interned types
 
 ## node_types (31019)
 003_collections_lambdas.cn:3:14 [named_type] unit
@@ -36255,7 +36255,7 @@ zeros$3
 ## arena sizes
 synthesized_functor_nodes 0
 synthesized_types 108
-synthesized_fragments 31
+synthesized_fragments 26
 synthesized_const_literals 65
 elided_contracts 0
 
