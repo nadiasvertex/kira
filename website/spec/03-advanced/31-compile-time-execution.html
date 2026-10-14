@@ -69,8 +69,10 @@ compile-time reflection, <code>pure</code> functions, and
 quoting/splicing.</p>
 <p>There is no separate template or macro language. Compile-time code is
 ordinary Cinder — the same functions, loops, and pattern matching —
-evaluated by an interpreter (<code>src/comptime/eval.*</code>) rather
-than compiled to machine code. See <a
+checked, lowered and run on the bytecode VM
+(<code>src/comptime_vm</code>) with a step budget and no access outside
+the VM. Compile-time code the VM cannot run is reported as an error at
+the expression or call that needed it. See <a
 href="32-compile-time-semantics.html">Compile-Time Semantics</a> for the
 execution model this section’s constructs run inside.</p>
 <h2 id="static-bindings"><code>static</code> bindings</h2>
@@ -80,9 +82,9 @@ execution model this section’s constructs run inside.</p>
 static LIMIT: int32            = 1_000_000
 static TABLE: array[int32, 256] = build_lookup_table()</code></pre>
 <ul>
-<li>A <code>static</code> binding’s initializer is evaluated by the
-compile-time interpreter. Evaluation failure (an expression that is not
-closed, or that depends on runtime input) is a compile error.</li>
+<li>A <code>static</code> binding’s initializer is evaluated at compile
+time. Evaluation failure (an expression that is not closed, or that
+depends on runtime input) is a compile error.</li>
 <li><code>build_lookup_table</code> above is an ordinary function;
 nothing marks it <code>static</code> — the binding forces evaluation of
 whatever it calls.</li>
@@ -126,6 +128,13 @@ concrete type); the checker falls back to type-checking both branches in
 that case, and real branch selection happens per call, once
 <code>T</code> is concretely bound, via the same evaluator that runs the
 rest of the <code>static def</code>’s body.</li>
+<li>In a function body the condition may read an immutable
+<code>let</code> whose initializer is itself a compile-time value
+(<code>let n = T.name()</code> followed by
+<code>static if n == "int8"</code>). The initializer is evaluated when
+the condition reads it, against the bindings in scope where the
+<code>let</code> was written. A <code>let</code> whose initializer
+cannot be evaluated at compile time has no compile-time value.</li>
 </ul>
 <h2 id="static-assert"><code>static assert</code></h2>
 <pre class="cinder"><code>static assert size_of[T]() &lt;= 64, &quot;T must fit in a cache line&quot;</code></pre>
@@ -152,6 +161,43 @@ is generated per iteration, each with <code>field</code> bound to that
 iteration’s concrete value.</li>
 <li>An optional guard filters iterations:
 <code>static for x in xs if pred(x) =&gt; ...</code>.</li>
+<li>The inline form evaluates to a <code>list</code> of the yielded
+values, like a <code>for ... =&gt;</code> comprehension. In a function
+body the yield may use runtime values such as a parameter
+(<code>static for i in 0..3 =&gt; i + n</code>): it is unrolled to one
+copy per iteration, with the loop variable written in as that
+iteration’s constant. A loop variable used this way must be a number,
+boolean, string, or struct of those, such as a <code>field_info</code>.
+When the yield uses no runtime value and every yielded value has such a
+literal form, the list is computed at compile time instead. The element
+type is the yield’s type, else the type the context expects (such as a
+<code>-&gt; list[str]</code> return), else the type of the values. The
+inline form is also a value anywhere an expression is
+(<code>let names = static for f in T.fields() =&gt; f.name</code>, or a
+<code>for</code> iterable); the block form is a statement only.</li>
+<li>A <code>static for</code> over <code>T.fields()</code> binds its
+loop variable to a <code>field_info</code> (a <code>std.traits</code>
+struct with fields <code>name: str</code>, <code>type_name: str</code>,
+<code>is_data_member: bool</code>). This is what gives
+<code>f.name</code> the type <code>str</code> inside a generic body,
+before <code>T</code> is known.</li>
+<li>The block form in a function body runs its body once per iteration,
+with the loop variable a constant in each copy; the loop variable must
+have a literal form. A block <code>static for</code> inside another is
+unrolled once per outer iteration, so its iterable may read the outer
+loop’s variables (<code>static for i in 0..v.payload_count</code>).</li>
+<li>In a <code>static def</code>, a <code>static for</code> whose
+iterable reads a value known only when the call runs, such as a
+parameter, is an ordinary loop (or, in the inline form, a comprehension)
+that runs with the call. The same holds for a <code>static if</code>
+whose condition reads such a value: it is an ordinary <code>if</code>,
+and both branches are type-checked. A <code>static for</code> or
+<code>static if</code> that reads only types and compile-time values is
+still unrolled or decided while checking.</li>
+<li>At module level, the block form’s body holds compile-time
+declarations. It is checked once, and its <code>static assert</code>,
+<code>static if</code> and nested <code>static for</code> run once per
+iteration with the loop variable bound.</li>
 <li><code>static_decl_kind::for_inline</code> and
 <code>static_decl_kind::for_block</code> are the two AST forms
 (<code>ast.h:1836</code>); both are handled in
@@ -164,6 +210,15 @@ one code fragment per field.</li>
 <pre class="cinder"><code>T.fields()          # list of field descriptors
 T.field_count()     # number of fields (compile-time integer)
 T.name()            # name of the type as str</code></pre>
+<p>Each call has an ordinary type: <code>T.fields()</code> is a
+<code>list[field_info]</code>, <code>T.variants()</code> a
+<code>list[variant_info]</code>, <code>M.functions()</code> and
+<code>M.types()</code> a <code>list[member_info]</code>,
+<code>T.kind()</code> a <code>type_kind</code>, <code>T.name()</code> a
+<code>str</code>, and the counts <code>int32</code>. The descriptor
+types are structs in <code>std.traits</code>. On a concrete type each
+call is a constant, so its result can be kept, indexed and iterated in
+run-time code too.</p>
 <ul>
 <li>Reflection is implemented in <code>src/comptime/reflect.cpp</code>
 as a read-only traversal of the type’s already-parsed declaration syntax
@@ -258,6 +313,11 @@ reflection, this is how <code>deriving</code> works internally:</p>
             ~body`
 
 ~derive_show[point]()    # emits the impl at this point in the module</code></pre>
+<p>Item-level splices and <code>deriving</code> clauses run after every
+written <code>impl</code> is known. The <code>impl</code> each one
+produces is added to the program as it is made, so compile-time code a
+splice runs sees the written <code>impl</code>s and those earlier
+splices produced, but not those later splices produce.</p>
 <h3 id="hygiene">Hygiene</h3>
 <p>Quotes are hygienic by default: a plain (non-destructuring)
 <code>let</code>/<code>var</code> binding introduced <em>inside</em> a
@@ -295,6 +355,38 @@ assignments (<code>+=</code>, <code>-=</code>, <code>*=</code>,
 iterations; a loop that exceeds this is reported as one that never ends.
 A <code>static</code> whose initializer fails is reported once, and no
 module that refers to it is lowered.</li>
+<li>Method calls in compile-time code, on <code>str</code> values
+(<code>f.name.len() &gt; 1</code>, <code>s.trim()</code>,
+<code>s.find(x)</code>, <code>s.split(",")</code>, …) and on struct,
+sum-type, integer, and generic-instance values
+(<code>p.scaled(2).sum()</code>). The checker finds the method from the
+receiver expression’s checked type, and the evaluator runs its real
+body; for <code>str</code> that is <code>std.string</code>’s body,
+implementing the <code>rt_str_*</code> intrinsics with the same
+<code>src/runtime/string_ops</code> code the backends use.
+<code>str</code> also supports <code>&lt;</code>, <code>&lt;=</code>,
+<code>&gt;</code>, <code>&gt;=</code>, <code>+</code>, and
+<code>s[a .. b]</code>. A compile-time list has <code>len()</code>,
+<code>push(x)</code> on a local <code>var</code>, and
+<code>xs[a .. b]</code>. A receiver typed with a type parameter
+(<code>x.size()</code> with <code>x: T</code>) is callable: a
+compile-time call to a generic <code>static def</code>, implicit
+(<code>measure(b)</code>) or explicit (<code>measure[box3](b)</code>),
+binds its type parameters to the types the checker solved, and the
+method is found for that exact type. An unannotated <code>static</code>
+read before its declaration is checked takes its initializer’s type, so
+methods on it work. <code>std.unicode</code>’s casing
+(<code>to_uppercase</code>, <code>to_lowercase</code>,
+<code>fold_case</code>, <code>eq_ignore_case</code>) also runs. Shared
+references (<code>&amp;x</code>) and dereferences (<code>*r</code>) read
+as the value itself, since compile-time values are immutable;
+<code>&amp;mut</code> is rejected. Compile-time code can call prelude
+functions (<code>binary_search</code>, <code>partition_point</code>, …)
+and write and call lambdas, which capture the enclosing locals by value,
+as both backends do; an explicit
+<code>&amp;</code>/<code>&amp;mut</code> capture is rejected. An error
+inside another file, such as the standard library, carries a note at the
+user’s own call.</li>
 <li>Compile-time reflection (<code>T.fields()</code>,
 <code>T.field_count()</code>, <code>T.name()</code>) —
 <code>src/comptime/reflect.cpp</code> for <code>static</code> contexts.

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>64-proof-solving</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">64-proof-solving</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#proof-solving" id="toc-proof-solving">64. Proof
+Solving</a>
+<ul>
+<li><a href="#role" id="toc-role">Role</a></li>
+<li><a href="#the-solver" id="toc-the-solver">The solver</a></li>
+<li><a href="#from-source-to-constraints"
+id="toc-from-source-to-constraints">From source to constraints</a></li>
+<li><a href="#facts-along-a-function"
+id="toc-facts-along-a-function">Facts along a function</a></li>
+<li><a href="#outcomes" id="toc-outcomes">Outcomes</a></li>
+<li><a href="#try_from-proofs"
+id="toc-try_from-proofs"><code>try_from</code> proofs</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="proof-solving">64. Proof Solving</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>How the reference compiler proves facts about values it does not
+know: the solver’s fragment, how source predicates reach it, how facts
+accumulate along a function, and what a proof changes in the compiled
+program.</p>
+<h2 id="role">Role</h2>
+<p>Compile time has two machineries (<a
+href="../03-advanced/32-compile-time-semantics.html">Compile-Time
+Semantics</a>). Evaluation runs code on known values; see <a
+href="65-compile-time-execution-in-the-compiler.html">Compile-Time
+Execution in the Compiler</a>. Reasoning proves facts about unknown
+values. The reasoning engine discharges refinement predicates,
+dependent-type obligations,
+<code>pre</code>/<code>post</code>/<code>invariant</code> conditions,
+and index bounds. It decides one question: whether a set of facts
+entails a goal.</p>
+<h2 id="the-solver">The solver</h2>
+<p>The solver (<code>src/semantic/reason.h</code>,
+<code>reason.cpp</code>) works in quantifier-free linear integer
+arithmetic over uninterpreted atoms.</p>
+<ul>
+<li>A <strong>constraint</strong> is a linear polynomial related to zero
+by <code>==</code>, <code>!=</code>, or <code>&gt;=</code>. Other
+comparisons normalize to these; <code>&gt;</code> becomes
+<code>&gt;= 1</code> because the domain is the integers.</li>
+<li>An <strong>atom</strong> is anything the solver does not interpret:
+a name, a field projection such as <code>x.len</code>, or a call such as
+<code>len(v)</code>. Two occurrences of the same atom are the same
+unknown.</li>
+<li>A <strong>goal</strong> is in disjunctive normal form. Disjunction
+only comes from a predicate the user wrote with <code>or</code>.</li>
+<li>The decision procedure is Fourier-Motzkin elimination over the
+rationals. If the facts plus the negated goal have no rational solution,
+the goal is <strong>proved</strong>. If the facts plus the goal have
+none, it is <strong>refuted</strong>. Otherwise the answer is
+<strong>unknown</strong>.</li>
+</ul>
+<p>Both definite answers are sound, because no rational solution implies
+no integer solution. The procedure is incomplete in the other direction,
+which is where <code>unknown</code> comes from. The solver always
+terminates: it has no search, timeout, or configuration. Obligations
+with more than a fixed number of atoms, or that grow too many
+intermediate constraints, are answered <code>unknown</code> rather than
+risk exponential time.</p>
+<p>Each constraint keeps the source spelling it came from, so a failed
+proof can show what was known and what was needed in the user’s own
+terms.</p>
+<h2 id="from-source-to-constraints">From source to constraints</h2>
+<p><code>predicates.cpp</code> translates source expressions into solver
+terms. A predicate becomes a goal when it must be proved and a fact set
+when it may be assumed. The parts outside the linear fragment are
+handled differently in each case: an unrepresentable goal cannot be
+proved, and an unrepresentable fact is dropped. Translation applies a
+substitution, because a predicate is written about <code>self</code> and
+the declaring type’s value parameters. For example,
+<code>index[n]</code>’s <code>self &lt; n</code>, applied to argument
+<code>i</code> in a function with its own <code>n</code>, becomes the
+goal <code>i &lt; n</code>. One polynomial builder
+(<code>linear_poly</code>) serves both the proof engine and the value
+solver.</p>
+<h2 id="facts-along-a-function">Facts along a function</h2>
+<p>The narrowing engine (<code>narrowing.cpp</code>) tracks which facts
+hold at each point in a function body. Facts come from parameter
+refinements and domains (a <code>usize</code> is <code>&gt;= 0</code>),
+earlier <code>pre</code> conditions, <code>let</code> bindings with
+known values, and branch conditions. A fact is visible exactly in the
+region its source dominates: a branch’s condition holds only inside that
+branch, and the fact set shrinks back when the region ends. When a value
+is assigned, facts about it are dropped. The engine holds no checker
+state and emits no diagnostics; it returns the pieces a diagnostic needs
+and the checker words the message.</p>
+<h2 id="outcomes">Outcomes</h2>
+<ul>
+<li><strong>Proved.</strong> The obligation is discharged. A narrowing
+coercion to a refined type is accepted. An index proved in bounds has
+its run-time check removed. A contract proved on every call emits no
+check at all.</li>
+<li><strong>Refuted.</strong> The code is wrong on every execution that
+reaches it. This is always an error.</li>
+<li><strong>Unknown.</strong> For a refinement, the checker reports what
+it needed and what it knew, and points at the two remedies: add a fact
+the solver can use, or convert at run time with <code>try_from</code>.
+For a contract, lowering emits a run-time check that panics on
+violation, unless contract checks are turned off with
+<code>--no-contract-checks</code> (<a
+href="../03-advanced/34-contracts.html">Contracts</a>).</li>
+</ul>
+<h2 id="try_from-proofs"><code>try_from</code> proofs</h2>
+<p><code>T.try_from(x)</code> for a refined <code>T</code> is a run-time
+proof. <code>try_from_proof.cpp</code> rewrites it into ordinary code
+that binds <code>x</code>, tests the refinement’s predicate with
+<code>self</code> and the value parameters replaced by the actual value
+and constants, and produces <code>@some(x)</code> or <code>@none</code>.
+The checker types the rewritten tree like any other code. Inside the
+<code>@some</code> arm the predicate is a fact, so later obligations can
+use it. When a value parameter is still open (inside a generic over
+<code>n</code>), the check is generated per instance.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a
+href="../03-advanced/33-dependent-and-refinement-types.html">Dependent
+and Refinement Types</a></li>
+<li><a href="../03-advanced/34-contracts.html">Contracts</a></li>
+</ul>
+</body>
+</html>

@@ -12,6 +12,7 @@ The specification is organized in three layered sections, followed by a standard
 - **Intermediate** (`02-intermediate/`) — ownership and borrowing, traits and generics, and async concurrency. Needed for library code and concurrent programs.
 - **Advanced** (`03-advanced/`) — compile-time execution, dependent and refinement types, contracts, concepts, modules as compile-time values, and the low-level `machine` layer.
 - **Standard Library** (`04-stdlib/`) — the modules that ship with the compiler: collections, algorithms, string/formatting, I/O/platform, type traits/limits/meta queries, and unit testing.
+- **Implementation** (`05-implementation/`) — informative, not normative: a sketch of how the reference compiler is structured. The language does not require this architecture.
 
 A later section never needs to be understood to use an earlier one. Within a section, each chapter is a single language or library feature, keeping the specification's chapters small and independently addressable — the goal, per the project's structuring intent, is that both a human and an LLM can find a specific rule without loading unrelated context.
 
@@ -113,6 +114,18 @@ Each chapter opens with a status line:
 **Testing** (`04-stdlib/testing/`)
 
 61. [Unit Testing (`std.test`)](04-stdlib/testing/61-std-test.md) — Partial
+
+### Implementation (`05-implementation/`)
+
+Informative. Describes the reference compiler, not requirements on the language.
+
+62. [Compiler Structure](05-implementation/62-compiler-structure.md)
+63. [Type Checking and Inference](05-implementation/63-type-checking-and-inference.md)
+64. [Proof Solving](05-implementation/64-proof-solving.md)
+65. [Compile-Time Execution in the Compiler](05-implementation/65-compile-time-execution-in-the-compiler.md)
+66. [HIR and the Bytecode VM](05-implementation/66-hir-and-bytecode-vm.md)
+67. [LLVM and Ahead-of-Time Compilation](05-implementation/67-llvm-and-aot.md)
+68. [JIT Execution](05-implementation/68-jit-execution.md) — Partial
 
 ## Diagnostics
 

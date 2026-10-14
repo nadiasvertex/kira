@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>63-type-checking-and-inference</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">63-type-checking-and-inference</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#type-checking-and-inference"
+id="toc-type-checking-and-inference">63. Type Checking and Inference</a>
+<ul>
+<li><a href="#the-checker" id="toc-the-checker">The checker</a></li>
+<li><a href="#the-inference-engine" id="toc-the-inference-engine">The
+inference engine</a></li>
+<li><a href="#generics" id="toc-generics">Generics</a></li>
+<li><a href="#stability-checks" id="toc-stability-checks">Stability
+checks</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="type-checking-and-inference">63. Type Checking and
+Inference</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>How the reference compiler checks types: the checker’s phases, the
+inference engine it is built on, how generics are checked and
+instantiated, and what the checker hands to later stages.</p>
+<h2 id="the-checker">The checker</h2>
+<p>The checker (<code>src/semantic/check*.cpp</code>) is one class that
+walks every module in a session. Its output, <code>checked_types</code>,
+is a set of side tables keyed by AST node: the type of every expression,
+the function or instance every call resolved to, operator and index
+dispatch, literal conversions, generic instances, elided checks, and
+drop plans. HIR lowering reads these tables; it never re-infers
+anything.</p>
+<p>A session runs in this order:</p>
+<ol type="1">
+<li>Register <code>static def</code> functions and decide which
+bracketed parameters are bounded type parameters and which are value
+parameters.</li>
+<li>Materialize parameterized-module (functor) instantiations, so the
+<code>impl</code>s and <code>extend</code>s they declare exist before
+the method table is built.</li>
+<li>Build the method table and check impl coherence (<a
+href="../02-intermediate/21-coherence-and-orphan-rule.html">Coherence
+and the Orphan Rule</a>).</li>
+<li>Run item-level splices and <code>deriving</code> clauses. These
+execute compile-time code, which may check functions out of order; each
+<code>impl</code> they produce is added to the method table and
+coherence records as it is made.</li>
+<li>Check functor bodies, then each file in turn. After each file, the
+generic instances that file asked for are made, so their diagnostics
+appear next to the code that caused them.</li>
+<li>Make any remaining instances and settle any results still open.</li>
+</ol>
+<h2 id="the-inference-engine">The inference engine</h2>
+<p>Inference lives in <code>src/semantic/infer/</code> as a set of
+small, separately tested parts.</p>
+<ul>
+<li><strong>Metavariable store</strong> (<code>infer_ctxt</code>). One
+union-find over type ids holds every unknown, whatever it ranges over: a
+type, a type constructor of known arity (the <code>F</code> in
+<code>functor[F]</code>), or a compile-time value (the <code>n</code> in
+<code>vec[T, n]</code>). Generic parameters, const generics, and
+higher-kinded heads therefore share one mechanism. The store also
+records a cause for each constraint.</li>
+<li><strong>Unifier</strong> (<code>unify</code>). Applies three rules
+in order. Two rigid types unify structurally, and different constructors
+are a mismatch. A variable-headed application such as
+<code>F[A] ~ option[int32]</code> solves by matching the outermost
+nominal constructor, which keeps higher-kinded inference decidable with
+one most-general answer (<a
+href="../03-advanced/37-higher-kinded-traits.html">Higher-Kinded
+Traits</a>). Value slots such as <code>vec[T, n + 1] ~ vec[T, 3]</code>
+go to the value solver. A constraint outside these rules is postponed,
+not failed, because its shape may still become known.</li>
+<li><strong>Value solver</strong> (<code>value_solver</code>). Decides
+and solves a single linear equation over integers. It distinguishes
+flexible variables (the callee’s <code>n</code>, which the call
+determines) from rigid ones (the caller’s own <code>m</code>, fixed but
+unknown). So <code>n + 1 = m + 1</code> solves to
+<code>n := m</code>.</li>
+<li><strong>Obligation queue</strong> (<code>obligations</code>). Method
+resolution, trait selection and refinement narrowing are decisions that
+may need to wait until a type is known. They share one queue: each
+obligation is retried when something it depends on is solved, and
+reported if it never can be.</li>
+<li><strong>Blame</strong> (<code>blame</code>). Constraints are kept
+after they are solved. When constraints disagree, blame chooses which
+one is the mistake by majority (four branches say <code>int32</code> and
+one says <code>str</code>, so the <code>str</code> branch is reported)
+and builds the message from the decisions that led there. A golden
+corpus of wrong programs
+(<code>src/testdata/inference_diagnostics/</code>) fixes the expected
+messages.</li>
+</ul>
+<p>Integer and float literals start as open leaves and settle from the
+context that demands them. Demand is scoped: an operand of
+<code>==</code> or <code>&lt;</code> ties to the other operand, but an
+expected type alone never forces a leaf.</p>
+<h2 id="generics">Generics</h2>
+<p>A generic function is checked once, against its declared bounds (<a
+href="../02-intermediate/19-generics-and-inference.html">Generics and
+Inference</a>). Inside the body, a type parameter is opaque except for
+what its <code>where</code> bounds and any enclosing
+<code>static if</code> provide. Bounds are enforced at each call site,
+so an error points at the call that violates them rather than inside the
+generic body.</p>
+<p>Each call names an instance: the template plus the concrete types and
+constants it was solved with (for example <code>get$3</code>). The
+instance queue (<code>instance_queue.cpp</code>) decides when each
+instance is made. Most are made by substitution: the instance copies the
+template’s checked records with its parameters replaced, and replays
+only the decisions that depended on a type parameter
+(<code>instance_substitution.cpp</code>). Each backend then compiles
+every instance as an ordinary concrete function. There is no runtime
+polymorphism for generics; <code>box[trait]</code> and trait objects are
+the explicit exception (<a
+href="../02-intermediate/24-trait-objects.html">Trait Objects</a>).</p>
+<h2 id="stability-checks">Stability checks</h2>
+<p><code>snapshot.cpp</code> renders every elaboration decision in
+<code>checked_types</code> as stable text ordered by source position. A
+test diffs this snapshot, so a change that silently resolves a call to a
+different instance is caught even when every program still compiles.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="64-proof-solving.html">Proof Solving</a> — the reasoning
+engine the checker calls for refinements and contracts.</li>
+<li><a
+href="65-compile-time-execution-in-the-compiler.html">Compile-Time
+Execution in the Compiler</a> — how the checker runs code while
+checking.</li>
+</ul>
+</body>
+</html>

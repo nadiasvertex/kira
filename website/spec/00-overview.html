@@ -52,6 +52,9 @@ id="toc-advanced-03-advanced">Advanced
 <li><a href="#standard-library-04-stdlib"
 id="toc-standard-library-04-stdlib">Standard Library
 (<code>04-stdlib/</code>)</a></li>
+<li><a href="#implementation-05-implementation"
+id="toc-implementation-05-implementation">Implementation
+(<code>05-implementation/</code>)</a></li>
 </ul></li>
 <li><a href="#diagnostics" id="toc-diagnostics">Diagnostics</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
@@ -84,6 +87,9 @@ layer.</li>
 modules that ship with the compiler: collections, algorithms,
 string/formatting, I/O/platform, type traits/limits/meta queries, and
 unit testing.</li>
+<li><strong>Implementation</strong> (<code>05-implementation/</code>) —
+informative, not normative: a sketch of how the reference compiler is
+structured. The language does not require this architecture.</li>
 </ul>
 <p>A later section never needs to be understood to use an earlier one.
 Within a section, each chapter is a single language or library feature,
@@ -259,6 +265,27 @@ Queries</a></li>
 <ol start="61" type="1">
 <li><a href="04-stdlib/testing/61-std-test.html">Unit Testing
 (<code>std.test</code>)</a> — Partial</li>
+</ol>
+<h3 id="implementation-05-implementation">Implementation
+(<code>05-implementation/</code>)</h3>
+<p>Informative. Describes the reference compiler, not requirements on
+the language.</p>
+<ol start="62" type="1">
+<li><a href="05-implementation/62-compiler-structure.html">Compiler
+Structure</a></li>
+<li><a href="05-implementation/63-type-checking-and-inference.html">Type
+Checking and Inference</a></li>
+<li><a href="05-implementation/64-proof-solving.html">Proof
+Solving</a></li>
+<li><a
+href="05-implementation/65-compile-time-execution-in-the-compiler.html">Compile-Time
+Execution in the Compiler</a></li>
+<li><a href="05-implementation/66-hir-and-bytecode-vm.html">HIR and the
+Bytecode VM</a></li>
+<li><a href="05-implementation/67-llvm-and-aot.html">LLVM and
+Ahead-of-Time Compilation</a></li>
+<li><a href="05-implementation/68-jit-execution.html">JIT Execution</a>
+— Partial</li>
 </ol>
 <h2 id="diagnostics">Diagnostics</h2>
 <p>Cinder’s compiler treats diagnostics as part of the language’s

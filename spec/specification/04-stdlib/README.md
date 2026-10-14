@@ -11,4 +11,4 @@ The modules that ship with the compiler: collections, algorithms, string/formatt
 - [Type Traits](type-traits/README.md) — `std.traits`, `std.limits`, meta queries
 - [Testing](testing/README.md) — `std.test`
 
-Previous: [Advanced](../03-advanced/README.md)
+Previous: [Advanced](../03-advanced/README.md) · Next: [Implementation](../05-implementation/README.md)

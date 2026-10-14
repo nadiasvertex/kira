@@ -80,11 +80,11 @@ the string list — see <a href="#implementation-status">Implementation
 status</a>.</p>
 <h2 id="type-predicates">Type predicates</h2>
 <p>Each predicate is a
-<code>static pure def name[T]() -&gt; bool</code>, evaluated by the
-compile-time interpreter and usable anywhere a compile-time
-<code>bool</code> is (<code>static if</code>,
-<code>static assert</code>, a <code>concept</code> value-constraint
-clause, an ordinary generic body per <a
+<code>static pure def name[T]() -&gt; bool</code>, evaluated at compile
+time and usable anywhere a compile-time <code>bool</code> is
+(<code>static if</code>, <code>static assert</code>, a
+<code>concept</code> value-constraint clause, an ordinary generic body
+per <a
 href="../../03-advanced/31-compile-time-execution.html#compile-time-reflection">Compile-Time
 Execution § reflection</a>).</p>
 <table>

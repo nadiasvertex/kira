@@ -117,10 +117,11 @@ about <em>phase</em>. They do not collapse into one axis.</p>
 evaluation and reasoning</h2>
 <p>Compile time has two distinct machineries.</p>
 <ul>
-<li><strong>Evaluation</strong> (<code>src/comptime/eval.*</code>) is an
-interpreter that runs ordinary Cinder — loops, functions, pattern
-matching — on <strong>known</strong> values to produce compile-time
-values. <code>build_lookup_table()</code>, <code>deriving</code>, and
+<li><strong>Evaluation</strong> runs ordinary Cinder — loops, functions,
+pattern matching — on <strong>known</strong> values to produce
+compile-time values. The checker lowers compile-time code to HIR and
+runs it on the bytecode VM, the same lowering run-time code uses.
+<code>build_lookup_table()</code>, <code>deriving</code>, and
 quote/splice construction are all evaluation.</li>
 <li><strong>Reasoning</strong> (<code>src/semantic/reason.*</code>) is
 the constraint solver that discharges refinement predicates, contract

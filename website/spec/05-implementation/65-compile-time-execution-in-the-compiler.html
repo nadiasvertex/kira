@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>65-compile-time-execution-in-the-compiler</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">65-compile-time-execution-in-the-compiler</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#compile-time-execution-in-the-compiler"
+id="toc-compile-time-execution-in-the-compiler">65. Compile-Time
+Execution in the Compiler</a>
+<ul>
+<li><a href="#what-runs-at-compile-time"
+id="toc-what-runs-at-compile-time">What runs at compile time</a></li>
+<li><a href="#one-executor" id="toc-one-executor">One executor</a></li>
+<li><a href="#how-a-compile-time-call-runs"
+id="toc-how-a-compile-time-call-runs">How a compile-time call
+runs</a></li>
+<li><a href="#limits-on-a-compile-time-run"
+id="toc-limits-on-a-compile-time-run">Limits on a compile-time
+run</a></li>
+<li><a href="#consistency-with-the-final-program"
+id="toc-consistency-with-the-final-program">Consistency with the final
+program</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="compile-time-execution-in-the-compiler">65. Compile-Time
+Execution in the Compiler</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>How the reference compiler runs compile-time code: it lowers that
+code to HIR and executes it on the same bytecode VM that runs programs,
+in the middle of type checking.</p>
+<h2 id="what-runs-at-compile-time">What runs at compile time</h2>
+<p>Compile-time code includes <code>static let</code> initializers,
+<code>static assert</code> and <code>static if</code> conditions,
+<code>static for</code> iterables, splice operands, item-level splices,
+<code>deriving</code> clauses, and calls to <code>static def</code>
+functions (<a
+href="../03-advanced/31-compile-time-execution.html">Compile-Time
+Execution</a>). Each of these produces a value the checker needs before
+it can continue: a constant that appears in a type, a branch to keep, or
+syntax to splice in.</p>
+<h2 id="one-executor">One executor</h2>
+<p>Compile-time code is not interpreted from the AST. It goes through
+the same path as run-time code: check, lower to HIR, compile to
+bytecode, run on the VM. The language’s semantics are therefore
+implemented in one lowering and two backends, and compile-time results
+cannot drift from run-time results.</p>
+<h2 id="how-a-compile-time-call-runs">How a compile-time call runs</h2>
+<p>The checker cannot call HIR lowering or the VM directly, because both
+depend on the checker’s output. Two interfaces in
+<code>src/semantic/comptime_backend.h</code> break the cycle:</p>
+<ul>
+<li>The checker implements <code>comptime_program</code>. It hands out
+checked functions ready to lower, checking a function out of turn if
+compile-time code reaches it before the checker’s normal walk does.</li>
+<li><code>src/comptime_vm/</code> implements
+<code>comptime_backend</code>. It lowers the callee and every function
+its lowered code names, compiles them into one bytecode module, and runs
+it.</li>
+</ul>
+<p>A compile-time expression that is not a call, such as a
+<code>static assert</code> condition, is lowered as the body of a
+synthetic function. Names it reads from its surroundings, such as a
+<code>static for</code> loop variable or a type parameter, are passed in
+as parameters.</p>
+<p>Arguments and results cross the boundary through
+<code>src/comptime_vm/values.cpp</code>. Each conversion is given the
+type the checker assigned, and builds or reads the VM’s representation
+using the same heap layout compiled code uses. Integers, floats,
+<code>bool</code>, <code>char</code>, <code>unit</code>,
+<code>str</code>, tuples, arrays, <code>list[T]</code>, structs, sum
+types, <code>option</code>, and <code>result</code> convert in any
+nesting. Quoted syntax (<code>expr</code>, <code>stmt</code>, and
+related types) is held by handle.</p>
+<h2 id="limits-on-a-compile-time-run">Limits on a compile-time run</h2>
+<ul>
+<li><strong>No effects.</strong> A compile-time run uses the VM’s hosted
+mode with effects disallowed. It cannot perform I/O or reach anything
+outside the VM.</li>
+<li><strong>Step budget.</strong> A run stops with a diagnostic when it
+exceeds a fixed step budget. The diagnostic says this usually means a
+loop or recursion that never ends.</li>
+<li><strong>Host calls for syntax.</strong> Building quoted syntax and
+calling the <code>expr.*</code> builders are host calls
+(<code>op_host_call</code>) from the VM back into the compiler.
+<code>src/comptime/fragments.cpp</code> builds the nodes, and
+<code>src/comptime/hygiene.cpp</code> renames bindings introduced inside
+a quote so a splice cannot capture names at the splice site.</li>
+<li><strong>Unsupported conversions fail closed.</strong> A value whose
+type has no conversion yet (closures, slices, types as values) produces
+an error naming the type.</li>
+</ul>
+<h2 id="consistency-with-the-final-program">Consistency with the final
+program</h2>
+<p>A compile-time run lowers functions while checking is still in
+progress, from the checker’s records at that moment. Setting
+<code>CINDER_COMPTIME_VERIFY</code> makes the driver re-lower every
+function that ran at compile time from the final results and report any
+difference. This checks that the checker’s mid-session view held every
+record lowering reads.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="../03-advanced/32-compile-time-semantics.html">Compile-Time
+Semantics</a> — the language-level evaluation model.</li>
+<li><a href="66-hir-and-bytecode-vm.html">HIR and the Bytecode VM</a> —
+the VM these runs use.</li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.11" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>68-jit-execution</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">68-jit-execution</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#jit-execution" id="toc-jit-execution">68. JIT
+Execution</a>
+<ul>
+<li><a href="#what-exists" id="toc-what-exists">What exists</a></li>
+<li><a href="#what-is-planned" id="toc-what-is-planned">What is
+planned</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="jit-execution">68. JIT Execution</h1>
+<p><strong>Status:</strong> Partial</p>
+<p>How the reference compiler runs LLVM-generated code in-process. A
+just-in-time path exists and is used to test the LLVM backend. A tiered
+JIT that promotes hot VM code to native code is designed but not
+built.</p>
+<h2 id="what-exists">What exists</h2>
+<p><code>src/llvm_codegen/jit_support.cpp</code> wraps LLVM’s ORC
+<code>LLJIT</code>. It takes a module produced by LLVM code generation
+(<a href="67-llvm-and-aot.html">LLVM and Ahead-of-Time Compilation</a>),
+adds it to a JIT session, resolves runtime symbols such as the panic and
+allocation entry points from the host process, and calls a zero-argument
+entry function.</p>
+<p>This path is used by <code>codegen_test</code> and the codegen stress
+test. They run each program on the bytecode VM and through the JIT and
+compare results, so the LLVM backend is checked by execution without
+linking an executable for every test case. The JIT runs the same IR,
+with the same runtime and layout rules, that <code>--compile</code>
+writes to an object file.</p>
+<h2 id="what-is-planned">What is planned</h2>
+<p>The planned design is a tiered runtime:</p>
+<ul>
+<li>Programs start on the bytecode VM.</li>
+<li>The VM counts calls to each function. A function that crosses a
+threshold is compiled through LLVM in the background.</li>
+<li>When native code is ready, the function’s dispatch slot is swapped
+to point at it, so later calls from both tiers go to native code.</li>
+<li>Both tiers share the runtime library, heap layout and panic reasons,
+so a value created in one tier is valid in the other.</li>
+</ul>
+<p>None of this is wired into the command-line driver. There are no call
+counters, no dispatch-slot swap, and no interaction between the JIT and
+the VM at run time. A program today runs entirely on the VM
+(<code>cinder FILE</code>) or entirely as native code
+(<code>cinder --compile FILE</code>).</p>
+<h2 id="implementation-status">Implementation status</h2>
+<ul>
+<li>Implemented: in-process execution of LLVM output through ORC
+<code>LLJIT</code>, used for backend testing.</li>
+<li>Not implemented: tier-up from the VM, call counting, dispatch-slot
+replacement, and any command-line option to run a program through the
+JIT.</li>
+</ul>
+</body>
+</html>

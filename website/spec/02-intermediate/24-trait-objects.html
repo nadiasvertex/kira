@@ -172,7 +172,7 @@ or returning</em> values whose types are not known together.</p>
 <li><code>some trait</code> (general existential return types)
 <strong>is implemented</strong>:
 <code>semantic::type_kind::existential_kind</code>
-(<code>src/semantic/types.h</code>/<code>.cpp</code>), minted via
+(<code>src/semantic/type_table.h</code>/<code>.cpp</code>), minted via
 <code>type_table::fresh_existential</code> and resolved by
 <code>resolve_existential_type</code>; method calls on an opaque-typed
 receiver are checked against the bound traits’ declared methods and
