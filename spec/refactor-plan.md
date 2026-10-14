@@ -233,12 +233,15 @@ not started.
     template) and lowering emits the body once per iteration. This also
     makes it usable in run-time code, which it was not before. An inline
     `static for` in a compile-time-only function is unrolled the same way.
+    A block `static for` inside another is unrolled once per outer
+    iteration, so its iterable may read the outer loop's variables.
+  - `deriving` and item-level splices run on the VM. They now run after the
+    method table and coherence records for the written `impl`s are built,
+    and each `impl` they produce is added to both as it is made. Compile-time
+    code a splice runs does not see the `impl`s later splices produce. A
+    derive runs the checked instance `derive_<trait>[T]` for the type, so
+    the AST cloner now copies quotes and splices.
 - Phase 4, not done:
-  - `deriving` and item-level splices run in a pre-pass that must finish
-    before the method table is built, because their results add `impl`
-    blocks. The VM needs checked code, and checking needs the method table,
-    so these stay interpreted. The likely fix is a method table built in
-    two stages: every written `impl` first, then the spliced ones.
   - Every immutable `let` in ordinary code is probed with the interpreter
     to see whether it is a compile-time constant, so a later `static if`
     can read it. That should become a lazy evaluation of the `let`'s

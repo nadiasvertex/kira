@@ -1,0 +1,26 @@
+module main
+
+# An item-level splice runs on the VM (only the VM has `is_empty`). The
+# `impl` it builds is added to the method table after the written ones, and
+# `main` calls through it.
+
+trait answer:
+    def answer(self) -> int32
+
+type box = { value: int32 }
+
+static def make_impl(xs: list[int32]) -> def_expr:
+    if xs.is_empty():
+        return `(impl answer for box:
+            def answer(self) -> int32:
+                return 0)`
+    let extra: expr = expr.lit(xs[0])
+    return `(impl answer for box:
+        def answer(self) -> int32:
+            return self.value + ~extra)`
+
+~make_impl([2, 3])
+
+def main() -> int32:
+    let b = box{ value: 40 }
+    return b.answer()

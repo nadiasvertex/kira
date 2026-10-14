@@ -16,7 +16,7 @@ static LIMIT: int32            = 1_000_000
 static TABLE: array[int32, 256] = build_lookup_table()
 ```
 
-- A `static` binding's initializer is evaluated by the compile-time interpreter. Evaluation failure (an expression that is not closed, or that depends on runtime input) is a compile error.
+- A `static` binding's initializer is evaluated at compile time. Evaluation failure (an expression that is not closed, or that depends on runtime input) is a compile error.
 - `build_lookup_table` above is an ordinary function; nothing marks it `static` — the binding forces evaluation of whatever it calls.
 - The result is reified: frozen, immutable data baked into the binary. See [Compile-Time Semantics § Compile-Time Memory](32-compile-time-semantics.md#compile-time-memory).
 - A `static` item may also appear inside a `trait`/`impl` body as a required or provided constant (`check.cpp`'s trait-item handling for `static_decl`).
@@ -64,7 +64,7 @@ static for field in T.fields():
 - An optional guard filters iterations: `static for x in xs if pred(x) => ...`.
 - The inline form evaluates to a `list` of the yielded values, like a `for ... =>` comprehension. In a function body the yield may use runtime values such as a parameter (`static for i in 0..3 => i + n`): it is unrolled to one copy per iteration, with the loop variable written in as that iteration's constant. A loop variable used this way must be a number, boolean, string, or struct of those, such as a `field_info`. When the yield uses no runtime value and every yielded value has such a literal form, the list is computed at compile time instead. The element type is the yield's type, else the type the context expects (such as a `-> list[str]` return), else the type of the values. The inline form is also a value anywhere an expression is (`let names = static for f in T.fields() => f.name`, or a `for` iterable); the block form is a statement only.
 - A `static for` over `T.fields()` binds its loop variable to a `field_info` (a `std.traits` struct with fields `name: str`, `type_name: str`, `is_data_member: bool`). This is what gives `f.name` the type `str` inside a generic body, before `T` is known.
-- The block form in a function body runs its body once per iteration, with the loop variable a constant in each copy; the loop variable must have a literal form.
+- The block form in a function body runs its body once per iteration, with the loop variable a constant in each copy; the loop variable must have a literal form. A block `static for` inside another is unrolled once per outer iteration, so its iterable may read the outer loop's variables (`static for i in 0..v.payload_count`).
 - `static_decl_kind::for_inline` and `static_decl_kind::for_block` are the two AST forms (`ast.h:1836`); both are handled in `check.cpp:15145`–`15211`.
 - This is the mechanism `deriving` is built from: reflect over a type's fields, unroll, and (typically combined with quoting) emit one code fragment per field.
 
@@ -152,6 +152,8 @@ static def derive_show[T]() -> def_expr:
 
 ~derive_show[point]()    # emits the impl at this point in the module
 ```
+
+Item-level splices and `deriving` clauses run after every written `impl` is known. The `impl` each one produces is added to the program as it is made, so compile-time code a splice runs sees the written `impl`s and those earlier splices produced, but not those later splices produce.
 
 ### Hygiene
 

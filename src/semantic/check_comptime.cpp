@@ -651,9 +651,38 @@ auto checker::record_static_for_block(const ast::static_decl &decl) -> void {
 
 auto checker::unroll_static_for_block(const ast::static_decl &decl,
                                       bool silent) -> void {
+  if (auto unrolled = static_for_block_iterations(decl, silent)) {
+    cache_.static_for_iterations_.insert_or_assign(&decl, std::move(*unrolled));
+  }
+}
+
+/// A block `static for`'s iterations, each with the block `static for`s
+/// directly inside its body unrolled under its bindings. `nullopt` when one
+/// of them cannot be unrolled.
+auto checker::static_for_block_iterations(const ast::static_decl &decl,
+                                          bool silent)
+    -> std::optional<std::vector<static_for_iteration>> {
   const auto iterations = evaluate_static_for_inline(decl, silent);
   if (!iterations.has_value()) {
-    return;
+    return std::nullopt;
+  }
+  auto inner = std::vector<const ast::static_decl *>{};
+  for (const auto &node : decl.for_body) {
+    if (node == nullptr) {
+      continue;
+    }
+    ast::walk(*node, [&](const ast::node &child) -> bool {
+      if (child.kind == ast::node_kind::func_decl) {
+        return false;
+      }
+      if (const auto *nested = ast::as<const ast::static_decl>(&child);
+          nested != nullptr &&
+          nested->decl_kind == ast::static_decl_kind::for_block) {
+        inner.push_back(nested);
+        return false;
+      }
+      return true;
+    });
   }
   const auto bindings = collect_pattern_bindings(*decl.for_patterns[0]);
   auto unrolled = std::vector<static_for_iteration>{};
@@ -671,13 +700,25 @@ auto checker::unroll_static_for_block(const ast::static_decl &decl,
       // A loop variable with no literal form (a list) cannot be written
       // into each copy of the body; the loop is not unrolled.
       if (literal == nullptr) {
-        return;
+        return std::nullopt;
       }
       iteration.bindings.emplace_back(binding.name, literal);
     }
+    if (!inner.empty()) {
+      comptime_eval_.push_locals(scope);
+      for (const auto *nested : inner) {
+        auto nested_iterations = static_for_block_iterations(*nested, silent);
+        if (!nested_iterations.has_value()) {
+          comptime_eval_.pop_locals();
+          return std::nullopt;
+        }
+        iteration.nested.emplace_back(nested, std::move(*nested_iterations));
+      }
+      comptime_eval_.pop_locals();
+    }
     unrolled.push_back(std::move(iteration));
   }
-  cache_.static_for_iterations_.insert_or_assign(&decl, std::move(unrolled));
+  return unrolled;
 }
 
 auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
@@ -804,7 +845,11 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
       cache_.static_for_yields_.pop_back();
       cache_.static_for_yield_types_.insert_or_assign(&decl, yield_type);
     }
+    const auto block_in_body =
+        in_body && decl.decl_kind == ast::static_decl_kind::for_block;
+    function_.static_for_block_depth_ += block_in_body ? 1 : 0;
     check_body_nodes(decl.for_body, k_unknown_type);
+    function_.static_for_block_depth_ -= block_in_body ? 1 : 0;
     pop_scope();
 
     // The inline form's values, computed once here for code that is not
@@ -825,7 +870,11 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
     // In a function body, the block form is code that runs, once per
     // iteration: lowering unrolls it from the iterations recorded here.
     if (in_body) {
-      record_static_for_block(decl);
+      // One inside another is unrolled with the outermost, so it can read
+      // the enclosing loops' variables.
+      if (function_.static_for_block_depth_ == 0) {
+        record_static_for_block(decl);
+      }
       return;
     }
 

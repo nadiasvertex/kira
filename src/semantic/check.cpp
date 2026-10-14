@@ -542,32 +542,20 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
   }
   const bool is_sum_shaped =
       decl.definition->kind == ast::node_kind::sum_type_def;
-  auto derive_fn_name = is_sum_shaped ? std::format("derive_{}_sum", trait_name)
-                                      : std::format("derive_{}", trait_name);
+  const auto derive_fn_name = is_sum_shaped
+                                  ? std::format("derive_{}_sum", trait_name)
+                                  : std::format("derive_{}", trait_name);
   const auto *derive_fn = comptime_eval_.pending_function(derive_fn_name);
-  if (derive_fn == nullptr) {
+  if (derive_fn == nullptr || derive_fn->type_params.size() != 1) {
     return nullptr;
   }
-  // The synthesized call names `derive_<trait>` bare, so it is evaluated
-  // in the module declaring it (`std.derive`), not the one being checked,
-  // which need not import it.
+  // `derive_<trait>[T]()` runs in the module declaring it (`std.derive`),
+  // not the one being checked, which need not import it.
   const auto derive_owner = function_owner(*derive_fn);
   if (!derive_owner.has_value()) {
     return nullptr;
   }
-  auto callee_ident = ast::make<ast::ident_expr>();
-  callee_ident->span = decl.span;
-  callee_ident->name = std::move(derive_fn_name);
-  auto type_ident = ast::make<ast::ident_expr>();
-  type_ident->span = decl.span;
-  type_ident->name = decl.name;
-  auto index = ast::make<ast::index_expr>();
-  index->span = decl.span;
-  index->object = std::move(callee_ident);
-  index->index = std::move(type_ident);
-  auto call = ast::make<ast::call_expr>();
-  call->span = decl.span;
-  call->callee = std::move(index);
+  const auto &type_param = derive_fn->type_params.front();
 
   auto field_type_names =
       std::unordered_map<const ast::struct_field *, std::string>{};
@@ -584,9 +572,21 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
     }
   }
   comptime_eval_.push_field_type_context(std::move(field_type_names));
+  // The instance for this type is checked first, so the VM can run it. Any
+  // problem with it is reported at the type that asked for it.
+  auto solution = generic_solution{};
+  bind_generic_type(solution, type_param, instance_id);
+  static_cast<void>(find_or_check_generic_instance(
+      decl, *derive_fn, derive_owner->first, derive_owner->second, solution,
+      derive_fn->name + solution.suffix, /*fixed_type_params=*/nullptr));
   const auto fragment_value = in_module_context(
       *derive_owner->first, derive_owner->second,
-      [&] -> comptime::value { return comptime_eval_.evaluate(*call); });
+      [&] -> comptime::value {
+        return comptime_eval_.call_with_types(
+            *derive_fn, decl.span,
+            {{type_param.name, comptime::value::make_type_value(
+                                   decl.name, &decl, instance_id)}});
+      });
   comptime_eval_.pop_field_type_context();
   if (fragment_value.is_error() ||
       fragment_value.kind != comptime::value_kind::def_expr_fragment ||
@@ -733,10 +733,9 @@ auto checker::resolve_deriving_traits(const ast::type_decl &decl,
     if (impl == nullptr) {
       continue;
     }
-    index_.modules[file_.module_name_].impls.push_back(
-        impl_ref{.decl = impl,
-                 .module_name = file_.module_name_,
-                 .file_id = owner_file});
+    add_synthesized_impl(impl_ref{.decl = impl,
+                                  .module_name = file_.module_name_,
+                                  .file_id = owner_file});
     session_.synthesized_item_splices_.push_back(synthesized_item_splice{
         .impl = impl, .owner_module = file_.module_name_});
     session_.derived_trait_impls_[&decl].push_back(impl);
@@ -847,10 +846,9 @@ auto checker::resolve_item_splices(
           "block instead.");
       continue;
     }
-    index_.modules[file_.module_name_].impls.push_back(
-        impl_ref{.decl = impl,
-                 .module_name = file_.module_name_,
-                 .file_id = owner_file});
+    add_synthesized_impl(impl_ref{.decl = impl,
+                                  .module_name = file_.module_name_,
+                                  .file_id = owner_file});
     session_.item_splice_impls_[item.get()] = impl;
     session_.synthesized_item_splices_.push_back(synthesized_item_splice{
         .impl = impl, .owner_module = file_.module_name_});
@@ -945,29 +943,6 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
     register_comptime_globals(input.ast_file->items);
   }
 
-  // Resolve item-level splices before the method table/coherence build
-  // below, so any injected impl participates exactly like one written
-  // directly in source — see `resolve_item_splices`'s doc comment.
-  for (const auto &input : inputs) {
-    if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
-        input.ast_file->module_decl->has_error ||
-        input.ast_file->module_decl->path.empty()) {
-      continue;
-    }
-    if (static_cast<size_t>(input.file_id) < file_has_errors_.size() &&
-        file_has_errors_[input.file_id]) {
-      continue;
-    }
-    file_.file_id_ = input.file_id;
-    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
-    file_.module_ = index_.find_module(file_.module_name_);
-    file_.file_no_prelude_ = input.ast_file->no_prelude;
-    compute_external_wildcard();
-    push_scope();
-    resolve_item_splices(input.ast_file->items, input.file_id);
-    pop_scope();
-  }
-
   // `[T: ord]` and `[n: usize]` parse alike, so the parser marks both as
   // value parameters. What the name after the colon resolves to decides —
   // a trait or a concept makes it a bounded type parameter — and it is
@@ -989,7 +964,7 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
 
   // Materialize every functor instantiation (`use m[args]`) before the
   // method table and coherence build below, so any `impl`/`extend` a functor
-  // body declares participates in both — exactly like an item-level splice.
+  // body declares participates in both.
   // Bodies are only *registered* here; they are *checked* by
   // `check_pending_functor_bodies` after the table is complete.
   for (const auto &input : inputs) {
@@ -1023,11 +998,35 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
   // coherence` above and, like `register_comptime_modules`, before any
   // file's body (and therefore any `static`/comptime call) is checked.
   register_comptime_coherence_info();
-  // From here on every declaration the method table and coherence read is in
-  // place, so compile-time code may check functions out of turn to run them
-  // on the VM. Before this — splices resolved into new items — checking a
-  // body early would build the method table without those items.
+  // From here on the method table and coherence records hold every written
+  // declaration, so compile-time code may check functions out of turn to run
+  // them on the VM.
   bodies_phase_ = true;
+  // Item-level splices and `deriving` clauses run on the VM, which checks
+  // the code it runs, so they come after the method table and coherence
+  // records for the written `impl`s. Each `impl` they produce is added to
+  // both as it is made (`add_synthesized_impl`).
+  for (const auto &input : inputs) {
+    if (input.ast_file == nullptr || input.ast_file->module_decl == nullptr ||
+        input.ast_file->module_decl->has_error ||
+        input.ast_file->module_decl->path.empty()) {
+      continue;
+    }
+    if (static_cast<size_t>(input.file_id) < file_has_errors_.size() &&
+        file_has_errors_[input.file_id]) {
+      continue;
+    }
+    file_.file_id_ = input.file_id;
+    file_.module_name_ = join_strings(input.ast_file->module_decl->path, ".");
+    file_.module_ = index_.find_module(file_.module_name_);
+    file_.file_no_prelude_ = input.ast_file->no_prelude;
+    compute_external_wildcard();
+    push_scope();
+    resolve_item_splices(input.ast_file->items, input.file_id);
+    pop_scope();
+  }
+
+  register_comptime_coherence_info();
   check_pending_functor_bodies();
 
   for (const auto &input : inputs) {

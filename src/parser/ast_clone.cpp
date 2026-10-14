@@ -36,6 +36,8 @@ auto record_clone(const void *original, const void *cloned) -> void {
     -> std::expected<ptr<node>, clone_error>;
 [[nodiscard]] auto clone_bound(const bound &b)
     -> std::expected<bound, clone_error>;
+[[nodiscard]] auto clone_quoted_body(const node &body)
+    -> std::expected<ptr<node>, clone_error>;
 [[nodiscard]] auto clone_func_decl_unmapped(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error>;
 
@@ -223,6 +225,23 @@ template <typename T>
     auto cloned = make<existential_type>();
     cloned->span = et.span;
     cloned->value = std::move(*value);
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::quote_type: {
+    const auto &qt = cast<quote_type>(t);
+    auto cloned = make<quote_type>(qt.quote_kind);
+    cloned->span = qt.span;
+    return ptr<type_expr>(std::move(cloned));
+  }
+  case node_kind::splice_type: {
+    const auto &st = cast<splice_type>(t);
+    auto operand = clone_optional(st.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto cloned = make<splice_type>();
+    cloned->span = st.span;
+    cloned->operand = std::move(*operand);
     return ptr<type_expr>(std::move(cloned));
   }
   default:
@@ -929,6 +948,33 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->operand = std::move(*operand);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::splice_expr: {
+    const auto &splice = cast<splice_expr>(e);
+    auto operand = clone_optional(splice.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto cloned = make<splice_expr>();
+    cloned->span = splice.span;
+    cloned->operand = std::move(*operand);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::quote_expr: {
+    const auto &quote = cast<quote_expr>(e);
+    auto body = std::expected<ptr<node>, clone_error>{};
+    if (quote.parsed_body != nullptr) {
+      body = clone_quoted_body(*quote.parsed_body);
+      if (!body.has_value()) {
+        return std::unexpected(body.error());
+      }
+    }
+    auto cloned = make<quote_expr>();
+    cloned->span = quote.span;
+    cloned->tokens = quote.tokens;
+    cloned->fragment_kind = quote.fragment_kind;
+    cloned->parsed_body = std::move(*body);
+    return ptr<expr>(std::move(cloned));
+  }
   default:
     return unsupported(e, "this expression shape");
   }
@@ -968,6 +1014,17 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
 [[nodiscard]] auto clone_node_unmapped(const node &n)
     -> std::expected<ptr<node>, clone_error> {
   switch (n.kind) {
+  case node_kind::splice_stmt: {
+    const auto &splice = cast<splice_stmt>(n);
+    auto operand = clone_optional(splice.expr);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto cloned = make<splice_stmt>();
+    cloned->span = splice.span;
+    cloned->expr = std::move(*operand);
+    return ptr<node>(std::move(cloned));
+  }
   case node_kind::let_stmt: {
     const auto &let = cast<let_stmt>(n);
     if (!let.else_body.empty()) {
@@ -1770,5 +1827,38 @@ auto clone_trait_decl(const trait_decl &decl)
   cloned->items = std::move(*items);
   return cloned;
 }
+
+namespace {
+
+/// A quote's parsed content: an item for a quoted definition, otherwise an
+/// expression, statement, pattern or type.
+auto clone_quoted_body(const node &body)
+    -> std::expected<ptr<node>, clone_error> {
+  const auto as_node = [](auto cloned) -> std::expected<ptr<node>, clone_error> {
+    if (!cloned.has_value()) {
+      return std::unexpected(cloned.error());
+    }
+    return ptr<node>(std::move(*cloned));
+  };
+  switch (body.kind) {
+  case node_kind::func_decl:
+    return as_node(clone_func_decl_unmapped(cast<func_decl>(body)));
+  case node_kind::impl_decl:
+    return as_node(clone_impl_decl(cast<impl_decl>(body)));
+  case node_kind::extend_decl:
+    return as_node(clone_extend_decl(cast<extend_decl>(body)));
+  case node_kind::trait_decl:
+    return as_node(clone_trait_decl(cast<trait_decl>(body)));
+  case node_kind::type_decl:
+    return as_node(clone_type_decl(cast<type_decl>(body)));
+  default:
+    if (const auto *type = as<type_expr>(&body)) {
+      return as_node(clone_type_expr(*type));
+    }
+    return clone_node(body);
+  }
+}
+
+} // namespace
 
 } // namespace cinder::ast

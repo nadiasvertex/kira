@@ -1932,6 +1932,31 @@ auto test_comptime_vm_quote() -> void {
                      report->run.has_value() ? report->run->exit_code : -1));
 }
 
+/// An item-level splice runs on the VM, after the method table is built, and
+/// the `impl` it produces is callable at run time.
+auto test_comptime_vm_item_splice() -> void {
+  auto temp = make_temp_dir();
+  auto main_source = temp.path / "main.cn";
+  auto metadata_dir = temp.path / "meta";
+  write_file(main_source, read_program("comptime_vm_item_splice.cn"));
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {main_source.string()},
+      .metadata_dir = metadata_dir.string(),
+      .show_help = false,
+      .run = true,
+      .run_function = "main",
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto report = cinder::driver::compile_sources(run_cfg, false);
+  expect(report.has_value(), "expected compile driver to return a report");
+  expect(report->error_count == 0,
+         "expected the spliced impl to be built: " + report->diagnostics);
+  expect(report->run.has_value() && report->run->exit_code == 42,
+         std::format("expected `b.answer()` == 42, got {}",
+                     report->run.has_value() ? report->run->exit_code : -1));
+}
+
 /// Compile-time code overflows exactly as run-time code does — `int8`
 /// arithmetic in a `static def` does not quietly widen — and the error points
 /// at the call and, in a note, at the operation that overflowed.
@@ -5117,6 +5142,7 @@ auto main() -> int {
     test_comptime_vm_overflow_points_into_callee();
     test_comptime_vm_expression_overflow();
     test_comptime_vm_quote();
+    test_comptime_vm_item_splice();
     test_comptime_typed_methods();
     test_comptime_generic_receiver_method();
     test_comptime_unannotated_static_read_early();

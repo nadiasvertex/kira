@@ -1265,6 +1265,9 @@ private:
   /// whose yield is being lowered (`static_for_iteration::folded`).
   const std::unordered_map<const ast::expr *, const ast::expr *>
       *static_for_folds_ = nullptr;
+  /// The iterations of the block `static for`s being lowered, innermost
+  /// last: each holds the unrolled loops directly inside its body.
+  std::vector<const semantic::static_for_iteration *> static_for_frames_;
 };
 
 auto lowerer::lower_expr(const ast::expr &expr)
@@ -5964,15 +5967,27 @@ auto lowerer::lower_static_for_inline(const ast::static_decl &decl)
 
 auto lowerer::lower_static_for_block(const ast::static_decl &decl)
     -> std::expected<ptr_vec<hir_node>, lowering_error> {
-  const auto iterations = checked_.lowering.static_for_iterations.find(&decl);
-  if (iterations == checked_.lowering.static_for_iterations.end()) {
+  // A loop inside another was unrolled with the enclosing iteration.
+  const std::vector<semantic::static_for_iteration> *iterations = nullptr;
+  if (!static_for_frames_.empty()) {
+    for (const auto &[nested, unrolled] : static_for_frames_.back()->nested) {
+      if (nested == &decl) {
+        iterations = &unrolled;
+      }
+    }
+  } else if (const auto found =
+                 checked_.lowering.static_for_iterations.find(&decl);
+             found != checked_.lowering.static_for_iterations.end()) {
+    iterations = &found->second;
+  }
+  if (iterations == nullptr) {
     return fail(lowering_error_kind::unsupported_construct, decl.span,
                 "this `static for` was not unrolled during checking");
   }
   // One copy of the body per iteration, each in a block of its own behind
   // a `let` for each loop variable, holding that iteration's value.
   auto result = ptr_vec<hir_node>{};
-  for (const auto &iteration : iterations->second) {
+  for (const auto &iteration : *iterations) {
     push_scope();
     auto stmts = ptr_vec<hir_node>{};
     for (const auto &[name, literal] : iteration.bindings) {
@@ -5987,7 +6002,9 @@ auto lowerer::lower_static_for_block(const ast::static_decl &decl)
     }
     const auto *saved_folds =
         std::exchange(static_for_folds_, &iteration.folded);
+    static_for_frames_.push_back(&iteration);
     auto body = lower_block(decl.for_body, decl.span, k_unknown_type);
+    static_for_frames_.pop_back();
     static_for_folds_ = saved_folds;
     pop_scope();
     if (!body.has_value()) {

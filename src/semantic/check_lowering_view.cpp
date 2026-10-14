@@ -972,18 +972,26 @@ auto checker::project_node(const ast::node &node) -> void {
     if (const auto found = cache_.static_for_iterations_.find(decl);
         found != cache_.static_for_iterations_.end()) {
       lowered.static_for_iterations.insert_or_assign(decl, found->second);
-      for (const auto &iteration : found->second) {
-        for (const auto &[name, value] : iteration.bindings) {
-          if (value != nullptr) {
-            project_subtree(*value);
+      const auto project_iterations =
+          [&](this const auto &self,
+              const std::vector<static_for_iteration> &iterations) -> void {
+        for (const auto &iteration : iterations) {
+          for (const auto &[name, value] : iteration.bindings) {
+            if (value != nullptr) {
+              project_subtree(*value);
+            }
+          }
+          for (const auto &[read, folded] : iteration.folded) {
+            if (folded != nullptr) {
+              project_subtree(*folded);
+            }
+          }
+          for (const auto &[nested, nested_iterations] : iteration.nested) {
+            self(nested_iterations);
           }
         }
-        for (const auto &[read, folded] : iteration.folded) {
-          if (folded != nullptr) {
-            project_subtree(*folded);
-          }
-        }
-      }
+      };
+      project_iterations(found->second);
     }
     break;
   }

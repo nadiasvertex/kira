@@ -240,6 +240,7 @@ auto fragment_builder::materialize(const ast::node &node,
   };
   switch (node.kind) {
   case ast::node_kind::ident_expr:
+  case ast::node_kind::module_path_expr:
   case ast::node_kind::literal_expr:
   case ast::node_kind::field_expr:
   case ast::node_kind::interpolated_string_expr: {
@@ -531,6 +532,14 @@ auto fragment_builder::clone_expr(const ast::node &node)
     auto cloned = ast::make<ast::ident_expr>();
     cloned->span = ident.span;
     cloned->name = ident.name;
+    return cloned;
+  }
+  case ast::node_kind::module_path_expr: {
+    // A dotted path (`self.value`), left unresolved by the parser.
+    const auto &path = ast::cast<const ast::module_path_expr>(node);
+    auto cloned = ast::make<ast::module_path_expr>();
+    cloned->span = path.span;
+    cloned->segments = path.segments;
     return cloned;
   }
   case ast::node_kind::literal_expr: {

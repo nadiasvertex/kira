@@ -886,6 +886,10 @@ private:
     /// itself is invoked at compile time, and its own body is never lowered.
     bool in_comptime_only_function_ = false;
 
+    /// How many block `static for` bodies enclose the code being checked. A
+    /// nested one is unrolled by the outermost, once per its iteration.
+    int static_for_block_depth_ = 0;
+
     /// Whether the function body currently being checked carries the `machine`
     /// modifier. Raw-pointer operations (`as_ptr`/`as_mut_ptr`, `ptr_cast`,
     /// indexing or dereferencing a `*T`/`*mut T`, and constructing a
@@ -2849,6 +2853,27 @@ private:
 
   auto build_method_table() -> void;
 
+  /// A trait's default-bodied method, waiting to be monomorphized for one
+  /// `impl` target once every `impl` is registered (`build_method_table`).
+  struct deferred_trait_default {
+    const ast::func_decl *decl;
+    type_id target;
+    std::string target_type_name;
+    const ast::trait_decl *trait_decl;
+    const module_members *trait_module;
+    file_id_type trait_file_id;
+    std::deque<method_entry> *methods;
+  };
+
+  auto register_impl_methods(
+      const module_members &members, const impl_ref &impl,
+      std::vector<deferred_trait_default> &deferred_defaults) -> void;
+
+  auto monomorphize_trait_defaults(
+      const std::vector<deferred_trait_default> &deferred_defaults) -> void;
+
+  auto add_synthesized_impl(impl_ref impl) -> void;
+
   auto monomorphize_trait_default(const ast::func_decl &decl, type_id target,
                                   std::string_view target_type_name,
                                   const ast::trait_decl *trait_decl,
@@ -4059,6 +4084,9 @@ private:
   /// `record_static_for_block` for a concrete `decl`: nothing is recorded
   /// when the iterable cannot be computed (reported unless `silent`) or a
   /// loop variable has no literal form.
+  auto static_for_block_iterations(const ast::static_decl &decl, bool silent)
+      -> std::optional<std::vector<static_for_iteration>>;
+
   auto unroll_static_for_block(const ast::static_decl &decl, bool silent)
       -> void;
 
@@ -4069,6 +4097,8 @@ private:
   auto check_item(const ast::node &item, bool at_module_scope) -> void;
 
   auto validate_impl_coherence() -> void;
+
+  auto record_impl_coherence(const impl_ref &impl) -> void;
 
   // ==========================================================================
   //  check.cpp

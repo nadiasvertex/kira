@@ -2354,89 +2354,95 @@ auto checker::check_item(const ast::node &item, bool at_module_scope) -> void {
 auto checker::validate_impl_coherence() -> void {
   for (const auto &[module_name, members] : index_.modules) {
     for (const auto &impl : members.impls) {
-      if (impl.decl->has_error) {
-        continue;
-      }
-      const auto trait_name = trait_name_of_impl(*impl.decl);
-      if (trait_name.empty()) {
-        continue; // inherent impls never conflict by construction
-      }
-      const auto target = strip_refs(resolve_impl_target(impl));
-      const auto &target_entry = session_.types_.entry(target);
-      if (session_.types_.is_unknown(target)) {
-        continue;
-      }
-      const auto type_key = type_key_of(target_entry);
-      auto &recorded_traits = traits_by_type_key_[type_key];
-      if (!std::ranges::contains(recorded_traits, trait_name)) {
-        recorded_traits.push_back(trait_name);
-      }
-      // Keyed by the trait *as instantiated*: `index[usize]` and
-      // `index[range[usize]]` are two different capabilities a collection
-      // can offer (an element and a sub-view), not two impls of one
-      // trait. A trait with no arguments keys under its bare name, so
-      // nothing about the `show`/`drop` cases changes.
-      const auto key = std::format(
-          "{}:{}", resolve_impl_trait_key(impl, trait_name), type_key);
-      const auto bare_key = std::format("{}:{}", trait_name, type_key);
-      const auto location =
-          source_location{.file_id = impl.file_id, .span = impl.decl->span};
-      // Both keys are filed first-wins: they answer "does this type
-      // implement the trait at all" (`type_has_trait`, and the `requires`
-      // check behind it), which two impls of one parameterized trait both
-      // satisfy. Conflict detection is a separate question, decided below
-      // against every impl already recorded rather than against whichever
-      // one happened to claim the key.
-      impl_trait_index_.emplace(
-          key, recorded_impl{.location = location, .target = target});
-      if (key != bare_key) {
-        impl_trait_index_.emplace(
-            bare_key, recorded_impl{.location = location, .target = target});
-      }
-
-      const auto trait_arg = resolve_impl_trait_argument(impl);
-      const auto *trait_decl = resolve_trait_decl_from(
-          trait_name, index_.find_module(impl.module_name));
-      auto &recorded = impl_coherence_records_[bare_key];
-      const auto found = std::ranges::find_if(
-          recorded, [&](const coherence_record &seen) -> bool {
-            return seen.trait_decl == trait_decl &&
-                   impl_targets_overlap(seen.target, target) &&
-                   impl_targets_overlap(seen.trait_arg, trait_arg);
-          });
-      const auto clash = found == recorded.end()
-                             ? std::optional<coherence_record>{}
-                             : std::optional<coherence_record>{*found};
-      recorded.push_back(coherence_record{.location = location,
-                                          .trait_decl = trait_decl,
-                                          .target = target,
-                                          .trait_arg = trait_arg});
-      if (!clash.has_value()) {
-        // Either the first impl for this pair, or two impls for two
-        // different instantiations of one generic declaration — legal.
-        continue;
-      }
-      auto duplicate = diagnostic(
-          diagnostic_level::error,
-          std::format("duplicate implementation of trait `{}` for `{}`",
-                      trait_name, session_.types_.display(target)),
-          impl.file_id);
-      duplicate.with_label(impl.decl->span, "conflicting implementation");
-      duplicate.children.push_back(
-          diagnostic(diagnostic_level::note,
-                     std::format("`{}` was first implemented for `{}` here",
-                                 trait_name,
-                                 session_.types_.display(clash->target)),
-                     clash->location.file_id)
-              .with_label(clash->location.span, "previous implementation"));
-      duplicate.with_help(
-          "A program contains at most one implementation of a trait for a "
-          "type; remove or merge one of these.");
-      emit_diag(duplicate);
-      if (static_cast<size_t>(impl.file_id) < file_has_errors_.size()) {
-        file_has_errors_[impl.file_id] = true;
-      }
+      record_impl_coherence(impl);
     }
+  }
+}
+
+/// Records one `impl` for `validate_impl_coherence`, reporting it if it
+/// conflicts with one already recorded.
+auto checker::record_impl_coherence(const impl_ref &impl) -> void {
+  if (impl.decl->has_error) {
+    return;
+  }
+  const auto trait_name = trait_name_of_impl(*impl.decl);
+  if (trait_name.empty()) {
+    return; // inherent impls never conflict by construction
+  }
+  const auto target = strip_refs(resolve_impl_target(impl));
+  const auto &target_entry = session_.types_.entry(target);
+  if (session_.types_.is_unknown(target)) {
+    return;
+  }
+  const auto type_key = type_key_of(target_entry);
+  auto &recorded_traits = traits_by_type_key_[type_key];
+  if (!std::ranges::contains(recorded_traits, trait_name)) {
+    recorded_traits.push_back(trait_name);
+  }
+  // Keyed by the trait *as instantiated*: `index[usize]` and
+  // `index[range[usize]]` are two different capabilities a collection
+  // can offer (an element and a sub-view), not two impls of one
+  // trait. A trait with no arguments keys under its bare name, so
+  // nothing about the `show`/`drop` cases changes.
+  const auto key =
+      std::format("{}:{}", resolve_impl_trait_key(impl, trait_name), type_key);
+  const auto bare_key = std::format("{}:{}", trait_name, type_key);
+  const auto location =
+      source_location{.file_id = impl.file_id, .span = impl.decl->span};
+  // Both keys are filed first-wins: they answer "does this type
+  // implement the trait at all" (`type_has_trait`, and the `requires`
+  // check behind it), which two impls of one parameterized trait both
+  // satisfy. Conflict detection is a separate question, decided below
+  // against every impl already recorded rather than against whichever
+  // one happened to claim the key.
+  impl_trait_index_.emplace(
+      key, recorded_impl{.location = location, .target = target});
+  if (key != bare_key) {
+    impl_trait_index_.emplace(
+        bare_key, recorded_impl{.location = location, .target = target});
+  }
+
+  const auto trait_arg = resolve_impl_trait_argument(impl);
+  const auto *trait_decl =
+      resolve_trait_decl_from(trait_name, index_.find_module(impl.module_name));
+  auto &recorded = impl_coherence_records_[bare_key];
+  const auto found =
+      std::ranges::find_if(recorded, [&](const coherence_record &seen) -> bool {
+        return seen.trait_decl == trait_decl &&
+               impl_targets_overlap(seen.target, target) &&
+               impl_targets_overlap(seen.trait_arg, trait_arg);
+      });
+  const auto clash = found == recorded.end()
+                         ? std::optional<coherence_record>{}
+                         : std::optional<coherence_record>{*found};
+  recorded.push_back(coherence_record{.location = location,
+                                      .trait_decl = trait_decl,
+                                      .target = target,
+                                      .trait_arg = trait_arg});
+  if (!clash.has_value()) {
+    // Either the first impl for this pair, or two impls for two
+    // different instantiations of one generic declaration — legal.
+    return;
+  }
+  auto duplicate =
+      diagnostic(diagnostic_level::error,
+                 std::format("duplicate implementation of trait `{}` for `{}`",
+                             trait_name, session_.types_.display(target)),
+                 impl.file_id);
+  duplicate.with_label(impl.decl->span, "conflicting implementation");
+  duplicate.children.push_back(
+      diagnostic(diagnostic_level::note,
+                 std::format("`{}` was first implemented for `{}` here",
+                             trait_name,
+                             session_.types_.display(clash->target)),
+                 clash->location.file_id)
+          .with_label(clash->location.span, "previous implementation"));
+  duplicate.with_help(
+      "A program contains at most one implementation of a trait for a "
+      "type; remove or merge one of these.");
+  emit_diag(duplicate);
+  if (static_cast<size_t>(impl.file_id) < file_has_errors_.size()) {
+    file_has_errors_[impl.file_id] = true;
   }
 }
 

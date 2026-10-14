@@ -438,6 +438,14 @@ public:
 
   /// The type the current call's type parameter `name` is bound to, or
   /// `nullptr` when `name` is not a type parameter bound in this frame.
+  /// Calls `fn` with no value arguments and `type_args` bound to its type
+  /// parameters, as the call `fn[types]()` would.
+  [[nodiscard]] auto
+  call_with_types(const ast::func_decl &fn, source_span span,
+                  std::vector<std::pair<std::string, value>> type_args)
+      -> value {
+    return call_function(fn, fn.name, {}, span, std::move(type_args));
+  }
   [[nodiscard]] auto type_binding(const std::string &name) -> const value * {
     const auto *found = lookup_local(name);
     return found != nullptr && found->kind == value_kind::type_value ? found

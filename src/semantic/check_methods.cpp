@@ -293,8 +293,7 @@ auto checker::resolve_impl_trait_argument(const impl_ref &impl) -> type_id {
       impl.decl->trait_type->kind != ast::node_kind::named_type) {
     return k_unknown_type;
   }
-  const auto &named =
-      ast::cast<const ast::named_type>(*impl.decl->trait_type);
+  const auto &named = ast::cast<const ast::named_type>(*impl.decl->trait_type);
   if (named.type_args.size() != 1) {
     return k_unknown_type;
   }
@@ -379,7 +378,8 @@ auto checker::resolve_extend_target(const extend_ref &ext) -> type_id {
 /// and that check can itself call `find_method`/`build_method_table`
 /// reentrantly (e.g. a default `read_to_end` calling `list[byte].push`).
 /// `cache_.methods_built_` is already `true` by then, so a reentrant call would
-/// see whatever subset of `cache_.method_tables_.declared`/`cache_.method_tables_.extend_by_builtin`
+/// see whatever subset of
+/// `cache_.method_tables_.declared`/`cache_.method_tables_.extend_by_builtin`
 /// this loop happened to have populated so far — order-dependent on
 /// `index_.modules`'s (unordered) iteration order, i.e. on which module
 /// the compile's entry point happens to be (spec/todo.md item 18). Doing
@@ -392,15 +392,6 @@ auto checker::build_method_table() -> void {
   }
   cache_.methods_built_ = true;
 
-  struct deferred_trait_default {
-    const ast::func_decl *decl;
-    type_id target;
-    std::string target_type_name;
-    const ast::trait_decl *trait_decl;
-    const module_members *trait_module;
-    file_id_type trait_file_id;
-    std::deque<method_entry> *methods;
-  };
   auto deferred_defaults = std::vector<deferred_trait_default>{};
 
   for (const auto &[module_name, members] : index_.modules) {
@@ -435,152 +426,184 @@ auto checker::build_method_table() -> void {
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       } else if (!target_entry.name.empty()) {
-        auto &methods = cache_.method_tables_.extend_by_builtin[target_entry.name];
+        auto &methods =
+            cache_.method_tables_.extend_by_builtin[target_entry.name];
         methods.insert(methods.end(), extend_methods.begin(),
                        extend_methods.end());
       }
     }
 
     for (const auto &impl : members.impls) {
-      const auto target = strip_refs(resolve_impl_target(impl));
-      const auto &target_entry = session_.types_.entry(target);
-      // An impl of a higher-kinded trait for a *prelude* constructor
-      // (`impl monad for option`) has no `type_decl` to key `cache_.method_tables_.declared`
-      // by; its methods go in the constructor-name-keyed table instead.
-      const auto is_builtin_ctor_target =
-          target_entry.kind == type_kind::ctor_ref_kind &&
-          target_entry.decl == nullptr;
-      // An impl for an *applied* prelude generic (`impl from_iter[int32]
-      // for list[int32]`). Like the bare-constructor case it has no
-      // `type_decl` to key `cache_.method_tables_.declared` by, and it used to fall into the
-      // `continue` below: the impl was parsed and coherence-checked, then
-      // silently never registered, so its members did not exist as far as
-      // every lookup was concerned. `collect`'s collector impls are all
-      // this shape, which is why `list[int32].from_iter(...)` reported no
-      // such static member however it was written.
-      const auto is_builtin_applied_target =
-          target_entry.kind == type_kind::builtin_generic_kind &&
-          target_entry.decl == nullptr && !target_entry.name.empty();
-      // An impl for a builtin *scalar* (`impl zero for int32`). The third
-      // instance of the same shape: no `type_decl`, so it fell into the
-      // `continue` and was parsed, coherence-checked, and then silently
-      // never registered. `int32` and friends are where the numeric
-      // identity traits have to land, since nothing else can name a zero.
-      const auto is_builtin_scalar_target =
-          target_entry.kind == type_kind::builtin_kind &&
-          target_entry.decl == nullptr && !target_entry.name.empty();
-      if (target_entry.decl == nullptr && !is_builtin_ctor_target &&
-          !is_builtin_applied_target && !is_builtin_scalar_target) {
-        continue;
-      }
-      auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
-                       is_builtin_scalar_target)
-                          ? cache_.method_tables_.impl_by_builtin[target_entry.name]
-                          : cache_.method_tables_.declared[target_entry.decl];
-      auto overridden_names = std::unordered_set<std::string>{};
-      // Owned copy of `target_entry.name`, taken up front: `target_entry`
-      // is a reference into `type_table`'s backing store
-      // (`type_table::entries_`, a `std::vector`), and
-      // `monomorphize_trait_default` below calls `check_function` on each
-      // cloned default body, which can intern new types and reallocate
-      // that vector — silently invalidating `target_entry` (and any
-      // `string_view` still pointing into it) for every default *after*
-      // the first in this same impl. Reading through an owned string
-      // instead of `target_entry.name` keeps every call in this loop
-      // using a name that's still valid no matter how much interning the
-      // previous call triggered.
-      const auto target_type_name = std::string(target_entry.name);
-
-      // Trait methods with default bodies are callable through the impl;
-      // also recorded on the impl's own overridden methods below, so a
-      // caller can identify a method by the trait it implements.
-      const auto trait_name = trait_name_of_impl(*impl.decl);
-
-      for (const auto &item : impl.decl->items) {
-        if (item == nullptr || item->has_error ||
-            item->kind != ast::node_kind::func_decl) {
-          continue;
-        }
-        const auto *decl = ast::as<const ast::func_decl>(item.get());
-        overridden_names.insert(decl->name);
-        methods.push_back(method_entry{
-            .decl = decl,
-            .owner = &members,
-            .from_trait = nullptr,
-            .is_extension = false,
-            .trait_name = trait_name,
-            .file_id = impl.file_id,
-            .block_type_params = &impl.decl->type_params,
-            .impl_target_pattern = target,
-        });
-      }
-
-      if (trait_name.empty()) {
-        continue;
-      }
-      const auto *trait_module = &members;
-      const ast::trait_decl *trait_decl = nullptr;
-      auto trait_file_id = file_id_type{0};
-      if (const auto it = members.traits.find(trait_name);
-          it != members.traits.end()) {
-        trait_decl = it->second.decl;
-        trait_file_id = it->second.file_id;
-      } else {
-        for (const auto &[other_name, other] : index_.modules) {
-          if (const auto other_it = other.traits.find(trait_name);
-              other_it != other.traits.end()) {
-            trait_decl = other_it->second.decl;
-            trait_file_id = other_it->second.file_id;
-            trait_module = &other;
-            break;
-          }
-        }
-      }
-      if (trait_decl == nullptr) {
-        continue;
-      }
-      for (const auto &item : trait_decl->items) {
-        if (item == nullptr || item->kind != ast::node_kind::func_decl) {
-          continue;
-        }
-        const auto *decl = ast::as<const ast::func_decl>(item.get());
-        const auto first_param =
-            decl->params.empty() ? std::string{}
-                                 : param_name_of(decl->params.front());
-        const auto action =
-            classify_trait_item(*decl, first_param, overridden_names);
-        if (action == trait_item_action::overridden) {
-          continue;
-        }
-        if (action == trait_item_action::register_as_declared) {
-          methods.push_back(method_entry{
-              .decl = decl,
-              .owner = trait_module,
-              .from_trait = trait_decl,
-              .trait_name = trait_name,
-              .file_id = trait_file_id,
-          });
-          continue;
-        }
-        deferred_defaults.push_back(deferred_trait_default{
-            .decl = decl,
-            .target = target,
-            .target_type_name = target_type_name,
-            .trait_decl = trait_decl,
-            .trait_module = trait_module,
-            .trait_file_id = trait_file_id,
-            .methods = &methods,
-        });
-      }
+      register_impl_methods(members, impl, deferred_defaults);
     }
   }
 
+  monomorphize_trait_defaults(deferred_defaults);
+}
+
+/// Registers one `impl` block's methods in the method table: its own methods
+/// and, for a trait impl, the trait's methods it does not override. A
+/// default-bodied trait method is queued on `deferred_defaults` rather than
+/// monomorphized here — see `build_method_table`.
+auto checker::register_impl_methods(
+    const module_members &members, const impl_ref &impl,
+    std::vector<deferred_trait_default> &deferred_defaults) -> void {
+  const auto target = strip_refs(resolve_impl_target(impl));
+  const auto &target_entry = session_.types_.entry(target);
+  // An impl of a higher-kinded trait for a *prelude* constructor
+  // (`impl monad for option`) has no `type_decl` to key
+  // `cache_.method_tables_.declared` by; its methods go in the
+  // constructor-name-keyed table instead.
+  const auto is_builtin_ctor_target =
+      target_entry.kind == type_kind::ctor_ref_kind &&
+      target_entry.decl == nullptr;
+  // An impl for an *applied* prelude generic (`impl from_iter[int32]
+  // for list[int32]`). Like the bare-constructor case it has no
+  // `type_decl` to key `cache_.method_tables_.declared` by, and it used to fall
+  // into the `continue` below: the impl was parsed and coherence-checked, then
+  // silently never registered, so its members did not exist as far as
+  // every lookup was concerned. `collect`'s collector impls are all
+  // this shape, which is why `list[int32].from_iter(...)` reported no
+  // such static member however it was written.
+  const auto is_builtin_applied_target =
+      target_entry.kind == type_kind::builtin_generic_kind &&
+      target_entry.decl == nullptr && !target_entry.name.empty();
+  // An impl for a builtin *scalar* (`impl zero for int32`). The third
+  // instance of the same shape: no `type_decl`, so it fell into the
+  // `continue` and was parsed, coherence-checked, and then silently
+  // never registered. `int32` and friends are where the numeric
+  // identity traits have to land, since nothing else can name a zero.
+  const auto is_builtin_scalar_target =
+      target_entry.kind == type_kind::builtin_kind &&
+      target_entry.decl == nullptr && !target_entry.name.empty();
+  if (target_entry.decl == nullptr && !is_builtin_ctor_target &&
+      !is_builtin_applied_target && !is_builtin_scalar_target) {
+    return;
+  }
+  auto &methods = (is_builtin_ctor_target || is_builtin_applied_target ||
+                   is_builtin_scalar_target)
+                      ? cache_.method_tables_.impl_by_builtin[target_entry.name]
+                      : cache_.method_tables_.declared[target_entry.decl];
+  auto overridden_names = std::unordered_set<std::string>{};
+  // Owned copy of `target_entry.name`, taken up front: `target_entry`
+  // is a reference into `type_table`'s backing store
+  // (`type_table::entries_`, a `std::vector`), and
+  // `monomorphize_trait_default` below calls `check_function` on each
+  // cloned default body, which can intern new types and reallocate
+  // that vector — silently invalidating `target_entry` (and any
+  // `string_view` still pointing into it) for every default *after*
+  // the first in this same impl. Reading through an owned string
+  // instead of `target_entry.name` keeps every call in this loop
+  // using a name that's still valid no matter how much interning the
+  // previous call triggered.
+  const auto target_type_name = std::string(target_entry.name);
+
+  // Trait methods with default bodies are callable through the impl;
+  // also recorded on the impl's own overridden methods below, so a
+  // caller can identify a method by the trait it implements.
+  const auto trait_name = trait_name_of_impl(*impl.decl);
+
+  for (const auto &item : impl.decl->items) {
+    if (item == nullptr || item->has_error ||
+        item->kind != ast::node_kind::func_decl) {
+      continue;
+    }
+    const auto *decl = ast::as<const ast::func_decl>(item.get());
+    overridden_names.insert(decl->name);
+    methods.push_back(method_entry{
+        .decl = decl,
+        .owner = &members,
+        .from_trait = nullptr,
+        .is_extension = false,
+        .trait_name = trait_name,
+        .file_id = impl.file_id,
+        .block_type_params = &impl.decl->type_params,
+        .impl_target_pattern = target,
+    });
+  }
+
+  if (trait_name.empty()) {
+    return;
+  }
+  const auto *trait_module = &members;
+  const ast::trait_decl *trait_decl = nullptr;
+  auto trait_file_id = file_id_type{0};
+  if (const auto it = members.traits.find(trait_name);
+      it != members.traits.end()) {
+    trait_decl = it->second.decl;
+    trait_file_id = it->second.file_id;
+  } else {
+    for (const auto &[other_name, other] : index_.modules) {
+      if (const auto other_it = other.traits.find(trait_name);
+          other_it != other.traits.end()) {
+        trait_decl = other_it->second.decl;
+        trait_file_id = other_it->second.file_id;
+        trait_module = &other;
+        break;
+      }
+    }
+  }
+  if (trait_decl == nullptr) {
+    return;
+  }
+  for (const auto &item : trait_decl->items) {
+    if (item == nullptr || item->kind != ast::node_kind::func_decl) {
+      continue;
+    }
+    const auto *decl = ast::as<const ast::func_decl>(item.get());
+    const auto first_param = decl->params.empty()
+                                 ? std::string{}
+                                 : param_name_of(decl->params.front());
+    const auto action =
+        classify_trait_item(*decl, first_param, overridden_names);
+    if (action == trait_item_action::overridden) {
+      continue;
+    }
+    if (action == trait_item_action::register_as_declared) {
+      methods.push_back(method_entry{
+          .decl = decl,
+          .owner = trait_module,
+          .from_trait = trait_decl,
+          .trait_name = trait_name,
+          .file_id = trait_file_id,
+      });
+      continue;
+    }
+    deferred_defaults.push_back(deferred_trait_default{
+        .decl = decl,
+        .target = target,
+        .target_type_name = target_type_name,
+        .trait_decl = trait_decl,
+        .trait_module = trait_module,
+        .trait_file_id = trait_file_id,
+        .methods = &methods,
+    });
+  }
+}
+
+auto checker::monomorphize_trait_defaults(
+    const std::vector<deferred_trait_default> &deferred_defaults) -> void {
   for (const auto &deferred : deferred_defaults) {
     monomorphize_trait_default(*deferred.decl, deferred.target,
                                deferred.target_type_name, deferred.trait_decl,
                                deferred.trait_module, deferred.trait_file_id,
                                *deferred.methods);
   }
+}
+
+/// Adds an `impl` a splice or a `deriving` clause produced to the program.
+/// Splices run on the VM once the method table and coherence records for
+/// the written `impl`s exist, so the new one is added to both directly.
+/// Compile-time code that ran before it was added did not see it.
+auto checker::add_synthesized_impl(impl_ref impl) -> void {
+  build_method_table();
+  auto &members = index_.modules[impl.module_name];
+  members.impls.push_back(std::move(impl));
+  const auto &added = members.impls.back();
+  auto deferred_defaults = std::vector<deferred_trait_default>{};
+  register_impl_methods(members, added, deferred_defaults);
+  monomorphize_trait_defaults(deferred_defaults);
+  record_impl_coherence(added);
 }
 
 /// Clones `decl` (an unwritten trait-default method) and type-checks the
@@ -697,7 +720,6 @@ auto checker::find_method(const type_entry &instance, std::string_view name,
   const auto found = resolve_method(instance, instance_id, name, accepts);
   return found.origin == method_origin::declared ? found.method : nullptr;
 }
-
 
 /// Whether `name` is one of `k_builtin_methods`' entries for `object`.
 /// Asked by name rather than through `builtin_method_result`, whose answer
@@ -1054,8 +1076,7 @@ auto checker::trait_args_of_impl_for(type_id concrete,
           ast::cast<const ast::named_type>(*impl.decl->trait_type);
       auto args = std::vector<type_id>{};
       for (const auto &arg : named.type_args) {
-        const auto *arg_type =
-            ast::as<const ast::type_expr>(arg.value.get());
+        const auto *arg_type = ast::as<const ast::type_expr>(arg.value.get());
         args.push_back(
             arg_type != nullptr
                 ? substitute_solved(resolve_type(*arg_type, ctx), impl_bindings)
@@ -1149,8 +1170,8 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
       }
       for (size_t i = 0;
            i < named.type_args.size() && i < concrete_args->size(); ++i) {
-        const auto *arg_type = ast::as<const ast::type_expr>(
-            named.type_args[i].value.get());
+        const auto *arg_type =
+            ast::as<const ast::type_expr>(named.type_args[i].value.get());
         if (arg_type == nullptr) {
           continue;
         }
@@ -1171,8 +1192,7 @@ auto checker::solve_from_bounds(const ast::func_decl &decl,
         constraint.subject->kind != ast::node_kind::named_type) {
       continue;
     }
-    const auto &subject =
-        ast::cast<const ast::named_type>(*constraint.subject);
+    const auto &subject = ast::cast<const ast::named_type>(*constraint.subject);
     if (!subject.path.empty()) {
       apply(subject.path.back(), *constraint.bound_or_type);
     }
@@ -1705,13 +1725,11 @@ auto checker::static_for_element_type(const ast::expr &iterable) -> type_id {
   // type, and its loop variable is the builtin descriptor.
   if (iterable.kind == ast::node_kind::call_expr) {
     const auto &call = ast::cast<const ast::call_expr>(iterable);
-    const auto *callee =
-        ast::as<const ast::field_expr>(call.callee.get());
+    const auto *callee = ast::as<const ast::field_expr>(call.callee.get());
     if (callee != nullptr && callee->field_name == "fields" &&
         callee->object != nullptr &&
         callee->object->kind == ast::node_kind::ident_expr) {
-      const auto &name =
-          ast::cast<const ast::ident_expr>(*callee->object).name;
+      const auto &name = ast::cast<const ast::ident_expr>(*callee->object).name;
       if (lookup_type_param(name).has_value() || find_type_decl_by_name(name)) {
         return field_info_type();
       }
@@ -2088,8 +2106,7 @@ auto checker::function_owner(const ast::func_decl &fn)
       // where it was written, so `std.string`'s own `rt_str_*` resolve.
       const auto add_methods = [&](const auto &items, file_id_type file) {
         for (const auto &item : items) {
-          if (const auto *method =
-                  ast::as<const ast::func_decl>(item.get())) {
+          if (const auto *method = ast::as<const ast::func_decl>(item.get())) {
             cache_.function_owners_.emplace(method, std::pair{&members, file});
           }
         }

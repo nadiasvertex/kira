@@ -1,0 +1,15 @@
+module main
+
+# expect: 123345
+
+# A block `static for` inside another whose range reads the outer loop's
+# variable. The inner loop is unrolled once per outer iteration, with that
+# iteration's `n`, so each copy runs a different number of times. Each step
+# appends a digit, so the result records the order the copies ran in.
+
+def main() -> int32:
+    var total: int32 = 0
+    static for n in [1, 2, 3]:
+        static for i in 0..n:
+            total = total * 10 + n + i
+    return total

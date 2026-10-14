@@ -223,6 +223,11 @@ struct static_for_iteration {
   /// Reads in the yield rooted at a loop binding with no literal form (a
   /// `field_info`'s `f.name`), each replaced by the literal it evaluated to.
   std::unordered_map<const ast::expr *, const ast::expr *> folded;
+  /// Each block `static for` directly inside this one's body, unrolled with
+  /// this iteration's bindings in place.
+  std::vector<
+      std::pair<const ast::static_decl *, std::vector<static_for_iteration>>>
+      nested;
 };
 
 struct iterator_loop_dispatch {
