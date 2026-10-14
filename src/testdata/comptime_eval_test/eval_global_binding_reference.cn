@@ -1,4 +1,0 @@
-module sample
-
-def run():
-  let result = limit + 1

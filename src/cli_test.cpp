@@ -1649,7 +1649,7 @@ auto test_static_aggregate_read_at_run_time() -> void {
 
   write_file(main_source, read_program("static_aggregate_read_at_run_time.cn"));
 
-  constexpr auto expected = 78;
+  constexpr auto expected = 88;
   const auto sources = std::vector<std::string>{main_source.string()};
 
   cinder::driver::cli_config run_cfg{
@@ -1746,12 +1746,8 @@ auto test_comptime_error_names_call_site() -> void {
          std::format("expected exactly one error, got {}: {}",
                      report->error_count, report->diagnostics));
   // The VM reports at the outermost compile-time call (`shout()`), with a
-  // note at each line it passed through; the interpreter (which
-  // `CINDER_COMPTIME_VM=compare` reports from) reports at the library line
-  // with a note at the call.
-  expect(report->diagnostics.contains("compile-time call to `shout` failed") ||
-             report->diagnostics.contains(
-                 "reached from this compile-time call to `println`"),
+  // note at each line it passed through.
+  expect(report->diagnostics.contains("compile-time call to `shout` failed"),
          "expected the error to name the call: " + report->diagnostics);
   expect(report->diagnostics.contains("main.cn:7:5"),
          "expected the error to point at the user's call: " +
@@ -2034,7 +2030,6 @@ auto test_comptime_vm_overflow_points_into_callee() -> void {
   expect(report->diagnostics.contains("compile-time call to `doubled`") &&
              report->diagnostics.contains("overflowed"),
          "expected the overflow to be named: " + report->diagnostics);
-  // `CINDER_COMPTIME_VM=compare` reports the VM's failure at the call alone.
   expect(report->diagnostics.contains("main.cn:9:16"),
          "expected the error at the call: " + report->diagnostics);
 }
@@ -2192,10 +2187,7 @@ auto test_failed_static_initializer_blocks_lowering() -> void {
   expect(report->error_count == 1,
          std::format("expected exactly the initializer's error, got {}: {}",
                      report->error_count, report->diagnostics));
-  // The VM's step budget or the interpreter's iteration budget, which
-  // `CINDER_COMPTIME_VM=compare` reports from.
-  expect(report->diagnostics.contains("compile-time step budget") ||
-             report->diagnostics.contains("this usually means it never ends"),
+  expect(report->diagnostics.contains("compile-time step budget"),
          "expected the budget error: " + report->diagnostics);
   expect(!report->diagnostics.contains("could not lower"),
          "expected no lowering error for a failed initializer: " +
@@ -3889,6 +3881,8 @@ auto test_run_static_def_call_from_ordinary_generic_body() -> void {
       .run = true,
       .run_function = "main",
   };
+  // `T.name() == "int32"` compares strings, which needs `std.string`.
+  cinder::driver::inject_stdlib_prelude(cfg);
 
   auto report = cinder::driver::compile_sources(cfg, false);
   expect(report.has_value(), "expected compile driver to return a report");

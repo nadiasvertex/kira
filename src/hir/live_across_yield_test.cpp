@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/hir/live_across_yield.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
@@ -63,8 +64,9 @@ auto check_fixture(const std::string &text) -> checked_fixture {
       cinder::semantic::parsed_module{.file_id = *file_id,
                                       .ast_file = fixture.ast_file.get()},
   };
+  auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
-      parsed_modules, fixture.diag, file_has_errors);
+      parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
   return fixture;
 }

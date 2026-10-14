@@ -19,10 +19,6 @@ namespace cinder::semantic {
 struct checked_types;
 class comptime_backend;
 
-/// How compile-time calls use a `comptime_backend` — see
-/// `comptime::evaluator::vm_mode`, which these mirror.
-enum class comptime_vm_mode : std::uint8_t { off, on, compare };
-
 /// One parsed module file borrowed from the driver for semantic validation.
 struct parsed_module {
   file_id_type file_id = 0;
@@ -35,9 +31,9 @@ struct semantic_options {
   /// Parser-focused drivers (e.g. the parser stress corpus) disable this to
   /// exercise syntax without requiring semantically complete programs.
   bool check_names_and_types = true;
-  /// Runs compile-time calls on the VM; null interprets every one.
+  /// Runs compile-time code; without one, compile-time code is reported as
+  /// unable to run.
   comptime_backend *comptime = nullptr;
-  comptime_vm_mode comptime_mode = comptime_vm_mode::on;
 };
 
 /// Run the semantic validation pipeline over parsed modules.

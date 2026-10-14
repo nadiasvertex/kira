@@ -33269,7 +33269,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (674)
+## drop_plans (677)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33883,6 +33883,9 @@ list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
 list[T] own=std.list::list::drop fields=[]
+list[T] own=std.list::list::drop fields=[]
+list[T] own=std.list::list::drop fields=[]
+list[T] own=std.list::list::drop fields=[]
 list[U] own=std.list::list::drop fields=[]
 list[_] own=std.list::list::drop fields=[]
 list[byte] own=std.list::list::drop$list_byte_ fields=[]
@@ -33945,7 +33948,7 @@ take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1701)
+## borrow_bearing_types (1702)
 &K
 &T
 &T
@@ -34210,6 +34213,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 *T
 *T
 *T
+*mut T
 *mut T
 *mut T
 *mut T

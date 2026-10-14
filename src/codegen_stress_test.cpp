@@ -30,6 +30,7 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/comptime_vm/backend.h"
 #include "src/hir/inline.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
@@ -153,8 +154,9 @@ auto check_source(const std::string &text, const fs::path &path)
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
+  auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
-      parsed_modules, fixture.diag, file_has_errors);
+      parsed_modules, fixture.diag, file_has_errors, &comptime);
   if (fixture.diag.error_count() != 0) {
     std::cerr << cinder::diagnostic_renderer(fixture.sources, false)
                      .render_all(fixture.diag);

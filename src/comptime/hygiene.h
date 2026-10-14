@@ -19,8 +19,8 @@ namespace cinder::comptime {
 /// one, so a spliced `let` is otherwise indistinguishable from one written
 /// directly at the splice site.
 ///
-/// `next_id` is threaded in by the caller (`comptime::evaluator::eval_quote`
-/// passes its own session-lifetime counter) rather than owned here, so
+/// `next_id` is threaded in by the caller (`fragment_builder` passes its
+/// own session-lifetime counter) rather than owned here, so
 /// names stay unique across every fragment renamed in one compilation
 /// session — two different quoted fragments, each with their own internal
 /// `temp`, must never mint the same synthetic name, or they could collide

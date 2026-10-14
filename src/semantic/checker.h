@@ -261,10 +261,9 @@ public:
   auto operator=(checker &&) -> checker & = delete;
   ~checker();
 
-  /// Runs compile-time calls on `backend` where it can, instead of in the
-  /// AST evaluator, as `mode` says. `backend` must outlive the checker.
-  auto set_comptime_backend(comptime_backend *backend,
-                            comptime::evaluator::vm_mode mode) -> void;
+  /// Runs compile-time code on `backend`, which must outlive the checker.
+  /// Null (the default) reports compile-time code as unable to run.
+  auto set_comptime_backend(comptime_backend *backend) -> void;
 
   auto run(const std::vector<parsed_module> &inputs) -> void;
 
@@ -463,13 +462,16 @@ private:
     std::unordered_map<const ast::call_expr *, reified_value>
         reflection_folds_;
 
-    /// Every free, module-level `static def` registered for compile-time
-    /// calling — see `checked_types::comptime_only_functions`'s doc comment,
-    /// the reason this exists (a plain `is_static` check can't tell such a
-    /// function apart from an ordinary static *method*). Populated
-    /// alongside `comptime_eval_.register_pending_function` in `register_
-    /// comptime_globals`, handed to the caller via `take_checked_types`.
+    /// Every free, module-level `static def` — see `checked_types::
+    /// comptime_only_functions`'s doc comment, the reason this exists (a
+    /// plain `is_static` check can't tell such a function apart from an
+    /// ordinary static *method*). Populated by `register_static_functions`,
+    /// handed to the caller via `take_checked_types`.
     std::unordered_set<const ast::func_decl *> comptime_only_functions_;
+    /// The same functions by name, for `evaluate_derive_call` to find its
+    /// `derive_<trait>` function. A later declaration of a name wins.
+    std::unordered_map<std::string, const ast::func_decl *>
+        static_functions_by_name_;
 
     /// Every `for` loop over a user `std.iter.iterator[T]` — see
     /// `iterator_loop_dispatch` in types.h. Populated by `check_body_node`'s
@@ -2670,7 +2672,6 @@ private:
 
   auto try_fold_comptime_only_call(const ast::call_expr &call,
                                    const ast::func_decl &decl,
-                                   const ast::func_decl &instance,
                                    type_id result_type,
                                    const type_scope &type_slots)
       -> const ast::literal_expr *;
@@ -3343,27 +3344,6 @@ private:
   auto function_owner(const ast::func_decl &fn)
       -> std::optional<std::pair<const module_members *, file_id_type>>;
 
-  auto comptime_static_value(const ast::static_decl &decl,
-                             const module_members *owner, std::string cycle)
-      -> std::expected<comptime::value, std::string>;
-
-  auto find_comptime_method(const ast::expr &receiver_expr,
-                            const comptime::value &receiver,
-                            const std::string &name)
-      -> std::expected<const ast::func_decl *, std::string>;
-
-  auto comptime_call_type_args(const ast::call_expr &call)
-      -> std::optional<std::vector<std::pair<std::string, comptime::value>>>;
-
-  auto substitute_comptime_type_params(type_id type) -> type_id;
-
-  auto read_bare_name_for_comptime(const std::string &name)
-      -> comptime::evaluator::bare_name_reading;
-
-  auto read_dotted_path_for_comptime(const ast::module_path_expr &path,
-                                     bool root_is_local)
-      -> comptime::evaluator::dotted_path_reading;
-
   auto infer_value_rooted_path(const ast::module_path_expr &path) -> type_id;
 
   // ==========================================================================
@@ -3493,6 +3473,9 @@ private:
   auto run_comptime_expr_on_vm(const ast::expr &expr)
       -> comptime::evaluator::vm_call_outcome;
 
+  /// Why compile-time code cannot run yet, or `nullopt` when it can.
+  [[nodiscard]] auto comptime_unavailable() const -> std::optional<std::string>;
+
   /// Turns a failed VM run into the notes saying where it failed.
   auto vm_failure_notes(const comptime_failure &failure)
       -> std::vector<diagnostic>;
@@ -3509,11 +3492,11 @@ private:
   friend class vm_program;
   std::unique_ptr<comptime_program> vm_program_;
 
-  /// Runs compile-time calls on the VM, when the session has one.
+  /// Runs compile-time code on the VM, when the session has one.
   comptime_backend *comptime_backend_ = nullptr;
 
   /// Whether the declarations are all in place and bodies are being checked
-  /// (`run_impl`); compile-time calls before then are interpreted.
+  /// (`run_impl`); compile-time code cannot run before then.
   bool bodies_phase_ = false;
 
   auto fold_static_field_path(const ast::module_path_expr &path,
@@ -4013,13 +3996,6 @@ private:
   auto mark_file_error() -> void;
 
   // ==========================================================================
-  //  check_patterns.cpp
-  // ==========================================================================
-
-  auto resolve_variant_tag(const ast::node &node)
-      -> std::optional<std::pair<std::string, std::string>>;
-
-  // ==========================================================================
   //  check_comptime.cpp
   // ==========================================================================
 
@@ -4146,7 +4122,7 @@ private:
   //  check_comptime.cpp
   // ==========================================================================
 
-  auto register_comptime_globals(const std::vector<ast::ptr<ast::node>> &items)
+  auto register_static_functions(const std::vector<ast::ptr<ast::node>> &items)
       -> void;
 
   // ==========================================================================
@@ -4199,15 +4175,10 @@ private:
   //  check_comptime.cpp
   // ==========================================================================
 
-  auto register_comptime_modules() -> void;
-
-  auto register_comptime_coherence_info() -> void;
-
   /// Recursively resolves every item-level splice (`~expr` used directly
   /// among `items`, as opposed to inside a function body) into an injected
   /// `impl` block, descending into inline submodules the same way
-  /// `register_comptime_globals` does. Must run after that pass (so
-  /// `static def`/`static let` globals it references are registered) but
+  /// `register_static_functions` does. Must run after that pass but
   /// before `build_method_table`/`validate_impl_coherence` — see `index_`'s
   /// doc comment for why running here, rather than during ordinary
   /// per-file checking, is what makes the injected impl's methods visible

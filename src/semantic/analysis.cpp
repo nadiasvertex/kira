@@ -40,8 +40,7 @@ auto validate_semantics(const std::vector<parsed_module> &inputs,
 
   if (options.check_names_and_types) {
     return check_program(inputs, session_index, semantic_index, diag,
-                         file_has_errors, options.comptime,
-                         options.comptime_mode);
+                         file_has_errors, options.comptime);
   }
   return checked_types{};
 }

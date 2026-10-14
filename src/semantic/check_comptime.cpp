@@ -639,9 +639,10 @@ auto checker::record_static_for_block(const ast::static_decl &decl) -> void {
   if (decl.for_patterns.size() != 1 || decl.for_patterns[0] == nullptr) {
     return;
   }
-  // In a comptime-only function the iterable may read the function's
-  // parameters, known only per call: nothing is reported then, and the
-  // call is interpreted.
+  // In a comptime-only function, failures are silent: a `static for` that
+  // reads the call's parameters was already rewritten into an ordinary
+  // loop (`rewrite_call_time_static`), so what is left fails only where
+  // the call itself would report it.
   const auto silent = function_.in_comptime_only_function_;
   if (inside_unbound_generic_scope()) {
     defer_to_instances(decl,
@@ -676,19 +677,26 @@ auto checker::static_for_block_iterations(const ast::static_decl &decl,
     return std::nullopt;
   }
   auto inner = std::vector<const ast::static_decl *>{};
+  auto static_ifs = std::vector<const ast::static_decl *>{};
   for (const auto &node : decl.for_body) {
     if (node == nullptr) {
       continue;
     }
     ast::walk(*node, [&](const ast::node &child) -> bool {
-      if (child.kind == ast::node_kind::func_decl) {
+      if (child.kind == ast::node_kind::func_decl ||
+          child.kind == ast::node_kind::quote_expr) {
         return false;
       }
-      if (const auto *nested = ast::as<const ast::static_decl>(&child);
-          nested != nullptr &&
-          nested->decl_kind == ast::static_decl_kind::for_block) {
-        inner.push_back(nested);
-        return false;
+      if (const auto *nested = ast::as<const ast::static_decl>(&child)) {
+        if (nested->decl_kind == ast::static_decl_kind::for_block) {
+          inner.push_back(nested);
+          return false;
+        }
+        if (nested->decl_kind ==
+                ast::static_decl_kind::conditional_compilation &&
+            nested->if_condition != nullptr) {
+          static_ifs.push_back(nested);
+        }
       }
       return true;
     });
@@ -713,18 +721,25 @@ auto checker::static_for_block_iterations(const ast::static_decl &decl,
       }
       iteration.bindings.emplace_back(binding.name, literal);
     }
-    if (!inner.empty()) {
-      comptime_eval_.push_locals(scope);
-      for (const auto *nested : inner) {
-        auto nested_iterations = static_for_block_iterations(*nested, silent);
-        if (!nested_iterations.has_value()) {
-          comptime_eval_.pop_locals();
-          return std::nullopt;
-        }
-        iteration.nested.emplace_back(nested, std::move(*nested_iterations));
+    comptime_eval_.push_locals(scope);
+    // A condition that reads nothing it can evaluate now keeps the decision
+    // checking made, if any.
+    for (const auto *nested : static_ifs) {
+      const auto condition = comptime_eval_.try_evaluate(*nested->if_condition);
+      if (condition.has_value() &&
+          condition->kind == comptime::value_kind::boolean) {
+        iteration.static_ifs.emplace(nested, condition->boolean);
       }
-      comptime_eval_.pop_locals();
     }
+    for (const auto *nested : inner) {
+      auto nested_iterations = static_for_block_iterations(*nested, silent);
+      if (!nested_iterations.has_value()) {
+        comptime_eval_.pop_locals();
+        return std::nullopt;
+      }
+      iteration.nested.emplace_back(nested, std::move(*nested_iterations));
+    }
+    comptime_eval_.pop_locals();
     unrolled.push_back(std::move(iteration));
   }
   return unrolled;
@@ -848,6 +863,13 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
                                              function_.scopes_.size() - 1);
       const auto yield_type = infer_expr(*decl.for_yield, expected_element);
       cache_.static_for_yields_.pop_back();
+      // The list the loop builds is the one its use expects, so a yielded
+      // literal takes that element type before the yield is run (which
+      // would settle it at its default). A mismatch is reported where the
+      // list is used.
+      if (expected_element != k_unknown_type) {
+        static_cast<void>(agrees(expected_element, yield_type));
+      }
       cache_.static_for_yield_types_.insert_or_assign(&decl, yield_type);
     }
     const auto block_form = decl.decl_kind == ast::static_decl_kind::for_block;
@@ -867,9 +889,8 @@ auto checker::check_static_decl(const ast::static_decl &decl, bool in_body)
 
     // The inline form's values, computed once here for code that is not
     // generic; a template's are computed per instance instead
-    // (`record_static_for_inline`). In a comptime-only function the
-    // iterable may read the function's parameters, known only per call;
-    // then nothing is reported here, and the call is interpreted.
+    // (`record_static_for_inline`). In a comptime-only function a failure
+    // here is silent, as in `record_static_for_block`.
     if (decl.decl_kind == ast::static_decl_kind::for_inline) {
       if (!inside_unbound_generic_scope()) {
         if (auto values = evaluate_static_for_inline(
@@ -1067,13 +1088,10 @@ auto checker::rewrite_call_time_static(ast::ptr<ast::node> &slot) -> bool {
   return true;
 }
 
-/// Recursively registers every top-level `static def` function and `type`
-/// declaration found in `items` (descending into inline submodules) with
-/// `comptime_eval_`. Bare names in compile-time code do not resolve
-/// against these tables — the checker answers them per module
-/// (`read_bare_name_for_comptime`) — but `evaluate_derive_call` finds its
-/// `derive_<trait>` function here, and type reflection its declarations.
-auto checker::register_comptime_globals(
+/// Records every module-level `static def` in `items` (descending into
+/// inline submodules) as compile-time-only (`session_.comptime_only_
+/// functions_`) and by name (`session_.static_functions_by_name_`).
+auto checker::register_static_functions(
     const std::vector<ast::ptr<ast::node>> &items) -> void {
   for (const auto &item : items) {
     if (item == nullptr || item->has_error) {
@@ -1082,98 +1100,14 @@ auto checker::register_comptime_globals(
     if (item->kind == ast::node_kind::func_decl) {
       const auto &fn = ast::cast<const ast::func_decl>(*item);
       if (fn.modifiers.is_static && !fn.name.empty()) {
-        comptime_eval_.register_pending_function(fn.name, fn);
+        session_.static_functions_by_name_.insert_or_assign(fn.name, &fn);
         session_.comptime_only_functions_.insert(&fn);
       }
-    } else if (item->kind == ast::node_kind::type_decl) {
-      // Every `type` declaration is registered, unconditionally ( Cinder
-      // types have no "static" modifier to gate on — they're always
-      // compile-time-known) — gives `comptime::evaluator::eval_call`'s
-      // reflection intrinsics (`T.fields()`/etc., `reflect.cpp`) their
-      // own session-wide name -> declaration table, the same
-      // "confluent, order-independent" shape `register_pending_static`/
-      // `register_pending_function` already use for `static let`/
-      // `static def`.
-      const auto &decl = ast::cast<const ast::type_decl>(*item);
-      if (!decl.name.empty()) {
-        comptime_eval_.register_pending_type(decl.name, decl);
-      }
     } else if (item->kind == ast::node_kind::sub_module_decl) {
-      const auto &sub = ast::cast<const ast::sub_module_decl>(*item);
-      register_comptime_globals(sub.items);
+      register_static_functions(
+          ast::cast<const ast::sub_module_decl>(*item).items);
     }
   }
-}
-
-/// Registers every module's reflectable surface (its `def` and `type`
-/// members, each with visibility) with the compile-time evaluator so
-/// `M.functions()`/`M.types()`/`M.name()` reflection resolves. Iterates the
-/// finished `program_index`, so an instantiated functor's synthetic module
-/// is reflected exactly like a hand-written one (design §5).
-auto checker::register_comptime_modules() -> void {
-  for (const auto &[module_name, members] : index_.modules) {
-    auto info = comptime::evaluator::module_reflection_info{};
-    info.functions.reserve(members.functions.size());
-    for (const auto &[name, ref] : members.functions) {
-      info.functions.push_back(comptime::evaluator::module_member_info{
-          .name = name,
-          .is_pub = ref.decl != nullptr &&
-                    ref.decl->visibility == ast::visibility::pub});
-    }
-    info.types.reserve(members.types.size());
-    for (const auto &[name, ref] : members.types) {
-      info.types.push_back(comptime::evaluator::module_member_info{
-          .name = name,
-          .is_pub = ref.decl != nullptr &&
-                    ref.decl->visibility == ast::visibility::pub});
-    }
-    // By name, as `reflect_module_call` lists them.
-    const auto by_name = [](const auto &a, const auto &b) -> bool {
-      return a.name < b.name;
-    };
-    std::ranges::sort(info.functions, by_name);
-    std::ranges::sort(info.types, by_name);
-    // Register under the fully-qualified name and, for ergonomic
-    // reflection, the leaf name (`sample.math` is reachable as `math` when
-    // a reflection reference names it unqualified). Full name registered
-    // last so it wins any leaf/full collision.
-    const auto leaf = split_module_name(module_name).back();
-    if (leaf != module_name) {
-      comptime_eval_.register_pending_module(leaf, info);
-    }
-    comptime_eval_.register_pending_module(module_name, std::move(info));
-  }
-}
-
-/// Registers the session-wide coherence facts `implements[T, Trait]()`/
-/// `T.traits()`/`Trait.requires()` (`reflect.cpp`) answer from: `traits_
-/// by_type_key_` (already built by `validate_impl_coherence`, which must
-/// therefore run before this) mirrored as-is, plus each trait's own
-/// `requires`-clause supertrait names extracted from its declaration.
-/// Called once, alongside `register_comptime_modules`, before any file's
-/// body is checked.
-auto checker::register_comptime_coherence_info() -> void {
-  auto info = comptime::evaluator::impl_coherence_info{.traits_by_type_key =
-                                                           traits_by_type_key_};
-  for (const auto &[module_name, members] : index_.modules) {
-    for (const auto &[trait_name, ref] : members.traits) {
-      if (ref.decl == nullptr || !ref.decl->requires_bound.has_value()) {
-        continue;
-      }
-      auto &supertraits = info.trait_requires[trait_name];
-      for (const auto &term : ref.decl->requires_bound->terms) {
-        if (term.type == nullptr ||
-            term.type->kind != ast::node_kind::named_type) {
-          continue;
-        }
-        const auto &named = ast::cast<const ast::named_type>(*term.type);
-        if (!named.path.empty()) {
-          supertraits.push_back(named.path.back());
-        }
-      }
-    }
-  }
-  comptime_eval_.register_impl_coherence_info(std::move(info));
 }
 
 } // namespace cinder::semantic::detail

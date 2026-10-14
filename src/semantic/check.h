@@ -24,9 +24,13 @@ namespace cinder::semantic {
 /// typed lowering) can read what the checker already knows instead of
 /// re-deriving it. The types remain meaningful only as long as the AST they
 /// were resolved against is alive.
+///
+/// `comptime` runs compile-time code; without one, compile-time code is
+/// reported as unable to run.
 [[nodiscard]] auto check_program(const std::vector<parsed_module> &inputs,
                                  diagnostic_bag &diag,
-                                 std::vector<bool> &file_has_errors)
+                                 std::vector<bool> &file_has_errors,
+                                 comptime_backend *comptime = nullptr)
     -> checked_types;
 
 /// As above, reusing a module graph the caller already built (the
@@ -36,7 +40,7 @@ namespace cinder::semantic {
     const std::vector<parsed_module> &inputs,
     const module_session_index &session_index,
     const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
-    std::vector<bool> &file_has_errors, comptime_backend *comptime = nullptr,
-    comptime_vm_mode comptime_mode = comptime_vm_mode::on) -> checked_types;
+    std::vector<bool> &file_has_errors, comptime_backend *comptime = nullptr)
+    -> checked_types;
 
 } // namespace cinder::semantic

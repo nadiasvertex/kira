@@ -6,7 +6,6 @@
 #include <vector>
 
 namespace cinder::ast {
-struct func_decl;
 struct node;
 struct type_decl;
 } // namespace cinder::ast
@@ -23,29 +22,12 @@ enum class value_kind : uint8_t {
   /// A compile-time list or tuple; both are represented the same way since
   /// neither has element-count-dependent typing at this layer.
   list,
-  /// A compile-time struct instance built from a `struct_expr` literal.
+  /// A struct value: `type_name` and `fields`.
   struct_instance,
-  /// A compile-time sum-type variant instance, e.g. `@x86_64` or
-  /// `@other("foo")` — the type's name and the specific variant's tag are
-  /// held in `type_name`/`variant_tag`; any payload values (e.g. `"foo"` in
-  /// `@other("foo")`) reuse `elements`, positionally, one per declared
-  /// payload type. Constructed only through `variant_resolver_fn`
-  /// (`evaluator::resolve_variant`), which asks the type checker's own
-  /// already-resolved type for the node whether it names a variant — the
-  /// parser drops the leading `@` entirely (`@unix` becomes a plain
-  /// `ident_expr` named `"unix"`), so the evaluator has no syntactic way to
-  /// tell a variant constructor apart from an ordinary identifier without
-  /// that resolved-type context.
+  /// A sum-type variant value: the type's name in `type_name`, the
+  /// variant's tag (`"some"`, `"x86_64"`) in `variant_tag`, and its payload
+  /// values, in order, in `elements`.
   variant_instance,
-  /// A reference to a `static def` function, callable from other
-  /// compile-time expressions.
-  closure,
-  /// A lambda written in compile-time code: `fragment` is its
-  /// `ast::lambda_expr`, `fields` the enclosing locals it captured (by
-  /// value, as both backends capture implicitly), and `function` the
-  /// `def` it was written in (null at module scope), whose module its body
-  /// resolves names in.
-  lambda,
   /// A quoted expression fragment ( Cinder type `expr`) — a boxed
   /// `const ast::expr *` into `fragment` (stored as `const ast::node *`
   /// since the four quote-value kinds share one storage field; the actual
@@ -59,18 +41,15 @@ enum class value_kind : uint8_t {
   type_expr_fragment,
   /// A synthesized pattern fragment ( Cinder type `pattern`) — a boxed
   /// `const ast::pattern *` into `fragment`, built only by the
-  /// `expr.ctor_pattern(...)` AST-builder intrinsic (`eval.cpp`) and
+  /// `expr.ctor_pattern(...)` AST-builder intrinsic (`fragments.cpp`) and
   /// consumed only by `expr.arm(...)`. Never produced by an ordinary
   /// backtick quote (there is no `` `(pattern-syntax)` `` quote form), so
   /// unlike the four kinds above it never needs `require_quote_value`
   /// splice-position checking.
   pattern_fragment,
   /// A bound generic type argument (e.g. `T` inside `static def
-  /// derive_show[T]()`, bound by a compile-time generic call like
-  /// `derive_show[point]()`) — a boxed `const ast::type_decl *`, resolved
-  /// the same way `reflect.cpp`'s `pending_types_`-by-literal-name lookup
-  /// already resolves a type reflection target, just reached through a
-  /// local binding instead of a literal identifier spelling.
+  /// derive_show[T]()` called as `derive_show[point]()`): the type's name,
+  /// its declaration when it has one, and its `checked_type`.
   type_value,
   /// Sentinel meaning "evaluation already failed and a diagnostic was
   /// already reported" — mirrors `k_unknown_type`'s role in the type
@@ -80,12 +59,10 @@ enum class value_kind : uint8_t {
   diagnostic_marker,
 };
 
-/// A compile-time value produced by `evaluator`. Integers are held as a
-/// signed 64-bit value regardless of the expression's declared Cinder width
-/// — by the time the evaluator runs, `checker::infer_expr` has already
-/// validated the expression against its declared type, so the evaluator
-/// itself doesn't need to re-derive or enforce width/signedness; it only
-/// needs a value.
+/// A compile-time value: what compile-time code the VM ran returned, or a
+/// binding the checker holds for it. Integers are held as a signed 64-bit
+/// value regardless of their declared Cinder width; the checker knows the
+/// type.
 struct value {
   value_kind kind = value_kind::unit;
   bool boolean = false;
@@ -97,8 +74,8 @@ struct value {
   std::vector<value> elements;
 
   /// Declared/inferred type name for `struct_instance` (empty if the
-  /// literal had no explicit type head) and, for `closure`, the function's
-  /// name (used in diagnostics).
+  /// literal had no explicit type head), and the type's name for
+  /// `type_value`.
   std::string type_name;
 
   /// Field values for `struct_instance`.
@@ -108,12 +85,8 @@ struct value {
   /// `"other"`); `type_name` (above) holds the sum type's own name.
   std::string variant_tag;
 
-  /// Target function for `closure`; never owning — function declarations
+  /// Bound type declaration for `type_value`; never owning — declarations
   /// live for the whole checking session.
-  const ast::func_decl *function = nullptr;
-
-  /// Bound type declaration for `type_value`; never owning, same lifetime
-  /// rationale as `function`.
   const ast::type_decl *type_decl = nullptr;
 
   /// For `type_value`, the checker's interned `type_id` for the bound type,
@@ -162,22 +135,6 @@ struct value {
                  .elements = std::move(payload),
                  .type_name = std::move(type_name),
                  .variant_tag = std::move(variant_tag)};
-  }
-  [[nodiscard]] static auto make_closure(std::string name,
-                                         const ast::func_decl *function)
-      -> value {
-    return value{.kind = value_kind::closure,
-                 .type_name = std::move(name),
-                 .function = function};
-  }
-  [[nodiscard]] static auto
-  make_lambda(const ast::node *lambda,
-              std::unordered_map<std::string, value> captures,
-              const ast::func_decl *defined_in) -> value {
-    return value{.kind = value_kind::lambda,
-                 .fields = std::move(captures),
-                 .function = defined_in,
-                 .fragment = lambda};
   }
   [[nodiscard]] static auto make_expr_fragment(const ast::node *fragment)
       -> value {
@@ -232,14 +189,5 @@ struct value {
     return kind == value_kind::boolean && boolean;
   }
 };
-
-/// Whether `a` and `b` are the same compile-time value: the same kind and
-/// contents, compared deeply. Two quoted fragments are the same when they
-/// are the same syntax; two closures or types only when they refer to the
-/// same thing.
-[[nodiscard]] auto same_value(const value &a, const value &b) -> bool;
-
-/// `v` written out for a diagnostic: `3`, `"text"`, `[1, 2]`, `@some(4)`.
-[[nodiscard]] auto describe_value(const value &v) -> std::string;
 
 } // namespace cinder::comptime

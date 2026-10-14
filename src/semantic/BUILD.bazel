@@ -102,6 +102,7 @@ cc_test(
         "//src:semantic_analysis_test_files",
     ],
     deps = [
+        "//src/comptime_vm",
         ":semantic",
         "//src/parser:parser",
         "//src/testing",
@@ -116,6 +117,7 @@ cc_test(
         "//src:std_sources",
     ],
     deps = [
+        "//src/comptime_vm",
         ":semantic",
         "//src/parser:parser",
         "//src/testing",
@@ -131,6 +133,7 @@ cc_test(
         "//src:std_sources",
     ],
     deps = [
+        "//src/comptime_vm",
         ":semantic",
         "//src/parser:parser",
         "//src/testing",
@@ -161,6 +164,7 @@ cc_test(
         "//src:std_sources",
     ],
     deps = [
+        "//src/comptime_vm",
         ":semantic",
         "//src/parser:parser",
         "//src/testing",

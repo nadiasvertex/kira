@@ -23,9 +23,8 @@ struct fragment_error {
 /// Builds quoted syntax for compile-time code: the value a quote evaluates
 /// to, and the `expr.*` builders (`expr.lit`, `expr.field`, ...). Every
 /// operation takes values already computed — a quote's splices, a builder's
-/// arguments — so the interpreter and the compile-time VM, which compute
-/// them differently, build exactly the same syntax. Owns every node it
-/// makes for the rest of the session.
+/// arguments — which the compile-time VM passes in through host calls. Owns
+/// every node it makes for the rest of the session.
 class fragment_builder {
 public:
   /// The splices nested in `quote` (`splice_expr`/`splice_type` nodes) that

@@ -138,12 +138,6 @@ filegroup(
 )
 
 filegroup(
-    name = "comptime_eval_test_files",
-    srcs = glob(["testdata/comptime_eval_test/*.cn"]),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
     name = "runtime_layout_test_files",
     srcs = glob(["testdata/runtime_layout_test/*.cn"]),
     visibility = ["//visibility:public"],
@@ -287,6 +281,7 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/comptime_vm",
         "//src/bytecode:bytecode",
         "//src/bytecode:vm",
         "//src/bytecode_compiler:bytecode_compiler",

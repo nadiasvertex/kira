@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "comptime",
@@ -6,8 +6,6 @@ cc_library(
         "eval.cpp",
         "fragments.cpp",
         "hygiene.cpp",
-        "reflect.cpp",
-        "value.cpp",
     ],
     hdrs = [
         "eval.h",
@@ -20,18 +18,5 @@ cc_library(
         "//src/parser",
         "//src/runtime:string_ops",
         "//src/utf8",
-    ],
-)
-
-cc_test(
-    name = "eval_test",
-    srcs = ["eval_test.cpp"],
-    data = [
-        "//src:comptime_eval_test_files",
-    ],
-    deps = [
-        ":comptime",
-        "//src/parser",
-        "//src/testing",
     ],
 )

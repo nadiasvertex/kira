@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
@@ -75,8 +76,9 @@ auto lower_fixture(
   }
 
   auto file_has_errors = std::vector<bool>(file_ids.size(), false);
+  auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
-      parsed_modules, fixture.diag, file_has_errors);
+      parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
 
   for (size_t i = 0; i < fixture.ast_files.size(); ++i) {

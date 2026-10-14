@@ -9,6 +9,7 @@
 
 #include "analysis.h"
 #include "ownership_check.h"
+#include "src/comptime_vm/backend.h"
 #include "src/parser/parser.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
@@ -158,8 +159,12 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     fail("expected ownership check test fixtures to parse");
   }
 
+  auto comptime = cinder::comptime_vm::vm_backend{};
+
   const auto checked = cinder::semantic::validate_semantics(
-      parsed_modules, diag, file_has_errors);
+      parsed_modules, diag, file_has_errors,
+
+      cinder::semantic::semantic_options{.comptime = &comptime});
 
   // Mirror the driver: one ownership pass over the checked result, run only
   // over the user's own files (`stdlib_boundary` skips the injected prelude).

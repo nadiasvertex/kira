@@ -26,7 +26,7 @@ A function may be:
 
 Compile time has two distinct machineries.
 
-- **Evaluation** (`src/comptime/eval.*`) is an interpreter that runs ordinary Cinder — loops, functions, pattern matching — on **known** values to produce compile-time values. `build_lookup_table()`, `deriving`, and quote/splice construction are all evaluation.
+- **Evaluation** runs ordinary Cinder — loops, functions, pattern matching — on **known** values to produce compile-time values. The checker lowers compile-time code to HIR and runs it on the bytecode VM, the same lowering run-time code uses. `build_lookup_table()`, `deriving`, and quote/splice construction are all evaluation.
 - **Reasoning** (`src/semantic/reason.*`) is the constraint solver that discharges refinement predicates, contract conditions, and dependent-type obligations over **unknown** values. It proves; it does not run arbitrary code.
 
 They never substitute for one another. `vec[T, 2 + 3]` is evaluation — the expression is closed, so it folds to the constant `5`. `vec[T, m + n]` is reasoning — `m` and `n` are unknown, so the length is a symbolic term and any question about it is a proof, not a computation. The governing rule: **fold if closed, symbolize otherwise.** See [Dependent and Refinement Types § The two subsystems, concretely](33-dependent-and-refinement-types.md#the-two-subsystems-concretely).

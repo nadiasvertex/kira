@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "analysis.h"
+#include "src/comptime_vm/backend.h"
 #include "src/parser/parser.h"
 #include "src/semantic/checker_results.h"
 #include "src/testing/test_assert.h"
@@ -68,8 +69,12 @@ auto analyze_sources(const std::vector<source_fixture> &fixtures)
     ast_files.push_back(std::move(ast_file));
   }
 
+  auto comptime = cinder::comptime_vm::vm_backend{};
+
   [[maybe_unused]] const auto checked = cinder::semantic::validate_semantics(
-      parsed_modules, diag, file_has_errors);
+      parsed_modules, diag, file_has_errors,
+
+      cinder::semantic::semantic_options{.comptime = &comptime});
 
   return analyzed_session{
       .diagnostics =

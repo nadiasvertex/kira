@@ -228,6 +228,10 @@ struct static_for_iteration {
   std::vector<
       std::pair<const ast::static_decl *, std::vector<static_for_iteration>>>
       nested;
+  /// The branch each `static if` in this one's body takes in this
+  /// iteration, when its condition reads the loop bindings. A nested block
+  /// `static for`'s iterations hold the decisions for its own body.
+  std::unordered_map<const ast::static_decl *, bool> static_ifs;
 };
 
 struct iterator_loop_dispatch {
@@ -638,9 +642,8 @@ struct lowering_results {
   std::unordered_set<const ast::func_decl *> open_param_templates;
   /// Owns the copies in `generic_lambda_instances`.
   ast::ptr_vec<ast::expr> synthesized_lambdas;
-  /// Every free, module-level `static def` registered with `comptime::
-  /// evaluator` for compile-time calling (`checker::register_comptime_
-  /// globals`'s `register_pending_function` call) — as opposed to an
+  /// Every free, module-level `static def` (`checker::register_static_
+  /// functions`) — as opposed to an
   /// ordinary `static def` *method* declared inside an `impl`/`extend`/
   /// `trait` block (`zero`, `one`, `from_iter`, ...), which shares the same
   /// `func_decl::modifiers.is_static` flag but has a real runtime body and

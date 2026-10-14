@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
 #include "src/llvm_codegen/aot.h"
@@ -92,8 +93,9 @@ auto compile_to_object(const std::string &text, const fs::path &object_path)
       cinder::semantic::parsed_module{.file_id = *file_id,
                                       .ast_file = ast_file.get()},
   };
-  auto checked =
-      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  auto checked = cinder::semantic::check_program(parsed_modules, diag,
+                                                 file_has_errors, &comptime);
   expect(diag.error_count() == 0, "expected fixture to check cleanly");
 
   auto lowered = hir::lower_module(*ast_file, "sample", checked);

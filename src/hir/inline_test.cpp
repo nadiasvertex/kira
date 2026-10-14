@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/hir/inline.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
@@ -67,8 +68,9 @@ auto inline_program(const std::string &text) -> inlined_program {
       cinder::semantic::parsed_module{.file_id = *file_id,
                                       .ast_file = program.ast_file.get()},
   };
+  auto comptime = cinder::comptime_vm::vm_backend{};
   program.checked = cinder::semantic::check_program(
-      parsed_modules, program.diag, file_has_errors);
+      parsed_modules, program.diag, file_has_errors, &comptime);
   expect(program.diag.error_count() == 0, "expected fixture to check cleanly");
 
   auto lowered =

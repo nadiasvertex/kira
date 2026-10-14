@@ -8,43 +8,6 @@ checker::checker(program_index &index, diagnostic_bag &diag,
                  std::vector<bool> &file_has_errors)
     : index_(index), diag_(diag), file_has_errors_(file_has_errors),
       comptime_eval_(diag, 0) {
-  comptime_eval_.set_variant_resolver(
-      [this](const ast::node &node)
-          -> std::optional<std::pair<std::string, std::string>> {
-        return resolve_variant_tag(node);
-      });
-  comptime_eval_.set_path_resolver(
-      [this](const ast::module_path_expr &path,
-             bool root_is_local) -> comptime::evaluator::dotted_path_reading {
-        return read_dotted_path_for_comptime(path, root_is_local);
-      });
-  comptime_eval_.set_name_resolver(
-      [this](
-          const std::string &name) -> comptime::evaluator::bare_name_reading {
-        return read_bare_name_for_comptime(name);
-      });
-  comptime_eval_.set_method_resolver(
-      [this](const ast::expr &receiver_expr, const comptime::value &receiver,
-             const std::string &name)
-          -> std::expected<const ast::func_decl *, std::string> {
-        return find_comptime_method(receiver_expr, receiver, name);
-      });
-  comptime_eval_.set_generic_call_resolver(
-      [this](const ast::call_expr &call)
-          -> std::optional<
-              std::vector<std::pair<std::string, comptime::value>>> {
-        return comptime_call_type_args(call);
-      });
-  comptime_eval_.set_call_context(
-      [this](const ast::func_decl &fn,
-             const std::function<comptime::value()> &body)
-          -> cinder::comptime::value {
-        const auto owner = function_owner(fn);
-        if (!owner.has_value()) {
-          return body();
-        }
-        return in_module_context(*owner->first, owner->second, body);
-      });
   // A default is a candidate the queue offers once everything else has
   // stalled, not a rule inside the solver. The candidate travels in the
   // obligation's payload, so this resolver does not know what `int32` is
@@ -471,8 +434,7 @@ auto checker::check_file(const ast::file &file) -> void {
 }
 
 /// Whether `name` reflects a module — matching a module's fully-qualified
-/// name or its leaf segment, the two keys `register_comptime_modules`
-/// registers. Lets `infer_field_call` type `M.functions()` and hand it to
+/// name or its leaf segment. Lets `infer_field_call` type `M.functions()` and hand it to
 /// compile-time evaluation instead of rejecting `M` as an undefined value.
 auto checker::names_reflectable_module(std::string_view name) const -> bool {
   return std::ranges::any_of(index_.modules, [&](const auto &entry) -> auto {
@@ -519,24 +481,14 @@ auto checker::impl_report_span(const ast::impl_decl &impl) const
 /// `nullptr` means "no derivation available here", never "an error was
 /// reported": the caller is expected to fall back to the type-check-only
 /// `derived_method_result` path. In particular, a session that didn't
-/// inject `std.derive` at all (several narrow test fixture sets don't) hits
-/// the `has_pending_function` guard and degrades quietly, rather than
-/// attempting a call `evaluate` can only fail with a leaked diagnostic.
+/// inject `std.derive` at all (several narrow test fixture sets don't) finds
+/// no `derive_<trait>` function and degrades quietly.
 ///
-/// Every call materializes a *fresh* fragment (`comptime::evaluator::
-/// materialize_quote`), which is what makes per-instantiation derivation
-/// work at all: `box[int32]` and `box[str]` each get their own `impl`
-/// node, identical in spelling and distinct in identity, so each can be
-/// registered against its own target type.
-///
-/// `instance_id` is the *concrete* type being derived for (`box[int32]`,
-/// or the type's own id for a non-generic type) — used to precompute each
-/// field's fully-substituted, canonically-rendered type name
-/// (`struct_field_type` + `type_table::display`) and hand it to the
-/// evaluator (`push_field_type_context`) for the duration of this call, so
-/// `f.type_name` inside the derive body reports the instantiation's real
-/// field types instead of the declaration's raw, un-substituted syntax
-/// (`spec/todo.md` item 5).
+/// Each call runs the instance `derive_<trait>[T]` for `instance_id`, the
+/// concrete type being derived for (`box[int32]`, or the type's own id for a
+/// non-generic type), on the VM. Every call builds a fresh fragment, so
+/// `box[int32]` and `box[str]` each get their own `impl` node, registered
+/// against its own target type.
 auto checker::evaluate_derive_call(const ast::type_decl &decl,
                                    std::string_view trait_name,
                                    type_id instance_id)
@@ -549,7 +501,10 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
   const auto derive_fn_name = is_sum_shaped
                                   ? std::format("derive_{}_sum", trait_name)
                                   : std::format("derive_{}", trait_name);
-  const auto *derive_fn = comptime_eval_.pending_function(derive_fn_name);
+  const auto found = session_.static_functions_by_name_.find(derive_fn_name);
+  const auto *derive_fn = found != session_.static_functions_by_name_.end()
+                              ? found->second
+                              : nullptr;
   if (derive_fn == nullptr || derive_fn->type_params.size() != 1) {
     return nullptr;
   }
@@ -561,21 +516,6 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
   }
   const auto &type_param = derive_fn->type_params.front();
 
-  auto field_type_names =
-      std::unordered_map<const ast::struct_field *, std::string>{};
-  if (!is_sum_shaped) {
-    const auto &struct_def =
-        ast::cast<const ast::struct_type_def>(*decl.definition);
-    const auto &instance = session_.types_.entry(instance_id);
-    for (const auto &field : struct_def.body.fields) {
-      if (const auto field_type_id = struct_field_type(instance, field.name);
-          field_type_id.has_value()) {
-        field_type_names.emplace(&field,
-                                 session_.types_.display(*field_type_id));
-      }
-    }
-  }
-  comptime_eval_.push_field_type_context(std::move(field_type_names));
   // The instance for this type is checked first, so the VM can run it. Any
   // problem with it is reported at the type that asked for it.
   auto solution = generic_solution{};
@@ -591,7 +531,6 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
             {{type_param.name, comptime::value::make_type_value(
                                    decl.name, &decl, instance_id)}});
       });
-  comptime_eval_.pop_field_type_context();
   if (fragment_value.is_error() ||
       fragment_value.kind != comptime::value_kind::def_expr_fragment ||
       fragment_value.fragment == nullptr) {
@@ -944,7 +883,7 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
         file_has_errors_[input.file_id]) {
       continue;
     }
-    register_comptime_globals(input.ast_file->items);
+    register_static_functions(input.ast_file->items);
   }
 
   // `[T: ord]` and `[n: usize]` parse alike, so the parser marks both as
@@ -991,17 +930,8 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
     pop_scope();
   }
 
-  // Register every module's reflectable surface (now including materialized
-  // functor instantiations) so compile-time `M.functions()`/`M.types()`/
-  // `M.name()` reflection resolves — see `register_comptime_modules`.
-  register_comptime_modules();
-
   build_method_table();
   validate_impl_coherence();
-  // Reads `traits_by_type_key_`, so must run after `validate_impl_
-  // coherence` above and, like `register_comptime_modules`, before any
-  // file's body (and therefore any `static`/comptime call) is checked.
-  register_comptime_coherence_info();
   // From here on the method table and coherence records hold every written
   // declaration, so compile-time code may check functions out of turn to run
   // them on the VM.
@@ -1030,7 +960,6 @@ auto checker::run_impl(const std::vector<parsed_module> &inputs) -> void {
     pop_scope();
   }
 
-  register_comptime_coherence_info();
   check_pending_functor_bodies();
 
   for (const auto &input : inputs) {
@@ -1078,32 +1007,26 @@ auto checker::run(const std::vector<parsed_module> &inputs) -> void {
 /// Builds the session-wide `program_index` once, then runs one `checker`
 /// instance over every input file.
 auto check_program(const std::vector<parsed_module> &inputs,
-                   diagnostic_bag &diag, std::vector<bool> &file_has_errors)
-    -> checked_types {
+                   diagnostic_bag &diag, std::vector<bool> &file_has_errors,
+                   comptime_backend *comptime) -> checked_types {
   const auto session_index = build_module_session_index(inputs);
   const auto semantic_index = build_semantic_resolution_index(inputs);
   return check_program(inputs, session_index, semantic_index, diag,
-                       file_has_errors);
+                       file_has_errors, comptime);
 }
 
 auto check_program(const std::vector<parsed_module> &inputs,
                    const module_session_index &session_index,
                    const semantic_resolution_index &semantic_index,
                    diagnostic_bag &diag, std::vector<bool> &file_has_errors,
-                   comptime_backend *comptime, comptime_vm_mode comptime_mode)
-    -> checked_types {
+                   comptime_backend *comptime) -> checked_types {
   // Not `const`: `checker::resolve_item_splices` mutates this in place to
   // graft splice-synthesized impls in before method-table/coherence build —
   // see `checker::index_`'s doc comment.
   auto index = build_program_index(inputs);
   auto session_checker = checker(index, diag, file_has_errors);
   session_checker.set_module_graph(session_index, semantic_index);
-  if (comptime != nullptr && comptime_mode != comptime_vm_mode::off) {
-    session_checker.set_comptime_backend(
-        comptime, comptime_mode == comptime_vm_mode::compare
-                      ? comptime::evaluator::vm_mode::compare
-                      : comptime::evaluator::vm_mode::on);
-  }
+  session_checker.set_comptime_backend(comptime);
   session_checker.run(inputs);
   return session_checker.take_checked_types();
 }

@@ -1105,6 +1105,28 @@ auto checker::reify_value(const comptime::value &value, type_id type,
     return result;
   }
   case comptime::value_kind::variant_instance: {
+    // `option` and `result` have no declaration to read variants from; their
+    // payloads are the generic arguments.
+    if (entry.kind == type_kind::builtin_generic_kind &&
+        ((entry.name == "option" && entry.args.size() == 1) ||
+         (entry.name == "result" && entry.args.size() == 2))) {
+      const auto &tag = value.variant_tag;
+      const auto is_option = entry.name == "option";
+      auto payload = std::vector<type_id>{};
+      if (tag == (is_option ? "some" : "ok")) {
+        payload.push_back(entry.args[0]);
+      } else if (!is_option && tag == "err") {
+        payload.push_back(entry.args[1]);
+      } else if (!is_option || tag != "none") {
+        return std::nullopt;
+      }
+      result.kind = shape::variant;
+      result.names.push_back(tag);
+      if (!reify_parts(value.elements, payload)) {
+        return std::nullopt;
+      }
+      return result;
+    }
     const auto *variant = find_variant(entry, value.variant_tag);
     if (variant == nullptr) {
       return std::nullopt;
@@ -1309,33 +1331,25 @@ auto checker::build_static_struct_expr(const comptime::value &value,
 
 /// Attempts to fold a call to a comptime-only `static def` instance
 /// (`session_.comptime_only_functions_`) reached from ordinary, non-comptime
-/// code — see todo item 8. `instance` has already been fully, concretely type-
-/// checked by `find_or_check_generic_instance`, but `hir::lower_module`
-/// deliberately never lowers it (nor any comptime-only instance) to a real
-/// function, so an ordinary `hir_call` naming it would fail to resolve at
-/// the bytecode-compile stage. `comptime::evaluator` already knows how to
-/// execute a `static def`'s body directly (the same machinery `static
-/// assert`/`static if` use); this just runs that here, at the call site,
-/// and turns the result into a literal for lowering to splice in instead
-/// of a call. Returns `nullptr` (leaving the call to fall back to the
+/// code — see todo item 8. `hir::lower_module` never lowers a comptime-only
+/// instance to a run-time function, so an ordinary `hir_call` naming it
+/// would fail to resolve at the bytecode-compile stage. This runs the call
+/// at compile time instead, through `decl` (the template) and the call's
+/// type arguments, and turns the result into a literal for lowering to
+/// splice in instead of a call. Returns `nullptr` (leaving the call to fall back to the
 /// pre-existing, unresolvable-function behavior) when the call's arguments
 /// aren't themselves compile-time constant, or the result isn't a scalar
 /// `materialize_const_literal` can represent — a struct/list/variant
 /// result has no route to a literal today.
 auto checker::try_fold_comptime_only_call(const ast::call_expr &call,
                                           const ast::func_decl &decl,
-                                          const ast::func_decl &instance,
                                           type_id result_type,
                                           const type_scope &type_slots)
     -> const ast::literal_expr * {
-  // Rebind `decl`'s own type parameters into the evaluator's locals the
-  // same way `check_function` did while `instance` was being checked
-  // (`type_param_comptime_values`) — that binding is long gone by now,
-  // and without it every `T.name()`/`T.kind()` in `instance`'s body has
-  // nothing to resolve against.
+  // The call runs the instance its type arguments name.
   auto type_args = type_param_comptime_values(decl.type_params, type_slots);
-  const auto result = comptime_eval_.try_eval_ordinary_call(
-      instance, call, std::move(type_args));
+  const auto result =
+      comptime_eval_.try_eval_ordinary_call(decl, call, std::move(type_args));
   if (!result.has_value()) {
     return nullptr;
   }

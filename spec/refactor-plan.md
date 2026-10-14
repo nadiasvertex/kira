@@ -182,7 +182,7 @@ interpreter is deleted. The comparison is only a check on the move from one
 path to the other, since a bug shared by both paths will not show up in it.
 Tests that check a computed value remain the primary check.
 
-Status: phases 1 through 4 have landed; phase 5 has not started.
+Status: all five phases have landed. Compile-time code runs only on the VM.
 
 - Phase 1. The checker keeps a lowering view (`semantic/check_lowering_view.
   cpp`): a `checked_types` holding just the functions compile-time code
@@ -258,11 +258,28 @@ Status: phases 1 through 4 have landed; phase 5 has not started.
     values (`static for f in T.fields()`) is still unrolled while
     checking. The inline form of such a `static for` did not work before
     in either path.
-- Phase 4 leaves two cases in the test corpus on the interpreter: an
-  expression reading a struct `static` whose type has no run-time form,
-  and a compile-time call to a function whose return type is not
-  annotated.
-- Phase 5 (deleting the interpreter) depends on those two cases.
+- Phase 5. The AST interpreter is deleted. `comptime::evaluator` keeps
+  only what compile-time code reads but the VM does not own: the bindings
+  in scope (a `static for` loop variable, a type parameter, a lazily
+  evaluated `let`), the quoted-syntax builder, and whether failures are
+  reported. Every expression and call goes to the VM; one the VM cannot
+  run is an error that says why. `CINDER_COMPTIME_VM` is gone, and every
+  test fixture that checks programs installs the VM backend. Removing the
+  interpreter exposed and fixed these:
+  - A `static` of type `option` or `result` could not be read at run time
+    (the struct-static case phase 4 left on the interpreter).
+  - An inline `static for` yielding an integer literal settled it at
+    `int32` before the list's expected element type reached it.
+  - A `static if` reading a block `static for`'s loop variable had no
+    per-iteration decision, so lowering failed, in ordinary functions as
+    well as in a `static def`. Each unrolled iteration now records it.
+  - Folding a call to a generic `static def` from ordinary code passed the
+    made instance where the template was expected.
+  - The driver's early `static if` folding (for imports) used the
+    interpreter; it now folds `true`, `false`, `not`, `and`, `or` and
+    parentheses itself.
+  - Compile-time code needs the standard library for strings, as run-time
+    code does; one test that compared strings without it now loads it.
 
 Phase 3 also fixed a tail-call bug it exposed: a call whose argument
 borrows a temporary (`&TABLE[0..n]`) was compiled as a tail call, which

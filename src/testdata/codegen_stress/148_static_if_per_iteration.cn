@@ -1,0 +1,38 @@
+module codegen_stress.static_if_per_iteration
+
+# A `static if` inside a block `static for` whose condition reads the loop
+# variable takes its own branch in each unrolled iteration: in a plain
+# function, in a generic one per instance, and in a nested loop reading the
+# outer loop's variable.
+
+type pair = { a: int32, b: int32 }
+
+def plain() -> int32:
+    var c = 0
+    static for x in [1, 2, 3]:
+        static if x > 1:
+            c = c + x
+        else:
+            c = c + 100
+    return c
+
+def only_a[T](scale: int32) -> int32:
+    var count = 0
+    static for f in T.fields():
+        static if f.name == "a":
+            count = count + scale
+    return count
+
+def nested() -> int32:
+    var c = 0
+    static for i in 0..3:
+        static for j in 0..3:
+            static if i == j:
+                c = c + 1000
+    return c
+
+def main() -> int32:
+    # 100 + 2 + 3 = 105; 10; 3000
+    return plain() + only_a[pair](10) + nested()
+
+# expect: 3115

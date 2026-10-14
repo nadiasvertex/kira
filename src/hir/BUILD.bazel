@@ -59,6 +59,7 @@ cc_test(
         "//src:std_sources",
     ],
     deps = [
+        "//src/comptime_vm",
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
@@ -74,6 +75,7 @@ cc_test(
         "//src:hir_link_test_files",
     ],
     deps = [
+        "//src/comptime_vm",
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
@@ -89,6 +91,7 @@ cc_test(
         "//src:hir_inline_test_files",
     ],
     deps = [
+        "//src/comptime_vm",
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
@@ -103,6 +106,7 @@ cc_test(
         "//src:hir_captures_test_files",
     ],
     deps = [
+        "//src/comptime_vm",
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",
@@ -117,6 +121,7 @@ cc_test(
         "//src:hir_live_across_yield_test_files",
     ],
     deps = [
+        "//src/comptime_vm",
         ":hir",
         "//src/parser:parser",
         "//src/semantic:semantic",

@@ -12,6 +12,7 @@
 #include "src/bytecode/value.h"
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
+#include "src/comptime_vm/backend.h"
 #include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/nodes.h"
@@ -107,8 +108,9 @@ auto check_fixture(const std::string &text) -> checked_fixture {
   auto parsed_modules = fixture.stdlib.modules;
   parsed_modules.push_back(cinder::semantic::parsed_module{
       .file_id = *file_id, .ast_file = fixture.ast_file.get()});
+  auto comptime = cinder::comptime_vm::vm_backend{};
   fixture.checked = cinder::semantic::check_program(
-      parsed_modules, fixture.diag, file_has_errors);
+      parsed_modules, fixture.diag, file_has_errors, &comptime);
   expect_checked_cleanly(fixture.sources, fixture.diag);
   return fixture;
 }
@@ -177,8 +179,9 @@ auto compile_fixture_multi(
 
   auto file_has_errors =
       std::vector<bool>(static_cast<size_t>(file_ids.back()) + 1, false);
-  const auto checked =
-      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  const auto checked = cinder::semantic::check_program(
+      parsed_modules, diag, file_has_errors, &comptime);
   expect_checked_cleanly(sources, diag);
 
   auto modules = hir::ptr_vec<hir::hir_module>{};

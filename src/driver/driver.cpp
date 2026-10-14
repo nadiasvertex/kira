@@ -366,31 +366,13 @@ auto compile_sources(const cli_config &cfg, bool use_color)
     });
   }
 
-  // Compile-time calls run on the VM where it can run them. The
-  // `CINDER_COMPTIME_VM` environment variable selects `off` (interpret every
-  // call) or `compare` (run both ways and report any difference), for
-  // checking the move from the interpreter to the VM.
+  // Compile-time code runs on the VM.
   auto comptime_backend = comptime_vm::vm_backend{};
-  const auto comptime_mode = [] -> semantic::comptime_vm_mode {
-    const auto *setting = std::getenv("CINDER_COMPTIME_VM");
-    if (setting == nullptr) {
-      return semantic::comptime_vm_mode::on;
-    }
-    const auto text = std::string_view(setting);
-    if (text == "off") {
-      return semantic::comptime_vm_mode::off;
-    }
-    if (text == "compare") {
-      return semantic::comptime_vm_mode::compare;
-    }
-    return semantic::comptime_vm_mode::on;
-  }();
   const auto checked = semantic::validate_semantics(
       semantic_inputs, session_diagnostics, file_has_errors,
       semantic::semantic_options{.check_names_and_types =
                                      !effective_cfg.parse_only,
-                                 .comptime = &comptime_backend,
-                                 .comptime_mode = comptime_mode});
+                                 .comptime = &comptime_backend});
 
   // `CINDER_COMPTIME_VERIFY` re-lowers every function compile-time code ran
   // on the VM from the final results and reports any difference — a check

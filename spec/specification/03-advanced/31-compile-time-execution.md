@@ -4,7 +4,7 @@
 
 Compile-time evaluation of `static` declarations, `static if`/`static assert`/`static for`, compile-time reflection, `pure` functions, and quoting/splicing.
 
-There is no separate template or macro language. Compile-time code is ordinary Cinder — the same functions, loops, and pattern matching — checked, lowered and run on the bytecode VM (`src/comptime_vm`) with a step budget and no access outside the VM; constructs the VM cannot run yet fall back to an interpreter (`src/comptime/eval.*`). See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
+There is no separate template or macro language. Compile-time code is ordinary Cinder — the same functions, loops, and pattern matching — checked, lowered and run on the bytecode VM (`src/comptime_vm`) with a step budget and no access outside the VM. Compile-time code the VM cannot run is reported as an error at the expression or call that needed it. See [Compile-Time Semantics](32-compile-time-semantics.md) for the execution model this section's constructs run inside.
 
 ## `static` bindings
 

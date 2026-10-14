@@ -1,9 +1,9 @@
 module main
 
 # Run-time code reads `static let`s holding strings, nested collections,
-# variants, tuples, and structs with list fields (todo item 8). Each global
-# is built once from its compile-time value; a reader that takes one by
-# value gets its own copy.
+# variants (`option` and `result` too), tuples, and structs with list
+# fields (todo item 8). Each global is built once from its compile-time
+# value; a reader that takes one by value gets its own copy.
 
 type shape =
     | @circle(int32)
@@ -26,12 +26,25 @@ static let shapes = [@circle(3), @rect(4, 5), @empty]
 static let pair = ("seven", 7)
 static let computed = labels()
 static let table: list[entry] = [{key: "a", values: [1]}, {key: "b", values: [2, 3]}]
+static let maybe: option[int32] = @some(6)
+static let nothing: option[int32] = @none
+static let outcome: result[int32, str] = @err("bad")
 
 def area(s: shape) -> int32:
     return match s:
         @circle(r) => r * 3
         @rect(w, h) => w * h
         @empty => 0
+
+def or_one(o: option[int32]) -> int32:
+    return match o:
+        @some(v) => v
+        @none => 1
+
+def err_len(r: result[int32, str]) -> int32:
+    return match r:
+        @ok(v) => v
+        @err(m) => m.len() as int32
 
 def main() -> int32:
     # 2 + 3 + 4 = 9
@@ -49,4 +62,6 @@ def main() -> int32:
     var own = nested
     own[0][0] = 10
     total = total + own[0][0] - nested[0][0] + computed[1].len() as int32
+    # + 6 + 1 + 3 = 88
+    total = total + or_one(maybe) + or_one(nothing) + err_len(outcome)
     return total

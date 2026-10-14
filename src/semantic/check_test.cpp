@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "analysis.h"
+#include "src/comptime_vm/backend.h"
 #include "src/parser/parser.h"
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
@@ -128,8 +129,10 @@ auto analyze_sources(const std::vector<source_fixture> &extra_fixtures)
     std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected check test fixtures to parse");
   }
+  auto comptime = cinder::comptime_vm::vm_backend{};
   [[maybe_unused]] const auto checked = cinder::semantic::validate_semantics(
-      parsed_modules, diag, file_has_errors);
+      parsed_modules, diag, file_has_errors,
+      cinder::semantic::semantic_options{.comptime = &comptime});
 
   return analyzed_session{
       .diagnostics =
@@ -1940,8 +1943,9 @@ auto test_check_program_persists_expression_types() -> void {
       cinder::semantic::parsed_module{.file_id = *file_id,
                                       .ast_file = ast_file.get()},
   };
-  auto checked =
-      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  auto checked = cinder::semantic::check_program(parsed_modules, diag,
+                                                 file_has_errors, &comptime);
   expect(diag.error_count() == 0, "expected fixture to check cleanly");
 
   const cinder::ast::func_decl *add_decl = nullptr;
@@ -2694,8 +2698,10 @@ auto test_dispatches_index_mut_borrow() -> void {
   expect(sample_file != nullptr, "expected to find the sample fixture's AST");
   const auto &ast_file = *sample_file;
 
-  auto checked =
-      cinder::semantic::check_program(parsed_modules, diag, file_has_errors);
+  auto comptime = cinder::comptime_vm::vm_backend{};
+
+  auto checked = cinder::semantic::check_program(parsed_modules, diag,
+                                                 file_has_errors, &comptime);
   if (diag.error_count() != 0) {
     std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
   }

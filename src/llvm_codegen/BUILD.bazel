@@ -82,6 +82,7 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/comptime_vm",
         ":aot",
         ":codegen",
         "//src/hir:hir",
@@ -101,6 +102,7 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/comptime_vm",
         ":codegen",
         ":jit_support",
         "//src/bytecode:bytecode",

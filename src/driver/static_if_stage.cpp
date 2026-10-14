@@ -1,9 +1,9 @@
 #include "static_if_stage.h"
 
+#include <optional>
 #include <utility>
 
-#include "src/comptime/eval.h"
-#include "src/comptime/value.h"
+#include "src/parser/ast_traversal.h"
 
 namespace cinder::driver {
 
@@ -20,6 +20,51 @@ branch_contains_use(const std::vector<ast::ptr<ast::node>> &items) -> bool {
     }
   }
   return false;
+}
+
+/// The value of a condition built from `true`, `false`, `not`, `and`, `or`
+/// and parentheses alone, or `nullopt` for anything that needs names
+/// resolved. Nothing else is known before the module graph is built.
+[[nodiscard]] auto literal_condition(const ast::expr &expr)
+    -> std::optional<bool> {
+  if (expr.has_error) {
+    return std::nullopt;
+  }
+  if (const auto *lit = ast::as<const ast::literal_expr>(&expr)) {
+    if (lit->lit_kind == token_kind::kw_true) {
+      return true;
+    }
+    if (lit->lit_kind == token_kind::kw_false) {
+      return false;
+    }
+    return std::nullopt;
+  }
+  if (const auto *group = ast::as<const ast::group_expr>(&expr)) {
+    return group->inner != nullptr ? literal_condition(*group->inner)
+                                   : std::nullopt;
+  }
+  if (const auto *un = ast::as<const ast::unary_expr>(&expr)) {
+    if (un->op != ast::unary_op::logical_not || un->operand == nullptr) {
+      return std::nullopt;
+    }
+    const auto operand = literal_condition(*un->operand);
+    return operand.has_value() ? std::optional(!*operand) : std::nullopt;
+  }
+  if (const auto *bin = ast::as<const ast::binary_expr>(&expr)) {
+    if ((bin->op != ast::binary_op::logical_and &&
+         bin->op != ast::binary_op::logical_or) ||
+        bin->lhs == nullptr || bin->rhs == nullptr) {
+      return std::nullopt;
+    }
+    const auto lhs = literal_condition(*bin->lhs);
+    const auto rhs = literal_condition(*bin->rhs);
+    if (!lhs.has_value() || !rhs.has_value()) {
+      return std::nullopt;
+    }
+    return bin->op == ast::binary_op::logical_and ? *lhs && *rhs
+                                                   : *lhs || *rhs;
+  }
+  return std::nullopt;
 }
 
 /// Recursively folds every module-scope `static if` in `items` whose
@@ -60,18 +105,11 @@ branch_contains_use(const std::vector<ast::ptr<ast::node>> &items) -> bool {
     const bool import_gating = branch_contains_use(stat->if_body) ||
                                branch_contains_use(stat->else_body);
 
-    // Evaluate the condition with a standalone, resolution-free evaluator —
-    // literals only, no globals registered — into a scratch bag so a failure
-    // yields our own targeted diagnostic rather than the evaluator's generic
-    // "not a compile-time constant" one.
-    auto scratch = diagnostic_bag{};
-    auto evaluator = comptime::evaluator(scratch, file_id);
-    const auto condition =
-        (stat->if_condition != nullptr && !stat->if_condition->has_error)
-            ? evaluator.evaluate(*stat->if_condition)
-            : comptime::value::make_error();
+    const auto condition = stat->if_condition != nullptr
+                               ? literal_condition(*stat->if_condition)
+                               : std::nullopt;
 
-    if (condition.kind != comptime::value_kind::boolean) {
+    if (!condition.has_value()) {
       if (import_gating) {
         auto diag = diagnostic(
             diagnostic_level::error,
@@ -93,7 +131,7 @@ branch_contains_use(const std::vector<ast::ptr<ast::node>> &items) -> bool {
       continue;
     }
 
-    auto &taken = condition.is_true() ? stat->if_body : stat->else_body;
+    auto &taken = *condition ? stat->if_body : stat->else_body;
     auto folded = fold_items(std::move(taken), file_id, diagnostics);
     for (auto &node : folded) {
       out.push_back(std::move(node));

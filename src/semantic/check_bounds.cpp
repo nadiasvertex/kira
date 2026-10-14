@@ -1700,7 +1700,7 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   if (!function_.in_comptime_only_function_ &&
       session_.comptime_only_functions_.contains(instance)) {
     if (const auto *lit = try_fold_comptime_only_call(
-            call, decl, *instance, result, solution->type_slots)) {
+            call, decl, result, solution->type_slots)) {
       session_.folded_comptime_calls_[&call] = lit;
       return record_expr_type(call, result);
     }

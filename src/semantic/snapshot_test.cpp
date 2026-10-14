@@ -31,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -183,8 +184,12 @@ auto render_session() -> std::string {
     fail("expected the snapshot session to parse cleanly");
   }
 
+  auto comptime = cinder::comptime_vm::vm_backend{};
+
   const auto checked = cinder::semantic::validate_semantics(
-      parsed_modules, diag, file_has_errors);
+      parsed_modules, diag, file_has_errors,
+
+      cinder::semantic::semantic_options{.comptime = &comptime});
   if (diag.error_count() != 0) {
     std::cerr << cinder::diagnostic_renderer(sources, false).render_all(diag);
     fail("expected the snapshot session to check cleanly");

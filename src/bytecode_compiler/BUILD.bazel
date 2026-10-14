@@ -41,6 +41,7 @@ cc_test(
     ],
     tags = ["no-sandbox"],
     deps = [
+        "//src/comptime_vm",
         ":bytecode_compiler",
         "//src/bytecode:bytecode",
         "//src/bytecode:vm",

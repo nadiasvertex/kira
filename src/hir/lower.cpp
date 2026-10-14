@@ -4856,13 +4856,26 @@ auto lowerer::lower_stmt(const ast::node &node)
                   "this `static` declaration is not lowered as a function-"
                   "body statement (see spec/todo.md)");
     }
-    const auto found = checked_.lowering.static_if_taken_branch.find(&decl);
-    if (found == checked_.lowering.static_if_taken_branch.end()) {
+    // In an unrolled `static for`, the iteration's own decision.
+    auto taken = std::optional<bool>{};
+    for (const auto *frame : static_for_frames_ | std::views::reverse) {
+      if (const auto it = frame->static_ifs.find(&decl);
+          it != frame->static_ifs.end()) {
+        taken = it->second;
+        break;
+      }
+    }
+    if (const auto found = checked_.lowering.static_if_taken_branch.find(&decl);
+        !taken.has_value() &&
+        found != checked_.lowering.static_if_taken_branch.end()) {
+      taken = found->second;
+    }
+    if (!taken.has_value()) {
       return fail(lowering_error_kind::unsupported_construct, decl.span,
                   "this `static if` condition was never resolved to a "
                   "concrete branch during checking");
     }
-    const auto &branch_body = found->second ? decl.if_body : decl.else_body;
+    const auto &branch_body = *taken ? decl.if_body : decl.else_body;
     auto result = ptr_vec<hir_node>{};
     for (const auto &stmt : branch_body) {
       if (stmt == nullptr) {

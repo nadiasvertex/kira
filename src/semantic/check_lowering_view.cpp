@@ -18,7 +18,7 @@
 //
 // Most records lowering needs and this projection does not copy make lowering
 // fail closed ("no concrete checked type is available for this node"), and the
-// call is interpreted instead. Not all: a callee's parameter types decide how
+// compile-time code is reported as unable to run. Not all: a callee's parameter types decide how
 // an argument is passed, and without them lowering passes it another way
 // without complaint. `CINDER_COMPTIME_VERIFY` (on in the driver tests)
 // re-lowers every function the VM ran from the final results and reports any
@@ -198,11 +198,11 @@ private:
 
 checker::~checker() = default;
 
-auto checker::set_comptime_backend(comptime_backend *backend,
-                                   comptime::evaluator::vm_mode mode) -> void {
+auto checker::set_comptime_backend(comptime_backend *backend) -> void {
   comptime_backend_ = backend;
   if (backend == nullptr) {
-    comptime_eval_.set_vm_call({}, comptime::evaluator::vm_mode::off);
+    comptime_eval_.set_vm_call({});
+    comptime_eval_.set_vm_eval({});
     return;
   }
   if (vm_program_ == nullptr) {
@@ -213,8 +213,7 @@ auto checker::set_comptime_backend(comptime_backend *backend,
              std::span<const std::pair<std::string, comptime::value>> type_args)
           -> comptime::evaluator::vm_call_outcome {
         return run_comptime_call_on_vm(fn, args, type_args);
-      },
-      mode);
+      });
   comptime_eval_.set_vm_eval(
       [this](const ast::expr &expr) -> comptime::evaluator::vm_call_outcome {
         return run_comptime_expr_on_vm(expr);
@@ -250,14 +249,15 @@ auto checker::run_comptime_call_on_vm(
     std::span<const std::pair<std::string, comptime::value>> type_args)
     -> comptime::evaluator::vm_call_outcome {
   using outcome = comptime::evaluator::vm_call_outcome;
-  if (!bodies_phase_ || comptime_backend_ == nullptr) {
-    return outcome{.outcome = outcome::kind::not_run};
+  if (const auto reason = comptime_unavailable()) {
+    return outcome{.outcome = outcome::kind::not_run, .message = *reason};
   }
   const auto *instance = type_args.empty()
                              ? &template_fn
                              : comptime_instance(template_fn, type_args);
   if (instance == nullptr) {
-    return outcome{.outcome = outcome::kind::not_run};
+    return outcome{.outcome = outcome::kind::not_run,
+                   .message = "no instance was made for its type arguments"};
   }
   const auto &fn = *instance;
   if (instances_.queued_template(fn) != nullptr) {
@@ -266,15 +266,15 @@ auto checker::run_comptime_call_on_vm(
   refresh_function_index();
   const auto named = lowering_view_state_.names_by_decl.find(&fn);
   if (named == lowering_view_state_.names_by_decl.end()) {
-    return outcome{.outcome = outcome::kind::not_run};
+    return outcome{.outcome = outcome::kind::not_run,
+                   .message = "it is not a function the compiler can lower"};
   }
   // Copied: running the call can grow the index, which rebuilds it.
   const auto callee = comptime_function{.decl = &fn,
                                         .owner_module = named->second.first,
                                         .hir_name = named->second.second};
   auto result = comptime_backend_->call(*vm_program_, callee, args);
-  // `CINDER_COMPTIME_TRACE` lists each call and whether the VM ran it — for
-  // finding what keeps a call in the interpreter.
+  // `CINDER_COMPTIME_TRACE` lists each call and whether the VM ran it.
   static const auto trace = std::getenv("CINDER_COMPTIME_TRACE") != nullptr;
   if (trace) {
     std::println(stderr, "comptime vm: `{}`: {}", callee.hir_name,
@@ -295,6 +295,16 @@ auto checker::run_comptime_call_on_vm(
                  .result = {},
                  .message = std::move(result.error().message),
                  .notes = vm_failure_notes(result.error())};
+}
+
+auto checker::comptime_unavailable() const -> std::optional<std::string> {
+  if (comptime_backend_ == nullptr) {
+    return "no compile-time backend is installed";
+  }
+  if (!bodies_phase_) {
+    return "compile-time code runs only once every declaration is known";
+  }
+  return std::nullopt;
 }
 
 auto checker::vm_failure_notes(const comptime_failure &failure)
@@ -320,9 +330,12 @@ auto checker::vm_failure_notes(const comptime_failure &failure)
 auto checker::run_comptime_expr_on_vm(const ast::expr &expr)
     -> comptime::evaluator::vm_call_outcome {
   using outcome = comptime::evaluator::vm_call_outcome;
-  if (!bodies_phase_ || comptime_backend_ == nullptr ||
-      file_.module_ == nullptr) {
-    return outcome{.outcome = outcome::kind::not_run};
+  if (const auto reason = comptime_unavailable()) {
+    return outcome{.outcome = outcome::kind::not_run, .message = *reason};
+  }
+  if (file_.module_ == nullptr) {
+    return outcome{.outcome = outcome::kind::not_run,
+                   .message = "it is outside any module"};
   }
   // The bindings the expression reads that only the evaluator has a value
   // for — a `static for` loop variable, a compile-time `let` — become its
@@ -392,7 +405,7 @@ auto checker::run_comptime_expr_on_vm(const ast::expr &expr)
       std::println(stderr, "comptime vm: expression at {}: not run: {}",
                    expr.span.start, *blocked);
     }
-    return outcome{.outcome = outcome::kind::not_run};
+    return outcome{.outcome = outcome::kind::not_run, .message = *blocked};
   }
   auto result = comptime_backend_->evaluate(*vm_program_, request, args);
   if (trace) {

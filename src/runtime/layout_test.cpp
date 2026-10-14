@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "src/comptime_vm/backend.h"
 #include "src/parser/diagnostic.h"
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
@@ -64,8 +65,9 @@ auto check_fixture(const std::string &text) -> checked_fixture {
       semantic::parsed_module{.file_id = *file_id,
                               .ast_file = fixture.ast_file.get()},
   };
-  fixture.checked =
-      semantic::check_program(parsed_modules, fixture.diag, file_has_errors);
+  auto comptime = cinder::comptime_vm::vm_backend{};
+  fixture.checked = semantic::check_program(parsed_modules, fixture.diag,
+                                            file_has_errors, &comptime);
   expect(fixture.diag.error_count() == 0, "expected fixture to check cleanly");
   return fixture;
 }

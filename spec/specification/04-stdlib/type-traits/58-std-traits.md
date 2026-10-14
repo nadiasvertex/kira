@@ -12,7 +12,7 @@ The need is not hypothetical: `src/std/algo.cn`'s `is_radix_integer[T]`/`is_sign
 
 ## Type predicates
 
-Each predicate is a `static pure def name[T]() -> bool`, evaluated by the compile-time interpreter and usable anywhere a compile-time `bool` is (`static if`, `static assert`, a `concept` value-constraint clause, an ordinary generic body per [Compile-Time Execution § reflection](../../03-advanced/31-compile-time-execution.md#compile-time-reflection)).
+Each predicate is a `static pure def name[T]() -> bool`, evaluated at compile time and usable anywhere a compile-time `bool` is (`static if`, `static assert`, a `concept` value-constraint clause, an ordinary generic body per [Compile-Time Execution § reflection](../../03-advanced/31-compile-time-execution.md#compile-time-reflection)).
 
 | Predicate | True for |
 |---|---|
