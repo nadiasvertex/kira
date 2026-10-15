@@ -192,7 +192,7 @@ using cinder::decode_string_literal;
 /// Ordinary (non-short-circuit) binary opcode for `op`, or `nullopt` for
 /// `Pipe`/`And`/`Or`/`In`/`NotIn`/`Range`/`RangeInclusive` — `And`/`Or` are
 /// compiled specially (short-circuit jumps, see `compile_expr_into`), and
-/// the rest have no bytecode representation in this increment's scope
+/// the rest have no bytecode representation
 /// (membership tests need a container, ranges are pattern-only surface
 /// syntax with no expression-position `hir_binary` shape to reach here).
 [[nodiscard]] auto binary_opcode_for(ast::binary_op op)
@@ -1033,9 +1033,9 @@ private:
           .kind = compile_error_kind::unsupported_type,
           .span = span,
           .message = std::format(
-              "type `{}` has no scalar bytecode representation yet — "
-              "non-scalar types and 128-bit widths are not supported by "
-              "the bytecode VM yet (see spec/todo.md)",
+              "type `{}` has no numeric bytecode representation yet — "
+              "128-bit integer and float types are not supported by the "
+              "bytecode VM yet (see spec/todo.md)",
               types_.display(id))});
     }
     return *kind;
@@ -1309,7 +1309,7 @@ private:
         // `unit` has exactly one value and carries no information — nothing
         // downstream ever reads it back out, so a zeroed placeholder slot
         // (mirroring `op_return_unit`'s own no-value return) is enough.
-        // Bypasses `numeric_kind_for` below, which has no scalar kind for
+        // Bypasses `numeric_kind_for` below, which has no numeric kind for
         // `unit` at all.
         const auto index = writer_.add_constant(slot_value{uint64_t{0}});
         emit_op(opcode::op_load_const);
@@ -2047,7 +2047,7 @@ private:
   }
 
   // ------------------------------------------------------------------
-  //  Heap values (spec/codegen-design.md increment 6): `str` literals,
+  //  Heap values: `str` literals,
   //  fixed `array[T, N]`/tuple/struct construction, and field/element
   //  reads — every non-scalar value is a single pointer into
   //  `src/runtime/arena.h`'s bump allocator, and every aggregate is a flat
@@ -3068,7 +3068,7 @@ private:
   }
 
   // ------------------------------------------------------------------
-  //  match + patterns (spec/codegen-design.md increment 4). Every pattern
+  //  match + patterns. Every pattern
   //  kind compiles to a boolean register: a scalar comparison for literals,
   //  a runtime tag check for a constructor pattern, or `op_bitand`/
   //  `op_bitor`-combined sub-tests for the structural kinds (tuple/array/
@@ -3083,7 +3083,7 @@ private:
   //  when known. Tuple/array element types come straight from the
   //  subject's own interned `type_entry` (`args`/`result`), needing no
   //  further resolution. Struct field types and sum-variant payload types
-  //  are *not* tracked this increment — `runtime::layout.h` deliberately
+  //  are *not* tracked here — `runtime::layout.h` deliberately
   //  only exposes field/variant *order*, not resolved field *types* (see
   //  its own doc comment), and resolving them would need
   //  `semantic::check.cpp`'s private, generic-substitution-aware

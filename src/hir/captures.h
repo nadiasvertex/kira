@@ -19,9 +19,9 @@ namespace cinder::hir {
 /// leak out as bindings visible to sibling code after it.
 ///
 /// This is exactly the capture set both `bytecode_compiler` and
-/// `llvm_codegen` build a closure's environment block from
-/// (`spec/codegen-design.md` increment 6) — a lambda whose result is empty
-/// captures nothing, and its closure value's `env_ptr` slot is null.
+/// `llvm_codegen` build a closure's environment block from. A lambda whose
+/// result is empty captures nothing, and its closure value's `env_ptr` slot
+/// is null.
 [[nodiscard]] auto free_variables(const hir_lambda &lambda)
     -> std::vector<symbol_id>;
 

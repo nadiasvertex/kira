@@ -35,9 +35,8 @@ enum class allocator_mode : uint8_t {
 
 /// C-ABI heap entry points. Both backends bottom out here: the bytecode VM
 /// calls them as plain C++ (no ABI boundary), and `llvm_codegen`-compiled IR
-/// (JIT and AOT alike) calls the same symbols, which is what keeps the two
-/// tiers' heap layouts byte-for-byte identical per `spec/codegen-design.md`
-/// Decision 3.
+/// (JIT and AOT alike) calls the same symbols, which keeps the two tiers'
+/// heap layouts identical.
 ///
 /// Every block these hand back is **zero-filled and 8-byte aligned**, in
 /// both modes and including the grown tail of a `cinder_heap_realloc`. Both

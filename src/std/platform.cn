@@ -88,13 +88,9 @@ pub type macos_version = {
 # runtime. `target_arch`/`target_os`/`target_vendor`/`target_env`/
 # `target_endianness`/`target_pointer_width`/`target_os_family` are generated
 # above by the driver (see the top-of-file comment). `target_os_family` in
-# particular has to be generated rather than classified here from
-# `target_os()`'s string at runtime (`os == "linux"`-style comparisons):
-# neither backend implements `str` `==` yet ("type `str` has no scalar
-# bytecode/llvm_codegen representation yet ... until spec/codegen-design.md
-# increment 6 (heap types) lands"), confirmed with a two-line repro. The
-# driver already knows the classification in C++ (`detect_target_os`), so it
-# bakes the resulting `@unix`/`@windows`/`@macos`/`@other(...)` variant
+# particular is generated rather than classified here from `target_os()`'s
+# string at runtime. The driver already knows the classification in C++
+# (`detect_target_os`), so it bakes the resulting `@unix`/`@windows`/`@macos`/`@other(...)` variant
 # straight into `target_os_family()`'s body instead.
 # ---------------------------------------------------------------------------
 

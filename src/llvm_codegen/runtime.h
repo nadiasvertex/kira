@@ -14,9 +14,8 @@ namespace cinder::llvm_codegen {
 ///
 /// Declared `extern "C"` so it has an unmangled name generated IR can call
 /// by name (`kPanicSymbolName`, codegen.h), and so it resolves via ordinary
-/// process-symbol lookup once the JIT looks it up (`jit_support.h`) — this
-/// is a test/JIT-execution concern only, not part of the AOT runtime
-/// support library `spec/codegen-design.md` increment 4 will eventually add.
+/// process-symbol lookup once the JIT looks it up (`jit_support.h`). Compiled
+/// executables get their panic handling from the AOT runtime archives instead.
 extern "C" [[noreturn]] void cinder_codegen_panic(uint8_t reason);
 
 } // namespace cinder::llvm_codegen

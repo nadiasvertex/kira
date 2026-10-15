@@ -25,12 +25,9 @@
 namespace cinder::llvm_codegen {
 
 /// Why `compile_module` refused to produce an `llvm::Module` for some HIR
-/// construct. Mirrors `bytecode_compiler::compile_error_kind` deliberately
-/// (`src/bytecode_compiler/compile.h`) — this pass targets the exact same
-/// `spec/codegen-design.md` increment-1 scalar/control-flow subset, so a
-/// construct outside that scope fails closed here for the same reason it
-/// does there, not because the two compilers happen to duplicate a design
-/// choice independently.
+/// construct. This pass lowers the same HIR as the bytecode compiler
+/// (`src/bytecode_compiler/compile.h`) and fails closed on the same kinds of
+/// construct, so a gap in one tier is reported as a gap in the other.
 enum class codegen_error_kind : uint8_t {
   unsupported_construct,
   unsupported_type,
@@ -49,32 +46,30 @@ struct codegen_error {
 /// destroyed, so the two are kept paired rather than letting a caller
 /// accidentally separate them. Ready to hand to `llvm::orc::LLJIT` via
 /// `llvm::orc::ThreadSafeModule` (which takes exactly this pair), or to
-/// `llvm::TargetMachine::addPassesToEmitFile` for the (not-yet-built) AOT
-/// path (`spec/codegen-design.md` increment 4).
+/// the AOT path in `aot.h`, which emits an object file from it.
 struct compiled_module {
   std::unique_ptr<llvm::LLVMContext> context;
   std::unique_ptr<llvm::Module> module;
 };
 
-/// The exact symbol name generated IR calls to report a panic
-/// (`spec/codegen-design.md` Decision 3's runtime-ABI sharing in miniature:
-/// both tiers raise the same closed `bytecode::panic_reason` set). Defined
-/// as an ordinary C++ function (`runtime.cpp`) the JIT resolves via process
-/// symbols — see `jit_support.h` for the execution side of this contract.
+/// The exact symbol name generated IR calls to report a panic. Both tiers
+/// raise the same closed `bytecode::panic_reason` set. Defined as an ordinary
+/// C++ function (`runtime.h`) that the JIT resolves via process symbols — see
+/// `jit_support.h` for the execution side of this contract.
 inline constexpr const char *kPanicSymbolName = "cinder_codegen_panic";
 
-/// The exact symbol name generated IR calls to allocate a heap value
-/// (`spec/codegen-design.md` Decision 3/increment 6) — every non-scalar
-/// value (`str`, `list[T]`, tuple/struct/sum-type/closure) is allocated
-/// through this one entry point, defined in `src/runtime/allocator.h` and
-/// resolved the same way `kPanicSymbolName` already is (process-symbol
-/// lookup for the JIT, ordinary static linking for `cinder build`).
+/// The exact symbol name generated IR calls to allocate a heap value. Every
+/// non-scalar value (`str`, `list[T]`, tuple/struct/sum-type/closure) is
+/// allocated through this one entry point, defined in
+/// `src/runtime/allocator.h` and resolved the same way `kPanicSymbolName` is
+/// (process-symbol lookup for the JIT, ordinary static linking for
+/// `cinder --compile`).
 ///
 /// Named `cinder_heap_alloc`, not `cinder_rt_alloc`: the `cinder_rt_*` prefix
 /// is reserved for the uniform-ABI intrinsic entry points (`src/intrinsics.h`),
-/// and `rt_alloc` is now one of them — a Cinder-callable intrinsic whose
-/// native symbol `cinder_rt_alloc` takes and returns opaque heap pointers,
-/// unlike this one's `(i64) -> ptr`.
+/// and `rt_alloc` is one of them — a Cinder-callable intrinsic whose native
+/// symbol `cinder_rt_alloc` takes and returns opaque heap pointers, unlike
+/// this one's `(i64) -> ptr`.
 inline constexpr const char *kAllocSymbolName = "cinder_heap_alloc";
 
 /// Lowers every function in `module` into one `llvm::Module` named after
@@ -106,9 +101,8 @@ compile_module(std::span<const hir::hir_module *const> modules,
 //  Optimization — an opt-in `llvm::PassBuilder` pipeline run over a
 //  `compiled_module`'s IR before it's JIT-executed or emitted as a native
 //  object file. `compile_module` above never runs any optimization itself
-//  (matches `spec/codegen-design.md`'s "compiler is a teacher" philosophy,
-//  CLAUDE.md — the generated IR should stay a direct, readable reflection
-//  of the source); `optimize_module` is a separate, explicit step a caller
+//  (the generated IR should stay a direct, readable reflection of the
+//  source); `optimize_module` is a separate, explicit step a caller
 //  opts into via `-O1`/`-O2`/`-O3` (`driver::cli_config::opt_level`).
 // ==========================================================================
 

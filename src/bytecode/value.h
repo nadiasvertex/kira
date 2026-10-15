@@ -11,7 +11,7 @@ namespace cinder::bytecode {
 /// value holds. This is *not* stored per-value (see `slot_value`) — it's an
 /// immediate operand baked into the instruction stream at compile time,
 /// since every type is fully resolved before lowering ever reaches bytecode
-/// (mirrors `spec/typed-ir-design.md` Decision 1). `isize`/`int64` and
+/// (every type is concrete once HIR is built). `isize`/`int64` and
 /// `usize`/`uint64`/`byte` collapse onto the same kind here (see
 /// `numeric_kind_of`) because they have identical runtime representation
 /// and behavior — there is nothing left to distinguish once the type has
@@ -103,16 +103,12 @@ enum class numeric_kind : uint8_t {
 
 /// Maps a checked, concrete scalar `type_id` to the `numeric_kind` bytecode
 /// arithmetic/comparison opcodes are parameterized on. Returns `nullopt` for
-/// anything that isn't one of these scalar kinds — including `int128`/
-/// `uint128`/`float128`, which this first bytecode-design increment does not
-/// support: a `slot_value` is a single 8-byte register-width slot (see its
-/// own doc comment), and a 128-bit value needs two, which is a real (if
-/// mechanical) extension to the value/frame model this increment doesn't
-/// need to solve to cover the scalar/control-flow subset HIR already lowers
-/// today (`spec/codegen-design.md` increment 1). Callers should surface
-/// `nullopt` as a compile-time "not supported yet" error, the same way
-/// `hir::lowering_error_kind::unsupported_construct` already fails closed
-/// rather than guessing.
+/// anything that isn't one of these scalar kinds. That includes `int128`/
+/// `uint128`/`float128`, which are not supported yet: a `slot_value` is a
+/// single 8-byte register-width slot (see its own doc comment), and a 128-bit
+/// value needs two. Callers surface `nullopt` as a compile-time "not
+/// supported yet" error rather than guessing a representation. Non-scalar
+/// types are not scalars at all; they live in heap memory (see `slot_value`).
 [[nodiscard]] auto numeric_kind_of(const semantic::type_table &types,
                                    semantic::type_id id)
     -> std::optional<numeric_kind>;
@@ -124,11 +120,10 @@ enum class numeric_kind : uint8_t {
 /// bits as an immediate operand baked in at compile time (see
 /// `numeric_kind`'s own doc comment on why runtime tagging would be
 /// redundant). `bool` is `i` 0/1; `char` is `i` holding a widened Unicode
-/// scalar value in `u32`'s range. This is a placeholder scalar-only value
-/// representation — heap-backed values (`list`/`str`/sum-type payloads
-/// wider than one scalar) are explicitly out of scope until
-/// `spec/codegen-design.md` increment 6 gives both the bytecode VM and
-/// `llvm_codegen` a shared heap-value ABI (Decision 3) at the same time.
+/// scalar value in `u32`'s range. Every non-scalar value is a pointer to a
+/// heap block laid out by `src/runtime/layout.h`, the same layout
+/// `llvm_codegen` uses, so a value created by either tier is valid in the
+/// other.
 union slot_value {
   int64_t i;
   uint64_t u;

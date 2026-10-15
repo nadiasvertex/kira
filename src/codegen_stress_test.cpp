@@ -1,4 +1,4 @@
-// Cross-checks the two increment-1/3 execution tiers against each other:
+// Cross-checks the two execution tiers against each other:
 // every corpus file's `main()` is compiled and run through both the
 // bytecode VM (src/bytecode_compiler + src/bytecode) and the LLVM JIT
 // (src/llvm_codegen), and the two results (including which panic, if any)
@@ -290,11 +290,10 @@ auto run_llvm(const fs::path &path,
 //  `is_deep_comparable`): a struct/sum type's *field* types require the
 //  same generic-substitution-aware resolution `semantic::check.cpp`'s
 //  private `struct_field_type`/`variant_payload_types` perform, which isn't
-//  exposed for reuse outside the checker session that produced them — the
-//  same gap `spec/codegen-design.md`'s planning notes already flagged.
+//  exposed for reuse outside the checker session that produced them.
 //  Extending deep equality to those is future scope, not a soundness
 //  shortcut taken here: `is_deep_comparable` fails closed, and `run_one`
-//  falls back to today's scalar-only comparison whenever it does.
+//  falls back to a scalar-only comparison whenever it does.
 // ==========================================================================
 
 [[nodiscard]] auto read_slot(uint64_t base, size_t slot_index) -> uint64_t {

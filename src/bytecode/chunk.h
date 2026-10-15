@@ -117,7 +117,7 @@ struct bytecode_module {
 };
 
 /// Reads a little-endian-encoded operand back out of a `bytecode_function`'s
-/// `code` buffer — used by the VM (increment 2) and by tests that verify
+/// `code` buffer — used by the VM and by tests that verify
 /// `chunk_writer`'s encoding directly, without needing a VM yet. Byte order
 /// is chosen explicitly here (not `std::memcpy` over the host's native
 /// order) so the encoding is portable regardless of host endianness.
@@ -135,9 +135,8 @@ struct bytecode_module {
 /// keeps a function's compiled form self-contained (no cross-function
 /// constant-pool bookkeeping to get wrong), at the cost of some
 /// duplication when the same literal appears in two functions — an
-/// acceptable trade for this first design, consistent with "simplest thing
-/// that works" elsewhere in this increment (see `bytecode_function`'s doc
-/// comment on register reuse).
+/// acceptable trade, consistent with "simplest thing that works" elsewhere
+/// (see `bytecode_function`'s doc comment on register reuse).
 ///
 /// Jump targets are patched in a second pass: emit the opcode, call
 /// `emit_jump_placeholder` to reserve (and remember the offset of) the i32

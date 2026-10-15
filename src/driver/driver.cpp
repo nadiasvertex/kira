@@ -116,13 +116,9 @@ struct target_os_info {
 /// a reference to a binding at all.
 ///
 /// `target_os_family()` in particular is generated here rather than
-/// classified from `target_os()`'s string at runtime, because neither
-/// backend implements `str` `==` yet ("type `str` has no scalar
-/// bytecode/llvm_codegen representation yet ... until spec/codegen-design.md
-/// increment 6 (heap types) lands", confirmed with a two-line repro) — the
-/// classification the checked-in file would otherwise compute at runtime is
-/// done here in C++ instead, from the exact same `target_os_info` used for
-/// `target_os()` itself, so the two can't disagree.
+/// classified from `target_os()`'s string at runtime. The classification is
+/// computed in C++ from the same `target_os_info` used for `target_os()`
+/// itself, so the two can't disagree.
 [[nodiscard]] auto generate_platform_target_accessors() -> std::string {
   const auto os = detect_target_os();
   const auto os_family_variant =

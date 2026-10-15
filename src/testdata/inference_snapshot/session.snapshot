@@ -6562,10 +6562,14 @@ std/fmt.cn:49:15 [binding_pat] align_mode
 std/fmt.cn:49:21 [literal] bool
 std/fmt.cn:50:9 [ctor_pat] option[align_mode]
 std/fmt.cn:50:18 [literal] bool
-std/fmt.cn:58:22 [binding_pat] bool
-std/fmt.cn:58:38 [binding_pat] sign_mode
-std/fmt.cn:58:58 [named_type] str
-std/fmt.cn:59:11 [ident] sign_mode
+std/fmt.cn:54:22 [binding_pat] bool
+std/fmt.cn:54:38 [binding_pat] sign_mode
+std/fmt.cn:54:58 [named_type] str
+std/fmt.cn:55:11 [ident] sign_mode
+std/fmt.cn:56:9 [ctor_pat] sign_mode
+std/fmt.cn:57:16 [ident] bool
+std/fmt.cn:58:24 [literal] str
+std/fmt.cn:59:20 [literal] str
 std/fmt.cn:60:9 [ctor_pat] sign_mode
 std/fmt.cn:61:16 [ident] bool
 std/fmt.cn:62:24 [literal] str
@@ -6574,385 +6578,381 @@ std/fmt.cn:64:9 [ctor_pat] sign_mode
 std/fmt.cn:65:16 [ident] bool
 std/fmt.cn:66:24 [literal] str
 std/fmt.cn:67:20 [literal] str
-std/fmt.cn:68:9 [ctor_pat] sign_mode
-std/fmt.cn:69:16 [ident] bool
-std/fmt.cn:70:24 [literal] str
-std/fmt.cn:71:20 [literal] str
-std/fmt.cn:73:22 [binding_pat] bool
-std/fmt.cn:73:39 [binding_pat] str
-std/fmt.cn:73:55 [named_type] str
-std/fmt.cn:74:8 [ident] bool
-std/fmt.cn:75:16 [ident] str
-std/fmt.cn:76:12 [literal] str
-std/fmt.cn:78:15 [binding_pat] bool
-std/fmt.cn:78:27 [named_type] str
-std/fmt.cn:79:8 [ident] bool
-std/fmt.cn:80:16 [literal] str
-std/fmt.cn:81:12 [literal] str
-std/fmt.cn:89:17 [binding_pat] str
-std/fmt.cn:89:25 [binding_pat] format_spec
-std/fmt.cn:89:47 [named_type] str
-std/fmt.cn:90:9 [binding_pat] str
-std/fmt.cn:90:21 [match] str
-std/fmt.cn:90:27 [module_path] option[usize]
-std/fmt.cn:91:9 [option_pat] option[usize]
-std/fmt.cn:91:15 [binding_pat] usize
-std/fmt.cn:91:24 [ident] fn(str, usize) -> str
-std/fmt.cn:91:24 [call] str
-std/fmt.cn:91:48 [ident] str
-std/fmt.cn:91:51 [ident] usize
-std/fmt.cn:92:9 [ctor_pat] option[usize]
-std/fmt.cn:92:18 [ident] str
-std/fmt.cn:94:9 [binding_pat] usize
-std/fmt.cn:94:20 [ident] fn(str) -> usize
-std/fmt.cn:94:20 [call] usize
-std/fmt.cn:94:31 [ident] str
+std/fmt.cn:69:22 [binding_pat] bool
+std/fmt.cn:69:39 [binding_pat] str
+std/fmt.cn:69:55 [named_type] str
+std/fmt.cn:70:8 [ident] bool
+std/fmt.cn:71:16 [ident] str
+std/fmt.cn:72:12 [literal] str
+std/fmt.cn:74:15 [binding_pat] bool
+std/fmt.cn:74:27 [named_type] str
+std/fmt.cn:75:8 [ident] bool
+std/fmt.cn:76:16 [literal] str
+std/fmt.cn:77:12 [literal] str
+std/fmt.cn:85:17 [binding_pat] str
+std/fmt.cn:85:25 [binding_pat] format_spec
+std/fmt.cn:85:47 [named_type] str
+std/fmt.cn:86:9 [binding_pat] str
+std/fmt.cn:86:21 [match] str
+std/fmt.cn:86:27 [module_path] option[usize]
+std/fmt.cn:87:9 [option_pat] option[usize]
+std/fmt.cn:87:15 [binding_pat] usize
+std/fmt.cn:87:24 [ident] fn(str, usize) -> str
+std/fmt.cn:87:24 [call] str
+std/fmt.cn:87:48 [ident] str
+std/fmt.cn:87:51 [ident] usize
+std/fmt.cn:88:9 [ctor_pat] option[usize]
+std/fmt.cn:88:18 [ident] str
+std/fmt.cn:90:9 [binding_pat] usize
+std/fmt.cn:90:20 [ident] fn(str) -> usize
+std/fmt.cn:90:20 [call] usize
+std/fmt.cn:90:31 [ident] str
+std/fmt.cn:91:9 [binding_pat] usize
+std/fmt.cn:91:24 [ident] fn(option[usize]) -> usize
+std/fmt.cn:91:24 [call] usize
+std/fmt.cn:91:38 [module_path] option[usize]
+std/fmt.cn:92:8 [ident] usize
+std/fmt.cn:92:8 [binary] bool
+std/fmt.cn:92:24 [ident] usize
+std/fmt.cn:93:16 [ident] str
 std/fmt.cn:95:9 [binding_pat] usize
-std/fmt.cn:95:24 [ident] fn(option[usize]) -> usize
-std/fmt.cn:95:24 [call] usize
-std/fmt.cn:95:38 [module_path] option[usize]
-std/fmt.cn:96:8 [ident] usize
-std/fmt.cn:96:8 [binary] bool
-std/fmt.cn:96:24 [ident] usize
-std/fmt.cn:97:16 [ident] str
-std/fmt.cn:99:9 [binding_pat] usize
-std/fmt.cn:99:21 [ident] usize
-std/fmt.cn:99:21 [binary] usize
-std/fmt.cn:99:36 [ident] usize
-std/fmt.cn:100:9 [binding_pat] align_mode
-std/fmt.cn:100:17 [ident] fn(option[align_mode], align_mode) -> align_mode
-std/fmt.cn:100:17 [call] align_mode
-std/fmt.cn:100:26 [module_path] option[align_mode]
-std/fmt.cn:100:38 [ident] align_mode
-std/fmt.cn:102:11 [ident] align_mode
-std/fmt.cn:103:9 [ctor_pat] align_mode
-std/fmt.cn:103:18 [ident] fn(str, str) -> str
-std/fmt.cn:103:18 [call] str
-std/fmt.cn:103:32 [ident] str
-std/fmt.cn:103:43 [ident] fn(char, usize) -> str
-std/fmt.cn:103:43 [call] str
-std/fmt.cn:103:55 [module_path] char
-std/fmt.cn:103:66 [ident] usize
-std/fmt.cn:104:9 [ctor_pat] align_mode
-std/fmt.cn:104:19 [ident] fn(str, str) -> str
-std/fmt.cn:104:19 [call] str
-std/fmt.cn:104:33 [ident] fn(char, usize) -> str
-std/fmt.cn:104:33 [call] str
-std/fmt.cn:104:45 [module_path] char
-std/fmt.cn:104:56 [ident] usize
-std/fmt.cn:104:68 [ident] str
-std/fmt.cn:105:9 [ctor_pat] align_mode
-std/fmt.cn:106:17 [binding_pat] usize
-std/fmt.cn:106:28 [ident] usize
-std/fmt.cn:106:28 [binary] usize
-std/fmt.cn:106:40 [literal] usize
-std/fmt.cn:107:17 [binding_pat] usize
-std/fmt.cn:107:29 [ident] usize
-std/fmt.cn:107:29 [binary] usize
-std/fmt.cn:107:41 [ident] usize
-std/fmt.cn:108:13 [ident] fn(str, str) -> str
-std/fmt.cn:108:13 [call] str
-std/fmt.cn:108:27 [ident] fn(str, str) -> str
-std/fmt.cn:108:27 [call] str
-std/fmt.cn:108:41 [ident] fn(char, usize) -> str
-std/fmt.cn:108:41 [call] str
-std/fmt.cn:108:53 [module_path] char
-std/fmt.cn:108:64 [ident] usize
-std/fmt.cn:108:75 [ident] str
-std/fmt.cn:108:87 [ident] fn(char, usize) -> str
-std/fmt.cn:108:87 [call] str
-std/fmt.cn:108:99 [module_path] char
-std/fmt.cn:108:110 [ident] usize
-std/fmt.cn:118:22 [binding_pat] bool
-std/fmt.cn:118:38 [binding_pat] str
-std/fmt.cn:118:51 [binding_pat] str
-std/fmt.cn:118:64 [binding_pat] format_spec
-std/fmt.cn:118:86 [named_type] str
-std/fmt.cn:119:9 [binding_pat] str
-std/fmt.cn:119:21 [ident] fn(bool, sign_mode) -> str
-std/fmt.cn:119:21 [call] str
-std/fmt.cn:119:38 [ident] bool
-std/fmt.cn:119:48 [module_path] sign_mode
-std/fmt.cn:120:9 [binding_pat] str
-std/fmt.cn:120:23 [ident] fn(bool, str) -> str
-std/fmt.cn:120:23 [call] str
-std/fmt.cn:120:40 [module_path] bool
-std/fmt.cn:120:56 [ident] str
-std/fmt.cn:121:9 [binding_pat] str
-std/fmt.cn:121:16 [ident] fn(str, str) -> str
-std/fmt.cn:121:16 [call] str
-std/fmt.cn:121:30 [ident] fn(str, str) -> str
-std/fmt.cn:121:30 [call] str
-std/fmt.cn:121:44 [ident] str
-std/fmt.cn:121:55 [ident] str
-std/fmt.cn:121:69 [ident] str
-std/fmt.cn:122:9 [binding_pat] bool
-std/fmt.cn:122:30 [ident] fn(option[align_mode]) -> bool
-std/fmt.cn:122:30 [call] bool
-std/fmt.cn:122:40 [module_path] option[align_mode]
-std/fmt.cn:124:8 [module_path] bool
-std/fmt.cn:124:8 [binary] bool
-std/fmt.cn:124:26 [unary] bool
-std/fmt.cn:124:30 [ident] bool
-std/fmt.cn:125:13 [binding_pat] usize
-std/fmt.cn:125:31 [ident] fn(str) -> usize
-std/fmt.cn:125:31 [call] usize
-std/fmt.cn:125:31 [binary] usize
-std/fmt.cn:125:42 [ident] str
-std/fmt.cn:125:55 [ident] fn(str) -> usize
-std/fmt.cn:125:55 [call] usize
-std/fmt.cn:125:66 [ident] str
-std/fmt.cn:126:13 [binding_pat] usize
-std/fmt.cn:126:26 [ident] fn(str) -> usize
-std/fmt.cn:126:26 [call] usize
-std/fmt.cn:126:37 [ident] str
-std/fmt.cn:127:13 [binding_pat] usize
-std/fmt.cn:127:28 [ident] fn(option[usize]) -> usize
-std/fmt.cn:127:28 [call] usize
-std/fmt.cn:127:42 [module_path] option[usize]
-std/fmt.cn:128:12 [ident] usize
-std/fmt.cn:128:12 [binary] bool
-std/fmt.cn:128:28 [ident] usize
-std/fmt.cn:128:28 [binary] usize
-std/fmt.cn:128:46 [ident] usize
-std/fmt.cn:129:20 [ident] str
-std/fmt.cn:130:13 [binding_pat] str
-std/fmt.cn:130:21 [ident] fn(char, usize) -> str
-std/fmt.cn:130:21 [call] str
-std/fmt.cn:130:33 [literal] char
-std/fmt.cn:130:38 [ident] usize
-std/fmt.cn:130:38 [binary] usize
-std/fmt.cn:130:38 [binary] usize
-std/fmt.cn:130:53 [ident] usize
-std/fmt.cn:130:71 [ident] usize
-std/fmt.cn:131:16 [ident] fn(str, str) -> str
-std/fmt.cn:131:16 [call] str
-std/fmt.cn:131:30 [ident] fn(str, str) -> str
-std/fmt.cn:131:30 [call] str
-std/fmt.cn:131:44 [ident] fn(str, str) -> str
-std/fmt.cn:131:44 [call] str
-std/fmt.cn:131:58 [ident] str
-std/fmt.cn:131:69 [ident] str
-std/fmt.cn:131:83 [ident] str
-std/fmt.cn:131:91 [ident] str
-std/fmt.cn:133:9 [binding_pat] format_spec
-std/fmt.cn:133:21 [struct_literal] format_spec
-std/fmt.cn:134:15 [module_path] char
-std/fmt.cn:135:16 [call] option[align_mode]
-std/fmt.cn:135:22 [ident] fn(option[align_mode], align_mode) -> align_mode
-std/fmt.cn:135:22 [call] align_mode
-std/fmt.cn:135:31 [module_path] option[align_mode]
-std/fmt.cn:135:43 [ident] align_mode
-std/fmt.cn:136:15 [module_path] sign_mode
-std/fmt.cn:137:20 [module_path] bool
-std/fmt.cn:138:19 [literal] bool
-std/fmt.cn:139:16 [module_path] option[usize]
-std/fmt.cn:140:20 [ident] option[usize]
-std/fmt.cn:142:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:142:12 [call] str
-std/fmt.cn:142:20 [ident] str
-std/fmt.cn:142:26 [ident] format_spec
-std/fmt.cn:158:22 [binding_pat] str
-std/fmt.cn:158:30 [binding_pat] format_spec
-std/fmt.cn:158:52 [named_type] str
-std/fmt.cn:159:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:159:12 [call] str
-std/fmt.cn:159:20 [ident] str
-std/fmt.cn:159:23 [ident] format_spec
-std/fmt.cn:167:23 [binding_pat] str
-std/fmt.cn:167:31 [binding_pat] format_spec
-std/fmt.cn:167:53 [named_type] str
-std/fmt.cn:168:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:168:12 [call] str
-std/fmt.cn:168:20 [ident] fn(str, str) -> str
-std/fmt.cn:168:20 [call] str
-std/fmt.cn:168:34 [ident] fn(str, str) -> str
-std/fmt.cn:168:34 [call] str
-std/fmt.cn:168:48 [literal] str
-std/fmt.cn:168:54 [ident] str
-std/fmt.cn:168:58 [literal] str
-std/fmt.cn:168:65 [ident] format_spec
-std/fmt.cn:176:23 [binding_pat] bool
-std/fmt.cn:176:32 [binding_pat] format_spec
-std/fmt.cn:176:54 [named_type] str
-std/fmt.cn:177:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:177:12 [call] str
-std/fmt.cn:177:20 [ident] fn(bool) -> str
-std/fmt.cn:177:20 [call] str
-std/fmt.cn:177:30 [ident] bool
-std/fmt.cn:177:34 [ident] format_spec
-std/fmt.cn:185:23 [binding_pat] char
-std/fmt.cn:185:32 [binding_pat] format_spec
-std/fmt.cn:185:54 [named_type] str
-std/fmt.cn:186:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:186:12 [call] str
-std/fmt.cn:186:20 [ident] fn(uint32) -> str
-std/fmt.cn:186:20 [call] str
-std/fmt.cn:186:47 [ident] char
-std/fmt.cn:186:47 [cast] uint32
-std/fmt.cn:186:61 [ident] format_spec
-std/fmt.cn:194:28 [binding_pat] uint32
-std/fmt.cn:194:40 [binding_pat] format_spec
-std/fmt.cn:194:62 [named_type] str
-std/fmt.cn:195:12 [ident] fn(str, format_spec) -> str
-std/fmt.cn:195:12 [call] str
-std/fmt.cn:195:20 [ident] fn(uint32) -> str
-std/fmt.cn:195:20 [call] str
-std/fmt.cn:195:47 [ident] uint32
-std/fmt.cn:195:52 [ident] format_spec
-std/fmt.cn:203:22 [binding_pat] int64
-std/fmt.cn:203:32 [binding_pat] format_spec
-std/fmt.cn:203:54 [named_type] str
-std/fmt.cn:204:12 [ident] fn(int64, uint8, bool, str, format_spec) -> str
-std/fmt.cn:204:12 [call] str
-std/fmt.cn:204:26 [ident] int64
-std/fmt.cn:204:29 [literal] uint8
-std/fmt.cn:204:33 [literal] bool
-std/fmt.cn:204:40 [literal] str
-std/fmt.cn:204:44 [ident] format_spec
-std/fmt.cn:212:22 [binding_pat] uint64
-std/fmt.cn:212:33 [binding_pat] format_spec
-std/fmt.cn:212:55 [named_type] str
-std/fmt.cn:213:12 [ident] fn(uint64, uint8, bool, str, format_spec) -> str
-std/fmt.cn:213:12 [call] str
-std/fmt.cn:213:26 [ident] uint64
-std/fmt.cn:213:29 [literal] uint8
-std/fmt.cn:213:33 [literal] bool
-std/fmt.cn:213:40 [literal] str
-std/fmt.cn:213:44 [ident] format_spec
-std/fmt.cn:224:23 [binding_pat] int64
-std/fmt.cn:224:33 [binding_pat] uint8
-std/fmt.cn:224:47 [binding_pat] bool
-std/fmt.cn:224:64 [binding_pat] str
-std/fmt.cn:224:77 [binding_pat] format_spec
-std/fmt.cn:224:99 [named_type] str
-std/fmt.cn:225:9 [binding_pat] bool
-std/fmt.cn:225:20 [ident] int64
-std/fmt.cn:225:20 [binary] bool
-std/fmt.cn:225:24 [literal] int64
-std/fmt.cn:226:9 [binding_pat] uint64
-std/fmt.cn:226:16 [ident] int64
-std/fmt.cn:226:16 [cast] uint64
-std/fmt.cn:227:9 [binding_pat] uint64
-std/fmt.cn:227:21 [if] uint64
-std/fmt.cn:227:24 [ident] bool
-std/fmt.cn:227:34 [group] uint64
-std/fmt.cn:227:34 [binary] uint64
-std/fmt.cn:227:35 [literal] uint64
-std/fmt.cn:227:35 [cast] uint64
-std/fmt.cn:227:35 [binary] uint64
-std/fmt.cn:227:68 [ident] uint64
-std/fmt.cn:227:76 [group] uint64
-std/fmt.cn:227:77 [literal] uint64
-std/fmt.cn:227:77 [cast] uint64
-std/fmt.cn:227:96 [ident] uint64
-std/fmt.cn:228:9 [binding_pat] str
-std/fmt.cn:228:18 [ident] fn(uint64, uint8, bool) -> str
-std/fmt.cn:228:18 [call] str
-std/fmt.cn:228:38 [ident] uint64
-std/fmt.cn:228:49 [ident] uint8
-std/fmt.cn:228:56 [ident] bool
-std/fmt.cn:229:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:229:12 [call] str
-std/fmt.cn:229:25 [ident] bool
-std/fmt.cn:229:35 [ident] str
-std/fmt.cn:229:43 [ident] str
-std/fmt.cn:229:51 [ident] format_spec
-std/fmt.cn:240:23 [binding_pat] uint64
-std/fmt.cn:240:34 [binding_pat] uint8
-std/fmt.cn:240:48 [binding_pat] bool
-std/fmt.cn:240:65 [binding_pat] str
-std/fmt.cn:240:78 [binding_pat] format_spec
-std/fmt.cn:240:100 [named_type] str
-std/fmt.cn:241:9 [binding_pat] str
-std/fmt.cn:241:18 [ident] fn(uint64, uint8, bool) -> str
-std/fmt.cn:241:18 [call] str
-std/fmt.cn:241:38 [ident] uint64
-std/fmt.cn:241:41 [ident] uint8
-std/fmt.cn:241:48 [ident] bool
-std/fmt.cn:242:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:242:12 [call] str
-std/fmt.cn:242:25 [literal] bool
-std/fmt.cn:242:32 [ident] str
-std/fmt.cn:242:40 [ident] str
-std/fmt.cn:242:48 [ident] format_spec
-std/fmt.cn:251:25 [binding_pat] float64
-std/fmt.cn:251:37 [binding_pat] usize
-std/fmt.cn:251:55 [binding_pat] format_spec
-std/fmt.cn:251:77 [named_type] str
-std/fmt.cn:252:9 [binding_pat] bool
-std/fmt.cn:252:20 [ident] float64
-std/fmt.cn:252:20 [binary] bool
-std/fmt.cn:252:24 [literal] float64
-std/fmt.cn:253:9 [binding_pat] float64
-std/fmt.cn:253:21 [if] float64
-std/fmt.cn:253:24 [ident] bool
-std/fmt.cn:253:34 [unary] float64
-std/fmt.cn:253:35 [ident] float64
-std/fmt.cn:253:43 [ident] float64
-std/fmt.cn:254:9 [binding_pat] str
-std/fmt.cn:254:18 [ident] fn(float64, usize) -> str
-std/fmt.cn:254:18 [call] str
-std/fmt.cn:254:35 [ident] float64
-std/fmt.cn:254:46 [ident] usize
-std/fmt.cn:255:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:255:12 [call] str
-std/fmt.cn:255:25 [ident] bool
-std/fmt.cn:255:35 [literal] str
-std/fmt.cn:255:39 [ident] str
-std/fmt.cn:255:47 [ident] format_spec
-std/fmt.cn:265:23 [binding_pat] float64
-std/fmt.cn:265:35 [binding_pat] usize
-std/fmt.cn:265:53 [binding_pat] bool
-std/fmt.cn:265:70 [binding_pat] format_spec
-std/fmt.cn:265:92 [named_type] str
-std/fmt.cn:266:9 [binding_pat] bool
-std/fmt.cn:266:20 [ident] float64
-std/fmt.cn:266:20 [binary] bool
-std/fmt.cn:266:24 [literal] float64
-std/fmt.cn:267:9 [binding_pat] float64
-std/fmt.cn:267:21 [if] float64
-std/fmt.cn:267:24 [ident] bool
-std/fmt.cn:267:34 [unary] float64
-std/fmt.cn:267:35 [ident] float64
-std/fmt.cn:267:43 [ident] float64
-std/fmt.cn:268:9 [binding_pat] str
-std/fmt.cn:268:18 [ident] fn(float64, usize, bool) -> str
-std/fmt.cn:268:18 [call] str
-std/fmt.cn:268:33 [ident] float64
-std/fmt.cn:268:44 [ident] usize
-std/fmt.cn:268:55 [ident] bool
-std/fmt.cn:269:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:269:12 [call] str
-std/fmt.cn:269:25 [ident] bool
-std/fmt.cn:269:35 [literal] str
-std/fmt.cn:269:39 [ident] str
-std/fmt.cn:269:47 [ident] format_spec
-std/fmt.cn:278:27 [binding_pat] float64
-std/fmt.cn:278:39 [binding_pat] usize
-std/fmt.cn:278:57 [binding_pat] format_spec
-std/fmt.cn:278:79 [named_type] str
-std/fmt.cn:279:9 [binding_pat] bool
-std/fmt.cn:279:20 [ident] float64
-std/fmt.cn:279:20 [binary] bool
-std/fmt.cn:279:24 [literal] float64
-std/fmt.cn:280:9 [binding_pat] float64
-std/fmt.cn:280:21 [if] float64
-std/fmt.cn:280:24 [ident] bool
-std/fmt.cn:280:34 [unary] float64
-std/fmt.cn:280:35 [ident] float64
-std/fmt.cn:280:43 [ident] float64
-std/fmt.cn:281:9 [binding_pat] str
-std/fmt.cn:281:18 [ident] fn(float64, usize) -> str
-std/fmt.cn:281:18 [call] str
-std/fmt.cn:281:37 [ident] float64
-std/fmt.cn:281:48 [ident] usize
-std/fmt.cn:282:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:282:12 [call] str
-std/fmt.cn:282:25 [ident] bool
-std/fmt.cn:282:35 [literal] str
-std/fmt.cn:282:39 [ident] str
-std/fmt.cn:282:47 [ident] format_spec
+std/fmt.cn:95:21 [ident] usize
+std/fmt.cn:95:21 [binary] usize
+std/fmt.cn:95:36 [ident] usize
+std/fmt.cn:96:9 [binding_pat] align_mode
+std/fmt.cn:96:17 [ident] fn(option[align_mode], align_mode) -> align_mode
+std/fmt.cn:96:17 [call] align_mode
+std/fmt.cn:96:26 [module_path] option[align_mode]
+std/fmt.cn:96:38 [ident] align_mode
+std/fmt.cn:98:11 [ident] align_mode
+std/fmt.cn:99:9 [ctor_pat] align_mode
+std/fmt.cn:99:18 [ident] fn(str, str) -> str
+std/fmt.cn:99:18 [call] str
+std/fmt.cn:99:32 [ident] str
+std/fmt.cn:99:43 [ident] fn(char, usize) -> str
+std/fmt.cn:99:43 [call] str
+std/fmt.cn:99:55 [module_path] char
+std/fmt.cn:99:66 [ident] usize
+std/fmt.cn:100:9 [ctor_pat] align_mode
+std/fmt.cn:100:19 [ident] fn(str, str) -> str
+std/fmt.cn:100:19 [call] str
+std/fmt.cn:100:33 [ident] fn(char, usize) -> str
+std/fmt.cn:100:33 [call] str
+std/fmt.cn:100:45 [module_path] char
+std/fmt.cn:100:56 [ident] usize
+std/fmt.cn:100:68 [ident] str
+std/fmt.cn:101:9 [ctor_pat] align_mode
+std/fmt.cn:102:17 [binding_pat] usize
+std/fmt.cn:102:28 [ident] usize
+std/fmt.cn:102:28 [binary] usize
+std/fmt.cn:102:40 [literal] usize
+std/fmt.cn:103:17 [binding_pat] usize
+std/fmt.cn:103:29 [ident] usize
+std/fmt.cn:103:29 [binary] usize
+std/fmt.cn:103:41 [ident] usize
+std/fmt.cn:104:13 [ident] fn(str, str) -> str
+std/fmt.cn:104:13 [call] str
+std/fmt.cn:104:27 [ident] fn(str, str) -> str
+std/fmt.cn:104:27 [call] str
+std/fmt.cn:104:41 [ident] fn(char, usize) -> str
+std/fmt.cn:104:41 [call] str
+std/fmt.cn:104:53 [module_path] char
+std/fmt.cn:104:64 [ident] usize
+std/fmt.cn:104:75 [ident] str
+std/fmt.cn:104:87 [ident] fn(char, usize) -> str
+std/fmt.cn:104:87 [call] str
+std/fmt.cn:104:99 [module_path] char
+std/fmt.cn:104:110 [ident] usize
+std/fmt.cn:114:22 [binding_pat] bool
+std/fmt.cn:114:38 [binding_pat] str
+std/fmt.cn:114:51 [binding_pat] str
+std/fmt.cn:114:64 [binding_pat] format_spec
+std/fmt.cn:114:86 [named_type] str
+std/fmt.cn:115:9 [binding_pat] str
+std/fmt.cn:115:21 [ident] fn(bool, sign_mode) -> str
+std/fmt.cn:115:21 [call] str
+std/fmt.cn:115:38 [ident] bool
+std/fmt.cn:115:48 [module_path] sign_mode
+std/fmt.cn:116:9 [binding_pat] str
+std/fmt.cn:116:23 [ident] fn(bool, str) -> str
+std/fmt.cn:116:23 [call] str
+std/fmt.cn:116:40 [module_path] bool
+std/fmt.cn:116:56 [ident] str
+std/fmt.cn:117:9 [binding_pat] str
+std/fmt.cn:117:16 [ident] fn(str, str) -> str
+std/fmt.cn:117:16 [call] str
+std/fmt.cn:117:30 [ident] fn(str, str) -> str
+std/fmt.cn:117:30 [call] str
+std/fmt.cn:117:44 [ident] str
+std/fmt.cn:117:55 [ident] str
+std/fmt.cn:117:69 [ident] str
+std/fmt.cn:118:9 [binding_pat] bool
+std/fmt.cn:118:30 [ident] fn(option[align_mode]) -> bool
+std/fmt.cn:118:30 [call] bool
+std/fmt.cn:118:40 [module_path] option[align_mode]
+std/fmt.cn:120:8 [module_path] bool
+std/fmt.cn:120:8 [binary] bool
+std/fmt.cn:120:26 [unary] bool
+std/fmt.cn:120:30 [ident] bool
+std/fmt.cn:121:13 [binding_pat] usize
+std/fmt.cn:121:31 [ident] fn(str) -> usize
+std/fmt.cn:121:31 [call] usize
+std/fmt.cn:121:31 [binary] usize
+std/fmt.cn:121:42 [ident] str
+std/fmt.cn:121:55 [ident] fn(str) -> usize
+std/fmt.cn:121:55 [call] usize
+std/fmt.cn:121:66 [ident] str
+std/fmt.cn:122:13 [binding_pat] usize
+std/fmt.cn:122:26 [ident] fn(str) -> usize
+std/fmt.cn:122:26 [call] usize
+std/fmt.cn:122:37 [ident] str
+std/fmt.cn:123:13 [binding_pat] usize
+std/fmt.cn:123:28 [ident] fn(option[usize]) -> usize
+std/fmt.cn:123:28 [call] usize
+std/fmt.cn:123:42 [module_path] option[usize]
+std/fmt.cn:124:12 [ident] usize
+std/fmt.cn:124:12 [binary] bool
+std/fmt.cn:124:28 [ident] usize
+std/fmt.cn:124:28 [binary] usize
+std/fmt.cn:124:46 [ident] usize
+std/fmt.cn:125:20 [ident] str
+std/fmt.cn:126:13 [binding_pat] str
+std/fmt.cn:126:21 [ident] fn(char, usize) -> str
+std/fmt.cn:126:21 [call] str
+std/fmt.cn:126:33 [literal] char
+std/fmt.cn:126:38 [ident] usize
+std/fmt.cn:126:38 [binary] usize
+std/fmt.cn:126:38 [binary] usize
+std/fmt.cn:126:53 [ident] usize
+std/fmt.cn:126:71 [ident] usize
+std/fmt.cn:127:16 [ident] fn(str, str) -> str
+std/fmt.cn:127:16 [call] str
+std/fmt.cn:127:30 [ident] fn(str, str) -> str
+std/fmt.cn:127:30 [call] str
+std/fmt.cn:127:44 [ident] fn(str, str) -> str
+std/fmt.cn:127:44 [call] str
+std/fmt.cn:127:58 [ident] str
+std/fmt.cn:127:69 [ident] str
+std/fmt.cn:127:83 [ident] str
+std/fmt.cn:127:91 [ident] str
+std/fmt.cn:129:9 [binding_pat] format_spec
+std/fmt.cn:129:21 [struct_literal] format_spec
+std/fmt.cn:130:15 [module_path] char
+std/fmt.cn:131:16 [call] option[align_mode]
+std/fmt.cn:131:22 [ident] fn(option[align_mode], align_mode) -> align_mode
+std/fmt.cn:131:22 [call] align_mode
+std/fmt.cn:131:31 [module_path] option[align_mode]
+std/fmt.cn:131:43 [ident] align_mode
+std/fmt.cn:132:15 [module_path] sign_mode
+std/fmt.cn:133:20 [module_path] bool
+std/fmt.cn:134:19 [literal] bool
+std/fmt.cn:135:16 [module_path] option[usize]
+std/fmt.cn:136:20 [ident] option[usize]
+std/fmt.cn:138:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:138:12 [call] str
+std/fmt.cn:138:20 [ident] str
+std/fmt.cn:138:26 [ident] format_spec
+std/fmt.cn:154:22 [binding_pat] str
+std/fmt.cn:154:30 [binding_pat] format_spec
+std/fmt.cn:154:52 [named_type] str
+std/fmt.cn:155:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:155:12 [call] str
+std/fmt.cn:155:20 [ident] str
+std/fmt.cn:155:23 [ident] format_spec
+std/fmt.cn:163:23 [binding_pat] str
+std/fmt.cn:163:31 [binding_pat] format_spec
+std/fmt.cn:163:53 [named_type] str
+std/fmt.cn:164:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:164:12 [call] str
+std/fmt.cn:164:20 [ident] fn(str, str) -> str
+std/fmt.cn:164:20 [call] str
+std/fmt.cn:164:34 [ident] fn(str, str) -> str
+std/fmt.cn:164:34 [call] str
+std/fmt.cn:164:48 [literal] str
+std/fmt.cn:164:54 [ident] str
+std/fmt.cn:164:58 [literal] str
+std/fmt.cn:164:65 [ident] format_spec
+std/fmt.cn:172:23 [binding_pat] bool
+std/fmt.cn:172:32 [binding_pat] format_spec
+std/fmt.cn:172:54 [named_type] str
+std/fmt.cn:173:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:173:12 [call] str
+std/fmt.cn:173:20 [ident] fn(bool) -> str
+std/fmt.cn:173:20 [call] str
+std/fmt.cn:173:30 [ident] bool
+std/fmt.cn:173:34 [ident] format_spec
+std/fmt.cn:181:23 [binding_pat] char
+std/fmt.cn:181:32 [binding_pat] format_spec
+std/fmt.cn:181:54 [named_type] str
+std/fmt.cn:182:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:182:12 [call] str
+std/fmt.cn:182:20 [ident] fn(uint32) -> str
+std/fmt.cn:182:20 [call] str
+std/fmt.cn:182:47 [ident] char
+std/fmt.cn:182:47 [cast] uint32
+std/fmt.cn:182:61 [ident] format_spec
+std/fmt.cn:190:28 [binding_pat] uint32
+std/fmt.cn:190:40 [binding_pat] format_spec
+std/fmt.cn:190:62 [named_type] str
+std/fmt.cn:191:12 [ident] fn(str, format_spec) -> str
+std/fmt.cn:191:12 [call] str
+std/fmt.cn:191:20 [ident] fn(uint32) -> str
+std/fmt.cn:191:20 [call] str
+std/fmt.cn:191:47 [ident] uint32
+std/fmt.cn:191:52 [ident] format_spec
+std/fmt.cn:199:22 [binding_pat] int64
+std/fmt.cn:199:32 [binding_pat] format_spec
+std/fmt.cn:199:54 [named_type] str
+std/fmt.cn:200:12 [ident] fn(int64, uint8, bool, str, format_spec) -> str
+std/fmt.cn:200:12 [call] str
+std/fmt.cn:200:26 [ident] int64
+std/fmt.cn:200:29 [literal] uint8
+std/fmt.cn:200:33 [literal] bool
+std/fmt.cn:200:40 [literal] str
+std/fmt.cn:200:44 [ident] format_spec
+std/fmt.cn:208:22 [binding_pat] uint64
+std/fmt.cn:208:33 [binding_pat] format_spec
+std/fmt.cn:208:55 [named_type] str
+std/fmt.cn:209:12 [ident] fn(uint64, uint8, bool, str, format_spec) -> str
+std/fmt.cn:209:12 [call] str
+std/fmt.cn:209:26 [ident] uint64
+std/fmt.cn:209:29 [literal] uint8
+std/fmt.cn:209:33 [literal] bool
+std/fmt.cn:209:40 [literal] str
+std/fmt.cn:209:44 [ident] format_spec
+std/fmt.cn:220:23 [binding_pat] int64
+std/fmt.cn:220:33 [binding_pat] uint8
+std/fmt.cn:220:47 [binding_pat] bool
+std/fmt.cn:220:64 [binding_pat] str
+std/fmt.cn:220:77 [binding_pat] format_spec
+std/fmt.cn:220:99 [named_type] str
+std/fmt.cn:221:9 [binding_pat] bool
+std/fmt.cn:221:20 [ident] int64
+std/fmt.cn:221:20 [binary] bool
+std/fmt.cn:221:24 [literal] int64
+std/fmt.cn:222:9 [binding_pat] uint64
+std/fmt.cn:222:16 [ident] int64
+std/fmt.cn:222:16 [cast] uint64
+std/fmt.cn:223:9 [binding_pat] uint64
+std/fmt.cn:223:21 [if] uint64
+std/fmt.cn:223:24 [ident] bool
+std/fmt.cn:223:34 [group] uint64
+std/fmt.cn:223:34 [binary] uint64
+std/fmt.cn:223:35 [literal] uint64
+std/fmt.cn:223:35 [cast] uint64
+std/fmt.cn:223:35 [binary] uint64
+std/fmt.cn:223:68 [ident] uint64
+std/fmt.cn:223:76 [group] uint64
+std/fmt.cn:223:77 [literal] uint64
+std/fmt.cn:223:77 [cast] uint64
+std/fmt.cn:223:96 [ident] uint64
+std/fmt.cn:224:9 [binding_pat] str
+std/fmt.cn:224:18 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.cn:224:18 [call] str
+std/fmt.cn:224:38 [ident] uint64
+std/fmt.cn:224:49 [ident] uint8
+std/fmt.cn:224:56 [ident] bool
+std/fmt.cn:225:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:225:12 [call] str
+std/fmt.cn:225:25 [ident] bool
+std/fmt.cn:225:35 [ident] str
+std/fmt.cn:225:43 [ident] str
+std/fmt.cn:225:51 [ident] format_spec
+std/fmt.cn:236:23 [binding_pat] uint64
+std/fmt.cn:236:34 [binding_pat] uint8
+std/fmt.cn:236:48 [binding_pat] bool
+std/fmt.cn:236:65 [binding_pat] str
+std/fmt.cn:236:78 [binding_pat] format_spec
+std/fmt.cn:236:100 [named_type] str
+std/fmt.cn:237:9 [binding_pat] str
+std/fmt.cn:237:18 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.cn:237:18 [call] str
+std/fmt.cn:237:38 [ident] uint64
+std/fmt.cn:237:41 [ident] uint8
+std/fmt.cn:237:48 [ident] bool
+std/fmt.cn:238:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:238:12 [call] str
+std/fmt.cn:238:25 [literal] bool
+std/fmt.cn:238:32 [ident] str
+std/fmt.cn:238:40 [ident] str
+std/fmt.cn:238:48 [ident] format_spec
+std/fmt.cn:247:25 [binding_pat] float64
+std/fmt.cn:247:37 [binding_pat] usize
+std/fmt.cn:247:55 [binding_pat] format_spec
+std/fmt.cn:247:77 [named_type] str
+std/fmt.cn:248:9 [binding_pat] bool
+std/fmt.cn:248:20 [ident] float64
+std/fmt.cn:248:20 [binary] bool
+std/fmt.cn:248:24 [literal] float64
+std/fmt.cn:249:9 [binding_pat] float64
+std/fmt.cn:249:21 [if] float64
+std/fmt.cn:249:24 [ident] bool
+std/fmt.cn:249:34 [unary] float64
+std/fmt.cn:249:35 [ident] float64
+std/fmt.cn:249:43 [ident] float64
+std/fmt.cn:250:9 [binding_pat] str
+std/fmt.cn:250:18 [ident] fn(float64, usize) -> str
+std/fmt.cn:250:18 [call] str
+std/fmt.cn:250:35 [ident] float64
+std/fmt.cn:250:46 [ident] usize
+std/fmt.cn:251:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:251:12 [call] str
+std/fmt.cn:251:25 [ident] bool
+std/fmt.cn:251:35 [literal] str
+std/fmt.cn:251:39 [ident] str
+std/fmt.cn:251:47 [ident] format_spec
+std/fmt.cn:261:23 [binding_pat] float64
+std/fmt.cn:261:35 [binding_pat] usize
+std/fmt.cn:261:53 [binding_pat] bool
+std/fmt.cn:261:70 [binding_pat] format_spec
+std/fmt.cn:261:92 [named_type] str
+std/fmt.cn:262:9 [binding_pat] bool
+std/fmt.cn:262:20 [ident] float64
+std/fmt.cn:262:20 [binary] bool
+std/fmt.cn:262:24 [literal] float64
+std/fmt.cn:263:9 [binding_pat] float64
+std/fmt.cn:263:21 [if] float64
+std/fmt.cn:263:24 [ident] bool
+std/fmt.cn:263:34 [unary] float64
+std/fmt.cn:263:35 [ident] float64
+std/fmt.cn:263:43 [ident] float64
+std/fmt.cn:264:9 [binding_pat] str
+std/fmt.cn:264:18 [ident] fn(float64, usize, bool) -> str
+std/fmt.cn:264:18 [call] str
+std/fmt.cn:264:33 [ident] float64
+std/fmt.cn:264:44 [ident] usize
+std/fmt.cn:264:55 [ident] bool
+std/fmt.cn:265:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:265:12 [call] str
+std/fmt.cn:265:25 [ident] bool
+std/fmt.cn:265:35 [literal] str
+std/fmt.cn:265:39 [ident] str
+std/fmt.cn:265:47 [ident] format_spec
+std/fmt.cn:274:27 [binding_pat] float64
+std/fmt.cn:274:39 [binding_pat] usize
+std/fmt.cn:274:57 [binding_pat] format_spec
+std/fmt.cn:274:79 [named_type] str
+std/fmt.cn:275:9 [binding_pat] bool
+std/fmt.cn:275:20 [ident] float64
+std/fmt.cn:275:20 [binary] bool
+std/fmt.cn:275:24 [literal] float64
+std/fmt.cn:276:9 [binding_pat] float64
+std/fmt.cn:276:21 [if] float64
+std/fmt.cn:276:24 [ident] bool
+std/fmt.cn:276:34 [unary] float64
+std/fmt.cn:276:35 [ident] float64
+std/fmt.cn:276:43 [ident] float64
+std/fmt.cn:277:9 [binding_pat] str
+std/fmt.cn:277:18 [ident] fn(float64, usize) -> str
+std/fmt.cn:277:18 [call] str
+std/fmt.cn:277:37 [ident] float64
+std/fmt.cn:277:48 [ident] usize
+std/fmt.cn:278:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:278:12 [call] str
+std/fmt.cn:278:25 [ident] bool
+std/fmt.cn:278:35 [literal] str
+std/fmt.cn:278:39 [ident] str
+std/fmt.cn:278:47 [ident] format_spec
 std/intrinsics.cn:9:37 [binding_pat] float64
 std/intrinsics.cn:9:52 [named_type] uint64
 std/intrinsics.cn:13:37 [binding_pat] float32
@@ -11066,217 +11066,217 @@ std/string.cn:48:16 [ident] fn(str, str) -> bool
 std/string.cn:48:16 [call] bool
 std/string.cn:48:26 [ident] &str
 std/string.cn:48:32 [ident] str
-std/string.cn:59:17 [binding_pat] &str
-std/string.cn:59:23 [binding_pat] str
-std/string.cn:59:38 [named_type] ordering
-std/string.cn:60:13 [binding_pat] int32
-std/string.cn:60:17 [ident] fn(str, str) -> int32
-std/string.cn:60:17 [call] int32
-std/string.cn:60:28 [ident] &str
-std/string.cn:60:34 [ident] str
-std/string.cn:61:12 [ident] int32
-std/string.cn:61:12 [binary] bool
-std/string.cn:61:16 [literal] int32
-std/string.cn:62:20 [ident] ordering
-std/string.cn:63:14 [ident] int32
-std/string.cn:63:14 [binary] bool
-std/string.cn:63:18 [literal] int32
-std/string.cn:64:20 [ident] ordering
-std/string.cn:65:16 [ident] ordering
-std/string.cn:73:25 [binding_pat] &str
-std/string.cn:73:31 [binding_pat] str
-std/string.cn:73:47 [named_type] bool
-std/string.cn:74:13 [binding_pat] usize
-std/string.cn:74:20 [ident] str
-std/string.cn:74:20 [call] usize
-std/string.cn:75:12 [ident] &str
-std/string.cn:75:12 [call] usize
-std/string.cn:75:12 [binary] bool
-std/string.cn:75:25 [ident] usize
-std/string.cn:76:20 [literal] bool
-std/string.cn:77:16 [ident] fn(str, str) -> bool
-std/string.cn:77:16 [call] bool
-std/string.cn:77:26 [ident] &str
-std/string.cn:77:26 [index] str
-std/string.cn:77:31 [literal] usize
-std/string.cn:77:31 [binary] range[usize]
-std/string.cn:77:36 [ident] usize
-std/string.cn:77:43 [ident] str
-std/string.cn:85:23 [binding_pat] &str
-std/string.cn:85:29 [binding_pat] str
-std/string.cn:85:45 [named_type] bool
-std/string.cn:86:13 [binding_pat] usize
-std/string.cn:86:20 [ident] str
-std/string.cn:86:20 [call] usize
+std/string.cn:60:17 [binding_pat] &str
+std/string.cn:60:23 [binding_pat] str
+std/string.cn:60:38 [named_type] ordering
+std/string.cn:61:13 [binding_pat] int32
+std/string.cn:61:17 [ident] fn(str, str) -> int32
+std/string.cn:61:17 [call] int32
+std/string.cn:61:28 [ident] &str
+std/string.cn:61:34 [ident] str
+std/string.cn:62:12 [ident] int32
+std/string.cn:62:12 [binary] bool
+std/string.cn:62:16 [literal] int32
+std/string.cn:63:20 [ident] ordering
+std/string.cn:64:14 [ident] int32
+std/string.cn:64:14 [binary] bool
+std/string.cn:64:18 [literal] int32
+std/string.cn:65:20 [ident] ordering
+std/string.cn:66:16 [ident] ordering
+std/string.cn:74:25 [binding_pat] &str
+std/string.cn:74:31 [binding_pat] str
+std/string.cn:74:47 [named_type] bool
+std/string.cn:75:13 [binding_pat] usize
+std/string.cn:75:20 [ident] str
+std/string.cn:75:20 [call] usize
+std/string.cn:76:12 [ident] &str
+std/string.cn:76:12 [call] usize
+std/string.cn:76:12 [binary] bool
+std/string.cn:76:25 [ident] usize
+std/string.cn:77:20 [literal] bool
+std/string.cn:78:16 [ident] fn(str, str) -> bool
+std/string.cn:78:16 [call] bool
+std/string.cn:78:26 [ident] &str
+std/string.cn:78:26 [index] str
+std/string.cn:78:31 [literal] usize
+std/string.cn:78:31 [binary] range[usize]
+std/string.cn:78:36 [ident] usize
+std/string.cn:78:43 [ident] str
+std/string.cn:86:23 [binding_pat] &str
+std/string.cn:86:29 [binding_pat] str
+std/string.cn:86:45 [named_type] bool
 std/string.cn:87:13 [binding_pat] usize
-std/string.cn:87:17 [ident] &str
-std/string.cn:87:17 [call] usize
-std/string.cn:88:12 [ident] usize
-std/string.cn:88:12 [binary] bool
-std/string.cn:88:16 [ident] usize
-std/string.cn:89:20 [literal] bool
-std/string.cn:90:16 [ident] fn(str, str) -> bool
-std/string.cn:90:16 [call] bool
-std/string.cn:90:26 [ident] &str
-std/string.cn:90:26 [index] str
-std/string.cn:90:31 [ident] usize
-std/string.cn:90:31 [binary] usize
-std/string.cn:90:31 [binary] range[usize]
-std/string.cn:90:35 [ident] usize
-std/string.cn:90:43 [ident] usize
-std/string.cn:90:47 [ident] str
-std/string.cn:98:22 [binding_pat] &str
-std/string.cn:98:28 [binding_pat] str
-std/string.cn:98:44 [named_type] bool
-std/string.cn:99:16 [ident] fn(str, str, usize) -> find_result
-std/string.cn:99:16 [call] find_result
-std/string.cn:99:16 [field] bool
-std/string.cn:99:28 [ident] &str
-std/string.cn:99:34 [ident] str
-std/string.cn:99:42 [literal] usize
-std/string.cn:108:18 [binding_pat] &str
-std/string.cn:108:24 [binding_pat] str
-std/string.cn:108:40 [named_type] option[usize]
-std/string.cn:109:13 [binding_pat] find_result
-std/string.cn:109:17 [ident] fn(str, str, usize) -> find_result
-std/string.cn:109:17 [call] find_result
-std/string.cn:109:29 [ident] &str
-std/string.cn:109:35 [ident] str
-std/string.cn:109:43 [literal] usize
-std/string.cn:110:12 [module_path] bool
-std/string.cn:111:20 [call] option[usize]
-std/string.cn:111:26 [module_path] usize
-std/string.cn:112:16 [ident] option[usize]
-std/string.cn:121:19 [binding_pat] &str
-std/string.cn:121:25 [binding_pat] str
-std/string.cn:121:41 [named_type] option[usize]
-std/string.cn:122:13 [binding_pat] find_result
-std/string.cn:122:17 [ident] fn(str, str) -> find_result
-std/string.cn:122:17 [call] find_result
-std/string.cn:122:30 [ident] &str
-std/string.cn:122:36 [ident] str
-std/string.cn:123:12 [module_path] bool
-std/string.cn:124:20 [call] option[usize]
-std/string.cn:124:26 [module_path] usize
-std/string.cn:125:16 [ident] option[usize]
-std/string.cn:130:18 [binding_pat] &str
-std/string.cn:130:27 [named_type] str
-std/string.cn:131:16 [ident] fn(str, uint8) -> str
-std/string.cn:131:16 [call] str
-std/string.cn:131:28 [ident] &str
-std/string.cn:131:34 [literal] uint8
-std/string.cn:136:24 [binding_pat] &str
-std/string.cn:136:33 [named_type] str
-std/string.cn:137:16 [ident] fn(str, uint8) -> str
-std/string.cn:137:16 [call] str
-std/string.cn:137:28 [ident] &str
-std/string.cn:137:34 [literal] uint8
-std/string.cn:142:22 [binding_pat] &str
-std/string.cn:142:31 [named_type] str
-std/string.cn:143:16 [ident] fn(str, uint8) -> str
-std/string.cn:143:16 [call] str
-std/string.cn:143:28 [ident] &str
-std/string.cn:143:34 [literal] uint8
-std/string.cn:148:22 [binding_pat] &str
-std/string.cn:148:31 [named_type] str
-std/string.cn:149:16 [ident] fn(str) -> str
-std/string.cn:149:16 [call] str
-std/string.cn:149:31 [ident] &str
-std/string.cn:156:26 [binding_pat] &str
-std/string.cn:156:35 [named_type] str
-std/string.cn:157:16 [ident] fn(str) -> str
-std/string.cn:157:16 [call] str
-std/string.cn:157:29 [ident] &str
-std/string.cn:164:26 [binding_pat] &str
-std/string.cn:164:35 [named_type] str
-std/string.cn:165:16 [ident] fn(str) -> str
-std/string.cn:165:16 [call] str
-std/string.cn:165:29 [ident] &str
-std/string.cn:172:23 [binding_pat] &str
-std/string.cn:172:32 [named_type] str
-std/string.cn:173:16 [ident] fn(str) -> str
-std/string.cn:173:16 [call] str
-std/string.cn:173:26 [ident] &str
-std/string.cn:182:28 [binding_pat] &str
-std/string.cn:182:34 [binding_pat] str
-std/string.cn:182:49 [named_type] bool
-std/string.cn:183:16 [ident] fn(str, str) -> bool
-std/string.cn:183:16 [call] bool
-std/string.cn:183:26 [ident] fn(str) -> str
-std/string.cn:183:26 [call] str
-std/string.cn:183:36 [ident] &str
-std/string.cn:183:43 [ident] fn(str) -> str
-std/string.cn:183:43 [call] str
-std/string.cn:183:53 [ident] str
-std/string.cn:192:21 [binding_pat] &str
-std/string.cn:192:27 [binding_pat] str
-std/string.cn:192:38 [binding_pat] str
-std/string.cn:192:50 [named_type] str
-std/string.cn:193:16 [ident] fn(str, str, str) -> str
-std/string.cn:193:16 [call] str
-std/string.cn:193:31 [ident] &str
-std/string.cn:193:37 [ident] str
-std/string.cn:193:43 [ident] str
-std/string.cn:203:19 [binding_pat] &str
-std/string.cn:203:25 [binding_pat] str
-std/string.cn:203:38 [named_type] list[str]
-std/string.cn:204:9 [var_stmt] list[str]
-std/string.cn:204:33 [array] list[str]
-std/string.cn:205:12 [ident] str
-std/string.cn:205:12 [call] usize
-std/string.cn:205:12 [binary] bool
-std/string.cn:205:25 [literal] usize
-std/string.cn:206:13 [ident] list[str]
-std/string.cn:206:13 [field] fn(_, _) -> unit
-std/string.cn:206:13 [call] unit
-std/string.cn:206:25 [ident] &str
-std/string.cn:207:20 [ident] list[str]
-std/string.cn:208:13 [binding_pat] usize
-std/string.cn:208:17 [ident] &str
-std/string.cn:208:17 [call] usize
-std/string.cn:209:9 [var_stmt] usize
-std/string.cn:209:28 [literal] usize
-std/string.cn:210:15 [literal] bool
-std/string.cn:211:17 [binding_pat] find_result
-std/string.cn:211:21 [ident] fn(str, str, usize) -> find_result
-std/string.cn:211:21 [call] find_result
-std/string.cn:211:33 [ident] &str
-std/string.cn:211:39 [ident] str
-std/string.cn:211:44 [ident] usize
-std/string.cn:212:16 [unary] bool
-std/string.cn:212:20 [module_path] bool
-std/string.cn:213:17 [ident] list[str]
-std/string.cn:213:17 [field] fn(_, _) -> unit
-std/string.cn:213:17 [call] unit
-std/string.cn:213:29 [ident] &str
-std/string.cn:213:29 [index] str
-std/string.cn:213:34 [ident] usize
-std/string.cn:213:34 [binary] range[usize]
-std/string.cn:213:43 [ident] usize
-std/string.cn:214:24 [ident] list[str]
-std/string.cn:215:13 [ident] list[str]
-std/string.cn:215:13 [field] fn(_, _) -> unit
-std/string.cn:215:13 [call] unit
-std/string.cn:215:25 [ident] &str
-std/string.cn:215:25 [index] str
-std/string.cn:215:30 [ident] usize
-std/string.cn:215:30 [binary] range[usize]
-std/string.cn:215:39 [module_path] usize
-std/string.cn:216:13 [ident] usize
-std/string.cn:216:21 [module_path] usize
-std/string.cn:216:21 [binary] usize
-std/string.cn:216:29 [ident] str
-std/string.cn:216:29 [call] usize
-std/string.cn:218:29 [binding_pat] str
-std/string.cn:218:37 [binding_pat] str
-std/string.cn:218:48 [named_type] str
-std/string.cn:228:13 [binding_pat] &str
-std/string.cn:228:19 [binding_pat] str
-std/string.cn:228:34 [named_type] str
-std/string.cn:229:16 [ident] fn(str, str) -> str
-std/string.cn:229:16 [call] str
-std/string.cn:229:30 [ident] &str
-std/string.cn:229:36 [ident] str
+std/string.cn:87:20 [ident] str
+std/string.cn:87:20 [call] usize
+std/string.cn:88:13 [binding_pat] usize
+std/string.cn:88:17 [ident] &str
+std/string.cn:88:17 [call] usize
+std/string.cn:89:12 [ident] usize
+std/string.cn:89:12 [binary] bool
+std/string.cn:89:16 [ident] usize
+std/string.cn:90:20 [literal] bool
+std/string.cn:91:16 [ident] fn(str, str) -> bool
+std/string.cn:91:16 [call] bool
+std/string.cn:91:26 [ident] &str
+std/string.cn:91:26 [index] str
+std/string.cn:91:31 [ident] usize
+std/string.cn:91:31 [binary] usize
+std/string.cn:91:31 [binary] range[usize]
+std/string.cn:91:35 [ident] usize
+std/string.cn:91:43 [ident] usize
+std/string.cn:91:47 [ident] str
+std/string.cn:99:22 [binding_pat] &str
+std/string.cn:99:28 [binding_pat] str
+std/string.cn:99:44 [named_type] bool
+std/string.cn:100:16 [ident] fn(str, str, usize) -> find_result
+std/string.cn:100:16 [call] find_result
+std/string.cn:100:16 [field] bool
+std/string.cn:100:28 [ident] &str
+std/string.cn:100:34 [ident] str
+std/string.cn:100:42 [literal] usize
+std/string.cn:109:18 [binding_pat] &str
+std/string.cn:109:24 [binding_pat] str
+std/string.cn:109:40 [named_type] option[usize]
+std/string.cn:110:13 [binding_pat] find_result
+std/string.cn:110:17 [ident] fn(str, str, usize) -> find_result
+std/string.cn:110:17 [call] find_result
+std/string.cn:110:29 [ident] &str
+std/string.cn:110:35 [ident] str
+std/string.cn:110:43 [literal] usize
+std/string.cn:111:12 [module_path] bool
+std/string.cn:112:20 [call] option[usize]
+std/string.cn:112:26 [module_path] usize
+std/string.cn:113:16 [ident] option[usize]
+std/string.cn:122:19 [binding_pat] &str
+std/string.cn:122:25 [binding_pat] str
+std/string.cn:122:41 [named_type] option[usize]
+std/string.cn:123:13 [binding_pat] find_result
+std/string.cn:123:17 [ident] fn(str, str) -> find_result
+std/string.cn:123:17 [call] find_result
+std/string.cn:123:30 [ident] &str
+std/string.cn:123:36 [ident] str
+std/string.cn:124:12 [module_path] bool
+std/string.cn:125:20 [call] option[usize]
+std/string.cn:125:26 [module_path] usize
+std/string.cn:126:16 [ident] option[usize]
+std/string.cn:131:18 [binding_pat] &str
+std/string.cn:131:27 [named_type] str
+std/string.cn:132:16 [ident] fn(str, uint8) -> str
+std/string.cn:132:16 [call] str
+std/string.cn:132:28 [ident] &str
+std/string.cn:132:34 [literal] uint8
+std/string.cn:137:24 [binding_pat] &str
+std/string.cn:137:33 [named_type] str
+std/string.cn:138:16 [ident] fn(str, uint8) -> str
+std/string.cn:138:16 [call] str
+std/string.cn:138:28 [ident] &str
+std/string.cn:138:34 [literal] uint8
+std/string.cn:143:22 [binding_pat] &str
+std/string.cn:143:31 [named_type] str
+std/string.cn:144:16 [ident] fn(str, uint8) -> str
+std/string.cn:144:16 [call] str
+std/string.cn:144:28 [ident] &str
+std/string.cn:144:34 [literal] uint8
+std/string.cn:149:22 [binding_pat] &str
+std/string.cn:149:31 [named_type] str
+std/string.cn:150:16 [ident] fn(str) -> str
+std/string.cn:150:16 [call] str
+std/string.cn:150:31 [ident] &str
+std/string.cn:157:26 [binding_pat] &str
+std/string.cn:157:35 [named_type] str
+std/string.cn:158:16 [ident] fn(str) -> str
+std/string.cn:158:16 [call] str
+std/string.cn:158:29 [ident] &str
+std/string.cn:165:26 [binding_pat] &str
+std/string.cn:165:35 [named_type] str
+std/string.cn:166:16 [ident] fn(str) -> str
+std/string.cn:166:16 [call] str
+std/string.cn:166:29 [ident] &str
+std/string.cn:173:23 [binding_pat] &str
+std/string.cn:173:32 [named_type] str
+std/string.cn:174:16 [ident] fn(str) -> str
+std/string.cn:174:16 [call] str
+std/string.cn:174:26 [ident] &str
+std/string.cn:183:28 [binding_pat] &str
+std/string.cn:183:34 [binding_pat] str
+std/string.cn:183:49 [named_type] bool
+std/string.cn:184:16 [ident] fn(str, str) -> bool
+std/string.cn:184:16 [call] bool
+std/string.cn:184:26 [ident] fn(str) -> str
+std/string.cn:184:26 [call] str
+std/string.cn:184:36 [ident] &str
+std/string.cn:184:43 [ident] fn(str) -> str
+std/string.cn:184:43 [call] str
+std/string.cn:184:53 [ident] str
+std/string.cn:193:21 [binding_pat] &str
+std/string.cn:193:27 [binding_pat] str
+std/string.cn:193:38 [binding_pat] str
+std/string.cn:193:50 [named_type] str
+std/string.cn:194:16 [ident] fn(str, str, str) -> str
+std/string.cn:194:16 [call] str
+std/string.cn:194:31 [ident] &str
+std/string.cn:194:37 [ident] str
+std/string.cn:194:43 [ident] str
+std/string.cn:204:19 [binding_pat] &str
+std/string.cn:204:25 [binding_pat] str
+std/string.cn:204:38 [named_type] list[str]
+std/string.cn:205:9 [var_stmt] list[str]
+std/string.cn:205:33 [array] list[str]
+std/string.cn:206:12 [ident] str
+std/string.cn:206:12 [call] usize
+std/string.cn:206:12 [binary] bool
+std/string.cn:206:25 [literal] usize
+std/string.cn:207:13 [ident] list[str]
+std/string.cn:207:13 [field] fn(_, _) -> unit
+std/string.cn:207:13 [call] unit
+std/string.cn:207:25 [ident] &str
+std/string.cn:208:20 [ident] list[str]
+std/string.cn:209:13 [binding_pat] usize
+std/string.cn:209:17 [ident] &str
+std/string.cn:209:17 [call] usize
+std/string.cn:210:9 [var_stmt] usize
+std/string.cn:210:28 [literal] usize
+std/string.cn:211:15 [literal] bool
+std/string.cn:212:17 [binding_pat] find_result
+std/string.cn:212:21 [ident] fn(str, str, usize) -> find_result
+std/string.cn:212:21 [call] find_result
+std/string.cn:212:33 [ident] &str
+std/string.cn:212:39 [ident] str
+std/string.cn:212:44 [ident] usize
+std/string.cn:213:16 [unary] bool
+std/string.cn:213:20 [module_path] bool
+std/string.cn:214:17 [ident] list[str]
+std/string.cn:214:17 [field] fn(_, _) -> unit
+std/string.cn:214:17 [call] unit
+std/string.cn:214:29 [ident] &str
+std/string.cn:214:29 [index] str
+std/string.cn:214:34 [ident] usize
+std/string.cn:214:34 [binary] range[usize]
+std/string.cn:214:43 [ident] usize
+std/string.cn:215:24 [ident] list[str]
+std/string.cn:216:13 [ident] list[str]
+std/string.cn:216:13 [field] fn(_, _) -> unit
+std/string.cn:216:13 [call] unit
+std/string.cn:216:25 [ident] &str
+std/string.cn:216:25 [index] str
+std/string.cn:216:30 [ident] usize
+std/string.cn:216:30 [binary] range[usize]
+std/string.cn:216:39 [module_path] usize
+std/string.cn:217:13 [ident] usize
+std/string.cn:217:21 [module_path] usize
+std/string.cn:217:21 [binary] usize
+std/string.cn:217:29 [ident] str
+std/string.cn:217:29 [call] usize
+std/string.cn:219:29 [binding_pat] str
+std/string.cn:219:37 [binding_pat] str
+std/string.cn:219:48 [named_type] str
+std/string.cn:229:13 [binding_pat] &str
+std/string.cn:229:19 [binding_pat] str
+std/string.cn:229:34 [named_type] str
+std/string.cn:230:16 [ident] fn(str, str) -> str
+std/string.cn:230:16 [call] str
+std/string.cn:230:30 [ident] &str
+std/string.cn:230:36 [ident] str
 std/test.cn:13:21 [binding_pat] bool
 std/test.cn:13:33 [binding_pat] str
 std/test.cn:13:50 [named_type] result[unit, test_failure]
@@ -31127,16 +31127,20 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4135 f fn(T) -> U
 ?:4186 first int32
 ?:4196 items list[int32]
+?:4322 fill char
 ?:4343 fd int32
+?:4347 align option[align_mode]
 ?:4379 total int32
 ?:4379 total int32
+?:4399 sign sign_mode
+?:4424 alternate bool
 ?:4425 fd int32
-?:4606 fill char
-?:4631 align option[align_mode]
+?:4459 zero_pad bool
+?:4484 width option[usize]
+?:4511 precision option[usize]
 ?:4661 cents int64
 ?:4664 inner I
 ?:4675 pred fn(&T) -> bool
-?:4683 sign sign_mode
 ?:4685 src &list[T]
 ?:4685 src &list[test_case]
 ?:4688 fd raw_fd
@@ -31145,10 +31149,6 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4696 owns bool
 ?:4701 end usize
 ?:4701 end usize
-?:4708 alternate bool
-?:4743 zero_pad bool
-?:4768 width option[usize]
-?:4795 precision option[usize]
 ?:4904 fd raw_fd
 ?:4914 v T
 ?:4914 v int32
@@ -31598,55 +31598,55 @@ std/console.cn:50:5 [call] (s=arg)
 std/console.cn:51:5 [call] (s=arg)
 std/fmt.cn:32:12 [call] (s=arg)
 std/fmt.cn:35:12 [call] (c=arg, n=arg)
-std/fmt.cn:91:24 [call] (s=arg, n=arg)
-std/fmt.cn:94:20 [call] (s=arg)
-std/fmt.cn:95:24 [call] (width=arg)
-std/fmt.cn:100:17 [call] (align=arg, default_align=arg)
-std/fmt.cn:103:18 [call] (a=arg, b=arg)
-std/fmt.cn:103:43 [call] (c=arg, n=arg)
-std/fmt.cn:104:19 [call] (a=arg, b=arg)
-std/fmt.cn:104:33 [call] (c=arg, n=arg)
-std/fmt.cn:108:13 [call] (a=arg, b=arg)
-std/fmt.cn:108:27 [call] (a=arg, b=arg)
-std/fmt.cn:108:41 [call] (c=arg, n=arg)
-std/fmt.cn:108:87 [call] (c=arg, n=arg)
-std/fmt.cn:119:21 [call] (negative=arg, mode=arg)
-std/fmt.cn:120:23 [call] (alternate=arg, prefix=arg)
-std/fmt.cn:121:16 [call] (a=arg, b=arg)
-std/fmt.cn:121:30 [call] (a=arg, b=arg)
-std/fmt.cn:122:30 [call] (align=arg)
-std/fmt.cn:125:31 [call] (s=arg)
-std/fmt.cn:125:55 [call] (s=arg)
-std/fmt.cn:126:26 [call] (s=arg)
-std/fmt.cn:127:28 [call] (width=arg)
-std/fmt.cn:130:21 [call] (c=arg, n=arg)
-std/fmt.cn:131:16 [call] (a=arg, b=arg)
-std/fmt.cn:131:30 [call] (a=arg, b=arg)
-std/fmt.cn:131:44 [call] (a=arg, b=arg)
-std/fmt.cn:135:22 [call] (align=arg, default_align=arg)
-std/fmt.cn:142:12 [call] (s=arg, spec=arg)
-std/fmt.cn:159:12 [call] (s=arg, spec=arg)
-std/fmt.cn:168:12 [call] (s=arg, spec=arg)
-std/fmt.cn:168:20 [call] (a=arg, b=arg)
-std/fmt.cn:168:34 [call] (a=arg, b=arg)
-std/fmt.cn:177:12 [call] (s=arg, spec=arg)
-std/fmt.cn:177:20 [call] (b=arg)
-std/fmt.cn:186:12 [call] (s=arg, spec=arg)
-std/fmt.cn:186:20 [call] (cp=arg)
-std/fmt.cn:195:12 [call] (s=arg, spec=arg)
-std/fmt.cn:195:20 [call] (cp=arg)
-std/fmt.cn:204:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
-std/fmt.cn:213:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
-std/fmt.cn:228:18 [call] (value=arg, radix=arg, uppercase=arg)
-std/fmt.cn:229:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:241:18 [call] (value=arg, radix=arg, uppercase=arg)
-std/fmt.cn:242:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:254:18 [call] (value=arg, precision=arg)
-std/fmt.cn:255:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:268:18 [call] (value=arg, precision=arg, uppercase=arg)
-std/fmt.cn:269:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:281:18 [call] (value=arg, precision=arg)
-std/fmt.cn:282:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:87:24 [call] (s=arg, n=arg)
+std/fmt.cn:90:20 [call] (s=arg)
+std/fmt.cn:91:24 [call] (width=arg)
+std/fmt.cn:96:17 [call] (align=arg, default_align=arg)
+std/fmt.cn:99:18 [call] (a=arg, b=arg)
+std/fmt.cn:99:43 [call] (c=arg, n=arg)
+std/fmt.cn:100:19 [call] (a=arg, b=arg)
+std/fmt.cn:100:33 [call] (c=arg, n=arg)
+std/fmt.cn:104:13 [call] (a=arg, b=arg)
+std/fmt.cn:104:27 [call] (a=arg, b=arg)
+std/fmt.cn:104:41 [call] (c=arg, n=arg)
+std/fmt.cn:104:87 [call] (c=arg, n=arg)
+std/fmt.cn:115:21 [call] (negative=arg, mode=arg)
+std/fmt.cn:116:23 [call] (alternate=arg, prefix=arg)
+std/fmt.cn:117:16 [call] (a=arg, b=arg)
+std/fmt.cn:117:30 [call] (a=arg, b=arg)
+std/fmt.cn:118:30 [call] (align=arg)
+std/fmt.cn:121:31 [call] (s=arg)
+std/fmt.cn:121:55 [call] (s=arg)
+std/fmt.cn:122:26 [call] (s=arg)
+std/fmt.cn:123:28 [call] (width=arg)
+std/fmt.cn:126:21 [call] (c=arg, n=arg)
+std/fmt.cn:127:16 [call] (a=arg, b=arg)
+std/fmt.cn:127:30 [call] (a=arg, b=arg)
+std/fmt.cn:127:44 [call] (a=arg, b=arg)
+std/fmt.cn:131:22 [call] (align=arg, default_align=arg)
+std/fmt.cn:138:12 [call] (s=arg, spec=arg)
+std/fmt.cn:155:12 [call] (s=arg, spec=arg)
+std/fmt.cn:164:12 [call] (s=arg, spec=arg)
+std/fmt.cn:164:20 [call] (a=arg, b=arg)
+std/fmt.cn:164:34 [call] (a=arg, b=arg)
+std/fmt.cn:173:12 [call] (s=arg, spec=arg)
+std/fmt.cn:173:20 [call] (b=arg)
+std/fmt.cn:182:12 [call] (s=arg, spec=arg)
+std/fmt.cn:182:20 [call] (cp=arg)
+std/fmt.cn:191:12 [call] (s=arg, spec=arg)
+std/fmt.cn:191:20 [call] (cp=arg)
+std/fmt.cn:200:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.cn:209:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.cn:224:18 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.cn:225:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:237:18 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.cn:238:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:250:18 [call] (value=arg, precision=arg)
+std/fmt.cn:251:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:264:18 [call] (value=arg, precision=arg, uppercase=arg)
+std/fmt.cn:265:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:277:18 [call] (value=arg, precision=arg)
+std/fmt.cn:278:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
 std/io.cn:52:23 [call] (buf=arg)
 std/io.cn:52:23 [call] (buf=arg)
 std/io.cn:57:17 [call] (value=arg)
@@ -31926,28 +31926,28 @@ std/shared.cn:59:22 [call] (p=arg, n=arg)
 std/shared.cn:61:13 [call] (p=arg)
 std/shared.cn:62:13 [call] (p=arg, count=arg)
 std/string.cn:48:16 [call] (a=arg, b=arg)
-std/string.cn:60:17 [call] (a=arg, b=arg)
-std/string.cn:77:16 [call] (a=arg, b=arg)
-std/string.cn:90:16 [call] (a=arg, b=arg)
-std/string.cn:99:16 [call] (haystack=arg, needle=arg, from=arg)
-std/string.cn:109:17 [call] (haystack=arg, needle=arg, from=arg)
-std/string.cn:122:17 [call] (haystack=arg, needle=arg)
-std/string.cn:131:16 [call] (s=arg, mode=arg)
-std/string.cn:137:16 [call] (s=arg, mode=arg)
-std/string.cn:143:16 [call] (s=arg, mode=arg)
-std/string.cn:149:16 [call] (s=arg)
-std/string.cn:157:16 [call] (s=arg)
-std/string.cn:165:16 [call] (s=arg)
-std/string.cn:173:16 [call] (s=arg)
-std/string.cn:183:16 [call] (a=arg, b=arg)
-std/string.cn:183:26 [call] (s=arg)
-std/string.cn:183:43 [call] (s=arg)
-std/string.cn:193:16 [call] (s=arg, from=arg, to=arg)
-std/string.cn:206:13 [call] (value=arg)
-std/string.cn:211:21 [call] (haystack=arg, needle=arg, from=arg)
-std/string.cn:213:17 [call] (value=arg)
-std/string.cn:215:13 [call] (value=arg)
-std/string.cn:229:16 [call] (a=arg, b=arg)
+std/string.cn:61:17 [call] (a=arg, b=arg)
+std/string.cn:78:16 [call] (a=arg, b=arg)
+std/string.cn:91:16 [call] (a=arg, b=arg)
+std/string.cn:100:16 [call] (haystack=arg, needle=arg, from=arg)
+std/string.cn:110:17 [call] (haystack=arg, needle=arg, from=arg)
+std/string.cn:123:17 [call] (haystack=arg, needle=arg)
+std/string.cn:132:16 [call] (s=arg, mode=arg)
+std/string.cn:138:16 [call] (s=arg, mode=arg)
+std/string.cn:144:16 [call] (s=arg, mode=arg)
+std/string.cn:150:16 [call] (s=arg)
+std/string.cn:158:16 [call] (s=arg)
+std/string.cn:166:16 [call] (s=arg)
+std/string.cn:174:16 [call] (s=arg)
+std/string.cn:184:16 [call] (a=arg, b=arg)
+std/string.cn:184:26 [call] (s=arg)
+std/string.cn:184:43 [call] (s=arg)
+std/string.cn:194:16 [call] (s=arg, from=arg, to=arg)
+std/string.cn:207:13 [call] (value=arg)
+std/string.cn:212:21 [call] (haystack=arg, needle=arg, from=arg)
+std/string.cn:214:17 [call] (value=arg)
+std/string.cn:216:13 [call] (value=arg)
+std/string.cn:230:16 [call] (a=arg, b=arg)
 std/test.cn:98:19 [call] (s=arg)
 std/test.cn:99:20 [call] (s=arg)
 std/test.cn:99:45 [call] (f=arg)
@@ -32233,25 +32233,25 @@ std/console.cn:27:5 [call] std.io::file_handle::write_all trait=writer recv
 std/console.cn:43:5 [call] std.io::file_handle::write_all trait=writer recv
 std/fmt.cn:32:12 [call] std.intrinsics::rt_str_len_scalars
 std/fmt.cn:35:12 [call] std.intrinsics::rt_str_repeat_char
-std/fmt.cn:91:24 [call] std.intrinsics::rt_str_truncate_scalars
-std/fmt.cn:103:18 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:104:19 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:108:13 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:108:27 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:121:16 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:121:30 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:131:16 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:131:30 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:131:44 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:168:20 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:168:34 [call] std.intrinsics::rt_str_concat
-std/fmt.cn:186:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
-std/fmt.cn:195:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
-std/fmt.cn:228:18 [call] std.intrinsics::rt_fmt_radix_digits
-std/fmt.cn:241:18 [call] std.intrinsics::rt_fmt_radix_digits
-std/fmt.cn:254:18 [call] std.intrinsics::rt_fmt_f64_fixed
-std/fmt.cn:268:18 [call] std.intrinsics::rt_fmt_f64_sci
-std/fmt.cn:281:18 [call] std.intrinsics::rt_fmt_f64_general
+std/fmt.cn:87:24 [call] std.intrinsics::rt_str_truncate_scalars
+std/fmt.cn:99:18 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:100:19 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:104:13 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:104:27 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:117:16 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:117:30 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:127:16 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:127:30 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:127:44 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:164:20 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:164:34 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:182:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.cn:191:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
+std/fmt.cn:224:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:237:18 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:250:18 [call] std.intrinsics::rt_fmt_f64_fixed
+std/fmt.cn:264:18 [call] std.intrinsics::rt_fmt_f64_sci
+std/fmt.cn:277:18 [call] std.intrinsics::rt_fmt_f64_general
 std/io.cn:52:23 [call] std.io::file_handle::read trait=reader recv
 std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
@@ -32516,14 +32516,14 @@ std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
 std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
 std/shared.cn:61:13 [call] std.mem::drop_in_place
 std/shared.cn:62:13 [call] std.mem::free
-std/string.cn:157:16 [call] std.unicode::to_uppercase
-std/string.cn:165:16 [call] std.unicode::to_lowercase
-std/string.cn:173:16 [call] std.unicode::fold_case
-std/string.cn:183:26 [call] std.unicode::fold_case
-std/string.cn:183:43 [call] std.unicode::fold_case
-std/string.cn:206:13 [call] std.list::list::push$list_str_ recv
-std/string.cn:213:17 [call] std.list::list::push$list_str_ recv
-std/string.cn:215:13 [call] std.list::list::push$list_str_ recv
+std/string.cn:158:16 [call] std.unicode::to_uppercase
+std/string.cn:166:16 [call] std.unicode::to_lowercase
+std/string.cn:174:16 [call] std.unicode::fold_case
+std/string.cn:184:26 [call] std.unicode::fold_case
+std/string.cn:184:43 [call] std.unicode::fold_case
+std/string.cn:207:13 [call] std.list::list::push$list_str_ recv
+std/string.cn:214:17 [call] std.list::list::push$list_str_ recv
+std/string.cn:216:13 [call] std.list::list::push$list_str_ recv
 std/test.cn:98:19 [call] std.console::println
 std/test.cn:99:20 [call] std.console::println
 std/test.cn:134:17 [call] std.console::println
@@ -32859,7 +32859,7 @@ std/algo.cn:1956:47 [array] std.list::list::from_array$0$list__usize__usize__ fr
 std/algo.cn:2142:31 [array] std.list::list::from_array from array[slice[T], 0]
 std/algo.cn:2162:31 [array] std.list::list::from_array from array[slice[T], 0]
 std/iter.cn:217:19 [array] std.list::list::from_array from array[T, 0]
-std/string.cn:204:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
+std/string.cn:205:33 [array] std.list::list::from_array$0$list_str_ from array[str, 0]
 std/test.cn:108:23 [array] std.list::list::from_array$1$list_test_suite_ from array[test_suite, 1]
 std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
 

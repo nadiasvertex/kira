@@ -40,9 +40,8 @@ namespace cinder::semantic {
 /// `ast::node`, but both are stable for the AST's lifetime. A node the
 /// checker never reached (inside a file already marked failing, or simply
 /// never checked) has no entry in any of these maps — look it up with
-/// `.find`, not `.at`. This is what a later typed-lowering pass
-/// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
-/// AST a second time.
+/// `.find`, not `.at`. This is what a later typed-lowering pass reads
+/// instead of re-deriving types from the AST a second time.
 /// Per-call-site argument-to-parameter mapping for a call resolved against
 /// a real `ast::func_decl` (a free function, a method, or a trait default
 /// body) via `check_call_against_decl` — the only call form that supports
@@ -306,9 +305,8 @@ struct interp_dispatch {
 /// `ast::node`, but both are stable for the AST's lifetime. A node the
 /// checker never reached (inside a file already marked failing, or simply
 /// never checked) has no entry in any of these maps — look it up with
-/// `.find`, not `.at`. This is what a later typed-lowering pass
-/// (`spec/typed-ir-design.md`) reads instead of re-deriving types from the
-/// AST a second time.
+/// `.find`, not `.at`. This is what a later typed-lowering pass reads
+/// instead of re-deriving types from the AST a second time.
 /// A trait-default method body cloned and type-checked concretely for one
 /// impl that doesn't override it — see `checker::build_method_table`
 /// (`check.cpp`), the only place these are created. `decl` is owned by the

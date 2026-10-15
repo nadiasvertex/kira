@@ -2062,9 +2062,8 @@ auto test_comptime_vm_expression_overflow() -> void {
          "expected the error at the assertion: " + report->diagnostics);
 }
 
-/// A list method called at compile time runs on the VM, where the AST
-/// interpreter could only name it in an error. Asserted by the value the
-/// compile-time call produced.
+/// A list method called at compile time runs on the VM. Asserted by the
+/// value the compile-time call produced.
 auto test_comptime_list_method_runs() -> void {
   auto temp = make_temp_dir();
   auto main_source = temp.path / "main.cn";

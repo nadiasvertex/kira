@@ -11,12 +11,11 @@
 namespace cinder::driver {
 
 /// Outcome of executing `cli_config::run_function` when `cli_config::run` is
-/// set. Bytecode compilation only covers `spec/codegen-design.md` increment
-/// 1's narrow scalar/control-flow subset (see
-/// `src/bytecode_compiler/compile.h`), so this is a distinct, best-effort
-/// step layered on top of `compile_report::hir_modules` rather than folded
-/// into `error_count` — a program that compiles and lowers cleanly may still
-/// be unrunnable yet (heap types, generics, ...).
+/// set. The run is a distinct step layered on top of
+/// `compile_report::hir_modules`, not folded into `error_count`: a program
+/// that lowers cleanly can still fail to run, for example when the bytecode
+/// compiler rejects a construct it does not lower yet (see
+/// `src/bytecode_compiler/compile.h`).
 struct run_outcome {
   bool succeeded = false; ///< True when the function was found, compiled, and
                           ///< ran to completion without panicking.
@@ -51,11 +50,10 @@ namespace cinder::driver {
     -> std::string;
 
 /// Compiles `modules` to bytecode and executes `function_name` with no
-/// arguments, producing the `--run` outcome shown in the CLI summary.
-/// `--run` targets exactly `spec/codegen-design.md` increment 1's subset —
-/// this project has no CLI-level argument-marshalling story yet, so only
-/// zero-parameter functions are runnable — and fails closed (a message, not
-/// a crash) on every other reason execution can't proceed.
+/// arguments, producing the `--run` outcome shown in the CLI summary. The
+/// CLI has no argument-marshalling yet, so only zero-parameter functions are
+/// runnable. Every other reason execution cannot proceed is reported as a
+/// message, not a crash.
 ///
 /// @param modules The entry module (`modules.front()`, which owns
 /// `function_name`) plus every module `hir::find_reachable_modules` found it

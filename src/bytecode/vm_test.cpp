@@ -680,8 +680,7 @@ auto test_narrow_element_array_indexed_load_store_round_trip() -> void {
 
 auto test_load_str_const_produces_len_and_data_slots() -> void {
   // fn() -> u64 { return len("hi!") } — reads the heap `str` value's own
-  // length slot (slot 0) directly, since increment 2 hasn't wired up a
-  // surface-syntax `.len()` yet.
+  // length slot (slot 0) directly, rather than through a `.len()` call.
   auto writer = bc::chunk_writer{};
   const auto idx = writer.add_string_constant("hi!");
   writer.emit_opcode(bc::opcode::op_load_str_const);

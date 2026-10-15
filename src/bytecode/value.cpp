@@ -38,7 +38,7 @@ auto numeric_kind_of(const type_table &types, type_id id)
   // int128/uint128/float128 and every non-scalar builtin (str, unit, never,
   // ordering, io, cpu, ...) fall through to `nullopt` — see the doc comment
   // on `numeric_kind_of` in value.h for why 128-bit widths aren't supported
-  // by this increment, and non-scalars simply aren't numeric.
+  // by this compiler, and non-scalars simply aren't numeric.
   return std::nullopt;
 }
 

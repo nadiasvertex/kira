@@ -21,16 +21,12 @@
 
 namespace cinder::llvm_codegen {
 
-/// Test/JIT-execution-only helper: enough `llvm::orc::LLJIT` plumbing to
-/// actually run a `compile_module` result's zero-argument entry function, so
-/// `codegen_test.cpp` and the codegen stress suite can compare its result
-/// directly against the bytecode VM's (`bytecode::vm::run`). This is
-/// explicitly *not* `spec/codegen-design.md` increment 5's tier-up JIT
-/// wiring (no call counters, no dispatch-slot swap, no interpreter
-/// integration) — just the minimum needed to prove increment 3's `HIR ->
-/// llvm::Module` lowering is correct by actually running its output, the
-/// same spirit as increment 3's own "prove the lowering is correct" scope,
-/// just via execution instead of by-hand `.ll` inspection.
+/// JIT helper: enough `llvm::orc::LLJIT` plumbing to run a `compile_module`
+/// result's zero-argument entry function in-process. The tests use it to
+/// compare the LLVM tier's result against the bytecode VM's
+/// (`bytecode::vm::run`). It does not tier up hot VM code, and no command
+/// runs programs through it. See
+/// `spec/specification/05-implementation/68-jit-execution.md`.
 struct jit_result {
   bool has_value = false;
   bytecode::slot_value value{};

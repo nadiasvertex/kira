@@ -19,62 +19,9 @@ using semantic::k_unknown_type;
 using semantic::type_id;
 
 // ==========================================================================
-//  hir_node_kind — flat tag, same shape as ast::node_kind (see
-//  spec/typed-ir-design.md Decision 4). Kinds beyond this first lowering
-//  milestone (tuple literal, struct-init literal, cast, lambda) are listed
-//  here for the record — the milestone's Non-Goals explicitly defer them —
-//  but have no concrete node struct below yet; nothing constructs them
-//  until the step that adds their lowering. `match` and its patterns were
-//  added lowering `match`/pattern aliases (Decision 6, items 1-2);
-//  destructuring patterns (tuple/struct/constructor/range/array) and their
-//  supporting projection expressions (`hir_tuple_index`,
-//  `hir_variant_payload`) were added in the extension that tackles
-//  destructuring. `hir_array_pattern` covers array/list/slice element
-//  destructuring — this grammar has no rest/slice-capture syntax in pattern
-//  position (`..` there is always an open-ended `range_pattern`, never a
-//  "gather the rest" marker), so it's a plain fixed-arity structural
-//  pattern exactly like `hir_tuple_pattern`, just over an indexable rather
-//  than a tuple-shaped value; any length mismatch is a runtime dispatch
-//  concern for codegen (phase 5), the same as a literal or tag comparison.
-//  `hir_assign` and `hir_while` (plain-condition form only) were added in
-//  the mutation/control-flow extension; `for` and `while let` remain
-//  unsupported — `for` needs an iterator protocol this project hasn't
-//  decided on yet (see spec/typed-ir-design.md's open questions), and
-//  `while let` needs repeated structural dispatch (re-testing a pattern
-//  every iteration) that hasn't been designed for loops. `hir_tuple` and
-//  `hir_struct_init` (construction, not the pattern kinds of similar name)
-//  got node structs in the literal-construction extension, alongside the
-//  new `hir_array_init`; `hir_cast` got one in the extension after that.
-//  `hir_lambda` and `where_expr`-as-`hir_block` (no new node needed) were
-//  added in the "finish lowering" pass. Named/reordered call arguments
-//  were added after that (`hir_call.args` stays purely positional — the
-//  reordering happens during lowering, via a persisted per-call-site
-//  argument-to-parameter mapping; see `hir::lower_call`); default
-//  parameter values are still unsupported (a call omitting a defaulted
-//  argument still rejects — the default expression's own evaluation
-//  context isn't threaded through this pass). `hir_variant_init` (the
-//  inverse of `hir_constructor_pattern` — see its doc comment) and
-//  `try_expr` (which lowers to a synthetic two-arm `hir_match` using it)
-//  were added after that. `for` loops resolved the open iterator-protocol
-//  question (see spec/iterator-protocol-design.md — a closed, compiler-
-//  recognized set of shapes, not a general trait, since a real protocol
-//  needs mutable iterator state and borrow/ownership semantics don't
-//  exist yet): range-literal loops came first (no new node needed, just
-//  `hir_while`), then `array`/`list`/`slice`/`slice_mut`/`str` loops,
-//  which needed one new node — `hir_container_len` — since a container's
-//  element count isn't always statically known (an `array[T, N]`'s is,
-//  and uses a plain `hir_literal` instead). `option` iteration (a plain
-//  `hir_match`, no loop) and `while let` (`hir_while_let`, re-testing a
-//  pattern every iteration and falling out on the first mismatch — see
-//  its own doc comment) came after that. `for` comprehensions came last,
-//  reusing every iterable shape above (nested when a comprehension has
-//  more than one clause), growing a `list[T]` accumulator through its
-//  ordinary `push` method. Still explicitly
-//  unsupported: the concurrency forms (`async`/`await`/`par`/`race`/
-//  `crew`/`on`) and compile-time forms (`quote`/`splice`/`static`),
-//  monomorphization (phase 5), and borrow/ownership metadata — all
-//  explicit Non-Goals for this milestone in spec/typed-ir-design.md, not
-//  oversights.
+//  hir_node_kind — flat tag, same shape as ast::node_kind. Generics, operators, method calls, `for` loops over
+//  iterators, contracts, and drops are already explicit by the time code is
+//  in HIR. See `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -515,8 +462,8 @@ struct hir_variant_init : hir_expr {
 };
 
 /// A container's element count (`type` is always `usize`) — used only by
-/// `for`-loop lowering over a `list`/`slice`/`slice_mut`/`str` (see
-/// spec/iterator-protocol-design.md): a dedicated node rather than a
+/// `for`-loop lowering over a `list`/`slice`/`slice_mut`/`str`: a dedicated
+/// node rather than a
 /// synthesized `.len()` method call, since there's no real call here to
 /// model (no callee to resolve, no arguments) — just like
 /// `hir_tuple_index`, there's no surface syntax this lowers *from*, only

@@ -382,8 +382,7 @@ private:
   // ------------------------------------------------------------------
   //  Local identity
   //
-  //  Decision 7 (spec/typed-ir-design.md) says HIR should reuse the
-  //  semantic session's `symbol_id` rather than reinvent identity — but
+  //  HIR should reuse the semantic session's `symbol_id` rather than reinvent identity — but
   //  `checked_types` (src/semantic/types.h) only persists *types*, not the
   //  session's symbol table, so that real id isn't available here yet.
   //  Until that's threaded through, this class mints its own ordinals: a
@@ -840,8 +839,8 @@ private:
                     const std::vector<ast::ptr<ast::node>> &else_body,
                     size_t index, source_span span, type_id type)
       -> std::expected<ptr<hir_block>, lowering_error>;
-  /// Dispatches a `for` loop to whichever iterable shape it matches (see
-  /// spec/iterator-protocol-design.md): a range literal written directly
+  /// Dispatches a `for` loop to whichever iterable shape it matches: a range
+  /// literal written directly
   /// in the loop header, a checked `option`, or a checked
   /// `array`/`list`/`slice`/`slice_mut`/`str` iterable. A user-defined
   /// iterable still rejects. The three shape-specific lowerers below are
@@ -980,7 +979,6 @@ private:
   /// as `for` statements, one nested inside the next), and appends the
   /// yielded value — filtered by `guard`, if present — via the list's own
   /// `push` method at the innermost position. See
-  /// spec/iterator-protocol-design.md.
   [[nodiscard]] auto lower_for_expr(const ast::for_expr &for_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// Lowers an inline `static for ... => e` to the list it evaluates to,
@@ -1875,10 +1873,10 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
 /// `op` actually asks for, via a synthesized 3-arm match against
 /// `@less`/`@equal`/`@greater` — mirrors `lower_try`'s synthesized matches
 /// over `option`/`result` above (same technique, a different sum type).
-/// `ordering` has no scalar bytecode/LLVM representation any more than
-/// `str` does (`check.cpp`'s `wire_ord_dispatch` is the only place `<`/
-/// `<=`/`>`/`>=` ever produces one), so this runs before either backend ever
-/// sees the comparison, and needs no backend-specific support of its own.
+/// `ordering` is a sum type, so it is not a scalar (`check.cpp`'s
+/// `wire_ord_dispatch` is the only place `<`/`<=`/`>`/`>=` ever produces one).
+/// This runs before either backend sees the comparison, and needs no
+/// backend-specific support of its own.
 auto lowerer::lower_ordering_comparison(source_span span, type_id bool_type,
                                         ast::binary_op op,
                                         ptr<hir_expr> ordering_value)
@@ -3349,8 +3347,7 @@ auto lowerer::lower_struct(const ast::struct_expr &literal)
       return fail(lowering_error_kind::unresolved_type, field.span,
                   "no concrete checked type is available for this struct "
                   "literal's shorthand field; lowering only accepts fully "
-                  "type-checked, fully-annotated code (spec/"
-                  "typed-ir-design.md Decision 1)");
+                  "type-checked, fully-annotated code");
     }
     auto symbol = resolve_reference(field.name);
     // `{f}` for a generic lambda `f`: the closure of the copy it was
@@ -5272,7 +5269,7 @@ auto lowerer::lower_guarded_for_body(
   if (guard_ast != nullptr) {
     // No `continue` exists in this language (it isn't even tokenized), so
     // "skip this iteration" is an ordinary conditional wrapping the body,
-    // not a jump — see spec/iterator-protocol-design.md.
+    // not a jump.
     auto guard = lower_expr(*guard_ast);
     if (!guard.has_value()) {
       return std::unexpected(guard.error());
@@ -6231,7 +6228,7 @@ auto lowerer::lower_comprehension_clause(
     return lower_generator_loop(span, &clause.iterable, *clause.iterable,
                                 *iterable_type, loop_var, nested, owns_element);
   }
-  // The same iterator-protocol route the statement `for` takes. A clause
+  // The same iteration route the statement `for` takes. A clause
   // over a `list` reaches this and not the indexed-loop fallback below,
   // because `list` is an ordinary stdlib type with an `into_iterator` impl
   // rather than a shape the loop lowerers know by name.
@@ -6519,8 +6516,7 @@ auto lowerer::lower_pattern(const ast::node &pattern,
         return fail(lowering_error_kind::unresolved_type, field_span,
                     "no concrete checked type is available for this struct "
                     "pattern field; lowering only accepts fully "
-                    "type-checked, fully-annotated code (spec/"
-                    "typed-ir-design.md Decision 1)");
+                    "type-checked, fully-annotated code");
       }
       const auto ftype = found->second;
       const auto whole = drop_schedule_.owned_bindings.contains(&field);
@@ -7313,8 +7309,7 @@ auto lower_function(const ast::func_decl &decl,
 /// `lower_function` sees it (its type comes from `checked_type_of`, not
 /// `param.type_annotation`, which is always null for `self`; see
 /// `lower_function`'s guard). A generic impl/method is still left alone —
-/// monomorphization is out of scope (`spec/typed-ir-design.md`'s generics
-/// non-goal).
+/// monomorphization is out of scope here.
 [[nodiscard]] auto lower_impl_associated_functions(
     const ast::impl_decl &impl, const semantic::checked_types &checked,
     const lowering_options &options, ptr_vec<hir_function> &functions)

@@ -7,15 +7,11 @@
 namespace cinder::runtime {
 
 /// Bump/arena allocator: hands out zeroed, 8-byte-aligned memory from
-/// growable blocks and never frees anything. This is the explicit
-/// placeholder `spec/codegen-design.md` Decision 3 calls for — real memory
-/// management (refcounting, ownership-based drop, or a tracing GC) is
-/// blocked on Cinder's still-undesigned ownership/borrow model, so this is
-/// deliberately the simplest thing that could work, not a performance
-/// strategy. Every heap-backed Cinder value (`str`, `list[T]`, tuple/struct/
-/// sum-type payloads, closure environments) is allocated from here by both
-/// the bytecode VM and `llvm_codegen`-compiled code, which is exactly what
-/// keeps their in-memory layouts byte-for-byte identical per Decision 3.
+/// growable blocks and never frees anything. It backs the `arena` allocator
+/// mode (see `allocator.h`), which is not the default. Every heap-backed
+/// Cinder value (`str`, `list[T]`, tuple/struct/sum-type payloads, closure
+/// environments) is allocated the same way by both the bytecode VM and
+/// `llvm_codegen`-compiled code, so their in-memory layouts match.
 class bump_arena {
 public:
   bump_arena() = default;

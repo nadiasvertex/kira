@@ -220,7 +220,7 @@ using cinder::decode_string_literal;
 /// Whether `id` is one of the heap-backed representations
 /// `src/runtime/layout.h` describes (`str`, `list`/`option`/`result` and
 /// other prelude generics, tuple, fixed array, struct, sum type, and now
-/// `fn(...)` — a lambda/closure value, per increment 6) — every such value
+/// `fn(...)` — a lambda/closure value) — every such value
 /// is a single opaque pointer, as opposed to the closed scalar set
 /// `numeric_kind_of` maps directly to an LLVM integer/float type.
 ///
@@ -969,8 +969,8 @@ private:
           .kind = codegen_error_kind::unsupported_type,
           .span = span,
           .message = std::format(
-              "type `{}` has no scalar llvm_codegen representation yet — "
-              "non-scalar types and 128-bit widths are not supported yet "
+              "type `{}` has no numeric llvm_codegen representation yet — "
+              "128-bit integer and float types are not supported yet "
               "(see spec/todo.md)",
               types_.display(id))});
     }
@@ -1052,9 +1052,9 @@ private:
   }
 
   // ------------------------------------------------------------------
-  //  Heap values (spec/codegen-design.md increment 6) — src/runtime/
-  //  layout.h's flat "N 8-byte slots" representation, shared byte-for-byte
-  //  with bytecode::vm's op_alloc/op_load_slot/op_store_slot (Decision 3).
+  //  Heap values — src/runtime/layout.h's flat "N 8-byte slots"
+  //  representation, shared byte-for-byte with bytecode::vm's
+  //  op_alloc/op_load_slot/op_store_slot.
   //  Opaque pointers make this simple: a slot's address is just a byte
   //  offset GEP off the block's base pointer, and `CreateLoad`/`CreateStore`
   //  can target that address with whatever concrete LLVM type the caller
@@ -2333,9 +2333,9 @@ private:
   }
 
   // ------------------------------------------------------------------
-  //  Heap values (spec/codegen-design.md increment 6) — same flat "N
-  //  8-byte slots" representation as bytecode::vm's op_alloc/op_load_slot/
-  //  op_store_slot (Decision 3), built from `compile_heap_alloc`/
+  //  Heap values — same flat "N 8-byte slots" representation as
+  //  bytecode::vm's op_alloc/op_load_slot/op_store_slot, built from
+  //  `compile_heap_alloc`/
   //  `slot_address` above.
   // ------------------------------------------------------------------
 
@@ -3332,14 +3332,14 @@ private:
   }
 
   // ------------------------------------------------------------------
-  //  match + patterns (spec/codegen-design.md increment 4) — mirrors
+  //  match + patterns — mirrors
   //  `bytecode_compiler`'s own pattern-testing scope exactly (see that
   //  file's doc comment on `compile_pattern_test` for the full rationale):
   //  every structural sub-test is safe to evaluate unconditionally (arity
   //  is already checker-verified), combined here via plain `CreateAnd`/
   //  `CreateOr` on `i1` rather than any short-circuiting. Struct field and
   //  sum-variant payload sub-patterns are only supported as a wildcard/
-  //  binding — this increment doesn't resolve field/variant *types*, only
+  //  binding — this doesn't resolve field/variant *types*, only
   //  their slot order (`runtime::layout.h`), and a non-wildcard sub-pattern
   //  there would need one to keep testing.
   // ------------------------------------------------------------------

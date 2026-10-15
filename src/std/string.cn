@@ -49,8 +49,9 @@ extend str:
 
     #: Compares two strings lexicographically by UTF-8 byte value. Backs
     #: `ord for str`, which is what `<`/`<=`/`>`/`>=` and `min`/`max`/`sort`
-    #: dispatch to — `str` has no scalar bytecode/LLVM representation for
-    #: those to compare directly, the same reason `eq` exists alongside `==`.
+    #: dispatch to. `str` values are heap blocks, not scalars, so those
+    #: operators call `cmp` rather than compare them directly, the same way
+    #: `eq` backs `==`.
     #: Args:
     #:   self: the string to compare.
     #:   other: the other string to compare against.

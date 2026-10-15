@@ -694,10 +694,9 @@ auto checker::wire_ord_dispatch(const ast::binary_expr &binary, type_id lhs)
 }
 
 /// Wires `==`/`!=` between two `str` operands to a real call of
-/// `std.string`'s `str::eq` extend method (`rt_str_eq`-backed) — `str`
-/// has no scalar bytecode/LLVM representation for `==` to compare
-/// directly (see `std/string.cn`'s own `eq` doc comment: "Use this
-/// instead of `==`, which has no `str` codegen yet"). Recorded through
+/// `std.string`'s `str::eq` extend method (`rt_str_eq`-backed). `str` values
+/// are heap blocks, not scalars, so `==` cannot compare them directly.
+/// Recorded through
 /// the same `session_.operator_dispatches_` map arithmetic operators use;
 /// `hir::lower_binary` negates the call's result for `!=` itself (it
 /// already has `bin.op`, so no extra bookkeeping is needed here). A

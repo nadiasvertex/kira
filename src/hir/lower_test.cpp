@@ -1137,7 +1137,7 @@ auto test_lowers_elif_let_chain() -> void {
 auto test_rejects_for_loop_over_user_defined_type() -> void {
   // list/array/slice/str iteration lowers now (see
   // test_lowers_list_for_loop and friends) — a user-defined iterable is
-  // the one shape spec/iterator-protocol-design.md still defers, since it
+  // the one shape still deferred, since it
   // would need a real trait-based protocol this project doesn't have yet.
   auto fixture =
       check_fixture(read_program("rejects_for_loop_over_user_defined_type.cn"));

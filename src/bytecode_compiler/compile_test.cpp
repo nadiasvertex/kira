@@ -422,9 +422,8 @@ auto test_implicit_tail_match_and_if_are_the_return_value() -> void {
 
 auto test_implicit_tail_expression_is_the_return_value() -> void {
   // No explicit `return` — the last statement's value is the function's
-  // result (spec/typed-ir-design.md's Rust-like trailing-expression rule,
-  // enforced by check_function; see check.cpp's "mismatched final
-  // expression" diagnostic).
+  // result (the trailing expression rule, enforced by check_function; see
+  // check.cpp's "mismatched final expression" diagnostic).
   auto module = compile_fixture(load_fixture("implicit_tail_expression.cn"));
   const auto vm = bc::vm{module};
   const auto args = std::array{bc::slot_value{int64_t{21}}};

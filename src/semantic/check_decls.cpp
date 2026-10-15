@@ -347,7 +347,7 @@ auto checker::check_function_impl(const ast::func_decl &decl,
     if (param.pattern != nullptr) {
       // Parameters aren't expressions, so `infer_expr`'s chokepoint never
       // sees them; record the resolved type here so a later lowering pass
-      // (spec/typed-ir-design.md) can read a parameter's declared type
+      // can read a parameter's declared type
       // without re-running `resolve_type`'s module-context machinery.
       record_expr_type(*param.pattern, type);
       if (param.pattern->kind == ast::node_kind::binding_pattern) {

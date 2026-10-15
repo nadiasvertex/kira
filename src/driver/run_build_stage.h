@@ -6,7 +6,7 @@
 
 namespace cinder::driver {
 
-/// Executes `cfg.run_function` via the tier-0 VM when `cfg.run` is set,
+/// Executes `cfg.run_function` via the bytecode VM when `cfg.run` is set,
 /// recording the outcome in `report.run`. Locates the target module by
 /// scanning `lowered_modules` for one that defines a matching function;
 /// reports a "no such function" outcome rather than running anything when

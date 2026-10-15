@@ -237,7 +237,7 @@ auto checker::check_call_args_against(
   // declaration order it would be inferred against the literal `fn(T) -> U`
   // and bind its parameter to the type *parameter* `T`, which then reaches
   // lowering as an abstract type and fails there rather than here ("type
-  // `T` has no scalar bytecode representation"). Every other argument
+  // `T` has no concrete representation"). Every other argument
   // determines its own type, so running those first — and solving the call's
   // generic parameters from them plus the declared bounds — is what makes
   // `T` known by the time the lambda needs it.

@@ -60,12 +60,10 @@ struct vm_failure {
   std::vector<vm_frame_location> frames;
 };
 
-/// Tier-0 bytecode interpreter (`spec/codegen-design.md` Decision 1,
-/// increment 2). Dispatches one `bytecode_module`'s flat instruction stream
-/// via an ordinary `switch` over `opcode` — no computed-goto/threaded
-/// dispatch trick, per `CLAUDE.md`'s stated priority of clarity over
-/// dispatch-speed cleverness for this tier (real hot code is Decision 4's
-/// job, not this one's).
+/// The bytecode VM, the reference execution tier. Dispatches one
+/// `bytecode_module`'s flat instruction stream via an ordinary `switch` over
+/// `opcode`, with no computed-goto or threaded dispatch. Clarity takes
+/// priority over dispatch speed in this tier.
 ///
 /// Call frames are an explicit `std::vector<frame>` growing one entry per
 /// nested `op_call`, not C++ call-stack recursion — this keeps Cinder's own

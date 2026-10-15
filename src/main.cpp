@@ -62,10 +62,10 @@ auto main(int argc, char *argv[]) -> int {
       std::println("{}", summary);
     }
 
-    // In interpreter mode the process exit code mirrors whatever `main`
+    // In run mode the process exit code mirrors whatever `main`
     // (or `--run-function`'s target) returned, like any other program —
     // not the usual "0 success / 1 failure" the compiler itself uses for
-    // every other outcome (`spec/codegen-design.md`'s driver semantics).
+    // every other outcome.
     if (cfg.run && !had_errors) {
       return report->run.has_value() ? report->run->exit_code : 0;
     }

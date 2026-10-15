@@ -12,13 +12,13 @@ namespace cinder::runtime {
 
 // ==========================================================================
 //  Heap value layouts shared by `bytecode_compiler`/`bytecode::vm` and
-//  `llvm_codegen` (spec/codegen-design.md Decision 3). Every non-scalar
-//  Cinder value is a single pointer into `bump_arena` memory (`arena.h`) to a
-//  flat block of 8-byte slots, uniform regardless of each slot's own type —
-//  a nested aggregate/heap value is itself just a pointer, so it fits in
-//  one slot the same as any scalar. This trades some memory for not having
-//  to hand-roll per-field alignment/packing logic in two backends for a
-//  representation `CLAUDE.md` explicitly deprioritizes performance for:
+//  `llvm_codegen`. Every non-scalar Cinder value is a single pointer to a
+//  flat block of 8-byte slots (allocated through `allocator.h`), uniform
+//  regardless of each slot's own type. A nested aggregate or heap value is
+//  itself just a pointer, so it fits in one slot the same as any scalar.
+//  This trades some memory for not having to hand-roll per-field
+//  alignment or packing logic in two backends. Clarity is prioritized over
+//  performance here:
 //
 //  - `str`:                  { u64 len; u8* data; }               (2 slots)
 //  - `list[T]`:              { u64 len; u64 cap; T* data; }       (3 slots)

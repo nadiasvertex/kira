@@ -14,30 +14,23 @@
 namespace cinder::bytecode_compiler {
 
 /// Why `compile_module`/`compile_function` refused to produce bytecode for
-/// some HIR construct. This compiler targets exactly
-/// `spec/codegen-design.md` increment 1's scope — the non-generic,
-/// non-concurrent, scalar/control-flow subset (arithmetic, comparisons,
-/// casts, `if`, `while`, direct calls) — even though HIR itself has since
-/// grown match, tuples, structs, arrays, lambdas, and sum-type variants for
-/// later increments. Anything outside that scope fails closed with a
-/// specific reason here, the same discipline `hir::lower` already applies
-/// (`spec/typed-ir-design.md` Decision 1), rather than silently miscompiling
-/// or guessing a representation for a construct increment 6 (heap types)
-/// hasn't designed yet.
+/// some HIR construct. The compiler covers the full HIR language, including
+/// generics (already instantiated in HIR), match, aggregates, heap-backed
+/// values, closures, and generators (see
+/// `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`). A
+/// construct it cannot yet lower fails closed with a specific reason here,
+/// the same discipline `hir::lower` applies, rather than silently
+/// miscompiling.
 enum class compile_error_kind : uint8_t {
-  unsupported_construct,   ///< Outside increment 1's scope — match, tuples,
-                           ///< structs, arrays, lambdas, variants, field/index
-                           ///< access, references, destructuring, string
-                           ///< literals, and every construct this increment
-                           ///< doesn't lower yet.
-  unsupported_type,        ///< A reachable expression's checked type has no
-                           ///< `bytecode::numeric_kind` (`numeric_kind_of`
-                           ///< returned `nullopt`) — a non-scalar type
-                           ///< (`list[T]`, `str`, a struct/sum type, ...) or a
-                           ///< 128-bit scalar, neither representable by this
-                           ///< tier's scalar-only `slot_value` yet.
+  unsupported_construct,   ///< A HIR construct this compiler does not lower
+                           ///< yet.
+  unsupported_type,        ///< A reachable scalar operation's checked type has
+                           ///< no `bytecode::numeric_kind` (`numeric_kind_of`
+                           ///< returned `nullopt`). Today this is a 128-bit
+                           ///< integer or float, which needs two register
+                           ///< slots and is not yet supported.
   unknown_callee,          ///< A call's callee could not be resolved to a
-                           ///< function declared in the same compiled module.
+                           ///< function declared in the compiled module set.
   encoding_limit_exceeded, ///< Some count in this function exceeds what the
                            ///< corresponding operand can encode: more than 255
                            ///< `yield` points (a `u8` resume index), or an
@@ -77,9 +70,8 @@ struct compile_error {
 
 /// Compiles every function in `module` into a `bytecode_module`, in the same
 /// order, so `op_call`'s `function_index` operand can index directly into
-/// the result (no first-class function values in this increment, so a
-/// fixed compile-time table is all calls ever need — mirrors
-/// `bytecode_module`'s own doc comment in chunk.h). Fails closed on the
+/// the result. Direct calls resolve through this fixed compile-time table
+/// (mirrors `bytecode_module`'s own doc comment in chunk.h). Fails closed on the
 /// first function `compile_function` rejects.
 [[nodiscard]] auto compile_module(const hir::hir_module &module,
                                   const semantic::type_table &types)

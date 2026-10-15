@@ -107,8 +107,8 @@ pub trait one:
 #
 # The 128-bit types are absent. A reachable module is compiled in full, not
 # just the functions a program calls, so an `impl zero for int128` here would
-# make every program fail with "type `int128` has no scalar bytecode
-# representation yet". They arrive with codegen increment 6.
+# make every program fail, since neither backend has a representation for
+# them yet.
 impl zero for int8:
     pure static def zero() -> int8:
         return 0

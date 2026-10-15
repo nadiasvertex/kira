@@ -7,16 +7,11 @@
 
 namespace cinder::bytecode {
 
-/// Closed set of reasons the VM (`vm.h`) can panic. There is no
-/// arbitrary/user-supplied message here — `op_panic`'s original design
-/// (opcodes.h) carried a `message_const_index` into the constant pool, but
-/// `slot_value` (value.h) is a bare numeric union with no string
-/// representation, and heap types (`str` included) are explicitly deferred
-/// to `spec/codegen-design.md` increment 6. Rather than inventing a
-/// string-table side channel just for diagnostics ahead of that increment,
-/// every panic this tier can raise is one of this fixed set, and the VM
-/// renders a fixed human-readable message per reason (`panic_reason_message`
-/// below) — revisit once increment 6 gives this tier real strings.
+/// Closed set of reasons the VM (`vm.h`) and the LLVM tier can panic. There
+/// is no arbitrary, user-supplied message here. Every panic is one of this
+/// fixed set, and the VM renders a fixed human-readable message per reason
+/// (`panic_reason_message` below). Both tiers use the same set, so a program
+/// fails the same way in either.
 enum class panic_reason : uint8_t {
   integer_overflow,
   integer_divide_by_zero,

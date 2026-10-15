@@ -50,11 +50,7 @@ def has_align(align: option[align_mode]) -> bool:
         @none => false
 
 # Written as statement-style `if`/`return` rather than an `if`/`else`
-# *expression* yielding `str`: the LLVM backend does not yet support a
-# heap-typed (`str`) value flowing out of an `if`-expression branch
-# (`spec/codegen-design.md` increment 6, heap types, hasn't landed for that
-# shape yet) — the bytecode VM tier has no such restriction, but every
-# helper here is written the way that works on both backends.
+# *expression* yielding `str`. Every helper here uses that shape.
 def sign_prefix_char(negative: bool, mode: sign_mode) -> str:
     match mode:
         @always =>:

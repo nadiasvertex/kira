@@ -60,7 +60,7 @@ struct cli_config {
             ///< `--no-inline` turns it off, for measuring what it buys or
             ///< ruling it out while chasing a miscompile.
   bool run = false; ///< Compile to bytecode and execute `run_function`
-                    ///< via the tier-0 VM (`src/bytecode/vm.h`) after a
+                    ///< via the bytecode VM (`src/bytecode/vm.h`) after a
                     ///< successful compile. `parse_args` defaults this
                     ///< to true whenever `--compile` was not
                     ///< requested, so plain `cinder SOURCE` runs it
@@ -71,8 +71,7 @@ struct cli_config {
   bool build = false; ///< Compile to a native object file via
                       ///< `src/llvm_codegen`, link it against Cinder's AOT
                       ///< runtime support library, and produce a standalone
-                      ///< executable (`spec/codegen-design.md` increment 4).
-                      ///< Requested via `--compile`.
+                      ///< executable. Requested via `--compile`.
   std::string build_function =
       std::string(k_default_run_function); ///< Zero-argument function to use as
                                            ///< the executable's entry point

@@ -7,21 +7,13 @@
 namespace cinder::bytecode {
 
 // ==========================================================================
-//  Instruction set — see `spec/codegen-design.md` Decision 1/increment 1.
+//  Instruction set. See `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
 //
 //  A register machine, not a stack machine: every operand is an explicit
 //  register index into the current call frame's register file, not an
-//  implicit stack top. This reverses the stack-machine choice this same
-//  increment started with — caught and corrected before any compiler code
-//  was written against it, specifically because register machines
-//  measurably win on instruction count (one `add dst, lhs, rhs` where a
-//  stack machine needs push-push-add-implicit-pop-push) and avoid the
-//  stack-shuffling (redundant push/pop pairs for values already sitting
-//  where they're needed) that a stack machine's compiler has to work
-//  around after the fact — Lua's VM (register-based since 5.0, replacing an
-//  earlier stack design) and Dalvik/ART both made the same call for the
-//  same reason. Tearing this out once the HIR-to-bytecode compiler existed
-//  would have been far more expensive than fixing it now.
+//  implicit stack top. This saves instructions (one `add dst, lhs, rhs`
+//  where a stack machine needs push-push-add-pop-push) and avoids the
+//  redundant push/pop pairs a stack machine's compiler must remove later.
 //
 //  A function's registers are one flat array per call frame — there is no
 //  separate "locals" storage distinct from "temporaries": parameters
@@ -56,11 +48,9 @@ namespace cinder::bytecode {
 //  description of which is which, and every instruction size and offset is
 //  derived from it.
 //
-//  The register index was a `u8` originally — "up to 256 per frame, ample
-//  for the scalar/control-flow subset this increment covers, revisit only
-//  if a real program's temporary count ever gets close." A real program's
-//  temporary count got close almost immediately, so it is `u16` now; see
-//  the operand-layout section below for why widening beat spilling.
+//  The register index is a `u16`. A `u8` index (256 registers per frame)
+//  was too small for real programs. See the operand-layout section below
+//  for why widening beat spilling.
 //
 //  Two hardware-inspired encoding ideas were considered for this
 //  instruction set and rejected — recorded here so they aren't
@@ -194,8 +184,7 @@ enum class opcode : uint8_t {
 
   // --- Control flow --------------------------------------------------------
   //
-  //  `if`/`while`/`while let` compile to these directly (see
-  //  spec/codegen-design.md's `hir_if`/`hir_while` shapes). `and`/`or`
+  //  `if`/`while`/`while let` compile to these directly. `and`/`or`
   //  (`ast::binary_op::And`/`Or`) are lowered to `hir_binary` at the HIR
   //  level with no short-circuit marker at all (confirmed by reading
   //  `hir::lower_binary` — both operands are unconditionally lowered
@@ -252,7 +241,7 @@ enum class opcode : uint8_t {
                      ///< the same "parameterize, don't enumerate" choice
                      ///< `numeric_kind` already makes for arithmetic.
 
-  // --- Heap values (spec/codegen-design.md increment 6) -------------------
+  // --- Heap values --------------------------------------------------------
   //
   //  Every non-scalar Cinder value (`str`, `list[T]`, fixed `array[T, N]`,
   //  tuple, struct, sum-type payload, closure) is a single pointer into
@@ -374,26 +363,18 @@ enum class opcode : uint8_t {
 
   // --- Diagnostics ---------------------------------------------------------
   op_panic, ///< (no operands) — panics with `panic_reason::explicit_panic`
-            ///< (see `panic.h`). Originally specced with a
-            ///< `u16 message_const_index` into the constant pool, but
-            ///< `slot_value` (value.h) has no string representation and
-            ///< heap types are deferred to increment 6 — rather than add a
-            ///< string-table side channel just for this, every VM panic
-            ///< (this opcode's, and the checked-arithmetic opcodes' above)
-            ///< reports one of a small fixed `panic_reason` set instead of
-            ///< an arbitrary message; revisit once increment 6 lands real
-            ///< strings. `op_panic` itself is for panics with a
-            ///< source-level trigger (e.g. an unreachable-match arm), not
-            ///< something increment 1's compiler emits yet, but reserved
-            ///< now so the VM (increment 2) has one panic mechanism to
-            ///< implement, not two.
+            ///< (see `panic.h`). Every panic, from this opcode or from the
+            ///< checked-arithmetic opcodes above, reports one of a small
+            ///< fixed `panic_reason` set rather than an arbitrary message.
+            ///< `op_panic` is for panics with a source-level trigger, such
+            ///< as an unreachable match arm.
 
   // --- Direct function values (first-class module-level functions) --------
   op_load_direct_fn, ///< u16 dst, u16 function_index — loads `{fn_index; 0}`
                      ///< into a two-slot register value so it can be passed
                      ///< as a `fn` argument or stored in a local.
 
-  // --- Closures (spec/codegen-design.md increment 6) -----------------------
+  // --- Closures -----------------------------------------------------------
   op_make_closure,  ///< u16 dst, u16 function_index, u16 env_ptr,
                     ///< u16 glue_index — reg[dst] = a fresh 3-slot heap
                     ///< block `{ function_index; reg[env_ptr]; glue }`

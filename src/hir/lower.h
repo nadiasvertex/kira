@@ -13,14 +13,11 @@
 namespace cinder::hir {
 
 /// Why `lower_function`/`lower_module` refused to produce HIR for some
-/// construct. Lowering fails closed (spec/typed-ir-design.md Decision 1):
-/// an unsupported or not-fully-typed construct is a hard error, never a
-/// silently-skipped function or a placeholder node.
+/// construct. Lowering fails closed: an unsupported or not-fully-typed
+/// construct is a hard error, never a silently-skipped function or a
+/// placeholder node.
 enum class lowering_error_kind : uint8_t {
-  unsupported_construct, ///< Outside this milestone's scope — generics,
-                         ///< destructuring patterns, `if let`, named call
-                         ///< arguments, and every construct not listed in
-                         ///< spec/typed-ir-design.md's milestone-1 breakdown.
+  unsupported_construct, ///< A construct HIR lowering does not handle yet.
   unannotated_parameter, ///< A parameter has no explicit type annotation.
   missing_return_type,   ///< The function has no explicit declared return type.
   unresolved_type,       ///< An expression's or declaration's checked type

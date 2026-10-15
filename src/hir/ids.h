@@ -5,8 +5,7 @@
 namespace cinder::hir {
 
 /// Identity for a bound HIR-level declaration (parameter, `let`/`var`
-/// binding, or function). Reused rather than reinvented (see
-/// spec/typed-ir-design.md Decision 7): the semantic session already
+/// binding, or function). Reused rather than reinvented: the semantic session already
 /// assigns every binding a stable id, so HIR only needs to remember which
 /// one a reference points at.
 using symbol_id = semantic::symbol_id;

@@ -120,7 +120,7 @@ auto list_samples(const fs::path &corpus_dir) -> std::vector<sample> {
   return samples;
 }
 
-/// Runs `source_path`'s `main` via the tier-0 bytecode VM
+/// Runs `source_path`'s `main` via the bytecode VM
 /// (`driver::compile_sources` with `cfg.run = true`) with real process
 /// stdout (fd 1) redirected to a temp file for the duration of the call —
 /// `println`/`print`/`eprintln`/`eprint` write through `rt_write`'s real
