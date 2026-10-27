@@ -40,7 +40,7 @@ The VM (`src/bytecode/vm.cpp`) is a register machine.
 - **Dispatch** is an ordinary `switch` over the opcode. Clarity takes priority over dispatch speed in this tier.
 - **Frames** are an explicit vector, not C++ recursion, so Cinder's call-depth limit and its `stack_overflow` panic do not depend on the host stack.
 - **Values** in registers are untagged slots; the compiler knows every type statically. Scalars live in the slot. Every other value lives in heap memory laid out by `src/runtime/layout.h`, the same layout the LLVM backend uses.
-- **Instructions** cover arithmetic in checked, wrapping and saturating forms; comparisons and casts; jumps; direct, indirect and tail calls; closures; generators (`op_make_generator`, `op_yield`, `op_generator_next`); stack and heap allocation; slot and indexed loads and stores; address-of; panics; atomics; calls into runtime intrinsics; and host calls.
+- **Instructions** cover arithmetic in checked, wrapping and saturating forms; comparisons and casts; jumps; direct, indirect and tail calls; closures; generators (`op_make_generator`, `op_yield`, `op_coroutine_resume`); stack and heap allocation; slot and indexed loads and stores; address-of; panics; atomics; calls into runtime intrinsics; and host calls.
 - **Runtime support** comes from `src/runtime/`: the allocator, string operations, formatting, platform queries and I/O. The VM calls these directly; compiled code links against the same library.
 - **Panics** use one closed set of reasons shared with the LLVM backend, so both tiers fail the same way on overflow, division by zero, a failed contract, and similar conditions.
 

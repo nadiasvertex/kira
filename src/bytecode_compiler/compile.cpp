@@ -563,9 +563,9 @@ public:
                                   3, fn.span);
   }
 
-  /// Builds `option::none`, marks the generator object (`generator_self_
-  /// reg_`) finished, and returns it — the step function's behavior on a
-  /// bare `return` or falling off the end of the body. Syncs the state
+  /// Marks the generator object (`generator_self_reg_`) done and returns
+  /// the `done` status — the step function's behavior on a bare `return` or
+  /// falling off the end of the body. Syncs the state
   /// block first (harmless if nothing will read it again, and cheap).
   [[nodiscard]] auto emit_generator_exhausted_return(source_span span)
       -> std::expected<void, compile_error> {
@@ -577,39 +577,21 @@ public:
       }
     }
 
-    auto one_reg = alloc_register(span);
-    if (!one_reg.has_value()) {
-      return std::unexpected(one_reg.error());
+    auto done_reg = alloc_register(span);
+    if (!done_reg.has_value()) {
+      return std::unexpected(done_reg.error());
     }
     const auto done_const = writer_.add_constant(
         slot_value{runtime::coroutine::raw(runtime::coroutine::status::done)});
     emit_op(opcode::op_load_const);
-    emit_register(*one_reg);
+    emit_register(*done_reg);
     writer_.emit_u32(done_const);
     emit_store_slot(generator_self_reg_,
                     static_cast<uint16_t>(runtime::coroutine::k_status_slot),
-                    *one_reg);
-
-    auto none_reg = alloc_register(span);
-    if (!none_reg.has_value()) {
-      return std::unexpected(none_reg.error());
-    }
-    emit_alloc_slots(*none_reg, 2);
-    // `option::none` — a 2-slot `{ tag=1; payload }` block, matching
-    // `option`'s hardcoded variant order (see `op_yield`'s doc comment in
-    // `src/bytecode/opcodes.h`).
-    auto none_tag_reg = alloc_register(span);
-    if (!none_tag_reg.has_value()) {
-      return std::unexpected(none_tag_reg.error());
-    }
-    const auto none_tag_const = writer_.add_constant(slot_value{int64_t{1}});
-    emit_op(opcode::op_load_const);
-    emit_register(*none_tag_reg);
-    writer_.emit_u32(none_tag_const);
-    emit_store_slot(*none_reg, 0, *none_tag_reg);
+                    *done_reg);
 
     emit_op(opcode::op_return_value);
-    emit_register(*none_reg);
+    emit_register(*done_reg);
     return {};
   }
 
@@ -2419,6 +2401,10 @@ private:
     return {};
   }
 
+  /// `g.next()`: resumes the generator, then builds `option::some(value)`
+  /// when the step function reported a suspension and `option::none`
+  /// otherwise. `option`'s layout is hardcoded here (`some`=0, `none`=1, one
+  /// payload slot), as `src/runtime/layout.cpp` declares it.
   [[nodiscard]] auto compile_generator_next(const hir::hir_generator_next &node,
                                             virtual_reg dst)
       -> std::expected<void, compile_error> {
@@ -2426,9 +2412,55 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    emit_op(opcode::op_generator_next);
-    emit_register(dst);
+    auto regs = std::array<virtual_reg, 5>{};
+    for (auto &reg : regs) {
+      auto allocated = alloc_register(node.span);
+      if (!allocated.has_value()) {
+        return std::unexpected(allocated.error());
+      }
+      reg = *allocated;
+    }
+    const auto [status_reg, suspended_reg, is_suspended_reg, tag_reg,
+                payload_reg] = regs;
+    emit_op(opcode::op_coroutine_resume);
+    emit_register(status_reg);
     emit_register(*object_reg);
+
+    const auto suspended_const = writer_.add_constant(slot_value{
+        runtime::coroutine::raw(runtime::coroutine::status::suspended)});
+    emit_op(opcode::op_load_const);
+    emit_register(suspended_reg);
+    writer_.emit_u32(suspended_const);
+    emit_op(opcode::op_eq);
+    emit_register(is_suspended_reg);
+    emit_register(status_reg);
+    emit_register(suspended_reg);
+    writer_.emit_numeric_kind(numeric_kind::i64);
+
+    emit_alloc_slots(dst, 2);
+    emit_op(opcode::op_jump_if_false);
+    emit_register(is_suspended_reg);
+    const auto none_placeholder = writer_.emit_jump_placeholder();
+
+    const auto some_const = writer_.add_constant(slot_value{int64_t{0}});
+    emit_op(opcode::op_load_const);
+    emit_register(tag_reg);
+    writer_.emit_u32(some_const);
+    emit_store_slot(dst, 0, tag_reg);
+    emit_load_slot(payload_reg, *object_reg,
+                   static_cast<uint16_t>(runtime::coroutine::k_value_slot));
+    emit_store_slot(dst, 1, payload_reg);
+    emit_op(opcode::op_jump);
+    const auto end_placeholder = writer_.emit_jump_placeholder();
+
+    writer_.patch_jump_to_here(none_placeholder);
+    const auto none_const = writer_.add_constant(slot_value{int64_t{1}});
+    emit_op(opcode::op_load_const);
+    emit_register(tag_reg);
+    writer_.emit_u32(none_const);
+    emit_store_slot(dst, 0, tag_reg);
+
+    writer_.patch_jump_to_here(end_placeholder);
     return {};
   }
 

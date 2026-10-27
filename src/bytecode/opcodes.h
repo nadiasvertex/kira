@@ -418,16 +418,17 @@ enum class opcode : uint8_t {
   // `op_yield` — an index into the step function's own leading
   // resume-dispatch chain, not a raw saved program counter.
   op_make_generator, ///< u16 dst, u16 step_function_index, u16 state_ptr —
-                     ///< reg[dst] = a fresh 4-slot heap block
+                     ///< reg[dst] = a fresh 5-slot heap block
   ///< `{ step_function_index; reg[state_ptr]; resume_index=0;
-  ///< finished=0 }`. `state_ptr` is the sentinel `0`
+  ///< finished=0; value }`. `state_ptr` is the sentinel `0`
   ///< when the generator has no state to preserve
   ///< (mirrors `op_make_closure`'s null-env convention).
   ///< Emitted by a generator's constructor function, not
   ///< at its call sites — calling a generator function
   ///< is an ordinary `op_call` into the constructor.
   op_yield, ///< u16 value_reg, u16 generator_reg, u8 next_resume_index —
-            ///< writes `some(reg[value_reg])` into the *caller's*
+            ///< stores reg[value_reg] in the generator's `value`
+            ///< slot and writes `suspended` into the *caller's*
             ///< result register (the same `result_reg`/
             ///< `has_caller` bookkeeping `op_return_value` already
             ///< threads through `frame`), sets
@@ -441,28 +442,26 @@ enum class opcode : uint8_t {
             ///< suspension is synced into `state_ptr` via ordinary
             ///< `op_store_slot`s immediately before this opcode,
             ///< not by this opcode itself.
-  op_generator_next,   ///< u16 dst, u16 generator_reg — the compiled form of
-                       ///< `.next()`. If reg[generator_reg]'s `finished` slot
-                       ///< is set, writes `none` into dst directly (no frame
-                       ///< push). Otherwise pushes a frame for the
-                       ///< generator's `step_function_index`, with register 0
-                       ///< = `state_ptr`, register 1 = `resume_index`,
-                       ///< register 2 = reg[generator_reg] itself (so a
-                       ///< nested `op_yield`/fall-through-return can address
-                       ///< it), and transfers control — the step function
-                       ///< either hits an `op_yield` (writes `some(...)` into
-                       ///< dst per above) or falls off the end / hits a bare
-                       ///< `return` (compiled to build `none`, set
-                       ///< `finished=1` on the generator object, and
-                       ///< `op_return_value` it).
+  op_coroutine_resume, ///< u16 dst, u16 coroutine_reg — runs the coroutine
+                       ///< one step. If reg[coroutine_reg]'s `status` slot is
+                       ///< not `suspended`, writes that status into dst
+                       ///< directly (no frame push). Otherwise pushes a frame
+                       ///< for the coroutine's `step_function_index`, with
+                       ///< register 0 = `state_ptr`, register 1 =
+                       ///< `resume_index`, register 2 = the coroutine itself;
+                       ///< the step function's return value, the new status,
+                       ///< lands in dst. A suspension leaves the yielded item
+                       ///< in the coroutine's `value` slot. A generator's
+                       ///< `.next()` compiles to this plus code that reads
+                       ///< `value` into an `option`.
   op_generator_cancel, ///< u16 dst, u16 generator_reg — the compiled form
                        ///< of `hir_generator_cancel`. If reg[generator_reg]'s
                        ///< `finished` slot is set, does nothing. Otherwise
                        ///< sets it to `2` (cancelled) and resumes the
-                       ///< generator exactly as `op_generator_next` does; its
+                       ///< generator exactly as `op_coroutine_resume` does; its
                        ///< body sees the cancellation and returns, dropping
                        ///< what it owns, which sets `finished` to `1`. The
-                       ///< `none` it returns lands in dst, unread.
+                       ///< status it returns lands in dst, unread.
   op_generator_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
@@ -677,7 +676,7 @@ struct operand_signature {
     return sig({reg, imm16, reg});
   case opcode::op_yield:
     return sig({reg, reg, imm8});
-  case opcode::op_generator_next:
+  case opcode::op_coroutine_resume:
   case opcode::op_generator_cancel:
   case opcode::op_generator_cancelled:
   case opcode::op_drop_closure:

@@ -1921,6 +1921,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         slots[runtime::coroutine::k_resume_index_slot] = slot_value{uint64_t{0}};
         slots[runtime::coroutine::k_status_slot] =
             slot_value{runtime::coroutine::raw(runtime::coroutine::status::suspended)};
+        slots[runtime::coroutine::k_value_slot] = slot_value{};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -1930,20 +1931,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         const auto next_resume_index = ops.imm8();
         f.pc = ops.pos();
-        // `option::some(value)` — a 2-slot `{ tag=0; payload }` block,
-        // matching `option`'s hardcoded variant order (`some`=0, `none`=1;
-        // see `runtime::layout.cpp`'s `make_two_variants("some", 1, "none",
-        // 0)` and `sum_variant_tag`'s declaration-index tagging).
-        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
-        auto *slots = static_cast<slot_value *>(header);
-        slots[0] = slot_value{int64_t{0}};
-        slots[1] = f.registers[value_reg];
-        const slot_value result = ptr_to_slot(header);
-
         auto *gen_slots = slots_of(f.registers[generator_reg]);
+        gen_slots[runtime::coroutine::k_value_slot] = f.registers[value_reg];
         gen_slots[runtime::coroutine::k_resume_index_slot] =
             slot_value{static_cast<uint64_t>(next_resume_index)};
 
+        const slot_value result{
+            runtime::coroutine::raw(runtime::coroutine::status::suspended)};
         const bool has_caller = f.has_caller;
         const auto result_reg = f.result_reg;
         frames.pop_back();
@@ -1953,27 +1947,21 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         frames.back().registers[result_reg] = result;
         continue;
       }
-      case opcode::op_generator_next: {
+      case opcode::op_coroutine_resume: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
-        const auto generator_reg = ops.reg();
+        const auto coroutine_reg = ops.reg();
         f.pc = ops.pos();
-        auto *gen_slots = slots_of(f.registers[generator_reg]);
+        auto *gen_slots = slots_of(f.registers[coroutine_reg]);
         if (gen_slots[runtime::coroutine::k_status_slot].u !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
-          // `option::none` — a 2-slot `{ tag=1; payload }` block; the
-          // payload slot is never read back for `none`, left zeroed.
-          auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
-          auto *slots = static_cast<slot_value *>(header);
-          slots[0] = slot_value{int64_t{1}};
-          slots[1] = slot_value{};
-          f.registers[dst] = ptr_to_slot(header);
+          f.registers[dst] = gen_slots[runtime::coroutine::k_status_slot];
           break;
         }
         const auto step_fn_idx = static_cast<uint16_t>(gen_slots[runtime::coroutine::k_step_function_slot].u);
         const std::array<slot_value, runtime::coroutine::k_step_arg_count> call_args = {
             gen_slots[runtime::coroutine::k_state_ptr_slot],
-            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[generator_reg]};
+            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[coroutine_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.

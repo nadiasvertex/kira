@@ -627,7 +627,8 @@ public:
     }
 
     auto *step_fn_type = llvm::FunctionType::get(
-        ptr_ty, {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
+        llvm::Type::getInt64Ty(ctx_),
+        {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
         /*isVarArg=*/false);
     auto *step_fn = llvm::Function::Create(
         step_fn_type, llvm::Function::InternalLinkage,
@@ -663,7 +664,8 @@ public:
 
   /// Compiles a generator's actual body into its step function
   /// (`llvm_fn`, already declared by `compile_generator_constructor` with
-  /// signature `[ptr state, i64 resume_index, ptr generator_self] -> ptr`).
+  /// signature `[ptr state, i64 resume_index, ptr generator_self] -> i64`, the
+  /// returned value being the new coroutine status).
   /// Every `state_symbols` entry is loaded out of the state block into a
   /// fresh local alloca up front — exactly like a closure loads its
   /// captures — typed via `fn.params[i].type` for parameters or
@@ -680,7 +682,7 @@ public:
       -> std::expected<void, codegen_error> {
     current_fn_ = llvm_fn;
     return_is_unit_ = false;
-    return_llvm_type_ = llvm::PointerType::get(ctx_, 0);
+    return_llvm_type_ = llvm::Type::getInt64Ty(ctx_);
 
     auto *entry = llvm::BasicBlock::Create(ctx_, "entry", llvm_fn);
     builder_.SetInsertPoint(entry);
@@ -3104,8 +3106,8 @@ private:
   /// the checker already resolved, so there's no guaranteed-interned
   /// `option[T]` instance to look one up from `types_` (a `const
   /// type_table&` at this layer, same constraint as the bytecode tier).
-  /// Matches `bytecode::vm.cpp`'s `op_yield`/`op_generator_next` exactly,
-  /// which hardcode the identical convention for the identical reason.
+  /// Matches `bytecode_compiler::compile_generator_next` exactly, which
+  /// hardcodes the identical convention for the identical reason.
   [[nodiscard]] auto build_option_some(llvm::Value *payload) -> llvm::Value * {
     auto *block = compile_heap_alloc(2);
     builder_.CreateStore(
@@ -3123,9 +3125,8 @@ private:
     return block;
   }
 
-  /// Builds `option::none`, marks the generator object (`generator_self_
-  /// arg_`) finished, and returns it — the step function's behavior on a
-  /// bare `return` or falling off the end of the body. Syncs the state
+  /// Marks the generator object (`generator_self_arg_`) done and returns the
+  /// `done` status — the step function's behavior on a bare `return` or falling off the end of the body. Syncs the state
   /// block first (harmless if nothing will read it again).
   [[nodiscard]] auto emit_generator_exhausted_return(source_span /*span*/)
       -> std::expected<void, codegen_error> {
@@ -3140,19 +3141,20 @@ private:
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                runtime::coroutine::raw(runtime::coroutine::status::done)),
         slot_address(generator_self_arg_, runtime::coroutine::k_status_slot));
-    builder_.CreateRet(build_option_none());
+    builder_.CreateRet(llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(ctx_),
+        runtime::coroutine::raw(runtime::coroutine::status::done)));
     return {};
   }
 
   /// `g.next()` on a `generator[T]` value — mirrors
-  /// `bytecode_compiler::compile_generator_next`/`op_generator_next`: if the
-  /// generator object's `finished` slot is set, produce `none` directly (no
-  /// call); otherwise call through its `step_function`/`state`/`resume_
-  /// index` slots (register/argument order `{state; resume_index; self}`,
-  /// matching the bytecode tier's convention exactly) and use whatever it
-  /// returns. Merges the two paths through a shared result alloca
-  /// (`compile_if`'s `want_result` pattern) rather than an LLVM `phi`, this
-  /// file's uniform style for merging branch values.
+  /// `bytecode_compiler::compile_generator_next`: resume the coroutine
+  /// (calling the step function through its slots unless it already
+  /// finished, in which case the status is just read back), then build
+  /// `some(value)` if the status says it suspended and `none` otherwise.
+  /// Merges the two results through a shared alloca (`compile_if`'s
+  /// `want_result` pattern) rather than an LLVM `phi`, this file's uniform
+  /// style for merging branch values.
   [[nodiscard]] auto compile_generator_next(const hir::hir_generator_next &node)
       -> std::expected<llvm::Value *, codegen_error> {
     auto object = compile_expr(*node.object);
@@ -3160,45 +3162,68 @@ private:
       return std::unexpected(object.error());
     }
     auto *gen = *object;
+    auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    auto *status_alloca = create_local_alloca(i64, "gen.next.status");
     auto *result_alloca = create_local_alloca(ptr_ty, "gen.next.result");
 
-    auto *finished =
-        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                            slot_address(gen, runtime::coroutine::k_status_slot), "gen.finished");
-    auto *is_finished = builder_.CreateICmpNE(
-        finished,
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                               runtime::coroutine::raw(runtime::coroutine::status::suspended)),
-        "gen.finished.bool");
+    auto *current = builder_.CreateLoad(
+        i64, slot_address(gen, runtime::coroutine::k_status_slot),
+        "gen.status");
+    builder_.CreateStore(current, status_alloca);
+    auto *is_suspended = builder_.CreateICmpEQ(
+        current,
+        llvm::ConstantInt::get(
+            i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        "gen.runnable");
 
-    auto *finished_bb =
-        llvm::BasicBlock::Create(ctx_, "gen.next.finished", current_fn_);
     auto *call_bb =
         llvm::BasicBlock::Create(ctx_, "gen.next.call", current_fn_);
-    auto *merge_bb =
-        llvm::BasicBlock::Create(ctx_, "gen.next.merge", current_fn_);
-    builder_.CreateCondBr(is_finished, finished_bb, call_bb);
-
-    builder_.SetInsertPoint(finished_bb);
-    builder_.CreateStore(build_option_none(), result_alloca);
-    builder_.CreateBr(merge_bb);
+    auto *build_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.build", current_fn_);
+    builder_.CreateCondBr(is_suspended, call_bb, build_bb);
 
     builder_.SetInsertPoint(call_bb);
     auto *step_fn_ptr = builder_.CreateLoad(
-        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot), "gen.step_fn");
-    auto *state_ptr =
-        builder_.CreateLoad(ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot), "gen.state");
-    auto *resume_idx =
-        builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                            slot_address(gen, runtime::coroutine::k_resume_index_slot), "gen.resume");
-    auto *step_fn_type = llvm::FunctionType::get(
-        ptr_ty, {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
-        /*isVarArg=*/false);
-    auto *call_result =
-        builder_.CreateCall(step_fn_type, step_fn_ptr,
-                            {state_ptr, resume_idx, gen}, "gen.next.call");
-    builder_.CreateStore(call_result, result_alloca);
+        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot),
+        "gen.step_fn");
+    auto *state_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot),
+        "gen.state");
+    auto *resume_idx = builder_.CreateLoad(
+        i64, slot_address(gen, runtime::coroutine::k_resume_index_slot),
+        "gen.resume");
+    auto *step_fn_type = llvm::FunctionType::get(i64, {ptr_ty, i64, ptr_ty},
+                                                 /*isVarArg=*/false);
+    auto *call_result = builder_.CreateCall(
+        step_fn_type, step_fn_ptr, {state_ptr, resume_idx, gen}, "gen.step");
+    builder_.CreateStore(call_result, status_alloca);
+    builder_.CreateBr(build_bb);
+
+    builder_.SetInsertPoint(build_bb);
+    auto *status = builder_.CreateLoad(i64, status_alloca, "gen.new_status");
+    auto *yielded = builder_.CreateICmpEQ(
+        status,
+        llvm::ConstantInt::get(
+            i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        "gen.yielded");
+    auto *some_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.some", current_fn_);
+    auto *none_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.none", current_fn_);
+    auto *merge_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.next.merge", current_fn_);
+    builder_.CreateCondBr(yielded, some_bb, none_bb);
+
+    builder_.SetInsertPoint(some_bb);
+    auto *payload = builder_.CreateLoad(
+        i64, slot_address(gen, runtime::coroutine::k_value_slot),
+        "gen.value");
+    builder_.CreateStore(build_option_some(payload), result_alloca);
+    builder_.CreateBr(merge_bb);
+
+    builder_.SetInsertPoint(none_bb);
+    builder_.CreateStore(build_option_none(), result_alloca);
     builder_.CreateBr(merge_bb);
 
     builder_.SetInsertPoint(merge_bb);
@@ -3241,7 +3266,7 @@ private:
         builder_.CreateLoad(ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot), "gen.state");
     auto *resume_idx =
         builder_.CreateLoad(i64, slot_address(gen, runtime::coroutine::k_resume_index_slot), "gen.resume");
-    auto *step_fn_type = llvm::FunctionType::get(ptr_ty, {ptr_ty, i64, ptr_ty},
+    auto *step_fn_type = llvm::FunctionType::get(i64, {ptr_ty, i64, ptr_ty},
                                                  /*isVarArg=*/false);
     builder_.CreateCall(step_fn_type, step_fn_ptr,
                         {state_ptr, resume_idx, gen});
@@ -4038,8 +4063,14 @@ private:
       const auto ordinal = generator_next_yield_ordinal_++;
       builder_.CreateStore(
           llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), ordinal),
-          slot_address(generator_self_arg_, size_t{2}));
-      builder_.CreateRet(build_option_some(*value));
+          slot_address(generator_self_arg_,
+                       runtime::coroutine::k_resume_index_slot));
+      builder_.CreateStore(
+          *value,
+          slot_address(generator_self_arg_, runtime::coroutine::k_value_slot));
+      builder_.CreateRet(llvm::ConstantInt::get(
+          llvm::Type::getInt64Ty(ctx_),
+          runtime::coroutine::raw(runtime::coroutine::status::suspended)));
 
       // The landing block a resumed call jumps to — pre-created by
       // `compile_generator_step`'s dispatch chain; subsequent statements
