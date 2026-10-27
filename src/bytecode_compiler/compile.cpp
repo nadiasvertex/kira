@@ -27,6 +27,7 @@
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
+#include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 
 namespace cinder::bytecode_compiler {
@@ -580,11 +581,14 @@ public:
     if (!one_reg.has_value()) {
       return std::unexpected(one_reg.error());
     }
-    const auto one_const = writer_.add_constant(slot_value{uint64_t{1}});
+    const auto done_const = writer_.add_constant(
+        slot_value{runtime::coroutine::raw(runtime::coroutine::status::done)});
     emit_op(opcode::op_load_const);
     emit_register(*one_reg);
-    writer_.emit_u32(one_const);
-    emit_store_slot(generator_self_reg_, 3, *one_reg);
+    writer_.emit_u32(done_const);
+    emit_store_slot(generator_self_reg_,
+                    static_cast<uint16_t>(runtime::coroutine::k_status_slot),
+                    *one_reg);
 
     auto none_reg = alloc_register(span);
     if (!none_reg.has_value()) {

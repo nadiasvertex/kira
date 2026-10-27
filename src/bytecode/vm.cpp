@@ -21,6 +21,7 @@
 #include "src/intrinsics.h"
 #include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
+#include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/platform_query.h"
 #include "src/runtime/string_ops.h"
@@ -1912,12 +1913,14 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(4 * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count * sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
-        slots[0] = slot_value{static_cast<uint64_t>(step_fn_idx)};
-        slots[1] = f.registers[state_ptr_reg];
-        slots[2] = slot_value{uint64_t{0}}; // resume_index
-        slots[3] = slot_value{uint64_t{0}}; // finished
+        slots[runtime::coroutine::k_step_function_slot] =
+            slot_value{static_cast<uint64_t>(step_fn_idx)};
+        slots[runtime::coroutine::k_state_ptr_slot] = f.registers[state_ptr_reg];
+        slots[runtime::coroutine::k_resume_index_slot] = slot_value{uint64_t{0}};
+        slots[runtime::coroutine::k_status_slot] =
+            slot_value{runtime::coroutine::raw(runtime::coroutine::status::suspended)};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -1938,7 +1941,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const slot_value result = ptr_to_slot(header);
 
         auto *gen_slots = slots_of(f.registers[generator_reg]);
-        gen_slots[2] = slot_value{static_cast<uint64_t>(next_resume_index)};
+        gen_slots[runtime::coroutine::k_resume_index_slot] =
+            slot_value{static_cast<uint64_t>(next_resume_index)};
 
         const bool has_caller = f.has_caller;
         const auto result_reg = f.result_reg;
@@ -1955,7 +1959,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[generator_reg]);
-        if (gen_slots[3].u != 0) {
+        if (gen_slots[runtime::coroutine::k_status_slot].u !=
+            runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
           // `option::none` — a 2-slot `{ tag=1; payload }` block; the
           // payload slot is never read back for `none`, left zeroed.
           auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
@@ -1965,9 +1970,10 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           f.registers[dst] = ptr_to_slot(header);
           break;
         }
-        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[0].u);
-        const std::array<slot_value, 3> call_args = {
-            gen_slots[1], gen_slots[2], f.registers[generator_reg]};
+        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[runtime::coroutine::k_step_function_slot].u);
+        const std::array<slot_value, runtime::coroutine::k_step_arg_count> call_args = {
+            gen_slots[runtime::coroutine::k_state_ptr_slot],
+            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[generator_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -1978,14 +1984,17 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[generator_reg]);
-        if (gen_slots[3].u != 0) {
+        if (gen_slots[runtime::coroutine::k_status_slot].u !=
+            runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
           f.registers[dst] = slot_value{};
           break;
         }
-        gen_slots[3] = slot_value{uint64_t{2}};
-        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[0].u);
-        const std::array<slot_value, 3> call_args = {
-            gen_slots[1], gen_slots[2], f.registers[generator_reg]};
+        gen_slots[runtime::coroutine::k_status_slot] =
+            slot_value{runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)};
+        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[runtime::coroutine::k_step_function_slot].u);
+        const std::array<slot_value, runtime::coroutine::k_step_arg_count> call_args = {
+            gen_slots[runtime::coroutine::k_state_ptr_slot],
+            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[generator_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -2012,7 +2021,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         f.registers[dst] =
-            store_bool(slots_of(f.registers[generator_reg])[3].u == 2);
+            store_bool(slots_of(f.registers[generator_reg])[runtime::coroutine::k_status_slot].u ==
+                       runtime::coroutine::raw(runtime::coroutine::status::cancel_requested));
         break;
       }
       case opcode::op_str_decode_scalar: {

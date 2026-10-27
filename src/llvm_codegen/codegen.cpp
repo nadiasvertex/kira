@@ -42,6 +42,7 @@
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
+#include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 
 namespace cinder::llvm_codegen {
@@ -642,15 +643,18 @@ public:
       return std::unexpected(step_compiled.error());
     }
 
-    auto *handle = compile_heap_alloc(4);
-    builder_.CreateStore(step_fn, slot_address(handle, size_t{0}));
-    builder_.CreateStore(state_block, slot_address(handle, size_t{1}));
+    auto *handle = compile_heap_alloc(runtime::coroutine::k_slot_count);
+    auto *i64_ty = llvm::Type::getInt64Ty(ctx_);
+    builder_.CreateStore(step_fn,
+                         slot_address(handle, runtime::coroutine::k_step_function_slot));
+    builder_.CreateStore(state_block,
+                         slot_address(handle, runtime::coroutine::k_state_ptr_slot));
+    builder_.CreateStore(llvm::ConstantInt::get(i64_ty, 0),
+                         slot_address(handle, runtime::coroutine::k_resume_index_slot));
     builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
-        slot_address(handle, size_t{2}));
-    builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
-        slot_address(handle, size_t{3}));
+        llvm::ConstantInt::get(i64_ty,
+                               runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        slot_address(handle, runtime::coroutine::k_status_slot));
     builder_.CreateRet(handle);
 
     alloca_marker_->eraseFromParent();
@@ -1328,9 +1332,13 @@ private:
       }
       auto *finished = builder_.CreateLoad(
           llvm::Type::getInt64Ty(ctx_),
-          slot_address(generator_self_arg_, size_t{3}), "gen.finished");
+          slot_address(generator_self_arg_, runtime::coroutine::k_status_slot),
+          "gen.finished");
       return builder_.CreateICmpEQ(
-          finished, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 2),
+          finished,
+          llvm::ConstantInt::get(
+              llvm::Type::getInt64Ty(ctx_),
+              runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)),
           "gen.cancelled");
     }
     case hir_node_kind::hir_str_decode_scalar:
@@ -3129,8 +3137,9 @@ private:
       }
     }
     builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1),
-        slot_address(generator_self_arg_, size_t{3}));
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                               runtime::coroutine::raw(runtime::coroutine::status::done)),
+        slot_address(generator_self_arg_, runtime::coroutine::k_status_slot));
     builder_.CreateRet(build_option_none());
     return {};
   }
@@ -3156,9 +3165,11 @@ private:
 
     auto *finished =
         builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                            slot_address(gen, size_t{3}), "gen.finished");
+                            slot_address(gen, runtime::coroutine::k_status_slot), "gen.finished");
     auto *is_finished = builder_.CreateICmpNE(
-        finished, llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
+        finished,
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                               runtime::coroutine::raw(runtime::coroutine::status::suspended)),
         "gen.finished.bool");
 
     auto *finished_bb =
@@ -3175,12 +3186,12 @@ private:
 
     builder_.SetInsertPoint(call_bb);
     auto *step_fn_ptr = builder_.CreateLoad(
-        ptr_ty, slot_address(gen, size_t{0}), "gen.step_fn");
+        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot), "gen.step_fn");
     auto *state_ptr =
-        builder_.CreateLoad(ptr_ty, slot_address(gen, size_t{1}), "gen.state");
+        builder_.CreateLoad(ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot), "gen.state");
     auto *resume_idx =
         builder_.CreateLoad(llvm::Type::getInt64Ty(ctx_),
-                            slot_address(gen, size_t{2}), "gen.resume");
+                            slot_address(gen, runtime::coroutine::k_resume_index_slot), "gen.resume");
     auto *step_fn_type = llvm::FunctionType::get(
         ptr_ty, {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
         /*isVarArg=*/false);
@@ -3208,23 +3219,28 @@ private:
     auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
     auto *finished =
-        builder_.CreateLoad(i64, slot_address(gen, size_t{3}), "gen.finished");
+        builder_.CreateLoad(i64, slot_address(gen, runtime::coroutine::k_status_slot),
+                            "gen.finished");
     auto *running = builder_.CreateICmpEQ(
-        finished, llvm::ConstantInt::get(i64, 0), "gen.running");
+        finished,
+        llvm::ConstantInt::get(i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        "gen.running");
     auto *cancel_bb = llvm::BasicBlock::Create(ctx_, "gen.cancel", current_fn_);
     auto *done_bb =
         llvm::BasicBlock::Create(ctx_, "gen.cancel.done", current_fn_);
     builder_.CreateCondBr(running, cancel_bb, done_bb);
 
     builder_.SetInsertPoint(cancel_bb);
-    builder_.CreateStore(llvm::ConstantInt::get(i64, 2),
-                         slot_address(gen, size_t{3}));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(
+            i64, runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)),
+        slot_address(gen, runtime::coroutine::k_status_slot));
     auto *step_fn_ptr = builder_.CreateLoad(
-        ptr_ty, slot_address(gen, size_t{0}), "gen.step_fn");
+        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot), "gen.step_fn");
     auto *state_ptr =
-        builder_.CreateLoad(ptr_ty, slot_address(gen, size_t{1}), "gen.state");
+        builder_.CreateLoad(ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot), "gen.state");
     auto *resume_idx =
-        builder_.CreateLoad(i64, slot_address(gen, size_t{2}), "gen.resume");
+        builder_.CreateLoad(i64, slot_address(gen, runtime::coroutine::k_resume_index_slot), "gen.resume");
     auto *step_fn_type = llvm::FunctionType::get(ptr_ty, {ptr_ty, i64, ptr_ty},
                                                  /*isVarArg=*/false);
     builder_.CreateCall(step_fn_type, step_fn_ptr,
