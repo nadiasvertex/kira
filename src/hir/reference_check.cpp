@@ -42,7 +42,7 @@ public:
           }
         }
         symbol_types_.clear();
-        return_type_ = function->is_generator ? semantic::k_unknown_type
+        return_type_ = function->is_coroutine() ? semantic::k_unknown_type
                                               : function->return_type;
         if (function->body != nullptr) {
           collect_symbol_types(*function->body);
@@ -299,7 +299,7 @@ public:
         drop_temporary_(drop_temporary), end_of_(end_of) {}
 
   auto run(hir_function &function) -> void {
-    returns_.push_back(function.is_generator ? semantic::k_unknown_type
+    returns_.push_back(function.is_coroutine() ? semantic::k_unknown_type
                                              : function.return_type);
     if (function.body != nullptr) {
       visit(*function.body);

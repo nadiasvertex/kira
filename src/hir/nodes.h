@@ -1080,6 +1080,12 @@ struct hir_yield : hir_stmt {
 //  Items
 // ==========================================================================
 
+/// How a function's body is compiled into a suspendable state machine.
+enum class coroutine_kind : uint8_t {
+  none,      ///< An ordinary function.
+  generator, ///< `generator def`: suspends at `yield`, resumed by `.next()`.
+};
+
 /// Lowered function. Decision 1 guarantees every parameter and the return
 /// type are concrete by the time this node exists — a function with an
 /// unannotated parameter fails lowering before a `hir_function` is built.
@@ -1088,20 +1094,32 @@ struct hir_function : hir_item {
   std::vector<hir_param> params;
   type_id return_type = k_unknown_type;
   ptr<hir_block> body;
-  /// Whether this function was declared `generator def`. When true,
-  /// `return_type` is the concrete `generator[T]` value the function
-  /// itself produces, and `item_type` is `T` — the type each `hir_yield`
-  /// in `body` hands back to the caller. See `hir::live_across_yield` for
-  /// the analysis backends need to lower a generator body.
-  bool is_generator = false;
+  /// What kind of suspendable state machine this function compiles into, if
+  /// any. For `coroutine_kind::generator`, `return_type` is the concrete
+  /// `generator[T]` value the function itself produces, and `item_type` is
+  /// `T` — the type each `hir_yield` in `body` hands back to the caller.
+  /// See `hir::live_across_yield` for the analysis backends need to lower a
+  /// coroutine body.
+  coroutine_kind coroutine = coroutine_kind::none;
   type_id item_type = k_unknown_type;
 
+  /// True for any function whose body is a state machine rather than a plain
+  /// call. Passes that must leave such bodies alone (inlining, tail calls,
+  /// reference checking) ask this rather than naming a specific kind.
+  [[nodiscard]] auto is_coroutine() const -> bool {
+    return coroutine != coroutine_kind::none;
+  }
+  [[nodiscard]] auto is_generator() const -> bool {
+    return coroutine == coroutine_kind::generator;
+  }
+
   hir_function(source_span s, std::string n, std::vector<hir_param> p,
-               type_id ret, ptr<hir_block> b, bool generator = false,
+               type_id ret, ptr<hir_block> b,
+               coroutine_kind kind = coroutine_kind::none,
                type_id item = k_unknown_type)
       : hir_item(hir_node_kind::hir_function, s), name(std::move(n)),
         params(std::move(p)), return_type(ret), body(std::move(b)),
-        is_generator(generator), item_type(item) {}
+        coroutine(kind), item_type(item) {}
 };
 
 /// One top-level `static let` reified as real backing data — see

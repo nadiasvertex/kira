@@ -403,7 +403,7 @@ public:
         !promoted.has_value()) {
       return std::unexpected(promoted.error());
     }
-    if (fn.is_generator) {
+    if (fn.is_generator()) {
       return compile_generator_constructor(fn);
     }
     return compile_body_and_finish(*fn.body, fn.span, fn.name,

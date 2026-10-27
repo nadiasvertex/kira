@@ -565,7 +565,7 @@ public:
       bind_local(param.symbol, alloca);
     }
 
-    if (fn.is_generator) {
+    if (fn.is_generator()) {
       return compile_generator_constructor(fn);
     }
     return compile_body_and_finish(*fn.body);

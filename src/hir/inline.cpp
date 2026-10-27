@@ -730,7 +730,7 @@ struct inline_template {
                                   const std::string &module_name,
                                   const type_table &types)
     -> std::optional<inline_template> {
-  if (fn.is_generator || fn.body == nullptr ||
+  if (fn.is_coroutine() || fn.body == nullptr ||
       count_nodes(*fn.body) > k_max_callee_nodes) {
     return std::nullopt;
   }
@@ -962,7 +962,7 @@ auto inline_small_calls(ptr_vec<hir_module> &modules, const type_table &types)
   auto pass = inliner(templates, types);
   for (auto &module : modules) {
     for (auto &fn : module->functions) {
-      if (fn->is_generator || fn->body == nullptr) {
+      if (fn->is_coroutine() || fn->body == nullptr) {
         continue;
       }
       auto state = caller_state{.module_name = &module->module_name,

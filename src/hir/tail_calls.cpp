@@ -456,7 +456,7 @@ auto mark_tail_block(hir_block &block,
 } // namespace
 
 auto mark_tail_calls(hir_function &fn) -> void {
-  if (fn.is_generator) {
+  if (fn.is_coroutine()) {
     // This body doubles as the generator step function's body — excluded
     // outright (Decision 2 / Future extensions item 4).
     return;

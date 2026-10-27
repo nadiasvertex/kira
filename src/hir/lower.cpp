@@ -7153,7 +7153,9 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 
   auto function = ptr<hir_function>(make<hir_function>(
       decl.span, decl.name, std::move(params), *return_type, std::move(*body),
-      decl.modifiers.is_generator, item_type));
+      decl.modifiers.is_generator ? coroutine_kind::generator
+                                  : coroutine_kind::none,
+      item_type));
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());
   }
@@ -7191,7 +7193,7 @@ auto lowerer::lower_expression_function(
   auto function = ptr<hir_function>(make<hir_function>(
       expr.span, std::move(name), std::move(params), *return_type,
       make<hir_block>(expr.span, *return_type, std::move(*exit)),
-      /*is_generator=*/false, k_unknown_type));
+      coroutine_kind::none, k_unknown_type));
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());
   }

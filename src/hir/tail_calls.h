@@ -12,7 +12,7 @@ namespace cinder::hir {
 /// lowering, so the bytecode and LLVM backends both consume the same
 /// verdict instead of re-deriving (and potentially disagreeing on) it.
 ///
-/// A no-op for a generator function (`fn.is_generator`): its body doubles
+/// A no-op for a generator function (`fn.is_coroutine()`): its body doubles
 /// as the generator step function's body, which the spec excludes outright.
 ///
 /// Also a no-op for a function that owns an `uninit[T, N]` buffer: the

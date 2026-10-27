@@ -2199,7 +2199,7 @@ auto test_lowers_generator_function() -> void {
 
   auto result = hir::lower_function(decl, fixture.checked);
   expect(result.has_value(), "expected a generator function to lower");
-  expect((*result)->is_generator,
+  expect((*result)->is_generator(),
          "expected the lowered function to be marked as a generator");
   expect(!fixture.checked.types.is_unknown((*result)->item_type),
          "expected the generator's item type to resolve");
@@ -2562,7 +2562,7 @@ auto test_does_not_mark_calls_inside_a_generator_function() -> void {
 
   auto result = hir::lower_function(decl, fixture.checked);
   expect(result.has_value(), "expected the generator function to lower");
-  expect((*result)->is_generator,
+  expect((*result)->is_generator(),
          "expected the function to lower as a generator");
 
   const auto &stmts = (*result)->body->stmts;

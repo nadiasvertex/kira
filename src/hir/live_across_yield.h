@@ -16,7 +16,7 @@ namespace cinder::hir {
 /// lambda's environment block holds every name free *into* the lambda, a
 /// generator's state block holds every name that needs to survive *across*
 /// a suspension of the function's own body. Only meaningful for a
-/// `generator def`'s `hir_function` (`fn.is_generator`); callers should not
+/// `generator def`'s `hir_function` (`fn.is_generator()`); callers should not
 /// invoke this on an ordinary function.
 ///
 /// A `hir_while`/`hir_while_let` loop whose body contains a `yield`
