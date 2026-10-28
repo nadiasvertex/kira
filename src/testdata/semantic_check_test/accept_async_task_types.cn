@@ -1,0 +1,12 @@
+module accept_async_task_types
+
+async def answer() -> int32:
+    return 42
+
+async def parse(text: str) -> result[int32, str]:
+    return @ok(1)
+
+async def total() -> int32:
+    let a: int32 = await answer()
+    let r: result[int32, str] = await parse("1")
+    return a

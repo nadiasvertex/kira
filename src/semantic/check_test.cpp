@@ -180,6 +180,20 @@ auto test_accepts_typed_core_program() -> void {
   expect_clean(analyzed, "expected typed core program to check cleanly");
 }
 
+auto test_accepts_async_task_types() -> void {
+  const auto analyzed = analyze_test_data_file("accept_async_task_types.cn");
+  expect_clean(analyzed,
+               "expected `async def` calls to type as tasks that `await` "
+               "unwraps");
+}
+
+auto test_reports_async_call_used_as_value() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_async_call_used_as_value.cn");
+  expect_diagnostic(analyzed, "task[int32, never, io]",
+                    "expected an un-awaited `async def` call to be a task");
+}
+
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed = analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
@@ -3804,6 +3818,8 @@ auto test_reports_member_missing_through_deref() -> void {
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
+    test_accepts_async_task_types();
+    test_reports_async_call_used_as_value();
     test_reports_write_through_deref();
     test_reports_write_through_shared();
     test_reports_deref_operator_misuse();

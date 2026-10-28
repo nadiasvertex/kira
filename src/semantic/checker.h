@@ -3643,6 +3643,7 @@ private:
   auto infer_try(const ast::try_expr &expr) -> type_id;
 
   auto infer_await(const ast::await_expr &expr) -> type_id;
+  [[nodiscard]] auto task_of_declared_result(type_id declared) -> type_id;
 
   auto infer_yield(const ast::yield_expr &expr) -> type_id;
 

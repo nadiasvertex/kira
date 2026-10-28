@@ -1195,7 +1195,8 @@ auto checker::infer_await(const ast::await_expr &expr) -> type_id {
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
   const auto &entry = session_.types_.entry(operand);
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "task") {
-    if (entry.args.size() >= 2 && !session_.types_.is_unknown(entry.args[1])) {
+    if (entry.args.size() >= 2 && !session_.types_.is_unknown(entry.args[1]) &&
+        session_.types_.entry(entry.args[1]).name != "never") {
       return session_.types_.builtin_generic("result",
                                              {entry.args[0], entry.args[1]});
     }

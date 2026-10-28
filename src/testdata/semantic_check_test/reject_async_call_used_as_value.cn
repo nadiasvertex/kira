@@ -1,0 +1,8 @@
+module reject_async_call_used_as_value
+
+async def answer() -> int32:
+    return 42
+
+def main() -> int32:
+    let x: int32 = answer()
+    return x

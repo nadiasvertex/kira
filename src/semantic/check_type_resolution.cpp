@@ -953,7 +953,24 @@ auto checker::signature_return_type(
                   .quiet = true,
                   .existential_allowed = true,
                   .is_generator_return = decl.modifiers.is_generator};
-  return resolve_type(*decl.return_type, ctx);
+  const auto declared = resolve_type(*decl.return_type, ctx);
+  return decl.modifiers.is_async ? task_of_declared_result(declared) : declared;
+}
+
+/// The type a caller sees from an `async def` whose body returns `declared`:
+/// `result[T, E]` becomes `task[T, E, io]` and any other type becomes the
+/// infallible `task[declared, never, io]`. The body itself is still checked
+/// against `declared`.
+auto checker::task_of_declared_result(type_id declared) -> type_id {
+  auto &types = session_.types_;
+  const auto &entry = types.entry(declared);
+  const auto value =
+      entry.kind == type_kind::builtin_generic_kind && entry.name == "result" &&
+              entry.args.size() == 2
+          ? std::pair{entry.args[0], entry.args[1]}
+          : std::pair{declared, types.builtin("never")};
+  return types.builtin_generic(
+      "task", {value.first, value.second, types.builtin("io")});
 }
 
 /// Builds the `fn(...)` value type of a function declaration, used when
