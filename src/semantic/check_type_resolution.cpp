@@ -539,9 +539,10 @@ auto checker::resolve_drop_plan(type_id id,
   }
   const auto &entry = session_.types_.entry(id);
   if (entry.kind == type_kind::builtin_generic_kind &&
-      entry.name == "generator") {
+      (entry.name == "generator" || entry.name == "task")) {
     // What a generator's body still owns depends on where it is
-    // suspended, so every generator is dropped by cancelling it.
+    // suspended, so every generator (and task, which is one) is dropped by
+    // cancelling it.
     return drop_plan{.cancels_generator = true};
   }
   if (entry.kind == type_kind::fn_kind) {
@@ -954,7 +955,13 @@ auto checker::signature_return_type(
                   .existential_allowed = true,
                   .is_generator_return = decl.modifiers.is_generator};
   const auto declared = resolve_type(*decl.return_type, ctx);
-  return decl.modifiers.is_async ? task_of_declared_result(declared) : declared;
+  // The entry `async def main()` is called by the runtime, not awaited, so it
+  // keeps the type it declares.
+  const auto is_entry_main = decl.name == "main" && decl.params.empty() &&
+                             decl.type_params.empty();
+  return decl.modifiers.is_async && !is_entry_main
+             ? task_of_declared_result(declared)
+             : declared;
 }
 
 /// The type a caller sees from an `async def` whose body returns `declared`:

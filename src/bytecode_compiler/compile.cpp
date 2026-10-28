@@ -404,7 +404,7 @@ public:
         !promoted.has_value()) {
       return std::unexpected(promoted.error());
     }
-    if (fn.is_generator()) {
+    if (fn.is_coroutine()) {
       return compile_generator_constructor(fn);
     }
     return compile_body_and_finish(*fn.body, fn.span, fn.name,
@@ -2411,6 +2411,19 @@ private:
     auto object_reg = compile_expr(*node.object);
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
+    }
+    if (node.awaiting) {
+      // A task yields its result exactly once, so one resume produces it.
+      auto status_reg = alloc_register(node.span);
+      if (!status_reg.has_value()) {
+        return std::unexpected(status_reg.error());
+      }
+      emit_op(opcode::op_coroutine_resume);
+      emit_register(*status_reg);
+      emit_register(*object_reg);
+      emit_load_slot(dst, *object_reg,
+                     static_cast<uint16_t>(runtime::coroutine::k_value_slot));
+      return {};
     }
     auto regs = std::array<virtual_reg, 5>{};
     for (auto &reg : regs) {

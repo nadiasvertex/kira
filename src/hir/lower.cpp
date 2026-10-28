@@ -1054,9 +1054,63 @@ private:
   /// wide slot: two `hir_let`s carrying the same `symbol_id` would collide in
   /// the backends' `locals_` maps (whose `emplace` keeps the *first* register
   /// bound to a symbol), so the second exit would read the first one's value.
+  /// `task[T, E, io]` for an `async def` declared to return `declared`
+  /// (`result[T, E]` splits into `T` and `E`; anything else is infallible).
+  [[nodiscard]] static auto is_entry_main(const ast::func_decl &decl) -> bool {
+    return decl.name == "main" && decl.params.empty() &&
+           decl.type_params.empty();
+  }
+
+  [[nodiscard]] auto task_type_of(type_id declared) -> type_id {
+    // The checker already interned `task`, `never` and `io` for this
+    // function's signature; interning here only finds them again.
+    auto &types = const_cast<semantic::type_table &>(checked_.types);
+    const auto &entry = types.entry(declared);
+    const auto is_result = entry.kind == type_kind::builtin_generic_kind &&
+                           entry.name == "result" && entry.args.size() == 2;
+    const auto value = is_result ? entry.args[0] : declared;
+    const auto error = is_result ? entry.args[1] : types.builtin("never");
+    return types.builtin_generic("task", {value, error, types.builtin("io")});
+  }
+
+  /// Ends an `async def` body that falls off its end: a trailing value
+  /// expression becomes the task's result, and a body with no tail result
+  /// yields `unit`.
+  [[nodiscard]] auto finish_task_body(hir_block &body, type_id declared,
+                                      source_span span)
+      -> std::expected<void, lowering_error> {
+    auto &stmts = body.stmts;
+    if (!stmts.empty() && always_returns(*stmts.back())) {
+      return {};
+    }
+    auto value = ptr<hir_expr>{};
+    if (!stmts.empty() && stmts.back()->kind == hir_node_kind::hir_expr_stmt &&
+        !checked_.types.is_unit(declared)) {
+      value = std::move(dynamic_cast<hir_expr_stmt &>(*stmts.back()).expr);
+      stmts.pop_back();
+    } else {
+      value = ptr<hir_expr>(make<hir_literal>(
+          span, const_cast<semantic::type_table &>(checked_.types).builtin("unit"),
+          token_kind::kw_unit, "unit"));
+    }
+    auto exit = lower_return_value(span, std::move(value));
+    if (!exit.has_value()) {
+      return std::unexpected(exit.error());
+    }
+    for (auto &stmt : *exit) {
+      stmts.push_back(std::move(stmt));
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_return_value(source_span span, ptr<hir_expr> value)
       -> std::expected<ptr_vec<hir_node>, lowering_error> {
     auto stmts = ptr_vec<hir_node>{};
+    if (in_task_body_) {
+      stmts.push_back(ptr<hir_node>(make<hir_yield>(span, std::move(value))));
+      stmts.push_back(ptr<hir_node>(make<hir_return>(span, nullptr)));
+      return stmts;
+    }
     if (post_contracts_.empty()) {
       stmts.push_back(ptr<hir_node>(make<hir_return>(span, std::move(value))));
       return stmts;
@@ -1245,6 +1299,9 @@ private:
   /// body, where a `return` returns from the lambda and settles nothing about
   /// the enclosing function's promise (see `lower_lambda`).
   std::vector<const ast::contract_clause *> post_contracts_;
+  /// True while lowering an `async def` body, where `return v` means "yield
+  /// `v` as the task's one result, then finish". Cleared inside a lambda.
+  bool in_task_body_ = false;
   /// The callee's parameter names while a default-value expression is being
   /// lowered at a call site (`lower_default_argument`), null otherwise.
   ///
@@ -1511,6 +1568,24 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
   }
   case ast::node_kind::quote_expr:
     return lower_quote(ast::cast<const ast::quote_expr>(expr));
+  case ast::node_kind::await_expr: {
+    const auto &await = ast::cast<const ast::await_expr>(expr);
+    if (await.operand == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, expr.span,
+                  "`await yield` is not lowered yet");
+    }
+    auto type = checked_type_of(expr);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    auto task = lower_expr(*await.operand);
+    if (!task.has_value()) {
+      return std::unexpected(task.error());
+    }
+    return ok_expr(make<hir_generator_next>(expr.span, *type,
+                                            std::move(*task),
+                                            /*await_task=*/true));
+  }
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
                 std::format("expression kind {} is not lowered yet "
@@ -3526,8 +3601,10 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   // lambda has no return value of its own to hand a `post` condition. So the
   // enclosing function's postconditions are out of scope for the duration.
   auto enclosing_posts = std::exchange(post_contracts_, {});
+  const auto enclosing_task = std::exchange(in_task_body_, false);
   const auto restore_posts = [&] -> void {
     post_contracts_ = std::move(enclosing_posts);
+    in_task_body_ = enclosing_task;
   };
 
   auto body = std::expected<ptr<hir_block>, lowering_error>{};
@@ -6986,6 +7063,29 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     return std::unexpected(return_type.error());
   }
 
+  // An `async def` is a task: callers get a `task[T, E, io]`, and the body
+  // is a coroutine that yields its result once. `*return_type` stays the
+  // declared result type for lowering the body; `function_type` is what the
+  // function itself returns.
+  // The program's entry `async def main()` is an ordinary function whose
+  // `await`s run their tasks to completion in place: nothing else needs to
+  // run beside it yet, and the entry point has no caller to hand a task to.
+  const auto is_task = decl.modifiers.is_async && !is_entry_main(decl);
+  auto function_type = *return_type;
+  if (is_task) {
+    if (decl.modifiers.is_generator || decl.return_type == nullptr ||
+        has_post) {
+      pop_scope();
+      return fail(lowering_error_kind::unsupported_construct, decl.span,
+                  std::format("`async def {}` needs a declared return type, "
+                              "and cannot be a generator or have a `post` "
+                              "condition yet",
+                              decl.name));
+    }
+    function_type = task_type_of(*return_type);
+  }
+  in_task_body_ = is_task;
+
   // Preconditions run before the body does — that is the whole of what "pre"
   // means — so they go at the front, after the parameter prelude that binds
   // the names they talk about. Postconditions can't be placed until an exit
@@ -7043,7 +7143,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
     body = lower_block(decl.body_stmts, decl.span,
                        decl.modifiers.is_generator ? k_unknown_type
                                                    : *return_type);
-    if (body.has_value() && decl.modifiers.is_generator) {
+    if (body.has_value() && (decl.modifiers.is_generator || is_task)) {
       // A generator dropped before its body first runs returns at once.
       auto cancel = coroutine_cancel_check(
           semantic::ownership::generator_start(decl), decl.span);
@@ -7143,8 +7243,18 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // `src/semantic/check.cpp`) to the concrete `generator[T]` — extract `T`
   // the same way `?`/`for`-loop lowering elsewhere in this file unwraps a
   // builtin generic's type argument.
+  if (is_task) {
+    if (auto finished = finish_task_body(**body, *return_type, decl.span);
+        !finished.has_value()) {
+      in_task_body_ = false;
+      return std::unexpected(finished.error());
+    }
+  }
+  in_task_body_ = false;
   auto item_type = k_unknown_type;
-  if (decl.modifiers.is_generator) {
+  if (is_task) {
+    item_type = *return_type;
+  } else if (decl.modifiers.is_generator) {
     const auto &return_entry = checked_.types.entry(*return_type);
     if (!return_entry.args.empty()) {
       item_type = return_entry.args.front();
@@ -7152,9 +7262,11 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   }
 
   auto function = ptr<hir_function>(make<hir_function>(
-      decl.span, decl.name, std::move(params), *return_type, std::move(*body),
-      decl.modifiers.is_generator ? coroutine_kind::generator
-                                  : coroutine_kind::none,
+      decl.span, decl.name, std::move(params), function_type,
+      std::move(*body),
+      is_task                       ? coroutine_kind::task
+      : decl.modifiers.is_generator ? coroutine_kind::generator
+                                    : coroutine_kind::none,
       item_type));
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());

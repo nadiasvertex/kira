@@ -603,12 +603,19 @@ struct hir_host_call : hir_expr {
 /// types this call with no backing `func_decl` to resolve, so it can't go
 /// through the ordinary call-lowering path — a dedicated node with no
 /// callee/args to compile instead. `type` is always `option[T]`.
+///
+/// With `awaiting` set this is `await task` instead: `object` is a
+/// `task[T, E, C]`, the node resumes it until it finishes (a task's body
+/// yields its result exactly once), and `type` is the result value itself,
+/// not an `option`.
 struct hir_generator_next : hir_expr {
   ptr<hir_expr> object;
+  bool awaiting = false;
 
-  hir_generator_next(source_span s, type_id t, ptr<hir_expr> obj)
+  hir_generator_next(source_span s, type_id t, ptr<hir_expr> obj,
+                     bool await_task = false)
       : hir_expr(hir_node_kind::hir_generator_next, s, t),
-        object(std::move(obj)) {}
+        object(std::move(obj)), awaiting(await_task) {}
 };
 
 /// Drops a `generator[T]` value. A generator that has not finished is
@@ -1084,6 +1091,7 @@ struct hir_yield : hir_stmt {
 enum class coroutine_kind : uint8_t {
   none,      ///< An ordinary function.
   generator, ///< `generator def`: suspends at `yield`, resumed by `.next()`.
+  task,      ///< `async def`: a generator that yields its result once.
 };
 
 /// Lowered function. Decision 1 guarantees every parameter and the return
@@ -1111,6 +1119,9 @@ struct hir_function : hir_item {
   }
   [[nodiscard]] auto is_generator() const -> bool {
     return coroutine == coroutine_kind::generator;
+  }
+  [[nodiscard]] auto is_task() const -> bool {
+    return coroutine == coroutine_kind::task;
   }
 
   hir_function(source_span s, std::string n, std::vector<hir_param> p,

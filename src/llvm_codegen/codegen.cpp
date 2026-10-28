@@ -566,7 +566,7 @@ public:
       bind_local(param.symbol, alloca);
     }
 
-    if (fn.is_generator()) {
+    if (fn.is_coroutine()) {
       return compile_generator_constructor(fn);
     }
     return compile_body_and_finish(*fn.body);
@@ -3164,6 +3164,29 @@ private:
     auto *gen = *object;
     auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
+    if (node.awaiting) {
+      // A task yields its result exactly once, so one resume produces it.
+      auto result_type = storage_type_for(node.type, node.span);
+      if (!result_type.has_value()) {
+        return std::unexpected(result_type.error());
+      }
+      auto *step_fn_ptr = builder_.CreateLoad(
+          ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot),
+          "task.step_fn");
+      auto *state_ptr = builder_.CreateLoad(
+          ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot),
+          "task.state");
+      auto *resume_idx = builder_.CreateLoad(
+          i64, slot_address(gen, runtime::coroutine::k_resume_index_slot),
+          "task.resume");
+      auto *step_fn_type = llvm::FunctionType::get(i64, {ptr_ty, i64, ptr_ty},
+                                                   /*isVarArg=*/false);
+      builder_.CreateCall(step_fn_type, step_fn_ptr,
+                          {state_ptr, resume_idx, gen}, "task.step");
+      return builder_.CreateLoad(
+          *result_type, slot_address(gen, runtime::coroutine::k_value_slot),
+          "task.result");
+    }
     auto *status_alloca = create_local_alloca(i64, "gen.next.status");
     auto *result_alloca = create_local_alloca(ptr_ty, "gen.next.result");
 
