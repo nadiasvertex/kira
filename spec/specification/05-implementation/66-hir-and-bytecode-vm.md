@@ -24,7 +24,7 @@ These run once, before either backend:
 - **Explicit references** (`reference_check.cpp`). Every borrow and dereference becomes an explicit node. A leftover implicit reference is reported as a lowering gap rather than compiled.
 - **Tail calls** (`tail_calls.cpp`). Marks direct calls in tail position ([Tail-Call Optimization](../03-advanced/39-tail-call-optimization.md)).
 - **Captures** (`captures.cpp`). Computes what each lambda captures and how.
-- **Generator state** (`live_across_yield.cpp`). Finds the locals live across a `yield`; these form the generator's state block.
+- **Generator state** (`live_across_yield.cpp`). Finds the locals live across a `yield`; these form the generator's state block. `op_yield` stores the item in the object's value slot and returns `suspended`; `op_coroutine_resume` yields the step function's status, or the stored status if the coroutine already finished.
 - **Frame budget** (`frame_budget.cpp`). Rejects a function whose stack-allocated buffers exceed the per-frame limit.
 - **Reachability** (`link.cpp`). Finds every module the entry function reaches. A reached module is included in full.
 - **Inlining** (`inline.cpp`). Replaces calls to small functions with a copy of the body. This is what makes standard library collections such as `list[T]` cost about what a built-in would. `--no-inline` turns it off.
@@ -40,7 +40,7 @@ The VM (`src/bytecode/vm.cpp`) is a register machine.
 - **Dispatch** is an ordinary `switch` over the opcode. Clarity takes priority over dispatch speed in this tier.
 - **Frames** are an explicit vector, not C++ recursion, so Cinder's call-depth limit and its `stack_overflow` panic do not depend on the host stack.
 - **Values** in registers are untagged slots; the compiler knows every type statically. Scalars live in the slot. Every other value lives in heap memory laid out by `src/runtime/layout.h`, the same layout the LLVM backend uses.
-- **Instructions** cover arithmetic in checked, wrapping and saturating forms; comparisons and casts; jumps; direct, indirect and tail calls; closures; generators (`op_make_generator`, `op_yield`, `op_coroutine_resume`); stack and heap allocation; slot and indexed loads and stores; address-of; panics; atomics; calls into runtime intrinsics; and host calls.
+- **Instructions** cover arithmetic in checked, wrapping and saturating forms; comparisons and casts; jumps; direct, indirect and tail calls; closures; generators (`op_make_generator`, `op_yield`, `op_coroutine_resume`, `op_coroutine_cancel`); stack and heap allocation; slot and indexed loads and stores; address-of; panics; atomics; calls into runtime intrinsics; and host calls.
 - **Runtime support** comes from `src/runtime/`: the allocator, string operations, formatting, platform queries and I/O. The VM calls these directly; compiled code links against the same library.
 - **Panics** use one closed set of reasons shared with the LLVM backend, so both tiers fail the same way on overflow, division by zero, a failed contract, and similar conditions.
 
