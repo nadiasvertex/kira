@@ -10,3 +10,8 @@ async def total() -> int32:
     let a: int32 = await answer()
     let r: result[int32, str] = await parse("1")
     return a
+
+async def bridged() -> int32:
+    let a: int32 = await on(io):
+        await answer()
+    return a

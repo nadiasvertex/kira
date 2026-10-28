@@ -891,6 +891,16 @@ private:
     /// `infer_yield`/`check_function`).
     bool in_generator_ = false;
 
+    /// Whether the body being checked is `async` (an `async def`, or inside
+    /// an `async` block), and so may `await`.
+    bool in_async_ = false;
+
+    /// The execution context the code being checked runs on: `io` in an
+    /// `async def`, switched by an enclosing `on(...)` block. `unknown` when
+    /// the context is not one of the built-in ones, which turns off the
+    /// `await` context check.
+    type_id async_context_ = k_unknown_type;
+
     /// Whether the function body currently being checked is a comptime-only
     /// `static def` (template or instantiated clone alike) — see
     /// `session_.comptime_only_functions_`'s doc comment and `check_function`,
@@ -3644,6 +3654,7 @@ private:
 
   auto infer_await(const ast::await_expr &expr) -> type_id;
   [[nodiscard]] auto task_of_declared_result(type_id declared) -> type_id;
+  [[nodiscard]] auto context_of_on_target(const ast::on_expr &expr) -> type_id;
 
   auto infer_yield(const ast::yield_expr &expr) -> type_id;
 

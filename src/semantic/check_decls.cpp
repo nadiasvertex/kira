@@ -388,6 +388,9 @@ auto checker::check_function_impl(const ast::func_decl &decl,
   }
 
   function_.in_generator_ = decl.modifiers.is_generator;
+  function_.in_async_ = decl.modifiers.is_async;
+  function_.async_context_ =
+      decl.modifiers.is_async ? session_.types_.builtin("io") : k_unknown_type;
   function_.generator_item_type_ = k_unknown_type;
   if (function_.in_generator_) {
     // `return_ctx.is_generator_return` (set above) already made

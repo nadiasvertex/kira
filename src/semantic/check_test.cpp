@@ -194,6 +194,18 @@ auto test_reports_async_call_used_as_value() -> void {
                     "expected an un-awaited `async def` call to be a task");
 }
 
+auto test_reports_await_outside_async() -> void {
+  const auto analyzed = analyze_test_data_file("reject_await_outside_async.cn");
+  expect_diagnostic(analyzed, "`await` outside an `async` function",
+                    "expected `await` in a plain function to be rejected");
+}
+
+auto test_reports_await_wrong_context() -> void {
+  const auto analyzed = analyze_test_data_file("reject_await_wrong_context.cn");
+  expect_diagnostic(analyzed, "needs the `io` context",
+                    "expected awaiting an `io` task on `pool` to be rejected");
+}
+
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed = analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
@@ -3820,6 +3832,8 @@ auto main() -> int {
     test_accepts_typed_core_program();
     test_accepts_async_task_types();
     test_reports_async_call_used_as_value();
+    test_reports_await_outside_async();
+    test_reports_await_wrong_context();
     test_reports_write_through_deref();
     test_reports_write_through_shared();
     test_reports_deref_operator_misuse();

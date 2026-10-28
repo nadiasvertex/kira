@@ -47,8 +47,8 @@ Cancellation is requested when a sibling in the same `crew` fails (the crew canc
 Design only, beyond parsing. Concretely, as of this writing:
 
 - Surface syntax parses completely: `async`, `await` (including `await yield`), `crew`, `par`, `race`, `on`, and the `async` function modifier all lex and parse (`src/parser/ast.h`, `parser.cpp:3424`–`4512`).
-- A bare `task[T, E, C]` type constructor is registered in `src/semantic/types.cpp` (1–3 type arguments) but has no checking semantics — no default `E = never`, no default `C = io`, no `io`/`cpu` builtin context types, no context-mismatch diagnostic.
-- `check.cpp` types `await expr` as a pass-through of its operand's type (`infer_await`, `check.cpp:11321`, comment: "awaiting a non-task is validated once tasks are typed") and types a `crew` body as `k_unknown_type` (`check.cpp:11612`–`11617`). There is no context (`C`) tracking, no `send`/`share` checking, no crew-scoped borrow rules.
+- The checker types an `async def` call as `task[T, E, io]` (`E` is `never` unless the body returns `result[T, E]`), and `await` unwraps it to `T`, or to `result[T, E]` for a fallible task. `await` outside an `async` function is an error. Awaiting a task whose context differs from the current one (`io` in an `async def`, switched by an enclosing `on(pool)` or `on(io)`) is an error. Only the built-in `io` and `cpu` contexts are checked; user-defined contexts and `task` annotations in other positions are not modeled (`infer_await`, `context_of_on_target` in `src/semantic/check_expr.cpp`).
+- A `crew` body is still typed as `k_unknown_type` (`check_expr.cpp`). There is no `send`/`share` checking and no crew-scoped borrow rules.
 - `src/hir/nodes.h` lists concurrency forms as unsupported; lowering rejects them.
 - Neither runtime backend (the bytecode VM in `src/bytecode/vm.cpp`, the AOT runtime in `src/llvm_codegen/aot_runtime.cpp` + `src/runtime/`) has a scheduler, event loop, threads, or synchronization primitives.
 - `src/std/` has no `task`, `channel`, `watch`, `shared`, `mutex`, `rwlock`, or `atomic`.

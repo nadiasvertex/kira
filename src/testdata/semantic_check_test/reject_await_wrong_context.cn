@@ -1,0 +1,9 @@
+module reject_await_wrong_context
+
+async def answer() -> int32:
+    return 42
+
+async def total() -> int32:
+    let a: int32 = await on(pool):
+        await answer()
+    return a

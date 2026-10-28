@@ -1184,6 +1184,21 @@ auto checker::infer_try(const ast::try_expr &expr) -> type_id {
   return is_wrapper && !entry.args.empty() ? entry.args[0] : k_unknown_type;
 }
 
+/// The built-in context an `on(target)` block runs on: `pool` and `cpu` name
+/// the thread pool's `cpu` context, `io` names `io`. Any other target is a
+/// user-defined context, which this check does not model, so it is unknown.
+auto checker::context_of_on_target(const ast::on_expr &expr) -> type_id {
+  const auto *named = ast::as<const ast::named_type>(expr.context_type.get());
+  if (named == nullptr || named->path.size() != 1) {
+    return k_unknown_type;
+  }
+  const auto &name = named->path.front();
+  if (name == "pool" || name == "cpu") {
+    return session_.types_.builtin("cpu");
+  }
+  return name == "io" ? session_.types_.builtin("io") : k_unknown_type;
+}
+
 /// Types `await expr` (or bare `await yield`, which yields `unit`).
 /// Unwraps a `task[T, E, C]` operand to `result[T, E]` (or plain `T` when
 /// the task cannot fail); any other operand type passes through
@@ -1192,9 +1207,27 @@ auto checker::infer_await(const ast::await_expr &expr) -> type_id {
   if (expr.operand == nullptr) {
     return session_.types_.builtin("unit"); // `await yield`
   }
+  if (!function_.in_async_) {
+    error_with_help(expr.span, "`await` outside an `async` function",
+                    "not inside an `async` function",
+                    "Mark the enclosing function `async def`, or run the "
+                    "task from a `crew`.");
+  }
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
   const auto &entry = session_.types_.entry(operand);
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "task") {
+    if (entry.args.size() == 3 && function_.async_context_ != k_unknown_type &&
+        !session_.types_.is_unknown(entry.args[2]) &&
+        entry.args[2] != function_.async_context_) {
+      error_with_help(
+          expr.span,
+          std::format("this task needs the `{}` context, but the code "
+                      "awaiting it runs on `{}`",
+                      session_.types_.display(entry.args[2]),
+                      session_.types_.display(function_.async_context_)),
+          "awaited from the wrong context",
+          "Wrap the `await` in `on(...)` to switch to the task's context.");
+    }
     if (entry.args.size() >= 2 && !session_.types_.is_unknown(entry.args[1]) &&
         session_.types_.entry(entry.args[1]).name != "never") {
       return session_.types_.builtin_generic("result",
@@ -1685,10 +1718,13 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return infer_await(ast::cast<const ast::await_expr>(expr));
   case ast::node_kind::yield_expr:
     return infer_yield(ast::cast<const ast::yield_expr>(expr));
-  case ast::node_kind::async_expr:
+  case ast::node_kind::async_expr: {
+    const auto saved_async = std::exchange(function_.in_async_, true);
     check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
                      k_unknown_type);
+    function_.in_async_ = saved_async;
     return k_unknown_type;
+  }
   case ast::node_kind::par_expr: {
     const auto &par = ast::cast<const ast::par_expr>(expr);
     auto elements = std::vector<type_id>{};
@@ -1721,7 +1757,11 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     if (on.sender != nullptr) {
       infer_expr(*on.sender, k_unknown_type);
     }
-    return check_body_nodes(on.body, expected);
+    const auto saved_context = function_.async_context_;
+    function_.async_context_ = context_of_on_target(on);
+    const auto result = check_body_nodes(on.body, expected);
+    function_.async_context_ = saved_context;
+    return result;
   }
   case ast::node_kind::block_expr:
     return check_body_nodes(ast::cast<const ast::block_expr>(expr).stmts,

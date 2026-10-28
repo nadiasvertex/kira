@@ -1,0 +1,7 @@
+module reject_await_outside_async
+
+async def answer() -> int32:
+    return 42
+
+def main() -> int32:
+    return await answer()
