@@ -301,6 +301,21 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
     }
     return k_unknown_type; // comparisons of other builtins are primitive
   }
+  // A task or generator is a handle to a computation, not a value: `a + b`
+  // on two tasks means `await a + await b`, which the program has to say.
+  if (entry.kind == type_kind::builtin_generic_kind &&
+      (entry.name == "task" || entry.name == "generator") &&
+      trait_name != "eq" && trait_name != "ord") {
+    error_with_help(
+        binary.span,
+        std::format("operator `{}` is not defined for `{}`", op_name,
+                    session_.types_.display(target)),
+        std::format("`{}` is a handle to a computation, not a number", entry.name),
+        entry.name == "task"
+            ? std::string("Await each task first, e.g. `(await a) + (await b)`.")
+            : std::string("Take a value from the generator first, e.g. `.next()`."));
+    return k_error_type;
+  }
   return k_unknown_type;
 }
 

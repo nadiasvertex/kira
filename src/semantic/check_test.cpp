@@ -206,6 +206,12 @@ auto test_reports_await_wrong_context() -> void {
                     "expected awaiting an `io` task on `pool` to be rejected");
 }
 
+auto test_reports_arithmetic_on_task() -> void {
+  const auto analyzed = analyze_test_data_file("reject_arithmetic_on_task.cn");
+  expect_diagnostic(analyzed, "is not defined for `task",
+                    "expected `+` on a task operand to be rejected");
+}
+
 auto test_accepts_try_from_conversion() -> void {
   const auto analyzed = analyze_test_data_file("accept_try_from_conversion.cn");
   expect_clean(
@@ -3834,6 +3840,7 @@ auto main() -> int {
     test_reports_async_call_used_as_value();
     test_reports_await_outside_async();
     test_reports_await_wrong_context();
+    test_reports_arithmetic_on_task();
     test_reports_write_through_deref();
     test_reports_write_through_shared();
     test_reports_deref_operator_misuse();

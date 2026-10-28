@@ -1,0 +1,9 @@
+module reject_arithmetic_on_task
+
+async def one() -> int32:
+    return 1
+
+async def main() -> int32:
+    let a = one()
+    let b = one()
+    return await a + b
