@@ -1996,7 +1996,7 @@ auto test_lowers_generator_for_loop() -> void {
   // if it has not finished.
   const auto &drop =
       dynamic_cast<const hir::hir_expr_stmt &>(*function.body->stmts[3]);
-  expect(drop.expr->kind == hir::hir_node_kind::hir_generator_cancel,
+  expect(drop.expr->kind == hir::hir_node_kind::hir_coroutine_cancel,
          "expected the generator to be dropped once the loop ends");
   expect(function.body->stmts[1]->kind == hir::hir_node_kind::hir_let,
          "expected the generator handle to be bound once, ahead of the loop");
@@ -2222,7 +2222,7 @@ auto test_lowers_generator_function() -> void {
     const auto &branch = dynamic_cast<const hir::hir_if &>(expr).branches;
     return branch.size() == 1 &&
            branch.front().condition->kind ==
-               hir::hir_node_kind::hir_generator_cancelled &&
+               hir::hir_node_kind::hir_coroutine_cancelled &&
            branch.front().body->stmts.back()->kind ==
                hir::hir_node_kind::hir_return;
   };

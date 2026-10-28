@@ -454,15 +454,15 @@ enum class opcode : uint8_t {
                        ///< in the coroutine's `value` slot. A generator's
                        ///< `.next()` compiles to this plus code that reads
                        ///< `value` into an `option`.
-  op_generator_cancel, ///< u16 dst, u16 generator_reg — the compiled form
-                       ///< of `hir_generator_cancel`. If reg[generator_reg]'s
+  op_coroutine_cancel, ///< u16 dst, u16 generator_reg — the compiled form
+                       ///< of `hir_coroutine_cancel`. If reg[generator_reg]'s
                        ///< `finished` slot is set, does nothing. Otherwise
                        ///< sets it to `2` (cancelled) and resumes the
                        ///< generator exactly as `op_coroutine_resume` does; its
                        ///< body sees the cancellation and returns, dropping
                        ///< what it owns, which sets `finished` to `1`. The
                        ///< status it returns lands in dst, unread.
-  op_generator_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
+  op_coroutine_cancelled, ///< u16 dst, u16 generator_reg — reg[dst] = whether
                           ///< reg[generator_reg]'s `finished` slot is `2`:
                           ///< the generator was resumed only to be cancelled.
   op_drop_closure,        ///< u16 dst, u16 closure_reg — the compiled form of
@@ -677,8 +677,8 @@ struct operand_signature {
   case opcode::op_yield:
     return sig({reg, reg, imm8});
   case opcode::op_coroutine_resume:
-  case opcode::op_generator_cancel:
-  case opcode::op_generator_cancelled:
+  case opcode::op_coroutine_cancel:
+  case opcode::op_coroutine_cancelled:
   case opcode::op_drop_closure:
     return sig({reg, reg});
   case opcode::op_str_decode_scalar:

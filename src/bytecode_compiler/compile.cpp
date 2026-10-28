@@ -1413,13 +1413,13 @@ private:
     case hir_node_kind::hir_generator_next:
       return compile_generator_next(
           dynamic_cast<const hir::hir_generator_next &>(expr), dst);
-    case hir_node_kind::hir_generator_cancel: {
+    case hir_node_kind::hir_coroutine_cancel: {
       auto object_reg = compile_expr(
-          *dynamic_cast<const hir::hir_generator_cancel &>(expr).object);
+          *dynamic_cast<const hir::hir_coroutine_cancel &>(expr).object);
       if (!object_reg.has_value()) {
         return std::unexpected(object_reg.error());
       }
-      emit_op(opcode::op_generator_cancel);
+      emit_op(opcode::op_coroutine_cancel);
       emit_register(dst);
       emit_register(*object_reg);
       return {};
@@ -1435,7 +1435,7 @@ private:
       emit_register(*object_reg);
       return {};
     }
-    case hir_node_kind::hir_generator_cancelled:
+    case hir_node_kind::hir_coroutine_cancelled:
       if (!is_generator_step_) {
         return std::unexpected(compile_error{
             .kind = compile_error_kind::unsupported_construct,
@@ -1443,7 +1443,7 @@ private:
             .message = "internal error: a generator cancellation test "
                        "outside a generator's own body"});
       }
-      emit_op(opcode::op_generator_cancelled);
+      emit_op(opcode::op_coroutine_cancelled);
       emit_register(dst);
       emit_register(generator_self_reg_);
       return {};

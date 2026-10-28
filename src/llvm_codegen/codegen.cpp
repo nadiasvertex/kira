@@ -1318,13 +1318,13 @@ private:
     case hir_node_kind::hir_generator_next:
       return compile_generator_next(
           dynamic_cast<const hir::hir_generator_next &>(expr));
-    case hir_node_kind::hir_generator_cancel:
-      return compile_generator_cancel(
-          dynamic_cast<const hir::hir_generator_cancel &>(expr));
+    case hir_node_kind::hir_coroutine_cancel:
+      return compile_coroutine_cancel(
+          dynamic_cast<const hir::hir_coroutine_cancel &>(expr));
     case hir_node_kind::hir_closure_drop:
       return compile_closure_drop(
           dynamic_cast<const hir::hir_closure_drop &>(expr));
-    case hir_node_kind::hir_generator_cancelled: {
+    case hir_node_kind::hir_coroutine_cancelled: {
       if (!is_generator_step_) {
         return std::unexpected(codegen_error{
             .kind = codegen_error_kind::unsupported_construct,
@@ -3230,11 +3230,11 @@ private:
     return builder_.CreateLoad(ptr_ty, result_alloca, "gen.next.value");
   }
 
-  /// Drops a generator value — mirrors `op_generator_cancel`: one that has
+  /// Drops a generator value — mirrors `op_coroutine_cancel`: one that has
   /// not finished is marked cancelled (`finished = 2`) and resumed once, so
   /// its body returns and drops what it owns.
   [[nodiscard]] auto
-  compile_generator_cancel(const hir::hir_generator_cancel &node)
+  compile_coroutine_cancel(const hir::hir_coroutine_cancel &node)
       -> std::expected<llvm::Value *, codegen_error> {
     auto object = compile_expr(*node.object);
     if (!object.has_value()) {

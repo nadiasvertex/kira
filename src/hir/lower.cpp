@@ -737,7 +737,7 @@ private:
   /// `if <cancelled>: return`, dropping what the generator owns at the
   /// cancel point `key` (`semantic::ownership::generator_start` or a
   /// `yield`).
-  [[nodiscard]] auto generator_cancel_check(const void *key, source_span span)
+  [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span)
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The same, for a `break`/`continue`/`return` or the failure path of a
   /// `?` leaving early: every scope it passes through, innermost first.
@@ -2811,7 +2811,7 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
   const auto &plan = found->second;
   if (plan.cancels_generator) {
     out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(make<hir_generator_cancel>(span, k_unknown_type,
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(span, k_unknown_type,
                                                        make_receiver())))));
     return {};
   }
@@ -3079,7 +3079,7 @@ auto lowerer::emit_exit_drops(const void *key, jump_exit kind, source_span span,
   return emit_scope_exit_drops(key, stmts);
 }
 
-auto lowerer::generator_cancel_check(const void *key, source_span span)
+auto lowerer::coroutine_cancel_check(const void *key, source_span span)
     -> std::expected<ptr<hir_node>, lowering_error> {
   auto exit = ptr_vec<hir_node>{};
   if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
@@ -3090,7 +3090,7 @@ auto lowerer::generator_cancel_check(const void *key, source_span span)
   auto branches = std::vector<hir_if_branch>{};
   branches.push_back(hir_if_branch{
       .condition = ptr<hir_expr>(
-          make<hir_generator_cancelled>(span, checked_.types.bool_type())),
+          make<hir_coroutine_cancelled>(span, checked_.types.bool_type())),
       .body = make<hir_block>(span, k_unknown_type, std::move(exit))});
   return ptr<hir_node>(make<hir_expr_stmt>(
       span, ptr<hir_expr>(make<hir_if>(span, k_unknown_type,
@@ -4486,7 +4486,7 @@ auto lowerer::lower_stmt(const ast::node &node)
       stmts.push_back(
           ptr<hir_node>(make<hir_yield>(yield_ast.span, std::move(*value))));
       // Resumed only to be dropped: return from here.
-      auto cancel = generator_cancel_check(&yield_ast, yield_ast.span);
+      auto cancel = coroutine_cancel_check(&yield_ast, yield_ast.span);
       if (!cancel.has_value()) {
         return std::unexpected(cancel.error());
       }
@@ -6875,7 +6875,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
 
   // A generator's body drops like any other, in its step function: its
   // locals live in the generator's state across a `yield`, and a generator
-  // dropped while suspended is resumed to return (`hir_generator_cancel`).
+  // dropped while suspended is resumed to return (`hir_coroutine_cancel`).
   drop_schedule_ = compute_drop_schedule(decl, checked_);
   flag_symbols_.assign(drop_schedule_.flag_count, k_invalid_symbol_id);
 
@@ -7045,7 +7045,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
                                                    : *return_type);
     if (body.has_value() && decl.modifiers.is_generator) {
       // A generator dropped before its body first runs returns at once.
-      auto cancel = generator_cancel_check(
+      auto cancel = coroutine_cancel_check(
           semantic::ownership::generator_start(decl), decl.span);
       if (!cancel.has_value()) {
         pop_scope();

@@ -166,8 +166,8 @@ struct collector {
     case hir_node_kind::hir_generator_next:
       walk_expr(*dynamic_cast<const hir_generator_next &>(expr).object);
       return;
-    case hir_node_kind::hir_generator_cancel:
-      walk_expr(*dynamic_cast<const hir_generator_cancel &>(expr).object);
+    case hir_node_kind::hir_coroutine_cancel:
+      walk_expr(*dynamic_cast<const hir_coroutine_cancel &>(expr).object);
       return;
     case hir_node_kind::hir_closure_drop:
       walk_expr(*dynamic_cast<const hir_closure_drop &>(expr).object);

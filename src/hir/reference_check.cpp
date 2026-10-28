@@ -167,8 +167,8 @@ private:
       projection(*dynamic_cast<const hir_generator_next &>(node).object,
                  "a generator step");
       break;
-    case hir_node_kind::hir_generator_cancel:
-      projection(*dynamic_cast<const hir_generator_cancel &>(node).object,
+    case hir_node_kind::hir_coroutine_cancel:
+      projection(*dynamic_cast<const hir_coroutine_cancel &>(node).object,
                  "a generator drop");
       break;
     case hir_node_kind::hir_closure_drop:
@@ -1152,8 +1152,8 @@ private:
     case hir_node_kind::hir_generator_next:
       project(dynamic_cast<hir_generator_next &>(node).object);
       return;
-    case hir_node_kind::hir_generator_cancel:
-      project(dynamic_cast<hir_generator_cancel &>(node).object);
+    case hir_node_kind::hir_coroutine_cancel:
+      project(dynamic_cast<hir_coroutine_cancel &>(node).object);
       return;
     case hir_node_kind::hir_closure_drop:
       project(dynamic_cast<hir_closure_drop &>(node).object);

@@ -59,11 +59,11 @@ enum class hir_node_kind : uint8_t {
   hir_generator_next,      ///< `g.next()` on a `generator[T]` value — no
                            ///< backing `func_decl`, same rationale as
                            ///< `hir_container_len`.
-  hir_generator_cancel,    ///< Drops a `generator[T]` value: see
-                           ///< `hir_generator_cancel`'s doc comment.
+  hir_coroutine_cancel,    ///< Drops a `generator[T]` value: see
+                           ///< `hir_coroutine_cancel`'s doc comment.
   hir_closure_drop,        ///< Drops a `fn` value: see `hir_closure_drop`'s
                            ///< doc comment.
-  hir_generator_cancelled, ///< Inside a generator's body, whether it was
+  hir_coroutine_cancelled, ///< Inside a generator's body, whether it was
                            ///< resumed only to be cancelled.
   hir_str_decode_scalar,   ///< The decoded Unicode scalar at a byte offset
                            ///< into a `str` (`for`-loop lowering only) — see
@@ -613,14 +613,14 @@ struct hir_generator_next : hir_expr {
 
 /// Drops a `generator[T]` value. A generator that has not finished is
 /// marked cancelled and resumed once: its body sees
-/// `hir_generator_cancelled` where it was suspended (or before it first
+/// `hir_coroutine_cancelled` where it was suspended (or before it first
 /// runs) and returns, dropping what it still owns. A finished generator owns
 /// nothing. Evaluates to `unit`.
-struct hir_generator_cancel : hir_expr {
+struct hir_coroutine_cancel : hir_expr {
   ptr<hir_expr> object;
 
-  hir_generator_cancel(source_span s, type_id t, ptr<hir_expr> obj)
-      : hir_expr(hir_node_kind::hir_generator_cancel, s, t),
+  hir_coroutine_cancel(source_span s, type_id t, ptr<hir_expr> obj)
+      : hir_expr(hir_node_kind::hir_coroutine_cancel, s, t),
         object(std::move(obj)) {}
 };
 
@@ -637,11 +637,11 @@ struct hir_closure_drop : hir_expr {
 };
 
 /// Inside a `generator def`'s body: whether the generator was resumed only
-/// to be cancelled (`hir_generator_cancel`). `type` is `bool`. Lowering
+/// to be cancelled (`hir_coroutine_cancel`). `type` is `bool`. Lowering
 /// tests it before the body first runs and right after each `yield`.
-struct hir_generator_cancelled : hir_expr {
-  hir_generator_cancelled(source_span s, type_id t)
-      : hir_expr(hir_node_kind::hir_generator_cancelled, s, t) {}
+struct hir_coroutine_cancelled : hir_expr {
+  hir_coroutine_cancelled(source_span s, type_id t)
+      : hir_expr(hir_node_kind::hir_coroutine_cancelled, s, t) {}
 };
 
 /// `c.set(v)` on a `cell_mut[T]`: stores `v` through the address `c` already

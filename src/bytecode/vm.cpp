@@ -1966,7 +1966,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
-      case opcode::op_generator_cancel: {
+      case opcode::op_coroutine_cancel: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();
@@ -2003,7 +2003,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
       }
-      case opcode::op_generator_cancelled: {
+      case opcode::op_coroutine_cancelled: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();

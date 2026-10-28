@@ -49,7 +49,7 @@ enum class status : uint64_t {
   /// The body returned; resuming again does nothing.
   done = 1,
   /// A cancel was requested and the body is being resumed only to observe it
-  /// and unwind (`hir_generator_cancelled` tests for this value).
+  /// and unwind (`hir_coroutine_cancelled` tests for this value).
   cancel_requested = 2,
 };
 
