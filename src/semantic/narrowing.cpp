@@ -36,8 +36,7 @@ auto slot_poly(const type_table &types, type_id slot)
   }
 }
 
-auto refines(const type_table &types, type_id found, type_id expected)
-    -> bool {
+auto refines(const type_table &types, type_id found, type_id expected) -> bool {
   for (auto current = found;
        types.entry(current).kind == type_kind::refinement_kind;
        current = types.entry(current).result) {
@@ -219,8 +218,7 @@ auto narrowing_engine::refuted_label(const goal_form &goal,
   for (const auto &alternative : goal) {
     for (const auto &item : alternative) {
       if (!item.label.empty() &&
-          solve(*facts_, goal_form{fact_set{item}}) ==
-              proof_result::refuted) {
+          solve(*facts_, goal_form{fact_set{item}}) == proof_result::refuted) {
         return item.label;
       }
     }
@@ -407,9 +405,9 @@ auto narrowing_engine::assume_non_negative(std::string var, std::string label)
 /// own types plus the preconditions ahead of it, which are checked first at
 /// run time and so hold by the time it is evaluated. One that follows from
 /// those cannot fail on any call, so its run-time check can be elided.
-auto narrowing_engine::assume_precondition(const ast::expr &condition)
-    -> bool {
-  const auto needed = translator_.goal_from(condition, predicate_subst{}, false);
+auto narrowing_engine::assume_precondition(const ast::expr &condition) -> bool {
+  const auto needed =
+      translator_.goal_from(condition, predicate_subst{}, false);
   const auto proved =
       !needed.empty() && solve(*facts_, needed) == proof_result::proved;
   for (auto &fact :

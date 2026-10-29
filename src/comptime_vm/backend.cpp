@@ -94,10 +94,11 @@ auto vm_backend::evaluate(semantic::comptime_program &program,
     for (const auto &[decl, fingerprint] : compiled->fingerprints) {
       fingerprints_.emplace(decl, fingerprint);
     }
-    found = expression_programs_
-                .emplace(std::move(key), std::make_unique<compiled_program>(
-                                             std::move(*compiled)))
-                .first;
+    found =
+        expression_programs_
+            .emplace(std::move(key),
+                     std::make_unique<compiled_program>(std::move(*compiled)))
+            .first;
   }
   return run(program, *found->second, "the expression", args);
 }
@@ -125,10 +126,10 @@ auto vm_backend::run(semantic::comptime_program &program,
   }
 
   // The compiler builds quoted syntax when the run asks it to.
-  const auto host =
-      bytecode::host_fn([&](const bytecode::host_site &site,
-                            std::span<const bytecode::slot_value> operands)
-                            -> std::expected<bytecode::slot_value, std::string> {
+  const auto host = bytecode::host_fn(
+      [&](const bytecode::host_site &site,
+          std::span<const bytecode::slot_value> operands)
+          -> std::expected<bytecode::slot_value, std::string> {
         auto values = std::vector<comptime::value>{};
         for (std::size_t i = 0; i < operands.size(); ++i) {
           auto value =

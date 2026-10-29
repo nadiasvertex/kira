@@ -4,9 +4,9 @@
 #include <format>
 #include <vector>
 
+#include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/semantic/module_index.h"
-#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic::detail {
 
@@ -159,8 +159,7 @@ auto predicate_translator::solver_poly(const ast::expr &expr,
         case ast::node_kind::field_expr:
         case ast::node_kind::module_path_expr:
         case ast::node_kind::call_expr: {
-          const auto key =
-              atom_key(ast::cast<const ast::expr>(leaf), subst);
+          const auto key = atom_key(ast::cast<const ast::expr>(leaf), subst);
           return key.has_value() ? std::optional{poly_variable(*key)}
                                  : std::nullopt;
         }

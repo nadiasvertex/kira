@@ -23,13 +23,13 @@
 #include "src/hir/live_across_yield.h"
 #include "src/hir/nodes.h"
 #include "src/intrinsics.h"
-#include "src/runtime/scheduler.h"
 #include "src/parser/ast.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/parser/token.h"
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/scheduler.h"
 
 namespace cinder::bytecode_compiler {
 
@@ -2460,14 +2460,14 @@ private:
         if (!unit_reg.has_value()) {
           return std::unexpected(unit_reg.error());
         }
-        const auto io_pool = writer_.add_constant(slot_value{
-            static_cast<uint64_t>(runtime::scheduler::pool::io)});
+        const auto io_pool = writer_.add_constant(
+            slot_value{static_cast<uint64_t>(runtime::scheduler::pool::io)});
         emit_op(opcode::op_load_const);
         emit_register(*pool_reg);
         writer_.emit_u32(io_pool);
-        if (auto blocked = emit_runtime_call("rt_task_block_on", *unit_reg,
-                                             {*object_reg, *pool_reg},
-                                             node.span);
+        if (auto blocked =
+                emit_runtime_call("rt_task_block_on", *unit_reg,
+                                  {*object_reg, *pool_reg}, node.span);
             !blocked.has_value()) {
           return std::unexpected(blocked.error());
         }
@@ -3942,9 +3942,9 @@ private:
           !polled.has_value()) {
         return std::unexpected(polled.error());
       }
-    } else if (auto polled = emit_runtime_call(
-                   "rt_task_await_poll", *done_reg,
-                   {generator_self_reg_, *task_reg}, y.span);
+    } else if (auto polled =
+                   emit_runtime_call("rt_task_await_poll", *done_reg,
+                                     {generator_self_reg_, *task_reg}, y.span);
                !polled.has_value()) {
       return std::unexpected(polled.error());
     }

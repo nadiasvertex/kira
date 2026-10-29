@@ -173,8 +173,7 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
       } else if (const auto *root = assignment_root_ident(*stmt.target)) {
         root_name = root->name;
       } else if (stmt.target->kind == ast::node_kind::module_path_expr) {
-        const auto &path =
-            ast::cast<const ast::module_path_expr>(*stmt.target);
+        const auto &path = ast::cast<const ast::module_path_expr>(*stmt.target);
         if (!path.segments.empty()) {
           root_name = path.segments.front();
         }
@@ -342,13 +341,13 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
             comptime_eval_.bind_lazy_local(binding.name, *stmt.initializer);
             // An instance knows what the template could not: `T.name()`
             // is a string there.
-            defer_to_instances(
-                stmt,
-                [this, &stmt,
-                 name = binding.name](instance_subst &subst) -> void {
-                  comptime_eval_.bind_lazy_local(
-                      name, *clone_of(subst, stmt.initializer.get()));
-                });
+            defer_to_instances(stmt,
+                               [this, &stmt, name = binding.name](
+                                   instance_subst &subst) -> void {
+                                 comptime_eval_.bind_lazy_local(
+                                     name,
+                                     *clone_of(subst, stmt.initializer.get()));
+                               });
           }
         }
       } else {

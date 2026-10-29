@@ -183,13 +183,13 @@ auto copy_template_records(const template_record_tables &tables,
   copy_map(tables.index_ref_dispatches, subst, callee);
   copy_map(tables.try_conversions, subst, callee);
   copy_map(tables.try_conversion_types, subst, type);
-  copy_map(tables.array_literal_conversions, subst,
-           [&](array_literal_conversion conversion)
-               -> array_literal_conversion {
-             conversion.callee = callee(conversion.callee);
-             conversion.array_type = type(conversion.array_type);
-             return conversion;
-           });
+  copy_map(
+      tables.array_literal_conversions, subst,
+      [&](array_literal_conversion conversion) -> array_literal_conversion {
+        conversion.callee = callee(conversion.callee);
+        conversion.array_type = type(conversion.array_type);
+        return conversion;
+      });
   copy_map(tables.interp_dispatches, subst,
            [&](interp_dispatch dispatch) -> interp_dispatch {
              dispatch.value_type = type(dispatch.value_type);

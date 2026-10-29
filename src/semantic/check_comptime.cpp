@@ -659,8 +659,8 @@ auto checker::record_static_for_block(const ast::static_decl &decl) -> void {
   unroll_static_for_block(decl, silent);
 }
 
-auto checker::unroll_static_for_block(const ast::static_decl &decl,
-                                      bool silent) -> void {
+auto checker::unroll_static_for_block(const ast::static_decl &decl, bool silent)
+    -> void {
   if (auto unrolled = static_for_block_iterations(decl, silent)) {
     cache_.static_for_iterations_.insert_or_assign(&decl, std::move(*unrolled));
   }
@@ -1035,12 +1035,12 @@ auto checker::rewrite_call_time_static(ast::ptr<ast::node> &slot) -> bool {
     }
     auto stmt = ast::make<ast::if_stmt>();
     stmt->span = decl->span;
-    stmt->branches.push_back(ast::if_branch{
-        .span = decl->span,
-        .condition = std::move(decl->if_condition),
-        .let_pattern = nullptr,
-        .let_expr = nullptr,
-        .body = std::move(decl->if_body)});
+    stmt->branches.push_back(
+        ast::if_branch{.span = decl->span,
+                       .condition = std::move(decl->if_condition),
+                       .let_pattern = nullptr,
+                       .let_expr = nullptr,
+                       .body = std::move(decl->if_body)});
     stmt->else_body = std::move(decl->else_body);
     replacement = std::move(stmt);
     break;

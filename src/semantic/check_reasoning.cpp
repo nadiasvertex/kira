@@ -113,10 +113,11 @@ auto checker::check_narrowing(type_id expected, type_id found,
   const auto refuted = failure->outcome == proof_result::refuted;
   const auto &refined_name = failure->refined_name;
   const auto message =
-      refuted ? std::format("`{}` is never true here, so this value can never "
-                            "be a `{}`",
-                            failure->goal_text, refined_name)
-              : std::format("cannot prove `{}` {}", failure->goal_text, context);
+      refuted
+          ? std::format("`{}` is never true here, so this value can never "
+                        "be a `{}`",
+                        failure->goal_text, refined_name)
+          : std::format("cannot prove `{}` {}", failure->goal_text, context);
 
   auto diag = diagnostic(diagnostic_level::error, message, file_.file_id_);
   diag.with_label(span, std::format("expected `{}`, found `{}`", refined_name,
@@ -190,8 +191,7 @@ auto checker::collect_function_facts(const ast::func_decl &decl) -> void {
         param.pattern->kind != ast::node_kind::binding_pattern) {
       continue;
     }
-    const auto &binding =
-        ast::cast<const ast::binding_pattern>(*param.pattern);
+    const auto &binding = ast::cast<const ast::binding_pattern>(*param.pattern);
     if (const auto *found = lookup_value(binding.name)) {
       engine.assume_binding(binding.name, found->type);
     }
@@ -364,8 +364,7 @@ auto checker::make_refinement_type(const ast::type_decl &decl,
     display_name += ']';
   }
 
-  const auto *predicate =
-      ast::as<const ast::expr>(refinement.predicate.get());
+  const auto *predicate = ast::as<const ast::expr>(refinement.predicate.get());
   return session_.types_.refinement_of(
       &decl, display_name, owner_module, base, std::move(args),
       predicate != nullptr && !predicate->has_error ? predicate : nullptr);
@@ -417,8 +416,8 @@ auto checker::make_user_type(const ast::type_decl &decl,
   case ast::node_kind::union_type:
   case ast::node_kind::refinement_type:
   case ast::node_kind::bound_type:
-    resolved = resolve_type(
-        ast::cast<const ast::type_expr>(*decl.definition), ctx);
+    resolved =
+        resolve_type(ast::cast<const ast::type_expr>(*decl.definition), ctx);
     break;
   default:
     break;
@@ -772,10 +771,9 @@ auto checker::user_type_shadows_builtin(std::string_view name,
 /// than a silent pass-through.
 auto checker::resolve_mut_type(const ast::mut_type &mt, const resolve_ctx &ctx)
     -> type_id {
-  const auto *named =
-      mt.inner != nullptr
-          ? ast::as<const ast::named_type>(mt.inner.get())
-          : nullptr;
+  const auto *named = mt.inner != nullptr
+                          ? ast::as<const ast::named_type>(mt.inner.get())
+                          : nullptr;
   if (named != nullptr && named->path.size() == 1 &&
       (named->path.front() == "slice" || named->path.front() == "cell")) {
     const auto mut_name = named->path.front() + "_mut";
@@ -1673,8 +1671,7 @@ auto checker::infer_index(const ast::index_expr &index) -> type_id {
     const auto is_type_argument =
         index.index != nullptr &&
         index.index->kind == ast::node_kind::ident_expr &&
-        (lookup_type_param(
-             ast::cast<const ast::ident_expr>(*index.index).name)
+        (lookup_type_param(ast::cast<const ast::ident_expr>(*index.index).name)
              .has_value() ||
          find_type_decl_by_name(
              ast::cast<const ast::ident_expr>(*index.index).name)

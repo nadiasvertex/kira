@@ -52,7 +52,9 @@ auto yield_result(fake_task &t, uint64_t value) -> uint64_t {
 }
 
 // A task that produces `input * 2`.
-auto double_body(fake_task &t) -> uint64_t { return yield_result(t, t.input * 2); }
+auto double_body(fake_task &t) -> uint64_t {
+  return yield_result(t, t.input * 2);
+}
 
 // Awaits `other`, which nobody has spawned, and adds one to its result.
 auto add_one_body(fake_task &t) -> uint64_t {
@@ -152,8 +154,7 @@ auto rendezvous_body(fake_task &t) -> uint64_t {
   g_started.fetch_add(1);
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(5);
-  while (g_started.load() < 2 &&
-         std::chrono::steady_clock::now() < deadline) {
+  while (g_started.load() < 2 && std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
   return yield_result(t, g_started.load() >= 2 ? 1 : 0);

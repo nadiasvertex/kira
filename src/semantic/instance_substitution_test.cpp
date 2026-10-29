@@ -3,8 +3,8 @@
 #include <unordered_set>
 
 #include "src/parser/ast.h"
-#include "src/semantic/instance_substitution.h"
 #include "src/semantic/checker_results.h"
+#include "src/semantic/instance_substitution.h"
 #include "src/testing/test_assert.h"
 
 namespace {
@@ -26,8 +26,7 @@ namespace ast = cinder::ast;
 /// One map per record table, so a test can read back what a copy wrote.
 struct record_maps {
   std::unordered_map<const ast::node *, type_id> node_types;
-  std::unordered_map<const ast::node *, cinder::file_id_type>
-      node_files;
+  std::unordered_map<const ast::node *, cinder::file_id_type> node_files;
   std::unordered_map<const ast::field_pattern *, type_id> struct_pattern;
   std::unordered_map<const ast::struct_field_init *, type_id> literal_types;
   std::unordered_map<const ast::struct_field_init *, type_id> literal_expected;
@@ -56,7 +55,8 @@ struct record_maps {
   std::unordered_map<const ast::for_stmt *,
                      cinder::semantic::iterator_loop_dispatch>
       for_loops;
-  std::unordered_map<const ast::node *, cinder::semantic::iterator_loop_dispatch>
+  std::unordered_map<const ast::node *,
+                     cinder::semantic::iterator_loop_dispatch>
       comprehension_loops;
   std::unordered_map<const ast::for_expr *,
                      cinder::semantic::comprehension_dispatch>
@@ -82,19 +82,42 @@ struct record_maps {
   std::unordered_map<const ast::node *, const ast::node *> fragments;
 
   auto tables() -> template_record_tables {
-    return template_record_tables{
-        node_types,       node_files,   struct_pattern,
-        literal_types,    literal_expected, call_expected,
-        argument_mappings, callees,     fn_values,
-        operators,        ord_results,  index,
-        index_set,        index_mut,    index_ref,
-        tries,            try_types,    array_conversions,
-        interps,          reflections,  for_loops,
-        comprehension_loops, comprehensions, fills,
-        folded,           layouts,      ptr_casts,
-        raw_slices,       buffers,      static_if,
-        global_refs,      consts,       value_paths,
-        in_bounds,        elided,       fragments};
+    return template_record_tables{node_types,
+                                  node_files,
+                                  struct_pattern,
+                                  literal_types,
+                                  literal_expected,
+                                  call_expected,
+                                  argument_mappings,
+                                  callees,
+                                  fn_values,
+                                  operators,
+                                  ord_results,
+                                  index,
+                                  index_set,
+                                  index_mut,
+                                  index_ref,
+                                  tries,
+                                  try_types,
+                                  array_conversions,
+                                  interps,
+                                  reflections,
+                                  for_loops,
+                                  comprehension_loops,
+                                  comprehensions,
+                                  fills,
+                                  folded,
+                                  layouts,
+                                  ptr_casts,
+                                  raw_slices,
+                                  buffers,
+                                  static_if,
+                                  global_refs,
+                                  consts,
+                                  value_paths,
+                                  in_bounds,
+                                  elided,
+                                  fragments};
   }
 };
 
@@ -131,7 +154,8 @@ auto test_substitution_replaces_the_parameter_at_every_depth() -> void {
   expect(substitute_type(f.types, identity, f.subst, list_t) == list_i32,
          "a parameter inside a generic application is replaced");
   const auto fn_t = f.types.fn_of({f.t, f.str}, f.types.tuple_of({f.t}));
-  const auto fn_i32 = f.types.fn_of({f.int32, f.str}, f.types.tuple_of({f.int32}));
+  const auto fn_i32 =
+      f.types.fn_of({f.int32, f.str}, f.types.tuple_of({f.int32}));
   expect(substitute_type(f.types, identity, f.subst, fn_t) == fn_i32,
          "parameters in a function's arguments and result are replaced");
   const auto ref_t = f.types.ref_to(f.t, true);

@@ -17,18 +17,27 @@ auto numeric_kind_of(const type_table &types, type_id id)
     return std::nullopt;
   }
   static const std::unordered_map<std::string_view, numeric_kind> map = {
-      {"bool", numeric_kind::boolean}, {"char", numeric_kind::character},
-      {"int8", numeric_kind::i8},      {"int16", numeric_kind::i16},
-      {"int32", numeric_kind::i32},    {"int64", numeric_kind::i64},
-      {"isize", numeric_kind::i64},    {"uint8", numeric_kind::u8},
-      {"byte", numeric_kind::u8},      {"uint16", numeric_kind::u16},
-      {"uint32", numeric_kind::u32},   {"uint64", numeric_kind::u64},
-      {"usize", numeric_kind::u64},    {"float32", numeric_kind::f32},
+      {"bool", numeric_kind::boolean},
+      {"char", numeric_kind::character},
+      {"int8", numeric_kind::i8},
+      {"int16", numeric_kind::i16},
+      {"int32", numeric_kind::i32},
+      {"int64", numeric_kind::i64},
+      {"isize", numeric_kind::i64},
+      {"uint8", numeric_kind::u8},
+      {"byte", numeric_kind::u8},
+      {"uint16", numeric_kind::u16},
+      {"uint32", numeric_kind::u32},
+      {"uint64", numeric_kind::u64},
+      {"usize", numeric_kind::u64},
+      {"float32", numeric_kind::f32},
       {"float64", numeric_kind::f64},
       // Quoted syntax, held by compile-time code as a handle the compiler
       // hands out (`hir_host_call`).
-      {"expr", numeric_kind::u64},     {"stmt", numeric_kind::u64},
-      {"def_expr", numeric_kind::u64}, {"type_expr", numeric_kind::u64},
+      {"expr", numeric_kind::u64},
+      {"stmt", numeric_kind::u64},
+      {"def_expr", numeric_kind::u64},
+      {"type_expr", numeric_kind::u64},
   };
 
   if (auto it = map.find(entry.name); it != map.end()) {

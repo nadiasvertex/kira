@@ -627,10 +627,10 @@ public:
       }
     }
 
-    auto *step_fn_type = llvm::FunctionType::get(
-        llvm::Type::getInt64Ty(ctx_),
-        {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
-        /*isVarArg=*/false);
+    auto *step_fn_type =
+        llvm::FunctionType::get(llvm::Type::getInt64Ty(ctx_),
+                                {ptr_ty, llvm::Type::getInt64Ty(ctx_), ptr_ty},
+                                /*isVarArg=*/false);
     auto *step_fn = llvm::Function::Create(
         step_fn_type, llvm::Function::InternalLinkage,
         std::format("generator.step.{}", reinterpret_cast<uintptr_t>(&fn)),
@@ -647,15 +647,19 @@ public:
 
     auto *handle = compile_heap_alloc(runtime::coroutine::k_slot_count);
     auto *i64_ty = llvm::Type::getInt64Ty(ctx_);
-    builder_.CreateStore(step_fn,
-                         slot_address(handle, runtime::coroutine::k_step_function_slot));
-    builder_.CreateStore(state_block,
-                         slot_address(handle, runtime::coroutine::k_state_ptr_slot));
-    builder_.CreateStore(llvm::ConstantInt::get(i64_ty, 0),
-                         slot_address(handle, runtime::coroutine::k_resume_index_slot));
     builder_.CreateStore(
-        llvm::ConstantInt::get(i64_ty,
-                               runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        step_fn,
+        slot_address(handle, runtime::coroutine::k_step_function_slot));
+    builder_.CreateStore(
+        state_block,
+        slot_address(handle, runtime::coroutine::k_state_ptr_slot));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(i64_ty, 0),
+        slot_address(handle, runtime::coroutine::k_resume_index_slot));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(
+            i64_ty,
+            runtime::coroutine::raw(runtime::coroutine::status::suspended)),
         slot_address(handle, runtime::coroutine::k_status_slot));
     builder_.CreateRet(handle);
 
@@ -1341,7 +1345,8 @@ private:
           finished,
           llvm::ConstantInt::get(
               llvm::Type::getInt64Ty(ctx_),
-              runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)),
+              runtime::coroutine::raw(
+                  runtime::coroutine::status::cancel_requested)),
           "gen.cancelled");
     }
     case hir_node_kind::hir_str_decode_scalar:
@@ -3127,8 +3132,9 @@ private:
   }
 
   /// Marks the generator object (`generator_self_arg_`) done and returns the
-  /// `done` status — the step function's behavior on a bare `return` or falling off the end of the body. Syncs the state
-  /// block first (harmless if nothing will read it again).
+  /// `done` status — the step function's behavior on a bare `return` or falling
+  /// off the end of the body. Syncs the state block first (harmless if nothing
+  /// will read it again).
   [[nodiscard]] auto emit_generator_exhausted_return(source_span /*span*/)
       -> std::expected<void, codegen_error> {
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
@@ -3139,8 +3145,9 @@ private:
       }
     }
     builder_.CreateStore(
-        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
-                               runtime::coroutine::raw(runtime::coroutine::status::done)),
+        llvm::ConstantInt::get(
+            llvm::Type::getInt64Ty(ctx_),
+            runtime::coroutine::raw(runtime::coroutine::status::done)),
         slot_address(generator_self_arg_, runtime::coroutine::k_status_slot));
     builder_.CreateRet(llvm::ConstantInt::get(
         llvm::Type::getInt64Ty(ctx_),
@@ -3174,11 +3181,10 @@ private:
       // the awaited task. An ordinary function (the entry `async def main`)
       // has nothing to suspend, so it blocks until the task is done.
       if (!is_generator_step_) {
-        builder_.CreateCall(
-            runtime_intrinsic("rt_task_block_on"),
-            {gen, llvm::ConstantInt::get(
-                      i64, static_cast<uint64_t>(
-                               runtime::scheduler::pool::io))});
+        builder_.CreateCall(runtime_intrinsic("rt_task_block_on"),
+                            {gen, llvm::ConstantInt::get(
+                                      i64, static_cast<uint64_t>(
+                                               runtime::scheduler::pool::io))});
       }
       return builder_.CreateLoad(
           *result_type, slot_address(gen, runtime::coroutine::k_value_slot),
@@ -3193,8 +3199,8 @@ private:
     builder_.CreateStore(current, status_alloca);
     auto *is_suspended = builder_.CreateICmpEQ(
         current,
-        llvm::ConstantInt::get(
-            i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        llvm::ConstantInt::get(i64, runtime::coroutine::raw(
+                                        runtime::coroutine::status::suspended)),
         "gen.runnable");
 
     auto *call_bb =
@@ -3224,8 +3230,8 @@ private:
     auto *status = builder_.CreateLoad(i64, status_alloca, "gen.new_status");
     auto *yielded = builder_.CreateICmpEQ(
         status,
-        llvm::ConstantInt::get(
-            i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        llvm::ConstantInt::get(i64, runtime::coroutine::raw(
+                                        runtime::coroutine::status::suspended)),
         "gen.yielded");
     auto *some_bb =
         llvm::BasicBlock::Create(ctx_, "gen.next.some", current_fn_);
@@ -3237,8 +3243,7 @@ private:
 
     builder_.SetInsertPoint(some_bb);
     auto *payload = builder_.CreateLoad(
-        i64, slot_address(gen, runtime::coroutine::k_value_slot),
-        "gen.value");
+        i64, slot_address(gen, runtime::coroutine::k_value_slot), "gen.value");
     builder_.CreateStore(build_option_some(payload), result_alloca);
     builder_.CreateBr(merge_bb);
 
@@ -3263,12 +3268,13 @@ private:
     auto *gen = *object;
     auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
-    auto *finished =
-        builder_.CreateLoad(i64, slot_address(gen, runtime::coroutine::k_status_slot),
-                            "gen.finished");
+    auto *finished = builder_.CreateLoad(
+        i64, slot_address(gen, runtime::coroutine::k_status_slot),
+        "gen.finished");
     auto *running = builder_.CreateICmpEQ(
         finished,
-        llvm::ConstantInt::get(i64, runtime::coroutine::raw(runtime::coroutine::status::suspended)),
+        llvm::ConstantInt::get(i64, runtime::coroutine::raw(
+                                        runtime::coroutine::status::suspended)),
         "gen.running");
     auto *cancel_bb = llvm::BasicBlock::Create(ctx_, "gen.cancel", current_fn_);
     auto *done_bb =
@@ -3278,25 +3284,30 @@ private:
     builder_.SetInsertPoint(cancel_bb);
     // A task the scheduler owns may be queued or running on another thread,
     // so the scheduler unwinds it; anything else is resumed here.
-    auto *handed_over = builder_.CreateCall(
-        runtime_intrinsic("rt_task_cancel"), {gen}, "gen.cancel.scheduled");
+    auto *handed_over = builder_.CreateCall(runtime_intrinsic("rt_task_cancel"),
+                                            {gen}, "gen.cancel.scheduled");
     auto *resume_here_bb =
         llvm::BasicBlock::Create(ctx_, "gen.cancel.inline", current_fn_);
     builder_.CreateCondBr(
         builder_.CreateICmpNE(
-            handed_over, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0)),
+            handed_over,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0)),
         done_bb, resume_here_bb);
     builder_.SetInsertPoint(resume_here_bb);
     builder_.CreateStore(
         llvm::ConstantInt::get(
-            i64, runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)),
+            i64, runtime::coroutine::raw(
+                     runtime::coroutine::status::cancel_requested)),
         slot_address(gen, runtime::coroutine::k_status_slot));
     auto *step_fn_ptr = builder_.CreateLoad(
-        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot), "gen.step_fn");
-    auto *state_ptr =
-        builder_.CreateLoad(ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot), "gen.state");
-    auto *resume_idx =
-        builder_.CreateLoad(i64, slot_address(gen, runtime::coroutine::k_resume_index_slot), "gen.resume");
+        ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot),
+        "gen.step_fn");
+    auto *state_ptr = builder_.CreateLoad(
+        ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot),
+        "gen.state");
+    auto *resume_idx = builder_.CreateLoad(
+        i64, slot_address(gen, runtime::coroutine::k_resume_index_slot),
+        "gen.resume");
     auto *step_fn_type = llvm::FunctionType::get(i64, {ptr_ty, i64, ptr_ty},
                                                  /*isVarArg=*/false);
     builder_.CreateCall(step_fn_type, step_fn_ptr,
@@ -4177,10 +4188,12 @@ private:
             : builder_.CreateCall(runtime_intrinsic("rt_task_await_poll"),
                                   {generator_self_arg_, *task}, "await.poll");
     auto *finished = builder_.CreateICmpNE(
-        polled,
-        llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0), "await.done");
-    auto *pending_bb = llvm::BasicBlock::Create(ctx_, "await.pending", current_fn_);
-    auto *proceed_bb = llvm::BasicBlock::Create(ctx_, "await.proceed", current_fn_);
+        polled, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0),
+        "await.done");
+    auto *pending_bb =
+        llvm::BasicBlock::Create(ctx_, "await.pending", current_fn_);
+    auto *proceed_bb =
+        llvm::BasicBlock::Create(ctx_, "await.proceed", current_fn_);
     builder_.CreateCondBr(finished, proceed_bb, pending_bb);
 
     builder_.SetInsertPoint(pending_bb);

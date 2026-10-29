@@ -316,8 +316,8 @@ auto walk_lambda_body(const ast::lambda_expr &lambda, scope_id parent_scope,
       record_node_scope(context.session, param.pattern.get(), signature_scope);
       auto bindings = std::vector<pattern_binding_spec>{};
       collect_pattern_bindings(
-          *ast::as<const ast::pattern>(param.pattern.get()),
-          context.file_id, bindings);
+          *ast::as<const ast::pattern>(param.pattern.get()), context.file_id,
+          bindings);
       for (const auto &binding : bindings) {
         add_symbol(context.session, signature_scope,
                    semantic_symbol_spec{
@@ -603,9 +603,8 @@ auto walk_node(const ast::node &node, scope_id active_scope,
       for (const auto &pattern : clause.patterns) {
         if (pattern != nullptr) {
           walk_node(*pattern, current_scope, context);
-          collect_pattern_bindings(
-              *ast::as<const ast::pattern>(pattern.get()),
-              context.file_id, bindings);
+          collect_pattern_bindings(*ast::as<const ast::pattern>(pattern.get()),
+                                   context.file_id, bindings);
         }
       }
       current_scope = extend_scope_with_bindings(
@@ -635,8 +634,8 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*arm.pattern, arm_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *ast::as<const ast::pattern>(arm.pattern.get()),
-            context.file_id, bindings);
+            *ast::as<const ast::pattern>(arm.pattern.get()), context.file_id,
+            bindings);
         arm_scope = extend_scope_with_bindings(
             context.session, arm_scope, semantic_scope_kind::match_arm_scope,
             "match arm bindings", context.file_id, context.module_name,
@@ -666,8 +665,8 @@ auto walk_node(const ast::node &node, scope_id active_scope,
         walk_node(*arm.pattern, arm_scope, context);
         auto bindings = std::vector<pattern_binding_spec>{};
         collect_pattern_bindings(
-            *ast::as<const ast::pattern>(arm.pattern.get()),
-            context.file_id, bindings);
+            *ast::as<const ast::pattern>(arm.pattern.get()), context.file_id,
+            bindings);
         arm_scope = extend_scope_with_bindings(
             context.session, arm_scope, semantic_scope_kind::match_arm_scope,
             "match arm bindings", context.file_id, context.module_name,
@@ -907,8 +906,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::associated_type_decl_node: {
-    const auto &assoc =
-        ast::cast<const ast::associated_type_decl_node>(node);
+    const auto &assoc = ast::cast<const ast::associated_type_decl_node>(node);
     if (!assoc.value.name.empty()) {
       add_symbol(context.session, active_scope,
                  semantic_symbol_spec{
@@ -930,8 +928,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   }
 
   case ast::node_kind::associated_type_def_node: {
-    const auto &assoc =
-        ast::cast<const ast::associated_type_def_node>(node);
+    const auto &assoc = ast::cast<const ast::associated_type_def_node>(node);
     if (!assoc.value.name.empty()) {
       add_symbol(context.session, active_scope,
                  semantic_symbol_spec{

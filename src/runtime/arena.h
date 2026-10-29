@@ -38,8 +38,9 @@ private:
 /// The single arena every heap allocation in a `cinder run`/`cinder build`
 /// process draws from. A function-local static singleton rather than a
 /// context object threaded through the VM/codegen call paths: both tiers
-/// already assume a single-arena-per-process model, and `cinder_heap_alloc` (`allocator.h`) needs a plain
-/// C-ABI symbol `llvm_codegen`-compiled IR can call with no context argument.
+/// already assume a single-arena-per-process model, and `cinder_heap_alloc`
+/// (`allocator.h`) needs a plain C-ABI symbol `llvm_codegen`-compiled IR can
+/// call with no context argument.
 ///
 /// This is no longer the only allocation strategy: it is one of the two
 /// `cinder::runtime::allocator_mode`s, selected by `CINDER_ALLOCATOR=arena`.

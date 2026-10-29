@@ -95,11 +95,10 @@ namespace {
 /// Lowers every function `entry` reaches, transitively, and compiles them
 /// with it into one module. `entry` is already lowered, named `entry_name`
 /// in `entry_module`; `entry_decl` is its declaration, if it has one.
-[[nodiscard]] auto assemble(semantic::comptime_program &program,
-                            const std::string &entry_module,
-                            const std::string &entry_name,
-                            const ast::func_decl *entry_decl,
-                            hir::ptr<hir::hir_function> entry)
+[[nodiscard]] auto
+assemble(semantic::comptime_program &program, const std::string &entry_module,
+         const std::string &entry_name, const ast::func_decl *entry_decl,
+         hir::ptr<hir::hir_function> entry)
     -> std::expected<compiled_program, semantic::comptime_failure> {
   auto result = compiled_program{};
   for (const auto &param : entry->params) {
@@ -188,7 +187,8 @@ namespace {
       skipped.emplace(key, ready.error());
       continue;
     }
-    auto lowered = hir::lower_function(*fn.decl, program.view(), k_compile_time);
+    auto lowered =
+        hir::lower_function(*fn.decl, program.view(), k_compile_time);
     if (!lowered.has_value()) {
       skipped.emplace(key, std::format("{} (at bytes {}..{})",
                                        lowered.error().message,
@@ -264,12 +264,13 @@ auto compile_program(semantic::comptime_program &program,
     return unsupported(std::format("`{}` cannot run on the VM: {}",
                                    entry.hir_name, ready.error()));
   }
-  auto lowered = hir::lower_function(*entry.decl, program.view(), k_compile_time);
+  auto lowered =
+      hir::lower_function(*entry.decl, program.view(), k_compile_time);
   if (!lowered.has_value()) {
-    return unsupported(std::format(
-        "`{}` cannot be lowered: {} (at bytes {}..{})", entry.hir_name,
-        lowered.error().message, lowered.error().span.start,
-        lowered.error().span.end));
+    return unsupported(
+        std::format("`{}` cannot be lowered: {} (at bytes {}..{})",
+                    entry.hir_name, lowered.error().message,
+                    lowered.error().span.start, lowered.error().span.end));
   }
   (*lowered)->name = entry.hir_name;
   return assemble(program, entry.owner_module, entry.hir_name, entry.decl,
@@ -282,8 +283,7 @@ auto compile_expression(semantic::comptime_program &program,
   if (expr.expr == nullptr) {
     return unsupported("there is no expression");
   }
-  if (auto ready = program.prepare_expression(*expr.expr);
-      !ready.has_value()) {
+  if (auto ready = program.prepare_expression(*expr.expr); !ready.has_value()) {
     return unsupported(
         std::format("the expression cannot run on the VM: {}", ready.error()));
   }
@@ -295,10 +295,10 @@ auto compile_expression(semantic::comptime_program &program,
   auto lowered = hir::lower_comptime_expression(
       *expr.expr, captures, std::string(k_expression_function), program.view());
   if (!lowered.has_value()) {
-    return unsupported(std::format(
-        "the expression cannot be lowered: {} (at bytes {}..{})",
-        lowered.error().message, lowered.error().span.start,
-        lowered.error().span.end));
+    return unsupported(
+        std::format("the expression cannot be lowered: {} (at bytes {}..{})",
+                    lowered.error().message, lowered.error().span.start,
+                    lowered.error().span.end));
   }
   return assemble(program, expr.owner_module,
                   std::string(k_expression_function), nullptr,

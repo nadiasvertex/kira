@@ -5,9 +5,9 @@
 namespace cinder::hir {
 
 /// Identity for a bound HIR-level declaration (parameter, `let`/`var`
-/// binding, or function). Reused rather than reinvented: the semantic session already
-/// assigns every binding a stable id, so HIR only needs to remember which
-/// one a reference points at.
+/// binding, or function). Reused rather than reinvented: the semantic session
+/// already assigns every binding a stable id, so HIR only needs to remember
+/// which one a reference points at.
 using symbol_id = semantic::symbol_id;
 
 /// Sentinel meaning "no symbol" — mirrors `semantic::k_invalid_symbol_id`.

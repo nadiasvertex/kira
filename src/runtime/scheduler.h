@@ -75,8 +75,7 @@ void block_on(uint64_t *task, pool where, runner how);
                                   size_t count) -> bool;
 
 /// `block_on` for a set of tasks: blocks until any one has finished.
-void block_on_any(uint64_t *const *tasks, size_t count, pool where,
-                  runner how);
+void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 
 /// Asks a task the scheduler owns to stop at its next cancellation check and
 /// unwind. Returns false, having done nothing, for a task the scheduler

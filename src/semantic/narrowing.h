@@ -30,8 +30,7 @@ namespace cinder::semantic::detail {
 /// exactly within the region that dominates them and nowhere else.
 class fact_scope {
 public:
-  explicit fact_scope(fact_set &facts)
-      : facts_(&facts), depth_(facts.size()) {}
+  explicit fact_scope(fact_set &facts) : facts_(&facts), depth_(facts.size()) {}
   fact_scope(const fact_scope &) = delete;
   fact_scope(fact_scope &&) = delete;
   auto operator=(const fact_scope &) -> fact_scope & = delete;

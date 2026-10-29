@@ -1567,8 +1567,7 @@ auto checker::check_variant_construction(const ast::call_expr &call,
         const auto *payload_type = variant.payload_types[i].get();
         if (payload_type != nullptr &&
             payload_type->kind == ast::node_kind::named_type) {
-          const auto &named =
-              ast::cast<const ast::named_type>(*payload_type);
+          const auto &named = ast::cast<const ast::named_type>(*payload_type);
           if (named.path.size() == 1 && named.path.front() == param.name &&
               i < inferred_args.size()) {
             bound = inferred_args[i];

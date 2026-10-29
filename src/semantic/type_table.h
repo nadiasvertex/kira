@@ -510,5 +510,4 @@ private:
 /// `isize`); false for unsigned integer names and non-integer names.
 [[nodiscard]] auto is_signed_integer_name(std::string_view name) -> bool;
 
-
 } // namespace cinder::semantic

@@ -40,8 +40,8 @@ auto test_instance_name_joins_target_method_and_suffix() -> void {
 
 auto test_overridden_default_is_not_inherited() -> void {
   const auto decl = method("show", true, true);
-  const auto action =
-      classify_trait_item(decl, "self", std::unordered_set<std::string>{"show"});
+  const auto action = classify_trait_item(
+      decl, "self", std::unordered_set<std::string>{"show"});
   expect(action == trait_item_action::overridden,
          "a method the impl writes is not derived from the trait");
 }

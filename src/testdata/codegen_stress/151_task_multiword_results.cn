@@ -1,0 +1,31 @@
+module codegen_stress.task_multiword_results
+
+# expect: 266
+
+# A task's result does not have to fit one machine word: a struct, a tuple
+# and a string all travel through the coroutine's value slot as heap
+# values, including across a task that awaits another to produce its own.
+
+type pair = {
+    a: int32,
+    b: int64,
+}
+
+async def make_pair(x: int32) -> pair:
+    return pair { a: x, b: 100 }
+
+async def make_tuple(x: int32) -> (int32, int32, int32):
+    return (x, x + 1, x + 2)
+
+async def greet() -> str:
+    return "hello"
+
+async def relay(x: int32) -> pair:
+    return await make_pair(x + 1)
+
+async def main() -> int32:
+    let p = await make_pair(7)
+    let t = await make_tuple(10)
+    let s = await greet()
+    let r = await relay(20)
+    return p.a + (p.b as int32) + t.0 + t.1 + t.2 + (s.len() as int32) + r.a + (r.b as int32)

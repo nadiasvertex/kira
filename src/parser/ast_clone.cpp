@@ -1834,7 +1834,8 @@ namespace {
 /// expression, statement, pattern or type.
 auto clone_quoted_body(const node &body)
     -> std::expected<ptr<node>, clone_error> {
-  const auto as_node = [](auto cloned) -> std::expected<ptr<node>, clone_error> {
+  const auto as_node =
+      [](auto cloned) -> std::expected<ptr<node>, clone_error> {
     if (!cloned.has_value()) {
       return std::unexpected(cloned.error());
     }

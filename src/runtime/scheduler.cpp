@@ -191,8 +191,7 @@ void push_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   // can take, up to the pool's size. A busy worker does not count: a task
   // queued behind a long one would otherwise wait for it.
   const auto wanted = worker_count(rec.where);
-  while (target.workers.size() < wanted &&
-         target.queue.size() > target.idle) {
+  while (target.workers.size() < wanted && target.queue.size() > target.idle) {
     target.workers.emplace_back(worker_loop, rec.where);
   }
   target.work.notify_one();
@@ -226,7 +225,8 @@ auto native_runner() -> runner { return runner{.run = run_native}; }
 void spawn(uint64_t *task, pool where, runner how) {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
-  if (record_of(task) != nullptr || status_of(task) == co::raw(co::status::done)) {
+  if (record_of(task) != nullptr ||
+      status_of(task) == co::raw(co::status::done)) {
     return;
   }
   adopt_locked(s, task, where, how);
@@ -239,9 +239,8 @@ void block_on(uint64_t *task, pool where, runner how) {
       record_of(task) == nullptr) {
     adopt_locked(s, task, where, how);
   }
-  s.finished.wait(lock, [&] {
-    return status_of(task) == co::raw(co::status::done);
-  });
+  s.finished.wait(lock,
+                  [&] { return status_of(task) == co::raw(co::status::done); });
   const auto *rec = record_of(task);
   const auto failure = rec != nullptr ? rec->failure : std::exception_ptr{};
   lock.unlock();
@@ -319,10 +318,9 @@ auto await_any_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     auto *awaited = tasks[i]; // NOLINT
     auto *rec = record_of(awaited);
     if (rec == nullptr) {
-      rec = &adopt_locked(s, awaited,
-                          self_rec != nullptr ? self_rec->where : pool::io,
-                          self_rec != nullptr ? self_rec->how
-                                              : native_runner());
+      rec = &adopt_locked(
+          s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
+          self_rec != nullptr ? self_rec->how : native_runner());
     }
     if (std::ranges::find(rec->waiters, self) == rec->waiters.end()) {
       rec->waiters.push_back(self);
@@ -425,8 +423,8 @@ auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t {
 
 auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t {
-  return cinder::runtime::scheduler::await_any_poll(
-             self, tasks, static_cast<size_t>(count))
+  return cinder::runtime::scheduler::await_any_poll(self, tasks,
+                                                    static_cast<size_t>(count))
              ? 1U
              : 0U;
 }

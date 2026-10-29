@@ -11,8 +11,8 @@
 #include <variant>
 #include <vector>
 
-#include "src/semantic/ownership_cfg.h"
 #include "src/parser/ast_traversal.h"
+#include "src/semantic/ownership_cfg.h"
 
 namespace cinder::semantic {
 namespace {
@@ -390,13 +390,15 @@ private:
     // The copy made just before this one is the closure that already took
     // the value.
     auto earlier = std::optional<source_span>{};
-    for (const auto &[tmpl, copies] : checked_.ownership.generic_lambda_instances) {
+    for (const auto &[tmpl, copies] :
+         checked_.ownership.generic_lambda_instances) {
       const auto at = std::ranges::find(copies, copy);
       if (at == copies.end()) {
         continue;
       }
       if (at != copies.begin()) {
-        if (const auto prior = checked_.ownership.generic_lambda_uses.find(*(at - 1));
+        if (const auto prior =
+                checked_.ownership.generic_lambda_uses.find(*(at - 1));
             prior != checked_.ownership.generic_lambda_uses.end()) {
           earlier = prior->second.span;
         }
@@ -955,8 +957,7 @@ auto walk_item(const ast::node &item, const checked_types &checked,
   };
   switch (item.kind) {
   case ast::node_kind::func_decl:
-    check_decl(ast::cast<const ast::func_decl>(item), checked, diag,
-               file_id);
+    check_decl(ast::cast<const ast::func_decl>(item), checked, diag, file_id);
     return;
   case ast::node_kind::impl_decl:
     walk_items(ast::cast<const ast::impl_decl>(item).items);

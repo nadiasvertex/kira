@@ -72,8 +72,8 @@ template <typename T> auto as_owned(ast::ptr<ast::node> node) -> ast::ptr<T> {
 
 /// Appends the splices `materialize` resolves in `node`, in the order it
 /// reaches them.
-auto collect_splices(const ast::node &node,
-                     std::vector<const ast::node *> &out) -> void {
+auto collect_splices(const ast::node &node, std::vector<const ast::node *> &out)
+    -> void {
   switch (node.kind) {
   case ast::node_kind::splice_expr:
   case ast::node_kind::splice_type:
@@ -227,8 +227,7 @@ auto fragment_builder::quote(const ast::quote_expr &quote,
 }
 
 auto fragment_builder::materialize(const ast::node &node,
-                                   std::span<const value> splices,
-                                   size_t &next)
+                                   std::span<const value> splices, size_t &next)
     -> std::expected<ast::ptr<ast::node>, fragment_error> {
   const auto take = [&]() -> const value * {
     return next < splices.size() ? &splices[next++] : nullptr;
@@ -688,8 +687,7 @@ auto fragment_builder::clone_segment(const ast::interp_segment &segment)
   return cloned;
 }
 
-auto fragment_builder::build(std::string_view name,
-                             std::span<const value> args,
+auto fragment_builder::build(std::string_view name, std::span<const value> args,
                              std::span<const source_span> arg_spans,
                              source_span span)
     -> std::expected<value, fragment_error> {
@@ -697,10 +695,8 @@ auto fragment_builder::build(std::string_view name,
     return i < arg_spans.size() ? arg_spans[i] : span;
   };
   // The `expr` fragment argument `i`, or why it is not one.
-  const auto expr_arg =
-      [&](size_t i,
-          std::string_view what) -> std::expected<const ast::node *,
-                                                  fragment_error> {
+  const auto expr_arg = [&](size_t i, std::string_view what)
+      -> std::expected<const ast::node *, fragment_error> {
     if (args[i].kind != value_kind::expr_fragment ||
         args[i].fragment == nullptr) {
       return fail(at(i), std::string(what));
@@ -760,9 +756,9 @@ auto fragment_builder::build(std::string_view name,
     // `is_variant_ident` tells a `@variant` reference from a plain name by
     // comparing the span's length with the name's, so the span is exactly
     // as long as the name.
-    ident->span = source_span{
-        .start = span.start,
-        .end = span.start + static_cast<byte_offset>(text->size())};
+    ident->span =
+        source_span{.start = span.start,
+                    .end = span.start + static_cast<byte_offset>(text->size())};
     ident->name = std::move(*text);
     return keep(std::move(ident), value_kind::expr_fragment);
   }

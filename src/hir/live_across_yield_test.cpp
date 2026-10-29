@@ -90,7 +90,7 @@ auto lower_generator(const checked_fixture &fixture, std::string_view fn_name)
   auto result = hir::lower_function(decl, fixture.checked);
   expect(result.has_value(), "expected the fixture generator to lower");
   expect((*result)->is_generator(), "expected the lowered function to be "
-                                  "marked as a generator");
+                                    "marked as a generator");
   return std::move(*result);
 }
 

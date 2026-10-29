@@ -146,9 +146,8 @@ public:
     }
     if (is_handle_type(types_, type)) {
       if (slot.u == 0 || slot.u > handles_.values.size()) {
-        return std::unexpected(
-            std::format("a `{}` value is not one the compiler made",
-                        types_.display(type)));
+        return std::unexpected(std::format(
+            "a `{}` value is not one the compiler made", types_.display(type)));
       }
       return handles_.values[slot.u - 1];
     }

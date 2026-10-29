@@ -50,11 +50,13 @@ auto checker::reflect_type_call(const ast::call_expr &call,
   const auto result = type_reflection_type(method);
   if (mentions_template_param(reflected)) {
     // Each instance knows its type; the template is never lowered.
-    defer_to_instances(call, [this, &call, method = std::string(method),
-                              reflected](instance_subst &subst) -> void {
-      fold_type_reflection(*clone_of(subst, &call), method,
-                           substitute_type(reflected, subst));
-    });
+    defer_to_instances(call,
+                       [this, &call, method = std::string(method),
+                        reflected](instance_subst &subst) -> void {
+                         fold_type_reflection(
+                             *clone_of(subst, &call), method,
+                             substitute_type(reflected, subst));
+                       });
   } else {
     fold_type_reflection(call, method, reflected);
   }
@@ -119,11 +121,11 @@ auto checker::fold_type_reflection(const ast::call_expr &call,
         const auto field_type = struct_field_type(entry, field.name);
         auto described = std::unordered_map<std::string, comptime::value>{};
         described.emplace("name", comptime::value::make_string(field.name));
-        described.emplace(
-            "type_name", comptime::value::make_string(
-                             field_type.has_value()
-                                 ? session_.types_.display(*field_type)
-                                 : std::string("<type>")));
+        described.emplace("type_name",
+                          comptime::value::make_string(
+                              field_type.has_value()
+                                  ? session_.types_.display(*field_type)
+                                  : std::string("<type>")));
         described.emplace("is_data_member", comptime::value::make_bool(true));
         elements.push_back(
             comptime::value::make_struct("field_info", std::move(described)));
@@ -202,8 +204,8 @@ auto checker::reflect_module_call(const ast::call_expr &call,
     const auto add = [&](const auto &table) -> void {
       for (const auto &[name, ref] : table) {
         described.emplace_back(name,
-                               ref.decl != nullptr &&
-                                   ref.decl->visibility == ast::visibility::pub);
+                               ref.decl != nullptr && ref.decl->visibility ==
+                                                          ast::visibility::pub);
       }
     };
     if (method == "functions") {
@@ -227,8 +229,8 @@ auto checker::reflect_module_call(const ast::call_expr &call,
 }
 
 auto checker::record_reflection_fold(const ast::call_expr &call,
-                                     const comptime::value &value,
-                                     type_id type) -> void {
+                                     const comptime::value &value, type_id type)
+    -> void {
   if (auto reified = reify_value(value, type, call.span)) {
     session_.reflection_folds_.insert_or_assign(&call, *std::move(reified));
   }

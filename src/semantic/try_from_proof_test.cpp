@@ -88,14 +88,13 @@ auto test_variant_call_shape() -> void {
 auto test_proof_syntax_shape() -> void {
   const auto span = source_span{.start = 0, .end = 20};
   auto syntax = detail::build_proof_syntax(
-      binary(ast::binary_op::lt, ident("#proof0"), ident("m")), "#proof0",
-      span, source_span{.start = 5, .end = 6});
+      binary(ast::binary_op::lt, ident("#proof0"), ident("m")), "#proof0", span,
+      source_span{.start = 5, .end = 6});
   expect(syntax.block != nullptr, "a block is built");
   expect(syntax.block->stmts.size() == 2, "a `let` and the `if`");
   expect(syntax.block->stmts.front()->kind == ast::node_kind::let_stmt,
          "the first statement binds the value");
-  expect(syntax.placeholder != nullptr &&
-             syntax.placeholder->name == "#proof0",
+  expect(syntax.placeholder != nullptr && syntax.placeholder->name == "#proof0",
          "the placeholder carries the temporary's name");
   expect(syntax.conditional != nullptr &&
              syntax.conditional->kind == ast::node_kind::if_expr,
@@ -118,8 +117,8 @@ auto test_constants_need_known_arguments() -> void {
 
   const auto usize = types.usize_type();
   const auto base = types.builtin("int32");
-  const auto known = types.refinement_of(&decl, "index", "m", base,
-                                         {types.const_value(usize, 8)}, nullptr);
+  const auto known = types.refinement_of(
+      &decl, "index", "m", base, {types.const_value(usize, 8)}, nullptr);
   const auto open = types.refinement_of(
       &decl, "index", "m", base,
       {types.symbolic_value(usize, cinder::semantic::poly_variable("k"))},

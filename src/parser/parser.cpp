@@ -9,9 +9,9 @@
 #include <utility>
 #include <variant>
 
+#include "src/parser/ast_traversal.h"
 #include "src/parser/interp_string.h"
 #include "src/parser/text_escape.h"
-#include "src/parser/ast_traversal.h"
 
 namespace cinder {
 

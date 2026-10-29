@@ -43,7 +43,7 @@ public:
         }
         symbol_types_.clear();
         return_type_ = function->is_coroutine() ? semantic::k_unknown_type
-                                              : function->return_type;
+                                                : function->return_type;
         if (function->body != nullptr) {
           collect_symbol_types(*function->body);
           walk(*function->body);
@@ -300,7 +300,7 @@ public:
 
   auto run(hir_function &function) -> void {
     returns_.push_back(function.is_coroutine() ? semantic::k_unknown_type
-                                             : function.return_type);
+                                               : function.return_type);
     if (function.body != nullptr) {
       visit(*function.body);
       remove_empty_exits(*function.body);

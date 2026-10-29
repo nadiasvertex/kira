@@ -73,11 +73,9 @@ struct comptime_capture {
 /// own, named `name`, that takes each of `captures` as a parameter in order
 /// and returns the expression's value. It runs once, while compiling, so
 /// nothing it owns is dropped.
-[[nodiscard]] auto
-lower_comptime_expression(const ast::expr &expr,
-                          std::span<const comptime_capture> captures,
-                          std::string name,
-                          const semantic::checked_types &checked)
+[[nodiscard]] auto lower_comptime_expression(
+    const ast::expr &expr, std::span<const comptime_capture> captures,
+    std::string name, const semantic::checked_types &checked)
     -> std::expected<ptr<hir_function>, lowering_error>;
 
 /// Builds a reified `static let` (`lowering_results::static_global_def`) as

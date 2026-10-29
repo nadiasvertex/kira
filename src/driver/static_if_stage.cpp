@@ -61,8 +61,7 @@ branch_contains_use(const std::vector<ast::ptr<ast::node>> &items) -> bool {
     if (!lhs.has_value() || !rhs.has_value()) {
       return std::nullopt;
     }
-    return bin->op == ast::binary_op::logical_and ? *lhs && *rhs
-                                                   : *lhs || *rhs;
+    return bin->op == ast::binary_op::logical_and ? *lhs && *rhs : *lhs || *rhs;
   }
   return std::nullopt;
 }

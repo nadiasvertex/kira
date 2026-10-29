@@ -7,8 +7,7 @@
 namespace cinder::semantic {
 namespace {
 
-auto collect(const ast::node &node, std::vector<pattern_binding> &out)
-    -> void {
+auto collect(const ast::node &node, std::vector<pattern_binding> &out) -> void {
   if (!ast::is_pattern_kind(node.kind)) {
     return;
   }
@@ -16,10 +15,10 @@ auto collect(const ast::node &node, std::vector<pattern_binding> &out)
   case ast::node_kind::binding_pattern: {
     const auto &binding = ast::cast<const ast::binding_pattern>(node);
     if (!binding.name.empty()) {
-      out.push_back(pattern_binding{
-          .name = binding.name,
-          .node = &ast::cast<const ast::pattern>(node),
-          .span = binding.span});
+      out.push_back(
+          pattern_binding{.name = binding.name,
+                          .node = &ast::cast<const ast::pattern>(node),
+                          .span = binding.span});
     }
     return;
   }
@@ -79,18 +78,15 @@ auto disjoint(const ast::node *node) -> bool {
                                [](const auto &e) { return disjoint(e.get()); });
   }
   case ast::node_kind::struct_pattern: {
-    const auto &fields =
-        ast::cast<const ast::struct_pattern>(*node).fields;
+    const auto &fields = ast::cast<const ast::struct_pattern>(*node).fields;
     return std::ranges::all_of(fields, [](const auto &f) {
       return f.is_rest || disjoint(f.pattern.get());
     });
   }
   case ast::node_kind::option_pattern:
-    return disjoint(
-        ast::cast<const ast::option_pattern>(*node).inner.get());
+    return disjoint(ast::cast<const ast::option_pattern>(*node).inner.get());
   case ast::node_kind::result_pattern:
-    return disjoint(
-        ast::cast<const ast::result_pattern>(*node).inner.get());
+    return disjoint(ast::cast<const ast::result_pattern>(*node).inner.get());
   case ast::node_kind::group_pattern: {
     const auto &group = ast::cast<const ast::group_pattern>(*node);
     return !group.alias.has_value() && disjoint(group.inner.get());

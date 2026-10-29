@@ -30,8 +30,8 @@ enum class operator_family : uint8_t {
 
 /// @brief Everything the compiler knows about one binary operator.
 struct binary_op_info {
-  binary_op op;                  ///< The operator this row describes.
-  operator_family family;        ///< Typing/lowering family.
+  binary_op op;                    ///< The operator this row describes.
+  operator_family family;          ///< Typing/lowering family.
   std::string_view overload_trait; ///< Trait that overloads it; empty if none.
 };
 

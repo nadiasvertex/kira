@@ -45,10 +45,9 @@ public:
 
 private:
   /// Runs `compiled`'s entry, which `name` names in a failure, with `args`.
-  [[nodiscard]] auto run(semantic::comptime_program &program,
-                         const compiled_program &compiled,
-                         std::string_view name,
-                         std::span<const comptime::value> args) const
+  [[nodiscard]] auto
+  run(semantic::comptime_program &program, const compiled_program &compiled,
+      std::string_view name, std::span<const comptime::value> args) const
       -> std::expected<comptime::value, semantic::comptime_failure>;
 
   std::uint64_t step_budget_;

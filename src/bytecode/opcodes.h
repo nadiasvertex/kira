@@ -7,7 +7,8 @@
 namespace cinder::bytecode {
 
 // ==========================================================================
-//  Instruction set. See `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
+//  Instruction set. See
+//  `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
 //
 //  A register machine, not a stack machine: every operand is an explicit
 //  register index into the current call frame's register file, not an

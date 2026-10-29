@@ -680,8 +680,8 @@ auto checker::instantiate_impl_method_for(const ast::node &site,
   carry_impl_value_slots(method, bindings, solution);
   solution.suffix = std::format(
       "${}{}", mangle_type_for_instance(receiver_type), discriminator);
-  const auto name = method_instance_name(receiver_entry.name,
-                                         method.decl->name, solution.suffix);
+  const auto name = method_instance_name(receiver_entry.name, method.decl->name,
+                                         solution.suffix);
   return find_or_check_generic_instance(
       site, *method.decl, method.owner, method.file_id, solution, name,
       &scoped_params, receiver_type, method.block_type_params);

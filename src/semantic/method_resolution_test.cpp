@@ -152,12 +152,10 @@ auto test_filter_narrows_past_the_name() -> void {
 
 auto test_builtin_origins() -> void {
   auto f = fixture{};
-  f.tables.impl_by_builtin["str"].push_back(
-      fixture::entry_for(*f.pure, f.str));
+  f.tables.impl_by_builtin["str"].push_back(fixture::entry_for(*f.pure, f.str));
   f.tables.extend_by_builtin["str"].push_back(
       fixture::entry_for(*f.shout, f.str));
-  f.tables.impl_by_builtin["str"].push_back(
-      fixture::entry_for(*f.len, f.str));
+  f.tables.impl_by_builtin["str"].push_back(fixture::entry_for(*f.len, f.str));
   const auto resolver = f.resolver();
 
   const auto inherent = resolver.resolve(f.str, "len");
@@ -190,16 +188,13 @@ auto test_constructor_method_and_names() -> void {
       fixture::entry_for(*f.shout, f.str));
   const auto resolver = f.resolver();
 
-  expect(resolver.constructor_method("option", "pure") == &f.tables
-                                                              .impl_by_builtin
-                                                                  ["option"]
-                                                              .front(),
+  expect(resolver.constructor_method("option", "pure") ==
+             &f.tables.impl_by_builtin["option"].front(),
          "constructor_method finds an impl by the constructor's spelling");
   expect(resolver.constructor_method("option", "other") == nullptr,
          "constructor_method returns null for an unknown name");
 
-  const auto declared =
-      resolver.declared_names(f.types.entry(f.boxed_i32));
+  const auto declared = resolver.declared_names(f.types.entry(f.boxed_i32));
   expect(declared.size() == 1 && declared.front() == "get",
          "declared_names lists a user type's methods");
   const auto builtin = resolver.declared_names(f.types.entry(f.str));
@@ -212,8 +207,7 @@ auto test_mentions_param() -> void {
   const auto resolver = f.resolver();
   expect(resolver.mentions_param(f.boxed_t),
          "boxed[T] mentions a type parameter");
-  expect(!resolver.mentions_param(f.boxed_i32),
-         "boxed[int32] mentions none");
+  expect(!resolver.mentions_param(f.boxed_i32), "boxed[int32] mentions none");
 }
 
 } // namespace

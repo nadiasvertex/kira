@@ -19,9 +19,10 @@ using semantic::k_unknown_type;
 using semantic::type_id;
 
 // ==========================================================================
-//  hir_node_kind — flat tag, same shape as ast::node_kind. Generics, operators, method calls, `for` loops over
-//  iterators, contracts, and drops are already explicit by the time code is
-//  in HIR. See `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
+//  hir_node_kind — flat tag, same shape as ast::node_kind. Generics, operators,
+//  method calls, `for` loops over iterators, contracts, and drops are already
+//  explicit by the time code is in HIR. See
+//  `spec/specification/05-implementation/66-hir-and-bytecode-vm.md`.
 // ==========================================================================
 enum class hir_node_kind : uint8_t {
   // expressions
@@ -71,7 +72,7 @@ enum class hir_node_kind : uint8_t {
   hir_str_scalar_width,    ///< Bytes consumed decoding the scalar at a byte
                            ///< offset into a `str` — companion to
                            ///< `hir_str_decode_scalar`.
-  hir_cell_set, ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
+  hir_cell_set,  ///< `c.set(v)` on a `cell_mut[T]`; see `hir_cell_set`.
   hir_host_call, ///< An operation only the compiler can do, for code it runs
                  ///< while compiling; see `hir_host_call`.
   // patterns (match arms only)

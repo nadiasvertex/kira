@@ -36,11 +36,11 @@ namespace cinder::semantic {
 /// As above, reusing a module graph the caller already built (the
 /// `validate_semantics` pipeline builds it for its own passes). The graph is
 /// what module-rooted dotted paths (`pkg.mod.value`) are validated against.
-[[nodiscard]] auto check_program(
-    const std::vector<parsed_module> &inputs,
-    const module_session_index &session_index,
-    const semantic_resolution_index &semantic_index, diagnostic_bag &diag,
-    std::vector<bool> &file_has_errors, comptime_backend *comptime = nullptr)
-    -> checked_types;
+[[nodiscard]] auto
+check_program(const std::vector<parsed_module> &inputs,
+              const module_session_index &session_index,
+              const semantic_resolution_index &semantic_index,
+              diagnostic_bag &diag, std::vector<bool> &file_has_errors,
+              comptime_backend *comptime = nullptr) -> checked_types;
 
 } // namespace cinder::semantic

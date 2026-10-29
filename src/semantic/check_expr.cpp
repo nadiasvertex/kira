@@ -203,8 +203,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
 
   if (expr.type_name != nullptr) {
     if (expr.type_name->kind == ast::node_kind::ident_expr) {
-      const auto &ident =
-          ast::cast<const ast::ident_expr>(*expr.type_name);
+      const auto &ident = ast::cast<const ast::ident_expr>(*expr.type_name);
       if (const auto found = find_type_decl_by_name(ident.name)) {
         target = resolve_struct_literal_head(
             *found->first, found->second, expr.type_args, expr.type_name->span);
@@ -383,8 +382,7 @@ auto checker::check_struct_literal(const ast::struct_expr &expr,
           continue;
         }
         if (field.type->kind == ast::node_kind::named_type) {
-          const auto &named =
-              ast::cast<const ast::named_type>(*field.type);
+          const auto &named = ast::cast<const ast::named_type>(*field.type);
           if (named.path.size() == 1 && named.path.front() == param.name) {
             bound = it->second;
             break;
@@ -979,9 +977,8 @@ auto checker::defer_loop_route(const ast::expr &iterable_expr,
           return;
         }
         if (site.kind == ast::node_kind::for_stmt) {
-          session_
-              .for_iterator_dispatches_[&ast::cast<const ast::for_stmt>(
-                  clone_site)] = std::move(routed);
+          session_.for_iterator_dispatches_[&ast::cast<const ast::for_stmt>(
+              clone_site)] = std::move(routed);
         } else {
           session_.comprehension_iterator_dispatches_[&clone_site] =
               std::move(routed);
@@ -1439,8 +1436,8 @@ auto checker::try_resolve_into_iterator(type_id iterable, const ast::node *site)
     scoped_params.merge(bindings_by_name(bindings));
     auto solution = generic_solution{};
     solution.suffix = std::format("${}", mangle_type_for_instance(stripped));
-    const auto name = method_instance_name(entry.name, method->decl->name,
-                                           solution.suffix);
+    const auto name =
+        method_instance_name(entry.name, method->decl->name, solution.suffix);
     if (const auto *instance = find_or_check_generic_instance(
             *site, *method->decl, method->owner, method->file_id, solution,
             name, &scoped_params, stripped)) {
@@ -1663,8 +1660,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   case ast::node_kind::ident_expr:
     return resolve_ident(ast::cast<const ast::ident_expr>(expr), expected);
   case ast::node_kind::literal_expr:
-    return infer_literal(ast::cast<const ast::literal_expr>(expr),
-                         expected);
+    return infer_literal(ast::cast<const ast::literal_expr>(expr), expected);
   case ast::node_kind::binary_expr:
     return infer_binary(ast::cast<const ast::binary_expr>(expr), expected);
   case ast::node_kind::unary_expr:
@@ -2282,8 +2278,7 @@ auto checker::fill_count_of(const ast::array_expr &array)
     return std::nullopt;
   }
   if (array.fill_count->kind == ast::node_kind::literal_expr) {
-    const auto &lit =
-        ast::cast<const ast::literal_expr>(*array.fill_count);
+    const auto &lit = ast::cast<const ast::literal_expr>(*array.fill_count);
     if (lit.lit_kind == token_kind::int_lit) {
       return parse_integer_literal(lit.value);
     }
@@ -2770,8 +2765,7 @@ auto checker::infer_array(const ast::array_expr &array, type_id expected)
     if (array.fill_count != nullptr) {
       check_fill_count(*array.fill_count);
       if (array.fill_count->kind == ast::node_kind::literal_expr) {
-        const auto &lit =
-            ast::cast<const ast::literal_expr>(*array.fill_count);
+        const auto &lit = ast::cast<const ast::literal_expr>(*array.fill_count);
         if (lit.lit_kind == token_kind::int_lit) {
           count = parse_integer_literal(lit.value);
         }

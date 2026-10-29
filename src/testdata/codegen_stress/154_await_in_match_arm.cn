@@ -1,0 +1,24 @@
+module codegen_stress.await_in_match_arm
+
+# expect: 8
+
+# An `await` in a match arm's value waits only when that arm is taken. The
+# `_` arm would divide by zero if its task ran for `n == 0`.
+
+async def boom(x: int32) -> int32:
+    return x / 0
+
+async def one() -> int32:
+    return 1
+
+def note(x: int32) -> unit:
+    return ()
+
+async def pick(n: int32) -> int32:
+    match n:
+        0 => note(7)
+        _ => note(await boom(1))
+    return 7
+
+async def main() -> int32:
+    return (await pick(0)) + (await one())

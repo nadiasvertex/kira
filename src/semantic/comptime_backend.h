@@ -87,10 +87,9 @@ public:
   /// Performs `operation` for compile-time code (`hir_host_call`): builds
   /// the syntax a quote (`subject`) or an `expr.*` builder evaluates to,
   /// from `args`. The error says why it could not.
-  [[nodiscard]] virtual auto host_call(std::string_view operation,
-                                       const void *subject,
-                                       std::span<const comptime::value> args,
-                                       source_span span)
+  [[nodiscard]] virtual auto
+  host_call(std::string_view operation, const void *subject,
+            std::span<const comptime::value> args, source_span span)
       -> std::expected<comptime::value, std::string> = 0;
 
   /// The file `fn` is declared in, for an error inside it.

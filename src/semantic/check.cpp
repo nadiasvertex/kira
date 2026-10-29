@@ -434,8 +434,9 @@ auto checker::check_file(const ast::file &file) -> void {
 }
 
 /// Whether `name` reflects a module — matching a module's fully-qualified
-/// name or its leaf segment. Lets `infer_field_call` type `M.functions()` and hand it to
-/// compile-time evaluation instead of rejecting `M` as an undefined value.
+/// name or its leaf segment. Lets `infer_field_call` type `M.functions()` and
+/// hand it to compile-time evaluation instead of rejecting `M` as an undefined
+/// value.
 auto checker::names_reflectable_module(std::string_view name) const -> bool {
   return std::ranges::any_of(index_.modules, [&](const auto &entry) -> auto {
     return entry.first == name || split_module_name(entry.first).back() == name;
@@ -524,8 +525,7 @@ auto checker::evaluate_derive_call(const ast::type_decl &decl,
       decl, *derive_fn, derive_owner->first, derive_owner->second, solution,
       derive_fn->name + solution.suffix, /*fixed_type_params=*/nullptr));
   const auto fragment_value = in_module_context(
-      *derive_owner->first, derive_owner->second,
-      [&] -> comptime::value {
+      *derive_owner->first, derive_owner->second, [&] -> comptime::value {
         return comptime_eval_.call_with_types(
             *derive_fn, decl.span,
             {{type_param.name, comptime::value::make_type_value(

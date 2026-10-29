@@ -95,8 +95,7 @@ using method_filter = std::function<bool(const method_entry &)>;
 struct method_tables {
   /// Impl, trait-default, and `extend` methods of a user type, keyed by its
   /// declaration.
-  std::unordered_map<const ast::type_decl *, std::deque<method_entry>>
-      declared;
+  std::unordered_map<const ast::type_decl *, std::deque<method_entry>> declared;
   /// `extend`-block methods on a builtin type (`str`), keyed by the
   /// builtin's type-entry name since builtins have no `type_decl`.
   std::unordered_map<std::string, std::deque<method_entry>> extend_by_builtin;

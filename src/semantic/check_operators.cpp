@@ -178,10 +178,10 @@ auto checker::impl_trait_arguments_key(const ast::impl_decl &decl,
     return std::string(trait_name);
   }
   const auto &named = ast::cast<const ast::named_type>(*decl.trait_type);
-  const auto *argument = named.type_args.size() == 1
-                             ? ast::as<const ast::type_expr>(
-                                   named.type_args.front().value.get())
-                             : nullptr;
+  const auto *argument =
+      named.type_args.size() == 1
+          ? ast::as<const ast::type_expr>(named.type_args.front().value.get())
+          : nullptr;
   if (argument == nullptr) {
     return std::string(trait_name);
   }
@@ -211,11 +211,11 @@ auto checker::resolve_operator_return_type(type_id target,
 /// `trait_name` (reporting a missing-impl error with an `impl`/`deriving`
 /// hint otherwise); returns `unknown` for anything else. When `binary` is
 /// an arithmetic operator being dispatched to a real overload method (see
-/// `ast::overload_trait_of`), also records an `session_.operator_dispatches_` entry
-/// so `hir::lower_binary` emits a call to that method instead of a raw numeric
-/// opcode, and returns the method's real (impl-specific) return type rather
-/// than `unknown`. `wire_dispatch` is true for `==`/`!=` too (dispatches to
-/// `eq`), but false for ordering comparisons (`<`/`<=`/
+/// `ast::overload_trait_of`), also records an `session_.operator_dispatches_`
+/// entry so `hir::lower_binary` emits a call to that method instead of a raw
+/// numeric opcode, and returns the method's real (impl-specific) return type
+/// rather than `unknown`. `wire_dispatch` is true for `==`/`!=` too (dispatches
+/// to `eq`), but false for ordering comparisons (`<`/`<=`/
 /// `>`/`>=`), which always yield `bool` regardless of this function's
 /// return value and have no overload-method dispatch of their own yet.
 auto checker::require_operand_trait(const ast::binary_expr &binary,
@@ -310,10 +310,13 @@ auto checker::require_operand_trait(const ast::binary_expr &binary,
         binary.span,
         std::format("operator `{}` is not defined for `{}`", op_name,
                     session_.types_.display(target)),
-        std::format("`{}` is a handle to a computation, not a number", entry.name),
+        std::format("`{}` is a handle to a computation, not a number",
+                    entry.name),
         entry.name == "task"
-            ? std::string("Await each task first, e.g. `(await a) + (await b)`.")
-            : std::string("Take a value from the generator first, e.g. `.next()`."));
+            ? std::string(
+                  "Await each task first, e.g. `(await a) + (await b)`.")
+            : std::string(
+                  "Take a value from the generator first, e.g. `.next()`."));
     return k_error_type;
   }
   return k_unknown_type;
@@ -992,8 +995,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
   // minimum value (e.g. `-128` as `int8`), so the fit check must know a
   // negation is about to apply before it runs, not after.
   if (unary.op == ast::unary_op::neg && unary.operand != nullptr) {
-    if (const auto *lit =
-            ast::as<const ast::literal_expr>(unary.operand.get());
+    if (const auto *lit = ast::as<const ast::literal_expr>(unary.operand.get());
         lit != nullptr && lit->lit_kind == token_kind::int_lit) {
       const auto result_type = infer_literal(*lit, expected, /*negated=*/true);
       record_expr_type(*lit, result_type);
@@ -1005,8 +1007,7 @@ auto checker::infer_unary(const ast::unary_expr &unary, type_id expected)
     // own operand check (which never sees `negated`) rejects e.g.
     // `-2147483648 as int32` as a positive-value overflow even though
     // `-2147483648` is exactly `int32::min`.
-    if (const auto *cast =
-            ast::as<const ast::cast_expr>(unary.operand.get());
+    if (const auto *cast = ast::as<const ast::cast_expr>(unary.operand.get());
         cast != nullptr && cast->operand != nullptr) {
       if (const auto *lit =
               ast::as<const ast::literal_expr>(cast->operand.get());

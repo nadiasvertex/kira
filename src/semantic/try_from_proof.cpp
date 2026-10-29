@@ -1,7 +1,7 @@
 #include "src/semantic/try_from_proof.h"
 
-#include <utility>
 #include "src/parser/ast_traversal.h"
+#include <utility>
 
 namespace cinder::semantic::detail {
 
@@ -118,8 +118,8 @@ auto specialize_predicate(
 /// a variant and hunts for a sum type that declares it. `is_variant` sizes
 /// the span accordingly, which is how `@some` and `#proof0` are built by the
 /// same function without one being mistaken for the other.
-auto make_ident(std::string_view name, source_span span,
-                         bool is_variant) -> ast::ptr<ast::ident_expr> {
+auto make_ident(std::string_view name, source_span span, bool is_variant)
+    -> ast::ptr<ast::ident_expr> {
   auto ident = ast::make<ast::ident_expr>();
   ident->name = std::string(name);
   ident->span = source_span{
@@ -131,9 +131,8 @@ auto make_ident(std::string_view name, source_span span,
 }
 
 /// `@some(<binding>)`, or a bare `@none` when `binding` is empty.
-auto make_variant_call(std::string_view variant,
-                                std::string_view binding, source_span span)
-    -> ast::ptr<ast::expr> {
+auto make_variant_call(std::string_view variant, std::string_view binding,
+                       source_span span) -> ast::ptr<ast::expr> {
   auto name = make_ident(variant, span, /*is_variant=*/true);
   if (binding.empty()) {
     return name;

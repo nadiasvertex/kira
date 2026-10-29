@@ -1,8 +1,8 @@
 #include "symbols.h"
 
+#include "src/parser/ast_traversal.h"
 #include <algorithm>
 #include <utility>
-#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 

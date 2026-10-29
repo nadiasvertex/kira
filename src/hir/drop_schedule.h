@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "src/parser/ast.h"
-#include "src/semantic/ownership_cfg.h"
 #include "src/semantic/checker_results.h"
+#include "src/semantic/ownership_cfg.h"
 
 namespace cinder::hir {
 

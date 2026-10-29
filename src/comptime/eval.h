@@ -171,11 +171,9 @@ public:
 
 private:
   /// Runs `fn` on the VM, reporting at `span` when it cannot run or fails.
-  [[nodiscard]] auto
-  call_function(const ast::func_decl &fn, std::span<const value> args,
-                source_span span,
-                std::span<const std::pair<std::string, value>> type_args)
-      -> value;
+  [[nodiscard]] auto call_function(
+      const ast::func_decl &fn, std::span<const value> args, source_span span,
+      std::span<const std::pair<std::string, value>> type_args) -> value;
 
   /// The value `outcome` holds, or the error it reports at `span`. `what`
   /// names what was run.
@@ -210,8 +208,7 @@ private:
   std::vector<std::unordered_map<std::string, lazy_local>> lazy_locals_;
   /// Evaluates the lazy `let` `name` in frame `frame` and moves it into
   /// `locals_`, returning its value or `nullptr` if it has none.
-  auto force_lazy_local(size_t frame, const std::string &name)
-      -> const value *;
+  auto force_lazy_local(size_t frame, const std::string &name) -> const value *;
   /// Before `name` is rebound, evaluates every visible lazy `let` whose
   /// initializer reads it, so each sees the binding it was written against.
   void force_lazy_readers(const std::string &name);

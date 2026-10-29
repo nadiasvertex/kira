@@ -210,8 +210,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     return;
   }
   case ast::node_kind::struct_pattern: {
-    const auto &struct_pattern =
-        ast::cast<const ast::struct_pattern>(pattern);
+    const auto &struct_pattern = ast::cast<const ast::struct_pattern>(pattern);
     for (const auto &field : struct_pattern.fields) {
       if (field.is_rest) {
         continue;
@@ -420,22 +419,19 @@ auto checker::collect_covered_names(const ast::pattern &pattern,
     -> void {
   switch (pattern.kind) {
   case ast::node_kind::constructor_pattern:
-    covered.insert(
-        ast::cast<const ast::constructor_pattern>(pattern).name);
+    covered.insert(ast::cast<const ast::constructor_pattern>(pattern).name);
     return;
   case ast::node_kind::option_pattern:
-    covered.insert(
-        ast::cast<const ast::option_pattern>(pattern).option_kind ==
-                ast::option_result_kind::some
-            ? "some"
-            : "none");
+    covered.insert(ast::cast<const ast::option_pattern>(pattern).option_kind ==
+                           ast::option_result_kind::some
+                       ? "some"
+                       : "none");
     return;
   case ast::node_kind::result_pattern:
-    covered.insert(
-        ast::cast<const ast::result_pattern>(pattern).result_kind ==
-                ast::option_result_kind::err
-            ? "err"
-            : "ok");
+    covered.insert(ast::cast<const ast::result_pattern>(pattern).result_kind ==
+                           ast::option_result_kind::err
+                       ? "err"
+                       : "ok");
     return;
   case ast::node_kind::literal_pattern: {
     const auto &literal = ast::cast<const ast::literal_pattern>(pattern);
@@ -561,8 +557,7 @@ auto checker::check_match(const ast::expr *subject,
   for (const auto &arm : arms) {
     push_scope();
     if (arm.pattern != nullptr) {
-      check_pattern(ast::cast<const ast::pattern>(*arm.pattern),
-                    subject_type);
+      check_pattern(ast::cast<const ast::pattern>(*arm.pattern), subject_type);
     }
     if (arm.guard != nullptr) {
       require_bool(*arm.guard, "a match guard");

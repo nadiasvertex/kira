@@ -192,8 +192,8 @@ auto checker::add_bound_facts(type_id subject, const ast::type_expr &bound,
                                          .quiet = true};
     in_scope_of(home, concept_ref->file_id, [&] -> void {
       for (const auto &constraint : concept_decl.constraints) {
-        const auto *constraint_bound = ast::as<const ast::type_expr>(
-            constraint.bound_or_expr.get());
+        const auto *constraint_bound =
+            ast::as<const ast::type_expr>(constraint.bound_or_expr.get());
         if (constraint.subject == nullptr || constraint_bound == nullptr) {
           continue;
         }
@@ -601,8 +601,8 @@ auto checker::reflected_name_of(const ast::expr &expr)
       field.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto param = lookup_type_param(
-      ast::cast<const ast::ident_expr>(*field.object).name);
+  const auto param =
+      lookup_type_param(ast::cast<const ast::ident_expr>(*field.object).name);
   if (!param.has_value() || !is_rigid_param(*param)) {
     return std::nullopt;
   }
@@ -1699,8 +1699,8 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   // recording it as an ordinary callee.
   if (!function_.in_comptime_only_function_ &&
       session_.comptime_only_functions_.contains(instance)) {
-    if (const auto *lit = try_fold_comptime_only_call(
-            call, decl, result, solution->type_slots)) {
+    if (const auto *lit = try_fold_comptime_only_call(call, decl, result,
+                                                      solution->type_slots)) {
       session_.folded_comptime_calls_[&call] = lit;
       return record_expr_type(call, result);
     }

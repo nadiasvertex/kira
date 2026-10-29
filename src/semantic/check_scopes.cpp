@@ -1336,10 +1336,10 @@ auto checker::build_static_struct_expr(const comptime::value &value,
 /// would fail to resolve at the bytecode-compile stage. This runs the call
 /// at compile time instead, through `decl` (the template) and the call's
 /// type arguments, and turns the result into a literal for lowering to
-/// splice in instead of a call. Returns `nullptr` (leaving the call to fall back to the
-/// pre-existing, unresolvable-function behavior) when the call's arguments
-/// aren't themselves compile-time constant, or the result isn't a scalar
-/// `materialize_const_literal` can represent — a struct/list/variant
+/// splice in instead of a call. Returns `nullptr` (leaving the call to fall
+/// back to the pre-existing, unresolvable-function behavior) when the call's
+/// arguments aren't themselves compile-time constant, or the result isn't a
+/// scalar `materialize_const_literal` can represent — a struct/list/variant
 /// result has no route to a literal today.
 auto checker::try_fold_comptime_only_call(const ast::call_expr &call,
                                           const ast::func_decl &decl,

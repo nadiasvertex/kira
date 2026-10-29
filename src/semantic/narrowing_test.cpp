@@ -46,8 +46,10 @@ auto compare(ast::binary_op op, std::string name, std::string value)
 struct fixture {
   type_table types;
   fact_set facts;
-  ast::ptr<ast::expr> positive_predicate = compare(ast::binary_op::gt, "self", "0");
-  ast::ptr<ast::expr> small_predicate = compare(ast::binary_op::lt, "self", "10");
+  ast::ptr<ast::expr> positive_predicate =
+      compare(ast::binary_op::gt, "self", "0");
+  ast::ptr<ast::expr> small_predicate =
+      compare(ast::binary_op::lt, "self", "10");
   type_id int32 = types.builtin("int32");
   type_id positive = types.refinement_of(nullptr, "positive", "m", int32, {},
                                          positive_predicate.get());
@@ -64,7 +66,8 @@ struct fixture {
 auto test_unproven_narrowing_reports_the_goal() -> void {
   auto f = fixture{};
   const auto value = ident("x");
-  const auto failure = f.engine().check(f.positive, f.int32, value.get(), nullptr);
+  const auto failure =
+      f.engine().check(f.positive, f.int32, value.get(), nullptr);
   expect(failure.has_value(), "nothing is known about x, so nothing is proved");
   expect(failure->outcome == proof_result::unknown, "unproven, not refuted");
   expect(failure->goal_text == "x > 0", "the goal is the predicate about x");
@@ -89,7 +92,8 @@ auto test_negated_condition_refutes() -> void {
   const auto value = ident("x");
   const auto condition = compare(ast::binary_op::gt, "x", "0");
   f.engine().assume_condition(condition.get(), true);
-  const auto failure = f.engine().check(f.positive, f.int32, value.get(), nullptr);
+  const auto failure =
+      f.engine().check(f.positive, f.int32, value.get(), nullptr);
   expect(failure.has_value(), "`not (x > 0)` must not prove `positive`");
   expect(failure->outcome == proof_result::refuted,
          "the facts rule the predicate out");
@@ -105,8 +109,9 @@ auto test_fact_scope_forgets_a_branch() -> void {
     expect(f.facts.size() == 1, "the branch condition is a fact inside");
   }
   expect(f.facts.empty(), "the fact must not outlive its region");
-  expect(f.engine().check(f.positive, f.int32, value.get(), nullptr).has_value(),
-         "after the region x is no longer known positive");
+  expect(
+      f.engine().check(f.positive, f.int32, value.get(), nullptr).has_value(),
+      "after the region x is no longer known positive");
 }
 
 auto test_assignment_invalidates_facts() -> void {

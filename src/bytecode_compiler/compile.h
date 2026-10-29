@@ -71,8 +71,8 @@ struct compile_error {
 /// Compiles every function in `module` into a `bytecode_module`, in the same
 /// order, so `op_call`'s `function_index` operand can index directly into
 /// the result. Direct calls resolve through this fixed compile-time table
-/// (mirrors `bytecode_module`'s own doc comment in chunk.h). Fails closed on the
-/// first function `compile_function` rejects.
+/// (mirrors `bytecode_module`'s own doc comment in chunk.h). Fails closed on
+/// the first function `compile_function` rejects.
 [[nodiscard]] auto compile_module(const hir::hir_module &module,
                                   const semantic::type_table &types)
     -> std::expected<bytecode::bytecode_module, compile_error>;

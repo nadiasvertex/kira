@@ -1308,7 +1308,8 @@ auto intrinsic_rt_task_await_poll(std::span<const slot_value> args)
 
 auto intrinsic_rt_task_spawn(std::span<const slot_value> args) -> slot_value {
   cinder::runtime::scheduler::spawn(
-      task_of(args[0]), static_cast<cinder::runtime::scheduler::pool>(args[1].u),
+      task_of(args[0]),
+      static_cast<cinder::runtime::scheduler::pool>(args[1].u),
       current_task_runner());
   return slot_value{}; // `unit`
 }
@@ -1325,7 +1326,8 @@ auto intrinsic_rt_task_is_finished(std::span<const slot_value> args)
 auto intrinsic_rt_task_await_any_poll(std::span<const slot_value> args)
     -> slot_value {
   return store_bool(cinder::runtime::scheduler::await_any_poll(
-      task_of(args[0]), reinterpret_cast<uint64_t *const *>(args[1].u), // NOLINT
+      task_of(args[0]),
+      reinterpret_cast<uint64_t *const *>(args[1].u), // NOLINT
       static_cast<size_t>(args[2].u)));
 }
 
@@ -1482,50 +1484,50 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// names against.
 constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
     k_intrinsics = {{
-    intrinsic_rt_stdin,
-    intrinsic_rt_stdout,
-    intrinsic_rt_stderr,
-    intrinsic_rt_open,
-    intrinsic_rt_close,
-    intrinsic_rt_read,
-    intrinsic_rt_write,
-    intrinsic_rt_flush,
-    intrinsic_rt_str_concat,
-    intrinsic_rt_str_len_scalars,
-    intrinsic_rt_str_repeat_char,
-    intrinsic_rt_str_truncate_scalars,
-    intrinsic_rt_fmt_radix_digits,
-    intrinsic_rt_fmt_f64_fixed,
-    intrinsic_rt_fmt_f64_sci,
-    intrinsic_rt_fmt_f64_general,
-    intrinsic_rt_fmt_char_from_codepoint,
-    intrinsic_rt_str_eq,
-    intrinsic_rt_str_cmp,
-    intrinsic_rt_str_find,
-    intrinsic_rt_str_rfind,
-    intrinsic_rt_str_reverse,
-    intrinsic_rt_str_trim,
-    intrinsic_rt_str_replace,
-    intrinsic_rt_uname,
-    intrinsic_rt_gethostname,
-    intrinsic_rt_processor_name,
-    intrinsic_rt_libc_version,
-    intrinsic_rt_windows_version,
-    intrinsic_rt_macos_version,
-    intrinsic_rt_panic,
-    intrinsic_rt_bitcast_f64_to_u64,
-    intrinsic_rt_bitcast_f32_to_u32,
-    intrinsic_rt_alloc,
-    intrinsic_rt_realloc,
-    intrinsic_rt_free,
-    intrinsic_rt_task_block_on,
-    intrinsic_rt_task_await_poll,
-    intrinsic_rt_task_spawn,
-    intrinsic_rt_task_cancel,
-    intrinsic_rt_task_is_finished,
-    intrinsic_rt_task_await_any_poll,
-    intrinsic_rt_task_block_on_any,
-}};
+        intrinsic_rt_stdin,
+        intrinsic_rt_stdout,
+        intrinsic_rt_stderr,
+        intrinsic_rt_open,
+        intrinsic_rt_close,
+        intrinsic_rt_read,
+        intrinsic_rt_write,
+        intrinsic_rt_flush,
+        intrinsic_rt_str_concat,
+        intrinsic_rt_str_len_scalars,
+        intrinsic_rt_str_repeat_char,
+        intrinsic_rt_str_truncate_scalars,
+        intrinsic_rt_fmt_radix_digits,
+        intrinsic_rt_fmt_f64_fixed,
+        intrinsic_rt_fmt_f64_sci,
+        intrinsic_rt_fmt_f64_general,
+        intrinsic_rt_fmt_char_from_codepoint,
+        intrinsic_rt_str_eq,
+        intrinsic_rt_str_cmp,
+        intrinsic_rt_str_find,
+        intrinsic_rt_str_rfind,
+        intrinsic_rt_str_reverse,
+        intrinsic_rt_str_trim,
+        intrinsic_rt_str_replace,
+        intrinsic_rt_uname,
+        intrinsic_rt_gethostname,
+        intrinsic_rt_processor_name,
+        intrinsic_rt_libc_version,
+        intrinsic_rt_windows_version,
+        intrinsic_rt_macos_version,
+        intrinsic_rt_panic,
+        intrinsic_rt_bitcast_f64_to_u64,
+        intrinsic_rt_bitcast_f32_to_u32,
+        intrinsic_rt_alloc,
+        intrinsic_rt_realloc,
+        intrinsic_rt_free,
+        intrinsic_rt_task_block_on,
+        intrinsic_rt_task_await_poll,
+        intrinsic_rt_task_spawn,
+        intrinsic_rt_task_cancel,
+        intrinsic_rt_task_is_finished,
+        intrinsic_rt_task_await_any_poll,
+        intrinsic_rt_task_block_on_any,
+    }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
               "every known intrinsic needs exactly one native implementation, "
@@ -1544,7 +1546,8 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
 
 auto vm::poll_task(uint64_t *task) const -> uint64_t {
   namespace co = cinder::runtime::coroutine;
-  const auto step_function = static_cast<uint16_t>(task[co::k_step_function_slot]);
+  const auto step_function =
+      static_cast<uint16_t>(task[co::k_step_function_slot]);
   const std::array<slot_value, co::k_step_arg_count> args = {
       slot_value{task[co::k_state_ptr_slot]},
       slot_value{task[co::k_resume_index_slot]},
@@ -2022,14 +2025,17 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count * sizeof(slot_value));
+        auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count *
+                                         sizeof(slot_value));
         auto *slots = static_cast<slot_value *>(header);
         slots[runtime::coroutine::k_step_function_slot] =
             slot_value{static_cast<uint64_t>(step_fn_idx)};
-        slots[runtime::coroutine::k_state_ptr_slot] = f.registers[state_ptr_reg];
-        slots[runtime::coroutine::k_resume_index_slot] = slot_value{uint64_t{0}};
-        slots[runtime::coroutine::k_status_slot] =
-            slot_value{runtime::coroutine::raw(runtime::coroutine::status::suspended)};
+        slots[runtime::coroutine::k_state_ptr_slot] =
+            f.registers[state_ptr_reg];
+        slots[runtime::coroutine::k_resume_index_slot] =
+            slot_value{uint64_t{0}};
+        slots[runtime::coroutine::k_status_slot] = slot_value{
+            runtime::coroutine::raw(runtime::coroutine::status::suspended)};
         slots[runtime::coroutine::k_value_slot] = slot_value{};
         f.registers[dst] = ptr_to_slot(header);
         break;
@@ -2061,7 +2067,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto task_reg = ops.reg();
         const auto next_resume_index = ops.imm8();
         f.pc = ops.pos();
-        slots_of(f.registers[task_reg])[runtime::coroutine::k_resume_index_slot] =
+        slots_of(
+            f.registers[task_reg])[runtime::coroutine::k_resume_index_slot] =
             slot_value{static_cast<uint64_t>(next_resume_index)};
         const slot_value result{
             runtime::coroutine::raw(runtime::coroutine::status::pending)};
@@ -2085,10 +2092,12 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           f.registers[dst] = gen_slots[runtime::coroutine::k_status_slot];
           break;
         }
-        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[runtime::coroutine::k_step_function_slot].u);
-        const std::array<slot_value, runtime::coroutine::k_step_arg_count> call_args = {
-            gen_slots[runtime::coroutine::k_state_ptr_slot],
-            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[coroutine_reg]};
+        const auto step_fn_idx = static_cast<uint16_t>(
+            gen_slots[runtime::coroutine::k_step_function_slot].u);
+        const std::array<slot_value, runtime::coroutine::k_step_arg_count>
+            call_args = {gen_slots[runtime::coroutine::k_state_ptr_slot],
+                         gen_slots[runtime::coroutine::k_resume_index_slot],
+                         f.registers[coroutine_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -2112,11 +2121,14 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           break;
         }
         gen_slots[runtime::coroutine::k_status_slot] =
-            slot_value{runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)};
-        const auto step_fn_idx = static_cast<uint16_t>(gen_slots[runtime::coroutine::k_step_function_slot].u);
-        const std::array<slot_value, runtime::coroutine::k_step_arg_count> call_args = {
-            gen_slots[runtime::coroutine::k_state_ptr_slot],
-            gen_slots[runtime::coroutine::k_resume_index_slot], f.registers[generator_reg]};
+            slot_value{runtime::coroutine::raw(
+                runtime::coroutine::status::cancel_requested)};
+        const auto step_fn_idx = static_cast<uint16_t>(
+            gen_slots[runtime::coroutine::k_step_function_slot].u);
+        const std::array<slot_value, runtime::coroutine::k_step_arg_count>
+            call_args = {gen_slots[runtime::coroutine::k_state_ptr_slot],
+                         gen_slots[runtime::coroutine::k_resume_index_slot],
+                         f.registers[generator_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -2142,9 +2154,11 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto dst = ops.reg();
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
-        f.registers[dst] =
-            store_bool(slots_of(f.registers[generator_reg])[runtime::coroutine::k_status_slot].u ==
-                       runtime::coroutine::raw(runtime::coroutine::status::cancel_requested));
+        f.registers[dst] = store_bool(
+            slots_of(
+                f.registers[generator_reg])[runtime::coroutine::k_status_slot]
+                .u == runtime::coroutine::raw(
+                          runtime::coroutine::status::cancel_requested));
         break;
       }
       case opcode::op_str_decode_scalar: {

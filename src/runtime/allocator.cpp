@@ -13,9 +13,9 @@ namespace cinder::runtime {
 namespace {
 
 /// Rounds a byte count up to the 8-byte granularity every Cinder heap block is
-/// sized and aligned at (the uniform 8-byte slot). Doing it here rather than in each caller means a `realloc`
-/// that grows a block by less than a slot is a no-op in `system` mode too,
-/// not just in the arena.
+/// sized and aligned at (the uniform 8-byte slot). Doing it here rather than in
+/// each caller means a `realloc` that grows a block by less than a slot is a
+/// no-op in `system` mode too, not just in the arena.
 [[nodiscard]] auto round_to_slot(uint64_t bytes) -> size_t {
   return static_cast<size_t>((bytes + 7) & ~uint64_t{7});
 }

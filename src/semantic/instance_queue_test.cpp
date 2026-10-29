@@ -70,8 +70,8 @@ auto test_walked_instance_is_checked_recorded_then_marked() -> void {
   auto hooks = recording_hooks{};
   queue.request(instance_of(*inst, *tmpl));
   queue.flush_walks(hooks);
-  expect(hooks.log == std::vector<std::string>{"clone:t$1", "record:t$1",
-                                               "walked:t$1"},
+  expect(hooks.log ==
+             std::vector<std::string>{"clone:t$1", "record:t$1", "walked:t$1"},
          "a walked instance is checked, recorded, then reported walked");
   expect(!queue.has_walks(), "the walk queue is empty after a flush");
 }
@@ -92,8 +92,7 @@ auto test_substituted_instance_waits_for_its_template() -> void {
   queue.template_checked(*tmpl, false);
   expect(queue.has_substitutions(), "checking the template requeues it");
   queue.flush_substitutions(hooks);
-  expect(hooks.log ==
-             std::vector<std::string>{"substitute:t$1", "record:t$1"},
+  expect(hooks.log == std::vector<std::string>{"substitute:t$1", "record:t$1"},
          "the instance is substituted, then recorded");
 }
 
@@ -111,7 +110,8 @@ auto test_instance_of_a_failed_template_is_never_made() -> void {
   auto other = pending_instance{instance_of(*inst, *tmpl)};
   queue.make_now(other, hooks);
   queue.flush_substitutions(hooks);
-  expect(hooks.log.empty(), "no hook runs for an instance of a failed template");
+  expect(hooks.log.empty(),
+         "no hook runs for an instance of a failed template");
 }
 
 auto test_instance_with_open_answers_is_not_made() -> void {

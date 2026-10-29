@@ -93,7 +93,8 @@ auto test_walk_can_prune() -> void {
               binaries += n.kind == ast::node_kind::binary_expr ? 1 : 0;
               return true;
             });
-  saw_lambda_body_binary = count_kind(*parsed.file, ast::node_kind::binary_expr);
+  saw_lambda_body_binary =
+      count_kind(*parsed.file, ast::node_kind::binary_expr);
   expect(binaries == saw_lambda_body_binary - 1,
          "returning false skips exactly the lambda's one binary expression");
 }

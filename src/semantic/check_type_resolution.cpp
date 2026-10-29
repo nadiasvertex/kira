@@ -957,8 +957,8 @@ auto checker::signature_return_type(
   const auto declared = resolve_type(*decl.return_type, ctx);
   // The entry `async def main()` is called by the runtime, not awaited, so it
   // keeps the type it declares.
-  const auto is_entry_main = decl.name == "main" && decl.params.empty() &&
-                             decl.type_params.empty();
+  const auto is_entry_main =
+      decl.name == "main" && decl.params.empty() && decl.type_params.empty();
   return decl.modifiers.is_async && !is_entry_main
              ? task_of_declared_result(declared)
              : declared;
@@ -971,11 +971,10 @@ auto checker::signature_return_type(
 auto checker::task_of_declared_result(type_id declared) -> type_id {
   auto &types = session_.types_;
   const auto &entry = types.entry(declared);
-  const auto value =
-      entry.kind == type_kind::builtin_generic_kind && entry.name == "result" &&
-              entry.args.size() == 2
-          ? std::pair{entry.args[0], entry.args[1]}
-          : std::pair{declared, types.builtin("never")};
+  const auto value = entry.kind == type_kind::builtin_generic_kind &&
+                             entry.name == "result" && entry.args.size() == 2
+                         ? std::pair{entry.args[0], entry.args[1]}
+                         : std::pair{declared, types.builtin("never")};
   return types.builtin_generic(
       "task", {value.first, value.second, types.builtin("io")});
 }

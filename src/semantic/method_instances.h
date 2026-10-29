@@ -26,8 +26,7 @@ namespace cinder::semantic::detail {
 /// lowering names an impl member.
 [[nodiscard]] auto method_instance_name(std::string_view target,
                                         std::string_view method,
-                                        std::string_view suffix)
-    -> std::string;
+                                        std::string_view suffix) -> std::string;
 
 /// What an impl does with one function a trait declares.
 enum class trait_item_action {
@@ -43,9 +42,10 @@ enum class trait_item_action {
 
 /// Whether `decl`'s first parameter is `self`. `first_param_name` is that
 /// parameter's spelling, or empty when it has none.
-[[nodiscard]] auto classify_trait_item(
-    const ast::func_decl &decl, std::string_view first_param_name,
-    const std::unordered_set<std::string> &overridden_names)
+[[nodiscard]] auto
+classify_trait_item(const ast::func_decl &decl,
+                    std::string_view first_param_name,
+                    const std::unordered_set<std::string> &overridden_names)
     -> trait_item_action;
 
 /// The bindings a trait default body is checked under for an impl whose

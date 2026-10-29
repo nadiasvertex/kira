@@ -1,8 +1,8 @@
 #include "module_index.h"
 
+#include "src/parser/ast_traversal.h"
 #include <algorithm>
 #include <ranges>
-#include "src/parser/ast_traversal.h"
 
 namespace cinder::semantic {
 namespace {

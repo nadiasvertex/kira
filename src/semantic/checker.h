@@ -464,8 +464,7 @@ private:
     std::unordered_map<const ast::call_expr *, type_param_reflection>
         type_param_reflections_;
     /// See `lowering_results::reflection_folds`.
-    std::unordered_map<const ast::call_expr *, reified_value>
-        reflection_folds_;
+    std::unordered_map<const ast::call_expr *, reified_value> reflection_folds_;
 
     /// Every free, module-level `static def` — see `checked_types::
     /// comptime_only_functions`'s doc comment, the reason this exists (a
@@ -2893,9 +2892,10 @@ private:
     std::deque<method_entry> *methods;
   };
 
-  auto register_impl_methods(
-      const module_members &members, const impl_ref &impl,
-      std::vector<deferred_trait_default> &deferred_defaults) -> void;
+  auto
+  register_impl_methods(const module_members &members, const impl_ref &impl,
+                        std::vector<deferred_trait_default> &deferred_defaults)
+      -> void;
 
   auto monomorphize_trait_defaults(
       const std::vector<deferred_trait_default> &deferred_defaults) -> void;
@@ -4175,9 +4175,8 @@ private:
   /// Records the constant `T.<method>()` is for the concrete type
   /// `reflected`. Reports asking a type for what its shape does not have
   /// (`fields()` of a sum type).
-  auto fold_type_reflection(const ast::call_expr &call,
-                            std::string_view method, type_id reflected)
-      -> void;
+  auto fold_type_reflection(const ast::call_expr &call, std::string_view method,
+                            type_id reflected) -> void;
 
   /// Types the module reflection call `call` (`M.<method>()`) and records
   /// its answer.

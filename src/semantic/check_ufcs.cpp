@@ -552,8 +552,7 @@ auto checker::infer_method_call(const ast::call_expr &call,
       (field.field_name == "name" || field.field_name == "functions" ||
        field.field_name == "types" || field.field_name == "function_count" ||
        field.field_name == "type_count")) {
-    const auto &mod_name =
-        ast::cast<const ast::ident_expr>(*field.object).name;
+    const auto &mod_name = ast::cast<const ast::ident_expr>(*field.object).name;
     if (names_reflectable_module(mod_name)) {
       infer_call_args_loosely(call);
       return reflect_module_call(call, field.field_name, mod_name);
@@ -1973,8 +1972,7 @@ auto checker::infer_comptime_generic_call(const ast::call_expr &call,
       index.object->kind != ast::node_kind::ident_expr) {
     return std::nullopt;
   }
-  const auto &callee_ident =
-      ast::cast<const ast::ident_expr>(*index.object);
+  const auto &callee_ident = ast::cast<const ast::ident_expr>(*index.object);
   const auto found = find_callable_decl(callee_ident.name);
   if (!found.has_value() || !found->decl->modifiers.is_static ||
       found->decl->type_params.empty()) {
@@ -2110,12 +2108,11 @@ auto checker::called_name_for_diagnostic(const ast::call_expr &call)
   if (call.callee != nullptr) {
     if (call.callee->kind == ast::node_kind::field_expr) {
       return std::format(
-          "`{}`",
-          ast::cast<const ast::field_expr>(*call.callee).field_name);
+          "`{}`", ast::cast<const ast::field_expr>(*call.callee).field_name);
     }
     if (call.callee->kind == ast::node_kind::ident_expr) {
-      return std::format(
-          "`{}`", ast::cast<const ast::ident_expr>(*call.callee).name);
+      return std::format("`{}`",
+                         ast::cast<const ast::ident_expr>(*call.callee).name);
     }
   }
   return "handing out a raw pointer";
@@ -2139,8 +2136,8 @@ auto checker::infer_call_unguarded(const ast::call_expr &call, type_id expected)
   }
 
   if (call.callee->kind == ast::node_kind::field_expr) {
-    return infer_method_call(
-        call, ast::cast<const ast::field_expr>(*call.callee));
+    return infer_method_call(call,
+                             ast::cast<const ast::field_expr>(*call.callee));
   }
 
   // `size_of[T]()` / `align_of[T]()`. Tried before every other bracketed-

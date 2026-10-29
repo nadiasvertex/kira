@@ -1,0 +1,28 @@
+module codegen_stress.task_await_pending
+
+# expect: 71
+
+# A task that awaits another task nobody has started suspends until the
+# scheduler has run the awaited one, then resumes at the same `await`. The
+# chain below is awaited from the outermost task, so each level is pending
+# at least once; `sum_to` also awaits inside a loop, resuming mid-loop with
+# its locals intact.
+
+async def leaf(x: int32) -> int32:
+    return x + 1
+
+async def middle(x: int32) -> int32:
+    let a = await leaf(x)
+    let b = await leaf(a)
+    return a + b
+
+async def sum_to(n: int32) -> int32:
+    var total: int32 = 0
+    var i: int32 = 0
+    while i < n:
+        total = total + await middle(i)
+        i = i + 1
+    return total
+
+async def main() -> int32:
+    return (await sum_to(6)) + (await middle(10))

@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include "src/semantic/module_index.h"
 #include "src/parser/ast_traversal.h"
+#include "src/semantic/module_index.h"
 
 namespace cinder::semantic {
 namespace {
@@ -76,8 +76,7 @@ auto record_module_item(const ast::node &item, file_id_type file_id,
                           type_decl_ref{.decl = &decl, .file_id = file_id});
     if (decl.definition != nullptr &&
         decl.definition->kind == ast::node_kind::sum_type_def) {
-      const auto &sum =
-          ast::cast<const ast::sum_type_def>(*decl.definition);
+      const auto &sum = ast::cast<const ast::sum_type_def>(*decl.definition);
       for (const auto &variant : sum.body.variants) {
         if (!variant.name.empty()) {
           members.variants.emplace(

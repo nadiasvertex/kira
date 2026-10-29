@@ -1,0 +1,41 @@
+module codegen_stress.par_and_race
+
+# expect: 1221
+
+# `await par:` starts every branch before waiting for any, and gives the tuple
+# of their results. `await race:` gives the first result to arrive and
+# cancels the others. `spawn` starts a task ahead of the `await` that collects
+# it.
+
+async def slow_square(x: int32) -> int32:
+    return x * x
+
+async def triple(x: int32) -> int32:
+    return x * 3
+
+async def from_par() -> int32:
+    let (a, b, c) = await par:
+        slow_square(4)
+        triple(5)
+        slow_square(6)
+    return a + b + c
+
+async def from_race() -> int32:
+    return await race:
+        triple(100)
+        triple(100)
+
+async def from_spawn() -> int32:
+    let t = triple(7)
+    t.spawn()
+    let u = triple(8)
+    return (await u) + (await t)
+
+async def main() -> int32:
+    let p = await from_par()
+    let r = await from_race()
+    let s = await from_spawn()
+    let (x, y) = await par:
+        triple(1)
+        triple(2)
+    return p + r + s + x + y + 800

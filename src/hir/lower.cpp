@@ -369,16 +369,13 @@ public:
 
   /// `expr.<name>(args...)`, built by the compiler from `args`.
   [[nodiscard]] auto lower_fragment_builder(const ast::call_expr &call,
-                                            std::string_view name,
-                                            type_id type)
+                                            std::string_view name, type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
 
   /// See `hir::lower_comptime_expression`.
-  [[nodiscard]] auto
-  lower_expression_function(const ast::expr &expr,
-                            std::span<const comptime_capture> captures,
-                            std::string name)
-      -> std::expected<ptr<hir_function>, lowering_error>;
+  [[nodiscard]] auto lower_expression_function(
+      const ast::expr &expr, std::span<const comptime_capture> captures,
+      std::string name) -> std::expected<ptr<hir_function>, lowering_error>;
 
 private:
   /// Turns every reference the function borrows into explicit `&`/`*`
@@ -389,13 +386,13 @@ private:
   // ------------------------------------------------------------------
   //  Local identity
   //
-  //  HIR should reuse the semantic session's `symbol_id` rather than reinvent identity — but
-  //  `checked_types` (src/semantic/types.h) only persists *types*, not the
-  //  session's symbol table, so that real id isn't available here yet.
-  //  Until that's threaded through, this class mints its own ordinals: a
-  //  fresh id per parameter/`let` binding as it's declared, and one fixed
-  //  id per distinct free-standing name (e.g. a called function) the first
-  //  time it's referenced. These ids are only unique *within one
+  //  HIR should reuse the semantic session's `symbol_id` rather than reinvent
+  //  identity — but `checked_types` (src/semantic/types.h) only persists
+  //  *types*, not the session's symbol table, so that real id isn't available
+  //  here yet. Until that's threaded through, this class mints its own
+  //  ordinals: a fresh id per parameter/`let` binding as it's declared, and one
+  //  fixed id per distinct free-standing name (e.g. a called function) the
+  //  first time it's referenced. These ids are only unique *within one
   //  `lower_function` call* — they are not stable across functions and
   //  must not be persisted or compared across separate lowering calls.
   // ------------------------------------------------------------------
@@ -784,8 +781,8 @@ private:
       return {make<hir_local_ref>(spans[i], types[i], symbols[i],
                                   std::string("<group task>"))};
     }
-    [[nodiscard]] auto result_of(size_t i, source_span span, type_id result)
-        const -> ptr<hir_expr> {
+    [[nodiscard]] auto result_of(size_t i, source_span span,
+                                 type_id result) const -> ptr<hir_expr> {
       return {make<hir_generator_next>(span, result, ref(i),
                                        /*await_task=*/true)};
     }
@@ -794,15 +791,13 @@ private:
   [[nodiscard]] auto lower_await_group(const ast::await_expr &await,
                                        type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
-  [[nodiscard]] auto lower_par_results(ptr_vec<hir_node> &setup,
-                                       const group_tasks &tasks,
-                                       const ast::await_expr &await,
-                                       type_id type, bool in_task)
+  [[nodiscard]] auto
+  lower_par_results(ptr_vec<hir_node> &setup, const group_tasks &tasks,
+                    const ast::await_expr &await, type_id type, bool in_task)
       -> std::expected<ptr<hir_expr>, lowering_error>;
-  [[nodiscard]] auto lower_race_result(ptr_vec<hir_node> &setup,
-                                       const group_tasks &tasks,
-                                       const ast::await_expr &await,
-                                       type_id type, bool in_task)
+  [[nodiscard]] auto
+  lower_race_result(ptr_vec<hir_node> &setup, const group_tasks &tasks,
+                    const ast::await_expr &await, type_id type, bool in_task)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// The same, for a `break`/`continue`/`return` or the failure path of a
   /// `?` leaving early: every scope it passes through, innermost first.
@@ -1154,9 +1149,9 @@ private:
       value = std::move(dynamic_cast<hir_expr_stmt &>(*stmts.back()).expr);
       stmts.pop_back();
     } else {
-      value = ptr<hir_expr>(make<hir_literal>(
-          span, interning_types().builtin("unit"),
-          token_kind::kw_unit, "unit"));
+      value = ptr<hir_expr>(make<hir_literal>(span,
+                                              interning_types().builtin("unit"),
+                                              token_kind::kw_unit, "unit"));
     }
     auto exit = lower_return_value(span, std::move(value));
     if (!exit.has_value()) {
@@ -1724,9 +1719,9 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
       return {make<hir_local_ref>(task_span, *task_type, task_symbol,
                                   std::string("<await task>"))};
     };
-    await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
-        task_span, task_symbol, std::string("<await task>"),
-        std::move(*task))));
+    await_hoist_->push_back(ptr<hir_node>(
+        make<hir_let>(task_span, task_symbol, std::string("<await task>"),
+                      std::move(*task))));
     if (auto waited =
             emit_task_wait(*await_hoist_, task_ref(), &expr, expr.span);
         !waited.has_value()) {
@@ -1800,9 +1795,8 @@ auto lowerer::lower_fragment_builder(const ast::call_expr &call,
     }
     args.push_back(std::move(*lowered));
   }
-  return ok_expr(hir::make<hir_host_call>(call.span, type,
-                                          std::format("expr.{}", name),
-                                          nullptr, std::move(args)));
+  return ok_expr(hir::make<hir_host_call>(
+      call.span, type, std::format("expr.{}", name), nullptr, std::move(args)));
 }
 
 auto lowerer::lower_literal(const ast::literal_expr &lit)
@@ -2087,9 +2081,9 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   }
   auto rhs = [&] {
     // The right side of `&&`/`||` is skipped when the left decides the answer.
-    const auto short_circuited = conditional_scope(
-        *this, bin.op == ast::binary_op::logical_and ||
-                   bin.op == ast::binary_op::logical_or);
+    const auto short_circuited =
+        conditional_scope(*this, bin.op == ast::binary_op::logical_and ||
+                                     bin.op == ast::binary_op::logical_or);
     return lower_expr(*bin.rhs);
   }();
   if (!rhs.has_value()) {
@@ -2261,11 +2255,10 @@ auto lowerer::lower_call(const ast::call_expr &call)
   // the checker computed the answer, a constant.
   if (const auto folded = checked_.lowering.reflection_folds.find(&call);
       folded != checked_.lowering.reflection_folds.end()) {
-    return lower_reified_value(
-        folded->second, checked_, call.span,
-        [this](std::string_view callee) -> symbol_id {
-          return resolve_reference(callee);
-        });
+    return lower_reified_value(folded->second, checked_, call.span,
+                               [this](std::string_view callee) -> symbol_id {
+                                 return resolve_reference(callee);
+                               });
   }
 
   // A call to a comptime-only `static def` instance, reached from ordinary
@@ -2459,8 +2452,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
           auto args = ptr_vec<hir_expr>{};
           args.push_back(std::move(*object));
           args.push_back(default_pool_literal(call.span));
-          return ok_expr(runtime_call(call.span, "rt_task_spawn", *type,
-                                      std::move(args)));
+          return ok_expr(
+              runtime_call(call.span, "rt_task_spawn", *type, std::move(args)));
         }
       }
     }
@@ -4026,9 +4019,9 @@ auto lowerer::lower_await_group(const ast::await_expr &await, type_id type)
     auto args = ptr_vec<hir_expr>{};
     args.push_back(tasks.ref(i));
     args.push_back(default_pool_literal(span));
-    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, runtime_call(span, "rt_task_spawn", unit_type,
-                           std::move(args)))));
+    setup.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_spawn", unit_type,
+                                               std::move(args)))));
   }
 
   auto result = is_par ? lower_par_results(setup, tasks, await, type, in_task)
@@ -4067,9 +4060,9 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
       auto args = ptr_vec<hir_expr>{};
       args.push_back(tasks.ref(i));
       args.push_back(default_pool_literal(span));
-      setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-          span, runtime_call(span, "rt_task_block_on", unit_type,
-                             std::move(args)))));
+      setup.push_back(ptr<hir_node>(
+          make<hir_expr_stmt>(span, runtime_call(span, "rt_task_block_on",
+                                                 unit_type, std::move(args)))));
     }
     elements.push_back(tasks.result_of(i, span, result_entry.args[i]));
   }
@@ -4111,12 +4104,12 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   } else {
     auto args = ptr_vec<hir_expr>{};
     args.push_back(group_ref());
-    args.push_back(ptr<hir_expr>(make<hir_literal>(
-        span, checked_.types.usize_type(), token_kind::int_lit,
-        std::to_string(tasks.size()))));
-    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, runtime_call(span, "rt_task_block_on_any", unit_type,
-                           std::move(args)))));
+    args.push_back(ptr<hir_expr>(
+        make<hir_literal>(span, checked_.types.usize_type(),
+                          token_kind::int_lit, std::to_string(tasks.size()))));
+    setup.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_block_on_any",
+                                               unit_type, std::move(args)))));
   }
 
   // The first finished branch in source order wins.
@@ -4130,10 +4123,10 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   for (size_t i = 0; i + 1 < tasks.size(); ++i) {
     auto args = ptr_vec<hir_expr>{};
     args.push_back(tasks.ref(i));
-    picks.push_back(hir_if_branch{
-        .condition = runtime_call(span, "rt_task_is_finished", bool_type,
-                                  std::move(args)),
-        .body = read_branch(i)});
+    picks.push_back(
+        hir_if_branch{.condition = runtime_call(span, "rt_task_is_finished",
+                                                bool_type, std::move(args)),
+                      .body = read_branch(i)});
   }
   auto last = read_branch(tasks.size() - 1);
   auto pick = ptr<hir_expr>{};
@@ -4152,9 +4145,9 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
     auto args = ptr_vec<hir_expr>{};
     args.push_back(ptr<hir_expr>(
         make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
-    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, runtime_call(span, "rt_task_cancel", bool_type,
-                           std::move(args)))));
+    setup.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_cancel",
+                                               bool_type, std::move(args)))));
   }
   return ptr<hir_expr>(
       make<hir_local_ref>(span, type, winner, std::string("<race winner>")));
@@ -6195,7 +6188,8 @@ auto lowerer::lower_generator_loop(
   // table, so this can't retroactively change anything checking already
   // decided — it only adds an entry checking simply never had occasion to
   // add itself.
-  const auto option_type = interning_types().builtin_generic("option", {element_type});
+  const auto option_type =
+      interning_types().builtin_generic("option", {element_type});
 
   const auto subject_symbol = mint_symbol();
   auto subject = ptr<hir_expr>(make<hir_generator_next>(
@@ -6312,7 +6306,8 @@ auto lowerer::lower_iterator_loop(
                                                std::move(*handle_value))));
 
   // See `lower_generator_loop` for why interning `option[T]` here is safe.
-  const auto option_type = interning_types().builtin_generic("option", {element_type});
+  const auto option_type =
+      interning_types().builtin_generic("option", {element_type});
 
   // Rebuild the `handle.next()` method call directly from the resolved
   // dispatch — the same `Type::method`-mangled `hir_local_ref` callee shape
@@ -7709,8 +7704,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   }
 
   auto function = ptr<hir_function>(make<hir_function>(
-      decl.span, decl.name, std::move(params), function_type,
-      std::move(*body),
+      decl.span, decl.name, std::move(params), function_type, std::move(*body),
       is_task                       ? coroutine_kind::task
       : decl.modifiers.is_generator ? coroutine_kind::generator
                                     : coroutine_kind::none,

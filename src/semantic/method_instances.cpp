@@ -9,9 +9,9 @@ auto method_instance_name(std::string_view target, std::string_view method,
   return std::format("{}::{}{}", target, method, suffix);
 }
 
-auto classify_trait_item(const ast::func_decl &decl,
-                         std::string_view first_param_name,
-                         const std::unordered_set<std::string> &overridden_names)
+auto classify_trait_item(
+    const ast::func_decl &decl, std::string_view first_param_name,
+    const std::unordered_set<std::string> &overridden_names)
     -> trait_item_action {
   if (overridden_names.contains(decl.name)) {
     return trait_item_action::overridden;

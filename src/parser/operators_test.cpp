@@ -28,7 +28,8 @@ auto test_families() -> void {
   expect(ast::is_arithmetic(binary_op::add_sat), "add_sat is arithmetic");
   expect(!ast::is_arithmetic(binary_op::bit_and), "& is not arithmetic");
   expect(ast::is_comparison(binary_op::bang_eq), "!= is a comparison");
-  expect(ast::is_equality(binary_op::eq_eq) && !ast::is_ordering(binary_op::eq_eq),
+  expect(ast::is_equality(binary_op::eq_eq) &&
+             !ast::is_ordering(binary_op::eq_eq),
          "== is equality, not ordering");
   expect(ast::is_ordering(binary_op::gt_eq), ">= is ordering");
   expect(ast::is_logical(binary_op::logical_or), "or is logical");

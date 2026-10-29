@@ -18,11 +18,11 @@
 //
 // Most records lowering needs and this projection does not copy make lowering
 // fail closed ("no concrete checked type is available for this node"), and the
-// compile-time code is reported as unable to run. Not all: a callee's parameter types decide how
-// an argument is passed, and without them lowering passes it another way
-// without complaint. `CINDER_COMPTIME_VERIFY` (on in the driver tests)
-// re-lowers every function the VM ran from the final results and reports any
-// function that lowers differently (`comptime_vm::vm_backend::verify`).
+// compile-time code is reported as unable to run. Not all: a callee's parameter
+// types decide how an argument is passed, and without them lowering passes it
+// another way without complaint. `CINDER_COMPTIME_VERIFY` (on in the driver
+// tests) re-lowers every function the VM ran from the final results and reports
+// any function that lowers differently (`comptime_vm::vm_backend::verify`).
 
 namespace cinder::semantic {
 namespace detail {
@@ -118,8 +118,8 @@ public:
       return *found->second;
     }
     if (operation == "quote" && subject != nullptr) {
-      built = fragments.quote(*static_cast<const ast::quote_expr *>(subject),
-                              args);
+      built =
+          fragments.quote(*static_cast<const ast::quote_expr *>(subject), args);
     } else if (operation.starts_with("expr.")) {
       const auto spans = std::vector<source_span>(args.size(), span);
       built = fragments.build(operation.substr(5), args, spans, span);
@@ -437,8 +437,7 @@ auto checker::run_comptime_expr_on_vm(const ast::expr &expr)
       name = ident->name;
     } else if (const auto *field = ast::as<const ast::field_expr>(&callee)) {
       name = field->field_name;
-    } else if (const auto *path =
-                   ast::as<const ast::module_path_expr>(&callee);
+    } else if (const auto *path = ast::as<const ast::module_path_expr>(&callee);
                path != nullptr && !path->segments.empty()) {
       name = path->segments.back();
     }
@@ -448,8 +447,8 @@ auto checker::run_comptime_expr_on_vm(const ast::expr &expr)
   }
   return outcome{.outcome = outcome::kind::failed,
                  .result = {},
-                 .message = std::format("{} failed: {}", what,
-                                        result.error().message),
+                 .message =
+                     std::format("{} failed: {}", what, result.error().message),
                  .notes = vm_failure_notes(result.error())};
 }
 

@@ -436,24 +436,30 @@ auto renderer::run() -> std::string {
     return callee_text(item.second);
   };
   node_section("resolved_callees", checked_.resolved_callees, callee);
-  node_section("resolved_fn_values", checked_.lowering.resolved_fn_values, callee);
-  node_section("operator_dispatches", checked_.lowering.operator_dispatches, callee);
-  node_section("ord_dispatch_result_types", checked_.lowering.ord_dispatch_result_types,
+  node_section("resolved_fn_values", checked_.lowering.resolved_fn_values,
+               callee);
+  node_section("operator_dispatches", checked_.lowering.operator_dispatches,
+               callee);
+  node_section("ord_dispatch_result_types",
+               checked_.lowering.ord_dispatch_result_types,
                [this](const auto &item) -> auto { return ty(item.second); });
   node_section("index_dispatches", checked_.lowering.index_dispatches, callee);
-  node_section("index_set_dispatches", checked_.lowering.index_set_dispatches, callee);
-  node_section("index_mut_dispatches", checked_.lowering.index_mut_dispatches, callee);
-  node_section("index_ref_dispatches", checked_.lowering.index_ref_dispatches, callee);
+  node_section("index_set_dispatches", checked_.lowering.index_set_dispatches,
+               callee);
+  node_section("index_mut_dispatches", checked_.lowering.index_mut_dispatches,
+               callee);
+  node_section("index_ref_dispatches", checked_.lowering.index_ref_dispatches,
+               callee);
   node_section("try_conversions", checked_.lowering.try_conversions, callee);
   node_section("try_conversion_types", checked_.lowering.try_conversion_types,
                [this](const auto &item) -> auto { return ty(item.second); });
 
-  node_section("array_literal_conversions", checked_.lowering.array_literal_conversions,
-               [this](const auto &item) -> auto {
-                 return std::format("{} from {}",
-                                    callee_text(item.second.callee),
-                                    ty(item.second.array_type));
-               });
+  node_section(
+      "array_literal_conversions", checked_.lowering.array_literal_conversions,
+      [this](const auto &item) -> auto {
+        return std::format("{} from {}", callee_text(item.second.callee),
+                           ty(item.second.array_type));
+      });
 
   node_section("interp_dispatches", checked_.lowering.interp_dispatches,
                [this](const auto &item) -> auto {
@@ -485,7 +491,8 @@ auto renderer::run() -> std::string {
                  return text;
                });
 
-  node_section("type_param_reflections", checked_.lowering.type_param_reflections,
+  node_section("type_param_reflections",
+               checked_.lowering.type_param_reflections,
                [](const auto &item) -> auto { return item.second.type_name; });
 
   node_section("for_iterator_dispatches", checked_.for_iterator_dispatches,
@@ -497,11 +504,13 @@ auto renderer::run() -> std::string {
                [this](const auto &item) -> auto {
                  return loop_dispatch_text(item.second);
                });
-  node_section("comprehension_dispatches", checked_.lowering.comprehension_dispatches,
+  node_section("comprehension_dispatches",
+               checked_.lowering.comprehension_dispatches,
                [this](const auto &item) -> auto {
                  return comprehension_text(item.second);
                });
-  node_section("runtime_fill_dispatches", checked_.lowering.runtime_fill_dispatches,
+  node_section("runtime_fill_dispatches",
+               checked_.lowering.runtime_fill_dispatches,
                [this](const auto &item) -> auto {
                  return comprehension_text(item.second);
                });
@@ -540,7 +549,8 @@ auto renderer::run() -> std::string {
                });
   node_section("static_global_refs", checked_.static_global_refs,
                [](const auto &item) -> auto { return item.second; });
-  node_section("static_if_taken_branch", checked_.lowering.static_if_taken_branch,
+  node_section("static_if_taken_branch",
+               checked_.lowering.static_if_taken_branch,
                [](const auto &item) -> auto {
                  return std::string(item.second ? "then" : "else");
                });

@@ -61,7 +61,9 @@ auto evaluator::force_lazy_local(size_t frame, const std::string &name)
   if (result.is_error()) {
     return nullptr;
   }
-  return &locals_[frame].insert_or_assign(name, std::move(result)).first->second;
+  return &locals_[frame]
+              .insert_or_assign(name, std::move(result))
+              .first->second;
 }
 
 void evaluator::force_lazy_readers(const std::string &name) {
@@ -115,11 +117,10 @@ auto evaluator::use_vm_outcome(vm_call_outcome outcome, std::string_view what,
   case vm_call_outcome::kind::not_run:
     break;
   }
-  return report(span,
-                outcome.message.empty()
-                    ? std::format("{} cannot run at compile time", what)
-                    : std::format("{} cannot run at compile time: {}", what,
-                                  outcome.message));
+  return report(span, outcome.message.empty()
+                          ? std::format("{} cannot run at compile time", what)
+                          : std::format("{} cannot run at compile time: {}",
+                                        what, outcome.message));
 }
 
 auto evaluator::evaluate(const ast::expr &expr) -> value {

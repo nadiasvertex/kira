@@ -10,9 +10,8 @@ auto method_resolver::mentions_param(type_id id) const -> bool {
       entry.kind == type_kind::param_app_kind) {
     return true;
   }
-  return std::ranges::any_of(entry.args, [&](type_id arg) -> bool {
-    return mentions_param(arg);
-  });
+  return std::ranges::any_of(
+      entry.args, [&](type_id arg) -> bool { return mentions_param(arg); });
 }
 
 auto method_resolver::target_pattern_matches(type_id pattern,
@@ -45,7 +44,8 @@ auto method_resolver::target_pattern_matches(type_id pattern,
     return false;
   }
   for (size_t i = 0; i < pattern_entry.args.size(); ++i) {
-    if (!target_pattern_matches(pattern_entry.args[i], concrete_entry.args[i])) {
+    if (!target_pattern_matches(pattern_entry.args[i],
+                                concrete_entry.args[i])) {
       return false;
     }
   }
@@ -73,8 +73,8 @@ auto method_resolver::resolve(const type_entry &entry, type_id instance,
   // (a static call's signature, a receiver's `deref`) is not asking which
   // one a method call would dispatch to.
   const auto *impl = resolve_builtin_impl(entry, name);
-  const auto *extend = impl == nullptr ? resolve_builtin_extend(entry, name)
-                                       : nullptr;
+  const auto *extend =
+      impl == nullptr ? resolve_builtin_extend(entry, name) : nullptr;
   const auto *declared = impl != nullptr ? impl : extend;
   if (has_inherent_ != nullptr && has_inherent_(entry, name)) {
     return {method_origin::builtin_inherent, declared};
@@ -109,8 +109,7 @@ auto method_resolver::declared_names(const type_entry &entry) const
 }
 
 auto method_resolver::resolve_declared(const type_entry &entry,
-                                       type_id instance,
-                                       std::string_view name,
+                                       type_id instance, std::string_view name,
                                        const method_filter &accepts) const
     -> const method_entry * {
   const auto it = tables_->declared.find(entry.decl);

@@ -9,8 +9,8 @@
 #include "src/parser/ast.h"
 #include "src/parser/ast_clone.h"
 #include "src/parser/source_location.h"
-#include "src/semantic/linear_poly.h"
 #include "src/semantic/checker_results.h"
+#include "src/semantic/linear_poly.h"
 
 namespace cinder::semantic::detail {
 
@@ -97,7 +97,8 @@ struct template_record_tables {
       &operator_dispatches;
   std::unordered_map<const ast::binary_expr *, type_id>
       &ord_dispatch_result_types;
-  std::unordered_map<const ast::index_expr *, resolved_callee> &index_dispatches;
+  std::unordered_map<const ast::index_expr *, resolved_callee>
+      &index_dispatches;
   std::unordered_map<const ast::index_expr *, resolved_callee>
       &index_set_dispatches;
   std::unordered_map<const ast::index_expr *, resolved_callee>

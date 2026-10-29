@@ -1,0 +1,42 @@
+module codegen_stress.par_workers_share_counter
+
+# expect: 4004
+
+# Four tasks started together each add to one shared counter with an atomic
+# increment. The total depends on every task having run to the end, so a task
+# the scheduler dropped, ran twice, or ran before its inputs were ready
+# changes it. Runs with several `io` workers in the stress harness
+# (`CINDER_IO_WORKERS`), so the increments really are concurrent there.
+
+use std.mem.{alloc, atomic_fetch_add}
+use std.shared.shared
+
+type counter = {
+    cell: *mut usize,
+}
+
+extend counter:
+    machine def make() -> counter:
+        return counter { cell: alloc[usize](1) }
+
+    machine def add_one(self) -> unit:
+        let _ = atomic_fetch_add(self.cell, 1)
+
+    machine def total(self) -> usize:
+        return self.cell[0]
+
+async def bump(c: shared[counter], times: usize) -> usize:
+    var i: usize = 0
+    while i < times:
+        c.add_one()
+        i = i + 1
+    return times
+
+async def main() -> int32:
+    let c = shared[counter].new(counter.make())
+    let (r1, r2, r3, r4) = await par:
+        bump(c.clone(), 1000)
+        bump(c.clone(), 1000)
+        bump(c.clone(), 1000)
+        bump(c.clone(), 1000)
+    return (c.total() as int32) + ((r1 + r2 + r3 + r4) as int32) / 1000
