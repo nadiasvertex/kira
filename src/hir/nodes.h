@@ -1088,10 +1088,14 @@ struct hir_continue : hir_stmt {
 struct hir_yield : hir_stmt {
   ptr<hir_expr> value;
   bool awaits = false;
+  /// With `awaits`, and a tuple of tasks as `value`: wait for every task
+  /// (`par`) instead of any one (`race`).
+  bool awaits_all = false;
 
-  hir_yield(source_span s, ptr<hir_expr> v, bool awaiting_task = false)
+  hir_yield(source_span s, ptr<hir_expr> v, bool awaiting_task = false,
+            bool awaiting_all = false)
       : hir_stmt(hir_node_kind::hir_yield, s), value(std::move(v)),
-        awaits(awaiting_task) {}
+        awaits(awaiting_task), awaits_all(awaiting_all) {}
 };
 
 // ==========================================================================

@@ -1340,6 +1340,23 @@ auto intrinsic_rt_task_block_on_any(std::span<const slot_value> args)
   return slot_value{}; // `unit`
 }
 
+auto intrinsic_rt_task_await_all_poll(std::span<const slot_value> args)
+    -> slot_value {
+  return store_bool(cinder::runtime::scheduler::await_all_poll(
+      task_of(args[0]),
+      reinterpret_cast<uint64_t *const *>(args[1].u), // NOLINT
+      static_cast<size_t>(args[2].u)));
+}
+
+auto intrinsic_rt_task_block_on_all(std::span<const slot_value> args)
+    -> slot_value {
+  cinder::runtime::scheduler::block_on_all(
+      reinterpret_cast<uint64_t *const *>(args[0].u), // NOLINT
+      static_cast<size_t>(args[1].u), cinder::runtime::scheduler::pool::io,
+      current_task_runner());
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1473,7 +1490,8 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_macos_version" || name == "rt_task_block_on" ||
          name == "rt_task_await_poll" || name == "rt_task_spawn" ||
          name == "rt_task_cancel" || name == "rt_task_is_finished" ||
-         name == "rt_task_await_any_poll" || name == "rt_task_block_on_any";
+         name == "rt_task_await_any_poll" || name == "rt_task_block_on_any" ||
+         name == "rt_task_await_all_poll" || name == "rt_task_block_on_all";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1527,6 +1545,8 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_task_is_finished,
         intrinsic_rt_task_await_any_poll,
         intrinsic_rt_task_block_on_any,
+        intrinsic_rt_task_await_all_poll,
+        intrinsic_rt_task_block_on_all,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),

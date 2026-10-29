@@ -222,6 +222,43 @@ auto test_cpu_pool_runs_every_task_in_parallel() -> void {
          "the cpu pool should have used more than one thread");
 }
 
+auto test_block_on_all_waits_for_every_task() -> void {
+  auto a = fake_task{.body = double_body, .input = 3};
+  auto b = fake_task{.body = double_body, .input = 4};
+  auto group = std::array<uint64_t *, 2>{a.raw(), b.raw()};
+  sched::block_on_all(group.data(), group.size(), sched::pool::io,
+                      fake_runner());
+  expect(result_of(a) == 6 && result_of(b) == 8,
+         "block_on_all should return only once every task has its result");
+}
+
+auto test_a_failure_in_a_group_cancels_the_rest() -> void {
+  // `stuck` never finishes on its own; it finishes only once cancelled.
+  auto stuck = fake_task{.body = [](fake_task &t) -> uint64_t {
+    return t.slots[co::k_status_slot] == co::raw(co::status::cancel_requested)
+               ? co::raw(co::status::done)
+               : co::raw(co::status::pending);
+  }};
+  auto failing = fake_task{.body = throwing_body};
+  auto group = std::array<uint64_t *, 2>{stuck.raw(), failing.raw()};
+  auto caught = false;
+  try {
+    sched::block_on_all(group.data(), group.size(), sched::pool::io,
+                        fake_runner());
+  } catch (const std::runtime_error &error) {
+    caught = std::string_view(error.what()) == "boom";
+  }
+  expect(caught, "block_on_all should rethrow the failing task's failure");
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!sched::is_finished(stuck.raw()) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  expect(sched::is_finished(stuck.raw()),
+         "the sibling of a failed task should have been cancelled");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -231,6 +268,8 @@ auto main() -> int {
   test_await_of_an_unstarted_task_goes_pending_then_resumes();
   test_a_failing_task_rethrows_in_the_awaiter();
   test_cancel_unblocks_a_waiting_task();
+  test_block_on_all_waits_for_every_task();
+  test_a_failure_in_a_group_cancels_the_rest();
   test_a_second_task_does_not_wait_behind_a_busy_worker();
   test_cpu_pool_runs_every_task_in_parallel();
   return 0;

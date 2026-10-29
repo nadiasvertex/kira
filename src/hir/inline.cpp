@@ -431,7 +431,8 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_yield: {
     const auto &n = dynamic_cast<const hir_yield &>(node);
-    return hir::make<hir_yield>(span, clone_as(*n.value, rename), n.awaits);
+    return hir::make<hir_yield>(span, clone_as(*n.value, rename), n.awaits,
+                                n.awaits_all);
   }
   case hir_node_kind::hir_while: {
     const auto &n = dynamic_cast<const hir_while &>(node);

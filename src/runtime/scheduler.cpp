@@ -295,7 +295,87 @@ auto first_finished_failure(uint64_t *const *tasks, size_t count,
   return {};
 }
 
+/// The failure of the first task in `tasks` that finished by panicking, if
+/// any. Lock held. Sets `all_finished`.
+auto first_failure(uint64_t *const *tasks, size_t count, bool &all_finished)
+    -> std::exception_ptr {
+  auto failure = std::exception_ptr{};
+  all_finished = true;
+  for (size_t i = 0; i < count; ++i) {
+    if (status_of(tasks[i]) != co::raw(co::status::done)) { // NOLINT
+      all_finished = false;
+      continue;
+    }
+    const auto *rec = record_of(tasks[i]); // NOLINT
+    if (failure == nullptr && rec != nullptr) {
+      failure = rec->failure;
+    }
+  }
+  return failure;
+}
+
 } // namespace
+
+auto await_all_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
+    -> bool {
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  auto all_finished = false;
+  const auto failure = first_failure(tasks, count, all_finished);
+  if (failure != nullptr) {
+    lock.unlock();
+    for (size_t i = 0; i < count; ++i) {
+      (void)cancel(tasks[i]); // NOLINT
+    }
+    std::rethrow_exception(failure);
+  }
+  if (all_finished || status_of(self) == co::raw(co::status::cancel_requested)) {
+    return true;
+  }
+  const auto *self_rec = record_of(self);
+  for (size_t i = 0; i < count; ++i) {
+    auto *awaited = tasks[i]; // NOLINT
+    if (status_of(awaited) == co::raw(co::status::done)) {
+      continue;
+    }
+    auto *rec = record_of(awaited);
+    if (rec == nullptr) {
+      rec = &adopt_locked(
+          s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
+          self_rec != nullptr ? self_rec->how : native_runner());
+    }
+    if (std::ranges::find(rec->waiters, self) == rec->waiters.end()) {
+      rec->waiters.push_back(self);
+    }
+  }
+  return false;
+}
+
+void block_on_all(uint64_t *const *tasks, size_t count, pool where,
+                  runner how) {
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  for (size_t i = 0; i < count; ++i) {
+    auto *task = tasks[i]; // NOLINT
+    if (status_of(task) != co::raw(co::status::done) &&
+        record_of(task) == nullptr) {
+      adopt_locked(s, task, where, how);
+    }
+  }
+  auto all_finished = false;
+  auto failure = std::exception_ptr{};
+  s.finished.wait(lock, [&] {
+    failure = first_failure(tasks, count, all_finished);
+    return failure != nullptr || all_finished;
+  });
+  lock.unlock();
+  if (failure != nullptr) {
+    for (size_t i = 0; i < count; ++i) {
+      (void)cancel(tasks[i]); // NOLINT
+    }
+    std::rethrow_exception(failure);
+  }
+}
 
 auto await_any_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     -> bool {
@@ -421,12 +501,28 @@ auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t {
   return cinder::runtime::scheduler::is_finished(task) ? 1U : 0U;
 }
 
+auto cinder_rt_task_await_all_poll(uint64_t *self, uint64_t *const *tasks,
+                                   uint64_t count) -> uint32_t {
+  return cinder::runtime::scheduler::await_all_poll(self, tasks,
+                                                    static_cast<size_t>(count))
+             ? 1U
+             : 0U;
+}
+
 auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t {
   return cinder::runtime::scheduler::await_any_poll(self, tasks,
                                                     static_cast<size_t>(count))
              ? 1U
              : 0U;
+}
+
+auto cinder_rt_task_block_on_all(uint64_t *const *tasks, uint64_t count)
+    -> uint64_t * {
+  namespace sched = cinder::runtime::scheduler;
+  sched::block_on_all(tasks, static_cast<size_t>(count), sched::pool::io,
+                      sched::native_runner());
+  return nullptr;
 }
 
 auto cinder_rt_task_block_on_any(uint64_t *const *tasks, uint64_t count)

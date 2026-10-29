@@ -4180,7 +4180,8 @@ private:
     auto *polled =
         awaited.kind == semantic::type_kind::tuple_kind
             ? builder_.CreateCall(
-                  runtime_intrinsic("rt_task_await_any_poll"),
+                  runtime_intrinsic(y.awaits_all ? "rt_task_await_all_poll"
+                                                 : "rt_task_await_any_poll"),
                   {generator_self_arg_, *task,
                    llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
                                           awaited.args.size())},

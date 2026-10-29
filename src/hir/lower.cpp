@@ -773,7 +773,7 @@ private:
   /// suspension point, then the check for a cancel that arrived meanwhile.
   [[nodiscard]] auto emit_task_wait(ptr_vec<hir_node> &stmts,
                                     ptr<hir_expr> task, const void *key,
-                                    source_span span)
+                                    source_span span, bool all = false)
       -> std::expected<void, lowering_error>;
   /// `await on(ctx): body`: runs the body as a task on `ctx`'s pool.
   [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
@@ -3957,10 +3957,10 @@ auto lowerer::lower_where(const ast::where_expr &where)
 }
 
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
-                             const void *key, source_span span)
+                             const void *key, source_span span, bool all)
     -> std::expected<void, lowering_error> {
-  stmts.push_back(ptr<hir_node>(
-      make<hir_yield>(span, std::move(task), /*awaiting_task=*/true)));
+  stmts.push_back(ptr<hir_node>(make<hir_yield>(
+      span, std::move(task), /*awaiting_task=*/true, /*awaiting_all=*/all)));
   auto cancel = coroutine_cancel_check(key, span);
   if (!cancel.has_value()) {
     return std::unexpected(cancel.error());
@@ -4173,22 +4173,47 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
                 "`par` did not resolve to a tuple of its branch results");
   }
   const auto unit_type = interning_types().builtin("unit");
+
+  // The tasks as one tuple of task pointers, which is the block of slots the
+  // runtime's wait-for-all reads. If any of them panics the runtime cancels
+  // the rest before it rethrows.
+  auto members = ptr_vec<hir_expr>{};
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    members.push_back(tasks.ref(i));
+  }
+  const auto group_type = interning_types().tuple_of(tasks.types);
+  const auto group_symbol = mint_symbol();
+  setup.push_back(ptr<hir_node>(make<hir_let>(
+      span, group_symbol, std::string("<par tasks>"),
+      ptr<hir_expr>(make<hir_tuple>(span, group_type, std::move(members))))));
+  const auto group_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, group_type, group_symbol,
+                                std::string("<par tasks>"))};
+  };
+  if (in_task) {
+    if (auto waited = emit_task_wait(setup, group_ref(), &await, span,
+                                     /*all=*/true);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+  } else {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(group_ref());
+    args.push_back(ptr<hir_expr>(
+        make<hir_literal>(span, checked_.types.usize_type(),
+                          token_kind::int_lit, std::to_string(tasks.size()))));
+    setup.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_block_on_all",
+                                               unit_type, std::move(args)))));
+  }
   auto elements = ptr_vec<hir_expr>{};
   for (size_t i = 0; i < tasks.size(); ++i) {
-    if (in_task) {
-      if (auto waited = emit_task_wait(setup, tasks.ref(i), &await, span);
-          !waited.has_value()) {
-        return std::unexpected(waited.error());
-      }
-    } else {
-      auto args = ptr_vec<hir_expr>{};
-      args.push_back(tasks.ref(i));
-      args.push_back(default_pool_literal(span));
-      setup.push_back(ptr<hir_node>(
-          make<hir_expr_stmt>(span, runtime_call(span, "rt_task_block_on",
-                                                 unit_type, std::move(args)))));
-    }
-    elements.push_back(tasks.result_of(i, span, result_entry.args[i]));
+    // Read through the tuple, so it is a local the state machine keeps across
+    // the wait above.
+    elements.push_back(ptr<hir_expr>(make<hir_generator_next>(
+        span, result_entry.args[i],
+        ptr<hir_expr>(make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)),
+        /*await_task=*/true)));
   }
   return ptr<hir_expr>(make<hir_tuple>(span, type, std::move(elements)));
 }

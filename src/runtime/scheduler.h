@@ -74,6 +74,18 @@ void block_on(uint64_t *task, pool where, runner how);
 [[nodiscard]] auto await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                   size_t count) -> bool;
 
+/// `await_poll` for a set of tasks that must all finish (`par`): true once
+/// every task in `tasks` has finished, or `self` was cancelled. If one of
+/// them panicked, the others are cancelled and the failure is rethrown.
+/// Otherwise `self` waits on every unfinished task and the step function must
+/// return `status::pending`.
+[[nodiscard]] auto await_all_poll(uint64_t *self, uint64_t *const *tasks,
+                                  size_t count) -> bool;
+
+/// `block_on` for a set of tasks that must all finish: blocks until they
+/// have, or until one panics (cancelling the rest and rethrowing).
+void block_on_all(uint64_t *const *tasks, size_t count, pool where, runner how);
+
 /// `block_on` for a set of tasks: blocks until any one has finished.
 void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 
@@ -108,5 +120,9 @@ auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t;
 auto cinder_rt_task_block_on_any(uint64_t *const *tasks, uint64_t count)
+    -> uint64_t *;
+auto cinder_rt_task_await_all_poll(uint64_t *self, uint64_t *const *tasks,
+                                   uint64_t count) -> uint32_t;
+auto cinder_rt_task_block_on_all(uint64_t *const *tasks, uint64_t count)
     -> uint64_t *;
 }

@@ -8,7 +8,7 @@ The shared runtime that runs tasks on worker threads for both backends. It lives
 
 A task runs in a pool, one per execution context ([The Execution Model](../02-intermediate/26-concurrency-execution-model.md)). The `io` pool has one worker thread, so `io` tasks interleave but do not run in parallel. The `cpu` pool has one worker per hardware thread. `CINDER_IO_WORKERS` and `CINDER_CPU_WORKERS` override the counts; the test harness sets the first to run `io` tasks in parallel. A pool starts its threads when it first has work and keeps them for the life of the process. All scheduling state is behind one mutex, and a step function runs outside it.
 
-Every `async def` is an `io` task today. Nothing starts a task in the `cpu` pool yet, because `on(pool)` is not lowered.
+Every `async def` is an `io` task today. `await on(cpu): ...` starts a task in the `cpu` pool.
 
 ## Task lifecycle
 
@@ -22,7 +22,7 @@ A worker pops a task and calls its step function through the runner the task was
 
 ## Awaiting
 
-`await_poll(self, awaited)` is called by a task's step function at each `await`. It returns true if `awaited` is done (rethrowing its failure if it panicked). Otherwise it queues `awaited` if nothing had started it, adds `self` to its waiters, and returns false, and the step function returns `pending`. On wake the step function resumes at the same `await` and polls again, so a spurious wake is harmless. `await_any_poll` does the same for a set of tasks and is true when any one is done; it backs `race`. `block_on` serves callers that are not tasks, such as the entry `async def main`: it queues the task and blocks the calling thread until it is done.
+`await_poll(self, awaited)` is called by a task's step function at each `await`. It returns true if `awaited` is done (rethrowing its failure if it panicked). Otherwise it queues `awaited` if nothing had started it, adds `self` to its waiters, and returns false, and the step function returns `pending`. On wake the step function resumes at the same `await` and polls again, so a spurious wake is harmless. `await_any_poll` does the same for a set of tasks and is true when any one is done; it backs `race`. `await_all_poll` is true when every task is done; if one has panicked it cancels the others and rethrows. It backs `par`, with `block_on_all` for callers that are not tasks. `block_on` serves callers that are not tasks, such as the entry `async def main`: it queues the task and blocks the calling thread until it is done.
 
 A panic inside a task does not end the process. It is rethrown in the task or function that awaits it, so it propagates up the chain of awaits to the entry function.
 
@@ -36,8 +36,8 @@ A panic inside a task does not end the process. It is rethrown in the task or fu
 
 ## Testing
 
-`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153` run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
+`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153` and `155` (`on(cpu)`) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
 
 ## Not built
 
-`on(pool)` and `crew` are not lowered, so nothing runs in the `cpu` pool and `spawn` is the only way to start a task outside `par`. `par` waits for its branches in order and does not cancel the rest when one fails. `send` and `share` are not checked, so nothing yet stops a program from handing non-shareable data to a task that runs on another thread. There is no event loop behind `io`.
+`crew` is not lowered, and `on` bodies cannot `await`. `par` waits for its branches in order and does not cancel the rest when one fails. `send` and `share` are not checked, so nothing yet stops a program from handing non-shareable data to a task that runs on another thread. There is no event loop behind `io`.

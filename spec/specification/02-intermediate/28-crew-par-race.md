@@ -70,12 +70,13 @@ for err in c.errors():
 
 ## Implementation status
 
-Partial. `par`, `race` and `spawn` work on both backends; `crew` and `on` do not.
+Partial. `par`, `race`, `spawn` and `await on(cpu|pool|io):` work on both backends; `crew` does not.
 
-- `await par: ...` starts every branch task, waits for each in order, and gives the tuple of results. `await race: ...` waits until any branch has finished, gives the first finished one in branch order, and cancels the others. Both work inside a task and in the entry `async def main`. `par` does not yet cancel the remaining branches when one fails: it waits for them in order, and a panic in a later branch is seen only after the earlier ones finish.
+- `await par: ...` starts every branch task, waits for each in order, and gives the tuple of results. `await race: ...` waits until any branch has finished, gives the first finished one in branch order, and cancels the others. Both work inside a task and in the entry `async def main`. If a `par` branch panics, the runtime cancels the other branches and the panic propagates to the awaiting task.
 - `task.spawn()` starts a task without waiting; a later `await` collects its result.
 - All of these run on the `io` pool. With the default single `io` worker they interleave; they run in parallel only when `CINDER_IO_WORKERS` is raised (the stress-test harness does this).
-- `crew`, `on(target)` and `on_error: collect` parse and type-check but are not lowered. A `crew` body is typed as `k_unknown_type` with no `spawn`/`get`/`errors` semantics.
+- `await on(ctx): body` runs the body as a task on that context's pool (`cpu`/`pool` → cpu pool). The body is lowered to a closure and run by a synthesized task function, so it cannot itself `await`, and it has no sender form. Values it captures are copied in; ownership of non-copy captures is not yet checked (step 6 of the threading plan).
+- `crew` and `on_error: collect` parse and type-check but are not lowered. A `crew` body is typed as `k_unknown_type` with no `spawn`/`get`/`errors` semantics.
 - There is no `send`/`share` checking and no crew-scoped borrowing, so nothing yet stops a program from handing data that is not safe to share to a task running on another worker.
 
 ## See also

@@ -3937,7 +3937,9 @@ private:
       emit_register(*count_reg);
       writer_.emit_u32(count_const);
       if (auto polled = emit_runtime_call(
-              "rt_task_await_any_poll", *done_reg,
+              y.awaits_all ? "rt_task_await_all_poll"
+                           : "rt_task_await_any_poll",
+              *done_reg,
               {generator_self_reg_, *task_reg, *count_reg}, y.span);
           !polled.has_value()) {
         return std::unexpected(polled.error());

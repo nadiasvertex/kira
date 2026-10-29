@@ -89,7 +89,7 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 43> known_intrinsics = {{
+inline constexpr std::array<intrinsic_signature, 45> known_intrinsics = {{
     intrinsic("rt_stdin", wire::ptr, {}),
     intrinsic("rt_stdout", wire::ptr, {}),
     intrinsic("rt_stderr", wire::ptr, {}),
@@ -194,6 +194,11 @@ inline constexpr std::array<intrinsic_signature, 43> known_intrinsics = {{
                wire::i64}), // rt_task_await_any_poll (self, tasks, count),
     intrinsic("rt_task_block_on_any", wire::ptr,
               {wire::ptr, wire::i64}), // rt_task_block_on_any (tasks, count),
+    intrinsic("rt_task_await_all_poll", wire::i32,
+              {wire::ptr, wire::ptr,
+               wire::i64}), // rt_task_await_all_poll (self, tasks, count),
+    intrinsic("rt_task_block_on_all", wire::ptr,
+              {wire::ptr, wire::i64}), // rt_task_block_on_all (tasks, count),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,
