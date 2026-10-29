@@ -1480,7 +1480,8 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `cinder::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 43> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
+    k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
