@@ -1076,11 +1076,21 @@ struct hir_continue : hir_stmt {
 /// this does not terminate the enclosing block; lowering/codegen must keep
 /// walking `stmts` after it. `value` is never null — the surface grammar
 /// has no bare `yield` form.
+///
+/// With `awaits` set this is a task's `await` point instead: `value` is the
+/// `task[T, E, C]` being awaited (a local, so it survives the suspension),
+/// and the statement does not hand anything back to the resumer. It polls the
+/// awaited task; if that has not finished, the task suspends with status
+/// `pending` and, when woken, resumes at this same statement to poll again.
+/// Past it the awaited task has finished, and an `awaiting`
+/// `hir_generator_next` reads its result.
 struct hir_yield : hir_stmt {
   ptr<hir_expr> value;
+  bool awaits = false;
 
-  hir_yield(source_span s, ptr<hir_expr> v)
-      : hir_stmt(hir_node_kind::hir_yield, s), value(std::move(v)) {}
+  hir_yield(source_span s, ptr<hir_expr> v, bool awaiting_task = false)
+      : hir_stmt(hir_node_kind::hir_yield, s), value(std::move(v)),
+        awaits(awaiting_task) {}
 };
 
 // ==========================================================================

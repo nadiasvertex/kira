@@ -10,6 +10,7 @@ auto bump_arena::allocate(size_t bytes) -> void * {
   // needs 8-byte alignment, and rounding the request up here means callers
   // never have to think about alignment themselves.
   const auto aligned = (bytes + 7) & ~size_t{7};
+  const auto lock = std::scoped_lock(mutex_);
   if (aligned > remaining_) {
     const auto block_size = aligned > k_block_size ? aligned : k_block_size;
     blocks_.push_back(std::make_unique<std::byte[]>(block_size));

@@ -18,6 +18,11 @@ namespace cinder::runtime {
 ///   reused, which makes a use-after-free in generated code impossible and
 ///   therefore isolates an allocator bug from a codegen bug.
 ///
+/// Both modes are safe to call from any number of threads at once. `system`
+/// inherits that from the C library's allocator; `arena` takes a lock around
+/// each bump. A block is owned by whichever thread holds its pointer: the
+/// allocator guards its own state, not the memory it hands out.
+///
 /// Selected by the `CINDER_ALLOCATOR` environment variable (`system` /
 /// `arena`), read once on first allocation. An unrecognized value is the
 /// default rather than an error: this is a diagnostic knob, and failing a

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace cinder::runtime {
@@ -19,12 +20,16 @@ public:
   auto operator=(const bump_arena &) -> bump_arena & = delete;
 
   /// Returns `bytes` of zeroed, 8-byte-aligned memory that lives for the
-  /// remainder of the process — never reclaimed, never moved.
+  /// remainder of the process — never reclaimed, never moved. Safe to call
+  /// from several threads: the task scheduler's workers (`scheduler.h`)
+  /// allocate concurrently, and this is the one allocation path that is not
+  /// already thread-safe in the C library.
   [[nodiscard]] auto allocate(size_t bytes) -> void *;
 
 private:
   static constexpr size_t k_block_size = 1 << 20; // 1 MiB.
 
+  std::mutex mutex_;
   std::vector<std::unique_ptr<std::byte[]>> blocks_;
   std::byte *current_ = nullptr;
   size_t remaining_ = 0;
@@ -33,9 +38,7 @@ private:
 /// The single arena every heap allocation in a `cinder run`/`cinder build`
 /// process draws from. A function-local static singleton rather than a
 /// context object threaded through the VM/codegen call paths: both tiers
-/// already assume a single-threaded, single-arena-per-process model (no
-/// concurrency story exists yet, per `spec/llm-compiler-roadmap.md`'s "What
-/// Not To Assume Yet"), and `cinder_heap_alloc` (`allocator.h`) needs a plain
+/// already assume a single-arena-per-process model, and `cinder_heap_alloc` (`allocator.h`) needs a plain
 /// C-ABI symbol `llvm_codegen`-compiled IR can call with no context argument.
 ///
 /// This is no longer the only allocation strategy: it is one of the two

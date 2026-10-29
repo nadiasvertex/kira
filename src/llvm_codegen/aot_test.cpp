@@ -134,6 +134,13 @@ auto build_and_run(const fs::path &dir, const std::string &cinder_source)
                         "}\n"
                         "void *cinder_heap_alloc(uint64_t bytes) {\n"
                         "  return calloc(1, bytes);\n"
+                        "}\n"
+                        // Dropping a generator asks the task scheduler
+                        // whether it owns the coroutine first. This stub
+                        // has no scheduler, so nothing is ever scheduled.
+                        "uint32_t cinder_rt_task_cancel(uint64_t *task) {\n"
+                        "  (void)task;\n"
+                        "  return 0;\n"
                         "}\n");
 
   const auto link_command =

@@ -90,6 +90,16 @@ public:
                          std::span<const slot_value> args) const
       -> std::expected<vm_result, panic_reason>;
 
+  /// Runs one poll of a task whose step function is in this module, on the
+  /// calling thread: the task scheduler's workers call this through the
+  /// runner the VM spawns tasks with. Each poll gets its own call frames, so
+  /// any number of threads can poll different tasks of one `vm` at once; the
+  /// module is read-only and `globals_` is the only state they share.
+  /// Returns the step function's status word (`runtime::coroutine::status`).
+  /// A panic in the task is thrown as `panic_error`, for the scheduler to
+  /// record as the task's failure.
+  [[nodiscard]] auto poll_task(uint64_t *task) const -> uint64_t;
+
   /// Runs like `run`, for a host that must survive whatever the program
   /// does: no panic ends the process (`hosted_panic_scope`), the run stops
   /// once `limits` are exceeded, and a failure says where it happened.

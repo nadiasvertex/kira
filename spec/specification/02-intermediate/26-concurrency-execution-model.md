@@ -44,16 +44,16 @@ Cancellation is requested when a sibling in the same `crew` fails (the crew canc
 
 ## Implementation status
 
-Design only, beyond parsing. Concretely, as of this writing:
+Partial. Tasks run on a shared scheduler on both backends; `crew`, `on` and the data-race checks are not built.
 
-- Surface syntax parses completely: `async`, `await` (including `await yield`), `crew`, `par`, `race`, `on`, and the `async` function modifier all lex and parse (`src/parser/ast.h`, `parser.cpp:3424`–`4512`).
-- The checker types an `async def` call as `task[T, E, io]` (`E` is `never` unless the body returns `result[T, E]`), and `await` unwraps it to `T`, or to `result[T, E]` for a fallible task. `await` outside an `async` function is an error. Awaiting a task whose context differs from the current one (`io` in an `async def`, switched by an enclosing `on(pool)` or `on(io)`) is an error. Only the built-in `io` and `cpu` contexts are checked; user-defined contexts and `task` annotations in other positions are not modeled (`infer_await`, `context_of_on_target` in `src/semantic/check_expr.cpp`).
-- A `crew` body is still typed as `k_unknown_type` (`check_expr.cpp`). There is no `send`/`share` checking and no crew-scoped borrow rules.
-- `src/hir/nodes.h` lists concurrency forms as unsupported; lowering rejects them.
-- Neither runtime backend (the bytecode VM in `src/bytecode/vm.cpp`, the AOT runtime in `src/llvm_codegen/aot_runtime.cpp` + `src/runtime/`) has a scheduler, event loop, threads, or synchronization primitives.
-- `src/std/` has no `task`, `channel`, `watch`, `shared`, `mutex`, `rwlock`, or `atomic`.
-
-The coroutine transform this chapter's `task` semantics are meant to build on (state machine with a `resume_index` and heap state block) does already exist end-to-end for `generator def` — see [`async`/`await` and Generators](27-async-await-and-generators.md#implementation-status).
+- Surface syntax parses completely: `async`, `await` (including `await yield`), `crew`, `par`, `race`, `on`, and the `async` function modifier all lex and parse (`src/parser/ast.h`).
+- The checker types an `async def` call as `task[T, E, io]` (`E` is `never` unless the body returns `result[T, E]`), and `await` unwraps it to `T`, or to `result[T, E]` for a fallible task. `await par:` unwraps each branch into a tuple. `await` outside an `async` function is an error. Awaiting a task whose context differs from the current one (`io` in an `async def`, switched by an enclosing `on(pool)` or `on(io)`) is an error. Only the built-in `io` and `cpu` contexts are checked; user-defined contexts and `task` annotations in other positions are not modeled (`infer_await`, `awaited_type`, `context_of_on_target` in `src/semantic/check_expr.cpp`).
+- Tasks are scheduled by a runtime shared by the VM and the AOT/JIT tiers ([The Task Scheduler](../05-implementation/69-task-scheduler.md)). The `io` pool has one worker; the `cpu` pool has one per hardware thread. An `await` inside a task suspends it until the awaited task finishes, and a panic in a task is rethrown in whoever awaits it. Cancelling a task the scheduler owns is cooperative, as described above.
+- Nothing runs in the `cpu` pool yet. `on` is not lowered, so the only way onto it is closed.
+- A `crew` body is still typed as `k_unknown_type` (`check_expr.cpp`) and is not lowered.
+- There is no `send`/`share` checking and no crew-scoped borrow rules.
+- There is no event loop behind `io`. `io` tasks run on the single-worker driver.
+- `src/std/` has no `channel`, `watch`, `mutex`, `rwlock`, or `atomic` module. `shared[T]` and the `std.mem` atomics exist.
 
 ## See also
 

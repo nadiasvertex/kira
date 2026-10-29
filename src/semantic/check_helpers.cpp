@@ -40,7 +40,8 @@ auto builtin_method_owner(const type_entry &object) -> std::string_view {
     return object.name;
   }
   if (object.name == "option" || object.name == "result" ||
-      object.name == "generator" || object.name == "uninit") {
+      object.name == "generator" || object.name == "task" ||
+      object.name == "uninit") {
     return object.name;
   }
   return {};

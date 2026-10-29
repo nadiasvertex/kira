@@ -24,6 +24,7 @@
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/platform_query.h"
+#include "src/runtime/scheduler.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
 
@@ -1258,6 +1259,85 @@ auto intrinsic_rt_free(std::span<const slot_value> args) -> slot_value {
   return slot_value{};                                              // `unit`
 }
 
+/// The `vm` whose `execute` is running on this thread, so a task intrinsic
+/// can hand the scheduler a runner that polls tasks on the same module.
+thread_local const vm *g_current_vm = nullptr;
+
+/// Makes `v` the current `vm` for the lifetime of the scope.
+class current_vm_scope {
+public:
+  explicit current_vm_scope(const vm *v) : saved_(g_current_vm) {
+    g_current_vm = v;
+  }
+  current_vm_scope(const current_vm_scope &) = delete;
+  auto operator=(const current_vm_scope &) -> current_vm_scope & = delete;
+  current_vm_scope(current_vm_scope &&) = delete;
+  auto operator=(current_vm_scope &&) -> current_vm_scope & = delete;
+  ~current_vm_scope() { g_current_vm = saved_; }
+
+private:
+  const vm *saved_;
+};
+
+auto run_task_on_vm(void *context, uint64_t *task) -> uint64_t {
+  return static_cast<const vm *>(context)->poll_task(task);
+}
+
+[[nodiscard]] auto current_task_runner() -> cinder::runtime::scheduler::runner {
+  return {.run = run_task_on_vm, .context = const_cast<vm *>(g_current_vm)};
+}
+
+[[nodiscard]] auto task_of(slot_value v) -> uint64_t * {
+  return reinterpret_cast<uint64_t *>(v.u); // NOLINT
+}
+
+auto intrinsic_rt_task_block_on(std::span<const slot_value> args)
+    -> slot_value {
+  cinder::runtime::scheduler::block_on(
+      task_of(args[0]),
+      static_cast<cinder::runtime::scheduler::pool>(args[1].u),
+      current_task_runner());
+  return slot_value{}; // `unit`
+}
+
+auto intrinsic_rt_task_await_poll(std::span<const slot_value> args)
+    -> slot_value {
+  return store_bool(cinder::runtime::scheduler::await_poll(task_of(args[0]),
+                                                           task_of(args[1])));
+}
+
+auto intrinsic_rt_task_spawn(std::span<const slot_value> args) -> slot_value {
+  cinder::runtime::scheduler::spawn(
+      task_of(args[0]), static_cast<cinder::runtime::scheduler::pool>(args[1].u),
+      current_task_runner());
+  return slot_value{}; // `unit`
+}
+
+auto intrinsic_rt_task_cancel(std::span<const slot_value> args) -> slot_value {
+  return store_bool(cinder::runtime::scheduler::cancel(task_of(args[0])));
+}
+
+auto intrinsic_rt_task_is_finished(std::span<const slot_value> args)
+    -> slot_value {
+  return store_bool(cinder::runtime::scheduler::is_finished(task_of(args[0])));
+}
+
+auto intrinsic_rt_task_await_any_poll(std::span<const slot_value> args)
+    -> slot_value {
+  return store_bool(cinder::runtime::scheduler::await_any_poll(
+      task_of(args[0]), reinterpret_cast<uint64_t *const *>(args[1].u), // NOLINT
+      static_cast<size_t>(args[2].u)));
+}
+
+auto intrinsic_rt_task_block_on_any(std::span<const slot_value> args)
+    -> slot_value {
+  cinder::runtime::scheduler::block_on_any(
+      reinterpret_cast<uint64_t *const *>(args[0].u), // NOLINT
+      static_cast<size_t>(args[1].u), cinder::runtime::scheduler::pool::io,
+      current_task_runner());
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1388,7 +1468,10 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_write" || name == "rt_flush" || name == "rt_uname" ||
          name == "rt_gethostname" || name == "rt_processor_name" ||
          name == "rt_libc_version" || name == "rt_windows_version" ||
-         name == "rt_macos_version";
+         name == "rt_macos_version" || name == "rt_task_block_on" ||
+         name == "rt_task_await_poll" || name == "rt_task_spawn" ||
+         name == "rt_task_cancel" || name == "rt_task_is_finished" ||
+         name == "rt_task_await_any_poll" || name == "rt_task_block_on_any";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1397,7 +1480,7 @@ using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
 /// the exact order of `cinder::known_intrinsic_names` (src/intrinsics.h),
 /// which is also the order the semantic checker validated `intrinsic def`
 /// names against.
-constexpr std::array<intrinsic_fn, 36> k_intrinsics = {{
+constexpr std::array<intrinsic_fn, 43> k_intrinsics = {{
     intrinsic_rt_stdin,
     intrinsic_rt_stdout,
     intrinsic_rt_stderr,
@@ -1434,6 +1517,13 @@ constexpr std::array<intrinsic_fn, 36> k_intrinsics = {{
     intrinsic_rt_alloc,
     intrinsic_rt_realloc,
     intrinsic_rt_free,
+    intrinsic_rt_task_block_on,
+    intrinsic_rt_task_await_poll,
+    intrinsic_rt_task_spawn,
+    intrinsic_rt_task_cancel,
+    intrinsic_rt_task_is_finished,
+    intrinsic_rt_task_await_any_poll,
+    intrinsic_rt_task_block_on_any,
 }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
@@ -1451,6 +1541,20 @@ auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
   return *result;
 }
 
+auto vm::poll_task(uint64_t *task) const -> uint64_t {
+  namespace co = cinder::runtime::coroutine;
+  const auto step_function = static_cast<uint16_t>(task[co::k_step_function_slot]);
+  const std::array<slot_value, co::k_step_arg_count> args = {
+      slot_value{task[co::k_state_ptr_slot]},
+      slot_value{task[co::k_resume_index_slot]},
+      slot_value{reinterpret_cast<uint64_t>(task)}}; // NOLINT
+  auto result = execute(step_function, args, run_limits{});
+  if (!result.has_value()) {
+    throw panic_error(result.error().reason, result.error().message);
+  }
+  return result->value.u;
+}
+
 auto vm::run_hosted(uint16_t function_index, std::span<const slot_value> args,
                     const run_limits &limits) const
     -> std::expected<vm_result, vm_failure> {
@@ -1461,6 +1565,10 @@ auto vm::run_hosted(uint16_t function_index, std::span<const slot_value> args,
 auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                  const run_limits &limits) const
     -> std::expected<vm_result, vm_failure> {
+  // The shared part of the VM is `module_` and `globals_`; everything an
+  // execution mutates (its frames and counters) is local to this call, so
+  // concurrent task polls never touch each other's state.
+  const auto current = current_vm_scope(this);
   std::vector<frame> frames;
   auto steps = uint64_t{0};
   // The start of the instruction running now, which is where a failure in
@@ -1947,6 +2055,24 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         frames.back().registers[result_reg] = result;
         continue;
       }
+      case opcode::op_await_pending: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto task_reg = ops.reg();
+        const auto next_resume_index = ops.imm8();
+        f.pc = ops.pos();
+        slots_of(f.registers[task_reg])[runtime::coroutine::k_resume_index_slot] =
+            slot_value{static_cast<uint64_t>(next_resume_index)};
+        const slot_value result{
+            runtime::coroutine::raw(runtime::coroutine::status::pending)};
+        const bool has_caller = f.has_caller;
+        const auto result_reg = f.result_reg;
+        frames.pop_back();
+        if (!has_caller) {
+          return vm_result{.has_value = true, .value = result};
+        }
+        frames.back().registers[result_reg] = result;
+        continue;
+      }
       case opcode::op_coroutine_resume: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();
@@ -1974,6 +2100,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         auto *gen_slots = slots_of(f.registers[generator_reg]);
         if (gen_slots[runtime::coroutine::k_status_slot].u !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
+          f.registers[dst] = slot_value{};
+          break;
+        }
+        // A task the scheduler owns may be queued or running on another
+        // thread, so its owner unwinds it; anything else is resumed here.
+        if (cinder::runtime::scheduler::cancel(
+                reinterpret_cast<uint64_t *>(gen_slots))) { // NOLINT
           f.registers[dst] = slot_value{};
           break;
         }

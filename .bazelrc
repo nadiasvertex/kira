@@ -38,6 +38,15 @@ build:debug --compilation_mode=dbg
 build:debug --cxxopt=-O0
 build:debug --cxxopt=-g
 
+# ThreadSanitizer, for the task scheduler and the code that runs on its
+# workers: `bazelisk test --config=tsan //src/runtime:scheduler_test
+# //src:codegen_stress_test`.
+build:tsan --copt=-fsanitize=thread
+build:tsan --linkopt=-fsanitize=thread
+build:tsan --copt=-g
+build:tsan --copt=-O1
+build:tsan --strip=never
+
 # Release configuration
 build:release --compilation_mode=opt
 build:release --cxxopt=-O3

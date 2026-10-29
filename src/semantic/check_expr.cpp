@@ -1214,13 +1214,31 @@ auto checker::infer_await(const ast::await_expr &expr) -> type_id {
                     "task from a `crew`.");
   }
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
-  const auto &entry = session_.types_.entry(operand);
+  // `await par:` waits for every branch and gives a tuple of their results.
+  if (expr.operand->kind == ast::node_kind::par_expr &&
+      session_.types_.entry(operand).kind == type_kind::tuple_kind) {
+    auto results = std::vector<type_id>{};
+    for (const auto branch : session_.types_.entry(operand).args) {
+      results.push_back(awaited_type(branch, expr.span));
+    }
+    return session_.types_.tuple_of(std::move(results));
+  }
+  return awaited_type(operand, expr.span);
+}
+
+/// What awaiting a value of type `operand` produces: for a `task[T, E, C]`,
+/// `result[T, E]` (or plain `T` when the task cannot fail), after checking
+/// that the awaiting code runs on the task's context. Any other operand type
+/// passes through unchanged, since full task/context typing is not yet
+/// modeled.
+auto checker::awaited_type(type_id operand, source_span span) -> type_id {
+  const auto &entry = session_.types_.entry(strip_refs(operand));
   if (entry.kind == type_kind::builtin_generic_kind && entry.name == "task") {
     if (entry.args.size() == 3 && function_.async_context_ != k_unknown_type &&
         !session_.types_.is_unknown(entry.args[2]) &&
         entry.args[2] != function_.async_context_) {
       error_with_help(
-          expr.span,
+          span,
           std::format("this task needs the `{}` context, but the code "
                       "awaiting it runs on `{}`",
                       session_.types_.display(entry.args[2]),

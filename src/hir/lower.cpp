@@ -24,6 +24,7 @@
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/scheduler.h"
 #include "src/semantic/checker_results.h"
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
@@ -32,6 +33,12 @@
 namespace cinder::hir {
 
 namespace {
+
+constexpr const char *k_conditional_await_message =
+    "an `await` that is evaluated conditionally or repeatedly (the right "
+    "side of `&&`/`||`, an `elif` condition, a loop condition, a match guard, "
+    "or inside an `if`/`match` that produces a value) is not lowered yet; "
+    "await into a `let` first";
 
 using semantic::checked_types;
 using semantic::k_error_type;
@@ -739,6 +746,64 @@ private:
   /// `yield`).
   [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span)
       -> std::expected<ptr<hir_node>, lowering_error>;
+  /// The type table, for the few types lowering interns that checking never
+  /// had occasion to (`unit` results of runtime calls, `option[T]`, the tuple
+  /// of a `race`'s tasks). Lowering runs after checking is complete, so this
+  /// only adds entries; it never changes one checking already decided.
+  [[nodiscard]] auto interning_types() const -> semantic::type_table & {
+    return const_cast<semantic::type_table &>(checked_.types);
+  }
+  /// A call to the runtime intrinsic `name` — one the compiler emits itself
+  /// rather than one written in source — typed `result`.
+  [[nodiscard]] auto runtime_call(source_span span, std::string_view name,
+                                  type_id result, ptr_vec<hir_expr> args)
+      -> ptr<hir_expr> {
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, k_unknown_type, resolve_reference(name), std::string(name)));
+    return {make<hir_call>(span, result, std::move(callee), std::move(args))};
+  }
+  /// The pool every task is spawned on until `on` selects one.
+  [[nodiscard]] auto default_pool_literal(source_span span) -> ptr<hir_expr> {
+    return {make<hir_literal>(
+        span, checked_.types.usize_type(), token_kind::int_lit,
+        std::to_string(static_cast<uint64_t>(runtime::scheduler::pool::io)))};
+  }
+  /// Appends the statements that wait for `task` inside a task body: the
+  /// suspension point, then the check for a cancel that arrived meanwhile.
+  [[nodiscard]] auto emit_task_wait(ptr_vec<hir_node> &stmts,
+                                    ptr<hir_expr> task, const void *key,
+                                    source_span span)
+      -> std::expected<void, lowering_error>;
+  /// The tasks of an `await par:`/`await race:`, each held in a local.
+  struct group_tasks {
+    std::vector<symbol_id> symbols;
+    std::vector<type_id> types;
+    std::vector<source_span> spans;
+    [[nodiscard]] auto size() const -> size_t { return symbols.size(); }
+    [[nodiscard]] auto ref(size_t i) const -> ptr<hir_expr> {
+      return {make<hir_local_ref>(spans[i], types[i], symbols[i],
+                                  std::string("<group task>"))};
+    }
+    [[nodiscard]] auto result_of(size_t i, source_span span, type_id result)
+        const -> ptr<hir_expr> {
+      return {make<hir_generator_next>(span, result, ref(i),
+                                       /*await_task=*/true)};
+    }
+  };
+  /// `await par: ...` / `await race: ...` — see their definitions.
+  [[nodiscard]] auto lower_await_group(const ast::await_expr &await,
+                                       type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_par_results(ptr_vec<hir_node> &setup,
+                                       const group_tasks &tasks,
+                                       const ast::await_expr &await,
+                                       type_id type, bool in_task)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_race_result(ptr_vec<hir_node> &setup,
+                                       const group_tasks &tasks,
+                                       const ast::await_expr &await,
+                                       type_id type, bool in_task)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   /// The same, for a `break`/`continue`/`return` or the failure path of a
   /// `?` leaving early: every scope it passes through, innermost first.
   [[nodiscard]] auto emit_jump_drops(const ast::node &node,
@@ -1064,7 +1129,7 @@ private:
   [[nodiscard]] auto task_type_of(type_id declared) -> type_id {
     // The checker already interned `task`, `never` and `io` for this
     // function's signature; interning here only finds them again.
-    auto &types = const_cast<semantic::type_table &>(checked_.types);
+    auto &types = interning_types();
     const auto &entry = types.entry(declared);
     const auto is_result = entry.kind == type_kind::builtin_generic_kind &&
                            entry.name == "result" && entry.args.size() == 2;
@@ -1090,7 +1155,7 @@ private:
       stmts.pop_back();
     } else {
       value = ptr<hir_expr>(make<hir_literal>(
-          span, const_cast<semantic::type_table &>(checked_.types).builtin("unit"),
+          span, interning_types().builtin("unit"),
           token_kind::kw_unit, "unit"));
     }
     auto exit = lower_return_value(span, std::move(value));
@@ -1302,6 +1367,49 @@ private:
   /// True while lowering an `async def` body, where `return v` means "yield
   /// `v` as the task's one result, then finish". Cleared inside a lambda.
   bool in_task_body_ = false;
+  /// Where an `await` inside the statement being lowered puts the statements
+  /// that wait for its task, which must run before the statement does: an
+  /// `await` is a suspension point, and a suspension point is a statement.
+  /// Null outside a task body.
+  ptr_vec<hir_node> *await_hoist_ = nullptr;
+  /// How many enclosing constructs evaluate the expression being lowered
+  /// conditionally or repeatedly (the right side of `&&`, an `elif`
+  /// condition, a loop condition). An `await` there cannot be hoisted ahead
+  /// of the statement without changing when it runs.
+  int conditional_depth_ = 0;
+  /// How many enclosing `if`/`match` expressions produce a value. A task
+  /// cannot suspend inside one, because the backends compile such a branch as
+  /// an expression rather than as a statement list, so an `await` there is
+  /// refused (`await_cannot_hoist`).
+  int value_branch_depth_ = 0;
+  [[nodiscard]] auto await_cannot_hoist() const -> bool {
+    return await_hoist_ == nullptr || conditional_depth_ > 0 ||
+           value_branch_depth_ > 0;
+  }
+  /// Marks the expressions lowered while it lives as conditionally or
+  /// repeatedly evaluated (`conditional_depth_`).
+  class conditional_scope {
+  public:
+    explicit conditional_scope(lowerer &owner, bool active = true)
+        : owner_(owner), active_(active) {
+      if (active_) {
+        ++owner_.conditional_depth_;
+      }
+    }
+    conditional_scope(const conditional_scope &) = delete;
+    auto operator=(const conditional_scope &) -> conditional_scope & = delete;
+    conditional_scope(conditional_scope &&) = delete;
+    auto operator=(conditional_scope &&) -> conditional_scope & = delete;
+    ~conditional_scope() {
+      if (active_) {
+        --owner_.conditional_depth_;
+      }
+    }
+
+  private:
+    lowerer &owner_;
+    bool active_;
+  };
   /// The callee's parameter names while a default-value expression is being
   /// lowered at a call site (`lower_default_argument`), null otherwise.
   ///
@@ -1502,7 +1610,9 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
+    ++value_branch_depth_;
     auto lowered = lower_if(if_e.branches, if_e.else_body, if_e.span, *type);
+    --value_branch_depth_;
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -1518,8 +1628,10 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
+    ++value_branch_depth_;
     auto lowered =
         lower_match(*match_e.subject, match_e.arms, match_e.span, *type);
+    --value_branch_depth_;
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -1578,12 +1690,49 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
+    if (await.operand->kind == ast::node_kind::par_expr ||
+        await.operand->kind == ast::node_kind::race_expr) {
+      return lower_await_group(await, *type);
+    }
+    auto task_type = checked_type_of(*await.operand);
+    if (!task_type.has_value()) {
+      return std::unexpected(task_type.error());
+    }
     auto task = lower_expr(*await.operand);
     if (!task.has_value()) {
       return std::unexpected(task.error());
     }
-    return ok_expr(make<hir_generator_next>(expr.span, *type,
-                                            std::move(*task),
+    if (!in_task_body_) {
+      // An ordinary function (the entry `async def main`) has no state
+      // machine to suspend: it blocks the calling thread until the task is
+      // done.
+      return ok_expr(make<hir_generator_next>(expr.span, *type,
+                                              std::move(*task),
+                                              /*await_task=*/true));
+    }
+    if (await_cannot_hoist()) {
+      return fail(lowering_error_kind::unsupported_construct, expr.span,
+                  k_conditional_await_message);
+    }
+    // `await e` waits for `e` in statements ahead of the one that uses its
+    // result:  let t = e;  <wait for t>;  <cancel check>  and the expression
+    // itself becomes a read of `t`'s result. The wait is a suspension point,
+    // so `t` is a local that the state machine saves across it.
+    const auto task_symbol = mint_symbol();
+    const auto task_span = await.operand->span;
+    const auto task_ref = [&, task_symbol]() -> ptr<hir_expr> {
+      return {make<hir_local_ref>(task_span, *task_type, task_symbol,
+                                  std::string("<await task>"))};
+    };
+    await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
+        task_span, task_symbol, std::string("<await task>"),
+        std::move(*task))));
+    if (auto waited =
+            emit_task_wait(*await_hoist_, task_ref(), &expr, expr.span);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+    return ok_expr(make<hir_generator_next>(expr.span, *type, task_ref(),
                                             /*await_task=*/true));
   }
   default:
@@ -1936,7 +2085,13 @@ auto lowerer::lower_binary(const ast::binary_expr &bin)
   if (!lhs.has_value()) {
     return std::unexpected(lhs.error());
   }
-  auto rhs = lower_expr(*bin.rhs);
+  auto rhs = [&] {
+    // The right side of `&&`/`||` is skipped when the left decides the answer.
+    const auto short_circuited = conditional_scope(
+        *this, bin.op == ast::binary_op::logical_and ||
+                   bin.op == ast::binary_op::logical_or);
+    return lower_expr(*bin.rhs);
+  }();
   if (!rhs.has_value()) {
     return std::unexpected(rhs.error());
   }
@@ -2285,6 +2440,29 @@ auto lowerer::lower_call(const ast::call_expr &call)
       // `src/bytecode/vm.cpp`), so this is a pure type-level reinterpret —
       // the `str` value lowers completely unchanged.
       return lower_receiver(*field.object);
+    }
+    if (field.object != nullptr && field.field_name == "spawn" &&
+        call.args.empty()) {
+      const auto object_type = receiver_type_of(*field.object);
+      if (object_type.has_value()) {
+        auto stripped = *object_type;
+        while (checked_.types.entry(stripped).kind == type_kind::ref_kind) {
+          stripped = checked_.types.entry(stripped).result;
+        }
+        const auto &object_entry = checked_.types.entry(stripped);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            object_entry.name == "task") {
+          auto object = lower_receiver(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          auto args = ptr_vec<hir_expr>{};
+          args.push_back(std::move(*object));
+          args.push_back(default_pool_literal(call.span));
+          return ok_expr(runtime_call(call.span, "rt_task_spawn", *type,
+                                      std::move(args)));
+        }
+      }
     }
     if (field.object != nullptr && field.field_name == "next") {
       auto object_type = receiver_type_of(*field.object);
@@ -3773,6 +3951,215 @@ auto lowerer::lower_where(const ast::where_expr &where)
   return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
 }
 
+auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
+                             const void *key, source_span span)
+    -> std::expected<void, lowering_error> {
+  stmts.push_back(ptr<hir_node>(
+      make<hir_yield>(span, std::move(task), /*awaiting_task=*/true)));
+  auto cancel = coroutine_cancel_check(key, span);
+  if (!cancel.has_value()) {
+    return std::unexpected(cancel.error());
+  }
+  stmts.push_back(std::move(*cancel));
+  return {};
+}
+
+/// `await par: a b c` runs the branch tasks concurrently and gives the tuple
+/// of their results; `await race: a b c` gives the first result to arrive
+/// and cancels the rest. Both desugar like a single `await` does: each branch
+/// task goes into a local, the waiting happens in statements ahead of the
+/// one that uses the result, and the expression is left reading finished
+/// tasks.
+///
+///   par:   spawn every task; wait for each in turn; (r0, r1, ...)
+///   race:  spawn every task; wait until any has finished; read the first
+///          finished one in branch order; cancel the others
+///
+/// Outside a task body (the entry `async def main`) the waits block the
+/// calling thread instead.
+auto lowerer::lower_await_group(const ast::await_expr &await, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto is_par = await.operand->kind == ast::node_kind::par_expr;
+  const auto &branches =
+      is_par ? ast::cast<const ast::par_expr>(*await.operand).branches
+             : ast::cast<const ast::race_expr>(*await.operand).branches;
+  if (branches.empty()) {
+    return fail(lowering_error_kind::unsupported_construct, await.span,
+                "`par`/`race` needs at least one task");
+  }
+  const auto in_task = in_task_body_;
+  if (in_task && await_cannot_hoist()) {
+    return fail(lowering_error_kind::unsupported_construct, await.span,
+                k_conditional_await_message);
+  }
+  // Outside a task there is no statement list to hoist into, so the setup
+  // runs inside a block expression whose tail is the result.
+  auto local_setup = ptr_vec<hir_node>{};
+  auto &setup = in_task ? *await_hoist_ : local_setup;
+
+  const auto span = await.span;
+  auto tasks = group_tasks{};
+  for (const auto &branch : branches) {
+    if (branch == nullptr) {
+      return fail(lowering_error_kind::unsupported_construct, span,
+                  "`par`/`race` has a missing branch");
+    }
+    auto branch_type = checked_type_of(*branch);
+    if (!branch_type.has_value()) {
+      return std::unexpected(branch_type.error());
+    }
+    auto task = lower_expr(*branch);
+    if (!task.has_value()) {
+      return std::unexpected(task.error());
+    }
+    const auto symbol = mint_symbol();
+    tasks.symbols.push_back(symbol);
+    tasks.types.push_back(*branch_type);
+    tasks.spans.push_back(branch->span);
+    setup.push_back(ptr<hir_node>(make<hir_let>(
+        branch->span, symbol, std::string("<group task>"), std::move(*task))));
+  }
+
+  // Every branch starts before the first wait, so they overlap.
+  const auto unit_type = interning_types().builtin("unit");
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(tasks.ref(i));
+    args.push_back(default_pool_literal(span));
+    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_task_spawn", unit_type,
+                           std::move(args)))));
+  }
+
+  auto result = is_par ? lower_par_results(setup, tasks, await, type, in_task)
+                       : lower_race_result(setup, tasks, await, type, in_task);
+  if (!result.has_value() || in_task) {
+    return result;
+  }
+  local_setup.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*result))));
+  return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
+}
+
+/// `par`: wait for each task in turn; the result is the tuple of their
+/// results.
+auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
+                                const group_tasks &tasks,
+                                const ast::await_expr &await, type_id type,
+                                bool in_task)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto span = await.span;
+  const auto &result_entry = checked_.types.entry(type);
+  if (result_entry.kind != type_kind::tuple_kind ||
+      result_entry.args.size() != tasks.size()) {
+    return fail(lowering_error_kind::unresolved_type, span,
+                "`par` did not resolve to a tuple of its branch results");
+  }
+  const auto unit_type = interning_types().builtin("unit");
+  auto elements = ptr_vec<hir_expr>{};
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    if (in_task) {
+      if (auto waited = emit_task_wait(setup, tasks.ref(i), &await, span);
+          !waited.has_value()) {
+        return std::unexpected(waited.error());
+      }
+    } else {
+      auto args = ptr_vec<hir_expr>{};
+      args.push_back(tasks.ref(i));
+      args.push_back(default_pool_literal(span));
+      setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+          span, runtime_call(span, "rt_task_block_on", unit_type,
+                             std::move(args)))));
+    }
+    elements.push_back(tasks.result_of(i, span, result_entry.args[i]));
+  }
+  return ptr<hir_expr>(make<hir_tuple>(span, type, std::move(elements)));
+}
+
+/// `race`: wait until any task has finished, read the first finished one in
+/// branch order, and cancel them all (a finished task ignores the cancel).
+auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
+                                const group_tasks &tasks,
+                                const ast::await_expr &await, type_id type,
+                                bool in_task)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto span = await.span;
+  const auto unit_type = interning_types().builtin("unit");
+  const auto bool_type = checked_.types.bool_type();
+
+  // The tasks as one tuple of task pointers, which is the block of slots the
+  // runtime's wait-for-any reads.
+  auto members = ptr_vec<hir_expr>{};
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    members.push_back(tasks.ref(i));
+  }
+  const auto group_type = interning_types().tuple_of(tasks.types);
+  const auto group_symbol = mint_symbol();
+  setup.push_back(ptr<hir_node>(make<hir_let>(
+      span, group_symbol, std::string("<race tasks>"),
+      ptr<hir_expr>(make<hir_tuple>(span, group_type, std::move(members))))));
+  const auto group_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, group_type, group_symbol,
+                                std::string("<race tasks>"))};
+  };
+
+  if (in_task) {
+    if (auto waited = emit_task_wait(setup, group_ref(), &await, span);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+  } else {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(group_ref());
+    args.push_back(ptr<hir_expr>(make<hir_literal>(
+        span, checked_.types.usize_type(), token_kind::int_lit,
+        std::to_string(tasks.size()))));
+    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_task_block_on_any", unit_type,
+                           std::move(args)))));
+  }
+
+  // The first finished branch in source order wins.
+  const auto read_branch = [&](size_t i) -> ptr<hir_block> {
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, tasks.result_of(i, span, type))));
+    return make<hir_block>(span, type, std::move(stmts));
+  };
+  auto picks = std::vector<hir_if_branch>{};
+  for (size_t i = 0; i + 1 < tasks.size(); ++i) {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(tasks.ref(i));
+    picks.push_back(hir_if_branch{
+        .condition = runtime_call(span, "rt_task_is_finished", bool_type,
+                                  std::move(args)),
+        .body = read_branch(i)});
+  }
+  auto last = read_branch(tasks.size() - 1);
+  auto pick = ptr<hir_expr>{};
+  if (picks.empty()) {
+    pick = std::move(last);
+  } else {
+    pick = make<hir_if>(span, type, std::move(picks), std::move(last));
+  }
+  const auto winner = mint_symbol();
+  setup.push_back(ptr<hir_node>(make<hir_let>(
+      span, winner, std::string("<race winner>"), std::move(pick))));
+
+  // Cancel through the tuple, so the tasks are a local the state machine
+  // keeps across the wait above.
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(ptr<hir_expr>(
+        make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_task_cancel", bool_type,
+                           std::move(args)))));
+  }
+  return ptr<hir_expr>(
+      make<hir_local_ref>(span, type, winner, std::string("<race winner>")));
+}
+
 auto lowerer::lower_try(const ast::try_expr &try_expr)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   // `x?` desugars to a two-arm match on the wrapper's runtime tag:
@@ -4304,6 +4691,18 @@ auto lowerer::lower_tail_control_flow_stmt(const ast::node &node, type_id type)
       make<hir_expr_stmt>(match_s.span, ptr<hir_expr>(std::move(*lowered))));
 }
 
+/// Puts the statements an `await` hoisted out of a statement ahead of the
+/// statement's own nodes.
+void prepend_hoisted(ptr_vec<hir_node> &hoisted, ptr_vec<hir_node> &lowered) {
+  if (hoisted.empty()) {
+    return;
+  }
+  for (auto &node : lowered) {
+    hoisted.push_back(std::move(node));
+  }
+  lowered = std::move(hoisted);
+}
+
 auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
                           source_span span, type_id type)
     -> std::expected<ptr<hir_block>, lowering_error> {
@@ -4347,7 +4746,16 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
     if (last_index.has_value() && i == *last_index &&
         (stmt_ptr->kind == ast::node_kind::if_stmt ||
          stmt_ptr->kind == ast::node_kind::match_stmt)) {
-      auto tail = lower_tail_control_flow_stmt(*stmt_ptr, type);
+      auto hoisted = ptr_vec<hir_node>{};
+      auto tail = [&] {
+        const auto enclosing_hoist =
+            std::exchange(await_hoist_, in_task_body_ ? &hoisted : nullptr);
+        const auto enclosing_depth = std::exchange(conditional_depth_, 0);
+        auto result = lower_tail_control_flow_stmt(*stmt_ptr, type);
+        await_hoist_ = enclosing_hoist;
+        conditional_depth_ = enclosing_depth;
+        return result;
+      }();
       if (!tail.has_value()) {
         pop_scope();
         return std::unexpected(tail.error());
@@ -4355,14 +4763,27 @@ auto lowerer::lower_block(const std::vector<ast::ptr<ast::node>> &stmts,
       if ((*tail)->origin == nullptr) {
         (*tail)->origin = stmt_ptr.get();
       }
+      for (auto &node : hoisted) {
+        lowered_stmts.push_back(std::move(node));
+      }
       lowered_stmts.push_back(std::move(*tail));
       continue;
     }
-    auto lowered = lower_stmt(*stmt_ptr);
+    auto hoisted = ptr_vec<hir_node>{};
+    auto lowered = [&] {
+      const auto enclosing_hoist =
+          std::exchange(await_hoist_, in_task_body_ ? &hoisted : nullptr);
+      const auto enclosing_depth = std::exchange(conditional_depth_, 0);
+      auto result = lower_stmt(*stmt_ptr);
+      await_hoist_ = enclosing_hoist;
+      conditional_depth_ = enclosing_depth;
+      return result;
+    }();
     if (!lowered.has_value()) {
       pop_scope();
       return std::unexpected(lowered.error());
     }
+    prepend_hoisted(hoisted, *lowered);
     if (!lowered->empty() && lowered->front()->origin == nullptr) {
       lowered->front()->origin = stmt_ptr.get();
     }
@@ -4843,7 +5264,10 @@ auto lowerer::lower_stmt(const ast::node &node)
       return fail(lowering_error_kind::unsupported_construct, while_s.span,
                   "while loop has no condition");
     }
-    auto condition = lower_expr(*while_s.condition);
+    auto condition = [&] {
+      const auto repeated = conditional_scope(*this);
+      return lower_expr(*while_s.condition);
+    }();
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
@@ -4995,6 +5419,8 @@ auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
                              const std::vector<ast::ptr<ast::node>> &else_body,
                              size_t index, source_span span, type_id type)
     -> std::expected<ptr<hir_expr>, lowering_error> {
+  // Everything past the first branch only runs when the earlier ones fail.
+  const auto later_branch = conditional_scope(*this, index > 0);
   if (branches[index].let_pattern != nullptr) {
     return lower_if_let_chain(branches, else_body, index, span, type);
   }
@@ -5012,7 +5438,10 @@ auto lowerer::lower_if_chain(const std::vector<ast::if_branch> &branches,
       return fail(lowering_error_kind::unsupported_construct, branch.span,
                   "if branch is missing a condition");
     }
-    auto condition = lower_expr(*branch.condition);
+    auto condition = [&] {
+      const auto later_branch = conditional_scope(*this, next > index);
+      return lower_expr(*branch.condition);
+    }();
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
@@ -5766,8 +6195,7 @@ auto lowerer::lower_generator_loop(
   // table, so this can't retroactively change anything checking already
   // decided — it only adds an entry checking simply never had occasion to
   // add itself.
-  const auto option_type = const_cast<semantic::type_table &>(checked_.types)
-                               .builtin_generic("option", {element_type});
+  const auto option_type = interning_types().builtin_generic("option", {element_type});
 
   const auto subject_symbol = mint_symbol();
   auto subject = ptr<hir_expr>(make<hir_generator_next>(
@@ -5884,8 +6312,7 @@ auto lowerer::lower_iterator_loop(
                                                std::move(*handle_value))));
 
   // See `lower_generator_loop` for why interning `option[T]` here is safe.
-  const auto option_type = const_cast<semantic::type_table &>(checked_.types)
-                               .builtin_generic("option", {element_type});
+  const auto option_type = interning_types().builtin_generic("option", {element_type});
 
   // Rebuild the `handle.next()` method call directly from the resolved
   // dispatch — the same `Type::method`-mangled `hir_local_ref` callee shape
@@ -6338,7 +6765,10 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   if (!subject_type.has_value()) {
     return std::unexpected(subject_type.error());
   }
-  auto subject_value = lower_expr(*while_stmt.let_expr);
+  auto subject_value = [&] {
+    const auto repeated = conditional_scope(*this);
+    return lower_expr(*while_stmt.let_expr);
+  }();
   if (!subject_value.has_value()) {
     return std::unexpected(subject_value.error());
   }
@@ -6836,7 +7266,10 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
 
     auto guard = ptr<hir_expr>{};
     if (arm.guard != nullptr) {
-      auto lowered_guard = lower_expr(*arm.guard);
+      auto lowered_guard = [&] {
+        const auto conditional = conditional_scope(*this);
+        return lower_expr(*arm.guard);
+      }();
       if (!lowered_guard.has_value()) {
         pop_scope();
         return std::unexpected(lowered_guard.error());
@@ -6859,12 +7292,26 @@ auto lowerer::lower_match(const ast::expr &subject_ast,
 
     auto body = ptr<hir_block>{};
     if (arm.body_expr != nullptr) {
-      auto value = lower_expr(*arm.body_expr);
+      // An `await` in the arm's value waits inside the arm, not ahead of the
+      // whole match, so the arm gets its own hoist list.
+      auto arm_hoisted = ptr_vec<hir_node>{};
+      auto value = [&] {
+        const auto enclosing_hoist =
+            std::exchange(await_hoist_, in_task_body_ ? &arm_hoisted : nullptr);
+        const auto enclosing_depth = std::exchange(conditional_depth_, 0);
+        auto result = lower_expr(*arm.body_expr);
+        await_hoist_ = enclosing_hoist;
+        conditional_depth_ = enclosing_depth;
+        return result;
+      }();
       if (!value.has_value()) {
         pop_scope();
         return std::unexpected(value.error());
       }
       auto stmts = std::move(pending);
+      for (auto &hoisted_node : arm_hoisted) {
+        stmts.push_back(std::move(hoisted_node));
+      }
       stmts.push_back(ptr<hir_node>(
           make<hir_expr_stmt>(arm.body_expr->span, std::move(*value))));
       // The arm's bindings end with the arm, after its value is computed.

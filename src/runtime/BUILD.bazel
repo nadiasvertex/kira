@@ -16,6 +16,7 @@ cc_library(
         "layout.cpp",
         "platform.cpp",
         "platform_query.cpp",
+        "scheduler.cpp",
         "string.cpp",
     ],
     hdrs = [
@@ -27,6 +28,7 @@ cc_library(
         "layout.h",
         "platform.h",
         "platform_query.h",
+        "scheduler.h",
         "string.h",
     ],
     alwayslink = True,
@@ -59,6 +61,18 @@ cc_test(
     ],
 )
 
+# The same checks with the arena allocator, whose bump pointer is the one
+# allocation path that needs its own lock.
+cc_test(
+    name = "allocator_arena_test",
+    srcs = ["allocator_test.cpp"],
+    env = {"CINDER_ALLOCATOR": "arena"},
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
+)
+
 cc_test(
     name = "arena_test",
     srcs = ["arena_test.cpp"],
@@ -79,6 +93,15 @@ cc_test(
         ":runtime",
         "//src/parser:parser",
         "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "scheduler_test",
+    srcs = ["scheduler_test.cpp"],
+    deps = [
+        ":runtime",
         "//src/testing",
     ],
 )

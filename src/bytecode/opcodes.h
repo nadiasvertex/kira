@@ -498,6 +498,14 @@ enum class opcode : uint8_t {
                         ///< on reg[first_arg_reg .. +argc]; dst = its
                         ///< result. Compiled form of `hir_host_call`; only
                         ///< a hosted run (`run_limits::host`) can do one.
+  op_await_pending,     ///< u16 task_reg, u8 resume_index — a task's `await`
+                        ///< found its awaited task unfinished. Sets
+                        ///< reg[task_reg]'s `resume_index` slot to
+                        ///< `resume_index` (the await's own ordinal, which
+                        ///< resumes at the await itself) and pops the
+                        ///< current frame with `pending` as its result. As
+                        ///< with `op_yield`, live locals are synced into
+                        ///< the state block by `op_store_slot`s just before.
 };
 
 // ==========================================================================
@@ -676,6 +684,8 @@ struct operand_signature {
     return sig({reg, imm16, reg});
   case opcode::op_yield:
     return sig({reg, reg, imm8});
+  case opcode::op_await_pending:
+    return sig({reg, imm8});
   case opcode::op_coroutine_resume:
   case opcode::op_coroutine_cancel:
   case opcode::op_coroutine_cancelled:

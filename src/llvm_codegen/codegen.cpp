@@ -44,6 +44,7 @@
 #include "src/parser/token.h"
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/scheduler.h"
 
 namespace cinder::llvm_codegen {
 
@@ -3165,24 +3166,20 @@ private:
     auto *i64 = llvm::Type::getInt64Ty(ctx_);
     auto *ptr_ty = llvm::PointerType::get(ctx_, 0);
     if (node.awaiting) {
-      // A task yields its result exactly once, so one resume produces it.
       auto result_type = storage_type_for(node.type, node.span);
       if (!result_type.has_value()) {
         return std::unexpected(result_type.error());
       }
-      auto *step_fn_ptr = builder_.CreateLoad(
-          ptr_ty, slot_address(gen, runtime::coroutine::k_step_function_slot),
-          "task.step_fn");
-      auto *state_ptr = builder_.CreateLoad(
-          ptr_ty, slot_address(gen, runtime::coroutine::k_state_ptr_slot),
-          "task.state");
-      auto *resume_idx = builder_.CreateLoad(
-          i64, slot_address(gen, runtime::coroutine::k_resume_index_slot),
-          "task.resume");
-      auto *step_fn_type = llvm::FunctionType::get(i64, {ptr_ty, i64, ptr_ty},
-                                                   /*isVarArg=*/false);
-      builder_.CreateCall(step_fn_type, step_fn_ptr,
-                          {state_ptr, resume_idx, gen}, "task.step");
+      // Inside a task the `hir_yield` ahead of this read already waited for
+      // the awaited task. An ordinary function (the entry `async def main`)
+      // has nothing to suspend, so it blocks until the task is done.
+      if (!is_generator_step_) {
+        builder_.CreateCall(
+            runtime_intrinsic("rt_task_block_on"),
+            {gen, llvm::ConstantInt::get(
+                      i64, static_cast<uint64_t>(
+                               runtime::scheduler::pool::io))});
+      }
       return builder_.CreateLoad(
           *result_type, slot_address(gen, runtime::coroutine::k_value_slot),
           "task.result");
@@ -3279,6 +3276,17 @@ private:
     builder_.CreateCondBr(running, cancel_bb, done_bb);
 
     builder_.SetInsertPoint(cancel_bb);
+    // A task the scheduler owns may be queued or running on another thread,
+    // so the scheduler unwinds it; anything else is resumed here.
+    auto *handed_over = builder_.CreateCall(
+        runtime_intrinsic("rt_task_cancel"), {gen}, "gen.cancel.scheduled");
+    auto *resume_here_bb =
+        llvm::BasicBlock::Create(ctx_, "gen.cancel.inline", current_fn_);
+    builder_.CreateCondBr(
+        builder_.CreateICmpNE(
+            handed_over, llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0)),
+        done_bb, resume_here_bb);
+    builder_.SetInsertPoint(resume_here_bb);
     builder_.CreateStore(
         llvm::ConstantInt::get(
             i64, runtime::coroutine::raw(runtime::coroutine::status::cancel_requested)),
@@ -4069,6 +4077,9 @@ private:
                        "`generator def`'s own body, not inside a nested "
                        "lambda"});
       }
+      if (y.awaits) {
+        return compile_await_point(y);
+      }
       auto value = compile_expr(*y.value);
       if (!value.has_value()) {
         return std::unexpected(value.error());
@@ -4128,6 +4139,68 @@ private:
           .message = "this statement form is outside llvm_codegen's current "
                      "scope"});
     }
+  }
+
+  /// The declaration of the runtime intrinsic `name`, for calls the compiler
+  /// emits itself rather than ones written in source.
+  [[nodiscard]] auto runtime_intrinsic(std::string_view name) const
+      -> llvm::Function * {
+    return intrinsic_fns_.at(*cinder::intrinsic_index_of(name));
+  }
+
+  /// A task's `await`: polls the awaited task and, if it has not finished,
+  /// suspends with `pending`. The resume point is the poll itself, so a woken
+  /// task checks again before reading the result. Mirrors
+  /// `bytecode_compiler`'s `compile_await_point`.
+  [[nodiscard]] auto compile_await_point(const hir::hir_yield &y)
+      -> std::expected<bool, codegen_error> {
+    const auto ordinal = generator_next_yield_ordinal_++;
+    auto *resume_bb = generator_resume_blocks_[ordinal - 1];
+    builder_.CreateBr(resume_bb);
+    builder_.SetInsertPoint(resume_bb);
+
+    auto task = compile_expr(*y.value);
+    if (!task.has_value()) {
+      return std::unexpected(task.error());
+    }
+    const auto &awaited = types_.entry(y.value->type);
+    // A tuple of tasks is a `race`: the tuple is the block of slots the
+    // runtime scans for a finished one.
+    auto *polled =
+        awaited.kind == semantic::type_kind::tuple_kind
+            ? builder_.CreateCall(
+                  runtime_intrinsic("rt_task_await_any_poll"),
+                  {generator_self_arg_, *task,
+                   llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_),
+                                          awaited.args.size())},
+                  "await.poll")
+            : builder_.CreateCall(runtime_intrinsic("rt_task_await_poll"),
+                                  {generator_self_arg_, *task}, "await.poll");
+    auto *finished = builder_.CreateICmpNE(
+        polled,
+        llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx_), 0), "await.done");
+    auto *pending_bb = llvm::BasicBlock::Create(ctx_, "await.pending", current_fn_);
+    auto *proceed_bb = llvm::BasicBlock::Create(ctx_, "await.proceed", current_fn_);
+    builder_.CreateCondBr(finished, proceed_bb, pending_bb);
+
+    builder_.SetInsertPoint(pending_bb);
+    for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+      const auto slot = lookup_local(generator_state_layout_[i]);
+      if (slot.valid()) {
+        auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
+        builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+      }
+    }
+    builder_.CreateStore(
+        llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), ordinal),
+        slot_address(generator_self_arg_,
+                     runtime::coroutine::k_resume_index_slot));
+    builder_.CreateRet(llvm::ConstantInt::get(
+        llvm::Type::getInt64Ty(ctx_),
+        runtime::coroutine::raw(runtime::coroutine::status::pending)));
+
+    builder_.SetInsertPoint(proceed_bb);
+    return false;
   }
 
   [[nodiscard]] auto compile_let(const hir::hir_let &let)

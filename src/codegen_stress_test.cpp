@@ -674,6 +674,10 @@ auto run_one(const fs::path &path) -> void {
 } // namespace
 
 auto main(int argc, char *argv[]) -> int {
+  // Run `io` tasks on several workers so the corpus exercises real threads;
+  // a program's result must not depend on how many there are. Read when the
+  // first task is spawned.
+  setenv("CINDER_IO_WORKERS", "4", /*overwrite=*/0);
   try {
     auto corpus_dir = find_corpus_dir(argc > 0 ? std::string_view(*argv)
                                                : std::string_view{});

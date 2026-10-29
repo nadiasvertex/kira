@@ -11,5 +11,6 @@ This section is informative, not normative. The language is defined by sections 
 66. [HIR and the Bytecode VM](66-hir-and-bytecode-vm.md)
 67. [LLVM and Ahead-of-Time Compilation](67-llvm-and-aot.md)
 68. [JIT Execution](68-jit-execution.md) — Partial
+69. [The Task Scheduler](69-task-scheduler.md) — Partial
 
 Previous: [Standard Library](../04-stdlib/README.md)

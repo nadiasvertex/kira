@@ -126,6 +126,7 @@ Informative. Describes the reference compiler, not requirements on the language.
 66. [HIR and the Bytecode VM](05-implementation/66-hir-and-bytecode-vm.md)
 67. [LLVM and Ahead-of-Time Compilation](05-implementation/67-llvm-and-aot.md)
 68. [JIT Execution](05-implementation/68-jit-execution.md) — Partial
+69. [The Task Scheduler](05-implementation/69-task-scheduler.md) — Partial
 
 ## Diagnostics
 

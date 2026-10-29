@@ -176,7 +176,7 @@ build_hir_module(std::span<const hir::hir_module *const> modules,
   }
 
   const auto link_command = std::format(
-      R"(c++ "{}" "{}" "{}" "{}" "{}" "{}" "{}" -o "{}")", object_path.string(),
+      R"(c++ -pthread "{}" "{}" "{}" "{}" "{}" "{}" "{}" -o "{}")", object_path.string(),
       panic_archive->string(), heap_archive->string(),
       string_ops_archive->string(), semantic_archive->string(),
       parser_archive->string(), utf8_archive->string(), output_path.string());

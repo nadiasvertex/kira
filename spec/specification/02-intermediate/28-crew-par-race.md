@@ -70,7 +70,13 @@ for err in c.errors():
 
 ## Implementation status
 
-Parse-only. `crew_stmt`/`crew_expr` (with `on_error:`-style options), `par_expr`, `race_expr`, and `on_expr` all lex and parse. `check.cpp` types a `crew` body's contents against `k_unknown_type` with no borrow-scoping, no cancellation-scope construction, and no `spawn`/`get`/`errors` method semantics. No lowering exists — `src/hir/nodes.h` lists these forms as unsupported — and neither runtime backend has a scheduler capable of running tasks concurrently at all. None of the code in this chapter compiles past type-checking today.
+Partial. `par`, `race` and `spawn` work on both backends; `crew` and `on` do not.
+
+- `await par: ...` starts every branch task, waits for each in order, and gives the tuple of results. `await race: ...` waits until any branch has finished, gives the first finished one in branch order, and cancels the others. Both work inside a task and in the entry `async def main`. `par` does not yet cancel the remaining branches when one fails: it waits for them in order, and a panic in a later branch is seen only after the earlier ones finish.
+- `task.spawn()` starts a task without waiting; a later `await` collects its result.
+- All of these run on the `io` pool. With the default single `io` worker they interleave; they run in parallel only when `CINDER_IO_WORKERS` is raised (the stress-test harness does this).
+- `crew`, `on(target)` and `on_error: collect` parse and type-check but are not lowered. A `crew` body is typed as `k_unknown_type` with no `spawn`/`get`/`errors` semantics.
+- There is no `send`/`share` checking and no crew-scoped borrowing, so nothing yet stops a program from handing data that is not safe to share to a task running on another worker.
 
 ## See also
 

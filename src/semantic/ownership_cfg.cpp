@@ -279,8 +279,8 @@ public:
         declare_param(*param.pattern, type_of(param.pattern.get()));
       }
     }
-    if (decl.modifiers.is_generator) {
-      // A generator dropped before it first runs returns at once.
+    if (decl.modifiers.is_generator || decl.modifiers.is_async) {
+      // A generator or task dropped before it first runs returns at once.
       cancel_point(generator_start(decl));
     }
     finish(decl.body_expr.get(), decl.body_stmts);
@@ -1419,7 +1419,10 @@ private:
 
     case ast::node_kind::await_expr: {
       const auto &await_e = ast::cast<ast::await_expr>(expr);
-      return eval_opt(await_e.operand.get(), use_mode::move);
+      auto result = eval_opt(await_e.operand.get(), use_mode::move);
+      // Dropping the task while it waits here resumes it only to return.
+      cancel_point(&await_e);
+      return result;
     }
 
     case ast::node_kind::yield_expr: {

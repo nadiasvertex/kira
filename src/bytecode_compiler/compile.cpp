@@ -23,6 +23,7 @@
 #include "src/hir/live_across_yield.h"
 #include "src/hir/nodes.h"
 #include "src/intrinsics.h"
+#include "src/runtime/scheduler.h"
 #include "src/parser/ast.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
@@ -2401,6 +2402,40 @@ private:
     return {};
   }
 
+  /// Calls the runtime intrinsic `name` on `args` and puts its result in
+  /// `dst`. For intrinsics the compiler itself emits calls to, rather than
+  /// ones reached through an `intrinsic def` call in source.
+  [[nodiscard]] auto emit_runtime_call(std::string_view name, virtual_reg dst,
+                                       std::initializer_list<virtual_reg> args,
+                                       source_span span)
+      -> std::expected<void, compile_error> {
+    const auto intrinsic_id = cinder::intrinsic_index_of(name);
+    if (!intrinsic_id.has_value()) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = span,
+          .message = std::format("the `{}` intrinsic is missing from this "
+                                 "build",
+                                 name)});
+    }
+    const auto block = argument_block(span, args.size());
+    if (!block.has_value()) {
+      return std::unexpected(block.error());
+    }
+    auto index = size_t{0};
+    for (const auto arg : args) {
+      emit_op(opcode::op_move);
+      emit_register(nth_argument(*block, index++));
+      emit_register(arg);
+    }
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(dst);
+    writer_.emit_u8(*intrinsic_id);
+    emit_register(*block);
+    writer_.emit_u8(static_cast<uint8_t>(args.size()));
+    return {};
+  }
+
   /// `g.next()`: resumes the generator, then builds `option::some(value)`
   /// when the step function reported a suspension and `option::none`
   /// otherwise. `option`'s layout is hardcoded here (`some`=0, `none`=1, one
@@ -2413,14 +2448,30 @@ private:
       return std::unexpected(object_reg.error());
     }
     if (node.awaiting) {
-      // A task yields its result exactly once, so one resume produces it.
-      auto status_reg = alloc_register(node.span);
-      if (!status_reg.has_value()) {
-        return std::unexpected(status_reg.error());
+      // Inside a task the `hir_yield` ahead of this read already waited for
+      // the awaited task. An ordinary function (the entry `async def main`)
+      // has nothing to suspend, so it blocks until the task is done.
+      if (!is_generator_step_) {
+        auto pool_reg = alloc_register(node.span);
+        auto unit_reg = alloc_register(node.span);
+        if (!pool_reg.has_value()) {
+          return std::unexpected(pool_reg.error());
+        }
+        if (!unit_reg.has_value()) {
+          return std::unexpected(unit_reg.error());
+        }
+        const auto io_pool = writer_.add_constant(slot_value{
+            static_cast<uint64_t>(runtime::scheduler::pool::io)});
+        emit_op(opcode::op_load_const);
+        emit_register(*pool_reg);
+        writer_.emit_u32(io_pool);
+        if (auto blocked = emit_runtime_call("rt_task_block_on", *unit_reg,
+                                             {*object_reg, *pool_reg},
+                                             node.span);
+            !blocked.has_value()) {
+          return std::unexpected(blocked.error());
+        }
       }
-      emit_op(opcode::op_coroutine_resume);
-      emit_register(*status_reg);
-      emit_register(*object_reg);
       emit_load_slot(dst, *object_reg,
                      static_cast<uint16_t>(runtime::coroutine::k_value_slot));
       return {};
@@ -3810,6 +3861,9 @@ private:
                        "`generator def`'s own body, not inside a nested "
                        "lambda"});
       }
+      if (y.awaits) {
+        return compile_await_point(y);
+      }
       auto value_reg = compile_expr(*y.value);
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
@@ -3853,6 +3907,62 @@ private:
           .message = "this statement form is outside the bytecode compiler's "
                      "current scope"});
     }
+  }
+
+  /// A task's `await`: polls the awaited task and, if it has not finished,
+  /// suspends with `pending`. The resume point is the poll itself, so a woken
+  /// task checks again before reading the result.
+  [[nodiscard]] auto compile_await_point(const hir::hir_yield &y)
+      -> std::expected<void, compile_error> {
+    const auto ordinal = generator_next_yield_ordinal_++;
+    writer_.patch_jump_to_here(generator_resume_placeholders_[ordinal - 1]);
+    auto task_reg = compile_expr(*y.value);
+    if (!task_reg.has_value()) {
+      return std::unexpected(task_reg.error());
+    }
+    auto done_reg = alloc_register(y.span);
+    if (!done_reg.has_value()) {
+      return std::unexpected(done_reg.error());
+    }
+    const auto &awaited = types_.entry(y.value->type);
+    if (awaited.kind == semantic::type_kind::tuple_kind) {
+      // `race`: the tuple of tasks is the block of slots the runtime scans.
+      auto count_reg = alloc_register(y.span);
+      if (!count_reg.has_value()) {
+        return std::unexpected(count_reg.error());
+      }
+      const auto count_const = writer_.add_constant(
+          slot_value{static_cast<uint64_t>(awaited.args.size())});
+      emit_op(opcode::op_load_const);
+      emit_register(*count_reg);
+      writer_.emit_u32(count_const);
+      if (auto polled = emit_runtime_call(
+              "rt_task_await_any_poll", *done_reg,
+              {generator_self_reg_, *task_reg, *count_reg}, y.span);
+          !polled.has_value()) {
+        return std::unexpected(polled.error());
+      }
+    } else if (auto polled = emit_runtime_call(
+                   "rt_task_await_poll", *done_reg,
+                   {generator_self_reg_, *task_reg}, y.span);
+               !polled.has_value()) {
+      return std::unexpected(polled.error());
+    }
+    emit_op(opcode::op_jump_if_true);
+    emit_register(*done_reg);
+    const auto finished_placeholder = writer_.emit_jump_placeholder();
+    for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
+      const auto local_reg = lookup_local(generator_state_layout_[i]);
+      if (local_reg.has_value()) {
+        emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
+                        *local_reg);
+      }
+    }
+    emit_op(opcode::op_await_pending);
+    emit_register(generator_self_reg_);
+    writer_.emit_u8(ordinal);
+    writer_.patch_jump_to_here(finished_placeholder);
+    return {};
   }
 
   [[nodiscard]] auto compile_let(const hir::hir_let &let)

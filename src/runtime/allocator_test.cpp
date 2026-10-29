@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <cstring>
+#include <thread>
+#include <vector>
 
 #include "src/testing/test_assert.h"
 
@@ -104,6 +106,42 @@ auto test_sub_slot_growth_is_not_a_reallocation() -> void {
   cinder_heap_free(block, 8);
 }
 
+/// Several threads allocate, grow and free blocks at once, each checking that
+/// the bytes it wrote into its own blocks are the bytes it reads back. Two
+/// threads handed overlapping memory would corrupt each other's pattern.
+auto test_concurrent_allocation_does_not_overlap() -> void {
+  constexpr size_t thread_count = 8;
+  constexpr size_t rounds = 2000;
+  auto failures = std::vector<bool>(thread_count, false);
+  auto threads = std::vector<std::thread>{};
+  for (size_t id = 0; id < thread_count; ++id) {
+    threads.emplace_back([id, &failures] {
+      const auto pattern = static_cast<unsigned char>(id + 1);
+      for (size_t round = 0; round < rounds; ++round) {
+        auto *block = cinder_heap_alloc(64);
+        fill(block, 64, pattern);
+        block = cinder_heap_realloc(block, 64, 256);
+        auto *bytes = static_cast<const unsigned char *>(block);
+        for (size_t i = 0; i < 64; ++i) {
+          if (bytes[i] != pattern) { // NOLINT
+            failures[id] = true;
+          }
+        }
+        if (!all_zero(bytes + 64, 192)) { // NOLINT
+          failures[id] = true;
+        }
+        cinder_heap_free(block, 256);
+      }
+    });
+  }
+  for (auto &thread : threads) {
+    thread.join();
+  }
+  for (const auto failed : failures) {
+    expect(!failed, "expected every thread to read back what it wrote");
+  }
+}
+
 } // namespace
 
 auto main() -> int {
@@ -116,6 +154,7 @@ auto main() -> int {
     test_realloc_of_null_allocates();
     test_free_of_null_is_a_no_op();
     test_sub_slot_growth_is_not_a_reallocation();
+    test_concurrent_allocation_does_not_overlap();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

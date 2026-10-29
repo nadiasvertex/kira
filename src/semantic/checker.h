@@ -174,6 +174,11 @@ inline constexpr auto k_builtin_methods =
         {.owner = "generator",
          .name = "next",
          .result = builtin_result_shape::option_of_element},
+        // `t.spawn()` hands a task to the scheduler to run concurrently with
+        // the caller; awaiting it later collects the result.
+        {.owner = "task",
+         .name = "spawn",
+         .result = builtin_result_shape::unit_result},
         {.owner = "cell",
          .name = "get",
          .result = builtin_result_shape::element},
@@ -3653,6 +3658,7 @@ private:
   auto infer_try(const ast::try_expr &expr) -> type_id;
 
   auto infer_await(const ast::await_expr &expr) -> type_id;
+  auto awaited_type(type_id operand, source_span span) -> type_id;
   [[nodiscard]] auto task_of_declared_result(type_id declared) -> type_id;
   [[nodiscard]] auto context_of_on_target(const ast::on_expr &expr) -> type_id;
 
