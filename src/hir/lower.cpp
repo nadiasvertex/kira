@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -760,10 +761,13 @@ private:
     return {make<hir_call>(span, result, std::move(callee), std::move(args))};
   }
   /// The pool every task is spawned on until `on` selects one.
-  [[nodiscard]] auto default_pool_literal(source_span span) -> ptr<hir_expr> {
-    return {make<hir_literal>(
-        span, checked_.types.usize_type(), token_kind::int_lit,
-        std::to_string(static_cast<uint64_t>(runtime::scheduler::pool::io)))};
+  [[nodiscard]] auto default_pool_literal(
+      source_span span,
+      runtime::scheduler::pool where = runtime::scheduler::pool::io)
+      -> ptr<hir_expr> {
+    return {make<hir_literal>(span, checked_.types.usize_type(),
+                              token_kind::int_lit,
+                              std::to_string(static_cast<uint64_t>(where)))};
   }
   /// Appends the statements that wait for `task` inside a task body: the
   /// suspension point, then the check for a cancel that arrived meanwhile.
@@ -771,6 +775,11 @@ private:
                                     ptr<hir_expr> task, const void *key,
                                     source_span span)
       -> std::expected<void, lowering_error>;
+  /// `await on(ctx): body`: runs the body as a task on `ctx`'s pool.
+  [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Functions synthesized while lowering the current function.
+  ptr_vec<hir_function> nested_functions_;
   /// The tasks of an `await par:`/`await race:`, each held in a local.
   struct group_tasks {
     std::vector<symbol_id> symbols;
@@ -1688,6 +1697,9 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (await.operand->kind == ast::node_kind::par_expr ||
         await.operand->kind == ast::node_kind::race_expr) {
       return lower_await_group(await, *type);
+    }
+    if (await.operand->kind == ast::node_kind::on_expr) {
+      return lower_await_on(await, *type);
     }
     auto task_type = checked_type_of(*await.operand);
     if (!task_type.has_value()) {
@@ -4031,6 +4043,118 @@ auto lowerer::lower_await_group(const ast::await_expr &await, type_id type)
   }
   local_setup.push_back(
       ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*result))));
+  return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
+}
+
+/// `await on(ctx): body` runs `body` as a task on `ctx`'s pool and gives its
+/// result. The body becomes a closure, and a synthesized task function per
+/// result type calls it once:
+///
+///   task on$T(f: fn() -> T): yield f()
+///
+/// The call site spawns that task on the pool and waits for it like any other
+/// `await`. The body is an ordinary closure, so it cannot itself `await`.
+auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto &on = ast::cast<const ast::on_expr>(*await.operand);
+  const auto span = await.span;
+  if (on.sender != nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "`on(...)` with a sender is not lowered yet");
+  }
+  const auto *named = ast::as<const ast::named_type>(on.context_type.get());
+  if (named == nullptr || named->path.size() != 1) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "`on(...)` only supports the `cpu`, `pool` and `io` contexts");
+  }
+  const auto &target = named->path.front();
+  const auto where = target == "io" ? runtime::scheduler::pool::io
+                                    : runtime::scheduler::pool::cpu;
+  if (target != "io" && target != "cpu" && target != "pool") {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "`on(...)` only supports the `cpu`, `pool` and `io` contexts");
+  }
+  const auto in_task = in_task_body_;
+  if (in_task && await_cannot_hoist()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                k_conditional_await_message);
+  }
+
+  auto &types = interning_types();
+  const auto fn_type = types.fn_of({}, type);
+  const auto task_type = task_type_of(type);
+
+  // The body, as a closure over whatever it reads from the enclosing function.
+  auto enclosing_posts = std::exchange(post_contracts_, {});
+  const auto enclosing_task = std::exchange(in_task_body_, false);
+  const auto enclosing_hoist = std::exchange(await_hoist_, nullptr);
+  push_scope();
+  auto body = lower_block(on.body, span, type);
+  pop_scope();
+  post_contracts_ = std::move(enclosing_posts);
+  in_task_body_ = enclosing_task;
+  await_hoist_ = enclosing_hoist;
+  if (!body.has_value()) {
+    return std::unexpected(body.error());
+  }
+  auto closure = ptr<hir_expr>(make<hir_lambda>(
+      span, fn_type, std::vector<hir_param>{}, type, std::move(*body)));
+
+  // The task function that runs the closure.
+  const auto thunk_name = std::format("<on thunk ${}>", type);
+  const auto already = std::ranges::any_of(
+      nested_functions_,
+      [&](const auto &function) { return function->name == thunk_name; });
+  if (!already) {
+    const auto param = mint_symbol();
+    auto call = ptr<hir_expr>(make<hir_call>(
+        span, type,
+        ptr<hir_expr>(make<hir_local_ref>(span, fn_type, param, "f")),
+        ptr_vec<hir_expr>{}));
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(ptr<hir_node>(make<hir_yield>(span, std::move(call))));
+    stmts.push_back(ptr<hir_node>(make<hir_return>(span, nullptr)));
+    auto params = std::vector<hir_param>{};
+    params.push_back(hir_param{.symbol = param, .name = "f", .type = fn_type});
+    nested_functions_.push_back(make<hir_function>(
+        span, thunk_name, std::move(params), task_type,
+        make<hir_block>(span, type, std::move(stmts)), coroutine_kind::task,
+        type));
+  }
+
+  auto local_setup = ptr_vec<hir_node>{};
+  auto &setup = in_task ? *await_hoist_ : local_setup;
+  const auto symbol = mint_symbol();
+  const auto task_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, task_type, symbol,
+                                std::string("<on task>"))};
+  };
+  auto args = ptr_vec<hir_expr>{};
+  args.push_back(std::move(closure));
+  auto callee = ptr<hir_expr>(make<hir_local_ref>(
+      span, k_unknown_type, mint_symbol(), std::string(thunk_name)));
+  setup.push_back(ptr<hir_node>(make<hir_let>(
+      span, symbol, std::string("<on task>"),
+      ptr<hir_expr>(make<hir_call>(span, task_type, std::move(callee),
+                                   std::move(args))))));
+  const auto unit_type = types.builtin("unit");
+  auto spawn_args = ptr_vec<hir_expr>{};
+  spawn_args.push_back(task_ref());
+  spawn_args.push_back(default_pool_literal(span, where));
+  setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, runtime_call(span, "rt_task_spawn", unit_type,
+                         std::move(spawn_args)))));
+  if (in_task) {
+    if (auto waited = emit_task_wait(setup, task_ref(), &await, span);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+    return ok_expr(
+        make<hir_generator_next>(span, type, task_ref(), /*await_task=*/true));
+  }
+  local_setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
+                                                   /*await_task=*/true)))));
   return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
 }
 
@@ -7712,6 +7836,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   if (auto finished = finish_function(*function); !finished.has_value()) {
     return std::unexpected(finished.error());
   }
+  function->nested = std::move(nested_functions_);
   return function;
 }
 
@@ -8116,6 +8241,25 @@ auto lower_module_synthesized(const std::string &module_name,
   return {};
 }
 
+/// Moves the functions lowering synthesized inside `functions` (see
+/// `hir_function::nested`) into the list itself, skipping any name already
+/// present.
+void hoist_nested_functions(ptr_vec<hir_function> &functions) {
+  auto names = std::unordered_set<std::string>{};
+  for (const auto &function : functions) {
+    names.insert(function->name);
+  }
+  for (size_t i = 0; i < functions.size(); ++i) {
+    auto nested = std::move(functions[i]->nested);
+    functions[i]->nested.clear();
+    for (auto &function : nested) {
+      if (names.insert(function->name).second) {
+        functions.push_back(std::move(function));
+      }
+    }
+  }
+}
+
 auto lower_module(const ast::file &file, std::string module_name,
                   const semantic::checked_types &checked,
                   const lowering_options &options)
@@ -8132,6 +8276,7 @@ auto lower_module(const ast::file &file, std::string module_name,
       !result.has_value()) {
     return std::unexpected(result.error());
   }
+  hoist_nested_functions(functions);
   auto module =
       make<hir_module>(file.span, std::move(module_name), std::move(functions));
   module->statics = std::move(statics);
@@ -8186,6 +8331,7 @@ auto lower_inline_submodules_into(const std::vector<ast::ptr<ast::node>> &items,
         !result.has_value()) {
       return std::unexpected(result.error());
     }
+    hoist_nested_functions(functions);
     auto sub_module =
         make<hir_module>(decl.span, module_name, std::move(functions));
     sub_module->statics = std::move(statics);
@@ -8256,6 +8402,7 @@ auto lower_functor_modules(const semantic::checked_types &checked,
     // function's span so diagnostics have somewhere to point.
     const auto span =
         functions.empty() ? source_span{} : functions.front()->span;
+    hoist_nested_functions(functions);
     modules.push_back(make<hir_module>(span, name, std::move(functions)));
   }
   return modules;

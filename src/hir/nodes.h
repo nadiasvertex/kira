@@ -1121,6 +1121,10 @@ struct hir_function : hir_item {
   /// coroutine body.
   coroutine_kind coroutine = coroutine_kind::none;
   type_id item_type = k_unknown_type;
+  /// Functions lowering synthesized while lowering this one (the task thunk
+  /// behind an `on` block). `lower_module` moves them into the module's
+  /// function list, dropping a name that is already there.
+  std::vector<std::unique_ptr<hir_function>> nested;
 
   /// True for any function whose body is a state machine rather than a plain
   /// call. Passes that must leave such bodies alone (inlining, tail calls,
