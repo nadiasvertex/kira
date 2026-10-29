@@ -801,6 +801,19 @@ auto checker::infer_method_call(const ast::call_expr &call,
     // user type's `machine def` equivalents are treated alike. Reading or
     // indexing the container itself stays unrestricted.
     const auto builtin_result = builtin_method_result(entry, field.field_name);
+    if (entry.kind == type_kind::builtin_generic_kind &&
+        builtin_result != k_unknown_type) {
+      if (entry.name == "crew" && field.field_name == "spawn" &&
+          call.args.size() == 1) {
+        // `c.spawn(t)` gives back the task it was handed.
+        return infer_expr(*call.args[0].value, k_unknown_type);
+      }
+      if (entry.name == "task" && field.field_name == "get" &&
+          call.args.empty()) {
+        // `t.get()` is `await t`, for a task a `crew` has already finished.
+        return awaited_type(object, field.span);
+      }
+    }
     const auto resolved = resolve_method(entry, object, field.field_name);
     if (resolved.origin == method_origin::builtin_impl) {
       const auto *method = resolved.method;

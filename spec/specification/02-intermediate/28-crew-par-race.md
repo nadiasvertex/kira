@@ -10,16 +10,19 @@
 
 ```cinder
 async def fetch_dashboard(user_id: int32) -> result[dashboard, app_error]:
-    crew c:
+    let (user_task, orders_task, prefs_task) = crew c:
         let user_task   = c.spawn(fetch_user(user_id))
         let orders_task = c.spawn(fetch_orders(user_id))
         let prefs_task  = c.spawn(fetch_preferences(user_id))
+        (user_task, orders_task, prefs_task)
 
     let user   = user_task.get()?
     let orders = orders_task.get()?
     let prefs  = prefs_task.get()?
     return @ok(build_dashboard(user, orders, prefs))
 ```
+
+The body of a `crew` is its own scope, and its last expression is the value of the block. The block waits for every task spawned into it, so a task handed out as the block's value has already finished when `get()` reads it. `c.spawn(t)` returns `t`; dropping that handle does not cancel the task.
 
 Tasks in a `crew` cannot outlive the `crew` block — enforced by the compiler, so there are no dangling background tasks. This is what lets a closure spawned into a `crew` borrow local data instead of moving it; see [Closures and Capture](16-closures-and-capture.md#crew-scoped-borrowing).
 
@@ -70,13 +73,13 @@ for err in c.errors():
 
 ## Implementation status
 
-Partial. `par`, `race`, `spawn` and `await on(cpu|pool|io):` work on both backends; `crew` does not.
+Partial. `par`, `race`, `spawn`, `await on(cpu|pool|io):` and `crew` work on both backends; `crew` options (`on_error: collect`) do not.
 
 - `await par: ...` starts every branch task, waits for each in order, and gives the tuple of results. `await race: ...` waits until any branch has finished, gives the first finished one in branch order, and cancels the others. Both work inside a task and in the entry `async def main`. If a `par` branch panics, the runtime cancels the other branches and the panic propagates to the awaiting task.
 - `task.spawn()` starts a task without waiting; a later `await` collects its result.
 - All of these run on the `io` pool. With the default single `io` worker they interleave; they run in parallel only when `CINDER_IO_WORKERS` is raised (the stress-test harness does this).
 - `await on(ctx): body` runs the body as a task on that context's pool (`cpu`/`pool` → cpu pool). The body is lowered to a closure and run by a synthesized task function, so it cannot itself `await`, and it has no sender form. Values it captures are copied in; ownership of non-copy captures is not yet checked (step 6 of the threading plan).
-- `crew` and `on_error: collect` parse and type-check but are not lowered. A `crew` body is typed as `k_unknown_type` with no `spawn`/`get`/`errors` semantics.
+- `crew c: body` binds `c` (a `crew` handle) for the body, runs it, then waits for every task passed to `c.spawn(t)` and frees the handle. It is a statement or an expression whose value is the body's last expression. In a task the wait suspends the task; in an ordinary function it blocks the thread. If a spawned task panics the others are cancelled and the panic propagates. `t.get()` is `await t`. Spawned tasks run on the `io` pool. `crew` options such as `on_error: collect`, and `c.errors()`, are not lowered; a crew with options is refused with a diagnostic. Spawned-task bodies are ordinary `async def` calls; a closure spawned into a crew does not yet borrow local data (step 6).
 - There is no `send`/`share` checking and no crew-scoped borrowing, so nothing yet stops a program from handing data that is not safe to share to a task running on another worker.
 
 ## See also

@@ -1357,6 +1357,44 @@ auto intrinsic_rt_task_block_on_all(std::span<const slot_value> args)
   return slot_value{}; // `unit`
 }
 
+auto intrinsic_rt_task_drop(std::span<const slot_value> args) -> slot_value {
+  return store_bool(cinder::runtime::scheduler::cancel_on_drop(task_of(args[0])));
+}
+
+auto intrinsic_rt_crew_new(std::span<const slot_value> /*args*/)
+    -> slot_value {
+  return slot_value{reinterpret_cast<uint64_t>( // NOLINT
+      cinder::runtime::scheduler::crew_new())};
+}
+
+auto intrinsic_rt_crew_spawn(std::span<const slot_value> args) -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_spawn(reinterpret_cast<sched::crew *>(args[0].u), // NOLINT
+                    task_of(args[1]), sched::pool::io, current_task_runner());
+  return args[1];
+}
+
+auto intrinsic_rt_crew_join_poll(std::span<const slot_value> args)
+    -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  return store_bool(sched::crew_join_poll(
+      task_of(args[0]),
+      reinterpret_cast<sched::crew *>(args[1].u))); // NOLINT
+}
+
+auto intrinsic_rt_crew_free(std::span<const slot_value> args) -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_free(reinterpret_cast<sched::crew *>(args[0].u)); // NOLINT
+  return slot_value{}; // `unit`
+}
+
+auto intrinsic_rt_crew_join(std::span<const slot_value> args) -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_join(reinterpret_cast<sched::crew *>(args[0].u), // NOLINT
+                   sched::pool::io, current_task_runner());
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1491,7 +1529,10 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_task_await_poll" || name == "rt_task_spawn" ||
          name == "rt_task_cancel" || name == "rt_task_is_finished" ||
          name == "rt_task_await_any_poll" || name == "rt_task_block_on_any" ||
-         name == "rt_task_await_all_poll" || name == "rt_task_block_on_all";
+         name == "rt_task_await_all_poll" || name == "rt_task_block_on_all" ||
+         name == "rt_task_drop" || name == "rt_crew_new" || name == "rt_crew_spawn" ||
+         name == "rt_crew_join_poll" || name == "rt_crew_join" ||
+         name == "rt_crew_free";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1547,6 +1588,12 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_task_block_on_any,
         intrinsic_rt_task_await_all_poll,
         intrinsic_rt_task_block_on_all,
+        intrinsic_rt_task_drop,
+        intrinsic_rt_crew_new,
+        intrinsic_rt_crew_spawn,
+        intrinsic_rt_crew_join_poll,
+        intrinsic_rt_crew_join,
+        intrinsic_rt_crew_free,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
@@ -2135,7 +2182,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         }
         // A task the scheduler owns may be queued or running on another
         // thread, so its owner unwinds it; anything else is resumed here.
-        if (cinder::runtime::scheduler::cancel(
+        if (cinder::runtime::scheduler::cancel_on_drop(
                 reinterpret_cast<uint64_t *>(gen_slots))) { // NOLINT
           f.registers[dst] = slot_value{};
           break;

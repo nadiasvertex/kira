@@ -775,6 +775,21 @@ private:
                                     ptr<hir_expr> task, const void *key,
                                     source_span span, bool all = false)
       -> std::expected<void, lowering_error>;
+  /// Waits for `task` and reads its result: `await task` and `task.get()`.
+  [[nodiscard]] auto lower_task_read(const void *key, source_span span,
+                                     source_span task_span, type_id type,
+                                     type_id task_type, ptr<hir_expr> task)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `crew c: body`: runs `body`, then waits for every task spawned into `c`.
+  /// Gives the statements to run, and the body's value for the expression
+  /// form (`result_type` is its type; null for the statement form).
+  [[nodiscard]] auto lower_crew(std::string_view name,
+                                const std::vector<ast::crew_option> &options,
+                                const std::vector<ast::ptr<ast::node>> &body,
+                                const void *key, source_span span,
+                                type_id result_type)
+      -> std::expected<std::pair<ptr_vec<hir_node>, ptr<hir_expr>>,
+                       lowering_error>;
   /// `await on(ctx): body`: runs the body as a task on `ctx`'s pool.
   [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -1684,6 +1699,37 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
   }
   case ast::node_kind::quote_expr:
     return lower_quote(ast::cast<const ast::quote_expr>(expr));
+  case ast::node_kind::crew_expr: {
+    const auto &crew = ast::cast<const ast::crew_expr>(expr);
+    auto type = checked_type_of(expr);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    if (in_task_body_ && await_cannot_hoist()) {
+      return fail(lowering_error_kind::unsupported_construct, expr.span,
+                  k_conditional_await_message);
+    }
+    auto lowered = lower_crew(crew.name, crew.options, crew.body, &crew,
+                              expr.span, *type);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    auto &[nodes, result] = *lowered;
+    if (in_task_body_) {
+      for (auto &node : nodes) {
+        await_hoist_->push_back(std::move(node));
+      }
+      if (result == nullptr) {
+        return ok_expr(make<hir_block>(expr.span, *type, ptr_vec<hir_node>{}));
+      }
+      return std::move(result);
+    }
+    if (result != nullptr) {
+      nodes.push_back(
+          ptr<hir_node>(make<hir_expr_stmt>(expr.span, std::move(result))));
+    }
+    return ok_expr(make<hir_block>(expr.span, *type, std::move(nodes)));
+  }
   case ast::node_kind::await_expr: {
     const auto &await = ast::cast<const ast::await_expr>(expr);
     if (await.operand == nullptr) {
@@ -1709,38 +1755,8 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (!task.has_value()) {
       return std::unexpected(task.error());
     }
-    if (!in_task_body_) {
-      // An ordinary function (the entry `async def main`) has no state
-      // machine to suspend: it blocks the calling thread until the task is
-      // done.
-      return ok_expr(make<hir_generator_next>(expr.span, *type,
-                                              std::move(*task),
-                                              /*await_task=*/true));
-    }
-    if (await_cannot_hoist()) {
-      return fail(lowering_error_kind::unsupported_construct, expr.span,
-                  k_conditional_await_message);
-    }
-    // `await e` waits for `e` in statements ahead of the one that uses its
-    // result:  let t = e;  <wait for t>;  <cancel check>  and the expression
-    // itself becomes a read of `t`'s result. The wait is a suspension point,
-    // so `t` is a local that the state machine saves across it.
-    const auto task_symbol = mint_symbol();
-    const auto task_span = await.operand->span;
-    const auto task_ref = [&, task_symbol]() -> ptr<hir_expr> {
-      return {make<hir_local_ref>(task_span, *task_type, task_symbol,
-                                  std::string("<await task>"))};
-    };
-    await_hoist_->push_back(ptr<hir_node>(
-        make<hir_let>(task_span, task_symbol, std::string("<await task>"),
-                      std::move(*task))));
-    if (auto waited =
-            emit_task_wait(*await_hoist_, task_ref(), &expr, expr.span);
-        !waited.has_value()) {
-      return std::unexpected(waited.error());
-    }
-    return ok_expr(make<hir_generator_next>(expr.span, *type, task_ref(),
-                                            /*await_task=*/true));
+    return lower_task_read(&expr, expr.span, await.operand->span, *type,
+                           *task_type, std::move(*task));
   }
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
@@ -2466,6 +2482,49 @@ auto lowerer::lower_call(const ast::call_expr &call)
           args.push_back(default_pool_literal(call.span));
           return ok_expr(
               runtime_call(call.span, "rt_task_spawn", *type, std::move(args)));
+        }
+      }
+    }
+    if (field.object != nullptr && field.field_name == "spawn" &&
+        call.args.size() == 1) {
+      const auto object_type = receiver_type_of(*field.object);
+      if (object_type.has_value()) {
+        const auto &object_entry = checked_.types.entry(*object_type);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            object_entry.name == "crew") {
+          auto object = lower_receiver(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          auto task = lower_expr(*call.args[0].value);
+          if (!task.has_value()) {
+            return std::unexpected(task.error());
+          }
+          auto args = ptr_vec<hir_expr>{};
+          args.push_back(std::move(*object));
+          args.push_back(std::move(*task));
+          return ok_expr(
+              runtime_call(call.span, "rt_crew_spawn", *type, std::move(args)));
+        }
+      }
+    }
+    if (field.object != nullptr && field.field_name == "get" &&
+        call.args.empty()) {
+      const auto object_type = receiver_type_of(*field.object);
+      if (object_type.has_value()) {
+        auto stripped = *object_type;
+        while (checked_.types.entry(stripped).kind == type_kind::ref_kind) {
+          stripped = checked_.types.entry(stripped).result;
+        }
+        const auto &object_entry = checked_.types.entry(stripped);
+        if (object_entry.kind == type_kind::builtin_generic_kind &&
+            object_entry.name == "task") {
+          auto object = lower_receiver(*field.object);
+          if (!object.has_value()) {
+            return std::unexpected(object.error());
+          }
+          return lower_task_read(&call, call.span, field.object->span, *type,
+                                 stripped, std::move(*object));
         }
       }
     }
@@ -3956,6 +4015,41 @@ auto lowerer::lower_where(const ast::where_expr &where)
   return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
 }
 
+auto lowerer::lower_task_read(const void *key, source_span span,
+                              source_span task_span, type_id type,
+                              type_id task_type, ptr<hir_expr> task)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (!in_task_body_) {
+    // An ordinary function (the entry `async def main`) has no state
+    // machine to suspend: it blocks the calling thread until the task is
+    // done.
+    return ok_expr(make<hir_generator_next>(span, type, std::move(task),
+                                            /*await_task=*/true));
+  }
+  if (await_cannot_hoist()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                k_conditional_await_message);
+  }
+  // `await e` waits for `e` in statements ahead of the one that uses its
+  // result:  let t = e;  <wait for t>;  <cancel check>  and the expression
+  // itself becomes a read of `t`'s result. The wait is a suspension point,
+  // so `t` is a local that the state machine saves across it.
+  const auto task_symbol = mint_symbol();
+  const auto task_ref = [&, task_symbol]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(task_span, task_type, task_symbol,
+                                std::string("<await task>"))};
+  };
+  await_hoist_->push_back(ptr<hir_node>(
+      make<hir_let>(task_span, task_symbol, std::string("<await task>"),
+                    std::move(task))));
+  if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span);
+      !waited.has_value()) {
+    return std::unexpected(waited.error());
+  }
+  return ok_expr(make<hir_generator_next>(span, type, task_ref(),
+                                          /*await_task=*/true));
+}
+
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
                              const void *key, source_span span, bool all)
     -> std::expected<void, lowering_error> {
@@ -4156,6 +4250,73 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
       span, ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
                                                    /*await_task=*/true)))));
   return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
+}
+
+auto lowerer::lower_crew(std::string_view name,
+                         const std::vector<ast::crew_option> &options,
+                         const std::vector<ast::ptr<ast::node>> &body,
+                         const void *key, source_span span,
+                         type_id result_type)
+    -> std::expected<std::pair<ptr_vec<hir_node>, ptr<hir_expr>>,
+                     lowering_error> {
+  if (!options.empty()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                "`crew` options such as `on_error: collect` are not lowered "
+                "yet");
+  }
+  auto &types = interning_types();
+  const auto unit_type = types.builtin("unit");
+  const auto crew_type = types.builtin_generic("crew", {});
+  const auto has_value = result_type != k_unknown_type &&
+                         result_type != unit_type;
+
+  // let c = <new crew>;  let r = { body };  <wait for c's tasks>;  <free c>
+  push_scope();
+  const auto crew_symbol = declare_local(name, crew_type);
+  const auto crew_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, crew_type, crew_symbol,
+                                std::string(name))};
+  };
+  auto nodes = ptr_vec<hir_node>{};
+  nodes.push_back(ptr<hir_node>(make<hir_let>(
+      span, crew_symbol, std::string(name),
+      runtime_call(span, "rt_crew_new", crew_type, ptr_vec<hir_expr>{}))));
+
+  auto block = lower_block(body, span, has_value ? result_type : unit_type);
+  pop_scope();
+  if (!block.has_value()) {
+    return std::unexpected(block.error());
+  }
+  auto result = ptr<hir_expr>{};
+  if (has_value) {
+    const auto result_symbol = mint_symbol();
+    nodes.push_back(ptr<hir_node>(make<hir_let>(
+        span, result_symbol, std::string("<crew result>"),
+        ptr<hir_expr>(std::move(*block)))));
+    result = ptr<hir_expr>(make<hir_local_ref>(
+        span, result_type, result_symbol, std::string("<crew result>")));
+  } else {
+    nodes.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(*block)))));
+  }
+
+  if (in_task_body_) {
+    if (auto waited = emit_task_wait(nodes, crew_ref(), key, span);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+  } else {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(crew_ref());
+    nodes.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_crew_join", unit_type, std::move(args)))));
+  }
+  auto free_args = ptr_vec<hir_expr>{};
+  free_args.push_back(crew_ref());
+  nodes.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span,
+      runtime_call(span, "rt_crew_free", unit_type, std::move(free_args)))));
+  return std::pair{std::move(nodes), std::move(result)};
 }
 
 /// `par`: wait for each task in turn; the result is the tuple of their
@@ -4972,6 +5133,15 @@ auto lowerer::lower_stmt(const ast::node &node)
         "statement carries a parse/recovery error and cannot be lowered");
   }
   switch (node.kind) {
+  case ast::node_kind::crew_stmt: {
+    const auto &crew = ast::cast<const ast::crew_stmt>(node);
+    auto lowered = lower_crew(crew.name, crew.options, crew.body, &crew,
+                              crew.span, k_unknown_type);
+    if (!lowered.has_value()) {
+      return std::unexpected(lowered.error());
+    }
+    return std::move(lowered->first);
+  }
   case ast::node_kind::let_stmt: {
     const auto &let = ast::cast<const ast::let_stmt>(node);
     if (let.pattern == nullptr || let.pattern->has_error) {

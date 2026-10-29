@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <deque>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -40,6 +41,9 @@ struct task_record {
   /// A cancel arrived while the task was running. It is applied once the
   /// step function returns.
   bool cancel_pending = false;
+  /// Spawned into a `crew`, which keeps the task alive until the block ends
+  /// even when the program drops its handle.
+  bool crew_owned = false;
   pool where = pool::io;
   runner how;
   /// Tasks to wake when this one finishes.
@@ -377,6 +381,32 @@ void block_on_all(uint64_t *const *tasks, size_t count, pool where,
   }
 }
 
+struct crew {
+  std::vector<uint64_t *> tasks;
+};
+
+auto crew_new() -> crew * { return std::make_unique<crew>().release(); }
+
+void crew_spawn(crew *group, uint64_t *task, pool where, runner how) {
+  group->tasks.push_back(task);
+  spawn(task, where, how);
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  if (auto *rec = record_of(task); rec != nullptr) {
+    rec->crew_owned = true;
+  }
+}
+
+auto crew_join_poll(uint64_t *self, crew *group) -> bool {
+  return await_all_poll(self, group->tasks.data(), group->tasks.size());
+}
+
+void crew_join(crew *group, pool where, runner how) {
+  block_on_all(group->tasks.data(), group->tasks.size(), where, how);
+}
+
+void crew_free(crew *group) { const auto owned = std::unique_ptr<crew>(group); }
+
 auto await_any_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     -> bool {
   auto &s = state();
@@ -462,6 +492,22 @@ auto cancel(uint64_t *task) -> bool {
   return true;
 }
 
+auto cancel_on_drop(uint64_t *task) -> bool {
+  if (std::atomic_ref(task[co::k_record_slot])
+          .load(std::memory_order_acquire) == 0) {
+    return false;
+  }
+  {
+    auto &s = state();
+    const auto lock = std::scoped_lock(s.mutex);
+    const auto *rec = record_of(task);
+    if (rec != nullptr && rec->crew_owned) {
+      return true;
+    }
+  }
+  return cancel(task);
+}
+
 auto is_finished(const uint64_t *task) -> bool {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
@@ -497,8 +543,43 @@ auto cinder_rt_task_cancel(uint64_t *task) -> uint32_t {
   return cinder::runtime::scheduler::cancel(task) ? 1U : 0U;
 }
 
+auto cinder_rt_task_drop(uint64_t *task) -> uint32_t {
+  return cinder::runtime::scheduler::cancel_on_drop(task) ? 1U : 0U;
+}
+
 auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t {
   return cinder::runtime::scheduler::is_finished(task) ? 1U : 0U;
+}
+
+auto cinder_rt_crew_new() -> uint64_t * {
+  return reinterpret_cast<uint64_t *>(cinder::runtime::scheduler::crew_new()); // NOLINT
+}
+
+auto cinder_rt_crew_spawn(uint64_t *group, uint64_t *task) -> uint64_t * {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_spawn(reinterpret_cast<sched::crew *>(group), task, // NOLINT
+                    sched::pool::io, sched::native_runner());
+  return task;
+}
+
+auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t {
+  namespace sched = cinder::runtime::scheduler;
+  return sched::crew_join_poll(self, reinterpret_cast<sched::crew *>(group)) // NOLINT
+             ? 1U
+             : 0U;
+}
+
+auto cinder_rt_crew_free(uint64_t *group) -> uint64_t * {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_free(reinterpret_cast<sched::crew *>(group)); // NOLINT
+  return nullptr;
+}
+
+auto cinder_rt_crew_join(uint64_t *group) -> uint64_t * {
+  namespace sched = cinder::runtime::scheduler;
+  sched::crew_join(reinterpret_cast<sched::crew *>(group), // NOLINT
+                   sched::pool::io, sched::native_runner());
+  return nullptr;
 }
 
 auto cinder_rt_task_await_all_poll(uint64_t *self, uint64_t *const *tasks,

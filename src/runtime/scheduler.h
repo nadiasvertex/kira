@@ -86,6 +86,24 @@ void block_on(uint64_t *task, pool where, runner how);
 /// have, or until one panics (cancelling the rest and rethrowing).
 void block_on_all(uint64_t *const *tasks, size_t count, pool where, runner how);
 
+/// The tasks spawned into one `crew` block. Owned by the block that made it,
+/// which frees it with `crew_free` once it has joined.
+struct crew;
+
+[[nodiscard]] auto crew_new() -> crew *;
+
+/// Starts `task` and records it in `group`, which is only touched by the
+/// task or thread that runs the `crew` block.
+void crew_spawn(crew *group, uint64_t *task, pool where, runner how);
+
+/// `await_all_poll` over everything spawned into `group`.
+[[nodiscard]] auto crew_join_poll(uint64_t *self, crew *group) -> bool;
+
+/// `block_on_all` over everything spawned into `group`.
+void crew_join(crew *group, pool where, runner how);
+
+void crew_free(crew *group);
+
 /// `block_on` for a set of tasks: blocks until any one has finished.
 void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 
@@ -94,6 +112,10 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 /// never took over; the caller then resumes it itself. A task that already
 /// finished is left alone and counts as handled.
 [[nodiscard]] auto cancel(uint64_t *task) -> bool;
+
+/// `cancel` for a program that dropped its handle to `task`. A task spawned
+/// into a `crew` is left running: the block that owns it waits for it.
+[[nodiscard]] auto cancel_on_drop(uint64_t *task) -> bool;
 
 /// Whether `task` has finished (its body returned or was cancelled).
 [[nodiscard]] auto is_finished(const uint64_t *task) -> bool;
@@ -116,6 +138,7 @@ auto cinder_rt_task_block_on(uint64_t *task, uint64_t pool) -> uint64_t *;
 auto cinder_rt_task_await_poll(uint64_t *self, uint64_t *awaited) -> uint32_t;
 auto cinder_rt_task_spawn(uint64_t *task, uint64_t pool) -> uint64_t *;
 auto cinder_rt_task_cancel(uint64_t *task) -> uint32_t;
+auto cinder_rt_task_drop(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t;
@@ -125,4 +148,9 @@ auto cinder_rt_task_await_all_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t;
 auto cinder_rt_task_block_on_all(uint64_t *const *tasks, uint64_t count)
     -> uint64_t *;
+auto cinder_rt_crew_new() -> uint64_t *;
+auto cinder_rt_crew_spawn(uint64_t *group, uint64_t *task) -> uint64_t *;
+auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t;
+auto cinder_rt_crew_join(uint64_t *group) -> uint64_t *;
+auto cinder_rt_crew_free(uint64_t *group) -> uint64_t *;
 }

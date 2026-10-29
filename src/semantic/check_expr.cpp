@@ -1761,10 +1761,11 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   case ast::node_kind::crew_expr: {
     const auto &crew = ast::cast<const ast::crew_expr>(expr);
     push_scope();
-    bind_value(crew.name, k_unknown_type, binding_origin::synthetic, crew.span);
-    check_body_nodes(crew.body, k_unknown_type);
+    bind_value(crew.name, session_.types_.builtin_generic("crew", {}),
+               binding_origin::synthetic, crew.span);
+    const auto result = check_body_nodes(crew.body, k_unknown_type);
     pop_scope();
-    return k_unknown_type;
+    return result;
   }
   case ast::node_kind::on_expr: {
     const auto &on = ast::cast<const ast::on_expr>(expr);

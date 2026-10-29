@@ -179,6 +179,15 @@ inline constexpr auto k_builtin_methods =
         {.owner = "task",
          .name = "spawn",
          .result = builtin_result_shape::unit_result},
+        // `c.spawn(t)` hands a task to a `crew`; `t.get()` waits for a task
+        // and reads its result. Both take their result type from the
+        // receiver or argument, so `infer_call` overrides the placeholder.
+        {.owner = "crew",
+         .name = "spawn",
+         .result = builtin_result_shape::unit_result},
+        {.owner = "task",
+         .name = "get",
+         .result = builtin_result_shape::unit_result},
         {.owner = "cell",
          .name = "get",
          .result = builtin_result_shape::element},

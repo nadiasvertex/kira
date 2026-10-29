@@ -22,7 +22,7 @@ A worker pops a task and calls its step function through the runner the task was
 
 ## Awaiting
 
-`await_poll(self, awaited)` is called by a task's step function at each `await`. It returns true if `awaited` is done (rethrowing its failure if it panicked). Otherwise it queues `awaited` if nothing had started it, adds `self` to its waiters, and returns false, and the step function returns `pending`. On wake the step function resumes at the same `await` and polls again, so a spurious wake is harmless. `await_any_poll` does the same for a set of tasks and is true when any one is done; it backs `race`. `await_all_poll` is true when every task is done; if one has panicked it cancels the others and rethrows. It backs `par`, with `block_on_all` for callers that are not tasks. `block_on` serves callers that are not tasks, such as the entry `async def main`: it queues the task and blocks the calling thread until it is done.
+`await_poll(self, awaited)` is called by a task's step function at each `await`. It returns true if `awaited` is done (rethrowing its failure if it panicked). Otherwise it queues `awaited` if nothing had started it, adds `self` to its waiters, and returns false, and the step function returns `pending`. On wake the step function resumes at the same `await` and polls again, so a spurious wake is harmless. `await_any_poll` does the same for a set of tasks and is true when any one is done; it backs `race`. `await_all_poll` is true when every task is done; if one has panicked it cancels the others and rethrows. It backs `par`, with `block_on_all` for callers that are not tasks. A `crew` is a runtime object (`crew_new`, `crew_spawn`, `crew_join_poll`/`crew_join`, `crew_free`) holding the tasks spawned into one block; joining it is `await_all`/`block_on_all` over them. `crew_spawn` marks each task crew-owned so that dropping the program's handle (`cancel_on_drop`, used by drop glue) does not cancel it. `block_on` serves callers that are not tasks, such as the entry `async def main`: it queues the task and blocks the calling thread until it is done.
 
 A panic inside a task does not end the process. It is rethrown in the task or function that awaits it, so it propagates up the chain of awaits to the entry function.
 
@@ -36,7 +36,7 @@ A panic inside a task does not end the process. It is rethrown in the task or fu
 
 ## Testing
 
-`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153` and `155` (`on(cpu)`) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
+`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153` and `155`–`157` (`on(cpu)`, `race` cancelling losers, `crew`) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
 
 ## Not built
 

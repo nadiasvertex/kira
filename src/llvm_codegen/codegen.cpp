@@ -3284,7 +3284,7 @@ private:
     builder_.SetInsertPoint(cancel_bb);
     // A task the scheduler owns may be queued or running on another thread,
     // so the scheduler unwinds it; anything else is resumed here.
-    auto *handed_over = builder_.CreateCall(runtime_intrinsic("rt_task_cancel"),
+    auto *handed_over = builder_.CreateCall(runtime_intrinsic("rt_task_drop"),
                                             {gen}, "gen.cancel.scheduled");
     auto *resume_here_bb =
         llvm::BasicBlock::Create(ctx_, "gen.cancel.inline", current_fn_);
@@ -4177,8 +4177,12 @@ private:
     const auto &awaited = types_.entry(y.value->type);
     // A tuple of tasks is a `race`: the tuple is the block of slots the
     // runtime scans for a finished one.
+    const auto is_crew = awaited.kind == semantic::type_kind::builtin_generic_kind &&
+                         awaited.name == "crew";
     auto *polled =
-        awaited.kind == semantic::type_kind::tuple_kind
+        is_crew ? builder_.CreateCall(runtime_intrinsic("rt_crew_join_poll"),
+                                      {generator_self_arg_, *task}, "await.poll")
+        : awaited.kind == semantic::type_kind::tuple_kind
             ? builder_.CreateCall(
                   runtime_intrinsic(y.awaits_all ? "rt_task_await_all_poll"
                                                  : "rt_task_await_any_poll"),

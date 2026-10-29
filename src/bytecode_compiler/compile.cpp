@@ -3925,7 +3925,16 @@ private:
       return std::unexpected(done_reg.error());
     }
     const auto &awaited = types_.entry(y.value->type);
-    if (awaited.kind == semantic::type_kind::tuple_kind) {
+    if (awaited.kind == semantic::type_kind::builtin_generic_kind &&
+        awaited.name == "crew") {
+      // The end of a `crew` block: wait for everything spawned into it.
+      if (auto polled = emit_runtime_call("rt_crew_join_poll", *done_reg,
+                                          {generator_self_reg_, *task_reg},
+                                          y.span);
+          !polled.has_value()) {
+        return std::unexpected(polled.error());
+      }
+    } else if (awaited.kind == semantic::type_kind::tuple_kind) {
       // `race`: the tuple of tasks is the block of slots the runtime scans.
       auto count_reg = alloc_register(y.span);
       if (!count_reg.has_value()) {
