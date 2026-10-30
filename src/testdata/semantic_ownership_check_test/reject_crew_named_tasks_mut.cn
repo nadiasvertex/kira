@@ -1,0 +1,14 @@
+module reject_crew_named_tasks_mut
+
+async def bump(n: &mut int32) -> int32:
+    *n = *n + 1
+    return *n
+
+async def main() -> int32:
+    var x: int32 = 0
+    crew c:
+        let t1 = bump(&mut x)
+        let t2 = bump(&mut x)
+        let a = c.spawn(t1)
+        let b = c.spawn(t2)
+    return x

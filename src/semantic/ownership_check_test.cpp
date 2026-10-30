@@ -324,6 +324,14 @@ auto test_two_mut_borrows_in_crew_tasks_are_rejected() -> void {
       "expected a crew-task borrow diagnostic naming `x`");
 }
 
+auto test_named_tasks_keep_their_borrows_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_crew_named_tasks_mut.cn");
+  expect(analyzed.error_count > 0,
+         "expected two named tasks borrowing the same value mutably to be "
+         "rejected");
+}
+
 auto test_reading_while_crew_task_holds_mut_is_rejected() -> void {
   const auto analyzed =
       analyze_test_data_file("reject_crew_read_while_task_mut.cn");
@@ -1086,6 +1094,7 @@ auto main() -> int {
     test_mut_borrow_across_nested_call_is_rejected();
     test_two_mut_borrows_across_nested_call_are_rejected();
     test_two_mut_borrows_in_crew_tasks_are_rejected();
+    test_named_tasks_keep_their_borrows_is_rejected();
     test_reading_while_crew_task_holds_mut_is_rejected();
     test_crew_shared_reads_and_disjoint_mut_are_accepted();
     test_shared_borrows_across_nested_call_are_accepted();

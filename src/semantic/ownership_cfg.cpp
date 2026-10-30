@@ -343,9 +343,6 @@ private:
   /// One `crew_tasks` local per enclosing `crew`, innermost last. A task
   /// spawned into the crew keeps what it borrows until the crew ends.
   std::vector<local_id> crew_holders_;
-  /// The call that is the direct argument of the `c.spawn(...)` being
-  /// lowered; its borrows go to the crew rather than to a temporary.
-  const ast::call_expr *spawned_task_ = nullptr;
   /// The `field_path` local for each (parent, field) pair made so far.
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
   /// The temporaries made in one statement or full expression, which end
@@ -1818,7 +1815,7 @@ private:
     auto activate_temp = temp;
     auto reservation = k_no_loan;
 
-    const auto into_crew = &call == spawned_task_ && !crew_holders_.empty();
+    const auto into_crew = !crew_holders_.empty() && is_crew_spawn(call);
     const auto resolved = checked_.resolved_callees.find(&call);
     const auto *decl = signature_decl(
         resolved != checked_.resolved_callees.end() ? resolved->second.decl
@@ -1902,12 +1899,11 @@ private:
               borrow_place(argument, passing == param_passing::mut_ref,
                            loan_origin::borrow, argument.span));
       } else {
-        const auto *const outer_spawned = spawned_task_;
-        if (is_crew_spawn(call) && argument.kind == ast::node_kind::call_expr) {
-          spawned_task_ = &ast::cast<ast::call_expr>(argument);
+        auto passed = eval(*arg.value, use_mode::move);
+        if (into_crew) {
+          stash(crew_holders_.back(), passed);
         }
-        stash(arg_temp, eval(*arg.value, use_mode::move));
-        spawned_task_ = outer_spawned;
+        stash(arg_temp, std::move(passed));
       }
     }
 
@@ -1916,9 +1912,6 @@ private:
           borrow_place(*activate, true, loan_origin::receiver, activate->span,
                        reservation, /*evaluate_subscripts=*/false);
       stash(activate_temp, activated);
-    }
-    if (into_crew) {
-      stash(crew_holders_.back(), value{.loans = {}, .sources = {held, temp}});
     }
     emit(use_event{.local = held});
     return compound_result(call, temp);
