@@ -584,6 +584,13 @@ struct lowering_results {
   /// — see `hir::lower_array`. Keyed by the `ast::array_expr` node.
   std::unordered_map<const ast::array_expr *, comprehension_dispatch>
       runtime_fill_dispatches;
+  /// Every `c.errors()` on a `crew` that collects errors: the `list[E]`
+  /// `new`/`push` pair that builds its result, and the type of the tasks
+  /// spawned into the crew (all one `task[T, E, C]`), which the lowering
+  /// reads each finished task back as. Keyed by the call node.
+  std::unordered_map<const ast::call_expr *, comprehension_dispatch>
+      crew_error_dispatches;
+  std::unordered_map<const ast::call_expr *, type_id> crew_error_task_types;
   /// Every inline `static for pat in xs => e` in a function body, unrolled:
   /// the values it yields, computed at compile time and embedded as
   /// literals (or struct literals of literals) in iteration order, plus the

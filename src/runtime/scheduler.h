@@ -104,6 +104,10 @@ void crew_join(crew *group, pool where, runner how);
 
 void crew_free(crew *group);
 
+/// How many tasks have been spawned into `group`, and the `index`-th of them.
+[[nodiscard]] auto crew_size(const crew *group) -> size_t;
+[[nodiscard]] auto crew_task(const crew *group, size_t index) -> uint64_t *;
+
 /// `block_on` for a set of tasks: blocks until any one has finished.
 void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 
@@ -153,4 +157,6 @@ auto cinder_rt_crew_spawn(uint64_t *group, uint64_t *task) -> uint64_t *;
 auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t;
 auto cinder_rt_crew_join(uint64_t *group) -> uint64_t *;
 auto cinder_rt_crew_free(uint64_t *group) -> uint64_t *;
+auto cinder_rt_crew_len(uint64_t *group) -> uint64_t;
+auto cinder_rt_crew_task(uint64_t *group, uint64_t index) -> uint64_t *;
 }

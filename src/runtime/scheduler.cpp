@@ -407,6 +407,12 @@ void crew_join(crew *group, pool where, runner how) {
 
 void crew_free(crew *group) { const auto owned = std::unique_ptr<crew>(group); }
 
+auto crew_size(const crew *group) -> size_t { return group->tasks.size(); }
+
+auto crew_task(const crew *group, size_t index) -> uint64_t * {
+  return group->tasks[index];
+}
+
 auto await_any_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     -> bool {
   auto &s = state();
@@ -560,6 +566,17 @@ auto cinder_rt_crew_spawn(uint64_t *group, uint64_t *task) -> uint64_t * {
   sched::crew_spawn(reinterpret_cast<sched::crew *>(group), task, // NOLINT
                     sched::pool::io, sched::native_runner());
   return task;
+}
+
+auto cinder_rt_crew_len(uint64_t *group) -> uint64_t {
+  namespace sched = cinder::runtime::scheduler;
+  return sched::crew_size(reinterpret_cast<sched::crew *>(group)); // NOLINT
+}
+
+auto cinder_rt_crew_task(uint64_t *group, uint64_t index) -> uint64_t * {
+  namespace sched = cinder::runtime::scheduler;
+  return sched::crew_task(reinterpret_cast<sched::crew *>(group), // NOLINT
+                          index);
 }
 
 auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t {

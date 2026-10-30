@@ -63,23 +63,26 @@ let result = await on(pool):
 Errors from concurrent tasks follow the same `result` model as sequential code. A `crew` that uses `on_error: collect` gathers all errors rather than stopping on the first:
 
 ```cinder
-crew c(on_error: collect):
+let errors = crew c(on_error: collect):
     for item in items:
-        c.spawn(process(item))
+        let _ = c.spawn(process(item))
+    c.errors()
 
-for err in c.errors():
-    log("failed: {err.message()}")
+for err in errors:
+    log("failed: {err}")
 ```
+
+`on_error: collect` is the one crew option. It allows `c.errors()` inside the crew's body. The call waits for every task spawned so far, then gives a `list[E]` of the errors they finished with, in spawn order. A task that finishes with `err` does not stop its siblings, and the `ok` results stay readable through `get()`. Every task spawned into a collecting crew must have the same type, `task[T, E]`, so `errors()` has one element type. A panic still cancels the other tasks and propagates, as in any crew.
 
 ## Implementation status
 
-Partial. `par`, `race`, `spawn`, `await on(cpu|pool|io):` and `crew` work on both backends; `crew` options (`on_error: collect`) do not.
+Partial. `par`, `race`, `spawn`, `await on(cpu|pool|io):` and `crew` work on both backends; `crew` options work too (`on_error: collect`).
 
 - `await par: ...` starts every branch task, waits for each in order, and gives the tuple of results. `await race: ...` waits until any branch has finished, gives the first finished one in branch order, and cancels the others. Both work inside a task and in the entry `async def main`. If a `par` branch panics, the runtime cancels the other branches and the panic propagates to the awaiting task.
 - `task.spawn()` starts a task without waiting; a later `await` collects its result.
 - All of these run on the `io` pool. With the default single `io` worker they interleave; they run in parallel only when `CINDER_IO_WORKERS` is raised (the stress-test harness does this).
 - `await on(ctx): body` runs the body as a task on that context's pool (`cpu`/`pool` → cpu pool). The body is lowered to a closure and run by a synthesized task function, so it cannot itself `await`, and it has no sender form. Values it captures are copied in; ownership of non-copy captures is not yet checked (step 6 of the threading plan).
-- `crew c: body` binds `c` (a `crew` handle) for the body, runs it, then waits for every task passed to `c.spawn(t)` and frees the handle. It is a statement or an expression whose value is the body's last expression. In a task the wait suspends the task; in an ordinary function it blocks the thread. If a spawned task panics the others are cancelled and the panic propagates. `t.get()` is `await t`. Spawned tasks run on the `io` pool. `crew` options such as `on_error: collect`, and `c.errors()`, are not lowered; a crew with options is refused with a diagnostic. Spawned-task bodies are ordinary `async def` calls; a closure spawned into a crew does not yet borrow local data (step 6).
+- `crew c: body` binds `c` (a `crew` handle) for the body, runs it, then waits for every task passed to `c.spawn(t)` and frees the handle. It is a statement or an expression whose value is the body's last expression. In a task the wait suspends the task; in an ordinary function it blocks the thread. If a spawned task panics the others are cancelled and the panic propagates. `t.get()` is `await t`. Spawned tasks run on the `io` pool. With `on_error: collect`, `c.errors()` waits (it suspends the task, or blocks the thread outside one), then reads each spawned task through `rt_crew_len` and `rt_crew_task` and pushes the `err` payloads onto a list. `c.errors()` is not supported inside a generic function. Spawned-task bodies are ordinary `async def` calls; a closure spawned into a crew does not yet borrow local data (step 6).
 - There is no `send`/`share` checking and no crew-scoped borrowing, so nothing yet stops a program from handing data that is not safe to share to a task running on another worker.
 
 ## See also

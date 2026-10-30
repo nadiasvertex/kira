@@ -1,0 +1,13 @@
+module reject_crew_collect_mixed_tasks
+
+async def f(n: int32) -> result[int32, int32]:
+    return @ok(n)
+
+async def g(n: int32) -> result[int32, str]:
+    return @ok(n)
+
+async def main() -> int32:
+    crew c(on_error: collect):
+        let _ = c.spawn(f(1))
+        let _ = c.spawn(g(1))
+    return 0

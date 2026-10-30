@@ -188,6 +188,11 @@ inline constexpr auto k_builtin_methods =
         {.owner = "task",
          .name = "get",
          .result = builtin_result_shape::unit_result},
+        // `c.errors()` on a crew that collects errors: the `list[E]` of the
+        // errors its tasks finished with; typed by `infer_call`.
+        {.owner = "crew",
+         .name = "errors",
+         .result = builtin_result_shape::unit_result},
         {.owner = "cell",
          .name = "get",
          .result = builtin_result_shape::element},
@@ -515,6 +520,20 @@ private:
     /// `checked_types::runtime_fill_dispatches`.
     std::unordered_map<const ast::array_expr *, comprehension_dispatch>
         runtime_fill_dispatches_;
+
+    /// `c.errors()` calls — see `checked_types::crew_error_dispatches`.
+    std::unordered_map<const ast::call_expr *, comprehension_dispatch>
+        crew_error_dispatches_;
+    std::unordered_map<const ast::call_expr *, type_id>
+        crew_error_task_types_;
+
+    /// The crews in scope, by name: whether each collects errors and the task
+    /// type of the first thing spawned into it (`k_unknown_type` until then).
+    struct crew_scope {
+      bool collects = false;
+      type_id task_type = k_unknown_type;
+    };
+    std::unordered_map<std::string, crew_scope> crews_;
 
     /// Every `?` whose operand's error type needed a `from`-conversion to the
     /// enclosing function's declared error type, recorded by `infer_try`.
@@ -3622,6 +3641,23 @@ private:
 
   auto check_struct_literal(const ast::struct_expr &expr, type_id expected)
       -> type_id;
+
+  /// Checks a `crew name(options): body`: binds `name` as the crew handle,
+  /// validates the options and tracks what is spawned into it for
+  /// `name.errors()`. Returns the body's type.
+  auto check_crew(const std::string &name,
+                  const std::vector<ast::crew_option> &options,
+                  const std::vector<ast::ptr<ast::node>> &body,
+                  source_span span) -> type_id;
+
+  /// `c.spawn(task)`: every task in a crew that collects errors must have the
+  /// same type, so `c.errors()` has one element type.
+  auto record_crew_spawn(const ast::expr &crew, type_id task, source_span span)
+      -> void;
+
+  /// `c.errors()`: the `list[E]` of errors the crew's tasks finished with.
+  auto infer_crew_errors(const ast::call_expr &call, const ast::expr &crew,
+                         source_span span) -> type_id;
 
   auto check_body_nodes(const std::vector<ast::ptr<ast::node>> &items,
                         type_id expected_tail) -> type_id;

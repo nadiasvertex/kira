@@ -194,6 +194,21 @@ auto test_reports_async_call_used_as_value() -> void {
                     "expected an un-awaited `async def` call to be a task");
 }
 
+auto test_reports_crew_errors_without_collect() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_crew_errors_without_collect.cn");
+  expect_diagnostic(analyzed, "`errors()` needs a `crew` that collects errors",
+                    "expected `errors()` on a plain crew to be rejected");
+}
+
+auto test_reports_crew_collect_mixed_tasks() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_crew_collect_mixed_tasks.cn");
+  expect_diagnostic(analyzed, "collects errors, but this task is a",
+                    "expected differing task types in a collecting crew to be "
+                    "rejected");
+}
+
 auto test_reports_await_outside_async() -> void {
   const auto analyzed = analyze_test_data_file("reject_await_outside_async.cn");
   expect_diagnostic(analyzed, "`await` outside an `async` function",
@@ -3839,6 +3854,8 @@ auto main() -> int {
     test_accepts_async_task_types();
     test_reports_async_call_used_as_value();
     test_reports_await_outside_async();
+    test_reports_crew_errors_without_collect();
+    test_reports_crew_collect_mixed_tasks();
     test_reports_await_wrong_context();
     test_reports_arithmetic_on_task();
     test_reports_write_through_deref();

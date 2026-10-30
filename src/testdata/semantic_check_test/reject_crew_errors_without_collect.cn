@@ -1,0 +1,10 @@
+module reject_crew_errors_without_collect
+
+async def f(n: int32) -> result[int32, int32]:
+    return @ok(n)
+
+async def main() -> int32:
+    crew c:
+        let _ = c.spawn(f(1))
+        let e = c.errors()
+    return 0

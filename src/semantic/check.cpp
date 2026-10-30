@@ -222,6 +222,8 @@ auto checker::take_checked_types() -> checked_types {
       .reflection_folds = std::move(session_.reflection_folds_),
       .comprehension_dispatches = std::move(session_.comprehension_dispatches_),
       .runtime_fill_dispatches = std::move(session_.runtime_fill_dispatches_),
+      .crew_error_dispatches = std::move(session_.crew_error_dispatches_),
+      .crew_error_task_types = std::move(session_.crew_error_task_types_),
       .static_for_elements = std::move(cache_.static_for_elements_),
       .static_for_dispatches = std::move(cache_.static_for_dispatches_),
       .static_for_iterations = std::move(cache_.static_for_iterations_),

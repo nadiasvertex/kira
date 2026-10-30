@@ -804,6 +804,10 @@ auto checker::project_node(const ast::node &node) -> void {
                fix_callee);
     copy_entry(session_.type_param_reflections_, lowered.type_param_reflections,
                call);
+    copy_entry(session_.crew_error_dispatches_, lowered.crew_error_dispatches,
+               call, fix_dispatch);
+    copy_entry(session_.crew_error_task_types_, lowered.crew_error_task_types,
+               call, fix_type);
     copy_entry(session_.layout_queries_, lowered.layout_queries, call,
                [this](layout_query &query) -> void {
                  query.operand = view_type(query.operand);

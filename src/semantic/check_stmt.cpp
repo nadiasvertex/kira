@@ -617,11 +617,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
 
   case ast::node_kind::crew_stmt: {
     const auto &stmt = ast::cast<const ast::crew_stmt>(node);
-    push_scope();
-    bind_value(stmt.name, session_.types_.builtin_generic("crew", {}),
-               binding_origin::synthetic, stmt.span);
-    check_body_nodes(stmt.body, k_unknown_type);
-    pop_scope();
+    check_crew(stmt.name, stmt.options, stmt.body, stmt.span);
     return unit;
   }
 

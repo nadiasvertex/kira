@@ -1395,6 +1395,18 @@ auto intrinsic_rt_crew_join(std::span<const slot_value> args) -> slot_value {
   return slot_value{}; // `unit`
 }
 
+auto intrinsic_rt_crew_len(std::span<const slot_value> args) -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  return store_unsigned(sched::crew_size(
+      reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
+}
+
+auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
+  namespace sched = cinder::runtime::scheduler;
+  return slot_value{reinterpret_cast<uint64_t>(sched::crew_task( // NOLINT
+      reinterpret_cast<sched::crew *>(args[0].u), args[1].u))};  // NOLINT
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1532,7 +1544,8 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_task_await_all_poll" || name == "rt_task_block_on_all" ||
          name == "rt_task_drop" || name == "rt_crew_new" || name == "rt_crew_spawn" ||
          name == "rt_crew_join_poll" || name == "rt_crew_join" ||
-         name == "rt_crew_free";
+         name == "rt_crew_free" || name == "rt_crew_len" ||
+         name == "rt_crew_task";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1594,6 +1607,8 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_crew_join_poll,
         intrinsic_rt_crew_join,
         intrinsic_rt_crew_free,
+        intrinsic_rt_crew_len,
+        intrinsic_rt_crew_task,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),

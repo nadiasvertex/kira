@@ -1,0 +1,44 @@
+module codegen_stress.crew_collects_errors
+
+# expect: 147
+
+# A `crew` declared with `on_error: collect` lets its body call `c.errors()`,
+# which waits for the tasks spawned so far and gives the list of the errors
+# they finished with, in spawn order. A task that fails with `err` does not
+# stop its siblings: the other tasks still run and their results stay
+# readable through `get()`.
+
+async def check(n: int32) -> result[int32, int32]:
+    if n % 3 == 0:
+        return @err(n)
+    return @ok(n * 10)
+
+async def errors_in_a_task() -> int32:
+    let errs = crew c(on_error: collect):
+        for n in 1..8:
+            let _ = c.spawn(check(n))
+        c.errors()
+    var total: int32 = 0
+    for e in errs:
+        total = total * 10 + e
+    return total
+
+async def main() -> int32:
+    let in_task = await errors_in_a_task()
+    let (errs, oks) = crew c(on_error: collect):
+        let a = c.spawn(check(4))
+        let b = c.spawn(check(9))
+        let d = c.spawn(check(5))
+        let e = c.spawn(check(12))
+        (c.errors(), (a, d))
+    var sum: int32 = 0
+    for e in errs:
+        sum = sum + e
+    let (x, y) = oks
+    let first = match x.get():
+        @ok(v) => v
+        @err(_) => 0
+    let second = match y.get():
+        @ok(v) => v
+        @err(_) => 0
+    return in_task + sum + first + second

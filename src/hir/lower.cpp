@@ -780,6 +780,11 @@ private:
                                      source_span task_span, type_id type,
                                      type_id task_type, ptr<hir_expr> task)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `c.errors()`: waits for the crew's tasks, then builds the list of the
+  /// errors they finished with.
+  [[nodiscard]] auto lower_crew_errors(const ast::call_expr &call,
+                                       const ast::expr &crew, type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   /// `crew c: body`: runs `body`, then waits for every task spawned into `c`.
   /// Gives the statements to run, and the body's value for the expression
   /// form (`result_type` is its type; null for the statement form).
@@ -2507,6 +2512,11 @@ auto lowerer::lower_call(const ast::call_expr &call)
               runtime_call(call.span, "rt_crew_spawn", *type, std::move(args)));
         }
       }
+    }
+    if (field.object != nullptr && field.field_name == "errors" &&
+        call.args.empty() &&
+        checked_.lowering.crew_error_dispatches.contains(&call)) {
+      return lower_crew_errors(call, *field.object, *type);
     }
     if (field.object != nullptr && field.field_name == "get" &&
         call.args.empty()) {
@@ -4259,11 +4269,9 @@ auto lowerer::lower_crew(std::string_view name,
                          type_id result_type)
     -> std::expected<std::pair<ptr_vec<hir_node>, ptr<hir_expr>>,
                      lowering_error> {
-  if (!options.empty()) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "`crew` options such as `on_error: collect` are not lowered "
-                "yet");
-  }
+  // The checker has validated `options`; `on_error: collect` only enables
+  // `c.errors()`, since a task that fails with `err` is an ordinary value.
+  static_cast<void>(options);
   auto &types = interning_types();
   const auto unit_type = types.builtin("unit");
   const auto crew_type = types.builtin_generic("crew", {});
@@ -4288,7 +4296,33 @@ auto lowerer::lower_crew(std::string_view name,
     return std::unexpected(block.error());
   }
   auto result = ptr<hir_expr>{};
-  if (has_value) {
+  if (in_task_body_) {
+    // The body can wait (`await`, `c.errors()`), and a wait is only a
+    // suspension point among the statements of the task body, so the block's
+    // statements join this list rather than nesting in a block expression.
+    auto &stmts = (*block)->stmts;
+    auto tail = ptr<hir_expr>{};
+    if (has_value && !stmts.empty() &&
+        stmts.back()->kind == hir_node_kind::hir_expr_stmt) {
+      tail = std::move(static_cast<hir_expr_stmt &>(*stmts.back()).expr);
+      stmts.pop_back();
+    }
+    for (auto &stmt : stmts) {
+      nodes.push_back(std::move(stmt));
+    }
+    if (has_value) {
+      if (tail == nullptr) {
+        return fail(lowering_error_kind::unsupported_construct, span,
+                    "a `crew` block's value must be its last expression");
+      }
+      const auto result_symbol = mint_symbol();
+      nodes.push_back(ptr<hir_node>(make<hir_let>(
+          span, result_symbol, std::string("<crew result>"),
+          std::move(tail))));
+      result = ptr<hir_expr>(make<hir_local_ref>(
+          span, result_type, result_symbol, std::string("<crew result>")));
+    }
+  } else if (has_value) {
     const auto result_symbol = mint_symbol();
     nodes.push_back(ptr<hir_node>(make<hir_let>(
         span, result_symbol, std::string("<crew result>"),
@@ -4317,6 +4351,174 @@ auto lowerer::lower_crew(std::string_view name,
       span,
       runtime_call(span, "rt_crew_free", unit_type, std::move(free_args)))));
   return std::pair{std::move(nodes), std::move(result)};
+}
+
+/// `c.errors()` on a crew that collects errors:
+///
+/// ```text
+/// { <wait for c's tasks>
+///   var errs = list::new(); var i: usize = 0; let n = rt_crew_len(c)
+///   while i < n:
+///     match <the result of rt_crew_task(c, i)>: err(e) => errs.push(e)
+///     i = i + 1
+///   errs }
+/// ```
+///
+/// The wait is a suspension point in a task and blocks the thread elsewhere.
+/// Every task in the crew has one type, which the checker recorded.
+auto lowerer::lower_crew_errors(const ast::call_expr &call,
+                                const ast::expr &crew, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto span = call.span;
+  const auto &dispatch = checked_.lowering.crew_error_dispatches.at(&call);
+  const auto task_type = checked_.lowering.crew_error_task_types.at(&call);
+  const auto &task_entry = checked_.types.entry(task_type);
+  if (task_entry.args.size() < 2) {
+    return fail(lowering_error_kind::unresolved_type, span,
+                "`errors()` did not resolve to a task type");
+  }
+  const auto error_type = task_entry.args[1];
+  const auto result_type = interning_types().builtin_generic(
+      "result", {task_entry.args[0], error_type});
+  const auto unit_type = interning_types().builtin("unit");
+  const auto usize_type = checked_.types.usize_type();
+  const auto bool_type = checked_.types.bool_type();
+  const auto in_task = in_task_body_;
+  if (in_task && await_cannot_hoist()) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                k_conditional_await_message);
+  }
+
+  auto crew_value = lower_receiver(crew);
+  if (!crew_value.has_value()) {
+    return std::unexpected(crew_value.error());
+  }
+  const auto crew_symbol = mint_symbol();
+  const auto crew_type = checked_type_of(crew);
+  if (!crew_type.has_value()) {
+    return std::unexpected(crew_type.error());
+  }
+  const auto crew_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, *crew_type, crew_symbol,
+                                std::string("<errors crew>"))};
+  };
+
+  auto stmts = ptr_vec<hir_node>{};
+  auto &prologue = in_task ? *await_hoist_ : stmts;
+  prologue.push_back(ptr<hir_node>(make<hir_let>(
+      span, crew_symbol, std::string("<errors crew>"),
+      std::move(*crew_value))));
+  if (in_task) {
+    if (auto waited = emit_task_wait(prologue, crew_ref(), &call, span);
+        !waited.has_value()) {
+      return std::unexpected(waited.error());
+    }
+  } else {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(crew_ref());
+    prologue.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_crew_join", unit_type, std::move(args)))));
+  }
+
+  const auto call_from_resolved =
+      [this, span](type_id result, const semantic::resolved_callee &resolved,
+                   ptr_vec<hir_expr> args) -> ptr<hir_expr> {
+    const auto local_name =
+        resolved.impl_target_type.empty()
+            ? resolved.decl->name
+            : std::format("{}::{}", resolved.impl_target_type,
+                          resolved.decl->name);
+    const auto symbol = resolve_reference(local_name);
+    auto callee = ptr<hir_expr>(make<hir_local_ref>(
+        span, k_unknown_type, symbol, local_name, resolved.owner_module));
+    return {direct_call(span, result, std::move(callee), std::move(args),
+                        resolved.decl)};
+  };
+
+  const auto acc_symbol = mint_symbol();
+  const auto count_symbol = mint_symbol();
+  const auto index_symbol = mint_symbol();
+  const auto task_symbol = mint_symbol();
+  const auto outcome_symbol = mint_symbol();
+  const auto local = [&](symbol_id symbol, type_id local_type,
+                         const char *name) -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, local_type, symbol, std::string(name))};
+  };
+  const auto usize_literal = [&](const char *text) -> ptr<hir_expr> {
+    return {make<hir_literal>(span, usize_type, token_kind::int_lit, text)};
+  };
+
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, acc_symbol, std::string("<errors result>"),
+      call_from_resolved(type, dispatch.new_callee, ptr_vec<hir_expr>{}),
+      /*mut=*/true)));
+  auto len_args = ptr_vec<hir_expr>{};
+  len_args.push_back(crew_ref());
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, count_symbol, std::string("<errors count>"),
+      runtime_call(span, "rt_crew_len", usize_type, std::move(len_args)),
+      /*mut=*/false)));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, index_symbol, std::string("<errors index>"),
+                    usize_literal("0"), /*mut=*/true)));
+
+  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
+      span, bool_type, ast::binary_op::lt,
+      local(index_symbol, usize_type, "<errors index>"),
+      local(count_symbol, usize_type, "<errors count>")));
+
+  auto body_stmts = ptr_vec<hir_node>{};
+  auto task_args = ptr_vec<hir_expr>{};
+  task_args.push_back(crew_ref());
+  task_args.push_back(local(index_symbol, usize_type, "<errors index>"));
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, task_symbol, std::string("<errors task>"),
+      runtime_call(span, "rt_crew_task", task_type, std::move(task_args)))));
+  body_stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, outcome_symbol, std::string("<errors outcome>"),
+      ptr<hir_expr>(make<hir_generator_next>(
+          span, result_type, local(task_symbol, task_type, "<errors task>"),
+          /*await_task=*/true)))));
+
+  auto push_args = ptr_vec<hir_expr>{};
+  push_args.push_back(local(acc_symbol, type, "<errors result>"));
+  push_args.push_back(ptr<hir_expr>(make<hir_variant_payload>(
+      span, error_type, local(outcome_symbol, result_type, "<errors outcome>"),
+      std::string("err"), size_t{0})));
+  auto err_stmts = ptr_vec<hir_node>{};
+  err_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, call_from_resolved(
+                drop_call_result_type(checked_, *dispatch.push_callee.decl),
+                dispatch.push_callee, std::move(push_args)))));
+  auto err_pattern_args = ptr_vec<hir_pattern>{};
+  err_pattern_args.push_back(ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
+  auto arms = std::vector<hir_match_arm>{};
+  arms.push_back(hir_match_arm{
+      .pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+          span, std::string("err"), std::move(err_pattern_args))),
+      .guard = nullptr,
+      .body = make<hir_block>(span, k_unknown_type, std::move(err_stmts))});
+  arms.push_back(hir_match_arm{
+      .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(span)),
+      .guard = nullptr,
+      .body = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{})});
+  body_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, ptr<hir_expr>(make<hir_match>(
+                span, k_unknown_type,
+                local(outcome_symbol, result_type, "<errors outcome>"),
+                mint_symbol(), std::move(arms))))));
+  auto body = make<hir_block>(span, k_unknown_type, std::move(body_stmts));
+
+  auto step_stmts = ptr_vec<hir_node>{};
+  step_stmts.push_back(ptr<hir_node>(hir::make<hir_assign>(
+      span, ast::assign_op::add_assign,
+      local(index_symbol, usize_type, "<errors index>"), usize_literal("1"))));
+  stmts.push_back(ptr<hir_node>(make<hir_while>(
+      span, std::move(condition), std::move(body),
+      make<hir_block>(span, k_unknown_type, std::move(step_stmts)))));
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span, local(acc_symbol, type, "<errors result>"))));
+  return ok_expr(make<hir_block>(span, type, std::move(stmts)));
 }
 
 /// `par`: wait for each task in turn; the result is the tuple of their

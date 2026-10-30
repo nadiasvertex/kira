@@ -806,7 +806,13 @@ auto checker::infer_method_call(const ast::call_expr &call,
       if (entry.name == "crew" && field.field_name == "spawn" &&
           call.args.size() == 1) {
         // `c.spawn(t)` gives back the task it was handed.
-        return infer_expr(*call.args[0].value, k_unknown_type);
+        const auto task = infer_expr(*call.args[0].value, k_unknown_type);
+        record_crew_spawn(*field.object, task, call.args[0].value->span);
+        return task;
+      }
+      if (entry.name == "crew" && field.field_name == "errors" &&
+          call.args.empty()) {
+        return infer_crew_errors(call, *field.object, field.span);
       }
       if (entry.name == "task" && field.field_name == "get" &&
           call.args.empty()) {

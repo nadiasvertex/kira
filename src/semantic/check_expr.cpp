@@ -1223,6 +1223,103 @@ auto checker::infer_await(const ast::await_expr &expr) -> type_id {
   return awaited_type(operand, expr.span);
 }
 
+/// Checks a `crew` block. The one option is `on_error: collect`, which lets
+/// the body read the errors its tasks finished with through `name.errors()`.
+auto checker::check_crew(const std::string &name,
+                         const std::vector<ast::crew_option> &options,
+                         const std::vector<ast::ptr<ast::node>> &body,
+                         source_span span) -> type_id {
+  auto scope = session_state::crew_scope{};
+  for (const auto &option : options) {
+    if (option.name == "on_error" && option.value == "collect") {
+      scope.collects = true;
+    } else {
+      error_with_help(option.span,
+                      std::format("`crew` has no option `{}: {}`", option.name,
+                                  option.value),
+                      "unknown crew option",
+                      "The only option is `on_error: collect`.");
+    }
+  }
+  const auto saved = session_.crews_.find(name) != session_.crews_.end()
+                         ? std::optional{session_.crews_.at(name)}
+                         : std::nullopt;
+  session_.crews_[name] = scope;
+  push_scope();
+  bind_value(name, session_.types_.builtin_generic("crew", {}),
+             binding_origin::synthetic, span);
+  const auto result = check_body_nodes(body, k_unknown_type);
+  pop_scope();
+  if (saved.has_value()) {
+    session_.crews_[name] = *saved;
+  } else {
+    session_.crews_.erase(name);
+  }
+  return result;
+}
+
+auto checker::record_crew_spawn(const ast::expr &crew, type_id task,
+                                source_span span) -> void {
+  const auto *name = ast::as<const ast::ident_expr>(&crew);
+  if (name == nullptr) {
+    return;
+  }
+  const auto found = session_.crews_.find(name->name);
+  if (found == session_.crews_.end() || !found->second.collects ||
+      session_.types_.is_unknown(task)) {
+    return;
+  }
+  if (found->second.task_type == k_unknown_type) {
+    found->second.task_type = task;
+  } else if (found->second.task_type != task) {
+    error_with_help(
+        span,
+        std::format("`{}` collects errors, but this task is a `{}` and the "
+                    "crew's earlier tasks are `{}`",
+                    name->name, session_.types_.display(task),
+                    session_.types_.display(found->second.task_type)),
+        "different task type",
+        "Every task in a crew that uses `on_error: collect` must return the "
+        "same type, so `errors()` has one error type.");
+  }
+}
+
+auto checker::infer_crew_errors(const ast::call_expr &call,
+                                const ast::expr &crew, source_span span)
+    -> type_id {
+  const auto *name = ast::as<const ast::ident_expr>(&crew);
+  const auto found = name != nullptr ? session_.crews_.find(name->name)
+                                     : session_.crews_.end();
+  if (found == session_.crews_.end() || !found->second.collects) {
+    error_with_help(span, "`errors()` needs a `crew` that collects errors",
+                    "this crew does not collect errors",
+                    "Declare it as `crew c(on_error: collect):`.");
+    return k_error_type;
+  }
+  if (found->second.task_type == k_unknown_type) {
+    error_with_help(span,
+                    std::format("`{}.errors()` comes before any task is "
+                                "spawned into `{}`",
+                                name->name, name->name),
+                    "no task spawned yet",
+                    "Spawn the tasks first; `errors()` waits for them and "
+                    "collects what they failed with.");
+    return k_error_type;
+  }
+  const auto &task = session_.types_.entry(found->second.task_type);
+  if (task.args.size() < 2 || session_.types_.entry(task.args[1]).name == "never") {
+    error_with_help(span, "the tasks in this crew cannot fail",
+                    "no error type",
+                    "`errors()` collects the `err` side of a task that "
+                    "returns `result[T, E]`.");
+    return k_error_type;
+  }
+  const auto list_type = resolve_list_type(task.args[1]);
+  record_new_push_dispatch(call, list_type, session_.crew_error_dispatches_);
+  session_.crew_error_task_types_[&call] = found->second.task_type;
+  return list_type;
+}
+
 /// What awaiting a value of type `operand` produces: for a `task[T, E, C]`,
 /// `result[T, E]` (or plain `T` when the task cannot fail), after checking
 /// that the awaiting code runs on the task's context. Any other operand type
@@ -1760,12 +1857,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   }
   case ast::node_kind::crew_expr: {
     const auto &crew = ast::cast<const ast::crew_expr>(expr);
-    push_scope();
-    bind_value(crew.name, session_.types_.builtin_generic("crew", {}),
-               binding_origin::synthetic, crew.span);
-    const auto result = check_body_nodes(crew.body, k_unknown_type);
-    pop_scope();
-    return result;
+    return check_crew(crew.name, crew.options, crew.body, crew.span);
   }
   case ast::node_kind::on_expr: {
     const auto &on = ast::cast<const ast::on_expr>(expr);
