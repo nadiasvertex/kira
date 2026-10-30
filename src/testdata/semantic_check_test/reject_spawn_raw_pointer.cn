@@ -1,0 +1,11 @@
+module reject_spawn_raw_pointer
+
+type handle = { raw: *mut int32 }
+
+async def use_handle(h: handle) -> int32:
+    return 1
+
+async def main(h: handle) -> int32:
+    crew c:
+        let _ = c.spawn(use_handle(h))
+    return 0

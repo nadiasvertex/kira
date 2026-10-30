@@ -1284,6 +1284,41 @@ auto checker::record_crew_spawn(const ast::expr &crew, type_id task,
   }
 }
 
+auto checker::check_task_body(source_span span,
+                              const std::function<type_id()> &check)
+    -> type_id {
+  function_.task_boundaries_.push_back(
+      {.scope_floor = function_.scopes_.size(), .captured = {}});
+  const auto result = check();
+  const auto captured = std::move(function_.task_boundaries_.back().captured);
+  function_.task_boundaries_.pop_back();
+  auto reported = std::unordered_set<std::string>{};
+  for (const auto &[name, type] : captured) {
+    if (reported.insert(name).second) {
+      require_sendable(type, span,
+                       std::format("`{}` is captured by this task", name));
+    }
+  }
+  return result;
+}
+
+auto checker::require_task_args_sendable(const ast::expr &task) -> void {
+  const auto *call = ast::as<const ast::call_expr>(&task);
+  if (call == nullptr) {
+    return;
+  }
+  for (const auto &arg : call->args) {
+    if (arg.value == nullptr) {
+      continue;
+    }
+    if (const auto it = session_.node_types_.find(arg.value.get());
+        it != session_.node_types_.end()) {
+      require_sendable(it->second, arg.value->span,
+                       "this argument moves into the task");
+    }
+  }
+}
+
 auto checker::infer_crew_errors(const ast::call_expr &call,
                                 const ast::expr &crew, source_span span)
     -> type_id {
@@ -1831,8 +1866,10 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     return infer_yield(ast::cast<const ast::yield_expr>(expr));
   case ast::node_kind::async_expr: {
     const auto saved_async = std::exchange(function_.in_async_, true);
-    check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
-                     k_unknown_type);
+    check_task_body(expr.span, [&] -> type_id {
+      return check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
+                              k_unknown_type);
+    });
     function_.in_async_ = saved_async;
     return k_unknown_type;
   }
@@ -1842,6 +1879,9 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     for (const auto &branch : par.branches) {
       elements.push_back(branch != nullptr ? infer_expr(*branch, k_unknown_type)
                                            : k_unknown_type);
+      if (branch != nullptr) {
+        require_task_args_sendable(*branch);
+      }
     }
     return session_.types_.tuple_of(std::move(elements));
   }
@@ -1851,6 +1891,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     for (const auto &branch : race.branches) {
       if (branch != nullptr) {
         result = infer_expr(*branch, k_unknown_type);
+        require_task_args_sendable(*branch);
       }
     }
     return result;
@@ -1866,7 +1907,13 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     }
     const auto saved_context = function_.async_context_;
     function_.async_context_ = context_of_on_target(on);
-    const auto result = check_body_nodes(on.body, expected);
+    // A single-threaded context moves nothing between threads.
+    const auto result =
+        function_.async_context_ == session_.types_.builtin("io")
+            ? check_body_nodes(on.body, expected)
+            : check_task_body(on.span, [&] -> type_id {
+                return check_body_nodes(on.body, expected);
+              });
     function_.async_context_ = saved_context;
     return result;
   }

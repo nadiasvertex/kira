@@ -1,0 +1,7 @@
+module reject_task_captures_raw_pointer
+
+async def main(p: *mut int32) -> int32:
+    let t = async:
+        let q = p
+        1
+    return await t

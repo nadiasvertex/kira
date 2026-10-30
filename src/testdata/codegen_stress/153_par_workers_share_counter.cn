@@ -15,6 +15,11 @@ type counter = {
     cell: *mut usize,
 }
 
+# The cell is only touched through atomics, so tasks may share the counter.
+impl send for counter:
+
+impl share for counter:
+
 extend counter:
     machine def make() -> counter:
         return counter { cell: alloc[usize](1) }

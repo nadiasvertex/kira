@@ -889,6 +889,15 @@ private:
 
     std::vector<capture_barrier> capture_barriers_;
 
+    /// One entry per `async:` or `on(...)` body being checked: where it began
+    /// in `scopes_`, and the outer locals it has read so far, which cross to
+    /// whichever task runs the body.
+    struct task_boundary {
+      size_t scope_floor = 0;
+      std::vector<std::pair<std::string, type_id>> captured;
+    };
+    std::vector<task_boundary> task_boundaries_;
+
     std::vector<type_scope> type_params_;
 
     type_id self_type_ = k_unknown_type;
@@ -1466,6 +1475,30 @@ private:
   auto value_is_copy(type_id id) -> bool;
 
   auto value_is_copy(type_id id, std::unordered_set<type_id> &visiting) -> bool;
+
+  /// The raw pointer that keeps values of `id` from crossing to another task
+  /// (`send`), or from being read by several at once (`share`), or `nullopt`
+  /// when they may. Both concepts are derived from a type's parts; a
+  /// standard-library type or one with `impl send/share for` vouches for its
+  /// own fields, and its type arguments are still checked.
+  auto concurrency_offender(type_id id, bool need_share,
+                            std::unordered_set<type_id> &visiting)
+      -> std::optional<type_id>;
+
+  /// Checks the body of an `async:` or `on(...)` block: runs `check` with the
+  /// block marked as a task boundary, then requires what it captured to be
+  /// sendable.
+  auto check_task_body(source_span span, const std::function<type_id()> &check)
+      -> type_id;
+
+  /// Requires the arguments of a task-creating call (`f(args)` handed to
+  /// `c.spawn`, `par` or `race`) to be sendable.
+  auto require_task_args_sendable(const ast::expr &task) -> void;
+
+  /// Reports `value`, of type `type`, as unable to cross into a task when
+  /// `concurrency_offender` finds a pointer in it. `what` names the use.
+  auto require_sendable(type_id type, source_span span, std::string_view what)
+      -> void;
 
   static auto intersect_domains(const type_domain &a, const type_domain &b)
       -> type_domain;

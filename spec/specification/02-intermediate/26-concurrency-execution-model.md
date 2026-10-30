@@ -51,7 +51,7 @@ Partial. Tasks run on a shared scheduler on both backends; `crew`, `on` and the 
 - Tasks are scheduled by a runtime shared by the VM and the AOT/JIT tiers ([The Task Scheduler](../05-implementation/69-task-scheduler.md)). The `io` pool has one worker; the `cpu` pool has one per hardware thread. An `await` inside a task suspends it until the awaited task finishes, and a panic in a task is rethrown in whoever awaits it. Cancelling a task the scheduler owns is cooperative, as described above.
 - Nothing runs in the `cpu` pool yet. `on` is not lowered, so the only way onto it is closed.
 - A `crew` body is still typed as `k_unknown_type` (`check_expr.cpp`) and is not lowered.
-- There is no `send`/`share` checking and no crew-scoped borrow rules.
+- `send`/`share` are checked structurally at spawn, `par`, `race` and non-`io` `on` sites ([Data-Race Freedom](30-data-race-freedom.md#implementation-status)). There are no crew-scoped borrow rules yet.
 - There is no event loop behind `io`. `io` tasks run on the single-worker driver.
 - `src/std/` has no `channel`, `watch`, `mutex`, `rwlock`, or `atomic` module. `shared[T]` and the `std.mem` atomics exist.
 

@@ -435,6 +435,95 @@ auto checker::value_is_copy(type_id id, std::unordered_set<type_id> &visiting)
   return true;
 }
 
+auto checker::concurrency_offender(type_id id, bool need_share,
+                                   std::unordered_set<type_id> &visiting)
+    -> std::optional<type_id> {
+  const auto stripped = session_.types_.strip_refinement(id);
+  const auto &entry = session_.types_.entry(stripped);
+  const auto any_offender =
+      [&](const std::vector<type_id> &parts) -> std::optional<type_id> {
+    for (const auto part : parts) {
+      if (const auto found = concurrency_offender(part, need_share, visiting)) {
+        return found;
+      }
+    }
+    return std::nullopt;
+  };
+  switch (entry.kind) {
+  case type_kind::ptr_kind:
+    return stripped;
+  case type_kind::ref_kind:
+    // Several tasks reading through `&T` need `T` to be `share`; a `&mut T`
+    // moves with its referent.
+    return concurrency_offender(entry.result, need_share || !entry.is_mut,
+                                visiting);
+  case type_kind::array_kind:
+    return concurrency_offender(entry.result, need_share, visiting);
+  case type_kind::tuple_kind:
+    return any_offender(entry.args);
+  case type_kind::builtin_generic_kind:
+    if (entry.name == "slice" || entry.name == "cell") {
+      return any_offender(entry.args);
+    }
+    return any_offender(entry.args);
+  case type_kind::struct_kind:
+  case type_kind::sum_kind:
+    break;
+  default:
+    return std::nullopt;
+  }
+  if (!visiting.insert(stripped).second) {
+    return std::nullopt;
+  }
+  // Every handle to a `shared[T]` reads the same `T`.
+  const auto arg_need_share = need_share || entry.name == "shared";
+  for (const auto arg : entry.args) {
+    if (const auto found = concurrency_offender(arg, arg_need_share, visiting)) {
+      return found;
+    }
+  }
+  if (entry.module_name.starts_with("std") ||
+      type_has_trait(entry, need_share ? "share" : "send")) {
+    return std::nullopt;
+  }
+  if (const auto *fields = struct_fields_of(entry); fields != nullptr) {
+    for (const auto &field : *fields) {
+      if (const auto type = struct_field_type(entry, field.name)) {
+        if (const auto found = concurrency_offender(*type, need_share, visiting)) {
+          return found;
+        }
+      }
+    }
+  }
+  if (const auto *variants = sum_variants_of(entry); variants != nullptr) {
+    for (const auto &variant : *variants) {
+      if (const auto found = any_offender(variant_payload_types(entry, variant))) {
+        return found;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
+auto checker::require_sendable(type_id type, source_span span,
+                               std::string_view what) -> void {
+  auto visiting = std::unordered_set<type_id>{};
+  const auto offender = concurrency_offender(type, false, visiting);
+  if (!offender.has_value()) {
+    return;
+  }
+  error_with_help(
+      span,
+      std::format("`{}` cannot be sent to another task",
+                  session_.types_.display(type)),
+      std::string(what),
+      std::format("It contains `{}`, a raw pointer, and nothing says another "
+                  "task may use the memory it points to. If the type owns "
+                  "that memory and no other task can reach it, write "
+                  "`impl send for` it to say so.",
+                  session_.types_.display(*offender)));
+}
+
 auto checker::intersect_domains(const type_domain &a, const type_domain &b)
     -> type_domain {
   auto out = type_domain{};

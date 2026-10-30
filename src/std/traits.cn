@@ -9,6 +9,21 @@ pub trait drop:
     #:   unit (nothing).
     def drop(mut self) -> unit
 
+#: A type whose ownership may move to another task
+#: (`spec/specification/02-intermediate/30-data-race-freedom.md`).
+#:
+#: Nothing to write for most types: the checker derives `send` from a type's
+#: parts. A type built on a raw pointer is not `send` unless its author
+#: vouches for it with `impl send for the_type`, which asserts that no other
+#: task can reach the memory the pointer owns.
+pub trait send:
+
+#: A type that several tasks may read through `&` at the same time.
+#:
+#: Derived like `send`. `impl share for the_type` vouches for a type built on
+#: a raw pointer whose reads are safe from several tasks at once.
+pub trait share:
+
 #: A value that can produce an independent duplicate of itself.
 #:
 #: Unlike `copy`, cloning is explicit: `x.clone()`. A handle type such as

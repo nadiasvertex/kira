@@ -35,6 +35,11 @@ auto checker::lookup_value(std::string_view name) -> const value_binding * {
   }
   if (found.binding != nullptr) {
     note_capture_use(name, found.depth);
+    for (auto &boundary : function_.task_boundaries_) {
+      if (boundary.scope_floor > found.depth) {
+        boundary.captured.emplace_back(std::string(name), found.binding->type);
+      }
+    }
   }
   return found.binding;
 }

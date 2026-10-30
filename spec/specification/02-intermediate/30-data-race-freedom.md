@@ -1,6 +1,6 @@
 # 30. Data-Race Freedom
 
-**Status:** Planned
+**Status:** Partial
 
 `send`/`share` concepts, and the two ways to share data across tasks: scoped sharing vs. `shared` + `mutex[T]`/`rwlock[T]`/`atomic[T]`.
 
@@ -47,7 +47,12 @@ A `mutex` enforces "one writer at a time" at runtime, exactly as the borrow chec
 
 ## Implementation status
 
-Design only. `send`/`share` are not implemented as concepts anywhere in the checker — no context (`C`) tracking exists to require them, and `crew` bodies type-check against `k_unknown_type` rather than enforcing borrow rules across spawned tasks (see [The Execution Model](26-concurrency-execution-model.md#implementation-status)). `shared[T]` itself is implemented: an atomically reference-counted, read-only handle in `std.shared` (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)). The cross-task guarantee described above is aspirational until a scheduler exists. `mutex[T]`, `rwlock[T]`, and `atomic[T]` do not exist anywhere in `src/std/`, and neither runtime backend has any synchronization primitive. None of the "many readers or one writer" enforcement described in this chapter — compile-time or runtime — is checked by the compiler today.
+Partial. A narrow form of `send`/`share` is checked; crew-scoped borrow rules and the synchronized cells are not built.
+
+- `send` and `share` are marker traits in `std.traits`. The checker derives them structurally (`concurrency_offender`, `src/semantic/check_bounds.cpp`): a raw pointer is neither, a `&T` needs `T: share`, a `shared[T]` needs `T: share`, and a struct, sum, tuple or array is the conjunction of its parts. Standard-library types vouch for their own fields. A user type built on a raw pointer says `impl send for the_type` and `impl share for the_type`; the type's arguments are still checked.
+- The check runs on the arguments of a call handed to `c.spawn`, `par` or `race`, and on the outer locals an `async:` block or an `on(pool)` body reads. `on(io)` is exempt because it stays on one thread.
+- Not checked: the captures of a closure value passed as a task, `&mut` aliasing across spawned tasks, `channel.send`, and a function-typed value's captures. A task type does not record its arguments, so only the direct call form is seen.
+- `shared[T]` is implemented: an atomically reference-counted, read-only handle in `std.shared` (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)). `mutex[T]`, `rwlock[T]`, and `atomic[T]` do not exist in `src/std/`; `std.mem` has the atomic operations.
 
 ## See also
 

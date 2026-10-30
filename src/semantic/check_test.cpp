@@ -209,6 +209,30 @@ auto test_reports_crew_collect_mixed_tasks() -> void {
                     "rejected");
 }
 
+auto test_reports_spawn_raw_pointer() -> void {
+  const auto analyzed = analyze_test_data_file("reject_spawn_raw_pointer.cn");
+  expect_diagnostic(analyzed, "`handle` cannot be sent to another task",
+                    "expected a raw-pointer argument to a spawned task to be "
+                    "rejected");
+}
+
+auto test_reports_task_captures_raw_pointer() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_task_captures_raw_pointer.cn");
+  expect_diagnostic(analyzed, "`p` is captured by this task",
+                    "expected a raw pointer captured by an `async:` block to "
+                    "be rejected");
+}
+
+auto test_accepts_spawn_vouched_pointer() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_spawn_vouched_pointer.cn");
+  expect_clean(analyzed,
+               std::string("expected `impl send` to vouch for a pointer "
+                           "type:\n") +
+                   analyzed.diagnostics);
+}
+
 auto test_reports_await_outside_async() -> void {
   const auto analyzed = analyze_test_data_file("reject_await_outside_async.cn");
   expect_diagnostic(analyzed, "`await` outside an `async` function",
@@ -3856,6 +3880,9 @@ auto main() -> int {
     test_reports_await_outside_async();
     test_reports_crew_errors_without_collect();
     test_reports_crew_collect_mixed_tasks();
+    test_reports_spawn_raw_pointer();
+    test_reports_task_captures_raw_pointer();
+    test_accepts_spawn_vouched_pointer();
     test_reports_await_wrong_context();
     test_reports_arithmetic_on_task();
     test_reports_write_through_deref();
