@@ -44,7 +44,7 @@ Cancellation is requested when a sibling in the same `crew` fails (the crew canc
 
 ## Implementation status
 
-Partial. Tasks run on a shared scheduler on both backends; `crew`, `on` and the data-race checks are not built.
+Partial. Tasks run on a shared scheduler on both backends, with `crew`, `par`, `race` and `on`; the data-race checks are partial (see chapter 30).
 
 - Surface syntax parses completely: `async`, `await` (including `await yield`), `crew`, `par`, `race`, `on`, and the `async` function modifier all lex and parse (`src/parser/ast.h`).
 - The checker types an `async def` call as `task[T, E, io]` (`E` is `never` unless the body returns `result[T, E]`), and `await` unwraps it to `T`, or to `result[T, E]` for a fallible task. `await par:` unwraps each branch into a tuple. `await` outside an `async` function is an error. Awaiting a task whose context differs from the current one (`io` in an `async def`, switched by an enclosing `on(pool)` or `on(io)`) is an error. Only the built-in `io` and `cpu` contexts are checked; user-defined contexts and `task` annotations in other positions are not modeled (`infer_await`, `awaited_type`, `context_of_on_target` in `src/semantic/check_expr.cpp`).

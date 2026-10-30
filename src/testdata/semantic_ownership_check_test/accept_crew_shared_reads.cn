@@ -1,0 +1,20 @@
+module accept_crew_shared_reads
+
+async def peek(n: &int32) -> int32:
+    return *n
+
+async def bump(n: &mut int32) -> int32:
+    *n = *n + 1
+    return *n
+
+async def main() -> int32:
+    var x: int32 = 4
+    var y: int32 = 0
+    var z: int32 = 0
+    crew c:
+        let a = c.spawn(peek(&x))
+        let b = c.spawn(peek(&x))
+        let d = c.spawn(bump(&mut y))
+        let e = c.spawn(bump(&mut z))
+    x = 5
+    return x

@@ -56,6 +56,8 @@ enum class local_role : std::uint8_t {
   field_path,   ///< A field of an owning local reached through fields only
                 ///< (`j.output`, `j.a.b`), tracked so a partial move of it
                 ///< is known. Its `parent` is the path one field shorter.
+  crew_tasks,   ///< What the tasks spawned into a `crew` borrow; held until
+                ///< the crew ends.
   temporary,    ///< A value that is not a place, stored so it can be
                 ///< borrowed (`&make()`, `make().len()`). It is dropped at
                 ///< the end of its statement (ch. 17, When drops run).

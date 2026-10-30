@@ -340,6 +340,12 @@ private:
   block_id current_ = 0;
   block_id exit_ = 0;
   local_id return_slot_ = 0;
+  /// One `crew_tasks` local per enclosing `crew`, innermost last. A task
+  /// spawned into the crew keeps what it borrows until the crew ends.
+  std::vector<local_id> crew_holders_;
+  /// The call that is the direct argument of the `c.spawn(...)` being
+  /// lowered; its borrows go to the crew rather than to a temporary.
+  const ast::call_expr *spawned_task_ = nullptr;
   /// The `field_path` local for each (parent, field) pair made so far.
   std::map<std::pair<local_id, std::string>, local_id> field_paths_;
   /// The temporaries made in one statement or full expression, which end
@@ -1454,8 +1460,7 @@ private:
       return {};
 
     case ast::node_kind::crew_expr:
-      static_cast<void>(
-          lower_scoped_body(ast::cast<ast::crew_expr>(expr).body, false));
+      lower_crew_body(ast::cast<ast::crew_expr>(expr).body);
       return {};
 
     case ast::node_kind::on_expr: {
@@ -1813,6 +1818,7 @@ private:
     auto activate_temp = temp;
     auto reservation = k_no_loan;
 
+    const auto into_crew = &call == spawned_task_ && !crew_holders_.empty();
     const auto resolved = checked_.resolved_callees.find(&call);
     const auto *decl = signature_decl(
         resolved != checked_.resolved_callees.end() ? resolved->second.decl
@@ -1896,7 +1902,12 @@ private:
               borrow_place(argument, passing == param_passing::mut_ref,
                            loan_origin::borrow, argument.span));
       } else {
+        const auto *const outer_spawned = spawned_task_;
+        if (is_crew_spawn(call) && argument.kind == ast::node_kind::call_expr) {
+          spawned_task_ = &ast::cast<ast::call_expr>(argument);
+        }
         stash(arg_temp, eval(*arg.value, use_mode::move));
+        spawned_task_ = outer_spawned;
       }
     }
 
@@ -1906,8 +1917,36 @@ private:
                        reservation, /*evaluate_subscripts=*/false);
       stash(activate_temp, activated);
     }
+    if (into_crew) {
+      stash(crew_holders_.back(), value{.loans = {}, .sources = {held, temp}});
+    }
     emit(use_event{.local = held});
     return compound_result(call, temp);
+  }
+
+  /// Whether `call` is `c.spawn(task)` on a `crew`.
+  [[nodiscard]] auto is_crew_spawn(const ast::call_expr &call) const -> bool {
+    if (call.callee == nullptr ||
+        call.callee->kind != ast::node_kind::field_expr ||
+        call.args.size() != 1) {
+      return false;
+    }
+    const auto &field = ast::cast<ast::field_expr>(*call.callee);
+    if (field.field_name != "spawn" || field.object == nullptr) {
+      return false;
+    }
+    const auto type = type_of(field.object.get());
+    return !checked_.types.is_unknown(type) &&
+           checked_.types.entry(type).name == "crew";
+  }
+
+  /// A `crew` body, whose spawned tasks all end with it.
+  auto lower_crew_body(const std::vector<ast::ptr<ast::node>> &body) -> void {
+    const auto holder = new_temp(local_role::crew_tasks);
+    crew_holders_.push_back(holder);
+    static_cast<void>(lower_scoped_body(body, false));
+    crew_holders_.pop_back();
+    emit(use_event{.local = holder});
   }
 
   /// A lambda: its body is a function of its own; here, only what creating
@@ -2525,8 +2564,7 @@ private:
     }
 
     case ast::node_kind::crew_stmt:
-      static_cast<void>(
-          lower_scoped_body(ast::cast<ast::crew_stmt>(node).body, false));
+      lower_crew_body(ast::cast<ast::crew_stmt>(node).body);
       return {};
 
     case ast::node_kind::splice_stmt: {

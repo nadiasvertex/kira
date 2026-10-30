@@ -489,6 +489,9 @@ private:
     if (info.role == local_role::loop_source) {
       return std::format("the `for` loop over `{}`", root);
     }
+    if (info.role == local_role::crew_tasks) {
+      return std::string("a task spawned into this crew");
+    }
     if (loan.origin == loan_origin::capture ||
         type_kind_of(info.type) == type_kind::fn_kind) {
       return std::format("the closure `{}`", info.name);
@@ -770,7 +773,9 @@ private:
                        : a.kind == access_kind::move ? "move"
                        : a.kind == access_kind::read ? "use"
                                                      : "assign to";
-    const auto *still = is_loop ? "still running" : "still in use";
+    const auto *still = is_loop                                ? "still running"
+                        : info.role == local_role::crew_tasks ? "still running"
+                                                              : "still in use";
     auto d = diagnostic(diagnostic_level::error,
                         std::format("cannot {} `{}` while {} is {}", verb, root,
                                     description, still),
@@ -792,6 +797,23 @@ private:
     default:
       d.with_label(a.span, std::format("`{}` assigned here", root));
       break;
+    }
+    if (info.role == local_role::crew_tasks) {
+      d.with_secondary_label(
+          loan.span,
+          std::format("a task spawned into this crew borrows `{}` here", root));
+      d.with_note(std::format(
+          "the tasks of a `crew` run side by side until the crew ends, so "
+          "`{0}` allows any number of `&{0}` borrows, or one `&mut {0}`, "
+          "across all of them — never both, and `{0}` cannot be moved or "
+          "assigned while a task holds it",
+          root));
+      d.with_help(std::format(
+          "give each task its own piece of `{0}` (for example a different "
+          "slice) or run the tasks one after another",
+          root));
+      diag_.emit(d);
+      return;
     }
     if (is_loop) {
       d.with_secondary_label(

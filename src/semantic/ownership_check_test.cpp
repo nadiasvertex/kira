@@ -310,6 +310,40 @@ auto test_mutable_and_shared_borrow_in_one_call_are_rejected() -> void {
 }
 
 // ==========================================================================
+//  Tasks spawned into a `crew` hold their borrows until the crew ends.
+// ==========================================================================
+
+auto test_two_mut_borrows_in_crew_tasks_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_crew_two_mut_tasks.cn");
+  expect(analyzed.error_count > 0,
+         "expected two tasks of one crew borrowing the same value mutably to "
+         "be rejected");
+  expect_diagnostic(
+      analyzed,
+      "cannot borrow `x` while a task spawned into this crew is still running",
+      "expected a crew-task borrow diagnostic naming `x`");
+}
+
+auto test_reading_while_crew_task_holds_mut_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_crew_read_while_task_mut.cn");
+  expect(analyzed.error_count > 0,
+         "expected reading a value a running crew task borrows mutably to be "
+         "rejected");
+  expect_diagnostic(
+      analyzed,
+      "cannot use `x` while a task spawned into this crew is still running",
+      "expected a crew-task use diagnostic naming `x`");
+}
+
+auto test_crew_shared_reads_and_disjoint_mut_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_crew_shared_reads.cn");
+  expect(analyzed.error_count == 0,
+         "expected shared reads, disjoint `&mut`s and use after the crew to "
+         "check cleanly");
+}
+
+// ==========================================================================
 //  Acceptance: borrows used as intended must check cleanly.
 // ==========================================================================
 
@@ -1051,6 +1085,9 @@ auto main() -> int {
     test_mutable_slice_view_is_accepted();
     test_mut_borrow_across_nested_call_is_rejected();
     test_two_mut_borrows_across_nested_call_are_rejected();
+    test_two_mut_borrows_in_crew_tasks_are_rejected();
+    test_reading_while_crew_task_holds_mut_is_rejected();
+    test_crew_shared_reads_and_disjoint_mut_are_accepted();
     test_shared_borrows_across_nested_call_are_accepted();
     test_receiver_mut_with_shared_arg_is_rejected();
     test_two_phase_receiver_is_accepted();
