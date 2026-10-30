@@ -1,0 +1,17 @@
+module codegen_stress.on_cpu_pool
+
+# expect: 184
+
+# `await on(cpu):` runs its block as a task on the cpu pool and gives the
+# block's value. The block reads locals of the enclosing function.
+
+async def doubled_after(n: int32) -> int32:
+    let k = await on(cpu):
+        n + 1
+    return k * 2
+
+async def main() -> int32:
+    let base = 10
+    let r = await on(cpu):
+        base * 4 + 2
+    return r + (await doubled_after(20)) + 100

@@ -1,0 +1,55 @@
+module codegen_stress.crew_spawn_and_get
+
+# expect: 155
+
+# A `crew` block starts the tasks spawned into it and waits for all of them
+# before it finishes, so `get()` on a task it handed back never has to wait.
+# The block's value is its last expression. It works in an ordinary task and
+# in the entry `async def main`, and a statement-form crew waits too.
+
+use std.mem.{alloc, atomic_fetch_add}
+use std.shared.shared
+
+type counter = {
+    cell: *mut usize,
+}
+
+extend counter:
+    machine def make() -> counter:
+        return counter { cell: alloc[usize](1) }
+
+    machine def add_one(self) -> unit:
+        let _ = atomic_fetch_add(self.cell, 1)
+
+    machine def total(self) -> usize:
+        return self.cell[0]
+
+async def square(x: int32) -> int32:
+    return x * x
+
+async def bump(c: shared[counter], times: usize) -> usize:
+    var i: usize = 0
+    while i < times:
+        c.add_one()
+        i = i + 1
+    return times
+
+async def sum_squares() -> int32:
+    let (a, b, c) = crew k:
+        let ta = k.spawn(square(3))
+        let tb = k.spawn(square(4))
+        let tc = k.spawn(square(5))
+        (ta, tb, tc)
+    return a.get() + b.get() + c.get()
+
+async def main() -> int32:
+    let inner = await sum_squares()
+    let hits = shared[counter].new(counter.make())
+    crew k:
+        let _ = k.spawn(bump(hits.clone(), 1000))
+        let _ = k.spawn(bump(hits.clone(), 1000))
+    let (x, y) = crew k:
+        let tx = k.spawn(square(6))
+        let ty = k.spawn(square(7))
+        (tx, ty)
+    return inner + (hits.total() as int32) / 100 + x.get() + y.get()
