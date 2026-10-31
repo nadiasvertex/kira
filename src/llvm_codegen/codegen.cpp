@@ -392,6 +392,8 @@ using cinder::decode_string_literal;
     }
     return total;
   }
+  case hir_node_kind::hir_expr_stmt:
+    return count_yields(*dynamic_cast<const hir::hir_expr_stmt &>(node).expr);
   case hir_node_kind::hir_block:
     return count_yields(dynamic_cast<const hir::hir_block &>(node));
   default:

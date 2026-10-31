@@ -8,6 +8,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -18,6 +19,13 @@ namespace cinder::runtime::scheduler {
 
 namespace co = cinder::runtime::coroutine;
 
+struct crew {
+  std::vector<uint64_t *> tasks;
+  /// The task whose body opened this crew; null on a thread that is not a
+  /// worker.
+  uint64_t *owner = nullptr;
+};
+
 namespace {
 
 /// Where a spawned task is in its life. Only the scheduler moves a task
@@ -26,7 +34,8 @@ enum class task_state : uint8_t {
   queued,   ///< In its pool's run queue.
   running,  ///< A worker is inside its step function.
   waiting,  ///< Returned `pending`; a wake will queue it again.
-  finished, ///< Its result is in the value slot, or it failed.
+  unwinding, ///< Failed with crews open; waiting for their tasks to stop.
+  finished,  ///< Its result is in the value slot, or it failed.
 };
 
 /// The scheduler's bookkeeping for one task, pointed to by the task's
@@ -50,6 +59,9 @@ struct task_record {
   std::vector<uint64_t *> waiters;
   /// Set when the step function threw, e.g. on a panic.
   std::exception_ptr failure;
+  /// The crews this task's body has opened and not yet freed. A panic skips
+  /// the end of the block, so the scheduler finishes them (`unwind_locked`).
+  std::vector<crew *> open_crews;
 };
 
 struct pool_state {
@@ -68,6 +80,9 @@ struct scheduler_state {
   /// Tasks taken over and not yet finished.
   size_t unfinished = 0;
 };
+
+/// The task this worker is polling, which owns any crew its body opens.
+thread_local uint64_t *current_task = nullptr;
 
 /// Leaked on purpose: worker threads block on this state until the process
 /// ends, so it must outlive every static destructor.
@@ -107,7 +122,17 @@ auto worker_count(pool p) -> size_t {
   return std::max<size_t>(1, std::thread::hardware_concurrency());
 }
 
+auto is_done(const uint64_t *task) -> bool {
+  return status_of(task) == co::raw(co::status::done);
+}
+
+auto is_cancelled(const uint64_t *task) -> bool {
+  return status_of(task) == co::raw(co::status::cancel_requested);
+}
+
 void push_locked(scheduler_state &s, uint64_t *task, task_record &rec);
+void finish_unwinding_locked(scheduler_state &s, uint64_t *task,
+                             task_record &rec);
 
 /// Moves a waiting task back to its run queue, or remembers the wake for a
 /// task that is mid-poll.
@@ -122,6 +147,9 @@ void wake_locked(scheduler_state &s, uint64_t *task) {
     return;
   case task_state::running:
     rec->notified = true;
+    return;
+  case task_state::unwinding:
+    finish_unwinding_locked(s, task, *rec);
     return;
   case task_state::queued:
   case task_state::finished:
@@ -141,6 +169,70 @@ void finish_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   s.finished.notify_all();
 }
 
+/// Asks a task to unwind, along with the tasks of every crew it has open:
+/// they stop together, whichever `await` the body is at. A task already asked
+/// is left where it is, so a repeated cancel does not requeue it.
+void cancel_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
+  for (const auto *group : rec.open_crews) {
+    for (auto *member : group->tasks) {
+      if (auto *member_rec = record_of(member); member_rec != nullptr) {
+        cancel_locked(s, member, *member_rec);
+      }
+    }
+  }
+  switch (rec.state) {
+  case task_state::running:
+    rec.cancel_pending = true;
+    return;
+  case task_state::queued:
+    set_status(task, co::status::cancel_requested);
+    return;
+  case task_state::waiting:
+    if (!is_cancelled(task)) {
+      set_status(task, co::status::cancel_requested);
+      push_locked(s, task, rec);
+    }
+    return;
+  case task_state::unwinding:
+  case task_state::finished:
+    return;
+  }
+}
+
+/// Finishes a failed task once every crew it left open has stopped.
+void finish_unwinding_locked(scheduler_state &s, uint64_t *task,
+                             task_record &rec) {
+  for (const auto *group : rec.open_crews) {
+    if (!std::ranges::all_of(group->tasks, is_done)) {
+      return;
+    }
+  }
+  for (auto *group : rec.open_crews) {
+    // The crew's block will not reach `crew_free`.
+    const auto owned = std::unique_ptr<crew>(group);
+  }
+  rec.open_crews.clear();
+  finish_locked(s, task, rec);
+}
+
+/// A task's body panicked, so nothing will reach the end of its open `crew`
+/// blocks. Their tasks may borrow from the task's frame, so it does not
+/// finish until they have stopped.
+void unwind_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
+  rec.state = task_state::unwinding;
+  for (const auto *group : rec.open_crews) {
+    for (auto *member : group->tasks) {
+      auto *member_rec = record_of(member);
+      if (member_rec == nullptr || is_done(member)) {
+        continue;
+      }
+      member_rec->waiters.push_back(task);
+    }
+  }
+  cancel_locked(s, task, rec);
+  finish_unwinding_locked(s, task, rec);
+}
+
 void worker_loop(pool where) {
   auto &s = state();
   auto &mine = s.pools[pool_index(where)];
@@ -158,16 +250,18 @@ void worker_loop(pool where) {
     lock.unlock();
     auto status = uint64_t{0};
     auto failure = std::exception_ptr{};
+    current_task = task;
     try {
       status = rec.how.run(rec.how.context, task);
     } catch (...) {
       failure = std::current_exception();
     }
+    current_task = nullptr;
     lock.lock();
 
     if (failure != nullptr) {
       rec.failure = failure;
-      finish_locked(s, task, rec);
+      unwind_locked(s, task, rec);
     } else if (status == co::raw(co::status::pending)) {
       if (rec.cancel_pending) {
         rec.cancel_pending = false;
@@ -229,8 +323,7 @@ auto native_runner() -> runner { return runner{.run = run_native}; }
 void spawn(uint64_t *task, pool where, runner how) {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
-  if (record_of(task) != nullptr ||
-      status_of(task) == co::raw(co::status::done)) {
+  if (record_of(task) != nullptr || is_done(task)) {
     return;
   }
   adopt_locked(s, task, where, how);
@@ -239,12 +332,10 @@ void spawn(uint64_t *task, pool where, runner how) {
 void block_on(uint64_t *task, pool where, runner how) {
   auto &s = state();
   auto lock = std::unique_lock(s.mutex);
-  if (status_of(task) != co::raw(co::status::done) &&
-      record_of(task) == nullptr) {
+  if (!is_done(task) && record_of(task) == nullptr) {
     adopt_locked(s, task, where, how);
   }
-  s.finished.wait(lock,
-                  [&] { return status_of(task) == co::raw(co::status::done); });
+  s.finished.wait(lock, [&] { return is_done(task); });
   const auto *rec = record_of(task);
   const auto failure = rec != nullptr ? rec->failure : std::exception_ptr{};
   lock.unlock();
@@ -253,97 +344,37 @@ void block_on(uint64_t *task, pool where, runner how) {
   }
 }
 
-auto await_poll(uint64_t *self, uint64_t *awaited) -> bool {
-  auto &s = state();
-  auto lock = std::unique_lock(s.mutex);
-  auto *awaited_rec = record_of(awaited);
-  if (status_of(awaited) == co::raw(co::status::done)) {
-    const auto failure =
-        awaited_rec != nullptr ? awaited_rec->failure : std::exception_ptr{};
-    lock.unlock();
-    if (failure != nullptr) {
-      std::rethrow_exception(failure);
-    }
-    return true;
-  }
-  if (status_of(self) == co::raw(co::status::cancel_requested)) {
-    return true;
-  }
-  if (awaited_rec == nullptr) {
-    const auto *self_rec = record_of(self);
-    awaited_rec = &adopt_locked(
-        s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
-        self_rec != nullptr ? self_rec->how : native_runner());
-  }
-  if (std::ranges::find(awaited_rec->waiters, self) ==
-      awaited_rec->waiters.end()) {
-    awaited_rec->waiters.push_back(self);
-  }
-  return false;
-}
-
 namespace {
 
-/// The failure of the first finished task in `tasks`, if any finished.
-/// Lock held. Sets `any_finished`.
-auto first_finished_failure(uint64_t *const *tasks, size_t count,
-                            bool &any_finished) -> std::exception_ptr {
-  for (size_t i = 0; i < count; ++i) {
-    if (status_of(tasks[i]) == co::raw(co::status::done)) { // NOLINT
-      any_finished = true;
-      const auto *rec = record_of(tasks[i]); // NOLINT
-      return rec != nullptr ? rec->failure : std::exception_ptr{};
+/// The failure of the first task in `tasks` that finished by panicking, if
+/// any. Lock held.
+auto first_failure(std::span<uint64_t *const> tasks) -> std::exception_ptr {
+  for (const auto *task : tasks) {
+    const auto *rec = record_of(task);
+    if (is_done(task) && rec != nullptr && rec->failure != nullptr) {
+      return rec->failure;
     }
   }
-  any_finished = false;
   return {};
 }
 
-/// The failure of the first task in `tasks` that finished by panicking, if
-/// any. Lock held. Sets `all_finished`.
-auto first_failure(uint64_t *const *tasks, size_t count, bool &all_finished)
-    -> std::exception_ptr {
-  auto failure = std::exception_ptr{};
-  all_finished = true;
-  for (size_t i = 0; i < count; ++i) {
-    if (status_of(tasks[i]) != co::raw(co::status::done)) { // NOLINT
-      all_finished = false;
-      continue;
-    }
-    const auto *rec = record_of(tasks[i]); // NOLINT
-    if (failure == nullptr && rec != nullptr) {
-      failure = rec->failure;
-    }
-  }
-  return failure;
-}
-
-} // namespace
-
-auto await_all_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
-    -> bool {
-  auto &s = state();
-  auto lock = std::unique_lock(s.mutex);
-  auto all_finished = false;
-  const auto failure = first_failure(tasks, count, all_finished);
-  if (failure != nullptr) {
-    lock.unlock();
-    for (size_t i = 0; i < count; ++i) {
-      (void)cancel(tasks[i]); // NOLINT
-    }
-    std::rethrow_exception(failure);
-  }
-  if (all_finished || status_of(self) == co::raw(co::status::cancel_requested)) {
-    return true;
-  }
+/// Makes `self` a waiter on every unfinished task in `tasks`, and returns
+/// whether there were any. Unstarted tasks are queued. If `stopping`, the
+/// tasks are cancelled instead, and an unstarted one is left alone since it
+/// has nothing to unwind. Lock held.
+auto wait_on_locked(scheduler_state &s, uint64_t *self,
+                    std::span<uint64_t *const> tasks, bool stopping) -> bool {
   const auto *self_rec = record_of(self);
-  for (size_t i = 0; i < count; ++i) {
-    auto *awaited = tasks[i]; // NOLINT
-    if (status_of(awaited) == co::raw(co::status::done)) {
+  auto waiting = false;
+  for (auto *awaited : tasks) {
+    if (is_done(awaited)) {
       continue;
     }
     auto *rec = record_of(awaited);
     if (rec == nullptr) {
+      if (stopping) {
+        continue;
+      }
       rec = &adopt_locked(
           s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
           self_rec != nullptr ? self_rec->how : native_runner());
@@ -351,6 +382,65 @@ auto await_all_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     if (std::ranges::find(rec->waiters, self) == rec->waiters.end()) {
       rec->waiters.push_back(self);
     }
+    if (stopping) {
+      cancel_locked(s, awaited, *rec);
+    }
+    waiting = true;
+  }
+  return waiting;
+}
+
+/// Ends a wait that found nothing left to wait for.
+auto finish_wait(std::unique_lock<std::mutex> &lock,
+                 const std::exception_ptr &failure) -> bool {
+  lock.unlock();
+  if (failure != nullptr) {
+    std::rethrow_exception(failure);
+  }
+  return true;
+}
+
+void adopt_all_locked(scheduler_state &s, std::span<uint64_t *const> tasks,
+                      pool where, runner how) {
+  for (auto *task : tasks) {
+    if (!is_done(task) && record_of(task) == nullptr) {
+      adopt_locked(s, task, where, how);
+    }
+  }
+}
+
+/// Cancels `tasks` and blocks until they have all finished. Lock held.
+void stop_all_locked(scheduler_state &s, std::unique_lock<std::mutex> &lock,
+                     std::span<uint64_t *const> tasks) {
+  for (auto *task : tasks) {
+    if (auto *rec = record_of(task); rec != nullptr) {
+      cancel_locked(s, task, *rec);
+    }
+  }
+  s.finished.wait(lock, [&] { return std::ranges::all_of(tasks, is_done); });
+}
+
+} // namespace
+
+auto await_poll(uint64_t *self, uint64_t *awaited) -> bool {
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  const auto tasks = std::span<uint64_t *const>(&awaited, 1);
+  const auto failure = first_failure(tasks);
+  if (!wait_on_locked(s, self, tasks, is_cancelled(self))) {
+    return finish_wait(lock, failure);
+  }
+  return false;
+}
+
+auto await_all_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
+    -> bool {
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  const auto all = std::span(tasks, count);
+  const auto failure = first_failure(all);
+  if (!wait_on_locked(s, self, all, failure != nullptr || is_cancelled(self))) {
+    return finish_wait(lock, failure);
   }
   return false;
 }
@@ -359,39 +449,35 @@ void block_on_all(uint64_t *const *tasks, size_t count, pool where,
                   runner how) {
   auto &s = state();
   auto lock = std::unique_lock(s.mutex);
-  for (size_t i = 0; i < count; ++i) {
-    auto *task = tasks[i]; // NOLINT
-    if (status_of(task) != co::raw(co::status::done) &&
-        record_of(task) == nullptr) {
-      adopt_locked(s, task, where, how);
-    }
-  }
-  auto all_finished = false;
+  const auto all = std::span(tasks, count);
+  adopt_all_locked(s, all, where, how);
   auto failure = std::exception_ptr{};
   s.finished.wait(lock, [&] {
-    failure = first_failure(tasks, count, all_finished);
-    return failure != nullptr || all_finished;
+    failure = first_failure(all);
+    return failure != nullptr || std::ranges::all_of(all, is_done);
   });
-  lock.unlock();
   if (failure != nullptr) {
-    for (size_t i = 0; i < count; ++i) {
-      (void)cancel(tasks[i]); // NOLINT
-    }
-    std::rethrow_exception(failure);
+    stop_all_locked(s, lock, all);
   }
+  finish_wait(lock, failure);
 }
 
-struct crew {
-  std::vector<uint64_t *> tasks;
-};
-
-auto crew_new() -> crew * { return std::make_unique<crew>().release(); }
+auto crew_new() -> crew * {
+  auto group = std::make_unique<crew>();
+  if (current_task != nullptr) {
+    auto &s = state();
+    const auto lock = std::scoped_lock(s.mutex);
+    group->owner = current_task;
+    record_of(current_task)->open_crews.push_back(group.get());
+  }
+  return group.release();
+}
 
 void crew_spawn(crew *group, uint64_t *task, pool where, runner how) {
-  group->tasks.push_back(task);
-  spawn(task, where, how);
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
+  group->tasks.push_back(task);
+  adopt_all_locked(s, std::span(&task, 1), where, how);
   if (auto *rec = record_of(task); rec != nullptr) {
     rec->crew_owned = true;
   }
@@ -405,7 +491,14 @@ void crew_join(crew *group, pool where, runner how) {
   block_on_all(group->tasks.data(), group->tasks.size(), where, how);
 }
 
-void crew_free(crew *group) { const auto owned = std::unique_ptr<crew>(group); }
+void crew_free(crew *group) {
+  const auto owned = std::unique_ptr<crew>(group);
+  if (group->owner != nullptr) {
+    auto &s = state();
+    const auto lock = std::scoped_lock(s.mutex);
+    std::erase(record_of(group->owner)->open_crews, group);
+  }
+}
 
 auto crew_size(const crew *group) -> size_t { return group->tasks.size(); }
 
@@ -417,30 +510,14 @@ auto await_any_poll(uint64_t *self, uint64_t *const *tasks, size_t count)
     -> bool {
   auto &s = state();
   auto lock = std::unique_lock(s.mutex);
-  auto any_finished = false;
-  const auto failure = first_finished_failure(tasks, count, any_finished);
-  if (any_finished) {
-    lock.unlock();
-    if (failure != nullptr) {
-      std::rethrow_exception(failure);
-    }
+  const auto all = std::span(tasks, count);
+  const auto failure = first_failure(all);
+  const auto cancelled = is_cancelled(self);
+  if (failure == nullptr && !cancelled && std::ranges::any_of(all, is_done)) {
     return true;
   }
-  if (status_of(self) == co::raw(co::status::cancel_requested)) {
-    return true;
-  }
-  const auto *self_rec = record_of(self);
-  for (size_t i = 0; i < count; ++i) {
-    auto *awaited = tasks[i]; // NOLINT
-    auto *rec = record_of(awaited);
-    if (rec == nullptr) {
-      rec = &adopt_locked(
-          s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
-          self_rec != nullptr ? self_rec->how : native_runner());
-    }
-    if (std::ranges::find(rec->waiters, self) == rec->waiters.end()) {
-      rec->waiters.push_back(self);
-    }
+  if (!wait_on_locked(s, self, all, failure != nullptr || cancelled)) {
+    return finish_wait(lock, failure);
   }
   return false;
 }
@@ -449,23 +526,14 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where,
                   runner how) {
   auto &s = state();
   auto lock = std::unique_lock(s.mutex);
-  for (size_t i = 0; i < count; ++i) {
-    auto *task = tasks[i]; // NOLINT
-    if (status_of(task) != co::raw(co::status::done) &&
-        record_of(task) == nullptr) {
-      adopt_locked(s, task, where, how);
-    }
-  }
-  auto any_finished = false;
-  auto failure = std::exception_ptr{};
-  s.finished.wait(lock, [&] {
-    failure = first_finished_failure(tasks, count, any_finished);
-    return any_finished;
-  });
-  lock.unlock();
+  const auto all = std::span(tasks, count);
+  adopt_all_locked(s, all, where, how);
+  s.finished.wait(lock, [&] { return std::ranges::any_of(all, is_done); });
+  const auto failure = first_failure(all);
   if (failure != nullptr) {
-    std::rethrow_exception(failure);
+    stop_all_locked(s, lock, all);
   }
+  finish_wait(lock, failure);
 }
 
 auto cancel(uint64_t *task) -> bool {
@@ -481,20 +549,7 @@ auto cancel(uint64_t *task) -> bool {
   if (rec == nullptr) {
     return false;
   }
-  switch (rec->state) {
-  case task_state::finished:
-    return true;
-  case task_state::running:
-    rec->cancel_pending = true;
-    return true;
-  case task_state::queued:
-    set_status(task, co::status::cancel_requested);
-    return true;
-  case task_state::waiting:
-    set_status(task, co::status::cancel_requested);
-    push_locked(s, task, *rec);
-    return true;
-  }
+  cancel_locked(s, task, *rec);
   return true;
 }
 
@@ -517,7 +572,7 @@ auto cancel_on_drop(uint64_t *task) -> bool {
 auto is_finished(const uint64_t *task) -> bool {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
-  return status_of(task) == co::raw(co::status::done);
+  return is_done(task);
 }
 
 void wait_idle() {

@@ -59,35 +59,39 @@ void block_on(uint64_t *task, pool where, runner how);
 
 /// Called by the step function of `self` at an `await` of `awaited`. Returns
 /// true when `awaited` has finished and its value can be read (rethrowing its
-/// failure if it panicked), and also when `self` was cancelled, so that the
-/// body can proceed to its cancellation check. Returns false when `awaited`
-/// has not finished: `self` is now registered as its waiter, `awaited` is
-/// queued if nothing had started it, and the step function must return
-/// `status::pending`.
+/// failure if it panicked). Returns false when `awaited` has not finished:
+/// `self` is now registered as its waiter, `awaited` is queued if nothing had
+/// started it, and the step function must return `status::pending`. If `self`
+/// was cancelled, `awaited` is cancelled too and the wait lasts until it has
+/// stopped; `true` then leads the body to its cancellation check.
 [[nodiscard]] auto await_poll(uint64_t *self, uint64_t *awaited) -> bool;
 
 /// `await_poll` for a set of tasks (`race`): true as soon as any of the
-/// `count` tasks in `tasks` has finished (rethrowing its failure if it
-/// panicked) or `self` was cancelled. Otherwise `self` is registered as a
+/// `count` tasks in `tasks` has finished. Otherwise `self` is registered as a
 /// waiter on every unfinished task, unstarted ones are queued, and the step
-/// function must return `status::pending`.
+/// function must return `status::pending`. If one of them panicked or `self`
+/// was cancelled, the others are cancelled and it is true once they have all
+/// stopped, rethrowing the failure if there is one.
 [[nodiscard]] auto await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                   size_t count) -> bool;
 
 /// `await_poll` for a set of tasks that must all finish (`par`): true once
-/// every task in `tasks` has finished, or `self` was cancelled. If one of
-/// them panicked, the others are cancelled and the failure is rethrown.
-/// Otherwise `self` waits on every unfinished task and the step function must
-/// return `status::pending`.
+/// every task in `tasks` has finished. Until then `self` waits on every
+/// unfinished task and the step function must return `status::pending`. If
+/// one of them panicked or `self` was cancelled, the others are cancelled;
+/// once they have stopped the failure, if any, is rethrown.
 [[nodiscard]] auto await_all_poll(uint64_t *self, uint64_t *const *tasks,
                                   size_t count) -> bool;
 
 /// `block_on` for a set of tasks that must all finish: blocks until they
-/// have, or until one panics (cancelling the rest and rethrowing).
+/// have. If one panics the rest are cancelled, and the failure is rethrown
+/// once they have stopped.
 void block_on_all(uint64_t *const *tasks, size_t count, pool where, runner how);
 
 /// The tasks spawned into one `crew` block. Owned by the block that made it,
-/// which frees it with `crew_free` once it has joined.
+/// which frees it with `crew_free` once it has joined. If a task's body
+/// panics with a crew open, the scheduler cancels the crew's tasks, frees it,
+/// and finishes the panicking task only once they have stopped.
 struct crew;
 
 [[nodiscard]] auto crew_new() -> crew *;
@@ -108,7 +112,9 @@ void crew_free(crew *group);
 [[nodiscard]] auto crew_size(const crew *group) -> size_t;
 [[nodiscard]] auto crew_task(const crew *group, size_t index) -> uint64_t *;
 
-/// `block_on` for a set of tasks: blocks until any one has finished.
+/// `block_on` for a set of tasks: blocks until any one has finished. If a
+/// finished one panicked, the rest are cancelled and the failure is rethrown
+/// once they have stopped.
 void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 
 /// Asks a task the scheduler owns to stop at its next cancellation check and

@@ -41,6 +41,12 @@ constexpr const char *k_conditional_await_message =
     "or inside an `if`/`match` that produces a value) is not lowered yet; "
     "await into a `let` first";
 
+constexpr const char *k_crew_exit_message =
+    "a `?` in a task, or leaving a `crew` block, from a place where a task "
+    "cannot suspend (the right side of `&&`/`||`, an `elif` condition, a loop "
+    "condition, a match guard, or inside an `if`/`match` that produces a "
+    "value) is not lowered yet; move it into a statement";
+
 using semantic::checked_types;
 using semantic::k_error_type;
 using semantic::k_unknown_type;
@@ -742,6 +748,14 @@ private:
   /// `if <cancelled>: return`, dropping what the generator owns at the
   /// cancel point `key` (`semantic::ownership::generator_start` or a
   /// `yield`).
+  /// Waits for one `crew` and frees it: a suspension in a task, a blocking
+  /// wait elsewhere.
+  void emit_crew_end(symbol_id crew, source_span span,
+                     ptr_vec<hir_node> &stmts);
+  /// Ends every `crew` a jump of `kind` leaves, innermost first.
+  [[nodiscard]] auto emit_crew_exits(jump_exit kind, source_span span,
+                                     ptr_vec<hir_node> &stmts)
+      -> std::expected<void, lowering_error>;
   [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span)
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The type table, for the few types lowering interns that checking never
@@ -1396,6 +1410,28 @@ private:
   /// `await` is a suspension point, and a suspension point is a statement.
   /// Null outside a task body.
   ptr_vec<hir_node> *await_hoist_ = nullptr;
+  /// The `crew` handles open at the point being lowered, outermost first. A
+  /// lambda body starts a fresh list: its `return` leaves no enclosing crew.
+  std::vector<symbol_id> open_crews_;
+  /// How many of `open_crews_` were opened outside the innermost loop. A
+  /// `break` or `continue` leaves only the ones after them.
+  size_t crews_outside_loop_ = 0;
+  /// Marks the statements lowered while it lives as a loop body
+  /// (`crews_outside_loop_`).
+  class crew_loop_scope {
+  public:
+    explicit crew_loop_scope(lowerer &owner)
+        : owner_(owner),
+          enclosing_(std::exchange(owner.crews_outside_loop_,
+                                   owner.open_crews_.size())) {}
+    crew_loop_scope(const crew_loop_scope &) = delete;
+    auto operator=(const crew_loop_scope &) -> crew_loop_scope & = delete;
+    ~crew_loop_scope() { owner_.crews_outside_loop_ = enclosing_; }
+
+  private:
+    lowerer &owner_;
+    size_t enclosing_;
+  };
   /// How many enclosing constructs evaluate the expression being lowered
   /// conditionally or repeatedly (the right side of `&&`, an `elif`
   /// condition, a loop condition). An `await` there cannot be hoisted ahead
@@ -3399,11 +3435,55 @@ auto lowerer::emit_exit_drops(const void *key, jump_exit kind, source_span span,
     -> std::expected<void, lowering_error> {
   // The temporaries the jump leaves alive drop first, innermost; the rewriter
   // that makes them (`make_references_explicit`) fills this in.
+  if (auto ended = emit_crew_exits(kind, span, stmts); !ended.has_value()) {
+    return ended;
+  }
   auto placeholder = make<hir_block>(span, k_unknown_type, ptr_vec<hir_node>{});
   placeholder->exit = kind;
   stmts.push_back(ptr<hir_node>(
       make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(placeholder)))));
   return emit_scope_exit_drops(key, stmts);
+}
+
+void lowerer::emit_crew_end(symbol_id crew, source_span span,
+                            ptr_vec<hir_node> &stmts) {
+  auto &types = interning_types();
+  const auto crew_type = types.builtin_generic("crew", {});
+  const auto unit_type = types.builtin("unit");
+  const auto crew_ref = [&]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(span, crew_type, crew, std::string("<crew>"))};
+  };
+  if (in_task_body_) {
+    stmts.push_back(ptr<hir_node>(make<hir_yield>(
+        span, crew_ref(), /*awaiting_task=*/true, /*awaiting_all=*/false)));
+  } else {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(crew_ref());
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, runtime_call(span, "rt_crew_join", unit_type, std::move(args)))));
+  }
+  auto free_args = ptr_vec<hir_expr>{};
+  free_args.push_back(crew_ref());
+  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      span,
+      runtime_call(span, "rt_crew_free", unit_type, std::move(free_args)))));
+}
+
+auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
+                              ptr_vec<hir_node> &stmts)
+    -> std::expected<void, lowering_error> {
+  const auto outside = kind == jump_exit::loop ? crews_outside_loop_ : 0;
+  if (open_crews_.size() == outside) {
+    return {};
+  }
+  if (in_task_body_ && (value_branch_depth_ > 0 || conditional_depth_ > 0)) {
+    return fail(lowering_error_kind::unsupported_construct, span,
+                k_crew_exit_message);
+  }
+  for (auto i = open_crews_.size(); i > outside; --i) {
+    emit_crew_end(open_crews_[i - 1], span, stmts);
+  }
+  return {};
 }
 
 auto lowerer::coroutine_cancel_check(const void *key, source_span span)
@@ -3854,9 +3934,13 @@ auto lowerer::lower_lambda(const ast::lambda_expr &lambda)
   // enclosing function's postconditions are out of scope for the duration.
   auto enclosing_posts = std::exchange(post_contracts_, {});
   const auto enclosing_task = std::exchange(in_task_body_, false);
+  auto enclosing_crews = std::exchange(open_crews_, {});
+  const auto enclosing_outside = std::exchange(crews_outside_loop_, 0);
   const auto restore_posts = [&] -> void {
     post_contracts_ = std::move(enclosing_posts);
     in_task_body_ = enclosing_task;
+    open_crews_ = std::move(enclosing_crews);
+    crews_outside_loop_ = enclosing_outside;
   };
 
   auto body = std::expected<ptr<hir_block>, lowering_error>{};
@@ -4192,12 +4276,16 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
   auto enclosing_posts = std::exchange(post_contracts_, {});
   const auto enclosing_task = std::exchange(in_task_body_, false);
   const auto enclosing_hoist = std::exchange(await_hoist_, nullptr);
+  auto enclosing_crews = std::exchange(open_crews_, {});
+  const auto enclosing_outside = std::exchange(crews_outside_loop_, 0);
   push_scope();
   auto body = lower_block(on.body, span, type);
   pop_scope();
   post_contracts_ = std::move(enclosing_posts);
   in_task_body_ = enclosing_task;
   await_hoist_ = enclosing_hoist;
+  open_crews_ = std::move(enclosing_crews);
+  crews_outside_loop_ = enclosing_outside;
   if (!body.has_value()) {
     return std::unexpected(body.error());
   }
@@ -4281,16 +4369,14 @@ auto lowerer::lower_crew(std::string_view name,
   // let c = <new crew>;  let r = { body };  <wait for c's tasks>;  <free c>
   push_scope();
   const auto crew_symbol = declare_local(name, crew_type);
-  const auto crew_ref = [&]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(span, crew_type, crew_symbol,
-                                std::string(name))};
-  };
   auto nodes = ptr_vec<hir_node>{};
   nodes.push_back(ptr<hir_node>(make<hir_let>(
       span, crew_symbol, std::string(name),
       runtime_call(span, "rt_crew_new", crew_type, ptr_vec<hir_expr>{}))));
 
+  open_crews_.push_back(crew_symbol);
   auto block = lower_block(body, span, has_value ? result_type : unit_type);
+  open_crews_.pop_back();
   pop_scope();
   if (!block.has_value()) {
     return std::unexpected(block.error());
@@ -4334,22 +4420,14 @@ auto lowerer::lower_crew(std::string_view name,
         make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(*block)))));
   }
 
+  emit_crew_end(crew_symbol, span, nodes);
   if (in_task_body_) {
-    if (auto waited = emit_task_wait(nodes, crew_ref(), key, span);
-        !waited.has_value()) {
-      return std::unexpected(waited.error());
+    auto cancel = coroutine_cancel_check(key, span);
+    if (!cancel.has_value()) {
+      return std::unexpected(cancel.error());
     }
-  } else {
-    auto args = ptr_vec<hir_expr>{};
-    args.push_back(crew_ref());
-    nodes.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, runtime_call(span, "rt_crew_join", unit_type, std::move(args)))));
+    nodes.push_back(std::move(*cancel));
   }
-  auto free_args = ptr_vec<hir_expr>{};
-  free_args.push_back(crew_ref());
-  nodes.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span,
-      runtime_call(span, "rt_crew_free", unit_type, std::move(free_args)))));
   return std::pair{std::move(nodes), std::move(result)};
 }
 
@@ -4785,9 +4863,18 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
       !dropped.has_value()) {
     return std::unexpected(dropped.error());
   }
-  failure_stmts.push_back(ptr<hir_node>(make<hir_return>(
-      try_expr.span,
-      failure_value != nullptr ? std::move(failure_value) : make_place())));
+  auto failed =
+      failure_value != nullptr ? std::move(failure_value) : make_place();
+  if (in_task_body_) {
+    // A task hands back its result; `hir_return` only ends the body.
+    failure_stmts.push_back(
+        ptr<hir_node>(make<hir_yield>(try_expr.span, std::move(failed))));
+    failure_stmts.push_back(
+        ptr<hir_node>(make<hir_return>(try_expr.span, nullptr)));
+  } else {
+    failure_stmts.push_back(
+        ptr<hir_node>(make<hir_return>(try_expr.span, std::move(failed))));
+  }
   auto failure_arm =
       hir_match_arm{.pattern = std::move(failure_pattern),
                     .guard = nullptr,
@@ -4795,6 +4882,30 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
                                             std::move(failure_stmts))};
 
   auto arms = std::vector<hir_match_arm>{};
+  if (in_task_body_) {
+    // Handing back the failure suspends, as does leaving a crew, and a task
+    // cannot suspend inside a match that produces a value. So the failure
+    // test runs as a statement of its own:
+    //   let subject = e;  match subject: <failure> => ...;  <read the payload>
+    if (await_cannot_hoist()) {
+      return fail(lowering_error_kind::unsupported_construct, try_expr.span,
+                  k_crew_exit_message);
+    }
+    await_hoist_->push_back(ptr<hir_node>(
+        make<hir_let>(subject_span, subject_symbol,
+                      std::string("<try subject>"), std::move(*operand))));
+    arms.push_back(std::move(failure_arm));
+    arms.push_back(hir_match_arm{
+        .pattern = ptr<hir_pattern>(make<hir_wildcard_pattern>(try_expr.span)),
+        .guard = nullptr,
+        .body = make<hir_block>(try_expr.span, k_unknown_type,
+                                ptr_vec<hir_node>{})});
+    await_hoist_->push_back(ptr<hir_node>(
+        make<hir_match>(try_expr.span, k_unknown_type, make_place(),
+                        mint_symbol(), std::move(arms))));
+    return ok_expr(make<hir_variant_payload>(try_expr.span, *type, make_place(),
+                                             success_variant, size_t{0}));
+  }
   arms.push_back(std::move(success_arm));
   arms.push_back(std::move(failure_arm));
 
@@ -5535,7 +5646,9 @@ auto lowerer::lower_stmt(const ast::node &node)
     // would run too early.
     auto stmts = ptr_vec<hir_node>{};
     const auto scheduled = drop_schedule_.exits.find(&node);
-    if (scheduled != drop_schedule_.exits.end() && !scheduled->second.empty() &&
+    const auto has_drops =
+        scheduled != drop_schedule_.exits.end() && !scheduled->second.empty();
+    if ((has_drops || !open_crews_.empty()) &&
         (*value)->type != k_unknown_type) {
       const auto value_type = (*value)->type;
       const auto temp = mint_symbol();
@@ -5765,6 +5878,7 @@ auto lowerer::lower_stmt(const ast::node &node)
     return stmts;
   }
   case ast::node_kind::while_stmt: {
+    const auto loop = crew_loop_scope(*this);
     const auto &while_s = ast::cast<const ast::while_stmt>(node);
     if (while_s.let_pattern != nullptr && while_s.let_expr != nullptr) {
       return lower_while_let_stmt(while_s);
@@ -5806,6 +5920,7 @@ auto lowerer::lower_stmt(const ast::node &node)
         make<hir_expr_stmt>(scope_s.span, ptr<hir_expr>(std::move(*body)))));
   }
   case ast::node_kind::for_stmt: {
+    const auto loop = crew_loop_scope(*this);
     return lower_for_stmt(ast::cast<const ast::for_stmt>(node));
   }
   case ast::node_kind::splice_stmt: {

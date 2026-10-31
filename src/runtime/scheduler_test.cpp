@@ -261,6 +261,121 @@ auto test_a_failure_in_a_group_cancels_the_rest() -> void {
 
 } // namespace
 
+// Waits for `other`, then records that it saw it finish.
+auto await_other_body(fake_task &t) -> uint64_t {
+  if (!sched::await_poll(t.raw(), t.other->raw())) {
+    return co::raw(co::status::pending);
+  }
+  t.input = sched::is_finished(t.other->raw()) ? 1 : 0;
+  return co::raw(co::status::done);
+}
+
+// Waits for the scheduler to take over `t`.
+auto wait_until_owned(fake_task &t) -> void {
+  while (std::atomic_ref(t.slots[co::k_record_slot])
+             .load(std::memory_order_acquire) == 0) {
+    std::this_thread::yield();
+  }
+}
+
+// Finishes only when cancelled, after a delay long enough for a parent that
+// did not wait to be seen as finished first.
+auto slow_to_stop_body(fake_task &t) -> uint64_t {
+  if (t.slots[co::k_status_slot] == co::raw(co::status::cancel_requested)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    t.input = 1;
+    return co::raw(co::status::done);
+  }
+  return co::raw(co::status::pending);
+}
+
+auto test_a_cancelled_await_stops_the_task_it_waits_for() -> void {
+  auto child = fake_task{.body = slow_to_stop_body};
+  auto parent = fake_task{.body = await_other_body, .other = &child};
+  sched::spawn(parent.raw(), sched::pool::cpu, fake_runner());
+  wait_until_owned(child);
+  (void)sched::cancel(parent.raw());
+  sched::wait_idle();
+  expect(parent.input == 1,
+         "a cancelled task should finish after the task it awaited");
+}
+
+// Opens a crew holding `other` and waits, in its body, on `many[0]`.
+auto waits_in_crew_body(fake_task &t) -> uint64_t {
+  if (t.cursor == 0) {
+    t.cursor = 1;
+    auto *group = sched::crew_new();
+    sched::crew_spawn(group, t.other->raw(), sched::pool::cpu, fake_runner());
+  }
+  if (!sched::await_poll(t.raw(), t.many[0]->raw())) {
+    return co::raw(co::status::pending);
+  }
+  return co::raw(co::status::done);
+}
+
+auto test_a_cancel_reaches_a_crew_while_the_body_waits() -> void {
+  // Both stay pending until cancelled. Without the reach into the crew,
+  // `child` would only be asked once the parent got past `gate`.
+  const auto until_cancelled = [](fake_task &t) -> uint64_t {
+    return t.slots[co::k_status_slot] == co::raw(co::status::cancel_requested)
+               ? yield_result(t, 1)
+               : co::raw(co::status::pending);
+  };
+  auto child = fake_task{.body = until_cancelled};
+  auto gate = fake_task{.body = until_cancelled};
+  auto parent = fake_task{.body = waits_in_crew_body, .other = &child};
+  parent.many.push_back(&gate);
+  sched::spawn(parent.raw(), sched::pool::cpu, fake_runner());
+  wait_until_owned(child);
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  (void)sched::cancel(parent.raw());
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (!sched::is_finished(child.raw()) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  expect(sched::is_finished(child.raw()),
+         "cancelling a task should reach its open crew at once");
+  sched::wait_idle();
+}
+
+// Opens a crew holding `other`, then panics in the crew's body.
+auto panics_in_crew_body(fake_task &t) -> uint64_t {
+  auto *group = sched::crew_new();
+  sched::crew_spawn(group, t.other->raw(), sched::pool::cpu, fake_runner());
+  throw std::runtime_error("boom");
+}
+
+auto test_a_panic_in_a_crew_body_stops_the_crew_first() -> void {
+  auto child = fake_task{.body = slow_to_stop_body};
+  auto parent = fake_task{.body = panics_in_crew_body, .other = &child};
+  auto threw = false;
+  try {
+    sched::block_on(parent.raw(), sched::pool::cpu, fake_runner());
+  } catch (const std::runtime_error &) {
+    threw = true;
+  }
+  expect(threw, "the panic should reach the caller");
+  expect(child.input == 1,
+         "the crew's task should stop before its owner finishes");
+}
+
+auto test_a_group_failure_waits_for_the_others() -> void {
+  auto slow = fake_task{.body = slow_to_stop_body};
+  auto bad = fake_task{.body = throwing_body};
+  auto tasks = std::array{slow.raw(), bad.raw()};
+  auto threw = false;
+  try {
+    sched::block_on_all(tasks.data(), tasks.size(), sched::pool::cpu,
+                        fake_runner());
+  } catch (const std::runtime_error &) {
+    threw = true;
+  }
+  expect(threw, "the failure should reach the caller");
+  expect(slow.input == 1, "a group should rethrow only once the rest stopped");
+}
+
 auto main() -> int {
   // Read when the cpu pool first starts, so set before any test spawns.
   setenv("CINDER_CPU_WORKERS", "4", 1);
@@ -272,5 +387,9 @@ auto main() -> int {
   test_a_failure_in_a_group_cancels_the_rest();
   test_a_second_task_does_not_wait_behind_a_busy_worker();
   test_cpu_pool_runs_every_task_in_parallel();
+  test_a_cancelled_await_stops_the_task_it_waits_for();
+  test_a_cancel_reaches_a_crew_while_the_body_waits();
+  test_a_panic_in_a_crew_body_stops_the_crew_first();
+  test_a_group_failure_waits_for_the_others();
   return 0;
 }

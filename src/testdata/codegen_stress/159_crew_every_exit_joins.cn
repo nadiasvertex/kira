@@ -1,0 +1,134 @@
+module codegen_stress.crew_every_exit_joins
+
+# expect: 21
+
+# A `crew` waits for its tasks however its body is left. Each function here
+# leaves one with a child still running, and the caller reads what the child
+# did straight afterwards. The waits run on the cpu pool so that a child is
+# still going when the parent reaches its exit.
+
+use std.mem.{alloc, atomic_fetch_add}
+use std.shared.shared
+
+type counter = {
+    cell: *mut usize,
+}
+
+# The cell is only touched through atomics, so tasks may share the counter.
+impl send for counter:
+
+impl share for counter:
+
+extend counter:
+    machine def make() -> counter:
+        return counter { cell: alloc[usize](1) }
+
+    machine def add(self, n: usize) -> unit:
+        let _ = atomic_fetch_add(self.cell, n)
+
+    machine def total(self) -> usize:
+        return self.cell[0]
+
+async def child(c: shared[counter], n: usize) -> int32:
+    let _ = await on(cpu):
+        var i: int64 = 0
+        while i < 2000000:
+            i = i + 1
+        1
+    c.add(n)
+    return 1
+
+async def leaves_by_return(c: shared[counter]) -> int32:
+    crew k:
+        let _ = k.spawn(child(c.clone(), 1))
+        return 5
+    return 6
+
+async def fails() -> result[int32, int32]:
+    return @err(3)
+
+async def try_outside_crew() -> result[int32, int32]:
+    let value = (await fails())?
+    return @ok(value + 100)
+
+async def leaves_by_try(c: shared[counter]) -> result[int32, int32]:
+    crew k:
+        let _ = k.spawn(child(c.clone(), 10))
+        let value = (await fails())?
+        return @ok(value)
+    return @ok(0)
+
+async def leaves_by_break(c: shared[counter]) -> int32:
+    var turns = 0
+    for i in 0..3:
+        turns = turns + 1
+        crew k:
+            let _ = k.spawn(child(c.clone(), 100))
+            if i == 1:
+                break
+    return turns
+
+async def leaves_nested(c: shared[counter]) -> int32:
+    crew outer:
+        let _ = outer.spawn(child(c.clone(), 1000))
+        crew inner:
+            let _ = inner.spawn(child(c.clone(), 1000))
+            return 7
+    return 8
+
+async def quick() -> int32:
+    let spun = await on(cpu):
+        var i: int64 = 0
+        while i < 100000:
+            i = i + 1
+        1
+    return spun
+
+# Loses a race while waiting inside its crew. Cancelling it reaches the child,
+# which stops before it adds anything.
+async def cancelled_in_body(c: shared[counter]) -> int32:
+    crew k:
+        let _ = k.spawn(child(c.clone(), 10000))
+        let _ = await child(c.clone(), 10000)
+        return 2
+    return 3
+
+async def main() -> int32:
+    let c = shared[counter].new(counter.make())
+
+    let returned = await leaves_by_return(c.clone())
+    if c.total() != 1:
+        return 101
+
+    let tried = await leaves_by_try(c.clone())
+    if c.total() != 11:
+        return 102
+    let failure = match tried:
+        @err(e) => e
+        @ok(_) => 0
+
+    let plain = await try_outside_crew()
+    let plain_failure = match plain:
+        @err(e) => e
+        @ok(_) => 0
+
+    let turns = await leaves_by_break(c.clone())
+    if c.total() != 211:
+        return 103
+
+    let nested = await leaves_nested(c.clone())
+    if c.total() != 2211:
+        return 104
+
+    let winner = await race:
+        quick()
+        cancelled_in_body(c.clone())
+    let _ = await on(cpu):
+        var i: int64 = 0
+        while i < 20000000:
+            i = i + 1
+        1
+    if c.total() != 2211:
+        return 105
+
+    return returned + failure + turns + nested + winner + plain_failure
