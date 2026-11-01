@@ -1,15 +1,13 @@
 #include "src/llvm_codegen/runtime.h"
 
-#include <cstdio>
-#include <cstdlib>
-#include <print>
-
 #include "src/bytecode/panic.h"
+#include "src/runtime/scheduler.h"
 
 // The AOT counterpart of `runtime.cpp`'s throwing `cinder_codegen_panic`:
 // `cinder build` output has no C++ exception handler waiting at the top of
 // the (real OS) process, so unwinding isn't the right shape here the way
-// it is for `jit_support.h`'s in-process JIT execution. Instead this
+// it is for `jit_support.h`'s in-process JIT execution, except on a worker,
+// where the scheduler catches it. Otherwise this
 // prints a friendly message (CLAUDE.md's "compiler is a teacher" applies
 // to a shipped binary's runtime failures too, not just compile-time
 // diagnostics) and exits with `k_panic_exit_code` — see its doc comment
@@ -57,6 +55,5 @@ extern "C" [[noreturn]] void cinder_codegen_panic(uint8_t reason) {
     message = "unknown panic";
     break;
   }
-  std::println(stderr, "panic: {}", message);
-  std::exit(cinder::bytecode::k_panic_exit_code);
+  cinder::runtime::scheduler::raise_native_panic(message);
 }

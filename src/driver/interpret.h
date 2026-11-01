@@ -17,6 +17,8 @@ namespace cinder::driver {
 /// compiler rejects a construct it does not lower yet (see
 /// `src/bytecode_compiler/compile.h`).
 struct run_outcome {
+  bool panicked = false;  ///< The function panicked; the CLI exits with
+                          ///< `bytecode::k_panic_exit_code`.
   bool succeeded = false; ///< True when the function was found, compiled, and
                           ///< ran to completion without panicking.
   int32_t exit_code = 0;  ///< The function's return value, read back the same

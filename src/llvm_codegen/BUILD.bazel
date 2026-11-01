@@ -41,7 +41,10 @@ cc_library(
     srcs = ["aot_runtime.cpp"],
     hdrs = ["runtime.h"],
     alwayslink = True,
-    deps = ["//src/bytecode:bytecode"],
+    deps = [
+        "//src/bytecode:bytecode",
+        "//src/runtime:runtime",
+    ],
     visibility = ["//visibility:public"],
 )
 

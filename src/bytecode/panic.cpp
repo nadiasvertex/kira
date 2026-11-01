@@ -1,9 +1,9 @@
 #include "src/bytecode/panic.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include <string>
 #include <utility>
+
+#include "src/runtime/scheduler.h"
 
 namespace cinder::bytecode {
 
@@ -54,11 +54,10 @@ auto raise_panic(panic_reason reason) -> void {
     // Matches `cinder_rt_panic`'s output (`src/runtime/io.cpp`) so a bounds
     // violation reads the same whichever container raised it and whichever
     // tier ran the program.
-    const auto message = panic_reason_message(reason);
-    std::fputs("panic: ", stderr);
-    std::fwrite(message.data(), 1, message.size(), stderr);
-    std::fputc('\n', stderr);
-    std::exit(k_panic_exit_code);
+    runtime::scheduler::report_panic(panic_reason_message(reason));
+    if (!runtime::scheduler::on_worker()) {
+      runtime::scheduler::exit_after_panic();
+    }
   }
   throw panic_error(reason);
 }

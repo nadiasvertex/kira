@@ -1,0 +1,32 @@
+module panic_in_task_stops_siblings
+
+use std.panic.panic
+
+type guard = {id: int32}
+
+impl drop for guard:
+    def drop(mut self):
+        println("sibling unwound")
+
+async def boom() -> int32:
+    let _ = await on(cpu):
+        1
+    panic("boom")
+    return 1
+
+async def sibling() -> int32:
+    let g = guard{id: 1}
+    let _ = await on(cpu):
+        var i: int64 = 0
+        while i < 3000000:
+            i = i + 1
+        1
+    println("sibling ran on")
+    return g.id
+
+async def main() -> int32:
+    let (a, b) = await par:
+        sibling()
+        boom()
+    println("main ran on")
+    return a + b

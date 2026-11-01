@@ -4876,6 +4876,8 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   for (auto &fn : llvm_module) {
     if (!fn.isDeclaration()) {
       fn.addFnAttr("probe-stack", "inline-asm");
+      // A panic in a task unwinds through these frames to the scheduler.
+      fn.setUWTableKind(llvm::UWTableKind::Default);
     }
   }
 

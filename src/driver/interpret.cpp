@@ -1,4 +1,5 @@
 #include <bit>
+#include <cstdlib>
 #include <format>
 #include <string>
 #include <string_view>
@@ -9,6 +10,7 @@
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/compile.h"
 #include "src/hir/lower.h"
+#include "src/runtime/scheduler.h"
 
 namespace cinder::driver {
 
@@ -146,11 +148,24 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
     }
   }
   auto result = vm.run(index, std::span<const bytecode::slot_value>{});
+  // `vm` and `compiled` end with this function, and a task still running
+  // reads both, so one that will not stop has to end with the process.
+  const auto stopped = runtime::scheduler::shutdown();
   if (!result) {
+    if (!stopped) {
+      std::_Exit(bytecode::k_panic_exit_code);
+    }
     return run_outcome{
+        .panicked = true,
         .succeeded = false,
         .message = std::format("`{}` panicked: {}", function_name,
                                bytecode::panic_reason_message(result.error()))};
+  }
+
+  if (!stopped) {
+    std::_Exit(result->has_value ? exit_code_of(types, target->return_type,
+                                                result->value)
+                                 : 0);
   }
 
   if (!result->has_value) {

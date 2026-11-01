@@ -2734,6 +2734,68 @@ auto run_in_forked_child(const std::string &program) -> int {
   return status;
 }
 
+/// A panic in a task unwinds to the scheduler on both tiers: the sibling that
+/// is cancelled runs its drops, and the process ends with the panic status and
+/// one report only once it has stopped.
+auto test_panic_in_task_stops_siblings_then_exits() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "panic_in_task.cn";
+  auto output_path = temp.path / "panic_in_task_bin";
+  write_file(source_path, read_program("panic_in_task_stops_siblings.cn"));
+
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = (temp.path / "meta").string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(cfg);
+  auto report = cinder::driver::compile_sources(cfg, false);
+  expect(report.has_value() && report->build.has_value() &&
+             report->build->succeeded,
+         "expected the panicking task program to build");
+
+  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  const auto close_status = pclose(pipe);
+  expect(WEXITSTATUS(close_status) == cinder::bytecode::k_panic_exit_code,
+         std::format("expected status {}, got {}: `{}`",
+                     cinder::bytecode::k_panic_exit_code,
+                     WEXITSTATUS(close_status), output));
+  const auto first = output.find("panic: boom");
+  expect(first != std::string::npos,
+         std::format("expected the panic message, got: `{}`", output));
+  expect(output.find("panic: boom", first + 1) == std::string::npos,
+         std::format("expected one panic report, got: `{}`", output));
+  expect(output.find("sibling unwound") != std::string::npos,
+         std::format("expected the sibling to run its drops, got: `{}`",
+                     output));
+  expect(output.find("main ran on") == std::string::npos,
+         std::format("expected the panic to reach `main`, got: `{}`", output));
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = (temp.path / "meta").string(),
+      .show_help = false,
+      .run = true,
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value() && run_report->run.has_value() &&
+             run_report->run->panicked,
+         "expected the VM to report the panic to its host");
+}
+
 auto test_out_of_bounds_index_terminates_for_every_container() -> void {
   check_out_of_bounds_index_terminates(
       "array",
@@ -5215,6 +5277,7 @@ auto main() -> int {
     test_compile_sources_reports_inaccessible_session_import();
     test_build_links_and_runs_a_heap_using_program();
     test_out_of_bounds_index_terminates_for_every_container();
+    test_panic_in_task_stops_siblings_then_exits();
     test_run_index_mut_dispatches_to_cell_mut();
     test_run_index_ref_dispatches_to_cell();
     test_cross_module_function_used_as_a_value();

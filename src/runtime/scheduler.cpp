@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdlib>
 #include <deque>
@@ -10,8 +11,13 @@
 #include <mutex>
 #include <span>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <unordered_set>
+#include <utility>
 #include <vector>
+
+#include <unistd.h>
 
 #include "src/runtime/coroutine.h"
 
@@ -78,11 +84,24 @@ struct scheduler_state {
   /// Notified whenever any task finishes.
   std::condition_variable finished;
   /// Tasks taken over and not yet finished.
-  size_t unfinished = 0;
+  std::unordered_set<uint64_t *> unfinished;
 };
 
 /// The task this worker is polling, which owns any crew its body opens.
 thread_local uint64_t *current_task = nullptr;
+
+/// True on a thread running `worker_loop`, including in a plain function a
+/// task called.
+thread_local bool is_worker = false;
+
+/// This poll's panic has been printed, or came from a task that printed it.
+thread_local bool panic_reported = false;
+
+/// How long `shutdown` lets tasks stop. A task that never reaches a
+/// cancellation check must not keep the process alive.
+constexpr auto k_shutdown_grace = std::chrono::seconds(1);
+
+constexpr int k_panic_exit_code = 101; // `bytecode::k_panic_exit_code`
 
 /// Leaked on purpose: worker threads block on this state until the process
 /// ends, so it must outlive every static destructor.
@@ -165,7 +184,7 @@ void finish_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   for (auto *waiter : waiters) {
     wake_locked(s, waiter);
   }
-  --s.unfinished;
+  s.unfinished.erase(task);
   s.finished.notify_all();
 }
 
@@ -234,6 +253,7 @@ void unwind_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
 }
 
 void worker_loop(pool where) {
+  is_worker = true;
   auto &s = state();
   auto &mine = s.pools[pool_index(where)];
   auto lock = std::unique_lock(s.mutex);
@@ -251,6 +271,7 @@ void worker_loop(pool where) {
     auto status = uint64_t{0};
     auto failure = std::exception_ptr{};
     current_task = task;
+    panic_reported = false;
     try {
       status = rec.how.run(rec.how.context, task);
     } catch (...) {
@@ -290,6 +311,8 @@ void push_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   // queued behind a long one would otherwise wait for it.
   const auto wanted = worker_count(rec.where);
   while (target.workers.size() < wanted && target.queue.size() > target.idle) {
+    static const auto stop_at_exit = std::atexit([] { (void)shutdown(); });
+    (void)stop_at_exit;
     target.workers.emplace_back(worker_loop, rec.where);
   }
   target.work.notify_one();
@@ -303,7 +326,7 @@ auto adopt_locked(scheduler_state &s, uint64_t *task, pool where, runner how)
   rec->how = how;
   std::atomic_ref(task[co::k_record_slot])
       .store(reinterpret_cast<uint64_t>(rec), std::memory_order_release);
-  ++s.unfinished;
+  s.unfinished.insert(task);
   push_locked(s, task, *rec);
   return *rec;
 }
@@ -340,6 +363,7 @@ void block_on(uint64_t *task, pool where, runner how) {
   const auto failure = rec != nullptr ? rec->failure : std::exception_ptr{};
   lock.unlock();
   if (failure != nullptr) {
+    panic_reported = true;
     std::rethrow_exception(failure);
   }
 }
@@ -395,6 +419,7 @@ auto finish_wait(std::unique_lock<std::mutex> &lock,
                  const std::exception_ptr &failure) -> bool {
   lock.unlock();
   if (failure != nullptr) {
+    panic_reported = true;
     std::rethrow_exception(failure);
   }
   return true;
@@ -578,15 +603,76 @@ auto is_finished(const uint64_t *task) -> bool {
 void wait_idle() {
   auto &s = state();
   auto lock = std::unique_lock(s.mutex);
-  s.finished.wait(lock, [&] { return s.unfinished == 0; });
+  s.finished.wait(lock, [&] { return s.unfinished.empty(); });
+}
+
+auto shutdown() -> bool {
+  if (is_worker) {
+    return false;
+  }
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  // A copy: a cancel can finish a task, which edits the set.
+  const auto tasks = std::vector(s.unfinished.begin(), s.unfinished.end());
+  for (auto *task : tasks) {
+    cancel_locked(s, task, *record_of(task));
+  }
+  return s.finished.wait_for(lock, k_shutdown_grace,
+                             [&] { return s.unfinished.empty(); });
+}
+
+auto on_worker() -> bool { return is_worker; }
+
+void report_panic(std::string_view message) {
+  if (std::exchange(panic_reported, true)) {
+    return;
+  }
+  // One write, so panics on two workers do not interleave.
+  const auto line = std::string("panic: ").append(message).append("\n");
+  (void)::write(2, line.data(), line.size());
+}
+
+void exit_after_panic() {
+  (void)shutdown();
+  std::_Exit(k_panic_exit_code);
+}
+
+void raise_native_panic(std::string_view message) {
+  report_panic(message);
+  if (!is_worker) {
+    exit_after_panic();
+  }
+  throw task_panic{};
 }
 
 } // namespace cinder::runtime::scheduler
 
+namespace {
+
+/// Runs a blocking wait for generated code. A panic that reaches a thread
+/// that is not a worker has no awaiter left, so it ends the process; the
+/// other tasks are stopped while the entry function's frame is still alive.
+template <typename wait_function> void blocking(wait_function wait) {
+  namespace sched = cinder::runtime::scheduler;
+  try {
+    wait();
+  } catch (const sched::task_panic &) {
+    if (sched::on_worker()) {
+      throw;
+    }
+    sched::exit_after_panic();
+  }
+}
+
+} // namespace
+
 extern "C" {
 auto cinder_rt_task_block_on(uint64_t *task, uint64_t pool) -> uint64_t * {
   namespace sched = cinder::runtime::scheduler;
-  sched::block_on(task, static_cast<sched::pool>(pool), sched::native_runner());
+  blocking([&] {
+    sched::block_on(task, static_cast<sched::pool>(pool),
+                    sched::native_runner());
+  });
   return nullptr;
 }
 
@@ -649,8 +735,10 @@ auto cinder_rt_crew_free(uint64_t *group) -> uint64_t * {
 
 auto cinder_rt_crew_join(uint64_t *group) -> uint64_t * {
   namespace sched = cinder::runtime::scheduler;
-  sched::crew_join(reinterpret_cast<sched::crew *>(group), // NOLINT
-                   sched::pool::io, sched::native_runner());
+  blocking([&] {
+    sched::crew_join(reinterpret_cast<sched::crew *>(group), // NOLINT
+                     sched::pool::io, sched::native_runner());
+  });
   return nullptr;
 }
 
@@ -673,16 +761,20 @@ auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
 auto cinder_rt_task_block_on_all(uint64_t *const *tasks, uint64_t count)
     -> uint64_t * {
   namespace sched = cinder::runtime::scheduler;
-  sched::block_on_all(tasks, static_cast<size_t>(count), sched::pool::io,
-                      sched::native_runner());
+  blocking([&] {
+    sched::block_on_all(tasks, static_cast<size_t>(count), sched::pool::io,
+                        sched::native_runner());
+  });
   return nullptr;
 }
 
 auto cinder_rt_task_block_on_any(uint64_t *const *tasks, uint64_t count)
     -> uint64_t * {
   namespace sched = cinder::runtime::scheduler;
-  sched::block_on_any(tasks, static_cast<size_t>(count), sched::pool::io,
-                      sched::native_runner());
+  blocking([&] {
+    sched::block_on_any(tasks, static_cast<size_t>(count), sched::pool::io,
+                        sched::native_runner());
+  });
   return nullptr;
 }
 }

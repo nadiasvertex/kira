@@ -376,6 +376,31 @@ auto test_a_group_failure_waits_for_the_others() -> void {
   expect(slow.input == 1, "a group should rethrow only once the rest stopped");
 }
 
+auto test_shutdown_stops_a_detached_task() -> void {
+  auto child = fake_task{.body = slow_to_stop_body};
+  sched::spawn(child.raw(), sched::pool::cpu, fake_runner());
+  expect(sched::shutdown(), "a task that can stop should stop in time");
+  expect(child.input == 1, "shutdown should cancel a detached task");
+}
+
+// Never reaches a cancellation check until `release` is set.
+std::atomic<bool> release{false};
+auto ignores_cancel_body(fake_task &t) -> uint64_t {
+  while (!release.load()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  t.input = 1;
+  return co::raw(co::status::done);
+}
+
+auto test_shutdown_gives_up_on_a_task_that_will_not_stop() -> void {
+  auto stuck = fake_task{.body = ignores_cancel_body};
+  sched::spawn(stuck.raw(), sched::pool::cpu, fake_runner());
+  expect(!sched::shutdown(), "shutdown should report a task still running");
+  release = true;
+  sched::wait_idle();
+}
+
 auto main() -> int {
   // Read when the cpu pool first starts, so set before any test spawns.
   setenv("CINDER_CPU_WORKERS", "4", 1);
@@ -391,5 +416,7 @@ auto main() -> int {
   test_a_cancel_reaches_a_crew_while_the_body_waits();
   test_a_panic_in_a_crew_body_stops_the_crew_first();
   test_a_group_failure_waits_for_the_others();
+  test_shutdown_stops_a_detached_task();
+  test_shutdown_gives_up_on_a_task_that_will_not_stop();
   return 0;
 }

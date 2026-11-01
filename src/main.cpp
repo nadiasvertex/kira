@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "driver/cli.h"
+#include "src/bytecode/panic.h"
 #include "version.h"
 
 /// Run the Cinder CLI driver from process entry to exit status.
@@ -66,6 +67,9 @@ auto main(int argc, char *argv[]) -> int {
     // (or `--run-function`'s target) returned, like any other program —
     // not the usual "0 success / 1 failure" the compiler itself uses for
     // every other outcome.
+    if (cfg.run && report->run.has_value() && report->run->panicked) {
+      return cinder::bytecode::k_panic_exit_code;
+    }
     if (cfg.run && !had_errors) {
       return report->run.has_value() ? report->run->exit_code : 0;
     }

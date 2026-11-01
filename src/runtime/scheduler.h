@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace cinder::runtime::scheduler {
 
@@ -134,6 +135,33 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 /// has finished. Used by tests to drain detached work; a program's tasks are
 /// normally awaited.
 void wait_idle();
+
+/// Cancels every unfinished task and waits a short time for them to stop.
+/// Returns whether they all did: a task that never reaches a cancellation
+/// check is still running if not. A worker cannot wait for itself, so there
+/// it does nothing and returns false. Runs at process exit; a host that frees
+/// what tasks point at calls it first.
+[[nodiscard]] auto shutdown() -> bool;
+
+/// Whether the calling thread is a worker, where a panic unwinds to the
+/// scheduler rather than ending the process.
+[[nodiscard]] auto on_worker() -> bool;
+
+/// Thrown through compiled frames by a panic on a worker. It carries nothing:
+/// the message is printed where the panic was raised.
+struct task_panic {};
+
+/// Prints `panic: <message>` on stderr, once per poll of a task, so a panic
+/// rethrown in its awaiters is not printed again.
+void report_panic(std::string_view message);
+
+/// Ends the process after a panic with nothing left to propagate to: stops
+/// the tasks, then exits without running static destructors.
+[[noreturn]] void exit_after_panic();
+
+/// The panic of compiled code: reports `message`, then throws `task_panic` on
+/// a worker or ends the process elsewhere.
+[[noreturn]] void raise_native_panic(std::string_view message);
 
 } // namespace cinder::runtime::scheduler
 

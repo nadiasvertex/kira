@@ -1511,20 +1511,21 @@ namespace platform_query = cinder::runtime::platform_query;
 }
 
 /// Mirrors `cinder_rt_panic` (`src/runtime/io.cpp`) for the bytecode tier:
-/// reports `msg` on stderr and terminates with `k_panic_exit_code`. Both
-/// tiers terminate rather than unwinding, so a panicking program behaves
-/// identically whichever backend ran it — which is what lets
-/// `codegen_stress_test` cross-check them.
+/// reports `msg` on stderr, then unwinds to the scheduler on a worker and
+/// terminates with `k_panic_exit_code` elsewhere. Both tiers do the same, so
+/// a panicking program behaves identically whichever backend ran it — which
+/// is what lets `codegen_stress_test` cross-check them.
 [[noreturn]] auto intrinsic_rt_panic(std::span<const slot_value> args)
     -> slot_value {
   const auto text = view_of(args[0]);
   if (panics_are_hosted()) {
     throw panic_error(panic_reason::explicit_panic, std::string(text));
   }
-  std::fputs("panic: ", stderr);
-  std::fwrite(text.data(), 1, text.size(), stderr);
-  std::fputc('\n', stderr);
-  std::exit(k_panic_exit_code);
+  cinder::runtime::scheduler::report_panic(text);
+  if (cinder::runtime::scheduler::on_worker()) {
+    throw panic_error(panic_reason::explicit_panic, std::string(text));
+  }
+  cinder::runtime::scheduler::exit_after_panic();
 }
 
 /// Whether intrinsic `id` reaches outside the VM: the console and files, or
@@ -1636,6 +1637,9 @@ auto vm::poll_task(uint64_t *task) const -> uint64_t {
       slot_value{reinterpret_cast<uint64_t>(task)}}; // NOLINT
   auto result = execute(step_function, args, run_limits{});
   if (!result.has_value()) {
+    // Most of the VM's panics are thrown without a report. One already
+    // reported, or rethrown from an awaited task, is not printed again.
+    cinder::runtime::scheduler::report_panic(result.error().message);
     throw panic_error(result.error().reason, result.error().message);
   }
   return result->value.u;

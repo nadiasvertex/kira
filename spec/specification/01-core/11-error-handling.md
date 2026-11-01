@@ -97,7 +97,11 @@ panic("should never reach here")
 A panic terminates the program. It prints `panic: <message>` on stderr and
 exits with status 101 — the same message and the same status whichever
 backend ran the program, and whether the panic came from `panic()` in Cinder
-or from a check the compiler emitted.
+or from a check the compiler emitted. A panic in a task prints at once and
+then propagates to whoever awaits the task, stopping the task's siblings on the
+way ([`crew`, `par`, `race`](../02-intermediate/28-crew-par-race.md)); the
+program ends when it reaches the entry function. A panic in a task nothing
+awaits prints, and the program carries on.
 
 An out-of-range index is the same event on every container. `array[T, N]`,
 `slice[T]` and `str` are bounds-checked by the compiler; `list[T]` checks
