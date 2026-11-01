@@ -1,0 +1,18 @@
+module deep_stack_in_task
+
+def down(n: int64) -> int64:
+    if n == 0:
+        return 0
+    return 1 + down(n - 1)
+
+def big_frame() -> int64:
+    var a: array[int64, 90000] = [1; 90000]
+    return a[89999]
+
+async def work() -> int64:
+    return down(100000) + big_frame()
+
+async def main() -> int32:
+    let total = await work()
+    println("total {total}")
+    return 0

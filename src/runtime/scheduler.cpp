@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include <pthread.h>
 #include <unistd.h>
 
 #include "src/runtime/coroutine.h"
@@ -75,7 +76,6 @@ struct pool_state {
   std::condition_variable work;
   /// Notified when a poll stops running, for a worker waiting in `resuming`.
   std::condition_variable slot;
-  std::vector<std::thread> workers;
   /// Workers blocked on `work`, or started and on their way there.
   size_t idle = 0;
   /// Workers inside a step function, not counting one blocked in a wait. This
@@ -113,6 +113,11 @@ thread_local bool panic_reported = false;
 constexpr auto k_shutdown_grace = std::chrono::seconds(1);
 
 constexpr int k_panic_exit_code = 101; // `bytecode::k_panic_exit_code`
+
+/// A worker's stack, the size of a main thread's by default, so a task can
+/// recurse as deep as the entry function. A thread's default is much smaller
+/// on macOS. Pages are only committed when touched.
+constexpr size_t k_worker_stack_bytes = size_t{8} * 1024 * 1024;
 
 /// Leaked on purpose: worker threads block on this state until the process
 /// ends, so it must outlive every static destructor.
@@ -339,6 +344,27 @@ void push_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   dispatch_locked(target, rec.where);
 }
 
+/// Starts a thread running `worker_loop`. Returns false if the system has no
+/// thread to give. Workers are never joined.
+auto start_worker(pool where) -> bool {
+  pthread_attr_t attributes{};
+  if (pthread_attr_init(&attributes) != 0) {
+    return false;
+  }
+  (void)pthread_attr_setstacksize(&attributes, k_worker_stack_bytes);
+  (void)pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+  pthread_t thread{};
+  const auto failed = pthread_create(
+      &thread, &attributes,
+      [](void *argument) -> void * {
+        worker_loop(static_cast<pool>(reinterpret_cast<uintptr_t>(argument)));
+        return nullptr;
+      },
+      reinterpret_cast<void *>(static_cast<uintptr_t>(where)));
+  (void)pthread_attr_destroy(&attributes);
+  return failed == 0;
+}
+
 /// Gives a free place in the pool to whoever should take it: a worker back
 /// from a blocking wait, else a queued task. Workers start on first use, one
 /// for each task that could run now and no idle worker can take. A busy
@@ -354,8 +380,16 @@ void dispatch_locked(pool_state &target, pool where) {
   while (std::min(target.queue.size(), free) > target.idle) {
     static const auto stop_at_exit = std::atexit([] { (void)shutdown(); });
     (void)stop_at_exit;
+    if (!start_worker(where)) {
+      // A worker that polls or waits will reach the queue later. With none,
+      // nothing will, and a program left waiting would hang.
+      if (target.running == 0 && target.idle == 0) {
+        report_panic("could not start a thread to run a task");
+        std::_Exit(k_panic_exit_code);
+      }
+      break;
+    }
     ++target.idle;
-    target.workers.emplace_back(worker_loop, where);
   }
   target.work.notify_one();
 }
