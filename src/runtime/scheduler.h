@@ -20,7 +20,8 @@ namespace cinder::runtime::scheduler {
 //  interleave but never run in parallel. The `cpu` pool has one worker per
 //  hardware thread (`CINDER_CPU_WORKERS` overrides this) and runs tasks in
 //  parallel. Pools start their threads on first use and live for the rest of
-//  the process.
+//  the process. A pool's size limits how many polls run at once, not how many
+//  threads it has: a worker blocked in a plain function does not count.
 //
 //  All scheduling state sits behind one mutex. A step function runs outside
 //  it, so the lock is held only for queue and bookkeeping operations.
@@ -55,7 +56,9 @@ void spawn(uint64_t *task, pool where, runner how);
 
 /// Runs `task` to completion for a caller that is not itself a task: spawns
 /// it if needed and blocks the calling thread until it finishes. Rethrows
-/// the failure of a task that panicked. Must not be called from a worker.
+/// the failure of a task that panicked. On a worker, which is how a plain
+/// function a task called waits, another worker takes this one's place until
+/// the wait ends. The other blocking calls below do the same.
 void block_on(uint64_t *task, pool where, runner how);
 
 /// Called by the step function of `self` at an `await` of `awaited`. Returns

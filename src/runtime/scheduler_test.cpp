@@ -401,9 +401,70 @@ auto test_shutdown_gives_up_on_a_task_that_will_not_stop() -> void {
   sched::wait_idle();
 }
 
+/// A plain function on the only `io` worker: it blocks on a task that needs
+/// that pool to run.
+auto block_on_child(fake_task &t) -> uint64_t {
+  sched::block_on(t.other->raw(), sched::pool::io, fake_runner());
+  return yield_result(t, result_of(*t.other) + 1);
+}
+
+auto test_a_blocked_worker_gives_up_its_place() -> void {
+  static auto child = fake_task{};
+  static auto parent = fake_task{};
+  child.body = +[](fake_task &t) -> uint64_t { return yield_result(t, 41); };
+  parent.body = block_on_child;
+  parent.other = &child;
+  sched::block_on(parent.raw(), sched::pool::io, fake_runner());
+  expect(result_of(parent) == 42,
+         "expected a blocked worker's child to run on the same pool");
+}
+
+/// How many fake polls are inside `count_running` right now, and the most
+/// there have been.
+auto polls_now = std::atomic<int>{0};
+auto polls_peak = std::atomic<int>{0};
+
+auto count_running(fake_task &t) -> uint64_t {
+  const auto now = polls_now.fetch_add(1) + 1;
+  auto peak = polls_peak.load();
+  while (now > peak && !polls_peak.compare_exchange_weak(peak, now)) {
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  polls_now.fetch_sub(1);
+  return yield_result(t, 1);
+}
+
+/// Stops counting while blocked, as the worker has given up its place, and
+/// counts again once it has one back.
+auto block_then_count(fake_task &t) -> uint64_t {
+  sched::block_on(t.other->raw(), sched::pool::io, fake_runner());
+  return count_running(t);
+}
+
+auto test_the_io_pool_stays_one_poll_at_a_time() -> void {
+  // `others` queue behind the parent, so a spare worker runs them while it is
+  // blocked, and the parent wakes with some of them still to run.
+  static auto child = fake_task{};
+  static auto parent = fake_task{};
+  static auto others = std::array<fake_task, 8>{};
+  child.body = count_running;
+  parent.body = block_then_count;
+  parent.other = &child;
+  auto all = std::vector<uint64_t *>{parent.raw()};
+  for (auto &other : others) {
+    other.body = count_running;
+    all.push_back(other.raw());
+  }
+  sched::block_on_all(all.data(), all.size(), sched::pool::io, fake_runner());
+  expect(polls_peak.load() == 1,
+         "expected the single-worker io pool to run one poll at a time");
+}
+
 auto main() -> int {
   // Read when the cpu pool first starts, so set before any test spawns.
   setenv("CINDER_CPU_WORKERS", "4", 1);
+  test_a_blocked_worker_gives_up_its_place();
+  test_the_io_pool_stays_one_poll_at_a_time();
   test_block_on_runs_a_task();
   test_await_of_an_unstarted_task_goes_pending_then_resumes();
   test_a_failing_task_rethrows_in_the_awaiter();

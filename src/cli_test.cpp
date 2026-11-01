@@ -2796,6 +2796,53 @@ auto test_panic_in_task_stops_siblings_then_exits() -> void {
          "expected the VM to report the panic to its host");
 }
 
+auto test_blocking_wait_in_a_task_finishes_on_both_tiers() -> void {
+  auto temp = make_temp_dir();
+  auto source_path = temp.path / "blocking_wait_in_task.cn";
+  auto output_path = temp.path / "blocking_wait_in_task_bin";
+  write_file(source_path, read_program("blocking_wait_in_task.cn"));
+
+  cinder::driver::cli_config cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = (temp.path / "meta").string(),
+      .show_help = false,
+      .build = true,
+      .build_function = "main",
+      .build_output = output_path.string(),
+  };
+  cinder::driver::inject_stdlib_prelude(cfg);
+  auto report = cinder::driver::compile_sources(cfg, false);
+  expect(report.has_value() && report->build.has_value() &&
+             report->build->succeeded,
+         "expected the blocking wait program to build");
+
+  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(), "r"); // NOLINT
+  expect(pipe != nullptr, "expected the linked executable to launch");
+  auto output = std::string{};
+  std::array<char, 256> buffer{};
+  size_t read = 0;
+  while ((read = std::fread(buffer.data(), 1, buffer.size(), pipe)) > 0) {
+    output.append(buffer.data(), read);
+  }
+  pclose(pipe);
+  expect(output.find("total 41") != std::string::npos,
+         std::format("expected `total 41`, got: `{}`", output));
+
+  cinder::driver::cli_config run_cfg{
+      .program_name = "cinder",
+      .sources = {source_path.string()},
+      .metadata_dir = (temp.path / "meta").string(),
+      .show_help = false,
+      .run = true,
+  };
+  cinder::driver::inject_stdlib_prelude(run_cfg);
+  auto run_report = cinder::driver::compile_sources(run_cfg, false);
+  expect(run_report.has_value() && run_report->run.has_value() &&
+             !run_report->run->panicked,
+         "expected the VM to finish the blocking wait program");
+}
+
 auto test_out_of_bounds_index_terminates_for_every_container() -> void {
   check_out_of_bounds_index_terminates(
       "array",
@@ -5278,6 +5325,7 @@ auto main() -> int {
     test_build_links_and_runs_a_heap_using_program();
     test_out_of_bounds_index_terminates_for_every_container();
     test_panic_in_task_stops_siblings_then_exits();
+    test_blocking_wait_in_a_task_finishes_on_both_tiers();
     test_run_index_mut_dispatches_to_cell_mut();
     test_run_index_ref_dispatches_to_cell();
     test_cross_module_function_used_as_a_value();

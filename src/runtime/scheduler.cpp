@@ -73,9 +73,17 @@ struct task_record {
 struct pool_state {
   std::deque<uint64_t *> queue;
   std::condition_variable work;
+  /// Notified when a poll stops running, for a worker waiting in `resuming`.
+  std::condition_variable slot;
   std::vector<std::thread> workers;
-  /// Workers blocked on `work`, i.e. ready to take a queued task.
+  /// Workers blocked on `work`, or started and on their way there.
   size_t idle = 0;
+  /// Workers inside a step function, not counting one blocked in a wait. This
+  /// is the number the pool's size limits.
+  size_t running = 0;
+  /// Workers whose blocking wait has ended, waiting to run again. They go
+  /// ahead of the queue, since a poll is already underway on each.
+  size_t resuming = 0;
 };
 
 struct scheduler_state {
@@ -93,6 +101,9 @@ thread_local uint64_t *current_task = nullptr;
 /// True on a thread running `worker_loop`, including in a plain function a
 /// task called.
 thread_local bool is_worker = false;
+
+/// The pool of a thread running `worker_loop`.
+thread_local pool worker_pool = pool::io;
 
 /// This poll's panic has been printed, or came from a task that printed it.
 thread_local bool panic_reported = false;
@@ -141,6 +152,13 @@ auto worker_count(pool p) -> size_t {
   return std::max<size_t>(1, std::thread::hardware_concurrency());
 }
 
+/// `worker_count`, read once: it runs under the lock on every push.
+auto pool_size(pool p) -> size_t {
+  static const size_t sizes[] = {worker_count(pool::io),
+                                 worker_count(pool::cpu)};
+  return sizes[pool_index(p)];
+}
+
 auto is_done(const uint64_t *task) -> bool {
   return status_of(task) == co::raw(co::status::done);
 }
@@ -150,6 +168,7 @@ auto is_cancelled(const uint64_t *task) -> bool {
 }
 
 void push_locked(scheduler_state &s, uint64_t *task, task_record &rec);
+void dispatch_locked(pool_state &target, pool where);
 void finish_unwinding_locked(scheduler_state &s, uint64_t *task,
                              task_record &rec);
 
@@ -254,15 +273,23 @@ void unwind_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
 
 void worker_loop(pool where) {
   is_worker = true;
+  worker_pool = where;
   auto &s = state();
   auto &mine = s.pools[pool_index(where)];
   auto lock = std::unique_lock(s.mutex);
   while (true) {
-    ++mine.idle;
-    mine.work.wait(lock, [&] { return !mine.queue.empty(); });
+    mine.work.wait(lock, [&] {
+      return !mine.queue.empty() && mine.resuming == 0 &&
+             mine.running < pool_size(where);
+    });
     --mine.idle;
+    ++mine.running;
     auto *task = mine.queue.front();
     mine.queue.pop_front();
+    if (!mine.queue.empty()) {
+      // Several places can free up at one notify; pass the wake along.
+      dispatch_locked(mine, where);
+    }
     auto &rec = *record_of(task);
     rec.state = task_state::running;
     rec.notified = false;
@@ -279,6 +306,9 @@ void worker_loop(pool where) {
     }
     current_task = nullptr;
     lock.lock();
+    --mine.running;
+    ++mine.idle;
+    dispatch_locked(mine, where);
 
     if (failure != nullptr) {
       rec.failure = failure;
@@ -306,16 +336,51 @@ void push_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   rec.state = task_state::queued;
   rec.notified = false;
   target.queue.push_back(task);
-  // Workers start on first use, one for each queued task that no idle worker
-  // can take, up to the pool's size. A busy worker does not count: a task
-  // queued behind a long one would otherwise wait for it.
-  const auto wanted = worker_count(rec.where);
-  while (target.workers.size() < wanted && target.queue.size() > target.idle) {
+  dispatch_locked(target, rec.where);
+}
+
+/// Gives a free place in the pool to whoever should take it: a worker back
+/// from a blocking wait, else a queued task. Workers start on first use, one
+/// for each task that could run now and no idle worker can take. A busy
+/// worker does not count, and neither does a blocked one, so a task queued
+/// behind either does not wait for it.
+void dispatch_locked(pool_state &target, pool where) {
+  if (target.resuming > 0) {
+    target.slot.notify_one();
+    return;
+  }
+  const auto size = pool_size(where);
+  const auto free = size - std::min(size, target.running);
+  while (std::min(target.queue.size(), free) > target.idle) {
     static const auto stop_at_exit = std::atexit([] { (void)shutdown(); });
     (void)stop_at_exit;
-    target.workers.emplace_back(worker_loop, rec.where);
+    ++target.idle;
+    target.workers.emplace_back(worker_loop, where);
   }
   target.work.notify_one();
+}
+
+/// Blocks until `done` holds. On a worker, a plain function a task called is
+/// waiting: it cannot suspend, so its place in the pool goes to another
+/// worker, which runs what it waits for, and it takes a place back before
+/// continuing. A pool therefore never runs more polls than its size. Lock
+/// held.
+template <typename predicate>
+void blocking_wait(scheduler_state &s, std::unique_lock<std::mutex> &lock,
+                   predicate done) {
+  if (!is_worker || done()) {
+    s.finished.wait(lock, done);
+    return;
+  }
+  auto &mine = s.pools[pool_index(worker_pool)];
+  --mine.running;
+  dispatch_locked(mine, worker_pool);
+  s.finished.wait(lock, done);
+  ++mine.resuming;
+  mine.slot.wait(lock, [&] { return mine.running < pool_size(worker_pool); });
+  --mine.resuming;
+  ++mine.running;
+  dispatch_locked(mine, worker_pool);
 }
 
 /// Takes over a task nobody has started. Lock held.
@@ -358,7 +423,7 @@ void block_on(uint64_t *task, pool where, runner how) {
   if (!is_done(task) && record_of(task) == nullptr) {
     adopt_locked(s, task, where, how);
   }
-  s.finished.wait(lock, [&] { return is_done(task); });
+  blocking_wait(s, lock, [&] { return is_done(task); });
   const auto *rec = record_of(task);
   const auto failure = rec != nullptr ? rec->failure : std::exception_ptr{};
   lock.unlock();
@@ -442,7 +507,7 @@ void stop_all_locked(scheduler_state &s, std::unique_lock<std::mutex> &lock,
       cancel_locked(s, task, *rec);
     }
   }
-  s.finished.wait(lock, [&] { return std::ranges::all_of(tasks, is_done); });
+  blocking_wait(s, lock, [&] { return std::ranges::all_of(tasks, is_done); });
 }
 
 } // namespace
@@ -477,7 +542,7 @@ void block_on_all(uint64_t *const *tasks, size_t count, pool where,
   const auto all = std::span(tasks, count);
   adopt_all_locked(s, all, where, how);
   auto failure = std::exception_ptr{};
-  s.finished.wait(lock, [&] {
+  blocking_wait(s, lock, [&] {
     failure = first_failure(all);
     return failure != nullptr || std::ranges::all_of(all, is_done);
   });
@@ -553,7 +618,7 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where,
   auto lock = std::unique_lock(s.mutex);
   const auto all = std::span(tasks, count);
   adopt_all_locked(s, all, where, how);
-  s.finished.wait(lock, [&] { return std::ranges::any_of(all, is_done); });
+  blocking_wait(s, lock, [&] { return std::ranges::any_of(all, is_done); });
   const auto failure = first_failure(all);
   if (failure != nullptr) {
     stop_all_locked(s, lock, all);

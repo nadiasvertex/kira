@@ -1,0 +1,20 @@
+module blocking_wait_in_task
+
+async def child(value: int32) -> int32:
+    return value
+
+# A plain function cannot suspend, so these block the worker they run on, and
+# with the default single `io` worker their tasks need another one.
+def join_a_crew() -> int32:
+    let t = crew c:
+        c.spawn(child(40))
+    return t.get()
+
+async def wrapper() -> int32:
+    let await_in_lambda = () => await child(1)
+    return join_a_crew() + await_in_lambda()
+
+async def main() -> int32:
+    let total = await wrapper()
+    println("total {total}")
+    return 0
