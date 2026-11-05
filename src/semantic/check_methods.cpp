@@ -1953,9 +1953,50 @@ auto checker::infer_field(const ast::field_expr &field) -> type_id {
   if (const auto type_constant = infer_type_name_member(field)) {
     return *type_constant;
   }
+  if (const auto static_type = infer_module_static_field(field)) {
+    return *static_type;
+  }
   const auto object = infer_expr(*field.object, k_unknown_type);
   return field_access_type(object, field.field_name, field.span,
                            deref_site{.receiver = field.object.get()});
+}
+
+/// `t.m.xs` when the parser split it as a field access on the module path
+/// `t.m`. It does that whenever the last segment is followed by `[`, so a
+/// module-qualified `static` used with an index (`t.m.xs[1]`) arrives
+/// here rather than in `infer_module_path`. The field node is recorded as
+/// the static reference, exactly as the whole path would have been, so
+/// lowering and the ownership check read it as the static itself.
+auto checker::infer_module_static_field(const ast::field_expr &field)
+    -> std::optional<type_id> {
+  auto segments = std::vector<std::string>{};
+  if (const auto *ident = ast::as<const ast::ident_expr>(field.object.get())) {
+    segments = {ident->name};
+  } else if (const auto *path =
+                 ast::as<const ast::module_path_expr>(field.object.get())) {
+    segments = path->segments;
+  }
+  if (segments.empty() || dotted_root_is_value(segments.front())) {
+    return std::nullopt;
+  }
+  segments.push_back(field.field_name);
+  const auto *owner = find_static_owner_of_path(segments);
+  if (owner == nullptr) {
+    return std::nullopt;
+  }
+  const auto it = owner->statics.find(field.field_name);
+  if (it == owner->statics.end()) {
+    return std::nullopt;
+  }
+  if (const auto *path =
+          ast::as<const ast::module_path_expr>(field.object.get());
+      path != nullptr && !validate_module_path(*path)) {
+    return k_error_type;
+  }
+  const auto type = static_binding_type(*it->second.decl, owner);
+  record_static_const_reference(field, *it->second.decl, type,
+                                owner->module_name);
+  return type;
 }
 
 /// The one rule for what `a.b.c` means — the "Dotted Names" section of

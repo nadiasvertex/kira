@@ -32,7 +32,8 @@ auto checker::check_loop_head_patterns(
   }
   if (patterns.size() == 1) {
     if (patterns.front() != nullptr) {
-      check_pattern(*patterns.front(), raw_element);
+      check_owning_pattern(*patterns.front(), raw_element, raw_element,
+                           binding_origin::pattern_binding);
     }
     return;
   }
@@ -80,7 +81,8 @@ auto checker::check_loop_head_patterns(
     const auto component = is_tuple && i < element_entry.args.size()
                                ? element_entry.args[i]
                                : k_unknown_type;
-    check_pattern(*patterns[i], component);
+    check_owning_pattern(*patterns[i], component, component,
+                         binding_origin::pattern_binding);
   }
 }
 
@@ -104,17 +106,17 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
 }
 
 auto checker::check_owning_pattern(const ast::pattern &pattern,
-                                   type_id subject, binding_origin origin)
-    -> void {
-  const auto &entry = session_.types_.entry(subject);
+                                   type_id raw_subject, type_id subject,
+                                   binding_origin origin) -> void {
+  const auto &entry = session_.types_.entry(raw_subject);
   const auto saved = function_.owning_pattern_origin_;
   function_.owning_pattern_origin_ =
-      !session_.types_.is_unknown(subject) &&
+      !session_.types_.is_unknown(raw_subject) &&
               entry.kind != type_kind::ref_kind &&
               entry.kind != type_kind::ptr_kind
           ? std::optional<binding_origin>{origin}
           : std::nullopt;
-  check_pattern(pattern, strip_refs(subject));
+  check_pattern(pattern, subject);
   function_.owning_pattern_origin_ = saved;
 }
 
@@ -124,12 +126,15 @@ auto checker::pattern_binding_origin(bool is_mut, const void *key)
     return binding_origin::mut_binding;
   }
   if (!function_.owning_pattern_origin_.has_value()) {
-    return binding_origin::pattern_binding;
+    return binding_origin::pattern_alias;
   }
-  if (*function_.owning_pattern_origin_ == binding_origin::let_binding) {
-    session_.let_pattern_bindings_.insert(key);
+  const auto origin = *function_.owning_pattern_origin_;
+  if (origin == binding_origin::let_binding ||
+      origin == binding_origin::pattern_binding) {
+    session_.immutable_pattern_bindings_.insert_or_assign(
+        key, origin == binding_origin::let_binding);
   }
-  return *function_.owning_pattern_origin_;
+  return origin;
 }
 
 auto checker::check_pattern_node(const ast::pattern &pattern,
@@ -595,15 +600,19 @@ auto checker::check_match(const ast::expr *subject,
                           const std::vector<ast::match_arm> &arms,
                           type_id expected, source_span span) -> type_id {
   auto subject_type = k_unknown_type;
+  auto raw_subject_type = k_unknown_type;
   if (subject != nullptr) {
-    subject_type = strip_refs(infer_expr(*subject, k_unknown_type));
+    raw_subject_type = infer_expr(*subject, k_unknown_type);
+    subject_type = strip_refs(raw_subject_type);
   }
 
   auto result = expected;
   for (const auto &arm : arms) {
     push_scope();
     if (arm.pattern != nullptr) {
-      check_pattern(ast::cast<const ast::pattern>(*arm.pattern), subject_type);
+      check_owning_pattern(ast::cast<const ast::pattern>(*arm.pattern),
+                           raw_subject_type, subject_type,
+                           binding_origin::pattern_binding);
     }
     if (arm.guard != nullptr) {
       require_bool(*arm.guard, "a match guard");

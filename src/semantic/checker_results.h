@@ -962,12 +962,13 @@ struct checked_types {
   /// ownership checker reads it to reject a write, `&mut`, or move through a
   /// static: statics are frozen data shared by every function and task.
   std::unordered_map<const ast::node *, std::string> static_refs;
-  /// The bindings a destructuring `let` makes that own what they bind —
-  /// none of the patterns above them reached their value through a
-  /// reference — keyed by `pattern_binding::key()`. Like a plain `let`,
-  /// they cannot change (ch. 3), which the ownership checker enforces for
-  /// `&mut` and `mut self` calls.
-  std::unordered_set<const void *> let_pattern_bindings;
+  /// The pattern bindings that own what they bind and cannot change —
+  /// those of a destructuring `let`, `match`, `if let`, `while let` and
+  /// `for`, when no pattern above them reached their value through a
+  /// reference — keyed by `pattern_binding::key()`, mapped to whether a
+  /// `let` made them (ch. 3). The ownership checker rejects a `&mut` of one
+  /// or a `mut self` call on one.
+  std::unordered_map<const void *, bool> immutable_pattern_bindings;
   /// Every `module_path_expr` the checker classified as *field access on a
   /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
   /// see `checker::dotted_root_is_value` — mapped to the type after each

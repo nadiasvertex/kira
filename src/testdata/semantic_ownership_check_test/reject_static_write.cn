@@ -1,7 +1,9 @@
 module ownership.static_write
 
 # A `static` is frozen data that every function and task shares. Each line in
-# `main` and `bump` changes one, and each is rejected.
+# `main` and `bump` changes one, and each is rejected. The module-qualified
+# `ownership.static_write.xs[1]` reaches `xs` through a field access on the
+# module, and is rejected the same way.
 
 type point = {
     x: int64,
@@ -22,6 +24,7 @@ async def bump() -> int64:
 
 def main() -> int64:
     n = 4
+    ownership.static_write.xs[1] = 5
     origin.x += 1
     set_first(&mut xs)
     xs.push(4)

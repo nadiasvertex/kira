@@ -1,7 +1,8 @@
 module check.let_element_write
 
 # Writing an element of a `let` binding changes it, so it is rejected the same
-# way a field write is, for a plain `let` and for a destructuring one.
+# way a field write is, for a plain `let`, a destructuring one, and a name a
+# `match`/`if let`/`for` pattern binds.
 
 def plain() -> int64:
     let xs: list[int64] = [1, 2]
@@ -12,3 +13,9 @@ def destructured() -> int64:
     let (a, b) = ([1, 2], 3)
     a[0] = 9
     return a[0] + b
+
+def pattern(o: option[list[int64]]) -> int64:
+    if let @some(xs) = o:
+        xs[0] = 5
+        return xs[0]
+    return 0

@@ -1,0 +1,33 @@
+module ownership.pattern_binding_write
+
+# A name bound by a `match`, `if let`, `while let` or `for` pattern cannot
+# change: no `&mut` of it and no `mut self` call on it.
+
+def match_arm(o: option[list[int64]]) -> int64:
+    match o:
+        @some(xs) =>:
+            xs.push(1)
+            return xs[0]
+        @none => return 0
+
+def if_let(o: option[list[int64]]) -> int64:
+    if let @some(xs) = o:
+        let _ = xs.pop()
+        return xs[0]
+    return 0
+
+def while_let(o: option[list[int64]]) -> int64:
+    while let @some(xs) = o:
+        xs.push(2)
+        return xs[0]
+    return 0
+
+def for_loop(v: list[list[int64]]) -> int64:
+    for xs in v:
+        xs.push(1)
+    return 0
+
+def for_borrow(v: list[int64]) -> int64:
+    for x in v:
+        let _ = &mut x
+    return 0

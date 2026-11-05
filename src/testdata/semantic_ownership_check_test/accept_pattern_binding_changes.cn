@@ -1,0 +1,26 @@
+module ownership.pattern_binding_changes
+
+# A pattern binding written `mut x` can change. One bound through a `&mut`
+# names part of what the reference points at, which can be written.
+
+def through_reference(o: &mut option[list[int64]]) -> int64:
+    match o:
+        @some(xs) =>:
+            xs.push(1)
+            return xs.len() as int64
+        @none => return 0
+
+def mut_in_match(o: option[list[int64]]) -> int64:
+    match o:
+        @some(mut xs) =>:
+            xs.push(1)
+            xs[0] = 3
+            return xs.len() as int64
+        @none => return 0
+
+def mut_in_for(v: list[list[int64]]) -> int64:
+    var n: int64 = 0
+    for mut xs in v:
+        xs.push(1)
+        n = n + (xs.len() as int64)
+    return n

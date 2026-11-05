@@ -99,6 +99,9 @@ struct local_info {
   /// and no `mut self` call on it, unless the change lands behind a
   /// reference or pointer it holds (ch. 3).
   bool immutable = false;
+  /// Immutable because a `match`, `if let`, `while let` or `for` pattern
+  /// binds it, rather than a `let`.
+  bool by_pattern = false;
 };
 
 /// How a loan was made — used only to word diagnostics.
@@ -242,6 +245,8 @@ struct let_write_event {
   std::string name;
   std::string method;
   source_span declared = source_span::dummy();
+  /// A `match`, `if let`, `while let` or `for` pattern bound it.
+  bool by_pattern = false;
 };
 
 /// A write, `&mut`, or `mut self` call that would change something behind a

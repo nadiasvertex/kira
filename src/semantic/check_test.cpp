@@ -1619,8 +1619,8 @@ auto test_reports_assignment_to_immutable() -> void {
 
 auto test_reports_let_element_write() -> void {
   const auto analyzed = analyze_test_data_file("report_let_element_write.cn");
-  expect(analyzed.error_count == 2,
-         std::format("expected 2 errors for element writes to `let` "
+  expect(analyzed.error_count == 3,
+         std::format("expected 3 errors for element writes to immutable "
                      "bindings, got {}:\n{}",
                      analyzed.error_count, analyzed.diagnostics));
   expect_diagnostic(analyzed, "cannot mutate `xs` — it is bound with `let`",
@@ -1628,6 +1628,9 @@ auto test_reports_let_element_write() -> void {
   expect_diagnostic(analyzed, "cannot mutate `a` — it is bound with `let`",
                     "expected an element write to a destructured `let` to "
                     "be rejected");
+  expect_diagnostic(analyzed, "cannot mutate `xs` — it is bound by a pattern",
+                    "expected an element write to an `if let` binding to be "
+                    "rejected");
 }
 
 auto test_accepts_let_mut_reassignment() -> void {

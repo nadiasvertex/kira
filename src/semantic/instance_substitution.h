@@ -130,7 +130,7 @@ struct template_record_tables {
   std::unordered_map<const ast::static_decl *, bool> &static_if_taken_branch;
   std::unordered_map<const ast::node *, std::string> &static_global_refs;
   std::unordered_map<const ast::node *, std::string> &static_refs;
-  std::unordered_set<const void *> &let_pattern_bindings;
+  std::unordered_map<const void *, bool> &immutable_pattern_bindings;
   std::unordered_map<const ast::node *, const ast::literal_expr *>
       &static_const_values;
   std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>

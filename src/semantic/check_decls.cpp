@@ -357,7 +357,8 @@ auto checker::check_function_impl(const ast::func_decl &decl,
       } else {
         // A by-value parameter's parts are the function's own, and may
         // change like the parameter itself.
-        check_owning_pattern(*param.pattern, type, binding_origin::parameter);
+        check_owning_pattern(*param.pattern, type, strip_refs(type),
+                             binding_origin::parameter);
       }
     }
     if (param.default_value != nullptr) {

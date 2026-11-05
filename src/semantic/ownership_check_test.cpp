@@ -450,8 +450,8 @@ auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
 
 auto test_static_writes_are_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_static_write.cn");
-  expect(analyzed.error_count == 7,
-         std::format("expected 7 errors for writes through statics, got {}:\n{}",
+  expect(analyzed.error_count == 8,
+         std::format("expected 8 errors for writes through statics, got {}:\n{}",
                      analyzed.error_count, analyzed.diagnostics));
   expect_diagnostic(analyzed, "cannot assign to `xs` — it is a `static`",
                     "expected an element write in a task to be rejected");
@@ -540,6 +540,35 @@ auto test_parameter_changes_are_accepted() -> void {
   expect(analyzed.error_count == 0,
          std::format("expected by-value and `&mut` parameters to change "
                      "cleanly:\n{}",
+                     analyzed.diagnostics));
+}
+
+auto test_pattern_binding_writes_are_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_pattern_binding_write.cn");
+  expect(analyzed.error_count == 5,
+         std::format("expected 5 errors for changes to pattern bindings, got "
+                     "{}:\n{}",
+                     analyzed.error_count, analyzed.diagnostics));
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `xs` — it is bound by a pattern",
+                    "expected a `mut self` call on a pattern binding to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot call `pop` on `xs` — it is bound by a pattern",
+                    "expected a `mut self` call on an `if let` binding to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `x` mutably — it is bound by a pattern",
+                    "expected `&mut` of a `for` binding to be rejected");
+}
+
+auto test_pattern_binding_changes_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_pattern_binding_changes.cn");
+  expect(analyzed.error_count == 0,
+         std::format("expected `mut` pattern bindings and bindings through a "
+                     "`&mut` to change cleanly:\n{}",
                      analyzed.diagnostics));
 }
 
@@ -1206,6 +1235,8 @@ auto main() -> int {
     test_let_writes_through_references_are_accepted();
     test_shared_reference_writes_are_rejected();
     test_parameter_changes_are_accepted();
+    test_pattern_binding_writes_are_rejected();
+    test_pattern_binding_changes_are_accepted();
     test_two_phase_receiver_with_nested_mut_is_rejected();
     test_mut_view_across_mutation_is_rejected();
     test_two_mut_views_are_rejected();

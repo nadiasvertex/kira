@@ -64,7 +64,11 @@ enum class binding_origin : uint8_t {
   let_binding,     ///< `let` — immutable.
   var_binding,     ///< `var` — mutable.
   parameter,       ///< Function or lambda parameter.
-  pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...).
+  pattern_binding, ///< Bound by a pattern (match arm, `if let`, `for`, ...)
+                   ///< to a value it owns — immutable.
+  pattern_alias,   ///< Bound by a pattern to a part of a value reached
+                   ///< through a reference (`match &mut opt`); it cannot be
+                   ///< reassigned, but what it names may be written.
   mut_binding,     ///< A pattern binding written with a leading `mut`
                    ///< (`let mut x`, `mut self`) — mutable like `var`.
   synthetic,       ///< Introduced by the checker itself (e.g. a `crew`/`cancel`
@@ -702,9 +706,9 @@ private:
     /// `record_static_const_reference` and `fold_static_field_path`.
     std::unordered_map<const ast::node *, std::string> static_refs_;
 
-    /// See `checked_types::let_pattern_bindings`'s doc comment. Populated by
-    /// `check_pattern`.
-    std::unordered_set<const void *> let_pattern_bindings_;
+    /// See `checked_types::immutable_pattern_bindings`'s doc comment.
+    /// Populated by `check_pattern`.
+    std::unordered_map<const void *, bool> immutable_pattern_bindings_;
 
     /// See `checked_types::value_path_types`. Populated by
     /// `infer_value_rooted_path`.
@@ -959,11 +963,12 @@ private:
     /// itself is invoked at compile time, and its own body is never lowered.
     bool in_comptime_only_function_ = false;
 
-    /// How the bindings of the pattern being checked are held, when it is
-    /// part of a `let`'s or a by-value parameter's destructuring and no
+    /// How the bindings of the pattern being checked are held when no
     /// pattern above it reached the value through a reference:
-    /// `let_binding` or `parameter`. Empty otherwise, and the bindings are
-    /// ordinary pattern bindings (`check_owning_pattern`).
+    /// `let_binding` for a `let`, `parameter` for a by-value parameter,
+    /// `pattern_binding` for `match`, `if let`, `while let` and `for`.
+    /// Empty otherwise, and the bindings are aliases
+    /// (`check_owning_pattern`).
     std::optional<binding_origin> owning_pattern_origin_;
 
     /// How many block `static for` bodies enclose the code being checked. A
@@ -3379,6 +3384,8 @@ private:
       -> std::optional<type_id>;
 
   auto infer_field(const ast::field_expr &field) -> type_id;
+  auto infer_module_static_field(const ast::field_expr &field)
+      -> std::optional<type_id>;
 
   auto classify_dotted_root(std::string_view root, bool root_is_local)
       -> dotted_root;
@@ -3887,11 +3894,11 @@ private:
   auto check_pattern(const ast::pattern &pattern, type_id raw_subject) -> void;
   auto check_pattern_node(const ast::pattern &pattern, type_id raw_subject)
       -> void;
-  /// Checks the pattern of a `let` or a parameter against `subject`. The
-  /// bindings take `origin` unless the value is reached through a
-  /// reference.
-  auto check_owning_pattern(const ast::pattern &pattern, type_id subject,
-                            binding_origin origin) -> void;
+  /// Checks a binding pattern against `subject` (`raw_subject` before any
+  /// reference was stripped from it). The bindings take `origin` unless the
+  /// value is reached through a reference.
+  auto check_owning_pattern(const ast::pattern &pattern, type_id raw_subject,
+                            type_id subject, binding_origin origin) -> void;
   /// How a name `pattern` binds is held: `mut`, `let`, or a pattern
   /// binding. Records a `let` one under `key`.
   auto pattern_binding_origin(bool is_mut, const void *key) -> binding_origin;

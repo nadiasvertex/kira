@@ -1,0 +1,22 @@
+module codegen_stress.qualified_static_index
+
+# A module-qualified static used with an index. The parser splits
+# `codegen_stress.qualified_static_index.xs[1]` into a field access `.xs` on
+# the module path, because an index follows. The checker and lowering must
+# still read it as the static `xs`, the same as the bare `xs[1]`.
+#
+# 20 + 3 + (10 + 20) * 100 + 2 * 1000 = 5023.
+
+# expect: 5023
+
+static let xs: list[int64] = [10, 20, 30]
+static let arr: array[int64, 3] = [1, 2, 3]
+static let words: list[str] = ["a", "bc"]
+
+def main() -> int64:
+    let a = codegen_stress.qualified_static_index.xs[1]
+    let b = codegen_stress.qualified_static_index.arr[2]
+    let part = codegen_stress.qualified_static_index.xs[0..2]
+    let c = part[0] + part[1]
+    let d = codegen_stress.qualified_static_index.words[1].len() as int64
+    return a + b + c * 100 + d * 1000

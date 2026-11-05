@@ -758,14 +758,14 @@ private:
   /// A `&mut` of, or a `mut self` call on, a `let` binding.
   auto report_let_write(const let_write_event &w) -> void {
     const auto receiver = w.kind == static_write::receiver;
+    const auto bound = w.by_pattern ? std::string_view("bound by a pattern")
+                                    : std::string_view("bound with `let`");
     auto d = diagnostic(
         diagnostic_level::error,
-        receiver ? std::format("cannot call `{}` on `{}` — it is bound with "
-                               "`let`",
-                               w.method, w.name)
-                 : std::format("cannot borrow `{}` mutably — it is bound with "
-                               "`let`",
-                               w.name),
+        receiver ? std::format("cannot call `{}` on `{}` — it is {}", w.method,
+                               w.name, bound)
+                 : std::format("cannot borrow `{}` mutably — it is {}", w.name,
+                               bound),
         file_id_);
     d.with_label(w.span, receiver
                              ? std::format("`{}` changes its receiver",
@@ -773,12 +773,17 @@ private:
                              : std::string("this would let it be changed"));
     d.children.push_back(
         diagnostic(diagnostic_level::note,
-                   std::format("`{}` is bound with `let`, so it cannot change",
-                               w.name),
+                   std::format("`{}` is {}, so it cannot change", w.name,
+                               bound),
                    file_id_)
             .with_label(w.declared, "binding declared here"));
-    d.with_help(std::format("Declare `{}` with `var` to allow changing it.",
-                            w.name));
+    d.with_help(
+        w.by_pattern
+            ? std::format("Bind it as `mut {}` in the pattern to allow "
+                          "changing it.",
+                          w.name)
+            : std::format("Declare `{}` with `var` to allow changing it.",
+                          w.name));
     diag_.emit(d);
   }
 

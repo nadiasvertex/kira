@@ -15,6 +15,7 @@ auto checker::binding_origin_description(binding_origin origin)
   case binding_origin::let_binding:
     return "bound with `let`";
   case binding_origin::pattern_binding:
+  case binding_origin::pattern_alias:
     return "bound by a pattern";
   case binding_origin::parameter:
     return "a parameter";
@@ -130,7 +131,8 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         // `session_.node_types_`'s doc comment.
         record_expr_type(ident, target_type);
         if (binding->origin == binding_origin::let_binding ||
-            binding->origin == binding_origin::pattern_binding) {
+            binding->origin == binding_origin::pattern_binding ||
+            binding->origin == binding_origin::pattern_alias) {
           auto diag =
               diagnostic(diagnostic_level::error,
                          std::format("cannot assign to immutable binding `{}`",
@@ -218,6 +220,17 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
                           root_name),
               "mutation through an immutable binding",
               std::format("Declare `{}` with `var` to allow mutation.",
+                          root_name));
+        } else if (binding != nullptr &&
+                   binding->origin == binding_origin::pattern_binding &&
+                   !writes_through_indirection) {
+          error_with_help(
+              stmt.target->span,
+              std::format("cannot mutate `{}` — it is bound by a pattern",
+                          root_name),
+              "mutation through an immutable binding",
+              std::format("Bind it as `mut {}` in the pattern to allow "
+                          "mutation.",
                           root_name));
         }
       }
@@ -357,6 +370,7 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
         // The bindings own what they bind unless the value is reached
         // through a reference (`let (a, b) = &mut pair`).
         check_owning_pattern(*stmt.pattern, binding_type,
+                             strip_refs(binding_type),
                              binding_origin::let_binding);
       }
     }
@@ -570,7 +584,8 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
     push_scope();
     if (stmt.let_expr != nullptr && stmt.let_pattern != nullptr) {
       const auto subject = infer_expr(*stmt.let_expr, k_unknown_type);
-      check_pattern(*stmt.let_pattern, strip_refs(subject));
+      check_owning_pattern(*stmt.let_pattern, subject, strip_refs(subject),
+                           binding_origin::pattern_binding);
     }
     ++function_.loop_depth_;
     check_body_nodes(stmt.body, k_unknown_type);

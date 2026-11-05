@@ -200,7 +200,8 @@ auto binding_type(const pattern_binding &binding, const checked_types &checked)
   return found != checked.node_types.end() ? found->second : k_unknown_type;
 }
 
-auto place_root(const ast::expr &expr, bool &projected)
+auto place_root(const ast::expr &expr, bool &projected,
+                const checked_types *checked = nullptr)
     -> std::optional<root_name> {
   const auto *current = &expr;
   while (true) {
@@ -226,6 +227,12 @@ auto place_root(const ast::expr &expr, bool &projected)
       const auto &field = ast::cast<ast::field_expr>(*current);
       if (field.object == nullptr) {
         return std::nullopt;
+      }
+      // `t.m.xs` written before `[` is a field access on the module `t.m`
+      // that names a static (`checker::infer_module_static_field`). The
+      // static is the root. It has no name a local could share.
+      if (checked != nullptr && checked->static_refs.contains(current)) {
+        return root_name{.name = {}, .span = current->span, .node = current};
       }
       projected = true;
       current = field.object.get();
@@ -631,8 +638,13 @@ private:
         new_local(name, local_role::binding, type, span, movable(type));
     cfg_.locals[local].whole = whole;
     cfg_.locals[local].node = node;
-    cfg_.locals[local].immutable =
-        node != nullptr && checked_.let_pattern_bindings.contains(node);
+    if (node != nullptr) {
+      if (const auto found = checked_.immutable_pattern_bindings.find(node);
+          found != checked_.immutable_pattern_bindings.end()) {
+        cfg_.locals[local].immutable = true;
+        cfg_.locals[local].by_pattern = !found->second;
+      }
+    }
     cfg_.locals[local].owns =
         (whole || owns) && name != "self" && owns_storage(type, name) &&
         (checked_.types.is_unknown(type) ||
@@ -934,7 +946,8 @@ private:
                          .kind = kind,
                          .name = info.name,
                          .method = std::string(method),
-                         .declared = info.span});
+                         .declared = info.span,
+                         .by_pattern = info.by_pattern});
   }
 
   /// The local `name` names in the nearest enclosing function, for a name
@@ -1213,7 +1226,7 @@ private:
   auto access_place(const ast::expr &expr, access_kind kind,
                     bool evaluate_subscripts = true) -> value {
     auto projected = false;
-    const auto root = place_root(expr, projected);
+    const auto root = place_root(expr, projected, &checked_);
     if (evaluate_subscripts) {
       eval_subscripts(expr);
     }
@@ -1301,7 +1314,7 @@ private:
       return borrow_temporary(expr, is_mut, origin, span);
     }
     auto projected = false;
-    const auto root = place_root(expr, projected);
+    const auto root = place_root(expr, projected, &checked_);
     if (evaluate_subscripts) {
       eval_subscripts(expr);
     }
@@ -2067,7 +2080,7 @@ private:
           // No loan means no local: a `mut self` call on a `static`, or on
           // a name this lambda body captures.
           auto projected = false;
-          if (const auto root = place_root(receiver, projected);
+          if (const auto root = place_root(receiver, projected, &checked_);
               root.has_value() &&
               !reject_static_write(*root, static_write::receiver,
                                    receiver.span, method)) {
@@ -2493,7 +2506,7 @@ private:
           operand = unary.operand.get();
         }
       }
-      if (const auto root = place_root(*operand, projected)) {
+      if (const auto root = place_root(*operand, projected, &checked_)) {
         name = root->name;
       }
     }
@@ -2855,7 +2868,7 @@ private:
       return;
     }
     auto projected = false;
-    const auto root = place_root(target, projected);
+    const auto root = place_root(target, projected, &checked_);
     eval_subscripts(target);
     const auto local = lookup(root->name);
     if (!local.has_value()) {
@@ -3037,7 +3050,7 @@ auto subject_moves(const ast::expr &subject,
                    const std::vector<const ast::node *> &patterns,
                    const checked_types &checked) -> bool {
   auto projected = false;
-  if (!place_root(subject, projected).has_value()) {
+  if (!place_root(subject, projected, &checked).has_value()) {
     return true;
   }
   for (const auto *node : patterns) {
@@ -3076,7 +3089,7 @@ auto match_owns_subject(const ast::expr &subject,
     return false;
   }
   auto projected = false;
-  const auto root = place_root(subject, projected);
+  const auto root = place_root(subject, projected, &checked);
   if (!root.has_value()) {
     return true; // a call result, constructor or literal: a fresh value
   }

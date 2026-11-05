@@ -28,6 +28,17 @@ var ys = [1, 2, 3]
 ys.push(4)          # fine
 ```
 
+## Pattern bindings
+
+A name bound by a `match` arm, `if let`, `while let`, or `for` pattern cannot change, the same as a `let`: it cannot be reassigned, written in place, borrowed with `&mut`, or have a `mut self` method called on it. Writing `mut` before the name (`@some(mut xs)`, `for mut xs in v`) makes it changeable. A binding reached through a reference names part of what the reference points at, so through a `&mut` subject (`match o` with `o: &mut option[list[int64]]`) it can be written, and through a `&` it cannot.
+
+```cinder
+for xs in lists:
+    xs.push(0)          # error: `xs` is bound by a pattern
+for mut xs in lists:
+    xs.push(0)          # fine
+```
+
 ## Parameters
 
 A parameter taken by value belongs to the function, so it can change like a `var`: it can be reassigned, written in place, borrowed with `&mut`, and have `mut self` methods called on it. The same holds for the bindings of a by-value parameter's destructuring pattern. The caller is not affected, because the value was moved or copied in.

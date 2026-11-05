@@ -718,7 +718,7 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
       bind_value(binding.name, type, binding_origin::parameter, param.span);
     } else if (param.pattern != nullptr) {
       check_owning_pattern(ast::cast<const ast::pattern>(*param.pattern), type,
-                           binding_origin::parameter);
+                           type, binding_origin::parameter);
     }
   }
 
@@ -804,8 +804,9 @@ auto checker::check_if_branch_header(const ast::if_branch &branch) -> void {
   }
   if (branch.let_expr != nullptr && branch.let_pattern != nullptr) {
     const auto subject = infer_expr(*branch.let_expr, k_unknown_type);
-    check_pattern(ast::cast<const ast::pattern>(*branch.let_pattern),
-                  strip_refs(subject));
+    check_owning_pattern(ast::cast<const ast::pattern>(*branch.let_pattern),
+                         subject, strip_refs(subject),
+                         binding_origin::pattern_binding);
   } else if (branch.let_expr != nullptr) {
     infer_expr(*branch.let_expr, k_unknown_type);
   }

@@ -617,6 +617,49 @@ private:
             name, checked_.types.display(type)));
   }
 
+  /// `ref` lowered as the `static let` the checker resolved it to
+  /// (`checker::record_static_const_reference`), or `nullopt` when it names
+  /// no static. `ref` is a bare name, a module path, or a field access on a
+  /// module (`t.m.xs` written before `[`): the checker recorded the static on
+  /// whichever node spells it.
+  [[nodiscard]] auto lower_static_reference(const ast::expr &ref)
+      -> std::optional<std::expected<ptr<hir_expr>, lowering_error>> {
+    // A scalar static: the checker evaluated it and recorded the literal.
+    if (const auto it = checked_.lowering.static_const_values.find(&ref);
+        it != checked_.lowering.static_const_values.end()) {
+      return lower_literal(*it->second);
+    }
+    // A struct static is rebuilt at each reference.
+    if (const auto it = checked_.lowering.static_struct_values.find(&ref);
+        it != checked_.lowering.static_struct_values.end()) {
+      return lower_expr(*it->second);
+    }
+    const auto global = checked_.static_global_refs.find(&ref);
+    const auto fragment = checked_.lowering.static_fragment_refs.find(&ref);
+    const auto unreadable = checked_.lowering.unreadable_static_refs.find(&ref);
+    if (global == checked_.static_global_refs.end() &&
+        fragment == checked_.lowering.static_fragment_refs.end() &&
+        unreadable == checked_.lowering.unreadable_static_refs.end()) {
+      return std::nullopt;
+    }
+    auto type = checked_type_of(ref);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    // Real backing data a backend builds once.
+    if (global != checked_.static_global_refs.end()) {
+      return lower_static_global_ref(ref, *type, global->second);
+    }
+    if (fragment != checked_.lowering.static_fragment_refs.end()) {
+      if (!options_.compile_time) {
+        return fail_unreadable_static(ref.span, fragment->second->name, *type);
+      }
+      return ok_expr(hir::make<hir_host_call>(
+          ref.span, *type, "static", fragment->second, ptr_vec<hir_expr>{}));
+    }
+    return fail_unreadable_static(ref.span, unreadable->second, *type);
+  }
+
   /// Unwraps an `existential_kind` type (`some Trait[Args]`) to its concrete
   /// backing type. Opacity is purely a checker-level view — `type_entry`'s
   /// doc comment (`semantic/types.h`) — enforced by restricting which
@@ -1904,40 +1947,12 @@ auto lowerer::lower_ident(const ast::ident_expr &ident)
     return ok_expr(make<hir_variant_init>(ident.span, *type, ident.name,
                                           ptr_vec<hir_expr>{}));
   }
-  // A reference to a scalar (integer/float/bool) top-level `static let` —
-  // `semantic::checker::resolve_ident` already evaluated it and recorded
-  // the literal to embed here. There's no other route to a runtime
-  // representation for a plain `static let`: it's neither a real local
-  // (no `declare_local` call ever registers one for it) nor a function,
-  // so falling through to the ordinary `hir_local_ref` path below would
+  // A reference to a top-level `static let`. It is neither a real local
+  // (no `declare_local` call ever registers one for it) nor a function, so
+  // falling through to the ordinary `hir_local_ref` path below would
   // produce a symbol nothing can ever resolve.
-  if (const auto it = checked_.lowering.static_const_values.find(&ident);
-      it != checked_.lowering.static_const_values.end()) {
-    return lower_literal(*it->second);
-  }
-  // A reference to a reified aggregate `static let` (see
-  // `lowering_results::static_global_defs`) — same rationale as the scalar
-  // case above, but the value is real backing data a backend builds once,
-  // not something to inline at every reference site.
-  if (const auto it = checked_.lowering.static_struct_values.find(&ident);
-      it != checked_.lowering.static_struct_values.end()) {
-    return lower_expr(*it->second);
-  }
-  if (const auto it = checked_.static_global_refs.find(&ident);
-      it != checked_.static_global_refs.end()) {
-    return lower_static_global_ref(ident, *type, it->second);
-  }
-  if (const auto it = checked_.lowering.static_fragment_refs.find(&ident);
-      it != checked_.lowering.static_fragment_refs.end()) {
-    if (!options_.compile_time) {
-      return fail_unreadable_static(ident.span, it->second->name, *type);
-    }
-    return ok_expr(hir::make<hir_host_call>(ident.span, *type, "static",
-                                            it->second, ptr_vec<hir_expr>{}));
-  }
-  if (const auto it = checked_.lowering.unreadable_static_refs.find(&ident);
-      it != checked_.lowering.unreadable_static_refs.end()) {
-    return fail_unreadable_static(ident.span, it->second, *type);
+  if (auto lowered = lower_static_reference(ident)) {
+    return std::move(*lowered);
   }
   // A module-level function named in value position (bound to a `let`,
   // passed as an argument) rather than called — `check.cpp`'s
@@ -2864,6 +2879,11 @@ auto lowerer::lower_receiver(const ast::expr &receiver)
 
 auto lowerer::lower_field(const ast::field_expr &field)
     -> std::expected<ptr<hir_expr>, lowering_error> {
+  // `t.m.xs` split as a field access on the module `t.m` because an index
+  // follows (`checker::infer_module_static_field`).
+  if (auto lowered = lower_static_reference(field)) {
+    return std::move(*lowered);
+  }
   auto type = checked_type_of(field);
   if (!type.has_value()) {
     return std::unexpected(type.error());
@@ -2912,48 +2932,12 @@ auto lowerer::lower_field(const ast::field_expr &field)
 /// this only reads that answer.
 auto lowerer::lower_module_path(const ast::module_path_expr &path)
     -> std::expected<ptr<hir_expr>, lowering_error> {
-  // A module-qualified scalar `static` (`main.inner.limit`, or `r.limit`
-  // after `use p.r`): `semantic::checker::infer_module_path` already
-  // evaluated it and recorded the literal to embed, exactly as it does for a
-  // bare name in `lower_ident`. Checked before the shape rules below, since
-  // such a path is a constant, not a projection out of a local.
-  if (const auto it = checked_.lowering.static_const_values.find(&path);
-      it != checked_.lowering.static_const_values.end()) {
-    return lower_literal(*it->second);
-  }
-  // Module-qualified reference to a reified aggregate `static let` — see
-  // the matching check in `lower_ident`.
-  if (const auto it = checked_.lowering.static_struct_values.find(&path);
-      it != checked_.lowering.static_struct_values.end()) {
-    return lower_expr(*it->second);
-  }
-  if (const auto it = checked_.static_global_refs.find(&path);
-      it != checked_.static_global_refs.end()) {
-    auto type = checked_type_of(path);
-    if (!type.has_value()) {
-      return std::unexpected(type.error());
-    }
-    return lower_static_global_ref(path, *type, it->second);
-  }
-  if (const auto it = checked_.lowering.static_fragment_refs.find(&path);
-      it != checked_.lowering.static_fragment_refs.end()) {
-    auto type = checked_type_of(path);
-    if (!type.has_value()) {
-      return std::unexpected(type.error());
-    }
-    if (!options_.compile_time) {
-      return fail_unreadable_static(path.span, it->second->name, *type);
-    }
-    return ok_expr(hir::make<hir_host_call>(path.span, *type, "static",
-                                            it->second, ptr_vec<hir_expr>{}));
-  }
-  if (const auto it = checked_.lowering.unreadable_static_refs.find(&path);
-      it != checked_.lowering.unreadable_static_refs.end()) {
-    auto type = checked_type_of(path);
-    if (!type.has_value()) {
-      return std::unexpected(type.error());
-    }
-    return fail_unreadable_static(path.span, it->second, *type);
+  // A module-qualified `static` (`main.inner.limit`, or `r.limit` after
+  // `use p.r`): `semantic::checker::infer_module_path` resolved it exactly
+  // as it does a bare name. Checked before the shape rules below, since
+  // such a path is the static, not a projection out of a local.
+  if (auto lowered = lower_static_reference(path)) {
+    return std::move(*lowered);
   }
   // A module-qualified function named in value position (`a.b.f` handed to a
   // higher-order function rather than called) — `check.cpp`'s

@@ -229,7 +229,7 @@ auto copy_template_records(const template_record_tables &tables,
   copy_map(tables.static_if_taken_branch, subst, same);
   copy_map(tables.static_global_refs, subst, same);
   copy_map(tables.static_refs, subst, same);
-  copy_set(tables.let_pattern_bindings, subst);
+  copy_map(tables.immutable_pattern_bindings, subst, same);
   copy_map(tables.static_const_values, subst, same);
   copy_map(tables.value_path_types, subst,
            [&](std::vector<type_id> path) -> std::vector<type_id> {
