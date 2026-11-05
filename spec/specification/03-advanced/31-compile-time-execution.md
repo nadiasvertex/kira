@@ -19,6 +19,7 @@ static TABLE: array[int32, 256] = build_lookup_table()
 - A `static` binding's initializer is evaluated at compile time. Evaluation failure (an expression that is not closed, or that depends on runtime input) is a compile error.
 - `build_lookup_table` above is an ordinary function; nothing marks it `static` — the binding forces evaluation of whatever it calls.
 - The result is reified: frozen, immutable data baked into the binary. See [Compile-Time Semantics § Compile-Time Memory](32-compile-time-semantics.md#compile-time-memory).
+- Code cannot change a static. Assigning to it or to any part of it, borrowing it with `&mut`, calling a `mut self` method on it, and moving a non-`copy` part out of it are compile errors. Reading it, borrowing it with `&`, and copying it into a local `var` are allowed. Because of this rule, every function and task can share one copy of a static without locks.
 - A `static` item may also appear inside a `trait`/`impl` body as a required or provided constant (`check.cpp`'s trait-item handling for `static_decl`).
 
 ## `static if`

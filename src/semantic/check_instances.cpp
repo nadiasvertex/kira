@@ -59,6 +59,8 @@ auto checker::template_records() -> template_record_tables {
       .stack_buffers = session_.stack_buffers_,
       .static_if_taken_branch = session_.static_if_taken_branch_,
       .static_global_refs = session_.static_global_refs_,
+      .static_refs = session_.static_refs_,
+      .let_pattern_bindings = session_.let_pattern_bindings_,
       .static_const_values = session_.static_const_values_,
       .value_path_types = session_.value_path_types_,
       .proven_in_bounds = session_.proven_in_bounds_,

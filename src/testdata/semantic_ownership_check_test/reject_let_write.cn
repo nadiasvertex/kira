@@ -1,0 +1,48 @@
+module ownership.let_write
+
+# A `let` binding cannot change: no `&mut` of it and no `mut self` call on it,
+# in the function itself or in a lambda that captures it, whether the `let`
+# names one value or destructures one (ch. 3).
+
+def bump(v: &mut list[int64]) -> unit:
+    v[0] = 9
+
+def fill(s: slice_mut[int64]) -> unit:
+    s[0] = 7
+
+def explicit_borrow() -> int64:
+    let xs: list[int64] = [1, 2, 3]
+    bump(&mut xs)
+    return xs[0]
+
+def mut_self_call() -> int64:
+    let xs: list[int64] = [1, 2, 3]
+    xs.push(4)
+    return xs[0]
+
+def element_receiver() -> int64:
+    let ys: list[list[int64]] = [[1], [2]]
+    ys[0].push(5)
+    return 0
+
+def mut_view() -> int64:
+    let xs: list[int64] = [1, 2, 3]
+    fill(&mut xs[0..2])
+    return xs[0]
+
+def iterator_next() -> int64:
+    let xs: list[int64] = [1, 2, 3]
+    let it = xs.iter()
+    let _ = it.next()
+    return 0
+
+def destructured() -> int64:
+    let (a, b) = ([1, 2], 3)
+    a.push(b)
+    return a[0]
+
+def in_lambda() -> int64:
+    let xs: list[int64] = [1, 2, 3]
+    let f = () => xs.push(4)
+    f()
+    return xs[0]

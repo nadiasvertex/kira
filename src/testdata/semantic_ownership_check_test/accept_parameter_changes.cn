@@ -1,0 +1,26 @@
+module ownership.parameter_changes
+
+# A parameter taken by value is the function's own, so it can change, whole or
+# destructured, through a method, a UFCS call, or an assignment. What a
+# `&mut` parameter points at can change. A `*mut` stored behind a `&` still
+# points at writable memory.
+
+def add_one(v: &mut list[int64]) -> unit:
+    v.push(1)
+
+def by_value(n: int64, xs: list[int64]) -> int64:
+    n = n + 1
+    xs.push(4)
+    xs[0] = 10
+    xs.add_one()
+    return n + xs[0]
+
+def destructured((a, b): (list[int64], int64)) -> int64:
+    a = [7, 8]
+    a.push(b)
+    a[0] = a[0] + 1
+    return a[0]
+
+def through_mut(v: &mut list[int64]) -> unit:
+    v.push(5)
+    v[0] = 20

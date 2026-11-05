@@ -84,8 +84,56 @@ auto checker::check_loop_head_patterns(
   }
 }
 
+/// Checks `pattern` against `raw_subject`. Inside a `let`'s destructuring,
+/// a pattern matched against a reference binds parts of what the reference
+/// points at, which the `let` does not own, so everything below it is
+/// bound as an ordinary pattern binding.
 auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     -> void {
+  const auto &entry = session_.types_.entry(raw_subject);
+  const auto owned = !session_.types_.is_unknown(raw_subject) &&
+                     entry.kind != type_kind::ref_kind &&
+                     entry.kind != type_kind::ptr_kind &&
+                     pattern.kind != ast::node_kind::ref_pattern;
+  const auto saved = function_.owning_pattern_origin_;
+  if (!owned) {
+    function_.owning_pattern_origin_.reset();
+  }
+  check_pattern_node(pattern, raw_subject);
+  function_.owning_pattern_origin_ = saved;
+}
+
+auto checker::check_owning_pattern(const ast::pattern &pattern,
+                                   type_id subject, binding_origin origin)
+    -> void {
+  const auto &entry = session_.types_.entry(subject);
+  const auto saved = function_.owning_pattern_origin_;
+  function_.owning_pattern_origin_ =
+      !session_.types_.is_unknown(subject) &&
+              entry.kind != type_kind::ref_kind &&
+              entry.kind != type_kind::ptr_kind
+          ? std::optional<binding_origin>{origin}
+          : std::nullopt;
+  check_pattern(pattern, strip_refs(subject));
+  function_.owning_pattern_origin_ = saved;
+}
+
+auto checker::pattern_binding_origin(bool is_mut, const void *key)
+    -> binding_origin {
+  if (is_mut) {
+    return binding_origin::mut_binding;
+  }
+  if (!function_.owning_pattern_origin_.has_value()) {
+    return binding_origin::pattern_binding;
+  }
+  if (*function_.owning_pattern_origin_ == binding_origin::let_binding) {
+    session_.let_pattern_bindings_.insert(key);
+  }
+  return *function_.owning_pattern_origin_;
+}
+
+auto checker::check_pattern_node(const ast::pattern &pattern,
+                                 type_id raw_subject) -> void {
   if (pattern.has_error) {
     return;
   }
@@ -121,9 +169,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
     // type at all. That is the shape every `iter_mut` yields.
     record_expr_type(pattern, subject);
     bind_value(binding.name, subject,
-               binding.is_mut ? binding_origin::mut_binding
-                              : binding_origin::pattern_binding,
-               binding.span);
+               pattern_binding_origin(binding.is_mut, &pattern), binding.span);
     // The name a pattern binds carries its type's facts, exactly as a `let`
     // does. This is what makes `try_from` work: after
     // `@some(i) => ...`, `i` has type `index[8]`, and it is *this* line that
@@ -234,8 +280,8 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
       if (field.pattern != nullptr) {
         check_pattern(*field.pattern, field_type);
       } else if (!field.name.empty()) {
-        bind_value(field.name, field_type, binding_origin::pattern_binding,
-                   field.span);
+        bind_value(field.name, field_type,
+                   pattern_binding_origin(false, &field), field.span);
       }
     }
     return;
@@ -285,7 +331,7 @@ auto checker::check_pattern(const ast::pattern &pattern, type_id raw_subject)
       check_pattern(*group.inner, stripped);
     }
     if (group.alias.has_value()) {
-      bind_value(*group.alias, stripped, binding_origin::pattern_binding,
+      bind_value(*group.alias, stripped, pattern_binding_origin(false, &group),
                  group.span);
     }
     return;

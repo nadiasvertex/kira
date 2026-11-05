@@ -74,9 +74,10 @@ auto checker::collect_ufcs_candidates(const std::string &name)
 }
 
 /// Whether the receiver expression names something that may be mutated —
-/// a `var`/`mut` binding, or a value already held behind a `&mut`. Used
-/// only to decide between `fits` and `needs_mut`, never to *permit* a
-/// mutation: the ordinary mutability checks still run on the call.
+/// a `var`/`mut` binding, a by-value parameter, or a value already held
+/// behind a `&mut`. Used only to decide between `fits` and `needs_mut`,
+/// never to *permit* a mutation: the ordinary mutability checks still run
+/// on the call.
 auto checker::receiver_is_mutable_lvalue(const ast::expr &receiver,
                                          type_id receiver_type) -> bool {
   const auto &entry = session_.types_.entry(receiver_type);
@@ -90,6 +91,16 @@ auto checker::receiver_is_mutable_lvalue(const ast::expr &receiver,
   const auto *binding = lookup_value(root->name);
   if (binding == nullptr) {
     return false;
+  }
+  // A reference binding decides by what it lets through.
+  const auto &binding_entry = session_.types_.entry(binding->type);
+  if (binding_entry.kind == type_kind::ref_kind) {
+    return binding_entry.is_mut;
+  }
+  // A parameter taken by value is the function's own (`self` never is: it
+  // is a reference, or a `copy` scalar a non-`mut` method may not change).
+  if (binding->origin == binding_origin::parameter) {
+    return root->name != "self";
   }
   return binding->origin == binding_origin::var_binding ||
          binding->origin == binding_origin::mut_binding;

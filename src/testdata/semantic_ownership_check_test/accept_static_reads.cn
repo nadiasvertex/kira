@@ -1,0 +1,30 @@
+module ownership.static_reads
+
+# Reading a `static`, borrowing it with `&`, and copying it into a local `var`
+# to change the copy are all allowed.
+
+type point = {
+    x: int64,
+    y: int64,
+}
+
+static let xs: list[int64] = [1, 2, 3]
+static let origin: point = point { x: 3, y: 4 }
+static let n: int64 = 10
+
+def total(v: &list[int64]) -> int64:
+    var s: int64 = 0
+    for x in v:
+        s = s + x
+    return s
+
+def main() -> int64:
+    var local = xs
+    local[0] = 100
+    local.push(4)
+    var p = origin
+    p.x = 50
+    var m = n
+    m += 1
+    let f = (i: usize) => xs[i] + n
+    return xs[0] + local[0] + total(&xs) + origin.x + p.x + m + f(1) + (xs.len() as int64)

@@ -1,0 +1,14 @@
+module check.let_element_write
+
+# Writing an element of a `let` binding changes it, so it is rejected the same
+# way a field write is, for a plain `let` and for a destructuring one.
+
+def plain() -> int64:
+    let xs: list[int64] = [1, 2]
+    xs[0] = 4
+    return xs[0]
+
+def destructured() -> int64:
+    let (a, b) = ([1, 2], 3)
+    a[0] = 9
+    return a[0] + b

@@ -355,7 +355,9 @@ auto checker::check_function_impl(const ast::func_decl &decl,
             ast::cast<const ast::binding_pattern>(*param.pattern);
         bind_value(binding.name, type, binding_origin::parameter, param.span);
       } else {
-        check_pattern(*param.pattern, strip_refs(type));
+        // A by-value parameter's parts are the function's own, and may
+        // change like the parameter itself.
+        check_owning_pattern(*param.pattern, type, binding_origin::parameter);
       }
     }
     if (param.default_value != nullptr) {

@@ -74,6 +74,8 @@ struct record_maps {
       buffers;
   std::unordered_map<const ast::static_decl *, bool> static_if;
   std::unordered_map<const ast::node *, std::string> global_refs;
+  std::unordered_map<const ast::node *, std::string> static_refs;
+  std::unordered_set<const void *> let_patterns;
   std::unordered_map<const ast::node *, const ast::literal_expr *> consts;
   std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
       value_paths;
@@ -113,6 +115,8 @@ struct record_maps {
                                   buffers,
                                   static_if,
                                   global_refs,
+                                  static_refs,
+                                  let_patterns,
                                   consts,
                                   value_paths,
                                   in_bounds,

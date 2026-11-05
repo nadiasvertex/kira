@@ -443,6 +443,106 @@ auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
       "expected a mutable-and-immutable diagnostic for the receiver");
 }
 
+// ==========================================================================
+//  Statics: frozen data shared by every function and task. A write, `&mut`,
+//  `mut self` call, or move through one is rejected; reads and copies are not.
+// ==========================================================================
+
+auto test_static_writes_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_static_write.cn");
+  expect(analyzed.error_count == 7,
+         std::format("expected 7 errors for writes through statics, got {}:\n{}",
+                     analyzed.error_count, analyzed.diagnostics));
+  expect_diagnostic(analyzed, "cannot assign to `xs` — it is a `static`",
+                    "expected an element write in a task to be rejected");
+  expect_diagnostic(analyzed, "cannot assign to `n` — it is a `static`",
+                    "expected a scalar static assignment to be rejected");
+  expect_diagnostic(analyzed, "cannot assign to `origin` — it is a `static`",
+                    "expected a compound field assignment to be rejected");
+  expect_diagnostic(analyzed, "cannot borrow `xs` mutably — it is a `static`",
+                    "expected `&mut xs` to be rejected");
+  expect_diagnostic(analyzed, "cannot call `push` on `xs` — it is a `static`",
+                    "expected a `mut self` call on a static to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot move a value out of `nested` — it is a `static`",
+                    "expected a move out of a static to be rejected");
+}
+
+auto test_static_reads_and_copies_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_static_reads.cn");
+  expect(analyzed.error_count == 0,
+         std::format("expected reads, `&` borrows and copies of statics to "
+                     "check cleanly:\n{}",
+                     analyzed.diagnostics));
+}
+
+auto test_let_writes_are_rejected() -> void {
+  const auto analyzed = analyze_test_data_file("reject_let_write.cn");
+  expect(analyzed.error_count == 7,
+         std::format("expected 7 errors for changes to `let` bindings, got "
+                     "{}:\n{}",
+                     analyzed.error_count, analyzed.diagnostics));
+  expect_diagnostic(analyzed, "cannot borrow `xs` mutably — it is bound with "
+                              "`let`",
+                    "expected `&mut xs` on a `let` to be rejected");
+  expect_diagnostic(analyzed, "cannot call `push` on `xs` — it is bound with "
+                              "`let`",
+                    "expected a `mut self` call on a `let` to be rejected");
+  expect_diagnostic(analyzed, "cannot call `push` on `ys` — it is bound with "
+                              "`let`",
+                    "expected a `mut self` call on an element of a `let` to "
+                    "be rejected");
+  expect_diagnostic(analyzed, "cannot call `next` on `it` — it is bound with "
+                              "`let`",
+                    "expected `next` on a `let` iterator to be rejected");
+  expect_diagnostic(analyzed, "cannot call `push` on `a` — it is bound with "
+                              "`let`",
+                    "expected a `mut self` call on a destructured `let` to be "
+                    "rejected");
+}
+
+auto test_let_writes_through_references_are_accepted() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_let_through_reference.cn");
+  expect(analyzed.error_count == 0,
+         std::format("expected writes through a `&mut` held by a `let`, and "
+                     "changes to a `var`, to check cleanly:\n{}",
+                     analyzed.diagnostics));
+}
+
+auto test_shared_reference_writes_are_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_shared_reference_write.cn");
+  expect(analyzed.error_count == 5,
+         std::format("expected 5 errors for changes behind a `&`, got {}:\n{}",
+                     analyzed.error_count, analyzed.diagnostics));
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `self.items` — it is behind a "
+                    "`&bag`",
+                    "expected a change through a non-`mut` `self` to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `v` — it is behind a "
+                    "`&list[int64]`",
+                    "expected a `mut self` call through a `&` parameter to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "cannot assign to `v[…]` — it is behind a `&list[int64]`",
+                    "expected an element write through a `&` to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot borrow `*v` mutably — it is behind a "
+                    "`&list[int64]`",
+                    "expected `&mut *v` through a `&` to be rejected");
+}
+
+auto test_parameter_changes_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_parameter_changes.cn");
+  expect(analyzed.error_count == 0,
+         std::format("expected by-value and `&mut` parameters to change "
+                     "cleanly:\n{}",
+                     analyzed.diagnostics));
+}
+
 auto test_two_phase_receiver_is_accepted() -> void {
   const auto analyzed = analyze_test_data_file("accept_two_phase_receiver.cn");
   expect(analyzed.error_count == 0,
@@ -1100,6 +1200,12 @@ auto main() -> int {
     test_shared_borrows_across_nested_call_are_accepted();
     test_receiver_mut_with_shared_arg_is_rejected();
     test_two_phase_receiver_is_accepted();
+    test_static_writes_are_rejected();
+    test_static_reads_and_copies_are_accepted();
+    test_let_writes_are_rejected();
+    test_let_writes_through_references_are_accepted();
+    test_shared_reference_writes_are_rejected();
+    test_parameter_changes_are_accepted();
     test_two_phase_receiver_with_nested_mut_is_rejected();
     test_mut_view_across_mutation_is_rejected();
     test_two_mut_views_are_rejected();

@@ -957,6 +957,17 @@ struct checked_types {
   /// to `hir_local_ref`, mirroring `static_const_values` but for the
   /// aggregate case that can't be inlined at each reference site.
   std::unordered_map<const ast::node *, std::string> static_global_refs;
+  /// Every `ident_expr`/`module_path_expr` that names a `static` binding,
+  /// however its value is lowered, mapped to the static's name. The
+  /// ownership checker reads it to reject a write, `&mut`, or move through a
+  /// static: statics are frozen data shared by every function and task.
+  std::unordered_map<const ast::node *, std::string> static_refs;
+  /// The bindings a destructuring `let` makes that own what they bind —
+  /// none of the patterns above them reached their value through a
+  /// reference — keyed by `pattern_binding::key()`. Like a plain `let`,
+  /// they cannot change (ch. 3), which the ownership checker enforces for
+  /// `&mut` and `mut self` calls.
+  std::unordered_set<const void *> let_pattern_bindings;
   /// Every `module_path_expr` the checker classified as *field access on a
   /// value* (`s.cases`, `self.value.inner`) rather than a module reference —
   /// see `checker::dotted_root_is_value` — mapped to the type after each

@@ -54,11 +54,11 @@ Each chapter opens with a status line:
 23. [Contracts on Trait Methods](02-intermediate/23-contracts-on-trait-methods.md) — Partial
 24. [Trait Objects](02-intermediate/24-trait-objects.md) — Partial
 25. [The Module System in Depth](02-intermediate/25-module-system-in-depth.md) — Partial
-26. [Concurrency: The Execution Model](02-intermediate/26-concurrency-execution-model.md) — Planned
+26. [Concurrency: The Execution Model](02-intermediate/26-concurrency-execution-model.md) — Partial
 27. [`async`/`await` and Generators](02-intermediate/27-async-await-and-generators.md) — Partial
-28. [`crew`, `par`, `race`](02-intermediate/28-crew-par-race.md) — Planned
+28. [`crew`, `par`, `race`](02-intermediate/28-crew-par-race.md) — Partial
 29. [Channels and Sync Primitives](02-intermediate/29-channels-and-sync-primitives.md) — Planned
-30. [Data-Race Freedom](02-intermediate/30-data-race-freedom.md) — Planned
+30. [Data-Race Freedom](02-intermediate/30-data-race-freedom.md) — Partial
 
 ### Advanced (`03-advanced/`)
 

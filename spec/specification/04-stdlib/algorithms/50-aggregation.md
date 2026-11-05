@@ -2,7 +2,7 @@
 
 **Status:** Implemented
 
-Covers every terminal (draining) algorithm in `src/std/algo.cn`: functions that consume an `iterator[T]` and return a final answer rather than another lazy iterator. Each takes its iterator by value and moves it into a local `var`, since `next` needs a mutable receiver and a parameter is not one.
+Covers every terminal (draining) algorithm in `src/std/algo.cn`: functions that consume an `iterator[T]` and return a final answer rather than another lazy iterator. Each takes its iterator by value, which lets it call `next` (a `mut self` method) on the parameter directly.
 
 The short-circuiting terminals — `any`, `all`, `find`, `find_map`, `position` — return from inside their loop rather than setting a flag and draining to the end; that is what makes `any` over an infinite iterator able to terminate.
 

@@ -717,7 +717,8 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
           ast::cast<const ast::binding_pattern>(*param.pattern);
       bind_value(binding.name, type, binding_origin::parameter, param.span);
     } else if (param.pattern != nullptr) {
-      check_pattern(ast::cast<const ast::pattern>(*param.pattern), type);
+      check_owning_pattern(ast::cast<const ast::pattern>(*param.pattern), type,
+                           binding_origin::parameter);
     }
   }
 

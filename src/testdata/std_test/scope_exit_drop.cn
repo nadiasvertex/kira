@@ -50,7 +50,7 @@ extend noisy:
 # `self` parameter were wrongly scheduled for a drop at `touch`'s own return)
 # twice here, then drops exactly once, at this function's own scope exit.
 def method_receiver_not_dropped_early() -> unit:
-    let a = noisy { id: 50 }
+    var a = noisy { id: 50 }
     a.touch()
     a.touch()
     println("method_receiver body done")

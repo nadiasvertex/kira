@@ -27,6 +27,7 @@ using ownership::event;
 using ownership::flow_event;
 using ownership::function_cfg;
 using ownership::invalid_move_event;
+using ownership::let_write_event;
 using ownership::k_no_loan;
 using ownership::k_no_local;
 using ownership::loan_id;
@@ -38,6 +39,9 @@ using ownership::move_block;
 using ownership::move_state;
 using ownership::moved_part;
 using ownership::owned_local;
+using ownership::static_write;
+using ownership::shared_write_event;
+using ownership::static_write_event;
 using ownership::scope_exit_event;
 using ownership::scope_exit_owned;
 using ownership::use_event;
@@ -322,6 +326,14 @@ private:
         } else if (const auto *m =
                        std::get_if<invalid_move_event>(&events[i])) {
           report_invalid_move(*m);
+        } else if (const auto *w =
+                       std::get_if<static_write_event>(&events[i])) {
+          report_static_write(*w);
+        } else if (const auto *l = std::get_if<let_write_event>(&events[i])) {
+          report_let_write(*l);
+        } else if (const auto *r =
+                       std::get_if<shared_write_event>(&events[i])) {
+          report_shared_write(*r);
         }
         forward_step(events[i], cfg_, state);
       }
@@ -692,6 +704,111 @@ private:
                     : "moving it out would give the value two owners, and the "
                       "one it was taken from would still drop it");
     d.with_help(help);
+    diag_.emit(d);
+  }
+
+  /// A write, `&mut`, or move through a `static`.
+  auto report_static_write(const static_write_event &w) -> void {
+    auto message = std::string{};
+    auto label = std::string{};
+    auto help = std::string{};
+    switch (w.kind) {
+    case static_write::assign:
+      message = std::format("cannot assign to `{}` — it is a `static`", w.name);
+      label = "this changes the static";
+      help = std::format("copy it into a local first (`var local = {}`) and "
+                         "change the copy",
+                         w.name);
+      break;
+    case static_write::borrow_mut:
+      message =
+          std::format("cannot borrow `{}` mutably — it is a `static`", w.name);
+      label = "this would let the static be changed";
+      help = std::format("copy it into a local first (`var local = {}`) and "
+                         "borrow the copy, or borrow it with `&` if it is "
+                         "only read",
+                         w.name);
+      break;
+    case static_write::receiver:
+      message = std::format("cannot call `{}` on `{}` — it is a `static`",
+                            w.method, w.name);
+      label = std::format("`{}` changes its receiver", w.method);
+      help = std::format("copy it into a local first (`var local = {}`) and "
+                         "call `{}` on the copy",
+                         w.name, w.method);
+      break;
+    case static_write::move:
+      message =
+          std::format("cannot move a value out of `{}` — it is a `static`",
+                      w.name);
+      label = "this would take the value out of the static";
+      help = "borrow it with `&` instead, or make an owned copy with "
+             "`.clone()`";
+      break;
+    }
+    auto d = diagnostic(diagnostic_level::error, message, file_id_);
+    d.with_label(w.span, label);
+    d.with_note("a `static` is computed at compile time and frozen; every "
+                "function and every task shares the same value, so it can "
+                "never change");
+    d.with_help(help);
+    diag_.emit(d);
+  }
+
+  /// A `&mut` of, or a `mut self` call on, a `let` binding.
+  auto report_let_write(const let_write_event &w) -> void {
+    const auto receiver = w.kind == static_write::receiver;
+    auto d = diagnostic(
+        diagnostic_level::error,
+        receiver ? std::format("cannot call `{}` on `{}` — it is bound with "
+                               "`let`",
+                               w.method, w.name)
+                 : std::format("cannot borrow `{}` mutably — it is bound with "
+                               "`let`",
+                               w.name),
+        file_id_);
+    d.with_label(w.span, receiver
+                             ? std::format("`{}` changes its receiver",
+                                           w.method)
+                             : std::string("this would let it be changed"));
+    d.children.push_back(
+        diagnostic(diagnostic_level::note,
+                   std::format("`{}` is bound with `let`, so it cannot change",
+                               w.name),
+                   file_id_)
+            .with_label(w.declared, "binding declared here"));
+    d.with_help(std::format("Declare `{}` with `var` to allow changing it.",
+                            w.name));
+    diag_.emit(d);
+  }
+
+  /// A change to something behind a read-only reference.
+  auto report_shared_write(const shared_write_event &w) -> void {
+    auto message = std::string{};
+    auto label = std::string{};
+    switch (w.kind) {
+    case static_write::assign:
+      message = std::format("cannot assign to `{}` — it is behind a `{}`",
+                            w.place, w.through);
+      label = "this writes through a read-only reference";
+      break;
+    case static_write::receiver:
+      message = std::format("cannot call `{}` on `{}` — it is behind a `{}`",
+                            w.method, w.place, w.through);
+      label = std::format("`{}` changes its receiver", w.method);
+      break;
+    case static_write::borrow_mut:
+    case static_write::move:
+      message = std::format("cannot borrow `{}` mutably — it is behind a `{}`",
+                            w.place, w.through);
+      label = "this would let it be changed";
+      break;
+    }
+    auto d = diagnostic(diagnostic_level::error, message, file_id_);
+    d.with_label(w.span, label);
+    d.with_note(std::format("a `{}` only permits reads", w.through));
+    d.with_help("To change the value, take it by `&mut` (or `*mut`) instead, "
+                "and pass `&mut` where it comes from.");
     diag_.emit(d);
   }
 

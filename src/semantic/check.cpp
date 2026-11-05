@@ -197,6 +197,8 @@ auto checker::take_checked_types() -> checked_types {
       .inferred_return_types = std::move(inferred_returns_),
       .spliced_fragments = std::move(session_.spliced_fragments_),
       .static_global_refs = std::move(session_.static_global_refs_),
+      .static_refs = std::move(session_.static_refs_),
+      .let_pattern_bindings = std::move(session_.let_pattern_bindings_),
       .value_path_types = std::move(session_.value_path_types_),
       .deref_adjustments = std::move(session_.deref_adjustments_),
       .path_deref_adjustments = std::move(session_.path_deref_adjustments_)};

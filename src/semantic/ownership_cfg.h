@@ -95,6 +95,10 @@ struct local_info {
   /// a `<subject>` by its pattern. Null for a temporary or a `field_path`
   /// local.
   const void *node = nullptr;
+  /// Bound with `let`, so nothing may change it in place: no `&mut` of it
+  /// and no `mut self` call on it, unless the change lands behind a
+  /// reference or pointer it holds (ch. 3).
+  bool immutable = false;
 };
 
 /// How a loan was made — used only to word diagnostics.
@@ -209,8 +213,53 @@ struct assign_event {
   local_id local = k_no_local;
 };
 
-using event = std::variant<access_event, flow_event, use_event,
-                           scope_exit_event, invalid_move_event, assign_event>;
+/// What a `static_write_event` does to the static.
+enum class static_write : std::uint8_t {
+  assign,      ///< `xs = v`, `xs[i] = v`, `p.x += 1`.
+  borrow_mut,  ///< `&mut xs`.
+  receiver,    ///< `xs.push(4)`: a `mut self` or `&mut` receiver.
+  move,        ///< Moving a non-`copy` part out of it (`xs[0]`).
+};
+
+/// A write, mutable borrow, or move through a `static`. Statics are frozen
+/// data that every function and task shares, so each of these is an error.
+/// `name` is the static; `method` is the called method for `receiver`.
+struct static_write_event {
+  source_span span = source_span::dummy();
+  static_write kind = static_write::assign;
+  std::string name;
+  std::string method;
+};
+
+/// A `&mut` borrow of, or a `mut self` call on, a binding made with `let`
+/// (ch. 3). Assigning to one is the checker's to reject; these two ways of
+/// changing it in place are seen here. `kind` is `borrow_mut` or
+/// `receiver`; `method` is the called method for `receiver`; `declared` is
+/// where the binding was made.
+struct let_write_event {
+  source_span span = source_span::dummy();
+  static_write kind = static_write::borrow_mut;
+  std::string name;
+  std::string method;
+  source_span declared = source_span::dummy();
+};
+
+/// A write, `&mut`, or `mut self` call that would change something behind a
+/// read-only reference: a `&T`, a `*T`, or a shared view (ch. 14). `place`
+/// is the place as written; `through` is the read-only type it is reached
+/// through; `method` is the called method for `receiver`.
+struct shared_write_event {
+  source_span span = source_span::dummy();
+  static_write kind = static_write::assign;
+  std::string place;
+  std::string method;
+  std::string through;
+};
+
+using event =
+    std::variant<access_event, flow_event, use_event, scope_exit_event,
+                 invalid_move_event, assign_event, static_write_event,
+                 let_write_event, shared_write_event>;
 
 struct basic_block {
   std::vector<event> events;

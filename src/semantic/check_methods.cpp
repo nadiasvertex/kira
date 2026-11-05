@@ -2179,6 +2179,7 @@ auto checker::fold_static_field_path(const ast::module_path_expr &path,
                                      const ast::static_decl &decl,
                                      const module_members *owner,
                                      size_t first_field, type_id type) -> void {
+  session_.static_refs_[&path] = decl.name;
   const auto *value = ensure_static_binding_evaluated(decl, owner);
   for (size_t i = first_field; value != nullptr && i < path.segments.size();
        ++i) {

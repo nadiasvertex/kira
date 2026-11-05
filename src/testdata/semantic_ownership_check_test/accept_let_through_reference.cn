@@ -1,0 +1,31 @@
+module ownership.let_through_reference
+
+# A `let` that holds a `&mut`, or destructures through one, changes what it
+# points at, not itself, so writing through it is allowed. A `var` may be borrowed mutably and have
+# `mut self` methods called on it.
+
+type holder = {
+    r: &mut list[int64],
+}
+
+def bump(v: &mut list[int64]) -> unit:
+    v[0] = v[0] + 100
+
+def fill(s: slice_mut[int64]) -> unit:
+    s[0] = s[0] + 10
+
+def run() -> int64:
+    var xs: list[int64] = [1, 2, 3]
+    xs.push(4)
+    bump(&mut xs)
+    let r = &mut xs
+    r.push(5)
+    bump(r)
+    let h = holder { r: &mut xs }
+    h.r.push(6)
+    fill(&mut h.r[0..2])
+    var pair = ([1, 2], 3)
+    let (a, b) = &mut pair
+    a.push(b)
+    a[0] = 4
+    return xs[0] + pair.0[0]

@@ -1,6 +1,6 @@
 # 28. `crew`, `par`, `race`
 
-**Status:** Planned
+**Status:** Partial
 
 `crew` structured concurrency, `par`, `race`, `on(target)`, and error handling in concurrent code (`on_error: collect`).
 
@@ -83,7 +83,7 @@ Partial. `par`, `race`, `spawn`, `await on(cpu|pool|io):` and `crew` work on bot
 - All of these run on the `io` pool. With the default single `io` worker they interleave; they run in parallel only when `CINDER_IO_WORKERS` is raised (the stress-test harness does this).
 - `await on(ctx): body` runs the body as a task on that context's pool (`cpu`/`pool` → cpu pool). The body is lowered to a closure and run by a synthesized task function, so it cannot itself `await`, and it has no sender form. Values it captures are copied in; ownership of non-copy captures is not yet checked (step 6 of the threading plan).
 - `crew c: body` binds `c` (a `crew` handle) for the body, runs it, then waits for every task passed to `c.spawn(t)` and frees the handle. It is a statement or an expression whose value is the body's last expression. In a task the wait suspends the task; in an ordinary function it blocks the thread, and if a task called that function another worker takes the blocked one's place in the pool. If a spawned task panics the others are cancelled, and the panic propagates once they have stopped. Every exit from the body waits the same way: `return`, `?`, and a `break` or `continue` out of the block join the crew and free it, and cancelling the task that runs the block cancels the crew's tasks and waits for them. In a task, such an exit is a suspension, so one placed where a task cannot suspend (inside an `if` or `match` that produces a value, for example) is refused as not lowered yet. `t.get()` is `await t`. Spawned tasks run on the `io` pool. With `on_error: collect`, `c.errors()` waits (it suspends the task, or blocks the thread outside one), then reads each spawned task through `rt_crew_len` and `rt_crew_task` and pushes the `err` payloads onto a list. `c.errors()` is not supported inside a generic function. Spawned-task bodies are ordinary `async def` calls; a closure spawned into a crew does not yet borrow local data (step 6).
-- There is no `send`/`share` checking and no crew-scoped borrowing, so nothing yet stops a program from handing data that is not safe to share to a task running on another worker.
+- `send`/`share` are checked on the arguments of calls handed to `c.spawn`, `par` and `race`, and crew-scoped borrows are checked, so two tasks in one crew cannot both hold `&mut` to the same value. The captures of a closure or function value passed as a task are not checked yet ([Data-Race Freedom](30-data-race-freedom.md#implementation-status)).
 
 ## See also
 

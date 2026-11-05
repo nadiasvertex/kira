@@ -155,16 +155,19 @@ auto checker::check_assignment(const ast::assign_stmt &stmt) -> void {
         target_type =
             record_expr_type(ident, resolve_ident(ident, k_unknown_type));
       }
-    } else if (const auto assigned_element =
-                   check_user_index_assignment(*stmt.target);
-               assigned_element.has_value()) {
-      // `v[i] = x` on a user type dispatches to `index_set`, and must not
-      // go through `infer_expr` on the target: that would resolve the
-      // same syntax as a *read* against `index`, reporting "has no
-      // `index` impl" for a type whose only omission is the write half.
-      target_type = *assigned_element;
     } else {
-      target_type = infer_expr(*stmt.target, k_unknown_type);
+      if (const auto assigned_element =
+              check_user_index_assignment(*stmt.target);
+          assigned_element.has_value()) {
+        // `v[i] = x` on a user type dispatches to `index_set`, and must not
+        // go through `infer_expr` on the target: that would resolve the
+        // same syntax as a *read* against `index`, reporting "has no
+        // `index` impl" for a type whose only omission is the write half.
+        // It is still a write to `v`, checked below like any other.
+        target_type = *assigned_element;
+      } else {
+        target_type = infer_expr(*stmt.target, k_unknown_type);
+      }
       auto root_name = std::string{};
       if (const auto handle = place_through_deref(*stmt.target)) {
         // The binding's mutability is beside the point: no binding makes
@@ -351,7 +354,10 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
           }
         }
       } else {
-        check_pattern(*stmt.pattern, strip_refs(binding_type));
+        // The bindings own what they bind unless the value is reached
+        // through a reference (`let (a, b) = &mut pair`).
+        check_owning_pattern(*stmt.pattern, binding_type,
+                             binding_origin::let_binding);
       }
     }
     return unit;

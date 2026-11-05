@@ -1,0 +1,30 @@
+module ownership.static_write
+
+# A `static` is frozen data that every function and task shares. Each line in
+# `main` and `bump` changes one, and each is rejected.
+
+type point = {
+    x: int64,
+    y: int64,
+}
+
+static let xs: list[int64] = [1, 2, 3]
+static let nested: list[list[int64]] = [[1], [2]]
+static let origin: point = point { x: 3, y: 4 }
+static let n: int64 = 10
+
+def set_first(v: &mut list[int64]) -> unit:
+    v[0] = 9
+
+async def bump() -> int64:
+    xs[0] = xs[0] + 1
+    return 0
+
+def main() -> int64:
+    n = 4
+    origin.x += 1
+    set_first(&mut xs)
+    xs.push(4)
+    let inner = nested[0]
+    let push_later = () => xs.push(5)
+    return inner[0]

@@ -155,6 +155,8 @@ auto strip_groups(const ast::expr &expr) -> const ast::expr & {
 struct root_name {
   std::string_view name;
   source_span span = source_span::dummy();
+  /// The `ident_expr` or `module_path_expr` the name was read from.
+  const ast::expr *node = nullptr;
 };
 
 /// One step from a place's root toward the place: a field, an element, or a
@@ -208,14 +210,17 @@ auto place_root(const ast::expr &expr, bool &projected)
         return std::nullopt;
       }
       return root_name{.name = ast::cast<ast::ident_expr>(*current).name,
-                       .span = current->span};
+                       .span = current->span,
+                       .node = current};
     case ast::node_kind::module_path_expr: {
       const auto &path = ast::cast<ast::module_path_expr>(*current);
       if (path.segments.empty()) {
         return std::nullopt;
       }
       projected = projected || path.segments.size() > 1;
-      return root_name{.name = path.segments.front(), .span = current->span};
+      return root_name{.name = path.segments.front(),
+                       .span = current->span,
+                       .node = current};
     }
     case ast::node_kind::field_expr: {
       const auto &field = ast::cast<ast::field_expr>(*current);
@@ -626,6 +631,8 @@ private:
         new_local(name, local_role::binding, type, span, movable(type));
     cfg_.locals[local].whole = whole;
     cfg_.locals[local].node = node;
+    cfg_.locals[local].immutable =
+        node != nullptr && checked_.let_pattern_bindings.contains(node);
     cfg_.locals[local].owns =
         (whole || owns) && name != "self" && owns_storage(type, name) &&
         (checked_.types.is_unknown(type) ||
@@ -786,6 +793,171 @@ private:
                             .reason = move_block::captured,
                             .place = std::move(place),
                             .owner = std::string(name)});
+  }
+
+  /// Rejects `kind` through `root` when it names a `static`, and answers
+  /// whether it did. A static has no local, so nothing else here sees it.
+  auto reject_static_write(const root_name &root, static_write kind,
+                           source_span span, std::string_view method = {})
+      -> bool {
+    if (root.node == nullptr) {
+      return false;
+    }
+    const auto it = checked_.static_refs.find(root.node);
+    if (it == checked_.static_refs.end()) {
+      return false;
+    }
+    // A generic lambda's further copies would report the same write again.
+    if (report_captures_) {
+      emit(static_write_event{.span = span,
+                              .kind = kind,
+                              .name = it->second,
+                              .method = std::string(method)});
+    }
+    return true;
+  }
+
+  /// Whether changing `place`, rooted at a local of `root_type`, changes
+  /// what the local holds behind a reference, pointer, or view rather than
+  /// the local itself. Writing through a `&mut` held by a `let` changes the
+  /// pointee, never the binding (ch. 3). `through_place` counts `place`'s
+  /// own type too: a method receiver is reached through it (`h.r.push(1)`
+  /// with `r: &mut list`), while `&mut xs[a..b]` makes the view it is typed
+  /// with.
+  [[nodiscard]] auto through_indirection(type_id root_type,
+                                         const ast::expr *place,
+                                         bool through_place) const -> bool {
+    const auto indirect = [this](type_id type) -> bool {
+      if (checked_.types.is_unknown(type)) {
+        return false;
+      }
+      const auto kind = checked_.types.entry(type).kind;
+      return kind == type_kind::ref_kind || kind == type_kind::ptr_kind ||
+             checked_.types.is_view(type);
+    };
+    if (indirect(root_type)) {
+      return true;
+    }
+    if (place == nullptr) {
+      return false;
+    }
+    auto steps = std::vector<place_step>{};
+    place_steps(*place, steps);
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+      if (steps[i].step == place_step::kind::deref ||
+          steps[i].step == place_step::kind::through_deref ||
+          ((through_place || i + 1 < steps.size()) &&
+           indirect(steps[i].type))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// The read-only indirection — a `&T`, a `*T`, or a shared view — that
+  /// changing `place`, rooted at a local of `root_type`, would write
+  /// through, if there is one. `through_place` is as for
+  /// `through_indirection`. A `&mut` reached through a `&` is still
+  /// read-only; a raw pointer is the `machine` code's to account for, so
+  /// what a `*mut` points at is writable however the pointer was reached. A
+  /// `*T` is left out for an assignment, which the checker rejects itself.
+  [[nodiscard]] auto shared_indirection(type_id root_type,
+                                        const ast::expr *place,
+                                        bool through_place,
+                                        bool include_pointers) const
+      -> std::optional<type_id> {
+    auto shared = std::optional<type_id>{};
+    const auto cross = [&](type_id type) -> void {
+      if (checked_.types.is_unknown(type)) {
+        return;
+      }
+      const auto &entry = checked_.types.entry(type);
+      if (entry.kind == type_kind::ptr_kind) {
+        shared = include_pointers && !entry.is_mut
+                     ? std::optional<type_id>{type}
+                     : std::nullopt;
+      } else if (entry.kind == type_kind::ref_kind) {
+        if (!entry.is_mut && !shared.has_value()) {
+          shared = type;
+        }
+      } else if (checked_.types.is_view(type) &&
+                 !checked_.types.is_mut_view(type) && !shared.has_value()) {
+        shared = type;
+      }
+    };
+    cross(root_type);
+    if (place != nullptr) {
+      auto steps = std::vector<place_step>{};
+      place_steps(*place, steps);
+      for (std::size_t i = 0; i < steps.size(); ++i) {
+        if (through_place || i + 1 < steps.size() ||
+            steps[i].step == place_step::kind::through_deref) {
+          cross(steps[i].type);
+        }
+      }
+    }
+    return shared;
+  }
+
+  /// Rejects `kind` on `place`, rooted at `info`, when it would change
+  /// something behind a read-only reference, or change `info` itself when
+  /// it is a `let` binding (whose assignments the checker rejects). `method`
+  /// names the called method for `receiver`; a null `place` is the binding
+  /// itself.
+  auto reject_place_write(const local_info &info, const ast::expr *place,
+                          static_write kind, source_span span,
+                          std::string_view method = {}) -> void {
+    if (!report_captures_) {
+      return;
+    }
+    if (const auto shared = shared_indirection(
+            info.type, place, kind == static_write::receiver,
+            kind != static_write::assign)) {
+      auto steps = std::vector<place_step>{};
+      if (place != nullptr) {
+        place_steps(*place, steps);
+      }
+      emit(shared_write_event{
+          .span = span,
+          .kind = kind,
+          .place = spell_place(info.name, steps, steps.size()),
+          .method = std::string(method),
+          .through = checked_.types.display(*shared)});
+      return;
+    }
+    if (kind == static_write::assign || !info.immutable ||
+        through_indirection(info.type, place,
+                            kind == static_write::receiver)) {
+      return;
+    }
+    emit(let_write_event{.span = span,
+                         .kind = kind,
+                         .name = info.name,
+                         .method = std::string(method),
+                         .declared = info.span});
+  }
+
+  /// The local `name` names in the nearest enclosing function, for a name
+  /// this lambda body captures.
+  [[nodiscard]] auto captured_local(std::string_view name) const
+      -> const local_info * {
+    for (const auto *builder = outer_; builder != nullptr;
+         builder = builder->outer_) {
+      if (const auto local = builder->lookup(name)) {
+        return &builder->cfg_.locals[*local];
+      }
+    }
+    return nullptr;
+  }
+
+  /// `reject_place_write` for a place rooted at a name this lambda body
+  /// captures.
+  auto reject_captured_write(const root_name &root, const ast::expr &place,
+                             static_write kind, source_span span,
+                             std::string_view method = {}) -> void {
+    if (const auto *info = captured_local(root.name)) {
+      reject_place_write(*info, &place, kind, span, method);
+    }
   }
 
   // ------------------------------------------------------------------
@@ -1047,6 +1219,10 @@ private:
     }
     const auto local = lookup(root->name);
     if (!local.has_value()) {
+      if (projected && kind == access_kind::move && movable(type_of(&expr)) &&
+          reject_static_write(*root, static_write::move, expr.span)) {
+        return {};
+      }
       if (!projected && kind == access_kind::move &&
           checked_.static_global_refs.contains(&expr)) {
         cfg_.owned_static_reads.insert(&expr);
@@ -1131,8 +1307,20 @@ private:
     }
     const auto local = lookup(root->name);
     if (!local.has_value()) {
+      if (is_mut &&
+          reject_static_write(*root, static_write::borrow_mut, span)) {
+        return {};
+      }
+      // A receiver is checked where the call names its method.
+      if (is_mut && origin != loan_origin::receiver) {
+        reject_captured_write(*root, expr, static_write::borrow_mut, span);
+      }
       note_capture(root->name, /*moved=*/false, root->span);
       return {};
+    }
+    if (is_mut && origin != loan_origin::receiver) {
+      reject_place_write(cfg_.locals[*local], &expr, static_write::borrow_mut,
+                       span);
     }
     emit(access_event{.local = *local,
                       .kind = is_mut ? access_kind::borrow_mut
@@ -1865,11 +2053,27 @@ private:
         }
         auto reserved =
             borrow_place(receiver, false, loan_origin::receiver, receiver.span);
+        const auto method = decl != nullptr ? std::string_view(decl->name)
+                                            : std::string_view{};
         if (!reserved.loans.empty()) {
           reservation = reserved.loans.front();
           cfg_.loans[reservation].reserved_mut = true;
           activate = &receiver;
           activate_temp = receiver_temp;
+          reject_place_write(cfg_.locals[cfg_.loans[reservation].root],
+                           &receiver, static_write::receiver, receiver.span,
+                           method);
+        } else {
+          // No loan means no local: a `mut self` call on a `static`, or on
+          // a name this lambda body captures.
+          auto projected = false;
+          if (const auto root = place_root(receiver, projected);
+              root.has_value() &&
+              !reject_static_write(*root, static_write::receiver,
+                                   receiver.span, method)) {
+            reject_captured_write(*root, receiver, static_write::receiver,
+                                      receiver.span, method);
+          }
         }
         stash(receiver_temp, reserved);
         break;
@@ -1985,6 +2189,10 @@ private:
             continue;
           }
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
+          if (is_mut) {
+            reject_place_write(cfg_.locals[*local], nullptr,
+                             static_write::borrow_mut, entry.span);
+          }
           access(*local,
                  is_mut ? access_kind::borrow_mut : access_kind::borrow_shared,
                  entry.span);
@@ -2628,6 +2836,7 @@ private:
       const auto local =
           declare(binding.name, type_of(stmt.pattern.get()), binding.span,
                   /*whole=*/true, /*owns=*/false, stmt.pattern.get());
+      cfg_.locals[local].immutable = !binding.is_mut;
       bind_value(local, v);
       return;
     }
@@ -2650,8 +2859,19 @@ private:
     eval_subscripts(target);
     const auto local = lookup(root->name);
     if (!local.has_value()) {
+      if (reject_static_write(*root, static_write::assign, target.span)) {
+        return;
+      }
+      if (projected) {
+        reject_captured_write(*root, target, static_write::assign,
+                              target.span);
+      }
       note_capture(root->name, false, root->span);
       return;
+    }
+    if (projected) {
+      reject_place_write(cfg_.locals[*local], &target, static_write::assign,
+                         target.span);
     }
     if (!projected && stmt.op == ast::assign_op::assign) {
       emit(assign_event{.key = &stmt, .local = *local});

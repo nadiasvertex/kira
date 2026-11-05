@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <exception>
+#include <format>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -1614,6 +1615,19 @@ auto test_reports_assignment_to_immutable() -> void {
   expect(analyzed.error_count > 0, "expected immutable assignment to fail");
   expect_diagnostic(analyzed, "cannot assign to immutable binding `count`",
                     "expected immutable-assignment diagnostic");
+}
+
+auto test_reports_let_element_write() -> void {
+  const auto analyzed = analyze_test_data_file("report_let_element_write.cn");
+  expect(analyzed.error_count == 2,
+         std::format("expected 2 errors for element writes to `let` "
+                     "bindings, got {}:\n{}",
+                     analyzed.error_count, analyzed.diagnostics));
+  expect_diagnostic(analyzed, "cannot mutate `xs` — it is bound with `let`",
+                    "expected `xs[0] = 4` on a `let` list to be rejected");
+  expect_diagnostic(analyzed, "cannot mutate `a` — it is bound with `let`",
+                    "expected an element write to a destructured `let` to "
+                    "be rejected");
 }
 
 auto test_accepts_let_mut_reassignment() -> void {
@@ -4019,6 +4033,7 @@ auto main() -> int {
     test_reports_non_numeric_builtin_arithmetic();
     test_reports_non_bool_condition();
     test_reports_assignment_to_immutable();
+    test_reports_let_element_write();
     test_accepts_let_mut_reassignment();
     test_reports_return_type_mismatch();
     test_reports_call_argument_problems();

@@ -1,0 +1,27 @@
+module ownership.shared_reference_write
+
+# A `&T` only permits reads: nothing behind it can be assigned, borrowed with
+# `&mut`, or changed by a `mut self` call, whether it is a parameter, `self`
+# in a non-`mut` method, or a capture.
+
+type bag = {
+    items: list[int64],
+}
+
+extend bag:
+    def sneak(self) -> unit:
+        self.items.push(1)
+
+def push_shared(v: &list[int64]) -> unit:
+    v.push(1)
+
+def write_shared(v: &list[int64]) -> unit:
+    v[0] = 1
+
+def borrow_shared(v: &list[int64]) -> unit:
+    let r = &mut *v
+    r.push(2)
+
+def in_lambda(v: &list[int64]) -> unit:
+    let f = () => v.push(1)
+    f()

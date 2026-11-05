@@ -698,6 +698,14 @@ private:
     /// `record_static_const_reference`.
     std::unordered_map<const ast::node *, std::string> static_global_refs_;
 
+    /// See `checked_types::static_refs`'s doc comment. Populated by
+    /// `record_static_const_reference` and `fold_static_field_path`.
+    std::unordered_map<const ast::node *, std::string> static_refs_;
+
+    /// See `checked_types::let_pattern_bindings`'s doc comment. Populated by
+    /// `check_pattern`.
+    std::unordered_set<const void *> let_pattern_bindings_;
+
     /// See `checked_types::value_path_types`. Populated by
     /// `infer_value_rooted_path`.
     std::unordered_map<const ast::module_path_expr *, std::vector<type_id>>
@@ -950,6 +958,13 @@ private:
     /// already handled by direct evaluator execution whenever this function
     /// itself is invoked at compile time, and its own body is never lowered.
     bool in_comptime_only_function_ = false;
+
+    /// How the bindings of the pattern being checked are held, when it is
+    /// part of a `let`'s or a by-value parameter's destructuring and no
+    /// pattern above it reached the value through a reference:
+    /// `let_binding` or `parameter`. Empty otherwise, and the bindings are
+    /// ordinary pattern bindings (`check_owning_pattern`).
+    std::optional<binding_origin> owning_pattern_origin_;
 
     /// How many block `static for` bodies enclose the code being checked. A
     /// nested one is unrolled by the outermost, once per its iteration.
@@ -3870,6 +3885,16 @@ private:
                            type_id raw_element) -> void;
 
   auto check_pattern(const ast::pattern &pattern, type_id raw_subject) -> void;
+  auto check_pattern_node(const ast::pattern &pattern, type_id raw_subject)
+      -> void;
+  /// Checks the pattern of a `let` or a parameter against `subject`. The
+  /// bindings take `origin` unless the value is reached through a
+  /// reference.
+  auto check_owning_pattern(const ast::pattern &pattern, type_id subject,
+                            binding_origin origin) -> void;
+  /// How a name `pattern` binds is held: `mut`, `let`, or a pattern
+  /// binding. Records a `let` one under `key`.
+  auto pattern_binding_origin(bool is_mut, const void *key) -> binding_origin;
 
   auto check_constructor_pattern(const ast::constructor_pattern &ctor,
                                  type_id subject) -> void;

@@ -992,6 +992,7 @@ auto checker::record_static_const_reference(const ast::expr &reference,
                                             type_id type,
                                             std::string_view owner_module)
     -> void {
+  session_.static_refs_[&reference] = decl.name;
   const auto *value =
       ensure_static_binding_evaluated(decl, index_.find_module(owner_module));
   if (value == nullptr) {
