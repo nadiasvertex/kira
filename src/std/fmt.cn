@@ -237,6 +237,78 @@ pub def fmt_radix_u64(v: uint64, radix: uint8, uppercase: bool, prefix: str, spe
     let digits = rt_fmt_radix_digits(v, radix, uppercase)
     return pad_integral(false, prefix, digits, spec)
 
+#: The digits of a 128-bit unsigned integer in `radix`, with no sign or
+#: prefix. Values that fit in 64 bits go straight to the 64-bit digit
+#: renderer; wider ones are split at the largest power of `radix` that fits
+#: in 64 bits, and the low part is zero-padded to that power's digit count.
+#: Args:
+#:   v: the integer value to render.
+#:   radix: the base for formatting (2-36).
+#:   uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+#: Returns:
+#:   the digit string.
+def radix_digits_u128(v: uint128, radix: uint8, uppercase: bool) -> str:
+    let u64_max: uint64 = 18446744073709551615
+    if v <= u64_max as uint128:
+        return rt_fmt_radix_digits(v as uint64, radix, uppercase)
+    let r = radix as uint64
+    var chunk: uint64 = 1
+    var width: usize = 0
+    while chunk <= u64_max / r:
+        chunk = chunk * r
+        width = width + 1
+    let high = radix_digits_u128(v / (chunk as uint128), radix, uppercase)
+    let low = rt_fmt_radix_digits((v % (chunk as uint128)) as uint64, radix, uppercase)
+    let zeros = repeat_char('0', width - scalar_len(low))
+    return rt_str_concat(rt_str_concat(high, zeros), low)
+
+#: Formats a 128-bit signed integer in decimal with the given specification.
+#: Args:
+#:   v: the integer value to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
+pub def fmt_show_i128(v: int128, spec: format_spec) -> str:
+    return fmt_radix_i128(v, 10, false, "", spec)
+
+#: Formats a 128-bit unsigned integer in decimal with the given specification.
+#: Args:
+#:   v: the integer value to format.
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
+pub def fmt_show_u128(v: uint128, spec: format_spec) -> str:
+    return fmt_radix_u128(v, 10, false, "", spec)
+
+#: Formats a 128-bit signed integer in the specified radix with optional prefix and uppercase.
+#: Args:
+#:   v: the integer value to format.
+#:   radix: the base for formatting (2-36).
+#:   uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+#:   prefix: an optional prefix string (e.g., "0x" for hex).
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
+pub def fmt_radix_i128(v: int128, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
+    let negative = v < 0
+    let bits = v as uint128
+    let magnitude = if negative: (340282366920938463463374607431768211455 as uint128 - bits) + (1 as uint128) else: bits
+    let digits = radix_digits_u128(magnitude, radix, uppercase)
+    return pad_integral(negative, prefix, digits, spec)
+
+#: Formats a 128-bit unsigned integer in the specified radix with optional prefix and uppercase.
+#: Args:
+#:   v: the integer value to format.
+#:   radix: the base for formatting (2-36).
+#:   uppercase: whether to use uppercase letters (A-Z) for digits > 9.
+#:   prefix: an optional prefix string (e.g., "0x" for hex).
+#:   spec: the formatting specification.
+#: Returns:
+#:   the formatted string.
+pub def fmt_radix_u128(v: uint128, radix: uint8, uppercase: bool, prefix: str, spec: format_spec) -> str:
+    let digits = radix_digits_u128(v, radix, uppercase)
+    return pad_integral(false, prefix, digits, spec)
+
 #: Formats a 64-bit floating-point number in fixed-point notation.
 #: Args:
 #:   v: the floating-point value to format.

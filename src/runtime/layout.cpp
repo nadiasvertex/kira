@@ -193,22 +193,6 @@ auto sum_variant_payload_slots(const type_table &types, semantic::type_id id,
   return std::nullopt;
 }
 
-auto sum_max_payload_slots(const type_table &types, semantic::type_id id)
-    -> size_t {
-  id = strip_refs(types, id);
-  const auto *variants = sum_variants_of(types.entry(id));
-  if (variants == nullptr) {
-    return 0;
-  }
-  auto max_slots = size_t{0};
-  for (const auto &variant : *variants) {
-    if (variant.payload_types.size() > max_slots) {
-      max_slots = variant.payload_types.size();
-    }
-  }
-  return max_slots;
-}
-
 namespace {
 
 /// Rounds `offset` up to the next multiple of `align` (`align` is always a
@@ -247,12 +231,15 @@ namespace {
   if (name == "float32") {
     return layout_info{.size_bytes = 4, .align_bytes = 4};
   }
+  if (name == "int128" || name == "uint128") {
+    return layout_info{.size_bytes = 16, .align_bytes = 16};
+  }
   if (name == "unit") {
     return layout_info{.size_bytes = 0, .align_bytes = 1};
   }
-  // int128/uint128/float128 and every non-scalar builtin (str is handled by
-  // the heap-pointer branch in `layout_of` before this is reached) fall
-  // through to `nullopt` — same 128-bit gap `numeric_kind_of` documents.
+  // float128 and every non-scalar builtin (str is handled by the
+  // heap-pointer branch in `layout_of` before this is reached) fall through
+  // to `nullopt` — same float128 gap `numeric_kind_of` documents.
   return std::nullopt;
 }
 
@@ -537,6 +524,89 @@ auto tuple_element_offset(const type_table &types, semantic::type_id id,
     return std::nullopt;
   }
   return found;
+}
+
+auto slot_width(const type_table &types, semantic::type_id id) -> size_t {
+  const auto layout = layout_of(types, id);
+  return layout.has_value() && layout->size_bytes > 8 ? 2 : 1;
+}
+
+namespace {
+
+/// The uniform-slot width (1 or 2) of payload `index` of `variant` within
+/// sum instance `instance` — 2 only for a 128-bit scalar. `option`/`result`
+/// have no payload type expressions to read (`make_variant`), so their one
+/// payload's type comes straight from the instance's arguments: `some`/`ok`
+/// carry the first, `err` the second.
+[[nodiscard]] auto payload_width(const type_table &types,
+                                 const type_entry &instance,
+                                 const ast::sum_variant &variant, size_t index)
+    -> size_t {
+  if (instance.kind == type_kind::builtin_generic_kind) {
+    const auto arg = variant.name == "err" ? size_t{1} : size_t{0};
+    return arg < instance.args.size() ? slot_width(types, instance.args[arg])
+                                      : 1;
+  }
+  const auto &expr = variant.payload_types[index];
+  if (expr == nullptr) {
+    return 1;
+  }
+  const auto layout = field_layout(types, instance, *expr);
+  return layout.has_value() && layout->size_bytes > 8 ? 2 : 1;
+}
+
+[[nodiscard]] auto variant_payload_words(const type_table &types,
+                                         const type_entry &instance,
+                                         const ast::sum_variant &variant)
+    -> size_t {
+  auto words = size_t{0};
+  for (size_t i = 0; i < variant.payload_types.size(); ++i) {
+    words += payload_width(types, instance, variant, i);
+  }
+  return words;
+}
+
+} // namespace
+
+auto sum_max_payload_slots(const type_table &types, semantic::type_id id)
+    -> size_t {
+  id = strip_refs(types, id);
+  const auto &instance = types.entry(id);
+  const auto *variants = sum_variants_of(instance);
+  if (variants == nullptr) {
+    return 0;
+  }
+  auto max_slots = size_t{0};
+  for (const auto &variant : *variants) {
+    max_slots =
+        std::max(max_slots, variant_payload_words(types, instance, variant));
+  }
+  return max_slots;
+}
+
+auto sum_payload_slot(const type_table &types, semantic::type_id id,
+                      std::string_view name, size_t index)
+    -> std::optional<size_t> {
+  id = strip_refs(types, id);
+  const auto &instance = types.entry(id);
+  const auto *variants = sum_variants_of(instance);
+  if (variants == nullptr) {
+    return std::nullopt;
+  }
+  for (const auto &variant : *variants) {
+    if (variant.name != name) {
+      continue;
+    }
+    if (index >= variant.payload_types.size()) {
+      return std::nullopt;
+    }
+    auto slot = size_t{1};
+    for (size_t i = 0; i < index; ++i) {
+      slot += payload_width(types, instance, variant, i);
+    }
+    return slot;
+  }
+  return std::nullopt;
 }
 
 } // namespace cinder::runtime

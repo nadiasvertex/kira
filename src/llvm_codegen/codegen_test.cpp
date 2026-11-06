@@ -348,6 +348,20 @@ auto test_intrinsic_call_resolves_to_native_symbol() -> void {
   expect(result->value.i == 1, "expected main()'s rt_stdout().value to be 1");
 }
 
+auto test_int128_main_returns_both_halves() -> void {
+  // A 128-bit `main` result comes back through `jit_module::run` whole: the
+  // native function returns it in a register pair, and the result keeps both
+  // halves rather than only the low 64 bits.
+  auto jf = jit_fixture_for("module sample\n"
+                            "def main() -> int128:\n"
+                            "    return -18446744073709551621\n");
+  auto result = jf.jit.run("main", bc::numeric_kind::i128);
+  expect(result.has_value(), "expected an int128 main() to succeed");
+  const auto expected = -((static_cast<__int128>(1) << 64) + 5);
+  expect(static_cast<__int128>(result->value.w) == expected,
+         "expected main() to return -(2^64 + 5) in both halves");
+}
+
 auto test_intrinsic_result_constructs_and_matches_through_real_syntax()
     -> void {
   // The LLVM-tier counterpart of
@@ -454,7 +468,7 @@ auto test_string_literal_round_trips_through_the_heap() -> void {
   auto jf = jit_fixture_for(load_fixture("string_literal.cn"));
   auto result = jf.jit.run_ptr_result("main");
   expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].u == 5, "expected \"hello\" to report length 5");
   const auto *data =
@@ -471,7 +485,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   auto jf = jit_fixture_for(load_fixture("sum_type_variant.cn"));
   auto result = jf.jit.run_ptr_result("main");
   expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].i == 0, "expected @circle to encode as tag 0");
   expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
@@ -481,7 +495,7 @@ auto test_sum_type_unit_variant_encodes_its_tag() -> void {
   auto jf = jit_fixture_for(load_fixture("sum_type_unit_variant.cn"));
   auto result = jf.jit.run_ptr_result("main");
   expect(result.has_value(), "expected main() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].i == 1, "expected @empty to encode as tag 1");
 }
@@ -1084,6 +1098,7 @@ auto test_static_array_global_backs_two_independent_reads() -> void {
 auto main() -> int {
   try {
     test_add_compiles_and_runs();
+    test_int128_main_returns_both_halves();
     test_implicit_tail_expression_is_the_return_value();
     test_if_expression_selects_branch_value();
     test_intrinsic_call_resolves_to_native_symbol();

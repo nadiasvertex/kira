@@ -7,43 +7,18 @@
 #include "src/parser/ast_traversal.h"
 #include "src/parser/operators.h"
 #include "src/semantic/module_index.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::semantic::detail {
 
 /// Parses an integer literal spelling (handles `_`, `0x`, `0o`, `0b`).
 /// Returns nullopt when the value does not fit in 64 bits.
 auto parse_integer_literal(std::string_view text) -> std::optional<uint64_t> {
-  auto cleaned = std::string{};
-  cleaned.reserve(text.size());
-  for (const auto ch : text) {
-    if (ch != '_') {
-      cleaned.push_back(ch);
-    }
-  }
-  auto base = 10;
-  auto digits = std::string_view(cleaned);
-  if (digits.size() > 2 && digits[0] == '0') {
-    if (digits[1] == 'x' || digits[1] == 'X') {
-      base = 16;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'o' || digits[1] == 'O') {
-      base = 8;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'b' || digits[1] == 'B') {
-      base = 2;
-      digits.remove_prefix(2);
-    }
-  }
-  auto value = uint64_t{0};
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  // std::from_chars requires a raw begin/end pointer pair.
-  const char *digits_end = digits.data() + digits.size();
-  const auto result = std::from_chars(digits.data(), digits_end, value, base);
-  if (result.ec != std::errc{} || result.ptr != digits_end) {
+  const auto wide = util::parse_integer_literal_wide(text);
+  if (!wide.has_value() || *wide > ~uint64_t{0}) {
     return std::nullopt;
   }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  return value;
+  return static_cast<uint64_t>(*wide);
 }
 
 // ==========================================================================

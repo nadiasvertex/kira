@@ -18,5 +18,6 @@ cc_library(
         "//src/parser",
         "//src/runtime:string_ops",
         "//src/utf8",
+        "//src/util",
     ],
 )

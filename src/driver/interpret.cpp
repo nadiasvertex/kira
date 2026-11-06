@@ -11,6 +11,7 @@
 #include "src/bytecode_compiler/compile.h"
 #include "src/hir/lower.h"
 #include "src/runtime/scheduler.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::driver {
 
@@ -34,6 +35,10 @@ namespace cinder::driver {
   case bytecode::numeric_kind::u32:
   case bytecode::numeric_kind::u64:
     return std::format("{}", value.u);
+  case bytecode::numeric_kind::i128:
+    return util::format_wide_signed_decimal(static_cast<__int128>(value.w));
+  case bytecode::numeric_kind::u128:
+    return util::format_wide_decimal(value.w);
   case bytecode::numeric_kind::f32:
     return std::format("{}",
                        std::bit_cast<float>(static_cast<uint32_t>(value.u)));
@@ -74,6 +79,8 @@ namespace cinder::driver {
   case bytecode::numeric_kind::u16:
   case bytecode::numeric_kind::u32:
   case bytecode::numeric_kind::u64:
+  case bytecode::numeric_kind::i128:
+  case bytecode::numeric_kind::u128:
     return static_cast<int32_t>(value.u);
   case bytecode::numeric_kind::boolean:
     return value.i != 0 ? 1 : 0;

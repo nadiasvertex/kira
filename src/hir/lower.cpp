@@ -30,6 +30,7 @@
 #include "src/semantic/module_index.h"
 #include "src/semantic/ownership_cfg.h"
 #include "src/semantic/program_index.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::hir {
 
@@ -283,9 +284,19 @@ auto lower_reified_value(
   switch (value.kind) {
   case shape::scalar:
     switch (value.leaf.kind) {
-    case comptime::value_kind::integer:
+    case comptime::value_kind::integer: {
+      // A `uint128` past `int128`'s maximum is held as a negative bit
+      // pattern (`comptime::value`); an unsigned literal has no sign, so it
+      // is spelled as the unsigned value instead.
+      const auto is_signed =
+          semantic::is_signed_integer_name(checked.types.entry(value.type).name);
+      const auto text =
+          is_signed ? util::format_wide_signed_decimal(value.leaf.integer)
+                    : util::format_wide_decimal(
+                          static_cast<unsigned __int128>(value.leaf.integer));
       return ok_expr(make<hir_literal>(span, value.type, token_kind::int_lit,
-                                       std::to_string(value.leaf.integer)));
+                                       text));
+    }
     case comptime::value_kind::floating:
       return ok_expr(make<hir_literal>(span, value.type, token_kind::float_lit,
                                        std::to_string(value.leaf.floating)));
@@ -5095,6 +5106,9 @@ auto lowerer::lower_interpolated_string(
     const auto &value_entry = checked_.types.entry(dispatch.value_type);
     const bool is_signed =
         value_entry.name.starts_with("int") || value_entry.name == "isize";
+    const bool is_wide_integer = value_entry.kind == type_kind::builtin_kind &&
+                                 (value_entry.name == "int128" ||
+                                  value_entry.name == "uint128");
 
     // `dispatch.type_char` selected a float style ('e'/'E'/'f'/'g'/'G') only
     // when `dispatch.kind == builtin_float`; every other kind ignores
@@ -5177,6 +5191,14 @@ auto lowerer::lower_interpolated_string(
         args.push_back(std::move(*value));
         args.push_back(std::move(*spec_expr));
         rendered = call_fmt("fmt_show_char", str_type, std::move(args));
+      } else if (is_wide_integer) {
+        // A 128-bit integer has its own helpers — narrowing it to 64 bits
+        // for the shared ones would silently drop the high half.
+        auto args = ptr_vec<hir_expr>{};
+        args.push_back(std::move(*value));
+        args.push_back(std::move(*spec_expr));
+        rendered = call_fmt(is_signed ? "fmt_show_i128" : "fmt_show_u128",
+                            str_type, std::move(args));
       } else if (checked_.types.is_integer(dispatch.value_type)) {
         auto args = ptr_vec<hir_expr>{};
         args.push_back(cast_to(std::move(*value),
@@ -5209,14 +5231,19 @@ auto lowerer::lower_interpolated_string(
           : (dispatch.type_char == 'x' || dispatch.type_char == 'X') ? "0x"
                                                                      : "";
       auto args = ptr_vec<hir_expr>{};
-      args.push_back(cast_to(std::move(*value),
-                             is_signed ? fmt.int64_type : fmt.uint64_type));
+      args.push_back(is_wide_integer
+                         ? std::move(*value)
+                         : cast_to(std::move(*value), is_signed
+                                                          ? fmt.int64_type
+                                                          : fmt.uint64_type));
       args.push_back(uint8_lit(static_cast<uint64_t>(radix)));
       args.push_back(bool_lit(uppercase));
       args.push_back(str_lit(prefix));
       args.push_back(std::move(*spec_expr));
-      rendered = call_fmt(is_signed ? "fmt_radix_i64" : "fmt_radix_u64",
-                          str_type, std::move(args));
+      const auto *helper =
+          is_wide_integer ? (is_signed ? "fmt_radix_i128" : "fmt_radix_u128")
+                          : (is_signed ? "fmt_radix_i64" : "fmt_radix_u64");
+      rendered = call_fmt(helper, str_type, std::move(args));
       break;
     }
     case semantic::interp_dispatch::kind_t::builtin_float: {

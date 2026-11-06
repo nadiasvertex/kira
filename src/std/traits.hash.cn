@@ -83,10 +83,14 @@ pub def hash_tag(n: uint64) -> uint64:
 # and `exec_cast` in the VM agree on this), so a negative value hashes by its
 # two's-complement bit pattern instead of panicking.
 #
-# `int128`/`uint128`/`float128` are deliberately absent: a reachable module is
-# compiled in full and the bytecode VM has no representation for them, so an
-# impl here would make every program fail to compile. `spec/todo.md` item 6
-# records the same trap for `zero`/`one`; these arrive with it.
+# The 128-bit integers fold their high word in after their low word, so a
+# value that fits in 64 bits still hashes differently from the same value as
+# an `int64` -- the types differ, and nothing requires them to agree.
+#
+# `float128` is deliberately absent: a reachable module is compiled in full
+# and neither backend has a representation for it, so an impl here would make
+# every program fail to compile. `spec/todo.md` records the same trap for
+# `zero`/`one`; these arrive with it.
 
 #: `float64`'s bit pattern with `hash`'s two required canonicalizations
 #: applied: every zero (`+0.0`/`-0.0`, which compare equal) collapses to one
@@ -143,6 +147,15 @@ impl hash for int32:
 impl hash for int64:
     def hash(self) -> uint64:
         return hash_combine(hash_seed(), self as uint64)
+
+impl hash for int128:
+    def hash(self) -> uint64:
+        let bits = self as uint128
+        return hash_combine(hash_combine(hash_seed(), bits as uint64), (bits >> 64) as uint64)
+
+impl hash for uint128:
+    def hash(self) -> uint64:
+        return hash_combine(hash_combine(hash_seed(), self as uint64), (self >> 64) as uint64)
 
 impl hash for isize:
     def hash(self) -> uint64:

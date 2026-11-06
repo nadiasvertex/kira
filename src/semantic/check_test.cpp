@@ -1512,6 +1512,28 @@ auto test_reports_int64_positive_literal_still_too_large() -> void {
                     "boundary value");
 }
 
+auto test_reports_128_bit_literals_too_large() -> void {
+  const auto analyzed =
+      analyze_test_data_file("report_int128_literal_too_large.cn");
+  expect(analyzed.error_count == 3,
+         "expected one literal-fit error per 128-bit literal past its "
+         "range:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "integer literal `170141183460469231731687303715884105728` "
+                    "does not fit in `int128`",
+                    "expected `int128` max + 1 to be rejected");
+  expect_diagnostic(analyzed,
+                    "integer literal `340282366920938463463374607431768211456` "
+                    "does not fit in `uint128`",
+                    "expected `uint128` max + 1 to be rejected");
+  expect_diagnostic(analyzed,
+                    "integer literal "
+                    "`-170141183460469231731687303715884105729` does not fit "
+                    "in `int128`",
+                    "expected `int128` min - 1 to be rejected");
+}
+
 auto test_accepts_negative_min_literal_through_cast() -> void {
   const auto analyzed =
       analyze_test_data_file("accept_negative_min_literal_through_cast.cn");
@@ -4028,7 +4050,8 @@ auto main() -> int {
     test_accepts_negative_min_integer_literals();
     test_reports_negated_integer_literal_still_too_large();
     test_reports_int64_positive_literal_still_too_large();
-    test_accepts_negative_min_literal_through_cast();
+    test_reports_128_bit_literals_too_large();
+  test_accepts_negative_min_literal_through_cast();
     test_accepts_wide_literal_in_generic_return();
     test_reports_generic_return_literal_overflow();
     test_reports_mixed_numeric_types();

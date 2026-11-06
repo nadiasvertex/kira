@@ -28,6 +28,10 @@ impl eq for int64:
     def eq(self, other: &int64) -> bool:
         return self == *other
 
+impl eq for int128:
+    def eq(self, other: &int128) -> bool:
+        return self == *other
+
 impl eq for isize:
     def eq(self, other: &isize) -> bool:
         return self == *other
@@ -46,6 +50,10 @@ impl eq for uint32:
 
 impl eq for uint64:
     def eq(self, other: &uint64) -> bool:
+        return self == *other
+
+impl eq for uint128:
+    def eq(self, other: &uint128) -> bool:
         return self == *other
 
 impl eq for usize:
@@ -96,6 +104,14 @@ impl ord for int64:
             return @greater
         return @equal
 
+impl ord for int128:
+    def cmp(self, other: &int128) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
 impl ord for isize:
     def cmp(self, other: &isize) -> ordering:
         if self < *other:
@@ -130,6 +146,14 @@ impl ord for uint32:
 
 impl ord for uint64:
     def cmp(self, other: &uint64) -> ordering:
+        if self < *other:
+            return @less
+        if *other < self:
+            return @greater
+        return @equal
+
+impl ord for uint128:
+    def cmp(self, other: &uint128) -> ordering:
         if self < *other:
             return @less
         if *other < self:
@@ -224,6 +248,14 @@ impl debug for int64:
     def debug(self) -> str:
         return "{self:?}"
 
+impl show for int128:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for int128:
+    def debug(self) -> str:
+        return "{self:?}"
+
 impl show for isize:
     def show(self) -> str:
         return "{self}"
@@ -261,6 +293,14 @@ impl show for uint64:
         return "{self}"
 
 impl debug for uint64:
+    def debug(self) -> str:
+        return "{self:?}"
+
+impl show for uint128:
+    def show(self) -> str:
+        return "{self}"
+
+impl debug for uint128:
     def debug(self) -> str:
         return "{self:?}"
 
@@ -312,6 +352,10 @@ impl add for int64:
     def add(self, other: int64) -> int64:
         return self + other
 
+impl add for int128:
+    def add(self, other: int128) -> int128:
+        return self + other
+
 impl add for isize:
     def add(self, other: isize) -> isize:
         return self + other
@@ -330,6 +374,10 @@ impl add for uint32:
 
 impl add for uint64:
     def add(self, other: uint64) -> uint64:
+        return self + other
+
+impl add for uint128:
+    def add(self, other: uint128) -> uint128:
         return self + other
 
 impl add for usize:
@@ -364,6 +412,10 @@ impl sub for int64:
     def sub(self, other: int64) -> int64:
         return self - other
 
+impl sub for int128:
+    def sub(self, other: int128) -> int128:
+        return self - other
+
 impl sub for isize:
     def sub(self, other: isize) -> isize:
         return self - other
@@ -382,6 +434,10 @@ impl sub for uint32:
 
 impl sub for uint64:
     def sub(self, other: uint64) -> uint64:
+        return self - other
+
+impl sub for uint128:
+    def sub(self, other: uint128) -> uint128:
         return self - other
 
 impl sub for usize:
@@ -416,6 +472,10 @@ impl mul for int64:
     def mul(self, other: int64) -> int64:
         return self * other
 
+impl mul for int128:
+    def mul(self, other: int128) -> int128:
+        return self * other
+
 impl mul for isize:
     def mul(self, other: isize) -> isize:
         return self * other
@@ -434,6 +494,10 @@ impl mul for uint32:
 
 impl mul for uint64:
     def mul(self, other: uint64) -> uint64:
+        return self * other
+
+impl mul for uint128:
+    def mul(self, other: uint128) -> uint128:
         return self * other
 
 impl mul for usize:
@@ -468,6 +532,10 @@ impl div for int64:
     def div(self, other: int64) -> int64:
         return self / other
 
+impl div for int128:
+    def div(self, other: int128) -> int128:
+        return self / other
+
 impl div for isize:
     def div(self, other: isize) -> isize:
         return self / other
@@ -486,6 +554,10 @@ impl div for uint32:
 
 impl div for uint64:
     def div(self, other: uint64) -> uint64:
+        return self / other
+
+impl div for uint128:
+    def div(self, other: uint128) -> uint128:
         return self / other
 
 impl div for usize:
@@ -520,6 +592,10 @@ impl rem for int64:
     def rem(self, other: int64) -> int64:
         return self % other
 
+impl rem for int128:
+    def rem(self, other: int128) -> int128:
+        return self % other
+
 impl rem for isize:
     def rem(self, other: isize) -> isize:
         return self % other
@@ -538,6 +614,10 @@ impl rem for uint32:
 
 impl rem for uint64:
     def rem(self, other: uint64) -> uint64:
+        return self % other
+
+impl rem for uint128:
+    def rem(self, other: uint128) -> uint128:
         return self % other
 
 impl rem for usize:
@@ -570,6 +650,10 @@ impl neg for int32:
 
 impl neg for int64:
     def neg(self) -> int64:
+        return -self
+
+impl neg for int128:
+    def neg(self) -> int128:
         return -self
 
 impl neg for isize:

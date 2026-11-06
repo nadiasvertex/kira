@@ -2,14 +2,13 @@ module std.limits
 
 use std.traits.type_category
 
-#: `T`'s bit width: 8, 16, 32, or 64.
+#: `T`'s bit width: 8, 16, 32, 64, or 128.
 #:
-#: `int128`/`uint128`/`float128` are deliberately absent, matching
-#: `std.traits.hash`'s own scalar impls (`src/std/traits.cn`): the
-#: bytecode VM has no representation for them, and a reachable module
-#: compiles in full, so a query that mentioned them would fail every
-#: program that reaches this file, not just ones that call it with a
-#: 128-bit type.
+#: `float128` is deliberately absent, matching `std.traits.hash`'s own
+#: scalar impls (`src/std/traits.hash.cn`): neither backend has a
+#: representation for it, and a reachable module compiles in full, so a
+#: query that mentioned it would fail every program that reaches this file,
+#: not just ones that call it with `float128`.
 pub static pure def bits[T]() -> usize:
     return match T.name():
       "int8"    => 8
@@ -20,6 +19,8 @@ pub static pure def bits[T]() -> usize:
       "int32"   => 32
       "uint32"  => 32
       "float32" => 32
+      "int128"  => 128
+      "uint128" => 128
       _         => 64
 
 #: True for a signed integer type or any (floating-point) type — floats have
@@ -42,6 +43,8 @@ pub static pure def min[T]() -> T where T: numeric:
         return -2147483648 as T
     static if n == "int64" or n == "isize":
         return -9223372036854775808 as T
+    static if n == "int128":
+        return -170141183460469231731687303715884105728 as T
     static if n == "float32":
         return -3.40282347e38 as T
     static if n == "float64":
@@ -68,6 +71,10 @@ pub static pure def max[T]() -> T where T: numeric:
         return 9223372036854775807 as T
     static if n == "uint64" or n == "usize":
         return 18446744073709551615 as T
+    static if n == "int128":
+        return 170141183460469231731687303715884105727 as T
+    static if n == "uint128":
+        return 340282366920938463463374607431768211455 as T
     static if n == "float32":
         return 3.40282347e38 as T
     static if n == "float64":

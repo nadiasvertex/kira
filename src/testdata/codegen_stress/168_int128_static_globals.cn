@@ -1,0 +1,18 @@
+module codegen_stress.int128_static_globals
+
+# 128-bit `static let` values read at run time. A compile-time value holds a
+# `uint128` past `int128`'s maximum as a negative bit pattern, and reifying it
+# once spelled that as `-1`, which no unsigned literal can be. The table's
+# first entry is that case.
+
+static let big: int128 = -170141183460469231731687303715884105727
+static let table: array[uint128, 2] = [340282366920938463463374607431768211455, 7]
+static let doubled: int128 = 2 * 85070591730234615865843651857942052863
+
+def term(v: uint128) -> int64:
+    return (v % 1000003) as int64
+
+def main() -> int64:
+    return term(big as uint128) + 2 * term(table[0]) + 3 * term(table[1]) + 4 * term(doubled as uint128)
+
+# expect: 13629

@@ -742,7 +742,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
   auto result = vm.run(function_index(module, "greet"), {});
   expect(result.has_value(), "expected greet() to succeed");
   expect(result->has_value, "expected greet() to produce a value");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].u == 5, "expected \"hello\" to report length 5");
   const auto *data =
@@ -752,7 +752,7 @@ auto test_string_literal_len_reads_the_heap_header() -> void {
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(main_result->value.u));
   expect(main_slots[0].u == 5, "expected main()'s greet() to report length 5");
   const auto *main_data =
@@ -1007,7 +1007,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   auto result =
       vm.run(function_index(module, "make"), std::array{bc::slot_value{3.5}});
   expect(result.has_value(), "expected make() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].i == 0, "expected @circle to encode as tag 0");
   expect(slots[1].f == 3.5, "expected the payload slot to hold 3.5");
@@ -1018,7 +1018,7 @@ auto test_sum_type_variant_with_payload_encodes_tag_and_slot() -> void {
   // input, just through two different compilers.
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(main_result->value.u));
   expect(main_slots[0].i == 0, "expected main()'s @circle to encode as tag 0");
   expect(main_slots[1].f == 3.5, "expected main()'s payload slot to hold 3.5");
@@ -1029,13 +1029,13 @@ auto test_sum_type_unit_variant_encodes_its_tag() -> void {
   const auto vm = bc::vm{module};
   auto result = vm.run(function_index(module, "make_empty"), {});
   expect(result.has_value(), "expected make_empty() to succeed");
-  const auto *slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(result->value.u));
   expect(slots[0].i == 1, "expected @empty to encode as tag 1");
 
   auto main_result = run_main(module);
   expect(main_result.has_value(), "expected main() to succeed");
-  const auto *main_slots = reinterpret_cast<const bc::slot_value *>(
+  const auto *main_slots = reinterpret_cast<const bc::heap_word *>(
       static_cast<uintptr_t>(main_result->value.u));
   expect(main_slots[0].i == 1, "expected main()'s @empty to encode as tag 1");
 }

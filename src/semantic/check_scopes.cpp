@@ -1,4 +1,5 @@
 #include "checker.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::semantic::detail {
 
@@ -1270,13 +1271,21 @@ auto checker::build_const_literal(const comptime::value &value,
     // values are ordinarily spelled as a `unary_expr(neg, ...)` wrapping
     // one (see `std.limits.min`'s own doc comment on this). A synthesized
     // literal has no such wrapper, so a negative `value.integer` is
-    // written out as its 64-bit two's-complement bit pattern instead of a
+    // written out as its two's-complement bit pattern instead of a
     // signed decimal string — `encode_literal`/`compile_literal_value`
     // parse it back as raw bits and truncate to the target width exactly
     // as they would for any other literal, so the resulting value is
-    // identical either way.
+    // identical either way. The pattern is 128 bits wide for a 128-bit
+    // target and 64 bits wide otherwise, since the 64-bit literal paths
+    // reject a spelling past `uint64`'s maximum.
     lit->lit_kind = token_kind::int_lit;
-    lit->value = std::to_string(static_cast<std::uint64_t>(value.integer));
+    lit->value =
+        (session_.types_.entry(type).kind == type_kind::builtin_kind &&
+         (session_.types_.entry(type).name == "int128" ||
+          session_.types_.entry(type).name == "uint128"))
+            ? util::format_wide_decimal(
+                  static_cast<unsigned __int128>(value.integer))
+            : std::to_string(static_cast<std::uint64_t>(value.integer));
     break;
   case comptime::value_kind::floating:
     lit->lit_kind = token_kind::float_lit;

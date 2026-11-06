@@ -1,5 +1,6 @@
 #include "checker.h"
 #include "src/parser/ast_traversal.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::semantic::detail {
 
@@ -265,16 +266,16 @@ auto checker::record_declared_facts(
 }
 
 /// The builtin types a category names — the membership `std.traits`'s
-/// `is_integer`/`is_float`/... predicates test, minus the 128-bit types.
-/// Those have no representation on the bytecode VM, so they have none of
-/// the core-trait impls every other member has (`traits.scalar.cn`), and a
-/// category bound promises those traits.
+/// `is_integer`/`is_float`/... predicates test, minus `float128`. Neither
+/// backend represents it yet, so it has none of the core-trait impls every
+/// other member has (`traits.scalar.cn`), and a category bound promises
+/// those traits.
 auto checker::category_members(std::string_view category)
     -> std::optional<type_domain> {
-  static constexpr auto k_signed = std::array<std::string_view, 5>{
-      "int8", "int16", "int32", "int64", "isize"};
-  static constexpr auto k_unsigned = std::array<std::string_view, 6>{
-      "uint8", "uint16", "uint32", "uint64", "usize", "byte"};
+  static constexpr auto k_signed = std::array<std::string_view, 6>{
+      "int8", "int16", "int32", "int64", "int128", "isize"};
+  static constexpr auto k_unsigned = std::array<std::string_view, 7>{
+      "uint8", "uint16", "uint32", "uint64", "uint128", "usize", "byte"};
   static constexpr auto k_float =
       std::array<std::string_view, 2>{"float32", "float64"};
   auto out = type_domain{};
@@ -609,7 +610,7 @@ auto checker::check_literal_as_param(const ast::literal_expr &lit,
         if (negated && is_signed_integer_name(entry.name)) {
           *max_value += 1;
         }
-        const auto value = parse_integer_literal(lit.value);
+        const auto value = util::parse_integer_literal_wide(lit.value);
         fits = value.has_value() && *value <= *max_value;
       }
     }

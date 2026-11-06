@@ -1,0 +1,8 @@
+module codegen_stress.int128_divide_by_zero_panics
+
+# `int128` division by zero panics on both tiers.
+
+def main() -> int64:
+    let a: int128 = 18446744073709551616
+    var b: int128 = 0
+    return (a / b) as int64

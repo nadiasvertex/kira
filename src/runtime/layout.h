@@ -26,6 +26,10 @@ namespace cinder::runtime {
 //                            { slot_0; slot_1; ...; slot_{N-1}; } (N slots)
 //  - sum type:               { i64 tag; <payload slots...>; }     (1 + max
 //                            payload-slot-count across all variants)
+//
+//  In the uniform-slot shapes (sum payloads, closure environments,
+//  generator state blocks), an `int128`/`uint128` occupies two consecutive
+//  slots and every other value one (`slot_width`).
 //  - closure/`fn` value:     { u64 fn_slot; u64 env_ptr; u64 drop_glue; }
 //                             (3 slots; `drop_glue` 0 when none)
 //
@@ -71,8 +75,23 @@ namespace cinder::runtime {
                                              std::string_view name)
     -> std::optional<size_t>;
 
+/// The number of uniform 8-byte slots a value of `id` occupies: 2 for an
+/// `int128`/`uint128`, 1 for everything else.
+[[nodiscard]] auto slot_width(const semantic::type_table &types,
+                              semantic::type_id id) -> size_t;
+
+/// The slot index (counting the tag as slot 0) at which payload `index` of
+/// variant `name` within sum-kind `id` starts — `1 + index` unless an
+/// earlier payload is 128 bits wide. `nullopt` if `id` is not a sum type or
+/// has no such variant or payload.
+[[nodiscard]] auto sum_payload_slot(const semantic::type_table &types,
+                                    semantic::type_id id,
+                                    std::string_view name, size_t index)
+    -> std::optional<size_t>;
+
 /// The widest payload slot count across every variant of sum-kind `id`
-/// (0 if `id` is not a sum type, or every variant is a unit variant) —
+/// (0 if `id` is not a sum type, or every variant is a unit variant),
+/// counting a 128-bit payload as two slots —
 /// the payload-area size a `hir_variant_init`/allocation site must
 /// reserve regardless of which variant it happens to construct, since one
 /// sum-type value's heap block must be able to hold any of its variants.
@@ -106,9 +125,10 @@ struct layout_info {
 /// tuple, array, struct, sum, `fn`/closure, `ref`/`ptr`) is pointer-sized/
 /// aligned (8/8) here — this doesn't change what a value looks like on its
 /// own, only what it costs as one field/element of another aggregate.
-/// `nullopt` only for a genuinely unrepresentable scalar (`int128`/
-/// `uint128`/`float128` — mirrors `bytecode::numeric_kind_of`'s existing
-/// `nullopt` gap for the same three types) or an unresolvable type.
+/// `int128`/`uint128` are 16 bytes, 16-aligned. `nullopt` only for a
+/// genuinely unrepresentable scalar (`float128` — mirrors
+/// `bytecode::numeric_kind_of`'s `nullopt` gap for the same type) or an
+/// unresolvable type.
 [[nodiscard]] auto layout_of(const semantic::type_table &types,
                              semantic::type_id id)
     -> std::optional<layout_info>;

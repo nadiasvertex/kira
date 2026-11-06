@@ -45,6 +45,7 @@
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/scheduler.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::llvm_codegen {
 
@@ -68,38 +69,30 @@ using semantic::type_table;
 //  across an unrelated module boundary for one caller (see its top comment).
 // ==========================================================================
 
-[[nodiscard]] auto parse_uint_literal(std::string_view text)
-    -> std::optional<uint64_t> {
-  auto cleaned = std::string{};
-  cleaned.reserve(text.size());
-  for (const auto ch : text) {
-    if (ch != '_') {
-      cleaned.push_back(ch);
-    }
-  }
-  auto base = 10;
-  auto digits = std::string_view(cleaned);
-  if (digits.size() > 2 && digits[0] == '0') {
-    if (digits[1] == 'x' || digits[1] == 'X') {
-      base = 16;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'o' || digits[1] == 'O') {
-      base = 8;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'b' || digits[1] == 'B') {
-      base = 2;
-      digits.remove_prefix(2);
-    }
-  }
-  auto value = uint64_t{0};
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  const char *digits_end = digits.data() + digits.size();
-  const auto result = std::from_chars(digits.data(), digits_end, value, base);
-  if (result.ec != std::errc{} || result.ptr != digits_end) {
+/// An integer literal's value as an `APInt` of `bits` bits — the only way
+/// to build an `i128` constant wider than 64 bits. `nullopt` when the
+/// spelling does not parse.
+[[nodiscard]] auto parse_wide_literal(std::string_view text, unsigned bits)
+    -> std::optional<llvm::APInt> {
+  const auto wide = util::parse_integer_literal_wide(text);
+  if (!wide.has_value()) {
     return std::nullopt;
   }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  return value;
+  const std::array<uint64_t, 2> words = {static_cast<uint64_t>(*wide),
+                                         static_cast<uint64_t>(*wide >> 64)};
+  return llvm::APInt(128, words).zextOrTrunc(bits);
+}
+
+/// The literal's value when it fits in 64 bits — every integer kind but
+/// the two 128-bit ones, which use `util::parse_integer_literal_wide`
+/// directly.
+[[nodiscard]] auto parse_uint_literal(std::string_view text)
+    -> std::optional<uint64_t> {
+  const auto wide = util::parse_integer_literal_wide(text);
+  if (!wide.has_value() || *wide > ~uint64_t{0}) {
+    return std::nullopt;
+  }
+  return static_cast<uint64_t>(*wide);
 }
 
 [[nodiscard]] auto parse_float_literal(std::string_view text)
@@ -621,11 +614,11 @@ public:
     if (state_symbols.empty()) {
       state_block = llvm::ConstantPointerNull::get(ptr_ty);
     } else {
-      state_block = compile_heap_alloc(state_symbols.size());
+      state_block = compile_private_block_alloc(state_symbols.size());
       for (size_t i = 0; i < fn.params.size(); ++i) {
         const auto slot = lookup_local(state_symbols[i]);
         auto *value = builder_.CreateLoad(slot.type, slot.addr, "state.init");
-        builder_.CreateStore(value, slot_address(state_block, i));
+        builder_.CreateStore(value, private_entry_address(state_block, i));
       }
     }
 
@@ -729,7 +722,7 @@ public:
       }
       auto *alloca = create_local_alloca(*ty, "state");
       auto *loaded =
-          builder_.CreateLoad(*ty, slot_address(state_arg, i), "state");
+          builder_.CreateLoad(*ty, private_entry_address(state_arg, i), "state");
       builder_.CreateStore(loaded, alloca);
       bind_local(state_symbols[i], alloca);
     }
@@ -841,8 +834,8 @@ public:
         // value out of the environment once, into a local slot of this
         // frame.
         auto *alloca = create_local_alloca(capture_types[i], "capture");
-        auto *loaded = builder_.CreateLoad(capture_types[i],
-                                           slot_address(env_arg, i), "capture");
+        auto *loaded = builder_.CreateLoad(
+            capture_types[i], private_entry_address(env_arg, i), "capture");
         builder_.CreateStore(loaded, alloca);
         bind_local(plan[i].symbol, alloca);
         continue;
@@ -853,8 +846,9 @@ public:
       // write in the body go through to the original — which is exactly
       // what `&`/`&mut` promise, and why `local_slot` can't be narrowed to
       // an `AllocaInst`.
-      auto *addr = builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
-                                       slot_address(env_arg, i), "capture.ref");
+      auto *addr =
+          builder_.CreateLoad(llvm::PointerType::get(ctx_, 0),
+                              private_entry_address(env_arg, i), "capture.ref");
       locals_.emplace(plan[i].symbol,
                       local_slot{.addr = addr, .type = capture_types[i]});
     }
@@ -1020,7 +1014,7 @@ private:
   [[nodiscard]] auto element_stride(type_id element_type) const -> uint8_t {
     const auto layout = runtime::layout_of(types_, element_type);
     if (!layout.has_value() || layout->size_bytes == 0 ||
-        layout->size_bytes > 8) {
+        layout->size_bytes > 16) {
       return 8;
     }
     return static_cast<uint8_t>(layout->size_bytes);
@@ -1099,6 +1093,20 @@ private:
     auto *offset =
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), slot_index * 8);
     return builder_.CreateGEP(llvm::Type::getInt8Ty(ctx_), block_ptr, offset);
+  }
+
+  /// Blocks only this tier reads — closure environments and generator state
+  /// blocks — give every entry 16 bytes, so an `int128`/`uint128` local fits
+  /// in one without the block's layout depending on its entries' types.
+  /// Mirrors the bytecode compiler's register-image blocks.
+  static constexpr size_t k_private_entry_bytes = 16;
+  [[nodiscard]] auto compile_private_block_alloc(size_t entry_count)
+      -> llvm::Value * {
+    return compile_heap_alloc_bytes(entry_count * k_private_entry_bytes);
+  }
+  [[nodiscard]] auto private_entry_address(llvm::Value *block_ptr,
+                                           size_t index) -> llvm::Value * {
+    return byte_address(block_ptr, index * k_private_entry_bytes);
   }
 
   /// A bare top-level function referenced as a *value* (not called
@@ -1416,6 +1424,17 @@ private:
     case token_kind::kw_false:
       return llvm::ConstantInt::get(ty, 0);
     case token_kind::int_lit: {
+      if (bytecode::is_wide_integer(kind)) {
+        const auto wide = parse_wide_literal(value, 128);
+        if (!wide.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = span,
+              .message =
+                  std::format("could not parse integer literal `{}`", value)});
+        }
+        return llvm::ConstantInt::get(ty, *wide);
+      }
       const auto parsed = parse_uint_literal(value);
       if (!parsed.has_value()) {
         return std::unexpected(codegen_error{
@@ -1821,6 +1840,17 @@ private:
       if (!kind.has_value()) {
         return std::unexpected(kind.error());
       }
+      if (bytecode::is_wide_integer(*kind)) {
+        const auto wide = parse_wide_literal(lit.value, 128);
+        if (!wide.has_value()) {
+          return std::unexpected(codegen_error{
+              .kind = codegen_error_kind::unsupported_construct,
+              .span = lit.span,
+              .message = std::format("could not parse integer literal `{}`",
+                                     lit.value)});
+        }
+        return llvm::ConstantInt::get(llvm_type_for(ctx_, *kind), -*wide);
+      }
       const auto magnitude = parse_uint_literal(lit.value);
       if (!magnitude.has_value()) {
         return std::unexpected(codegen_error{
@@ -2197,7 +2227,7 @@ private:
     if (plan.empty()) {
       env_ptr = llvm::ConstantPointerNull::get(ptr_ty);
     } else {
-      auto *env_block = compile_heap_alloc(plan.size());
+      auto *env_block = compile_private_block_alloc(plan.size());
       capture_types.reserve(plan.size());
       for (size_t i = 0; i < plan.size(); ++i) {
         const auto slot = lookup_local(plan[i].symbol);
@@ -2213,10 +2243,10 @@ private:
         // is whether the environment slot holds the value or its address.
         capture_types.push_back(slot.type);
         if (ast::is_reference_capture(plan[i].mode)) {
-          builder_.CreateStore(slot.addr, slot_address(env_block, i));
+          builder_.CreateStore(slot.addr, private_entry_address(env_block, i));
         } else {
           auto *value = builder_.CreateLoad(slot.type, slot.addr, "capture");
-          builder_.CreateStore(value, slot_address(env_block, i));
+          builder_.CreateStore(value, private_entry_address(env_block, i));
         }
       }
       env_ptr = env_block;
@@ -3117,7 +3147,9 @@ private:
   /// Matches `bytecode_compiler::compile_generator_next` exactly, which
   /// hardcodes the identical convention for the identical reason.
   [[nodiscard]] auto build_option_some(llvm::Value *payload) -> llvm::Value * {
-    auto *block = compile_heap_alloc(2);
+    // A 128-bit payload takes two slots (`runtime::slot_width`).
+    const auto wide = payload->getType()->isIntegerTy(128);
+    auto *block = compile_heap_alloc(wide ? 3 : 2);
     builder_.CreateStore(
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 0),
         slot_address(block, size_t{0}));
@@ -3125,8 +3157,8 @@ private:
     return block;
   }
 
-  [[nodiscard]] auto build_option_none() -> llvm::Value * {
-    auto *block = compile_heap_alloc(2);
+  [[nodiscard]] auto build_option_none(bool wide) -> llvm::Value * {
+    auto *block = compile_heap_alloc(wide ? 3 : 2);
     builder_.CreateStore(
         llvm::ConstantInt::get(llvm::Type::getInt64Ty(ctx_), 1),
         slot_address(block, size_t{0}));
@@ -3143,7 +3175,7 @@ private:
       const auto slot = lookup_local(generator_state_layout_[i]);
       if (slot.valid()) {
         auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-        builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+        builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
       }
     }
     builder_.CreateStore(
@@ -3244,13 +3276,19 @@ private:
     builder_.CreateCondBr(yielded, some_bb, none_bb);
 
     builder_.SetInsertPoint(some_bb);
+    // `node.type` is `option[T]`; a 128-bit `T` is read whole.
+    const auto &option_entry = types_.entry(strip_refs(types_, node.type));
+    const auto wide_item =
+        !option_entry.args.empty() &&
+        runtime::slot_width(types_, option_entry.args[0]) == 2;
     auto *payload = builder_.CreateLoad(
-        i64, slot_address(gen, runtime::coroutine::k_value_slot), "gen.value");
+        wide_item ? llvm::Type::getInt128Ty(ctx_) : i64,
+        slot_address(gen, runtime::coroutine::k_value_slot), "gen.value");
     builder_.CreateStore(build_option_some(payload), result_alloca);
     builder_.CreateBr(merge_bb);
 
     builder_.SetInsertPoint(none_bb);
-    builder_.CreateStore(build_option_none(), result_alloca);
+    builder_.CreateStore(build_option_none(wide_item), result_alloca);
     builder_.CreateBr(merge_bb);
 
     builder_.SetInsertPoint(merge_bb);
@@ -3381,7 +3419,10 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      builder_.CreateStore(*value, slot_address(block, 1 + i));
+      const auto slot = runtime::sum_payload_slot(types_, init.type,
+                                                  init.variant_name, i)
+                            .value_or(1 + i);
+      builder_.CreateStore(*value, slot_address(block, slot));
     }
     return block;
   }
@@ -3413,7 +3454,11 @@ private:
     if (!elem_ty.has_value()) {
       return std::unexpected(elem_ty.error());
     }
-    return builder_.CreateLoad(*elem_ty, slot_address(*object, 1 + node.index));
+    const auto payload_slot =
+        runtime::sum_payload_slot(types_, node.object->type, node.variant_name,
+                                  node.index)
+            .value_or(1 + node.index);
+    return builder_.CreateLoad(*elem_ty, slot_address(*object, payload_slot));
   }
 
   // ------------------------------------------------------------------
@@ -3761,8 +3806,12 @@ private:
         if (!slot_ty.has_value()) {
           return std::unexpected(slot_ty.error());
         }
+        const auto payload_slot =
+            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name,
+                                      i)
+                .value_or(1 + i);
         auto *slot_val =
-            builder_.CreateLoad(*slot_ty, slot_address(value, 1 + i));
+            builder_.CreateLoad(*slot_ty, slot_address(value, payload_slot));
         auto sub = compile_pattern_test(
             arg, slot_val, std::optional<type_id>(arg.subject_type));
         if (!sub.has_value()) {
@@ -4104,7 +4153,7 @@ private:
         if (slot.valid()) {
           auto *loaded =
               builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-          builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+          builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
         }
       }
       const auto ordinal = generator_next_yield_ordinal_++;
@@ -4208,7 +4257,7 @@ private:
       const auto slot = lookup_local(generator_state_layout_[i]);
       if (slot.valid()) {
         auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-        builder_.CreateStore(loaded, slot_address(generator_state_arg_, i));
+        builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
       }
     }
     builder_.CreateStore(
@@ -4873,6 +4922,25 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
   // out of stack under that bound deterministic, matching the bytecode tier,
   // whose `uninit` storage never touches the native stack at all. Frames
   // smaller than a page get no probes, so ordinary functions pay nothing.
+  // Heap blocks are only 8-byte aligned (`runtime/allocator.h`), and a
+  // uniform-slot block puts a 128-bit value at any multiple of 8. LLVM's
+  // default alignment for an `i128` access is 16, which would promise more
+  // than the memory has, so every `i128` load and store is capped at 8.
+  for (auto &fn : llvm_module) {
+    for (auto &block : fn) {
+      for (auto &inst : block) {
+        if (auto *load = llvm::dyn_cast<llvm::LoadInst>(&inst);
+            load != nullptr && load->getType()->isIntegerTy(128)) {
+          load->setAlignment(std::min(load->getAlign(), llvm::Align(8)));
+        } else if (auto *store = llvm::dyn_cast<llvm::StoreInst>(&inst);
+                   store != nullptr &&
+                   store->getValueOperand()->getType()->isIntegerTy(128)) {
+          store->setAlignment(std::min(store->getAlign(), llvm::Align(8)));
+        }
+      }
+    }
+  }
+
   for (auto &fn : llvm_module) {
     if (!fn.isDeclaration()) {
       fn.addFnAttr("probe-stack", "inline-asm");

@@ -11,16 +11,16 @@ so none of them can recurse: the operators on a builtin number are primitive
 (`checker::require_operand_trait` and `wire_ord_dispatch` dispatch only for
 types without one), and interpolating a builtin formats it directly.
 
-The 128-bit types are left out for the reason `traits.hash.cn` gives: the
-bytecode VM has no representation for them, and a reachable module compiles in
-full. `str` is left out because `std.string` already gives it `eq` and `cmp`
+`float128` is left out: neither backend has a representation for it yet, and a
+reachable module compiles in full, so an impl naming it would fail every
+program. `str` is left out because `std.string` already gives it `eq` and `cmp`
 with its own signatures; the checker treats it as satisfying those traits.
 
 Regenerate with:  python3 tools/std/gen_scalar_impls.py > src/std/traits.scalar.cn
 """
 
-SIGNED = ["int8", "int16", "int32", "int64", "isize"]
-UNSIGNED = ["uint8", "uint16", "uint32", "uint64", "usize", "byte"]
+SIGNED = ["int8", "int16", "int32", "int64", "int128", "isize"]
+UNSIGNED = ["uint8", "uint16", "uint32", "uint64", "uint128", "usize", "byte"]
 FLOATS = ["float32", "float64"]
 NUMERIC = SIGNED + UNSIGNED + FLOATS
 ALL = ["bool", "char"] + NUMERIC

@@ -501,12 +501,12 @@ private:
 [[nodiscard]] auto builtin_generic_arity(std::string_view name)
     -> std::optional<std::pair<size_t, size_t>>;
 
-/// Inclusive unsigned upper bound of a builtin integer type when it fits in
-/// 64 bits; `nullopt` for non-integers and for the 128-bit types.
+/// Inclusive unsigned upper bound of a builtin integer type, up to
+/// `uint128`'s; `nullopt` for non-integers.
 [[nodiscard]] auto integer_max_value(std::string_view name)
-    -> std::optional<uint64_t>;
+    -> std::optional<unsigned __int128>;
 
-/// True for the signed builtin integer type names (`int8`..`int64`,
+/// True for the signed builtin integer type names (`int8`..`int128`,
 /// `isize`); false for unsigned integer names and non-integer names.
 [[nodiscard]] auto is_signed_integer_name(std::string_view name) -> bool;
 

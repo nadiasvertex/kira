@@ -30,6 +30,7 @@
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/scheduler.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::bytecode_compiler {
 
@@ -63,38 +64,16 @@ inline constexpr size_t k_max_virtual_registers =
 using cinder::decode_char_literal;
 using cinder::decode_string_literal;
 
+/// The literal's value when it fits in 64 bits — every integer kind but
+/// the two 128-bit ones, which use `util::parse_integer_literal_wide`
+/// directly.
 [[nodiscard]] auto parse_uint_literal(std::string_view text)
     -> std::optional<uint64_t> {
-  auto cleaned = std::string{};
-  cleaned.reserve(text.size());
-  for (const auto ch : text) {
-    if (ch != '_') {
-      cleaned.push_back(ch);
-    }
-  }
-  auto base = 10;
-  auto digits = std::string_view(cleaned);
-  if (digits.size() > 2 && digits[0] == '0') {
-    if (digits[1] == 'x' || digits[1] == 'X') {
-      base = 16;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'o' || digits[1] == 'O') {
-      base = 8;
-      digits.remove_prefix(2);
-    } else if (digits[1] == 'b' || digits[1] == 'B') {
-      base = 2;
-      digits.remove_prefix(2);
-    }
-  }
-  auto value = uint64_t{0};
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  const char *digits_end = digits.data() + digits.size();
-  const auto result = std::from_chars(digits.data(), digits_end, value, base);
-  if (result.ec != std::errc{} || result.ptr != digits_end) {
+  const auto wide = util::parse_integer_literal_wide(text);
+  if (!wide.has_value() || *wide > ~uint64_t{0}) {
     return std::nullopt;
   }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-  return value;
+  return static_cast<uint64_t>(*wide);
 }
 
 [[nodiscard]] auto parse_float_literal(std::string_view text)
@@ -140,6 +119,19 @@ using cinder::decode_string_literal;
   case token_kind::kw_false:
     return slot_value{uint64_t{0}};
   case token_kind::int_lit: {
+    if (bytecode::is_wide_integer(kind)) {
+      // The checker already confirmed the value fits; a negative `int128`
+      // literal is this magnitude with `op_neg` applied afterward.
+      const auto wide = util::parse_integer_literal_wide(value);
+      if (!wide.has_value()) {
+        return std::unexpected(compile_error{
+            .kind = compile_error_kind::unsupported_construct,
+            .span = span,
+            .message =
+                std::format("could not parse integer literal `{}`", value)});
+      }
+      return slot_value{*wide};
+    }
     const auto parsed = parse_uint_literal(value);
     if (!parsed.has_value()) {
       return std::unexpected(compile_error{
@@ -438,12 +430,12 @@ public:
       emit_register(*state_ptr_reg);
       writer_.emit_u32(null_const);
     } else {
-      emit_alloc_slots(*state_ptr_reg,
-                       static_cast<uint16_t>(state_symbols.size()));
+      emit_alloc_register_images(*state_ptr_reg, state_symbols.size());
       for (size_t i = 0; i < fn.params.size(); ++i) {
         const auto src = lookup_local(state_symbols[i]);
         if (src.has_value()) {
-          emit_store_slot(*state_ptr_reg, static_cast<uint16_t>(i), *src);
+          emit_store_register_image(*state_ptr_reg, static_cast<uint16_t>(i),
+                                    *src);
         }
       }
     }
@@ -511,7 +503,7 @@ public:
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
-      emit_load_slot(*reg, *state_reg, static_cast<uint16_t>(i));
+      emit_load_register_image(*reg, *state_reg, static_cast<uint16_t>(i));
       locals_.emplace(state_symbols[i], *reg);
     }
 
@@ -575,8 +567,8 @@ public:
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
       const auto local_reg = lookup_local(generator_state_layout_[i]);
       if (local_reg.has_value()) {
-        emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
-                        *local_reg);
+        emit_store_register_image(generator_state_reg_,
+                                  static_cast<uint16_t>(i), *local_reg);
       }
     }
 
@@ -629,7 +621,7 @@ public:
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
-      emit_load_slot(*reg, *env_reg, static_cast<uint16_t>(i));
+      emit_load_register_image(*reg, *env_reg, static_cast<uint16_t>(i));
       locals_.emplace(plan[i].symbol, *reg);
       if (ast::is_reference_capture(plan[i].mode)) {
         // The slot held the enclosing frame's cell pointer, so `reg` now
@@ -989,8 +981,8 @@ private:
     if (!cell.has_value()) {
       return std::unexpected(cell.error());
     }
-    emit_alloc_slots(*cell, 1);
-    emit_store_slot(*cell, 0, value);
+    emit_alloc_register_images(*cell, 1);
+    emit_store_register_image(*cell, 0, value);
     // The cell pointer outlives its last textual mention (a closure built
     // later still reads it), so it must not be recycled by the allocator.
     address_taken_.push_back(*cell);
@@ -1003,7 +995,7 @@ private:
   auto read_local_into(hir::symbol_id symbol, virtual_reg src, virtual_reg dst)
       -> void {
     if (is_cell_local(symbol)) {
-      emit_load_slot(dst, src, 0);
+      emit_load_register_image(dst, src, 0);
       return;
     }
     if (src != dst) {
@@ -1081,7 +1073,7 @@ private:
   [[nodiscard]] auto element_stride(type_id element_type) const -> uint8_t {
     const auto layout = runtime::layout_of(types_, element_type);
     if (!layout.has_value() || layout->size_bytes == 0 ||
-        layout->size_bytes > 8) {
+        layout->size_bytes > 16) {
       return 8;
     }
     return static_cast<uint8_t>(layout->size_bytes);
@@ -1134,6 +1126,42 @@ private:
   auto emit_store_slot(virtual_reg ptr, uint16_t slot_index, virtual_reg src)
       -> void {
     emit_store_field(ptr, static_cast<uint16_t>(slot_index * 8), src, 8);
+  }
+
+  /// `emit_load_slot` for a value of type `type`: an `int128`/`uint128`
+  /// occupies two uniform slots starting at `slot_index` and is read whole
+  /// (`runtime::slot_width`).
+  auto emit_load_typed_slot(virtual_reg dst, virtual_reg ptr,
+                            uint16_t slot_index, type_id type) -> void {
+    emit_load_field(dst, ptr, static_cast<uint16_t>(slot_index * 8),
+                    runtime::slot_width(types_, type) == 2 ? 16 : 8);
+  }
+
+  /// The store counterpart of `emit_load_typed_slot`.
+  auto emit_store_typed_slot(virtual_reg ptr, uint16_t slot_index,
+                             virtual_reg src, type_id type) -> void {
+    emit_store_field(ptr, static_cast<uint16_t>(slot_index * 8), src,
+                     runtime::slot_width(types_, type) == 2 ? 16 : 8);
+  }
+
+  /// Blocks private to this tier whose entries are whole registers —
+  /// closure environments, generator state blocks, and cells. Nothing
+  /// outside the bytecode compiler reads them, so each entry is simply a
+  /// copy of one 16-byte register (`slot_value`), which holds a value of
+  /// any type without the compiler having to know which.
+  auto emit_alloc_register_images(virtual_reg dst, uint64_t count) -> void {
+    emit_alloc(dst, count * sizeof(slot_value));
+  }
+  auto emit_load_register_image(virtual_reg dst, virtual_reg ptr,
+                                uint16_t index) -> void {
+    emit_load_field(dst, ptr,
+                    static_cast<uint16_t>(index * sizeof(slot_value)),
+                    sizeof(slot_value));
+  }
+  auto emit_store_register_image(virtual_reg ptr, uint16_t index,
+                                 virtual_reg src) -> void {
+    emit_store_field(ptr, static_cast<uint16_t>(index * sizeof(slot_value)),
+                     src, sizeof(slot_value));
   }
 
   /// reg[dst] = globals[index] — see `bytecode_module::global_count`.
@@ -1647,6 +1675,13 @@ private:
         return std::unexpected(magnitude.error());
       }
       const auto bits = bytecode::bit_width(*kind);
+      if (bytecode::is_wide_integer(*kind)) {
+        const auto index = writer_.add_constant(slot_value{~magnitude->w + 1});
+        emit_op(opcode::op_load_const);
+        emit_register(dst);
+        writer_.emit_u32(index);
+        return {};
+      }
       uint64_t negated = ~magnitude->u + 1;
       if (bits < 64) {
         // Every other slot_value in this VM stores a signed integer
@@ -1914,14 +1949,14 @@ private:
         return std::unexpected(reg.error());
       }
       env_reg = *reg;
-      emit_alloc_slots(env_reg, 1);
+      emit_alloc_register_images(env_reg, 1);
     } else {
       const auto reg = alloc_register(lambda.span);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
       env_reg = *reg;
-      emit_alloc_slots(env_reg, static_cast<uint16_t>(plan.size()));
+      emit_alloc_register_images(env_reg, plan.size());
       for (size_t i = 0; i < plan.size(); ++i) {
         const auto src = lookup_local(plan[i].symbol);
         if (!src.has_value()) {
@@ -1952,10 +1987,10 @@ private:
             return std::unexpected(value.error());
           }
           read_local_into(plan[i].symbol, *src, *value);
-          emit_store_slot(env_reg, static_cast<uint16_t>(i), *value);
+          emit_store_register_image(env_reg, static_cast<uint16_t>(i), *value);
           continue;
         }
-        emit_store_slot(env_reg, static_cast<uint16_t>(i), *src);
+        emit_store_register_image(env_reg, static_cast<uint16_t>(i), *src);
       }
     }
 
@@ -2474,8 +2509,9 @@ private:
           return std::unexpected(blocked.error());
         }
       }
-      emit_load_slot(dst, *object_reg,
-                     static_cast<uint16_t>(runtime::coroutine::k_value_slot));
+      emit_load_typed_slot(
+          dst, *object_reg,
+          static_cast<uint16_t>(runtime::coroutine::k_value_slot), node.type);
       return {};
     }
     auto regs = std::array<virtual_reg, 5>{};
@@ -2503,7 +2539,11 @@ private:
     emit_register(suspended_reg);
     writer_.emit_numeric_kind(numeric_kind::i64);
 
-    emit_alloc_slots(dst, 2);
+    // `dst` is an `option[T]`; a 128-bit `T` takes two payload slots.
+    const auto item_type = types_.entry(strip_refs(node.type)).args.empty()
+                               ? semantic::k_unknown_type
+                               : types_.entry(strip_refs(node.type)).args[0];
+    emit_alloc_slots(dst, 1 + runtime::sum_max_payload_slots(types_, node.type));
     emit_op(opcode::op_jump_if_false);
     emit_register(is_suspended_reg);
     const auto none_placeholder = writer_.emit_jump_placeholder();
@@ -2513,9 +2553,10 @@ private:
     emit_register(tag_reg);
     writer_.emit_u32(some_const);
     emit_store_slot(dst, 0, tag_reg);
-    emit_load_slot(payload_reg, *object_reg,
-                   static_cast<uint16_t>(runtime::coroutine::k_value_slot));
-    emit_store_slot(dst, 1, payload_reg);
+    emit_load_typed_slot(
+        payload_reg, *object_reg,
+        static_cast<uint16_t>(runtime::coroutine::k_value_slot), item_type);
+    emit_store_typed_slot(dst, 1, payload_reg, item_type);
     emit_op(opcode::op_jump);
     const auto end_placeholder = writer_.emit_jump_placeholder();
 
@@ -3137,7 +3178,11 @@ private:
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      emit_store_slot(dst, static_cast<uint16_t>(1 + i), *value_reg);
+      const auto slot = runtime::sum_payload_slot(types_, init.type,
+                                                  init.variant_name, i)
+                            .value_or(1 + i);
+      emit_store_typed_slot(dst, static_cast<uint16_t>(slot), *value_reg,
+                            init.args[i]->type);
     }
     return {};
   }
@@ -3165,7 +3210,12 @@ private:
     if (!object_reg.has_value()) {
       return std::unexpected(object_reg.error());
     }
-    emit_load_slot(dst, *object_reg, static_cast<uint16_t>(1 + node.index));
+    const auto payload_slot =
+        runtime::sum_payload_slot(types_, node.object->type, node.variant_name,
+                                  node.index)
+            .value_or(1 + node.index);
+    emit_load_typed_slot(dst, *object_reg,
+                         static_cast<uint16_t>(payload_slot), node.type);
     return {};
   }
 
@@ -3618,11 +3668,22 @@ private:
         if (!slot_reg.has_value()) {
           return std::unexpected(slot_reg.error());
         }
-        emit_load_slot(*slot_reg, value_reg, static_cast<uint16_t>(1 + i));
         const auto payload_type =
             arg.subject_type == semantic::k_unknown_type
                 ? std::nullopt
                 : std::optional<type_id>(arg.subject_type);
+        const auto payload_slot =
+            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name,
+                                      i)
+                .value_or(1 + i);
+        if (payload_type.has_value()) {
+          emit_load_typed_slot(*slot_reg, value_reg,
+                               static_cast<uint16_t>(payload_slot),
+                               *payload_type);
+        } else {
+          emit_load_slot(*slot_reg, value_reg,
+                         static_cast<uint16_t>(payload_slot));
+        }
         auto sub = compile_pattern_test(arg, *slot_reg, payload_type);
         if (!sub.has_value()) {
           return std::unexpected(sub.error());
@@ -3875,8 +3936,8 @@ private:
       for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
         const auto local_reg = lookup_local(generator_state_layout_[i]);
         if (local_reg.has_value()) {
-          emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
-                          *local_reg);
+          emit_store_register_image(generator_state_reg_,
+                                    static_cast<uint16_t>(i), *local_reg);
         }
       }
       const auto ordinal = generator_next_yield_ordinal_++;
@@ -3967,8 +4028,8 @@ private:
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
       const auto local_reg = lookup_local(generator_state_layout_[i]);
       if (local_reg.has_value()) {
-        emit_store_slot(generator_state_reg_, static_cast<uint16_t>(i),
-                        *local_reg);
+        emit_store_register_image(generator_state_reg_,
+                                  static_cast<uint16_t>(i), *local_reg);
       }
     }
     emit_op(opcode::op_await_pending);
@@ -4190,7 +4251,7 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      emit_store_slot(*reg, 0, *value);
+      emit_store_register_image(*reg, 0, *value);
       return {};
     }
     const auto op = compound_assign_opcode_for(assign.op);
@@ -4216,13 +4277,13 @@ private:
       if (!current.has_value()) {
         return std::unexpected(current.error());
       }
-      emit_load_slot(*current, *reg, 0);
+      emit_load_register_image(*current, *reg, 0);
       emit_op(*op);
       emit_register(*current);
       emit_register(*current);
       emit_register(*rhs);
       writer_.emit_numeric_kind(*kind);
-      emit_store_slot(*reg, 0, *current);
+      emit_store_register_image(*reg, 0, *current);
       return {};
     }
     emit_op(*op);

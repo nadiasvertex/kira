@@ -1,0 +1,9 @@
+module codegen_stress.uint128_mul_overflow_panics
+
+# `uint128` multiplication past its maximum panics on both tiers. The LLVM
+# tier checks it with a 128-bit multiply-with-overflow intrinsic.
+
+def main() -> int64:
+    var x: uint128 = 18446744073709551616
+    x = x * x
+    return x as int64

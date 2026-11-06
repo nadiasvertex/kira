@@ -1,5 +1,6 @@
 #include "checker.h"
 #include "src/parser/ast_traversal.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::semantic::detail {
 
@@ -28,7 +29,7 @@ auto checker::check_integer_fit(const ast::literal_expr &lit, type_id target,
   if (is_negative_min) {
     *max_value += 1;
   }
-  const auto value = parse_integer_literal(lit.value);
+  const auto value = util::parse_integer_literal_wide(lit.value);
   if (value.has_value() && *value <= *max_value) {
     return;
   }
@@ -40,10 +41,11 @@ auto checker::check_integer_fit(const ast::literal_expr &lit, type_id target,
   diag.with_label(lit.span, std::format("too large for `{}`", entry.name));
   if (is_negative_min) {
     diag.with_note(std::format("the most negative `{}` value is -{}",
-                               entry.name, *max_value));
+                               entry.name,
+                               util::format_wide_decimal(*max_value)));
   } else {
-    diag.with_note(
-        std::format("the largest `{}` value is {}", entry.name, *max_value));
+    diag.with_note(std::format("the largest `{}` value is {}", entry.name,
+                               util::format_wide_decimal(*max_value)));
   }
   diag.with_help("Use a wider integer type, or reduce the value.");
   emit_diag(diag);

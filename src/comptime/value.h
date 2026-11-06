@@ -60,13 +60,13 @@ enum class value_kind : uint8_t {
 };
 
 /// A compile-time value: what compile-time code the VM ran returned, or a
-/// binding the checker holds for it. Integers are held as a signed 64-bit
+/// binding the checker holds for it. Integers are held as a signed 128-bit
 /// value regardless of their declared Cinder width; the checker knows the
-/// type.
+/// type. A `uint128` above `int128`'s maximum travels as its bit pattern.
 struct value {
   value_kind kind = value_kind::unit;
   bool boolean = false;
-  int64_t integer = 0;
+  __int128 integer = 0;
   double floating = 0.0;
   std::string string;
 
@@ -109,7 +109,7 @@ struct value {
   [[nodiscard]] static auto make_bool(bool v) -> value {
     return value{.kind = value_kind::boolean, .boolean = v};
   }
-  [[nodiscard]] static auto make_int(int64_t v) -> value {
+  [[nodiscard]] static auto make_int(__int128 v) -> value {
     return value{.kind = value_kind::integer, .integer = v};
   }
   [[nodiscard]] static auto make_float(double v) -> value {

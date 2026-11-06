@@ -1,0 +1,71 @@
+module codegen_stress.int128_layout
+
+# `int128`/`uint128` values stored in every kind of heap block both tiers
+# share or keep privately: a struct field between narrower fields (16-byte
+# size and alignment), a tuple element, an array element, a list element, an
+# `option` payload, a user sum payload placed before a second payload (so the
+# second one starts two slots later), a closure capture, and a generator's
+# yielded value and saved state. A tier that keeps only 8 bytes anywhere
+# loses the high half, and the checksum changes.
+
+type mixed = { tag: int8, wide: int128, after: int32 }
+
+type pair =
+    | @two(int128, int32)
+    | @none_here
+
+def term(v: int128) -> int64:
+    return ((v as uint128) % 1000003) as int64
+
+def second(p: pair) -> int32:
+    match p:
+        @two(w, n) => n
+        @none_here => 0
+
+def first(p: pair) -> int128:
+    match p:
+        @two(w, n) => w
+        @none_here => 0
+
+def unwrap(o: option[uint128]) -> uint128:
+    match o:
+        @some(v) => v
+        @none => 0
+
+generator def wides(start: int128) -> some iterator[int128]:
+    var at = start
+    yield at
+    at = at * 3
+    yield at
+    yield at + start
+
+def take(g: &mut generator[int128]) -> int128:
+    match g.next():
+        @some(v) => return v
+        @none => return -1
+
+def main() -> int64:
+    let big: int128 = 92233720368547758070000
+    let m = mixed { tag: 7, wide: -big, after: 11 }
+    let t = (3 as int8, big * 2, 5 as int32)
+    let xs: array[int128, 3] = [big, -big, big + 1]
+    let ys: list[uint128] = [1, 340282366920938463463374607431768211455, 3]
+    let o: option[uint128] = @some(ys[1] - 5)
+    let p = @two(big * 5, 42)
+    let f = (k: int128) => k + big
+    var g = wides(big)
+    var total: int64 = 0
+    total = total + 1 * term(m.wide) + (m.tag as int64) + (m.after as int64)
+    total = total + 2 * term(t.1) + (t.0 as int64) + (t.2 as int64)
+    total = total + 3 * term(xs[0]) + 4 * term(xs[1]) + 5 * term(xs[2])
+    total = total + 6 * ((ys[1] % 1000003) as int64) + (ys[2] as int64)
+    total = total + 7 * ((unwrap(o) % 1000003) as int64)
+    total = total + 8 * term(first(p)) + (second(p) as int64)
+    total = total + 9 * term(f(big))
+    total = total + 10 * term(take(&mut g))
+    total = total + 11 * term(take(&mut g))
+    total = total + 12 * term(take(&mut g))
+    total = total + 13 * term(take(&mut g))
+    return total
+
+# expect: 31573315

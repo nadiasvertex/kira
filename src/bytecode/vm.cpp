@@ -589,8 +589,244 @@ constexpr size_t k_max_call_depth = 4096;
   return store_bool(load_raw(lhs, k) >= load_raw(rhs, k));
 }
 
+// ---------------------------------------------------------------------------
+// 128-bit integers (`int128`/`uint128`). These use the whole 16-byte
+// register (`slot_value::w`) and Clang's `__int128`, so unlike the narrower
+// kinds above there is no masking or range re-check: the host arithmetic is
+// already exactly 128 bits wide. Same panics, same saturation, same shift
+// rules as every other integer kind.
+// ---------------------------------------------------------------------------
+
+using wide_signed = __int128;
+using wide_unsigned = unsigned __int128;
+
+constexpr auto k_wide_unsigned_max = ~wide_unsigned{0};
+constexpr auto k_wide_signed_max =
+    static_cast<wide_signed>(k_wide_unsigned_max >> 1);
+constexpr auto k_wide_signed_min = -k_wide_signed_max - 1;
+
+[[nodiscard]] auto load_wide_signed(slot_value v) -> wide_signed {
+  return static_cast<wide_signed>(v.w);
+}
+
+template <typename T> [[nodiscard]] auto wide_store(T v) -> slot_value {
+  return slot_value{static_cast<wide_unsigned>(v)};
+}
+
+template <typename T>
+[[nodiscard]] auto wide_checked(bool overflow, T result) -> slot_value {
+  if (overflow) {
+    throw panic_error(panic_reason::integer_overflow);
+  }
+  return wide_store(result);
+}
+
+[[nodiscard]] auto exec_wide_signed_binary(opcode op, wide_signed a,
+                                           wide_signed b) -> slot_value {
+  wide_signed r = 0;
+  switch (op) {
+  case opcode::op_add:
+    return wide_checked(__builtin_add_overflow(a, b, &r), r);
+  case opcode::op_sub:
+    return wide_checked(__builtin_sub_overflow(a, b, &r), r);
+  case opcode::op_mul:
+    return wide_checked(__builtin_mul_overflow(a, b, &r), r);
+  case opcode::op_div:
+  case opcode::op_mod:
+    if (b == 0) {
+      throw panic_error(panic_reason::integer_divide_by_zero);
+    }
+    if (a == k_wide_signed_min && b == -1) {
+      throw panic_error(panic_reason::integer_overflow);
+    }
+    return wide_store(op == opcode::op_div ? a / b : a % b);
+  case opcode::op_add_sat:
+    if (__builtin_add_overflow(a, b, &r)) {
+      return wide_store(a >= 0 ? k_wide_signed_max : k_wide_signed_min);
+    }
+    return wide_store(r);
+  case opcode::op_sub_sat:
+    if (__builtin_sub_overflow(a, b, &r)) {
+      return wide_store(a >= 0 ? k_wide_signed_max : k_wide_signed_min);
+    }
+    return wide_store(r);
+  case opcode::op_mul_sat:
+    if (__builtin_mul_overflow(a, b, &r)) {
+      return wide_store((a >= 0) == (b >= 0) ? k_wide_signed_max
+                                             : k_wide_signed_min);
+    }
+    return wide_store(r);
+  case opcode::op_shr: {
+    const auto shift = static_cast<wide_unsigned>(b);
+    if (shift >= 128) {
+      throw panic_error(panic_reason::integer_overflow);
+    }
+    return wide_store(a >> static_cast<int>(shift));
+  }
+  case opcode::op_lt:
+    return store_bool(a < b);
+  case opcode::op_le:
+    return store_bool(a <= b);
+  case opcode::op_gt:
+    return store_bool(a > b);
+  case opcode::op_ge:
+    return store_bool(a >= b);
+  default:
+    std::unreachable();
+  }
+}
+
+[[nodiscard]] auto exec_wide_unsigned_binary(opcode op, wide_unsigned a,
+                                             wide_unsigned b) -> slot_value {
+  wide_unsigned r = 0;
+  switch (op) {
+  case opcode::op_add:
+    return wide_checked(__builtin_add_overflow(a, b, &r), r);
+  case opcode::op_sub:
+    return wide_checked(__builtin_sub_overflow(a, b, &r), r);
+  case opcode::op_mul:
+    return wide_checked(__builtin_mul_overflow(a, b, &r), r);
+  case opcode::op_div:
+  case opcode::op_mod:
+    if (b == 0) {
+      throw panic_error(panic_reason::integer_divide_by_zero);
+    }
+    return wide_store(op == opcode::op_div ? a / b : a % b);
+  case opcode::op_add_sat:
+    return wide_store(__builtin_add_overflow(a, b, &r) ? k_wide_unsigned_max
+                                                       : r);
+  case opcode::op_sub_sat:
+    return wide_store(__builtin_sub_overflow(a, b, &r) ? wide_unsigned{0} : r);
+  case opcode::op_mul_sat:
+    return wide_store(__builtin_mul_overflow(a, b, &r) ? k_wide_unsigned_max
+                                                       : r);
+  case opcode::op_shr:
+    if (b >= 128) {
+      throw panic_error(panic_reason::integer_overflow);
+    }
+    return wide_store(a >> static_cast<int>(b));
+  case opcode::op_lt:
+    return store_bool(a < b);
+  case opcode::op_le:
+    return store_bool(a <= b);
+  case opcode::op_gt:
+    return store_bool(a > b);
+  case opcode::op_ge:
+    return store_bool(a >= b);
+  default:
+    std::unreachable();
+  }
+}
+
+/// Every binary opcode on an `int128`/`uint128` pair. The operations whose
+/// result is the same bit pattern either way (wrapping arithmetic, bitwise
+/// operations, `<<`, equality) are computed once on the unsigned bits.
+[[nodiscard]] auto exec_wide_binary(opcode op, numeric_kind k, slot_value lhs,
+                                    slot_value rhs) -> slot_value {
+  const auto a = lhs.w;
+  const auto b = rhs.w;
+  switch (op) {
+  case opcode::op_add_wrap:
+    return wide_store(a + b);
+  case opcode::op_sub_wrap:
+    return wide_store(a - b);
+  case opcode::op_mul_wrap:
+    return wide_store(a * b);
+  case opcode::op_bitand:
+    return wide_store(a & b);
+  case opcode::op_bitor:
+    return wide_store(a | b);
+  case opcode::op_bitxor:
+    return wide_store(a ^ b);
+  case opcode::op_shl: {
+    // A negative signed shift amount reads as a huge unsigned one and
+    // panics, the same as the narrower kinds.
+    if (b >= 128) {
+      throw panic_error(panic_reason::integer_overflow);
+    }
+    return wide_store(a << static_cast<int>(b));
+  }
+  case opcode::op_eq:
+    return store_bool(a == b);
+  case opcode::op_ne:
+    return store_bool(a != b);
+  default:
+    break;
+  }
+  if (k == numeric_kind::i128) {
+    return exec_wide_signed_binary(op, load_wide_signed(lhs),
+                                   load_wide_signed(rhs));
+  }
+  return exec_wide_unsigned_binary(op, a, b);
+}
+
+[[nodiscard]] auto exec_wide_unary(opcode op, numeric_kind k, slot_value src)
+    -> slot_value {
+  if (op == opcode::op_bitnot) {
+    return wide_store(~src.w);
+  }
+  // `-` only reaches here for `int128` (the checker rejects it on unsigned
+  // operands).
+  (void)k;
+  const auto a = load_wide_signed(src);
+  if (a == k_wide_signed_min) {
+    throw panic_error(panic_reason::integer_overflow);
+  }
+  return wide_store(-a);
+}
+
+/// The source of an `as` conversion as a 128-bit signed or unsigned integer,
+/// sign- or zero-extended from its own kind — the common first step of
+/// every integer conversion that has a 128-bit end.
+[[nodiscard]] auto widen_integer(numeric_kind k, slot_value v)
+    -> wide_unsigned {
+  if (is_wide_integer(k)) {
+    return v.w;
+  }
+  if (is_signed_integer(k)) {
+    return static_cast<wide_unsigned>(
+        static_cast<wide_signed>(load_signed(v, k)));
+  }
+  return wide_unsigned{load_unsigned(v, k)};
+}
+
+/// `as` where either end is `int128`/`uint128`.
+[[nodiscard]] auto exec_wide_cast(numeric_kind from_kind,
+                                  numeric_kind to_kind, slot_value src)
+    -> slot_value {
+  if (is_float(from_kind)) {
+    const double value = from_kind == numeric_kind::f32
+                             ? static_cast<double>(load_f32(src))
+                             : load_f64(src);
+    if (to_kind == numeric_kind::i128) {
+      return wide_store(static_cast<wide_signed>(value));
+    }
+    return wide_store(static_cast<wide_unsigned>(value));
+  }
+  if (is_float(to_kind)) {
+    const double value =
+        from_kind == numeric_kind::i128
+            ? static_cast<double>(load_wide_signed(src))
+            : static_cast<double>(src.w);
+    if (to_kind == numeric_kind::f32) {
+      return store_f32(static_cast<float>(value));
+    }
+    return store_f64(value);
+  }
+  const auto bits = widen_integer(from_kind, src);
+  if (is_wide_integer(to_kind)) {
+    return wide_store(bits);
+  }
+  const auto truncated =
+      static_cast<uint64_t>(bits) & mask_for_width(bit_width(to_kind));
+  return store_by_kind(to_kind, truncated);
+}
+
 [[nodiscard]] auto exec_cast(numeric_kind from_kind, numeric_kind to_kind,
                              slot_value src) -> slot_value {
+  if (is_wide_integer(from_kind) || is_wide_integer(to_kind)) {
+    return exec_wide_cast(from_kind, to_kind, src);
+  }
   const bool from_float = is_float(from_kind);
   const bool to_float = is_float(to_kind);
 
@@ -641,6 +877,9 @@ constexpr size_t k_max_call_depth = 4096;
 
 [[nodiscard]] auto dispatch_binary(opcode op, numeric_kind k, slot_value lhs,
                                    slot_value rhs) -> slot_value {
+  if (is_wide_integer(k)) {
+    return exec_wide_binary(op, k, lhs, rhs);
+  }
   switch (op) {
   case opcode::op_add:
     return exec_add(k, lhs, rhs);
@@ -693,6 +932,9 @@ constexpr size_t k_max_call_depth = 4096;
 
 [[nodiscard]] auto dispatch_unary(opcode op, numeric_kind k, slot_value src)
     -> slot_value {
+  if (is_wide_integer(k)) {
+    return exec_wide_unary(op, k, src);
+  }
   switch (op) {
   case opcode::op_neg:
     return exec_neg(k, src);
@@ -710,8 +952,8 @@ constexpr size_t k_max_call_depth = 4096;
 // same untagged-reinterpretation approach numeric_kind already relies on.
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] auto slots_of(slot_value ptr) -> slot_value * {
-  return reinterpret_cast<slot_value *>(static_cast<uintptr_t>(ptr.u));
+[[nodiscard]] auto slots_of(slot_value ptr) -> heap_word * {
+  return reinterpret_cast<heap_word *>(static_cast<uintptr_t>(ptr.u));
 }
 [[nodiscard]] auto ptr_to_slot(void *raw) -> slot_value {
   return slot_value{static_cast<uint64_t>(reinterpret_cast<uintptr_t>(raw))};
@@ -720,53 +962,62 @@ constexpr size_t k_max_call_depth = 4096;
   return reinterpret_cast<uint8_t *>(static_cast<uintptr_t>(ptr.u));
 }
 
-/// Zero-extended `size`-byte (1/2/4/8) read at `data`, the width-aware
-/// sibling of the old "always a whole `slot_value`" load — `size` is always
-/// one of these four values (`runtime::layout_info::size_bytes` for a
-/// scalar, or the fixed 8 every uniform-slot construct still passes). Uses
-/// `std::memcpy` rather than a typed `reinterpret_cast` load since a packed
-/// struct's byte offset is not generally aligned to `size`.
-[[nodiscard]] auto load_sized(const uint8_t *data, uint8_t size) -> uint64_t {
+/// Zero-extended `size`-byte (1/2/4/8/16) read at `data`, the width-aware
+/// sibling of the old "always a whole slot" load — `size` is always one of
+/// these values (`runtime::layout_info::size_bytes` for a scalar, 16 for an
+/// `int128`/`uint128`, or the fixed 8 every uniform-slot construct still
+/// passes). Uses `std::memcpy` rather than a typed `reinterpret_cast` load
+/// since a packed struct's byte offset is not generally aligned to `size`.
+[[nodiscard]] auto load_sized(const uint8_t *data, uint8_t size)
+    -> slot_value {
   switch (size) {
   case 1:
-    return *data;
+    return slot_value{uint64_t{*data}};
   case 2: {
     uint16_t v = 0;
     std::memcpy(&v, data, sizeof(v));
-    return v;
+    return slot_value{uint64_t{v}};
   }
   case 4: {
     uint32_t v = 0;
     std::memcpy(&v, data, sizeof(v));
-    return v;
+    return slot_value{uint64_t{v}};
+  }
+  case 16: {
+    unsigned __int128 v = 0;
+    std::memcpy(&v, data, sizeof(v));
+    return slot_value{v};
   }
   default: {
     uint64_t v = 0;
     std::memcpy(&v, data, sizeof(v));
-    return v;
+    return slot_value{v};
   }
   }
 }
 
-/// Writes the low `size` bytes (1/2/4/8) of `value` at `data` — the
-/// width-aware sibling of the old "always a whole `slot_value`" store.
-auto store_sized(uint8_t *data, uint8_t size, uint64_t value) -> void {
+/// Writes the low `size` bytes (1/2/4/8/16) of `value` at `data` — the
+/// width-aware sibling of the old "always a whole slot" store.
+auto store_sized(uint8_t *data, uint8_t size, slot_value value) -> void {
   switch (size) {
   case 1:
-    *data = static_cast<uint8_t>(value);
+    *data = static_cast<uint8_t>(value.u);
     return;
   case 2: {
-    const auto v = static_cast<uint16_t>(value);
+    const auto v = static_cast<uint16_t>(value.u);
     std::memcpy(data, &v, sizeof(v));
     return;
   }
   case 4: {
-    const auto v = static_cast<uint32_t>(value);
+    const auto v = static_cast<uint32_t>(value.u);
     std::memcpy(data, &v, sizeof(v));
     return;
   }
+  case 16:
+    std::memcpy(data, &value.w, sizeof(value.w));
+    return;
   default:
-    std::memcpy(data, &value, sizeof(value));
+    std::memcpy(data, &value.u, sizeof(value.u));
     return;
   }
 }
@@ -881,10 +1132,10 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
 
 [[nodiscard]] auto alloc_struct(std::span<const slot_value> fields)
     -> slot_value {
-  auto *raw = cinder_heap_alloc(fields.size() * sizeof(slot_value));
-  auto *slots = static_cast<slot_value *>(raw);
+  auto *raw = cinder_heap_alloc(fields.size() * sizeof(heap_word));
+  auto *slots = static_cast<heap_word *>(raw);
   for (size_t i = 0; i < fields.size(); ++i) {
-    slots[i] = fields[i];
+    slots[i] = heap_word{fields[i]};
   }
   return ptr_to_slot(raw);
 }
@@ -1941,8 +2192,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto ptr_reg = ops.reg();
         const auto byte_offset = ops.imm16();
         const auto field_size = ops.imm8();
-        f.registers[dst] = slot_value{load_sized(
-            raw_bytes_of(f.registers[ptr_reg]) + byte_offset, field_size)};
+        f.registers[dst] = load_sized(
+            raw_bytes_of(f.registers[ptr_reg]) + byte_offset, field_size);
         f.pc = ops.pos();
         break;
       }
@@ -1953,7 +2204,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto src = ops.reg();
         const auto field_size = ops.imm8();
         store_sized(raw_bytes_of(f.registers[ptr_reg]) + byte_offset,
-                    field_size, f.registers[src].u);
+                    field_size, f.registers[src]);
         f.pc = ops.pos();
         break;
       }
@@ -1996,10 +2247,10 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto dst = ops.reg();
         const auto idx = ops.imm32();
         const auto &text = f.function->string_constants[idx];
-        auto *header = cinder_heap_alloc(2 * sizeof(slot_value));
-        auto *slots = static_cast<slot_value *>(header);
-        slots[0] = slot_value{static_cast<uint64_t>(text.size())};
-        slots[1] = ptr_to_slot(const_cast<char *>(text.data()));
+        auto *header = cinder_heap_alloc(2 * sizeof(heap_word));
+        auto *slots = static_cast<heap_word *>(header);
+        slots[0] = heap_word{static_cast<uint64_t>(text.size())};
+        slots[1] = heap_word{ptr_to_slot(const_cast<char *>(text.data()))};
         f.registers[dst] = ptr_to_slot(header);
         f.pc = ops.pos();
         break;
@@ -2012,8 +2263,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto index_reg = ops.reg();
         const auto elem_size = ops.imm8();
         const auto index = f.registers[index_reg].u;
-        f.registers[dst] = slot_value{load_sized(
-            raw_bytes_of(f.registers[ptr_reg]) + index * elem_size, elem_size)};
+        f.registers[dst] = load_sized(
+            raw_bytes_of(f.registers[ptr_reg]) + index * elem_size, elem_size);
         f.pc = ops.pos();
         break;
       }
@@ -2025,7 +2276,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto elem_size = ops.imm8();
         const auto index = f.registers[index_reg].u;
         store_sized(raw_bytes_of(f.registers[ptr_reg]) + index * elem_size,
-                    elem_size, f.registers[src].u);
+                    elem_size, f.registers[src]);
         f.pc = ops.pos();
         break;
       }
@@ -2049,12 +2300,11 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto dst = ops.reg();
         const auto fn_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(3 * sizeof(slot_value));
-        auto *slots = static_cast<slot_value *>(header);
-        slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
-        slots[1] =
-            slot_value{static_cast<uint64_t>(0)}; // null env for direct fn
-        slots[2] = slot_value{uint64_t{0}};       // no drop glue
+        auto *header = cinder_heap_alloc(3 * sizeof(heap_word));
+        auto *slots = static_cast<heap_word *>(header);
+        slots[0] = heap_word{static_cast<uint64_t>(fn_idx)};
+        slots[1] = heap_word{uint64_t{0}}; // null env for direct fn
+        slots[2] = heap_word{uint64_t{0}}; // no drop glue
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -2066,13 +2316,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto env_reg = ops.reg();
         const auto glue_idx = ops.imm16();
         f.pc = ops.pos();
-        auto *header = cinder_heap_alloc(3 * sizeof(slot_value));
-        auto *slots = static_cast<slot_value *>(header);
-        slots[0] = slot_value{static_cast<uint64_t>(fn_idx)};
-        slots[1] = f.registers[env_reg];
-        slots[2] = slot_value{glue_idx == bytecode::k_no_drop_glue
-                                  ? uint64_t{0}
-                                  : static_cast<uint64_t>(glue_idx) + 1};
+        auto *header = cinder_heap_alloc(3 * sizeof(heap_word));
+        auto *slots = static_cast<heap_word *>(header);
+        slots[0] = heap_word{static_cast<uint64_t>(fn_idx)};
+        slots[1] = heap_word{f.registers[env_reg]};
+        slots[2] = heap_word{glue_idx == bytecode::k_no_drop_glue
+                                 ? uint64_t{0}
+                                 : static_cast<uint64_t>(glue_idx) + 1};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -2085,7 +2335,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         f.pc = ops.pos();
         const auto *closure = slots_of(f.registers[closure_reg]);
         const auto fn_idx = static_cast<uint16_t>(closure[0].u);
-        const auto env_ptr = closure[1];
+        const auto env_ptr = closure[1].as_slot();
         std::vector<slot_value> call_args;
         // Direct function references (materialized by `op_load_direct_fn`)
         // have slot[1] = 0x0000 as a null env sentinel; the VM skips the
@@ -2112,17 +2362,15 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto state_ptr_reg = ops.reg();
         f.pc = ops.pos();
         auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count *
-                                         sizeof(slot_value));
-        auto *slots = static_cast<slot_value *>(header);
+                                         sizeof(heap_word));
+        auto *slots = static_cast<heap_word *>(header);
         slots[runtime::coroutine::k_step_function_slot] =
-            slot_value{static_cast<uint64_t>(step_fn_idx)};
+            heap_word{static_cast<uint64_t>(step_fn_idx)};
         slots[runtime::coroutine::k_state_ptr_slot] =
-            f.registers[state_ptr_reg];
-        slots[runtime::coroutine::k_resume_index_slot] =
-            slot_value{uint64_t{0}};
-        slots[runtime::coroutine::k_status_slot] = slot_value{
+            heap_word{f.registers[state_ptr_reg]};
+        slots[runtime::coroutine::k_resume_index_slot] = heap_word{uint64_t{0}};
+        slots[runtime::coroutine::k_status_slot] = heap_word{
             runtime::coroutine::raw(runtime::coroutine::status::suspended)};
-        slots[runtime::coroutine::k_value_slot] = slot_value{};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }
@@ -2133,9 +2381,13 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto next_resume_index = ops.imm8();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[generator_reg]);
-        gen_slots[runtime::coroutine::k_value_slot] = f.registers[value_reg];
+        // The value area is two words wide, so a 128-bit item fits; a
+        // narrower one leaves the high word unread.
+        store_sized(reinterpret_cast<uint8_t *>( // NOLINT
+                        &gen_slots[runtime::coroutine::k_value_slot]),
+                    16, f.registers[value_reg]);
         gen_slots[runtime::coroutine::k_resume_index_slot] =
-            slot_value{static_cast<uint64_t>(next_resume_index)};
+            heap_word{static_cast<uint64_t>(next_resume_index)};
 
         const slot_value result{
             runtime::coroutine::raw(runtime::coroutine::status::suspended)};
@@ -2155,7 +2407,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         f.pc = ops.pos();
         slots_of(
             f.registers[task_reg])[runtime::coroutine::k_resume_index_slot] =
-            slot_value{static_cast<uint64_t>(next_resume_index)};
+            heap_word{static_cast<uint64_t>(next_resume_index)};
         const slot_value result{
             runtime::coroutine::raw(runtime::coroutine::status::pending)};
         const bool has_caller = f.has_caller;
@@ -2175,15 +2427,17 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         auto *gen_slots = slots_of(f.registers[coroutine_reg]);
         if (gen_slots[runtime::coroutine::k_status_slot].u !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
-          f.registers[dst] = gen_slots[runtime::coroutine::k_status_slot];
+          f.registers[dst] =
+              gen_slots[runtime::coroutine::k_status_slot].as_slot();
           break;
         }
         const auto step_fn_idx = static_cast<uint16_t>(
             gen_slots[runtime::coroutine::k_step_function_slot].u);
         const std::array<slot_value, runtime::coroutine::k_step_arg_count>
-            call_args = {gen_slots[runtime::coroutine::k_state_ptr_slot],
-                         gen_slots[runtime::coroutine::k_resume_index_slot],
-                         f.registers[coroutine_reg]};
+            call_args = {
+                gen_slots[runtime::coroutine::k_state_ptr_slot].as_slot(),
+                gen_slots[runtime::coroutine::k_resume_index_slot].as_slot(),
+                f.registers[coroutine_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -2207,14 +2461,15 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           break;
         }
         gen_slots[runtime::coroutine::k_status_slot] =
-            slot_value{runtime::coroutine::raw(
+            heap_word{runtime::coroutine::raw(
                 runtime::coroutine::status::cancel_requested)};
         const auto step_fn_idx = static_cast<uint16_t>(
             gen_slots[runtime::coroutine::k_step_function_slot].u);
         const std::array<slot_value, runtime::coroutine::k_step_arg_count>
-            call_args = {gen_slots[runtime::coroutine::k_state_ptr_slot],
-                         gen_slots[runtime::coroutine::k_resume_index_slot],
-                         f.registers[generator_reg]};
+            call_args = {
+                gen_slots[runtime::coroutine::k_state_ptr_slot].as_slot(),
+                gen_slots[runtime::coroutine::k_resume_index_slot].as_slot(),
+                f.registers[generator_reg]};
         push_frame(frames, module_.functions.at(step_fn_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.
@@ -2230,7 +2485,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
           break;
         }
         const auto glue_idx = static_cast<uint16_t>(closure[2].u - 1);
-        const std::array<slot_value, 1> call_args = {closure[1]};
+        const std::array<slot_value, 1> call_args = {closure[1].as_slot()};
         push_frame(frames, module_.functions.at(glue_idx), call_args, true,
                    dst);
         continue; // `f` is invalidated by push_frame's push_back.

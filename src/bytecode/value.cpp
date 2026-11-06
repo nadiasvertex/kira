@@ -30,6 +30,8 @@ auto numeric_kind_of(const type_table &types, type_id id)
       {"uint32", numeric_kind::u32},
       {"uint64", numeric_kind::u64},
       {"usize", numeric_kind::u64},
+      {"int128", numeric_kind::i128},
+      {"uint128", numeric_kind::u128},
       {"float32", numeric_kind::f32},
       {"float64", numeric_kind::f64},
       // Quoted syntax, held by compile-time code as a handle the compiler
@@ -44,10 +46,10 @@ auto numeric_kind_of(const type_table &types, type_id id)
     return it->second;
   }
 
-  // int128/uint128/float128 and every non-scalar builtin (str, unit, never,
-  // ordering, io, cpu, ...) fall through to `nullopt` — see the doc comment
-  // on `numeric_kind_of` in value.h for why 128-bit widths aren't supported
-  // by this compiler, and non-scalars simply aren't numeric.
+  // float128 and every non-scalar builtin (str, unit, never, ordering, io,
+  // cpu, ...) fall through to `nullopt` — see the doc comment on
+  // `numeric_kind_of` in value.h for why float128 isn't supported by this
+  // compiler, and non-scalars simply aren't numeric.
   return std::nullopt;
 }
 

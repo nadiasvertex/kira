@@ -34,14 +34,14 @@ using semantic::type_kind;
 /// The low `size` bytes of `slot` written at `at`, the way `op_store_slot`
 /// writes a field.
 auto store(std::uint8_t *at, std::size_t size, slot_value slot) -> void {
-  const auto raw = slot.u;
+  const auto raw = slot.w;
   std::memcpy(at, &raw, size);
 }
 
 /// `size` bytes at `at`, zero-extended, the way `op_load_slot` reads a field.
 [[nodiscard]] auto load(const std::uint8_t *at, std::size_t size)
     -> slot_value {
-  auto raw = std::uint64_t{0};
+  auto raw = static_cast<unsigned __int128>(0);
   std::memcpy(&raw, at, size);
   return slot_value{raw};
 }
@@ -50,8 +50,10 @@ auto store(std::uint8_t *at, std::size_t size, slot_value slot) -> void {
   return static_cast<std::uint8_t *>(cinder_heap_alloc(bytes));
 }
 
-[[nodiscard]] auto mask(int bits) -> std::uint64_t {
-  return bits >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << bits) - 1;
+using wide_unsigned = unsigned __int128;
+
+[[nodiscard]] auto mask(int bits) -> wide_unsigned {
+  return bits >= 128 ? ~wide_unsigned{0} : (wide_unsigned{1} << bits) - 1;
 }
 
 /// Whether `entry` is the standard library's `list[T]`.
@@ -239,25 +241,26 @@ private:
       return mismatch(type);
     }
     const auto bits = bytecode::bit_width(kind);
+    const auto does_not_fit = [&] {
+      return std::unexpected(
+          std::format("the compile-time value {} does not fit in `{}`",
+                      value.integer, types_.display(type)));
+    };
     if (bytecode::is_signed_integer(kind)) {
-      if (bits < 64) {
-        const auto low = -(std::int64_t{1} << (bits - 1));
-        const auto high = (std::int64_t{1} << (bits - 1)) - 1;
+      if (bits < 128) {
+        const auto low = -(__int128{1} << (bits - 1));
+        const auto high = (__int128{1} << (bits - 1)) - 1;
         if (value.integer < low || value.integer > high) {
-          return std::unexpected(
-              std::format("the compile-time value {} does not fit in `{}`",
-                          value.integer, types_.display(type)));
+          return does_not_fit();
         }
       }
       return slot_value{value.integer};
     }
-    // An unsigned 64-bit value past `INT64_MAX` travels as its bit pattern,
-    // the same convention `materialize_const_literal` uses.
-    const auto raw = static_cast<std::uint64_t>(value.integer);
-    if (bits < 64 && (value.integer < 0 || (raw & ~mask(bits)) != 0)) {
-      return std::unexpected(
-          std::format("the compile-time value {} does not fit in `{}`",
-                      value.integer, types_.display(type)));
+    // A `uint128` past `int128`'s maximum travels as its bit pattern (see
+    // `comptime::value`), so a 128-bit target takes any value as is.
+    const auto raw = static_cast<wide_unsigned>(value.integer);
+    if (bits < 128 && (value.integer < 0 || (raw & ~mask(bits)) != 0)) {
+      return does_not_fit();
     }
     return slot_value{raw};
   }
@@ -275,12 +278,12 @@ private:
       return comptime::value::make_float(slot.f);
     }
     const auto bits = bytecode::bit_width(kind);
-    auto raw = slot.u & mask(bits);
-    if (bytecode::is_signed_integer(kind) && bits < 64 &&
-        (raw & (std::uint64_t{1} << (bits - 1))) != 0) {
+    auto raw = slot.w & mask(bits);
+    if (bytecode::is_signed_integer(kind) && bits < 128 &&
+        (raw & (wide_unsigned{1} << (bits - 1))) != 0) {
       raw |= ~mask(bits);
     }
-    return comptime::value::make_int(static_cast<std::int64_t>(raw));
+    return comptime::value::make_int(static_cast<__int128>(raw));
   }
 
   [[nodiscard]] auto

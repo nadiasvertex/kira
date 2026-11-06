@@ -1,0 +1,44 @@
+module codegen_stress.int128_traits_and_format
+
+# The 128-bit integers' standard-library impls: `zero`/`one` and the
+# category bound `numeric` through a generic body, `show` through a bound,
+# `hash` folding both halves, and interpolation in decimal, hex, binary, and
+# with a width. Each check that holds sets one bit of the result, so the
+# declared value names exactly which ones must pass.
+
+use std.traits.zero
+use std.traits.one
+use std.traits.hash
+
+def sum_all[T](xs: list[T]) -> T where T: numeric + zero:
+    var acc: T = T.zero()
+    for x in xs:
+        acc = acc + x
+    return acc
+
+def one_of[T]() -> T where T: one:
+    return T.one()
+
+def describe[T](x: T) -> str where T: show:
+    return x.show()
+
+def bit(holds: bool, n: int64) -> int64:
+    return if holds: n else: 0
+
+def main() -> int64:
+    let big: uint128 = 18446744073709551616
+    let lo: int128 = -170141183460469231731687303715884105728
+    let xs: list[uint128] = [big, big, 1]
+    var total: int64 = 0
+    total = total + bit(sum_all(xs) == 36893488147419103233, 1)
+    total = total + bit(one_of[int128]() + one_of[int128]() == 2, 2)
+    total = total + bit(describe(big * 3) == "55340232221128654848", 4)
+    total = total + bit("{lo}" == "-170141183460469231731687303715884105728", 8)
+    total = total + bit("{big:x}" == "10000000000000000", 16)
+    total = total + bit("{big - 1:b}" == "1111111111111111111111111111111111111111111111111111111111111111", 32)
+    total = total + bit("{(5 as int128):06}" == "000005", 64)
+    total = total + bit(big.hash() != (0 as uint128).hash(), 128)
+    total = total + bit(big.hash() == big.hash(), 256)
+    return total
+
+# expect: 511

@@ -97,36 +97,31 @@ pub static pure def is_numeric[T]() -> bool:
 # have — a literal written as a `T`, an `as` conversion, the builtin
 # operators — and every core trait all their members implement (`eq`, `ord`,
 # `show`, `add`, ... from `traits.scalar.cn`). Each is satisfied by the types
-# the predicate it is named after answers `true` for, except the 128-bit
-# ones: those have no representation on the bytecode VM, so they have none
-# of those impls to promise. The checker knows the same membership
+# the predicate it is named after answers `true` for, except `float128`:
+# neither backend represents it yet, so it has none of those impls to
+# promise. The checker knows the same membership
 # (`checker::category_members`).
 
-#: A builtin signed integer: `int8`..`int64`, `isize`.
+#: A builtin signed integer: `int8`..`int128`, `isize`.
 pub concept signed_integer[T]:
-    is_signed_integer[T]() and T.name() != "int128"
+    is_signed_integer[T]()
 
-#: A builtin unsigned integer: `uint8`..`uint64`, `usize`, `byte`.
+#: A builtin unsigned integer: `uint8`..`uint128`, `usize`, `byte`.
 pub concept unsigned_integer[T]:
-    is_unsigned_integer[T]() and T.name() != "uint128"
+    is_unsigned_integer[T]()
 
-#: Any builtin integer, signed or unsigned, but not a 128-bit one.
+#: Any builtin integer, signed or unsigned.
 pub concept integer[T]:
-    is_integer_below_128[T]()
-
-#: True for a builtin integer that is not 128 bits wide — the members of the
-#: `integer` concept.
-pub static pure def is_integer_below_128[T]() -> bool:
-    let n = T.name()
-    return is_integer[T]() and n != "int128" and n != "uint128"
+    is_integer[T]()
 
 #: A builtin floating-point type: `float32`, `float64`.
 pub concept float[T]:
     is_float[T]() and T.name() != "float128"
 
-#: Any builtin integer or floating-point type, but not a 128-bit one.
+#: Any builtin integer, or a builtin floating-point type other than
+#: `float128`.
 pub concept numeric[T]:
-    is_integer_below_128[T]() or (is_float[T]() and T.name() != "float128")
+    is_integer[T]() or (is_float[T]() and T.name() != "float128")
 
 #: True for any builtin numeric type, `bool`, or `char`.
 pub static pure def is_scalar[T]() -> bool:

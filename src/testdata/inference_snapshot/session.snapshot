@@ -1,7 +1,7 @@
 # inference snapshot
-# 2307 interned types
+# 2322 interned types
 
-## node_types (31019)
+## node_types (31331)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -6876,83 +6876,233 @@ std/fmt.cn:238:25 [literal] bool
 std/fmt.cn:238:32 [ident] str
 std/fmt.cn:238:40 [ident] str
 std/fmt.cn:238:48 [ident] format_spec
-std/fmt.cn:247:25 [binding_pat] float64
-std/fmt.cn:247:37 [binding_pat] usize
-std/fmt.cn:247:55 [binding_pat] format_spec
-std/fmt.cn:247:77 [named_type] str
-std/fmt.cn:248:9 [binding_pat] bool
-std/fmt.cn:248:20 [ident] float64
-std/fmt.cn:248:20 [binary] bool
-std/fmt.cn:248:24 [literal] float64
-std/fmt.cn:249:9 [binding_pat] float64
-std/fmt.cn:249:21 [if] float64
-std/fmt.cn:249:24 [ident] bool
-std/fmt.cn:249:34 [unary] float64
-std/fmt.cn:249:35 [ident] float64
-std/fmt.cn:249:43 [ident] float64
-std/fmt.cn:250:9 [binding_pat] str
-std/fmt.cn:250:18 [ident] fn(float64, usize) -> str
-std/fmt.cn:250:18 [call] str
-std/fmt.cn:250:35 [ident] float64
-std/fmt.cn:250:46 [ident] usize
-std/fmt.cn:251:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:251:12 [call] str
-std/fmt.cn:251:25 [ident] bool
-std/fmt.cn:251:35 [literal] str
-std/fmt.cn:251:39 [ident] str
-std/fmt.cn:251:47 [ident] format_spec
-std/fmt.cn:261:23 [binding_pat] float64
-std/fmt.cn:261:35 [binding_pat] usize
-std/fmt.cn:261:53 [binding_pat] bool
-std/fmt.cn:261:70 [binding_pat] format_spec
-std/fmt.cn:261:92 [named_type] str
-std/fmt.cn:262:9 [binding_pat] bool
-std/fmt.cn:262:20 [ident] float64
-std/fmt.cn:262:20 [binary] bool
-std/fmt.cn:262:24 [literal] float64
-std/fmt.cn:263:9 [binding_pat] float64
-std/fmt.cn:263:21 [if] float64
-std/fmt.cn:263:24 [ident] bool
-std/fmt.cn:263:34 [unary] float64
-std/fmt.cn:263:35 [ident] float64
-std/fmt.cn:263:43 [ident] float64
-std/fmt.cn:264:9 [binding_pat] str
-std/fmt.cn:264:18 [ident] fn(float64, usize, bool) -> str
-std/fmt.cn:264:18 [call] str
-std/fmt.cn:264:33 [ident] float64
-std/fmt.cn:264:44 [ident] usize
-std/fmt.cn:264:55 [ident] bool
-std/fmt.cn:265:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:265:12 [call] str
-std/fmt.cn:265:25 [ident] bool
-std/fmt.cn:265:35 [literal] str
-std/fmt.cn:265:39 [ident] str
-std/fmt.cn:265:47 [ident] format_spec
-std/fmt.cn:274:27 [binding_pat] float64
-std/fmt.cn:274:39 [binding_pat] usize
-std/fmt.cn:274:57 [binding_pat] format_spec
-std/fmt.cn:274:79 [named_type] str
-std/fmt.cn:275:9 [binding_pat] bool
-std/fmt.cn:275:20 [ident] float64
-std/fmt.cn:275:20 [binary] bool
-std/fmt.cn:275:24 [literal] float64
-std/fmt.cn:276:9 [binding_pat] float64
-std/fmt.cn:276:21 [if] float64
-std/fmt.cn:276:24 [ident] bool
-std/fmt.cn:276:34 [unary] float64
-std/fmt.cn:276:35 [ident] float64
-std/fmt.cn:276:43 [ident] float64
-std/fmt.cn:277:9 [binding_pat] str
-std/fmt.cn:277:18 [ident] fn(float64, usize) -> str
-std/fmt.cn:277:18 [call] str
-std/fmt.cn:277:37 [ident] float64
-std/fmt.cn:277:48 [ident] usize
-std/fmt.cn:278:12 [ident] fn(bool, str, str, format_spec) -> str
-std/fmt.cn:278:12 [call] str
-std/fmt.cn:278:25 [ident] bool
-std/fmt.cn:278:35 [literal] str
-std/fmt.cn:278:39 [ident] str
-std/fmt.cn:278:47 [ident] format_spec
+std/fmt.cn:250:23 [binding_pat] uint128
+std/fmt.cn:250:35 [binding_pat] uint8
+std/fmt.cn:250:49 [binding_pat] bool
+std/fmt.cn:250:69 [named_type] str
+std/fmt.cn:251:9 [binding_pat] uint64
+std/fmt.cn:251:27 [literal] uint64
+std/fmt.cn:252:8 [ident] uint128
+std/fmt.cn:252:8 [binary] bool
+std/fmt.cn:252:13 [ident] uint64
+std/fmt.cn:252:13 [cast] uint128
+std/fmt.cn:253:16 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.cn:253:16 [call] str
+std/fmt.cn:253:36 [ident] uint128
+std/fmt.cn:253:36 [cast] uint64
+std/fmt.cn:253:49 [ident] uint8
+std/fmt.cn:253:56 [ident] bool
+std/fmt.cn:254:9 [binding_pat] uint64
+std/fmt.cn:254:13 [ident] uint8
+std/fmt.cn:254:13 [cast] uint64
+std/fmt.cn:255:5 [var_stmt] uint64
+std/fmt.cn:255:25 [literal] uint64
+std/fmt.cn:256:5 [var_stmt] usize
+std/fmt.cn:256:24 [literal] usize
+std/fmt.cn:257:11 [ident] uint64
+std/fmt.cn:257:11 [binary] bool
+std/fmt.cn:257:20 [ident] uint64
+std/fmt.cn:257:20 [binary] uint64
+std/fmt.cn:257:30 [ident] uint64
+std/fmt.cn:258:9 [ident] uint64
+std/fmt.cn:258:17 [ident] uint64
+std/fmt.cn:258:17 [binary] uint64
+std/fmt.cn:258:25 [ident] uint64
+std/fmt.cn:259:9 [ident] usize
+std/fmt.cn:259:17 [ident] usize
+std/fmt.cn:259:17 [binary] usize
+std/fmt.cn:259:25 [literal] usize
+std/fmt.cn:260:9 [binding_pat] str
+std/fmt.cn:260:16 [ident] fn(uint128, uint8, bool) -> str
+std/fmt.cn:260:16 [call] str
+std/fmt.cn:260:34 [ident] uint128
+std/fmt.cn:260:34 [binary] uint128
+std/fmt.cn:260:38 [group] uint128
+std/fmt.cn:260:39 [ident] uint64
+std/fmt.cn:260:39 [cast] uint128
+std/fmt.cn:260:58 [ident] uint8
+std/fmt.cn:260:65 [ident] bool
+std/fmt.cn:261:9 [binding_pat] str
+std/fmt.cn:261:15 [ident] fn(uint64, uint8, bool) -> str
+std/fmt.cn:261:15 [call] str
+std/fmt.cn:261:35 [group] uint128
+std/fmt.cn:261:35 [cast] uint64
+std/fmt.cn:261:36 [ident] uint128
+std/fmt.cn:261:36 [binary] uint128
+std/fmt.cn:261:40 [group] uint128
+std/fmt.cn:261:41 [ident] uint64
+std/fmt.cn:261:41 [cast] uint128
+std/fmt.cn:261:71 [ident] uint8
+std/fmt.cn:261:78 [ident] bool
+std/fmt.cn:262:9 [binding_pat] str
+std/fmt.cn:262:17 [ident] fn(char, usize) -> str
+std/fmt.cn:262:17 [call] str
+std/fmt.cn:262:29 [literal] char
+std/fmt.cn:262:34 [ident] usize
+std/fmt.cn:262:34 [binary] usize
+std/fmt.cn:262:42 [ident] fn(str) -> usize
+std/fmt.cn:262:42 [call] usize
+std/fmt.cn:262:53 [ident] str
+std/fmt.cn:263:12 [ident] fn(str, str) -> str
+std/fmt.cn:263:12 [call] str
+std/fmt.cn:263:26 [ident] fn(str, str) -> str
+std/fmt.cn:263:26 [call] str
+std/fmt.cn:263:40 [ident] str
+std/fmt.cn:263:46 [ident] str
+std/fmt.cn:263:54 [ident] str
+std/fmt.cn:271:23 [binding_pat] int128
+std/fmt.cn:271:34 [binding_pat] format_spec
+std/fmt.cn:271:56 [named_type] str
+std/fmt.cn:272:12 [ident] fn(int128, uint8, bool, str, format_spec) -> str
+std/fmt.cn:272:12 [call] str
+std/fmt.cn:272:27 [ident] int128
+std/fmt.cn:272:30 [literal] uint8
+std/fmt.cn:272:34 [literal] bool
+std/fmt.cn:272:41 [literal] str
+std/fmt.cn:272:45 [ident] format_spec
+std/fmt.cn:280:23 [binding_pat] uint128
+std/fmt.cn:280:35 [binding_pat] format_spec
+std/fmt.cn:280:57 [named_type] str
+std/fmt.cn:281:12 [ident] fn(uint128, uint8, bool, str, format_spec) -> str
+std/fmt.cn:281:12 [call] str
+std/fmt.cn:281:27 [ident] uint128
+std/fmt.cn:281:30 [literal] uint8
+std/fmt.cn:281:34 [literal] bool
+std/fmt.cn:281:41 [literal] str
+std/fmt.cn:281:45 [ident] format_spec
+std/fmt.cn:292:24 [binding_pat] int128
+std/fmt.cn:292:35 [binding_pat] uint8
+std/fmt.cn:292:49 [binding_pat] bool
+std/fmt.cn:292:66 [binding_pat] str
+std/fmt.cn:292:79 [binding_pat] format_spec
+std/fmt.cn:292:101 [named_type] str
+std/fmt.cn:293:9 [binding_pat] bool
+std/fmt.cn:293:20 [ident] int128
+std/fmt.cn:293:20 [binary] bool
+std/fmt.cn:293:24 [literal] int128
+std/fmt.cn:294:9 [binding_pat] uint128
+std/fmt.cn:294:16 [ident] int128
+std/fmt.cn:294:16 [cast] uint128
+std/fmt.cn:295:9 [binding_pat] uint128
+std/fmt.cn:295:21 [if] uint128
+std/fmt.cn:295:24 [ident] bool
+std/fmt.cn:295:34 [group] uint128
+std/fmt.cn:295:34 [binary] uint128
+std/fmt.cn:295:35 [literal] uint128
+std/fmt.cn:295:35 [cast] uint128
+std/fmt.cn:295:35 [binary] uint128
+std/fmt.cn:295:88 [ident] uint128
+std/fmt.cn:295:96 [group] uint128
+std/fmt.cn:295:97 [literal] uint128
+std/fmt.cn:295:97 [cast] uint128
+std/fmt.cn:295:117 [ident] uint128
+std/fmt.cn:296:9 [binding_pat] str
+std/fmt.cn:296:18 [ident] fn(uint128, uint8, bool) -> str
+std/fmt.cn:296:18 [call] str
+std/fmt.cn:296:36 [ident] uint128
+std/fmt.cn:296:47 [ident] uint8
+std/fmt.cn:296:54 [ident] bool
+std/fmt.cn:297:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:297:12 [call] str
+std/fmt.cn:297:25 [ident] bool
+std/fmt.cn:297:35 [ident] str
+std/fmt.cn:297:43 [ident] str
+std/fmt.cn:297:51 [ident] format_spec
+std/fmt.cn:308:24 [binding_pat] uint128
+std/fmt.cn:308:36 [binding_pat] uint8
+std/fmt.cn:308:50 [binding_pat] bool
+std/fmt.cn:308:67 [binding_pat] str
+std/fmt.cn:308:80 [binding_pat] format_spec
+std/fmt.cn:308:102 [named_type] str
+std/fmt.cn:309:9 [binding_pat] str
+std/fmt.cn:309:18 [ident] fn(uint128, uint8, bool) -> str
+std/fmt.cn:309:18 [call] str
+std/fmt.cn:309:36 [ident] uint128
+std/fmt.cn:309:39 [ident] uint8
+std/fmt.cn:309:46 [ident] bool
+std/fmt.cn:310:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:310:12 [call] str
+std/fmt.cn:310:25 [literal] bool
+std/fmt.cn:310:32 [ident] str
+std/fmt.cn:310:40 [ident] str
+std/fmt.cn:310:48 [ident] format_spec
+std/fmt.cn:319:25 [binding_pat] float64
+std/fmt.cn:319:37 [binding_pat] usize
+std/fmt.cn:319:55 [binding_pat] format_spec
+std/fmt.cn:319:77 [named_type] str
+std/fmt.cn:320:9 [binding_pat] bool
+std/fmt.cn:320:20 [ident] float64
+std/fmt.cn:320:20 [binary] bool
+std/fmt.cn:320:24 [literal] float64
+std/fmt.cn:321:9 [binding_pat] float64
+std/fmt.cn:321:21 [if] float64
+std/fmt.cn:321:24 [ident] bool
+std/fmt.cn:321:34 [unary] float64
+std/fmt.cn:321:35 [ident] float64
+std/fmt.cn:321:43 [ident] float64
+std/fmt.cn:322:9 [binding_pat] str
+std/fmt.cn:322:18 [ident] fn(float64, usize) -> str
+std/fmt.cn:322:18 [call] str
+std/fmt.cn:322:35 [ident] float64
+std/fmt.cn:322:46 [ident] usize
+std/fmt.cn:323:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:323:12 [call] str
+std/fmt.cn:323:25 [ident] bool
+std/fmt.cn:323:35 [literal] str
+std/fmt.cn:323:39 [ident] str
+std/fmt.cn:323:47 [ident] format_spec
+std/fmt.cn:333:23 [binding_pat] float64
+std/fmt.cn:333:35 [binding_pat] usize
+std/fmt.cn:333:53 [binding_pat] bool
+std/fmt.cn:333:70 [binding_pat] format_spec
+std/fmt.cn:333:92 [named_type] str
+std/fmt.cn:334:9 [binding_pat] bool
+std/fmt.cn:334:20 [ident] float64
+std/fmt.cn:334:20 [binary] bool
+std/fmt.cn:334:24 [literal] float64
+std/fmt.cn:335:9 [binding_pat] float64
+std/fmt.cn:335:21 [if] float64
+std/fmt.cn:335:24 [ident] bool
+std/fmt.cn:335:34 [unary] float64
+std/fmt.cn:335:35 [ident] float64
+std/fmt.cn:335:43 [ident] float64
+std/fmt.cn:336:9 [binding_pat] str
+std/fmt.cn:336:18 [ident] fn(float64, usize, bool) -> str
+std/fmt.cn:336:18 [call] str
+std/fmt.cn:336:33 [ident] float64
+std/fmt.cn:336:44 [ident] usize
+std/fmt.cn:336:55 [ident] bool
+std/fmt.cn:337:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:337:12 [call] str
+std/fmt.cn:337:25 [ident] bool
+std/fmt.cn:337:35 [literal] str
+std/fmt.cn:337:39 [ident] str
+std/fmt.cn:337:47 [ident] format_spec
+std/fmt.cn:346:27 [binding_pat] float64
+std/fmt.cn:346:39 [binding_pat] usize
+std/fmt.cn:346:57 [binding_pat] format_spec
+std/fmt.cn:346:79 [named_type] str
+std/fmt.cn:347:9 [binding_pat] bool
+std/fmt.cn:347:20 [ident] float64
+std/fmt.cn:347:20 [binary] bool
+std/fmt.cn:347:24 [literal] float64
+std/fmt.cn:348:9 [binding_pat] float64
+std/fmt.cn:348:21 [if] float64
+std/fmt.cn:348:24 [ident] bool
+std/fmt.cn:348:34 [unary] float64
+std/fmt.cn:348:35 [ident] float64
+std/fmt.cn:348:43 [ident] float64
+std/fmt.cn:349:9 [binding_pat] str
+std/fmt.cn:349:18 [ident] fn(float64, usize) -> str
+std/fmt.cn:349:18 [call] str
+std/fmt.cn:349:37 [ident] float64
+std/fmt.cn:349:48 [ident] usize
+std/fmt.cn:350:12 [ident] fn(bool, str, str, format_spec) -> str
+std/fmt.cn:350:12 [call] str
+std/fmt.cn:350:25 [ident] bool
+std/fmt.cn:350:35 [literal] str
+std/fmt.cn:350:39 [ident] str
+std/fmt.cn:350:47 [ident] format_spec
 std/intrinsics.cn:9:37 [binding_pat] float64
 std/intrinsics.cn:9:52 [named_type] uint64
 std/intrinsics.cn:13:37 [binding_pat] float32
@@ -7838,9 +7988,11 @@ std/iter.cn:220:13 [field] fn(_, _) -> unit
 std/iter.cn:220:13 [call] unit
 std/iter.cn:220:22 [ident] T
 std/iter.cn:221:16 [ident] list[T]
-std/limits.cn:13:34 [named_type] usize
-std/limits.cn:14:12 [match] usize
-std/limits.cn:14:18 [call] str
+std/limits.cn:12:34 [named_type] usize
+std/limits.cn:13:12 [match] usize
+std/limits.cn:13:18 [call] str
+std/limits.cn:14:7 [literal_pat] str
+std/limits.cn:14:20 [literal] usize
 std/limits.cn:15:7 [literal_pat] str
 std/limits.cn:15:20 [literal] usize
 std/limits.cn:16:7 [literal_pat] str
@@ -7857,148 +8009,166 @@ std/limits.cn:21:7 [literal_pat] str
 std/limits.cn:21:20 [literal] usize
 std/limits.cn:22:7 [literal_pat] str
 std/limits.cn:22:20 [literal] usize
-std/limits.cn:23:7 [wildcard_pat] str
+std/limits.cn:23:7 [literal_pat] str
 std/limits.cn:23:20 [literal] usize
-std/limits.cn:28:39 [named_type] bool
-std/limits.cn:29:12 [match] bool
-std/limits.cn:29:18 [index] fn() -> type_category
-std/limits.cn:29:18 [call] type_category
-std/limits.cn:30:9 [ctor_pat] type_category
-std/limits.cn:30:28 [literal] bool
+std/limits.cn:24:7 [wildcard_pat] str
+std/limits.cn:24:20 [literal] usize
+std/limits.cn:29:39 [named_type] bool
+std/limits.cn:30:12 [match] bool
+std/limits.cn:30:18 [index] fn() -> type_category
+std/limits.cn:30:18 [call] type_category
 std/limits.cn:31:9 [ctor_pat] type_category
 std/limits.cn:31:28 [literal] bool
-std/limits.cn:32:9 [wildcard_pat] type_category
+std/limits.cn:32:9 [ctor_pat] type_category
 std/limits.cn:32:28 [literal] bool
-std/limits.cn:35:33 [named_type] T
-std/limits.cn:36:9 [binding_pat] str
-std/limits.cn:36:13 [call] str
-std/limits.cn:37:15 [ident] str
-std/limits.cn:37:15 [binary] bool
-std/limits.cn:37:20 [literal] str
-std/limits.cn:38:16 [unary] T
-std/limits.cn:38:17 [literal] T
-std/limits.cn:38:17 [cast] T
-std/limits.cn:39:15 [ident] str
-std/limits.cn:39:15 [binary] bool
-std/limits.cn:39:20 [literal] str
-std/limits.cn:40:16 [unary] T
-std/limits.cn:40:17 [literal] T
-std/limits.cn:40:17 [cast] T
-std/limits.cn:41:15 [ident] str
-std/limits.cn:41:15 [binary] bool
-std/limits.cn:41:20 [literal] str
-std/limits.cn:42:16 [unary] T
-std/limits.cn:42:17 [literal] T
-std/limits.cn:42:17 [cast] T
-std/limits.cn:43:15 [ident] str
-std/limits.cn:43:15 [binary] bool
-std/limits.cn:43:15 [binary] bool
-std/limits.cn:43:20 [literal] str
-std/limits.cn:43:31 [ident] str
-std/limits.cn:43:31 [binary] bool
-std/limits.cn:43:36 [literal] str
-std/limits.cn:44:16 [unary] T
-std/limits.cn:44:17 [literal] T
-std/limits.cn:44:17 [cast] T
-std/limits.cn:45:15 [ident] str
-std/limits.cn:45:15 [binary] bool
-std/limits.cn:45:20 [literal] str
-std/limits.cn:46:16 [unary] T
-std/limits.cn:46:17 [literal] T
-std/limits.cn:46:17 [cast] T
-std/limits.cn:47:15 [ident] str
-std/limits.cn:47:15 [binary] bool
-std/limits.cn:47:20 [literal] str
-std/limits.cn:48:16 [unary] T
-std/limits.cn:48:17 [literal] T
-std/limits.cn:48:17 [cast] T
-std/limits.cn:50:12 [literal] T
-std/limits.cn:53:33 [named_type] T
-std/limits.cn:54:9 [binding_pat] str
-std/limits.cn:54:13 [call] str
-std/limits.cn:55:15 [ident] str
-std/limits.cn:55:15 [binary] bool
-std/limits.cn:55:20 [literal] str
-std/limits.cn:56:16 [literal] T
-std/limits.cn:56:16 [cast] T
-std/limits.cn:57:15 [ident] str
-std/limits.cn:57:15 [binary] bool
-std/limits.cn:57:15 [binary] bool
-std/limits.cn:57:20 [literal] str
-std/limits.cn:57:31 [ident] str
-std/limits.cn:57:31 [binary] bool
-std/limits.cn:57:36 [literal] str
-std/limits.cn:58:16 [literal] T
-std/limits.cn:58:16 [cast] T
-std/limits.cn:59:15 [ident] str
-std/limits.cn:59:15 [binary] bool
-std/limits.cn:59:20 [literal] str
-std/limits.cn:60:16 [literal] T
-std/limits.cn:60:16 [cast] T
-std/limits.cn:61:15 [ident] str
-std/limits.cn:61:15 [binary] bool
-std/limits.cn:61:20 [literal] str
-std/limits.cn:62:16 [literal] T
-std/limits.cn:62:16 [cast] T
-std/limits.cn:63:15 [ident] str
-std/limits.cn:63:15 [binary] bool
-std/limits.cn:63:20 [literal] str
-std/limits.cn:64:16 [literal] T
-std/limits.cn:64:16 [cast] T
-std/limits.cn:65:15 [ident] str
-std/limits.cn:65:15 [binary] bool
-std/limits.cn:65:20 [literal] str
-std/limits.cn:66:16 [literal] T
-std/limits.cn:66:16 [cast] T
-std/limits.cn:67:15 [ident] str
-std/limits.cn:67:15 [binary] bool
-std/limits.cn:67:15 [binary] bool
-std/limits.cn:67:20 [literal] str
-std/limits.cn:67:31 [ident] str
-std/limits.cn:67:31 [binary] bool
-std/limits.cn:67:36 [literal] str
-std/limits.cn:68:16 [literal] T
-std/limits.cn:68:16 [cast] T
-std/limits.cn:69:15 [ident] str
-std/limits.cn:69:15 [binary] bool
-std/limits.cn:69:15 [binary] bool
-std/limits.cn:69:20 [literal] str
-std/limits.cn:69:32 [ident] str
-std/limits.cn:69:32 [binary] bool
-std/limits.cn:69:37 [literal] str
-std/limits.cn:70:16 [literal] T
-std/limits.cn:70:16 [cast] T
-std/limits.cn:71:15 [ident] str
-std/limits.cn:71:15 [binary] bool
-std/limits.cn:71:20 [literal] str
-std/limits.cn:72:16 [literal] T
-std/limits.cn:72:16 [cast] T
-std/limits.cn:73:15 [ident] str
-std/limits.cn:73:15 [binary] bool
-std/limits.cn:73:20 [literal] str
-std/limits.cn:74:16 [literal] T
-std/limits.cn:74:16 [cast] T
-std/limits.cn:76:19 [literal] bool
-std/limits.cn:78:12 [literal] T
-std/limits.cn:87:36 [named_type] usize
-std/limits.cn:88:9 [binding_pat] str
-std/limits.cn:88:13 [call] str
-std/limits.cn:89:8 [ident] str
-std/limits.cn:89:8 [binary] bool
-std/limits.cn:89:13 [literal] str
-std/limits.cn:90:16 [literal] usize
-std/limits.cn:91:8 [ident] str
-std/limits.cn:91:8 [binary] bool
-std/limits.cn:91:13 [literal] str
-std/limits.cn:92:16 [literal] usize
-std/limits.cn:93:8 [index] fn() -> bool
-std/limits.cn:93:8 [call] bool
-std/limits.cn:94:16 [index] fn() -> usize
-std/limits.cn:94:16 [call] usize
-std/limits.cn:94:16 [binary] usize
-std/limits.cn:94:28 [literal] usize
-std/limits.cn:95:12 [index] fn() -> usize
-std/limits.cn:95:12 [call] usize
+std/limits.cn:33:9 [wildcard_pat] type_category
+std/limits.cn:33:28 [literal] bool
+std/limits.cn:36:33 [named_type] T
+std/limits.cn:37:9 [binding_pat] str
+std/limits.cn:37:13 [call] str
+std/limits.cn:38:15 [ident] str
+std/limits.cn:38:15 [binary] bool
+std/limits.cn:38:20 [literal] str
+std/limits.cn:39:16 [unary] T
+std/limits.cn:39:17 [literal] T
+std/limits.cn:39:17 [cast] T
+std/limits.cn:40:15 [ident] str
+std/limits.cn:40:15 [binary] bool
+std/limits.cn:40:20 [literal] str
+std/limits.cn:41:16 [unary] T
+std/limits.cn:41:17 [literal] T
+std/limits.cn:41:17 [cast] T
+std/limits.cn:42:15 [ident] str
+std/limits.cn:42:15 [binary] bool
+std/limits.cn:42:20 [literal] str
+std/limits.cn:43:16 [unary] T
+std/limits.cn:43:17 [literal] T
+std/limits.cn:43:17 [cast] T
+std/limits.cn:44:15 [ident] str
+std/limits.cn:44:15 [binary] bool
+std/limits.cn:44:15 [binary] bool
+std/limits.cn:44:20 [literal] str
+std/limits.cn:44:31 [ident] str
+std/limits.cn:44:31 [binary] bool
+std/limits.cn:44:36 [literal] str
+std/limits.cn:45:16 [unary] T
+std/limits.cn:45:17 [literal] T
+std/limits.cn:45:17 [cast] T
+std/limits.cn:46:15 [ident] str
+std/limits.cn:46:15 [binary] bool
+std/limits.cn:46:20 [literal] str
+std/limits.cn:47:16 [unary] T
+std/limits.cn:47:17 [literal] T
+std/limits.cn:47:17 [cast] T
+std/limits.cn:48:15 [ident] str
+std/limits.cn:48:15 [binary] bool
+std/limits.cn:48:20 [literal] str
+std/limits.cn:49:16 [unary] T
+std/limits.cn:49:17 [literal] T
+std/limits.cn:49:17 [cast] T
+std/limits.cn:50:15 [ident] str
+std/limits.cn:50:15 [binary] bool
+std/limits.cn:50:20 [literal] str
+std/limits.cn:51:16 [unary] T
+std/limits.cn:51:17 [literal] T
+std/limits.cn:51:17 [cast] T
+std/limits.cn:53:12 [literal] T
+std/limits.cn:56:33 [named_type] T
+std/limits.cn:57:9 [binding_pat] str
+std/limits.cn:57:13 [call] str
+std/limits.cn:58:15 [ident] str
+std/limits.cn:58:15 [binary] bool
+std/limits.cn:58:20 [literal] str
+std/limits.cn:59:16 [literal] T
+std/limits.cn:59:16 [cast] T
+std/limits.cn:60:15 [ident] str
+std/limits.cn:60:15 [binary] bool
+std/limits.cn:60:15 [binary] bool
+std/limits.cn:60:20 [literal] str
+std/limits.cn:60:31 [ident] str
+std/limits.cn:60:31 [binary] bool
+std/limits.cn:60:36 [literal] str
+std/limits.cn:61:16 [literal] T
+std/limits.cn:61:16 [cast] T
+std/limits.cn:62:15 [ident] str
+std/limits.cn:62:15 [binary] bool
+std/limits.cn:62:20 [literal] str
+std/limits.cn:63:16 [literal] T
+std/limits.cn:63:16 [cast] T
+std/limits.cn:64:15 [ident] str
+std/limits.cn:64:15 [binary] bool
+std/limits.cn:64:20 [literal] str
+std/limits.cn:65:16 [literal] T
+std/limits.cn:65:16 [cast] T
+std/limits.cn:66:15 [ident] str
+std/limits.cn:66:15 [binary] bool
+std/limits.cn:66:20 [literal] str
+std/limits.cn:67:16 [literal] T
+std/limits.cn:67:16 [cast] T
+std/limits.cn:68:15 [ident] str
+std/limits.cn:68:15 [binary] bool
+std/limits.cn:68:20 [literal] str
+std/limits.cn:69:16 [literal] T
+std/limits.cn:69:16 [cast] T
+std/limits.cn:70:15 [ident] str
+std/limits.cn:70:15 [binary] bool
+std/limits.cn:70:15 [binary] bool
+std/limits.cn:70:20 [literal] str
+std/limits.cn:70:31 [ident] str
+std/limits.cn:70:31 [binary] bool
+std/limits.cn:70:36 [literal] str
+std/limits.cn:71:16 [literal] T
+std/limits.cn:71:16 [cast] T
+std/limits.cn:72:15 [ident] str
+std/limits.cn:72:15 [binary] bool
+std/limits.cn:72:15 [binary] bool
+std/limits.cn:72:20 [literal] str
+std/limits.cn:72:32 [ident] str
+std/limits.cn:72:32 [binary] bool
+std/limits.cn:72:37 [literal] str
+std/limits.cn:73:16 [literal] T
+std/limits.cn:73:16 [cast] T
+std/limits.cn:74:15 [ident] str
+std/limits.cn:74:15 [binary] bool
+std/limits.cn:74:20 [literal] str
+std/limits.cn:75:16 [literal] T
+std/limits.cn:75:16 [cast] T
+std/limits.cn:76:15 [ident] str
+std/limits.cn:76:15 [binary] bool
+std/limits.cn:76:20 [literal] str
+std/limits.cn:77:16 [literal] T
+std/limits.cn:77:16 [cast] T
+std/limits.cn:78:15 [ident] str
+std/limits.cn:78:15 [binary] bool
+std/limits.cn:78:20 [literal] str
+std/limits.cn:79:16 [literal] T
+std/limits.cn:79:16 [cast] T
+std/limits.cn:80:15 [ident] str
+std/limits.cn:80:15 [binary] bool
+std/limits.cn:80:20 [literal] str
+std/limits.cn:81:16 [literal] T
+std/limits.cn:81:16 [cast] T
+std/limits.cn:83:19 [literal] bool
+std/limits.cn:85:12 [literal] T
+std/limits.cn:94:36 [named_type] usize
+std/limits.cn:95:9 [binding_pat] str
+std/limits.cn:95:13 [call] str
+std/limits.cn:96:8 [ident] str
+std/limits.cn:96:8 [binary] bool
+std/limits.cn:96:13 [literal] str
+std/limits.cn:97:16 [literal] usize
+std/limits.cn:98:8 [ident] str
+std/limits.cn:98:8 [binary] bool
+std/limits.cn:98:13 [literal] str
+std/limits.cn:99:16 [literal] usize
+std/limits.cn:100:8 [index] fn() -> bool
+std/limits.cn:100:8 [call] bool
+std/limits.cn:101:16 [index] fn() -> usize
+std/limits.cn:101:16 [call] usize
+std/limits.cn:101:16 [binary] usize
+std/limits.cn:101:28 [literal] usize
+std/limits.cn:102:12 [index] fn() -> usize
+std/limits.cn:102:12 [call] usize
 std/list.cn:38:30 [named_type] list[(int64, int32)]
 std/list.cn:38:30 [named_type] list[(usize, usize)]
 std/list.cn:38:30 [named_type] list[T]
@@ -11680,227 +11850,206 @@ std/traits.category.cn:90:31 [index] fn() -> bool
 std/traits.category.cn:90:31 [call] bool
 std/traits.category.cn:107:5 [index] fn() -> bool
 std/traits.category.cn:107:5 [call] bool
-std/traits.category.cn:107:5 [binary] bool
-std/traits.category.cn:107:32 [call] str
-std/traits.category.cn:107:32 [binary] bool
-std/traits.category.cn:107:44 [literal] str
 std/traits.category.cn:111:5 [index] fn() -> bool
 std/traits.category.cn:111:5 [call] bool
-std/traits.category.cn:111:5 [binary] bool
-std/traits.category.cn:111:34 [call] str
-std/traits.category.cn:111:34 [binary] bool
-std/traits.category.cn:111:46 [literal] str
 std/traits.category.cn:115:5 [index] fn() -> bool
 std/traits.category.cn:115:5 [call] bool
-std/traits.category.cn:119:50 [named_type] bool
-std/traits.category.cn:120:9 [binding_pat] str
-std/traits.category.cn:120:13 [call] str
-std/traits.category.cn:121:12 [index] fn() -> bool
-std/traits.category.cn:121:12 [call] bool
-std/traits.category.cn:121:12 [binary] bool
-std/traits.category.cn:121:12 [binary] bool
-std/traits.category.cn:121:32 [ident] str
-std/traits.category.cn:121:32 [binary] bool
-std/traits.category.cn:121:37 [literal] str
-std/traits.category.cn:121:50 [ident] str
-std/traits.category.cn:121:50 [binary] bool
-std/traits.category.cn:121:55 [literal] str
-std/traits.category.cn:125:5 [index] fn() -> bool
-std/traits.category.cn:125:5 [call] bool
-std/traits.category.cn:125:5 [binary] bool
-std/traits.category.cn:125:23 [call] str
-std/traits.category.cn:125:23 [binary] bool
-std/traits.category.cn:125:35 [literal] str
-std/traits.category.cn:129:5 [index] fn() -> bool
-std/traits.category.cn:129:5 [call] bool
-std/traits.category.cn:129:5 [binary] bool
-std/traits.category.cn:129:34 [group] bool
-std/traits.category.cn:129:35 [index] fn() -> bool
-std/traits.category.cn:129:35 [call] bool
-std/traits.category.cn:129:35 [binary] bool
-std/traits.category.cn:129:53 [call] str
-std/traits.category.cn:129:53 [binary] bool
-std/traits.category.cn:129:65 [literal] str
-std/traits.category.cn:132:39 [named_type] bool
-std/traits.category.cn:133:12 [index] fn() -> bool
-std/traits.category.cn:133:12 [call] bool
-std/traits.category.cn:133:12 [binary] bool
-std/traits.category.cn:133:12 [binary] bool
-std/traits.category.cn:133:31 [index] fn() -> bool
-std/traits.category.cn:133:31 [call] bool
-std/traits.category.cn:133:47 [index] fn() -> bool
-std/traits.category.cn:133:47 [call] bool
-std/traits.category.cn:136:36 [named_type] bool
-std/traits.category.cn:137:12 [call] str
-std/traits.category.cn:137:12 [binary] bool
-std/traits.category.cn:137:24 [literal] str
-std/traits.category.cn:140:37 [named_type] bool
-std/traits.category.cn:141:12 [call] str
-std/traits.category.cn:141:12 [binary] bool
-std/traits.category.cn:141:24 [literal] str
-std/traits.category.cn:144:38 [named_type] bool
-std/traits.category.cn:145:12 [call] str
+std/traits.category.cn:119:5 [index] fn() -> bool
+std/traits.category.cn:119:5 [call] bool
+std/traits.category.cn:119:5 [binary] bool
+std/traits.category.cn:119:23 [call] str
+std/traits.category.cn:119:23 [binary] bool
+std/traits.category.cn:119:35 [literal] str
+std/traits.category.cn:124:5 [index] fn() -> bool
+std/traits.category.cn:124:5 [call] bool
+std/traits.category.cn:124:5 [binary] bool
+std/traits.category.cn:124:24 [group] bool
+std/traits.category.cn:124:25 [index] fn() -> bool
+std/traits.category.cn:124:25 [call] bool
+std/traits.category.cn:124:25 [binary] bool
+std/traits.category.cn:124:43 [call] str
+std/traits.category.cn:124:43 [binary] bool
+std/traits.category.cn:124:55 [literal] str
+std/traits.category.cn:127:39 [named_type] bool
+std/traits.category.cn:128:12 [index] fn() -> bool
+std/traits.category.cn:128:12 [call] bool
+std/traits.category.cn:128:12 [binary] bool
+std/traits.category.cn:128:12 [binary] bool
+std/traits.category.cn:128:31 [index] fn() -> bool
+std/traits.category.cn:128:31 [call] bool
+std/traits.category.cn:128:47 [index] fn() -> bool
+std/traits.category.cn:128:47 [call] bool
+std/traits.category.cn:131:36 [named_type] bool
+std/traits.category.cn:132:12 [call] str
+std/traits.category.cn:132:12 [binary] bool
+std/traits.category.cn:132:24 [literal] str
+std/traits.category.cn:135:37 [named_type] bool
+std/traits.category.cn:136:12 [call] str
+std/traits.category.cn:136:12 [binary] bool
+std/traits.category.cn:136:24 [literal] str
+std/traits.category.cn:139:38 [named_type] bool
+std/traits.category.cn:140:12 [call] str
+std/traits.category.cn:140:12 [binary] bool
+std/traits.category.cn:140:24 [literal] str
+std/traits.category.cn:143:38 [named_type] bool
+std/traits.category.cn:144:9 [binding_pat] str
+std/traits.category.cn:144:13 [call] str
+std/traits.category.cn:145:12 [ident] str
 std/traits.category.cn:145:12 [binary] bool
-std/traits.category.cn:145:24 [literal] str
-std/traits.category.cn:148:38 [named_type] bool
-std/traits.category.cn:149:9 [binding_pat] str
-std/traits.category.cn:149:13 [call] str
-std/traits.category.cn:150:12 [ident] str
-std/traits.category.cn:150:12 [binary] bool
-std/traits.category.cn:150:12 [binary] bool
-std/traits.category.cn:150:17 [literal] str
-std/traits.category.cn:150:28 [ident] str
-std/traits.category.cn:150:28 [binary] bool
-std/traits.category.cn:150:33 [literal] str
-std/traits.category.cn:158:37 [named_type] bool
-std/traits.category.cn:159:12 [call] str
-std/traits.category.cn:159:12 [binary] bool
-std/traits.category.cn:159:24 [literal] str
-std/traits.category.cn:162:36 [named_type] bool
-std/traits.category.cn:163:12 [call] str
-std/traits.category.cn:163:12 [binary] bool
-std/traits.category.cn:163:24 [literal] str
-std/traits.category.cn:166:39 [named_type] bool
-std/traits.category.cn:167:12 [call] str
-std/traits.category.cn:167:12 [binary] bool
-std/traits.category.cn:167:24 [literal] str
-std/traits.category.cn:170:39 [named_type] bool
-std/traits.category.cn:171:12 [call] str
-std/traits.category.cn:171:12 [binary] bool
-std/traits.category.cn:171:24 [literal] str
-std/traits.category.cn:174:35 [named_type] bool
-std/traits.category.cn:175:12 [call] str
-std/traits.category.cn:175:12 [binary] bool
-std/traits.category.cn:175:24 [literal] str
-std/traits.category.cn:183:39 [named_type] bool
-std/traits.category.cn:184:11 [call] type_kind
-std/traits.category.cn:185:9 [ctor_pat] type_kind
-std/traits.category.cn:185:32 [literal] bool
-std/traits.category.cn:186:9 [wildcard_pat] type_kind
-std/traits.category.cn:186:21 [literal] bool
-std/traits.category.cn:190:36 [named_type] bool
-std/traits.category.cn:191:11 [call] type_kind
-std/traits.category.cn:192:9 [ctor_pat] type_kind
-std/traits.category.cn:192:29 [literal] bool
-std/traits.category.cn:193:9 [wildcard_pat] type_kind
-std/traits.category.cn:193:21 [literal] bool
-std/traits.category.cn:201:40 [named_type] bool
-std/traits.category.cn:202:12 [call] str
-std/traits.category.cn:202:12 [binary] bool
-std/traits.category.cn:202:24 [call] str
-std/traits.category.cn:223:51 [named_type] bool
-std/traits.category.cn:224:12 [ident] _
-std/traits.category.cn:224:12 [call] fn() -> bool
-std/traits.category.cn:224:12 [call] bool
-std/traits.category.cn:224:12 [binary] bool
-std/traits.category.cn:224:35 [ident] _
-std/traits.category.cn:224:35 [call] bool
-std/traits.category.cn:228:43 [named_type] type_category
-std/traits.category.cn:229:9 [binding_pat] str
-std/traits.category.cn:229:13 [call] str
-std/traits.category.cn:230:8 [ident] str
-std/traits.category.cn:230:8 [binary] bool
-std/traits.category.cn:230:13 [literal] str
+std/traits.category.cn:145:12 [binary] bool
+std/traits.category.cn:145:17 [literal] str
+std/traits.category.cn:145:28 [ident] str
+std/traits.category.cn:145:28 [binary] bool
+std/traits.category.cn:145:33 [literal] str
+std/traits.category.cn:153:37 [named_type] bool
+std/traits.category.cn:154:12 [call] str
+std/traits.category.cn:154:12 [binary] bool
+std/traits.category.cn:154:24 [literal] str
+std/traits.category.cn:157:36 [named_type] bool
+std/traits.category.cn:158:12 [call] str
+std/traits.category.cn:158:12 [binary] bool
+std/traits.category.cn:158:24 [literal] str
+std/traits.category.cn:161:39 [named_type] bool
+std/traits.category.cn:162:12 [call] str
+std/traits.category.cn:162:12 [binary] bool
+std/traits.category.cn:162:24 [literal] str
+std/traits.category.cn:165:39 [named_type] bool
+std/traits.category.cn:166:12 [call] str
+std/traits.category.cn:166:12 [binary] bool
+std/traits.category.cn:166:24 [literal] str
+std/traits.category.cn:169:35 [named_type] bool
+std/traits.category.cn:170:12 [call] str
+std/traits.category.cn:170:12 [binary] bool
+std/traits.category.cn:170:24 [literal] str
+std/traits.category.cn:178:39 [named_type] bool
+std/traits.category.cn:179:11 [call] type_kind
+std/traits.category.cn:180:9 [ctor_pat] type_kind
+std/traits.category.cn:180:32 [literal] bool
+std/traits.category.cn:181:9 [wildcard_pat] type_kind
+std/traits.category.cn:181:21 [literal] bool
+std/traits.category.cn:185:36 [named_type] bool
+std/traits.category.cn:186:11 [call] type_kind
+std/traits.category.cn:187:9 [ctor_pat] type_kind
+std/traits.category.cn:187:29 [literal] bool
+std/traits.category.cn:188:9 [wildcard_pat] type_kind
+std/traits.category.cn:188:21 [literal] bool
+std/traits.category.cn:196:40 [named_type] bool
+std/traits.category.cn:197:12 [call] str
+std/traits.category.cn:197:12 [binary] bool
+std/traits.category.cn:197:24 [call] str
+std/traits.category.cn:218:51 [named_type] bool
+std/traits.category.cn:219:12 [ident] _
+std/traits.category.cn:219:12 [call] fn() -> bool
+std/traits.category.cn:219:12 [call] bool
+std/traits.category.cn:219:12 [binary] bool
+std/traits.category.cn:219:35 [ident] _
+std/traits.category.cn:219:35 [call] bool
+std/traits.category.cn:223:43 [named_type] type_category
+std/traits.category.cn:224:9 [binding_pat] str
+std/traits.category.cn:224:13 [call] str
+std/traits.category.cn:225:8 [ident] str
+std/traits.category.cn:225:8 [binary] bool
+std/traits.category.cn:225:13 [literal] str
+std/traits.category.cn:226:16 [ident] type_category
+std/traits.category.cn:227:8 [ident] str
+std/traits.category.cn:227:8 [binary] bool
+std/traits.category.cn:227:13 [literal] str
+std/traits.category.cn:228:16 [ident] type_category
+std/traits.category.cn:229:8 [group] bool
+std/traits.category.cn:229:9 [ident] str
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:9 [binary] bool
+std/traits.category.cn:229:14 [literal] str
+std/traits.category.cn:229:24 [ident] str
+std/traits.category.cn:229:24 [binary] bool
+std/traits.category.cn:229:29 [literal] str
+std/traits.category.cn:229:40 [ident] str
+std/traits.category.cn:229:40 [binary] bool
+std/traits.category.cn:229:45 [literal] str
+std/traits.category.cn:229:56 [ident] str
+std/traits.category.cn:229:56 [binary] bool
+std/traits.category.cn:229:61 [literal] str
+std/traits.category.cn:230:9 [ident] str
+std/traits.category.cn:230:9 [binary] bool
+std/traits.category.cn:230:14 [literal] str
+std/traits.category.cn:230:26 [ident] str
+std/traits.category.cn:230:26 [binary] bool
+std/traits.category.cn:230:31 [literal] str
 std/traits.category.cn:231:16 [ident] type_category
-std/traits.category.cn:232:8 [ident] str
-std/traits.category.cn:232:8 [binary] bool
-std/traits.category.cn:232:13 [literal] str
-std/traits.category.cn:233:16 [ident] type_category
-std/traits.category.cn:234:8 [group] bool
-std/traits.category.cn:234:9 [ident] str
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:9 [binary] bool
-std/traits.category.cn:234:14 [literal] str
-std/traits.category.cn:234:24 [ident] str
-std/traits.category.cn:234:24 [binary] bool
-std/traits.category.cn:234:29 [literal] str
-std/traits.category.cn:234:40 [ident] str
-std/traits.category.cn:234:40 [binary] bool
-std/traits.category.cn:234:45 [literal] str
-std/traits.category.cn:234:56 [ident] str
-std/traits.category.cn:234:56 [binary] bool
-std/traits.category.cn:234:61 [literal] str
-std/traits.category.cn:235:9 [ident] str
-std/traits.category.cn:235:9 [binary] bool
-std/traits.category.cn:235:14 [literal] str
+std/traits.category.cn:232:8 [group] bool
+std/traits.category.cn:232:9 [ident] str
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:9 [binary] bool
+std/traits.category.cn:232:14 [literal] str
+std/traits.category.cn:232:25 [ident] str
+std/traits.category.cn:232:25 [binary] bool
+std/traits.category.cn:232:30 [literal] str
+std/traits.category.cn:232:42 [ident] str
+std/traits.category.cn:232:42 [binary] bool
+std/traits.category.cn:232:47 [literal] str
+std/traits.category.cn:232:59 [ident] str
+std/traits.category.cn:232:59 [binary] bool
+std/traits.category.cn:232:64 [literal] str
+std/traits.category.cn:233:9 [ident] str
+std/traits.category.cn:233:9 [binary] bool
+std/traits.category.cn:233:14 [literal] str
+std/traits.category.cn:233:27 [ident] str
+std/traits.category.cn:233:27 [binary] bool
+std/traits.category.cn:233:32 [literal] str
+std/traits.category.cn:233:43 [ident] str
+std/traits.category.cn:233:43 [binary] bool
+std/traits.category.cn:233:48 [literal] str
+std/traits.category.cn:234:16 [ident] type_category
+std/traits.category.cn:235:8 [ident] str
+std/traits.category.cn:235:8 [binary] bool
+std/traits.category.cn:235:8 [binary] bool
+std/traits.category.cn:235:8 [binary] bool
+std/traits.category.cn:235:13 [literal] str
 std/traits.category.cn:235:26 [ident] str
 std/traits.category.cn:235:26 [binary] bool
 std/traits.category.cn:235:31 [literal] str
+std/traits.category.cn:235:44 [ident] str
+std/traits.category.cn:235:44 [binary] bool
+std/traits.category.cn:235:49 [literal] str
 std/traits.category.cn:236:16 [ident] type_category
-std/traits.category.cn:237:8 [group] bool
-std/traits.category.cn:237:9 [ident] str
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:9 [binary] bool
-std/traits.category.cn:237:14 [literal] str
-std/traits.category.cn:237:25 [ident] str
-std/traits.category.cn:237:25 [binary] bool
-std/traits.category.cn:237:30 [literal] str
-std/traits.category.cn:237:42 [ident] str
-std/traits.category.cn:237:42 [binary] bool
-std/traits.category.cn:237:47 [literal] str
-std/traits.category.cn:237:59 [ident] str
-std/traits.category.cn:237:59 [binary] bool
-std/traits.category.cn:237:64 [literal] str
-std/traits.category.cn:238:9 [ident] str
-std/traits.category.cn:238:9 [binary] bool
-std/traits.category.cn:238:14 [literal] str
-std/traits.category.cn:238:27 [ident] str
-std/traits.category.cn:238:27 [binary] bool
-std/traits.category.cn:238:32 [literal] str
-std/traits.category.cn:238:43 [ident] str
-std/traits.category.cn:238:43 [binary] bool
-std/traits.category.cn:238:48 [literal] str
-std/traits.category.cn:239:16 [ident] type_category
-std/traits.category.cn:240:8 [ident] str
-std/traits.category.cn:240:8 [binary] bool
-std/traits.category.cn:240:8 [binary] bool
-std/traits.category.cn:240:8 [binary] bool
-std/traits.category.cn:240:13 [literal] str
-std/traits.category.cn:240:26 [ident] str
-std/traits.category.cn:240:26 [binary] bool
-std/traits.category.cn:240:31 [literal] str
-std/traits.category.cn:240:44 [ident] str
-std/traits.category.cn:240:44 [binary] bool
-std/traits.category.cn:240:49 [literal] str
-std/traits.category.cn:241:16 [ident] type_category
-std/traits.category.cn:242:8 [ident] str
-std/traits.category.cn:242:8 [binary] bool
-std/traits.category.cn:242:13 [literal] str
-std/traits.category.cn:243:16 [ident] type_category
-std/traits.category.cn:244:8 [ident] str
-std/traits.category.cn:244:8 [binary] bool
-std/traits.category.cn:244:8 [binary] bool
-std/traits.category.cn:244:8 [binary] bool
-std/traits.category.cn:244:13 [literal] str
-std/traits.category.cn:244:24 [ident] str
-std/traits.category.cn:244:24 [binary] bool
-std/traits.category.cn:244:29 [literal] str
-std/traits.category.cn:244:40 [ident] str
-std/traits.category.cn:244:40 [binary] bool
-std/traits.category.cn:244:45 [literal] str
-std/traits.category.cn:245:16 [ident] type_category
-std/traits.category.cn:246:8 [ident] str
-std/traits.category.cn:246:8 [binary] bool
-std/traits.category.cn:246:13 [literal] str
-std/traits.category.cn:247:16 [ident] type_category
-std/traits.category.cn:248:11 [call] type_kind
-std/traits.category.cn:249:9 [ctor_pat] type_kind
-std/traits.category.cn:249:32 [ident] type_category
-std/traits.category.cn:250:9 [ctor_pat] type_kind
-std/traits.category.cn:250:29 [ident] type_category
-std/traits.category.cn:251:9 [ctor_pat] type_kind
-std/traits.category.cn:251:28 [ident] type_category
-std/traits.category.cn:252:9 [wildcard_pat] type_kind
-std/traits.category.cn:252:21 [ident] type_category
+std/traits.category.cn:237:8 [ident] str
+std/traits.category.cn:237:8 [binary] bool
+std/traits.category.cn:237:13 [literal] str
+std/traits.category.cn:238:16 [ident] type_category
+std/traits.category.cn:239:8 [ident] str
+std/traits.category.cn:239:8 [binary] bool
+std/traits.category.cn:239:8 [binary] bool
+std/traits.category.cn:239:8 [binary] bool
+std/traits.category.cn:239:13 [literal] str
+std/traits.category.cn:239:24 [ident] str
+std/traits.category.cn:239:24 [binary] bool
+std/traits.category.cn:239:29 [literal] str
+std/traits.category.cn:239:40 [ident] str
+std/traits.category.cn:239:40 [binary] bool
+std/traits.category.cn:239:45 [literal] str
+std/traits.category.cn:240:16 [ident] type_category
+std/traits.category.cn:241:8 [ident] str
+std/traits.category.cn:241:8 [binary] bool
+std/traits.category.cn:241:13 [literal] str
+std/traits.category.cn:242:16 [ident] type_category
+std/traits.category.cn:243:11 [call] type_kind
+std/traits.category.cn:244:9 [ctor_pat] type_kind
+std/traits.category.cn:244:32 [ident] type_category
+std/traits.category.cn:245:9 [ctor_pat] type_kind
+std/traits.category.cn:245:29 [ident] type_category
+std/traits.category.cn:246:9 [ctor_pat] type_kind
+std/traits.category.cn:246:28 [ident] type_category
+std/traits.category.cn:247:9 [wildcard_pat] type_kind
+std/traits.category.cn:247:21 [ident] type_category
 std/traits.cn:10:14 [binding_pat] self
 std/traits.cn:10:27 [named_type] unit
 std/traits.cn:37:15 [binding_pat] self
@@ -12013,178 +12162,211 @@ std/traits.hash.cn:79:12 [call] uint64
 std/traits.hash.cn:79:25 [ident] fn() -> uint64
 std/traits.hash.cn:79:25 [call] uint64
 std/traits.hash.cn:79:38 [ident] uint64
-std/traits.hash.cn:100:24 [binding_pat] float64
-std/traits.hash.cn:100:39 [named_type] uint64
-std/traits.hash.cn:101:8 [ident] float64
-std/traits.hash.cn:101:8 [binary] bool
-std/traits.hash.cn:101:13 [literal] float64
-std/traits.hash.cn:102:16 [literal] uint64
-std/traits.hash.cn:103:8 [ident] float64
-std/traits.hash.cn:103:8 [binary] bool
-std/traits.hash.cn:103:13 [ident] float64
-std/traits.hash.cn:104:16 [literal] uint64
-std/traits.hash.cn:105:12 [ident] fn(float64) -> uint64
-std/traits.hash.cn:105:12 [call] uint64
-std/traits.hash.cn:105:34 [ident] float64
-std/traits.hash.cn:112:24 [binding_pat] float32
-std/traits.hash.cn:112:39 [named_type] uint32
-std/traits.hash.cn:113:8 [ident] float32
-std/traits.hash.cn:113:8 [binary] bool
-std/traits.hash.cn:113:13 [literal] float32
-std/traits.hash.cn:114:16 [literal] uint32
-std/traits.hash.cn:115:8 [ident] float32
-std/traits.hash.cn:115:8 [binary] bool
-std/traits.hash.cn:115:13 [ident] float32
-std/traits.hash.cn:116:16 [literal] uint32
-std/traits.hash.cn:117:12 [ident] fn(float32) -> uint32
-std/traits.hash.cn:117:12 [call] uint32
-std/traits.hash.cn:117:34 [ident] float32
-std/traits.hash.cn:120:14 [binding_pat] bool
-std/traits.hash.cn:120:23 [named_type] uint64
-std/traits.hash.cn:121:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:121:16 [call] uint64
-std/traits.hash.cn:121:29 [ident] fn() -> uint64
-std/traits.hash.cn:121:29 [call] uint64
-std/traits.hash.cn:121:42 [ident] bool
-std/traits.hash.cn:121:42 [cast] uint64
-std/traits.hash.cn:124:14 [binding_pat] char
+std/traits.hash.cn:104:24 [binding_pat] float64
+std/traits.hash.cn:104:39 [named_type] uint64
+std/traits.hash.cn:105:8 [ident] float64
+std/traits.hash.cn:105:8 [binary] bool
+std/traits.hash.cn:105:13 [literal] float64
+std/traits.hash.cn:106:16 [literal] uint64
+std/traits.hash.cn:107:8 [ident] float64
+std/traits.hash.cn:107:8 [binary] bool
+std/traits.hash.cn:107:13 [ident] float64
+std/traits.hash.cn:108:16 [literal] uint64
+std/traits.hash.cn:109:12 [ident] fn(float64) -> uint64
+std/traits.hash.cn:109:12 [call] uint64
+std/traits.hash.cn:109:34 [ident] float64
+std/traits.hash.cn:116:24 [binding_pat] float32
+std/traits.hash.cn:116:39 [named_type] uint32
+std/traits.hash.cn:117:8 [ident] float32
+std/traits.hash.cn:117:8 [binary] bool
+std/traits.hash.cn:117:13 [literal] float32
+std/traits.hash.cn:118:16 [literal] uint32
+std/traits.hash.cn:119:8 [ident] float32
+std/traits.hash.cn:119:8 [binary] bool
+std/traits.hash.cn:119:13 [ident] float32
+std/traits.hash.cn:120:16 [literal] uint32
+std/traits.hash.cn:121:12 [ident] fn(float32) -> uint32
+std/traits.hash.cn:121:12 [call] uint32
+std/traits.hash.cn:121:34 [ident] float32
+std/traits.hash.cn:124:14 [binding_pat] bool
 std/traits.hash.cn:124:23 [named_type] uint64
 std/traits.hash.cn:125:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:125:16 [call] uint64
 std/traits.hash.cn:125:29 [ident] fn() -> uint64
 std/traits.hash.cn:125:29 [call] uint64
-std/traits.hash.cn:125:42 [ident] char
+std/traits.hash.cn:125:42 [ident] bool
 std/traits.hash.cn:125:42 [cast] uint64
-std/traits.hash.cn:128:14 [binding_pat] byte
+std/traits.hash.cn:128:14 [binding_pat] char
 std/traits.hash.cn:128:23 [named_type] uint64
 std/traits.hash.cn:129:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:129:16 [call] uint64
 std/traits.hash.cn:129:29 [ident] fn() -> uint64
 std/traits.hash.cn:129:29 [call] uint64
-std/traits.hash.cn:129:42 [ident] byte
+std/traits.hash.cn:129:42 [ident] char
 std/traits.hash.cn:129:42 [cast] uint64
-std/traits.hash.cn:132:14 [binding_pat] int8
+std/traits.hash.cn:132:14 [binding_pat] byte
 std/traits.hash.cn:132:23 [named_type] uint64
 std/traits.hash.cn:133:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:133:16 [call] uint64
 std/traits.hash.cn:133:29 [ident] fn() -> uint64
 std/traits.hash.cn:133:29 [call] uint64
-std/traits.hash.cn:133:42 [ident] int8
+std/traits.hash.cn:133:42 [ident] byte
 std/traits.hash.cn:133:42 [cast] uint64
-std/traits.hash.cn:136:14 [binding_pat] int16
+std/traits.hash.cn:136:14 [binding_pat] int8
 std/traits.hash.cn:136:23 [named_type] uint64
 std/traits.hash.cn:137:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:137:16 [call] uint64
 std/traits.hash.cn:137:29 [ident] fn() -> uint64
 std/traits.hash.cn:137:29 [call] uint64
-std/traits.hash.cn:137:42 [ident] int16
+std/traits.hash.cn:137:42 [ident] int8
 std/traits.hash.cn:137:42 [cast] uint64
-std/traits.hash.cn:140:14 [binding_pat] int32
+std/traits.hash.cn:140:14 [binding_pat] int16
 std/traits.hash.cn:140:23 [named_type] uint64
 std/traits.hash.cn:141:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:141:16 [call] uint64
 std/traits.hash.cn:141:29 [ident] fn() -> uint64
 std/traits.hash.cn:141:29 [call] uint64
-std/traits.hash.cn:141:42 [ident] int32
+std/traits.hash.cn:141:42 [ident] int16
 std/traits.hash.cn:141:42 [cast] uint64
-std/traits.hash.cn:144:14 [binding_pat] int64
+std/traits.hash.cn:144:14 [binding_pat] int32
 std/traits.hash.cn:144:23 [named_type] uint64
 std/traits.hash.cn:145:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:145:16 [call] uint64
 std/traits.hash.cn:145:29 [ident] fn() -> uint64
 std/traits.hash.cn:145:29 [call] uint64
-std/traits.hash.cn:145:42 [ident] int64
+std/traits.hash.cn:145:42 [ident] int32
 std/traits.hash.cn:145:42 [cast] uint64
-std/traits.hash.cn:148:14 [binding_pat] isize
+std/traits.hash.cn:148:14 [binding_pat] int64
 std/traits.hash.cn:148:23 [named_type] uint64
 std/traits.hash.cn:149:16 [ident] fn(uint64, uint64) -> uint64
 std/traits.hash.cn:149:16 [call] uint64
 std/traits.hash.cn:149:29 [ident] fn() -> uint64
 std/traits.hash.cn:149:29 [call] uint64
-std/traits.hash.cn:149:42 [ident] isize
+std/traits.hash.cn:149:42 [ident] int64
 std/traits.hash.cn:149:42 [cast] uint64
-std/traits.hash.cn:152:14 [binding_pat] uint8
+std/traits.hash.cn:152:14 [binding_pat] int128
 std/traits.hash.cn:152:23 [named_type] uint64
-std/traits.hash.cn:153:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:153:16 [call] uint64
-std/traits.hash.cn:153:29 [ident] fn() -> uint64
-std/traits.hash.cn:153:29 [call] uint64
-std/traits.hash.cn:153:42 [ident] uint8
-std/traits.hash.cn:153:42 [cast] uint64
-std/traits.hash.cn:156:14 [binding_pat] uint16
-std/traits.hash.cn:156:23 [named_type] uint64
-std/traits.hash.cn:157:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:157:16 [call] uint64
-std/traits.hash.cn:157:29 [ident] fn() -> uint64
-std/traits.hash.cn:157:29 [call] uint64
-std/traits.hash.cn:157:42 [ident] uint16
-std/traits.hash.cn:157:42 [cast] uint64
-std/traits.hash.cn:160:14 [binding_pat] uint32
-std/traits.hash.cn:160:23 [named_type] uint64
-std/traits.hash.cn:161:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:161:16 [call] uint64
-std/traits.hash.cn:161:29 [ident] fn() -> uint64
-std/traits.hash.cn:161:29 [call] uint64
-std/traits.hash.cn:161:42 [ident] uint32
-std/traits.hash.cn:161:42 [cast] uint64
-std/traits.hash.cn:164:14 [binding_pat] uint64
-std/traits.hash.cn:164:23 [named_type] uint64
-std/traits.hash.cn:165:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:165:16 [call] uint64
-std/traits.hash.cn:165:29 [ident] fn() -> uint64
-std/traits.hash.cn:165:29 [call] uint64
-std/traits.hash.cn:165:42 [ident] uint64
-std/traits.hash.cn:168:14 [binding_pat] usize
-std/traits.hash.cn:168:23 [named_type] uint64
-std/traits.hash.cn:169:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:169:16 [call] uint64
-std/traits.hash.cn:169:29 [ident] fn() -> uint64
-std/traits.hash.cn:169:29 [call] uint64
-std/traits.hash.cn:169:42 [ident] usize
-std/traits.hash.cn:169:42 [cast] uint64
-std/traits.hash.cn:172:14 [binding_pat] float64
-std/traits.hash.cn:172:23 [named_type] uint64
-std/traits.hash.cn:173:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:173:16 [call] uint64
-std/traits.hash.cn:173:29 [ident] fn() -> uint64
-std/traits.hash.cn:173:29 [call] uint64
-std/traits.hash.cn:173:42 [ident] fn(float64) -> uint64
-std/traits.hash.cn:173:42 [call] uint64
-std/traits.hash.cn:173:61 [ident] float64
-std/traits.hash.cn:176:14 [binding_pat] float32
-std/traits.hash.cn:176:23 [named_type] uint64
-std/traits.hash.cn:177:16 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:177:16 [call] uint64
-std/traits.hash.cn:177:29 [ident] fn() -> uint64
-std/traits.hash.cn:177:29 [call] uint64
-std/traits.hash.cn:177:42 [ident] fn(float32) -> uint32
-std/traits.hash.cn:177:42 [call] uint32
-std/traits.hash.cn:177:42 [cast] uint64
-std/traits.hash.cn:177:61 [ident] float32
-std/traits.hash.cn:184:14 [binding_pat] &str
-std/traits.hash.cn:184:23 [named_type] uint64
-std/traits.hash.cn:185:9 [var_stmt] uint64
-std/traits.hash.cn:185:25 [ident] fn() -> uint64
-std/traits.hash.cn:185:25 [call] uint64
-std/traits.hash.cn:186:9 [var_stmt] usize
-std/traits.hash.cn:186:24 [literal] usize
-std/traits.hash.cn:187:15 [ident] usize
-std/traits.hash.cn:187:15 [binary] bool
-std/traits.hash.cn:187:19 [ident] &str
-std/traits.hash.cn:187:19 [call] usize
-std/traits.hash.cn:188:13 [ident] uint64
-std/traits.hash.cn:188:17 [ident] fn(uint64, uint64) -> uint64
-std/traits.hash.cn:188:17 [call] uint64
-std/traits.hash.cn:188:30 [ident] uint64
-std/traits.hash.cn:188:33 [ident] &str
-std/traits.hash.cn:188:33 [index] byte
-std/traits.hash.cn:188:33 [cast] uint64
-std/traits.hash.cn:188:38 [ident] usize
-std/traits.hash.cn:189:13 [ident] usize
-std/traits.hash.cn:189:17 [ident] usize
-std/traits.hash.cn:189:17 [binary] usize
-std/traits.hash.cn:189:21 [literal] usize
-std/traits.hash.cn:190:16 [ident] uint64
+std/traits.hash.cn:153:13 [binding_pat] uint128
+std/traits.hash.cn:153:20 [ident] int128
+std/traits.hash.cn:153:20 [cast] uint128
+std/traits.hash.cn:154:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:154:16 [call] uint64
+std/traits.hash.cn:154:29 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:154:29 [call] uint64
+std/traits.hash.cn:154:42 [ident] fn() -> uint64
+std/traits.hash.cn:154:42 [call] uint64
+std/traits.hash.cn:154:55 [ident] uint128
+std/traits.hash.cn:154:55 [cast] uint64
+std/traits.hash.cn:154:72 [group] uint128
+std/traits.hash.cn:154:72 [cast] uint64
+std/traits.hash.cn:154:73 [ident] uint128
+std/traits.hash.cn:154:73 [binary] uint128
+std/traits.hash.cn:154:81 [literal] uint128
+std/traits.hash.cn:157:14 [binding_pat] uint128
+std/traits.hash.cn:157:23 [named_type] uint64
+std/traits.hash.cn:158:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:158:16 [call] uint64
+std/traits.hash.cn:158:29 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:158:29 [call] uint64
+std/traits.hash.cn:158:42 [ident] fn() -> uint64
+std/traits.hash.cn:158:42 [call] uint64
+std/traits.hash.cn:158:55 [ident] uint128
+std/traits.hash.cn:158:55 [cast] uint64
+std/traits.hash.cn:158:72 [group] uint128
+std/traits.hash.cn:158:72 [cast] uint64
+std/traits.hash.cn:158:73 [ident] uint128
+std/traits.hash.cn:158:73 [binary] uint128
+std/traits.hash.cn:158:81 [literal] uint128
+std/traits.hash.cn:161:14 [binding_pat] isize
+std/traits.hash.cn:161:23 [named_type] uint64
+std/traits.hash.cn:162:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:162:16 [call] uint64
+std/traits.hash.cn:162:29 [ident] fn() -> uint64
+std/traits.hash.cn:162:29 [call] uint64
+std/traits.hash.cn:162:42 [ident] isize
+std/traits.hash.cn:162:42 [cast] uint64
+std/traits.hash.cn:165:14 [binding_pat] uint8
+std/traits.hash.cn:165:23 [named_type] uint64
+std/traits.hash.cn:166:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:166:16 [call] uint64
+std/traits.hash.cn:166:29 [ident] fn() -> uint64
+std/traits.hash.cn:166:29 [call] uint64
+std/traits.hash.cn:166:42 [ident] uint8
+std/traits.hash.cn:166:42 [cast] uint64
+std/traits.hash.cn:169:14 [binding_pat] uint16
+std/traits.hash.cn:169:23 [named_type] uint64
+std/traits.hash.cn:170:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:170:16 [call] uint64
+std/traits.hash.cn:170:29 [ident] fn() -> uint64
+std/traits.hash.cn:170:29 [call] uint64
+std/traits.hash.cn:170:42 [ident] uint16
+std/traits.hash.cn:170:42 [cast] uint64
+std/traits.hash.cn:173:14 [binding_pat] uint32
+std/traits.hash.cn:173:23 [named_type] uint64
+std/traits.hash.cn:174:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:174:16 [call] uint64
+std/traits.hash.cn:174:29 [ident] fn() -> uint64
+std/traits.hash.cn:174:29 [call] uint64
+std/traits.hash.cn:174:42 [ident] uint32
+std/traits.hash.cn:174:42 [cast] uint64
+std/traits.hash.cn:177:14 [binding_pat] uint64
+std/traits.hash.cn:177:23 [named_type] uint64
+std/traits.hash.cn:178:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:178:16 [call] uint64
+std/traits.hash.cn:178:29 [ident] fn() -> uint64
+std/traits.hash.cn:178:29 [call] uint64
+std/traits.hash.cn:178:42 [ident] uint64
+std/traits.hash.cn:181:14 [binding_pat] usize
+std/traits.hash.cn:181:23 [named_type] uint64
+std/traits.hash.cn:182:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:182:16 [call] uint64
+std/traits.hash.cn:182:29 [ident] fn() -> uint64
+std/traits.hash.cn:182:29 [call] uint64
+std/traits.hash.cn:182:42 [ident] usize
+std/traits.hash.cn:182:42 [cast] uint64
+std/traits.hash.cn:185:14 [binding_pat] float64
+std/traits.hash.cn:185:23 [named_type] uint64
+std/traits.hash.cn:186:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:186:16 [call] uint64
+std/traits.hash.cn:186:29 [ident] fn() -> uint64
+std/traits.hash.cn:186:29 [call] uint64
+std/traits.hash.cn:186:42 [ident] fn(float64) -> uint64
+std/traits.hash.cn:186:42 [call] uint64
+std/traits.hash.cn:186:61 [ident] float64
+std/traits.hash.cn:189:14 [binding_pat] float32
+std/traits.hash.cn:189:23 [named_type] uint64
+std/traits.hash.cn:190:16 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:190:16 [call] uint64
+std/traits.hash.cn:190:29 [ident] fn() -> uint64
+std/traits.hash.cn:190:29 [call] uint64
+std/traits.hash.cn:190:42 [ident] fn(float32) -> uint32
+std/traits.hash.cn:190:42 [call] uint32
+std/traits.hash.cn:190:42 [cast] uint64
+std/traits.hash.cn:190:61 [ident] float32
+std/traits.hash.cn:197:14 [binding_pat] &str
+std/traits.hash.cn:197:23 [named_type] uint64
+std/traits.hash.cn:198:9 [var_stmt] uint64
+std/traits.hash.cn:198:25 [ident] fn() -> uint64
+std/traits.hash.cn:198:25 [call] uint64
+std/traits.hash.cn:199:9 [var_stmt] usize
+std/traits.hash.cn:199:24 [literal] usize
+std/traits.hash.cn:200:15 [ident] usize
+std/traits.hash.cn:200:15 [binary] bool
+std/traits.hash.cn:200:19 [ident] &str
+std/traits.hash.cn:200:19 [call] usize
+std/traits.hash.cn:201:13 [ident] uint64
+std/traits.hash.cn:201:17 [ident] fn(uint64, uint64) -> uint64
+std/traits.hash.cn:201:17 [call] uint64
+std/traits.hash.cn:201:30 [ident] uint64
+std/traits.hash.cn:201:33 [ident] &str
+std/traits.hash.cn:201:33 [index] byte
+std/traits.hash.cn:201:33 [cast] uint64
+std/traits.hash.cn:201:38 [ident] usize
+std/traits.hash.cn:202:13 [ident] usize
+std/traits.hash.cn:202:17 [ident] usize
+std/traits.hash.cn:202:17 [binary] usize
+std/traits.hash.cn:202:21 [literal] usize
+std/traits.hash.cn:203:16 [ident] uint64
 std/traits.index.cn:54:12 [binding_pat] self
 std/traits.index.cn:54:18 [binding_pat] I
 std/traits.index.cn:54:27 [named_type] _
@@ -12219,54 +12401,62 @@ std/traits.numeric.cn:76:13 [binding_pat] self
 std/traits.numeric.cn:76:22 [named_type] self
 std/traits.numeric.cn:88:31 [named_type] self
 std/traits.numeric.cn:97:30 [named_type] self
-std/traits.numeric.cn:113:31 [named_type] int8
-std/traits.numeric.cn:114:16 [literal] int8
-std/traits.numeric.cn:117:30 [named_type] int8
-std/traits.numeric.cn:118:16 [literal] int8
-std/traits.numeric.cn:121:31 [named_type] int16
-std/traits.numeric.cn:122:16 [literal] int16
-std/traits.numeric.cn:125:30 [named_type] int16
-std/traits.numeric.cn:126:16 [literal] int16
-std/traits.numeric.cn:129:31 [named_type] int32
-std/traits.numeric.cn:130:16 [literal] int32
-std/traits.numeric.cn:133:30 [named_type] int32
-std/traits.numeric.cn:134:16 [literal] int32
-std/traits.numeric.cn:137:31 [named_type] int64
-std/traits.numeric.cn:138:16 [literal] int64
-std/traits.numeric.cn:141:30 [named_type] int64
-std/traits.numeric.cn:142:16 [literal] int64
-std/traits.numeric.cn:145:31 [named_type] uint8
-std/traits.numeric.cn:146:16 [literal] uint8
-std/traits.numeric.cn:149:30 [named_type] uint8
-std/traits.numeric.cn:150:16 [literal] uint8
-std/traits.numeric.cn:153:31 [named_type] uint16
-std/traits.numeric.cn:154:16 [literal] uint16
-std/traits.numeric.cn:157:30 [named_type] uint16
-std/traits.numeric.cn:158:16 [literal] uint16
-std/traits.numeric.cn:161:31 [named_type] uint32
-std/traits.numeric.cn:162:16 [literal] uint32
-std/traits.numeric.cn:165:30 [named_type] uint32
-std/traits.numeric.cn:166:16 [literal] uint32
-std/traits.numeric.cn:169:31 [named_type] uint64
-std/traits.numeric.cn:170:16 [literal] uint64
-std/traits.numeric.cn:173:30 [named_type] uint64
-std/traits.numeric.cn:174:16 [literal] uint64
-std/traits.numeric.cn:177:31 [named_type] isize
-std/traits.numeric.cn:178:16 [literal] isize
-std/traits.numeric.cn:181:30 [named_type] isize
-std/traits.numeric.cn:182:16 [literal] isize
-std/traits.numeric.cn:185:31 [named_type] usize
-std/traits.numeric.cn:186:16 [literal] usize
-std/traits.numeric.cn:189:30 [named_type] usize
-std/traits.numeric.cn:190:16 [literal] usize
-std/traits.numeric.cn:193:31 [named_type] float32
-std/traits.numeric.cn:194:16 [literal] float32
-std/traits.numeric.cn:197:30 [named_type] float32
-std/traits.numeric.cn:198:16 [literal] float32
-std/traits.numeric.cn:201:31 [named_type] float64
-std/traits.numeric.cn:202:16 [literal] float64
-std/traits.numeric.cn:205:30 [named_type] float64
-std/traits.numeric.cn:206:16 [literal] float64
+std/traits.numeric.cn:112:31 [named_type] int8
+std/traits.numeric.cn:113:16 [literal] int8
+std/traits.numeric.cn:116:30 [named_type] int8
+std/traits.numeric.cn:117:16 [literal] int8
+std/traits.numeric.cn:120:31 [named_type] int16
+std/traits.numeric.cn:121:16 [literal] int16
+std/traits.numeric.cn:124:30 [named_type] int16
+std/traits.numeric.cn:125:16 [literal] int16
+std/traits.numeric.cn:128:31 [named_type] int32
+std/traits.numeric.cn:129:16 [literal] int32
+std/traits.numeric.cn:132:30 [named_type] int32
+std/traits.numeric.cn:133:16 [literal] int32
+std/traits.numeric.cn:136:31 [named_type] int64
+std/traits.numeric.cn:137:16 [literal] int64
+std/traits.numeric.cn:140:30 [named_type] int64
+std/traits.numeric.cn:141:16 [literal] int64
+std/traits.numeric.cn:144:31 [named_type] int128
+std/traits.numeric.cn:145:16 [literal] int128
+std/traits.numeric.cn:148:30 [named_type] int128
+std/traits.numeric.cn:149:16 [literal] int128
+std/traits.numeric.cn:152:31 [named_type] uint8
+std/traits.numeric.cn:153:16 [literal] uint8
+std/traits.numeric.cn:156:30 [named_type] uint8
+std/traits.numeric.cn:157:16 [literal] uint8
+std/traits.numeric.cn:160:31 [named_type] uint16
+std/traits.numeric.cn:161:16 [literal] uint16
+std/traits.numeric.cn:164:30 [named_type] uint16
+std/traits.numeric.cn:165:16 [literal] uint16
+std/traits.numeric.cn:168:31 [named_type] uint32
+std/traits.numeric.cn:169:16 [literal] uint32
+std/traits.numeric.cn:172:30 [named_type] uint32
+std/traits.numeric.cn:173:16 [literal] uint32
+std/traits.numeric.cn:176:31 [named_type] uint64
+std/traits.numeric.cn:177:16 [literal] uint64
+std/traits.numeric.cn:180:30 [named_type] uint64
+std/traits.numeric.cn:181:16 [literal] uint64
+std/traits.numeric.cn:184:31 [named_type] uint128
+std/traits.numeric.cn:185:16 [literal] uint128
+std/traits.numeric.cn:188:30 [named_type] uint128
+std/traits.numeric.cn:189:16 [literal] uint128
+std/traits.numeric.cn:192:31 [named_type] isize
+std/traits.numeric.cn:193:16 [literal] isize
+std/traits.numeric.cn:196:30 [named_type] isize
+std/traits.numeric.cn:197:16 [literal] isize
+std/traits.numeric.cn:200:31 [named_type] usize
+std/traits.numeric.cn:201:16 [literal] usize
+std/traits.numeric.cn:204:30 [named_type] usize
+std/traits.numeric.cn:205:16 [literal] usize
+std/traits.numeric.cn:208:31 [named_type] float32
+std/traits.numeric.cn:209:16 [literal] float32
+std/traits.numeric.cn:212:30 [named_type] float32
+std/traits.numeric.cn:213:16 [literal] float32
+std/traits.numeric.cn:216:31 [named_type] float64
+std/traits.numeric.cn:217:16 [literal] float64
+std/traits.numeric.cn:220:30 [named_type] float64
+std/traits.numeric.cn:221:16 [literal] float64
 std/traits.ord.cn:11:12 [binding_pat] self
 std/traits.ord.cn:11:18 [binding_pat] &self
 std/traits.ord.cn:11:35 [named_type] bool
@@ -12343,565 +12533,563 @@ std/traits.scalar.cn:29:16 [ident] int64
 std/traits.scalar.cn:29:16 [binary] bool
 std/traits.scalar.cn:29:24 [unary] int64
 std/traits.scalar.cn:29:25 [ident] &int64
-std/traits.scalar.cn:32:12 [binding_pat] isize
-std/traits.scalar.cn:32:18 [binding_pat] &isize
-std/traits.scalar.cn:32:36 [named_type] bool
-std/traits.scalar.cn:33:16 [ident] isize
+std/traits.scalar.cn:32:12 [binding_pat] int128
+std/traits.scalar.cn:32:18 [binding_pat] &int128
+std/traits.scalar.cn:32:37 [named_type] bool
+std/traits.scalar.cn:33:16 [ident] int128
 std/traits.scalar.cn:33:16 [binary] bool
-std/traits.scalar.cn:33:24 [unary] isize
-std/traits.scalar.cn:33:25 [ident] &isize
-std/traits.scalar.cn:36:12 [binding_pat] uint8
-std/traits.scalar.cn:36:18 [binding_pat] &uint8
+std/traits.scalar.cn:33:24 [unary] int128
+std/traits.scalar.cn:33:25 [ident] &int128
+std/traits.scalar.cn:36:12 [binding_pat] isize
+std/traits.scalar.cn:36:18 [binding_pat] &isize
 std/traits.scalar.cn:36:36 [named_type] bool
-std/traits.scalar.cn:37:16 [ident] uint8
+std/traits.scalar.cn:37:16 [ident] isize
 std/traits.scalar.cn:37:16 [binary] bool
-std/traits.scalar.cn:37:24 [unary] uint8
-std/traits.scalar.cn:37:25 [ident] &uint8
-std/traits.scalar.cn:40:12 [binding_pat] uint16
-std/traits.scalar.cn:40:18 [binding_pat] &uint16
-std/traits.scalar.cn:40:37 [named_type] bool
-std/traits.scalar.cn:41:16 [ident] uint16
+std/traits.scalar.cn:37:24 [unary] isize
+std/traits.scalar.cn:37:25 [ident] &isize
+std/traits.scalar.cn:40:12 [binding_pat] uint8
+std/traits.scalar.cn:40:18 [binding_pat] &uint8
+std/traits.scalar.cn:40:36 [named_type] bool
+std/traits.scalar.cn:41:16 [ident] uint8
 std/traits.scalar.cn:41:16 [binary] bool
-std/traits.scalar.cn:41:24 [unary] uint16
-std/traits.scalar.cn:41:25 [ident] &uint16
-std/traits.scalar.cn:44:12 [binding_pat] uint32
-std/traits.scalar.cn:44:18 [binding_pat] &uint32
+std/traits.scalar.cn:41:24 [unary] uint8
+std/traits.scalar.cn:41:25 [ident] &uint8
+std/traits.scalar.cn:44:12 [binding_pat] uint16
+std/traits.scalar.cn:44:18 [binding_pat] &uint16
 std/traits.scalar.cn:44:37 [named_type] bool
-std/traits.scalar.cn:45:16 [ident] uint32
+std/traits.scalar.cn:45:16 [ident] uint16
 std/traits.scalar.cn:45:16 [binary] bool
-std/traits.scalar.cn:45:24 [unary] uint32
-std/traits.scalar.cn:45:25 [ident] &uint32
-std/traits.scalar.cn:48:12 [binding_pat] uint64
-std/traits.scalar.cn:48:18 [binding_pat] &uint64
+std/traits.scalar.cn:45:24 [unary] uint16
+std/traits.scalar.cn:45:25 [ident] &uint16
+std/traits.scalar.cn:48:12 [binding_pat] uint32
+std/traits.scalar.cn:48:18 [binding_pat] &uint32
 std/traits.scalar.cn:48:37 [named_type] bool
-std/traits.scalar.cn:49:16 [ident] uint64
+std/traits.scalar.cn:49:16 [ident] uint32
 std/traits.scalar.cn:49:16 [binary] bool
-std/traits.scalar.cn:49:24 [unary] uint64
-std/traits.scalar.cn:49:25 [ident] &uint64
-std/traits.scalar.cn:52:12 [binding_pat] usize
-std/traits.scalar.cn:52:18 [binding_pat] &usize
-std/traits.scalar.cn:52:36 [named_type] bool
-std/traits.scalar.cn:53:16 [ident] usize
+std/traits.scalar.cn:49:24 [unary] uint32
+std/traits.scalar.cn:49:25 [ident] &uint32
+std/traits.scalar.cn:52:12 [binding_pat] uint64
+std/traits.scalar.cn:52:18 [binding_pat] &uint64
+std/traits.scalar.cn:52:37 [named_type] bool
+std/traits.scalar.cn:53:16 [ident] uint64
 std/traits.scalar.cn:53:16 [binary] bool
-std/traits.scalar.cn:53:24 [unary] usize
-std/traits.scalar.cn:53:25 [ident] &usize
-std/traits.scalar.cn:56:12 [binding_pat] byte
-std/traits.scalar.cn:56:18 [binding_pat] &byte
-std/traits.scalar.cn:56:35 [named_type] bool
-std/traits.scalar.cn:57:16 [ident] byte
+std/traits.scalar.cn:53:24 [unary] uint64
+std/traits.scalar.cn:53:25 [ident] &uint64
+std/traits.scalar.cn:56:12 [binding_pat] uint128
+std/traits.scalar.cn:56:18 [binding_pat] &uint128
+std/traits.scalar.cn:56:38 [named_type] bool
+std/traits.scalar.cn:57:16 [ident] uint128
 std/traits.scalar.cn:57:16 [binary] bool
-std/traits.scalar.cn:57:24 [unary] byte
-std/traits.scalar.cn:57:25 [ident] &byte
-std/traits.scalar.cn:60:12 [binding_pat] float32
-std/traits.scalar.cn:60:18 [binding_pat] &float32
-std/traits.scalar.cn:60:38 [named_type] bool
-std/traits.scalar.cn:61:16 [ident] float32
+std/traits.scalar.cn:57:24 [unary] uint128
+std/traits.scalar.cn:57:25 [ident] &uint128
+std/traits.scalar.cn:60:12 [binding_pat] usize
+std/traits.scalar.cn:60:18 [binding_pat] &usize
+std/traits.scalar.cn:60:36 [named_type] bool
+std/traits.scalar.cn:61:16 [ident] usize
 std/traits.scalar.cn:61:16 [binary] bool
-std/traits.scalar.cn:61:24 [unary] float32
-std/traits.scalar.cn:61:25 [ident] &float32
-std/traits.scalar.cn:64:12 [binding_pat] float64
-std/traits.scalar.cn:64:18 [binding_pat] &float64
-std/traits.scalar.cn:64:38 [named_type] bool
-std/traits.scalar.cn:65:16 [ident] float64
+std/traits.scalar.cn:61:24 [unary] usize
+std/traits.scalar.cn:61:25 [ident] &usize
+std/traits.scalar.cn:64:12 [binding_pat] byte
+std/traits.scalar.cn:64:18 [binding_pat] &byte
+std/traits.scalar.cn:64:35 [named_type] bool
+std/traits.scalar.cn:65:16 [ident] byte
 std/traits.scalar.cn:65:16 [binary] bool
-std/traits.scalar.cn:65:24 [unary] float64
-std/traits.scalar.cn:65:25 [ident] &float64
-std/traits.scalar.cn:68:13 [binding_pat] int8
-std/traits.scalar.cn:68:19 [binding_pat] &int8
-std/traits.scalar.cn:68:36 [named_type] ordering
-std/traits.scalar.cn:69:12 [ident] int8
-std/traits.scalar.cn:69:12 [binary] bool
-std/traits.scalar.cn:69:19 [unary] int8
-std/traits.scalar.cn:69:20 [ident] &int8
-std/traits.scalar.cn:70:20 [ident] ordering
-std/traits.scalar.cn:71:12 [unary] int8
-std/traits.scalar.cn:71:12 [binary] bool
-std/traits.scalar.cn:71:13 [ident] &int8
-std/traits.scalar.cn:71:21 [ident] int8
-std/traits.scalar.cn:72:20 [ident] ordering
-std/traits.scalar.cn:73:16 [ident] ordering
-std/traits.scalar.cn:76:13 [binding_pat] int16
-std/traits.scalar.cn:76:19 [binding_pat] &int16
-std/traits.scalar.cn:76:37 [named_type] ordering
-std/traits.scalar.cn:77:12 [ident] int16
+std/traits.scalar.cn:65:24 [unary] byte
+std/traits.scalar.cn:65:25 [ident] &byte
+std/traits.scalar.cn:68:12 [binding_pat] float32
+std/traits.scalar.cn:68:18 [binding_pat] &float32
+std/traits.scalar.cn:68:38 [named_type] bool
+std/traits.scalar.cn:69:16 [ident] float32
+std/traits.scalar.cn:69:16 [binary] bool
+std/traits.scalar.cn:69:24 [unary] float32
+std/traits.scalar.cn:69:25 [ident] &float32
+std/traits.scalar.cn:72:12 [binding_pat] float64
+std/traits.scalar.cn:72:18 [binding_pat] &float64
+std/traits.scalar.cn:72:38 [named_type] bool
+std/traits.scalar.cn:73:16 [ident] float64
+std/traits.scalar.cn:73:16 [binary] bool
+std/traits.scalar.cn:73:24 [unary] float64
+std/traits.scalar.cn:73:25 [ident] &float64
+std/traits.scalar.cn:76:13 [binding_pat] int8
+std/traits.scalar.cn:76:19 [binding_pat] &int8
+std/traits.scalar.cn:76:36 [named_type] ordering
+std/traits.scalar.cn:77:12 [ident] int8
 std/traits.scalar.cn:77:12 [binary] bool
-std/traits.scalar.cn:77:19 [unary] int16
-std/traits.scalar.cn:77:20 [ident] &int16
+std/traits.scalar.cn:77:19 [unary] int8
+std/traits.scalar.cn:77:20 [ident] &int8
 std/traits.scalar.cn:78:20 [ident] ordering
-std/traits.scalar.cn:79:12 [unary] int16
+std/traits.scalar.cn:79:12 [unary] int8
 std/traits.scalar.cn:79:12 [binary] bool
-std/traits.scalar.cn:79:13 [ident] &int16
-std/traits.scalar.cn:79:21 [ident] int16
+std/traits.scalar.cn:79:13 [ident] &int8
+std/traits.scalar.cn:79:21 [ident] int8
 std/traits.scalar.cn:80:20 [ident] ordering
 std/traits.scalar.cn:81:16 [ident] ordering
-std/traits.scalar.cn:84:13 [binding_pat] int32
-std/traits.scalar.cn:84:19 [binding_pat] &int32
+std/traits.scalar.cn:84:13 [binding_pat] int16
+std/traits.scalar.cn:84:19 [binding_pat] &int16
 std/traits.scalar.cn:84:37 [named_type] ordering
-std/traits.scalar.cn:85:12 [ident] int32
+std/traits.scalar.cn:85:12 [ident] int16
 std/traits.scalar.cn:85:12 [binary] bool
-std/traits.scalar.cn:85:19 [unary] int32
-std/traits.scalar.cn:85:20 [ident] &int32
+std/traits.scalar.cn:85:19 [unary] int16
+std/traits.scalar.cn:85:20 [ident] &int16
 std/traits.scalar.cn:86:20 [ident] ordering
-std/traits.scalar.cn:87:12 [unary] int32
+std/traits.scalar.cn:87:12 [unary] int16
 std/traits.scalar.cn:87:12 [binary] bool
-std/traits.scalar.cn:87:13 [ident] &int32
-std/traits.scalar.cn:87:21 [ident] int32
+std/traits.scalar.cn:87:13 [ident] &int16
+std/traits.scalar.cn:87:21 [ident] int16
 std/traits.scalar.cn:88:20 [ident] ordering
 std/traits.scalar.cn:89:16 [ident] ordering
-std/traits.scalar.cn:92:13 [binding_pat] int64
-std/traits.scalar.cn:92:19 [binding_pat] &int64
+std/traits.scalar.cn:92:13 [binding_pat] int32
+std/traits.scalar.cn:92:19 [binding_pat] &int32
 std/traits.scalar.cn:92:37 [named_type] ordering
-std/traits.scalar.cn:93:12 [ident] int64
+std/traits.scalar.cn:93:12 [ident] int32
 std/traits.scalar.cn:93:12 [binary] bool
-std/traits.scalar.cn:93:19 [unary] int64
-std/traits.scalar.cn:93:20 [ident] &int64
+std/traits.scalar.cn:93:19 [unary] int32
+std/traits.scalar.cn:93:20 [ident] &int32
 std/traits.scalar.cn:94:20 [ident] ordering
-std/traits.scalar.cn:95:12 [unary] int64
+std/traits.scalar.cn:95:12 [unary] int32
 std/traits.scalar.cn:95:12 [binary] bool
-std/traits.scalar.cn:95:13 [ident] &int64
-std/traits.scalar.cn:95:21 [ident] int64
+std/traits.scalar.cn:95:13 [ident] &int32
+std/traits.scalar.cn:95:21 [ident] int32
 std/traits.scalar.cn:96:20 [ident] ordering
 std/traits.scalar.cn:97:16 [ident] ordering
-std/traits.scalar.cn:100:13 [binding_pat] isize
-std/traits.scalar.cn:100:19 [binding_pat] &isize
+std/traits.scalar.cn:100:13 [binding_pat] int64
+std/traits.scalar.cn:100:19 [binding_pat] &int64
 std/traits.scalar.cn:100:37 [named_type] ordering
-std/traits.scalar.cn:101:12 [ident] isize
+std/traits.scalar.cn:101:12 [ident] int64
 std/traits.scalar.cn:101:12 [binary] bool
-std/traits.scalar.cn:101:19 [unary] isize
-std/traits.scalar.cn:101:20 [ident] &isize
+std/traits.scalar.cn:101:19 [unary] int64
+std/traits.scalar.cn:101:20 [ident] &int64
 std/traits.scalar.cn:102:20 [ident] ordering
-std/traits.scalar.cn:103:12 [unary] isize
+std/traits.scalar.cn:103:12 [unary] int64
 std/traits.scalar.cn:103:12 [binary] bool
-std/traits.scalar.cn:103:13 [ident] &isize
-std/traits.scalar.cn:103:21 [ident] isize
+std/traits.scalar.cn:103:13 [ident] &int64
+std/traits.scalar.cn:103:21 [ident] int64
 std/traits.scalar.cn:104:20 [ident] ordering
 std/traits.scalar.cn:105:16 [ident] ordering
-std/traits.scalar.cn:108:13 [binding_pat] uint8
-std/traits.scalar.cn:108:19 [binding_pat] &uint8
-std/traits.scalar.cn:108:37 [named_type] ordering
-std/traits.scalar.cn:109:12 [ident] uint8
+std/traits.scalar.cn:108:13 [binding_pat] int128
+std/traits.scalar.cn:108:19 [binding_pat] &int128
+std/traits.scalar.cn:108:38 [named_type] ordering
+std/traits.scalar.cn:109:12 [ident] int128
 std/traits.scalar.cn:109:12 [binary] bool
-std/traits.scalar.cn:109:19 [unary] uint8
-std/traits.scalar.cn:109:20 [ident] &uint8
+std/traits.scalar.cn:109:19 [unary] int128
+std/traits.scalar.cn:109:20 [ident] &int128
 std/traits.scalar.cn:110:20 [ident] ordering
-std/traits.scalar.cn:111:12 [unary] uint8
+std/traits.scalar.cn:111:12 [unary] int128
 std/traits.scalar.cn:111:12 [binary] bool
-std/traits.scalar.cn:111:13 [ident] &uint8
-std/traits.scalar.cn:111:21 [ident] uint8
+std/traits.scalar.cn:111:13 [ident] &int128
+std/traits.scalar.cn:111:21 [ident] int128
 std/traits.scalar.cn:112:20 [ident] ordering
 std/traits.scalar.cn:113:16 [ident] ordering
-std/traits.scalar.cn:116:13 [binding_pat] uint16
-std/traits.scalar.cn:116:19 [binding_pat] &uint16
-std/traits.scalar.cn:116:38 [named_type] ordering
-std/traits.scalar.cn:117:12 [ident] uint16
+std/traits.scalar.cn:116:13 [binding_pat] isize
+std/traits.scalar.cn:116:19 [binding_pat] &isize
+std/traits.scalar.cn:116:37 [named_type] ordering
+std/traits.scalar.cn:117:12 [ident] isize
 std/traits.scalar.cn:117:12 [binary] bool
-std/traits.scalar.cn:117:19 [unary] uint16
-std/traits.scalar.cn:117:20 [ident] &uint16
+std/traits.scalar.cn:117:19 [unary] isize
+std/traits.scalar.cn:117:20 [ident] &isize
 std/traits.scalar.cn:118:20 [ident] ordering
-std/traits.scalar.cn:119:12 [unary] uint16
+std/traits.scalar.cn:119:12 [unary] isize
 std/traits.scalar.cn:119:12 [binary] bool
-std/traits.scalar.cn:119:13 [ident] &uint16
-std/traits.scalar.cn:119:21 [ident] uint16
+std/traits.scalar.cn:119:13 [ident] &isize
+std/traits.scalar.cn:119:21 [ident] isize
 std/traits.scalar.cn:120:20 [ident] ordering
 std/traits.scalar.cn:121:16 [ident] ordering
-std/traits.scalar.cn:124:13 [binding_pat] uint32
-std/traits.scalar.cn:124:19 [binding_pat] &uint32
-std/traits.scalar.cn:124:38 [named_type] ordering
-std/traits.scalar.cn:125:12 [ident] uint32
+std/traits.scalar.cn:124:13 [binding_pat] uint8
+std/traits.scalar.cn:124:19 [binding_pat] &uint8
+std/traits.scalar.cn:124:37 [named_type] ordering
+std/traits.scalar.cn:125:12 [ident] uint8
 std/traits.scalar.cn:125:12 [binary] bool
-std/traits.scalar.cn:125:19 [unary] uint32
-std/traits.scalar.cn:125:20 [ident] &uint32
+std/traits.scalar.cn:125:19 [unary] uint8
+std/traits.scalar.cn:125:20 [ident] &uint8
 std/traits.scalar.cn:126:20 [ident] ordering
-std/traits.scalar.cn:127:12 [unary] uint32
+std/traits.scalar.cn:127:12 [unary] uint8
 std/traits.scalar.cn:127:12 [binary] bool
-std/traits.scalar.cn:127:13 [ident] &uint32
-std/traits.scalar.cn:127:21 [ident] uint32
+std/traits.scalar.cn:127:13 [ident] &uint8
+std/traits.scalar.cn:127:21 [ident] uint8
 std/traits.scalar.cn:128:20 [ident] ordering
 std/traits.scalar.cn:129:16 [ident] ordering
-std/traits.scalar.cn:132:13 [binding_pat] uint64
-std/traits.scalar.cn:132:19 [binding_pat] &uint64
+std/traits.scalar.cn:132:13 [binding_pat] uint16
+std/traits.scalar.cn:132:19 [binding_pat] &uint16
 std/traits.scalar.cn:132:38 [named_type] ordering
-std/traits.scalar.cn:133:12 [ident] uint64
+std/traits.scalar.cn:133:12 [ident] uint16
 std/traits.scalar.cn:133:12 [binary] bool
-std/traits.scalar.cn:133:19 [unary] uint64
-std/traits.scalar.cn:133:20 [ident] &uint64
+std/traits.scalar.cn:133:19 [unary] uint16
+std/traits.scalar.cn:133:20 [ident] &uint16
 std/traits.scalar.cn:134:20 [ident] ordering
-std/traits.scalar.cn:135:12 [unary] uint64
+std/traits.scalar.cn:135:12 [unary] uint16
 std/traits.scalar.cn:135:12 [binary] bool
-std/traits.scalar.cn:135:13 [ident] &uint64
-std/traits.scalar.cn:135:21 [ident] uint64
+std/traits.scalar.cn:135:13 [ident] &uint16
+std/traits.scalar.cn:135:21 [ident] uint16
 std/traits.scalar.cn:136:20 [ident] ordering
 std/traits.scalar.cn:137:16 [ident] ordering
-std/traits.scalar.cn:140:13 [binding_pat] usize
-std/traits.scalar.cn:140:19 [binding_pat] &usize
-std/traits.scalar.cn:140:37 [named_type] ordering
-std/traits.scalar.cn:141:12 [ident] usize
+std/traits.scalar.cn:140:13 [binding_pat] uint32
+std/traits.scalar.cn:140:19 [binding_pat] &uint32
+std/traits.scalar.cn:140:38 [named_type] ordering
+std/traits.scalar.cn:141:12 [ident] uint32
 std/traits.scalar.cn:141:12 [binary] bool
-std/traits.scalar.cn:141:19 [unary] usize
-std/traits.scalar.cn:141:20 [ident] &usize
+std/traits.scalar.cn:141:19 [unary] uint32
+std/traits.scalar.cn:141:20 [ident] &uint32
 std/traits.scalar.cn:142:20 [ident] ordering
-std/traits.scalar.cn:143:12 [unary] usize
+std/traits.scalar.cn:143:12 [unary] uint32
 std/traits.scalar.cn:143:12 [binary] bool
-std/traits.scalar.cn:143:13 [ident] &usize
-std/traits.scalar.cn:143:21 [ident] usize
+std/traits.scalar.cn:143:13 [ident] &uint32
+std/traits.scalar.cn:143:21 [ident] uint32
 std/traits.scalar.cn:144:20 [ident] ordering
 std/traits.scalar.cn:145:16 [ident] ordering
-std/traits.scalar.cn:148:13 [binding_pat] byte
-std/traits.scalar.cn:148:19 [binding_pat] &byte
-std/traits.scalar.cn:148:36 [named_type] ordering
-std/traits.scalar.cn:149:12 [ident] byte
+std/traits.scalar.cn:148:13 [binding_pat] uint64
+std/traits.scalar.cn:148:19 [binding_pat] &uint64
+std/traits.scalar.cn:148:38 [named_type] ordering
+std/traits.scalar.cn:149:12 [ident] uint64
 std/traits.scalar.cn:149:12 [binary] bool
-std/traits.scalar.cn:149:19 [unary] byte
-std/traits.scalar.cn:149:20 [ident] &byte
+std/traits.scalar.cn:149:19 [unary] uint64
+std/traits.scalar.cn:149:20 [ident] &uint64
 std/traits.scalar.cn:150:20 [ident] ordering
-std/traits.scalar.cn:151:12 [unary] byte
+std/traits.scalar.cn:151:12 [unary] uint64
 std/traits.scalar.cn:151:12 [binary] bool
-std/traits.scalar.cn:151:13 [ident] &byte
-std/traits.scalar.cn:151:21 [ident] byte
+std/traits.scalar.cn:151:13 [ident] &uint64
+std/traits.scalar.cn:151:21 [ident] uint64
 std/traits.scalar.cn:152:20 [ident] ordering
 std/traits.scalar.cn:153:16 [ident] ordering
-std/traits.scalar.cn:156:13 [binding_pat] float32
-std/traits.scalar.cn:156:19 [binding_pat] &float32
+std/traits.scalar.cn:156:13 [binding_pat] uint128
+std/traits.scalar.cn:156:19 [binding_pat] &uint128
 std/traits.scalar.cn:156:39 [named_type] ordering
-std/traits.scalar.cn:157:12 [ident] float32
+std/traits.scalar.cn:157:12 [ident] uint128
 std/traits.scalar.cn:157:12 [binary] bool
-std/traits.scalar.cn:157:19 [unary] float32
-std/traits.scalar.cn:157:20 [ident] &float32
+std/traits.scalar.cn:157:19 [unary] uint128
+std/traits.scalar.cn:157:20 [ident] &uint128
 std/traits.scalar.cn:158:20 [ident] ordering
-std/traits.scalar.cn:159:12 [unary] float32
+std/traits.scalar.cn:159:12 [unary] uint128
 std/traits.scalar.cn:159:12 [binary] bool
-std/traits.scalar.cn:159:13 [ident] &float32
-std/traits.scalar.cn:159:21 [ident] float32
+std/traits.scalar.cn:159:13 [ident] &uint128
+std/traits.scalar.cn:159:21 [ident] uint128
 std/traits.scalar.cn:160:20 [ident] ordering
 std/traits.scalar.cn:161:16 [ident] ordering
-std/traits.scalar.cn:164:13 [binding_pat] float64
-std/traits.scalar.cn:164:19 [binding_pat] &float64
-std/traits.scalar.cn:164:39 [named_type] ordering
-std/traits.scalar.cn:165:12 [ident] float64
+std/traits.scalar.cn:164:13 [binding_pat] usize
+std/traits.scalar.cn:164:19 [binding_pat] &usize
+std/traits.scalar.cn:164:37 [named_type] ordering
+std/traits.scalar.cn:165:12 [ident] usize
 std/traits.scalar.cn:165:12 [binary] bool
-std/traits.scalar.cn:165:19 [unary] float64
-std/traits.scalar.cn:165:20 [ident] &float64
+std/traits.scalar.cn:165:19 [unary] usize
+std/traits.scalar.cn:165:20 [ident] &usize
 std/traits.scalar.cn:166:20 [ident] ordering
-std/traits.scalar.cn:167:12 [unary] float64
+std/traits.scalar.cn:167:12 [unary] usize
 std/traits.scalar.cn:167:12 [binary] bool
-std/traits.scalar.cn:167:13 [ident] &float64
-std/traits.scalar.cn:167:21 [ident] float64
+std/traits.scalar.cn:167:13 [ident] &usize
+std/traits.scalar.cn:167:21 [ident] usize
 std/traits.scalar.cn:168:20 [ident] ordering
 std/traits.scalar.cn:169:16 [ident] ordering
-std/traits.scalar.cn:172:13 [binding_pat] char
-std/traits.scalar.cn:172:19 [binding_pat] &char
+std/traits.scalar.cn:172:13 [binding_pat] byte
+std/traits.scalar.cn:172:19 [binding_pat] &byte
 std/traits.scalar.cn:172:36 [named_type] ordering
-std/traits.scalar.cn:173:12 [ident] char
+std/traits.scalar.cn:173:12 [ident] byte
 std/traits.scalar.cn:173:12 [binary] bool
-std/traits.scalar.cn:173:19 [unary] char
-std/traits.scalar.cn:173:20 [ident] &char
+std/traits.scalar.cn:173:19 [unary] byte
+std/traits.scalar.cn:173:20 [ident] &byte
 std/traits.scalar.cn:174:20 [ident] ordering
-std/traits.scalar.cn:175:12 [unary] char
+std/traits.scalar.cn:175:12 [unary] byte
 std/traits.scalar.cn:175:12 [binary] bool
-std/traits.scalar.cn:175:13 [ident] &char
-std/traits.scalar.cn:175:21 [ident] char
+std/traits.scalar.cn:175:13 [ident] &byte
+std/traits.scalar.cn:175:21 [ident] byte
 std/traits.scalar.cn:176:20 [ident] ordering
 std/traits.scalar.cn:177:16 [ident] ordering
-std/traits.scalar.cn:180:14 [binding_pat] bool
-std/traits.scalar.cn:180:23 [named_type] str
-std/traits.scalar.cn:181:16 [interp_string] str
-std/traits.scalar.cn:181:18 [ident] bool
-std/traits.scalar.cn:184:15 [binding_pat] bool
-std/traits.scalar.cn:184:24 [named_type] str
-std/traits.scalar.cn:185:16 [interp_string] str
-std/traits.scalar.cn:185:18 [ident] bool
-std/traits.scalar.cn:188:14 [binding_pat] char
-std/traits.scalar.cn:188:23 [named_type] str
-std/traits.scalar.cn:189:16 [interp_string] str
-std/traits.scalar.cn:189:18 [ident] char
-std/traits.scalar.cn:192:15 [binding_pat] char
-std/traits.scalar.cn:192:24 [named_type] str
-std/traits.scalar.cn:193:16 [interp_string] str
-std/traits.scalar.cn:193:18 [ident] char
-std/traits.scalar.cn:196:14 [binding_pat] int8
-std/traits.scalar.cn:196:23 [named_type] str
-std/traits.scalar.cn:197:16 [interp_string] str
-std/traits.scalar.cn:197:18 [ident] int8
-std/traits.scalar.cn:200:15 [binding_pat] int8
-std/traits.scalar.cn:200:24 [named_type] str
-std/traits.scalar.cn:201:16 [interp_string] str
-std/traits.scalar.cn:201:18 [ident] int8
-std/traits.scalar.cn:204:14 [binding_pat] int16
+std/traits.scalar.cn:180:13 [binding_pat] float32
+std/traits.scalar.cn:180:19 [binding_pat] &float32
+std/traits.scalar.cn:180:39 [named_type] ordering
+std/traits.scalar.cn:181:12 [ident] float32
+std/traits.scalar.cn:181:12 [binary] bool
+std/traits.scalar.cn:181:19 [unary] float32
+std/traits.scalar.cn:181:20 [ident] &float32
+std/traits.scalar.cn:182:20 [ident] ordering
+std/traits.scalar.cn:183:12 [unary] float32
+std/traits.scalar.cn:183:12 [binary] bool
+std/traits.scalar.cn:183:13 [ident] &float32
+std/traits.scalar.cn:183:21 [ident] float32
+std/traits.scalar.cn:184:20 [ident] ordering
+std/traits.scalar.cn:185:16 [ident] ordering
+std/traits.scalar.cn:188:13 [binding_pat] float64
+std/traits.scalar.cn:188:19 [binding_pat] &float64
+std/traits.scalar.cn:188:39 [named_type] ordering
+std/traits.scalar.cn:189:12 [ident] float64
+std/traits.scalar.cn:189:12 [binary] bool
+std/traits.scalar.cn:189:19 [unary] float64
+std/traits.scalar.cn:189:20 [ident] &float64
+std/traits.scalar.cn:190:20 [ident] ordering
+std/traits.scalar.cn:191:12 [unary] float64
+std/traits.scalar.cn:191:12 [binary] bool
+std/traits.scalar.cn:191:13 [ident] &float64
+std/traits.scalar.cn:191:21 [ident] float64
+std/traits.scalar.cn:192:20 [ident] ordering
+std/traits.scalar.cn:193:16 [ident] ordering
+std/traits.scalar.cn:196:13 [binding_pat] char
+std/traits.scalar.cn:196:19 [binding_pat] &char
+std/traits.scalar.cn:196:36 [named_type] ordering
+std/traits.scalar.cn:197:12 [ident] char
+std/traits.scalar.cn:197:12 [binary] bool
+std/traits.scalar.cn:197:19 [unary] char
+std/traits.scalar.cn:197:20 [ident] &char
+std/traits.scalar.cn:198:20 [ident] ordering
+std/traits.scalar.cn:199:12 [unary] char
+std/traits.scalar.cn:199:12 [binary] bool
+std/traits.scalar.cn:199:13 [ident] &char
+std/traits.scalar.cn:199:21 [ident] char
+std/traits.scalar.cn:200:20 [ident] ordering
+std/traits.scalar.cn:201:16 [ident] ordering
+std/traits.scalar.cn:204:14 [binding_pat] bool
 std/traits.scalar.cn:204:23 [named_type] str
 std/traits.scalar.cn:205:16 [interp_string] str
-std/traits.scalar.cn:205:18 [ident] int16
-std/traits.scalar.cn:208:15 [binding_pat] int16
+std/traits.scalar.cn:205:18 [ident] bool
+std/traits.scalar.cn:208:15 [binding_pat] bool
 std/traits.scalar.cn:208:24 [named_type] str
 std/traits.scalar.cn:209:16 [interp_string] str
-std/traits.scalar.cn:209:18 [ident] int16
-std/traits.scalar.cn:212:14 [binding_pat] int32
+std/traits.scalar.cn:209:18 [ident] bool
+std/traits.scalar.cn:212:14 [binding_pat] char
 std/traits.scalar.cn:212:23 [named_type] str
 std/traits.scalar.cn:213:16 [interp_string] str
-std/traits.scalar.cn:213:18 [ident] int32
-std/traits.scalar.cn:216:15 [binding_pat] int32
+std/traits.scalar.cn:213:18 [ident] char
+std/traits.scalar.cn:216:15 [binding_pat] char
 std/traits.scalar.cn:216:24 [named_type] str
 std/traits.scalar.cn:217:16 [interp_string] str
-std/traits.scalar.cn:217:18 [ident] int32
-std/traits.scalar.cn:220:14 [binding_pat] int64
+std/traits.scalar.cn:217:18 [ident] char
+std/traits.scalar.cn:220:14 [binding_pat] int8
 std/traits.scalar.cn:220:23 [named_type] str
 std/traits.scalar.cn:221:16 [interp_string] str
-std/traits.scalar.cn:221:18 [ident] int64
-std/traits.scalar.cn:224:15 [binding_pat] int64
+std/traits.scalar.cn:221:18 [ident] int8
+std/traits.scalar.cn:224:15 [binding_pat] int8
 std/traits.scalar.cn:224:24 [named_type] str
 std/traits.scalar.cn:225:16 [interp_string] str
-std/traits.scalar.cn:225:18 [ident] int64
-std/traits.scalar.cn:228:14 [binding_pat] isize
+std/traits.scalar.cn:225:18 [ident] int8
+std/traits.scalar.cn:228:14 [binding_pat] int16
 std/traits.scalar.cn:228:23 [named_type] str
 std/traits.scalar.cn:229:16 [interp_string] str
-std/traits.scalar.cn:229:18 [ident] isize
-std/traits.scalar.cn:232:15 [binding_pat] isize
+std/traits.scalar.cn:229:18 [ident] int16
+std/traits.scalar.cn:232:15 [binding_pat] int16
 std/traits.scalar.cn:232:24 [named_type] str
 std/traits.scalar.cn:233:16 [interp_string] str
-std/traits.scalar.cn:233:18 [ident] isize
-std/traits.scalar.cn:236:14 [binding_pat] uint8
+std/traits.scalar.cn:233:18 [ident] int16
+std/traits.scalar.cn:236:14 [binding_pat] int32
 std/traits.scalar.cn:236:23 [named_type] str
 std/traits.scalar.cn:237:16 [interp_string] str
-std/traits.scalar.cn:237:18 [ident] uint8
-std/traits.scalar.cn:240:15 [binding_pat] uint8
+std/traits.scalar.cn:237:18 [ident] int32
+std/traits.scalar.cn:240:15 [binding_pat] int32
 std/traits.scalar.cn:240:24 [named_type] str
 std/traits.scalar.cn:241:16 [interp_string] str
-std/traits.scalar.cn:241:18 [ident] uint8
-std/traits.scalar.cn:244:14 [binding_pat] uint16
+std/traits.scalar.cn:241:18 [ident] int32
+std/traits.scalar.cn:244:14 [binding_pat] int64
 std/traits.scalar.cn:244:23 [named_type] str
 std/traits.scalar.cn:245:16 [interp_string] str
-std/traits.scalar.cn:245:18 [ident] uint16
-std/traits.scalar.cn:248:15 [binding_pat] uint16
+std/traits.scalar.cn:245:18 [ident] int64
+std/traits.scalar.cn:248:15 [binding_pat] int64
 std/traits.scalar.cn:248:24 [named_type] str
 std/traits.scalar.cn:249:16 [interp_string] str
-std/traits.scalar.cn:249:18 [ident] uint16
-std/traits.scalar.cn:252:14 [binding_pat] uint32
+std/traits.scalar.cn:249:18 [ident] int64
+std/traits.scalar.cn:252:14 [binding_pat] int128
 std/traits.scalar.cn:252:23 [named_type] str
 std/traits.scalar.cn:253:16 [interp_string] str
-std/traits.scalar.cn:253:18 [ident] uint32
-std/traits.scalar.cn:256:15 [binding_pat] uint32
+std/traits.scalar.cn:253:18 [ident] int128
+std/traits.scalar.cn:256:15 [binding_pat] int128
 std/traits.scalar.cn:256:24 [named_type] str
 std/traits.scalar.cn:257:16 [interp_string] str
-std/traits.scalar.cn:257:18 [ident] uint32
-std/traits.scalar.cn:260:14 [binding_pat] uint64
+std/traits.scalar.cn:257:18 [ident] int128
+std/traits.scalar.cn:260:14 [binding_pat] isize
 std/traits.scalar.cn:260:23 [named_type] str
 std/traits.scalar.cn:261:16 [interp_string] str
-std/traits.scalar.cn:261:18 [ident] uint64
-std/traits.scalar.cn:264:15 [binding_pat] uint64
+std/traits.scalar.cn:261:18 [ident] isize
+std/traits.scalar.cn:264:15 [binding_pat] isize
 std/traits.scalar.cn:264:24 [named_type] str
 std/traits.scalar.cn:265:16 [interp_string] str
-std/traits.scalar.cn:265:18 [ident] uint64
-std/traits.scalar.cn:268:14 [binding_pat] usize
+std/traits.scalar.cn:265:18 [ident] isize
+std/traits.scalar.cn:268:14 [binding_pat] uint8
 std/traits.scalar.cn:268:23 [named_type] str
 std/traits.scalar.cn:269:16 [interp_string] str
-std/traits.scalar.cn:269:18 [ident] usize
-std/traits.scalar.cn:272:15 [binding_pat] usize
+std/traits.scalar.cn:269:18 [ident] uint8
+std/traits.scalar.cn:272:15 [binding_pat] uint8
 std/traits.scalar.cn:272:24 [named_type] str
 std/traits.scalar.cn:273:16 [interp_string] str
-std/traits.scalar.cn:273:18 [ident] usize
-std/traits.scalar.cn:276:14 [binding_pat] byte
+std/traits.scalar.cn:273:18 [ident] uint8
+std/traits.scalar.cn:276:14 [binding_pat] uint16
 std/traits.scalar.cn:276:23 [named_type] str
 std/traits.scalar.cn:277:16 [interp_string] str
-std/traits.scalar.cn:277:18 [ident] byte
-std/traits.scalar.cn:280:15 [binding_pat] byte
+std/traits.scalar.cn:277:18 [ident] uint16
+std/traits.scalar.cn:280:15 [binding_pat] uint16
 std/traits.scalar.cn:280:24 [named_type] str
 std/traits.scalar.cn:281:16 [interp_string] str
-std/traits.scalar.cn:281:18 [ident] byte
-std/traits.scalar.cn:284:14 [binding_pat] float32
+std/traits.scalar.cn:281:18 [ident] uint16
+std/traits.scalar.cn:284:14 [binding_pat] uint32
 std/traits.scalar.cn:284:23 [named_type] str
 std/traits.scalar.cn:285:16 [interp_string] str
-std/traits.scalar.cn:285:18 [ident] float32
-std/traits.scalar.cn:288:15 [binding_pat] float32
+std/traits.scalar.cn:285:18 [ident] uint32
+std/traits.scalar.cn:288:15 [binding_pat] uint32
 std/traits.scalar.cn:288:24 [named_type] str
 std/traits.scalar.cn:289:16 [interp_string] str
-std/traits.scalar.cn:289:18 [ident] float32
-std/traits.scalar.cn:292:14 [binding_pat] float64
+std/traits.scalar.cn:289:18 [ident] uint32
+std/traits.scalar.cn:292:14 [binding_pat] uint64
 std/traits.scalar.cn:292:23 [named_type] str
 std/traits.scalar.cn:293:16 [interp_string] str
-std/traits.scalar.cn:293:18 [ident] float64
-std/traits.scalar.cn:296:15 [binding_pat] float64
+std/traits.scalar.cn:293:18 [ident] uint64
+std/traits.scalar.cn:296:15 [binding_pat] uint64
 std/traits.scalar.cn:296:24 [named_type] str
 std/traits.scalar.cn:297:16 [interp_string] str
-std/traits.scalar.cn:297:18 [ident] float64
-std/traits.scalar.cn:300:13 [binding_pat] int8
-std/traits.scalar.cn:300:19 [binding_pat] int8
-std/traits.scalar.cn:300:35 [named_type] int8
-std/traits.scalar.cn:301:16 [ident] int8
-std/traits.scalar.cn:301:16 [binary] int8
-std/traits.scalar.cn:301:23 [ident] int8
-std/traits.scalar.cn:304:13 [binding_pat] int16
-std/traits.scalar.cn:304:19 [binding_pat] int16
-std/traits.scalar.cn:304:36 [named_type] int16
-std/traits.scalar.cn:305:16 [ident] int16
-std/traits.scalar.cn:305:16 [binary] int16
-std/traits.scalar.cn:305:23 [ident] int16
-std/traits.scalar.cn:308:13 [binding_pat] int32
-std/traits.scalar.cn:308:19 [binding_pat] int32
-std/traits.scalar.cn:308:36 [named_type] int32
-std/traits.scalar.cn:309:16 [ident] int32
-std/traits.scalar.cn:309:16 [binary] int32
-std/traits.scalar.cn:309:23 [ident] int32
-std/traits.scalar.cn:312:13 [binding_pat] int64
-std/traits.scalar.cn:312:19 [binding_pat] int64
-std/traits.scalar.cn:312:36 [named_type] int64
-std/traits.scalar.cn:313:16 [ident] int64
-std/traits.scalar.cn:313:16 [binary] int64
-std/traits.scalar.cn:313:23 [ident] int64
-std/traits.scalar.cn:316:13 [binding_pat] isize
-std/traits.scalar.cn:316:19 [binding_pat] isize
-std/traits.scalar.cn:316:36 [named_type] isize
-std/traits.scalar.cn:317:16 [ident] isize
-std/traits.scalar.cn:317:16 [binary] isize
-std/traits.scalar.cn:317:23 [ident] isize
-std/traits.scalar.cn:320:13 [binding_pat] uint8
-std/traits.scalar.cn:320:19 [binding_pat] uint8
-std/traits.scalar.cn:320:36 [named_type] uint8
-std/traits.scalar.cn:321:16 [ident] uint8
-std/traits.scalar.cn:321:16 [binary] uint8
-std/traits.scalar.cn:321:23 [ident] uint8
-std/traits.scalar.cn:324:13 [binding_pat] uint16
-std/traits.scalar.cn:324:19 [binding_pat] uint16
-std/traits.scalar.cn:324:37 [named_type] uint16
-std/traits.scalar.cn:325:16 [ident] uint16
-std/traits.scalar.cn:325:16 [binary] uint16
-std/traits.scalar.cn:325:23 [ident] uint16
-std/traits.scalar.cn:328:13 [binding_pat] uint32
-std/traits.scalar.cn:328:19 [binding_pat] uint32
-std/traits.scalar.cn:328:37 [named_type] uint32
-std/traits.scalar.cn:329:16 [ident] uint32
-std/traits.scalar.cn:329:16 [binary] uint32
-std/traits.scalar.cn:329:23 [ident] uint32
-std/traits.scalar.cn:332:13 [binding_pat] uint64
-std/traits.scalar.cn:332:19 [binding_pat] uint64
-std/traits.scalar.cn:332:37 [named_type] uint64
-std/traits.scalar.cn:333:16 [ident] uint64
-std/traits.scalar.cn:333:16 [binary] uint64
-std/traits.scalar.cn:333:23 [ident] uint64
-std/traits.scalar.cn:336:13 [binding_pat] usize
-std/traits.scalar.cn:336:19 [binding_pat] usize
-std/traits.scalar.cn:336:36 [named_type] usize
-std/traits.scalar.cn:337:16 [ident] usize
-std/traits.scalar.cn:337:16 [binary] usize
-std/traits.scalar.cn:337:23 [ident] usize
-std/traits.scalar.cn:340:13 [binding_pat] byte
-std/traits.scalar.cn:340:19 [binding_pat] byte
-std/traits.scalar.cn:340:35 [named_type] byte
-std/traits.scalar.cn:341:16 [ident] byte
-std/traits.scalar.cn:341:16 [binary] byte
-std/traits.scalar.cn:341:23 [ident] byte
-std/traits.scalar.cn:344:13 [binding_pat] float32
-std/traits.scalar.cn:344:19 [binding_pat] float32
-std/traits.scalar.cn:344:38 [named_type] float32
-std/traits.scalar.cn:345:16 [ident] float32
-std/traits.scalar.cn:345:16 [binary] float32
-std/traits.scalar.cn:345:23 [ident] float32
-std/traits.scalar.cn:348:13 [binding_pat] float64
-std/traits.scalar.cn:348:19 [binding_pat] float64
-std/traits.scalar.cn:348:38 [named_type] float64
-std/traits.scalar.cn:349:16 [ident] float64
-std/traits.scalar.cn:349:16 [binary] float64
-std/traits.scalar.cn:349:23 [ident] float64
-std/traits.scalar.cn:352:13 [binding_pat] int8
-std/traits.scalar.cn:352:19 [binding_pat] int8
-std/traits.scalar.cn:352:35 [named_type] int8
-std/traits.scalar.cn:353:16 [ident] int8
-std/traits.scalar.cn:353:16 [binary] int8
-std/traits.scalar.cn:353:23 [ident] int8
-std/traits.scalar.cn:356:13 [binding_pat] int16
-std/traits.scalar.cn:356:19 [binding_pat] int16
-std/traits.scalar.cn:356:36 [named_type] int16
-std/traits.scalar.cn:357:16 [ident] int16
-std/traits.scalar.cn:357:16 [binary] int16
-std/traits.scalar.cn:357:23 [ident] int16
-std/traits.scalar.cn:360:13 [binding_pat] int32
-std/traits.scalar.cn:360:19 [binding_pat] int32
-std/traits.scalar.cn:360:36 [named_type] int32
-std/traits.scalar.cn:361:16 [ident] int32
-std/traits.scalar.cn:361:16 [binary] int32
-std/traits.scalar.cn:361:23 [ident] int32
-std/traits.scalar.cn:364:13 [binding_pat] int64
-std/traits.scalar.cn:364:19 [binding_pat] int64
-std/traits.scalar.cn:364:36 [named_type] int64
-std/traits.scalar.cn:365:16 [ident] int64
-std/traits.scalar.cn:365:16 [binary] int64
-std/traits.scalar.cn:365:23 [ident] int64
-std/traits.scalar.cn:368:13 [binding_pat] isize
-std/traits.scalar.cn:368:19 [binding_pat] isize
-std/traits.scalar.cn:368:36 [named_type] isize
-std/traits.scalar.cn:369:16 [ident] isize
-std/traits.scalar.cn:369:16 [binary] isize
-std/traits.scalar.cn:369:23 [ident] isize
-std/traits.scalar.cn:372:13 [binding_pat] uint8
-std/traits.scalar.cn:372:19 [binding_pat] uint8
-std/traits.scalar.cn:372:36 [named_type] uint8
-std/traits.scalar.cn:373:16 [ident] uint8
-std/traits.scalar.cn:373:16 [binary] uint8
-std/traits.scalar.cn:373:23 [ident] uint8
-std/traits.scalar.cn:376:13 [binding_pat] uint16
-std/traits.scalar.cn:376:19 [binding_pat] uint16
-std/traits.scalar.cn:376:37 [named_type] uint16
-std/traits.scalar.cn:377:16 [ident] uint16
-std/traits.scalar.cn:377:16 [binary] uint16
-std/traits.scalar.cn:377:23 [ident] uint16
-std/traits.scalar.cn:380:13 [binding_pat] uint32
-std/traits.scalar.cn:380:19 [binding_pat] uint32
-std/traits.scalar.cn:380:37 [named_type] uint32
-std/traits.scalar.cn:381:16 [ident] uint32
-std/traits.scalar.cn:381:16 [binary] uint32
-std/traits.scalar.cn:381:23 [ident] uint32
-std/traits.scalar.cn:384:13 [binding_pat] uint64
-std/traits.scalar.cn:384:19 [binding_pat] uint64
-std/traits.scalar.cn:384:37 [named_type] uint64
-std/traits.scalar.cn:385:16 [ident] uint64
-std/traits.scalar.cn:385:16 [binary] uint64
-std/traits.scalar.cn:385:23 [ident] uint64
-std/traits.scalar.cn:388:13 [binding_pat] usize
-std/traits.scalar.cn:388:19 [binding_pat] usize
-std/traits.scalar.cn:388:36 [named_type] usize
-std/traits.scalar.cn:389:16 [ident] usize
-std/traits.scalar.cn:389:16 [binary] usize
-std/traits.scalar.cn:389:23 [ident] usize
-std/traits.scalar.cn:392:13 [binding_pat] byte
-std/traits.scalar.cn:392:19 [binding_pat] byte
-std/traits.scalar.cn:392:35 [named_type] byte
-std/traits.scalar.cn:393:16 [ident] byte
-std/traits.scalar.cn:393:16 [binary] byte
-std/traits.scalar.cn:393:23 [ident] byte
-std/traits.scalar.cn:396:13 [binding_pat] float32
-std/traits.scalar.cn:396:19 [binding_pat] float32
-std/traits.scalar.cn:396:38 [named_type] float32
-std/traits.scalar.cn:397:16 [ident] float32
-std/traits.scalar.cn:397:16 [binary] float32
-std/traits.scalar.cn:397:23 [ident] float32
-std/traits.scalar.cn:400:13 [binding_pat] float64
-std/traits.scalar.cn:400:19 [binding_pat] float64
-std/traits.scalar.cn:400:38 [named_type] float64
-std/traits.scalar.cn:401:16 [ident] float64
-std/traits.scalar.cn:401:16 [binary] float64
-std/traits.scalar.cn:401:23 [ident] float64
-std/traits.scalar.cn:404:13 [binding_pat] int8
-std/traits.scalar.cn:404:19 [binding_pat] int8
-std/traits.scalar.cn:404:35 [named_type] int8
-std/traits.scalar.cn:405:16 [ident] int8
-std/traits.scalar.cn:405:16 [binary] int8
-std/traits.scalar.cn:405:23 [ident] int8
-std/traits.scalar.cn:408:13 [binding_pat] int16
-std/traits.scalar.cn:408:19 [binding_pat] int16
-std/traits.scalar.cn:408:36 [named_type] int16
-std/traits.scalar.cn:409:16 [ident] int16
-std/traits.scalar.cn:409:16 [binary] int16
-std/traits.scalar.cn:409:23 [ident] int16
-std/traits.scalar.cn:412:13 [binding_pat] int32
-std/traits.scalar.cn:412:19 [binding_pat] int32
-std/traits.scalar.cn:412:36 [named_type] int32
-std/traits.scalar.cn:413:16 [ident] int32
-std/traits.scalar.cn:413:16 [binary] int32
-std/traits.scalar.cn:413:23 [ident] int32
-std/traits.scalar.cn:416:13 [binding_pat] int64
-std/traits.scalar.cn:416:19 [binding_pat] int64
-std/traits.scalar.cn:416:36 [named_type] int64
-std/traits.scalar.cn:417:16 [ident] int64
-std/traits.scalar.cn:417:16 [binary] int64
-std/traits.scalar.cn:417:23 [ident] int64
+std/traits.scalar.cn:297:18 [ident] uint64
+std/traits.scalar.cn:300:14 [binding_pat] uint128
+std/traits.scalar.cn:300:23 [named_type] str
+std/traits.scalar.cn:301:16 [interp_string] str
+std/traits.scalar.cn:301:18 [ident] uint128
+std/traits.scalar.cn:304:15 [binding_pat] uint128
+std/traits.scalar.cn:304:24 [named_type] str
+std/traits.scalar.cn:305:16 [interp_string] str
+std/traits.scalar.cn:305:18 [ident] uint128
+std/traits.scalar.cn:308:14 [binding_pat] usize
+std/traits.scalar.cn:308:23 [named_type] str
+std/traits.scalar.cn:309:16 [interp_string] str
+std/traits.scalar.cn:309:18 [ident] usize
+std/traits.scalar.cn:312:15 [binding_pat] usize
+std/traits.scalar.cn:312:24 [named_type] str
+std/traits.scalar.cn:313:16 [interp_string] str
+std/traits.scalar.cn:313:18 [ident] usize
+std/traits.scalar.cn:316:14 [binding_pat] byte
+std/traits.scalar.cn:316:23 [named_type] str
+std/traits.scalar.cn:317:16 [interp_string] str
+std/traits.scalar.cn:317:18 [ident] byte
+std/traits.scalar.cn:320:15 [binding_pat] byte
+std/traits.scalar.cn:320:24 [named_type] str
+std/traits.scalar.cn:321:16 [interp_string] str
+std/traits.scalar.cn:321:18 [ident] byte
+std/traits.scalar.cn:324:14 [binding_pat] float32
+std/traits.scalar.cn:324:23 [named_type] str
+std/traits.scalar.cn:325:16 [interp_string] str
+std/traits.scalar.cn:325:18 [ident] float32
+std/traits.scalar.cn:328:15 [binding_pat] float32
+std/traits.scalar.cn:328:24 [named_type] str
+std/traits.scalar.cn:329:16 [interp_string] str
+std/traits.scalar.cn:329:18 [ident] float32
+std/traits.scalar.cn:332:14 [binding_pat] float64
+std/traits.scalar.cn:332:23 [named_type] str
+std/traits.scalar.cn:333:16 [interp_string] str
+std/traits.scalar.cn:333:18 [ident] float64
+std/traits.scalar.cn:336:15 [binding_pat] float64
+std/traits.scalar.cn:336:24 [named_type] str
+std/traits.scalar.cn:337:16 [interp_string] str
+std/traits.scalar.cn:337:18 [ident] float64
+std/traits.scalar.cn:340:13 [binding_pat] int8
+std/traits.scalar.cn:340:19 [binding_pat] int8
+std/traits.scalar.cn:340:35 [named_type] int8
+std/traits.scalar.cn:341:16 [ident] int8
+std/traits.scalar.cn:341:16 [binary] int8
+std/traits.scalar.cn:341:23 [ident] int8
+std/traits.scalar.cn:344:13 [binding_pat] int16
+std/traits.scalar.cn:344:19 [binding_pat] int16
+std/traits.scalar.cn:344:36 [named_type] int16
+std/traits.scalar.cn:345:16 [ident] int16
+std/traits.scalar.cn:345:16 [binary] int16
+std/traits.scalar.cn:345:23 [ident] int16
+std/traits.scalar.cn:348:13 [binding_pat] int32
+std/traits.scalar.cn:348:19 [binding_pat] int32
+std/traits.scalar.cn:348:36 [named_type] int32
+std/traits.scalar.cn:349:16 [ident] int32
+std/traits.scalar.cn:349:16 [binary] int32
+std/traits.scalar.cn:349:23 [ident] int32
+std/traits.scalar.cn:352:13 [binding_pat] int64
+std/traits.scalar.cn:352:19 [binding_pat] int64
+std/traits.scalar.cn:352:36 [named_type] int64
+std/traits.scalar.cn:353:16 [ident] int64
+std/traits.scalar.cn:353:16 [binary] int64
+std/traits.scalar.cn:353:23 [ident] int64
+std/traits.scalar.cn:356:13 [binding_pat] int128
+std/traits.scalar.cn:356:19 [binding_pat] int128
+std/traits.scalar.cn:356:37 [named_type] int128
+std/traits.scalar.cn:357:16 [ident] int128
+std/traits.scalar.cn:357:16 [binary] int128
+std/traits.scalar.cn:357:23 [ident] int128
+std/traits.scalar.cn:360:13 [binding_pat] isize
+std/traits.scalar.cn:360:19 [binding_pat] isize
+std/traits.scalar.cn:360:36 [named_type] isize
+std/traits.scalar.cn:361:16 [ident] isize
+std/traits.scalar.cn:361:16 [binary] isize
+std/traits.scalar.cn:361:23 [ident] isize
+std/traits.scalar.cn:364:13 [binding_pat] uint8
+std/traits.scalar.cn:364:19 [binding_pat] uint8
+std/traits.scalar.cn:364:36 [named_type] uint8
+std/traits.scalar.cn:365:16 [ident] uint8
+std/traits.scalar.cn:365:16 [binary] uint8
+std/traits.scalar.cn:365:23 [ident] uint8
+std/traits.scalar.cn:368:13 [binding_pat] uint16
+std/traits.scalar.cn:368:19 [binding_pat] uint16
+std/traits.scalar.cn:368:37 [named_type] uint16
+std/traits.scalar.cn:369:16 [ident] uint16
+std/traits.scalar.cn:369:16 [binary] uint16
+std/traits.scalar.cn:369:23 [ident] uint16
+std/traits.scalar.cn:372:13 [binding_pat] uint32
+std/traits.scalar.cn:372:19 [binding_pat] uint32
+std/traits.scalar.cn:372:37 [named_type] uint32
+std/traits.scalar.cn:373:16 [ident] uint32
+std/traits.scalar.cn:373:16 [binary] uint32
+std/traits.scalar.cn:373:23 [ident] uint32
+std/traits.scalar.cn:376:13 [binding_pat] uint64
+std/traits.scalar.cn:376:19 [binding_pat] uint64
+std/traits.scalar.cn:376:37 [named_type] uint64
+std/traits.scalar.cn:377:16 [ident] uint64
+std/traits.scalar.cn:377:16 [binary] uint64
+std/traits.scalar.cn:377:23 [ident] uint64
+std/traits.scalar.cn:380:13 [binding_pat] uint128
+std/traits.scalar.cn:380:19 [binding_pat] uint128
+std/traits.scalar.cn:380:38 [named_type] uint128
+std/traits.scalar.cn:381:16 [ident] uint128
+std/traits.scalar.cn:381:16 [binary] uint128
+std/traits.scalar.cn:381:23 [ident] uint128
+std/traits.scalar.cn:384:13 [binding_pat] usize
+std/traits.scalar.cn:384:19 [binding_pat] usize
+std/traits.scalar.cn:384:36 [named_type] usize
+std/traits.scalar.cn:385:16 [ident] usize
+std/traits.scalar.cn:385:16 [binary] usize
+std/traits.scalar.cn:385:23 [ident] usize
+std/traits.scalar.cn:388:13 [binding_pat] byte
+std/traits.scalar.cn:388:19 [binding_pat] byte
+std/traits.scalar.cn:388:35 [named_type] byte
+std/traits.scalar.cn:389:16 [ident] byte
+std/traits.scalar.cn:389:16 [binary] byte
+std/traits.scalar.cn:389:23 [ident] byte
+std/traits.scalar.cn:392:13 [binding_pat] float32
+std/traits.scalar.cn:392:19 [binding_pat] float32
+std/traits.scalar.cn:392:38 [named_type] float32
+std/traits.scalar.cn:393:16 [ident] float32
+std/traits.scalar.cn:393:16 [binary] float32
+std/traits.scalar.cn:393:23 [ident] float32
+std/traits.scalar.cn:396:13 [binding_pat] float64
+std/traits.scalar.cn:396:19 [binding_pat] float64
+std/traits.scalar.cn:396:38 [named_type] float64
+std/traits.scalar.cn:397:16 [ident] float64
+std/traits.scalar.cn:397:16 [binary] float64
+std/traits.scalar.cn:397:23 [ident] float64
+std/traits.scalar.cn:400:13 [binding_pat] int8
+std/traits.scalar.cn:400:19 [binding_pat] int8
+std/traits.scalar.cn:400:35 [named_type] int8
+std/traits.scalar.cn:401:16 [ident] int8
+std/traits.scalar.cn:401:16 [binary] int8
+std/traits.scalar.cn:401:23 [ident] int8
+std/traits.scalar.cn:404:13 [binding_pat] int16
+std/traits.scalar.cn:404:19 [binding_pat] int16
+std/traits.scalar.cn:404:36 [named_type] int16
+std/traits.scalar.cn:405:16 [ident] int16
+std/traits.scalar.cn:405:16 [binary] int16
+std/traits.scalar.cn:405:23 [ident] int16
+std/traits.scalar.cn:408:13 [binding_pat] int32
+std/traits.scalar.cn:408:19 [binding_pat] int32
+std/traits.scalar.cn:408:36 [named_type] int32
+std/traits.scalar.cn:409:16 [ident] int32
+std/traits.scalar.cn:409:16 [binary] int32
+std/traits.scalar.cn:409:23 [ident] int32
+std/traits.scalar.cn:412:13 [binding_pat] int64
+std/traits.scalar.cn:412:19 [binding_pat] int64
+std/traits.scalar.cn:412:36 [named_type] int64
+std/traits.scalar.cn:413:16 [ident] int64
+std/traits.scalar.cn:413:16 [binary] int64
+std/traits.scalar.cn:413:23 [ident] int64
+std/traits.scalar.cn:416:13 [binding_pat] int128
+std/traits.scalar.cn:416:19 [binding_pat] int128
+std/traits.scalar.cn:416:37 [named_type] int128
+std/traits.scalar.cn:417:16 [ident] int128
+std/traits.scalar.cn:417:16 [binary] int128
+std/traits.scalar.cn:417:23 [ident] int128
 std/traits.scalar.cn:420:13 [binding_pat] isize
 std/traits.scalar.cn:420:19 [binding_pat] isize
 std/traits.scalar.cn:420:36 [named_type] isize
@@ -12932,214 +13120,338 @@ std/traits.scalar.cn:436:37 [named_type] uint64
 std/traits.scalar.cn:437:16 [ident] uint64
 std/traits.scalar.cn:437:16 [binary] uint64
 std/traits.scalar.cn:437:23 [ident] uint64
-std/traits.scalar.cn:440:13 [binding_pat] usize
-std/traits.scalar.cn:440:19 [binding_pat] usize
-std/traits.scalar.cn:440:36 [named_type] usize
-std/traits.scalar.cn:441:16 [ident] usize
-std/traits.scalar.cn:441:16 [binary] usize
-std/traits.scalar.cn:441:23 [ident] usize
-std/traits.scalar.cn:444:13 [binding_pat] byte
-std/traits.scalar.cn:444:19 [binding_pat] byte
-std/traits.scalar.cn:444:35 [named_type] byte
-std/traits.scalar.cn:445:16 [ident] byte
-std/traits.scalar.cn:445:16 [binary] byte
-std/traits.scalar.cn:445:23 [ident] byte
-std/traits.scalar.cn:448:13 [binding_pat] float32
-std/traits.scalar.cn:448:19 [binding_pat] float32
-std/traits.scalar.cn:448:38 [named_type] float32
-std/traits.scalar.cn:449:16 [ident] float32
-std/traits.scalar.cn:449:16 [binary] float32
-std/traits.scalar.cn:449:23 [ident] float32
-std/traits.scalar.cn:452:13 [binding_pat] float64
-std/traits.scalar.cn:452:19 [binding_pat] float64
-std/traits.scalar.cn:452:38 [named_type] float64
-std/traits.scalar.cn:453:16 [ident] float64
-std/traits.scalar.cn:453:16 [binary] float64
-std/traits.scalar.cn:453:23 [ident] float64
-std/traits.scalar.cn:456:13 [binding_pat] int8
-std/traits.scalar.cn:456:19 [binding_pat] int8
-std/traits.scalar.cn:456:35 [named_type] int8
-std/traits.scalar.cn:457:16 [ident] int8
-std/traits.scalar.cn:457:16 [binary] int8
-std/traits.scalar.cn:457:23 [ident] int8
-std/traits.scalar.cn:460:13 [binding_pat] int16
-std/traits.scalar.cn:460:19 [binding_pat] int16
-std/traits.scalar.cn:460:36 [named_type] int16
-std/traits.scalar.cn:461:16 [ident] int16
-std/traits.scalar.cn:461:16 [binary] int16
-std/traits.scalar.cn:461:23 [ident] int16
-std/traits.scalar.cn:464:13 [binding_pat] int32
-std/traits.scalar.cn:464:19 [binding_pat] int32
-std/traits.scalar.cn:464:36 [named_type] int32
-std/traits.scalar.cn:465:16 [ident] int32
-std/traits.scalar.cn:465:16 [binary] int32
-std/traits.scalar.cn:465:23 [ident] int32
-std/traits.scalar.cn:468:13 [binding_pat] int64
-std/traits.scalar.cn:468:19 [binding_pat] int64
-std/traits.scalar.cn:468:36 [named_type] int64
-std/traits.scalar.cn:469:16 [ident] int64
-std/traits.scalar.cn:469:16 [binary] int64
-std/traits.scalar.cn:469:23 [ident] int64
-std/traits.scalar.cn:472:13 [binding_pat] isize
-std/traits.scalar.cn:472:19 [binding_pat] isize
-std/traits.scalar.cn:472:36 [named_type] isize
-std/traits.scalar.cn:473:16 [ident] isize
-std/traits.scalar.cn:473:16 [binary] isize
-std/traits.scalar.cn:473:23 [ident] isize
-std/traits.scalar.cn:476:13 [binding_pat] uint8
-std/traits.scalar.cn:476:19 [binding_pat] uint8
-std/traits.scalar.cn:476:36 [named_type] uint8
-std/traits.scalar.cn:477:16 [ident] uint8
-std/traits.scalar.cn:477:16 [binary] uint8
-std/traits.scalar.cn:477:23 [ident] uint8
-std/traits.scalar.cn:480:13 [binding_pat] uint16
-std/traits.scalar.cn:480:19 [binding_pat] uint16
-std/traits.scalar.cn:480:37 [named_type] uint16
-std/traits.scalar.cn:481:16 [ident] uint16
-std/traits.scalar.cn:481:16 [binary] uint16
-std/traits.scalar.cn:481:23 [ident] uint16
-std/traits.scalar.cn:484:13 [binding_pat] uint32
-std/traits.scalar.cn:484:19 [binding_pat] uint32
-std/traits.scalar.cn:484:37 [named_type] uint32
-std/traits.scalar.cn:485:16 [ident] uint32
-std/traits.scalar.cn:485:16 [binary] uint32
-std/traits.scalar.cn:485:23 [ident] uint32
-std/traits.scalar.cn:488:13 [binding_pat] uint64
-std/traits.scalar.cn:488:19 [binding_pat] uint64
-std/traits.scalar.cn:488:37 [named_type] uint64
-std/traits.scalar.cn:489:16 [ident] uint64
-std/traits.scalar.cn:489:16 [binary] uint64
-std/traits.scalar.cn:489:23 [ident] uint64
-std/traits.scalar.cn:492:13 [binding_pat] usize
-std/traits.scalar.cn:492:19 [binding_pat] usize
-std/traits.scalar.cn:492:36 [named_type] usize
-std/traits.scalar.cn:493:16 [ident] usize
-std/traits.scalar.cn:493:16 [binary] usize
-std/traits.scalar.cn:493:23 [ident] usize
-std/traits.scalar.cn:496:13 [binding_pat] byte
-std/traits.scalar.cn:496:19 [binding_pat] byte
-std/traits.scalar.cn:496:35 [named_type] byte
-std/traits.scalar.cn:497:16 [ident] byte
-std/traits.scalar.cn:497:16 [binary] byte
-std/traits.scalar.cn:497:23 [ident] byte
-std/traits.scalar.cn:500:13 [binding_pat] float32
-std/traits.scalar.cn:500:19 [binding_pat] float32
-std/traits.scalar.cn:500:38 [named_type] float32
-std/traits.scalar.cn:501:16 [ident] float32
-std/traits.scalar.cn:501:16 [binary] float32
-std/traits.scalar.cn:501:23 [ident] float32
-std/traits.scalar.cn:504:13 [binding_pat] float64
-std/traits.scalar.cn:504:19 [binding_pat] float64
-std/traits.scalar.cn:504:38 [named_type] float64
-std/traits.scalar.cn:505:16 [ident] float64
-std/traits.scalar.cn:505:16 [binary] float64
-std/traits.scalar.cn:505:23 [ident] float64
-std/traits.scalar.cn:508:13 [binding_pat] int8
-std/traits.scalar.cn:508:19 [binding_pat] int8
-std/traits.scalar.cn:508:35 [named_type] int8
-std/traits.scalar.cn:509:16 [ident] int8
-std/traits.scalar.cn:509:16 [binary] int8
-std/traits.scalar.cn:509:23 [ident] int8
-std/traits.scalar.cn:512:13 [binding_pat] int16
-std/traits.scalar.cn:512:19 [binding_pat] int16
-std/traits.scalar.cn:512:36 [named_type] int16
-std/traits.scalar.cn:513:16 [ident] int16
-std/traits.scalar.cn:513:16 [binary] int16
-std/traits.scalar.cn:513:23 [ident] int16
-std/traits.scalar.cn:516:13 [binding_pat] int32
-std/traits.scalar.cn:516:19 [binding_pat] int32
-std/traits.scalar.cn:516:36 [named_type] int32
-std/traits.scalar.cn:517:16 [ident] int32
-std/traits.scalar.cn:517:16 [binary] int32
-std/traits.scalar.cn:517:23 [ident] int32
-std/traits.scalar.cn:520:13 [binding_pat] int64
-std/traits.scalar.cn:520:19 [binding_pat] int64
-std/traits.scalar.cn:520:36 [named_type] int64
-std/traits.scalar.cn:521:16 [ident] int64
-std/traits.scalar.cn:521:16 [binary] int64
-std/traits.scalar.cn:521:23 [ident] int64
-std/traits.scalar.cn:524:13 [binding_pat] isize
-std/traits.scalar.cn:524:19 [binding_pat] isize
-std/traits.scalar.cn:524:36 [named_type] isize
-std/traits.scalar.cn:525:16 [ident] isize
-std/traits.scalar.cn:525:16 [binary] isize
-std/traits.scalar.cn:525:23 [ident] isize
-std/traits.scalar.cn:528:13 [binding_pat] uint8
-std/traits.scalar.cn:528:19 [binding_pat] uint8
-std/traits.scalar.cn:528:36 [named_type] uint8
-std/traits.scalar.cn:529:16 [ident] uint8
-std/traits.scalar.cn:529:16 [binary] uint8
-std/traits.scalar.cn:529:23 [ident] uint8
-std/traits.scalar.cn:532:13 [binding_pat] uint16
-std/traits.scalar.cn:532:19 [binding_pat] uint16
-std/traits.scalar.cn:532:37 [named_type] uint16
-std/traits.scalar.cn:533:16 [ident] uint16
-std/traits.scalar.cn:533:16 [binary] uint16
-std/traits.scalar.cn:533:23 [ident] uint16
-std/traits.scalar.cn:536:13 [binding_pat] uint32
-std/traits.scalar.cn:536:19 [binding_pat] uint32
-std/traits.scalar.cn:536:37 [named_type] uint32
-std/traits.scalar.cn:537:16 [ident] uint32
-std/traits.scalar.cn:537:16 [binary] uint32
-std/traits.scalar.cn:537:23 [ident] uint32
-std/traits.scalar.cn:540:13 [binding_pat] uint64
-std/traits.scalar.cn:540:19 [binding_pat] uint64
-std/traits.scalar.cn:540:37 [named_type] uint64
-std/traits.scalar.cn:541:16 [ident] uint64
-std/traits.scalar.cn:541:16 [binary] uint64
-std/traits.scalar.cn:541:23 [ident] uint64
-std/traits.scalar.cn:544:13 [binding_pat] usize
-std/traits.scalar.cn:544:19 [binding_pat] usize
-std/traits.scalar.cn:544:36 [named_type] usize
-std/traits.scalar.cn:545:16 [ident] usize
-std/traits.scalar.cn:545:16 [binary] usize
-std/traits.scalar.cn:545:23 [ident] usize
-std/traits.scalar.cn:548:13 [binding_pat] byte
-std/traits.scalar.cn:548:19 [binding_pat] byte
-std/traits.scalar.cn:548:35 [named_type] byte
-std/traits.scalar.cn:549:16 [ident] byte
-std/traits.scalar.cn:549:16 [binary] byte
-std/traits.scalar.cn:549:23 [ident] byte
-std/traits.scalar.cn:552:13 [binding_pat] float32
-std/traits.scalar.cn:552:19 [binding_pat] float32
-std/traits.scalar.cn:552:38 [named_type] float32
-std/traits.scalar.cn:553:16 [ident] float32
-std/traits.scalar.cn:553:16 [binary] float32
-std/traits.scalar.cn:553:23 [ident] float32
-std/traits.scalar.cn:556:13 [binding_pat] float64
-std/traits.scalar.cn:556:19 [binding_pat] float64
-std/traits.scalar.cn:556:38 [named_type] float64
-std/traits.scalar.cn:557:16 [ident] float64
-std/traits.scalar.cn:557:16 [binary] float64
-std/traits.scalar.cn:557:23 [ident] float64
-std/traits.scalar.cn:560:13 [binding_pat] int8
-std/traits.scalar.cn:560:22 [named_type] int8
-std/traits.scalar.cn:561:16 [unary] int8
-std/traits.scalar.cn:561:17 [ident] int8
-std/traits.scalar.cn:564:13 [binding_pat] int16
-std/traits.scalar.cn:564:22 [named_type] int16
-std/traits.scalar.cn:565:16 [unary] int16
-std/traits.scalar.cn:565:17 [ident] int16
-std/traits.scalar.cn:568:13 [binding_pat] int32
-std/traits.scalar.cn:568:22 [named_type] int32
-std/traits.scalar.cn:569:16 [unary] int32
-std/traits.scalar.cn:569:17 [ident] int32
-std/traits.scalar.cn:572:13 [binding_pat] int64
-std/traits.scalar.cn:572:22 [named_type] int64
-std/traits.scalar.cn:573:16 [unary] int64
-std/traits.scalar.cn:573:17 [ident] int64
-std/traits.scalar.cn:576:13 [binding_pat] isize
-std/traits.scalar.cn:576:22 [named_type] isize
-std/traits.scalar.cn:577:16 [unary] isize
-std/traits.scalar.cn:577:17 [ident] isize
-std/traits.scalar.cn:580:13 [binding_pat] float32
-std/traits.scalar.cn:580:22 [named_type] float32
-std/traits.scalar.cn:581:16 [unary] float32
-std/traits.scalar.cn:581:17 [ident] float32
-std/traits.scalar.cn:584:13 [binding_pat] float64
-std/traits.scalar.cn:584:22 [named_type] float64
-std/traits.scalar.cn:585:16 [unary] float64
-std/traits.scalar.cn:585:17 [ident] float64
+std/traits.scalar.cn:440:13 [binding_pat] uint128
+std/traits.scalar.cn:440:19 [binding_pat] uint128
+std/traits.scalar.cn:440:38 [named_type] uint128
+std/traits.scalar.cn:441:16 [ident] uint128
+std/traits.scalar.cn:441:16 [binary] uint128
+std/traits.scalar.cn:441:23 [ident] uint128
+std/traits.scalar.cn:444:13 [binding_pat] usize
+std/traits.scalar.cn:444:19 [binding_pat] usize
+std/traits.scalar.cn:444:36 [named_type] usize
+std/traits.scalar.cn:445:16 [ident] usize
+std/traits.scalar.cn:445:16 [binary] usize
+std/traits.scalar.cn:445:23 [ident] usize
+std/traits.scalar.cn:448:13 [binding_pat] byte
+std/traits.scalar.cn:448:19 [binding_pat] byte
+std/traits.scalar.cn:448:35 [named_type] byte
+std/traits.scalar.cn:449:16 [ident] byte
+std/traits.scalar.cn:449:16 [binary] byte
+std/traits.scalar.cn:449:23 [ident] byte
+std/traits.scalar.cn:452:13 [binding_pat] float32
+std/traits.scalar.cn:452:19 [binding_pat] float32
+std/traits.scalar.cn:452:38 [named_type] float32
+std/traits.scalar.cn:453:16 [ident] float32
+std/traits.scalar.cn:453:16 [binary] float32
+std/traits.scalar.cn:453:23 [ident] float32
+std/traits.scalar.cn:456:13 [binding_pat] float64
+std/traits.scalar.cn:456:19 [binding_pat] float64
+std/traits.scalar.cn:456:38 [named_type] float64
+std/traits.scalar.cn:457:16 [ident] float64
+std/traits.scalar.cn:457:16 [binary] float64
+std/traits.scalar.cn:457:23 [ident] float64
+std/traits.scalar.cn:460:13 [binding_pat] int8
+std/traits.scalar.cn:460:19 [binding_pat] int8
+std/traits.scalar.cn:460:35 [named_type] int8
+std/traits.scalar.cn:461:16 [ident] int8
+std/traits.scalar.cn:461:16 [binary] int8
+std/traits.scalar.cn:461:23 [ident] int8
+std/traits.scalar.cn:464:13 [binding_pat] int16
+std/traits.scalar.cn:464:19 [binding_pat] int16
+std/traits.scalar.cn:464:36 [named_type] int16
+std/traits.scalar.cn:465:16 [ident] int16
+std/traits.scalar.cn:465:16 [binary] int16
+std/traits.scalar.cn:465:23 [ident] int16
+std/traits.scalar.cn:468:13 [binding_pat] int32
+std/traits.scalar.cn:468:19 [binding_pat] int32
+std/traits.scalar.cn:468:36 [named_type] int32
+std/traits.scalar.cn:469:16 [ident] int32
+std/traits.scalar.cn:469:16 [binary] int32
+std/traits.scalar.cn:469:23 [ident] int32
+std/traits.scalar.cn:472:13 [binding_pat] int64
+std/traits.scalar.cn:472:19 [binding_pat] int64
+std/traits.scalar.cn:472:36 [named_type] int64
+std/traits.scalar.cn:473:16 [ident] int64
+std/traits.scalar.cn:473:16 [binary] int64
+std/traits.scalar.cn:473:23 [ident] int64
+std/traits.scalar.cn:476:13 [binding_pat] int128
+std/traits.scalar.cn:476:19 [binding_pat] int128
+std/traits.scalar.cn:476:37 [named_type] int128
+std/traits.scalar.cn:477:16 [ident] int128
+std/traits.scalar.cn:477:16 [binary] int128
+std/traits.scalar.cn:477:23 [ident] int128
+std/traits.scalar.cn:480:13 [binding_pat] isize
+std/traits.scalar.cn:480:19 [binding_pat] isize
+std/traits.scalar.cn:480:36 [named_type] isize
+std/traits.scalar.cn:481:16 [ident] isize
+std/traits.scalar.cn:481:16 [binary] isize
+std/traits.scalar.cn:481:23 [ident] isize
+std/traits.scalar.cn:484:13 [binding_pat] uint8
+std/traits.scalar.cn:484:19 [binding_pat] uint8
+std/traits.scalar.cn:484:36 [named_type] uint8
+std/traits.scalar.cn:485:16 [ident] uint8
+std/traits.scalar.cn:485:16 [binary] uint8
+std/traits.scalar.cn:485:23 [ident] uint8
+std/traits.scalar.cn:488:13 [binding_pat] uint16
+std/traits.scalar.cn:488:19 [binding_pat] uint16
+std/traits.scalar.cn:488:37 [named_type] uint16
+std/traits.scalar.cn:489:16 [ident] uint16
+std/traits.scalar.cn:489:16 [binary] uint16
+std/traits.scalar.cn:489:23 [ident] uint16
+std/traits.scalar.cn:492:13 [binding_pat] uint32
+std/traits.scalar.cn:492:19 [binding_pat] uint32
+std/traits.scalar.cn:492:37 [named_type] uint32
+std/traits.scalar.cn:493:16 [ident] uint32
+std/traits.scalar.cn:493:16 [binary] uint32
+std/traits.scalar.cn:493:23 [ident] uint32
+std/traits.scalar.cn:496:13 [binding_pat] uint64
+std/traits.scalar.cn:496:19 [binding_pat] uint64
+std/traits.scalar.cn:496:37 [named_type] uint64
+std/traits.scalar.cn:497:16 [ident] uint64
+std/traits.scalar.cn:497:16 [binary] uint64
+std/traits.scalar.cn:497:23 [ident] uint64
+std/traits.scalar.cn:500:13 [binding_pat] uint128
+std/traits.scalar.cn:500:19 [binding_pat] uint128
+std/traits.scalar.cn:500:38 [named_type] uint128
+std/traits.scalar.cn:501:16 [ident] uint128
+std/traits.scalar.cn:501:16 [binary] uint128
+std/traits.scalar.cn:501:23 [ident] uint128
+std/traits.scalar.cn:504:13 [binding_pat] usize
+std/traits.scalar.cn:504:19 [binding_pat] usize
+std/traits.scalar.cn:504:36 [named_type] usize
+std/traits.scalar.cn:505:16 [ident] usize
+std/traits.scalar.cn:505:16 [binary] usize
+std/traits.scalar.cn:505:23 [ident] usize
+std/traits.scalar.cn:508:13 [binding_pat] byte
+std/traits.scalar.cn:508:19 [binding_pat] byte
+std/traits.scalar.cn:508:35 [named_type] byte
+std/traits.scalar.cn:509:16 [ident] byte
+std/traits.scalar.cn:509:16 [binary] byte
+std/traits.scalar.cn:509:23 [ident] byte
+std/traits.scalar.cn:512:13 [binding_pat] float32
+std/traits.scalar.cn:512:19 [binding_pat] float32
+std/traits.scalar.cn:512:38 [named_type] float32
+std/traits.scalar.cn:513:16 [ident] float32
+std/traits.scalar.cn:513:16 [binary] float32
+std/traits.scalar.cn:513:23 [ident] float32
+std/traits.scalar.cn:516:13 [binding_pat] float64
+std/traits.scalar.cn:516:19 [binding_pat] float64
+std/traits.scalar.cn:516:38 [named_type] float64
+std/traits.scalar.cn:517:16 [ident] float64
+std/traits.scalar.cn:517:16 [binary] float64
+std/traits.scalar.cn:517:23 [ident] float64
+std/traits.scalar.cn:520:13 [binding_pat] int8
+std/traits.scalar.cn:520:19 [binding_pat] int8
+std/traits.scalar.cn:520:35 [named_type] int8
+std/traits.scalar.cn:521:16 [ident] int8
+std/traits.scalar.cn:521:16 [binary] int8
+std/traits.scalar.cn:521:23 [ident] int8
+std/traits.scalar.cn:524:13 [binding_pat] int16
+std/traits.scalar.cn:524:19 [binding_pat] int16
+std/traits.scalar.cn:524:36 [named_type] int16
+std/traits.scalar.cn:525:16 [ident] int16
+std/traits.scalar.cn:525:16 [binary] int16
+std/traits.scalar.cn:525:23 [ident] int16
+std/traits.scalar.cn:528:13 [binding_pat] int32
+std/traits.scalar.cn:528:19 [binding_pat] int32
+std/traits.scalar.cn:528:36 [named_type] int32
+std/traits.scalar.cn:529:16 [ident] int32
+std/traits.scalar.cn:529:16 [binary] int32
+std/traits.scalar.cn:529:23 [ident] int32
+std/traits.scalar.cn:532:13 [binding_pat] int64
+std/traits.scalar.cn:532:19 [binding_pat] int64
+std/traits.scalar.cn:532:36 [named_type] int64
+std/traits.scalar.cn:533:16 [ident] int64
+std/traits.scalar.cn:533:16 [binary] int64
+std/traits.scalar.cn:533:23 [ident] int64
+std/traits.scalar.cn:536:13 [binding_pat] int128
+std/traits.scalar.cn:536:19 [binding_pat] int128
+std/traits.scalar.cn:536:37 [named_type] int128
+std/traits.scalar.cn:537:16 [ident] int128
+std/traits.scalar.cn:537:16 [binary] int128
+std/traits.scalar.cn:537:23 [ident] int128
+std/traits.scalar.cn:540:13 [binding_pat] isize
+std/traits.scalar.cn:540:19 [binding_pat] isize
+std/traits.scalar.cn:540:36 [named_type] isize
+std/traits.scalar.cn:541:16 [ident] isize
+std/traits.scalar.cn:541:16 [binary] isize
+std/traits.scalar.cn:541:23 [ident] isize
+std/traits.scalar.cn:544:13 [binding_pat] uint8
+std/traits.scalar.cn:544:19 [binding_pat] uint8
+std/traits.scalar.cn:544:36 [named_type] uint8
+std/traits.scalar.cn:545:16 [ident] uint8
+std/traits.scalar.cn:545:16 [binary] uint8
+std/traits.scalar.cn:545:23 [ident] uint8
+std/traits.scalar.cn:548:13 [binding_pat] uint16
+std/traits.scalar.cn:548:19 [binding_pat] uint16
+std/traits.scalar.cn:548:37 [named_type] uint16
+std/traits.scalar.cn:549:16 [ident] uint16
+std/traits.scalar.cn:549:16 [binary] uint16
+std/traits.scalar.cn:549:23 [ident] uint16
+std/traits.scalar.cn:552:13 [binding_pat] uint32
+std/traits.scalar.cn:552:19 [binding_pat] uint32
+std/traits.scalar.cn:552:37 [named_type] uint32
+std/traits.scalar.cn:553:16 [ident] uint32
+std/traits.scalar.cn:553:16 [binary] uint32
+std/traits.scalar.cn:553:23 [ident] uint32
+std/traits.scalar.cn:556:13 [binding_pat] uint64
+std/traits.scalar.cn:556:19 [binding_pat] uint64
+std/traits.scalar.cn:556:37 [named_type] uint64
+std/traits.scalar.cn:557:16 [ident] uint64
+std/traits.scalar.cn:557:16 [binary] uint64
+std/traits.scalar.cn:557:23 [ident] uint64
+std/traits.scalar.cn:560:13 [binding_pat] uint128
+std/traits.scalar.cn:560:19 [binding_pat] uint128
+std/traits.scalar.cn:560:38 [named_type] uint128
+std/traits.scalar.cn:561:16 [ident] uint128
+std/traits.scalar.cn:561:16 [binary] uint128
+std/traits.scalar.cn:561:23 [ident] uint128
+std/traits.scalar.cn:564:13 [binding_pat] usize
+std/traits.scalar.cn:564:19 [binding_pat] usize
+std/traits.scalar.cn:564:36 [named_type] usize
+std/traits.scalar.cn:565:16 [ident] usize
+std/traits.scalar.cn:565:16 [binary] usize
+std/traits.scalar.cn:565:23 [ident] usize
+std/traits.scalar.cn:568:13 [binding_pat] byte
+std/traits.scalar.cn:568:19 [binding_pat] byte
+std/traits.scalar.cn:568:35 [named_type] byte
+std/traits.scalar.cn:569:16 [ident] byte
+std/traits.scalar.cn:569:16 [binary] byte
+std/traits.scalar.cn:569:23 [ident] byte
+std/traits.scalar.cn:572:13 [binding_pat] float32
+std/traits.scalar.cn:572:19 [binding_pat] float32
+std/traits.scalar.cn:572:38 [named_type] float32
+std/traits.scalar.cn:573:16 [ident] float32
+std/traits.scalar.cn:573:16 [binary] float32
+std/traits.scalar.cn:573:23 [ident] float32
+std/traits.scalar.cn:576:13 [binding_pat] float64
+std/traits.scalar.cn:576:19 [binding_pat] float64
+std/traits.scalar.cn:576:38 [named_type] float64
+std/traits.scalar.cn:577:16 [ident] float64
+std/traits.scalar.cn:577:16 [binary] float64
+std/traits.scalar.cn:577:23 [ident] float64
+std/traits.scalar.cn:580:13 [binding_pat] int8
+std/traits.scalar.cn:580:19 [binding_pat] int8
+std/traits.scalar.cn:580:35 [named_type] int8
+std/traits.scalar.cn:581:16 [ident] int8
+std/traits.scalar.cn:581:16 [binary] int8
+std/traits.scalar.cn:581:23 [ident] int8
+std/traits.scalar.cn:584:13 [binding_pat] int16
+std/traits.scalar.cn:584:19 [binding_pat] int16
+std/traits.scalar.cn:584:36 [named_type] int16
+std/traits.scalar.cn:585:16 [ident] int16
+std/traits.scalar.cn:585:16 [binary] int16
+std/traits.scalar.cn:585:23 [ident] int16
+std/traits.scalar.cn:588:13 [binding_pat] int32
+std/traits.scalar.cn:588:19 [binding_pat] int32
+std/traits.scalar.cn:588:36 [named_type] int32
+std/traits.scalar.cn:589:16 [ident] int32
+std/traits.scalar.cn:589:16 [binary] int32
+std/traits.scalar.cn:589:23 [ident] int32
+std/traits.scalar.cn:592:13 [binding_pat] int64
+std/traits.scalar.cn:592:19 [binding_pat] int64
+std/traits.scalar.cn:592:36 [named_type] int64
+std/traits.scalar.cn:593:16 [ident] int64
+std/traits.scalar.cn:593:16 [binary] int64
+std/traits.scalar.cn:593:23 [ident] int64
+std/traits.scalar.cn:596:13 [binding_pat] int128
+std/traits.scalar.cn:596:19 [binding_pat] int128
+std/traits.scalar.cn:596:37 [named_type] int128
+std/traits.scalar.cn:597:16 [ident] int128
+std/traits.scalar.cn:597:16 [binary] int128
+std/traits.scalar.cn:597:23 [ident] int128
+std/traits.scalar.cn:600:13 [binding_pat] isize
+std/traits.scalar.cn:600:19 [binding_pat] isize
+std/traits.scalar.cn:600:36 [named_type] isize
+std/traits.scalar.cn:601:16 [ident] isize
+std/traits.scalar.cn:601:16 [binary] isize
+std/traits.scalar.cn:601:23 [ident] isize
+std/traits.scalar.cn:604:13 [binding_pat] uint8
+std/traits.scalar.cn:604:19 [binding_pat] uint8
+std/traits.scalar.cn:604:36 [named_type] uint8
+std/traits.scalar.cn:605:16 [ident] uint8
+std/traits.scalar.cn:605:16 [binary] uint8
+std/traits.scalar.cn:605:23 [ident] uint8
+std/traits.scalar.cn:608:13 [binding_pat] uint16
+std/traits.scalar.cn:608:19 [binding_pat] uint16
+std/traits.scalar.cn:608:37 [named_type] uint16
+std/traits.scalar.cn:609:16 [ident] uint16
+std/traits.scalar.cn:609:16 [binary] uint16
+std/traits.scalar.cn:609:23 [ident] uint16
+std/traits.scalar.cn:612:13 [binding_pat] uint32
+std/traits.scalar.cn:612:19 [binding_pat] uint32
+std/traits.scalar.cn:612:37 [named_type] uint32
+std/traits.scalar.cn:613:16 [ident] uint32
+std/traits.scalar.cn:613:16 [binary] uint32
+std/traits.scalar.cn:613:23 [ident] uint32
+std/traits.scalar.cn:616:13 [binding_pat] uint64
+std/traits.scalar.cn:616:19 [binding_pat] uint64
+std/traits.scalar.cn:616:37 [named_type] uint64
+std/traits.scalar.cn:617:16 [ident] uint64
+std/traits.scalar.cn:617:16 [binary] uint64
+std/traits.scalar.cn:617:23 [ident] uint64
+std/traits.scalar.cn:620:13 [binding_pat] uint128
+std/traits.scalar.cn:620:19 [binding_pat] uint128
+std/traits.scalar.cn:620:38 [named_type] uint128
+std/traits.scalar.cn:621:16 [ident] uint128
+std/traits.scalar.cn:621:16 [binary] uint128
+std/traits.scalar.cn:621:23 [ident] uint128
+std/traits.scalar.cn:624:13 [binding_pat] usize
+std/traits.scalar.cn:624:19 [binding_pat] usize
+std/traits.scalar.cn:624:36 [named_type] usize
+std/traits.scalar.cn:625:16 [ident] usize
+std/traits.scalar.cn:625:16 [binary] usize
+std/traits.scalar.cn:625:23 [ident] usize
+std/traits.scalar.cn:628:13 [binding_pat] byte
+std/traits.scalar.cn:628:19 [binding_pat] byte
+std/traits.scalar.cn:628:35 [named_type] byte
+std/traits.scalar.cn:629:16 [ident] byte
+std/traits.scalar.cn:629:16 [binary] byte
+std/traits.scalar.cn:629:23 [ident] byte
+std/traits.scalar.cn:632:13 [binding_pat] float32
+std/traits.scalar.cn:632:19 [binding_pat] float32
+std/traits.scalar.cn:632:38 [named_type] float32
+std/traits.scalar.cn:633:16 [ident] float32
+std/traits.scalar.cn:633:16 [binary] float32
+std/traits.scalar.cn:633:23 [ident] float32
+std/traits.scalar.cn:636:13 [binding_pat] float64
+std/traits.scalar.cn:636:19 [binding_pat] float64
+std/traits.scalar.cn:636:38 [named_type] float64
+std/traits.scalar.cn:637:16 [ident] float64
+std/traits.scalar.cn:637:16 [binary] float64
+std/traits.scalar.cn:637:23 [ident] float64
+std/traits.scalar.cn:640:13 [binding_pat] int8
+std/traits.scalar.cn:640:22 [named_type] int8
+std/traits.scalar.cn:641:16 [unary] int8
+std/traits.scalar.cn:641:17 [ident] int8
+std/traits.scalar.cn:644:13 [binding_pat] int16
+std/traits.scalar.cn:644:22 [named_type] int16
+std/traits.scalar.cn:645:16 [unary] int16
+std/traits.scalar.cn:645:17 [ident] int16
+std/traits.scalar.cn:648:13 [binding_pat] int32
+std/traits.scalar.cn:648:22 [named_type] int32
+std/traits.scalar.cn:649:16 [unary] int32
+std/traits.scalar.cn:649:17 [ident] int32
+std/traits.scalar.cn:652:13 [binding_pat] int64
+std/traits.scalar.cn:652:22 [named_type] int64
+std/traits.scalar.cn:653:16 [unary] int64
+std/traits.scalar.cn:653:17 [ident] int64
+std/traits.scalar.cn:656:13 [binding_pat] int128
+std/traits.scalar.cn:656:22 [named_type] int128
+std/traits.scalar.cn:657:16 [unary] int128
+std/traits.scalar.cn:657:17 [ident] int128
+std/traits.scalar.cn:660:13 [binding_pat] isize
+std/traits.scalar.cn:660:22 [named_type] isize
+std/traits.scalar.cn:661:16 [unary] isize
+std/traits.scalar.cn:661:17 [ident] isize
+std/traits.scalar.cn:664:13 [binding_pat] float32
+std/traits.scalar.cn:664:22 [named_type] float32
+std/traits.scalar.cn:665:16 [unary] float32
+std/traits.scalar.cn:665:17 [ident] float32
+std/traits.scalar.cn:668:13 [binding_pat] float64
+std/traits.scalar.cn:668:22 [named_type] float64
+std/traits.scalar.cn:669:16 [unary] float64
+std/traits.scalar.cn:669:17 [ident] float64
 std/traits.show.cn:8:14 [binding_pat] self
 std/traits.show.cn:8:23 [named_type] str
 std/traits.show.cn:16:15 [binding_pat] self
@@ -31228,7 +31540,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (827)
+## call_argument_mappings (845)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -31641,12 +31953,25 @@ std/fmt.cn:224:18 [call] (value=arg, radix=arg, uppercase=arg)
 std/fmt.cn:225:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
 std/fmt.cn:237:18 [call] (value=arg, radix=arg, uppercase=arg)
 std/fmt.cn:238:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:250:18 [call] (value=arg, precision=arg)
-std/fmt.cn:251:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:264:18 [call] (value=arg, precision=arg, uppercase=arg)
-std/fmt.cn:265:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/fmt.cn:277:18 [call] (value=arg, precision=arg)
-std/fmt.cn:278:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:253:16 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.cn:260:16 [call] (v=arg, radix=arg, uppercase=arg)
+std/fmt.cn:261:15 [call] (value=arg, radix=arg, uppercase=arg)
+std/fmt.cn:262:17 [call] (c=arg, n=arg)
+std/fmt.cn:262:42 [call] (s=arg)
+std/fmt.cn:263:12 [call] (a=arg, b=arg)
+std/fmt.cn:263:26 [call] (a=arg, b=arg)
+std/fmt.cn:272:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.cn:281:12 [call] (v=arg, radix=arg, uppercase=arg, prefix=arg, spec=arg)
+std/fmt.cn:296:18 [call] (v=arg, radix=arg, uppercase=arg)
+std/fmt.cn:297:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:309:18 [call] (v=arg, radix=arg, uppercase=arg)
+std/fmt.cn:310:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:322:18 [call] (value=arg, precision=arg)
+std/fmt.cn:323:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:336:18 [call] (value=arg, precision=arg, uppercase=arg)
+std/fmt.cn:337:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
+std/fmt.cn:349:18 [call] (value=arg, precision=arg)
+std/fmt.cn:350:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
 std/io.cn:52:23 [call] (buf=arg)
 std/io.cn:52:23 [call] (buf=arg)
 std/io.cn:57:17 [call] (value=arg)
@@ -31700,10 +32025,10 @@ std/iter.cn:189:9 [call] (p=arg, count=arg)
 std/iter.cn:204:22 [call] ()
 std/iter.cn:219:30 [call] ()
 std/iter.cn:220:13 [call] (value=arg)
-std/limits.cn:29:18 [call] ()
-std/limits.cn:93:8 [call] ()
-std/limits.cn:94:16 [call] ()
-std/limits.cn:95:12 [call] ()
+std/limits.cn:30:18 [call] ()
+std/limits.cn:100:8 [call] ()
+std/limits.cn:101:16 [call] ()
+std/limits.cn:102:12 [call] ()
 std/list.cn:39:48 [call] (count=arg)
 std/list.cn:39:48 [call] (count=arg)
 std/list.cn:39:48 [call] (count=arg)
@@ -31968,24 +32293,21 @@ std/traits.category.cn:90:31 [call] ()
 std/traits.category.cn:107:5 [call] ()
 std/traits.category.cn:111:5 [call] ()
 std/traits.category.cn:115:5 [call] ()
-std/traits.category.cn:121:12 [call] ()
-std/traits.category.cn:125:5 [call] ()
-std/traits.category.cn:129:5 [call] ()
-std/traits.category.cn:129:35 [call] ()
-std/traits.category.cn:133:12 [call] ()
-std/traits.category.cn:133:31 [call] ()
-std/traits.category.cn:133:47 [call] ()
-std/traits.category.cn:224:12 [call] ()
+std/traits.category.cn:119:5 [call] ()
+std/traits.category.cn:124:5 [call] ()
+std/traits.category.cn:124:25 [call] ()
+std/traits.category.cn:128:12 [call] ()
+std/traits.category.cn:128:31 [call] ()
+std/traits.category.cn:128:47 [call] ()
+std/traits.category.cn:219:12 [call] ()
 std/traits.cn:64:5 [call] ()
 std/traits.cn:64:23 [call] ()
 std/traits.cn:64:38 [call] ()
 std/traits.hash.cn:66:12 [call] ()
 std/traits.hash.cn:79:12 [call] (acc=arg, next=arg)
 std/traits.hash.cn:79:25 [call] ()
-std/traits.hash.cn:105:12 [call] (v=arg)
-std/traits.hash.cn:117:12 [call] (v=arg)
-std/traits.hash.cn:121:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:121:29 [call] ()
+std/traits.hash.cn:109:12 [call] (v=arg)
+std/traits.hash.cn:121:12 [call] (v=arg)
 std/traits.hash.cn:125:16 [call] (acc=arg, next=arg)
 std/traits.hash.cn:125:29 [call] ()
 std/traits.hash.cn:129:16 [call] (acc=arg, next=arg)
@@ -32000,24 +32322,32 @@ std/traits.hash.cn:145:16 [call] (acc=arg, next=arg)
 std/traits.hash.cn:145:29 [call] ()
 std/traits.hash.cn:149:16 [call] (acc=arg, next=arg)
 std/traits.hash.cn:149:29 [call] ()
-std/traits.hash.cn:153:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:153:29 [call] ()
-std/traits.hash.cn:157:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:157:29 [call] ()
-std/traits.hash.cn:161:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:161:29 [call] ()
-std/traits.hash.cn:165:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:165:29 [call] ()
-std/traits.hash.cn:169:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:169:29 [call] ()
-std/traits.hash.cn:173:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:173:29 [call] ()
-std/traits.hash.cn:173:42 [call] (v=arg)
-std/traits.hash.cn:177:16 [call] (acc=arg, next=arg)
-std/traits.hash.cn:177:29 [call] ()
-std/traits.hash.cn:177:42 [call] (v=arg)
-std/traits.hash.cn:185:25 [call] ()
-std/traits.hash.cn:188:17 [call] (acc=arg, next=arg)
+std/traits.hash.cn:154:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:154:29 [call] (acc=arg, next=arg)
+std/traits.hash.cn:154:42 [call] ()
+std/traits.hash.cn:158:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:158:29 [call] (acc=arg, next=arg)
+std/traits.hash.cn:158:42 [call] ()
+std/traits.hash.cn:162:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:162:29 [call] ()
+std/traits.hash.cn:166:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:166:29 [call] ()
+std/traits.hash.cn:170:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:170:29 [call] ()
+std/traits.hash.cn:174:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:174:29 [call] ()
+std/traits.hash.cn:178:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:178:29 [call] ()
+std/traits.hash.cn:182:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:182:29 [call] ()
+std/traits.hash.cn:186:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:186:29 [call] ()
+std/traits.hash.cn:186:42 [call] (v=arg)
+std/traits.hash.cn:190:16 [call] (acc=arg, next=arg)
+std/traits.hash.cn:190:29 [call] ()
+std/traits.hash.cn:190:42 [call] (v=arg)
+std/traits.hash.cn:198:25 [call] ()
+std/traits.hash.cn:201:17 [call] (acc=arg, next=arg)
 std/unicode.cn:48:12 [call] (cp=arg)
 std/unicode.cn:63:13 [call] (value=arg)
 std/unicode.cn:67:13 [call] (value=arg)
@@ -32057,7 +32387,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (482)
+## resolved_callees (486)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -32249,9 +32579,13 @@ std/fmt.cn:182:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
 std/fmt.cn:191:20 [call] std.intrinsics::rt_fmt_char_from_codepoint
 std/fmt.cn:224:18 [call] std.intrinsics::rt_fmt_radix_digits
 std/fmt.cn:237:18 [call] std.intrinsics::rt_fmt_radix_digits
-std/fmt.cn:250:18 [call] std.intrinsics::rt_fmt_f64_fixed
-std/fmt.cn:264:18 [call] std.intrinsics::rt_fmt_f64_sci
-std/fmt.cn:277:18 [call] std.intrinsics::rt_fmt_f64_general
+std/fmt.cn:253:16 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:261:15 [call] std.intrinsics::rt_fmt_radix_digits
+std/fmt.cn:263:12 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:263:26 [call] std.intrinsics::rt_str_concat
+std/fmt.cn:322:18 [call] std.intrinsics::rt_fmt_f64_fixed
+std/fmt.cn:336:18 [call] std.intrinsics::rt_fmt_f64_sci
+std/fmt.cn:349:18 [call] std.intrinsics::rt_fmt_f64_general
 std/io.cn:52:23 [call] std.io::file_handle::read trait=reader recv
 std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
 std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
@@ -32528,8 +32862,8 @@ std/test.cn:98:19 [call] std.console::println
 std/test.cn:99:20 [call] std.console::println
 std/test.cn:134:17 [call] std.console::println
 std/test.cn:181:5 [call] std.console::println
-std/traits.hash.cn:105:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
-std/traits.hash.cn:117:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
+std/traits.hash.cn:109:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
+std/traits.hash.cn:121:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
 std/unicode.cn:63:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:67:13 [call] std.list::list::push$list_uint32_ recv
 std/unicode.cn:72:13 [call] std.list::list::push$list_uint32_ recv
@@ -32547,7 +32881,7 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 091_unannotated_accumulator_in_generic.cn:42:28 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i32
 091_unannotated_accumulator_in_generic.cn:43:27 [ident] codegen_stress.unannotated_accumulator_in_generic::twice_i64
 
-## operator_dispatches (101)
+## operator_dispatches (100)
 089_elaboration_snapshot_gaps.cn:72:8 [binary] codegen_stress.elaboration_snapshot_gaps::weight::cmp recv
 110_instances_by_substitution.cn:58:15 [binary] codegen_stress.instances_by_substitution::money::add recv
 110_instances_by_substitution.cn:66:12 [binary] codegen_stress.instances_by_substitution::money::cmp recv
@@ -32561,28 +32895,31 @@ std/unicode.cn:277:13 [call] std.list::list::len$list_uint32_ recv
 110_instances_by_substitution.cn:98:15 [binary] std.string::str::eq recv
 std/deriving.cn:213:16 [binary] std.string::str::eq recv
 std/deriving.cn:253:16 [binary] std.string::str::eq recv
-std/limits.cn:37:15 [binary] std.string::str::eq recv
-std/limits.cn:39:15 [binary] std.string::str::eq recv
-std/limits.cn:41:15 [binary] std.string::str::eq recv
-std/limits.cn:43:15 [binary] std.string::str::eq recv
-std/limits.cn:43:31 [binary] std.string::str::eq recv
-std/limits.cn:45:15 [binary] std.string::str::eq recv
-std/limits.cn:47:15 [binary] std.string::str::eq recv
-std/limits.cn:55:15 [binary] std.string::str::eq recv
-std/limits.cn:57:15 [binary] std.string::str::eq recv
-std/limits.cn:57:31 [binary] std.string::str::eq recv
-std/limits.cn:59:15 [binary] std.string::str::eq recv
-std/limits.cn:61:15 [binary] std.string::str::eq recv
-std/limits.cn:63:15 [binary] std.string::str::eq recv
-std/limits.cn:65:15 [binary] std.string::str::eq recv
-std/limits.cn:67:15 [binary] std.string::str::eq recv
-std/limits.cn:67:31 [binary] std.string::str::eq recv
-std/limits.cn:69:15 [binary] std.string::str::eq recv
-std/limits.cn:69:32 [binary] std.string::str::eq recv
-std/limits.cn:71:15 [binary] std.string::str::eq recv
-std/limits.cn:73:15 [binary] std.string::str::eq recv
-std/limits.cn:89:8 [binary] std.string::str::eq recv
-std/limits.cn:91:8 [binary] std.string::str::eq recv
+std/limits.cn:38:15 [binary] std.string::str::eq recv
+std/limits.cn:40:15 [binary] std.string::str::eq recv
+std/limits.cn:42:15 [binary] std.string::str::eq recv
+std/limits.cn:44:15 [binary] std.string::str::eq recv
+std/limits.cn:44:31 [binary] std.string::str::eq recv
+std/limits.cn:46:15 [binary] std.string::str::eq recv
+std/limits.cn:48:15 [binary] std.string::str::eq recv
+std/limits.cn:50:15 [binary] std.string::str::eq recv
+std/limits.cn:58:15 [binary] std.string::str::eq recv
+std/limits.cn:60:15 [binary] std.string::str::eq recv
+std/limits.cn:60:31 [binary] std.string::str::eq recv
+std/limits.cn:62:15 [binary] std.string::str::eq recv
+std/limits.cn:64:15 [binary] std.string::str::eq recv
+std/limits.cn:66:15 [binary] std.string::str::eq recv
+std/limits.cn:68:15 [binary] std.string::str::eq recv
+std/limits.cn:70:15 [binary] std.string::str::eq recv
+std/limits.cn:70:31 [binary] std.string::str::eq recv
+std/limits.cn:72:15 [binary] std.string::str::eq recv
+std/limits.cn:72:32 [binary] std.string::str::eq recv
+std/limits.cn:74:15 [binary] std.string::str::eq recv
+std/limits.cn:76:15 [binary] std.string::str::eq recv
+std/limits.cn:78:15 [binary] std.string::str::eq recv
+std/limits.cn:80:15 [binary] std.string::str::eq recv
+std/limits.cn:96:8 [binary] std.string::str::eq recv
+std/limits.cn:98:8 [binary] std.string::str::eq recv
 std/traits.category.cn:61:12 [binary] std.string::str::eq recv
 std/traits.category.cn:65:12 [binary] std.string::str::eq recv
 std/traits.category.cn:70:13 [binary] std.string::str::eq recv
@@ -32601,46 +32938,42 @@ std/traits.category.cn:77:43 [binary] std.string::str::eq recv
 std/traits.category.cn:86:12 [binary] std.string::str::eq recv
 std/traits.category.cn:86:30 [binary] std.string::str::eq recv
 std/traits.category.cn:86:48 [binary] std.string::str::eq recv
-std/traits.category.cn:107:32 [binary] std.string::str::eq recv
-std/traits.category.cn:111:34 [binary] std.string::str::eq recv
-std/traits.category.cn:121:32 [binary] std.string::str::eq recv
-std/traits.category.cn:121:50 [binary] std.string::str::eq recv
-std/traits.category.cn:125:23 [binary] std.string::str::eq recv
-std/traits.category.cn:129:53 [binary] std.string::str::eq recv
-std/traits.category.cn:137:12 [binary] std.string::str::eq recv
-std/traits.category.cn:141:12 [binary] std.string::str::eq recv
+std/traits.category.cn:119:23 [binary] std.string::str::eq recv
+std/traits.category.cn:124:43 [binary] std.string::str::eq recv
+std/traits.category.cn:132:12 [binary] std.string::str::eq recv
+std/traits.category.cn:136:12 [binary] std.string::str::eq recv
+std/traits.category.cn:140:12 [binary] std.string::str::eq recv
 std/traits.category.cn:145:12 [binary] std.string::str::eq recv
-std/traits.category.cn:150:12 [binary] std.string::str::eq recv
-std/traits.category.cn:150:28 [binary] std.string::str::eq recv
-std/traits.category.cn:159:12 [binary] std.string::str::eq recv
-std/traits.category.cn:163:12 [binary] std.string::str::eq recv
-std/traits.category.cn:167:12 [binary] std.string::str::eq recv
-std/traits.category.cn:171:12 [binary] std.string::str::eq recv
-std/traits.category.cn:175:12 [binary] std.string::str::eq recv
-std/traits.category.cn:202:12 [binary] std.string::str::eq recv
-std/traits.category.cn:230:8 [binary] std.string::str::eq recv
-std/traits.category.cn:232:8 [binary] std.string::str::eq recv
-std/traits.category.cn:234:9 [binary] std.string::str::eq recv
-std/traits.category.cn:234:24 [binary] std.string::str::eq recv
-std/traits.category.cn:234:40 [binary] std.string::str::eq recv
-std/traits.category.cn:234:56 [binary] std.string::str::eq recv
-std/traits.category.cn:235:9 [binary] std.string::str::eq recv
+std/traits.category.cn:145:28 [binary] std.string::str::eq recv
+std/traits.category.cn:154:12 [binary] std.string::str::eq recv
+std/traits.category.cn:158:12 [binary] std.string::str::eq recv
+std/traits.category.cn:162:12 [binary] std.string::str::eq recv
+std/traits.category.cn:166:12 [binary] std.string::str::eq recv
+std/traits.category.cn:170:12 [binary] std.string::str::eq recv
+std/traits.category.cn:197:12 [binary] std.string::str::eq recv
+std/traits.category.cn:225:8 [binary] std.string::str::eq recv
+std/traits.category.cn:227:8 [binary] std.string::str::eq recv
+std/traits.category.cn:229:9 [binary] std.string::str::eq recv
+std/traits.category.cn:229:24 [binary] std.string::str::eq recv
+std/traits.category.cn:229:40 [binary] std.string::str::eq recv
+std/traits.category.cn:229:56 [binary] std.string::str::eq recv
+std/traits.category.cn:230:9 [binary] std.string::str::eq recv
+std/traits.category.cn:230:26 [binary] std.string::str::eq recv
+std/traits.category.cn:232:9 [binary] std.string::str::eq recv
+std/traits.category.cn:232:25 [binary] std.string::str::eq recv
+std/traits.category.cn:232:42 [binary] std.string::str::eq recv
+std/traits.category.cn:232:59 [binary] std.string::str::eq recv
+std/traits.category.cn:233:9 [binary] std.string::str::eq recv
+std/traits.category.cn:233:27 [binary] std.string::str::eq recv
+std/traits.category.cn:233:43 [binary] std.string::str::eq recv
+std/traits.category.cn:235:8 [binary] std.string::str::eq recv
 std/traits.category.cn:235:26 [binary] std.string::str::eq recv
-std/traits.category.cn:237:9 [binary] std.string::str::eq recv
-std/traits.category.cn:237:25 [binary] std.string::str::eq recv
-std/traits.category.cn:237:42 [binary] std.string::str::eq recv
-std/traits.category.cn:237:59 [binary] std.string::str::eq recv
-std/traits.category.cn:238:9 [binary] std.string::str::eq recv
-std/traits.category.cn:238:27 [binary] std.string::str::eq recv
-std/traits.category.cn:238:43 [binary] std.string::str::eq recv
-std/traits.category.cn:240:8 [binary] std.string::str::eq recv
-std/traits.category.cn:240:26 [binary] std.string::str::eq recv
-std/traits.category.cn:240:44 [binary] std.string::str::eq recv
-std/traits.category.cn:242:8 [binary] std.string::str::eq recv
-std/traits.category.cn:244:8 [binary] std.string::str::eq recv
-std/traits.category.cn:244:24 [binary] std.string::str::eq recv
-std/traits.category.cn:244:40 [binary] std.string::str::eq recv
-std/traits.category.cn:246:8 [binary] std.string::str::eq recv
+std/traits.category.cn:235:44 [binary] std.string::str::eq recv
+std/traits.category.cn:237:8 [binary] std.string::str::eq recv
+std/traits.category.cn:239:8 [binary] std.string::str::eq recv
+std/traits.category.cn:239:24 [binary] std.string::str::eq recv
+std/traits.category.cn:239:40 [binary] std.string::str::eq recv
+std/traits.category.cn:241:8 [binary] std.string::str::eq recv
 std/unicode.cn:119:23 [binary] std.string::str::add recv
 std/unicode.cn:121:23 [binary] std.string::str::add recv
 std/unicode.cn:123:23 [binary] std.string::str::add recv
@@ -32863,7 +33196,7 @@ std/string.cn:205:33 [array] std.list::list::from_array$0$list_str_ from array[s
 std/test.cn:108:23 [array] std.list::list::from_array$1$list_test_suite_ from array[test_suite, 1]
 std/unicode.cn:58:29 [array] std.list::list::from_array$0$list_uint32_ from array[uint32, 0]
 
-## interp_dispatches (60)
+## interp_dispatches (64)
 003_collections_lambdas.cn:18:15 [ident] show spec=' ' value=int32
 110_instances_by_substitution.cn:61:11 [field] show spec=' ' value=int64
 110_instances_by_substitution.cn:110:15 [ident] show spec=' ' value=int32
@@ -32894,36 +33227,40 @@ std/test.cn:175:29 [module_path] show spec=' ' value=str
 std/test.cn:181:15 [ident] show spec=' ' value=int32
 std/test.cn:181:32 [ident] show spec=' ' value=int32
 std/test.cn:181:49 [ident] show spec=' ' value=int32
-std/traits.scalar.cn:181:18 [ident] show spec=' ' value=bool
-std/traits.scalar.cn:185:18 [ident] debug spec='?' value=bool
-std/traits.scalar.cn:189:18 [ident] show spec=' ' value=char
-std/traits.scalar.cn:193:18 [ident] debug spec='?' value=char
-std/traits.scalar.cn:197:18 [ident] show spec=' ' value=int8
-std/traits.scalar.cn:201:18 [ident] debug spec='?' value=int8
-std/traits.scalar.cn:205:18 [ident] show spec=' ' value=int16
-std/traits.scalar.cn:209:18 [ident] debug spec='?' value=int16
-std/traits.scalar.cn:213:18 [ident] show spec=' ' value=int32
-std/traits.scalar.cn:217:18 [ident] debug spec='?' value=int32
-std/traits.scalar.cn:221:18 [ident] show spec=' ' value=int64
-std/traits.scalar.cn:225:18 [ident] debug spec='?' value=int64
-std/traits.scalar.cn:229:18 [ident] show spec=' ' value=isize
-std/traits.scalar.cn:233:18 [ident] debug spec='?' value=isize
-std/traits.scalar.cn:237:18 [ident] show spec=' ' value=uint8
-std/traits.scalar.cn:241:18 [ident] debug spec='?' value=uint8
-std/traits.scalar.cn:245:18 [ident] show spec=' ' value=uint16
-std/traits.scalar.cn:249:18 [ident] debug spec='?' value=uint16
-std/traits.scalar.cn:253:18 [ident] show spec=' ' value=uint32
-std/traits.scalar.cn:257:18 [ident] debug spec='?' value=uint32
-std/traits.scalar.cn:261:18 [ident] show spec=' ' value=uint64
-std/traits.scalar.cn:265:18 [ident] debug spec='?' value=uint64
-std/traits.scalar.cn:269:18 [ident] show spec=' ' value=usize
-std/traits.scalar.cn:273:18 [ident] debug spec='?' value=usize
-std/traits.scalar.cn:277:18 [ident] show spec=' ' value=byte
-std/traits.scalar.cn:281:18 [ident] debug spec='?' value=byte
-std/traits.scalar.cn:285:18 [ident] show spec=' ' value=float32
-std/traits.scalar.cn:289:18 [ident] debug spec='?' value=float32
-std/traits.scalar.cn:293:18 [ident] show spec=' ' value=float64
-std/traits.scalar.cn:297:18 [ident] debug spec='?' value=float64
+std/traits.scalar.cn:205:18 [ident] show spec=' ' value=bool
+std/traits.scalar.cn:209:18 [ident] debug spec='?' value=bool
+std/traits.scalar.cn:213:18 [ident] show spec=' ' value=char
+std/traits.scalar.cn:217:18 [ident] debug spec='?' value=char
+std/traits.scalar.cn:221:18 [ident] show spec=' ' value=int8
+std/traits.scalar.cn:225:18 [ident] debug spec='?' value=int8
+std/traits.scalar.cn:229:18 [ident] show spec=' ' value=int16
+std/traits.scalar.cn:233:18 [ident] debug spec='?' value=int16
+std/traits.scalar.cn:237:18 [ident] show spec=' ' value=int32
+std/traits.scalar.cn:241:18 [ident] debug spec='?' value=int32
+std/traits.scalar.cn:245:18 [ident] show spec=' ' value=int64
+std/traits.scalar.cn:249:18 [ident] debug spec='?' value=int64
+std/traits.scalar.cn:253:18 [ident] show spec=' ' value=int128
+std/traits.scalar.cn:257:18 [ident] debug spec='?' value=int128
+std/traits.scalar.cn:261:18 [ident] show spec=' ' value=isize
+std/traits.scalar.cn:265:18 [ident] debug spec='?' value=isize
+std/traits.scalar.cn:269:18 [ident] show spec=' ' value=uint8
+std/traits.scalar.cn:273:18 [ident] debug spec='?' value=uint8
+std/traits.scalar.cn:277:18 [ident] show spec=' ' value=uint16
+std/traits.scalar.cn:281:18 [ident] debug spec='?' value=uint16
+std/traits.scalar.cn:285:18 [ident] show spec=' ' value=uint32
+std/traits.scalar.cn:289:18 [ident] debug spec='?' value=uint32
+std/traits.scalar.cn:293:18 [ident] show spec=' ' value=uint64
+std/traits.scalar.cn:297:18 [ident] debug spec='?' value=uint64
+std/traits.scalar.cn:301:18 [ident] show spec=' ' value=uint128
+std/traits.scalar.cn:305:18 [ident] debug spec='?' value=uint128
+std/traits.scalar.cn:309:18 [ident] show spec=' ' value=usize
+std/traits.scalar.cn:313:18 [ident] debug spec='?' value=usize
+std/traits.scalar.cn:317:18 [ident] show spec=' ' value=byte
+std/traits.scalar.cn:321:18 [ident] debug spec='?' value=byte
+std/traits.scalar.cn:325:18 [ident] show spec=' ' value=float32
+std/traits.scalar.cn:329:18 [ident] debug spec='?' value=float32
+std/traits.scalar.cn:333:18 [ident] show spec=' ' value=float64
+std/traits.scalar.cn:337:18 [ident] debug spec='?' value=float64
 
 ## type_param_reflections (6)
 110_instances_by_substitution.cn:95:13 [call] int32
@@ -33269,7 +33606,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (677)
+## drop_plans (689)
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33399,6 +33736,7 @@ fn() -> def_expr own=- fields=[] glue=fn() -> unit
 fn() -> file_handle own=- fields=[] glue=fn() -> unit
 fn() -> float32 own=- fields=[] glue=fn() -> unit
 fn() -> float64 own=- fields=[] glue=fn() -> unit
+fn() -> int128 own=- fields=[] glue=fn() -> unit
 fn() -> int16 own=- fields=[] glue=fn() -> unit
 fn() -> int32 own=- fields=[] glue=fn() -> unit
 fn() -> int64 own=- fields=[] glue=fn() -> unit
@@ -33461,6 +33799,7 @@ fn() -> raw_fd own=- fields=[] glue=fn() -> unit
 fn() -> result[unit, test_failure] own=- fields=[] glue=fn() -> unit
 fn() -> self own=- fields=[] glue=fn() -> unit
 fn() -> type_category own=- fields=[] glue=fn() -> unit
+fn() -> uint128 own=- fields=[] glue=fn() -> unit
 fn() -> uint16 own=- fields=[] glue=fn() -> unit
 fn() -> uint32 own=- fields=[] glue=fn() -> unit
 fn() -> uint64 own=- fields=[] glue=fn() -> unit
@@ -33595,6 +33934,7 @@ fn(_) -> bool own=- fields=[] glue=fn() -> unit
 fn(_) -> example_type[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> float32 own=- fields=[] glue=fn() -> unit
 fn(_) -> float64 own=- fields=[] glue=fn() -> unit
+fn(_) -> int128 own=- fields=[] glue=fn() -> unit
 fn(_) -> int16 own=- fields=[] glue=fn() -> unit
 fn(_) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_) -> int64 own=- fields=[] glue=fn() -> unit
@@ -33626,6 +33966,8 @@ fn(_, &float32) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &float32) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &float64) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &float64) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &int128) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &int128) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &int16) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &int16) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &int32) -> bool own=- fields=[] glue=fn() -> unit
@@ -33645,6 +33987,8 @@ fn(_, &self) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &self) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &slice[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
 fn(_, &slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &uint128) -> bool own=- fields=[] glue=fn() -> unit
+fn(_, &uint128) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &uint16) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &uint16) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &uint32) -> bool own=- fields=[] glue=fn() -> unit
@@ -33673,6 +34017,7 @@ fn(_, fn(A) -> B) -> _ own=- fields=[] glue=fn() -> unit
 fn(_, fn(A) -> B) -> _ own=- fields=[] glue=fn() -> unit
 fn(_, fn(A) -> _) -> _ own=- fields=[] glue=fn() -> unit
 fn(_, fn(_) -> U) -> bag[U] own=- fields=[] glue=fn() -> unit
+fn(_, int128) -> int128 own=- fields=[] glue=fn() -> unit
 fn(_, int16) -> int16 own=- fields=[] glue=fn() -> unit
 fn(_, int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(_, int64) -> int64 own=- fields=[] glue=fn() -> unit
@@ -33688,6 +34033,7 @@ fn(_, str) -> option[usize] own=- fields=[] glue=fn() -> unit
 fn(_, str) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, str) -> str own=- fields=[] glue=fn() -> unit
 fn(_, str, str) -> str own=- fields=[] glue=fn() -> unit
+fn(_, uint128) -> uint128 own=- fields=[] glue=fn() -> unit
 fn(_, uint16) -> uint16 own=- fields=[] glue=fn() -> unit
 fn(_, uint32) -> uint32 own=- fields=[] glue=fn() -> unit
 fn(_, uint64) -> uint64 own=- fields=[] glue=fn() -> unit
@@ -33740,6 +34086,7 @@ fn(float64) -> uint64 own=- fields=[] glue=fn() -> unit
 fn(float64, usize) -> str own=- fields=[] glue=fn() -> unit
 fn(float64, usize, bool) -> str own=- fields=[] glue=fn() -> unit
 fn(fn(int32) -> int32, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(int128, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
 fn(int32) -> B own=- fields=[] glue=fn() -> unit
 fn(int32) -> U own=- fields=[] glue=fn() -> unit
 fn(int32) -> _ own=- fields=[] glue=fn() -> unit
@@ -33811,6 +34158,8 @@ fn(str, usize) -> str own=- fields=[] glue=fn() -> unit
 fn(test_case) -> unit own=- fields=[] glue=fn() -> unit
 fn(test_failure) -> str own=- fields=[] glue=fn() -> unit
 fn(test_suite) -> unit own=- fields=[] glue=fn() -> unit
+fn(uint128, uint8, bool) -> str own=- fields=[] glue=fn() -> unit
+fn(uint128, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
 fn(uint32) -> bool own=- fields=[] glue=fn() -> unit
 fn(uint32) -> str own=- fields=[] glue=fn() -> unit
 fn(uint32) -> unit own=- fields=[] glue=fn() -> unit
@@ -33948,7 +34297,7 @@ take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 
-## borrow_bearing_types (1702)
+## borrow_bearing_types (1715)
 &K
 &T
 &T
@@ -34030,6 +34379,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &holder[int32]
 &holder[int64]
 &inspect_iter[I, T]
+&int128
 &int16
 &int32
 &int64
@@ -34198,6 +34548,7 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &str
 &take_iter[I, T]
 &test_case
+&uint128
 &uint16
 &uint32
 &uint64
@@ -34669,7 +35020,6 @@ T
 T
 T
 T
-T
 To
 U
 U
@@ -34888,6 +35238,7 @@ fn() -> def_expr
 fn() -> file_handle
 fn() -> float32
 fn() -> float64
+fn() -> int128
 fn() -> int16
 fn() -> int32
 fn() -> int64
@@ -34950,6 +35301,7 @@ fn() -> raw_fd
 fn() -> result[unit, test_failure]
 fn() -> self
 fn() -> type_category
+fn() -> uint128
 fn() -> uint16
 fn() -> uint32
 fn() -> uint64
@@ -35092,6 +35444,7 @@ fn(_) -> bool
 fn(_) -> example_type[_]
 fn(_) -> float32
 fn(_) -> float64
+fn(_) -> int128
 fn(_) -> int16
 fn(_) -> int32
 fn(_) -> int64
@@ -35135,6 +35488,8 @@ fn(_, &float32) -> bool
 fn(_, &float32) -> ordering
 fn(_, &float64) -> bool
 fn(_, &float64) -> ordering
+fn(_, &int128) -> bool
+fn(_, &int128) -> ordering
 fn(_, &int16) -> bool
 fn(_, &int16) -> ordering
 fn(_, &int32) -> bool
@@ -35154,6 +35509,8 @@ fn(_, &self) -> bool
 fn(_, &self) -> ordering
 fn(_, &slice[byte]) -> result[unit, io_error]
 fn(_, &slice[byte]) -> result[usize, io_error]
+fn(_, &uint128) -> bool
+fn(_, &uint128) -> ordering
 fn(_, &uint16) -> bool
 fn(_, &uint16) -> ordering
 fn(_, &uint32) -> bool
@@ -35183,6 +35540,7 @@ fn(_, fn(A) -> B) -> _
 fn(_, fn(A) -> _) -> _
 fn(_, fn(_) -> U) -> bag[U]
 fn(_, fn(_) -> option[_]) -> option[_]
+fn(_, int128) -> int128
 fn(_, int16) -> int16
 fn(_, int32) -> int32
 fn(_, int64) -> int64
@@ -35198,6 +35556,7 @@ fn(_, str) -> option[usize]
 fn(_, str) -> ordering
 fn(_, str) -> str
 fn(_, str, str) -> str
+fn(_, uint128) -> uint128
 fn(_, uint16) -> uint16
 fn(_, uint32) -> uint32
 fn(_, uint64) -> uint64
@@ -35250,6 +35609,7 @@ fn(float64) -> uint64
 fn(float64, usize) -> str
 fn(float64, usize, bool) -> str
 fn(fn(int32) -> int32, int32) -> int32
+fn(int128, uint8, bool, str, format_spec) -> str
 fn(int32) -> B
 fn(int32) -> U
 fn(int32) -> _
@@ -35321,6 +35681,8 @@ fn(str, usize) -> str
 fn(test_case) -> unit
 fn(test_failure) -> str
 fn(test_suite) -> unit
+fn(uint128, uint8, bool) -> str
+fn(uint128, uint8, bool, str, format_spec) -> str
 fn(uint32) -> bool
 fn(uint32) -> str
 fn(uint32) -> unit
@@ -35680,7 +36042,7 @@ static$UPPER_FULL_CP2$8 -> std.unicode_tables
 static$UPPER_FULL_CP3$9 -> std.unicode_tables
 static$UPPER_FULL_KEY$4 -> std.unicode_tables
 
-## comptime_only_functions (40)
+## comptime_only_functions (39)
 bits
 derive_debug
 derive_debug_sum
@@ -35703,7 +36065,6 @@ is_convertible
 is_float
 is_fn
 is_integer
-is_integer_below_128
 is_numeric
 is_option
 is_result
@@ -36258,7 +36619,7 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 108
+synthesized_types 106
 synthesized_fragments 26
 synthesized_const_literals 65
 elided_contracts 0

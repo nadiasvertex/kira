@@ -54,10 +54,12 @@ auto test_numeric_kind_of_maps_every_scalar() -> void {
 auto test_numeric_kind_of_rejects_unsupported_widths_and_non_scalars() -> void {
   auto types = cinder::semantic::type_table{};
 
-  expect(!bc::numeric_kind_of(types, types.builtin("int128")).has_value(),
-         "expected int128 to be unsupported in this increment");
-  expect(!bc::numeric_kind_of(types, types.builtin("uint128")).has_value(),
-         "expected uint128 to be unsupported in this increment");
+  expect(bc::numeric_kind_of(types, types.builtin("int128")) ==
+             bc::numeric_kind::i128,
+         "expected int128 to map to numeric_kind::i128");
+  expect(bc::numeric_kind_of(types, types.builtin("uint128")) ==
+             bc::numeric_kind::u128,
+         "expected uint128 to map to numeric_kind::u128");
   expect(!bc::numeric_kind_of(types, types.builtin("float128")).has_value(),
          "expected float128 to be unsupported in this increment");
   expect(!bc::numeric_kind_of(types, types.builtin("str")).has_value(),

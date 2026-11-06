@@ -58,6 +58,10 @@ auto ensure_native_target_initialized() -> void {
   return slot_value{static_cast<uint64_t>(v)};
 }
 [[nodiscard]] auto pack(uint64_t v) -> slot_value { return slot_value{v}; }
+[[nodiscard]] auto pack(__int128 v) -> slot_value { return slot_value{v}; }
+[[nodiscard]] auto pack(unsigned __int128 v) -> slot_value {
+  return slot_value{v};
+}
 [[nodiscard]] auto pack(float v) -> slot_value {
   return slot_value{static_cast<uint64_t>(std::bit_cast<uint32_t>(v))};
 }
@@ -153,6 +157,12 @@ auto jit_module::run(std::string_view name,
     case numeric_kind::u64:
       return jit_result{.has_value = true,
                         .value = call_and_pack<uint64_t>(addr)};
+    case numeric_kind::i128:
+      return jit_result{.has_value = true,
+                        .value = call_and_pack<__int128>(addr)};
+    case numeric_kind::u128:
+      return jit_result{.has_value = true,
+                        .value = call_and_pack<unsigned __int128>(addr)};
     case numeric_kind::f32:
       return jit_result{.has_value = true, .value = call_and_pack<float>(addr)};
     case numeric_kind::f64:

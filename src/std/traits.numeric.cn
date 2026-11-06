@@ -105,10 +105,9 @@ pub trait one:
 # `type_decl` to key it by. These are the first impls in the standard library
 # that depend on that being fixed.
 #
-# The 128-bit types are absent. A reachable module is compiled in full, not
-# just the functions a program calls, so an `impl zero for int128` here would
-# make every program fail, since neither backend has a representation for
-# them yet.
+# `float128` is absent. A reachable module is compiled in full, not just the
+# functions a program calls, so an `impl zero for float128` here would make
+# every program fail, since neither backend has a representation for it yet.
 impl zero for int8:
     pure static def zero() -> int8:
         return 0
@@ -141,6 +140,14 @@ impl one for int64:
     pure static def one() -> int64:
         return 1
 
+impl zero for int128:
+    pure static def zero() -> int128:
+        return 0
+
+impl one for int128:
+    pure static def one() -> int128:
+        return 1
+
 impl zero for uint8:
     pure static def zero() -> uint8:
         return 0
@@ -171,6 +178,14 @@ impl zero for uint64:
 
 impl one for uint64:
     pure static def one() -> uint64:
+        return 1
+
+impl zero for uint128:
+    pure static def zero() -> uint128:
+        return 0
+
+impl one for uint128:
+    pure static def one() -> uint128:
         return 1
 
 impl zero for isize:

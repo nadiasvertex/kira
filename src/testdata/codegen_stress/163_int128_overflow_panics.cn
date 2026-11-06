@@ -1,0 +1,9 @@
+module codegen_stress.int128_overflow_panics
+
+# `int128` addition past its maximum panics on both tiers, the same way the
+# narrower integers do.
+
+def main() -> int64:
+    var x: int128 = 170141183460469231731687303715884105727
+    x = x + 1
+    return x as int64

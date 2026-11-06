@@ -1,6 +1,6 @@
 # 2. Built-in Types
 
-**Status:** Implemented
+**Status:** Implemented, except `float128`
 
 Covers the built-in scalar type set, numeric literal defaulting, integer overflow behavior, and conversion between types via constructor-call syntax.
 
@@ -22,6 +22,8 @@ never                                           # the uninhabited/bottom type
 ```
 
 `int32` is the default integer type and `float64` the default floating-point type when no other context is available.
+
+`float128` is not implemented yet. Neither backend has a representation for it, and the standard library gives it no trait impls. `int128` and `uint128` are fully supported: literals up to their full range, checked arithmetic, casts, formatting, and the standard library's scalar trait impls.
 
 ## Numeric literal defaulting
 

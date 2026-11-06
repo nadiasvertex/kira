@@ -3,12 +3,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "util",
     srcs = [
-      "path.cpp",
+        "integer_literal.cpp",
+        "path.cpp",
         "str.cpp",
     ],
     hdrs = [
-      "path.h",
-      "str.h",
+        "integer_literal.h",
+        "path.h",
+        "str.h",
     ],
     visibility = ["//visibility:public"],
 )
@@ -16,6 +18,15 @@ cc_library(
 cc_test(
     name = "path_test",
     srcs = ["path_test.cpp"],
+    deps = [
+        ":util",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "integer_literal_test",
+    srcs = ["integer_literal_test.cpp"],
     deps = [
         ":util",
         "//src/testing",

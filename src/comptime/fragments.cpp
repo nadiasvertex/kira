@@ -8,6 +8,7 @@
 #include "src/comptime/hygiene.h"
 #include "src/parser/ast_traversal.h"
 #include "src/parser/text_escape.h"
+#include "src/util/integer_literal.h"
 
 namespace cinder::comptime {
 
@@ -721,7 +722,7 @@ auto fragment_builder::build(std::string_view name, std::span<const value> args,
     switch (args[0].kind) {
     case value_kind::integer:
       lit->lit_kind = token_kind::int_lit;
-      lit->value = std::to_string(args[0].integer);
+      lit->value = util::format_wide_signed_decimal(args[0].integer);
       break;
     case value_kind::floating:
       lit->lit_kind = token_kind::float_lit;

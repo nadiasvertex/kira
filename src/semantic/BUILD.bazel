@@ -91,6 +91,7 @@ cc_library(
         "//src/comptime",
         "//src/parser:ast_clone",
         "//src/parser:parser",
+        "//src/util",
     ],
     visibility = ["//visibility:public"],
 )

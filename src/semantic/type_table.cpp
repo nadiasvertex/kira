@@ -866,10 +866,15 @@ auto builtin_generic_arity(std::string_view name)
   return std::nullopt;
 }
 
-/// 128-bit integer types have no representable max in `uint64_t` and are
-/// intentionally left unhandled (returning `nullopt`), so literal-fit
-/// checking simply does not fire for them yet.
-auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
+auto integer_max_value(std::string_view name)
+    -> std::optional<unsigned __int128> {
+  constexpr auto k_uint128_max = ~static_cast<unsigned __int128>(0);
+  if (name == "int128") {
+    return k_uint128_max >> 1;
+  }
+  if (name == "uint128") {
+    return k_uint128_max;
+  }
   if (name == "int8") {
     return 127u;
   }
@@ -899,7 +904,7 @@ auto integer_max_value(std::string_view name) -> std::optional<uint64_t> {
 
 auto is_signed_integer_name(std::string_view name) -> bool {
   return name == "int8" || name == "int16" || name == "int32" ||
-         name == "int64" || name == "isize";
+         name == "int64" || name == "int128" || name == "isize";
 }
 
 } // namespace cinder::semantic
