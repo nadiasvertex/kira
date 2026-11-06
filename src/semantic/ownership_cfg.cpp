@@ -2955,7 +2955,7 @@ auto loop_consumes_borrow(const ast::expr *iterable,
                           const iterator_loop_dispatch *dispatch,
                           const checked_types &checked) -> bool {
   if (iterable == nullptr || dispatch == nullptr ||
-      dispatch->adapter_decl == nullptr) {
+      dispatch->adapter_decl == nullptr || dispatch->adapter_borrows) {
     return false;
   }
   const auto found = checked.node_types.find(iterable);

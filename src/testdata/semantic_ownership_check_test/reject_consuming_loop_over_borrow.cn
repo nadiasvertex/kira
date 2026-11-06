@@ -3,6 +3,8 @@ module main
 # `for x in r` where `r` only borrows a collection reaches `into_iter`, which
 # consumes the collection, so the loop could only copy its elements out
 # (ch. 17). That is allowed for `copy` elements and rejected otherwise.
+# An explicit `&mut xs` reaches `iter_mut` instead, which only borrows, so
+# `bump` and `bump_local` are accepted although `&mut res` is not `copy`.
 
 type res = { id: int32 }
 
@@ -13,6 +15,15 @@ impl drop for res:
 def show(xs: &list[res]) -> unit:
     for r in xs:
         println("{r.id}")
+
+def bump(xs: &mut list[res]) -> unit:
+    for r in &mut *xs:
+        r.id = r.id + 1
+
+def bump_local() -> unit:
+    var rs = [res { id: 1 }]
+    for r in &mut rs:
+        r.id = r.id + 1
 
 def total(xs: &list[int32]) -> int32:
     var sum = 0

@@ -1487,6 +1487,7 @@ auto checker::try_resolve_iter_borrow(type_id operand, bool is_mut,
     inner->adapter_owner_module = candidate.owner->module_name;
     inner->adapter_impl_target_type = "";
     inner->adapter_result_type = ret_type;
+    inner->adapter_borrows = true;
 
     // A generic `iter[T]`/`iter_mut[T]` needs its own compiled instance for
     // the reason `try_resolve_into_iterator` documents: nothing in the

@@ -254,6 +254,10 @@ struct iterator_loop_dispatch {
   /// internal handle once the adapter has run. Meaningless when
   /// `adapter_decl` is null.
   type_id adapter_result_type = 0;
+  /// Set when `adapter_decl` is the `iter`/`iter_mut` that `for x in &v` /
+  /// `for x in &mut v` reaches: it borrows the collection rather than
+  /// consuming it, so the loop moves nothing out of a reference.
+  bool adapter_borrows = false;
 };
 
 /// How one interpolation segment's embedded expression

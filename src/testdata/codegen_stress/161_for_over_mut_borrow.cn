@@ -1,0 +1,27 @@
+module codegen_stress.for_over_mut_borrow
+
+# `for x in &mut v` reaches `std.iter`'s `iter_mut`, which borrows `v`
+# rather than consuming it. Each loop below writes through the element and
+# `v` is read again afterwards, so the value shows that the writes landed in
+# `v`'s storage on both tiers. This runner does not run the ownership check;
+# the rejection this loop used to get is covered by
+# `semantic_ownership_check_test/reject_consuming_loop_over_borrow.cn`.
+#
+# expect: 6012
+
+def main() -> int64:
+    var xs: list[int64] = [1, 2, 3]
+    for x in &mut xs:
+        *x = *x * 10
+    var total: int64 = 0
+    for x in &xs:
+        total = total + *x
+
+    var words: list[str] = ["a", "bb", "ccc"]
+    for w in &mut words:
+        *w = "dddd"
+    var letters: usize = 0
+    for w in &words:
+        letters = letters + w.len()
+
+    return total * 100 + (letters as int64)
