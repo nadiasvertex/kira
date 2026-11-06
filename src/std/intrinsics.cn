@@ -222,3 +222,38 @@ intrinsic def rt_word_waiter(p: *mut usize, expected: usize) -> task[unit]
 
 #: Wakes every wait on `p`, each of which reads it again.
 intrinsic def rt_word_wake(p: *mut usize) -> unit
+
+####################
+# The io event loop
+####################
+
+#: Each waiter below is a task that the reactor (`src/runtime/reactor.h`)
+#: finishes when a descriptor is ready or a deadline passes. No thread is
+#: held while a task waits on one.
+
+#: A task that finishes once descriptor `fd` can be read without blocking, or
+#: has an error or hang-up, or cannot be watched.
+intrinsic def rt_fd_readable(fd: int64) -> task[unit]
+
+#: A task that finishes once descriptor `fd` can be written without blocking,
+#: or has an error or hang-up, or cannot be watched.
+intrinsic def rt_fd_writable(fd: int64) -> task[unit]
+
+#: A task that finishes once the monotonic clock reaches `deadline`.
+intrinsic def rt_sleep_until(deadline: uint64) -> task[unit]
+
+#: Nanoseconds on a clock that never goes backwards, from an arbitrary start.
+intrinsic def rt_monotonic_now() -> uint64
+
+#: The descriptor numbers of a new pipe's two ends.
+pub type raw_pipe = { read: int64, write: int64 }
+
+#: Makes a pipe. Both ends are closed when the program runs another one.
+intrinsic def rt_pipe() -> result[raw_pipe, io_errno]
+
+#: Sets `O_NONBLOCK` on `fd`, so a read or write that cannot proceed fails
+#: with `rt_errno_would_block()` instead of blocking.
+intrinsic def rt_set_nonblocking(fd: raw_fd) -> result[unit, io_errno]
+
+#: The host's `EAGAIN` code. Linux and macOS number it differently.
+intrinsic def rt_errno_would_block() -> int32

@@ -1,0 +1,80 @@
+module std.time
+
+# Durations, the monotonic clock, and sleeping. A sleep is a timer in the io
+# event loop (`src/runtime/reactor.h`): the sleeping task gives up its thread
+# until the deadline passes.
+
+use std.intrinsics.{rt_monotonic_now, rt_sleep_until}
+
+#: A span of time, counted in nanoseconds.
+pub type duration = { nanos: uint64 }
+
+extend duration:
+    #: A duration of `n` nanoseconds.
+    pub def from_nanos(n: uint64) -> duration:
+        return duration { nanos: n }
+
+    #: A duration of `n` microseconds.
+    pub def from_micros(n: uint64) -> duration:
+        return duration { nanos: n * 1000 }
+
+    #: A duration of `n` milliseconds.
+    pub def from_millis(n: uint64) -> duration:
+        return duration { nanos: n * 1000000 }
+
+    #: A duration of `n` seconds.
+    pub def from_secs(n: uint64) -> duration:
+        return duration { nanos: n * 1000000000 }
+
+    #: The whole duration in nanoseconds.
+    pub def as_nanos(self) -> uint64:
+        return self.nanos
+
+    #: The duration in whole microseconds, rounded down.
+    pub def as_micros(self) -> uint64:
+        return self.nanos / 1000
+
+    #: The duration in whole milliseconds, rounded down.
+    pub def as_millis(self) -> uint64:
+        return self.nanos / 1000000
+
+    #: The duration in whole seconds, rounded down.
+    pub def as_secs(self) -> uint64:
+        return self.nanos / 1000000000
+
+#: A point in time on the monotonic clock. Instants from one run of a
+#: program can be compared and subtracted; the clock's starting point is
+#: arbitrary, so an instant means nothing on its own.
+pub type instant = { nanos: uint64 }
+
+#: The current time on the monotonic clock.
+pub def now() -> instant:
+    return instant { nanos: rt_monotonic_now() }
+
+extend instant:
+    #: The time from `earlier` to this instant, or zero if `earlier` is later.
+    pub def duration_since(self, earlier: &instant) -> duration:
+        if self.nanos <= earlier.nanos:
+            return duration { nanos: 0 }
+        return duration { nanos: self.nanos - earlier.nanos }
+
+    #: The time from this instant to now.
+    pub def elapsed(self) -> duration:
+        let current = rt_monotonic_now()
+        if current <= self.nanos:
+            return duration { nanos: 0 }
+        return duration { nanos: current - self.nanos }
+
+    #: The instant `d` after this one.
+    pub def after(self, d: &duration) -> instant:
+        return instant { nanos: self.nanos + d.nanos }
+
+#: Suspends the calling task for at least `d`. Other tasks run on its thread
+#: in the meantime.
+pub async def sleep(d: duration) -> unit:
+    await rt_sleep_until(rt_monotonic_now() + d.nanos)
+
+#: Suspends the calling task until the monotonic clock reaches `t`. Returns at
+#: once if `t` has passed.
+pub async def sleep_until(t: instant) -> unit:
+    await rt_sleep_until(t.nanos)

@@ -156,6 +156,12 @@ void wait_word(const uint64_t *word, uint64_t expected);
 /// again.
 void wake_word(const uint64_t *word);
 
+/// Queues `task` again if it returned `pending`, or has it polled once more
+/// if it is mid-poll. For a task that waits on something outside the
+/// scheduler, such as the reactor (`reactor.h`). Does nothing to a task the
+/// scheduler does not own or that has finished.
+void wake(uint64_t *task);
+
 /// Blocks the calling thread until every task the scheduler has taken over
 /// has finished. Used by tests to drain detached work; a program's tasks are
 /// normally awaited.

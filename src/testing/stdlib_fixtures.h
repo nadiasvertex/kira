@@ -98,6 +98,7 @@ inline auto stdlib_filenames() -> std::span<const char *const> {
       "shared.cn",
       "sync.cn",
       "io.cn",
+      "time.cn",
       "console.cn",
       "algo.cn",
       "fmt.cn",

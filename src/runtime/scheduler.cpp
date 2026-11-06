@@ -508,6 +508,12 @@ void wake_word(const uint64_t *word) {
   s.finished.notify_all();
 }
 
+void wake(uint64_t *task) {
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  wake_locked(s, task);
+}
+
 void spawn(uint64_t *task, pool where, runner how) {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);

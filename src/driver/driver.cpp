@@ -288,6 +288,7 @@ auto inject_stdlib_prelude(cli_config &cfg) -> void {
                                "shared.cn",
                                "sync.cn",
                                "io.cn",
+                               "time.cn",
                                "console.cn",
                                "algo.cn",
                                "fmt.cn",

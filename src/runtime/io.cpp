@@ -1,5 +1,6 @@
 #include "src/runtime/io.h"
 
+#include <array>
 #include <cerrno>
 #include <cstdlib>
 #include <fcntl.h>
@@ -121,6 +122,31 @@ auto cinder_rt_flush(uint64_t * /*fd*/) -> uint64_t * {
   // above, so there is nothing for this tier to flush either.
   return make_result_ok(0);
 }
+
+auto cinder_rt_pipe() -> uint64_t * {
+  auto ends = std::array<int, 2>{};
+  if (::pipe(ends.data()) != 0) {
+    return make_result_err(errno);
+  }
+  for (const int end : ends) {
+    (void)::fcntl(end, F_SETFD, FD_CLOEXEC); // NOLINT
+  }
+  auto *pair = alloc_slots(2);
+  pair[0] = static_cast<uint64_t>(int64_t{ends[0]});
+  pair[1] = static_cast<uint64_t>(int64_t{ends[1]});
+  return make_result_ok(reinterpret_cast<uint64_t>(pair)); // NOLINT
+}
+
+auto cinder_rt_set_nonblocking(uint64_t *fd) -> uint64_t * {
+  const int descriptor = raw_fd_of(fd);
+  const int flags = ::fcntl(descriptor, F_GETFL); // NOLINT
+  if (flags < 0 || ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
+    return make_result_err(errno);
+  }
+  return make_result_ok(0);
+}
+
+auto cinder_rt_errno_would_block() -> int32_t { return EAGAIN; }
 
 [[noreturn]] auto cinder_rt_panic(uint64_t *msg) -> uint64_t * {
   // Reported straight to fd 2 rather than through `std.io`: a panic must still

@@ -32,6 +32,15 @@ auto cinder_rt_close(uint64_t *fd) -> uint64_t *;
 auto cinder_rt_read(uint64_t *fd, uint64_t *buf) -> uint64_t *;
 auto cinder_rt_write(uint64_t *fd, uint64_t *buf) -> uint64_t *;
 auto cinder_rt_flush(uint64_t *fd) -> uint64_t *;
+/// `result[raw_pipe, io_errno]`: a new pipe, whose payload is a 2-slot
+/// `{ read; write }` block of descriptor numbers.
+auto cinder_rt_pipe() -> uint64_t *;
+/// `result[unit, io_errno]`: sets `O_NONBLOCK` on the descriptor, so a read
+/// or write that cannot proceed fails with the host's `EAGAIN` instead of
+/// blocking.
+auto cinder_rt_set_nonblocking(uint64_t *fd) -> uint64_t *;
+/// The host's `EAGAIN` code, which differs between Linux and macOS.
+auto cinder_rt_errno_would_block() -> int32_t;
 /// Writes `msg` (a `str` header) to stderr and terminates the process. The
 /// only intrinsic that does not return; its `uint64_t *` result exists solely
 /// so it shares the uniform intrinsic ABI the two backends emit calls under.

@@ -24,6 +24,7 @@
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/platform_query.h"
+#include "src/runtime/reactor.h"
 #include "src/runtime/scheduler.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
@@ -1689,6 +1690,58 @@ auto intrinsic_rt_word_wake(std::span<const slot_value> args) -> slot_value {
   return slot_value{}; // `unit`
 }
 
+auto intrinsic_rt_fd_readable(std::span<const slot_value> args) -> slot_value {
+  return slot_value{reinterpret_cast<uint64_t>( // NOLINT
+      cinder::runtime::reactor::fd_waiter(
+          static_cast<int>(args[0].i),
+          cinder::runtime::reactor::interest::read))};
+}
+
+auto intrinsic_rt_fd_writable(std::span<const slot_value> args) -> slot_value {
+  return slot_value{reinterpret_cast<uint64_t>( // NOLINT
+      cinder::runtime::reactor::fd_waiter(
+          static_cast<int>(args[0].i),
+          cinder::runtime::reactor::interest::write))};
+}
+
+auto intrinsic_rt_sleep_until(std::span<const slot_value> args) -> slot_value {
+  return slot_value{reinterpret_cast<uint64_t>( // NOLINT
+      cinder::runtime::reactor::timer_waiter(args[0].u))};
+}
+
+auto intrinsic_rt_monotonic_now(std::span<const slot_value> /*args*/)
+    -> slot_value {
+  return slot_value{cinder::runtime::reactor::monotonic_now()};
+}
+
+auto intrinsic_rt_pipe(std::span<const slot_value> /*args*/) -> slot_value {
+  auto ends = std::array<int, 2>{};
+  if (::pipe(ends.data()) != 0) {
+    return make_result_err(errno);
+  }
+  for (const int end : ends) {
+    (void)::fcntl(end, F_SETFD, FD_CLOEXEC); // NOLINT
+  }
+  const std::array<slot_value, 2> fields = {slot_value{int64_t{ends[0]}},
+                                            slot_value{int64_t{ends[1]}}};
+  return make_result_ok(alloc_struct(fields));
+}
+
+auto intrinsic_rt_set_nonblocking(std::span<const slot_value> args)
+    -> slot_value {
+  const int fd = raw_fd_of(args[0]);
+  const int flags = ::fcntl(fd, F_GETFL); // NOLINT
+  if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
+    return make_result_err(errno);
+  }
+  return make_result_ok(slot_value{});
+}
+
+auto intrinsic_rt_errno_would_block(std::span<const slot_value> /*args*/)
+    -> slot_value {
+  return slot_value{int64_t{EAGAIN}};
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1830,7 +1883,10 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_crew_join" || name == "rt_crew_free" ||
          name == "rt_crew_len" || name == "rt_crew_task" ||
          name == "rt_word_wait" || name == "rt_word_waiter" ||
-         name == "rt_word_wake";
+         name == "rt_word_wake" || name == "rt_fd_readable" ||
+         name == "rt_fd_writable" || name == "rt_sleep_until" ||
+         name == "rt_monotonic_now" || name == "rt_pipe" ||
+         name == "rt_set_nonblocking";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1900,6 +1956,13 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_word_wait,
         intrinsic_rt_word_waiter,
         intrinsic_rt_word_wake,
+        intrinsic_rt_fd_readable,
+        intrinsic_rt_fd_writable,
+        intrinsic_rt_sleep_until,
+        intrinsic_rt_monotonic_now,
+        intrinsic_rt_pipe,
+        intrinsic_rt_set_nonblocking,
+        intrinsic_rt_errno_would_block,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),

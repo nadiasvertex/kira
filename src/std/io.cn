@@ -14,17 +14,22 @@ use std.intrinsics.rt_read
 use std.intrinsics.rt_write
 use std.intrinsics.rt_flush
 
+use std.intrinsics.{raw_pipe, rt_pipe, rt_set_nonblocking, rt_errno_would_block}
+use std.intrinsics.{rt_fd_readable, rt_fd_writable}
+
 #: Error types that can occur during I/O operations.
 pub type io_error = @not_found(str) | @permission_denied(str) | @already_exists(str) | @interrupted | @would_block | @broken_pipe | @unexpected_eof | @other(io_errno)
 
 impl from[io_errno] for io_error:
     def from(e: io_errno) -> io_error:
+        # `EAGAIN` is 11 on Linux and 35 on macOS; the others agree.
+        if e.code == rt_errno_would_block():
+            return @would_block
         match e.code:
             2 => @not_found("no such file or directory")
             13 => @permission_denied("permission denied")
             17 => @already_exists("file already exists")
             4 => @interrupted
-            11 => @would_block
             32 => @broken_pipe
             _ => @other(e)
 
@@ -184,3 +189,230 @@ extend file_handle:
         match r:
             @ok(u) => @ok(u)
             @err(e) => @err(io_error.from(e))
+
+#: The two ends of a pipe: bytes written to `writer` are read from `reader`.
+pub type pipe_ends = { reader: file_handle, writer: file_handle }
+
+#: Makes a pipe whose ends block, for the `reader` and `writer` traits.
+#: Returns:
+#:   both ends, each of which closes its descriptor when dropped.
+pub def pipe() -> result[pipe_ends, io_error]:
+    match rt_pipe():
+        @ok(p) => @ok(pipe_ends {
+            reader: file_handle { fd: raw_fd { value: p.read }, owns: true },
+            writer: file_handle { fd: raw_fd { value: p.write }, owns: true } })
+        @err(e) => @err(io_error.from(e))
+
+####################
+# Asynchronous I/O
+####################
+
+# An `io` task that reads or writes a descriptor that is not ready suspends
+# in the event loop (`src/runtime/reactor.h`) instead of blocking its thread.
+# The descriptors of `async_file` are non-blocking: a read or write that
+# cannot proceed fails with `EAGAIN`, and the task then waits for the
+# descriptor to become ready and tries again. A regular file is always ready,
+# so its reads and writes finish without suspending.
+
+#: Suspends the calling task until `fd` can be read without blocking, or has
+#: an error or hang-up. Meant for pipes, sockets and terminals: a regular file
+#: is always ready, and on Linux one cannot be watched, so this returns at
+#: once for it.
+pub async def readable(fd: &raw_fd) -> unit:
+    await rt_fd_readable(fd.value)
+
+#: Suspends the calling task until `fd` can be written without blocking, or
+#: has an error or hang-up. Returns at once for a regular file.
+pub async def writable(fd: &raw_fd) -> unit:
+    await rt_fd_writable(fd.value)
+
+#: The asynchronous counterpart of `reader`, for sources whose bytes may not
+#: have arrived yet.
+pub trait async_reader:
+    #: Reads up to buf.len() bytes into the provided buffer, suspending until
+    #: at least one byte or the end of the input is available.
+    #: Args:
+    #:   self: the reader.
+    #:   buf: a mutable slice to read bytes into.
+    #: Returns:
+    #:   the number of bytes read (zero at the end of the input), or an io_error.
+    async def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]
+
+    #: Reads all remaining bytes into a list.
+    #: Args:
+    #:   self: the reader.
+    #:   out: a mutable list to append bytes to.
+    #: Returns:
+    #:   the total number of bytes read, or an io_error.
+    async def read_to_end(mut self, out: &mut list[byte]) -> result[usize, io_error]:
+        var total: usize = 0
+        var buf: array[byte, 4096] = [0; 4096]
+        while true:
+            let got = (await self.read(&mut buf[0..4096]))?
+            if got == 0:
+                return @ok(total)
+            var i: usize = 0
+            while i < got:
+                out.push(buf[i])
+                i = i + 1
+            total = total + got
+
+    #: Reads exactly buf.len() bytes into the provided buffer.
+    #: Args:
+    #:   self: the reader.
+    #:   buf: a mutable slice to read bytes into.
+    #: Returns:
+    #:   unit on success, or an io_error (unexpected_eof if the input ends first).
+    async def read_exact(mut self, buf: &mut slice_mut[byte]) -> result[unit, io_error]:
+        var filled: usize = 0
+        let want = buf.len()
+        while filled < want:
+            let got = (await self.read(&mut buf[filled..want]))?
+            if got == 0:
+                return @err(@unexpected_eof)
+            filled = filled + got
+        return @ok(unit)
+
+#: The asynchronous counterpart of `writer`, for destinations that may not
+#: accept bytes yet.
+pub trait async_writer:
+    #: Writes up to buf.len() bytes, suspending until at least one can be
+    #: written.
+    #: Args:
+    #:   self: the writer.
+    #:   buf: a slice of bytes to write.
+    #: Returns:
+    #:   the number of bytes written, or an io_error.
+    async def write(mut self, buf: &slice[byte]) -> result[usize, io_error]
+
+    #: Flushes any buffered data to the destination.
+    #: Args:
+    #:   self: the writer.
+    #: Returns:
+    #:   unit on success, or an io_error.
+    async def flush(mut self) -> result[unit, io_error]
+
+    #: Writes every byte of the buffer.
+    #: Args:
+    #:   self: the writer.
+    #:   buf: a slice of bytes to write.
+    #: Returns:
+    #:   unit on success, or an io_error (broken_pipe if a write accepts nothing).
+    async def write_all(mut self, buf: &slice[byte]) -> result[unit, io_error]:
+        var written: usize = 0
+        let want = buf.len()
+        while written < want:
+            let n = (await self.write(&buf[written..want]))?
+            if n == 0:
+                return @err(@broken_pipe)
+            written = written + n
+        return @ok(unit)
+
+#: A non-blocking file handle for `io` tasks. `owns` says whether dropping
+#: the handle closes its descriptor, as for `file_handle`.
+pub type async_file = { fd: raw_fd, owns: bool }
+
+#: Makes `fd` non-blocking and wraps it, closing it if that fails and `owns`
+#: is set.
+def wrap_async(fd: raw_fd, owns: bool) -> result[async_file, io_error]:
+    let f = async_file { fd: fd, owns: owns }
+    match rt_set_nonblocking(f.fd_arg()):
+        @ok(_) => @ok(f)
+        @err(e) => @err(io_error.from(e))
+
+#: Opens a file for asynchronous reads and writes. The open itself does not
+#: suspend. The descriptor is non-blocking from the start, so opening a FIFO
+#: does not wait for its other end; opening one for writing fails with
+#: `@other` when nothing has it open for reading.
+#: Args:
+#:   path: the path to the file to open.
+#:   opts: open options controlling read/write/create/truncate behavior.
+#: Returns:
+#:   an async_file on success, or an io_error on failure.
+pub async def open_async(path: str, opts: open_options) -> result[async_file, io_error]:
+    match rt_open(path, opts):
+        @ok(fd) => wrap_async(fd, true)
+        @err(e) => @err(io_error.from(e))
+
+#: Turns a blocking handle into an asynchronous one for the same descriptor,
+#: which becomes non-blocking. The descriptor's file description is shared
+#: with every copy of it, so making a standard stream asynchronous also
+#: changes it for the process that started this one.
+#: Args:
+#:   f: the handle (moved); its descriptor now belongs to the result.
+#: Returns:
+#:   an async_file on success, or an io_error on failure.
+pub def into_async(f: file_handle) -> result[async_file, io_error]:
+    let owns = f.owns
+    f.owns = false
+    return wrap_async(f.fd_arg(), owns)
+
+#: The two ends of an asynchronous pipe.
+pub type async_pipe_ends = { reader: async_file, writer: async_file }
+
+#: Makes a pipe whose ends are non-blocking, for `async_reader` and
+#: `async_writer`.
+#: Returns:
+#:   both ends, each of which closes its descriptor when dropped.
+pub def async_pipe() -> result[async_pipe_ends, io_error]:
+    match rt_pipe():
+        @ok(p) =>:
+            let r = wrap_async(raw_fd { value: p.read }, true)?
+            let w = wrap_async(raw_fd { value: p.write }, true)?
+            return @ok(async_pipe_ends { reader: r, writer: w })
+        @err(e) => return @err(io_error.from(e))
+
+extend async_file:
+    #: The descriptor number, as a fresh `raw_fd` for one intrinsic call.
+    def fd_arg(self) -> raw_fd:
+        return raw_fd { value: self.fd.value }
+
+    #: Closes the handle. It is invalid afterwards.
+    #: Returns:
+    #:   unit on success, or an io_error on failure.
+    pub def close(mut self) -> result[unit, io_error]:
+        let r = rt_close(self.fd_arg())
+        self.fd = raw_fd { value: -1 }
+        self.owns = false
+        match r:
+            @ok(u) => @ok(u)
+            @err(e) => @err(io_error.from(e))
+
+impl async_reader for async_file:
+    async def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]:
+        while true:
+            match rt_read(self.fd_arg(), buf):
+                @ok(n) => return @ok(n)
+                @err(e) =>:
+                    if e.code == rt_errno_would_block():
+                        await rt_fd_readable(self.fd.value)
+                    else:
+                        let failure = io_error.from(e)
+                        match failure:
+                            @interrupted => continue
+                            _ => return @err(failure)
+
+impl async_writer for async_file:
+    async def write(mut self, buf: &slice[byte]) -> result[usize, io_error]:
+        while true:
+            match rt_write(self.fd_arg(), buf):
+                @ok(n) => return @ok(n)
+                @err(e) =>:
+                    if e.code == rt_errno_would_block():
+                        await rt_fd_writable(self.fd.value)
+                    else:
+                        let failure = io_error.from(e)
+                        match failure:
+                            @interrupted => continue
+                            _ => return @err(failure)
+
+    async def flush(mut self) -> result[unit, io_error]:
+        match rt_flush(self.fd_arg()):
+            @ok(u) => @ok(u)
+            @err(e) => @err(io_error.from(e))
+
+impl drop for async_file:
+    def drop(mut self) -> unit:
+        if self.owns:
+            rt_close(self.fd_arg())
+        return unit
