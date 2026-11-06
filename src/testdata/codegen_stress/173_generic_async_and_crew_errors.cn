@@ -1,0 +1,36 @@
+module codegen_stress.generic_async_and_crew_errors
+
+# expect: 1136
+
+# A generic `async def` is instantiated per type like any generic function,
+# and a call to it is a task: it can be awaited, or spawned into a crew. A
+# crew in a generic body collects the errors of tasks whose type mentions
+# the body's type parameter. `collect` over [3, 4, 6, 7] fails on 3 and 6
+# (36); over two `int64`s it fails once (1 * 100); the awaited `check(4)`
+# succeeds with 40 (40 * 25 = 1000). 36 + 100 + 1000 = 1136.
+
+async def check[T](n: T) -> result[T, T] where T: integer:
+    if n % 3 == 0:
+        return @err(n)
+    return @ok(n * 10)
+
+async def collect[T](xs: list[T]) -> list[T] where T: integer:
+    return crew c(on_error: collect):
+        for x in xs:
+            let _ = c.spawn(check(x))
+        c.errors()
+
+async def awaited[T](x: T) -> T where T: integer:
+    let r = await check(x)
+    if let @ok(v) = r:
+        return v
+    return x
+
+async def main() -> int32:
+    let errs = await collect([3, 4, 6, 7])
+    var total: int32 = 0
+    for e in errs:
+        total = total * 10 + e
+    let wide = await collect([9 as int64, 1 as int64])
+    let got = await awaited(4)
+    return total + (wide.len() as int32) * 100 + got * 25

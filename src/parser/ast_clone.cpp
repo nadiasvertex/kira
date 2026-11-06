@@ -975,6 +975,87 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->parsed_body = std::move(*body);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::await_expr: {
+    const auto &awaited = cast<await_expr>(e);
+    auto operand = clone_optional(awaited.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto cloned = make<await_expr>();
+    cloned->span = awaited.span;
+    cloned->operand = std::move(*operand);
+    cloned->is_yield = awaited.is_yield;
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::async_expr: {
+    const auto &block = cast<async_expr>(e);
+    auto body = clone_node_list(block.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<async_expr>();
+    cloned->span = block.span;
+    cloned->body = std::move(*body);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::par_expr:
+  case node_kind::race_expr: {
+    const auto &source = e.kind == node_kind::par_expr
+                             ? cast<par_expr>(e).branches
+                             : cast<race_expr>(e).branches;
+    auto branches = std::vector<ptr<expr>>{};
+    for (const auto &branch : source) {
+      auto cloned_branch = clone_optional(branch);
+      if (!cloned_branch.has_value()) {
+        return std::unexpected(cloned_branch.error());
+      }
+      branches.push_back(std::move(*cloned_branch));
+    }
+    if (e.kind == node_kind::par_expr) {
+      auto cloned = make<par_expr>();
+      cloned->span = e.span;
+      cloned->branches = std::move(branches);
+      return ptr<expr>(std::move(cloned));
+    }
+    auto cloned = make<race_expr>();
+    cloned->span = e.span;
+    cloned->branches = std::move(branches);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::on_expr: {
+    const auto &on = cast<on_expr>(e);
+    auto context_type = clone_optional(on.context_type);
+    if (!context_type.has_value()) {
+      return std::unexpected(context_type.error());
+    }
+    auto sender = clone_optional(on.sender);
+    if (!sender.has_value()) {
+      return std::unexpected(sender.error());
+    }
+    auto body = clone_node_list(on.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<on_expr>();
+    cloned->span = on.span;
+    cloned->context_type = std::move(*context_type);
+    cloned->sender = std::move(*sender);
+    cloned->body = std::move(*body);
+    return ptr<expr>(std::move(cloned));
+  }
+  case node_kind::crew_expr: {
+    const auto &crew = cast<crew_expr>(e);
+    auto body = clone_node_list(crew.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<crew_expr>();
+    cloned->span = crew.span;
+    cloned->name = crew.name;
+    cloned->options = crew.options;
+    cloned->body = std::move(*body);
+    return ptr<expr>(std::move(cloned));
+  }
   default:
     return unsupported(e, "this expression shape");
   }
@@ -1147,6 +1228,19 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->body = std::move(*body);
     return ptr<node>(std::move(cloned));
   }
+  case node_kind::crew_stmt: {
+    const auto &crew = cast<crew_stmt>(n);
+    auto body = clone_node_list(crew.body);
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    auto cloned = make<crew_stmt>();
+    cloned->span = crew.span;
+    cloned->name = crew.name;
+    cloned->options = crew.options;
+    cloned->body = std::move(*body);
+    return ptr<node>(std::move(cloned));
+  }
   case node_kind::scope_stmt: {
     const auto &scope_s = cast<scope_stmt>(n);
     auto body = clone_node_list(scope_s.body);
@@ -1275,20 +1369,24 @@ namespace {
 
 auto clone_func_decl_unmapped(const func_decl &decl)
     -> std::expected<ptr<func_decl>, clone_error> {
-  if (decl.modifiers.async_context != nullptr || decl.modifiers.is_async) {
-    return unsupported(decl, "an async function");
+  // An async function clones like any other: the instance is checked and
+  // lowered as a task-returning function from the same modifiers.
+  auto async_context = clone_optional(decl.modifiers.async_context);
+  if (!async_context.has_value()) {
+    return std::unexpected(async_context.error());
   }
 
   auto cloned = make<func_decl>();
   cloned->span = decl.span;
   cloned->documentation = decl.documentation;
   cloned->visibility = decl.visibility;
-  cloned->modifiers = func_modifiers{.is_pure = decl.modifiers.is_pure,
-                                     .is_async = false,
-                                     .is_machine = decl.modifiers.is_machine,
-                                     .is_static = decl.modifiers.is_static,
-                                     .is_intrinsic = false,
-                                     .async_context = nullptr};
+  cloned->modifiers =
+      func_modifiers{.is_pure = decl.modifiers.is_pure,
+                     .is_async = decl.modifiers.is_async,
+                     .is_machine = decl.modifiers.is_machine,
+                     .is_static = decl.modifiers.is_static,
+                     .is_intrinsic = false,
+                     .async_context = std::move(*async_context)};
   cloned->modifiers.is_generator = decl.modifiers.is_generator;
   cloned->name = decl.name;
 

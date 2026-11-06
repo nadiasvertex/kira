@@ -818,6 +818,9 @@ auto checker::infer_method_call(const ast::call_expr &call,
           call.args.size() == 1) {
         // `c.spawn(t)` gives back the task it was handed.
         const auto task = infer_expr(*call.args[0].value, k_unknown_type);
+        if (reject_non_task(*call.args[0].value, task, "c.spawn(...)")) {
+          return k_error_type;
+        }
         record_crew_spawn(*field.object, task, call.args[0].value->span);
         require_task_args_sendable(*call.args[0].value);
         return task;

@@ -325,6 +325,15 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
                    binding.is_mut ? binding_origin::mut_binding
                                   : binding_origin::let_binding,
                    binding.span);
+        // A `fn` or `task` value remembers what it carries, for when it
+        // crosses to another task. A `let mut` could be given another.
+        if (!binding.is_mut && stmt.initializer != nullptr &&
+            hides_carried(binding_type) && !function_.scopes_.empty()) {
+          if (const auto it = function_.scopes_.back().find(binding.name);
+              it != function_.scopes_.back().end()) {
+            it->second.carried = carried_by(*stmt.initializer);
+          }
+        }
         // An immutable binding's type is a permanent fact about it: a `let
         // i: index[n]` is an `i < n` for the rest of the block. (A `var` is
         // deliberately *not* assumed — see `check_assignment`, which has to
@@ -420,6 +429,12 @@ auto checker::check_body_node(const ast::node &node, type_id expected_tail)
 
   case ast::node_kind::return_stmt: {
     const auto &stmt = ast::cast<const ast::return_stmt>(node);
+    if (reject_task_block_exit(stmt.span, "return")) {
+      if (stmt.value != nullptr) {
+        infer_expr(*stmt.value, k_unknown_type);
+      }
+      return session_.types_.builtin("never");
+    }
     if (function_.in_generator_) {
       // A generator's only output channel is `yield`; `return` just marks
       // exhaustion (translates to the iterator's `next()` returning

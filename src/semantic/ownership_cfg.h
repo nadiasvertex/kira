@@ -261,10 +261,20 @@ struct shared_write_event {
   std::string through;
 };
 
+/// A write, `&mut`, or `mut self` call on `name` inside an `async:` or
+/// `on(...)` block that only borrows it from the enclosing function
+/// (`task_capture`). `method` is the called method for `receiver`.
+struct task_capture_write_event {
+  source_span span = source_span::dummy();
+  static_write kind = static_write::assign;
+  std::string name;
+  std::string method;
+};
+
 using event =
     std::variant<access_event, flow_event, use_event, scope_exit_event,
                  invalid_move_event, assign_event, static_write_event,
-                 let_write_event, shared_write_event>;
+                 let_write_event, shared_write_event, task_capture_write_event>;
 
 struct basic_block {
   std::vector<event> events;
@@ -277,6 +287,26 @@ struct owned_capture {
   std::string name;
   type_id type = k_unknown_type;
 };
+
+/// A value an `async:` or `on(...)` block captures from the enclosing
+/// function. The block runs as a task of its own, built as a function whose
+/// parameters are these captures. A `moved` capture is one the body
+/// consumes: it moves into the task, which owns it as a local of its own
+/// graph declared by `node` (the capture's first reference in the body), and
+/// drops it there. Any other capture is lent to the task: the task value
+/// holds a shared loan of it until it is dropped or awaited.
+struct task_capture {
+  std::string name;
+  type_id type = k_unknown_type;
+  bool moved = false;
+  const void *node = nullptr;
+  /// The capture's first reference in the body.
+  source_span span = source_span::dummy();
+};
+
+/// The key of the exit a task block takes when it is dropped before its body
+/// first runs, as `generator_start` is for a function.
+[[nodiscard]] auto task_block_start(const ast::expr &block) -> const void *;
 
 struct function_cfg {
   /// The top-level patterns whose bindings own the parts they bind
@@ -313,6 +343,9 @@ struct function_cfg {
   /// The droppable values each lambda moves into its environment, in
   /// capture order, keyed by the `ast::lambda_expr`.
   std::map<const void *, std::vector<owned_capture>> owned_captures;
+  /// What each `async:` or `on(...)` block captures, in first-reference
+  /// order, keyed by the block's expression.
+  std::map<const void *, std::vector<task_capture>> task_captures;
   std::vector<local_info> locals;
   std::vector<loan_info> loans;
   std::vector<basic_block> blocks; ///< `blocks[0]` is the entry.

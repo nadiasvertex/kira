@@ -1,0 +1,4 @@
+module reject_on_sender_not_task
+
+async def main() -> int32:
+    return await on(pool, 3)

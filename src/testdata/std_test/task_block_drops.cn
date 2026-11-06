@@ -1,0 +1,67 @@
+module main
+
+# An `async:` block runs as a task of its own (ch. 27). A capture its body
+# consumes moves into the task, which drops what is left of it; a capture
+# it only reads is lent to it, and the enclosing function keeps and drops
+# it. Every `noisy` prints `drop <id>` exactly once.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def take(n: noisy) -> int32:
+    return n.id
+
+def peek(n: &noisy) -> int32:
+    return n.id
+
+# Consumed by the task's body: the callee drops it.
+async def moved_in() -> unit:
+    let n = noisy { id: 1 }
+    let r = await async:
+        take(n)
+    println("moved {r}")
+
+# Only read: the owner drops it at its own scope end, after the task.
+async def lent() -> unit:
+    let n = noisy { id: 2 }
+    let r = await async:
+        peek(&n)
+    println("lent {r}")
+    println("lent done")
+
+# Consumed on one path only: the task owns it and drops it on the other.
+async def kept_by_task(flag: bool, id: int32) -> unit:
+    let n = noisy { id: id }
+    let r = await async:
+        var out: int32 = 0
+        if flag:
+            out = take(n)
+        println("task ends")
+        out
+    println("kept {r}")
+
+# A task dropped before it runs still drops what moved into it.
+async def never_run() -> unit:
+    let n = noisy { id: 5 }
+    let t = async:
+        take(n)
+    println("made")
+
+# `on(...)` bodies follow the same rules.
+async def on_pool() -> unit:
+    let a = noisy { id: 6 }
+    let b = noisy { id: 7 }
+    let r = await on(io):
+        take(a) + peek(&b)
+    println("on {r}")
+
+async def main() -> unit:
+    await moved_in()
+    await lent()
+    await kept_by_task(true, 3)
+    await kept_by_task(false, 4)
+    await never_run()
+    await on_pool()

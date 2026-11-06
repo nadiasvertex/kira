@@ -1,0 +1,47 @@
+module codegen_stress.task_blocks
+
+# expect: 1147
+
+# An `async:` block is a task whose body may `await`, and so is an
+# `on(ctx):` body; `on(ctx, task)` runs an existing task on `ctx`. The
+# blocks read the enclosing function's locals: a list only read is lent to
+# every task in the crew at once, and one the body consumes moves in.
+
+def total(xs: &list[int32]) -> int32:
+    var s: int32 = 0
+    for x in xs:
+        s = s + x
+    return s
+
+def consume(xs: list[int32]) -> int32:
+    return xs.len() as int32
+
+async def square(x: int32) -> int32:
+    return x * x
+
+def heavy(n: int32) -> int32:
+    return n * 3
+
+async def main() -> int32:
+    let xs = [1, 2, 3, 4]
+    let ys = [5, 6]
+    let base: int32 = 7
+    # Two tasks borrow `xs` at once; one awaits inside its block.
+    let (a, b) = crew c:
+        let ta = c.spawn(async:
+            total(&xs) * 10
+        )
+        let tb = c.spawn(async:
+            let s = await square(base)
+            s + total(&xs)
+        )
+        (ta, tb)
+    let moved = await async:
+        consume(ys)
+    let nested = await on(pool):
+        let inner = await on(pool):
+            heavy(base)
+        inner + 1
+    let sent = await on(pool, square(base + 1))
+    # 100 * 10 + 59 + 2 + 22 + 64
+    return a.get() * 10 + b.get() + moved + nested + sent

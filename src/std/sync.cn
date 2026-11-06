@@ -1,0 +1,547 @@
+module std.sync
+
+# Synchronized cells and channels for data that several tasks reach at once
+# (`spec/specification/02-intermediate/29-channels-and-sync-primitives.md`,
+# `30-data-race-freedom.md`), written in Cinder over three kinds of
+# primitive: heap allocation (`std.mem`), atomic access to a `usize`, and
+# waiting on a `usize` (`std.intrinsics`, `src/runtime/scheduler.h`).
+#
+# Each type keeps its state in a heap block, so the address a waiter waits
+# on stays put while the handle itself moves, and every operation takes
+# `self` by shared reference, so the types work through a `shared[T]`
+# handle. A change another task may be waiting for is followed by
+# `rt_word_wake` on the word that changed.
+#
+# A blocking operation (`mutex.lock`, `rwlock.read`, `rwlock.write`) parks
+# the calling thread; in a task, the pool runs another worker in its place.
+# The channel and watch operations are `async` and suspend the task instead.
+
+use std.intrinsics.{rt_atomic_load, rt_atomic_store, rt_atomic_compare_exchange, rt_word_wait, rt_word_waiter, rt_word_wake}
+use std.mem.{alloc, free as mem_free, drop_in_place}
+
+####################
+# atomic[T]
+####################
+
+#: An integer that several tasks may read and change at once. Every
+#: operation is one sequentially consistent atomic step.
+pub type atomic[T] = {
+    word: *mut usize,
+}
+
+extend[T] atomic[T]:
+    #: A new atomic holding `value`.
+    pub machine def new(value: T) -> atomic[T] where T: integer:
+        let word = alloc[usize](1)
+        word[0] = value as usize
+        return atomic[T] { word: word }
+
+    #: The value it holds now.
+    pub machine def load(self) -> T where T: integer:
+        return rt_atomic_load(self.word) as T
+
+    #: Replaces the value with `value`.
+    pub machine def store(self, value: T) -> unit where T: integer:
+        rt_atomic_store(self.word, value as usize)
+
+    #: Replaces the value with `desired` if it is `expected`. Returns
+    #: `@ok(expected)` when it did, and `@err(actual)` with the value it
+    #: found when it did not.
+    pub machine def compare_exchange(self, expected: T, desired: T) -> result[T, T] where T: integer:
+        let before = rt_atomic_compare_exchange(self.word, expected as usize, desired as usize)
+        if before == expected as usize:
+            return @ok(expected)
+        return @err(before as T)
+
+    #: Replaces the value with `value` and returns the one it held.
+    pub machine def swap(self, value: T) -> T where T: integer:
+        while true:
+            let before = rt_atomic_load(self.word)
+            if rt_atomic_compare_exchange(self.word, before, value as usize) == before:
+                return before as T
+        return value
+
+    #: Adds `n`, wrapping on overflow, and returns the value it held before.
+    pub machine def fetch_add(self, n: T) -> T where T: integer:
+        while true:
+            let before = rt_atomic_load(self.word)
+            let after = ((before as T) +% n) as usize
+            if rt_atomic_compare_exchange(self.word, before, after) == before:
+                return before as T
+        return n
+
+    #: Subtracts `n`, wrapping on overflow, and returns the value it held
+    #: before.
+    pub machine def fetch_sub(self, n: T) -> T where T: integer:
+        while true:
+            let before = rt_atomic_load(self.word)
+            let after = ((before as T) -% n) as usize
+            if rt_atomic_compare_exchange(self.word, before, after) == before:
+                return before as T
+        return n
+
+impl[T] drop for atomic[T]:
+    machine def drop(mut self) -> unit:
+        mem_free(self.word, 1)
+
+####################
+# mutex[T]
+####################
+
+#: The heap record a `mutex` and its guards point at.
+type mutex_block[T] = {
+    #: 0 when free, 1 while a guard holds the value.
+    state: usize,
+    value: T,
+}
+
+#: A `T` that one task at a time may change. `lock` waits until no other
+#: guard is live and returns one; the value is reached through the guard,
+#: and dropping the guard lets the next task in.
+pub type mutex[T] = {
+    inner: *mut mutex_block[T],
+}
+
+#: Exclusive access to a `mutex`'s value, until the guard is dropped.
+pub type mutex_guard[T] = {
+    inner: *mut mutex_block[T],
+}
+
+extend[T] mutex[T]:
+    #: A new mutex holding `value`.
+    pub machine def new(value: T) -> mutex[T]:
+        let block = alloc[mutex_block[T]](1)
+        block[0] = mutex_block[T] { state: 0, value: value }
+        return mutex[T] { inner: block }
+
+    #: Waits until the value is free, then holds it until the guard drops.
+    pub machine def lock(self) -> mutex_guard[T]:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        while rt_atomic_compare_exchange(word, 0, 1) != 0:
+            rt_word_wait(word, 1)
+        return mutex_guard[T] { inner: self.inner }
+
+    #: The guard if the value is free now, else `@none`.
+    pub machine def try_lock(self) -> option[mutex_guard[T]]:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        if rt_atomic_compare_exchange(word, 0, 1) != 0:
+            return @none
+        return @some(mutex_guard[T] { inner: self.inner })
+
+extend[T] mutex_guard[T]:
+    #: The value, to read.
+    pub machine def get(self) -> &T:
+        return &self.inner[0].value
+
+    #: The value, to change.
+    pub machine def get_mut(mut self) -> &mut T:
+        return &mut self.inner[0].value
+
+    #: Replaces the value with `value`, dropping the old one.
+    pub machine def set(mut self, value: T) -> unit:
+        drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+        self.inner[0].value = value
+
+impl[T] deref for mutex_guard[T]:
+    type target = T
+    machine def deref(self) -> &T:
+        return &self.inner[0].value
+
+impl[T] drop for mutex_guard[T]:
+    #: Lets the next task in.
+    machine def drop(mut self) -> unit:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        rt_atomic_store(word, 0)
+        rt_word_wake(word)
+
+impl[T] drop for mutex[T]:
+    machine def drop(mut self) -> unit:
+        drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+        mem_free(self.inner, 1)
+
+####################
+# rwlock[T]
+####################
+
+#: `rwlock`'s state word while a writer holds the value. Any smaller value
+#: counts the readers.
+static let k_writer: usize = 18446744073709551615
+
+#: The heap record an `rwlock` and its guards point at.
+type rwlock_block[T] = {
+    #: 0 when free, `k_writer` while a writer holds the value, else the
+    #: number of readers.
+    state: usize,
+    value: T,
+}
+
+#: A `T` that many tasks may read at once, or one task may change. Readers
+#: share the value, so `T` must be `share`.
+pub type rwlock[T] = {
+    inner: *mut rwlock_block[T],
+}
+
+#: Shared access to an `rwlock`'s value, until the guard is dropped.
+pub type read_guard[T] = {
+    inner: *mut rwlock_block[T],
+}
+
+#: Exclusive access to an `rwlock`'s value, until the guard is dropped.
+pub type write_guard[T] = {
+    inner: *mut rwlock_block[T],
+}
+
+extend[T] rwlock[T]:
+    #: A new lock holding `value`.
+    pub machine def new(value: T) -> rwlock[T]:
+        let block = alloc[rwlock_block[T]](1)
+        block[0] = rwlock_block[T] { state: 0, value: value }
+        return rwlock[T] { inner: block }
+
+    #: Waits until no writer holds the value, then reads it until the guard
+    #: drops.
+    pub machine def read(self) -> read_guard[T]:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        while true:
+            let state = rt_atomic_load(word)
+            if state == k_writer:
+                rt_word_wait(word, k_writer)
+            elif rt_atomic_compare_exchange(word, state, state + 1) == state:
+                return read_guard[T] { inner: self.inner }
+        return read_guard[T] { inner: self.inner }
+
+    #: Waits until nobody holds the value, then holds it alone until the
+    #: guard drops.
+    pub machine def write(self) -> write_guard[T]:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        while true:
+            let state = rt_atomic_compare_exchange(word, 0, k_writer)
+            if state == 0:
+                return write_guard[T] { inner: self.inner }
+            rt_word_wait(word, state)
+        return write_guard[T] { inner: self.inner }
+
+extend[T] read_guard[T]:
+    #: The value, to read.
+    pub machine def get(self) -> &T:
+        return &self.inner[0].value
+
+impl[T] deref for read_guard[T]:
+    type target = T
+    machine def deref(self) -> &T:
+        return &self.inner[0].value
+
+impl[T] drop for read_guard[T]:
+    #: The last reader out lets a writer in.
+    machine def drop(mut self) -> unit:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        while true:
+            let state = rt_atomic_load(word)
+            if rt_atomic_compare_exchange(word, state, state - 1) == state:
+                if state == 1:
+                    rt_word_wake(word)
+                return
+
+extend[T] write_guard[T]:
+    #: The value, to read.
+    pub machine def get(self) -> &T:
+        return &self.inner[0].value
+
+    #: The value, to change.
+    pub machine def get_mut(mut self) -> &mut T:
+        return &mut self.inner[0].value
+
+    #: Replaces the value with `value`, dropping the old one.
+    pub machine def set(mut self, value: T) -> unit:
+        drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+        self.inner[0].value = value
+
+impl[T] deref for write_guard[T]:
+    type target = T
+    machine def deref(self) -> &T:
+        return &self.inner[0].value
+
+impl[T] drop for write_guard[T]:
+    #: Lets the next reader or writer in.
+    machine def drop(mut self) -> unit:
+        let word = ptr_cast[usize](&mut self.inner[0].state)
+        rt_atomic_store(word, 0)
+        rt_word_wake(word)
+
+impl[T] drop for rwlock[T]:
+    machine def drop(mut self) -> unit:
+        drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+        mem_free(self.inner, 1)
+
+####################
+# Words used as locks
+####################
+
+#: Takes the short internal lock at `word` (0 free, 1 held), parking the
+#: thread while another holds it. The channel and watch types hold it only
+#: to read or change their own fields.
+machine def acquire(word: *mut usize) -> unit:
+    while rt_atomic_compare_exchange(word, 0, 1) != 0:
+        rt_word_wait(word, 1)
+
+#: Gives up the lock `acquire` took.
+machine def release(word: *mut usize) -> unit:
+    rt_atomic_store(word, 0)
+    rt_word_wake(word)
+
+#: Adds one to the counter at `word` and wakes whoever waits on it.
+machine def bump(word: *mut usize) -> unit:
+    rt_atomic_store(word, rt_atomic_load(word) + 1)
+    rt_word_wake(word)
+
+####################
+# channel[T]
+####################
+
+#: The heap record a channel's senders and receiver point at.
+type channel_block[T] = {
+    #: The internal lock over the fields below (`acquire`).
+    lock: usize,
+    #: Counts the changes a waiting sender or receiver may be waiting for.
+    #: Changed only with `lock` held; waited on without it.
+    version: usize,
+    #: 1 once the channel is closed: by `close`, by the last sender's drop,
+    #: or by the receiver's drop.
+    closed: usize,
+    senders: usize,
+    #: Live handles of either kind; the last one frees the block.
+    handles: usize,
+    #: The queued values, a ring of `capacity` slots of which the `len`
+    #: from `head` on are live.
+    items: *mut T,
+    head: usize,
+    len: usize,
+    capacity: usize,
+}
+
+#: The sending end of a channel. Clone it for more senders.
+pub type sender[T] = {
+    inner: *mut channel_block[T],
+}
+
+#: The receiving end of a channel.
+pub type receiver[T] = {
+    inner: *mut channel_block[T],
+}
+
+#: A channel that queues up to `capacity` values (at least one) on their way
+#: from its senders to its receiver.
+pub machine def channel[T](capacity: usize) -> (sender[T], receiver[T]):
+    var slots = capacity
+    if slots == 0:
+        slots = 1
+    let block = alloc[channel_block[T]](1)
+    block[0] = channel_block[T] {
+        lock: 0,
+        version: 0,
+        closed: 0,
+        senders: 1,
+        handles: 2,
+        items: alloc[T](slots),
+        head: 0,
+        len: 0,
+        capacity: slots,
+    }
+    return (sender[T] { inner: block }, receiver[T] { inner: block })
+
+#: Closes the channel. Lock held.
+machine def close_locked[T](block: *mut channel_block[T]) -> unit:
+    if block[0].closed == 0:
+        block[0].closed = 1
+        bump(ptr_cast[usize](&mut block[0].version))
+
+#: Gives up one handle; the last frees the block and drops the values still
+#: queued. Lock held, and released here.
+machine def release_handle[T](block: *mut channel_block[T]) -> unit:
+    block[0].handles = block[0].handles - 1
+    let last = block[0].handles == 0
+    release(ptr_cast[usize](&mut block[0].lock))
+    if last:
+        var i: usize = 0
+        while i < block[0].len:
+            drop_in_place(&mut block[0].items[(block[0].head + i) % block[0].capacity])
+            i = i + 1
+        mem_free(block[0].items, block[0].capacity)
+        mem_free(block, 1)
+
+extend[T] sender[T]:
+    #: Queues `value`, waiting while the channel is full. Gives `value` back
+    #: as `@err` when the channel is closed.
+    pub machine async def send(self, value: T) -> result[unit, T]:
+        let block = self.inner
+        let lock = ptr_cast[usize](&mut block[0].lock)
+        let version = ptr_cast[usize](&mut block[0].version)
+        while true:
+            acquire(lock)
+            if block[0].closed != 0:
+                release(lock)
+                return @err(value)
+            if block[0].len < block[0].capacity:
+                block[0].items[(block[0].head + block[0].len) % block[0].capacity] = value
+                block[0].len = block[0].len + 1
+                bump(version)
+                release(lock)
+                return @ok(())
+            let seen = rt_atomic_load(version)
+            release(lock)
+            await rt_word_waiter(version, seen)
+        return @err(value)
+
+    #: Closes the channel: the receiver gets what is queued, then `@none`.
+    pub machine def close(self) -> unit:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        close_locked(self.inner)
+        release(lock)
+
+impl[T] clone for sender[T]:
+    #: Another sender on the same channel.
+    machine def clone(self) -> sender[T]:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        self.inner[0].senders = self.inner[0].senders + 1
+        self.inner[0].handles = self.inner[0].handles + 1
+        release(lock)
+        return sender[T] { inner: self.inner }
+
+impl[T] drop for sender[T]:
+    #: The last sender's drop closes the channel.
+    machine def drop(mut self) -> unit:
+        acquire(ptr_cast[usize](&mut self.inner[0].lock))
+        self.inner[0].senders = self.inner[0].senders - 1
+        if self.inner[0].senders == 0:
+            close_locked(self.inner)
+        release_handle(self.inner)
+
+extend[T] receiver[T]:
+    #: The next value, waiting while the channel is empty. `@none` once it is
+    #: closed and empty.
+    pub machine async def recv(self) -> option[T]:
+        let block = self.inner
+        let lock = ptr_cast[usize](&mut block[0].lock)
+        let version = ptr_cast[usize](&mut block[0].version)
+        while true:
+            acquire(lock)
+            if block[0].len > 0:
+                let value = block[0].items[block[0].head]
+                block[0].head = (block[0].head + 1) % block[0].capacity
+                block[0].len = block[0].len - 1
+                bump(version)
+                release(lock)
+                return @some(value)
+            if block[0].closed != 0:
+                release(lock)
+                return @none
+            let seen = rt_atomic_load(version)
+            release(lock)
+            await rt_word_waiter(version, seen)
+        return @none
+
+impl[T] drop for receiver[T]:
+    #: Closes the channel, so a waiting sender gets its value back.
+    machine def drop(mut self) -> unit:
+        acquire(ptr_cast[usize](&mut self.inner[0].lock))
+        close_locked(self.inner)
+        release_handle(self.inner)
+
+####################
+# watch[T]
+####################
+
+#: The heap record a watch's writer and readers point at.
+type watch_block[T] = {
+    lock: usize,
+    #: Counts the values written since the first; waited on by `changed`.
+    version: usize,
+    handles: usize,
+    value: T,
+}
+
+#: Writes the value a watch's readers see.
+pub type watch_writer[T] = {
+    inner: *mut watch_block[T],
+}
+
+#: Reads a watch's value and waits for it to change. Clone it for more
+#: readers; each notices a change once.
+pub type watch_reader[T] = {
+    inner: *mut watch_block[T],
+    #: The version this reader last saw.
+    seen: usize,
+}
+
+#: A value that changes over time, starting at `initial`.
+pub machine def watch[T](initial: T) -> (watch_writer[T], watch_reader[T]):
+    let block = alloc[watch_block[T]](1)
+    block[0] = watch_block[T] { lock: 0, version: 0, handles: 2, value: initial }
+    return (watch_writer[T] { inner: block }, watch_reader[T] { inner: block, seen: 0 })
+
+#: Gives up one handle; the last drops the value and frees the block.
+machine def release_watch[T](block: *mut watch_block[T]) -> unit:
+    let lock = ptr_cast[usize](&mut block[0].lock)
+    acquire(lock)
+    block[0].handles = block[0].handles - 1
+    let last = block[0].handles == 0
+    release(lock)
+    if last:
+        drop_in_place(ptr_cast[T](&mut block[0].value))
+        mem_free(block, 1)
+
+extend[T] watch_writer[T]:
+    #: Replaces the value, and wakes the readers waiting in `changed`.
+    pub machine def set(self, value: T) -> unit:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        drop_in_place(ptr_cast[T](&mut self.inner[0].value))
+        self.inner[0].value = value
+        bump(ptr_cast[usize](&mut self.inner[0].version))
+        release(lock)
+
+impl[T] drop for watch_writer[T]:
+    machine def drop(mut self) -> unit:
+        release_watch(self.inner)
+
+extend[T] watch_reader[T]:
+    #: A copy of the current value.
+    pub machine def get(self) -> T where T: copy:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        let value = self.inner[0].value
+        release(lock)
+        return value
+
+    #: A clone of the current value, for a `T` that is not `copy`.
+    pub machine def cloned(self) -> T where T: clone:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        let value = self.inner[0].value.clone()
+        release(lock)
+        return value
+
+    #: Waits until the value has changed since this reader last saw it.
+    pub machine async def changed(mut self) -> unit:
+        let version = ptr_cast[usize](&mut self.inner[0].version)
+        while true:
+            let now = rt_atomic_load(version)
+            if now != self.seen:
+                self.seen = now
+                return
+            await rt_word_waiter(version, now)
+
+impl[T] clone for watch_reader[T]:
+    #: Another reader of the same value, which has seen what this one has.
+    machine def clone(self) -> watch_reader[T]:
+        let lock = ptr_cast[usize](&mut self.inner[0].lock)
+        acquire(lock)
+        self.inner[0].handles = self.inner[0].handles + 1
+        release(lock)
+        return watch_reader[T] { inner: self.inner, seen: self.seen }
+
+impl[T] drop for watch_reader[T]:
+    machine def drop(mut self) -> unit:
+        release_watch(self.inner)

@@ -1,7 +1,7 @@
 # inference snapshot
-# 2322 interned types
+# 2602 interned types
 
-## node_types (31331)
+## node_types (32530)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -7195,6 +7195,23 @@ std/intrinsics.cn:189:63 [named_type] usize
 std/intrinsics.cn:193:35 [binding_pat] *mut usize
 std/intrinsics.cn:193:50 [binding_pat] usize
 std/intrinsics.cn:193:63 [named_type] usize
+std/intrinsics.cn:196:30 [binding_pat] *mut usize
+std/intrinsics.cn:196:48 [named_type] usize
+std/intrinsics.cn:199:31 [binding_pat] *mut usize
+std/intrinsics.cn:199:46 [binding_pat] usize
+std/intrinsics.cn:199:63 [named_type] unit
+std/intrinsics.cn:204:42 [binding_pat] *mut usize
+std/intrinsics.cn:204:57 [binding_pat] usize
+std/intrinsics.cn:204:74 [binding_pat] usize
+std/intrinsics.cn:204:93 [named_type] usize
+std/intrinsics.cn:217:28 [binding_pat] *mut usize
+std/intrinsics.cn:217:43 [binding_pat] usize
+std/intrinsics.cn:217:63 [named_type] unit
+std/intrinsics.cn:221:30 [binding_pat] *mut usize
+std/intrinsics.cn:221:45 [binding_pat] usize
+std/intrinsics.cn:221:65 [named_type] task[unit]
+std/intrinsics.cn:224:28 [binding_pat] *mut usize
+std/intrinsics.cn:224:46 [named_type] unit
 std/io.cn:21:14 [binding_pat] io_errno
 std/io.cn:21:30 [named_type] io_error
 std/io.cn:22:15 [module_path] int32
@@ -11447,6 +11464,1188 @@ std/string.cn:230:16 [ident] fn(str, str) -> str
 std/string.cn:230:16 [call] str
 std/string.cn:230:30 [ident] &str
 std/string.cn:230:36 [ident] str
+std/sync.cn:34:25 [binding_pat] T
+std/sync.cn:34:38 [named_type] atomic[T]
+std/sync.cn:35:13 [binding_pat] *mut usize
+std/sync.cn:35:20 [ident] _
+std/sync.cn:35:20 [index] fn(usize) -> *mut usize
+std/sync.cn:35:20 [call] *mut usize
+std/sync.cn:35:33 [literal] usize
+std/sync.cn:36:9 [ident] *mut usize
+std/sync.cn:36:9 [index] usize
+std/sync.cn:36:14 [literal] usize
+std/sync.cn:36:19 [ident] T
+std/sync.cn:36:19 [cast] usize
+std/sync.cn:37:16 [struct_literal] atomic[T]
+std/sync.cn:37:34 [ident] *mut usize
+std/sync.cn:40:26 [binding_pat] &atomic[T]
+std/sync.cn:40:35 [named_type] T
+std/sync.cn:41:16 [ident] fn(*mut usize) -> usize
+std/sync.cn:41:16 [call] usize
+std/sync.cn:41:16 [cast] T
+std/sync.cn:41:31 [module_path] *mut usize
+std/sync.cn:44:27 [binding_pat] &atomic[T]
+std/sync.cn:44:33 [binding_pat] T
+std/sync.cn:44:46 [named_type] unit
+std/sync.cn:45:9 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:45:9 [call] unit
+std/sync.cn:45:25 [module_path] *mut usize
+std/sync.cn:45:36 [ident] T
+std/sync.cn:45:36 [cast] usize
+std/sync.cn:50:38 [binding_pat] &atomic[T]
+std/sync.cn:50:44 [binding_pat] T
+std/sync.cn:50:57 [binding_pat] T
+std/sync.cn:50:72 [named_type] result[T, T]
+std/sync.cn:51:13 [binding_pat] usize
+std/sync.cn:51:22 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:51:22 [call] usize
+std/sync.cn:51:49 [module_path] *mut usize
+std/sync.cn:51:60 [ident] T
+std/sync.cn:51:60 [cast] usize
+std/sync.cn:51:79 [ident] T
+std/sync.cn:51:79 [cast] usize
+std/sync.cn:52:12 [ident] usize
+std/sync.cn:52:12 [binary] bool
+std/sync.cn:52:22 [ident] T
+std/sync.cn:52:22 [cast] usize
+std/sync.cn:53:20 [call] result[T, T]
+std/sync.cn:53:24 [ident] T
+std/sync.cn:54:16 [call] result[T, T]
+std/sync.cn:54:21 [ident] usize
+std/sync.cn:54:21 [cast] T
+std/sync.cn:57:26 [binding_pat] &atomic[T]
+std/sync.cn:57:32 [binding_pat] T
+std/sync.cn:57:45 [named_type] T
+std/sync.cn:58:15 [literal] bool
+std/sync.cn:59:17 [binding_pat] usize
+std/sync.cn:59:26 [ident] fn(*mut usize) -> usize
+std/sync.cn:59:26 [call] usize
+std/sync.cn:59:41 [module_path] *mut usize
+std/sync.cn:60:16 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:60:16 [call] usize
+std/sync.cn:60:16 [binary] bool
+std/sync.cn:60:43 [module_path] *mut usize
+std/sync.cn:60:54 [ident] usize
+std/sync.cn:60:62 [ident] T
+std/sync.cn:60:62 [cast] usize
+std/sync.cn:60:81 [ident] usize
+std/sync.cn:61:24 [ident] usize
+std/sync.cn:61:24 [cast] T
+std/sync.cn:62:16 [ident] T
+std/sync.cn:65:31 [binding_pat] &atomic[T]
+std/sync.cn:65:37 [binding_pat] T
+std/sync.cn:65:46 [named_type] T
+std/sync.cn:66:15 [literal] bool
+std/sync.cn:67:17 [binding_pat] usize
+std/sync.cn:67:26 [ident] fn(*mut usize) -> usize
+std/sync.cn:67:26 [call] usize
+std/sync.cn:67:41 [module_path] *mut usize
+std/sync.cn:68:17 [binding_pat] usize
+std/sync.cn:68:25 [group] T
+std/sync.cn:68:25 [cast] usize
+std/sync.cn:68:26 [group] T
+std/sync.cn:68:26 [binary] T
+std/sync.cn:68:27 [ident] usize
+std/sync.cn:68:27 [cast] T
+std/sync.cn:68:43 [ident] T
+std/sync.cn:69:16 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:69:16 [call] usize
+std/sync.cn:69:16 [binary] bool
+std/sync.cn:69:43 [module_path] *mut usize
+std/sync.cn:69:54 [ident] usize
+std/sync.cn:69:62 [ident] usize
+std/sync.cn:69:72 [ident] usize
+std/sync.cn:70:24 [ident] usize
+std/sync.cn:70:24 [cast] T
+std/sync.cn:71:16 [ident] T
+std/sync.cn:75:31 [binding_pat] &atomic[T]
+std/sync.cn:75:37 [binding_pat] T
+std/sync.cn:75:46 [named_type] T
+std/sync.cn:76:15 [literal] bool
+std/sync.cn:77:17 [binding_pat] usize
+std/sync.cn:77:26 [ident] fn(*mut usize) -> usize
+std/sync.cn:77:26 [call] usize
+std/sync.cn:77:41 [module_path] *mut usize
+std/sync.cn:78:17 [binding_pat] usize
+std/sync.cn:78:25 [group] T
+std/sync.cn:78:25 [cast] usize
+std/sync.cn:78:26 [group] T
+std/sync.cn:78:26 [binary] T
+std/sync.cn:78:27 [ident] usize
+std/sync.cn:78:27 [cast] T
+std/sync.cn:78:43 [ident] T
+std/sync.cn:79:16 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:79:16 [call] usize
+std/sync.cn:79:16 [binary] bool
+std/sync.cn:79:43 [module_path] *mut usize
+std/sync.cn:79:54 [ident] usize
+std/sync.cn:79:62 [ident] usize
+std/sync.cn:79:72 [ident] usize
+std/sync.cn:80:24 [ident] usize
+std/sync.cn:80:24 [cast] T
+std/sync.cn:81:16 [ident] T
+std/sync.cn:84:22 [binding_pat] &mut atomic[T]
+std/sync.cn:84:35 [named_type] unit
+std/sync.cn:85:9 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:85:9 [call] unit
+std/sync.cn:85:18 [module_path] *mut usize
+std/sync.cn:85:29 [literal] usize
+std/sync.cn:112:25 [binding_pat] T
+std/sync.cn:112:38 [named_type] mutex[T]
+std/sync.cn:113:13 [binding_pat] *mut mutex_block[T]
+std/sync.cn:113:21 [ident] _
+std/sync.cn:113:21 [index] fn(usize) -> *mut mutex_block[T]
+std/sync.cn:113:21 [call] *mut mutex_block[T]
+std/sync.cn:113:43 [literal] usize
+std/sync.cn:114:9 [ident] *mut mutex_block[T]
+std/sync.cn:114:9 [index] mutex_block[T]
+std/sync.cn:114:15 [literal] usize
+std/sync.cn:114:20 [struct_literal] mutex_block[T]
+std/sync.cn:114:44 [literal] usize
+std/sync.cn:114:54 [ident] T
+std/sync.cn:115:16 [struct_literal] mutex[T]
+std/sync.cn:115:34 [ident] *mut mutex_block[T]
+std/sync.cn:118:26 [binding_pat] &mutex[T]
+std/sync.cn:118:35 [named_type] mutex_guard[T]
+std/sync.cn:119:13 [binding_pat] *mut usize
+std/sync.cn:119:20 [ident] _
+std/sync.cn:119:20 [call] *mut usize
+std/sync.cn:119:36 [unary] &mut usize
+std/sync.cn:119:41 [ident] &mutex[T]
+std/sync.cn:119:41 [field] *mut mutex_block[T]
+std/sync.cn:119:41 [index] mutex_block[T]
+std/sync.cn:119:41 [field] usize
+std/sync.cn:119:52 [literal] usize
+std/sync.cn:120:15 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:120:15 [call] usize
+std/sync.cn:120:15 [binary] bool
+std/sync.cn:120:42 [ident] *mut usize
+std/sync.cn:120:48 [literal] usize
+std/sync.cn:120:51 [literal] usize
+std/sync.cn:120:57 [literal] usize
+std/sync.cn:121:13 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:121:13 [call] unit
+std/sync.cn:121:26 [ident] *mut usize
+std/sync.cn:121:32 [literal] usize
+std/sync.cn:122:16 [struct_literal] mutex_guard[T]
+std/sync.cn:122:40 [module_path] *mut mutex_block[T]
+std/sync.cn:125:30 [binding_pat] &mutex[T]
+std/sync.cn:125:39 [named_type] option[mutex_guard[T]]
+std/sync.cn:126:13 [binding_pat] *mut usize
+std/sync.cn:126:20 [ident] _
+std/sync.cn:126:20 [call] *mut usize
+std/sync.cn:126:36 [unary] &mut usize
+std/sync.cn:126:41 [ident] &mutex[T]
+std/sync.cn:126:41 [field] *mut mutex_block[T]
+std/sync.cn:126:41 [index] mutex_block[T]
+std/sync.cn:126:41 [field] usize
+std/sync.cn:126:52 [literal] usize
+std/sync.cn:127:12 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:127:12 [call] usize
+std/sync.cn:127:12 [binary] bool
+std/sync.cn:127:39 [ident] *mut usize
+std/sync.cn:127:45 [literal] usize
+std/sync.cn:127:48 [literal] usize
+std/sync.cn:127:54 [literal] usize
+std/sync.cn:128:20 [ident] option[mutex_guard[T]]
+std/sync.cn:129:16 [call] option[mutex_guard[T]]
+std/sync.cn:129:22 [struct_literal] mutex_guard[T]
+std/sync.cn:129:46 [module_path] *mut mutex_block[T]
+std/sync.cn:133:25 [binding_pat] &mutex_guard[T]
+std/sync.cn:133:34 [ref_type] &T
+std/sync.cn:134:16 [unary] &T
+std/sync.cn:134:17 [ident] &mutex_guard[T]
+std/sync.cn:134:17 [field] *mut mutex_block[T]
+std/sync.cn:134:17 [index] mutex_block[T]
+std/sync.cn:134:17 [field] T
+std/sync.cn:134:28 [literal] usize
+std/sync.cn:137:29 [binding_pat] &mut mutex_guard[T]
+std/sync.cn:137:42 [ref_type] &mut T
+std/sync.cn:138:16 [unary] &mut T
+std/sync.cn:138:21 [ident] &mut mutex_guard[T]
+std/sync.cn:138:21 [field] *mut mutex_block[T]
+std/sync.cn:138:21 [index] mutex_block[T]
+std/sync.cn:138:21 [field] T
+std/sync.cn:138:32 [literal] usize
+std/sync.cn:141:25 [binding_pat] &mut mutex_guard[T]
+std/sync.cn:141:35 [binding_pat] T
+std/sync.cn:141:48 [named_type] unit
+std/sync.cn:142:9 [ident] fn(*mut T) -> unit
+std/sync.cn:142:9 [call] unit
+std/sync.cn:142:23 [ident] _
+std/sync.cn:142:23 [call] *mut T
+std/sync.cn:142:35 [unary] &mut T
+std/sync.cn:142:40 [ident] &mut mutex_guard[T]
+std/sync.cn:142:40 [field] *mut mutex_block[T]
+std/sync.cn:142:40 [index] mutex_block[T]
+std/sync.cn:142:40 [field] T
+std/sync.cn:142:51 [literal] usize
+std/sync.cn:143:9 [ident] &mut mutex_guard[T]
+std/sync.cn:143:9 [field] *mut mutex_block[T]
+std/sync.cn:143:9 [index] mutex_block[T]
+std/sync.cn:143:9 [field] T
+std/sync.cn:143:20 [literal] usize
+std/sync.cn:143:31 [ident] T
+std/sync.cn:147:23 [binding_pat] &mutex_guard[T]
+std/sync.cn:147:32 [ref_type] &T
+std/sync.cn:148:16 [unary] &T
+std/sync.cn:148:17 [ident] &mutex_guard[T]
+std/sync.cn:148:17 [field] *mut mutex_block[T]
+std/sync.cn:148:17 [index] mutex_block[T]
+std/sync.cn:148:17 [field] T
+std/sync.cn:148:28 [literal] usize
+std/sync.cn:152:22 [binding_pat] &mut mutex_guard[T]
+std/sync.cn:152:35 [named_type] unit
+std/sync.cn:153:13 [binding_pat] *mut usize
+std/sync.cn:153:20 [ident] _
+std/sync.cn:153:20 [call] *mut usize
+std/sync.cn:153:36 [unary] &mut usize
+std/sync.cn:153:41 [ident] &mut mutex_guard[T]
+std/sync.cn:153:41 [field] *mut mutex_block[T]
+std/sync.cn:153:41 [index] mutex_block[T]
+std/sync.cn:153:41 [field] usize
+std/sync.cn:153:52 [literal] usize
+std/sync.cn:154:9 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:154:9 [call] unit
+std/sync.cn:154:25 [ident] *mut usize
+std/sync.cn:154:31 [literal] usize
+std/sync.cn:155:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:155:9 [call] unit
+std/sync.cn:155:22 [ident] *mut usize
+std/sync.cn:158:22 [binding_pat] &mut mutex[T]
+std/sync.cn:158:35 [named_type] unit
+std/sync.cn:159:9 [ident] fn(*mut T) -> unit
+std/sync.cn:159:9 [call] unit
+std/sync.cn:159:23 [ident] _
+std/sync.cn:159:23 [call] *mut T
+std/sync.cn:159:35 [unary] &mut T
+std/sync.cn:159:40 [ident] &mut mutex[T]
+std/sync.cn:159:40 [field] *mut mutex_block[T]
+std/sync.cn:159:40 [index] mutex_block[T]
+std/sync.cn:159:40 [field] T
+std/sync.cn:159:51 [literal] usize
+std/sync.cn:160:9 [ident] fn(*mut mutex_block[T], usize) -> unit
+std/sync.cn:160:9 [call] unit
+std/sync.cn:160:18 [module_path] *mut mutex_block[T]
+std/sync.cn:160:30 [literal] usize
+std/sync.cn:168:30 [literal] usize
+std/sync.cn:196:25 [binding_pat] T
+std/sync.cn:196:38 [named_type] rwlock[T]
+std/sync.cn:197:13 [binding_pat] *mut rwlock_block[T]
+std/sync.cn:197:21 [ident] _
+std/sync.cn:197:21 [index] fn(usize) -> *mut rwlock_block[T]
+std/sync.cn:197:21 [call] *mut rwlock_block[T]
+std/sync.cn:197:44 [literal] usize
+std/sync.cn:198:9 [ident] *mut rwlock_block[T]
+std/sync.cn:198:9 [index] rwlock_block[T]
+std/sync.cn:198:15 [literal] usize
+std/sync.cn:198:20 [struct_literal] rwlock_block[T]
+std/sync.cn:198:45 [literal] usize
+std/sync.cn:198:55 [ident] T
+std/sync.cn:199:16 [struct_literal] rwlock[T]
+std/sync.cn:199:35 [ident] *mut rwlock_block[T]
+std/sync.cn:203:26 [binding_pat] &rwlock[T]
+std/sync.cn:203:35 [named_type] read_guard[T]
+std/sync.cn:204:13 [binding_pat] *mut usize
+std/sync.cn:204:20 [ident] _
+std/sync.cn:204:20 [call] *mut usize
+std/sync.cn:204:36 [unary] &mut usize
+std/sync.cn:204:41 [ident] &rwlock[T]
+std/sync.cn:204:41 [field] *mut rwlock_block[T]
+std/sync.cn:204:41 [index] rwlock_block[T]
+std/sync.cn:204:41 [field] usize
+std/sync.cn:204:52 [literal] usize
+std/sync.cn:205:15 [literal] bool
+std/sync.cn:206:17 [binding_pat] usize
+std/sync.cn:206:25 [ident] fn(*mut usize) -> usize
+std/sync.cn:206:25 [call] usize
+std/sync.cn:206:40 [ident] *mut usize
+std/sync.cn:207:16 [ident] usize
+std/sync.cn:207:16 [binary] bool
+std/sync.cn:207:25 [ident] usize
+std/sync.cn:207:25 [literal] usize
+std/sync.cn:208:17 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:208:17 [call] unit
+std/sync.cn:208:30 [ident] *mut usize
+std/sync.cn:208:36 [ident] usize
+std/sync.cn:208:36 [literal] usize
+std/sync.cn:209:18 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:209:18 [call] usize
+std/sync.cn:209:18 [binary] bool
+std/sync.cn:209:45 [ident] *mut usize
+std/sync.cn:209:51 [ident] usize
+std/sync.cn:209:58 [ident] usize
+std/sync.cn:209:58 [binary] usize
+std/sync.cn:209:66 [literal] usize
+std/sync.cn:209:72 [ident] usize
+std/sync.cn:210:24 [struct_literal] read_guard[T]
+std/sync.cn:210:47 [module_path] *mut rwlock_block[T]
+std/sync.cn:211:16 [struct_literal] read_guard[T]
+std/sync.cn:211:39 [module_path] *mut rwlock_block[T]
+std/sync.cn:215:27 [binding_pat] &rwlock[T]
+std/sync.cn:215:36 [named_type] write_guard[T]
+std/sync.cn:216:13 [binding_pat] *mut usize
+std/sync.cn:216:20 [ident] _
+std/sync.cn:216:20 [call] *mut usize
+std/sync.cn:216:36 [unary] &mut usize
+std/sync.cn:216:41 [ident] &rwlock[T]
+std/sync.cn:216:41 [field] *mut rwlock_block[T]
+std/sync.cn:216:41 [index] rwlock_block[T]
+std/sync.cn:216:41 [field] usize
+std/sync.cn:216:52 [literal] usize
+std/sync.cn:217:15 [literal] bool
+std/sync.cn:218:17 [binding_pat] usize
+std/sync.cn:218:25 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:218:25 [call] usize
+std/sync.cn:218:52 [ident] *mut usize
+std/sync.cn:218:58 [literal] usize
+std/sync.cn:218:61 [ident] usize
+std/sync.cn:218:61 [literal] usize
+std/sync.cn:219:16 [ident] usize
+std/sync.cn:219:16 [binary] bool
+std/sync.cn:219:25 [literal] usize
+std/sync.cn:220:24 [struct_literal] write_guard[T]
+std/sync.cn:220:48 [module_path] *mut rwlock_block[T]
+std/sync.cn:221:13 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:221:13 [call] unit
+std/sync.cn:221:26 [ident] *mut usize
+std/sync.cn:221:32 [ident] usize
+std/sync.cn:222:16 [struct_literal] write_guard[T]
+std/sync.cn:222:40 [module_path] *mut rwlock_block[T]
+std/sync.cn:226:25 [binding_pat] &read_guard[T]
+std/sync.cn:226:34 [ref_type] &T
+std/sync.cn:227:16 [unary] &T
+std/sync.cn:227:17 [ident] &read_guard[T]
+std/sync.cn:227:17 [field] *mut rwlock_block[T]
+std/sync.cn:227:17 [index] rwlock_block[T]
+std/sync.cn:227:17 [field] T
+std/sync.cn:227:28 [literal] usize
+std/sync.cn:231:23 [binding_pat] &read_guard[T]
+std/sync.cn:231:32 [ref_type] &T
+std/sync.cn:232:16 [unary] &T
+std/sync.cn:232:17 [ident] &read_guard[T]
+std/sync.cn:232:17 [field] *mut rwlock_block[T]
+std/sync.cn:232:17 [index] rwlock_block[T]
+std/sync.cn:232:17 [field] T
+std/sync.cn:232:28 [literal] usize
+std/sync.cn:236:22 [binding_pat] &mut read_guard[T]
+std/sync.cn:236:35 [named_type] unit
+std/sync.cn:237:13 [binding_pat] *mut usize
+std/sync.cn:237:20 [ident] _
+std/sync.cn:237:20 [call] *mut usize
+std/sync.cn:237:36 [unary] &mut usize
+std/sync.cn:237:41 [ident] &mut read_guard[T]
+std/sync.cn:237:41 [field] *mut rwlock_block[T]
+std/sync.cn:237:41 [index] rwlock_block[T]
+std/sync.cn:237:41 [field] usize
+std/sync.cn:237:52 [literal] usize
+std/sync.cn:238:15 [literal] bool
+std/sync.cn:239:17 [binding_pat] usize
+std/sync.cn:239:25 [ident] fn(*mut usize) -> usize
+std/sync.cn:239:25 [call] usize
+std/sync.cn:239:40 [ident] *mut usize
+std/sync.cn:240:16 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:240:16 [call] usize
+std/sync.cn:240:16 [binary] bool
+std/sync.cn:240:43 [ident] *mut usize
+std/sync.cn:240:49 [ident] usize
+std/sync.cn:240:56 [ident] usize
+std/sync.cn:240:56 [binary] usize
+std/sync.cn:240:64 [literal] usize
+std/sync.cn:240:70 [ident] usize
+std/sync.cn:241:20 [ident] usize
+std/sync.cn:241:20 [binary] bool
+std/sync.cn:241:29 [literal] usize
+std/sync.cn:242:21 [ident] fn(*mut usize) -> unit
+std/sync.cn:242:21 [call] unit
+std/sync.cn:242:34 [ident] *mut usize
+std/sync.cn:247:25 [binding_pat] &write_guard[T]
+std/sync.cn:247:34 [ref_type] &T
+std/sync.cn:248:16 [unary] &T
+std/sync.cn:248:17 [ident] &write_guard[T]
+std/sync.cn:248:17 [field] *mut rwlock_block[T]
+std/sync.cn:248:17 [index] rwlock_block[T]
+std/sync.cn:248:17 [field] T
+std/sync.cn:248:28 [literal] usize
+std/sync.cn:251:29 [binding_pat] &mut write_guard[T]
+std/sync.cn:251:42 [ref_type] &mut T
+std/sync.cn:252:16 [unary] &mut T
+std/sync.cn:252:21 [ident] &mut write_guard[T]
+std/sync.cn:252:21 [field] *mut rwlock_block[T]
+std/sync.cn:252:21 [index] rwlock_block[T]
+std/sync.cn:252:21 [field] T
+std/sync.cn:252:32 [literal] usize
+std/sync.cn:255:25 [binding_pat] &mut write_guard[T]
+std/sync.cn:255:35 [binding_pat] T
+std/sync.cn:255:48 [named_type] unit
+std/sync.cn:256:9 [ident] fn(*mut T) -> unit
+std/sync.cn:256:9 [call] unit
+std/sync.cn:256:23 [ident] _
+std/sync.cn:256:23 [call] *mut T
+std/sync.cn:256:35 [unary] &mut T
+std/sync.cn:256:40 [ident] &mut write_guard[T]
+std/sync.cn:256:40 [field] *mut rwlock_block[T]
+std/sync.cn:256:40 [index] rwlock_block[T]
+std/sync.cn:256:40 [field] T
+std/sync.cn:256:51 [literal] usize
+std/sync.cn:257:9 [ident] &mut write_guard[T]
+std/sync.cn:257:9 [field] *mut rwlock_block[T]
+std/sync.cn:257:9 [index] rwlock_block[T]
+std/sync.cn:257:9 [field] T
+std/sync.cn:257:20 [literal] usize
+std/sync.cn:257:31 [ident] T
+std/sync.cn:261:23 [binding_pat] &write_guard[T]
+std/sync.cn:261:32 [ref_type] &T
+std/sync.cn:262:16 [unary] &T
+std/sync.cn:262:17 [ident] &write_guard[T]
+std/sync.cn:262:17 [field] *mut rwlock_block[T]
+std/sync.cn:262:17 [index] rwlock_block[T]
+std/sync.cn:262:17 [field] T
+std/sync.cn:262:28 [literal] usize
+std/sync.cn:266:22 [binding_pat] &mut write_guard[T]
+std/sync.cn:266:35 [named_type] unit
+std/sync.cn:267:13 [binding_pat] *mut usize
+std/sync.cn:267:20 [ident] _
+std/sync.cn:267:20 [call] *mut usize
+std/sync.cn:267:36 [unary] &mut usize
+std/sync.cn:267:41 [ident] &mut write_guard[T]
+std/sync.cn:267:41 [field] *mut rwlock_block[T]
+std/sync.cn:267:41 [index] rwlock_block[T]
+std/sync.cn:267:41 [field] usize
+std/sync.cn:267:52 [literal] usize
+std/sync.cn:268:9 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:268:9 [call] unit
+std/sync.cn:268:25 [ident] *mut usize
+std/sync.cn:268:31 [literal] usize
+std/sync.cn:269:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:269:9 [call] unit
+std/sync.cn:269:22 [ident] *mut usize
+std/sync.cn:272:22 [binding_pat] &mut rwlock[T]
+std/sync.cn:272:35 [named_type] unit
+std/sync.cn:273:9 [ident] fn(*mut T) -> unit
+std/sync.cn:273:9 [call] unit
+std/sync.cn:273:23 [ident] _
+std/sync.cn:273:23 [call] *mut T
+std/sync.cn:273:35 [unary] &mut T
+std/sync.cn:273:40 [ident] &mut rwlock[T]
+std/sync.cn:273:40 [field] *mut rwlock_block[T]
+std/sync.cn:273:40 [index] rwlock_block[T]
+std/sync.cn:273:40 [field] T
+std/sync.cn:273:51 [literal] usize
+std/sync.cn:274:9 [ident] fn(*mut rwlock_block[T], usize) -> unit
+std/sync.cn:274:9 [call] unit
+std/sync.cn:274:18 [module_path] *mut rwlock_block[T]
+std/sync.cn:274:30 [literal] usize
+std/sync.cn:283:21 [binding_pat] *mut usize
+std/sync.cn:283:42 [named_type] unit
+std/sync.cn:284:11 [ident] fn(*mut usize, usize, usize) -> usize
+std/sync.cn:284:11 [call] usize
+std/sync.cn:284:11 [binary] bool
+std/sync.cn:284:38 [ident] *mut usize
+std/sync.cn:284:44 [literal] usize
+std/sync.cn:284:47 [literal] usize
+std/sync.cn:284:53 [literal] usize
+std/sync.cn:285:9 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:285:9 [call] unit
+std/sync.cn:285:22 [ident] *mut usize
+std/sync.cn:285:28 [literal] usize
+std/sync.cn:288:21 [binding_pat] *mut usize
+std/sync.cn:288:42 [named_type] unit
+std/sync.cn:289:5 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:289:5 [call] unit
+std/sync.cn:289:21 [ident] *mut usize
+std/sync.cn:289:27 [literal] usize
+std/sync.cn:290:5 [ident] fn(*mut usize) -> unit
+std/sync.cn:290:5 [call] unit
+std/sync.cn:290:18 [ident] *mut usize
+std/sync.cn:293:18 [binding_pat] *mut usize
+std/sync.cn:293:39 [named_type] unit
+std/sync.cn:294:5 [ident] fn(*mut usize, usize) -> unit
+std/sync.cn:294:5 [call] unit
+std/sync.cn:294:21 [ident] *mut usize
+std/sync.cn:294:27 [ident] fn(*mut usize) -> usize
+std/sync.cn:294:27 [call] usize
+std/sync.cn:294:27 [binary] usize
+std/sync.cn:294:42 [ident] *mut usize
+std/sync.cn:294:50 [literal] usize
+std/sync.cn:295:5 [ident] fn(*mut usize) -> unit
+std/sync.cn:295:5 [call] unit
+std/sync.cn:295:18 [ident] *mut usize
+std/sync.cn:334:28 [binding_pat] usize
+std/sync.cn:334:48 [tuple_type] (sender[T], receiver[T])
+std/sync.cn:335:5 [var_stmt] usize
+std/sync.cn:335:17 [ident] usize
+std/sync.cn:336:8 [ident] usize
+std/sync.cn:336:8 [binary] bool
+std/sync.cn:336:17 [literal] usize
+std/sync.cn:337:9 [ident] usize
+std/sync.cn:337:17 [literal] usize
+std/sync.cn:338:9 [binding_pat] *mut channel_block[T]
+std/sync.cn:338:17 [ident] _
+std/sync.cn:338:17 [index] fn(usize) -> *mut channel_block[T]
+std/sync.cn:338:17 [call] *mut channel_block[T]
+std/sync.cn:338:41 [literal] usize
+std/sync.cn:339:5 [ident] *mut channel_block[T]
+std/sync.cn:339:5 [index] channel_block[T]
+std/sync.cn:339:11 [literal] usize
+std/sync.cn:339:16 [struct_literal] channel_block[T]
+std/sync.cn:340:15 [literal] usize
+std/sync.cn:341:18 [literal] usize
+std/sync.cn:342:17 [literal] usize
+std/sync.cn:343:18 [literal] usize
+std/sync.cn:344:18 [literal] usize
+std/sync.cn:345:16 [ident] _
+std/sync.cn:345:16 [index] fn(usize) -> *mut T
+std/sync.cn:345:16 [call] *mut T
+std/sync.cn:345:25 [ident] usize
+std/sync.cn:346:15 [literal] usize
+std/sync.cn:347:14 [literal] usize
+std/sync.cn:348:19 [ident] usize
+std/sync.cn:350:12 [tuple] (sender[T], receiver[T])
+std/sync.cn:350:13 [struct_literal] sender[T]
+std/sync.cn:350:32 [ident] *mut channel_block[T]
+std/sync.cn:350:41 [struct_literal] receiver[T]
+std/sync.cn:350:62 [ident] *mut channel_block[T]
+std/sync.cn:353:29 [binding_pat] *mut channel_block[T]
+std/sync.cn:353:62 [named_type] unit
+std/sync.cn:354:8 [ident] *mut channel_block[T]
+std/sync.cn:354:8 [index] channel_block[T]
+std/sync.cn:354:8 [field] usize
+std/sync.cn:354:8 [binary] bool
+std/sync.cn:354:14 [literal] usize
+std/sync.cn:354:27 [literal] usize
+std/sync.cn:355:9 [ident] *mut channel_block[T]
+std/sync.cn:355:9 [index] channel_block[T]
+std/sync.cn:355:9 [field] usize
+std/sync.cn:355:15 [literal] usize
+std/sync.cn:355:27 [literal] usize
+std/sync.cn:356:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:356:9 [call] unit
+std/sync.cn:356:14 [ident] _
+std/sync.cn:356:14 [call] *mut usize
+std/sync.cn:356:30 [unary] &mut usize
+std/sync.cn:356:35 [ident] *mut channel_block[T]
+std/sync.cn:356:35 [index] channel_block[T]
+std/sync.cn:356:35 [field] usize
+std/sync.cn:356:41 [literal] usize
+std/sync.cn:360:31 [binding_pat] *mut channel_block[T]
+std/sync.cn:360:64 [named_type] unit
+std/sync.cn:361:5 [ident] *mut channel_block[T]
+std/sync.cn:361:5 [index] channel_block[T]
+std/sync.cn:361:5 [field] usize
+std/sync.cn:361:11 [literal] usize
+std/sync.cn:361:24 [ident] *mut channel_block[T]
+std/sync.cn:361:24 [index] channel_block[T]
+std/sync.cn:361:24 [field] usize
+std/sync.cn:361:24 [binary] usize
+std/sync.cn:361:30 [literal] usize
+std/sync.cn:361:43 [literal] usize
+std/sync.cn:362:9 [binding_pat] bool
+std/sync.cn:362:16 [ident] *mut channel_block[T]
+std/sync.cn:362:16 [index] channel_block[T]
+std/sync.cn:362:16 [field] usize
+std/sync.cn:362:16 [binary] bool
+std/sync.cn:362:22 [literal] usize
+std/sync.cn:362:36 [literal] usize
+std/sync.cn:363:5 [ident] fn(*mut usize) -> unit
+std/sync.cn:363:5 [call] unit
+std/sync.cn:363:13 [ident] _
+std/sync.cn:363:13 [call] *mut usize
+std/sync.cn:363:29 [unary] &mut usize
+std/sync.cn:363:34 [ident] *mut channel_block[T]
+std/sync.cn:363:34 [index] channel_block[T]
+std/sync.cn:363:34 [field] usize
+std/sync.cn:363:40 [literal] usize
+std/sync.cn:364:8 [ident] bool
+std/sync.cn:365:9 [var_stmt] usize
+std/sync.cn:365:24 [literal] usize
+std/sync.cn:366:15 [ident] usize
+std/sync.cn:366:15 [binary] bool
+std/sync.cn:366:19 [ident] *mut channel_block[T]
+std/sync.cn:366:19 [index] channel_block[T]
+std/sync.cn:366:19 [field] usize
+std/sync.cn:366:25 [literal] usize
+std/sync.cn:367:13 [ident] fn(*mut T) -> unit
+std/sync.cn:367:13 [call] unit
+std/sync.cn:367:27 [unary] *mut T
+std/sync.cn:367:32 [ident] *mut channel_block[T]
+std/sync.cn:367:32 [index] channel_block[T]
+std/sync.cn:367:32 [field] *mut T
+std/sync.cn:367:32 [index] T
+std/sync.cn:367:38 [literal] usize
+std/sync.cn:367:47 [group] usize
+std/sync.cn:367:47 [binary] usize
+std/sync.cn:367:48 [ident] *mut channel_block[T]
+std/sync.cn:367:48 [index] channel_block[T]
+std/sync.cn:367:48 [field] usize
+std/sync.cn:367:48 [binary] usize
+std/sync.cn:367:54 [literal] usize
+std/sync.cn:367:64 [ident] usize
+std/sync.cn:367:69 [ident] *mut channel_block[T]
+std/sync.cn:367:69 [index] channel_block[T]
+std/sync.cn:367:69 [field] usize
+std/sync.cn:367:75 [literal] usize
+std/sync.cn:368:13 [ident] usize
+std/sync.cn:368:17 [ident] usize
+std/sync.cn:368:17 [binary] usize
+std/sync.cn:368:21 [literal] usize
+std/sync.cn:369:9 [ident] fn(*mut T, usize) -> unit
+std/sync.cn:369:9 [call] unit
+std/sync.cn:369:18 [ident] *mut channel_block[T]
+std/sync.cn:369:18 [index] channel_block[T]
+std/sync.cn:369:18 [field] *mut T
+std/sync.cn:369:24 [literal] usize
+std/sync.cn:369:34 [ident] *mut channel_block[T]
+std/sync.cn:369:34 [index] channel_block[T]
+std/sync.cn:369:34 [field] usize
+std/sync.cn:369:40 [literal] usize
+std/sync.cn:370:9 [ident] fn(*mut channel_block[T], usize) -> unit
+std/sync.cn:370:9 [call] unit
+std/sync.cn:370:18 [ident] *mut channel_block[T]
+std/sync.cn:370:25 [literal] usize
+std/sync.cn:375:32 [binding_pat] &sender[T]
+std/sync.cn:375:38 [binding_pat] T
+std/sync.cn:375:51 [named_type] result[unit, T]
+std/sync.cn:376:13 [binding_pat] *mut channel_block[T]
+std/sync.cn:376:21 [module_path] *mut channel_block[T]
+std/sync.cn:377:13 [binding_pat] *mut usize
+std/sync.cn:377:20 [ident] _
+std/sync.cn:377:20 [call] *mut usize
+std/sync.cn:377:36 [unary] &mut usize
+std/sync.cn:377:41 [ident] *mut channel_block[T]
+std/sync.cn:377:41 [index] channel_block[T]
+std/sync.cn:377:41 [field] usize
+std/sync.cn:377:47 [literal] usize
+std/sync.cn:378:13 [binding_pat] *mut usize
+std/sync.cn:378:23 [ident] _
+std/sync.cn:378:23 [call] *mut usize
+std/sync.cn:378:39 [unary] &mut usize
+std/sync.cn:378:44 [ident] *mut channel_block[T]
+std/sync.cn:378:44 [index] channel_block[T]
+std/sync.cn:378:44 [field] usize
+std/sync.cn:378:50 [literal] usize
+std/sync.cn:379:15 [literal] bool
+std/sync.cn:380:13 [ident] fn(*mut usize) -> unit
+std/sync.cn:380:13 [call] unit
+std/sync.cn:380:21 [ident] *mut usize
+std/sync.cn:381:16 [ident] *mut channel_block[T]
+std/sync.cn:381:16 [index] channel_block[T]
+std/sync.cn:381:16 [field] usize
+std/sync.cn:381:16 [binary] bool
+std/sync.cn:381:22 [literal] usize
+std/sync.cn:381:35 [literal] usize
+std/sync.cn:382:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:382:17 [call] unit
+std/sync.cn:382:25 [ident] *mut usize
+std/sync.cn:383:24 [call] result[unit, T]
+std/sync.cn:383:29 [ident] T
+std/sync.cn:384:16 [ident] *mut channel_block[T]
+std/sync.cn:384:16 [index] channel_block[T]
+std/sync.cn:384:16 [field] usize
+std/sync.cn:384:16 [binary] bool
+std/sync.cn:384:22 [literal] usize
+std/sync.cn:384:31 [ident] *mut channel_block[T]
+std/sync.cn:384:31 [index] channel_block[T]
+std/sync.cn:384:31 [field] usize
+std/sync.cn:384:37 [literal] usize
+std/sync.cn:385:17 [ident] *mut channel_block[T]
+std/sync.cn:385:17 [index] channel_block[T]
+std/sync.cn:385:17 [field] *mut T
+std/sync.cn:385:17 [index] T
+std/sync.cn:385:23 [literal] usize
+std/sync.cn:385:32 [group] usize
+std/sync.cn:385:32 [binary] usize
+std/sync.cn:385:33 [ident] *mut channel_block[T]
+std/sync.cn:385:33 [index] channel_block[T]
+std/sync.cn:385:33 [field] usize
+std/sync.cn:385:33 [binary] usize
+std/sync.cn:385:39 [literal] usize
+std/sync.cn:385:49 [ident] *mut channel_block[T]
+std/sync.cn:385:49 [index] channel_block[T]
+std/sync.cn:385:49 [field] usize
+std/sync.cn:385:55 [literal] usize
+std/sync.cn:385:65 [ident] *mut channel_block[T]
+std/sync.cn:385:65 [index] channel_block[T]
+std/sync.cn:385:65 [field] usize
+std/sync.cn:385:71 [literal] usize
+std/sync.cn:385:86 [ident] T
+std/sync.cn:386:17 [ident] *mut channel_block[T]
+std/sync.cn:386:17 [index] channel_block[T]
+std/sync.cn:386:17 [field] usize
+std/sync.cn:386:23 [literal] usize
+std/sync.cn:386:32 [ident] *mut channel_block[T]
+std/sync.cn:386:32 [index] channel_block[T]
+std/sync.cn:386:32 [field] usize
+std/sync.cn:386:32 [binary] usize
+std/sync.cn:386:38 [literal] usize
+std/sync.cn:386:47 [literal] usize
+std/sync.cn:387:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:387:17 [call] unit
+std/sync.cn:387:22 [ident] *mut usize
+std/sync.cn:388:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:388:17 [call] unit
+std/sync.cn:388:25 [ident] *mut usize
+std/sync.cn:389:24 [call] result[unit, T]
+std/sync.cn:389:28 [literal] unit
+std/sync.cn:390:17 [binding_pat] usize
+std/sync.cn:390:24 [ident] fn(*mut usize) -> usize
+std/sync.cn:390:24 [call] usize
+std/sync.cn:390:39 [ident] *mut usize
+std/sync.cn:391:13 [ident] fn(*mut usize) -> unit
+std/sync.cn:391:13 [call] unit
+std/sync.cn:391:21 [ident] *mut usize
+std/sync.cn:392:13 [await] unit
+std/sync.cn:392:19 [ident] fn(*mut usize, usize) -> task[unit]
+std/sync.cn:392:19 [call] task[unit]
+std/sync.cn:392:34 [ident] *mut usize
+std/sync.cn:392:43 [ident] usize
+std/sync.cn:393:16 [call] result[unit, T]
+std/sync.cn:393:21 [ident] T
+std/sync.cn:396:27 [binding_pat] &sender[T]
+std/sync.cn:396:36 [named_type] unit
+std/sync.cn:397:13 [binding_pat] *mut usize
+std/sync.cn:397:20 [ident] _
+std/sync.cn:397:20 [call] *mut usize
+std/sync.cn:397:36 [unary] &mut usize
+std/sync.cn:397:41 [ident] &sender[T]
+std/sync.cn:397:41 [field] *mut channel_block[T]
+std/sync.cn:397:41 [index] channel_block[T]
+std/sync.cn:397:41 [field] usize
+std/sync.cn:397:52 [literal] usize
+std/sync.cn:398:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:398:9 [call] unit
+std/sync.cn:398:17 [ident] *mut usize
+std/sync.cn:399:9 [ident] fn(*mut channel_block[T]) -> unit
+std/sync.cn:399:9 [call] unit
+std/sync.cn:399:22 [module_path] *mut channel_block[T]
+std/sync.cn:400:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:400:9 [call] unit
+std/sync.cn:400:17 [ident] *mut usize
+std/sync.cn:404:23 [binding_pat] &sender[T]
+std/sync.cn:404:32 [named_type] sender[T]
+std/sync.cn:405:13 [binding_pat] *mut usize
+std/sync.cn:405:20 [ident] _
+std/sync.cn:405:20 [call] *mut usize
+std/sync.cn:405:36 [unary] &mut usize
+std/sync.cn:405:41 [ident] &sender[T]
+std/sync.cn:405:41 [field] *mut channel_block[T]
+std/sync.cn:405:41 [index] channel_block[T]
+std/sync.cn:405:41 [field] usize
+std/sync.cn:405:52 [literal] usize
+std/sync.cn:406:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:406:9 [call] unit
+std/sync.cn:406:17 [ident] *mut usize
+std/sync.cn:407:9 [ident] &sender[T]
+std/sync.cn:407:9 [field] *mut channel_block[T]
+std/sync.cn:407:9 [index] channel_block[T]
+std/sync.cn:407:9 [field] usize
+std/sync.cn:407:20 [literal] usize
+std/sync.cn:407:33 [ident] &sender[T]
+std/sync.cn:407:33 [field] *mut channel_block[T]
+std/sync.cn:407:33 [index] channel_block[T]
+std/sync.cn:407:33 [field] usize
+std/sync.cn:407:33 [binary] usize
+std/sync.cn:407:44 [literal] usize
+std/sync.cn:407:57 [literal] usize
+std/sync.cn:408:9 [ident] &sender[T]
+std/sync.cn:408:9 [field] *mut channel_block[T]
+std/sync.cn:408:9 [index] channel_block[T]
+std/sync.cn:408:9 [field] usize
+std/sync.cn:408:20 [literal] usize
+std/sync.cn:408:33 [ident] &sender[T]
+std/sync.cn:408:33 [field] *mut channel_block[T]
+std/sync.cn:408:33 [index] channel_block[T]
+std/sync.cn:408:33 [field] usize
+std/sync.cn:408:33 [binary] usize
+std/sync.cn:408:44 [literal] usize
+std/sync.cn:408:57 [literal] usize
+std/sync.cn:409:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:409:9 [call] unit
+std/sync.cn:409:17 [ident] *mut usize
+std/sync.cn:410:16 [struct_literal] sender[T]
+std/sync.cn:410:35 [module_path] *mut channel_block[T]
+std/sync.cn:414:22 [binding_pat] &mut sender[T]
+std/sync.cn:414:35 [named_type] unit
+std/sync.cn:415:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:415:9 [call] unit
+std/sync.cn:415:17 [ident] _
+std/sync.cn:415:17 [call] *mut usize
+std/sync.cn:415:33 [unary] &mut usize
+std/sync.cn:415:38 [ident] &mut sender[T]
+std/sync.cn:415:38 [field] *mut channel_block[T]
+std/sync.cn:415:38 [index] channel_block[T]
+std/sync.cn:415:38 [field] usize
+std/sync.cn:415:49 [literal] usize
+std/sync.cn:416:9 [ident] &mut sender[T]
+std/sync.cn:416:9 [field] *mut channel_block[T]
+std/sync.cn:416:9 [index] channel_block[T]
+std/sync.cn:416:9 [field] usize
+std/sync.cn:416:20 [literal] usize
+std/sync.cn:416:33 [ident] &mut sender[T]
+std/sync.cn:416:33 [field] *mut channel_block[T]
+std/sync.cn:416:33 [index] channel_block[T]
+std/sync.cn:416:33 [field] usize
+std/sync.cn:416:33 [binary] usize
+std/sync.cn:416:44 [literal] usize
+std/sync.cn:416:57 [literal] usize
+std/sync.cn:417:12 [ident] &mut sender[T]
+std/sync.cn:417:12 [field] *mut channel_block[T]
+std/sync.cn:417:12 [index] channel_block[T]
+std/sync.cn:417:12 [field] usize
+std/sync.cn:417:12 [binary] bool
+std/sync.cn:417:23 [literal] usize
+std/sync.cn:417:37 [literal] usize
+std/sync.cn:418:13 [ident] fn(*mut channel_block[T]) -> unit
+std/sync.cn:418:13 [call] unit
+std/sync.cn:418:26 [module_path] *mut channel_block[T]
+std/sync.cn:419:9 [ident] fn(*mut channel_block[T]) -> unit
+std/sync.cn:419:9 [call] unit
+std/sync.cn:419:24 [module_path] *mut channel_block[T]
+std/sync.cn:424:32 [binding_pat] &receiver[T]
+std/sync.cn:424:41 [named_type] option[T]
+std/sync.cn:425:13 [binding_pat] *mut channel_block[T]
+std/sync.cn:425:21 [module_path] *mut channel_block[T]
+std/sync.cn:426:13 [binding_pat] *mut usize
+std/sync.cn:426:20 [ident] _
+std/sync.cn:426:20 [call] *mut usize
+std/sync.cn:426:36 [unary] &mut usize
+std/sync.cn:426:41 [ident] *mut channel_block[T]
+std/sync.cn:426:41 [index] channel_block[T]
+std/sync.cn:426:41 [field] usize
+std/sync.cn:426:47 [literal] usize
+std/sync.cn:427:13 [binding_pat] *mut usize
+std/sync.cn:427:23 [ident] _
+std/sync.cn:427:23 [call] *mut usize
+std/sync.cn:427:39 [unary] &mut usize
+std/sync.cn:427:44 [ident] *mut channel_block[T]
+std/sync.cn:427:44 [index] channel_block[T]
+std/sync.cn:427:44 [field] usize
+std/sync.cn:427:50 [literal] usize
+std/sync.cn:428:15 [literal] bool
+std/sync.cn:429:13 [ident] fn(*mut usize) -> unit
+std/sync.cn:429:13 [call] unit
+std/sync.cn:429:21 [ident] *mut usize
+std/sync.cn:430:16 [ident] *mut channel_block[T]
+std/sync.cn:430:16 [index] channel_block[T]
+std/sync.cn:430:16 [field] usize
+std/sync.cn:430:16 [binary] bool
+std/sync.cn:430:22 [literal] usize
+std/sync.cn:430:31 [literal] usize
+std/sync.cn:431:21 [binding_pat] T
+std/sync.cn:431:29 [ident] *mut channel_block[T]
+std/sync.cn:431:29 [index] channel_block[T]
+std/sync.cn:431:29 [field] *mut T
+std/sync.cn:431:29 [index] T
+std/sync.cn:431:35 [literal] usize
+std/sync.cn:431:44 [ident] *mut channel_block[T]
+std/sync.cn:431:44 [index] channel_block[T]
+std/sync.cn:431:44 [field] usize
+std/sync.cn:431:50 [literal] usize
+std/sync.cn:432:17 [ident] *mut channel_block[T]
+std/sync.cn:432:17 [index] channel_block[T]
+std/sync.cn:432:17 [field] usize
+std/sync.cn:432:23 [literal] usize
+std/sync.cn:432:33 [group] usize
+std/sync.cn:432:33 [binary] usize
+std/sync.cn:432:34 [ident] *mut channel_block[T]
+std/sync.cn:432:34 [index] channel_block[T]
+std/sync.cn:432:34 [field] usize
+std/sync.cn:432:34 [binary] usize
+std/sync.cn:432:40 [literal] usize
+std/sync.cn:432:50 [literal] usize
+std/sync.cn:432:55 [ident] *mut channel_block[T]
+std/sync.cn:432:55 [index] channel_block[T]
+std/sync.cn:432:55 [field] usize
+std/sync.cn:432:61 [literal] usize
+std/sync.cn:433:17 [ident] *mut channel_block[T]
+std/sync.cn:433:17 [index] channel_block[T]
+std/sync.cn:433:17 [field] usize
+std/sync.cn:433:23 [literal] usize
+std/sync.cn:433:32 [ident] *mut channel_block[T]
+std/sync.cn:433:32 [index] channel_block[T]
+std/sync.cn:433:32 [field] usize
+std/sync.cn:433:32 [binary] usize
+std/sync.cn:433:38 [literal] usize
+std/sync.cn:433:47 [literal] usize
+std/sync.cn:434:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:434:17 [call] unit
+std/sync.cn:434:22 [ident] *mut usize
+std/sync.cn:435:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:435:17 [call] unit
+std/sync.cn:435:25 [ident] *mut usize
+std/sync.cn:436:24 [call] option[T]
+std/sync.cn:436:30 [ident] T
+std/sync.cn:437:16 [ident] *mut channel_block[T]
+std/sync.cn:437:16 [index] channel_block[T]
+std/sync.cn:437:16 [field] usize
+std/sync.cn:437:16 [binary] bool
+std/sync.cn:437:22 [literal] usize
+std/sync.cn:437:35 [literal] usize
+std/sync.cn:438:17 [ident] fn(*mut usize) -> unit
+std/sync.cn:438:17 [call] unit
+std/sync.cn:438:25 [ident] *mut usize
+std/sync.cn:439:24 [ident] option[T]
+std/sync.cn:440:17 [binding_pat] usize
+std/sync.cn:440:24 [ident] fn(*mut usize) -> usize
+std/sync.cn:440:24 [call] usize
+std/sync.cn:440:39 [ident] *mut usize
+std/sync.cn:441:13 [ident] fn(*mut usize) -> unit
+std/sync.cn:441:13 [call] unit
+std/sync.cn:441:21 [ident] *mut usize
+std/sync.cn:442:13 [await] unit
+std/sync.cn:442:19 [ident] fn(*mut usize, usize) -> task[unit]
+std/sync.cn:442:19 [call] task[unit]
+std/sync.cn:442:34 [ident] *mut usize
+std/sync.cn:442:43 [ident] usize
+std/sync.cn:443:16 [ident] option[T]
+std/sync.cn:447:22 [binding_pat] &mut receiver[T]
+std/sync.cn:447:35 [named_type] unit
+std/sync.cn:448:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:448:9 [call] unit
+std/sync.cn:448:17 [ident] _
+std/sync.cn:448:17 [call] *mut usize
+std/sync.cn:448:33 [unary] &mut usize
+std/sync.cn:448:38 [ident] &mut receiver[T]
+std/sync.cn:448:38 [field] *mut channel_block[T]
+std/sync.cn:448:38 [index] channel_block[T]
+std/sync.cn:448:38 [field] usize
+std/sync.cn:448:49 [literal] usize
+std/sync.cn:449:9 [ident] fn(*mut channel_block[T]) -> unit
+std/sync.cn:449:9 [call] unit
+std/sync.cn:449:22 [module_path] *mut channel_block[T]
+std/sync.cn:450:9 [ident] fn(*mut channel_block[T]) -> unit
+std/sync.cn:450:9 [call] unit
+std/sync.cn:450:24 [module_path] *mut channel_block[T]
+std/sync.cn:479:26 [binding_pat] T
+std/sync.cn:479:41 [tuple_type] (watch_writer[T], watch_reader[T])
+std/sync.cn:480:9 [binding_pat] *mut watch_block[T]
+std/sync.cn:480:17 [ident] _
+std/sync.cn:480:17 [index] fn(usize) -> *mut watch_block[T]
+std/sync.cn:480:17 [call] *mut watch_block[T]
+std/sync.cn:480:39 [literal] usize
+std/sync.cn:481:5 [ident] *mut watch_block[T]
+std/sync.cn:481:5 [index] watch_block[T]
+std/sync.cn:481:11 [literal] usize
+std/sync.cn:481:16 [struct_literal] watch_block[T]
+std/sync.cn:481:39 [literal] usize
+std/sync.cn:481:51 [literal] usize
+std/sync.cn:481:63 [literal] usize
+std/sync.cn:481:73 [ident] T
+std/sync.cn:482:12 [tuple] (watch_writer[T], watch_reader[T])
+std/sync.cn:482:13 [struct_literal] watch_writer[T]
+std/sync.cn:482:38 [ident] *mut watch_block[T]
+std/sync.cn:482:47 [struct_literal] watch_reader[T]
+std/sync.cn:482:72 [ident] *mut watch_block[T]
+std/sync.cn:482:85 [literal] usize
+std/sync.cn:485:30 [binding_pat] *mut watch_block[T]
+std/sync.cn:485:61 [named_type] unit
+std/sync.cn:486:9 [binding_pat] *mut usize
+std/sync.cn:486:16 [ident] _
+std/sync.cn:486:16 [call] *mut usize
+std/sync.cn:486:32 [unary] &mut usize
+std/sync.cn:486:37 [ident] *mut watch_block[T]
+std/sync.cn:486:37 [index] watch_block[T]
+std/sync.cn:486:37 [field] usize
+std/sync.cn:486:43 [literal] usize
+std/sync.cn:487:5 [ident] fn(*mut usize) -> unit
+std/sync.cn:487:5 [call] unit
+std/sync.cn:487:13 [ident] *mut usize
+std/sync.cn:488:5 [ident] *mut watch_block[T]
+std/sync.cn:488:5 [index] watch_block[T]
+std/sync.cn:488:5 [field] usize
+std/sync.cn:488:11 [literal] usize
+std/sync.cn:488:24 [ident] *mut watch_block[T]
+std/sync.cn:488:24 [index] watch_block[T]
+std/sync.cn:488:24 [field] usize
+std/sync.cn:488:24 [binary] usize
+std/sync.cn:488:30 [literal] usize
+std/sync.cn:488:43 [literal] usize
+std/sync.cn:489:9 [binding_pat] bool
+std/sync.cn:489:16 [ident] *mut watch_block[T]
+std/sync.cn:489:16 [index] watch_block[T]
+std/sync.cn:489:16 [field] usize
+std/sync.cn:489:16 [binary] bool
+std/sync.cn:489:22 [literal] usize
+std/sync.cn:489:36 [literal] usize
+std/sync.cn:490:5 [ident] fn(*mut usize) -> unit
+std/sync.cn:490:5 [call] unit
+std/sync.cn:490:13 [ident] *mut usize
+std/sync.cn:491:8 [ident] bool
+std/sync.cn:492:9 [ident] fn(*mut T) -> unit
+std/sync.cn:492:9 [call] unit
+std/sync.cn:492:23 [ident] _
+std/sync.cn:492:23 [call] *mut T
+std/sync.cn:492:35 [unary] &mut T
+std/sync.cn:492:40 [ident] *mut watch_block[T]
+std/sync.cn:492:40 [index] watch_block[T]
+std/sync.cn:492:40 [field] T
+std/sync.cn:492:46 [literal] usize
+std/sync.cn:493:9 [ident] fn(*mut watch_block[T], usize) -> unit
+std/sync.cn:493:9 [call] unit
+std/sync.cn:493:18 [ident] *mut watch_block[T]
+std/sync.cn:493:25 [literal] usize
+std/sync.cn:497:25 [binding_pat] &watch_writer[T]
+std/sync.cn:497:31 [binding_pat] T
+std/sync.cn:497:44 [named_type] unit
+std/sync.cn:498:13 [binding_pat] *mut usize
+std/sync.cn:498:20 [ident] _
+std/sync.cn:498:20 [call] *mut usize
+std/sync.cn:498:36 [unary] &mut usize
+std/sync.cn:498:41 [ident] &watch_writer[T]
+std/sync.cn:498:41 [field] *mut watch_block[T]
+std/sync.cn:498:41 [index] watch_block[T]
+std/sync.cn:498:41 [field] usize
+std/sync.cn:498:52 [literal] usize
+std/sync.cn:499:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:499:9 [call] unit
+std/sync.cn:499:17 [ident] *mut usize
+std/sync.cn:500:9 [ident] fn(*mut T) -> unit
+std/sync.cn:500:9 [call] unit
+std/sync.cn:500:23 [ident] _
+std/sync.cn:500:23 [call] *mut T
+std/sync.cn:500:35 [unary] &mut T
+std/sync.cn:500:40 [ident] &watch_writer[T]
+std/sync.cn:500:40 [field] *mut watch_block[T]
+std/sync.cn:500:40 [index] watch_block[T]
+std/sync.cn:500:40 [field] T
+std/sync.cn:500:51 [literal] usize
+std/sync.cn:501:9 [ident] &watch_writer[T]
+std/sync.cn:501:9 [field] *mut watch_block[T]
+std/sync.cn:501:9 [index] watch_block[T]
+std/sync.cn:501:9 [field] T
+std/sync.cn:501:20 [literal] usize
+std/sync.cn:501:31 [ident] T
+std/sync.cn:502:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:502:9 [call] unit
+std/sync.cn:502:14 [ident] _
+std/sync.cn:502:14 [call] *mut usize
+std/sync.cn:502:30 [unary] &mut usize
+std/sync.cn:502:35 [ident] &watch_writer[T]
+std/sync.cn:502:35 [field] *mut watch_block[T]
+std/sync.cn:502:35 [index] watch_block[T]
+std/sync.cn:502:35 [field] usize
+std/sync.cn:502:46 [literal] usize
+std/sync.cn:503:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:503:9 [call] unit
+std/sync.cn:503:17 [ident] *mut usize
+std/sync.cn:506:22 [binding_pat] &mut watch_writer[T]
+std/sync.cn:506:35 [named_type] unit
+std/sync.cn:507:9 [ident] fn(*mut watch_block[T]) -> unit
+std/sync.cn:507:9 [call] unit
+std/sync.cn:507:23 [module_path] *mut watch_block[T]
+std/sync.cn:511:25 [binding_pat] &watch_reader[T]
+std/sync.cn:511:34 [named_type] T
+std/sync.cn:512:13 [binding_pat] *mut usize
+std/sync.cn:512:20 [ident] _
+std/sync.cn:512:20 [call] *mut usize
+std/sync.cn:512:36 [unary] &mut usize
+std/sync.cn:512:41 [ident] &watch_reader[T]
+std/sync.cn:512:41 [field] *mut watch_block[T]
+std/sync.cn:512:41 [index] watch_block[T]
+std/sync.cn:512:41 [field] usize
+std/sync.cn:512:52 [literal] usize
+std/sync.cn:513:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:513:9 [call] unit
+std/sync.cn:513:17 [ident] *mut usize
+std/sync.cn:514:13 [binding_pat] T
+std/sync.cn:514:21 [ident] &watch_reader[T]
+std/sync.cn:514:21 [field] *mut watch_block[T]
+std/sync.cn:514:21 [index] watch_block[T]
+std/sync.cn:514:21 [field] T
+std/sync.cn:514:32 [literal] usize
+std/sync.cn:515:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:515:9 [call] unit
+std/sync.cn:515:17 [ident] *mut usize
+std/sync.cn:516:16 [ident] T
+std/sync.cn:519:28 [binding_pat] &watch_reader[T]
+std/sync.cn:519:37 [named_type] T
+std/sync.cn:520:13 [binding_pat] *mut usize
+std/sync.cn:520:20 [ident] _
+std/sync.cn:520:20 [call] *mut usize
+std/sync.cn:520:36 [unary] &mut usize
+std/sync.cn:520:41 [ident] &watch_reader[T]
+std/sync.cn:520:41 [field] *mut watch_block[T]
+std/sync.cn:520:41 [index] watch_block[T]
+std/sync.cn:520:41 [field] usize
+std/sync.cn:520:52 [literal] usize
+std/sync.cn:521:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:521:9 [call] unit
+std/sync.cn:521:17 [ident] *mut usize
+std/sync.cn:522:13 [binding_pat] T
+std/sync.cn:522:21 [ident] &watch_reader[T]
+std/sync.cn:522:21 [field] *mut watch_block[T]
+std/sync.cn:522:21 [index] watch_block[T]
+std/sync.cn:522:21 [field] T
+std/sync.cn:522:21 [field] fn() -> T
+std/sync.cn:522:21 [call] T
+std/sync.cn:522:32 [literal] usize
+std/sync.cn:523:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:523:9 [call] unit
+std/sync.cn:523:17 [ident] *mut usize
+std/sync.cn:524:16 [ident] T
+std/sync.cn:527:35 [binding_pat] &mut watch_reader[T]
+std/sync.cn:527:48 [named_type] unit
+std/sync.cn:528:13 [binding_pat] *mut usize
+std/sync.cn:528:23 [ident] _
+std/sync.cn:528:23 [call] *mut usize
+std/sync.cn:528:39 [unary] &mut usize
+std/sync.cn:528:44 [ident] &mut watch_reader[T]
+std/sync.cn:528:44 [field] *mut watch_block[T]
+std/sync.cn:528:44 [index] watch_block[T]
+std/sync.cn:528:44 [field] usize
+std/sync.cn:528:55 [literal] usize
+std/sync.cn:529:15 [literal] bool
+std/sync.cn:530:17 [binding_pat] usize
+std/sync.cn:530:23 [ident] fn(*mut usize) -> usize
+std/sync.cn:530:23 [call] usize
+std/sync.cn:530:38 [ident] *mut usize
+std/sync.cn:531:16 [ident] usize
+std/sync.cn:531:16 [binary] bool
+std/sync.cn:531:23 [module_path] usize
+std/sync.cn:532:17 [module_path] usize
+std/sync.cn:532:29 [ident] usize
+std/sync.cn:534:13 [await] unit
+std/sync.cn:534:19 [ident] fn(*mut usize, usize) -> task[unit]
+std/sync.cn:534:19 [call] task[unit]
+std/sync.cn:534:34 [ident] *mut usize
+std/sync.cn:534:43 [ident] usize
+std/sync.cn:538:23 [binding_pat] &watch_reader[T]
+std/sync.cn:538:32 [named_type] watch_reader[T]
+std/sync.cn:539:13 [binding_pat] *mut usize
+std/sync.cn:539:20 [ident] _
+std/sync.cn:539:20 [call] *mut usize
+std/sync.cn:539:36 [unary] &mut usize
+std/sync.cn:539:41 [ident] &watch_reader[T]
+std/sync.cn:539:41 [field] *mut watch_block[T]
+std/sync.cn:539:41 [index] watch_block[T]
+std/sync.cn:539:41 [field] usize
+std/sync.cn:539:52 [literal] usize
+std/sync.cn:540:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:540:9 [call] unit
+std/sync.cn:540:17 [ident] *mut usize
+std/sync.cn:541:9 [ident] &watch_reader[T]
+std/sync.cn:541:9 [field] *mut watch_block[T]
+std/sync.cn:541:9 [index] watch_block[T]
+std/sync.cn:541:9 [field] usize
+std/sync.cn:541:20 [literal] usize
+std/sync.cn:541:33 [ident] &watch_reader[T]
+std/sync.cn:541:33 [field] *mut watch_block[T]
+std/sync.cn:541:33 [index] watch_block[T]
+std/sync.cn:541:33 [field] usize
+std/sync.cn:541:33 [binary] usize
+std/sync.cn:541:44 [literal] usize
+std/sync.cn:541:57 [literal] usize
+std/sync.cn:542:9 [ident] fn(*mut usize) -> unit
+std/sync.cn:542:9 [call] unit
+std/sync.cn:542:17 [ident] *mut usize
+std/sync.cn:543:16 [struct_literal] watch_reader[T]
+std/sync.cn:543:41 [module_path] *mut watch_block[T]
+std/sync.cn:543:59 [module_path] usize
+std/sync.cn:546:22 [binding_pat] &mut watch_reader[T]
+std/sync.cn:546:35 [named_type] unit
+std/sync.cn:547:9 [ident] fn(*mut watch_block[T]) -> unit
+std/sync.cn:547:9 [call] unit
+std/sync.cn:547:23 [module_path] *mut watch_block[T]
 std/test.cn:13:21 [binding_pat] bool
 std/test.cn:13:33 [binding_pat] str
 std/test.cn:13:50 [named_type] result[unit, test_failure]
@@ -31336,7 +32535,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (202)
+## struct_literal_field_types (236)
 ?:750 data array[T, m]
 ?:789 cents int64
 ?:882 current int32
@@ -31347,6 +32546,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1504 count usize
 ?:1514 value T
 ?:1556 inner *mut shared_block[T]
+?:1565 word *mut usize
 ?:1662 len usize
 ?:1662 len usize
 ?:1662 len usize
@@ -31444,9 +32644,12 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4347 align option[align_mode]
 ?:4379 total int32
 ?:4379 total int32
+?:4397 state usize
 ?:4399 sign sign_mode
+?:4407 value T
 ?:4424 alternate bool
 ?:4425 fd int32
+?:4448 inner *mut mutex_block[T]
 ?:4459 zero_pad bool
 ?:4484 width option[usize]
 ?:4511 precision option[usize]
@@ -31461,6 +32664,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4696 owns bool
 ?:4701 end usize
 ?:4701 end usize
+?:4775 inner *mut mutex_block[T]
 ?:4904 fd raw_fd
 ?:4914 v T
 ?:4914 v int32
@@ -31469,6 +32673,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:5053 at usize
 ?:5060 end usize
 ?:5089 fd raw_fd
+?:5095 inner *mut mutex_block[T]
 ?:5106 owns bool
 ?:5139 at int32
 ?:5146 end int32
@@ -31483,6 +32688,13 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:5367 end int32
 ?:5524 value int64
 ?:6645 value int64
+?:7139 state usize
+?:7149 value T
+?:7191 inner *mut rwlock_block[T]
+?:7668 inner *mut rwlock_block[T]
+?:7719 inner *mut rwlock_block[T]
+?:8102 inner *mut rwlock_block[T]
+?:8192 inner *mut rwlock_block[T]
 ?:10872 src &list[(int64, int32)]
 ?:10872 src &list[T]
 ?:10872 src &list[int32]
@@ -31501,6 +32713,17 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:10890 end usize
 ?:10890 end usize
 ?:10890 end usize
+?:11913 lock usize
+?:11930 version usize
+?:11950 closed usize
+?:11969 senders usize
+?:11989 handles usize
+?:12009 items *mut T
+?:12041 head usize
+?:12058 len usize
+?:12074 capacity usize
+?:12121 inner *mut channel_block[T]
+?:12151 inner *mut channel_block[T]
 ?:12803 inner I
 ?:12814 left usize
 ?:13291 inner I
@@ -31511,11 +32734,21 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:14394 inner I
 ?:14405 pred fn(&T) -> bool
 ?:14417 skipping bool
+?:14504 inner *mut channel_block[T]
 ?:14926 inner I
 ?:14937 step usize
 ?:14946 first bool
 ?:15699 inner I
 ?:15710 f fn(T) -> option[U]
+?:16883 lock usize
+?:16892 version usize
+?:16904 handles usize
+?:16916 value T
+?:16963 inner *mut watch_block[T]
+?:16997 inner *mut watch_block[T]
+?:17011 seen usize
+?:19260 inner *mut watch_block[T]
+?:19279 seen usize
 ?:22568 first I
 ?:22579 second J
 ?:22593 on_first bool
@@ -31540,7 +32773,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (845)
+## call_argument_mappings (938)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -32273,6 +33506,99 @@ std/string.cn:212:21 [call] (haystack=arg, needle=arg, from=arg)
 std/string.cn:214:17 [call] (value=arg)
 std/string.cn:216:13 [call] (value=arg)
 std/string.cn:230:16 [call] (a=arg, b=arg)
+std/sync.cn:35:20 [call] (count=arg)
+std/sync.cn:41:16 [call] (p=arg)
+std/sync.cn:45:9 [call] (p=arg, value=arg)
+std/sync.cn:51:22 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:59:26 [call] (p=arg)
+std/sync.cn:60:16 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:67:26 [call] (p=arg)
+std/sync.cn:69:16 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:77:26 [call] (p=arg)
+std/sync.cn:79:16 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:85:9 [call] (p=arg, count=arg)
+std/sync.cn:113:21 [call] (count=arg)
+std/sync.cn:120:15 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:121:13 [call] (p=arg, expected=arg)
+std/sync.cn:127:12 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:142:9 [call] (p=arg)
+std/sync.cn:154:9 [call] (p=arg, value=arg)
+std/sync.cn:155:9 [call] (p=arg)
+std/sync.cn:159:9 [call] (p=arg)
+std/sync.cn:160:9 [call] (p=arg, count=arg)
+std/sync.cn:197:21 [call] (count=arg)
+std/sync.cn:206:25 [call] (p=arg)
+std/sync.cn:208:17 [call] (p=arg, expected=arg)
+std/sync.cn:209:18 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:218:25 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:221:13 [call] (p=arg, expected=arg)
+std/sync.cn:239:25 [call] (p=arg)
+std/sync.cn:240:16 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:242:21 [call] (p=arg)
+std/sync.cn:256:9 [call] (p=arg)
+std/sync.cn:268:9 [call] (p=arg, value=arg)
+std/sync.cn:269:9 [call] (p=arg)
+std/sync.cn:273:9 [call] (p=arg)
+std/sync.cn:274:9 [call] (p=arg, count=arg)
+std/sync.cn:284:11 [call] (p=arg, expected=arg, desired=arg)
+std/sync.cn:285:9 [call] (p=arg, expected=arg)
+std/sync.cn:289:5 [call] (p=arg, value=arg)
+std/sync.cn:290:5 [call] (p=arg)
+std/sync.cn:294:5 [call] (p=arg, value=arg)
+std/sync.cn:294:27 [call] (p=arg)
+std/sync.cn:295:5 [call] (p=arg)
+std/sync.cn:338:17 [call] (count=arg)
+std/sync.cn:345:16 [call] (count=arg)
+std/sync.cn:356:9 [call] (word=arg)
+std/sync.cn:363:5 [call] (word=arg)
+std/sync.cn:367:13 [call] (p=arg)
+std/sync.cn:369:9 [call] (p=arg, count=arg)
+std/sync.cn:370:9 [call] (p=arg, count=arg)
+std/sync.cn:380:13 [call] (word=arg)
+std/sync.cn:382:17 [call] (word=arg)
+std/sync.cn:387:17 [call] (word=arg)
+std/sync.cn:388:17 [call] (word=arg)
+std/sync.cn:390:24 [call] (p=arg)
+std/sync.cn:391:13 [call] (word=arg)
+std/sync.cn:392:19 [call] (p=arg, expected=arg)
+std/sync.cn:398:9 [call] (word=arg)
+std/sync.cn:399:9 [call] (block=arg)
+std/sync.cn:400:9 [call] (word=arg)
+std/sync.cn:406:9 [call] (word=arg)
+std/sync.cn:409:9 [call] (word=arg)
+std/sync.cn:415:9 [call] (word=arg)
+std/sync.cn:418:13 [call] (block=arg)
+std/sync.cn:419:9 [call] (block=arg)
+std/sync.cn:429:13 [call] (word=arg)
+std/sync.cn:434:17 [call] (word=arg)
+std/sync.cn:435:17 [call] (word=arg)
+std/sync.cn:438:17 [call] (word=arg)
+std/sync.cn:440:24 [call] (p=arg)
+std/sync.cn:441:13 [call] (word=arg)
+std/sync.cn:442:19 [call] (p=arg, expected=arg)
+std/sync.cn:448:9 [call] (word=arg)
+std/sync.cn:449:9 [call] (block=arg)
+std/sync.cn:450:9 [call] (block=arg)
+std/sync.cn:480:17 [call] (count=arg)
+std/sync.cn:487:5 [call] (word=arg)
+std/sync.cn:490:5 [call] (word=arg)
+std/sync.cn:492:9 [call] (p=arg)
+std/sync.cn:493:9 [call] (p=arg, count=arg)
+std/sync.cn:499:9 [call] (word=arg)
+std/sync.cn:500:9 [call] (p=arg)
+std/sync.cn:502:9 [call] (word=arg)
+std/sync.cn:503:9 [call] (word=arg)
+std/sync.cn:507:9 [call] (block=arg)
+std/sync.cn:513:9 [call] (word=arg)
+std/sync.cn:515:9 [call] (word=arg)
+std/sync.cn:521:9 [call] (word=arg)
+std/sync.cn:522:21 [call] ()
+std/sync.cn:523:9 [call] (word=arg)
+std/sync.cn:530:23 [call] (p=arg)
+std/sync.cn:534:19 [call] (p=arg, expected=arg)
+std/sync.cn:540:9 [call] (word=arg)
+std/sync.cn:542:9 [call] (word=arg)
+std/sync.cn:547:9 [call] (block=arg)
 std/test.cn:98:19 [call] (s=arg)
 std/test.cn:99:20 [call] (s=arg)
 std/test.cn:99:45 [call] (f=arg)
@@ -32387,7 +33713,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (486)
+## resolved_callees (537)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -32858,6 +34184,57 @@ std/string.cn:184:43 [call] std.unicode::fold_case
 std/string.cn:207:13 [call] std.list::list::push$list_str_ recv
 std/string.cn:214:17 [call] std.list::list::push$list_str_ recv
 std/string.cn:216:13 [call] std.list::list::push$list_str_ recv
+std/sync.cn:35:20 [call] std.mem::alloc$usize
+std/sync.cn:41:16 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:45:9 [call] std.intrinsics::rt_atomic_store
+std/sync.cn:51:22 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:59:26 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:60:16 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:67:26 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:69:16 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:77:26 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:79:16 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:85:9 [call] std.mem::free$usize
+std/sync.cn:120:15 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:121:13 [call] std.intrinsics::rt_word_wait
+std/sync.cn:127:12 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:142:9 [call] std.mem::drop_in_place
+std/sync.cn:154:9 [call] std.intrinsics::rt_atomic_store
+std/sync.cn:155:9 [call] std.intrinsics::rt_word_wake
+std/sync.cn:159:9 [call] std.mem::drop_in_place
+std/sync.cn:160:9 [call] std.mem::free
+std/sync.cn:206:25 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:208:17 [call] std.intrinsics::rt_word_wait
+std/sync.cn:209:18 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:218:25 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:221:13 [call] std.intrinsics::rt_word_wait
+std/sync.cn:239:25 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:240:16 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:242:21 [call] std.intrinsics::rt_word_wake
+std/sync.cn:256:9 [call] std.mem::drop_in_place
+std/sync.cn:268:9 [call] std.intrinsics::rt_atomic_store
+std/sync.cn:269:9 [call] std.intrinsics::rt_word_wake
+std/sync.cn:273:9 [call] std.mem::drop_in_place
+std/sync.cn:274:9 [call] std.mem::free
+std/sync.cn:284:11 [call] std.intrinsics::rt_atomic_compare_exchange
+std/sync.cn:285:9 [call] std.intrinsics::rt_word_wait
+std/sync.cn:289:5 [call] std.intrinsics::rt_atomic_store
+std/sync.cn:290:5 [call] std.intrinsics::rt_word_wake
+std/sync.cn:294:5 [call] std.intrinsics::rt_atomic_store
+std/sync.cn:294:27 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:295:5 [call] std.intrinsics::rt_word_wake
+std/sync.cn:367:13 [call] std.mem::drop_in_place
+std/sync.cn:369:9 [call] std.mem::free
+std/sync.cn:370:9 [call] std.mem::free
+std/sync.cn:390:24 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:392:19 [call] std.intrinsics::rt_word_waiter
+std/sync.cn:440:24 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:442:19 [call] std.intrinsics::rt_word_waiter
+std/sync.cn:492:9 [call] std.mem::drop_in_place
+std/sync.cn:493:9 [call] std.mem::free
+std/sync.cn:500:9 [call] std.mem::drop_in_place
+std/sync.cn:530:23 [call] std.intrinsics::rt_atomic_load
+std/sync.cn:534:19 [call] std.intrinsics::rt_word_waiter
 std/test.cn:98:19 [call] std.console::println
 std/test.cn:99:20 [call] std.console::println
 std/test.cn:134:17 [call] std.console::println
@@ -33377,7 +34754,7 @@ std/mem.cn:86:8 [call] needs_drop of uint32
 std/mem.cn:86:8 [call] needs_drop of usize
 std/mem.cn:86:8 [call] needs_drop of variant_info
 
-## ptr_casts (55)
+## ptr_casts (85)
 std/mem.cn:31:12 [call] *mut (int64, int32)
 std/mem.cn:31:12 [call] *mut (usize, usize)
 std/mem.cn:31:12 [call] *mut T
@@ -33430,6 +34807,36 @@ std/mem.cn:55:13 [call] *mut byte
 std/shared.cn:48:26 [call] *mut usize
 std/shared.cn:59:39 [call] *mut usize
 std/shared.cn:61:27 [call] *mut T
+std/sync.cn:119:20 [call] *mut usize
+std/sync.cn:126:20 [call] *mut usize
+std/sync.cn:142:23 [call] *mut T
+std/sync.cn:153:20 [call] *mut usize
+std/sync.cn:159:23 [call] *mut T
+std/sync.cn:204:20 [call] *mut usize
+std/sync.cn:216:20 [call] *mut usize
+std/sync.cn:237:20 [call] *mut usize
+std/sync.cn:256:23 [call] *mut T
+std/sync.cn:267:20 [call] *mut usize
+std/sync.cn:273:23 [call] *mut T
+std/sync.cn:356:14 [call] *mut usize
+std/sync.cn:363:13 [call] *mut usize
+std/sync.cn:377:20 [call] *mut usize
+std/sync.cn:378:23 [call] *mut usize
+std/sync.cn:397:20 [call] *mut usize
+std/sync.cn:405:20 [call] *mut usize
+std/sync.cn:415:17 [call] *mut usize
+std/sync.cn:426:20 [call] *mut usize
+std/sync.cn:427:23 [call] *mut usize
+std/sync.cn:448:17 [call] *mut usize
+std/sync.cn:486:16 [call] *mut usize
+std/sync.cn:492:23 [call] *mut T
+std/sync.cn:498:20 [call] *mut usize
+std/sync.cn:500:23 [call] *mut T
+std/sync.cn:502:14 [call] *mut usize
+std/sync.cn:512:20 [call] *mut usize
+std/sync.cn:520:20 [call] *mut usize
+std/sync.cn:528:23 [call] *mut usize
+std/sync.cn:539:20 [call] *mut usize
 std/traits.cn:86:14 [call] *mut T
 std/traits.cn:87:14 [call] *mut T
 std/traits.cn:103:13 [call] *mut T
@@ -33463,7 +34870,7 @@ std/list.cn:238:16 [call]
 074_range_index_general_stride.cn:50:31 [index] 
 074_range_index_general_stride.cn:50:40 [index] 
 
-## static_const_values (65)
+## static_const_values (68)
 033_const_generic_monomorphization.cn:18:13 [ident] 5
 033_const_generic_monomorphization.cn:23:13 [ident] 3
 033_const_generic_monomorphization.cn:23:13 [ident] 5
@@ -33501,6 +34908,9 @@ std/list.cn:274:19 [ident] 256
 std/list.cn:274:19 [ident] 3
 std/list.cn:274:19 [ident] 4
 std/list.cn:274:19 [ident] 5
+std/sync.cn:207:25 [ident] 18446744073709551615
+std/sync.cn:208:36 [ident] 18446744073709551615
+std/sync.cn:218:61 [ident] 18446744073709551615
 std/unicode.cn:133:35 [ident] 147
 std/unicode.cn:133:60 [ident] 147
 std/unicode.cn:143:44 [ident] 376
@@ -33606,7 +35016,10 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (689)
+## drop_plans (778)
+atomic[T] own=std.sync::atomic::drop fields=[]
+atomic[T] own=std.sync::atomic::drop fields=[]
+atomic[_] own=std.sync::atomic::drop fields=[]
 bag[T] own=- fields=[items: list[T]]
 bag[T] own=- fields=[items: list[T]]
 bag[U] own=- fields=[items: list[U]]
@@ -33729,6 +35142,7 @@ fn((int64, int32)) -> unit own=- fields=[] glue=fn() -> unit
 fn((usize, usize)) -> unit own=- fields=[] glue=fn() -> unit
 fn() -> T own=- fields=[] glue=fn() -> unit
 fn() -> T own=- fields=[] glue=fn() -> unit
+fn() -> T own=- fields=[] glue=fn() -> unit
 fn() -> array[int32, 3] own=- fields=[] glue=fn() -> unit
 fn() -> bool own=- fields=[] glue=fn() -> unit
 fn() -> connection[closed] own=- fields=[] glue=fn() -> unit
@@ -33817,6 +35231,14 @@ fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut T, usize) -> unit own=- fields=[] glue=fn() -> unit
@@ -33828,6 +35250,12 @@ fn(*mut T, usize, usize) -> *mut T own=- fields=[] glue=fn() -> unit
 fn(*mut byte) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut byte, usize, usize) -> *mut byte own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut channel_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut field_info) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut field_info, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut field_info, usize, usize) -> *mut field_info own=- fields=[] glue=fn() -> unit
@@ -33840,6 +35268,8 @@ fn(*mut int64, usize, usize) -> *mut int64 own=- fields=[] glue=fn() -> unit
 fn(*mut money) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut money, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut money, usize, usize) -> *mut money own=- fields=[] glue=fn() -> unit
+fn(*mut mutex_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut rwlock_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut shared_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut str) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut str, usize) -> unit own=- fields=[] glue=fn() -> unit
@@ -33853,11 +35283,18 @@ fn(*mut uint32) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut uint32, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
 fn(*mut usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut usize) -> usize own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize) -> task[unit] own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut usize, usize, usize) -> *mut usize own=- fields=[] glue=fn() -> unit
+fn(*mut usize, usize, usize) -> usize own=- fields=[] glue=fn() -> unit
 fn(*mut variant_info) -> unit own=- fields=[] glue=fn() -> unit
 fn(*mut variant_info, usize) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut watch_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut watch_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut watch_block[T]) -> unit own=- fields=[] glue=fn() -> unit
+fn(*mut watch_block[T], usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
 fn(A) -> B own=- fields=[] glue=fn() -> unit
@@ -33926,10 +35363,12 @@ fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(T, bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(T, fn(T) -> option[U]) -> option[U] own=- fields=[] glue=fn() -> unit
 fn(_) -> &_ own=- fields=[] glue=fn() -> unit
+fn(_) -> &mut _ own=- fields=[] glue=fn() -> unit
 fn(_) -> *_ own=- fields=[] glue=fn() -> unit
 fn(_) -> *mut _ own=- fields=[] glue=fn() -> unit
 fn(_) -> U own=- fields=[] glue=fn() -> unit
 fn(_) -> _ own=- fields=[] glue=fn() -> unit
+fn(_) -> atomic[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> bool own=- fields=[] glue=fn() -> unit
 fn(_) -> example_type[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> float32 own=- fields=[] glue=fn() -> unit
@@ -33941,22 +35380,32 @@ fn(_) -> int64 own=- fields=[] glue=fn() -> unit
 fn(_) -> int8 own=- fields=[] glue=fn() -> unit
 fn(_) -> isize own=- fields=[] glue=fn() -> unit
 fn(_) -> list_into_iter[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> mutex[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> mutex_guard[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[&_] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[&mut _] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[(_, _)] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[(usize, _)] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> option[int32] own=- fields=[] glue=fn() -> unit
+fn(_) -> option[mutex_guard[_]] own=- fields=[] glue=fn() -> unit
 fn(_) -> raw_fd own=- fields=[] glue=fn() -> unit
+fn(_) -> read_guard[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
+fn(_) -> rwlock[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> self own=- fields=[] glue=fn() -> unit
+fn(_) -> sender[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> shared[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> slice[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> slice_mut[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> str own=- fields=[] glue=fn() -> unit
+fn(_) -> task[option[_], never, io] own=- fields=[] glue=fn() -> unit
+fn(_) -> task[unit, never, io] own=- fields=[] glue=fn() -> unit
 fn(_) -> uint64 own=- fields=[] glue=fn() -> unit
 fn(_) -> unit own=- fields=[] glue=fn() -> unit
 fn(_) -> usize own=- fields=[] glue=fn() -> unit
+fn(_) -> watch_reader[_] own=- fields=[] glue=fn() -> unit
+fn(_) -> write_guard[_] own=- fields=[] glue=fn() -> unit
 fn(_, &bool) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &byte) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &byte) -> ordering own=- fields=[] glue=fn() -> unit
@@ -34004,7 +35453,9 @@ fn(_, &weight) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, T) -> T own=- fields=[] glue=fn() -> unit
 fn(_, _) -> _ own=- fields=[] glue=fn() -> unit
 fn(_, _) -> cell[_] own=- fields=[] glue=fn() -> unit
+fn(_, _) -> task[unit, _, io] own=- fields=[] glue=fn() -> unit
 fn(_, _) -> unit own=- fields=[] glue=fn() -> unit
+fn(_, _, _) -> result[_, _] own=- fields=[] glue=fn() -> unit
 fn(_, _, _) -> unit own=- fields=[] glue=fn() -> unit
 fn(_, array[T, n], index[n]) -> T own=- fields=[] glue=fn() -> unit
 fn(_, array[T, n], usize) -> T own=- fields=[] glue=fn() -> unit
@@ -34174,16 +35625,21 @@ fn(usize) -> *mut (int64, int32) own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut (usize, usize) own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut T own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut T own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut T own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut byte own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut channel_block[T] own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut field_info own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut int32 own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut int64 own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut money own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut mutex_block[T] own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut rwlock_block[T] own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut shared_block[T] own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut str own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut test_suite own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut uint32 own=- fields=[] glue=fn() -> unit
 fn(usize) -> *mut usize own=- fields=[] glue=fn() -> unit
+fn(usize) -> *mut watch_block[T] own=- fields=[] glue=fn() -> unit
 fn(usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(usize) -> unit own=- fields=[] glue=fn() -> unit
 fn(usize) -> usize own=- fields=[] glue=fn() -> unit
@@ -34276,12 +35732,38 @@ map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
 map_iter[I, T, U] own=- fields=[f: fn(T) -> U]
 map_iter[counter, int32, int32] own=- fields=[f: fn(int32) -> int32]
 map_iter[filter_iter[counter, int32], int32, int32] own=- fields=[inner: filter_iter[counter, int32], f: fn(int32) -> int32]
+mutex[T] own=std.sync::mutex::drop fields=[]
+mutex[T] own=std.sync::mutex::drop fields=[]
+mutex[_] own=std.sync::mutex::drop fields=[]
+mutex_guard[T] own=std.sync::mutex_guard::drop fields=[]
+mutex_guard[T] own=std.sync::mutex_guard::drop fields=[]
+mutex_guard[T] own=std.sync::mutex_guard::drop fields=[]
+mutex_guard[T] own=std.sync::mutex_guard::drop fields=[]
+mutex_guard[_] own=std.sync::mutex_guard::drop fields=[]
 option[fn() -> result[unit, test_failure]] own=- fields=[] variants=[some.0: fn() -> result[unit, test_failure]]
+option[mutex_guard[T]] own=- fields=[] variants=[some.0: mutex_guard[T]]
+option[mutex_guard[_]] own=- fields=[] variants=[some.0: mutex_guard[_]]
 option[test_suite] own=- fields=[] variants=[some.0: test_suite]
+read_guard[T] own=std.sync::read_guard::drop fields=[]
+read_guard[T] own=std.sync::read_guard::drop fields=[]
+read_guard[T] own=std.sync::read_guard::drop fields=[]
+read_guard[T] own=std.sync::read_guard::drop fields=[]
+read_guard[_] own=std.sync::read_guard::drop fields=[]
+receiver[T] own=std.sync::receiver::drop fields=[]
+receiver[T] own=std.sync::receiver::drop fields=[]
+receiver[T] own=std.sync::receiver::drop fields=[]
 result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
+rwlock[T] own=std.sync::rwlock::drop fields=[]
+rwlock[T] own=std.sync::rwlock::drop fields=[]
+rwlock[_] own=std.sync::rwlock::drop fields=[]
 scan_iter own=- fields=[f: fn(_, _) -> _]
 scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
 scan_iter[I, T, S] own=- fields=[f: fn(S, T) -> S]
+sender[T] own=std.sync::sender::drop fields=[]
+sender[T] own=std.sync::sender::drop fields=[]
+sender[T] own=std.sync::sender::drop fields=[]
+sender[T] own=std.sync::sender::drop fields=[]
+sender[_] own=std.sync::sender::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
 shared[T] own=std.shared::shared::drop fields=[]
@@ -34294,10 +35776,27 @@ skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter own=- fields=[pred: fn(&_) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+task[option[_], never, io] own=- fields=[]
+task[unit, _, io] own=- fields=[]
+task[unit, never, io] own=- fields=[]
+task[unit] own=- fields=[]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
+watch_reader[T] own=std.sync::watch_reader::drop fields=[]
+watch_reader[T] own=std.sync::watch_reader::drop fields=[]
+watch_reader[T] own=std.sync::watch_reader::drop fields=[]
+watch_reader[T] own=std.sync::watch_reader::drop fields=[]
+watch_reader[_] own=std.sync::watch_reader::drop fields=[]
+watch_writer[T] own=std.sync::watch_writer::drop fields=[]
+watch_writer[T] own=std.sync::watch_writer::drop fields=[]
+watch_writer[T] own=std.sync::watch_writer::drop fields=[]
+write_guard[T] own=std.sync::write_guard::drop fields=[]
+write_guard[T] own=std.sync::write_guard::drop fields=[]
+write_guard[T] own=std.sync::write_guard::drop fields=[]
+write_guard[T] own=std.sync::write_guard::drop fields=[]
+write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (1715)
+## borrow_bearing_types (1975)
 &K
 &T
 &T
@@ -34341,10 +35840,17 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &T
 &T
 &T
+&T
+&T
+&T
+&T
+&T
+&T
 &U
 &U
 &_
 &_
+&atomic[T]
 &bag[T]
 &bag[int32]
 &bool
@@ -34418,8 +35924,15 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &mut T
 &mut T
 &mut T
+&mut T
+&mut T
+&mut T
+&mut T
+&mut T
+&mut T
 &mut _
 &mut acc
+&mut atomic[T]
 &mut chain_iter[I, J, T]
 &mut countdown
 &mut counter
@@ -34479,13 +35992,20 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &mut map_iter[I, T, U]
 &mut map_iter[counter, int32, int32]
 &mut map_iter[filter_iter[counter, int32], int32, int32]
+&mut mutex[T]
+&mut mutex_guard[T]
+&mut mutex_guard[T]
 &mut option[J]
 &mut option[J]
 &mut option[T]
 &mut peekable_iter[I, T]
 &mut peekable_iter[I, T]
+&mut read_guard[T]
+&mut receiver[T]
 &mut rev_iter[I, T]
+&mut rwlock[T]
 &mut scan_iter[I, T, S]
+&mut sender[T]
 &mut shared[T]
 &mut skip_iter[I, T]
 &mut skip_while_iter[I, T]
@@ -34515,7 +36035,15 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &mut take_while_iter[I, T]
 &mut upto
 &mut usize
+&mut watch_reader[T]
+&mut watch_reader[T]
+&mut watch_writer[T]
+&mut write_guard[T]
+&mut write_guard[T]
 &mut zip_iter[I, J, T, U]
+&mutex[T]
+&mutex_guard[T]
+&mutex_guard[T]
 &option[T]
 &option[T]
 &option[T]
@@ -34525,9 +36053,15 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &option[fn() -> result[unit, test_failure]]
 &ordering
 &peekable_iter[I, T]
+&read_guard[T]
+&read_guard[T]
+&receiver[T]
 &result[T, E]
 &rev_iter[I, T]
+&rwlock[T]
 &self
+&sender[T]
+&sender[T]
 &shared[T]
 &shared[T]
 &shared[T]
@@ -34554,16 +36088,40 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 &uint64
 &uint8
 &usize
+&watch_reader[T]
+&watch_reader[T]
+&watch_writer[T]
 &weight
+&write_guard[T]
+&write_guard[T]
 &zip_iter[I, J, T, U]
 (T, U)
 (list[T], list[T])
+(sender[T], receiver[T])
 (usize, T)
+(watch_writer[T], watch_reader[T])
 *T
 *T
 *T
 *T
 *T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
+*mut T
 *mut T
 *mut T
 *mut T
@@ -34614,6 +36172,34 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 *mut T
 *mut T
 *mut U
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut channel_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut mutex_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
+*mut rwlock_block[T]
 *mut shared_block[T]
 *mut shared_block[T]
 *mut shared_block[T]
@@ -34624,6 +36210,15 @@ test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> resu
 *mut slice[T]
 *mut test_case
 *mut test_suite
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
+*mut watch_block[T]
 *test_suite
 A
 A
@@ -35020,6 +36615,50 @@ T
 T
 T
 T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
+T
 To
 U
 U
@@ -35081,6 +36720,8 @@ array[slice[T], n]
 array[slice[T], n]
 array[test_suite, 1]
 array[test_suite, n]
+atomic[T]
+atomic[T]
 bag[T]
 bag[T]
 bag[U]
@@ -35107,6 +36748,16 @@ cell_mut[int64]
 chain_iter[I, J, T]
 chain_iter[I, J, T]
 chain_iter[I, J, _]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
+channel_block[T]
 cols
 doubler[I]
 doubler[map_iter[counter, int32, int32]]
@@ -35231,6 +36882,7 @@ fn((int64, int32)) -> unit
 fn((usize, usize)) -> unit
 fn() -> T
 fn() -> T
+fn() -> T
 fn() -> array[int32, 3]
 fn() -> bool
 fn() -> connection[closed]
@@ -35319,6 +36971,14 @@ fn(*mut T) -> unit
 fn(*mut T) -> unit
 fn(*mut T) -> unit
 fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T) -> unit
+fn(*mut T, usize) -> unit
 fn(*mut T, usize) -> unit
 fn(*mut T, usize) -> unit
 fn(*mut T, usize) -> unit
@@ -35330,6 +36990,12 @@ fn(*mut T, usize, usize) -> *mut T
 fn(*mut byte) -> unit
 fn(*mut byte, usize) -> unit
 fn(*mut byte, usize, usize) -> *mut byte
+fn(*mut channel_block[T]) -> unit
+fn(*mut channel_block[T]) -> unit
+fn(*mut channel_block[T]) -> unit
+fn(*mut channel_block[T]) -> unit
+fn(*mut channel_block[T]) -> unit
+fn(*mut channel_block[T], usize) -> unit
 fn(*mut field_info) -> unit
 fn(*mut field_info, usize) -> unit
 fn(*mut field_info, usize, usize) -> *mut field_info
@@ -35342,6 +37008,8 @@ fn(*mut int64, usize, usize) -> *mut int64
 fn(*mut money) -> unit
 fn(*mut money, usize) -> unit
 fn(*mut money, usize, usize) -> *mut money
+fn(*mut mutex_block[T], usize) -> unit
+fn(*mut rwlock_block[T], usize) -> unit
 fn(*mut shared_block[T], usize) -> unit
 fn(*mut str) -> unit
 fn(*mut str, usize) -> unit
@@ -35355,11 +37023,18 @@ fn(*mut uint32) -> unit
 fn(*mut uint32, usize) -> unit
 fn(*mut uint32, usize, usize) -> *mut uint32
 fn(*mut usize) -> unit
+fn(*mut usize) -> usize
+fn(*mut usize, usize) -> task[unit]
 fn(*mut usize, usize) -> unit
 fn(*mut usize, usize) -> usize
 fn(*mut usize, usize, usize) -> *mut usize
+fn(*mut usize, usize, usize) -> usize
 fn(*mut variant_info) -> unit
 fn(*mut variant_info, usize) -> unit
+fn(*mut watch_block[T]) -> unit
+fn(*mut watch_block[T]) -> unit
+fn(*mut watch_block[T]) -> unit
+fn(*mut watch_block[T], usize) -> unit
 fn(A) -> B
 fn(A) -> B
 fn(A) -> B
@@ -35429,6 +37104,7 @@ fn(T, bool) -> usize
 fn(T, bool) -> usize
 fn(T, fn(T) -> option[U]) -> option[U]
 fn(_) -> &_
+fn(_) -> &mut _
 fn(_) -> *_
 fn(_) -> *mut _
 fn(_) -> B
@@ -35439,6 +37115,7 @@ fn(_) -> _
 fn(_) -> _
 fn(_) -> _
 fn(_) -> _
+fn(_) -> atomic[_]
 fn(_) -> bool
 fn(_) -> bool
 fn(_) -> example_type[_]
@@ -35452,6 +37129,8 @@ fn(_) -> int8
 fn(_) -> isize
 fn(_) -> list[_]
 fn(_) -> list_into_iter[_]
+fn(_) -> mutex[_]
+fn(_) -> mutex_guard[_]
 fn(_) -> option[&_]
 fn(_) -> option[&mut _]
 fn(_) -> option[(_, _)]
@@ -35468,17 +37147,25 @@ fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[_]
 fn(_) -> option[int32]
+fn(_) -> option[mutex_guard[_]]
 fn(_) -> raw_fd
+fn(_) -> read_guard[_]
 fn(_) -> result[unit, io_error]
+fn(_) -> rwlock[_]
 fn(_) -> self
+fn(_) -> sender[_]
 fn(_) -> shared[_]
 fn(_) -> slice[_]
 fn(_) -> slice_mut[_]
 fn(_) -> str
 fn(_) -> str
+fn(_) -> task[option[_], never, io]
+fn(_) -> task[unit, never, io]
 fn(_) -> uint64
 fn(_) -> unit
 fn(_) -> usize
+fn(_) -> watch_reader[_]
+fn(_) -> write_guard[_]
 fn(_, &bool) -> bool
 fn(_, &byte) -> bool
 fn(_, &byte) -> ordering
@@ -35526,7 +37213,9 @@ fn(_, &weight) -> ordering
 fn(_, T) -> T
 fn(_, _) -> _
 fn(_, _) -> cell[_]
+fn(_, _) -> task[unit, _, io]
 fn(_, _) -> unit
+fn(_, _, _) -> result[_, _]
 fn(_, _, _) -> unit
 fn(_, array[T, n], index[n]) -> T
 fn(_, array[T, n], usize) -> T
@@ -35697,16 +37386,21 @@ fn(usize) -> *mut (int64, int32)
 fn(usize) -> *mut (usize, usize)
 fn(usize) -> *mut T
 fn(usize) -> *mut T
+fn(usize) -> *mut T
 fn(usize) -> *mut byte
+fn(usize) -> *mut channel_block[T]
 fn(usize) -> *mut field_info
 fn(usize) -> *mut int32
 fn(usize) -> *mut int64
 fn(usize) -> *mut money
+fn(usize) -> *mut mutex_block[T]
+fn(usize) -> *mut rwlock_block[T]
 fn(usize) -> *mut shared_block[T]
 fn(usize) -> *mut str
 fn(usize) -> *mut test_suite
 fn(usize) -> *mut uint32
 fn(usize) -> *mut usize
+fn(usize) -> *mut watch_block[T]
 fn(usize) -> int32
 fn(usize) -> unit
 fn(usize) -> usize
@@ -35796,6 +37490,19 @@ map_iter[I, T, U]
 map_iter[I, T, U]
 map_iter[counter, int32, int32]
 map_iter[filter_iter[counter, int32], int32, int32]
+mutex[T]
+mutex[T]
+mutex_block[T]
+mutex_block[T]
+mutex_block[T]
+mutex_block[T]
+mutex_block[T]
+mutex_block[T]
+mutex_block[T]
+mutex_guard[T]
+mutex_guard[T]
+mutex_guard[T]
+mutex_guard[T]
 n
 n
 n
@@ -35902,6 +37609,7 @@ option[T]
 option[T]
 option[T]
 option[T]
+option[T]
 option[U]
 option[U]
 option[U]
@@ -35918,20 +37626,47 @@ option[cell_mut[T]]
 option[cell_mut[_]]
 option[cell_mut[int32]]
 option[fn() -> result[unit, test_failure]]
+option[mutex_guard[T]]
 option[test_suite]
 peekable_iter[I, T]
 peekable_iter[I, T]
 peekable_iter[I, T]
 peekable_iter[I, _]
+read_guard[T]
+read_guard[T]
+read_guard[T]
+read_guard[T]
+receiver[T]
+receiver[T]
+receiver[T]
 result[T, E]
+result[T, T]
+result[unit, T]
 rev_iter[I, T]
 rev_iter[I, T]
 rev_iter[I, _]
 rows
+rwlock[T]
+rwlock[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
+rwlock_block[T]
 scan_iter
 scan_iter[I, T, S]
 scan_iter[I, T, S]
 self
+sender[T]
+sender[T]
+sender[T]
+sender[T]
 shared[T]
 shared[T]
 shared[T]
@@ -35997,6 +37732,10 @@ take_iter[I, _]
 take_while_iter
 take_while_iter[I, T]
 take_while_iter[I, T]
+task[option[_], never, io]
+task[unit, _, io]
+task[unit, never, io]
+task[unit]
 test_case
 test_suite
 vec[T, 2]
@@ -36010,6 +37749,26 @@ vec[T, m]
 vec[T, n + 1]
 vec[T, n]
 vec[T, n]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_block[T]
+watch_reader[T]
+watch_reader[T]
+watch_reader[T]
+watch_reader[T]
+watch_writer[T]
+watch_writer[T]
+watch_writer[T]
+write_guard[T]
+write_guard[T]
+write_guard[T]
+write_guard[T]
 zip_iter[I, J, T, U]
 zip_iter[I, J, T, U]
 zip_iter[I, J, _, _]
@@ -36619,9 +38378,9 @@ zeros$3
 
 ## arena sizes
 synthesized_functor_nodes 0
-synthesized_types 106
+synthesized_types 148
 synthesized_fragments 26
-synthesized_const_literals 65
+synthesized_const_literals 68
 elided_contracts 0
 
 ## fmt_runtime_types

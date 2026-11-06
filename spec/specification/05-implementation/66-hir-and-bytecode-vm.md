@@ -17,6 +17,8 @@ HIR (`src/hir/nodes.h`) is a typed tree. Every node carries a concrete type from
 
 Lowering (`src/hir/lower.cpp`) reads the checker's results and never infers. It fails closed: an unsupported or not fully typed construct is a reported error, never a skipped function or placeholder.
 
+In a task body, a suspension point has to be a statement. Lowering hoists each `await` in a statement into statements ahead of it. A loop whose condition awaits becomes `while true:` with the hoisted statements and an `if not cond: break` at its top. An `if` or `match` whose value is used and whose branches can suspend (an `await`, `?`, a `crew` exit, `par`, `race`) becomes a statement that assigns each branch's last expression to a hidden `<branch value>` local; that `hir_let` has no initializer and carries its type in `declared_type`. An `async:` block or `on(ctx):` body is lowered to a synthesized task function whose parameters are the outer locals it reads.
+
 ## HIR passes
 
 These run once, before either backend:
@@ -24,7 +26,7 @@ These run once, before either backend:
 - **Explicit references** (`reference_check.cpp`). Every borrow and dereference becomes an explicit node. A leftover implicit reference is reported as a lowering gap rather than compiled.
 - **Tail calls** (`tail_calls.cpp`). Marks direct calls in tail position ([Tail-Call Optimization](../03-advanced/39-tail-call-optimization.md)).
 - **Captures** (`captures.cpp`). Computes what each lambda captures and how.
-- **Generator state** (`live_across_yield.cpp`). Finds the locals live across a `yield`; these form the generator's state block. `op_yield` stores the item in the object's value slot and returns `suspended`; `op_coroutine_resume` yields the step function's status, or the stored status if the coroutine already finished. A task's `await` is a `hir_yield` with `awaits` set: it polls the awaited task through the scheduler, and `op_await_pending` returns `pending` when that task is not finished. The state-block analysis treats it like any other suspension point.
+- **Generator state** (`live_across_yield.cpp`). Finds the locals live across a `yield`; these form the generator's state block. `op_yield` stores the item in the object's value slot and returns `suspended`; `op_coroutine_resume` yields the step function's status, or the stored status if the coroutine already finished. A task's `await` is a `hir_yield` with `awaits` set: it polls the awaited task through the scheduler, and `op_await_pending` returns `pending` when that task is not finished. The state-block analysis treats it like any other suspension point. A local whose address is taken in a step function (`captures.cpp`, `address_taken_symbols`) is promoted to a heap cell on the VM, like a local a closure captures by reference, so a `&x` held across a suspension does not point into a frame that has returned.
 - **Frame budget** (`frame_budget.cpp`). Rejects a function whose stack-allocated buffers exceed the per-frame limit.
 - **Reachability** (`link.cpp`). Finds every module the entry function reaches. A reached module is included in full.
 - **Inlining** (`inline.cpp`). Replaces calls to small functions with a copy of the body. This is what makes standard library collections such as `list[T]` cost about what a built-in would. `--no-inline` turns it off.

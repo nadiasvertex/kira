@@ -1,0 +1,27 @@
+module accept_task_block_borrows
+
+# Several task blocks may borrow the same value at once, and the owner may
+# use and change it again once the crew has ended.
+
+def total(xs: &list[int32]) -> int32:
+    var s: int32 = 0
+    for x in xs:
+        s = s + x
+    return s
+
+async def main() -> int32:
+    var xs = [1, 2, 3]
+    let (a, b) = crew c:
+        let ta = c.spawn(async:
+            total(&xs)
+        )
+        let tb = c.spawn(async:
+            total(&xs) * 2
+        )
+        (ta, tb)
+    xs.push(4)
+    let r = &mut xs
+    let t = async:
+        r.push(5)
+        r.len() as int32
+    return a.get() + b.get() + await t

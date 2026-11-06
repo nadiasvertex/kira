@@ -1,0 +1,38 @@
+module main
+
+# A mutex, a channel's ends and a watch's handles give their `T` to one task
+# at a time, so `T` need only be `send`, however many tasks share the handle.
+# `solo` is `send` but not `share`.
+
+use std.sync.{mutex, channel, sender, receiver, watch, watch_reader}
+use std.mem.{alloc}
+
+type solo = { word: *mut usize }
+
+impl send for solo:
+
+machine def make_solo() -> solo:
+    return solo { word: alloc[usize](1) }
+
+async def use_mutex(m: &mutex[solo]) -> int32:
+    return 1
+
+async def use_sender(tx: sender[solo]) -> int32:
+    return 2
+
+async def use_receiver(rx: receiver[solo]) -> int32:
+    return 3
+
+async def use_watch(r: watch_reader[solo]) -> int32:
+    return 4
+
+async def main() -> int32:
+    let m = mutex.new(make_solo())
+    let (tx, rx) = channel[solo](1)
+    let (w, r) = watch[solo](make_solo())
+    crew c:
+        let _ = c.spawn(on(pool, use_mutex(&m)))
+        let _ = c.spawn(on(pool, use_sender(tx)))
+        let _ = c.spawn(on(pool, use_receiver(rx)))
+        let _ = c.spawn(on(pool, use_watch(r)))
+    return 0

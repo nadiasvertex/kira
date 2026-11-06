@@ -89,7 +89,7 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 53> known_intrinsics = {{
+inline constexpr std::array<intrinsic_signature, 59> known_intrinsics = {{
     intrinsic("rt_stdin", wire::ptr, {}),
     intrinsic("rt_stdout", wire::ptr, {}),
     intrinsic("rt_stderr", wire::ptr, {}),
@@ -210,6 +210,22 @@ inline constexpr std::array<intrinsic_signature, 53> known_intrinsics = {{
     intrinsic("rt_crew_len", wire::i64, {wire::ptr}),  // rt_crew_len (crew),
     intrinsic("rt_crew_task", wire::ptr,
               {wire::ptr, wire::i64}), // rt_crew_task (crew, index),
+    // Memory words shared between tasks (`std.sync`). The atomics are
+    // sequentially consistent; a lock or queue is slow next to them, so they
+    // are runtime calls rather than inline. A wait cannot be written in
+    // Cinder: it parks a thread or a task in the scheduler.
+    intrinsic("rt_atomic_load", wire::i64,
+              {wire::ptr}), // rt_atomic_load (word),
+    intrinsic("rt_atomic_store", wire::ptr,
+              {wire::ptr, wire::i64}), // rt_atomic_store (word, value),
+    intrinsic("rt_atomic_compare_exchange", wire::i64,
+              {wire::ptr, wire::i64,
+               wire::i64}), // rt_atomic_compare_exchange (word, old, new),
+    intrinsic("rt_word_wait", wire::ptr,
+              {wire::ptr, wire::i64}), // rt_word_wait (word, expected),
+    intrinsic("rt_word_waiter", wire::ptr,
+              {wire::ptr, wire::i64}), // rt_word_waiter (word, expected),
+    intrinsic("rt_word_wake", wire::ptr, {wire::ptr}), // rt_word_wake (word),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,

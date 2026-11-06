@@ -1,0 +1,33 @@
+module codegen_stress.async_borrow_survives_suspension
+
+# expect: 1234
+
+# A task that borrows a local of the task awaiting it reads that local after
+# the awaiting task has suspended to wait for it. The local must live where a
+# suspension does not reach, on both tiers: an `async def` method's receiver
+# borrow, an explicit `&local` argument, and a `&mut` the callee writes
+# through, each from a task that is itself awaited (not `main`).
+
+type counter = { n: int32 }
+
+extend counter:
+    async def get(self) -> int32:
+        return self.n
+
+async def read(c: &counter) -> int32:
+    return c.n
+
+async def bump(c: &mut counter, by: int32) -> unit:
+    c.n = c.n + by
+
+async def nested() -> int32:
+    var c = counter { n: 1000 }
+    let a = await c.get()
+    await bump(&mut c, 200)
+    let b = await read(&c)
+    let d = counter { n: 34 }
+    let e = await d.get()
+    return a + (b - 1000) + e
+
+async def main() -> int32:
+    return await nested()

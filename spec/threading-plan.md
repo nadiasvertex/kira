@@ -1,6 +1,6 @@
 # Threading and Task Scheduling Plan
 
-This plan adds a shared task runtime to the bytecode VM and the AOT backend so that `async`/`await`, `crew`, `par`, `race`, and `on` behave the same on both. Steps 1 through 5 are done on both backends: there is a scheduler with `io` and `cpu` worker pools, a `pending` coroutine status with wakers, a thread-safe allocator, a VM that polls tasks from several threads, and lowering for `crew`, `par`, `race`, `spawn`, and `on`. Step 6, `send`/`share` and crew-scoped borrows, is partly done. What remains is the rest of the step 6 checking, the synchronized cells and channels, a real `io` event loop, and a few lowering gaps.
+This plan adds a shared task runtime to the bytecode VM and the AOT backend so that `async`/`await`, `crew`, `par`, `race`, and `on` behave the same on both. All six steps are done on both backends: a scheduler with `io` and `cpu` worker pools, a `pending` coroutine status with wakers, a thread-safe allocator, a VM that polls tasks from several threads, lowering for `crew`, `par`, `race`, `spawn`, `async:` blocks and `on`, and the `send`/`share` and crew-scoped borrow checks. `std.sync` provides `mutex`, `rwlock`, `atomic`, `channel` and `watch`. The one piece of planned work left is a real event loop behind the `io` context. A few smaller gaps found along the way are listed in `spec/todo.md`.
 
 ## Current state
 
@@ -24,25 +24,22 @@ The user-facing behavior is described in the specification: chapter 27 for `asyn
 3. **Thread-safe allocator.** Done. The system allocator provides thread safety, so no extra mutex was needed. The multi-threaded stress test was added.
 4. **Worker pool.** Done. The `cpu` pool is sized to the hardware, and the `io` pool can be raised for tests.
 5. **`crew`, `par`, `race`, `on` lowering.** Done on both backends, including `task.spawn()` and `crew c(on_error: collect)` with `c.errors()`. `race` cancels its losers without waiting for them. Every way of leaving a crew's body joins the crew, including `return`, `?`, `break`, `continue`, and cancellation.
-6. **`send`/`share` and crew-scoped borrows.** Partly done.
-   - Done: `send` and `share` are marker traits that the checker derives structurally. The check covers the arguments of calls handed to `c.spawn`, `par`, and `race`, and the outer locals read by an `async:` block or an `on(pool)` body. A task that carries a raw pointer is rejected. The ownership checker keeps a crew's spawned borrows live until the crew body ends, including for a task bound to a name before `c.spawn(t)`. As a result, two tasks cannot both hold `&mut` to the same value.
-   - Not done: the captures of a closure passed as a task, `channel.send`, the captures of a function-typed value, and ownership of non-copy captures in an `on(ctx)` body.
+6. **`send`/`share` and crew-scoped borrows.** Done.
+   - `send` and `share` are marker traits that the checker derives structurally. The check covers the arguments of calls handed to `c.spawn`, `par`, and `race`, the outer locals read by an `async:` block or a non-`io` `on` body, and function values and tasks that cross to another task, which the checker follows back to where they were made. A task that carries a raw pointer is rejected.
+   - The ownership checker keeps a crew's spawned borrows live until the crew body ends, including for a task bound to a name before `c.spawn(t)`, so two tasks cannot both hold `&mut` to the same value. A non-copy local that an `async:` or `on` body consumes moves into the task.
+   - The `std.sync` types are `send` and `share` whenever `T: send`, because only one task reaches the value inside at a time. `rwlock[T]` is the exception: its readers share the value, so it is `share` only when `T: share`.
+7. **Synchronized cells and channels.** Done. `std.sync` is written in Cinder over atomic access to a `usize` and three runtime calls that wait on a word, wake its waiters, or make a task that finishes when the word changes. `mutex.lock`, `rwlock.read` and `rwlock.write` block the thread; `channel.send`, `channel.recv` and `watch.changed` suspend the task.
+8. **Lowering gaps.** Done. An `on(ctx)` body may `await`, and `on(ctx, task)` runs an existing task on `ctx`. A `crew` exit, `await` or other suspension inside an `if` or `match` that produces a value, or inside a loop condition, is lowered. `c.errors()` works inside a generic function, and generic `async def` calls are typed as tasks.
 
 ## Remaining work
 
-The remaining work is listed below, in no particular order.
-
-- Finish the step 6 checks listed above.
-- Add `mutex[T]`, `rwlock[T]`, and `atomic[T]` to `src/std/` (chapter 30), and channels (chapter 29). `std.mem` already has the atomic operations.
-- Give the `io` context a real event loop. Until then `io` tasks run on the single-threaded driver.
-- Allow `await` inside an `on(ctx)` body, and add its sender form.
-- Lower a crew exit that sits where a task cannot suspend, such as inside an `if` or `match` that produces a value. This is refused today.
-- Support `c.errors()` inside a generic function.
+The `io` context still has no event loop. `io` tasks run on the `io` worker pool and block a worker when they wait on the operating system. An event loop would let an `io` task suspend on a file descriptor or timer instead.
 
 ## Risks
 
 - Differential testing between the VM and AOT cannot detect a race that both tiers hit the same way. Concurrency tests should use `# expect:` values and the `tsan` config.
-- Until the step 6 checks are finished, a closure or function value passed as a task can carry data that is not safe to share to another worker, and the compiler will not reject it.
+- `std.sync` is new and has been run only by the corpus tests and a drop test. Its lock and channel algorithms are simple, but they have not been stress-tested under ThreadSanitizer at high worker counts.
+- The checks that follow function values and tasks back to their origin reject any value whose origin they cannot see. This is sound but may refuse correct programs that pass task values through data structures.
 - Globals are shared across workers without locks on both tiers. This relies on statics being immutable: the ownership checker rejects any write, `&mut`, `mut self` call, or move through a static (chapter 31). Chapter 26 has no rules of its own for globals.
 
 ## Resolved questions

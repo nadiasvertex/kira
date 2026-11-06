@@ -864,7 +864,40 @@ private:
       -> std::expected<std::pair<ptr_vec<hir_node>, ptr<hir_expr>>,
                        lowering_error>;
   /// `await on(ctx): body`: runs the body as a task on `ctx`'s pool.
+  /// The body of an `async:` or `on(...)` block, `key`, as a task function
+  /// of its own whose parameters are the block's captures, and the call
+  /// that makes the task. `declared` is what the body's last expression
+  /// gives.
+  [[nodiscard]] auto
+  lower_task_block(const ast::expr &key,
+                   const std::vector<ast::ptr<ast::node>> &body,
+                   type_id declared, source_span span)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `lower_task_block` with the body made by `lower_body`. `key` names the
+  /// task's captures and its scope-exit drops in the drop schedule, and
+  /// `start_key` the drops of a task dropped before it runs.
+  [[nodiscard]] auto lower_task_function(
+      const void *key, const void *start_key, std::string task_name,
+      const std::function<std::expected<ptr<hir_block>, lowering_error>()>
+          &lower_body,
+      type_id declared, source_span span)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_await_on(const ast::await_expr &await, type_id type)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// The pool `on(ctx, ...)` runs on.
+  [[nodiscard]] auto on_pool(const ast::on_expr &on, source_span span)
+      -> std::expected<runtime::scheduler::pool, lowering_error>;
+  /// Spawns the task `made`, of type `task_type`, on `where` and waits for
+  /// its result, of type `type`. `wait_key` names the drops of a cancel
+  /// during the wait.
+  [[nodiscard]] auto lower_spawn_and_wait(ptr<hir_expr> made, type_id task_type,
+                                          runtime::scheduler::pool where,
+                                          type_id type, const void *wait_key,
+                                          source_span span)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// `on(ctx, task)` or `on(ctx): body` not directly awaited: a task that
+  /// does the `await`, so it runs on `ctx` whoever awaits or spawns it.
+  [[nodiscard]] auto lower_on_task(const ast::on_expr &on, type_id task_type)
       -> std::expected<ptr<hir_expr>, lowering_error>;
   /// Functions synthesized while lowering the current function.
   ptr_vec<hir_function> nested_functions_;
@@ -1128,6 +1161,12 @@ private:
   /// Reuses the general `lower_pattern`, since `pattern` here can be any
   /// pattern shape — as can a `for` head, which reaches the same machinery
   /// through `destructure_loop_element`.
+  /// Lowers a loop's condition (or `while let` subject), which runs once per
+  /// iteration. In a task, the statements an `await` in it needs land in
+  /// `hoisted`, which the caller runs at the top of each iteration.
+  [[nodiscard]] auto lower_loop_condition(const ast::expr &condition,
+                                          ptr_vec<hir_node> &hoisted)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_while_let_stmt(const ast::while_stmt &while_stmt)
       -> std::expected<ptr_vec<hir_node>, lowering_error>;
   /// `for` comprehensions (`for x in a..b => expr`, `for x in a, y in b if
@@ -1414,6 +1453,24 @@ private:
                                  const std::vector<ast::match_arm> &arms,
                                  source_span span, type_id type)
       -> std::expected<ptr<hir_match>, lowering_error>;
+  /// Whether the value-producing `if`/`match` `branching`, of type `type`,
+  /// has a branch that may suspend its task: an `await`, a `?`, a jump that
+  /// may leave a `crew`, or a `crew`/`par`/`race` of its own. Such a branch
+  /// cannot be compiled as part of an expression (`value_branch_depth_`),
+  /// so `lower_suspending_branch_value` makes the whole `if`/`match` a
+  /// statement instead. Only in a task, where the statement has somewhere to
+  /// go (`await_hoist_`).
+  [[nodiscard]] auto branch_value_can_suspend(const ast::expr &branching,
+                                              type_id type) -> bool;
+  /// Lowers a value-producing `if`/`match` (`lower_branching`) as a statement
+  /// ahead of the one being lowered: a result local is declared, each
+  /// branch's value is assigned to it, and the expression reads it. The
+  /// statement goes where an `await` would (`await_hoist_`), so the branches
+  /// are statement lists in which a task may suspend.
+  [[nodiscard]] auto lower_suspending_branch_value(
+      source_span span, type_id type,
+      const std::function<std::expected<ptr<hir_expr>, lowering_error>()>
+          &lower_branching) -> std::expected<ptr<hir_expr>, lowering_error>;
 
   const checked_types &checked_;
   lowering_options options_;
@@ -1441,6 +1498,9 @@ private:
       generic_lambda_bindings_;
   std::unordered_map<symbol_id, type_id> local_types_;
   symbol_id next_symbol_ = 0;
+  /// The name of the function being lowered, which names the task functions
+  /// its `async:` and `on(...)` blocks become.
+  std::string function_name_;
   /// Where every synthesized scope-exit `drop` call belongs in this
   /// function's body (and every lambda nested inside it) — computed once,
   /// at the top of `lower_function`, before the real walk below consults it.
@@ -1723,6 +1783,11 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     if (!type.has_value()) {
       return std::unexpected(type.error());
     }
+    if (branch_value_can_suspend(if_e, *type)) {
+      return lower_suspending_branch_value(if_e.span, *type, [&] {
+        return lower_if(if_e.branches, if_e.else_body, if_e.span, *type);
+      });
+    }
     ++value_branch_depth_;
     auto lowered = lower_if(if_e.branches, if_e.else_body, if_e.span, *type);
     --value_branch_depth_;
@@ -1740,6 +1805,18 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     auto type = checked_type_of(match_e);
     if (!type.has_value()) {
       return std::unexpected(type.error());
+    }
+    if (branch_value_can_suspend(match_e, *type)) {
+      return lower_suspending_branch_value(
+          match_e.span, *type,
+          [&]() -> std::expected<ptr<hir_expr>, lowering_error> {
+            auto lowered = lower_match(*match_e.subject, match_e.arms,
+                                       match_e.span, *type);
+            if (!lowered.has_value()) {
+              return std::unexpected(lowered.error());
+            }
+            return ptr<hir_expr>(std::move(*lowered));
+          });
     }
     ++value_branch_depth_;
     auto lowered =
@@ -1823,6 +1900,33 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
           ptr<hir_node>(make<hir_expr_stmt>(expr.span, std::move(result))));
     }
     return ok_expr(make<hir_block>(expr.span, *type, std::move(nodes)));
+  }
+  case ast::node_kind::async_expr: {
+    // The task, made and not yet run. Its result is the body's last
+    // expression: `T`, or `result[T, E]` for a fallible task.
+    auto type = checked_type_of(expr);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    const auto &task = checked_.types.entry(*type);
+    if (task.kind != type_kind::builtin_generic_kind || task.name != "task" ||
+        task.args.size() < 2) {
+      return fail(lowering_error_kind::unresolved_type, expr.span,
+                  "an `async:` block did not resolve to a task type");
+    }
+    const auto fallible = checked_.types.entry(task.args[1]).name != "never";
+    const auto declared = fallible ? interning_types().builtin_generic(
+                                         "result", {task.args[0], task.args[1]})
+                                   : task.args[0];
+    return lower_task_block(expr, ast::cast<const ast::async_expr>(expr).body,
+                            declared, expr.span);
+  }
+  case ast::node_kind::on_expr: {
+    auto type = checked_type_of(expr);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    return lower_on_task(ast::cast<const ast::on_expr>(expr), *type);
   }
   case ast::node_kind::await_expr: {
     const auto &await = ast::cast<const ast::await_expr>(expr);
@@ -4227,87 +4331,280 @@ auto lowerer::lower_await_group(const ast::await_expr &await, type_id type)
   return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
 }
 
-/// `await on(ctx): body` runs `body` as a task on `ctx`'s pool and gives its
-/// result. The body becomes a closure, and a synthesized task function per
-/// result type calls it once:
+/// The task an `async:` or `on(...)` block runs. Its body becomes a task
+/// function of its own, with the block's captures as its parameters:
 ///
-///   task on$T(f: fn() -> T): yield f()
+///   task <task block>(a, b, ...): <body>; yield <its last expression>
 ///
-/// The call site spawns that task on the pool and waits for it like any other
-/// `await`. The body is an ordinary closure, so it cannot itself `await`.
-auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
+/// and the block itself becomes the call `<task block>(a, b, ...)`, which
+/// makes the task without running it. Every capture is passed by value. A
+/// capture the body consumes is the task's to drop (the ownership checker
+/// moved it in, `task_capture::moved`); any other is only lent to the task,
+/// which the checker keeps from outliving it, so the task never drops it.
+auto lowerer::lower_task_block(const ast::expr &key,
+                               const std::vector<ast::ptr<ast::node>> &body,
+                               type_id declared, source_span span)
     -> std::expected<ptr<hir_expr>, lowering_error> {
-  const auto &on = ast::cast<const ast::on_expr>(*await.operand);
-  const auto span = await.span;
-  if (on.sender != nullptr) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "`on(...)` with a sender is not lowered yet");
+  return lower_task_function(
+      &key, semantic::ownership::task_block_start(key),
+      std::format("<task block {}@{}>", function_name_, key.span.start),
+      [&] { return lower_block(body, span, declared); }, declared, span);
+}
+
+auto lowerer::lower_task_function(
+    const void *key, const void *start_key, std::string task_name,
+    const std::function<std::expected<ptr<hir_block>, lowering_error>()>
+        &lower_body,
+    type_id declared, source_span span)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto task_type = task_type_of(declared);
+  static const auto no_captures =
+      std::vector<semantic::ownership::task_capture>{};
+  const auto found = drop_schedule_.task_captures.find(key);
+  const auto &captures =
+      found != drop_schedule_.task_captures.end() ? found->second : no_captures;
+
+  // The body is a function of its own: nothing it does leaves through the
+  // enclosing function's exits, crews or suspension points.
+  auto enclosing_posts = std::exchange(post_contracts_, {});
+  const auto enclosing_task = std::exchange(in_task_body_, true);
+  const auto enclosing_hoist = std::exchange(await_hoist_, nullptr);
+  auto enclosing_crews = std::exchange(open_crews_, {});
+  const auto enclosing_outside = std::exchange(crews_outside_loop_, 0);
+  const auto enclosing_conditional = std::exchange(conditional_depth_, 0);
+  const auto enclosing_value_branch = std::exchange(value_branch_depth_, 0);
+  const auto restore = [&] -> void {
+    post_contracts_ = std::move(enclosing_posts);
+    in_task_body_ = enclosing_task;
+    await_hoist_ = enclosing_hoist;
+    open_crews_ = std::move(enclosing_crews);
+    crews_outside_loop_ = enclosing_outside;
+    conditional_depth_ = enclosing_conditional;
+    value_branch_depth_ = enclosing_value_branch;
+  };
+
+  // The parameters' scope. A capture the task owns is declared by its first
+  // reference in the body, which is how its drops name it; it keeps the
+  // enclosing local's symbol, which the body already refers to.
+  push_scope();
+  auto prelude = ptr_vec<hir_node>{};
+  for (const auto &capture : captures) {
+    if (!capture.moved) {
+      continue;
+    }
+    const auto symbol = lookup_local(capture.name);
+    if (!symbol.has_value()) {
+      pop_scope();
+      restore();
+      return fail(lowering_error_kind::unsupported_construct, span,
+                  std::format("internal error: the task block captures `{}`, "
+                              "which is not a local here",
+                              capture.name));
+    }
+    scopes_.back().whole.push_back(
+        lexical_scope::whole_binding{.node = capture.node, .id = *symbol});
+    declare_flags(capture.node, span, prelude);
   }
+  // A task dropped before it first runs returns at once.
+  auto cancel = coroutine_cancel_check(start_key, span);
+  if (!cancel.has_value()) {
+    pop_scope();
+    restore();
+    return std::unexpected(cancel.error());
+  }
+  prelude.push_back(std::move(*cancel));
+
+  auto block = lower_body();
+  if (block.has_value() &&
+      ((*block)->stmts.empty() || !always_exits(*(*block)->stmts.back()))) {
+    const auto value_typed =
+        declared != k_unknown_type && !checked_.types.is_unit(declared);
+    if (auto dropped = value_typed
+                           ? emit_tail_scope_exit_drops(key, (*block)->stmts)
+                           : emit_scope_exit_drops(key, (*block)->stmts);
+        !dropped.has_value()) {
+      pop_scope();
+      restore();
+      return std::unexpected(dropped.error());
+    }
+  }
+  pop_scope();
+  if (block.has_value()) {
+    if (auto finished = finish_task_body(**block, declared, span);
+        !finished.has_value()) {
+      restore();
+      return std::unexpected(finished.error());
+    }
+  }
+  restore();
+  if (!block.has_value()) {
+    return std::unexpected(block.error());
+  }
+  for (auto &stmt : (*block)->stmts) {
+    prelude.push_back(std::move(stmt));
+  }
+  (*block)->stmts = std::move(prelude);
+
+  // Every local of the enclosing function the body reads is a parameter.
+  auto params = std::vector<hir_param>{};
+  auto args = ptr_vec<hir_expr>{};
+  for (const auto symbol : free_variables(**block)) {
+    const auto type = local_types_.find(symbol);
+    if (type == local_types_.end()) {
+      const auto global =
+          std::ranges::any_of(global_refs_, [symbol](const auto &entry) {
+            return entry.second == symbol;
+          });
+      if (global) {
+        continue;
+      }
+      return fail(lowering_error_kind::unsupported_construct, span,
+                  "internal error: the task block reads a value of the "
+                  "enclosing function that is not one of its captures");
+    }
+    auto name = std::string("<capture>");
+    for (const auto &scope : scopes_) {
+      for (const auto &[spelling, id] : scope.by_name) {
+        if (id == symbol) {
+          name = spelling;
+        }
+      }
+    }
+    params.push_back(
+        hir_param{.symbol = symbol, .name = name, .type = type->second});
+    args.push_back(ptr<hir_expr>(
+        make<hir_local_ref>(span, type->second, symbol, std::move(name))));
+  }
+
+  auto function = ptr<hir_function>(
+      make<hir_function>(span, task_name, std::move(params), task_type,
+                         std::move(*block), coroutine_kind::task, declared));
+  if (auto finished = finish_function(*function); !finished.has_value()) {
+    return std::unexpected(finished.error());
+  }
+  nested_functions_.push_back(std::move(function));
+
+  auto callee = ptr<hir_expr>(make<hir_local_ref>(
+      span, k_unknown_type, resolve_reference(task_name), task_name));
+  return ok_expr(
+      make<hir_call>(span, task_type, std::move(callee), std::move(args)));
+}
+
+/// `await on(ctx): body` runs `body` as a task on `ctx`'s pool and gives its
+/// result (`lower_task_block`); `await on(ctx, task)` runs an existing task
+/// there. The call site spawns the task on the pool and waits for it like any
+/// other `await`.
+auto lowerer::on_pool(const ast::on_expr &on, source_span span)
+    -> std::expected<runtime::scheduler::pool, lowering_error> {
   const auto *named = ast::as<const ast::named_type>(on.context_type.get());
-  if (named == nullptr || named->path.size() != 1) {
-    return fail(lowering_error_kind::unsupported_construct, span,
-                "`on(...)` only supports the `cpu`, `pool` and `io` contexts");
-  }
-  const auto &target = named->path.front();
-  const auto where = target == "io" ? runtime::scheduler::pool::io
-                                    : runtime::scheduler::pool::cpu;
+  const auto target =
+      named != nullptr && named->path.size() == 1 ? named->path.front() : "";
   if (target != "io" && target != "cpu" && target != "pool") {
     return fail(lowering_error_kind::unsupported_construct, span,
                 "`on(...)` only supports the `cpu`, `pool` and `io` contexts");
   }
-  const auto in_task = in_task_body_;
-  if (in_task && await_cannot_hoist()) {
+  return target == "io" ? runtime::scheduler::pool::io
+                        : runtime::scheduler::pool::cpu;
+}
+
+auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto &on = ast::cast<const ast::on_expr>(*await.operand);
+  const auto span = await.span;
+  const auto where = on_pool(on, span);
+  if (!where.has_value()) {
+    return std::unexpected(where.error());
+  }
+  if (in_task_body_ && await_cannot_hoist()) {
     return fail(lowering_error_kind::unsupported_construct, span,
                 k_conditional_await_message);
   }
 
-  auto &types = interning_types();
-  const auto fn_type = types.fn_of({}, type);
-  const auto task_type = task_type_of(type);
+  auto task_type = task_type_of(type);
+  auto made = std::expected<ptr<hir_expr>, lowering_error>{};
+  if (on.sender != nullptr) {
+    auto sender_type = checked_type_of(*on.sender);
+    if (!sender_type.has_value()) {
+      return std::unexpected(sender_type.error());
+    }
+    task_type = *sender_type;
+    made = lower_expr(*on.sender);
+  } else {
+    made = lower_task_block(*await.operand, on.body, type, span);
+  }
+  if (!made.has_value()) {
+    return std::unexpected(made.error());
+  }
+  return lower_spawn_and_wait(std::move(*made), task_type, *where, type, &await,
+                              span);
+}
 
-  // The body, as a closure over whatever it reads from the enclosing function.
-  auto enclosing_posts = std::exchange(post_contracts_, {});
-  const auto enclosing_task = std::exchange(in_task_body_, false);
-  const auto enclosing_hoist = std::exchange(await_hoist_, nullptr);
-  auto enclosing_crews = std::exchange(open_crews_, {});
-  const auto enclosing_outside = std::exchange(crews_outside_loop_, 0);
+auto lowerer::lower_on_task(const ast::on_expr &on, type_id task_type)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto span = on.span;
+  const auto where = on_pool(on, span);
+  if (!where.has_value()) {
+    return std::unexpected(where.error());
+  }
+  const auto &task = checked_.types.entry(task_type);
+  if (task.kind != type_kind::builtin_generic_kind || task.name != "task" ||
+      task.args.size() < 2) {
+    return fail(lowering_error_kind::unresolved_type, span,
+                "an `on(...)` did not resolve to a task type");
+  }
+  const auto fallible = checked_.types.entry(task.args[1]).name != "never";
+  const auto declared = fallible ? interning_types().builtin_generic(
+                                       "result", {task.args[0], task.args[1]})
+                                 : task.args[0];
+
+  // The task that runs on the pool is made here, as an `await on(...)`
+  // would make it; the wrapper only takes it along.
+  auto made = on.sender != nullptr
+                  ? lower_expr(*on.sender)
+                  : lower_task_block(on, on.body, declared, span);
+  if (!made.has_value()) {
+    return std::unexpected(made.error());
+  }
   push_scope();
-  auto body = lower_block(on.body, span, type);
+  const auto held = declare_local("<on task>", task_type);
   pop_scope();
-  post_contracts_ = std::move(enclosing_posts);
-  in_task_body_ = enclosing_task;
-  await_hoist_ = enclosing_hoist;
-  open_crews_ = std::move(enclosing_crews);
-  crews_outside_loop_ = enclosing_outside;
-  if (!body.has_value()) {
-    return std::unexpected(body.error());
+  const auto *key = &on.context_type;
+  auto wrapper = lower_task_function(
+      key, key, std::format("<on {}@{}>", function_name_, span.start),
+      [&]() -> std::expected<ptr<hir_block>, lowering_error> {
+        auto stmts = ptr_vec<hir_node>{};
+        const auto enclosing = std::exchange(await_hoist_, &stmts);
+        auto value = lower_spawn_and_wait(
+            ptr<hir_expr>(make<hir_local_ref>(span, task_type, held,
+                                              std::string("<on task>"))),
+            task_type, *where, declared, key, span);
+        await_hoist_ = enclosing;
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        stmts.push_back(
+            ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*value))));
+        return ptr<hir_block>(
+            make<hir_block>(span, declared, std::move(stmts)));
+      },
+      declared, span);
+  if (!wrapper.has_value()) {
+    return std::unexpected(wrapper.error());
   }
-  auto closure = ptr<hir_expr>(make<hir_lambda>(
-      span, fn_type, std::vector<hir_param>{}, type, std::move(*body)));
+  auto stmts = ptr_vec<hir_node>{};
+  stmts.push_back(ptr<hir_node>(
+      make<hir_let>(span, held, std::string("<on task>"), std::move(*made))));
+  stmts.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(span, std::move(*wrapper))));
+  return ok_expr(make<hir_block>(span, task_type, std::move(stmts)));
+}
 
-  // The task function that runs the closure.
-  const auto thunk_name = std::format("<on thunk ${}>", type);
-  const auto already =
-      std::ranges::any_of(nested_functions_, [&](const auto &function) {
-        return function->name == thunk_name;
-      });
-  if (!already) {
-    const auto param = mint_symbol();
-    auto call = ptr<hir_expr>(make<hir_call>(
-        span, type,
-        ptr<hir_expr>(make<hir_local_ref>(span, fn_type, param, "f")),
-        ptr_vec<hir_expr>{}));
-    auto stmts = ptr_vec<hir_node>{};
-    stmts.push_back(ptr<hir_node>(make<hir_yield>(span, std::move(call))));
-    stmts.push_back(ptr<hir_node>(make<hir_return>(span, nullptr)));
-    auto params = std::vector<hir_param>{};
-    params.push_back(hir_param{.symbol = param, .name = "f", .type = fn_type});
-    nested_functions_.push_back(
-        make<hir_function>(span, thunk_name, std::move(params), task_type,
-                           make<hir_block>(span, type, std::move(stmts)),
-                           coroutine_kind::task, type));
-  }
-
+auto lowerer::lower_spawn_and_wait(ptr<hir_expr> made, type_id task_type,
+                                   runtime::scheduler::pool where, type_id type,
+                                   const void *wait_key, source_span span)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  const auto in_task = in_task_body_;
+  auto &types = interning_types();
   auto local_setup = ptr_vec<hir_node>{};
   auto &setup = in_task ? *await_hoist_ : local_setup;
   const auto symbol = mint_symbol();
@@ -4315,14 +4612,8 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
     return {
         make<hir_local_ref>(span, task_type, symbol, std::string("<on task>"))};
   };
-  auto args = ptr_vec<hir_expr>{};
-  args.push_back(std::move(closure));
-  auto callee = ptr<hir_expr>(make<hir_local_ref>(
-      span, k_unknown_type, mint_symbol(), std::string(thunk_name)));
-  setup.push_back(ptr<hir_node>(make<hir_let>(
-      span, symbol, std::string("<on task>"),
-      ptr<hir_expr>(make<hir_call>(span, task_type, std::move(callee),
-                                   std::move(args))))));
+  setup.push_back(ptr<hir_node>(
+      make<hir_let>(span, symbol, std::string("<on task>"), std::move(made))));
   const auto unit_type = types.builtin("unit");
   auto spawn_args = ptr_vec<hir_expr>{};
   spawn_args.push_back(task_ref());
@@ -4331,7 +4622,7 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
       make<hir_expr_stmt>(span, runtime_call(span, "rt_task_spawn", unit_type,
                                              std::move(spawn_args)))));
   if (in_task) {
-    if (auto waited = emit_task_wait(setup, task_ref(), &await, span);
+    if (auto waited = emit_task_wait(setup, task_ref(), wait_key, span);
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5901,10 +6192,8 @@ auto lowerer::lower_stmt(const ast::node &node)
       return fail(lowering_error_kind::unsupported_construct, while_s.span,
                   "while loop has no condition");
     }
-    auto condition = [&] {
-      const auto repeated = conditional_scope(*this);
-      return lower_expr(*while_s.condition);
-    }();
+    auto hoisted = ptr_vec<hir_node>{};
+    auto condition = lower_loop_condition(*while_s.condition, hoisted);
     if (!condition.has_value()) {
       return std::unexpected(condition.error());
     }
@@ -5912,8 +6201,35 @@ auto lowerer::lower_stmt(const ast::node &node)
     if (!body.has_value()) {
       return std::unexpected(body.error());
     }
+    if (hoisted.empty()) {
+      return one_stmt(ptr<hir_node>(make<hir_while>(
+          while_s.span, std::move(*condition), std::move(*body))));
+    }
+    // The condition waits for a task, and a wait is a statement, so the test
+    // moves into the loop: `while true: <wait>; if not cond: break; body`.
+    auto exit = ptr_vec<hir_node>{};
+    exit.push_back(ptr<hir_node>(make<hir_break>(while_s.span)));
+    auto branches = std::vector<hir_if_branch>{};
+    branches.push_back(
+        hir_if_branch{.condition = ptr<hir_expr>(hir::make<hir_unary>(
+                          while_s.span, checked_.types.bool_type(),
+                          ast::unary_op::logical_not, std::move(*condition))),
+                      .body = make<hir_block>(while_s.span, k_unknown_type,
+                                              std::move(exit))});
+    hoisted.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        while_s.span,
+        ptr<hir_expr>(make<hir_if>(while_s.span, k_unknown_type,
+                                   std::move(branches), nullptr)))));
+    for (auto &stmt_ptr : (*body)->stmts) {
+      hoisted.push_back(std::move(stmt_ptr));
+    }
+    (*body)->stmts = std::move(hoisted);
     return one_stmt(ptr<hir_node>(make<hir_while>(
-        while_s.span, std::move(*condition), std::move(*body))));
+        while_s.span,
+        ptr<hir_expr>(make<hir_literal>(while_s.span,
+                                        checked_.types.bool_type(),
+                                        token_kind::kw_true, "true")),
+        std::move(*body))));
   }
   case ast::node_kind::scope_stmt: {
     const auto &scope_s = ast::cast<const ast::scope_stmt>(node);
@@ -7399,16 +7715,146 @@ auto lowerer::lower_comprehension_clause(
                             nested);
 }
 
+namespace {
+
+/// Replaces the value at the end of `block` with `slot = value`, following
+/// a trailing `if`/`match`/block into its branches. A branch that ends in a
+/// jump, or in a statement, has no value to assign.
+auto assign_branch_values(hir_block &block, symbol_id slot, type_id type)
+    -> void {
+  if (block.stmts.empty()) {
+    return;
+  }
+  auto &last = block.stmts.back();
+  if (last->kind != hir_node_kind::hir_expr_stmt) {
+    return;
+  }
+  auto &stmt = dynamic_cast<hir_expr_stmt &>(*last);
+  auto &value = *stmt.expr;
+  block.type = k_unknown_type;
+  switch (value.kind) {
+  case hir_node_kind::hir_if: {
+    auto &branching = dynamic_cast<hir_if &>(value);
+    for (auto &branch : branching.branches) {
+      assign_branch_values(*branch.body, slot, type);
+    }
+    if (branching.else_body != nullptr) {
+      assign_branch_values(*branching.else_body, slot, type);
+    }
+    branching.type = k_unknown_type;
+    return;
+  }
+  case hir_node_kind::hir_match: {
+    auto &branching = dynamic_cast<hir_match &>(value);
+    for (auto &arm : branching.arms) {
+      assign_branch_values(*arm.body, slot, type);
+    }
+    branching.type = k_unknown_type;
+    return;
+  }
+  case hir_node_kind::hir_block:
+    assign_branch_values(dynamic_cast<hir_block &>(value), slot, type);
+    return;
+  default:
+    break;
+  }
+  if (value.type != type) {
+    return;
+  }
+  last = ptr<hir_node>(hir::make<hir_assign>(
+      stmt.span, ast::assign_op::assign,
+      ptr<hir_expr>(hir::make<hir_local_ref>(stmt.span, type, slot,
+                                             std::string("<branch value>"))),
+      std::move(stmt.expr)));
+}
+
+} // namespace
+
+auto lowerer::branch_value_can_suspend(const ast::expr &branching, type_id type)
+    -> bool {
+  if (!in_task_body_ || await_hoist_ == nullptr || conditional_depth_ > 0 ||
+      value_branch_depth_ > 0 || type == interning_types().builtin("unit")) {
+    return false;
+  }
+  auto found = false;
+  ast::walk(branching, [&found](const ast::node &n) -> bool {
+    switch (n.kind) {
+    case ast::node_kind::await_expr:
+    case ast::node_kind::try_expr:
+    case ast::node_kind::return_stmt:
+    case ast::node_kind::break_stmt:
+    case ast::node_kind::continue_stmt:
+    case ast::node_kind::crew_stmt:
+    case ast::node_kind::crew_expr:
+    case ast::node_kind::par_expr:
+    case ast::node_kind::race_expr:
+      found = true;
+      return false;
+    case ast::node_kind::lambda_expr:
+    case ast::node_kind::async_expr:
+    case ast::node_kind::on_expr:
+    case ast::node_kind::func_decl:
+      // A body of its own, which suspends its own task.
+      return false;
+    default:
+      return !found;
+    }
+  });
+  return found;
+}
+
+auto lowerer::lower_suspending_branch_value(
+    source_span span, type_id type,
+    const std::function<std::expected<ptr<hir_expr>, lowering_error>()>
+        &lower_branching) -> std::expected<ptr<hir_expr>, lowering_error> {
+  // The condition or subject waits into the enclosing statement's prelude
+  // as usual; the branches are statement lists with preludes of their own.
+  auto *prelude = await_hoist_;
+  auto lowered = lower_branching();
+  if (!lowered.has_value()) {
+    return std::unexpected(lowered.error());
+  }
+  const auto slot = mint_symbol();
+  auto branching = std::move(*lowered);
+  auto holder = ptr_vec<hir_node>{};
+  holder.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(span, std::move(branching))));
+  auto wrapper = hir_block(span, type, std::move(holder));
+  assign_branch_values(wrapper, slot, type);
+  auto declared = make<hir_let>(span, slot, std::string("<branch value>"),
+                                nullptr, /*mut=*/true);
+  declared->declared_type = type;
+  prelude->push_back(ptr<hir_node>(std::move(declared)));
+  for (auto &stmt : wrapper.stmts) {
+    prelude->push_back(std::move(stmt));
+  }
+  return ok_expr(
+      make<hir_local_ref>(span, type, slot, std::string("<branch value>")));
+}
+
+auto lowerer::lower_loop_condition(const ast::expr &condition,
+                                   ptr_vec<hir_node> &hoisted)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  if (!in_task_body_ || await_hoist_ == nullptr) {
+    const auto repeated = conditional_scope(*this);
+    return lower_expr(condition);
+  }
+  // In a task, an `await` in the condition waits into `hoisted`, which the
+  // caller runs at the top of every iteration.
+  const auto enclosing_hoist = std::exchange(await_hoist_, &hoisted);
+  auto result = lower_expr(condition);
+  await_hoist_ = enclosing_hoist;
+  return result;
+}
+
 auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
     -> std::expected<ptr_vec<hir_node>, lowering_error> {
   auto subject_type = checked_type_of(*while_stmt.let_expr);
   if (!subject_type.has_value()) {
     return std::unexpected(subject_type.error());
   }
-  auto subject_value = [&] {
-    const auto repeated = conditional_scope(*this);
-    return lower_expr(*while_stmt.let_expr);
-  }();
+  auto hoisted = ptr_vec<hir_node>{};
+  auto subject_value = lower_loop_condition(*while_stmt.let_expr, hoisted);
   if (!subject_value.has_value()) {
     return std::unexpected(subject_value.error());
   }
@@ -7445,16 +7891,21 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
   (*lowered_body)->stmts = std::move(body_stmts);
 
   auto result = ptr_vec<hir_node>{};
-  if (drop_schedule_.unmatched_drops.contains(while_stmt.let_pattern.get())) {
+  const auto drops_unmatched =
+      drop_schedule_.unmatched_drops.contains(while_stmt.let_pattern.get());
+  if (drops_unmatched || !hoisted.empty()) {
     // The subject is moved into each test. When the pattern misses, nothing
     // bound it, so the exit path drops it; `hir_while_let` has no such path,
     // so this form is `while true: match subject: pattern => body, _ => drop
-    // and break`.
+    // and break`. A subject that waits for a task takes the same form, with
+    // the wait at the top of the loop, because a wait is a statement.
     auto exit_stmts = std::vector<ptr<hir_node>>{};
-    if (auto dropped =
-            build_drop_calls(make_place, subj_type, subject_span, exit_stmts);
-        !dropped.has_value()) {
-      return std::unexpected(dropped.error());
+    if (drops_unmatched) {
+      if (auto dropped =
+              build_drop_calls(make_place, subj_type, subject_span, exit_stmts);
+          !dropped.has_value()) {
+        return std::unexpected(dropped.error());
+      }
     }
     exit_stmts.push_back(ptr<hir_node>(make<hir_break>(while_stmt.span)));
     auto arms = std::vector<hir_match_arm>{};
@@ -7467,7 +7918,7 @@ auto lowerer::lower_while_let_stmt(const ast::while_stmt &while_stmt)
         .guard = nullptr,
         .body = make<hir_block>(while_stmt.span, k_unknown_type,
                                 std::move(exit_stmts))});
-    auto loop_body = ptr_vec<hir_node>{};
+    auto loop_body = std::move(hoisted);
     loop_body.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         while_stmt.span,
         ptr<hir_expr>(make<hir_match>(while_stmt.span, k_unknown_type,
@@ -8041,6 +8492,7 @@ auto lowerer::lower_function(const ast::func_decl &decl)
   // locals live in the generator's state across a `yield`, and a generator
   // dropped while suspended is resumed to return (`hir_coroutine_cancel`).
   drop_schedule_ = compute_drop_schedule(decl, checked_);
+  function_name_ = decl.name;
   flag_symbols_.assign(drop_schedule_.flag_count, k_invalid_symbol_id);
 
   // An implicit generic has no body of its own to lower — only the instances

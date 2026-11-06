@@ -1,0 +1,16 @@
+module reject_crew_task_block_borrow_then_mut
+
+# A task block spawned into a crew borrows what it reads until the crew
+# ends, so the owner cannot change it meanwhile.
+
+def total(xs: &list[int32]) -> int32:
+    return xs.len() as int32
+
+async def main() -> int32:
+    var xs = [1, 2, 3]
+    crew c:
+        let _ = c.spawn(async:
+            total(&xs)
+        )
+        xs.push(4)
+    return 0

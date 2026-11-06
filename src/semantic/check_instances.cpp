@@ -1243,9 +1243,13 @@ auto checker::solved_signature(const ast::func_decl &decl,
                               ? resolve_type(*param.type_annotation, ctx)
                               : k_unknown_type);
   }
-  const auto result = decl.return_type != nullptr
-                          ? resolve_type(*decl.return_type, ctx)
-                          : k_unknown_type;
+  auto result = decl.return_type != nullptr
+                    ? resolve_type(*decl.return_type, ctx)
+                    : k_unknown_type;
+  // An `async def` gives its caller a task (`signature_return_type`).
+  if (decl.modifiers.is_async && result != k_unknown_type) {
+    result = task_of_declared_result(result);
+  }
   file_.file_id_ = saved_signature_file;
   return {std::move(param_types), result};
 }

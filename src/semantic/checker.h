@@ -84,8 +84,30 @@ using param_subst = std::unordered_map<type_id, type_id>;
 
 /// One name bound in the current lexical scope stack, with enough
 /// information to type future references and to diagnose illegal mutation.
+/// One value a function value or a task carries with it: a closure's
+/// capture, an `async:` block's capture, or an argument of an `async def`
+/// call. What crosses to another task with the value is checked through
+/// these, since a `fn` or `task` type does not say what it carries.
+struct carried_value {
+  type_id type = k_unknown_type;
+  /// Borrowed rather than owned, so the task reads it alongside its owner.
+  bool need_share = false;
+  /// Where to report it; unset for a capture, reported where its closure or
+  /// block crosses.
+  std::optional<source_span> span;
+  /// How the value comes along (`it captures \`h\``), or empty.
+  std::string label;
+};
+
+/// What a `fn` or `task` value carries, or null when the compiler cannot
+/// see where the value came from (a parameter, a field, a `var`).
+using carried_values = std::shared_ptr<const std::vector<carried_value>>;
+
 struct value_binding {
   type_id type = k_unknown_type;
+  /// For a `let` of a `fn` or `task` value: what it carries. See
+  /// `checker::carried_by`.
+  carried_values carried;
   binding_origin origin = binding_origin::let_binding;
   source_span
       span; ///< Where the binding was introduced, for "declared here" notes.
@@ -530,6 +552,13 @@ private:
         crew_error_dispatches_;
     std::unordered_map<const ast::call_expr *, type_id> crew_error_task_types_;
 
+    /// Calls of an `async def`: the task they make carries their arguments
+    /// and nothing else. See `checker::carried_by`.
+    std::unordered_set<const ast::call_expr *> async_calls_;
+    /// What each checked lambda and `async:` block carries; null when one of
+    /// its captures hides what it carries.
+    std::unordered_map<const ast::node *, carried_values> carried_literals_;
+
     /// The crews in scope, by name: whether each collects errors and the task
     /// type of the first thing spawned into it (`k_unknown_type` until then).
     struct crew_scope {
@@ -890,6 +919,10 @@ private:
     /// Listed names already diagnosed, so the "captured but never used"
     /// warning doesn't pile a second complaint onto a broken entry.
     std::unordered_set<std::string> invalid;
+    /// What the closure captures, and whether some capture hides what it
+    /// carries (`opaque`). See `carried_by`.
+    std::vector<carried_value> carried;
+    bool opaque = false;
   };
 
   /// State for the function, lambda, or block currently being checked.
@@ -903,9 +936,14 @@ private:
     /// One entry per `async:` or `on(...)` body being checked: where it began
     /// in `scopes_`, and the outer locals it has read so far, which cross to
     /// whichever task runs the body.
+    struct task_capture_use {
+      std::string name;
+      type_id type = k_unknown_type;
+      carried_values carried;
+    };
     struct task_boundary {
       size_t scope_floor = 0;
-      std::vector<std::pair<std::string, type_id>> captured;
+      std::vector<task_capture_use> captured;
     };
     std::vector<task_boundary> task_boundaries_;
 
@@ -1020,6 +1058,11 @@ private:
     /// reset across every function and lambda body: a loop in the *enclosing*
     /// function is not a loop this body can break out of.
     unsigned loop_depth_ = 0;
+
+    /// Enclosing `async:` and `on(...)` blocks in the body being checked. Each
+    /// runs as a task of its own, so `return` and `?` cannot leave it. Reset
+    /// across a lambda body, like `loop_depth_`.
+    unsigned task_block_depth_ = 0;
 
     type_id generator_item_type_ = k_unknown_type;
 
@@ -1495,29 +1538,81 @@ private:
 
   auto value_is_copy(type_id id, std::unordered_set<type_id> &visiting) -> bool;
 
-  /// The raw pointer that keeps values of `id` from crossing to another task
+  /// What keeps a value from crossing to another task: the offending part
+  /// (a raw pointer, or a function or task value), whether it had to be
+  /// `share` where it was found rather than only `send`, and the innermost
+  /// named type holding it, if any.
+  struct concurrency_offense {
+    type_id type;
+    bool need_share = false;
+    std::optional<type_id> holder;
+  };
+
+  /// The part that keeps values of `id` from crossing to another task
   /// (`send`), or from being read by several at once (`share`), or `nullopt`
   /// when they may. Both concepts are derived from a type's parts; a
   /// standard-library type or one with `impl send/share for` vouches for its
   /// own fields, and its type arguments are still checked.
   auto concurrency_offender(type_id id, bool need_share,
                             std::unordered_set<type_id> &visiting)
-      -> std::optional<type_id>;
+      -> std::optional<concurrency_offense>;
 
-  /// Checks the body of an `async:` or `on(...)` block: runs `check` with the
-  /// block marked as a task boundary, then requires what it captured to be
+  /// Checks the body of an `async:` or `on(...)` block, which runs as a task
+  /// of its own: runs `check` with the block marked as a task boundary, so
+  /// `return`, `?`, `break` and `continue` cannot leave it. When the task may
+  /// run on another thread (`crosses_threads`), what it captured must be
   /// sendable.
-  auto check_task_body(source_span span, const std::function<type_id()> &check)
-      -> type_id;
+  ///
+  /// What the block carries is recorded under `key` (`carried_literals_`).
+  auto check_task_body(const ast::node &key, source_span span,
+                       bool crosses_threads,
+                       const std::function<type_id()> &check) -> type_id;
 
-  /// Requires the arguments of a task-creating call (`f(args)` handed to
-  /// `c.spawn`, `par` or `race`) to be sendable.
+  /// True for a `fn` or `task` type, whose values carry data their type does
+  /// not show.
+  auto hides_carried(type_id type) -> bool;
+
+  /// What the `fn` or `task` value `expr` carries, followed back to where it
+  /// was made: a lambda, an `async:` block, an `async def` call, a named
+  /// function, or a `let` of one of those. Null when that origin is out of
+  /// sight.
+  auto carried_by(const ast::expr &expr) -> carried_values;
+  /// The expression `carried_by` last lost sight of, for the diagnostic.
+  const ast::expr *hidden_carrier_ = nullptr;
+
+  /// Appends what moves with `expr` into a task: `expr` itself, or for a
+  /// `fn` or `task` value what it carries. False when that is out of sight.
+  auto append_carried(const ast::expr &expr, std::vector<carried_value> &out)
+      -> bool;
+
+  /// Requires each value in `carried` to be sendable (or shareable).
+  /// Each is reported at its own span, else at `at`, with `what` and its
+  /// own label.
+  auto require_carried_sendable(const std::vector<carried_value> &carried,
+                                std::string_view what, source_span at) -> void;
+
+  /// Reports a `fn` or `task` value whose origin `carried_by` cannot see
+  /// crossing to another task.
+  auto report_hidden_carrier(type_id type, source_span span,
+                             std::string_view what) -> void;
+
+  /// Reports `what` (`return`, `?`) used inside an `async:` or `on(...)`
+  /// block, which it cannot leave. True when it reported.
+  auto reject_task_block_exit(source_span span, std::string_view what) -> bool;
+
+  /// Reports `expr`, of type `type`, when it is not a task, which `form`
+  /// (`c.spawn(...)`, `par:`) needs. True when it reported.
+  auto reject_non_task(const ast::expr &expr, type_id type,
+                       std::string_view form) -> bool;
+
+  /// Requires what the task `task` carries (handed to `c.spawn`, `par`,
+  /// `race` or `on(ctx, task)`) to be sendable.
   auto require_task_args_sendable(const ast::expr &task) -> void;
 
   /// Reports `value`, of type `type`, as unable to cross into a task when
   /// `concurrency_offender` finds a pointer in it. `what` names the use.
-  auto require_sendable(type_id type, source_span span, std::string_view what)
-      -> void;
+  auto require_sendable(type_id type, source_span span, std::string_view what,
+                        bool need_share = false) -> void;
 
   static auto intersect_domains(const type_domain &a, const type_domain &b)
       -> type_domain;

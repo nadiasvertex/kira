@@ -384,7 +384,7 @@ public:
   [[nodiscard]] auto compile(const hir::hir_function &fn)
       -> std::expected<bytecode::bytecode_function, compile_error> {
     source_function_ = fn.name;
-    cell_promoted_ = hir::ref_captured_symbols(*fn.body);
+    cell_promoted_ = promoted_symbols(fn);
     for (const auto &param : fn.params) {
       const auto reg = alloc_register(fn.span);
       if (!reg.has_value()) {
@@ -497,6 +497,7 @@ public:
     generator_state_reg_ = *state_reg;
     generator_self_reg_ = *self_reg;
     generator_state_layout_ = state_symbols;
+    cell_promoted_ = promoted_symbols(fn);
 
     for (size_t i = 0; i < state_symbols.size(); ++i) {
       const auto reg = alloc_register(fn.span);
@@ -505,6 +506,16 @@ public:
       }
       emit_load_register_image(*reg, *state_reg, static_cast<uint16_t>(i));
       locals_.emplace(state_symbols[i], *reg);
+    }
+    // The constructor boxed every promoted parameter before storing it
+    // (`promote_captured_params`), so its state slot holds the cell pointer.
+    for (const auto &param : fn.params) {
+      if (cell_promoted_.contains(param.symbol)) {
+        cell_locals_.insert(param.symbol);
+        if (const auto reg = lookup_local(param.symbol)) {
+          address_taken_.push_back(*reg);
+        }
+      }
     }
 
     const auto yield_total = count_yields(*fn.body);
@@ -966,6 +977,20 @@ private:
       }
     }
     return {};
+  }
+
+  /// The locals of `fn` that live in a cell rather than a register: those a
+  /// lambda captures by reference, and, in a coroutine, those whose address
+  /// is taken. A coroutine's frame does not survive a suspension, so a
+  /// borrow of a register (a receiver borrow handed to an awaited task, say)
+  /// would dangle once the task suspends; a cell outlives the frame.
+  [[nodiscard]] static auto promoted_symbols(const hir::hir_function &fn)
+      -> std::unordered_set<hir::symbol_id> {
+    auto promoted = hir::ref_captured_symbols(*fn.body);
+    if (fn.is_coroutine()) {
+      promoted.merge(hir::address_taken_symbols(*fn.body));
+    }
+    return promoted;
   }
 
   [[nodiscard]] auto is_cell_local(hir::symbol_id symbol) const -> bool {
@@ -4037,6 +4062,30 @@ private:
     return {};
   }
 
+  /// Loads the placeholder a declared-but-unassigned local holds until its
+  /// first assignment.
+  auto emit_load_zero(virtual_reg dst) -> void {
+    const auto zero = writer_.add_constant(slot_value{uint64_t{0}});
+    emit_op(opcode::op_load_const);
+    emit_register(dst);
+    writer_.emit_u32(zero);
+  }
+
+  /// `let`'s initial value in a fresh register: its initializer, or the
+  /// placeholder when it has none (`hir_let::initializer`).
+  [[nodiscard]] auto compile_let_initializer(const hir::hir_let &let)
+      -> std::expected<virtual_reg, compile_error> {
+    if (let.initializer != nullptr) {
+      return compile_expr(*let.initializer);
+    }
+    auto reg = alloc_register(let.span);
+    if (!reg.has_value()) {
+      return std::unexpected(reg.error());
+    }
+    emit_load_zero(*reg);
+    return *reg;
+  }
+
   [[nodiscard]] auto compile_let(const hir::hir_let &let)
       -> std::expected<void, compile_error> {
     // A generator step function's entry preloads a register for every
@@ -4051,6 +4100,21 @@ private:
     // reference to the symbol keeps resolving to the untouched
     // (zero-initialized) preloaded one.
     const auto existing = lookup_local(let.symbol);
+    if (existing.has_value() && cell_promoted_.contains(let.symbol)) {
+      // A promoted local that is also suspended state: its preloaded
+      // register holds the cell pointer, which the state block carries
+      // across a suspension like any other value. A fresh run allocates the
+      // cell into that same register; a resumed one reloads it.
+      auto value = compile_let_initializer(let);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      emit_alloc_register_images(*existing, 1);
+      emit_store_register_image(*existing, 0, *value);
+      address_taken_.push_back(*existing);
+      cell_locals_.insert(let.symbol);
+      return {};
+    }
     virtual_reg reg;
     if (existing.has_value()) {
       reg = *existing;
@@ -4061,27 +4125,14 @@ private:
       }
       reg = *allocated;
     }
-    if (auto result = compile_expr_into(*let.initializer, reg);
-        !result.has_value()) {
+    if (let.initializer == nullptr) {
+      // Declared now, assigned before it is read.
+      emit_load_zero(reg);
+    } else if (auto result = compile_expr_into(*let.initializer, reg);
+               !result.has_value()) {
       return std::unexpected(result.error());
     }
     if (existing.has_value()) {
-      // A generator's preloaded state register (see above). Cell promotion
-      // and generator-state preloading both want to own the symbol's
-      // storage, and reconciling them would mean teaching the suspend/resume
-      // state sync to round-trip through the cell. Rejecting the
-      // combination is the honest answer; silently picking one would
-      // miscompile the other.
-      if (cell_promoted_.contains(let.symbol)) {
-        return std::unexpected(compile_error{
-            .kind = compile_error_kind::unsupported_construct,
-            .span = let.span,
-            .message = std::format(
-                "`{}` is both part of a generator's suspended state and "
-                "captured by reference by a lambda — that combination is not "
-                "supported by the bytecode compiler yet",
-                let.name)});
-      }
       return {};
     }
     if (cell_promoted_.contains(let.symbol)) {

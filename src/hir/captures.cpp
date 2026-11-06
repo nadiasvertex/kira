@@ -25,6 +25,7 @@ struct walker {
   /// descending into its body. Lets a caller that only wants to *find*
   /// lambdas reuse this traversal instead of duplicating it.
   std::function<void(const hir_lambda &)> on_lambda;
+  std::function<void(const hir_unary &)> on_unary;
 
   auto bind(symbol_id sym) -> void { bound.insert(sym); }
 
@@ -50,9 +51,14 @@ struct walker {
       walk_expr(*node.rhs);
       return;
     }
-    case hir_node_kind::hir_unary:
-      walk_expr(*dynamic_cast<const hir_unary &>(expr).operand);
+    case hir_node_kind::hir_unary: {
+      const auto &node = dynamic_cast<const hir_unary &>(expr);
+      if (on_unary) {
+        on_unary(node);
+      }
+      walk_expr(*node.operand);
       return;
+    }
     case hir_node_kind::hir_call: {
       const auto &node = dynamic_cast<const hir_call &>(expr);
       walk_expr(*node.callee);
@@ -270,7 +276,9 @@ struct walker {
     switch (node.kind) {
     case hir_node_kind::hir_let: {
       const auto &let = dynamic_cast<const hir_let &>(node);
-      walk_expr(*let.initializer);
+      if (let.initializer != nullptr) {
+        walk_expr(*let.initializer);
+      }
       bind(let.symbol);
       return;
     }
@@ -370,6 +378,14 @@ auto free_variables(const hir_lambda &lambda) -> std::vector<symbol_id> {
   return std::move(w.free);
 }
 
+auto free_variables(const hir_block &body) -> std::vector<symbol_id> {
+  auto w = walker{};
+  for (const auto &stmt : body.stmts) {
+    w.walk_stmt(*stmt);
+  }
+  return std::move(w.free);
+}
+
 auto capture_plan(const hir_lambda &lambda) -> std::vector<hir_capture> {
   if (lambda.captures.has_value()) {
     return *lambda.captures;
@@ -401,6 +417,28 @@ auto ref_captured_symbols(const hir_block &body)
         found.insert(entry.symbol);
       }
     }
+  };
+  for (const auto &stmt : body.stmts) {
+    w.walk_stmt(*stmt);
+  }
+  return found;
+}
+
+auto address_taken_symbols(const hir_block &body)
+    -> std::unordered_set<symbol_id> {
+  // The same traversal-only use of `walker` as `ref_captured_symbols`. A
+  // borrow inside a nested lambda names the lambda's own copy of a by-value
+  // capture, which shares the outer symbol; reporting it boxes the outer
+  // local too, which costs a cell and nothing else.
+  auto found = std::unordered_set<symbol_id>{};
+  auto w = walker{};
+  w.on_unary = [&found](const hir_unary &unary) -> void {
+    if ((unary.op != ast::unary_op::addr_of &&
+         unary.op != ast::unary_op::addr_of_mut) ||
+        unary.operand->kind != hir_node_kind::hir_local_ref) {
+      return;
+    }
+    found.insert(dynamic_cast<const hir_local_ref &>(*unary.operand).symbol);
   };
   for (const auto &stmt : body.stmts) {
     w.walk_stmt(*stmt);

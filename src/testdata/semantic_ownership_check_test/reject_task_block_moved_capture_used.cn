@@ -1,0 +1,12 @@
+module reject_task_block_moved_capture_used
+
+# A capture the block's body consumes moves into the task.
+
+def total(xs: list[int32]) -> int32:
+    return xs.len() as int32
+
+async def main() -> int32:
+    let xs = [1, 2, 3]
+    let r = await on(pool):
+        total(xs)
+    return r + xs.len() as int32

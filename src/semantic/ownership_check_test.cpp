@@ -1206,6 +1206,48 @@ auto test_move_out_of_deref_operator_is_rejected() -> void {
                     "expected the label to name the `deref` it went through");
 }
 
+auto test_task_block_write_to_capture_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_task_block_writes_capture.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for the write to a lent capture:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "cannot assign to `n` inside a task block",
+                    "expected an `async:` block's write to a lent capture to "
+                    "be rejected");
+}
+
+auto test_task_block_moved_capture_use_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_task_block_moved_capture_used.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for the use after the move into the task:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "use of moved value `xs`",
+                    "expected a capture the task consumed to count as moved");
+}
+
+auto test_crew_task_block_borrow_then_mut_is_rejected() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_crew_task_block_borrow_then_mut.cn");
+  expect(analyzed.error_count == 1,
+         "expected one error for the conflicting borrow:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` while a task spawned into this crew "
+                    "is still running",
+                    "expected a crew task block's loan of `xs` to last until "
+                    "the crew closes");
+}
+
+auto test_task_block_borrows_are_accepted() -> void {
+  const auto analyzed = analyze_test_data_file("accept_task_block_borrows.cn");
+  expect(analyzed.error_count == 0,
+         "expected task blocks that read, move and write through `&mut` "
+         "captures to be accepted:\n" +
+             analyzed.diagnostics);
+}
+
 auto main() -> int {
   try {
     test_stored_borrow_is_accepted();
@@ -1305,6 +1347,10 @@ auto main() -> int {
     test_move_out_through_deref_is_rejected();
     test_shared_borrow_outliving_handle_is_rejected();
     test_move_out_of_deref_operator_is_rejected();
+    test_task_block_write_to_capture_is_rejected();
+    test_task_block_moved_capture_use_is_rejected();
+    test_crew_task_block_borrow_then_mut_is_rejected();
+    test_task_block_borrows_are_accepted();
   } catch (const std::exception &ex) {
     std::cerr << "ownership_check_test failed: unhandled exception: "
               << ex.what() << '\n';

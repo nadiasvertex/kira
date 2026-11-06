@@ -438,11 +438,11 @@ auto checker::value_is_copy(type_id id, std::unordered_set<type_id> &visiting)
 
 auto checker::concurrency_offender(type_id id, bool need_share,
                                    std::unordered_set<type_id> &visiting)
-    -> std::optional<type_id> {
+    -> std::optional<concurrency_offense> {
   const auto stripped = session_.types_.strip_refinement(id);
   const auto &entry = session_.types_.entry(stripped);
-  const auto any_offender =
-      [&](const std::vector<type_id> &parts) -> std::optional<type_id> {
+  const auto any_offender = [&](const std::vector<type_id> &parts)
+      -> std::optional<concurrency_offense> {
     for (const auto part : parts) {
       if (const auto found = concurrency_offender(part, need_share, visiting)) {
         return found;
@@ -452,7 +452,12 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   };
   switch (entry.kind) {
   case type_kind::ptr_kind:
-    return stripped;
+    return concurrency_offense{.type = stripped, .need_share = need_share};
+  case type_kind::fn_kind:
+    // What a function value carries is not in its type. Where the value
+    // itself crosses, `carried_by` follows it to its origin; inside another
+    // value it cannot.
+    return concurrency_offense{.type = stripped, .need_share = need_share};
   case type_kind::ref_kind:
     // Several tasks reading through `&T` need `T` to be `share`; a `&mut T`
     // moves with its referent.
@@ -463,8 +468,9 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   case type_kind::tuple_kind:
     return any_offender(entry.args);
   case type_kind::builtin_generic_kind:
-    if (entry.name == "slice" || entry.name == "cell") {
-      return any_offender(entry.args);
+    // A task carries its arguments, which its type does not show either.
+    if (entry.name == "task") {
+      return concurrency_offense{.type = stripped, .need_share = need_share};
     }
     return any_offender(entry.args);
   case type_kind::struct_kind:
@@ -476,8 +482,18 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   if (!visiting.insert(stripped).second) {
     return std::nullopt;
   }
-  // Every handle to a `shared[T]` reads the same `T`.
-  const auto arg_need_share = need_share || entry.name == "shared";
+  // Every handle to a `shared[T]` reads the same `T`. The std.sync types
+  // that hand their `T` to one task at a time (a mutex, a channel's ends, a
+  // watch's handles) need only that `T` can move between tasks, however many
+  // tasks share the handle. An `rwlock[T]` follows the general rule: reached
+  // through `&`, its `T` must be `share`.
+  auto arg_need_share = need_share || entry.name == "shared";
+  if (entry.module_name == "std.sync" &&
+      (entry.name == "mutex" || entry.name == "sender" ||
+       entry.name == "receiver" || entry.name == "watch_writer" ||
+       entry.name == "watch_reader" || entry.name == "atomic")) {
+    arg_need_share = false;
+  }
   for (const auto arg : entry.args) {
     if (const auto found =
             concurrency_offender(arg, arg_need_share, visiting)) {
@@ -491,8 +507,10 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   if (const auto *fields = struct_fields_of(entry); fields != nullptr) {
     for (const auto &field : *fields) {
       if (const auto type = struct_field_type(entry, field.name)) {
-        if (const auto found =
-                concurrency_offender(*type, need_share, visiting)) {
+        if (auto found = concurrency_offender(*type, need_share, visiting)) {
+          if (!found->holder.has_value()) {
+            found->holder = stripped;
+          }
           return found;
         }
       }
@@ -500,8 +518,10 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   }
   if (const auto *variants = sum_variants_of(entry); variants != nullptr) {
     for (const auto &variant : *variants) {
-      if (const auto found =
-              any_offender(variant_payload_types(entry, variant))) {
+      if (auto found = any_offender(variant_payload_types(entry, variant))) {
+        if (!found->holder.has_value()) {
+          found->holder = stripped;
+        }
         return found;
       }
     }
@@ -510,22 +530,58 @@ auto checker::concurrency_offender(type_id id, bool need_share,
 }
 
 auto checker::require_sendable(type_id type, source_span span,
-                               std::string_view what) -> void {
+                               std::string_view what, bool need_share) -> void {
   auto visiting = std::unordered_set<type_id>{};
-  const auto offender = concurrency_offender(type, false, visiting);
+  const auto offender = concurrency_offender(type, need_share, visiting);
   if (!offender.has_value()) {
     return;
   }
+  const auto &offending = session_.types_.entry(offender->type);
+  const auto headline = std::format("`{}` cannot be {} another task",
+                                    session_.types_.display(type),
+                                    need_share ? "shared with" : "sent to");
+  if (offending.kind != type_kind::ptr_kind) {
+    error_with_help(
+        span, headline, std::string(what),
+        std::format("It contains `{}`, and a {} type does not say what it "
+                    "carries, so the compiler cannot check it inside another "
+                    "value. Pass the {} to the task by itself.",
+                    session_.types_.display(offender->type),
+                    offending.kind == type_kind::fn_kind ? "function" : "task",
+                    offending.kind == type_kind::fn_kind ? "function value"
+                                                         : "task"));
+    return;
+  }
+  const auto holder = offender->holder.has_value()
+                          ? session_.types_.display(*offender->holder)
+                          : std::string("the type");
+  const auto holder_named =
+      offender->holder.has_value() ? std::format("`{}`", holder) : holder;
+  if (offender->need_share && offender->holder.has_value() &&
+      type_has_trait(session_.types_.entry(*offender->holder), "send")) {
+    error_with_help(
+        span, headline, std::string(what),
+        std::format("Several tasks may read {} at once here, through `&` or "
+                    "an `rwlock`. It says it may move to another task "
+                    "(`impl send`), but not that several may read it at once: "
+                    "it holds `{}`, a raw pointer. If reading it from several "
+                    "tasks is safe, write `impl share for {}`; otherwise guard "
+                    "it with a `mutex`.",
+                    holder_named, session_.types_.display(offender->type),
+                    holder));
+    return;
+  }
   error_with_help(
-      span,
-      std::format("`{}` cannot be sent to another task",
-                  session_.types_.display(type)),
-      std::string(what),
+      span, headline, std::string(what),
       std::format("It contains `{}`, a raw pointer, and nothing says another "
-                  "task may use the memory it points to. If the type owns "
+                  "task may use the memory it points to. If {} owns "
                   "that memory and no other task can reach it, write "
-                  "`impl send for` it to say so.",
-                  session_.types_.display(*offender)));
+                  "`impl send for {}` to say so{}.",
+                  session_.types_.display(offender->type), holder_named, holder,
+                  offender->need_share
+                      ? ", and `impl share for` it if several tasks may read "
+                        "it at once"
+                      : ""));
 }
 
 auto checker::intersect_domains(const type_domain &a, const type_domain &b)
@@ -1762,6 +1818,10 @@ auto checker::instantiate_solved_call(const ast::call_expr &call,
   type_id result = k_unknown_type;
   if (decl.return_type != nullptr) {
     result = resolve_type(*decl.return_type, ctx);
+    // An `async def` gives its caller a task (`signature_return_type`).
+    if (decl.modifiers.is_async) {
+      result = task_of_declared_result(result);
+    }
   } else if (const auto found = inferred_returns_.find(instance);
              found != inferred_returns_.end()) {
     result = found->second;

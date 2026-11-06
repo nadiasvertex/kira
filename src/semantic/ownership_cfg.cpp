@@ -137,6 +137,8 @@ struct implicit_capture {
   std::string name;
   bool moved = false;
   source_span span = source_span::dummy();
+  /// The capture's first reference, when the use that noted it has one.
+  const void *node = nullptr;
 };
 
 auto strip_groups(const ast::expr &expr) -> const ast::expr & {
@@ -320,6 +322,35 @@ public:
     finish(lambda.body_expr.get(), lambda.body_stmts);
   }
 
+  /// An `async:` or `on(...)` block, keyed by `key`, as the function its
+  /// task runs: the captures it owns (`task_capture::moved`) are its
+  /// parameters, and the others stay names of the enclosing function.
+  auto build_task_block(const ast::expr &key,
+                        const std::vector<ast::ptr<ast::node>> &body,
+                        const std::vector<task_capture> &captures) -> void {
+    task_block_ = true;
+    begin(&key);
+    for (const auto &capture : captures) {
+      if (capture.moved) {
+        declare(capture.name, capture.type, key.span, /*whole=*/true,
+                /*owns=*/false, capture.node);
+      }
+    }
+    // A task dropped before it first runs returns at once.
+    cancel_point(task_block_start(key));
+    finish(nullptr, body);
+  }
+
+  /// Finds what a task block's body captures and which captures it
+  /// consumes, without reporting anything: the graph is thrown away.
+  auto probe_task_block(const ast::expr &key,
+                        const std::vector<ast::ptr<ast::node>> &body) -> void {
+    task_probe_ = true;
+    report_captures_ = false;
+    begin(&key);
+    finish(nullptr, body);
+  }
+
   [[nodiscard]] auto captures() const -> const std::vector<implicit_capture> & {
     return captures_;
   }
@@ -346,6 +377,12 @@ private:
   /// False in every copy of a generic lambda but the first, so an error
   /// about its captures is reported once rather than once per copy.
   bool report_captures_ = true;
+  /// Set while probing a task block (`probe_task_block`): a capture the body
+  /// consumes is noted as moved, since the task owns what it consumes.
+  bool task_probe_ = false;
+  /// Set while building a task block's own graph: a name it uses from the
+  /// enclosing function is one the task only borrows, so it cannot change.
+  bool task_block_ = false;
   function_cfg cfg_;
   std::vector<scope> scopes_;
   std::vector<implicit_capture> captures_;
@@ -759,12 +796,12 @@ private:
   /// Records that this (lambda) body uses `name` from an enclosing function.
   /// The enclosing function performs the matching access when the lambda is
   /// created — see `eval_lambda`.
-  auto note_capture(std::string_view name, bool moved, source_span span)
-      -> void {
+  auto note_capture(std::string_view name, bool moved, source_span span,
+                    const void *node = nullptr) -> void {
     if (outer_ == nullptr) {
       return;
     }
-    if (moved) {
+    if (moved && !task_probe_) {
       const auto type = captured_type(name);
       if (type.has_value() && movable(*type)) {
         reject_capture_move(std::string(name), name, span);
@@ -774,11 +811,14 @@ private:
     for (auto &capture : captures_) {
       if (capture.name == name) {
         capture.moved = capture.moved || moved;
+        if (capture.node == nullptr) {
+          capture.node = node;
+        }
         return;
       }
     }
     captures_.push_back(implicit_capture{
-        .name = std::string(name), .moved = moved, .span = span});
+        .name = std::string(name), .moved = moved, .span = span, .node = node});
   }
 
   /// The type of `name` in the nearest enclosing function that declares it.
@@ -963,6 +1003,33 @@ private:
 
   /// `reject_place_write` for a place rooted at a name this lambda body
   /// captures.
+  /// Rejects `kind` on `root` inside a task block that only borrows it, and
+  /// answers whether it did.
+  auto reject_task_capture_write(const root_name &root, static_write kind,
+                                 source_span span, std::string_view method = {})
+      -> bool {
+    // A task owns what its body changes, as it owns what it consumes: a
+    // capture it would change is moved in. A `copy` one is not, since the
+    // change would be lost on the task's copy; that write is rejected.
+    if (task_probe_) {
+      if (const auto type = captured_type(root.name);
+          type.has_value() && movable(*type)) {
+        note_capture(root.name, /*moved=*/true, span, root.node);
+      }
+      return false;
+    }
+    if (!task_block_ || !captured_type(root.name).has_value()) {
+      return false;
+    }
+    if (report_captures_) {
+      emit(task_capture_write_event{.span = span,
+                                    .kind = kind,
+                                    .name = std::string(root.name),
+                                    .method = std::string(method)});
+    }
+    return true;
+  }
+
   auto reject_captured_write(const root_name &root, const ast::expr &place,
                              static_write kind, source_span span,
                              std::string_view method = {}) -> void {
@@ -1239,14 +1306,18 @@ private:
         cfg_.owned_static_reads.insert(&expr);
       }
       if (projected && kind == access_kind::move && outer_ != nullptr &&
-          captured_type(root->name).has_value() && movable(type_of(&expr))) {
+          !task_probe_ && captured_type(root->name).has_value() &&
+          movable(type_of(&expr))) {
         auto steps = std::vector<place_step>{};
         place_steps(expr, steps);
         reject_capture_move(spell_place(root->name, steps, steps.size()),
                             root->name, expr.span);
       }
-      note_capture(root->name, kind == access_kind::move && !projected,
-                   root->span);
+      // A task owns what its body consumes, a part of a capture included.
+      note_capture(root->name,
+                   kind == access_kind::move &&
+                       (!projected || (task_probe_ && movable(type_of(&expr)))),
+                   root->span, root->node);
       return {};
     }
     if (!projected) {
@@ -1323,10 +1394,11 @@ private:
         return {};
       }
       // A receiver is checked where the call names its method.
-      if (is_mut && origin != loan_origin::receiver) {
+      if (is_mut && origin != loan_origin::receiver &&
+          !reject_task_capture_write(*root, static_write::borrow_mut, span)) {
         reject_captured_write(*root, expr, static_write::borrow_mut, span);
       }
-      note_capture(root->name, /*moved=*/false, root->span);
+      note_capture(root->name, /*moved=*/false, root->span, root->node);
       return {};
     }
     if (is_mut && origin != loan_origin::receiver) {
@@ -1651,9 +1723,7 @@ private:
     }
 
     case ast::node_kind::async_expr:
-      static_cast<void>(
-          lower_scoped_body(ast::cast<ast::async_expr>(expr).body, false));
-      return {};
+      return eval_task_block(expr, ast::cast<ast::async_expr>(expr).body);
 
     case ast::node_kind::crew_expr:
       lower_crew_body(ast::cast<ast::crew_expr>(expr).body);
@@ -1661,9 +1731,11 @@ private:
 
     case ast::node_kind::on_expr: {
       const auto &on = ast::cast<ast::on_expr>(expr);
-      static_cast<void>(eval_opt(on.sender.get(), use_mode::read));
-      static_cast<void>(lower_scoped_body(on.body, false));
-      return {};
+      if (on.sender != nullptr) {
+        // `on(ctx, task)` runs a task that already exists: it moves in.
+        return eval(*on.sender, use_mode::move);
+      }
+      return eval_task_block(expr, on.body);
     }
 
     case ast::node_kind::splice_expr: {
@@ -1732,7 +1804,7 @@ private:
   auto eval_shorthand_field(const ast::struct_field_init &field) -> value {
     const auto local = lookup(field.name);
     if (!local.has_value()) {
-      note_capture(field.name, /*moved=*/true, field.span);
+      note_capture(field.name, /*moved=*/true, field.span, &field);
       return {};
     }
     const auto type = cfg_.locals[*local].type;
@@ -2081,7 +2153,9 @@ private:
           if (const auto root = place_root(receiver, projected, &checked_);
               root.has_value() &&
               !reject_static_write(*root, static_write::receiver, receiver.span,
-                                   method)) {
+                                   method) &&
+              !reject_task_capture_write(*root, static_write::receiver,
+                                         receiver.span, method)) {
             reject_captured_write(*root, receiver, static_write::receiver,
                                   receiver.span, method);
           }
@@ -2157,6 +2231,63 @@ private:
     emit(use_event{.local = holder});
   }
 
+  /// An `async:` or `on(...)` block, `key`: its body runs as a task of its
+  /// own, a function whose parameters are the block's captures. A capture
+  /// the body consumes moves into the task. Any other is lent to it: the
+  /// task value holds a shared loan of each non-`copy` one, so the owner
+  /// cannot change, move or drop it while the task may still read it.
+  /// Writing to a capture the task only borrows is rejected as it is in a
+  /// closure.
+  auto eval_task_block(const ast::expr &key,
+                       const std::vector<ast::ptr<ast::node>> &body) -> value {
+    // Which names the body uses from outside it, and which it consumes.
+    auto scratch = std::vector<function_cfg>{};
+    auto probe = cfg_builder(checked_, scratch, this);
+    probe.probe_task_block(key, body);
+
+    auto captures = std::vector<task_capture>{};
+    for (const auto &capture : probe.captures()) {
+      const auto local = lookup(capture.name);
+      if (!local.has_value()) {
+        // A name from further out: the enclosing closure or task captures
+        // it, and this task then borrows or takes it from there.
+        note_capture(capture.name, capture.moved, capture.span, capture.node);
+        continue;
+      }
+      const auto &info = cfg_.locals[*local];
+      captures.push_back(task_capture{.name = capture.name,
+                                      .type = info.type,
+                                      .moved = capture.moved && info.movable &&
+                                               capture.node != nullptr,
+                                      .node = capture.node,
+                                      .span = capture.span});
+    }
+
+    auto nested = cfg_builder(checked_, out_, this);
+    nested.report_captures_ = report_captures_;
+    nested.build_task_block(key, body, captures);
+
+    auto result = value{};
+    for (const auto &capture : captures) {
+      const auto local = *lookup(capture.name);
+      const auto &info = cfg_.locals[local];
+      if (capture.moved) {
+        access(local, access_kind::move, capture.span, k_no_loan, &key);
+      } else if (info.movable) {
+        access(local, access_kind::borrow_shared, capture.span);
+        result.loans.push_back(
+            new_loan(local, false, loan_origin::capture, capture.span));
+      } else {
+        access(local, access_kind::read, capture.span);
+      }
+      if (bears(info.type)) {
+        result.sources.push_back(local);
+      }
+    }
+    cfg_.task_captures[&key] = std::move(captures);
+    return result;
+  }
+
   /// A lambda: its body is a function of its own; here, only what creating
   /// it does to the enclosing function's locals. A `&`/`&mut` capture-list
   /// entry borrows for as long as the closure lives. Everything else is
@@ -2170,10 +2301,11 @@ private:
 
     auto result = value{};
     const auto capture_by_value = [&](std::string_view name, bool moved,
-                                      source_span span) -> void {
+                                      source_span span,
+                                      const void *node) -> void {
       const auto local = lookup(name);
       if (!local.has_value()) {
-        note_capture(name, moved, span);
+        note_capture(name, moved, span, node);
         return;
       }
       const auto &info = cfg_.locals[*local];
@@ -2196,7 +2328,7 @@ private:
         case ast::capture_mode::by_mut_ref: {
           const auto local = lookup(entry.name);
           if (!local.has_value()) {
-            note_capture(entry.name, false, entry.span);
+            note_capture(entry.name, false, entry.span, &entry);
             continue;
           }
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
@@ -2212,10 +2344,10 @@ private:
           break;
         }
         case ast::capture_mode::by_move:
-          capture_by_value(entry.name, true, entry.span);
+          capture_by_value(entry.name, true, entry.span, &entry);
           break;
         case ast::capture_mode::by_value:
-          capture_by_value(entry.name, lambda.is_move, entry.span);
+          capture_by_value(entry.name, lambda.is_move, entry.span, &entry);
           break;
         }
       }
@@ -2223,7 +2355,7 @@ private:
     }
     for (const auto &capture : nested.captures()) {
       capture_by_value(capture.name, capture.moved || lambda.is_move,
-                       capture.span);
+                       capture.span, capture.node);
     }
     return result;
   }
@@ -2873,10 +3005,14 @@ private:
       if (reject_static_write(*root, static_write::assign, target.span)) {
         return;
       }
+      if (reject_task_capture_write(*root, static_write::assign, target.span)) {
+        note_capture(root->name, false, root->span, root->node);
+        return;
+      }
       if (projected) {
         reject_captured_write(*root, target, static_write::assign, target.span);
       }
-      note_capture(root->name, false, root->span);
+      note_capture(root->name, false, root->span, root->node);
       return;
     }
     if (projected) {
@@ -3121,6 +3257,10 @@ auto arm_owns_subject(const ast::expr &subject, const ast::pattern &pattern,
 
 auto generator_start(const ast::func_decl &decl) -> const void * {
   return &decl.modifiers;
+}
+
+auto task_block_start(const ast::expr &block) -> const void * {
+  return &block.span;
 }
 
 auto build_function_cfgs(const ast::func_decl &decl,

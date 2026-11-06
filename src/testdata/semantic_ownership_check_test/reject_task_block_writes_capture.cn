@@ -1,0 +1,11 @@
+module reject_task_block_writes_capture
+
+# An `async:` block only borrows a name it reads from the enclosing
+# function, so it cannot assign to it.
+
+async def main() -> int32:
+    var n: int32 = 0
+    let t = async:
+        n = 5
+        1
+    return await t

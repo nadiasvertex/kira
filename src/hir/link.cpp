@@ -245,7 +245,10 @@ struct collector {
   auto walk_stmt(const hir_node &node) -> void {
     switch (node.kind) {
     case hir_node_kind::hir_let:
-      walk_expr(*dynamic_cast<const hir_let &>(node).initializer);
+      if (const auto &let = dynamic_cast<const hir_let &>(node);
+          let.initializer != nullptr) {
+        walk_expr(*let.initializer);
+      }
       return;
     case hir_node_kind::hir_let_else: {
       const auto &node2 = dynamic_cast<const hir_let_else &>(node);

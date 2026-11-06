@@ -1655,6 +1655,40 @@ auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
       reinterpret_cast<sched::crew *>(args[0].u), args[1].u))};  // NOLINT
 }
 
+[[nodiscard]] auto word_of(slot_value v) -> uint64_t * {
+  return reinterpret_cast<uint64_t *>(v.u); // NOLINT
+}
+
+auto intrinsic_rt_atomic_load(std::span<const slot_value> args) -> slot_value {
+  return slot_value{cinder_rt_atomic_load(word_of(args[0]))};
+}
+
+auto intrinsic_rt_atomic_store(std::span<const slot_value> args) -> slot_value {
+  (void)cinder_rt_atomic_store(word_of(args[0]), args[1].u);
+  return slot_value{}; // `unit`
+}
+
+auto intrinsic_rt_atomic_compare_exchange(std::span<const slot_value> args)
+    -> slot_value {
+  return slot_value{cinder_rt_atomic_compare_exchange(word_of(args[0]),
+                                                      args[1].u, args[2].u)};
+}
+
+auto intrinsic_rt_word_wait(std::span<const slot_value> args) -> slot_value {
+  cinder::runtime::scheduler::wait_word(word_of(args[0]), args[1].u);
+  return slot_value{}; // `unit`
+}
+
+auto intrinsic_rt_word_waiter(std::span<const slot_value> args) -> slot_value {
+  return slot_value{reinterpret_cast<uint64_t>( // NOLINT
+      cinder::runtime::scheduler::word_waiter(word_of(args[0]), args[1].u))};
+}
+
+auto intrinsic_rt_word_wake(std::span<const slot_value> args) -> slot_value {
+  cinder::runtime::scheduler::wake_word(word_of(args[0]));
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_bitcast_f64_to_u64(std::span<const slot_value> args)
     -> slot_value {
   return slot_value{std::bit_cast<uint64_t>(args[0].f)};
@@ -1794,7 +1828,9 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_task_drop" || name == "rt_crew_new" ||
          name == "rt_crew_spawn" || name == "rt_crew_join_poll" ||
          name == "rt_crew_join" || name == "rt_crew_free" ||
-         name == "rt_crew_len" || name == "rt_crew_task";
+         name == "rt_crew_len" || name == "rt_crew_task" ||
+         name == "rt_word_wait" || name == "rt_word_waiter" ||
+         name == "rt_word_wake";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);
@@ -1858,6 +1894,12 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_crew_free,
         intrinsic_rt_crew_len,
         intrinsic_rt_crew_task,
+        intrinsic_rt_atomic_load,
+        intrinsic_rt_atomic_store,
+        intrinsic_rt_atomic_compare_exchange,
+        intrinsic_rt_word_wait,
+        intrinsic_rt_word_waiter,
+        intrinsic_rt_word_wake,
     }};
 
 static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),

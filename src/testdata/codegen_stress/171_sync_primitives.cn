@@ -1,0 +1,94 @@
+module codegen_stress.sync_primitives
+
+# expect: 9959
+
+# std.sync from tasks on the pool's threads. Three tasks bump a mutex-guarded
+# counter and an atomic 300 times each (900 + 900). Two producers send 0..49
+# and 100..149 through a 4-slot channel to one consumer (100 values summing to
+# 1225 + 6225 = 7450). Two writers and a reader contend on an rwlock
+# (2 * 300). A watch reader follows the writer to 9.
+# 900 + 900 + 100 + 7450 + 600 + 9 = 9959.
+
+use std.sync.{atomic, mutex, rwlock, channel, sender, receiver, watch,
+              watch_reader}
+
+async def bump(m: &mutex[int32], a: &atomic[int32]) -> unit:
+    var i: int32 = 0
+    while i < 300:
+        var g = m.lock()
+        let r = g.get_mut()
+        *r = *r + 1
+        a.fetch_add(1)
+        i += 1
+
+async def produce(tx: sender[int32], start: int32) -> unit:
+    var i: int32 = 0
+    while i < 50:
+        let _ = await tx.send(start + i)
+        i += 1
+
+async def consume(rx: receiver[int32]) -> (int32, int32):
+    var total: int32 = 0
+    var count: int32 = 0
+    while let @some(v) = await rx.recv():
+        total += v
+        count += 1
+    return (total, count)
+
+async def write_many(l: &rwlock[int32]) -> unit:
+    var i: int32 = 0
+    while i < 300:
+        var g = l.write()
+        let r = g.get_mut()
+        *r = *r + 1
+        i += 1
+
+async def read_many(l: &rwlock[int32]) -> int32:
+    var i: int32 = 0
+    var seen: int32 = 0
+    while i < 300:
+        let g = l.read()
+        if *g.get() > seen:
+            seen = *g.get()
+        i += 1
+    return seen
+
+async def follow(r: watch_reader[int32]) -> int32:
+    var reader = r
+    var last: int32 = 0
+    while last < 9:
+        await reader.changed()
+        last = reader.get()
+    return last
+
+async def main() -> int32:
+    let m = mutex.new(0)
+    let a = atomic.new(0)
+    let l = rwlock.new(0)
+    let (tx, rx) = channel[int32](4)
+    let tx2 = tx.clone()
+    let (w, r) = watch[int32](0)
+    var received = (0, 0)
+    var followed: int32 = 0
+    crew c:
+        let _ = c.spawn(on(pool, bump(&m, &a)))
+        let _ = c.spawn(on(pool, bump(&m, &a)))
+        let _ = c.spawn(bump(&m, &a))
+        let _ = c.spawn(on(pool, produce(tx, 0)))
+        let _ = c.spawn(on(pool, produce(tx2, 100)))
+        let got = c.spawn(on(pool, consume(rx)))
+        let _ = c.spawn(on(pool, write_many(&l)))
+        let _ = c.spawn(on(pool, write_many(&l)))
+        let _ = c.spawn(on(pool, read_many(&l)))
+        let seen = c.spawn(on(pool, follow(r)))
+        var i: int32 = 1
+        while i <= 9:
+            w.set(i)
+            i += 1
+        received = await got
+        followed = await seen
+    let (total, count) = received
+    let guard = m.lock()
+    let written = l.read()
+    let locked = *guard.get() + a.load()
+    return locked + count + total + *written.get() + followed

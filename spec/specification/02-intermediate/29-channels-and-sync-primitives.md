@@ -1,6 +1,6 @@
 # 29. Channels and Sync Primitives
 
-**Status:** Planned
+**Status:** Partial
 
 `channel[T]` and `watch[T]`.
 
@@ -42,10 +42,16 @@ let current = reader.get()
 
 ## Implementation status
 
-Design only; no implementation of any kind. No `channel` or `watch` type, function, or method exists anywhere in `src/std/`, and neither runtime backend has any channel or synchronization machinery. This chapter depends on [`crew`, `par`, `race`](28-crew-par-race.md) and [The Execution Model](26-concurrency-execution-model.md), neither of which is implemented beyond parsing, so nothing here can be written and compiled today.
+Partial. Channels and `watch` work on both backends, in `std.sync` (`src/std/sync.cn`); `reader.get()` differs from the text above for a value that is not `copy`.
+
+- `channel[T](capacity)` returns a `(sender[T], receiver[T])` pair. A capacity of 0 is treated as 1. `await sender.send(v)` suspends while the channel is full and returns `result[unit, T]`, giving the value back as `err` if the channel is closed. `await receiver.recv()` suspends while the channel is empty and returns `none` once it is empty and closed. `sender.clone()` makes another sender; the channel closes when `close()` is called, when the last sender is dropped, or when the receiver is dropped. Values still queued when the last handle goes are dropped.
+- `watch[T](initial)` returns a `(watch_writer[T], watch_reader[T])` pair. `writer.set(v)` replaces the value and drops the old one. `await reader.changed()` suspends until the value changes after the reader last saw it. Readers can be cloned, and each tracks what it has seen.
+- Deviation: `reader.get()` needs `T: copy`. A value that is only `clone` is read with `reader.cloned()`. A single method covering both would need a bound of the form "copy or clone", which the language does not have.
+- Handles are `send` and `share` when `T: send` ([Data-Race Freedom](30-data-race-freedom.md#implementation-status)).
+- The waits are built on the scheduler's word wait and wake ([The Task Scheduler](../05-implementation/69-task-scheduler.md#waiting-on-a-word)). Corpus file `171` and `std_test/sync_drops.cn` exercise them.
 
 ## See also
 
 - [The Execution Model](26-concurrency-execution-model.md) — the task/context model channels move values between.
 - [`crew`, `par`, `race`](28-crew-par-race.md) — the structured-concurrency scope channels are typically used within.
-- [Data-Race Freedom](30-data-race-freedom.md) — `mutex`/`rwlock`/`atomic`, the other unimplemented synchronization primitives.
+- [Data-Race Freedom](30-data-race-freedom.md) — `mutex`/`rwlock`/`atomic`, the other synchronization primitives in `std.sync`.

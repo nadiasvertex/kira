@@ -1,0 +1,58 @@
+module reject_task_function_values
+
+# A function value or a task carries data its type does not show. The
+# compiler follows each one crossing to another task back to where it was
+# made, and rejects one it cannot follow.
+
+type handle = { raw: *mut int32 }
+type holder = { f: fn() -> int32 }
+
+def peek(h: handle) -> int32:
+    return 1
+
+async def call(f: fn() -> int32) -> int32:
+    return f()
+
+async def call_held(h: holder) -> int32:
+    return (h.f)()
+
+# A lambda that captures a raw pointer.
+async def lambda_literal(h: handle) -> int32:
+    crew c:
+        let _ = c.spawn(call(() => peek(h)))
+    return 0
+
+# The same lambda, bound with `let` first.
+async def lambda_through_let(h: handle) -> int32:
+    let f = () => peek(h)
+    crew c:
+        let _ = c.spawn(call(f))
+    return 0
+
+# A function value from a parameter could carry anything.
+async def from_parameter(f: fn() -> int32) -> int32:
+    crew c:
+        let _ = c.spawn(call(f))
+    return 0
+
+# So could a task.
+async def task_parameter(t: task[int32]) -> int32:
+    crew c:
+        let _ = c.spawn(t)
+    return 0
+
+# A function value inside another value cannot be followed.
+async def inside_struct() -> int32:
+    let h = holder{f: () => 1}
+    crew c:
+        let _ = c.spawn(call_held(h))
+    return 0
+
+# A captured function value on the pool.
+async def on_pool(h: handle) -> int32:
+    let f = () => peek(h)
+    return await on(pool):
+        f()
+
+async def main() -> int32:
+    return 0

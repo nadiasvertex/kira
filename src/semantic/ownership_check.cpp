@@ -44,6 +44,7 @@ using ownership::scope_exit_owned;
 using ownership::shared_write_event;
 using ownership::static_write;
 using ownership::static_write_event;
+using ownership::task_capture_write_event;
 using ownership::use_event;
 
 using loan_set = std::vector<loan_id>; ///< Sorted, unique.
@@ -334,6 +335,9 @@ private:
         } else if (const auto *r =
                        std::get_if<shared_write_event>(&events[i])) {
           report_shared_write(*r);
+        } else if (const auto *t =
+                       std::get_if<task_capture_write_event>(&events[i])) {
+          report_task_capture_write(*t);
         }
         forward_step(events[i], cfg_, state);
       }
@@ -782,6 +786,41 @@ private:
                           w.name)
             : std::format("Declare `{}` with `var` to allow changing it.",
                           w.name));
+    diag_.emit(d);
+  }
+
+  /// A change, inside a task block, to a value it only borrows.
+  auto report_task_capture_write(const task_capture_write_event &w) -> void {
+    auto message = std::string{};
+    auto label = std::string{};
+    switch (w.kind) {
+    case static_write::receiver:
+      message = std::format("cannot call `{}` on `{}` inside a task block",
+                            w.method, w.name);
+      label = std::format("`{}` changes its receiver", w.method);
+      break;
+    case static_write::borrow_mut:
+      message =
+          std::format("cannot borrow `{}` mutably inside a task block", w.name);
+      label = "this would let the task change it";
+      break;
+    default:
+      message =
+          std::format("cannot assign to `{}` inside a task block", w.name);
+      label = "this writes to the enclosing function's variable";
+      break;
+    }
+    auto d = diagnostic(diagnostic_level::error, message, file_id_);
+    d.with_label(w.span, label);
+    d.with_note(std::format(
+        "an `async:` or `on(...)` block runs as a task of its own, and it "
+        "only borrows `{}` from the enclosing function to read it",
+        w.name));
+    d.with_help(std::format(
+        "Make the new value the block's last expression and assign it after "
+        "the task finishes, or borrow it explicitly before the block (`let r "
+        "= &mut {}`) and change it through `r`.",
+        w.name));
     diag_.emit(d);
   }
 

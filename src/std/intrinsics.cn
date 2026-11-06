@@ -191,3 +191,34 @@ intrinsic def rt_atomic_fetch_add(p: *mut usize, n: usize) -> usize
 #: Subtracts `n` from the `usize` at `p` and returns the value it held
 #: before. Wraps on underflow.
 intrinsic def rt_atomic_fetch_sub(p: *mut usize, n: usize) -> usize
+
+#: Reads the `usize` at `p` atomically.
+intrinsic def rt_atomic_load(p: *mut usize) -> usize
+
+#: Writes `value` to the `usize` at `p` atomically.
+intrinsic def rt_atomic_store(p: *mut usize, value: usize) -> unit
+
+#: Writes `desired` to the `usize` at `p` if it holds `expected`, as one
+#: atomic step, and returns the value it held before. The write happened when
+#: that value is `expected`.
+intrinsic def rt_atomic_compare_exchange(p: *mut usize, expected: usize, desired: usize) -> usize
+
+####################
+# Waiting on a word
+####################
+
+#: The waits `std.sync` builds its locks and channels from. A lock keeps its
+#: state in a `usize`, changes it atomically, and calls `rt_word_wake` after
+#: a change another task may be waiting for. A wait reads the word again under
+#: the scheduler's lock, so a change made before the wake is never missed.
+
+#: Blocks the calling thread while the `usize` at `p` holds `expected`. In a
+#: task, the pool gives the blocked thread's place to another worker.
+intrinsic def rt_word_wait(p: *mut usize, expected: usize) -> unit
+
+#: A task that finishes once the `usize` at `p` no longer holds `expected`,
+#: for an `async def` to `await` instead of blocking its thread.
+intrinsic def rt_word_waiter(p: *mut usize, expected: usize) -> task[unit]
+
+#: Wakes every wait on `p`, each of which reads it again.
+intrinsic def rt_word_wake(p: *mut usize) -> unit

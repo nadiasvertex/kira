@@ -36,9 +36,40 @@ auto checker::lookup_value(std::string_view name) -> const value_binding * {
   }
   if (found.binding != nullptr) {
     note_capture_use(name, found.depth);
+    const auto &binding = *found.binding;
+    const auto hidden = hides_carried(binding.type);
+    // What a closure takes with it, for when the closure crosses to another
+    // task: the capture itself, or what a captured `fn` or `task` carries.
+    for (auto &barrier : function_.capture_barriers_) {
+      if (barrier.scope_floor <= found.depth) {
+        continue;
+      }
+      if (!hidden) {
+        auto by_ref = false;
+        if (barrier.allowed.has_value()) {
+          if (const auto it = barrier.allowed->find(std::string(name));
+              it != barrier.allowed->end()) {
+            by_ref = it->second == ast::capture_mode::by_ref;
+          }
+        }
+        barrier.carried.push_back(
+            carried_value{.type = binding.type,
+                          .need_share = by_ref,
+                          .span = std::nullopt,
+                          .label = std::format("it captures `{}`", name)});
+      } else if (binding.carried != nullptr) {
+        barrier.carried.insert(barrier.carried.end(), binding.carried->begin(),
+                               binding.carried->end());
+      } else {
+        barrier.opaque = true;
+      }
+    }
     for (auto &boundary : function_.task_boundaries_) {
       if (boundary.scope_floor > found.depth) {
-        boundary.captured.emplace_back(std::string(name), found.binding->type);
+        boundary.captured.push_back(
+            function_state::task_capture_use{.name = std::string(name),
+                                             .type = binding.type,
+                                             .carried = binding.carried});
       }
     }
   }

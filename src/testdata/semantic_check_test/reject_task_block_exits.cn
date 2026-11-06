@@ -1,0 +1,13 @@
+module reject_task_block_exits
+
+# An `async:` block runs as a task of its own, so `return` and `?` have no
+# function to leave.
+
+def f() -> result[int32, str]:
+    return @ok(1)
+
+async def main() -> int32:
+    let t = async:
+        let x = f()?
+        return 3
+    return await t

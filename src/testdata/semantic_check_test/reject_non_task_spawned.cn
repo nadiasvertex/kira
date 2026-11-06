@@ -1,0 +1,19 @@
+module reject_non_task_spawned
+
+# `c.spawn`, `par:` and `race:` run tasks. `t.spawn()` starts `t` and gives
+# back `unit`, so it is not a task to hand on.
+
+async def triple(x: int32) -> int32:
+    return x * 3
+
+async def main() -> int32:
+    let t = triple(1)
+    crew c:
+        let _ = c.spawn(t.spawn())
+    let (a, b) = await par:
+        triple(2)
+        2
+    let r = await race:
+        3
+        triple(4)
+    return a + b + r

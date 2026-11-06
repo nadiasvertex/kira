@@ -1,0 +1,62 @@
+module codegen_stress.suspending_value_branches
+
+# expect: 8355
+
+# A branch of an `if` or `match` that produces a value may suspend its task:
+# by awaiting, by `?`, or by leaving a `crew`, which waits for the crew's
+# tasks. Each case below picks a different branch in each of two calls.
+
+async def double(x: int32) -> int32:
+    return x * 2
+
+def parse(good: bool) -> result[int32, int32]:
+    if good:
+        return @ok(30)
+    return @err(4)
+
+# `return` from a value branch leaves the crew, which joins it first.
+async def leave_crew(flag: bool) -> int32:
+    var total: int32 = 0
+    crew c:
+        let _ = c.spawn(double(3))
+        let v = if flag:
+            return 7
+        else:
+            5
+        total = v
+    return total
+
+# An `await` in a value branch, and in a nested one.
+async def await_in_branch(n: int32) -> int32:
+    let v = if n > 10:
+        await double(n)
+    elif n > 5:
+        100
+    else:
+        let inner = match n:
+            1 => await double(200)
+            _ => 3
+        inner + 1
+    return v
+
+# `?` in a value-producing `match` arm.
+async def try_in_arm(good: bool) -> result[int32, int32]:
+    let v = match good:
+        true => parse(true)? + 1
+        false => parse(false)?
+    return @ok(v)
+
+async def main() -> int32:
+    let a = await leave_crew(true)
+    let b = await leave_crew(false)
+    let c = await await_in_branch(20)
+    let d = await await_in_branch(7)
+    let e = await await_in_branch(1)
+    var f: int32 = 0
+    if let @ok(x) = await try_in_arm(true):
+        f = x
+    var g: int32 = 0
+    if let @err(x) = await try_in_arm(false):
+        g = x
+    # 7000 + 500 + 40 + 100 + 401 + 31 * 10 + 4 = 8355
+    return a * 1000 + b * 100 + c + d + e + f * 10 + g

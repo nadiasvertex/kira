@@ -108,6 +108,11 @@ struct drop_schedule {
   std::unordered_map<const void *,
                      std::vector<semantic::ownership::owned_capture>>
       owned_captures;
+  /// `function_cfg::task_captures`: what each `async:` or `on(...)` block's
+  /// task captures, and which captures it owns.
+  std::unordered_map<const void *,
+                     std::vector<semantic::ownership::task_capture>>
+      task_captures;
 };
 
 /// Computes the drop schedule for one function body, including every lambda

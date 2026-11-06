@@ -1,0 +1,58 @@
+module main
+
+# std.sync owns the values it holds: each `noisy` prints `drop <id>` exactly
+# once, when its last owner lets go of it.
+
+use std.sync.{mutex, rwlock, channel, watch}
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+# `set` drops the value it replaces; the mutex drops the last one.
+def mutex_set() -> unit:
+    let m = mutex.new(noisy { id: 1 })
+    var g = m.lock()
+    g.set(noisy { id: 2 })
+    println("mutex set")
+
+# A value received is the receiver's to drop. Values still queued when the
+# last handle goes are dropped with the channel.
+async def channel_queue() -> unit:
+    let (tx, rx) = channel[noisy](4)
+    let _ = await tx.send(noisy { id: 3 })
+    let _ = await tx.send(noisy { id: 4 })
+    let _ = await tx.send(noisy { id: 5 })
+    if let @some(n) = await rx.recv():
+        println("received {n.id}")
+    println("channel ends")
+
+# Sending on a closed channel gives the value back.
+async def channel_closed() -> unit:
+    let (tx, rx) = channel[noisy](1)
+    tx.close()
+    let sent = await tx.send(noisy { id: 6 })
+    if let @err(n) = sent:
+        println("returned {n.id}")
+    println("closed ends")
+
+# The writer's `set` drops the old value; the last handle drops the current.
+def watch_set() -> unit:
+    let (w, r) = watch[noisy](noisy { id: 7 })
+    w.set(noisy { id: 8 })
+    println("watch set")
+
+def rwlock_write() -> unit:
+    let l = rwlock.new(noisy { id: 9 })
+    var g = l.write()
+    g.set(noisy { id: 10 })
+    println("rwlock set")
+
+async def main() -> unit:
+    mutex_set()
+    await channel_queue()
+    await channel_closed()
+    watch_set()
+    rwlock_write()

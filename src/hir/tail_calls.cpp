@@ -30,7 +30,9 @@ auto collect_bound_symbols(const hir_node &node,
   case hir_node_kind::hir_let: {
     const auto &let = dynamic_cast<const hir_let &>(node);
     bound.insert(let.symbol);
-    collect_bound_symbols(*let.initializer, bound);
+    if (let.initializer != nullptr) {
+      collect_bound_symbols(*let.initializer, bound);
+    }
     return;
   }
   case hir_node_kind::hir_let_else: {

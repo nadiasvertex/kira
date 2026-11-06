@@ -13,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -20,6 +21,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
+#include "src/runtime/allocator.h"
 #include "src/runtime/coroutine.h"
 
 namespace cinder::runtime::scheduler {
@@ -93,6 +95,8 @@ struct scheduler_state {
   std::condition_variable finished;
   /// Tasks taken over and not yet finished.
   std::unordered_set<uint64_t *> unfinished;
+  /// The tasks waiting on each memory word (`word_waiter`).
+  std::unordered_map<const uint64_t *, std::vector<uint64_t *>> word_waiters;
 };
 
 /// The task this worker is polling, which owns any crew its body opens.
@@ -441,6 +445,68 @@ auto run_native(void * /*context*/, uint64_t *task) -> uint64_t {
 } // namespace
 
 auto native_runner() -> runner { return runner{.run = run_native}; }
+
+namespace {
+
+auto load_word(const uint64_t *word) -> uint64_t {
+  return std::atomic_ref(*const_cast<uint64_t *>(word)).load(); // NOLINT
+}
+
+/// The step function of a `word_waiter` task, whose value slots hold the
+/// word and the value it waits to see change.
+auto word_waiter_step(void * /*state*/, uint64_t /*resume_index*/, void *object)
+    -> uint64_t {
+  auto *task = static_cast<uint64_t *>(object);
+  const auto *word = reinterpret_cast<const uint64_t *>( // NOLINT
+      task[co::k_value_slot]);
+  const auto expected = task[co::k_value_slot + 1];
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  if (is_cancelled(task) || load_word(word) != expected) {
+    return co::raw(co::status::done);
+  }
+  s.word_waiters[word].push_back(task);
+  return co::raw(co::status::pending);
+}
+
+} // namespace
+
+void wait_word(const uint64_t *word, uint64_t expected) {
+  auto &s = state();
+  auto lock = std::unique_lock(s.mutex);
+  blocking_wait(s, lock, [&] { return load_word(word) != expected; });
+}
+
+auto word_waiter(const uint64_t *word, uint64_t expected) -> uint64_t * {
+  auto *task = static_cast<uint64_t *>(
+      cinder_heap_alloc(co::k_slot_count * sizeof(uint64_t)));
+  using step_function = uint64_t (*)(void *, uint64_t, void *);
+  const step_function step = word_waiter_step;
+  task[co::k_step_function_slot] = reinterpret_cast<uint64_t>(step); // NOLINT
+  task[co::k_state_ptr_slot] = 0;
+  task[co::k_resume_index_slot] = 0;
+  task[co::k_status_slot] = co::raw(co::status::suspended);
+  task[co::k_record_slot] = 0;
+  task[co::k_value_slot] = reinterpret_cast<uint64_t>(word); // NOLINT
+  task[co::k_value_slot + 1] = expected;
+  spawn(task, pool::io, native_runner());
+  return task;
+}
+
+void wake_word(const uint64_t *word) {
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  if (const auto found = s.word_waiters.find(word);
+      found != s.word_waiters.end()) {
+    const auto waiters = std::move(found->second);
+    s.word_waiters.erase(found);
+    for (auto *waiter : waiters) {
+      wake_locked(s, waiter);
+    }
+  }
+  // A thread in `wait_word` waits on `finished`.
+  s.finished.notify_all();
+}
 
 void spawn(uint64_t *task, pool where, runner how) {
   auto &s = state();
@@ -818,6 +884,35 @@ auto cinder_rt_crew_task(uint64_t *group, uint64_t index) -> uint64_t * {
   namespace sched = cinder::runtime::scheduler;
   return sched::crew_task(reinterpret_cast<sched::crew *>(group), // NOLINT
                           index);
+}
+
+auto cinder_rt_atomic_load(uint64_t *word) -> uint64_t {
+  return std::atomic_ref(*word).load();
+}
+
+auto cinder_rt_atomic_store(uint64_t *word, uint64_t value) -> uint64_t * {
+  std::atomic_ref(*word).store(value);
+  return nullptr;
+}
+
+auto cinder_rt_atomic_compare_exchange(uint64_t *word, uint64_t expected,
+                                       uint64_t desired) -> uint64_t {
+  (void)std::atomic_ref(*word).compare_exchange_strong(expected, desired);
+  return expected;
+}
+
+auto cinder_rt_word_wait(uint64_t *word, uint64_t expected) -> uint64_t * {
+  cinder::runtime::scheduler::wait_word(word, expected);
+  return nullptr;
+}
+
+auto cinder_rt_word_waiter(uint64_t *word, uint64_t expected) -> uint64_t * {
+  return cinder::runtime::scheduler::word_waiter(word, expected);
+}
+
+auto cinder_rt_word_wake(uint64_t *word) -> uint64_t * {
+  cinder::runtime::scheduler::wake_word(word);
+  return nullptr;
 }
 
 auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t {

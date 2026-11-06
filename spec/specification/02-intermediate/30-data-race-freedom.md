@@ -47,13 +47,17 @@ A `mutex` enforces "one writer at a time" at runtime, exactly as the borrow chec
 
 ## Implementation status
 
-Partial. A narrow form of `send`/`share` and the crew-scoped borrow rules are checked; the synchronized cells are not built.
+Partial. Everything above works on both backends except writing through a guard with `*`.
 
-- `send` and `share` are marker traits in `std.traits`. The checker derives them structurally (`concurrency_offender`, `src/semantic/check_bounds.cpp`): a raw pointer is neither, a `&T` needs `T: share`, a `shared[T]` needs `T: share`, and a struct, sum, tuple or array is the conjunction of its parts. Standard-library types vouch for their own fields. A user type built on a raw pointer says `impl send for the_type` and `impl share for the_type`; the type's arguments are still checked.
-- The check runs on the arguments of a call handed to `c.spawn`, `par` or `race`, and on the outer locals an `async:` block or an `on(pool)` body reads. `on(io)` is exempt because it stays on one thread.
-- Crew-scoped borrows are checked by the ownership checker (`lower_crew_body`, `src/semantic/ownership_cfg.cpp`). Each `crew` has a holder local that keeps every borrow made by `c.spawn(f(args))` live until the crew body ends, so the usual rules apply across tasks: any number of `&x`, or one `&mut x`, and no use or move of `x` while a task holds it.
-- Not checked: the captures of a closure value passed as a task, `channel.send`, and a function-typed value's captures. A `task` value keeps the borrows of its arguments until it is dropped or spawned into a crew, so `let t = f(&mut x)` followed by `c.spawn(t)` is checked like the direct call.
-- `shared[T]` is implemented: an atomically reference-counted, read-only handle in `std.shared` (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)). `mutex[T]`, `rwlock[T]`, and `atomic[T]` do not exist in `src/std/`; `std.mem` has the atomic operations.
+- `send` and `share` are marker traits in `std.traits`. The checker derives them structurally (`concurrency_offender`, `src/semantic/check_bounds.cpp`): a raw pointer is neither, a `&T` needs `T: share`, a `shared[T]` needs `T: share`, and a struct, sum, tuple or array is the conjunction of its parts. Standard-library types vouch for their own fields. A user type built on a raw pointer says `impl send for the_type:` and `impl share for the_type:`; the type's arguments are still checked. When a type fails, the error names the field that caused it and suggests the `impl`, or a `mutex` when the type is `send` but not `share`.
+- The check runs on the arguments of a call handed to `c.spawn`, `par` or `race`, on the outer locals an `async:` block or an `on(pool)` body reads, and on function values and tasks that cross to another task. The checker follows a function value or task back to where it was made and checks what it carries; one whose origin it cannot see is rejected. `on(io)` is exempt because it stays on one thread.
+- Crew-scoped borrows are checked by the ownership checker (`lower_crew_body`, `src/semantic/ownership_cfg.cpp`). Each `crew` has a holder local that keeps every borrow made by a task spawned into it live until the crew body ends, so the usual rules apply across tasks: any number of `&x`, or one `&mut x`, and no use or move of `x` while a task holds it. A `task` value keeps the borrows of its arguments until it is dropped or spawned. A non-copy local consumed by an `async:` or `on` body moves into the task.
+- `std.sync` (`src/std/sync.cn`) has `mutex[T]`, `rwlock[T]` and `atomic[T]`. They are `send` and `share` whenever `T: send`, because one task at a time reaches the value. `rwlock[T]` is `share` only when `T: share`, since its readers share the value.
+  - `mutex.lock()` blocks until the lock is free and returns a `mutex_guard[T]`; `try_lock()` returns `none` instead of waiting. The lock is released when the guard drops.
+  - `rwlock.read()` returns a `read_guard[T]`, and `rwlock.write()` returns a `write_guard[T]` once no reader or writer holds the lock.
+  - `atomic[T]` needs `T: integer` and has `load`, `store`, `swap`, `compare_exchange`, `fetch_add` and `fetch_sub`, all sequentially consistent.
+- Deviation: the language has no mutable deref trait, so `*guard += 1` from the example above does not compile. A guard reads through `*guard` or `get()`, and writes through `get_mut()` or `set(value)`.
+- `shared[T]` is an atomically reference-counted, read-only handle in `std.shared` (see [Shared Ownership and Drop](17-shared-ownership-and-drop.md)).
 
 ## See also
 

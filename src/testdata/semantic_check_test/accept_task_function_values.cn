@@ -1,0 +1,26 @@
+module accept_task_function_values
+
+# Function values and tasks whose origin the compiler can see cross to
+# another task when what they carry may.
+
+def seven() -> int32:
+    return 7
+
+async def call(f: fn() -> int32) -> int32:
+    return f()
+
+async def add(a: int32, b: int32) -> int32:
+    return a + b
+
+async def main() -> int32:
+    let k: int32 = 5
+    let f = () => k + 1
+    let t = add(k, 2)
+    let total = await on(pool):
+        f() + 1
+    crew c:
+        let _ = c.spawn(call(() => k))
+        let _ = c.spawn(call(f))
+        let _ = c.spawn(call(seven))
+        let _ = c.spawn(t)
+    return total

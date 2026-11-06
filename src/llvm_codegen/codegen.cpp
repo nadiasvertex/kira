@@ -9,6 +9,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #pragma clang diagnostic push
@@ -408,19 +409,7 @@ auto count_yields(const hir::hir_block &block) -> size_t {
 /// followed by every non-parameter local `hir::live_across_yield` found
 /// live, in the order it returns them.
 [[nodiscard]] auto generator_state_symbols(const hir::hir_function &fn)
-    -> std::vector<hir::symbol_id> {
-  auto symbols = std::vector<hir::symbol_id>{};
-  symbols.reserve(fn.params.size());
-  for (const auto &param : fn.params) {
-    symbols.push_back(param.symbol);
-  }
-  for (const auto sym : hir::live_across_yield(fn)) {
-    if (std::ranges::find(symbols, sym) == symbols.end()) {
-      symbols.push_back(sym);
-    }
-  }
-  return symbols;
-}
+    -> std::vector<hir::symbol_id>;
 
 /// Recovers the declared type of every `hir_let`-bound symbol reachable
 /// from `block` (not descending into a nested lambda's own body, mirroring
@@ -439,7 +428,7 @@ auto collect_let_types(const hir_node &node,
   switch (node.kind) {
   case hir_node_kind::hir_let: {
     const auto &let = dynamic_cast<const hir::hir_let &>(node);
-    out.emplace(let.symbol, let.initializer->type);
+    out.emplace(let.symbol, let.type());
     return;
   }
   case hir_node_kind::hir_let_else:
@@ -478,6 +467,11 @@ auto collect_let_types(const hir_node &node,
   case hir_node_kind::hir_block:
     collect_let_types(dynamic_cast<const hir::hir_block &>(node), out);
     return;
+  case hir_node_kind::hir_expr_stmt:
+    // A statement-position `if`/`match`/block, a `crew` body among them.
+    collect_let_types(*dynamic_cast<const hir::hir_expr_stmt &>(node).expr,
+                      out);
+    return;
   default:
     return;
   }
@@ -489,6 +483,48 @@ auto collect_let_types(const hir::hir_block &block,
   for (const auto &stmt : block.stmts) {
     collect_let_types(*stmt, out);
   }
+}
+
+/// The locals of a coroutine whose storage must outlive one run of its step
+/// function: those whose address is taken, and those a lambda captures by
+/// reference. A borrow of one may be held by a pending task (a receiver
+/// borrow handed to an awaited call, say) across a suspension, after which
+/// the step function's own stack frame is gone. These live in the state
+/// block itself rather than in an alloca copied in and out of it.
+[[nodiscard]] auto heap_state_symbols(const hir::hir_function &fn)
+    -> std::unordered_set<hir::symbol_id> {
+  auto found = hir::address_taken_symbols(*fn.body);
+  found.merge(hir::ref_captured_symbols(*fn.body));
+  return found;
+}
+
+auto generator_state_symbols(const hir::hir_function &fn)
+    -> std::vector<hir::symbol_id> {
+  auto symbols = std::vector<hir::symbol_id>{};
+  symbols.reserve(fn.params.size());
+  for (const auto &param : fn.params) {
+    symbols.push_back(param.symbol);
+  }
+  for (const auto sym : hir::live_across_yield(fn)) {
+    if (std::ranges::find(symbols, sym) == symbols.end()) {
+      symbols.push_back(sym);
+    }
+  }
+  // Every heap-state local this body binds, whether or not it is read after
+  // a suspension: what has to survive is the storage a borrow points at.
+  // Sorted, so the layout does not depend on hash order.
+  auto let_types = std::unordered_map<hir::symbol_id, type_id>{};
+  collect_let_types(*fn.body, let_types);
+  auto extra = std::vector<hir::symbol_id>{};
+  for (const auto sym : heap_state_symbols(fn)) {
+    if (let_types.contains(sym) &&
+        std::ranges::find(symbols, sym) == symbols.end()) {
+      extra.push_back(sym);
+    }
+  }
+  std::ranges::sort(extra);
+  symbols.insert(symbols.end(), extra.begin(), extra.end());
+  return symbols;
 }
 
 // ==========================================================================
@@ -699,6 +735,7 @@ public:
 
     auto let_types = std::unordered_map<hir::symbol_id, type_id>{};
     collect_let_types(*fn.body, let_types);
+    const auto heap_state = heap_state_symbols(fn);
 
     for (size_t i = 0; i < state_symbols.size(); ++i) {
       auto sym_type = hir::k_unknown_type;
@@ -719,6 +756,14 @@ public:
       auto ty = storage_type_for(sym_type, fn.span);
       if (!ty.has_value()) {
         return std::unexpected(ty.error());
+      }
+      if (heap_state.contains(state_symbols[i])) {
+        // Borrowed: the state entry itself is the local's storage, so a
+        // borrow taken before a suspension still points at it after.
+        locals_.emplace(state_symbols[i],
+                        local_slot{.addr = private_entry_address(state_arg, i),
+                                   .type = *ty});
+        continue;
       }
       auto *alloca = create_local_alloca(*ty, "state");
       auto *loaded = builder_.CreateLoad(
@@ -4278,9 +4323,16 @@ private:
 
   [[nodiscard]] auto compile_let(const hir::hir_let &let)
       -> std::expected<bool, codegen_error> {
-    auto ty = storage_type_for(let.initializer->type, let.span);
+    auto ty = storage_type_for(let.type(), let.span);
     if (!ty.has_value()) {
       return std::unexpected(ty.error());
+    }
+    if (let.initializer == nullptr) {
+      // Declared now, assigned before it is read.
+      if (!lookup_local(let.symbol).valid()) {
+        bind_local(let.symbol, create_local_alloca(*ty, let.name));
+      }
+      return false;
     }
     auto value = compile_expr(*let.initializer);
     if (!value.has_value()) {

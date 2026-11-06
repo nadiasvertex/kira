@@ -689,6 +689,7 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
   // A lambda body is a separate function: a loop outside it is not one its
   // `break` could reach.
   const auto saved_loop_depth = std::exchange(function_.loop_depth_, 0U);
+  const auto saved_task_blocks = std::exchange(function_.task_block_depth_, 0U);
 
   // Validated *before* the barrier and the body scope go up, so each entry
   // resolves against the enclosing scope the way the programmer wrote it.
@@ -774,9 +775,17 @@ auto checker::infer_lambda(const ast::lambda_expr &lambda, type_id expected)
   }
   restore_return();
   warn_unused_captures(lambda, function_.capture_barriers_.back());
+  {
+    const auto &barrier = function_.capture_barriers_.back();
+    session_.carried_literals_[&lambda] =
+        barrier.opaque ? nullptr
+                       : std::make_shared<const std::vector<carried_value>>(
+                             barrier.carried);
+  }
   function_.capture_barriers_.pop_back();
   pop_scope();
   function_.loop_depth_ = saved_loop_depth;
+  function_.task_block_depth_ = saved_task_blocks;
 
   auto result =
       declared_result != k_unknown_type ? declared_result : body_result;
@@ -1142,6 +1151,9 @@ auto checker::infer_try(const ast::try_expr &expr) -> type_id {
     return k_unknown_type;
   }
   const auto operand = strip_refs(infer_expr(*expr.operand, k_unknown_type));
+  if (reject_task_block_exit(expr.span, "?")) {
+    return k_error_type;
+  }
   const auto &entry = session_.types_.entry(operand);
 
   const auto is_wrapper = entry.kind == type_kind::builtin_generic_kind &&
@@ -1286,39 +1298,287 @@ auto checker::record_crew_spawn(const ast::expr &crew, type_id task,
   }
 }
 
-auto checker::check_task_body(source_span span,
+auto checker::check_task_body(const ast::node &key, source_span span,
+                              bool crosses_threads,
                               const std::function<type_id()> &check)
     -> type_id {
   function_.task_boundaries_.push_back(
       {.scope_floor = function_.scopes_.size(), .captured = {}});
+  // The block is a task of its own: a loop outside it is not one its `break`
+  // could reach, and it has no function to `return` from.
+  const auto saved_loop_depth = std::exchange(function_.loop_depth_, 0U);
+  ++function_.task_block_depth_;
   const auto result = check();
+  --function_.task_block_depth_;
+  function_.loop_depth_ = saved_loop_depth;
   const auto captured = std::move(function_.task_boundaries_.back().captured);
   function_.task_boundaries_.pop_back();
-  auto reported = std::unordered_set<std::string>{};
-  for (const auto &[name, type] : captured) {
-    if (reported.insert(name).second) {
-      require_sendable(type, span,
-                       std::format("`{}` is captured by this task", name));
+
+  // A capture is moved into the task or borrowed by it; one borrowed may be
+  // read on both threads at once, so it must be `share` as well as `send`.
+  // A captured `fn` or `task` value takes what it carries along.
+  auto carried = std::vector<carried_value>{};
+  auto opaque = false;
+  auto seen = std::unordered_set<std::string>{};
+  for (const auto &capture : captured) {
+    if (!seen.insert(capture.name).second) {
+      continue;
+    }
+    if (!hides_carried(capture.type)) {
+      carried.push_back(carried_value{
+          .type = capture.type,
+          .need_share = true,
+          .span = std::nullopt,
+          .label = std::format("it captures `{}`", capture.name)});
+    } else if (capture.carried != nullptr) {
+      for (auto value : *capture.carried) {
+        value.span = std::nullopt;
+        value.label = std::format("it captures `{}`", capture.name);
+        carried.push_back(std::move(value));
+      }
+    } else {
+      opaque = true;
+    }
+  }
+  session_.carried_literals_[&key] =
+      opaque ? nullptr
+             : std::make_shared<const std::vector<carried_value>>(carried);
+  if (!crosses_threads) {
+    return result;
+  }
+  for (const auto &capture : captured) {
+    if (!seen.erase(capture.name)) {
+      continue;
+    }
+    const auto what =
+        std::format("`{}` is captured by this task", capture.name);
+    if (!hides_carried(capture.type)) {
+      require_sendable(capture.type, span, what, /*need_share=*/true);
+    } else if (capture.carried != nullptr) {
+      auto values = *capture.carried;
+      for (auto &value : values) {
+        value.span = std::nullopt;
+      }
+      require_carried_sendable(values, what, span);
+    } else {
+      report_hidden_carrier(capture.type, span, what);
     }
   }
   return result;
 }
 
+auto checker::hides_carried(type_id type) -> bool {
+  const auto &entry =
+      session_.types_.entry(session_.types_.strip_refinement(type));
+  return entry.kind == type_kind::fn_kind ||
+         (entry.kind == type_kind::builtin_generic_kind &&
+          entry.name == "task");
+}
+
+auto checker::append_carried(const ast::expr &expr,
+                             std::vector<carried_value> &out) -> bool {
+  const auto it = session_.node_types_.find(&expr);
+  const auto type =
+      it != session_.node_types_.end() ? it->second : k_unknown_type;
+  if (!hides_carried(type)) {
+    out.push_back(carried_value{
+        .type = type, .need_share = false, .span = expr.span, .label = {}});
+    return true;
+  }
+  const auto carried = carried_by(expr);
+  if (carried == nullptr) {
+    return false;
+  }
+  for (auto value : *carried) {
+    value.span = value.span.value_or(expr.span);
+    out.push_back(std::move(value));
+  }
+  // A task's result comes back to whoever awaits it.
+  const auto &entry =
+      session_.types_.entry(session_.types_.strip_refinement(type));
+  if (entry.kind == type_kind::builtin_generic_kind) {
+    for (const auto arg : entry.args) {
+      out.push_back(carried_value{.type = arg,
+                                  .need_share = false,
+                                  .span = expr.span,
+                                  .label = "its result comes back"});
+    }
+  }
+  return true;
+}
+
+auto checker::carried_by(const ast::expr &expr) -> carried_values {
+  const auto none = std::make_shared<const std::vector<carried_value>>();
+  hidden_carrier_ = &expr;
+  switch (expr.kind) {
+  case ast::node_kind::ident_expr: {
+    const auto found =
+        find_value_in_scopes(ast::cast<const ast::ident_expr>(expr).name);
+    if (found.binding != nullptr) {
+      if (found.binding->carried == nullptr) {
+        hidden_carrier_ = &expr;
+      }
+      return found.binding->carried;
+    }
+    // A named function or a static: it captures nothing of this task's.
+    return none;
+  }
+  case ast::node_kind::on_expr: {
+    // `on(ctx, t)` is the task `t`; `on(ctx): body` a block of its own.
+    const auto &on = ast::cast<const ast::on_expr>(expr);
+    if (on.sender != nullptr) {
+      return carried_by(*on.sender);
+    }
+    const auto it = session_.carried_literals_.find(&expr);
+    if (it == session_.carried_literals_.end() || it->second == nullptr) {
+      hidden_carrier_ = &expr;
+      return nullptr;
+    }
+    return it->second;
+  }
+  case ast::node_kind::lambda_expr:
+  case ast::node_kind::async_expr: {
+    const auto it = session_.carried_literals_.find(&expr);
+    if (it == session_.carried_literals_.end() || it->second == nullptr) {
+      hidden_carrier_ = &expr;
+      return nullptr;
+    }
+    return it->second;
+  }
+  case ast::node_kind::field_expr: {
+    // `module.function` names a function; `value.field` reads a `fn` stored
+    // in a value, which could hold anything.
+    const auto &field = ast::cast<const ast::field_expr>(expr);
+    return session_.node_types_.contains(field.object.get()) ? nullptr : none;
+  }
+  case ast::node_kind::call_expr: {
+    const auto &call = ast::cast<const ast::call_expr>(expr);
+    const auto *method = call.callee != nullptr
+                             ? ast::as<const ast::field_expr>(call.callee.get())
+                             : nullptr;
+    // Any other function could return a value carrying data it made itself;
+    // an `async def` call's task carries its arguments and nothing else.
+    if (!session_.async_calls_.contains(&call)) {
+      hidden_carrier_ = &expr;
+      return nullptr;
+    }
+    auto out = std::vector<carried_value>{};
+    if (method != nullptr &&
+        session_.node_types_.contains(method->object.get())) {
+      // The receiver, which the task may only borrow.
+      const auto before = out.size();
+      if (!append_carried(*method->object, out)) {
+        return nullptr;
+      }
+      for (auto i = before; i < out.size(); ++i) {
+        out[i].need_share = true;
+        if (out[i].label.empty()) {
+          out[i].label = "the task borrows it";
+        }
+      }
+    }
+    for (const auto &arg : call.args) {
+      if (arg.value != nullptr && !append_carried(*arg.value, out)) {
+        return nullptr;
+      }
+    }
+    return std::make_shared<const std::vector<carried_value>>(std::move(out));
+  }
+  default:
+    hidden_carrier_ = &expr;
+    return nullptr;
+  }
+}
+
+auto checker::require_carried_sendable(
+    const std::vector<carried_value> &carried, std::string_view what,
+    source_span at) -> void {
+  for (const auto &value : carried) {
+    require_sendable(value.type, value.span.value_or(at),
+                     value.label.empty()
+                         ? std::string(what)
+                         : std::format("{}, and {}", what, value.label),
+                     value.need_share);
+  }
+}
+
+auto checker::report_hidden_carrier(type_id type, source_span span,
+                                    std::string_view what) -> void {
+  const auto is_task =
+      session_.types_.entry(session_.types_.strip_refinement(type)).kind !=
+      type_kind::fn_kind;
+  error_with_help(
+      span,
+      std::format("cannot tell what this `{}` takes to another task",
+                  session_.types_.display(type)),
+      std::string(what),
+      std::format(
+          "A {0}'s type does not say what it carries, so the compiler follows "
+          "it back to where it was made. Here that is out of sight: it came "
+          "from a parameter, a field, a `var`, or a function's result. Pass "
+          "{1} directly, or bind it with `let` in this function.",
+          is_task ? "task" : "function value",
+          is_task ? "the `async def` call or `async:` block"
+                  : "the lambda or named function"));
+}
+
+auto checker::reject_task_block_exit(source_span span, std::string_view what)
+    -> bool {
+  if (function_.task_block_depth_ == 0) {
+    return false;
+  }
+  error_with_help(
+      span,
+      std::format("`{}` cannot leave an `async:` or `on(...)` block", what),
+      "inside a block that runs as its own task",
+      "The block runs as a task of its own, so there is no enclosing "
+      "function to return from here. Its value is its last expression; "
+      "to fail, make that a `result`, or move the code into an `async def`.");
+  return true;
+}
+
+auto checker::reject_non_task(const ast::expr &expr, type_id type,
+                              std::string_view form) -> bool {
+  // An open literal counts as unknown, but is never a task.
+  const auto &entry = session_.types_.entry(strip_refs(type));
+  if (type == k_unknown_type || type == k_error_type ||
+      (entry.kind == type_kind::builtin_generic_kind && entry.name == "task")) {
+    return false;
+  }
+  error_with_help(
+      expr.span,
+      std::format("`{}` runs {}, and this is not one", form,
+                  form.ends_with(':') ? "tasks" : "a task"),
+      session_.types_.is_unknown(type)
+          ? std::string("this is a number")
+          : std::format("this is a `{}`", session_.types_.display(type)),
+      form == "on(ctx, ...)"
+          ? "Pass the call of an `async def`, or an `async:` block. To run a "
+            "block of code on the context, write `on(ctx):` with the block "
+            "after it."
+          : "Pass the call of an `async def`, or an `async:` block. "
+            "`t.spawn()` starts `t` and gives back nothing, so pass `t` "
+            "itself.");
+  return true;
+}
+
 auto checker::require_task_args_sendable(const ast::expr &task) -> void {
-  const auto *call = ast::as<const ast::call_expr>(&task);
-  if (call == nullptr) {
+  const auto it = session_.node_types_.find(&task);
+  if (it == session_.node_types_.end() || !hides_carried(it->second)) {
     return;
   }
-  for (const auto &arg : call->args) {
-    if (arg.value == nullptr) {
-      continue;
-    }
-    if (const auto it = session_.node_types_.find(arg.value.get());
-        it != session_.node_types_.end()) {
-      require_sendable(it->second, arg.value->span,
-                       "this argument moves into the task");
-    }
+  const auto carried = carried_by(task);
+  if (carried == nullptr) {
+    const auto *hidden = hidden_carrier_ != nullptr ? hidden_carrier_ : &task;
+    const auto found = session_.node_types_.find(hidden);
+    report_hidden_carrier(found != session_.node_types_.end() ? found->second
+                                                              : it->second,
+                          hidden->span,
+                          hidden == &task ? "this task moves to another"
+                                          : "this moves into the task");
+    return;
   }
+  require_carried_sendable(*carried, "this moves into the task", task.span);
 }
 
 auto checker::infer_crew_errors(const ast::call_expr &call,
@@ -1353,7 +1613,18 @@ auto checker::infer_crew_errors(const ast::call_expr &call,
   }
   const auto list_type = resolve_list_type(task.args[1]);
   record_new_push_dispatch(call, list_type, session_.crew_error_dispatches_);
-  session_.crew_error_task_types_[&call] = found->second.task_type;
+  const auto task_type = found->second.task_type;
+  session_.crew_error_task_types_[&call] = task_type;
+  // In a generic body the tasks' type mentions its parameters; each instance
+  // records its own call with them substituted.
+  if (mentions_template_param(task_type)) {
+    defer_to_instances(call,
+                       [this, &call, task_type](instance_subst &subst) -> auto {
+                         const auto &clone = *clone_of(subst, &call);
+                         session_.crew_error_task_types_[&clone] =
+                             substitute_type(task_type, subst);
+                       });
+  }
   return list_type;
 }
 
@@ -1868,13 +2139,21 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   case ast::node_kind::yield_expr:
     return infer_yield(ast::cast<const ast::yield_expr>(expr));
   case ast::node_kind::async_expr: {
+    // An `async:` block is a task on `io`, like an `async def` call, whose
+    // result is the block's last expression.
     const auto saved_async = std::exchange(function_.in_async_, true);
-    check_task_body(expr.span, [&] -> type_id {
+    const auto saved_context =
+        std::exchange(function_.async_context_, session_.types_.builtin("io"));
+    const auto body = check_task_body(expr, expr.span, true, [&] -> type_id {
       return check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
                               k_unknown_type);
     });
     function_.in_async_ = saved_async;
-    return k_unknown_type;
+    function_.async_context_ = saved_context;
+    if (body == k_unknown_type || body == k_error_type) {
+      return body;
+    }
+    return task_of_declared_result(body);
   }
   case ast::node_kind::par_expr: {
     const auto &par = ast::cast<const ast::par_expr>(expr);
@@ -1882,7 +2161,8 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     for (const auto &branch : par.branches) {
       elements.push_back(branch != nullptr ? infer_expr(*branch, k_unknown_type)
                                            : k_unknown_type);
-      if (branch != nullptr) {
+      if (branch != nullptr &&
+          !reject_non_task(*branch, elements.back(), "par:")) {
         require_task_args_sendable(*branch);
       }
     }
@@ -1894,7 +2174,9 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     for (const auto &branch : race.branches) {
       if (branch != nullptr) {
         result = infer_expr(*branch, k_unknown_type);
-        require_task_args_sendable(*branch);
+        if (!reject_non_task(*branch, result, "race:")) {
+          require_task_args_sendable(*branch);
+        }
       }
     }
     return result;
@@ -1906,17 +2188,29 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   case ast::node_kind::on_expr: {
     const auto &on = ast::cast<const ast::on_expr>(expr);
     if (on.sender != nullptr) {
-      infer_expr(*on.sender, k_unknown_type);
+      // `on(ctx, task)` runs a task that already exists on `ctx`; awaiting
+      // it gives the task's result.
+      const auto task = infer_expr(*on.sender, k_unknown_type);
+      if (reject_non_task(*on.sender, task, "on(ctx, ...)")) {
+        return k_error_type;
+      }
+      if (!on.body.empty()) {
+        error(on.span, "`on(ctx, task)` takes no block",
+              "the task is what runs");
+      }
+      if (context_of_on_target(on) != session_.types_.builtin("io")) {
+        require_task_args_sendable(*on.sender);
+      }
+      return task;
     }
     const auto saved_context = function_.async_context_;
     function_.async_context_ = context_of_on_target(on);
-    // A single-threaded context moves nothing between threads.
-    const auto result =
-        function_.async_context_ == session_.types_.builtin("io")
-            ? check_body_nodes(on.body, expected)
-            : check_task_body(on.span, [&] -> type_id {
-                return check_body_nodes(on.body, expected);
-              });
+    // The body runs as a task on the context's pool. A single-threaded
+    // context moves nothing between threads.
+    const auto result = check_task_body(
+        expr, on.span,
+        function_.async_context_ != session_.types_.builtin("io"),
+        [&] -> type_id { return check_body_nodes(on.body, expected); });
     function_.async_context_ = saved_context;
     return result;
   }

@@ -317,7 +317,9 @@ struct walker {
     switch (node.kind) {
     case hir_node_kind::hir_let: {
       const auto &let = dynamic_cast<const hir_let &>(node);
-      walk_expr(*let.initializer);
+      if (let.initializer != nullptr) {
+        walk_expr(*let.initializer);
+      }
       bind(let.symbol);
       return;
     }

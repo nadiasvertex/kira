@@ -28,6 +28,10 @@ A panic inside a task does not end the process. Both tiers share one path. `repo
 
 A panic on a thread that is not a worker has nowhere to propagate, and that covers one rethrown into the entry function. `exit_after_panic` runs `shutdown` and then `_Exit(101)`, so the entry function's frame outlives its crews and no static destructor runs beside a worker.
 
+## Waiting on a word
+
+`std.sync` builds its locks and channels on three calls that wait on a 64-bit word. `wait_word(word, expected)` blocks the calling thread while the word holds `expected`; on a worker it gives up the worker's place like any other blocking wait. `word_waiter(word, expected)` returns a task that finishes once the word no longer holds `expected`, which a task awaits to suspend instead of block. `wake_word(word)` wakes every wait on the word. A wait re-reads the word under the scheduler's lock and a wake takes the same lock, so a change followed by a wake cannot be missed. The waiters are kept in a table keyed by the word's address. The calls are reached from Cinder as `rt_word_wait`, `rt_word_waiter` and `rt_word_wake`, together with `rt_atomic_load`, `rt_atomic_store` and `rt_atomic_compare_exchange`, which are sequentially consistent.
+
 ## Process shutdown
 
 `shutdown` cancels every unfinished task and waits up to one second for them to stop. It reports whether they all did, since a task that never reaches a cancellation check cannot be stopped. It runs at process exit through `atexit`, and `cinder run` calls it before freeing the VM and module; if a task is still running, the driver calls `_Exit` with the program's status instead of freeing what the task reads. A task nobody awaited is therefore cancelled when the entry function returns.
@@ -44,8 +48,8 @@ The losers of a `race` are the exception: they are cancelled but not waited for.
 
 ## Testing
 
-`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool, cancellation reaching awaited tasks and open crews, a panic in a crew body, and `shutdown`. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153` and `155`–`159` (`on(cpu)`, `race` cancelling losers, `crew`, `crew` collecting errors, every exit from a `crew` body) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
+`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool, cancellation reaching awaited tasks and open crews, a panic in a crew body, and `shutdown`. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153`, `155`–`159` and `169`–`173` (`on(cpu)`, `race` cancelling losers, `crew`, `crew` collecting errors, every exit from a `crew` body, `async:` blocks, borrows held across `await`, `std.sync`, suspending value branches, generic tasks) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
 
 ## Not built
 
-`on` bodies cannot `await`. `c.errors()` on a collecting crew is lowered inline (join, then a loop over `crew_task` pushing `err` payloads), so it is not available inside a generic function. `send` and `share` are not checked, so nothing yet stops a program from handing non-shareable data to a task that runs on another thread. There is no event loop behind `io`.
+There is no event loop behind `io`. A task that waits on the operating system blocks its worker.

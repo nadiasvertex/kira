@@ -1,0 +1,17 @@
+drop 1
+mutex set
+drop 2
+received 3
+drop 3
+channel ends
+drop 4
+drop 5
+returned 6
+drop 6
+closed ends
+drop 7
+watch set
+drop 8
+drop 9
+rwlock set
+drop 10

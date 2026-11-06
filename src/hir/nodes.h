@@ -905,8 +905,18 @@ struct hir_range_pattern : hir_pattern {
 struct hir_let : hir_stmt {
   symbol_id symbol = k_invalid_symbol_id;
   std::string name; ///< Preserved for diagnostics/debugging only.
+  /// Null for a local declared here and assigned later: lowering's result
+  /// slot for an `if`/`match` value whose branches may suspend
+  /// (`lowerer::lower_suspending_branch_value`). `declared_type` is then its
+  /// type.
   ptr<hir_expr> initializer;
   bool is_mut = false;
+  type_id declared_type = k_unknown_type;
+
+  /// The local's type, whichever way it was given.
+  [[nodiscard]] auto type() const -> type_id {
+    return initializer != nullptr ? initializer->type : declared_type;
+  }
 
   hir_let(source_span s, symbol_id sym, std::string n, ptr<hir_expr> init,
           bool mut = false)

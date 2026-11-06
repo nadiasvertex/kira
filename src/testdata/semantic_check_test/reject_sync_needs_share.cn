@@ -1,0 +1,30 @@
+module main
+
+# Every reader of an `rwlock[T]` reads the same `T` at once, so `T` must be
+# `share`; `solo` is only `send`. A channel still needs its `T` to be `send`.
+
+use std.sync.{rwlock, channel, sender}
+use std.mem.{alloc}
+
+type solo = { word: *mut usize }
+
+impl send for solo:
+
+type loose = { word: *mut usize }
+
+machine def make_solo() -> solo:
+    return solo { word: alloc[usize](1) }
+
+async def use_rwlock(l: &rwlock[solo]) -> int32:
+    return 1
+
+async def use_sender(tx: sender[loose]) -> int32:
+    return 2
+
+async def main() -> int32:
+    let l = rwlock.new(make_solo())
+    let (tx, rx) = channel[loose](1)
+    crew c:
+        let _ = c.spawn(on(pool, use_rwlock(&l)))
+        let _ = c.spawn(on(pool, use_sender(tx)))
+    return 0

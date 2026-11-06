@@ -25,6 +25,12 @@ namespace cinder::hir {
 [[nodiscard]] auto free_variables(const hir_lambda &lambda)
     -> std::vector<symbol_id>;
 
+/// `free_variables` for a block with no parameters of its own: the body of
+/// an `async:` or `on(...)` block, which runs as a function whose parameters
+/// are these.
+[[nodiscard]] auto free_variables(const hir_block &body)
+    -> std::vector<symbol_id>;
+
 /// The ordered environment plan for `lambda` — what both backends build the
 /// closure's environment block from, and the ABI contract between the code
 /// that *builds* the block and the code that *reads* it inside the body.
@@ -56,6 +62,15 @@ namespace cinder::hir {
 /// local of this body; a lambda's own parameters are not, since those belong
 /// to that lambda's frame rather than this one.
 [[nodiscard]] auto ref_captured_symbols(const hir_block &body)
+    -> std::unordered_set<symbol_id>;
+
+/// Every local in `body` whose address is taken (`&x` or `&mut x`, the
+/// receiver borrow of a method call included). A coroutine's step function
+/// keeps its locals in a frame that is gone once it suspends, so on the
+/// bytecode VM a borrow that a pending task holds across the suspension
+/// must point at a cell instead, exactly like a by-reference capture
+/// (`ref_captured_symbols`).
+[[nodiscard]] auto address_taken_symbols(const hir_block &body)
     -> std::unordered_set<symbol_id>;
 
 } // namespace cinder::hir

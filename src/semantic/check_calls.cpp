@@ -323,6 +323,9 @@ auto checker::check_call_against_decl(
         std::format("Mark `{}` as `pure def` if it has no side effects.",
                     decl.name));
   }
+  if (decl.modifiers.is_async) {
+    session_.async_calls_.insert(&call);
+  }
   const auto params = signature_params(decl, owner, skip_self);
   auto solved = value_bindings{};
   const auto generic = generic_call_context{.decl = &decl,

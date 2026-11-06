@@ -44,15 +44,15 @@ Cancellation is requested when a sibling in the same `crew` fails (the crew canc
 
 ## Implementation status
 
-Partial. Tasks run on a shared scheduler on both backends, with `crew`, `par`, `race` and `on`; the data-race checks are partial (see chapter 30).
+Partial. Tasks run on a shared scheduler on both backends, with `crew`, `par`, `race`, `on` and the data-race checks; `io` has no event loop, and `await yield` is not built.
 
 - Surface syntax parses completely: `async`, `await` (including `await yield`), `crew`, `par`, `race`, `on`, and the `async` function modifier all lex and parse (`src/parser/ast.h`).
 - The checker types an `async def` call as `task[T, E, io]` (`E` is `never` unless the body returns `result[T, E]`), and `await` unwraps it to `T`, or to `result[T, E]` for a fallible task. `await par:` unwraps each branch into a tuple. `await` outside an `async` function is an error. Awaiting a task whose context differs from the current one (`io` in an `async def`, switched by an enclosing `on(pool)` or `on(io)`) is an error. Only the built-in `io` and `cpu` contexts are checked; user-defined contexts and `task` annotations in other positions are not modeled (`infer_await`, `awaited_type`, `context_of_on_target` in `src/semantic/check_expr.cpp`).
 - Tasks are scheduled by a runtime shared by the VM and the AOT/JIT tiers ([The Task Scheduler](../05-implementation/69-task-scheduler.md)). The `io` pool has one worker unless `CINDER_IO_WORKERS` raises it; the `cpu` pool has one per hardware thread unless `CINDER_CPU_WORKERS` sets it. An `await` inside a task suspends it until the awaited task finishes, and a panic in a task is rethrown in whoever awaits it. Cancelling a task the scheduler owns is cooperative, as described above.
-- `await on(cpu|pool):` runs its body on the `cpu` pool. `crew`, `par`, `race` and `spawn` run on the `io` pool ([`crew`, `par`, `race`](28-crew-par-race.md#implementation-status)).
-- `send`/`share` are checked structurally at spawn, `par`, `race` and non-`io` `on` sites ([Data-Race Freedom](30-data-race-freedom.md#implementation-status)). Crew-scoped borrows are checked by the ownership checker. The captures of a closure or function value passed as a task are not checked.
-- There is no event loop behind `io`. `io` tasks run on the single-worker driver.
-- `src/std/` has no `channel`, `watch`, `mutex`, `rwlock`, or `atomic` module. `shared[T]` and the `std.mem` atomics exist.
+- `await on(cpu|pool):` runs its body on the `cpu` pool, and `on(ctx, task)` runs an existing task there. `crew`, `par`, `race`, `spawn` and `async:` blocks run on the `io` pool ([`crew`, `par`, `race`](28-crew-par-race.md#implementation-status)).
+- `send`/`share` are checked structurally at spawn, `par`, `race`, `async:` and non-`io` `on` sites, and on function values and tasks crossing to another task ([Data-Race Freedom](30-data-race-freedom.md#implementation-status)). Crew-scoped borrows are checked by the ownership checker.
+- There is no event loop behind `io`. `io` tasks run on the `io` worker pool, and a task waiting on the operating system blocks its worker.
+- `std.sync` has `channel`, `watch`, `mutex`, `rwlock` and `atomic` ([Channels and Sync Primitives](29-channels-and-sync-primitives.md#implementation-status)).
 
 ## See also
 

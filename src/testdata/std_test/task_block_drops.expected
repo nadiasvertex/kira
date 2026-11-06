@@ -1,0 +1,16 @@
+drop 1
+moved 1
+lent 2
+lent done
+drop 2
+drop 3
+task ends
+kept 3
+task ends
+drop 4
+kept 0
+made
+drop 5
+drop 6
+on 13
+drop 7

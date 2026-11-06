@@ -3911,6 +3911,102 @@ auto test_reports_member_missing_through_deref() -> void {
                     "expected the note to say the target was searched");
 }
 
+auto test_rejects_task_block_exits() -> void {
+  const auto analyzed = analyze_test_data_file("reject_task_block_exits.cn");
+  expect(analyzed.error_count == 2,
+         "expected `?` and `return` in an `async:` block to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "`?` cannot leave an `async:` or `on(...)` block",
+                    "expected `?` inside an `async:` block to be rejected");
+  expect_diagnostic(analyzed,
+                    "`return` cannot leave an `async:` or `on(...)` block",
+                    "expected `return` inside an `async:` block to be "
+                    "rejected");
+}
+
+auto test_rejects_on_sender_that_is_not_a_task() -> void {
+  const auto analyzed = analyze_test_data_file("reject_on_sender_not_task.cn");
+  expect(analyzed.error_count == 1,
+         "expected `on(pool, 3)` to be rejected once:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "`on(ctx, ...)` runs a task, and this is not one",
+                    "expected a non-task sender to be rejected");
+  expect_diagnostic(analyzed, "this is a number",
+                    "expected the label to describe the literal sender");
+}
+
+auto test_rejects_task_function_values() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_task_function_values.cn");
+  expect(analyzed.error_count == 6,
+         "expected six function-value and task crossings to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "this moves into the task, and it captures `h`",
+                    "expected a lambda capturing a raw pointer to be "
+                    "rejected, directly and through `let`");
+  expect_diagnostic(analyzed,
+                    "cannot tell what this `fn() -> int32` takes to another "
+                    "task",
+                    "expected a function-value parameter to be rejected");
+  expect_diagnostic(analyzed,
+                    "cannot tell what this `task[int32]` takes to another "
+                    "task",
+                    "expected a task parameter to be rejected");
+  expect_diagnostic(analyzed,
+                    "It contains `fn() -> int32`, and a function "
+                    "type does not say what it carries",
+                    "expected a function value inside a struct to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "`f` is captured by this task, and it captures `h`",
+                    "expected a captured lambda to take its captures to the "
+                    "pool");
+}
+
+auto test_accepts_task_function_values() -> void {
+  const auto analyzed =
+      analyze_test_data_file("accept_task_function_values.cn");
+  expect_clean(analyzed,
+               std::string("expected visible lambdas, named functions and "
+                           "`let` tasks to cross to another task:\n") +
+                   analyzed.diagnostics);
+}
+
+auto test_accepts_sync_values_that_are_only_send() -> void {
+  const auto analyzed = analyze_test_data_file("accept_sync_send_only.cn");
+  expect_clean(analyzed,
+               std::string("expected a shared mutex, channel ends and a watch "
+                           "reader of a send-only `T` to cross to another "
+                           "task:\n") +
+                   analyzed.diagnostics);
+}
+
+auto test_rejects_sync_values_that_need_share() -> void {
+  const auto analyzed = analyze_test_data_file("reject_sync_needs_share.cn");
+  expect(analyzed.error_count == 2,
+         "expected a shared rwlock of a send-only `T` and a channel of a "
+         "non-send `T` to be rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "write `impl share for solo`",
+                    "expected the rwlock's `T` to need `share`");
+  expect_diagnostic(analyzed, "write `impl send for loose`",
+                    "expected the channel's `T` to need `send`");
+}
+
+auto test_rejects_non_task_spawned() -> void {
+  const auto analyzed = analyze_test_data_file("reject_non_task_spawned.cn");
+  expect(analyzed.error_count == 3,
+         "expected `c.spawn`, `par:` and `race:` of non-tasks to be "
+         "rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "`c.spawn(...)` runs a task, and this is not one",
+                    "expected `c.spawn(t.spawn())` to be rejected");
+  expect_diagnostic(analyzed, "`par:` runs tasks, and this is not one",
+                    "expected a non-task `par:` branch to be rejected");
+  expect_diagnostic(analyzed, "`race:` runs tasks, and this is not one",
+                    "expected a non-task `race:` branch to be rejected");
+}
+
 auto main() -> int {
   try {
     test_accepts_typed_core_program();
@@ -3928,6 +4024,13 @@ auto main() -> int {
     test_reports_write_through_shared();
     test_reports_deref_operator_misuse();
     test_reports_member_missing_through_deref();
+    test_rejects_task_block_exits();
+    test_rejects_non_task_spawned();
+    test_rejects_on_sender_that_is_not_a_task();
+    test_rejects_task_function_values();
+    test_accepts_task_function_values();
+    test_accepts_sync_values_that_are_only_send();
+    test_rejects_sync_values_that_need_share();
     test_reports_copy_bound_unsatisfied();
     test_reports_fn_value_reference_mismatch();
     test_accepts_try_from_conversion();

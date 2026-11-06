@@ -8,3 +8,8 @@
 8. A module-qualified call with explicit type arguments does not bind them: `use std.limits` then `limits.max[int32]()` reports "cannot tell what `T` is in this call to `max`". `use std.limits.max` then `max[int32]()` works.
 9. A trait's static method called directly on a builtin type fails at code generation: `int64.zero()` (with `use std.traits.zero`) reports "no concrete checked type is available for this node". The same call through a bound (`T.zero()` with `T: zero`) works.
 10. On Linux x86-64, `int128` checked multiplication may lower to a call to `__muloti4`, which libgcc does not provide. Untested; macOS links it from compiler-rt.
+11. A compound assignment through a dereference, `*p += x` with `p: &mut int32`, is not supported on either backend. `*p = *p + x` works. This also blocks the next item.
+12. There is no mutable deref trait, so `*guard += 1` on a `mutex_guard` (chapter 30's example) cannot compile. `std.sync` guards offer `get_mut()` and `set(value)` instead.
+13. A bare `on(ctx, t)` or `on(ctx): body` value that is dropped without being awaited leaks what its inner task captured: the wrapper's drop does not drop the inner task's captures.
+14. `implements[T, copy]` cannot be used, because `copy` is a concept rather than a trait. A method that needs "copy if possible, else clone" has to be split in two, as `watch_reader.get` and `watch_reader.cloned` are.
+15. `await yield` parses and checks but is not lowered on either backend.

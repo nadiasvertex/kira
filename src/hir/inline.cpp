@@ -404,9 +404,12 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   }
   case hir_node_kind::hir_let: {
     const auto &n = dynamic_cast<const hir_let &>(node);
-    auto initializer = clone_as(*n.initializer, rename);
-    return hir::make<hir_let>(span, rename(n.symbol), n.name,
-                              std::move(initializer), n.is_mut);
+    auto initializer =
+        n.initializer != nullptr ? clone_as(*n.initializer, rename) : nullptr;
+    auto cloned = hir::make<hir_let>(span, rename(n.symbol), n.name,
+                                     std::move(initializer), n.is_mut);
+    cloned->declared_type = n.declared_type;
+    return cloned;
   }
   case hir_node_kind::hir_let_else: {
     const auto &n = dynamic_cast<const hir_let_else &>(node);

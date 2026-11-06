@@ -134,6 +134,28 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 /// Whether `task` has finished (its body returned or was cancelled).
 [[nodiscard]] auto is_finished(const uint64_t *task) -> bool;
 
+// --------------------------------------------------------------------------
+//  Waiting on a memory word. These are what `std.sync` builds its locks and
+//  channels from: a lock or a queue keeps its state in a `usize`, changes it
+//  with an atomic operation, and wakes the word's waiters after a change.
+//  A wait re-reads the word under the scheduler's lock, and a wake takes
+//  that lock, so a change made before a wake is never missed.
+// --------------------------------------------------------------------------
+
+/// Blocks the calling thread while the word at `word` holds `expected`. On
+/// a worker, another worker takes this one's place, as in `block_on`.
+void wait_word(const uint64_t *word, uint64_t expected);
+
+/// A task that finishes once the word at `word` no longer holds `expected`,
+/// for a task body to `await`. It is a coroutine object of its own whose
+/// step function re-reads the word; the scheduler has already taken it over.
+[[nodiscard]] auto word_waiter(const uint64_t *word, uint64_t expected)
+    -> uint64_t *;
+
+/// Wakes every wait on `word`: each re-reads it and either returns or waits
+/// again.
+void wake_word(const uint64_t *word);
+
 /// Blocks the calling thread until every task the scheduler has taken over
 /// has finished. Used by tests to drain detached work; a program's tasks are
 /// normally awaited.
@@ -196,4 +218,14 @@ auto cinder_rt_crew_join(uint64_t *group) -> uint64_t *;
 auto cinder_rt_crew_free(uint64_t *group) -> uint64_t *;
 auto cinder_rt_crew_len(uint64_t *group) -> uint64_t;
 auto cinder_rt_crew_task(uint64_t *group, uint64_t index) -> uint64_t *;
+
+/// The word operations of `std.sync`: sequentially consistent atomic access
+/// to a `usize`, and `wait_word`/`word_waiter`/`wake_word` above.
+auto cinder_rt_atomic_load(uint64_t *word) -> uint64_t;
+auto cinder_rt_atomic_store(uint64_t *word, uint64_t value) -> uint64_t *;
+auto cinder_rt_atomic_compare_exchange(uint64_t *word, uint64_t expected,
+                                       uint64_t desired) -> uint64_t;
+auto cinder_rt_word_wait(uint64_t *word, uint64_t expected) -> uint64_t *;
+auto cinder_rt_word_waiter(uint64_t *word, uint64_t expected) -> uint64_t *;
+auto cinder_rt_word_wake(uint64_t *word) -> uint64_t *;
 }
