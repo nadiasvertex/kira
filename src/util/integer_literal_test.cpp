@@ -34,19 +34,21 @@ auto main() -> int {
   expect(parse_integer_literal_wide("18446744073709551616") == u128(1, 0),
          "2^64");
   // uint128's maximum, decimal and hex.
-  expect(parse_integer_literal_wide(
-             "340282366920938463463374607431768211455") ==
-             u128(~uint64_t{0}, ~uint64_t{0}),
-         "uint128 max decimal");
-  expect(parse_integer_literal_wide("0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff") ==
-             u128(~uint64_t{0}, ~uint64_t{0}),
-         "uint128 max hex");
+  expect(
+      parse_integer_literal_wide("340282366920938463463374607431768211455") ==
+          u128(~uint64_t{0}, ~uint64_t{0}),
+      "uint128 max decimal");
+  expect(
+      parse_integer_literal_wide("0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff") ==
+          u128(~uint64_t{0}, ~uint64_t{0}),
+      "uint128 max hex");
   expect(!parse_integer_literal_wide("340282366920938463463374607431768211456")
               .has_value(),
          "2^128 does not fit");
-  expect(!parse_integer_literal_wide("0x1_0000_0000_0000_0000_0000_0000_0000_0000")
-              .has_value(),
-         "2^128 hex does not fit");
+  expect(
+      !parse_integer_literal_wide("0x1_0000_0000_0000_0000_0000_0000_0000_0000")
+           .has_value(),
+      "2^128 hex does not fit");
   expect(!parse_integer_literal_wide("12a").has_value(), "bad digit");
   expect(!parse_integer_literal_wide("0b2").has_value(), "digit past base");
   expect(!parse_integer_literal_wide("0x").has_value(), "no digits");

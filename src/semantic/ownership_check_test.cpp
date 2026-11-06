@@ -450,9 +450,10 @@ auto test_receiver_mut_with_shared_arg_is_rejected() -> void {
 
 auto test_static_writes_are_rejected() -> void {
   const auto analyzed = analyze_test_data_file("reject_static_write.cn");
-  expect(analyzed.error_count == 8,
-         std::format("expected 8 errors for writes through statics, got {}:\n{}",
-                     analyzed.error_count, analyzed.diagnostics));
+  expect(
+      analyzed.error_count == 8,
+      std::format("expected 8 errors for writes through statics, got {}:\n{}",
+                  analyzed.error_count, analyzed.diagnostics));
   expect_diagnostic(analyzed, "cannot assign to `xs` — it is a `static`",
                     "expected an element write in a task to be rejected");
   expect_diagnostic(analyzed, "cannot assign to `n` — it is a `static`",
@@ -482,21 +483,26 @@ auto test_let_writes_are_rejected() -> void {
          std::format("expected 7 errors for changes to `let` bindings, got "
                      "{}:\n{}",
                      analyzed.error_count, analyzed.diagnostics));
-  expect_diagnostic(analyzed, "cannot borrow `xs` mutably — it is bound with "
-                              "`let`",
+  expect_diagnostic(analyzed,
+                    "cannot borrow `xs` mutably — it is bound with "
+                    "`let`",
                     "expected `&mut xs` on a `let` to be rejected");
-  expect_diagnostic(analyzed, "cannot call `push` on `xs` — it is bound with "
-                              "`let`",
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `xs` — it is bound with "
+                    "`let`",
                     "expected a `mut self` call on a `let` to be rejected");
-  expect_diagnostic(analyzed, "cannot call `push` on `ys` — it is bound with "
-                              "`let`",
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `ys` — it is bound with "
+                    "`let`",
                     "expected a `mut self` call on an element of a `let` to "
                     "be rejected");
-  expect_diagnostic(analyzed, "cannot call `next` on `it` — it is bound with "
-                              "`let`",
+  expect_diagnostic(analyzed,
+                    "cannot call `next` on `it` — it is bound with "
+                    "`let`",
                     "expected `next` on a `let` iterator to be rejected");
-  expect_diagnostic(analyzed, "cannot call `push` on `a` — it is bound with "
-                              "`let`",
+  expect_diagnostic(analyzed,
+                    "cannot call `push` on `a` — it is bound with "
+                    "`let`",
                     "expected a `mut self` call on a destructured `let` to be "
                     "rejected");
 }

@@ -1344,9 +1344,9 @@ auto checker::infer_crew_errors(const ast::call_expr &call,
     return k_error_type;
   }
   const auto &task = session_.types_.entry(found->second.task_type);
-  if (task.args.size() < 2 || session_.types_.entry(task.args[1]).name == "never") {
-    error_with_help(span, "the tasks in this crew cannot fail",
-                    "no error type",
+  if (task.args.size() < 2 ||
+      session_.types_.entry(task.args[1]).name == "never") {
+    error_with_help(span, "the tasks in this crew cannot fail", "no error type",
                     "`errors()` collects the `err` side of a task that "
                     "returns `result[T, E]`.");
     return k_error_type;

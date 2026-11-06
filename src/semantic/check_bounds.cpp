@@ -479,7 +479,8 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   // Every handle to a `shared[T]` reads the same `T`.
   const auto arg_need_share = need_share || entry.name == "shared";
   for (const auto arg : entry.args) {
-    if (const auto found = concurrency_offender(arg, arg_need_share, visiting)) {
+    if (const auto found =
+            concurrency_offender(arg, arg_need_share, visiting)) {
       return found;
     }
   }
@@ -490,7 +491,8 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   if (const auto *fields = struct_fields_of(entry); fields != nullptr) {
     for (const auto &field : *fields) {
       if (const auto type = struct_field_type(entry, field.name)) {
-        if (const auto found = concurrency_offender(*type, need_share, visiting)) {
+        if (const auto found =
+                concurrency_offender(*type, need_share, visiting)) {
           return found;
         }
       }
@@ -498,7 +500,8 @@ auto checker::concurrency_offender(type_id id, bool need_share,
   }
   if (const auto *variants = sum_variants_of(entry); variants != nullptr) {
     for (const auto &variant : *variants) {
-      if (const auto found = any_offender(variant_payload_types(entry, variant))) {
+      if (const auto found =
+              any_offender(variant_payload_types(entry, variant))) {
         return found;
       }
     }

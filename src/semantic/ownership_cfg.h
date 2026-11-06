@@ -218,10 +218,10 @@ struct assign_event {
 
 /// What a `static_write_event` does to the static.
 enum class static_write : std::uint8_t {
-  assign,      ///< `xs = v`, `xs[i] = v`, `p.x += 1`.
-  borrow_mut,  ///< `&mut xs`.
-  receiver,    ///< `xs.push(4)`: a `mut self` or `&mut` receiver.
-  move,        ///< Moving a non-`copy` part out of it (`xs[0]`).
+  assign,     ///< `xs = v`, `xs[i] = v`, `p.x += 1`.
+  borrow_mut, ///< `&mut xs`.
+  receiver,   ///< `xs.push(4)`: a `mut self` or `&mut` receiver.
+  move,       ///< Moving a non-`copy` part out of it (`xs[0]`).
 };
 
 /// A write, mutable borrow, or move through a `static`. Statics are frozen

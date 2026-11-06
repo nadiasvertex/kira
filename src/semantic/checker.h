@@ -528,8 +528,7 @@ private:
     /// `c.errors()` calls — see `checked_types::crew_error_dispatches`.
     std::unordered_map<const ast::call_expr *, comprehension_dispatch>
         crew_error_dispatches_;
-    std::unordered_map<const ast::call_expr *, type_id>
-        crew_error_task_types_;
+    std::unordered_map<const ast::call_expr *, type_id> crew_error_task_types_;
 
     /// The crews in scope, by name: whether each collects errors and the task
     /// type of the first thing spawned into it (`k_unknown_type` until then).

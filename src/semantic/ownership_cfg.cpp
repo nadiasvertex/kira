@@ -873,10 +873,9 @@ private:
   /// read-only; a raw pointer is the `machine` code's to account for, so
   /// what a `*mut` points at is writable however the pointer was reached. A
   /// `*T` is left out for an assignment, which the checker rejects itself.
-  [[nodiscard]] auto shared_indirection(type_id root_type,
-                                        const ast::expr *place,
-                                        bool through_place,
-                                        bool include_pointers) const
+  [[nodiscard]] auto
+  shared_indirection(type_id root_type, const ast::expr *place,
+                     bool through_place, bool include_pointers) const
       -> std::optional<type_id> {
     auto shared = std::optional<type_id>{};
     const auto cross = [&](type_id type) -> void {
@@ -922,24 +921,23 @@ private:
     if (!report_captures_) {
       return;
     }
-    if (const auto shared = shared_indirection(
-            info.type, place, kind == static_write::receiver,
-            kind != static_write::assign)) {
+    if (const auto shared =
+            shared_indirection(info.type, place, kind == static_write::receiver,
+                               kind != static_write::assign)) {
       auto steps = std::vector<place_step>{};
       if (place != nullptr) {
         place_steps(*place, steps);
       }
-      emit(shared_write_event{
-          .span = span,
-          .kind = kind,
-          .place = spell_place(info.name, steps, steps.size()),
-          .method = std::string(method),
-          .through = checked_.types.display(*shared)});
+      emit(shared_write_event{.span = span,
+                              .kind = kind,
+                              .place =
+                                  spell_place(info.name, steps, steps.size()),
+                              .method = std::string(method),
+                              .through = checked_.types.display(*shared)});
       return;
     }
     if (kind == static_write::assign || !info.immutable ||
-        through_indirection(info.type, place,
-                            kind == static_write::receiver)) {
+        through_indirection(info.type, place, kind == static_write::receiver)) {
       return;
     }
     emit(let_write_event{.span = span,
@@ -1333,7 +1331,7 @@ private:
     }
     if (is_mut && origin != loan_origin::receiver) {
       reject_place_write(cfg_.locals[*local], &expr, static_write::borrow_mut,
-                       span);
+                         span);
     }
     emit(access_event{.local = *local,
                       .kind = is_mut ? access_kind::borrow_mut
@@ -2066,26 +2064,26 @@ private:
         }
         auto reserved =
             borrow_place(receiver, false, loan_origin::receiver, receiver.span);
-        const auto method = decl != nullptr ? std::string_view(decl->name)
-                                            : std::string_view{};
+        const auto method =
+            decl != nullptr ? std::string_view(decl->name) : std::string_view{};
         if (!reserved.loans.empty()) {
           reservation = reserved.loans.front();
           cfg_.loans[reservation].reserved_mut = true;
           activate = &receiver;
           activate_temp = receiver_temp;
           reject_place_write(cfg_.locals[cfg_.loans[reservation].root],
-                           &receiver, static_write::receiver, receiver.span,
-                           method);
+                             &receiver, static_write::receiver, receiver.span,
+                             method);
         } else {
           // No loan means no local: a `mut self` call on a `static`, or on
           // a name this lambda body captures.
           auto projected = false;
           if (const auto root = place_root(receiver, projected, &checked_);
               root.has_value() &&
-              !reject_static_write(*root, static_write::receiver,
-                                   receiver.span, method)) {
+              !reject_static_write(*root, static_write::receiver, receiver.span,
+                                   method)) {
             reject_captured_write(*root, receiver, static_write::receiver,
-                                      receiver.span, method);
+                                  receiver.span, method);
           }
         }
         stash(receiver_temp, reserved);
@@ -2204,7 +2202,7 @@ private:
           const auto is_mut = entry.mode == ast::capture_mode::by_mut_ref;
           if (is_mut) {
             reject_place_write(cfg_.locals[*local], nullptr,
-                             static_write::borrow_mut, entry.span);
+                               static_write::borrow_mut, entry.span);
           }
           access(*local,
                  is_mut ? access_kind::borrow_mut : access_kind::borrow_shared,
@@ -2876,8 +2874,7 @@ private:
         return;
       }
       if (projected) {
-        reject_captured_write(*root, target, static_write::assign,
-                              target.span);
+        reject_captured_write(*root, target, static_write::assign, target.span);
       }
       note_capture(root->name, false, root->span);
       return;

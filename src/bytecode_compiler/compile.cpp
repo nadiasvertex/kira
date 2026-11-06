@@ -1154,8 +1154,7 @@ private:
   }
   auto emit_load_register_image(virtual_reg dst, virtual_reg ptr,
                                 uint16_t index) -> void {
-    emit_load_field(dst, ptr,
-                    static_cast<uint16_t>(index * sizeof(slot_value)),
+    emit_load_field(dst, ptr, static_cast<uint16_t>(index * sizeof(slot_value)),
                     sizeof(slot_value));
   }
   auto emit_store_register_image(virtual_reg ptr, uint16_t index,
@@ -2543,7 +2542,8 @@ private:
     const auto item_type = types_.entry(strip_refs(node.type)).args.empty()
                                ? semantic::k_unknown_type
                                : types_.entry(strip_refs(node.type)).args[0];
-    emit_alloc_slots(dst, 1 + runtime::sum_max_payload_slots(types_, node.type));
+    emit_alloc_slots(dst,
+                     1 + runtime::sum_max_payload_slots(types_, node.type));
     emit_op(opcode::op_jump_if_false);
     emit_register(is_suspended_reg);
     const auto none_placeholder = writer_.emit_jump_placeholder();
@@ -3178,9 +3178,9 @@ private:
       if (!value_reg.has_value()) {
         return std::unexpected(value_reg.error());
       }
-      const auto slot = runtime::sum_payload_slot(types_, init.type,
-                                                  init.variant_name, i)
-                            .value_or(1 + i);
+      const auto slot =
+          runtime::sum_payload_slot(types_, init.type, init.variant_name, i)
+              .value_or(1 + i);
       emit_store_typed_slot(dst, static_cast<uint16_t>(slot), *value_reg,
                             init.args[i]->type);
     }
@@ -3214,8 +3214,8 @@ private:
         runtime::sum_payload_slot(types_, node.object->type, node.variant_name,
                                   node.index)
             .value_or(1 + node.index);
-    emit_load_typed_slot(dst, *object_reg,
-                         static_cast<uint16_t>(payload_slot), node.type);
+    emit_load_typed_slot(dst, *object_reg, static_cast<uint16_t>(payload_slot),
+                         node.type);
     return {};
   }
 
@@ -3673,8 +3673,7 @@ private:
                 ? std::nullopt
                 : std::optional<type_id>(arg.subject_type);
         const auto payload_slot =
-            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name,
-                                      i)
+            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name, i)
                 .value_or(1 + i);
         if (payload_type.has_value()) {
           emit_load_typed_slot(*slot_reg, value_reg,
@@ -3991,9 +3990,9 @@ private:
     if (awaited.kind == semantic::type_kind::builtin_generic_kind &&
         awaited.name == "crew") {
       // The end of a `crew` block: wait for everything spawned into it.
-      if (auto polled = emit_runtime_call("rt_crew_join_poll", *done_reg,
-                                          {generator_self_reg_, *task_reg},
-                                          y.span);
+      if (auto polled =
+              emit_runtime_call("rt_crew_join_poll", *done_reg,
+                                {generator_self_reg_, *task_reg}, y.span);
           !polled.has_value()) {
         return std::unexpected(polled.error());
       }
@@ -4011,8 +4010,7 @@ private:
       if (auto polled = emit_runtime_call(
               y.awaits_all ? "rt_task_await_all_poll"
                            : "rt_task_await_any_poll",
-              *done_reg,
-              {generator_self_reg_, *task_reg, *count_reg}, y.span);
+              *done_reg, {generator_self_reg_, *task_reg, *count_reg}, y.span);
           !polled.has_value()) {
         return std::unexpected(polled.error());
       }

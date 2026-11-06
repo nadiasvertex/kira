@@ -19,14 +19,14 @@ namespace cinder::runtime::coroutine {
 //  `resume_index` selects which suspension point the step function resumes
 //  after (0 at first entry). `value` holds what the last suspension handed
 //  to the resumer (a generator's yielded item); it is two slots wide so an
-//  `int128`/`uint128` item fits, and a narrower item uses only the first. `record` is null until the
-//  scheduler (`scheduler.h`) takes the coroutine over, and then points at the
-//  scheduler's bookkeeping for it; generated code never reads it. The step
-//  function is called
-//  with `(state_ptr, resume_index, object)` and returns the new `status` as
-//  a raw word; it never builds a result of its own. The resumer reads
-//  `value` when the returned status says a value was produced, and wraps it
-//  however the consumer needs (`option[T]` for a generator's `.next()`).
+//  `int128`/`uint128` item fits, and a narrower item uses only the first.
+//  `record` is null until the scheduler (`scheduler.h`) takes the coroutine
+//  over, and then points at the scheduler's bookkeeping for it; generated code
+//  never reads it. The step function is called with `(state_ptr, resume_index,
+//  object)` and returns the new `status` as a raw word; it never builds a
+//  result of its own. The resumer reads `value` when the returned status says a
+//  value was produced, and wraps it however the consumer needs (`option[T]` for
+//  a generator's `.next()`).
 //
 //  `status` is the one word every consumer of a coroutine shares. A
 //  generator's `.next()`, a task's poll, and a drop all read and write it,

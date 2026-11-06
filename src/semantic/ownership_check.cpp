@@ -27,9 +27,9 @@ using ownership::event;
 using ownership::flow_event;
 using ownership::function_cfg;
 using ownership::invalid_move_event;
-using ownership::let_write_event;
 using ownership::k_no_loan;
 using ownership::k_no_local;
+using ownership::let_write_event;
 using ownership::loan_id;
 using ownership::loan_info;
 using ownership::loan_origin;
@@ -39,11 +39,11 @@ using ownership::move_block;
 using ownership::move_state;
 using ownership::moved_part;
 using ownership::owned_local;
-using ownership::static_write;
-using ownership::shared_write_event;
-using ownership::static_write_event;
 using ownership::scope_exit_event;
 using ownership::scope_exit_owned;
+using ownership::shared_write_event;
+using ownership::static_write;
+using ownership::static_write_event;
 using ownership::use_event;
 
 using loan_set = std::vector<loan_id>; ///< Sorted, unique.
@@ -738,9 +738,8 @@ private:
                          w.name, w.method);
       break;
     case static_write::move:
-      message =
-          std::format("cannot move a value out of `{}` — it is a `static`",
-                      w.name);
+      message = std::format(
+          "cannot move a value out of `{}` — it is a `static`", w.name);
       label = "this would take the value out of the static";
       help = "borrow it with `&` instead, or make an owned copy with "
              "`.clone()`";
@@ -767,15 +766,14 @@ private:
                  : std::format("cannot borrow `{}` mutably — it is {}", w.name,
                                bound),
         file_id_);
-    d.with_label(w.span, receiver
-                             ? std::format("`{}` changes its receiver",
-                                           w.method)
-                             : std::string("this would let it be changed"));
+    d.with_label(w.span,
+                 receiver ? std::format("`{}` changes its receiver", w.method)
+                          : std::string("this would let it be changed"));
     d.children.push_back(
-        diagnostic(diagnostic_level::note,
-                   std::format("`{}` is {}, so it cannot change", w.name,
-                               bound),
-                   file_id_)
+        diagnostic(
+            diagnostic_level::note,
+            std::format("`{}` is {}, so it cannot change", w.name, bound),
+            file_id_)
             .with_label(w.declared, "binding declared here"));
     d.with_help(
         w.by_pattern
@@ -895,7 +893,7 @@ private:
                        : a.kind == access_kind::move ? "move"
                        : a.kind == access_kind::read ? "use"
                                                      : "assign to";
-    const auto *still = is_loop                                ? "still running"
+    const auto *still = is_loop                               ? "still running"
                         : info.role == local_role::crew_tasks ? "still running"
                                                               : "still in use";
     auto d = diagnostic(diagnostic_level::error,

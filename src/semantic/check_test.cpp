@@ -4051,7 +4051,7 @@ auto main() -> int {
     test_reports_negated_integer_literal_still_too_large();
     test_reports_int64_positive_literal_still_too_large();
     test_reports_128_bit_literals_too_large();
-  test_accepts_negative_min_literal_through_cast();
+    test_accepts_negative_min_literal_through_cast();
     test_accepts_wide_literal_in_generic_return();
     test_reports_generic_return_literal_overflow();
     test_reports_mixed_numeric_types();

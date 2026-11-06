@@ -84,8 +84,9 @@ enum class numeric_kind : uint8_t {
 
 /// Bit width used for range checks (checked/saturating arithmetic) and for
 /// the truncate-and-extend step narrower integer results need after being
-/// computed at the 64-bit width every non-128-bit kind is evaluated at. Meaningless (returns 64) for `boolean`, since it isn't a
-/// numeric-range type — callers should not call this for non-integer kinds.
+/// computed at the 64-bit width every non-128-bit kind is evaluated at.
+/// Meaningless (returns 64) for `boolean`, since it isn't a numeric-range type
+/// — callers should not call this for non-integer kinds.
 [[nodiscard]] constexpr auto bit_width(numeric_kind k) noexcept -> int {
   switch (k) {
   case numeric_kind::i8:

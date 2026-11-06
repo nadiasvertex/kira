@@ -38,9 +38,9 @@ namespace {
 /// Where a spawned task is in its life. Only the scheduler moves a task
 /// between these, and only with the lock held.
 enum class task_state : uint8_t {
-  queued,   ///< In its pool's run queue.
-  running,  ///< A worker is inside its step function.
-  waiting,  ///< Returned `pending`; a wake will queue it again.
+  queued,    ///< In its pool's run queue.
+  running,   ///< A worker is inside its step function.
+  waiting,   ///< Returned `pending`; a wake will queue it again.
   unwinding, ///< Failed with crews open; waiting for their tasks to stop.
   finished,  ///< Its result is in the value slot, or it failed.
 };
@@ -798,7 +798,8 @@ auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t {
 }
 
 auto cinder_rt_crew_new() -> uint64_t * {
-  return reinterpret_cast<uint64_t *>(cinder::runtime::scheduler::crew_new()); // NOLINT
+  return reinterpret_cast<uint64_t *>(
+      cinder::runtime::scheduler::crew_new()); // NOLINT
 }
 
 auto cinder_rt_crew_spawn(uint64_t *group, uint64_t *task) -> uint64_t * {
@@ -821,7 +822,8 @@ auto cinder_rt_crew_task(uint64_t *group, uint64_t index) -> uint64_t * {
 
 auto cinder_rt_crew_join_poll(uint64_t *self, uint64_t *group) -> uint32_t {
   namespace sched = cinder::runtime::scheduler;
-  return sched::crew_join_poll(self, reinterpret_cast<sched::crew *>(group)) // NOLINT
+  return sched::crew_join_poll(self,
+                               reinterpret_cast<sched::crew *>(group)) // NOLINT
              ? 1U
              : 0U;
 }

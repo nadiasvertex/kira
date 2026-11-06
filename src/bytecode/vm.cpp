@@ -791,9 +791,8 @@ template <typename T>
 }
 
 /// `as` where either end is `int128`/`uint128`.
-[[nodiscard]] auto exec_wide_cast(numeric_kind from_kind,
-                                  numeric_kind to_kind, slot_value src)
-    -> slot_value {
+[[nodiscard]] auto exec_wide_cast(numeric_kind from_kind, numeric_kind to_kind,
+                                  slot_value src) -> slot_value {
   if (is_float(from_kind)) {
     const double value = from_kind == numeric_kind::f32
                              ? static_cast<double>(load_f32(src))
@@ -804,10 +803,9 @@ template <typename T>
     return wide_store(static_cast<wide_unsigned>(value));
   }
   if (is_float(to_kind)) {
-    const double value =
-        from_kind == numeric_kind::i128
-            ? static_cast<double>(load_wide_signed(src))
-            : static_cast<double>(src.w);
+    const double value = from_kind == numeric_kind::i128
+                             ? static_cast<double>(load_wide_signed(src))
+                             : static_cast<double>(src.w);
     if (to_kind == numeric_kind::f32) {
       return store_f32(static_cast<float>(value));
     }
@@ -968,8 +966,7 @@ template <typename T>
 /// `int128`/`uint128`, or the fixed 8 every uniform-slot construct still
 /// passes). Uses `std::memcpy` rather than a typed `reinterpret_cast` load
 /// since a packed struct's byte offset is not generally aligned to `size`.
-[[nodiscard]] auto load_sized(const uint8_t *data, uint8_t size)
-    -> slot_value {
+[[nodiscard]] auto load_sized(const uint8_t *data, uint8_t size) -> slot_value {
   switch (size) {
   case 1:
     return slot_value{uint64_t{*data}};
@@ -1609,11 +1606,11 @@ auto intrinsic_rt_task_block_on_all(std::span<const slot_value> args)
 }
 
 auto intrinsic_rt_task_drop(std::span<const slot_value> args) -> slot_value {
-  return store_bool(cinder::runtime::scheduler::cancel_on_drop(task_of(args[0])));
+  return store_bool(
+      cinder::runtime::scheduler::cancel_on_drop(task_of(args[0])));
 }
 
-auto intrinsic_rt_crew_new(std::span<const slot_value> /*args*/)
-    -> slot_value {
+auto intrinsic_rt_crew_new(std::span<const slot_value> /*args*/) -> slot_value {
   return slot_value{reinterpret_cast<uint64_t>( // NOLINT
       cinder::runtime::scheduler::crew_new())};
 }
@@ -1636,7 +1633,7 @@ auto intrinsic_rt_crew_join_poll(std::span<const slot_value> args)
 auto intrinsic_rt_crew_free(std::span<const slot_value> args) -> slot_value {
   namespace sched = cinder::runtime::scheduler;
   sched::crew_free(reinterpret_cast<sched::crew *>(args[0].u)); // NOLINT
-  return slot_value{}; // `unit`
+  return slot_value{};                                          // `unit`
 }
 
 auto intrinsic_rt_crew_join(std::span<const slot_value> args) -> slot_value {
@@ -1648,8 +1645,8 @@ auto intrinsic_rt_crew_join(std::span<const slot_value> args) -> slot_value {
 
 auto intrinsic_rt_crew_len(std::span<const slot_value> args) -> slot_value {
   namespace sched = cinder::runtime::scheduler;
-  return store_unsigned(sched::crew_size(
-      reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
+  return store_unsigned(
+      sched::crew_size(reinterpret_cast<sched::crew *>(args[0].u))); // NOLINT
 }
 
 auto intrinsic_rt_crew_task(std::span<const slot_value> args) -> slot_value {
@@ -1794,10 +1791,10 @@ namespace platform_query = cinder::runtime::platform_query;
          name == "rt_task_cancel" || name == "rt_task_is_finished" ||
          name == "rt_task_await_any_poll" || name == "rt_task_block_on_any" ||
          name == "rt_task_await_all_poll" || name == "rt_task_block_on_all" ||
-         name == "rt_task_drop" || name == "rt_crew_new" || name == "rt_crew_spawn" ||
-         name == "rt_crew_join_poll" || name == "rt_crew_join" ||
-         name == "rt_crew_free" || name == "rt_crew_len" ||
-         name == "rt_crew_task";
+         name == "rt_task_drop" || name == "rt_crew_new" ||
+         name == "rt_crew_spawn" || name == "rt_crew_join_poll" ||
+         name == "rt_crew_join" || name == "rt_crew_free" ||
+         name == "rt_crew_len" || name == "rt_crew_task";
 }
 
 using intrinsic_fn = slot_value (*)(std::span<const slot_value>);

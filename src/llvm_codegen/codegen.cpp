@@ -721,8 +721,8 @@ public:
         return std::unexpected(ty.error());
       }
       auto *alloca = create_local_alloca(*ty, "state");
-      auto *loaded =
-          builder_.CreateLoad(*ty, private_entry_address(state_arg, i), "state");
+      auto *loaded = builder_.CreateLoad(
+          *ty, private_entry_address(state_arg, i), "state");
       builder_.CreateStore(loaded, alloca);
       bind_local(state_symbols[i], alloca);
     }
@@ -1104,8 +1104,8 @@ private:
       -> llvm::Value * {
     return compile_heap_alloc_bytes(entry_count * k_private_entry_bytes);
   }
-  [[nodiscard]] auto private_entry_address(llvm::Value *block_ptr,
-                                           size_t index) -> llvm::Value * {
+  [[nodiscard]] auto private_entry_address(llvm::Value *block_ptr, size_t index)
+      -> llvm::Value * {
     return byte_address(block_ptr, index * k_private_entry_bytes);
   }
 
@@ -3175,7 +3175,8 @@ private:
       const auto slot = lookup_local(generator_state_layout_[i]);
       if (slot.valid()) {
         auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-        builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
+        builder_.CreateStore(loaded,
+                             private_entry_address(generator_state_arg_, i));
       }
     }
     builder_.CreateStore(
@@ -3419,9 +3420,9 @@ private:
       if (!value.has_value()) {
         return std::unexpected(value.error());
       }
-      const auto slot = runtime::sum_payload_slot(types_, init.type,
-                                                  init.variant_name, i)
-                            .value_or(1 + i);
+      const auto slot =
+          runtime::sum_payload_slot(types_, init.type, init.variant_name, i)
+              .value_or(1 + i);
       builder_.CreateStore(*value, slot_address(block, slot));
     }
     return block;
@@ -3807,8 +3808,7 @@ private:
           return std::unexpected(slot_ty.error());
         }
         const auto payload_slot =
-            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name,
-                                      i)
+            runtime::sum_payload_slot(types_, *value_type, ctor.variant_name, i)
                 .value_or(1 + i);
         auto *slot_val =
             builder_.CreateLoad(*slot_ty, slot_address(value, payload_slot));
@@ -4153,7 +4153,8 @@ private:
         if (slot.valid()) {
           auto *loaded =
               builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-          builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
+          builder_.CreateStore(loaded,
+                               private_entry_address(generator_state_arg_, i));
         }
       }
       const auto ordinal = generator_next_yield_ordinal_++;
@@ -4228,11 +4229,13 @@ private:
     const auto &awaited = types_.entry(y.value->type);
     // A tuple of tasks is a `race`: the tuple is the block of slots the
     // runtime scans for a finished one.
-    const auto is_crew = awaited.kind == semantic::type_kind::builtin_generic_kind &&
-                         awaited.name == "crew";
+    const auto is_crew =
+        awaited.kind == semantic::type_kind::builtin_generic_kind &&
+        awaited.name == "crew";
     auto *polled =
-        is_crew ? builder_.CreateCall(runtime_intrinsic("rt_crew_join_poll"),
-                                      {generator_self_arg_, *task}, "await.poll")
+        is_crew
+            ? builder_.CreateCall(runtime_intrinsic("rt_crew_join_poll"),
+                                  {generator_self_arg_, *task}, "await.poll")
         : awaited.kind == semantic::type_kind::tuple_kind
             ? builder_.CreateCall(
                   runtime_intrinsic(y.awaits_all ? "rt_task_await_all_poll"
@@ -4257,7 +4260,8 @@ private:
       const auto slot = lookup_local(generator_state_layout_[i]);
       if (slot.valid()) {
         auto *loaded = builder_.CreateLoad(slot.type, slot.addr, "state.sync");
-        builder_.CreateStore(loaded, private_entry_address(generator_state_arg_, i));
+        builder_.CreateStore(loaded,
+                             private_entry_address(generator_state_arg_, i));
       }
     }
     builder_.CreateStore(

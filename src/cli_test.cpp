@@ -2758,7 +2758,8 @@ auto test_panic_in_task_stops_siblings_then_exits() -> void {
              report->build->succeeded,
          "expected the panicking task program to build");
 
-  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(), "r"); // NOLINT
+  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(),
+                     "r"); // NOLINT
   expect(pipe != nullptr, "expected the linked executable to launch");
   auto output = std::string{};
   std::array<char, 256> buffer{};
@@ -2776,9 +2777,9 @@ auto test_panic_in_task_stops_siblings_then_exits() -> void {
          std::format("expected the panic message, got: `{}`", output));
   expect(output.find("panic: boom", first + 1) == std::string::npos,
          std::format("expected one panic report, got: `{}`", output));
-  expect(output.find("sibling unwound") != std::string::npos,
-         std::format("expected the sibling to run its drops, got: `{}`",
-                     output));
+  expect(
+      output.find("sibling unwound") != std::string::npos,
+      std::format("expected the sibling to run its drops, got: `{}`", output));
   expect(output.find("main ran on") == std::string::npos,
          std::format("expected the panic to reach `main`, got: `{}`", output));
 
@@ -2819,7 +2820,8 @@ auto test_build_task_has_the_stack_of_the_main_thread() -> void {
              report->build->succeeded,
          "expected the deep stack program to build");
 
-  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(), "r"); // NOLINT
+  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(),
+                     "r"); // NOLINT
   expect(pipe != nullptr, "expected the linked executable to launch");
   auto output = std::string{};
   std::array<char, 256> buffer{};
@@ -2853,7 +2855,8 @@ auto test_blocking_wait_in_a_task_finishes_on_both_tiers() -> void {
              report->build->succeeded,
          "expected the blocking wait program to build");
 
-  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(), "r"); // NOLINT
+  auto *pipe = popen(std::format("{} 2>&1", output_path.string()).c_str(),
+                     "r"); // NOLINT
   expect(pipe != nullptr, "expected the linked executable to launch");
   auto output = std::string{};
   std::array<char, 256> buffer{};

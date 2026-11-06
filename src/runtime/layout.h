@@ -85,9 +85,8 @@ namespace cinder::runtime {
 /// earlier payload is 128 bits wide. `nullopt` if `id` is not a sum type or
 /// has no such variant or payload.
 [[nodiscard]] auto sum_payload_slot(const semantic::type_table &types,
-                                    semantic::type_id id,
-                                    std::string_view name, size_t index)
-    -> std::optional<size_t>;
+                                    semantic::type_id id, std::string_view name,
+                                    size_t index) -> std::optional<size_t>;
 
 /// The widest payload slot count across every variant of sum-kind `id`
 /// (0 if `id` is not a sum type, or every variant is a unit variant),

@@ -288,14 +288,14 @@ auto lower_reified_value(
       // A `uint128` past `int128`'s maximum is held as a negative bit
       // pattern (`comptime::value`); an unsigned literal has no sign, so it
       // is spelled as the unsigned value instead.
-      const auto is_signed =
-          semantic::is_signed_integer_name(checked.types.entry(value.type).name);
+      const auto is_signed = semantic::is_signed_integer_name(
+          checked.types.entry(value.type).name);
       const auto text =
           is_signed ? util::format_wide_signed_decimal(value.leaf.integer)
                     : util::format_wide_decimal(
                           static_cast<unsigned __int128>(value.leaf.integer));
-      return ok_expr(make<hir_literal>(span, value.type, token_kind::int_lit,
-                                       text));
+      return ok_expr(
+          make<hir_literal>(span, value.type, token_kind::int_lit, text));
     }
     case comptime::value_kind::floating:
       return ok_expr(make<hir_literal>(span, value.type, token_kind::float_lit,
@@ -1475,9 +1475,8 @@ private:
   class crew_loop_scope {
   public:
     explicit crew_loop_scope(lowerer &owner)
-        : owner_(owner),
-          enclosing_(std::exchange(owner.crews_outside_loop_,
-                                   owner.open_crews_.size())) {}
+        : owner_(owner), enclosing_(std::exchange(owner.crews_outside_loop_,
+                                                  owner.open_crews_.size())) {}
     crew_loop_scope(const crew_loop_scope &) = delete;
     auto operator=(const crew_loop_scope &) -> crew_loop_scope & = delete;
     ~crew_loop_scope() { owner_.crews_outside_loop_ = enclosing_; }
@@ -1804,8 +1803,8 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
       return fail(lowering_error_kind::unsupported_construct, expr.span,
                   k_conditional_await_message);
     }
-    auto lowered = lower_crew(crew.name, crew.options, crew.body, &crew,
-                              expr.span, *type);
+    auto lowered =
+        lower_crew(crew.name, crew.options, crew.body, &crew, expr.span, *type);
     if (!lowered.has_value()) {
       return std::unexpected(lowered.error());
     }
@@ -3459,9 +3458,9 @@ void lowerer::emit_crew_end(symbol_id crew, source_span span,
   }
   auto free_args = ptr_vec<hir_expr>{};
   free_args.push_back(crew_ref());
-  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span,
-      runtime_call(span, "rt_crew_free", unit_type, std::move(free_args)))));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(span, runtime_call(span, "rt_crew_free", unit_type,
+                                             std::move(free_args)))));
 }
 
 auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
@@ -4128,9 +4127,8 @@ auto lowerer::lower_task_read(const void *key, source_span span,
     return {make<hir_local_ref>(task_span, task_type, task_symbol,
                                 std::string("<await task>"))};
   };
-  await_hoist_->push_back(ptr<hir_node>(
-      make<hir_let>(task_span, task_symbol, std::string("<await task>"),
-                    std::move(task))));
+  await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
+      task_span, task_symbol, std::string("<await task>"), std::move(task))));
   if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span);
       !waited.has_value()) {
     return std::unexpected(waited.error());
@@ -4289,9 +4287,10 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
 
   // The task function that runs the closure.
   const auto thunk_name = std::format("<on thunk ${}>", type);
-  const auto already = std::ranges::any_of(
-      nested_functions_,
-      [&](const auto &function) { return function->name == thunk_name; });
+  const auto already =
+      std::ranges::any_of(nested_functions_, [&](const auto &function) {
+        return function->name == thunk_name;
+      });
   if (!already) {
     const auto param = mint_symbol();
     auto call = ptr<hir_expr>(make<hir_call>(
@@ -4303,18 +4302,18 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
     stmts.push_back(ptr<hir_node>(make<hir_return>(span, nullptr)));
     auto params = std::vector<hir_param>{};
     params.push_back(hir_param{.symbol = param, .name = "f", .type = fn_type});
-    nested_functions_.push_back(make<hir_function>(
-        span, thunk_name, std::move(params), task_type,
-        make<hir_block>(span, type, std::move(stmts)), coroutine_kind::task,
-        type));
+    nested_functions_.push_back(
+        make<hir_function>(span, thunk_name, std::move(params), task_type,
+                           make<hir_block>(span, type, std::move(stmts)),
+                           coroutine_kind::task, type));
   }
 
   auto local_setup = ptr_vec<hir_node>{};
   auto &setup = in_task ? *await_hoist_ : local_setup;
   const auto symbol = mint_symbol();
   const auto task_ref = [&]() -> ptr<hir_expr> {
-    return {make<hir_local_ref>(span, task_type, symbol,
-                                std::string("<on task>"))};
+    return {
+        make<hir_local_ref>(span, task_type, symbol, std::string("<on task>"))};
   };
   auto args = ptr_vec<hir_expr>{};
   args.push_back(std::move(closure));
@@ -4328,9 +4327,9 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
   auto spawn_args = ptr_vec<hir_expr>{};
   spawn_args.push_back(task_ref());
   spawn_args.push_back(default_pool_literal(span, where));
-  setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, runtime_call(span, "rt_task_spawn", unit_type,
-                         std::move(spawn_args)))));
+  setup.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(span, runtime_call(span, "rt_task_spawn", unit_type,
+                                             std::move(spawn_args)))));
   if (in_task) {
     if (auto waited = emit_task_wait(setup, task_ref(), &await, span);
         !waited.has_value()) {
@@ -4348,8 +4347,7 @@ auto lowerer::lower_await_on(const ast::await_expr &await, type_id type)
 auto lowerer::lower_crew(std::string_view name,
                          const std::vector<ast::crew_option> &options,
                          const std::vector<ast::ptr<ast::node>> &body,
-                         const void *key, source_span span,
-                         type_id result_type)
+                         const void *key, source_span span, type_id result_type)
     -> std::expected<std::pair<ptr_vec<hir_node>, ptr<hir_expr>>,
                      lowering_error> {
   // The checker has validated `options`; `on_error: collect` only enables
@@ -4358,8 +4356,8 @@ auto lowerer::lower_crew(std::string_view name,
   auto &types = interning_types();
   const auto unit_type = types.builtin("unit");
   const auto crew_type = types.builtin_generic("crew", {});
-  const auto has_value = result_type != k_unknown_type &&
-                         result_type != unit_type;
+  const auto has_value =
+      result_type != k_unknown_type && result_type != unit_type;
 
   // let c = <new crew>;  let r = { body };  <wait for c's tasks>;  <free c>
   push_scope();
@@ -4398,18 +4396,17 @@ auto lowerer::lower_crew(std::string_view name,
       }
       const auto result_symbol = mint_symbol();
       nodes.push_back(ptr<hir_node>(make<hir_let>(
-          span, result_symbol, std::string("<crew result>"),
-          std::move(tail))));
+          span, result_symbol, std::string("<crew result>"), std::move(tail))));
       result = ptr<hir_expr>(make<hir_local_ref>(
           span, result_type, result_symbol, std::string("<crew result>")));
     }
   } else if (has_value) {
     const auto result_symbol = mint_symbol();
-    nodes.push_back(ptr<hir_node>(make<hir_let>(
-        span, result_symbol, std::string("<crew result>"),
-        ptr<hir_expr>(std::move(*block)))));
-    result = ptr<hir_expr>(make<hir_local_ref>(
-        span, result_type, result_symbol, std::string("<crew result>")));
+    nodes.push_back(ptr<hir_node>(
+        make<hir_let>(span, result_symbol, std::string("<crew result>"),
+                      ptr<hir_expr>(std::move(*block)))));
+    result = ptr<hir_expr>(make<hir_local_ref>(span, result_type, result_symbol,
+                                               std::string("<crew result>")));
   } else {
     nodes.push_back(ptr<hir_node>(
         make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(*block)))));
@@ -4478,9 +4475,9 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
 
   auto stmts = ptr_vec<hir_node>{};
   auto &prologue = in_task ? *await_hoist_ : stmts;
-  prologue.push_back(ptr<hir_node>(make<hir_let>(
-      span, crew_symbol, std::string("<errors crew>"),
-      std::move(*crew_value))));
+  prologue.push_back(ptr<hir_node>(make<hir_let>(span, crew_symbol,
+                                                 std::string("<errors crew>"),
+                                                 std::move(*crew_value))));
   if (in_task) {
     if (auto waited = emit_task_wait(prologue, crew_ref(), &call, span);
         !waited.has_value()) {
@@ -4535,10 +4532,10 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
       make<hir_let>(span, index_symbol, std::string("<errors index>"),
                     usize_literal("0"), /*mut=*/true)));
 
-  auto condition = ptr<hir_expr>(hir::make<hir_binary>(
-      span, bool_type, ast::binary_op::lt,
-      local(index_symbol, usize_type, "<errors index>"),
-      local(count_symbol, usize_type, "<errors count>")));
+  auto condition = ptr<hir_expr>(
+      hir::make<hir_binary>(span, bool_type, ast::binary_op::lt,
+                            local(index_symbol, usize_type, "<errors index>"),
+                            local(count_symbol, usize_type, "<errors count>")));
 
   auto body_stmts = ptr_vec<hir_node>{};
   auto task_args = ptr_vec<hir_expr>{};
@@ -4564,7 +4561,8 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
                 drop_call_result_type(checked_, *dispatch.push_callee.decl),
                 dispatch.push_callee, std::move(push_args)))));
   auto err_pattern_args = ptr_vec<hir_pattern>{};
-  err_pattern_args.push_back(ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
+  err_pattern_args.push_back(
+      ptr<hir_pattern>(make<hir_wildcard_pattern>(span)));
   auto arms = std::vector<hir_match_arm>{};
   arms.push_back(hir_match_arm{
       .pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
@@ -4589,8 +4587,8 @@ auto lowerer::lower_crew_errors(const ast::call_expr &call,
   stmts.push_back(ptr<hir_node>(make<hir_while>(
       span, std::move(condition), std::move(body),
       make<hir_block>(span, k_unknown_type, std::move(step_stmts)))));
-  stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, local(acc_symbol, type, "<errors result>"))));
+  stmts.push_back(ptr<hir_node>(
+      make<hir_expr_stmt>(span, local(acc_symbol, type, "<errors result>"))));
   return ok_expr(make<hir_block>(span, type, std::move(stmts)));
 }
 
@@ -4646,10 +4644,11 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
   for (size_t i = 0; i < tasks.size(); ++i) {
     // Read through the tuple, so it is a local the state machine keeps across
     // the wait above.
-    elements.push_back(ptr<hir_expr>(make<hir_generator_next>(
-        span, result_entry.args[i],
-        ptr<hir_expr>(make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)),
-        /*await_task=*/true)));
+    elements.push_back(ptr<hir_expr>(
+        make<hir_generator_next>(span, result_entry.args[i],
+                                 ptr<hir_expr>(make<hir_tuple_index>(
+                                     span, tasks.types[i], group_ref(), i)),
+                                 /*await_task=*/true)));
   }
   return ptr<hir_expr>(make<hir_tuple>(span, type, std::move(elements)));
 }
@@ -5106,9 +5105,9 @@ auto lowerer::lower_interpolated_string(
     const auto &value_entry = checked_.types.entry(dispatch.value_type);
     const bool is_signed =
         value_entry.name.starts_with("int") || value_entry.name == "isize";
-    const bool is_wide_integer = value_entry.kind == type_kind::builtin_kind &&
-                                 (value_entry.name == "int128" ||
-                                  value_entry.name == "uint128");
+    const bool is_wide_integer =
+        value_entry.kind == type_kind::builtin_kind &&
+        (value_entry.name == "int128" || value_entry.name == "uint128");
 
     // `dispatch.type_char` selected a float style ('e'/'E'/'f'/'g'/'G') only
     // when `dispatch.kind == builtin_float`; every other kind ignores
@@ -5231,11 +5230,10 @@ auto lowerer::lower_interpolated_string(
           : (dispatch.type_char == 'x' || dispatch.type_char == 'X') ? "0x"
                                                                      : "";
       auto args = ptr_vec<hir_expr>{};
-      args.push_back(is_wide_integer
-                         ? std::move(*value)
-                         : cast_to(std::move(*value), is_signed
-                                                          ? fmt.int64_type
-                                                          : fmt.uint64_type));
+      args.push_back(is_wide_integer ? std::move(*value)
+                                     : cast_to(std::move(*value),
+                                               is_signed ? fmt.int64_type
+                                                         : fmt.uint64_type));
       args.push_back(uint8_lit(static_cast<uint64_t>(radix)));
       args.push_back(bool_lit(uppercase));
       args.push_back(str_lit(prefix));

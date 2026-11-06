@@ -170,9 +170,9 @@ run_hir_module(std::span<const hir::hir_module *const> modules,
   }
 
   if (!stopped) {
-    std::_Exit(result->has_value ? exit_code_of(types, target->return_type,
-                                                result->value)
-                                 : 0);
+    std::_Exit(result->has_value
+                   ? exit_code_of(types, target->return_type, result->value)
+                   : 0);
   }
 
   if (!result->has_value) {
