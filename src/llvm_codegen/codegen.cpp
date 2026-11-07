@@ -429,12 +429,18 @@ auto collect_let_types(const hir_node &node,
   case hir_node_kind::hir_let: {
     const auto &let = dynamic_cast<const hir::hir_let &>(node);
     out.emplace(let.symbol, let.type());
+    if (let.initializer != nullptr) {
+      // A value-producing `match`, `if` or block binds locals of its own.
+      collect_let_types(*let.initializer, out);
+    }
     return;
   }
-  case hir_node_kind::hir_let_else:
-    collect_let_types(*dynamic_cast<const hir::hir_let_else &>(node).else_body,
-                      out);
+  case hir_node_kind::hir_let_else: {
+    const auto &let_else = dynamic_cast<const hir::hir_let_else &>(node);
+    out.emplace(let_else.subject_symbol, let_else.initializer->type);
+    collect_let_types(*let_else.else_body, out);
     return;
+  }
   case hir_node_kind::hir_while: {
     const auto &loop = dynamic_cast<const hir::hir_while &>(node);
     collect_let_types(*loop.body, out);
@@ -443,10 +449,12 @@ auto collect_let_types(const hir_node &node,
     }
     return;
   }
-  case hir_node_kind::hir_while_let:
-    collect_let_types(*dynamic_cast<const hir::hir_while_let &>(node).body,
-                      out);
+  case hir_node_kind::hir_while_let: {
+    const auto &loop = dynamic_cast<const hir::hir_while_let &>(node);
+    out.emplace(loop.subject_symbol, loop.subject->type);
+    collect_let_types(*loop.body, out);
     return;
+  }
   case hir_node_kind::hir_if: {
     const auto &node2 = dynamic_cast<const hir::hir_if &>(node);
     for (const auto &branch : node2.branches) {
@@ -459,6 +467,9 @@ auto collect_let_types(const hir_node &node,
   }
   case hir_node_kind::hir_match: {
     const auto &node2 = dynamic_cast<const hir::hir_match &>(node);
+    // The subject is read by every arm's bindings, so it is suspended state
+    // whenever an earlier arm can suspend.
+    out.emplace(node2.subject_symbol, node2.subject->type);
     for (const auto &arm : node2.arms) {
       collect_let_types(*arm.body, out);
     }
@@ -747,9 +758,11 @@ public:
           return std::unexpected(codegen_error{
               .kind = codegen_error_kind::unsupported_construct,
               .span = fn.span,
-              .message = "a generator's live-across-yield local could not "
-                         "be typed — capture analysis and codegen have "
-                         "gotten out of sync"});
+              .message = std::format(
+                  "a local of coroutine `{}` that is live across a "
+                  "suspension (symbol {}) could not be typed — capture "
+                  "analysis and codegen have gotten out of sync",
+                  fn.name, state_symbols[i])});
         }
         sym_type = found->second;
       }
@@ -1011,6 +1024,20 @@ private:
   auto bind_local(hir::symbol_id symbol, llvm::AllocaInst *alloca) -> void {
     locals_.emplace(
         symbol, local_slot{.addr = alloca, .type = alloca->getAllocatedType()});
+  }
+
+  /// The storage a `match`, `while let` or `let ... else` keeps its subject
+  /// in. A coroutine's step function already holds a slot for a subject that
+  /// is live across a suspension, which a resumed poll reads; binding a fresh
+  /// alloca would leave that slot unwritten (`bind_local` does not replace).
+  [[nodiscard]] auto subject_storage(hir::symbol_id symbol, llvm::Type *ty,
+                                     const char *name) -> llvm::Value * {
+    if (const auto existing = lookup_local(symbol); existing.valid()) {
+      return existing.addr;
+    }
+    auto *alloca = create_local_alloca(ty, name);
+    bind_local(symbol, alloca);
+    return alloca;
   }
 
   [[nodiscard]] auto numeric_kind_for(type_id id, source_span span)
@@ -2694,6 +2721,15 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
+    if (is_generator_step_) {
+      // A coroutine's frame is gone once it suspends, and the borrow may be
+      // handed to a task that reads it later (`await f(&xs[a..b])`), so the
+      // temporary lives on the heap instead. The block is not freed, like the
+      // bytecode tier's cells for the same case.
+      auto *block = compile_private_block_alloc(1);
+      builder_.CreateStore(*value, block);
+      return block;
+    }
     auto *slot = create_local_alloca((*value)->getType(), "borrowed");
     builder_.CreateStore(*value, slot);
     return slot;
@@ -3946,9 +3982,9 @@ private:
     if (!subject_ty.has_value()) {
       return std::unexpected(subject_ty.error());
     }
-    auto *subject_alloca = create_local_alloca(*subject_ty, "match.subject");
+    auto *subject_alloca =
+        subject_storage(match.subject_symbol, *subject_ty, "match.subject");
     builder_.CreateStore(*subject, subject_alloca);
-    bind_local(match.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(match.subject->type);
 
     auto *merge_bb = llvm::BasicBlock::Create(ctx_, "match.end", current_fn_);
@@ -4653,8 +4689,7 @@ private:
       return std::unexpected(subject_ty.error());
     }
     auto *subject_alloca =
-        create_local_alloca(*subject_ty, "while_let.subject");
-    bind_local(loop.subject_symbol, subject_alloca);
+        subject_storage(loop.subject_symbol, *subject_ty, "while_let.subject");
     const auto subject_type = std::optional<type_id>(loop.subject->type);
 
     auto *cond_bb =
@@ -4714,9 +4749,9 @@ private:
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
-    auto *subject_alloca = create_local_alloca(*subject_ty, "let_else.subject");
+    auto *subject_alloca =
+        subject_storage(node.subject_symbol, *subject_ty, "let_else.subject");
     builder_.CreateStore(*value, subject_alloca);
-    bind_local(node.subject_symbol, subject_alloca);
     const auto subject_type = std::optional<type_id>(node.initializer->type);
 
     auto test = compile_pattern_test(*node.pattern, *value, subject_type);

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #if defined(__linux__)
@@ -93,8 +94,9 @@ void set_stage(uint64_t *task, stage s) {
 
 auto set_nonblocking_cloexec(int fd) -> bool {
   const int flags = ::fcntl(fd, F_GETFL); // NOLINT
-  return flags >= 0 && ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 && // NOLINT
-         ::fcntl(fd, F_SETFD, FD_CLOEXEC) == 0;                         // NOLINT
+  return flags >= 0 &&
+         ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 && // NOLINT
+         ::fcntl(fd, F_SETFD, FD_CLOEXEC) == 0;           // NOLINT
 }
 
 #if defined(__linux__)
@@ -125,7 +127,8 @@ auto arm(reactor_state &r, int fd, const fd_waiters &waiting, interest /*what*/)
   if (::epoll_ctl(r.queue, EPOLL_CTL_MOD, fd, &event) == 0) {
     return true;
   }
-  return errno == ENOENT && ::epoll_ctl(r.queue, EPOLL_CTL_ADD, fd, &event) == 0;
+  return errno == ENOENT &&
+         ::epoll_ctl(r.queue, EPOLL_CTL_ADD, fd, &event) == 0;
 }
 
 struct ready_event {
@@ -143,8 +146,8 @@ auto wait_events(const reactor_state &r, std::optional<uint64_t> timeout_ns,
     timeout_ms = static_cast<int>(
         std::min<uint64_t>((*timeout_ns + 999'999) / 1'000'000, 60'000));
   }
-  const int count = ::epoll_wait(r.queue, events.data(), k_event_batch,
-                                 timeout_ms);
+  const int count =
+      ::epoll_wait(r.queue, events.data(), k_event_batch, timeout_ms);
   for (int i = 0; i < count; ++i) {
     const auto &e = events[static_cast<size_t>(i)];
     const auto flags = e.events;
@@ -331,12 +334,28 @@ void run_loop(reactor_state &r) {
   }
 }
 
+/// Whether the readiness queue can say anything useful about `fd`. A regular
+/// file or a directory never blocks a read or write. epoll refuses one, and
+/// kqueue reports a regular file readable only when it is not at its end,
+/// so an empty file would never wake a reader. Both finish at once instead,
+/// as does a descriptor that is not open.
+auto can_watch(int fd) -> bool {
+  struct stat info{};
+  if (::fstat(fd, &info) != 0) {
+    return false;
+  }
+  return !S_ISREG(info.st_mode) && !S_ISDIR(info.st_mode);
+}
+
 /// Registers a descriptor waiter. False when the descriptor cannot be
 /// watched, in which case the waiter finishes at once.
 auto watch_fd(uint64_t *task) -> bool {
   const auto packed = task[co::k_value_slot];
   const auto fd = static_cast<int>(static_cast<uint32_t>(packed));
   const auto what = static_cast<interest>(packed >> 32U);
+  if (!can_watch(fd)) {
+    return false;
+  }
   auto &r = state();
   const auto lock = std::scoped_lock(r.mutex);
   auto &waiting = r.fds[fd];

@@ -1,7 +1,7 @@
 # inference snapshot
-# 2602 interned types
+# 2635 interned types
 
-## node_types (32530)
+## node_types (33114)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -7212,384 +7212,876 @@ std/intrinsics.cn:221:45 [binding_pat] usize
 std/intrinsics.cn:221:65 [named_type] task[unit]
 std/intrinsics.cn:224:28 [binding_pat] *mut usize
 std/intrinsics.cn:224:46 [named_type] unit
-std/io.cn:21:14 [binding_pat] io_errno
-std/io.cn:21:30 [named_type] io_error
-std/io.cn:22:15 [module_path] int32
-std/io.cn:23:13 [literal_pat] int32
-std/io.cn:23:18 [call] io_error
-std/io.cn:23:29 [literal] str
-std/io.cn:24:13 [literal_pat] int32
-std/io.cn:24:19 [call] io_error
-std/io.cn:24:38 [literal] str
-std/io.cn:25:13 [literal_pat] int32
-std/io.cn:25:19 [call] io_error
-std/io.cn:25:35 [literal] str
-std/io.cn:26:13 [literal_pat] int32
-std/io.cn:26:18 [ident] io_error
-std/io.cn:27:13 [literal_pat] int32
-std/io.cn:27:19 [ident] io_error
-std/io.cn:28:13 [literal_pat] int32
-std/io.cn:28:19 [ident] io_error
-std/io.cn:29:13 [wildcard_pat] int32
+std/intrinsics.cn:236:30 [binding_pat] int64
+std/intrinsics.cn:236:44 [named_type] task[unit]
+std/intrinsics.cn:240:30 [binding_pat] int64
+std/intrinsics.cn:240:44 [named_type] task[unit]
+std/intrinsics.cn:243:30 [binding_pat] uint64
+std/intrinsics.cn:243:51 [named_type] task[unit]
+std/intrinsics.cn:246:37 [named_type] uint64
+std/intrinsics.cn:252:28 [named_type] result[raw_pipe, io_errno]
+std/intrinsics.cn:256:34 [binding_pat] raw_fd
+std/intrinsics.cn:256:49 [named_type] result[unit, io_errno]
+std/intrinsics.cn:259:41 [named_type] int32
+std/io.cn:24:14 [binding_pat] io_errno
+std/io.cn:24:30 [named_type] io_error
+std/io.cn:26:12 [module_path] int32
+std/io.cn:26:12 [binary] bool
+std/io.cn:26:22 [ident] fn() -> int32
+std/io.cn:26:22 [call] int32
+std/io.cn:27:20 [ident] io_error
+std/io.cn:28:15 [module_path] int32
+std/io.cn:29:13 [literal_pat] int32
 std/io.cn:29:18 [call] io_error
-std/io.cn:29:25 [ident] io_errno
-std/io.cn:40:14 [binding_pat] self
-std/io.cn:40:24 [binding_pat] &mut slice_mut[byte]
-std/io.cn:40:54 [named_type] result[usize, io_error]
-std/io.cn:48:21 [binding_pat] &mut file_handle
-std/io.cn:48:21 [binding_pat] self
-std/io.cn:48:31 [binding_pat] &mut list[byte]
-std/io.cn:48:31 [binding_pat] &mut list[byte]
-std/io.cn:48:56 [named_type] result[usize, io_error]
-std/io.cn:48:56 [named_type] result[usize, io_error]
-std/io.cn:49:9 [var_stmt] usize
-std/io.cn:49:9 [var_stmt] usize
-std/io.cn:49:28 [literal] usize
-std/io.cn:49:28 [literal] usize
-std/io.cn:50:9 [var_stmt] array[byte, 4096]
-std/io.cn:50:9 [var_stmt] array[byte, 4096]
-std/io.cn:50:38 [array] array[byte, 4096]
-std/io.cn:50:38 [array] array[byte, 4096]
-std/io.cn:50:39 [literal] byte
-std/io.cn:50:39 [literal] byte
-std/io.cn:50:42 [literal] usize
-std/io.cn:50:42 [literal] usize
-std/io.cn:51:15 [literal] bool
-std/io.cn:51:15 [literal] bool
-std/io.cn:52:17 [binding_pat] usize
-std/io.cn:52:17 [binding_pat] usize
-std/io.cn:52:23 [ident] &mut file_handle
-std/io.cn:52:23 [ident] self
-std/io.cn:52:23 [field] fn(&mut slice_mut[byte]) -> result[usize, io_error]
-std/io.cn:52:23 [field] fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
-std/io.cn:52:23 [call] result[usize, io_error]
-std/io.cn:52:23 [call] result[usize, io_error]
-std/io.cn:52:23 [try] usize
-std/io.cn:52:23 [try] usize
-std/io.cn:52:33 [unary] &mut slice_mut[byte]
-std/io.cn:52:33 [unary] &mut slice_mut[byte]
-std/io.cn:52:38 [ident] array[byte, 4096]
-std/io.cn:52:38 [ident] array[byte, 4096]
-std/io.cn:52:38 [index] slice[byte]
-std/io.cn:52:38 [index] slice[byte]
-std/io.cn:52:42 [literal] usize
-std/io.cn:52:42 [literal] usize
-std/io.cn:52:42 [binary] range[usize]
-std/io.cn:52:42 [binary] range[usize]
-std/io.cn:52:45 [literal] usize
-std/io.cn:52:45 [literal] usize
-std/io.cn:53:16 [ident] usize
-std/io.cn:53:16 [ident] usize
-std/io.cn:53:16 [binary] bool
-std/io.cn:53:16 [binary] bool
-std/io.cn:53:23 [literal] usize
-std/io.cn:53:23 [literal] usize
-std/io.cn:54:24 [call] result[usize, io_error]
-std/io.cn:54:24 [call] result[usize, io_error]
-std/io.cn:54:28 [ident] usize
-std/io.cn:54:28 [ident] usize
-std/io.cn:55:13 [var_stmt] usize
-std/io.cn:55:13 [var_stmt] usize
-std/io.cn:55:28 [literal] usize
-std/io.cn:55:28 [literal] usize
-std/io.cn:56:19 [ident] usize
-std/io.cn:56:19 [ident] usize
-std/io.cn:56:19 [binary] bool
-std/io.cn:56:19 [binary] bool
-std/io.cn:56:23 [ident] usize
-std/io.cn:56:23 [ident] usize
-std/io.cn:57:17 [ident] &mut list[byte]
-std/io.cn:57:17 [ident] &mut list[byte]
-std/io.cn:57:17 [field] fn(_, _) -> unit
-std/io.cn:57:17 [field] fn(_, _) -> unit
-std/io.cn:57:17 [call] unit
-std/io.cn:57:17 [call] unit
-std/io.cn:57:26 [ident] array[byte, 4096]
-std/io.cn:57:26 [ident] array[byte, 4096]
-std/io.cn:57:26 [index] byte
-std/io.cn:57:26 [index] byte
-std/io.cn:57:30 [ident] usize
-std/io.cn:57:30 [ident] usize
-std/io.cn:58:17 [ident] usize
-std/io.cn:58:17 [ident] usize
-std/io.cn:58:21 [ident] usize
-std/io.cn:58:21 [ident] usize
-std/io.cn:58:21 [binary] usize
-std/io.cn:58:21 [binary] usize
-std/io.cn:58:25 [literal] usize
-std/io.cn:58:25 [literal] usize
-std/io.cn:59:13 [ident] usize
-std/io.cn:59:13 [ident] usize
-std/io.cn:59:21 [ident] usize
-std/io.cn:59:21 [ident] usize
-std/io.cn:59:21 [binary] usize
-std/io.cn:59:21 [binary] usize
-std/io.cn:59:29 [ident] usize
-std/io.cn:59:29 [ident] usize
-std/io.cn:68:20 [binding_pat] &mut file_handle
-std/io.cn:68:20 [binding_pat] self
-std/io.cn:68:30 [binding_pat] &mut slice_mut[byte]
-std/io.cn:68:30 [binding_pat] &mut slice_mut[byte]
-std/io.cn:68:60 [named_type] result[unit, io_error]
-std/io.cn:68:60 [named_type] result[unit, io_error]
-std/io.cn:69:9 [var_stmt] usize
-std/io.cn:69:9 [var_stmt] usize
-std/io.cn:69:29 [literal] usize
-std/io.cn:69:29 [literal] usize
-std/io.cn:70:13 [binding_pat] usize
-std/io.cn:70:13 [binding_pat] usize
-std/io.cn:70:20 [ident] &mut slice_mut[byte]
-std/io.cn:70:20 [ident] &mut slice_mut[byte]
-std/io.cn:70:20 [call] usize
-std/io.cn:70:20 [call] usize
-std/io.cn:71:15 [ident] usize
-std/io.cn:71:15 [ident] usize
-std/io.cn:71:15 [binary] bool
-std/io.cn:71:15 [binary] bool
-std/io.cn:71:24 [ident] usize
-std/io.cn:71:24 [ident] usize
-std/io.cn:72:17 [binding_pat] usize
-std/io.cn:72:17 [binding_pat] usize
-std/io.cn:72:23 [ident] &mut file_handle
-std/io.cn:72:23 [ident] self
-std/io.cn:72:23 [field] fn(&mut slice_mut[byte]) -> result[usize, io_error]
-std/io.cn:72:23 [field] fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
-std/io.cn:72:23 [call] result[usize, io_error]
-std/io.cn:72:23 [call] result[usize, io_error]
-std/io.cn:72:23 [try] usize
-std/io.cn:72:23 [try] usize
-std/io.cn:72:33 [unary] &mut slice_mut[byte]
-std/io.cn:72:33 [unary] &mut slice_mut[byte]
-std/io.cn:72:38 [ident] &mut slice_mut[byte]
-std/io.cn:72:38 [ident] &mut slice_mut[byte]
-std/io.cn:72:38 [index] slice_mut[byte]
-std/io.cn:72:38 [index] slice_mut[byte]
-std/io.cn:72:42 [ident] usize
-std/io.cn:72:42 [ident] usize
-std/io.cn:72:42 [binary] range[usize]
-std/io.cn:72:42 [binary] range[usize]
-std/io.cn:72:50 [ident] usize
-std/io.cn:72:50 [ident] usize
-std/io.cn:73:16 [ident] usize
-std/io.cn:73:16 [ident] usize
-std/io.cn:73:16 [binary] bool
-std/io.cn:73:16 [binary] bool
-std/io.cn:73:23 [literal] usize
-std/io.cn:73:23 [literal] usize
-std/io.cn:74:24 [call] result[unit, io_error]
-std/io.cn:74:24 [call] result[unit, io_error]
-std/io.cn:74:29 [ident] io_error
-std/io.cn:74:29 [ident] io_error
-std/io.cn:75:13 [ident] usize
-std/io.cn:75:13 [ident] usize
-std/io.cn:75:22 [ident] usize
-std/io.cn:75:22 [ident] usize
-std/io.cn:75:22 [binary] usize
-std/io.cn:75:22 [binary] usize
-std/io.cn:75:31 [ident] usize
-std/io.cn:75:31 [ident] usize
-std/io.cn:76:16 [call] result[unit, io_error]
-std/io.cn:76:16 [call] result[unit, io_error]
-std/io.cn:76:20 [literal] unit
-std/io.cn:76:20 [literal] unit
-std/io.cn:86:15 [binding_pat] self
-std/io.cn:86:25 [binding_pat] &slice[byte]
-std/io.cn:86:47 [named_type] result[usize, io_error]
-std/io.cn:92:15 [binding_pat] self
-std/io.cn:92:28 [named_type] result[unit, io_error]
-std/io.cn:101:19 [binding_pat] &mut file_handle
-std/io.cn:101:19 [binding_pat] self
-std/io.cn:101:29 [binding_pat] &slice[byte]
-std/io.cn:101:29 [binding_pat] &slice[byte]
-std/io.cn:101:51 [named_type] result[unit, io_error]
-std/io.cn:101:51 [named_type] result[unit, io_error]
-std/io.cn:102:9 [var_stmt] usize
-std/io.cn:102:9 [var_stmt] usize
-std/io.cn:102:30 [literal] usize
-std/io.cn:102:30 [literal] usize
-std/io.cn:103:13 [binding_pat] usize
-std/io.cn:103:13 [binding_pat] usize
-std/io.cn:103:20 [ident] &slice[byte]
-std/io.cn:103:20 [ident] &slice[byte]
-std/io.cn:103:20 [call] usize
-std/io.cn:103:20 [call] usize
-std/io.cn:104:15 [ident] usize
-std/io.cn:104:15 [ident] usize
-std/io.cn:104:15 [binary] bool
-std/io.cn:104:15 [binary] bool
-std/io.cn:104:25 [ident] usize
-std/io.cn:104:25 [ident] usize
-std/io.cn:105:17 [binding_pat] usize
-std/io.cn:105:17 [binding_pat] usize
-std/io.cn:105:21 [ident] &mut file_handle
-std/io.cn:105:21 [ident] self
-std/io.cn:105:21 [field] fn(&slice[byte]) -> result[usize, io_error]
-std/io.cn:105:21 [field] fn(_, &slice[byte]) -> result[usize, io_error]
-std/io.cn:105:21 [call] result[usize, io_error]
-std/io.cn:105:21 [call] result[usize, io_error]
-std/io.cn:105:21 [try] usize
-std/io.cn:105:21 [try] usize
-std/io.cn:105:32 [unary] &slice[byte]
-std/io.cn:105:32 [unary] &slice[byte]
-std/io.cn:105:33 [ident] &slice[byte]
-std/io.cn:105:33 [ident] &slice[byte]
-std/io.cn:105:33 [index] slice[byte]
-std/io.cn:105:33 [index] slice[byte]
-std/io.cn:105:37 [ident] usize
-std/io.cn:105:37 [ident] usize
-std/io.cn:105:37 [binary] range[usize]
-std/io.cn:105:37 [binary] range[usize]
-std/io.cn:105:46 [ident] usize
-std/io.cn:105:46 [ident] usize
-std/io.cn:106:16 [ident] usize
-std/io.cn:106:16 [ident] usize
-std/io.cn:106:16 [binary] bool
-std/io.cn:106:16 [binary] bool
-std/io.cn:106:21 [literal] usize
-std/io.cn:106:21 [literal] usize
-std/io.cn:107:24 [call] result[unit, io_error]
-std/io.cn:107:24 [call] result[unit, io_error]
-std/io.cn:107:29 [ident] io_error
-std/io.cn:107:29 [ident] io_error
-std/io.cn:108:13 [ident] usize
-std/io.cn:108:13 [ident] usize
-std/io.cn:108:23 [ident] usize
-std/io.cn:108:23 [ident] usize
-std/io.cn:108:23 [binary] usize
-std/io.cn:108:23 [binary] usize
-std/io.cn:108:33 [ident] usize
-std/io.cn:108:33 [ident] usize
-std/io.cn:109:16 [call] result[unit, io_error]
-std/io.cn:109:16 [call] result[unit, io_error]
-std/io.cn:109:20 [literal] unit
-std/io.cn:109:20 [literal] unit
-std/io.cn:123:14 [binding_pat] str
-std/io.cn:123:25 [binding_pat] open_options
-std/io.cn:123:48 [named_type] result[file_handle, io_error]
-std/io.cn:124:11 [ident] fn(str, open_options) -> result[raw_fd, io_errno]
-std/io.cn:124:11 [call] result[raw_fd, io_errno]
-std/io.cn:124:19 [ident] str
-std/io.cn:124:25 [ident] open_options
-std/io.cn:125:9 [result_pat] result[raw_fd, io_errno]
-std/io.cn:125:13 [binding_pat] raw_fd
-std/io.cn:125:20 [call] result[file_handle, io_error]
-std/io.cn:125:24 [struct_literal] file_handle
-std/io.cn:125:42 [ident] raw_fd
-std/io.cn:125:52 [literal] bool
-std/io.cn:126:9 [result_pat] result[raw_fd, io_errno]
-std/io.cn:126:14 [binding_pat] io_errno
-std/io.cn:126:20 [call] result[file_handle, io_error]
-std/io.cn:126:25 [field] fn(io_errno) -> io_error
-std/io.cn:126:25 [call] io_error
-std/io.cn:126:39 [ident] io_errno
-std/io.cn:131:27 [named_type] file_handle
-std/io.cn:132:12 [struct_literal] file_handle
-std/io.cn:132:30 [ident] fn() -> raw_fd
-std/io.cn:132:30 [call] raw_fd
-std/io.cn:132:48 [literal] bool
-std/io.cn:137:28 [named_type] file_handle
-std/io.cn:138:12 [struct_literal] file_handle
-std/io.cn:138:30 [ident] fn() -> raw_fd
-std/io.cn:138:30 [call] raw_fd
-std/io.cn:138:49 [literal] bool
-std/io.cn:143:28 [named_type] file_handle
-std/io.cn:144:12 [struct_literal] file_handle
-std/io.cn:144:30 [ident] fn() -> raw_fd
-std/io.cn:144:30 [call] raw_fd
-std/io.cn:144:49 [literal] bool
-std/io.cn:149:16 [binding_pat] &file_handle
-std/io.cn:149:25 [named_type] raw_fd
-std/io.cn:150:16 [struct_literal] raw_fd
-std/io.cn:150:32 [module_path] int64
-std/io.cn:153:14 [binding_pat] &mut file_handle
-std/io.cn:153:24 [binding_pat] &mut slice_mut[byte]
-std/io.cn:153:54 [named_type] result[usize, io_error]
-std/io.cn:154:15 [ident] fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno]
-std/io.cn:154:15 [call] result[usize, io_errno]
-std/io.cn:154:23 [ident] &mut file_handle
-std/io.cn:154:23 [field] fn(_) -> raw_fd
-std/io.cn:154:23 [call] raw_fd
-std/io.cn:154:38 [ident] &mut slice_mut[byte]
-std/io.cn:155:13 [result_pat] result[usize, io_errno]
-std/io.cn:155:17 [binding_pat] usize
-std/io.cn:155:23 [call] result[usize, io_error]
-std/io.cn:155:27 [ident] usize
-std/io.cn:156:13 [result_pat] result[usize, io_errno]
-std/io.cn:156:18 [binding_pat] io_errno
-std/io.cn:156:24 [call] result[usize, io_error]
-std/io.cn:156:29 [field] fn(io_errno) -> io_error
-std/io.cn:156:29 [call] io_error
-std/io.cn:156:43 [ident] io_errno
-std/io.cn:159:15 [binding_pat] &mut file_handle
-std/io.cn:159:25 [binding_pat] &slice[byte]
-std/io.cn:159:47 [named_type] result[usize, io_error]
-std/io.cn:160:15 [ident] fn(raw_fd, &slice[byte]) -> result[usize, io_errno]
-std/io.cn:160:15 [call] result[usize, io_errno]
-std/io.cn:160:24 [ident] &mut file_handle
-std/io.cn:160:24 [field] fn(_) -> raw_fd
-std/io.cn:160:24 [call] raw_fd
-std/io.cn:160:39 [ident] &slice[byte]
+std/io.cn:29:29 [literal] str
+std/io.cn:30:13 [literal_pat] int32
+std/io.cn:30:19 [call] io_error
+std/io.cn:30:38 [literal] str
+std/io.cn:31:13 [literal_pat] int32
+std/io.cn:31:19 [call] io_error
+std/io.cn:31:35 [literal] str
+std/io.cn:32:13 [literal_pat] int32
+std/io.cn:32:18 [ident] io_error
+std/io.cn:33:13 [literal_pat] int32
+std/io.cn:33:19 [ident] io_error
+std/io.cn:34:13 [wildcard_pat] int32
+std/io.cn:34:18 [call] io_error
+std/io.cn:34:25 [ident] io_errno
+std/io.cn:45:14 [binding_pat] self
+std/io.cn:45:24 [binding_pat] &mut slice_mut[byte]
+std/io.cn:45:54 [named_type] result[usize, io_error]
+std/io.cn:53:21 [binding_pat] &mut file_handle
+std/io.cn:53:21 [binding_pat] self
+std/io.cn:53:31 [binding_pat] &mut list[byte]
+std/io.cn:53:31 [binding_pat] &mut list[byte]
+std/io.cn:53:56 [named_type] result[usize, io_error]
+std/io.cn:53:56 [named_type] result[usize, io_error]
+std/io.cn:54:9 [var_stmt] usize
+std/io.cn:54:9 [var_stmt] usize
+std/io.cn:54:28 [literal] usize
+std/io.cn:54:28 [literal] usize
+std/io.cn:55:9 [var_stmt] array[byte, 4096]
+std/io.cn:55:9 [var_stmt] array[byte, 4096]
+std/io.cn:55:38 [array] array[byte, 4096]
+std/io.cn:55:38 [array] array[byte, 4096]
+std/io.cn:55:39 [literal] byte
+std/io.cn:55:39 [literal] byte
+std/io.cn:55:42 [literal] usize
+std/io.cn:55:42 [literal] usize
+std/io.cn:56:15 [literal] bool
+std/io.cn:56:15 [literal] bool
+std/io.cn:57:17 [binding_pat] usize
+std/io.cn:57:17 [binding_pat] usize
+std/io.cn:57:23 [ident] &mut file_handle
+std/io.cn:57:23 [ident] self
+std/io.cn:57:23 [field] fn(&mut slice_mut[byte]) -> result[usize, io_error]
+std/io.cn:57:23 [field] fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
+std/io.cn:57:23 [call] result[usize, io_error]
+std/io.cn:57:23 [call] result[usize, io_error]
+std/io.cn:57:23 [try] usize
+std/io.cn:57:23 [try] usize
+std/io.cn:57:33 [unary] &mut slice_mut[byte]
+std/io.cn:57:33 [unary] &mut slice_mut[byte]
+std/io.cn:57:38 [ident] array[byte, 4096]
+std/io.cn:57:38 [ident] array[byte, 4096]
+std/io.cn:57:38 [index] slice[byte]
+std/io.cn:57:38 [index] slice[byte]
+std/io.cn:57:42 [literal] usize
+std/io.cn:57:42 [literal] usize
+std/io.cn:57:42 [binary] range[usize]
+std/io.cn:57:42 [binary] range[usize]
+std/io.cn:57:45 [literal] usize
+std/io.cn:57:45 [literal] usize
+std/io.cn:58:16 [ident] usize
+std/io.cn:58:16 [ident] usize
+std/io.cn:58:16 [binary] bool
+std/io.cn:58:16 [binary] bool
+std/io.cn:58:23 [literal] usize
+std/io.cn:58:23 [literal] usize
+std/io.cn:59:24 [call] result[usize, io_error]
+std/io.cn:59:24 [call] result[usize, io_error]
+std/io.cn:59:28 [ident] usize
+std/io.cn:59:28 [ident] usize
+std/io.cn:60:13 [var_stmt] usize
+std/io.cn:60:13 [var_stmt] usize
+std/io.cn:60:28 [literal] usize
+std/io.cn:60:28 [literal] usize
+std/io.cn:61:19 [ident] usize
+std/io.cn:61:19 [ident] usize
+std/io.cn:61:19 [binary] bool
+std/io.cn:61:19 [binary] bool
+std/io.cn:61:23 [ident] usize
+std/io.cn:61:23 [ident] usize
+std/io.cn:62:17 [ident] &mut list[byte]
+std/io.cn:62:17 [ident] &mut list[byte]
+std/io.cn:62:17 [field] fn(_, _) -> unit
+std/io.cn:62:17 [field] fn(_, _) -> unit
+std/io.cn:62:17 [call] unit
+std/io.cn:62:17 [call] unit
+std/io.cn:62:26 [ident] array[byte, 4096]
+std/io.cn:62:26 [ident] array[byte, 4096]
+std/io.cn:62:26 [index] byte
+std/io.cn:62:26 [index] byte
+std/io.cn:62:30 [ident] usize
+std/io.cn:62:30 [ident] usize
+std/io.cn:63:17 [ident] usize
+std/io.cn:63:17 [ident] usize
+std/io.cn:63:21 [ident] usize
+std/io.cn:63:21 [ident] usize
+std/io.cn:63:21 [binary] usize
+std/io.cn:63:21 [binary] usize
+std/io.cn:63:25 [literal] usize
+std/io.cn:63:25 [literal] usize
+std/io.cn:64:13 [ident] usize
+std/io.cn:64:13 [ident] usize
+std/io.cn:64:21 [ident] usize
+std/io.cn:64:21 [ident] usize
+std/io.cn:64:21 [binary] usize
+std/io.cn:64:21 [binary] usize
+std/io.cn:64:29 [ident] usize
+std/io.cn:64:29 [ident] usize
+std/io.cn:73:20 [binding_pat] &mut file_handle
+std/io.cn:73:20 [binding_pat] self
+std/io.cn:73:30 [binding_pat] &mut slice_mut[byte]
+std/io.cn:73:30 [binding_pat] &mut slice_mut[byte]
+std/io.cn:73:60 [named_type] result[unit, io_error]
+std/io.cn:73:60 [named_type] result[unit, io_error]
+std/io.cn:74:9 [var_stmt] usize
+std/io.cn:74:9 [var_stmt] usize
+std/io.cn:74:29 [literal] usize
+std/io.cn:74:29 [literal] usize
+std/io.cn:75:13 [binding_pat] usize
+std/io.cn:75:13 [binding_pat] usize
+std/io.cn:75:20 [ident] &mut slice_mut[byte]
+std/io.cn:75:20 [ident] &mut slice_mut[byte]
+std/io.cn:75:20 [call] usize
+std/io.cn:75:20 [call] usize
+std/io.cn:76:15 [ident] usize
+std/io.cn:76:15 [ident] usize
+std/io.cn:76:15 [binary] bool
+std/io.cn:76:15 [binary] bool
+std/io.cn:76:24 [ident] usize
+std/io.cn:76:24 [ident] usize
+std/io.cn:77:17 [binding_pat] usize
+std/io.cn:77:17 [binding_pat] usize
+std/io.cn:77:23 [ident] &mut file_handle
+std/io.cn:77:23 [ident] self
+std/io.cn:77:23 [field] fn(&mut slice_mut[byte]) -> result[usize, io_error]
+std/io.cn:77:23 [field] fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
+std/io.cn:77:23 [call] result[usize, io_error]
+std/io.cn:77:23 [call] result[usize, io_error]
+std/io.cn:77:23 [try] usize
+std/io.cn:77:23 [try] usize
+std/io.cn:77:33 [unary] &mut slice_mut[byte]
+std/io.cn:77:33 [unary] &mut slice_mut[byte]
+std/io.cn:77:38 [ident] &mut slice_mut[byte]
+std/io.cn:77:38 [ident] &mut slice_mut[byte]
+std/io.cn:77:38 [index] slice_mut[byte]
+std/io.cn:77:38 [index] slice_mut[byte]
+std/io.cn:77:42 [ident] usize
+std/io.cn:77:42 [ident] usize
+std/io.cn:77:42 [binary] range[usize]
+std/io.cn:77:42 [binary] range[usize]
+std/io.cn:77:50 [ident] usize
+std/io.cn:77:50 [ident] usize
+std/io.cn:78:16 [ident] usize
+std/io.cn:78:16 [ident] usize
+std/io.cn:78:16 [binary] bool
+std/io.cn:78:16 [binary] bool
+std/io.cn:78:23 [literal] usize
+std/io.cn:78:23 [literal] usize
+std/io.cn:79:24 [call] result[unit, io_error]
+std/io.cn:79:24 [call] result[unit, io_error]
+std/io.cn:79:29 [ident] io_error
+std/io.cn:79:29 [ident] io_error
+std/io.cn:80:13 [ident] usize
+std/io.cn:80:13 [ident] usize
+std/io.cn:80:22 [ident] usize
+std/io.cn:80:22 [ident] usize
+std/io.cn:80:22 [binary] usize
+std/io.cn:80:22 [binary] usize
+std/io.cn:80:31 [ident] usize
+std/io.cn:80:31 [ident] usize
+std/io.cn:81:16 [call] result[unit, io_error]
+std/io.cn:81:16 [call] result[unit, io_error]
+std/io.cn:81:20 [literal] unit
+std/io.cn:81:20 [literal] unit
+std/io.cn:91:15 [binding_pat] self
+std/io.cn:91:25 [binding_pat] &slice[byte]
+std/io.cn:91:47 [named_type] result[usize, io_error]
+std/io.cn:97:15 [binding_pat] self
+std/io.cn:97:28 [named_type] result[unit, io_error]
+std/io.cn:106:19 [binding_pat] &mut file_handle
+std/io.cn:106:19 [binding_pat] self
+std/io.cn:106:29 [binding_pat] &slice[byte]
+std/io.cn:106:29 [binding_pat] &slice[byte]
+std/io.cn:106:51 [named_type] result[unit, io_error]
+std/io.cn:106:51 [named_type] result[unit, io_error]
+std/io.cn:107:9 [var_stmt] usize
+std/io.cn:107:9 [var_stmt] usize
+std/io.cn:107:30 [literal] usize
+std/io.cn:107:30 [literal] usize
+std/io.cn:108:13 [binding_pat] usize
+std/io.cn:108:13 [binding_pat] usize
+std/io.cn:108:20 [ident] &slice[byte]
+std/io.cn:108:20 [ident] &slice[byte]
+std/io.cn:108:20 [call] usize
+std/io.cn:108:20 [call] usize
+std/io.cn:109:15 [ident] usize
+std/io.cn:109:15 [ident] usize
+std/io.cn:109:15 [binary] bool
+std/io.cn:109:15 [binary] bool
+std/io.cn:109:25 [ident] usize
+std/io.cn:109:25 [ident] usize
+std/io.cn:110:17 [binding_pat] usize
+std/io.cn:110:17 [binding_pat] usize
+std/io.cn:110:21 [ident] &mut file_handle
+std/io.cn:110:21 [ident] self
+std/io.cn:110:21 [field] fn(&slice[byte]) -> result[usize, io_error]
+std/io.cn:110:21 [field] fn(_, &slice[byte]) -> result[usize, io_error]
+std/io.cn:110:21 [call] result[usize, io_error]
+std/io.cn:110:21 [call] result[usize, io_error]
+std/io.cn:110:21 [try] usize
+std/io.cn:110:21 [try] usize
+std/io.cn:110:32 [unary] &slice[byte]
+std/io.cn:110:32 [unary] &slice[byte]
+std/io.cn:110:33 [ident] &slice[byte]
+std/io.cn:110:33 [ident] &slice[byte]
+std/io.cn:110:33 [index] slice[byte]
+std/io.cn:110:33 [index] slice[byte]
+std/io.cn:110:37 [ident] usize
+std/io.cn:110:37 [ident] usize
+std/io.cn:110:37 [binary] range[usize]
+std/io.cn:110:37 [binary] range[usize]
+std/io.cn:110:46 [ident] usize
+std/io.cn:110:46 [ident] usize
+std/io.cn:111:16 [ident] usize
+std/io.cn:111:16 [ident] usize
+std/io.cn:111:16 [binary] bool
+std/io.cn:111:16 [binary] bool
+std/io.cn:111:21 [literal] usize
+std/io.cn:111:21 [literal] usize
+std/io.cn:112:24 [call] result[unit, io_error]
+std/io.cn:112:24 [call] result[unit, io_error]
+std/io.cn:112:29 [ident] io_error
+std/io.cn:112:29 [ident] io_error
+std/io.cn:113:13 [ident] usize
+std/io.cn:113:13 [ident] usize
+std/io.cn:113:23 [ident] usize
+std/io.cn:113:23 [ident] usize
+std/io.cn:113:23 [binary] usize
+std/io.cn:113:23 [binary] usize
+std/io.cn:113:33 [ident] usize
+std/io.cn:113:33 [ident] usize
+std/io.cn:114:16 [call] result[unit, io_error]
+std/io.cn:114:16 [call] result[unit, io_error]
+std/io.cn:114:20 [literal] unit
+std/io.cn:114:20 [literal] unit
+std/io.cn:128:14 [binding_pat] str
+std/io.cn:128:25 [binding_pat] open_options
+std/io.cn:128:48 [named_type] result[file_handle, io_error]
+std/io.cn:129:11 [ident] fn(str, open_options) -> result[raw_fd, io_errno]
+std/io.cn:129:11 [call] result[raw_fd, io_errno]
+std/io.cn:129:19 [ident] str
+std/io.cn:129:25 [ident] open_options
+std/io.cn:130:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:130:13 [binding_pat] raw_fd
+std/io.cn:130:20 [call] result[file_handle, io_error]
+std/io.cn:130:24 [struct_literal] file_handle
+std/io.cn:130:42 [ident] raw_fd
+std/io.cn:130:52 [literal] bool
+std/io.cn:131:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:131:14 [binding_pat] io_errno
+std/io.cn:131:20 [call] result[file_handle, io_error]
+std/io.cn:131:25 [field] fn(io_errno) -> io_error
+std/io.cn:131:25 [call] io_error
+std/io.cn:131:39 [ident] io_errno
+std/io.cn:136:27 [named_type] file_handle
+std/io.cn:137:12 [struct_literal] file_handle
+std/io.cn:137:30 [ident] fn() -> raw_fd
+std/io.cn:137:30 [call] raw_fd
+std/io.cn:137:48 [literal] bool
+std/io.cn:142:28 [named_type] file_handle
+std/io.cn:143:12 [struct_literal] file_handle
+std/io.cn:143:30 [ident] fn() -> raw_fd
+std/io.cn:143:30 [call] raw_fd
+std/io.cn:143:49 [literal] bool
+std/io.cn:148:28 [named_type] file_handle
+std/io.cn:149:12 [struct_literal] file_handle
+std/io.cn:149:30 [ident] fn() -> raw_fd
+std/io.cn:149:30 [call] raw_fd
+std/io.cn:149:49 [literal] bool
+std/io.cn:154:16 [binding_pat] &file_handle
+std/io.cn:154:25 [named_type] raw_fd
+std/io.cn:155:16 [struct_literal] raw_fd
+std/io.cn:155:32 [module_path] int64
+std/io.cn:158:14 [binding_pat] &mut file_handle
+std/io.cn:158:24 [binding_pat] &mut slice_mut[byte]
+std/io.cn:158:54 [named_type] result[usize, io_error]
+std/io.cn:159:15 [ident] fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno]
+std/io.cn:159:15 [call] result[usize, io_errno]
+std/io.cn:159:23 [ident] &mut file_handle
+std/io.cn:159:23 [field] fn(_) -> raw_fd
+std/io.cn:159:23 [call] raw_fd
+std/io.cn:159:38 [ident] &mut slice_mut[byte]
+std/io.cn:160:13 [result_pat] result[usize, io_errno]
+std/io.cn:160:17 [binding_pat] usize
+std/io.cn:160:23 [call] result[usize, io_error]
+std/io.cn:160:27 [ident] usize
 std/io.cn:161:13 [result_pat] result[usize, io_errno]
-std/io.cn:161:17 [binding_pat] usize
-std/io.cn:161:23 [call] result[usize, io_error]
-std/io.cn:161:27 [ident] usize
-std/io.cn:162:13 [result_pat] result[usize, io_errno]
-std/io.cn:162:18 [binding_pat] io_errno
-std/io.cn:162:24 [call] result[usize, io_error]
-std/io.cn:162:29 [field] fn(io_errno) -> io_error
-std/io.cn:162:29 [call] io_error
-std/io.cn:162:43 [ident] io_errno
-std/io.cn:163:15 [binding_pat] &mut file_handle
-std/io.cn:163:28 [named_type] result[unit, io_error]
-std/io.cn:164:15 [ident] fn(raw_fd) -> result[unit, io_errno]
-std/io.cn:164:15 [call] result[unit, io_errno]
-std/io.cn:164:24 [ident] &mut file_handle
-std/io.cn:164:24 [field] fn(_) -> raw_fd
-std/io.cn:164:24 [call] raw_fd
-std/io.cn:165:13 [result_pat] result[unit, io_errno]
-std/io.cn:165:17 [binding_pat] unit
-std/io.cn:165:23 [call] result[unit, io_error]
-std/io.cn:165:27 [ident] unit
-std/io.cn:166:13 [result_pat] result[unit, io_errno]
-std/io.cn:166:18 [binding_pat] io_errno
-std/io.cn:166:24 [call] result[unit, io_error]
-std/io.cn:166:29 [field] fn(io_errno) -> io_error
-std/io.cn:166:29 [call] io_error
-std/io.cn:166:43 [ident] io_errno
-std/io.cn:169:14 [binding_pat] &mut file_handle
-std/io.cn:169:27 [named_type] unit
-std/io.cn:170:12 [module_path] bool
-std/io.cn:171:13 [ident] fn(raw_fd) -> result[unit, io_errno]
-std/io.cn:171:13 [call] result[unit, io_errno]
-std/io.cn:171:22 [ident] &mut file_handle
-std/io.cn:171:22 [field] fn(_) -> raw_fd
-std/io.cn:171:22 [call] raw_fd
-std/io.cn:172:16 [literal] unit
-std/io.cn:180:19 [binding_pat] &mut file_handle
-std/io.cn:180:32 [named_type] result[unit, io_error]
-std/io.cn:181:13 [binding_pat] result[unit, io_errno]
-std/io.cn:181:17 [ident] fn(raw_fd) -> result[unit, io_errno]
-std/io.cn:181:17 [call] result[unit, io_errno]
-std/io.cn:181:26 [ident] &mut file_handle
-std/io.cn:181:26 [field] fn(_) -> raw_fd
-std/io.cn:181:26 [call] raw_fd
-std/io.cn:182:9 [module_path] raw_fd
-std/io.cn:182:19 [struct_literal] raw_fd
-std/io.cn:182:35 [unary] int64
-std/io.cn:182:36 [literal] int64
-std/io.cn:183:9 [module_path] bool
-std/io.cn:183:21 [literal] bool
-std/io.cn:184:15 [ident] result[unit, io_errno]
-std/io.cn:185:13 [result_pat] result[unit, io_errno]
-std/io.cn:185:17 [binding_pat] unit
-std/io.cn:185:23 [call] result[unit, io_error]
-std/io.cn:185:27 [ident] unit
-std/io.cn:186:13 [result_pat] result[unit, io_errno]
-std/io.cn:186:18 [binding_pat] io_errno
-std/io.cn:186:24 [call] result[unit, io_error]
-std/io.cn:186:29 [field] fn(io_errno) -> io_error
-std/io.cn:186:29 [call] io_error
-std/io.cn:186:43 [ident] io_errno
+std/io.cn:161:18 [binding_pat] io_errno
+std/io.cn:161:24 [call] result[usize, io_error]
+std/io.cn:161:29 [field] fn(io_errno) -> io_error
+std/io.cn:161:29 [call] io_error
+std/io.cn:161:43 [ident] io_errno
+std/io.cn:164:15 [binding_pat] &mut file_handle
+std/io.cn:164:25 [binding_pat] &slice[byte]
+std/io.cn:164:47 [named_type] result[usize, io_error]
+std/io.cn:165:15 [ident] fn(raw_fd, &slice[byte]) -> result[usize, io_errno]
+std/io.cn:165:15 [call] result[usize, io_errno]
+std/io.cn:165:24 [ident] &mut file_handle
+std/io.cn:165:24 [field] fn(_) -> raw_fd
+std/io.cn:165:24 [call] raw_fd
+std/io.cn:165:39 [ident] &slice[byte]
+std/io.cn:166:13 [result_pat] result[usize, io_errno]
+std/io.cn:166:17 [binding_pat] usize
+std/io.cn:166:23 [call] result[usize, io_error]
+std/io.cn:166:27 [ident] usize
+std/io.cn:167:13 [result_pat] result[usize, io_errno]
+std/io.cn:167:18 [binding_pat] io_errno
+std/io.cn:167:24 [call] result[usize, io_error]
+std/io.cn:167:29 [field] fn(io_errno) -> io_error
+std/io.cn:167:29 [call] io_error
+std/io.cn:167:43 [ident] io_errno
+std/io.cn:168:15 [binding_pat] &mut file_handle
+std/io.cn:168:28 [named_type] result[unit, io_error]
+std/io.cn:169:15 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:169:15 [call] result[unit, io_errno]
+std/io.cn:169:24 [ident] &mut file_handle
+std/io.cn:169:24 [field] fn(_) -> raw_fd
+std/io.cn:169:24 [call] raw_fd
+std/io.cn:170:13 [result_pat] result[unit, io_errno]
+std/io.cn:170:17 [binding_pat] unit
+std/io.cn:170:23 [call] result[unit, io_error]
+std/io.cn:170:27 [ident] unit
+std/io.cn:171:13 [result_pat] result[unit, io_errno]
+std/io.cn:171:18 [binding_pat] io_errno
+std/io.cn:171:24 [call] result[unit, io_error]
+std/io.cn:171:29 [field] fn(io_errno) -> io_error
+std/io.cn:171:29 [call] io_error
+std/io.cn:171:43 [ident] io_errno
+std/io.cn:174:14 [binding_pat] &mut file_handle
+std/io.cn:174:27 [named_type] unit
+std/io.cn:175:12 [module_path] bool
+std/io.cn:176:13 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:176:13 [call] result[unit, io_errno]
+std/io.cn:176:22 [ident] &mut file_handle
+std/io.cn:176:22 [field] fn(_) -> raw_fd
+std/io.cn:176:22 [call] raw_fd
+std/io.cn:177:16 [literal] unit
+std/io.cn:185:19 [binding_pat] &mut file_handle
+std/io.cn:185:32 [named_type] result[unit, io_error]
+std/io.cn:186:13 [binding_pat] result[unit, io_errno]
+std/io.cn:186:17 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:186:17 [call] result[unit, io_errno]
+std/io.cn:186:26 [ident] &mut file_handle
+std/io.cn:186:26 [field] fn(_) -> raw_fd
+std/io.cn:186:26 [call] raw_fd
+std/io.cn:187:9 [module_path] raw_fd
+std/io.cn:187:19 [struct_literal] raw_fd
+std/io.cn:187:35 [unary] int64
+std/io.cn:187:36 [literal] int64
+std/io.cn:188:9 [module_path] bool
+std/io.cn:188:21 [literal] bool
+std/io.cn:189:15 [ident] result[unit, io_errno]
+std/io.cn:190:13 [result_pat] result[unit, io_errno]
+std/io.cn:190:17 [binding_pat] unit
+std/io.cn:190:23 [call] result[unit, io_error]
+std/io.cn:190:27 [ident] unit
+std/io.cn:191:13 [result_pat] result[unit, io_errno]
+std/io.cn:191:18 [binding_pat] io_errno
+std/io.cn:191:24 [call] result[unit, io_error]
+std/io.cn:191:29 [field] fn(io_errno) -> io_error
+std/io.cn:191:29 [call] io_error
+std/io.cn:191:43 [ident] io_errno
+std/io.cn:199:19 [named_type] result[pipe_ends, io_error]
+std/io.cn:200:11 [ident] fn() -> result[raw_pipe, io_errno]
+std/io.cn:200:11 [call] result[raw_pipe, io_errno]
+std/io.cn:201:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:201:13 [binding_pat] raw_pipe
+std/io.cn:201:19 [call] result[pipe_ends, io_error]
+std/io.cn:201:23 [struct_literal] pipe_ends
+std/io.cn:202:21 [struct_literal] file_handle
+std/io.cn:202:39 [struct_literal] raw_fd
+std/io.cn:202:55 [module_path] int64
+std/io.cn:202:71 [literal] bool
+std/io.cn:203:21 [struct_literal] file_handle
+std/io.cn:203:39 [struct_literal] raw_fd
+std/io.cn:203:55 [module_path] int64
+std/io.cn:203:72 [literal] bool
+std/io.cn:204:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:204:14 [binding_pat] io_errno
+std/io.cn:204:20 [call] result[pipe_ends, io_error]
+std/io.cn:204:25 [field] fn(io_errno) -> io_error
+std/io.cn:204:25 [call] io_error
+std/io.cn:204:39 [ident] io_errno
+std/io.cn:221:24 [binding_pat] &raw_fd
+std/io.cn:221:40 [named_type] unit
+std/io.cn:222:5 [await] unit
+std/io.cn:222:11 [ident] fn(int64) -> task[unit]
+std/io.cn:222:11 [call] task[unit]
+std/io.cn:222:26 [module_path] int64
+std/io.cn:226:24 [binding_pat] &raw_fd
+std/io.cn:226:40 [named_type] unit
+std/io.cn:227:5 [await] unit
+std/io.cn:227:11 [ident] fn(int64) -> task[unit]
+std/io.cn:227:11 [call] task[unit]
+std/io.cn:227:26 [module_path] int64
+std/io.cn:239:20 [binding_pat] self
+std/io.cn:239:30 [binding_pat] &mut slice_mut[byte]
+std/io.cn:239:60 [named_type] result[usize, io_error]
+std/io.cn:247:27 [binding_pat] &mut async_file
+std/io.cn:247:27 [binding_pat] self
+std/io.cn:247:37 [binding_pat] &mut list[byte]
+std/io.cn:247:37 [binding_pat] &mut list[byte]
+std/io.cn:247:62 [named_type] result[usize, io_error]
+std/io.cn:247:62 [named_type] result[usize, io_error]
+std/io.cn:248:9 [var_stmt] usize
+std/io.cn:248:9 [var_stmt] usize
+std/io.cn:248:28 [literal] usize
+std/io.cn:248:28 [literal] usize
+std/io.cn:249:9 [var_stmt] array[byte, 4096]
+std/io.cn:249:9 [var_stmt] array[byte, 4096]
+std/io.cn:249:38 [array] array[byte, 4096]
+std/io.cn:249:38 [array] array[byte, 4096]
+std/io.cn:249:39 [literal] byte
+std/io.cn:249:39 [literal] byte
+std/io.cn:249:42 [literal] usize
+std/io.cn:249:42 [literal] usize
+std/io.cn:250:15 [literal] bool
+std/io.cn:250:15 [literal] bool
+std/io.cn:251:17 [binding_pat] usize
+std/io.cn:251:17 [binding_pat] usize
+std/io.cn:251:23 [group] result[usize, io_error]
+std/io.cn:251:23 [group] result[usize, io_error]
+std/io.cn:251:23 [try] usize
+std/io.cn:251:23 [try] usize
+std/io.cn:251:24 [await] result[usize, io_error]
+std/io.cn:251:24 [await] result[usize, io_error]
+std/io.cn:251:30 [ident] &mut async_file
+std/io.cn:251:30 [ident] self
+std/io.cn:251:30 [field] fn(&mut slice_mut[byte]) -> task[usize, io_error, io]
+std/io.cn:251:30 [field] fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io]
+std/io.cn:251:30 [call] task[usize, io_error, io]
+std/io.cn:251:30 [call] task[usize, io_error, io]
+std/io.cn:251:40 [unary] &mut slice_mut[byte]
+std/io.cn:251:40 [unary] &mut slice_mut[byte]
+std/io.cn:251:45 [ident] array[byte, 4096]
+std/io.cn:251:45 [ident] array[byte, 4096]
+std/io.cn:251:45 [index] slice[byte]
+std/io.cn:251:45 [index] slice[byte]
+std/io.cn:251:49 [literal] usize
+std/io.cn:251:49 [literal] usize
+std/io.cn:251:49 [binary] range[usize]
+std/io.cn:251:49 [binary] range[usize]
+std/io.cn:251:52 [literal] usize
+std/io.cn:251:52 [literal] usize
+std/io.cn:252:16 [ident] usize
+std/io.cn:252:16 [ident] usize
+std/io.cn:252:16 [binary] bool
+std/io.cn:252:16 [binary] bool
+std/io.cn:252:23 [literal] usize
+std/io.cn:252:23 [literal] usize
+std/io.cn:253:24 [call] result[usize, io_error]
+std/io.cn:253:24 [call] result[usize, io_error]
+std/io.cn:253:28 [ident] usize
+std/io.cn:253:28 [ident] usize
+std/io.cn:254:13 [var_stmt] usize
+std/io.cn:254:13 [var_stmt] usize
+std/io.cn:254:28 [literal] usize
+std/io.cn:254:28 [literal] usize
+std/io.cn:255:19 [ident] usize
+std/io.cn:255:19 [ident] usize
+std/io.cn:255:19 [binary] bool
+std/io.cn:255:19 [binary] bool
+std/io.cn:255:23 [ident] usize
+std/io.cn:255:23 [ident] usize
+std/io.cn:256:17 [ident] &mut list[byte]
+std/io.cn:256:17 [ident] &mut list[byte]
+std/io.cn:256:17 [field] fn(_, _) -> unit
+std/io.cn:256:17 [field] fn(_, _) -> unit
+std/io.cn:256:17 [call] unit
+std/io.cn:256:17 [call] unit
+std/io.cn:256:26 [ident] array[byte, 4096]
+std/io.cn:256:26 [ident] array[byte, 4096]
+std/io.cn:256:26 [index] byte
+std/io.cn:256:26 [index] byte
+std/io.cn:256:30 [ident] usize
+std/io.cn:256:30 [ident] usize
+std/io.cn:257:17 [ident] usize
+std/io.cn:257:17 [ident] usize
+std/io.cn:257:21 [ident] usize
+std/io.cn:257:21 [ident] usize
+std/io.cn:257:21 [binary] usize
+std/io.cn:257:21 [binary] usize
+std/io.cn:257:25 [literal] usize
+std/io.cn:257:25 [literal] usize
+std/io.cn:258:13 [ident] usize
+std/io.cn:258:13 [ident] usize
+std/io.cn:258:21 [ident] usize
+std/io.cn:258:21 [ident] usize
+std/io.cn:258:21 [binary] usize
+std/io.cn:258:21 [binary] usize
+std/io.cn:258:29 [ident] usize
+std/io.cn:258:29 [ident] usize
+std/io.cn:266:26 [binding_pat] &mut async_file
+std/io.cn:266:26 [binding_pat] self
+std/io.cn:266:36 [binding_pat] &mut slice_mut[byte]
+std/io.cn:266:36 [binding_pat] &mut slice_mut[byte]
+std/io.cn:266:66 [named_type] result[unit, io_error]
+std/io.cn:266:66 [named_type] result[unit, io_error]
+std/io.cn:267:9 [var_stmt] usize
+std/io.cn:267:9 [var_stmt] usize
+std/io.cn:267:29 [literal] usize
+std/io.cn:267:29 [literal] usize
+std/io.cn:268:13 [binding_pat] usize
+std/io.cn:268:13 [binding_pat] usize
+std/io.cn:268:20 [ident] &mut slice_mut[byte]
+std/io.cn:268:20 [ident] &mut slice_mut[byte]
+std/io.cn:268:20 [call] usize
+std/io.cn:268:20 [call] usize
+std/io.cn:269:15 [ident] usize
+std/io.cn:269:15 [ident] usize
+std/io.cn:269:15 [binary] bool
+std/io.cn:269:15 [binary] bool
+std/io.cn:269:24 [ident] usize
+std/io.cn:269:24 [ident] usize
+std/io.cn:270:17 [binding_pat] usize
+std/io.cn:270:17 [binding_pat] usize
+std/io.cn:270:23 [group] result[usize, io_error]
+std/io.cn:270:23 [group] result[usize, io_error]
+std/io.cn:270:23 [try] usize
+std/io.cn:270:23 [try] usize
+std/io.cn:270:24 [await] result[usize, io_error]
+std/io.cn:270:24 [await] result[usize, io_error]
+std/io.cn:270:30 [ident] &mut async_file
+std/io.cn:270:30 [ident] self
+std/io.cn:270:30 [field] fn(&mut slice_mut[byte]) -> task[usize, io_error, io]
+std/io.cn:270:30 [field] fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io]
+std/io.cn:270:30 [call] task[usize, io_error, io]
+std/io.cn:270:30 [call] task[usize, io_error, io]
+std/io.cn:270:40 [unary] &mut slice_mut[byte]
+std/io.cn:270:40 [unary] &mut slice_mut[byte]
+std/io.cn:270:45 [ident] &mut slice_mut[byte]
+std/io.cn:270:45 [ident] &mut slice_mut[byte]
+std/io.cn:270:45 [index] slice_mut[byte]
+std/io.cn:270:45 [index] slice_mut[byte]
+std/io.cn:270:49 [ident] usize
+std/io.cn:270:49 [ident] usize
+std/io.cn:270:49 [binary] range[usize]
+std/io.cn:270:49 [binary] range[usize]
+std/io.cn:270:57 [ident] usize
+std/io.cn:270:57 [ident] usize
+std/io.cn:271:16 [ident] usize
+std/io.cn:271:16 [ident] usize
+std/io.cn:271:16 [binary] bool
+std/io.cn:271:16 [binary] bool
+std/io.cn:271:23 [literal] usize
+std/io.cn:271:23 [literal] usize
+std/io.cn:272:24 [call] result[unit, io_error]
+std/io.cn:272:24 [call] result[unit, io_error]
+std/io.cn:272:29 [ident] io_error
+std/io.cn:272:29 [ident] io_error
+std/io.cn:273:13 [ident] usize
+std/io.cn:273:13 [ident] usize
+std/io.cn:273:22 [ident] usize
+std/io.cn:273:22 [ident] usize
+std/io.cn:273:22 [binary] usize
+std/io.cn:273:22 [binary] usize
+std/io.cn:273:31 [ident] usize
+std/io.cn:273:31 [ident] usize
+std/io.cn:274:16 [call] result[unit, io_error]
+std/io.cn:274:16 [call] result[unit, io_error]
+std/io.cn:274:20 [literal] unit
+std/io.cn:274:20 [literal] unit
+std/io.cn:286:21 [binding_pat] self
+std/io.cn:286:31 [binding_pat] &slice[byte]
+std/io.cn:286:53 [named_type] result[usize, io_error]
+std/io.cn:293:21 [binding_pat] self
+std/io.cn:293:34 [named_type] result[unit, io_error]
+std/io.cn:301:25 [binding_pat] &mut async_file
+std/io.cn:301:25 [binding_pat] self
+std/io.cn:301:35 [binding_pat] &slice[byte]
+std/io.cn:301:35 [binding_pat] &slice[byte]
+std/io.cn:301:57 [named_type] result[unit, io_error]
+std/io.cn:301:57 [named_type] result[unit, io_error]
+std/io.cn:302:9 [var_stmt] usize
+std/io.cn:302:9 [var_stmt] usize
+std/io.cn:302:30 [literal] usize
+std/io.cn:302:30 [literal] usize
+std/io.cn:303:13 [binding_pat] usize
+std/io.cn:303:13 [binding_pat] usize
+std/io.cn:303:20 [ident] &slice[byte]
+std/io.cn:303:20 [ident] &slice[byte]
+std/io.cn:303:20 [call] usize
+std/io.cn:303:20 [call] usize
+std/io.cn:304:15 [ident] usize
+std/io.cn:304:15 [ident] usize
+std/io.cn:304:15 [binary] bool
+std/io.cn:304:15 [binary] bool
+std/io.cn:304:25 [ident] usize
+std/io.cn:304:25 [ident] usize
+std/io.cn:305:17 [binding_pat] usize
+std/io.cn:305:17 [binding_pat] usize
+std/io.cn:305:21 [group] result[usize, io_error]
+std/io.cn:305:21 [group] result[usize, io_error]
+std/io.cn:305:21 [try] usize
+std/io.cn:305:21 [try] usize
+std/io.cn:305:22 [await] result[usize, io_error]
+std/io.cn:305:22 [await] result[usize, io_error]
+std/io.cn:305:28 [ident] &mut async_file
+std/io.cn:305:28 [ident] self
+std/io.cn:305:28 [field] fn(&slice[byte]) -> task[usize, io_error, io]
+std/io.cn:305:28 [field] fn(_, &slice[byte]) -> task[usize, io_error, io]
+std/io.cn:305:28 [call] task[usize, io_error, io]
+std/io.cn:305:28 [call] task[usize, io_error, io]
+std/io.cn:305:39 [unary] &slice[byte]
+std/io.cn:305:39 [unary] &slice[byte]
+std/io.cn:305:40 [ident] &slice[byte]
+std/io.cn:305:40 [ident] &slice[byte]
+std/io.cn:305:40 [index] slice[byte]
+std/io.cn:305:40 [index] slice[byte]
+std/io.cn:305:44 [ident] usize
+std/io.cn:305:44 [ident] usize
+std/io.cn:305:44 [binary] range[usize]
+std/io.cn:305:44 [binary] range[usize]
+std/io.cn:305:53 [ident] usize
+std/io.cn:305:53 [ident] usize
+std/io.cn:306:16 [ident] usize
+std/io.cn:306:16 [ident] usize
+std/io.cn:306:16 [binary] bool
+std/io.cn:306:16 [binary] bool
+std/io.cn:306:21 [literal] usize
+std/io.cn:306:21 [literal] usize
+std/io.cn:307:24 [call] result[unit, io_error]
+std/io.cn:307:24 [call] result[unit, io_error]
+std/io.cn:307:29 [ident] io_error
+std/io.cn:307:29 [ident] io_error
+std/io.cn:308:13 [ident] usize
+std/io.cn:308:13 [ident] usize
+std/io.cn:308:23 [ident] usize
+std/io.cn:308:23 [ident] usize
+std/io.cn:308:23 [binary] usize
+std/io.cn:308:23 [binary] usize
+std/io.cn:308:33 [ident] usize
+std/io.cn:308:33 [ident] usize
+std/io.cn:309:16 [call] result[unit, io_error]
+std/io.cn:309:16 [call] result[unit, io_error]
+std/io.cn:309:20 [literal] unit
+std/io.cn:309:20 [literal] unit
+std/io.cn:317:16 [binding_pat] raw_fd
+std/io.cn:317:28 [binding_pat] bool
+std/io.cn:317:43 [named_type] result[async_file, io_error]
+std/io.cn:318:9 [binding_pat] async_file
+std/io.cn:318:13 [struct_literal] async_file
+std/io.cn:318:30 [ident] raw_fd
+std/io.cn:318:40 [ident] bool
+std/io.cn:319:11 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:319:11 [call] result[unit, io_errno]
+std/io.cn:319:30 [ident] async_file
+std/io.cn:319:30 [field] fn(_) -> raw_fd
+std/io.cn:319:30 [call] raw_fd
+std/io.cn:320:9 [result_pat] result[unit, io_errno]
+std/io.cn:320:13 [wildcard_pat] unit
+std/io.cn:320:19 [call] result[async_file, io_error]
+std/io.cn:320:23 [ident] async_file
+std/io.cn:321:9 [result_pat] result[unit, io_errno]
+std/io.cn:321:14 [binding_pat] io_errno
+std/io.cn:321:20 [call] result[async_file, io_error]
+std/io.cn:321:25 [field] fn(io_errno) -> io_error
+std/io.cn:321:25 [call] io_error
+std/io.cn:321:39 [ident] io_errno
+std/io.cn:332:26 [binding_pat] str
+std/io.cn:332:37 [binding_pat] open_options
+std/io.cn:332:60 [named_type] result[async_file, io_error]
+std/io.cn:333:11 [ident] fn(str, open_options) -> result[raw_fd, io_errno]
+std/io.cn:333:11 [call] result[raw_fd, io_errno]
+std/io.cn:333:19 [ident] str
+std/io.cn:333:25 [ident] open_options
+std/io.cn:334:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:334:13 [binding_pat] raw_fd
+std/io.cn:334:20 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
+std/io.cn:334:20 [call] result[async_file, io_error]
+std/io.cn:334:31 [ident] raw_fd
+std/io.cn:334:35 [literal] bool
+std/io.cn:335:9 [result_pat] result[raw_fd, io_errno]
+std/io.cn:335:14 [binding_pat] io_errno
+std/io.cn:335:20 [call] result[async_file, io_error]
+std/io.cn:335:25 [field] fn(io_errno) -> io_error
+std/io.cn:335:25 [call] io_error
+std/io.cn:335:39 [ident] io_errno
+std/io.cn:345:20 [binding_pat] file_handle
+std/io.cn:345:39 [named_type] result[async_file, io_error]
+std/io.cn:346:9 [binding_pat] bool
+std/io.cn:346:16 [module_path] bool
+std/io.cn:347:5 [module_path] bool
+std/io.cn:347:14 [literal] bool
+std/io.cn:348:12 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
+std/io.cn:348:12 [call] result[async_file, io_error]
+std/io.cn:348:23 [ident] file_handle
+std/io.cn:348:23 [field] fn(_) -> raw_fd
+std/io.cn:348:23 [call] raw_fd
+std/io.cn:348:35 [ident] bool
+std/io.cn:357:25 [named_type] result[async_pipe_ends, io_error]
+std/io.cn:358:11 [ident] fn() -> result[raw_pipe, io_errno]
+std/io.cn:358:11 [call] result[raw_pipe, io_errno]
+std/io.cn:359:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:359:13 [binding_pat] raw_pipe
+std/io.cn:360:17 [binding_pat] async_file
+std/io.cn:360:21 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
+std/io.cn:360:21 [call] result[async_file, io_error]
+std/io.cn:360:21 [try] async_file
+std/io.cn:360:32 [struct_literal] raw_fd
+std/io.cn:360:48 [module_path] int64
+std/io.cn:360:58 [literal] bool
+std/io.cn:361:17 [binding_pat] async_file
+std/io.cn:361:21 [ident] fn(raw_fd, bool) -> result[async_file, io_error]
+std/io.cn:361:21 [call] result[async_file, io_error]
+std/io.cn:361:21 [try] async_file
+std/io.cn:361:32 [struct_literal] raw_fd
+std/io.cn:361:48 [module_path] int64
+std/io.cn:361:59 [literal] bool
+std/io.cn:362:20 [call] result[async_pipe_ends, io_error]
+std/io.cn:362:24 [struct_literal] async_pipe_ends
+std/io.cn:362:50 [ident] async_file
+std/io.cn:362:61 [ident] async_file
+std/io.cn:363:9 [result_pat] result[raw_pipe, io_errno]
+std/io.cn:363:14 [binding_pat] io_errno
+std/io.cn:363:27 [call] result[async_pipe_ends, io_error]
+std/io.cn:363:32 [field] fn(io_errno) -> io_error
+std/io.cn:363:32 [call] io_error
+std/io.cn:363:46 [ident] io_errno
+std/io.cn:367:16 [binding_pat] &async_file
+std/io.cn:367:25 [named_type] raw_fd
+std/io.cn:368:16 [struct_literal] raw_fd
+std/io.cn:368:32 [module_path] int64
+std/io.cn:373:19 [binding_pat] &mut async_file
+std/io.cn:373:32 [named_type] result[unit, io_error]
+std/io.cn:374:13 [binding_pat] result[unit, io_errno]
+std/io.cn:374:17 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:374:17 [call] result[unit, io_errno]
+std/io.cn:374:26 [ident] &mut async_file
+std/io.cn:374:26 [field] fn(_) -> raw_fd
+std/io.cn:374:26 [call] raw_fd
+std/io.cn:375:9 [module_path] raw_fd
+std/io.cn:375:19 [struct_literal] raw_fd
+std/io.cn:375:35 [unary] int64
+std/io.cn:375:36 [literal] int64
+std/io.cn:376:9 [module_path] bool
+std/io.cn:376:21 [literal] bool
+std/io.cn:377:15 [ident] result[unit, io_errno]
+std/io.cn:378:13 [result_pat] result[unit, io_errno]
+std/io.cn:378:17 [binding_pat] unit
+std/io.cn:378:23 [call] result[unit, io_error]
+std/io.cn:378:27 [ident] unit
+std/io.cn:379:13 [result_pat] result[unit, io_errno]
+std/io.cn:379:18 [binding_pat] io_errno
+std/io.cn:379:24 [call] result[unit, io_error]
+std/io.cn:379:29 [field] fn(io_errno) -> io_error
+std/io.cn:379:29 [call] io_error
+std/io.cn:379:43 [ident] io_errno
+std/io.cn:382:20 [binding_pat] &mut async_file
+std/io.cn:382:30 [binding_pat] &mut slice_mut[byte]
+std/io.cn:382:60 [named_type] result[usize, io_error]
+std/io.cn:383:15 [literal] bool
+std/io.cn:384:19 [ident] fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno]
+std/io.cn:384:19 [call] result[usize, io_errno]
+std/io.cn:384:27 [ident] &mut async_file
+std/io.cn:384:27 [field] fn(_) -> raw_fd
+std/io.cn:384:27 [call] raw_fd
+std/io.cn:384:42 [ident] &mut slice_mut[byte]
+std/io.cn:385:17 [result_pat] result[usize, io_errno]
+std/io.cn:385:21 [binding_pat] usize
+std/io.cn:385:34 [call] result[usize, io_error]
+std/io.cn:385:38 [ident] usize
+std/io.cn:386:17 [result_pat] result[usize, io_errno]
+std/io.cn:386:22 [binding_pat] io_errno
+std/io.cn:387:24 [module_path] int32
+std/io.cn:387:24 [binary] bool
+std/io.cn:387:34 [ident] fn() -> int32
+std/io.cn:387:34 [call] int32
+std/io.cn:388:25 [await] unit
+std/io.cn:388:31 [ident] fn(int64) -> task[unit]
+std/io.cn:388:31 [call] task[unit]
+std/io.cn:388:46 [module_path] int64
+std/io.cn:390:29 [binding_pat] io_error
+std/io.cn:390:39 [field] fn(io_errno) -> io_error
+std/io.cn:390:39 [call] io_error
+std/io.cn:390:53 [ident] io_errno
+std/io.cn:391:31 [ident] io_error
+std/io.cn:392:29 [ctor_pat] io_error
+std/io.cn:393:29 [wildcard_pat] io_error
+std/io.cn:393:41 [call] result[usize, io_error]
+std/io.cn:393:46 [ident] io_error
+std/io.cn:396:21 [binding_pat] &mut async_file
+std/io.cn:396:31 [binding_pat] &slice[byte]
+std/io.cn:396:53 [named_type] result[usize, io_error]
+std/io.cn:397:15 [literal] bool
+std/io.cn:398:19 [ident] fn(raw_fd, &slice[byte]) -> result[usize, io_errno]
+std/io.cn:398:19 [call] result[usize, io_errno]
+std/io.cn:398:28 [ident] &mut async_file
+std/io.cn:398:28 [field] fn(_) -> raw_fd
+std/io.cn:398:28 [call] raw_fd
+std/io.cn:398:43 [ident] &slice[byte]
+std/io.cn:399:17 [result_pat] result[usize, io_errno]
+std/io.cn:399:21 [binding_pat] usize
+std/io.cn:399:34 [call] result[usize, io_error]
+std/io.cn:399:38 [ident] usize
+std/io.cn:400:17 [result_pat] result[usize, io_errno]
+std/io.cn:400:22 [binding_pat] io_errno
+std/io.cn:401:24 [module_path] int32
+std/io.cn:401:24 [binary] bool
+std/io.cn:401:34 [ident] fn() -> int32
+std/io.cn:401:34 [call] int32
+std/io.cn:402:25 [await] unit
+std/io.cn:402:31 [ident] fn(int64) -> task[unit]
+std/io.cn:402:31 [call] task[unit]
+std/io.cn:402:46 [module_path] int64
+std/io.cn:404:29 [binding_pat] io_error
+std/io.cn:404:39 [field] fn(io_errno) -> io_error
+std/io.cn:404:39 [call] io_error
+std/io.cn:404:53 [ident] io_errno
+std/io.cn:405:31 [ident] io_error
+std/io.cn:406:29 [ctor_pat] io_error
+std/io.cn:407:29 [wildcard_pat] io_error
+std/io.cn:407:41 [call] result[usize, io_error]
+std/io.cn:407:46 [ident] io_error
+std/io.cn:409:21 [binding_pat] &mut async_file
+std/io.cn:409:34 [named_type] result[unit, io_error]
+std/io.cn:410:15 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:410:15 [call] result[unit, io_errno]
+std/io.cn:410:24 [ident] &mut async_file
+std/io.cn:410:24 [field] fn(_) -> raw_fd
+std/io.cn:410:24 [call] raw_fd
+std/io.cn:411:13 [result_pat] result[unit, io_errno]
+std/io.cn:411:17 [binding_pat] unit
+std/io.cn:411:23 [call] result[unit, io_error]
+std/io.cn:411:27 [ident] unit
+std/io.cn:412:13 [result_pat] result[unit, io_errno]
+std/io.cn:412:18 [binding_pat] io_errno
+std/io.cn:412:24 [call] result[unit, io_error]
+std/io.cn:412:29 [field] fn(io_errno) -> io_error
+std/io.cn:412:29 [call] io_error
+std/io.cn:412:43 [ident] io_errno
+std/io.cn:415:14 [binding_pat] &mut async_file
+std/io.cn:415:27 [named_type] unit
+std/io.cn:416:12 [module_path] bool
+std/io.cn:417:13 [ident] fn(raw_fd) -> result[unit, io_errno]
+std/io.cn:417:13 [call] result[unit, io_errno]
+std/io.cn:417:22 [ident] &mut async_file
+std/io.cn:417:22 [field] fn(_) -> raw_fd
+std/io.cn:417:22 [call] raw_fd
+std/io.cn:418:16 [literal] unit
 std/iter.cn:12:14 [binding_pat] self
 std/iter.cn:12:27 [named_type] option[T]
 std/iter.cn:21:19 [binding_pat] self
@@ -12955,6 +13447,98 @@ std/test.cn:182:8 [binary] bool
 std/test.cn:182:18 [literal] int32
 std/test.cn:183:16 [literal] int32
 std/test.cn:184:12 [literal] int32
+std/time.cn:14:24 [binding_pat] uint64
+std/time.cn:14:38 [named_type] duration
+std/time.cn:15:16 [struct_literal] duration
+std/time.cn:15:34 [ident] uint64
+std/time.cn:18:25 [binding_pat] uint64
+std/time.cn:18:39 [named_type] duration
+std/time.cn:19:16 [struct_literal] duration
+std/time.cn:19:34 [ident] uint64
+std/time.cn:19:34 [binary] uint64
+std/time.cn:19:38 [literal] uint64
+std/time.cn:22:25 [binding_pat] uint64
+std/time.cn:22:39 [named_type] duration
+std/time.cn:23:16 [struct_literal] duration
+std/time.cn:23:34 [ident] uint64
+std/time.cn:23:34 [binary] uint64
+std/time.cn:23:38 [literal] uint64
+std/time.cn:26:23 [binding_pat] uint64
+std/time.cn:26:37 [named_type] duration
+std/time.cn:27:16 [struct_literal] duration
+std/time.cn:27:34 [ident] uint64
+std/time.cn:27:34 [binary] uint64
+std/time.cn:27:38 [literal] uint64
+std/time.cn:30:22 [binding_pat] &duration
+std/time.cn:30:31 [named_type] uint64
+std/time.cn:31:16 [module_path] uint64
+std/time.cn:34:23 [binding_pat] &duration
+std/time.cn:34:32 [named_type] uint64
+std/time.cn:35:16 [module_path] uint64
+std/time.cn:35:16 [binary] uint64
+std/time.cn:35:29 [literal] uint64
+std/time.cn:38:23 [binding_pat] &duration
+std/time.cn:38:32 [named_type] uint64
+std/time.cn:39:16 [module_path] uint64
+std/time.cn:39:16 [binary] uint64
+std/time.cn:39:29 [literal] uint64
+std/time.cn:42:21 [binding_pat] &duration
+std/time.cn:42:30 [named_type] uint64
+std/time.cn:43:16 [module_path] uint64
+std/time.cn:43:16 [binary] uint64
+std/time.cn:43:29 [literal] uint64
+std/time.cn:51:18 [named_type] instant
+std/time.cn:52:12 [struct_literal] instant
+std/time.cn:52:29 [ident] fn() -> uint64
+std/time.cn:52:29 [call] uint64
+std/time.cn:56:28 [binding_pat] &instant
+std/time.cn:56:34 [binding_pat] &instant
+std/time.cn:56:56 [named_type] duration
+std/time.cn:57:12 [module_path] uint64
+std/time.cn:57:12 [binary] bool
+std/time.cn:57:26 [module_path] uint64
+std/time.cn:58:20 [struct_literal] duration
+std/time.cn:58:38 [literal] uint64
+std/time.cn:59:16 [struct_literal] duration
+std/time.cn:59:34 [module_path] uint64
+std/time.cn:59:34 [binary] uint64
+std/time.cn:59:47 [module_path] uint64
+std/time.cn:62:21 [binding_pat] &instant
+std/time.cn:62:30 [named_type] duration
+std/time.cn:63:13 [binding_pat] uint64
+std/time.cn:63:23 [ident] fn() -> uint64
+std/time.cn:63:23 [call] uint64
+std/time.cn:64:12 [ident] uint64
+std/time.cn:64:12 [binary] bool
+std/time.cn:64:23 [module_path] uint64
+std/time.cn:65:20 [struct_literal] duration
+std/time.cn:65:38 [literal] uint64
+std/time.cn:66:16 [struct_literal] duration
+std/time.cn:66:34 [ident] uint64
+std/time.cn:66:34 [binary] uint64
+std/time.cn:66:44 [module_path] uint64
+std/time.cn:69:19 [binding_pat] &instant
+std/time.cn:69:25 [binding_pat] &duration
+std/time.cn:69:42 [named_type] instant
+std/time.cn:70:16 [struct_literal] instant
+std/time.cn:70:33 [module_path] uint64
+std/time.cn:70:33 [binary] uint64
+std/time.cn:70:46 [module_path] uint64
+std/time.cn:74:21 [binding_pat] duration
+std/time.cn:74:37 [named_type] unit
+std/time.cn:75:5 [await] unit
+std/time.cn:75:11 [ident] fn(uint64) -> task[unit]
+std/time.cn:75:11 [call] task[unit]
+std/time.cn:75:26 [ident] fn() -> uint64
+std/time.cn:75:26 [call] uint64
+std/time.cn:75:26 [binary] uint64
+std/time.cn:75:47 [module_path] uint64
+std/time.cn:79:27 [binding_pat] instant
+std/time.cn:79:42 [named_type] unit
+std/time.cn:80:5 [await] unit
+std/time.cn:80:11 [ident] fn(uint64) -> task[unit]
+std/time.cn:80:11 [call] task[unit]
+std/time.cn:80:26 [module_path] uint64
 std/traits.category.cn:60:37 [named_type] bool
 std/traits.category.cn:61:12 [call] str
 std/traits.category.cn:61:12 [binary] bool
@@ -32535,9 +33119,13 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 
 ## struct_pattern_field_types (0)
 
-## struct_literal_field_types (236)
+## struct_literal_field_types (262)
+?:467 nanos uint64
+?:592 nanos uint64
+?:724 nanos uint64
 ?:750 data array[T, m]
 ?:789 cents int64
+?:852 nanos uint64
 ?:882 current int32
 ?:894 limit int32
 ?:1076 len usize
@@ -32580,6 +33168,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1678 data *mut test_suite
 ?:1678 data *mut uint32
 ?:1678 data *mut usize
+?:1702 nanos uint64
 ?:1730 first U
 ?:1730 first int32
 ?:1730 first int64
@@ -32591,10 +33180,15 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:1937 run fn() -> result[unit, test_failure]
 ?:1947 skip bool
 ?:1947 inner *mut shared_block[T]
+?:1961 nanos uint64
+?:1998 nanos uint64
 ?:2133 name str
 ?:2145 run fn() -> result[unit, test_failure]
 ?:2155 skip bool
+?:2221 nanos uint64
+?:2258 nanos uint64
 ?:2346 value int32
+?:2403 nanos uint64
 ?:2405 inner I
 ?:2405 inner counter
 ?:2416 f fn(T) -> U
@@ -32658,39 +33252,47 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:4675 pred fn(&T) -> bool
 ?:4685 src &list[T]
 ?:4685 src &list[test_case]
-?:4688 fd raw_fd
 ?:4694 at usize
 ?:4694 at usize
-?:4696 owns bool
 ?:4701 end usize
 ?:4701 end usize
 ?:4775 inner *mut mutex_block[T]
-?:4904 fd raw_fd
 ?:4914 v T
 ?:4914 v int32
-?:4920 owns bool
+?:4937 fd raw_fd
+?:4945 owns bool
 ?:5044 src &mut list[T]
 ?:5053 at usize
 ?:5060 end usize
-?:5089 fd raw_fd
 ?:5095 inner *mut mutex_block[T]
-?:5106 owns bool
 ?:5139 at int32
 ?:5146 end int32
-?:5274 fd raw_fd
-?:5291 owns bool
+?:5153 fd raw_fd
+?:5169 owns bool
 ?:5301 at int32
 ?:5308 end int32
 ?:5325 src list[T]
 ?:5334 at usize
+?:5338 fd raw_fd
 ?:5341 end usize
+?:5355 owns bool
 ?:5360 at int32
 ?:5367 end int32
-?:5524 value int64
-?:6645 value int64
+?:5523 fd raw_fd
+?:5540 owns bool
+?:5773 value int64
+?:6894 value int64
 ?:7139 state usize
 ?:7149 value T
 ?:7191 inner *mut rwlock_block[T]
+?:7433 reader file_handle
+?:7455 fd raw_fd
+?:7468 value int64
+?:7485 owns bool
+?:7511 writer file_handle
+?:7533 fd raw_fd
+?:7546 value int64
+?:7564 owns bool
 ?:7668 inner *mut rwlock_block[T]
 ?:7719 inner *mut rwlock_block[T]
 ?:8102 inner *mut rwlock_block[T]
@@ -32721,7 +33323,9 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:12009 items *mut T
 ?:12041 head usize
 ?:12058 len usize
+?:12070 fd raw_fd
 ?:12074 capacity usize
+?:12078 owns bool
 ?:12121 inner *mut channel_block[T]
 ?:12151 inner *mut channel_block[T]
 ?:12803 inner I
@@ -32731,9 +33335,15 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:13837 inner I
 ?:13848 pred fn(&T) -> bool
 ?:13860 done bool
+?:13863 value int64
+?:13927 value int64
+?:13993 reader async_file
+?:14004 writer async_file
+?:14216 value int64
 ?:14394 inner I
 ?:14405 pred fn(&T) -> bool
 ?:14417 skipping bool
+?:14483 value int64
 ?:14504 inner *mut channel_block[T]
 ?:14926 inner I
 ?:14937 step usize
@@ -32773,7 +33383,7 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:56508 inner I
 ?:56519 f fn(&T) -> T
 
-## call_argument_mappings (938)
+## call_argument_mappings (986)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -33205,33 +33815,76 @@ std/fmt.cn:336:18 [call] (value=arg, precision=arg, uppercase=arg)
 std/fmt.cn:337:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
 std/fmt.cn:349:18 [call] (value=arg, precision=arg)
 std/fmt.cn:350:12 [call] (negative=arg, prefix=arg, digits=arg, spec=arg)
-std/io.cn:52:23 [call] (buf=arg)
-std/io.cn:52:23 [call] (buf=arg)
-std/io.cn:57:17 [call] (value=arg)
-std/io.cn:57:17 [call] (value=arg)
-std/io.cn:72:23 [call] (buf=arg)
-std/io.cn:72:23 [call] (buf=arg)
-std/io.cn:105:21 [call] (buf=arg)
-std/io.cn:105:21 [call] (buf=arg)
-std/io.cn:124:11 [call] (path=arg, opts=arg)
-std/io.cn:126:25 [call] (e=arg)
-std/io.cn:132:30 [call] ()
-std/io.cn:138:30 [call] ()
-std/io.cn:144:30 [call] ()
-std/io.cn:154:15 [call] (fd=arg, buf=arg)
-std/io.cn:154:23 [call] ()
-std/io.cn:156:29 [call] (e=arg)
-std/io.cn:160:15 [call] (fd=arg, buf=arg)
-std/io.cn:160:24 [call] ()
-std/io.cn:162:29 [call] (e=arg)
-std/io.cn:164:15 [call] (fd=arg)
-std/io.cn:164:24 [call] ()
-std/io.cn:166:29 [call] (e=arg)
-std/io.cn:171:13 [call] (fd=arg)
-std/io.cn:171:22 [call] ()
-std/io.cn:181:17 [call] (fd=arg)
-std/io.cn:181:26 [call] ()
-std/io.cn:186:29 [call] (e=arg)
+std/io.cn:26:22 [call] ()
+std/io.cn:57:23 [call] (buf=arg)
+std/io.cn:57:23 [call] (buf=arg)
+std/io.cn:62:17 [call] (value=arg)
+std/io.cn:62:17 [call] (value=arg)
+std/io.cn:77:23 [call] (buf=arg)
+std/io.cn:77:23 [call] (buf=arg)
+std/io.cn:110:21 [call] (buf=arg)
+std/io.cn:110:21 [call] (buf=arg)
+std/io.cn:129:11 [call] (path=arg, opts=arg)
+std/io.cn:131:25 [call] (e=arg)
+std/io.cn:137:30 [call] ()
+std/io.cn:143:30 [call] ()
+std/io.cn:149:30 [call] ()
+std/io.cn:159:15 [call] (fd=arg, buf=arg)
+std/io.cn:159:23 [call] ()
+std/io.cn:161:29 [call] (e=arg)
+std/io.cn:165:15 [call] (fd=arg, buf=arg)
+std/io.cn:165:24 [call] ()
+std/io.cn:167:29 [call] (e=arg)
+std/io.cn:169:15 [call] (fd=arg)
+std/io.cn:169:24 [call] ()
+std/io.cn:171:29 [call] (e=arg)
+std/io.cn:176:13 [call] (fd=arg)
+std/io.cn:176:22 [call] ()
+std/io.cn:186:17 [call] (fd=arg)
+std/io.cn:186:26 [call] ()
+std/io.cn:191:29 [call] (e=arg)
+std/io.cn:200:11 [call] ()
+std/io.cn:204:25 [call] (e=arg)
+std/io.cn:222:11 [call] (fd=arg)
+std/io.cn:227:11 [call] (fd=arg)
+std/io.cn:251:30 [call] (buf=arg)
+std/io.cn:251:30 [call] (buf=arg)
+std/io.cn:256:17 [call] (value=arg)
+std/io.cn:256:17 [call] (value=arg)
+std/io.cn:270:30 [call] (buf=arg)
+std/io.cn:270:30 [call] (buf=arg)
+std/io.cn:305:28 [call] (buf=arg)
+std/io.cn:305:28 [call] (buf=arg)
+std/io.cn:319:11 [call] (fd=arg)
+std/io.cn:319:30 [call] ()
+std/io.cn:321:25 [call] (e=arg)
+std/io.cn:333:11 [call] (path=arg, opts=arg)
+std/io.cn:334:20 [call] (fd=arg, owns=arg)
+std/io.cn:335:25 [call] (e=arg)
+std/io.cn:348:12 [call] (fd=arg, owns=arg)
+std/io.cn:348:23 [call] ()
+std/io.cn:358:11 [call] ()
+std/io.cn:360:21 [call] (fd=arg, owns=arg)
+std/io.cn:361:21 [call] (fd=arg, owns=arg)
+std/io.cn:363:32 [call] (e=arg)
+std/io.cn:374:17 [call] (fd=arg)
+std/io.cn:374:26 [call] ()
+std/io.cn:379:29 [call] (e=arg)
+std/io.cn:384:19 [call] (fd=arg, buf=arg)
+std/io.cn:384:27 [call] ()
+std/io.cn:387:34 [call] ()
+std/io.cn:388:31 [call] (fd=arg)
+std/io.cn:390:39 [call] (e=arg)
+std/io.cn:398:19 [call] (fd=arg, buf=arg)
+std/io.cn:398:28 [call] ()
+std/io.cn:401:34 [call] ()
+std/io.cn:402:31 [call] (fd=arg)
+std/io.cn:404:39 [call] (e=arg)
+std/io.cn:410:15 [call] (fd=arg)
+std/io.cn:410:24 [call] ()
+std/io.cn:412:29 [call] (e=arg)
+std/io.cn:417:13 [call] (fd=arg)
+std/io.cn:417:22 [call] ()
 std/iter.cn:92:12 [call] (it=arg)
 std/iter.cn:124:45 [call] ()
 std/iter.cn:124:45 [call] ()
@@ -33612,6 +34265,11 @@ std/test.cn:160:36 [call] (name=arg, outcome=arg)
 std/test.cn:167:36 [call] (name=arg, outcome=arg)
 std/test.cn:175:20 [call] (name=arg, outcome=arg)
 std/test.cn:181:5 [call] (s=arg)
+std/time.cn:52:29 [call] ()
+std/time.cn:63:23 [call] ()
+std/time.cn:75:11 [call] (deadline=arg)
+std/time.cn:75:26 [call] ()
+std/time.cn:80:11 [call] (deadline=arg)
 std/traits.category.cn:81:12 [call] ()
 std/traits.category.cn:81:38 [call] ()
 std/traits.category.cn:90:12 [call] ()
@@ -33713,7 +34371,7 @@ std/unicode.cn:277:13 [call] ()
 std/unicode.cn:282:15 [call] (keys=arg, counts=arg, cp0s=arg, cp1s=arg, cp2s=arg, cp3s=arg, cp=arg)
 std/unicode.cn:288:29 [call] (cp=arg)
 
-## resolved_callees (537)
+## resolved_callees (578)
 003_collections_lambdas.cn:18:5 [call] std.console::println
 027_dependent_and_refinement_types.cn:29:5 [call] stress.dependent_types::head$int32$6
 027_dependent_and_refinement_types.cn:65:5 [call] stress.dependent_types::safe_get$int32$8
@@ -33912,30 +34570,66 @@ std/fmt.cn:263:26 [call] std.intrinsics::rt_str_concat
 std/fmt.cn:322:18 [call] std.intrinsics::rt_fmt_f64_fixed
 std/fmt.cn:336:18 [call] std.intrinsics::rt_fmt_f64_sci
 std/fmt.cn:349:18 [call] std.intrinsics::rt_fmt_f64_general
-std/io.cn:52:23 [call] std.io::file_handle::read trait=reader recv
-std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
-std/io.cn:57:17 [call] std.list::list::push$list_byte_ recv
-std/io.cn:72:23 [call] std.io::file_handle::read trait=reader recv
-std/io.cn:105:21 [call] std.io::file_handle::write trait=writer recv
-std/io.cn:124:11 [call] std.intrinsics::rt_open
-std/io.cn:126:25 [call] std.io::io_error::from
-std/io.cn:132:30 [call] std.intrinsics::rt_stdin
-std/io.cn:138:30 [call] std.intrinsics::rt_stdout
-std/io.cn:144:30 [call] std.intrinsics::rt_stderr
-std/io.cn:154:15 [call] std.intrinsics::rt_read
-std/io.cn:154:23 [call] std.io::file_handle::fd_arg recv
-std/io.cn:156:29 [call] std.io::io_error::from
-std/io.cn:160:15 [call] std.intrinsics::rt_write
-std/io.cn:160:24 [call] std.io::file_handle::fd_arg recv
-std/io.cn:162:29 [call] std.io::io_error::from
-std/io.cn:164:15 [call] std.intrinsics::rt_flush
-std/io.cn:164:24 [call] std.io::file_handle::fd_arg recv
-std/io.cn:166:29 [call] std.io::io_error::from
-std/io.cn:171:13 [call] std.intrinsics::rt_close
-std/io.cn:171:22 [call] std.io::file_handle::fd_arg recv
-std/io.cn:181:17 [call] std.intrinsics::rt_close
-std/io.cn:181:26 [call] std.io::file_handle::fd_arg recv
-std/io.cn:186:29 [call] std.io::io_error::from
+std/io.cn:26:22 [call] std.intrinsics::rt_errno_would_block
+std/io.cn:57:23 [call] std.io::file_handle::read trait=reader recv
+std/io.cn:62:17 [call] std.list::list::push$list_byte_ recv
+std/io.cn:62:17 [call] std.list::list::push$list_byte_ recv
+std/io.cn:77:23 [call] std.io::file_handle::read trait=reader recv
+std/io.cn:110:21 [call] std.io::file_handle::write trait=writer recv
+std/io.cn:129:11 [call] std.intrinsics::rt_open
+std/io.cn:131:25 [call] std.io::io_error::from
+std/io.cn:137:30 [call] std.intrinsics::rt_stdin
+std/io.cn:143:30 [call] std.intrinsics::rt_stdout
+std/io.cn:149:30 [call] std.intrinsics::rt_stderr
+std/io.cn:159:15 [call] std.intrinsics::rt_read
+std/io.cn:159:23 [call] std.io::file_handle::fd_arg recv
+std/io.cn:161:29 [call] std.io::io_error::from
+std/io.cn:165:15 [call] std.intrinsics::rt_write
+std/io.cn:165:24 [call] std.io::file_handle::fd_arg recv
+std/io.cn:167:29 [call] std.io::io_error::from
+std/io.cn:169:15 [call] std.intrinsics::rt_flush
+std/io.cn:169:24 [call] std.io::file_handle::fd_arg recv
+std/io.cn:171:29 [call] std.io::io_error::from
+std/io.cn:176:13 [call] std.intrinsics::rt_close
+std/io.cn:176:22 [call] std.io::file_handle::fd_arg recv
+std/io.cn:186:17 [call] std.intrinsics::rt_close
+std/io.cn:186:26 [call] std.io::file_handle::fd_arg recv
+std/io.cn:191:29 [call] std.io::io_error::from
+std/io.cn:200:11 [call] std.intrinsics::rt_pipe
+std/io.cn:204:25 [call] std.io::io_error::from
+std/io.cn:222:11 [call] std.intrinsics::rt_fd_readable
+std/io.cn:227:11 [call] std.intrinsics::rt_fd_writable
+std/io.cn:251:30 [call] std.io::async_file::read trait=async_reader recv
+std/io.cn:256:17 [call] std.list::list::push$list_byte_ recv
+std/io.cn:256:17 [call] std.list::list::push$list_byte_ recv
+std/io.cn:270:30 [call] std.io::async_file::read trait=async_reader recv
+std/io.cn:305:28 [call] std.io::async_file::write trait=async_writer recv
+std/io.cn:319:11 [call] std.intrinsics::rt_set_nonblocking
+std/io.cn:319:30 [call] std.io::async_file::fd_arg recv
+std/io.cn:321:25 [call] std.io::io_error::from
+std/io.cn:333:11 [call] std.intrinsics::rt_open
+std/io.cn:335:25 [call] std.io::io_error::from
+std/io.cn:348:23 [call] std.io::file_handle::fd_arg recv
+std/io.cn:358:11 [call] std.intrinsics::rt_pipe
+std/io.cn:363:32 [call] std.io::io_error::from
+std/io.cn:374:17 [call] std.intrinsics::rt_close
+std/io.cn:374:26 [call] std.io::async_file::fd_arg recv
+std/io.cn:379:29 [call] std.io::io_error::from
+std/io.cn:384:19 [call] std.intrinsics::rt_read
+std/io.cn:384:27 [call] std.io::async_file::fd_arg recv
+std/io.cn:387:34 [call] std.intrinsics::rt_errno_would_block
+std/io.cn:388:31 [call] std.intrinsics::rt_fd_readable
+std/io.cn:390:39 [call] std.io::io_error::from
+std/io.cn:398:19 [call] std.intrinsics::rt_write
+std/io.cn:398:28 [call] std.io::async_file::fd_arg recv
+std/io.cn:401:34 [call] std.intrinsics::rt_errno_would_block
+std/io.cn:402:31 [call] std.intrinsics::rt_fd_writable
+std/io.cn:404:39 [call] std.io::io_error::from
+std/io.cn:410:15 [call] std.intrinsics::rt_flush
+std/io.cn:410:24 [call] std.io::async_file::fd_arg recv
+std/io.cn:412:29 [call] std.io::io_error::from
+std/io.cn:417:13 [call] std.intrinsics::rt_close
+std/io.cn:417:22 [call] std.io::async_file::fd_arg recv
 std/iter.cn:124:45 [call] std.list::list::len recv
 std/iter.cn:124:45 [call] std.list::list::len$list_test_case_ recv
 std/iter.cn:133:13 [call] std.list::list::len recv
@@ -34239,6 +34933,11 @@ std/test.cn:98:19 [call] std.console::println
 std/test.cn:99:20 [call] std.console::println
 std/test.cn:134:17 [call] std.console::println
 std/test.cn:181:5 [call] std.console::println
+std/time.cn:52:29 [call] std.intrinsics::rt_monotonic_now
+std/time.cn:63:23 [call] std.intrinsics::rt_monotonic_now
+std/time.cn:75:11 [call] std.intrinsics::rt_sleep_until
+std/time.cn:75:26 [call] std.intrinsics::rt_monotonic_now
+std/time.cn:80:11 [call] std.intrinsics::rt_sleep_until
 std/traits.hash.cn:109:12 [call] std.intrinsics::rt_bitcast_f64_to_u64
 std/traits.hash.cn:121:12 [call] std.intrinsics::rt_bitcast_f32_to_u32
 std/unicode.cn:63:13 [call] std.list::list::push$list_uint32_ recv
@@ -35016,7 +35715,9 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (778)
+## drop_plans (802)
+async_file own=std.io::async_file::drop fields=[]
+async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
 atomic[T] own=std.sync::atomic::drop fields=[]
 atomic[T] own=std.sync::atomic::drop fields=[]
 atomic[_] own=std.sync::atomic::drop fields=[]
@@ -35125,11 +35826,13 @@ fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=
 fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(&mut slice_mut[int32]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&ordering) -> bool own=- fields=[] glue=fn() -> unit
 fn(&slice[T], T) -> option[usize] own=- fields=[] glue=fn() -> unit
 fn(&slice[T], fn(&T) -> bool) -> usize own=- fields=[] glue=fn() -> unit
 fn(&slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(&slice[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(&slice[int32]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&slice[uint32], &slice[uint32], uint32) -> bool own=- fields=[] glue=fn() -> unit
 fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32] own=- fields=[] glue=fn() -> unit
@@ -35210,6 +35913,7 @@ fn() -> option[U] own=- fields=[] glue=fn() -> unit
 fn() -> option[U] own=- fields=[] glue=fn() -> unit
 fn() -> option[int32] own=- fields=[] glue=fn() -> unit
 fn() -> raw_fd own=- fields=[] glue=fn() -> unit
+fn() -> result[raw_pipe, io_errno] own=- fields=[] glue=fn() -> unit
 fn() -> result[unit, test_failure] own=- fields=[] glue=fn() -> unit
 fn() -> self own=- fields=[] glue=fn() -> unit
 fn() -> type_category own=- fields=[] glue=fn() -> unit
@@ -35370,6 +36074,7 @@ fn(_) -> U own=- fields=[] glue=fn() -> unit
 fn(_) -> _ own=- fields=[] glue=fn() -> unit
 fn(_) -> atomic[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> bool own=- fields=[] glue=fn() -> unit
+fn(_) -> duration own=- fields=[] glue=fn() -> unit
 fn(_) -> example_type[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> float32 own=- fields=[] glue=fn() -> unit
 fn(_) -> float64 own=- fields=[] glue=fn() -> unit
@@ -35400,6 +36105,7 @@ fn(_) -> slice[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> slice_mut[_] own=- fields=[] glue=fn() -> unit
 fn(_) -> str own=- fields=[] glue=fn() -> unit
 fn(_) -> task[option[_], never, io] own=- fields=[] glue=fn() -> unit
+fn(_) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(_) -> task[unit, never, io] own=- fields=[] glue=fn() -> unit
 fn(_) -> uint64 own=- fields=[] glue=fn() -> unit
 fn(_) -> unit own=- fields=[] glue=fn() -> unit
@@ -35411,10 +36117,12 @@ fn(_, &byte) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &byte) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &char) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &char) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &duration) -> instant own=- fields=[] glue=fn() -> unit
 fn(_, &float32) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &float32) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &float64) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &float64) -> ordering own=- fields=[] glue=fn() -> unit
+fn(_, &instant) -> duration own=- fields=[] glue=fn() -> unit
 fn(_, &int128) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &int128) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &int16) -> bool own=- fields=[] glue=fn() -> unit
@@ -35430,12 +36138,17 @@ fn(_, &isize) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &money) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &money) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &mut list[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &mut list[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(_, &mut slice_mut[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
 fn(_, &mut slice_mut[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &mut slice_mut[byte]) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(_, &self) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &self) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &slice[byte]) -> result[unit, io_error] own=- fields=[] glue=fn() -> unit
 fn(_, &slice[byte]) -> result[usize, io_error] own=- fields=[] glue=fn() -> unit
+fn(_, &slice[byte]) -> task[unit, io_error, io] own=- fields=[] glue=fn() -> unit
+fn(_, &slice[byte]) -> task[usize, io_error, io] own=- fields=[] glue=fn() -> unit
 fn(_, &uint128) -> bool own=- fields=[] glue=fn() -> unit
 fn(_, &uint128) -> ordering own=- fields=[] glue=fn() -> unit
 fn(_, &uint16) -> bool own=- fields=[] glue=fn() -> unit
@@ -35557,6 +36270,7 @@ fn(int64) -> B own=- fields=[] glue=fn() -> unit
 fn(int64) -> int64 own=- fields=[] glue=fn() -> unit
 fn(int64) -> list[int64] own=- fields=[] glue=fn() -> unit
 fn(int64) -> str own=- fields=[] glue=fn() -> unit
+fn(int64) -> task[unit] own=- fields=[] glue=fn() -> unit
 fn(int64) -> unit own=- fields=[] glue=fn() -> unit
 fn(int64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
 fn(io_errno) -> io_error own=- fields=[] glue=fn() -> unit
@@ -35588,6 +36302,7 @@ fn(positive) -> int32 own=- fields=[] glue=fn() -> unit
 fn(raw_fd) -> result[unit, io_errno] own=- fields=[] glue=fn() -> unit
 fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno] own=- fields=[] glue=fn() -> unit
 fn(raw_fd, &slice[byte]) -> result[usize, io_errno] own=- fields=[] glue=fn() -> unit
+fn(raw_fd, bool) -> result[async_file, io_error] own=- fields=[] glue=fn() -> unit
 fn(small) -> int32 own=- fields=[] glue=fn() -> unit
 fn(str) -> list[uint32] own=- fields=[] glue=fn() -> unit
 fn(str) -> never own=- fields=[] glue=fn() -> unit
@@ -35615,6 +36330,8 @@ fn(uint32) -> bool own=- fields=[] glue=fn() -> unit
 fn(uint32) -> str own=- fields=[] glue=fn() -> unit
 fn(uint32) -> unit own=- fields=[] glue=fn() -> unit
 fn(uint32, usize) -> str own=- fields=[] glue=fn() -> unit
+fn(uint64) -> duration own=- fields=[] glue=fn() -> unit
+fn(uint64) -> task[unit] own=- fields=[] glue=fn() -> unit
 fn(uint64, uint64) -> uint64 own=- fields=[] glue=fn() -> unit
 fn(uint64, uint8, bool) -> str own=- fields=[] glue=fn() -> unit
 fn(uint64, uint8, bool, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
@@ -35744,6 +36461,7 @@ option[fn() -> result[unit, test_failure]] own=- fields=[] variants=[some.0: fn(
 option[mutex_guard[T]] own=- fields=[] variants=[some.0: mutex_guard[T]]
 option[mutex_guard[_]] own=- fields=[] variants=[some.0: mutex_guard[_]]
 option[test_suite] own=- fields=[] variants=[some.0: test_suite]
+pipe_ends own=- fields=[reader: file_handle, writer: file_handle]
 read_guard[T] own=std.sync::read_guard::drop fields=[]
 read_guard[T] own=std.sync::read_guard::drop fields=[]
 read_guard[T] own=std.sync::read_guard::drop fields=[]
@@ -35752,7 +36470,10 @@ read_guard[_] own=std.sync::read_guard::drop fields=[]
 receiver[T] own=std.sync::receiver::drop fields=[]
 receiver[T] own=std.sync::receiver::drop fields=[]
 receiver[T] own=std.sync::receiver::drop fields=[]
+result[async_file, io_error] own=- fields=[] variants=[ok.0: async_file]
+result[async_pipe_ends, io_error] own=- fields=[] variants=[ok.0: async_pipe_ends]
 result[file_handle, io_error] own=- fields=[] variants=[ok.0: file_handle]
+result[pipe_ends, io_error] own=- fields=[] variants=[ok.0: pipe_ends]
 rwlock[T] own=std.sync::rwlock::drop fields=[]
 rwlock[T] own=std.sync::rwlock::drop fields=[]
 rwlock[_] own=std.sync::rwlock::drop fields=[]
@@ -35778,8 +36499,10 @@ take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 task[option[_], never, io] own=- fields=[]
 task[unit, _, io] own=- fields=[]
+task[unit, io_error, io] own=- fields=[]
 task[unit, never, io] own=- fields=[]
 task[unit] own=- fields=[]
+task[usize, io_error, io] own=- fields=[]
 test_case own=- fields=[run: fn() -> result[unit, test_failure]]
 test_suite own=- fields=[cases: list[test_case], before_all: option[fn() -> result[unit, test_failure]], after_all: option[fn() -> result[unit, test_failure]], before_each: option[fn() -> result[unit, test_failure]], after_each: option[fn() -> result[unit, test_failure]]]
 watch_reader[T] own=std.sync::watch_reader::drop fields=[]
@@ -35796,7 +36519,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (1975)
+## borrow_bearing_types (1998)
 &K
 &T
 &T
@@ -35850,6 +36573,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &U
 &_
 &_
+&async_file
 &atomic[T]
 &bag[T]
 &bag[int32]
@@ -35864,6 +36588,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &char
 &counter
 &counter
+&duration
 &enumerate_iter[I, T]
 &file_handle
 &float32
@@ -35885,6 +36610,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &holder[int32]
 &holder[int64]
 &inspect_iter[I, T]
+&instant
 &int128
 &int16
 &int32
@@ -35932,6 +36658,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut T
 &mut _
 &mut acc
+&mut async_file
 &mut atomic[T]
 &mut chain_iter[I, J, T]
 &mut countdown
@@ -36053,6 +36780,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &option[fn() -> result[unit, test_failure]]
 &ordering
 &peekable_iter[I, T]
+&raw_fd
 &read_guard[T]
 &read_guard[T]
 &receiver[T]
@@ -36865,11 +37593,13 @@ fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit
 fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit
 fn(&mut slice_mut[T], usize, usize, usize, &fn(&T, &T) -> ordering) -> unit
 fn(&mut slice_mut[byte]) -> result[usize, io_error]
+fn(&mut slice_mut[byte]) -> task[usize, io_error, io]
 fn(&mut slice_mut[int32]) -> unit
 fn(&ordering) -> bool
 fn(&slice[T], T) -> option[usize]
 fn(&slice[T], fn(&T) -> bool) -> usize
 fn(&slice[byte]) -> result[usize, io_error]
+fn(&slice[byte]) -> task[usize, io_error, io]
 fn(&slice[int32]) -> int32
 fn(&slice[uint32], &slice[uint32], uint32) -> bool
 fn(&slice[uint32], &slice[uint32], uint32) -> option[uint32]
@@ -36950,6 +37680,7 @@ fn() -> option[U]
 fn() -> option[U]
 fn() -> option[int32]
 fn() -> raw_fd
+fn() -> result[raw_pipe, io_errno]
 fn() -> result[unit, test_failure]
 fn() -> self
 fn() -> type_category
@@ -37118,6 +37849,7 @@ fn(_) -> _
 fn(_) -> atomic[_]
 fn(_) -> bool
 fn(_) -> bool
+fn(_) -> duration
 fn(_) -> example_type[_]
 fn(_) -> float32
 fn(_) -> float64
@@ -37160,6 +37892,7 @@ fn(_) -> slice_mut[_]
 fn(_) -> str
 fn(_) -> str
 fn(_) -> task[option[_], never, io]
+fn(_) -> task[unit, io_error, io]
 fn(_) -> task[unit, never, io]
 fn(_) -> uint64
 fn(_) -> unit
@@ -37171,10 +37904,12 @@ fn(_, &byte) -> bool
 fn(_, &byte) -> ordering
 fn(_, &char) -> bool
 fn(_, &char) -> ordering
+fn(_, &duration) -> instant
 fn(_, &float32) -> bool
 fn(_, &float32) -> ordering
 fn(_, &float64) -> bool
 fn(_, &float64) -> ordering
+fn(_, &instant) -> duration
 fn(_, &int128) -> bool
 fn(_, &int128) -> ordering
 fn(_, &int16) -> bool
@@ -37190,12 +37925,17 @@ fn(_, &isize) -> ordering
 fn(_, &money) -> bool
 fn(_, &money) -> ordering
 fn(_, &mut list[byte]) -> result[usize, io_error]
+fn(_, &mut list[byte]) -> task[usize, io_error, io]
 fn(_, &mut slice_mut[byte]) -> result[unit, io_error]
 fn(_, &mut slice_mut[byte]) -> result[usize, io_error]
+fn(_, &mut slice_mut[byte]) -> task[unit, io_error, io]
+fn(_, &mut slice_mut[byte]) -> task[usize, io_error, io]
 fn(_, &self) -> bool
 fn(_, &self) -> ordering
 fn(_, &slice[byte]) -> result[unit, io_error]
 fn(_, &slice[byte]) -> result[usize, io_error]
+fn(_, &slice[byte]) -> task[unit, io_error, io]
+fn(_, &slice[byte]) -> task[usize, io_error, io]
 fn(_, &uint128) -> bool
 fn(_, &uint128) -> ordering
 fn(_, &uint16) -> bool
@@ -37318,6 +38058,7 @@ fn(int64) -> B
 fn(int64) -> int64
 fn(int64) -> list[int64]
 fn(int64) -> str
+fn(int64) -> task[unit]
 fn(int64) -> unit
 fn(int64, uint8, bool, str, format_spec) -> str
 fn(io_errno) -> io_error
@@ -37349,6 +38090,7 @@ fn(positive) -> int32
 fn(raw_fd) -> result[unit, io_errno]
 fn(raw_fd, &mut slice_mut[byte]) -> result[usize, io_errno]
 fn(raw_fd, &slice[byte]) -> result[usize, io_errno]
+fn(raw_fd, bool) -> result[async_file, io_error]
 fn(small) -> int32
 fn(str) -> list[uint32]
 fn(str) -> never
@@ -37376,6 +38118,8 @@ fn(uint32) -> bool
 fn(uint32) -> str
 fn(uint32) -> unit
 fn(uint32, usize) -> str
+fn(uint64) -> duration
+fn(uint64) -> task[unit]
 fn(uint64, uint64) -> uint64
 fn(uint64, uint8, bool) -> str
 fn(uint64, uint8, bool, str, format_spec) -> str
@@ -37734,8 +38478,10 @@ take_while_iter[I, T]
 take_while_iter[I, T]
 task[option[_], never, io]
 task[unit, _, io]
+task[unit, io_error, io]
 task[unit, never, io]
 task[unit]
+task[usize, io_error, io]
 test_case
 test_suite
 vec[T, 2]
@@ -37842,7 +38588,10 @@ max
 min
 type_category
 
-## synthesized_trait_defaults (3)
+## synthesized_trait_defaults (6)
+std.io::async_file::read_exact
+std.io::async_file::read_to_end
+std.io::async_file::write_all
 std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
@@ -38113,7 +38862,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (261)
+## synthesized_decls (264)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$field_info
@@ -38351,6 +39100,8 @@ pair_of$int32
 pair_of$int64
 partition_point$uint32
 read_exact
+read_exact
+read_to_end
 read_to_end
 resize$_int64__int32_
 resize$_usize__usize_
@@ -38373,6 +39124,7 @@ total$5
 width_of$int32
 width_of$int64
 width_of$int8
+write_all
 write_all
 zeros$3
 

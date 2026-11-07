@@ -1,0 +1,76 @@
+module codegen_stress.io_event_loop
+
+# expect: 2048961
+
+# `io` tasks waiting in the event loop: timers, a race whose losing sleeper
+# is cancelled, and a pipe whose reader starts before its writer. The writer
+# sends more than a pipe holds, so it has to wait for the reader to drain it,
+# and the reader sees the end of the input when the writer's end is dropped.
+#
+# Tagged sleeps: 1 + 2 + 4 = 7. Race winner: 40 * 10 = 400. Pipe: 50 chunks
+# of 4096 bytes is 204800 bytes, each chunk holding 0..15 repeating (30720 per
+# chunk, 1536000 in all), so 1740800. Durations: 1500 ms * 200 = 300000.
+# `sleep_until` waited long enough: 7754.
+# 7 + 400 + 1740800 + 300000 + 7754 = 2048961.
+
+use std.time.{duration, instant, now, sleep, sleep_until}
+use std.io.{async_pipe, async_file, async_reader, async_writer}
+
+async def tagged(ms: uint64, tag: int64) -> int64:
+    await sleep(duration.from_millis(ms))
+    return tag
+
+async def write_chunks(w: async_file, chunks: int64) -> int64:
+    var out = w
+    var buf: array[byte, 4096] = [0; 4096]
+    var i: usize = 0
+    while i < 4096:
+        buf[i] = (i % 16) as byte
+        i = i + 1
+    await sleep(duration.from_millis(5))
+    var sent: int64 = 0
+    while sent < chunks:
+        match await out.write_all(&buf[0..4096]):
+            @ok(_) =>:
+                sent = sent + 1
+            @err(_) => return -1
+    return sent
+
+async def read_all(r: async_file) -> int64:
+    var inp = r
+    var got: list[byte] = []
+    match await inp.read_to_end(&mut got):
+        @ok(n) =>:
+            var sum: int64 = 0
+            for b in &got:
+                sum = sum + ((*b) as int64)
+            return (n as int64) + sum
+        @err(_) => return -1
+
+async def pipe_round_trip() -> int64:
+    match async_pipe():
+        @ok(ends) =>:
+            let (got, sent) = await par:
+                read_all(ends.reader)
+                write_chunks(ends.writer, 50)
+            if sent != 50:
+                return -1
+            return got
+        @err(_) => return -2
+
+async def main() -> int32:
+    let (a, b, c) = await par:
+        tagged(30, 1)
+        tagged(10, 2)
+        tagged(20, 4)
+    let winner = await race:
+        tagged(5000, 99)
+        tagged(10, 40)
+    let start = now()
+    await sleep_until(start.after(&duration.from_millis(15)))
+    let waited = start.elapsed().as_millis()
+    let late = if waited >= 15: 7754 else: 0
+    let piped = await pipe_round_trip()
+    let d = duration.from_secs(1).as_millis() + duration.from_micros(500000).as_millis()
+    let total = (a + b + c) + winner * 10 + piped + (d as int64) * 200 + late
+    return total as int32

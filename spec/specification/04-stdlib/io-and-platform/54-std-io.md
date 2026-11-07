@@ -2,7 +2,7 @@
 
 **Status:** Partial
 
-Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, and the `file_handle` type.
+Byte-level I/O: error types, the `reader`/`writer` traits, `open_options`, the `file_handle` type, pipes, and asynchronous I/O for `io` tasks.
 
 `std.io` (`src/std/io.cn`) is the foundation `std.console` and `std.fs.path` build on: `std.console` implements printing in terms of `file_handle`'s `writer` impl, and `std.string` builds on `std.io`'s `writer` trait for its own formatting entry points.
 
@@ -26,7 +26,7 @@ impl from[io_errno] for io_error:
     def from(e: io_errno) -> io_error
 ```
 
-Maps raw error codes to variants by numeric code: `2` → `@not_found`, `13` → `@permission_denied`, `17` → `@already_exists`, `4` → `@interrupted`, `11` → `@would_block`, `32` → `@broken_pipe`; every other code becomes `@other(e)`. Every intrinsic in this module returns `result[T, io_errno]`; every public wrapper function converts that to `result[T, io_error]` through this `from` impl at the boundary — the pattern used throughout the standard library for propagating raw OS errors (see [`std.platform`](56-std-platform.md)).
+Maps raw error codes to variants by numeric code: `2` → `@not_found`, `13` → `@permission_denied`, `17` → `@already_exists`, `4` → `@interrupted`, the host's `EAGAIN` → `@would_block`, `32` → `@broken_pipe`; every other code becomes `@other(e)`. `EAGAIN` is 11 on Linux and 35 on macOS, so it is read from `rt_errno_would_block()` rather than written as a number. Every intrinsic in this module returns `result[T, io_errno]`; every public wrapper function converts that to `result[T, io_error]` through this `from` impl at the boundary — the pattern used throughout the standard library for propagating raw OS errors (see [`std.platform`](56-std-platform.md)).
 
 ### `open_options`
 
@@ -83,7 +83,17 @@ intrinsic def rt_close(fd: raw_fd) -> result[unit, io_errno]
 intrinsic def rt_read(fd: raw_fd, buf: &mut slice_mut[byte]) -> result[usize, io_errno]
 intrinsic def rt_write(fd: raw_fd, buf: &slice[byte]) -> result[usize, io_errno]
 intrinsic def rt_flush(fd: raw_fd) -> result[unit, io_errno]
+
+pub type raw_pipe = { read: int64, write: int64 }
+intrinsic def rt_pipe() -> result[raw_pipe, io_errno]
+intrinsic def rt_set_nonblocking(fd: raw_fd) -> result[unit, io_errno]
+intrinsic def rt_errno_would_block() -> int32
+
+intrinsic def rt_fd_readable(fd: int64) -> task[unit]
+intrinsic def rt_fd_writable(fd: int64) -> task[unit]
 ```
+
+`rt_pipe` makes a pipe whose ends are closed when the program runs another one. `rt_set_nonblocking` sets `O_NONBLOCK` on a descriptor. `rt_fd_readable` and `rt_fd_writable` return a task that finishes when the descriptor is ready, from the event loop behind the `io` context ([The Task Scheduler](../../05-implementation/69-task-scheduler.md#the-io-event-loop)). An error or hang-up on the descriptor also finishes it, so the read or write that follows reports the condition. A regular file, a directory, or a descriptor that is not open finishes it at once.
 
 Native entry points, implemented on both backends (`src/runtime/io.cpp`, `src/bytecode/vm.cpp`, `src/llvm_codegen/codegen.cpp`) via the shared intrinsic-dispatch table (`src/intrinsics.h`). None of these is called directly by ordinary code; `file_handle` and the module-level `open`/`stdin_handle`/`stdout_handle`/`stderr_handle` functions wrap them.
 
@@ -119,9 +129,91 @@ pub def close(mut self) -> result[unit, io_error]
 
 Explicitly closes the handle via `rt_close`, sets `self.fd` to the sentinel `raw_fd { value: -1 }` and `owns` to false, and returns the result (unlike `drop`, which discards it). Intended for callers that need to observe a close failure. A `file_handle` not explicitly closed is closed by `drop`.
 
+## Pipes
+
+```cinder
+pub type pipe_ends = { reader: file_handle, writer: file_handle }
+pub def pipe() -> result[pipe_ends, io_error]
+```
+
+`pipe` makes a pipe with blocking ends: bytes written to `writer` are read from `reader`. Each end owns its descriptor. A read returns zero once every copy of the write end is closed.
+
+## Asynchronous I/O
+
+An `io` task that reads or writes a descriptor that is not ready suspends instead of blocking its worker thread. The descriptor is non-blocking, so a read or write that cannot proceed fails with `EAGAIN`; the task then awaits the descriptor's readiness and tries again. Other tasks run on the thread in the meantime.
+
+```cinder
+pub async def readable(fd: &raw_fd) -> unit
+pub async def writable(fd: &raw_fd) -> unit
+```
+
+`readable` and `writable` suspend the calling task until the descriptor can be read or written without blocking, or has an error or hang-up. They return at once for a regular file, which never blocks.
+
+### `async_reader` and `async_writer`
+
+```cinder
+pub trait async_reader:
+    async def read(mut self, buf: &mut slice_mut[byte]) -> result[usize, io_error]
+    async def read_to_end(mut self, out: &mut list[byte]) -> result[usize, io_error]
+    async def read_exact(mut self, buf: &mut slice_mut[byte]) -> result[unit, io_error]
+
+pub trait async_writer:
+    async def write(mut self, buf: &slice[byte]) -> result[usize, io_error]
+    async def flush(mut self) -> result[unit, io_error]
+    async def write_all(mut self, buf: &slice[byte]) -> result[unit, io_error]
+```
+
+These mirror `reader` and `writer`. `read` and `write` are required; `read` suspends until at least one byte or the end of the input is available, and `write` until at least one byte can be written. The provided defaults loop as their blocking counterparts do: `read_to_end` until a zero-length read, `read_exact` until the buffer is full (`@unexpected_eof` if the input ends first), and `write_all` until every byte is written (`@broken_pipe` if a write accepts nothing).
+
+### `async_file`
+
+```cinder
+pub type async_file = { fd: raw_fd, owns: bool }
+
+pub async def open_async(path: str, opts: open_options) -> result[async_file, io_error]
+pub def into_async(f: file_handle) -> result[async_file, io_error]
+pub type async_pipe_ends = { reader: async_file, writer: async_file }
+pub def async_pipe() -> result[async_pipe_ends, io_error]
+```
+
+`async_file` is a handle whose descriptor is non-blocking. It implements `async_reader` and `async_writer`, and `drop` closes the descriptor when `owns` is set. `close(mut self)` closes it explicitly and reports the result, as for `file_handle`. `read` and `write` retry after `@interrupted`.
+
+- `open_async` opens a file with a non-blocking descriptor. The open itself does not suspend. Opening a FIFO does not wait for its other end, and opening one for writing fails with `@other` when nothing has it open for reading.
+- `into_async` makes an existing handle's descriptor non-blocking and moves it into an `async_file`. The descriptor's file description is shared with every copy of it, so making a standard stream asynchronous also changes it for the process that started this one.
+- `async_pipe` makes a pipe whose ends are both non-blocking.
+
+```cinder
+use std.io.{async_pipe, async_file, async_reader, async_writer}
+
+async def produce(w: async_file) -> unit:
+    var out = w
+    let bytes: array[byte, 3] = [1, 2, 3]
+    let _ = await out.write_all(&bytes[0..3])
+
+async def consume(r: async_file) -> usize:
+    var inp = r
+    var got: list[byte] = []
+    return match await inp.read_to_end(&mut got):
+        @ok(n) => n
+        @err(_) => 0
+
+async def main() -> int32:
+    match async_pipe():
+        @ok(ends) =>:
+            let (n, _) = await par:
+                consume(ends.reader)
+                produce(ends.writer)
+            return n as int32
+        @err(_) => return 1
+```
+
+The consumer starts first and suspends on the empty pipe. It sees the end of the input when the producer's end is dropped.
+
 ## Implementation status
 
-Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics. A handle is dropped where [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md) says values drop; the cases that still leak are listed in item 6 of [todo.md](../../../todo.md).
+Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics, on both backends.
+
+- `result.unwrap()` on a handle drops the handle it returns: `open(path, opts).unwrap()` and `async_pipe().unwrap()` give back a handle whose descriptor is already closed. Match on the result instead. This is item 16 of [todo.md](../../../todo.md). A handle is dropped where [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md) says values drop; the cases that still leak are listed in item 6 of [todo.md](../../../todo.md).
 
 ## See also
 

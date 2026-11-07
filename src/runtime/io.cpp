@@ -140,7 +140,8 @@ auto cinder_rt_pipe() -> uint64_t * {
 auto cinder_rt_set_nonblocking(uint64_t *fd) -> uint64_t * {
   const int descriptor = raw_fd_of(fd);
   const int flags = ::fcntl(descriptor, F_GETFL); // NOLINT
-  if (flags < 0 || ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
+  if (flags < 0 ||
+      ::fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
     return make_result_err(errno);
   }
   return make_result_ok(0);

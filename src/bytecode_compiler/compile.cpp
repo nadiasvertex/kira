@@ -2735,6 +2735,23 @@ private:
     if (auto value = compile_expr_into(place, *temp); !value.has_value()) {
       return std::unexpected(value.error());
     }
+    if (is_generator_step_) {
+      // A coroutine's frame is gone once it suspends, and the borrow may be
+      // handed to a task that reads it later (`await f(&xs[a..b])`), so the
+      // temporary lives in a cell instead. The cell is not freed, like the
+      // cells of borrowed locals.
+      auto cell = alloc_register(place.span);
+      if (!cell.has_value()) {
+        return std::unexpected(cell.error());
+      }
+      emit_alloc_register_images(*cell, 1);
+      emit_store_register_image(*cell, 0, *temp);
+      address_taken_.push_back(*cell);
+      emit_op(opcode::op_move);
+      emit_register(dst);
+      emit_register(*cell);
+      return {};
+    }
     address_taken_.push_back(*temp);
     emit_op(opcode::op_addr_local);
     emit_register(dst);
@@ -3810,11 +3827,10 @@ private:
   [[nodiscard]] auto compile_match(const hir::hir_match &match,
                                    std::optional<virtual_reg> want_result)
       -> std::expected<void, compile_error> {
-    auto subject_reg = compile_expr(*match.subject);
+    auto subject_reg = compile_subject(match.subject_symbol, *match.subject);
     if (!subject_reg.has_value()) {
       return std::unexpected(subject_reg.error());
     }
-    locals_.emplace(match.subject_symbol, *subject_reg);
     const auto subject_type = std::optional<type_id>(match.subject->type);
 
     auto end_placeholders = std::vector<size_t>{};
@@ -4083,6 +4099,29 @@ private:
       return std::unexpected(reg.error());
     }
     emit_load_zero(*reg);
+    return *reg;
+  }
+
+  /// Evaluates the subject of a `match`, `while let` or `let ... else` and
+  /// binds it to `symbol`. A generator step function already holds a
+  /// register for a subject that is live across a suspension, which a
+  /// resumed poll reloads; the value goes into that register, since
+  /// `locals_.emplace` would leave it unwritten.
+  [[nodiscard]] auto compile_subject(hir::symbol_id symbol,
+                                     const hir::hir_expr &subject)
+      -> std::expected<virtual_reg, compile_error> {
+    if (const auto existing = lookup_local(symbol)) {
+      if (auto result = compile_expr_into(subject, *existing);
+          !result.has_value()) {
+        return std::unexpected(result.error());
+      }
+      return *existing;
+    }
+    auto reg = compile_expr(subject);
+    if (!reg.has_value()) {
+      return std::unexpected(reg.error());
+    }
+    locals_.insert_or_assign(symbol, *reg);
     return *reg;
   }
 
@@ -4463,11 +4502,10 @@ private:
   [[nodiscard]] auto compile_while_let(const hir::hir_while_let &loop)
       -> std::expected<void, compile_error> {
     const auto loop_start = writer_.current_offset();
-    auto subject_reg = compile_expr(*loop.subject);
+    auto subject_reg = compile_subject(loop.subject_symbol, *loop.subject);
     if (!subject_reg.has_value()) {
       return std::unexpected(subject_reg.error());
     }
-    locals_.insert_or_assign(loop.subject_symbol, *subject_reg);
     const auto subject_type = std::optional<type_id>(loop.subject->type);
 
     auto test_reg =
@@ -4517,11 +4555,10 @@ private:
   /// something re-verified here (mirrors the node's own doc comment).
   [[nodiscard]] auto compile_let_else(const hir::hir_let_else &node)
       -> std::expected<void, compile_error> {
-    auto subject_reg = compile_expr(*node.initializer);
+    auto subject_reg = compile_subject(node.subject_symbol, *node.initializer);
     if (!subject_reg.has_value()) {
       return std::unexpected(subject_reg.error());
     }
-    locals_.emplace(node.subject_symbol, *subject_reg);
     const auto subject_type = std::optional<type_id>(node.initializer->type);
 
     auto test_reg =

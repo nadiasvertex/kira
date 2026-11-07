@@ -27,8 +27,8 @@ enum class interest : uint8_t {
 
 /// A task that finishes once `fd` is ready for `what`. An error or hang-up on
 /// the descriptor also finishes it, so the read or write that follows reports
-/// the condition. So does a descriptor the readiness queue cannot watch, such
-/// as a regular file under epoll, or an invalid one. The scheduler has
+/// the condition. A regular file or directory, which never blocks, finishes
+/// it at once, as does a descriptor that is not open. The scheduler has
 /// already taken the task over, on the `io` pool.
 [[nodiscard]] auto fd_waiter(int fd, interest what) -> uint64_t *;
 

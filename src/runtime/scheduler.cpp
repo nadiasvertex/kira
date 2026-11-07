@@ -134,12 +134,17 @@ auto record_of(const uint64_t *task) -> task_record * {
   return reinterpret_cast<task_record *>(task[co::k_record_slot]);
 }
 
+/// Atomic, because a task's dropper reads the status outside the lock to
+/// decide whether there is anything to cancel.
 auto status_of(const uint64_t *task) -> uint64_t {
-  return task[co::k_status_slot];
+  return std::atomic_ref(
+             const_cast<uint64_t *>(task)[co::k_status_slot]) // NOLINT
+      .load(std::memory_order_acquire);
 }
 
 void set_status(uint64_t *task, co::status s) {
-  task[co::k_status_slot] = co::raw(s);
+  std::atomic_ref(task[co::k_status_slot])
+      .store(co::raw(s), std::memory_order_release);
 }
 
 auto pool_index(pool p) -> size_t { return static_cast<size_t>(p); }

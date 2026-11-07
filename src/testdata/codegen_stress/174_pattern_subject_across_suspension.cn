@@ -1,0 +1,46 @@
+module codegen_stress.pattern_subject_across_suspension
+
+# expect: 7251221
+
+# A `match`, `while let` or `let ... else` keeps its subject in a local that
+# each arm's bindings read. When an earlier arm can suspend, that local is
+# part of the task's suspended state, and each tier has to store the subject
+# into the slot a resumed poll reads. Before this was fixed, the VM read an
+# unwritten register and the LLVM tier refused the function.
+
+async def two() -> int64:
+    return 2
+
+async def pick(r: result[int64, int64]) -> int64:
+    match r:
+        @ok(v) =>:
+            let a = await two()
+            return v * 10 + a
+        @err(e) => return e
+
+async def drain(xs: list[int64]) -> int64:
+    var total: int64 = 0
+    var i: usize = 0
+    while i < xs.len():
+        match xs.get(i):
+            @some(x) =>:
+                let a = await two()
+                total = total + x * a
+            @none => return -1
+        i = i + 1
+    return total
+
+async def let_else_case(o: option[int64]) -> int64:
+    let @some(v) = o else:
+        return -1
+    let a = await two()
+    return v + a
+
+async def main() -> int32:
+    let a = await pick(@ok(7))
+    let b = await pick(@err(5))
+    let c = await drain([1, 2, 3])
+    let d = await let_else_case(@some(100))
+    let e = await let_else_case(@none)
+    # a = 72, b = 5, c = 12, d = 102, e = -1
+    return (a * 100000 + b * 10000 + c * 100 + (d - 100) * 10 + (e + 2)) as int32

@@ -105,6 +105,8 @@ Each chapter opens with a status line:
 56. [`std.platform`](04-stdlib/io-and-platform/56-std-platform.md)
 57. [`std.fs.path`](04-stdlib/io-and-platform/57-std-fs-path.md)
 
+- [`std.time`](04-stdlib/io-and-platform/std-time.md) — durations, the monotonic clock, and sleeping
+
 **Type Traits** (`04-stdlib/type-traits/`)
 
 58. [`std.traits` — Type Predicates and Transformations](04-stdlib/type-traits/58-std-traits.md)
@@ -126,7 +128,7 @@ Informative. Describes the reference compiler, not requirements on the language.
 66. [HIR and the Bytecode VM](05-implementation/66-hir-and-bytecode-vm.md)
 67. [LLVM and Ahead-of-Time Compilation](05-implementation/67-llvm-and-aot.md)
 68. [JIT Execution](05-implementation/68-jit-execution.md) — Partial
-69. [The Task Scheduler](05-implementation/69-task-scheduler.md) — Partial
+69. [The Task Scheduler](05-implementation/69-task-scheduler.md)
 
 ## Diagnostics
 

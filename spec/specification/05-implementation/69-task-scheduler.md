@@ -1,8 +1,8 @@
 # 69. The Task Scheduler
 
-**Status:** Partial
+**Status:** Implemented
 
-The shared runtime that runs tasks on worker threads for both backends. It lives in `src/runtime/scheduler.{h,cpp}`, behind a C++ interface the VM uses and a C ABI that compiled code calls.
+The shared runtime that runs tasks on worker threads for both backends, with an event loop for tasks that wait on the operating system. It lives in `src/runtime/scheduler.{h,cpp}` and `src/runtime/reactor.{h,cpp}`, behind a C++ interface the VM uses and a C ABI that compiled code calls.
 
 ## Pools and workers
 
@@ -32,6 +32,18 @@ A panic on a thread that is not a worker has nowhere to propagate, and that cove
 
 `std.sync` builds its locks and channels on three calls that wait on a 64-bit word. `wait_word(word, expected)` blocks the calling thread while the word holds `expected`; on a worker it gives up the worker's place like any other blocking wait. `word_waiter(word, expected)` returns a task that finishes once the word no longer holds `expected`, which a task awaits to suspend instead of block. `wake_word(word)` wakes every wait on the word. A wait re-reads the word under the scheduler's lock and a wake takes the same lock, so a change followed by a wake cannot be missed. The waiters are kept in a table keyed by the word's address. The calls are reached from Cinder as `rt_word_wait`, `rt_word_waiter` and `rt_word_wake`, together with `rt_atomic_load`, `rt_atomic_store` and `rt_atomic_compare_exchange`, which are sequentially consistent.
 
+## The `io` event loop
+
+A task that waits for a file descriptor or a deadline waits in the reactor (`src/runtime/reactor.{h,cpp}`) and holds no thread. One reactor thread waits on the operating system's readiness queue (kqueue on macOS and the BSDs, epoll on Linux) and on a heap of timers ordered by deadline. It starts on first use and lives for the rest of the process; its state is leaked on purpose, like the scheduler's.
+
+A waiter is a small native coroutine object, built the same way as a word waiter and spawned into the `io` pool at once. `fd_waiter(fd, interest)` finishes when the descriptor is ready to read or write, and `timer_waiter(deadline)` when the monotonic clock (`monotonic_now`) reaches the deadline. Its first poll registers it with the reactor and returns `pending`. The reactor marks a ready waiter in a stage word in its second value slot, outside the scheduler's lock, and then wakes it with `scheduler::wake`, so its next poll returns `done`. The reactor never holds its own lock while it calls the scheduler. A wake that arrives while the first poll is still running is remembered by the scheduler, as for any other task.
+
+- **Descriptors.** Each descriptor has a list of read waiters and a list of write waiters. A registration is one-shot: an event takes every waiter in the direction it reports, and the descriptor is armed again only when a new waiter arrives. kqueue keeps the read and write filters apart. epoll keeps one registration per descriptor, which a one-shot event disables entirely, so the reactor re-arms it for the direction that still has waiters. An error or hang-up wakes waiters in both directions. A regular file, a directory, or a descriptor that is not open is never registered, and its waiter finishes on its first poll: such a descriptor never blocks, epoll refuses it, and kqueue would report an empty regular file as never readable.
+- **Timers.** A timer whose deadline has passed finishes on its first poll. An earlier timer than the one the reactor is waiting for writes a byte to a wake-up pipe the readiness queue also watches, so the wait ends and is recomputed. A timeout is rounded up to whole milliseconds for epoll, so a sleep never ends early.
+- **Cancellation.** A cancelled waiter is polled again by the scheduler and finishes. It stays in the reactor's list until its descriptor's next event or its deadline, when waking a finished task does nothing. Task objects are never freed, so the stale entry cannot point at freed memory.
+
+The calls reach Cinder as `rt_fd_readable`, `rt_fd_writable`, `rt_sleep_until` and `rt_monotonic_now`, with `rt_pipe`, `rt_set_nonblocking` and `rt_errno_would_block` for setting up non-blocking descriptors. `std.io`'s `async_file` and `std.time`'s `sleep` are written in Cinder over them ([`std.io`](../04-stdlib/io-and-platform/54-std-io.md#asynchronous-io), [`std.time`](../04-stdlib/io-and-platform/std-time.md)).
+
 ## Process shutdown
 
 `shutdown` cancels every unfinished task and waits up to one second for them to stop. It reports whether they all did, since a task that never reaches a cancellation check cannot be stopped. It runs at process exit through `atexit`, and `cinder run` calls it before freeing the VM and module; if a task is still running, the driver calls `_Exit` with the program's status instead of freeing what the task reads. A task nobody awaited is therefore cancelled when the entry function returns.
@@ -48,8 +60,4 @@ The losers of a `race` are the exception: they are cancelled but not waited for.
 
 ## Testing
 
-`scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool, cancellation reaching awaited tasks and open crews, a panic in a crew body, and `shutdown`. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153`, `155`–`159` and `169`–`173` (`on(cpu)`, `race` cancelling losers, `crew`, `crew` collecting errors, every exit from a `crew` body, `async:` blocks, borrows held across `await`, `std.sync`, suspending value branches, generic tasks) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.
-
-## Not built
-
-There is no event loop behind `io`. A task that waits on the operating system blocks its worker.
+`reactor_test` runs the event loop with one `io` worker: timers in deadline order, 100 timers waiting together, readers and writers on pipes and on one socket, hang-up, a full pipe, regular files and closed descriptors, and cancelled waiters. `scheduler_test` drives the scheduler with fake step functions, including 400 tasks on a four-worker pool, cancellation reaching awaited tasks and open crews, a panic in a crew body, and `shutdown`. `allocator_test` runs eight threads against the allocator, with the system and the arena allocator. Corpus files `150`–`153`, `155`–`159` and `169`–`175` (`on(cpu)`, `race` cancelling losers, `crew`, `crew` collecting errors, every exit from a `crew` body, `async:` blocks, borrows held across `await`, `std.sync`, suspending value branches, generic tasks, `match` subjects held across `await`, and sleeps and pipes in the event loop) run awaiting tasks, multiword results, `par`, `race` and a shared atomic counter on both backends, and the harness runs them with four `io` workers. `bazelisk test --config=tsan` builds under ThreadSanitizer.

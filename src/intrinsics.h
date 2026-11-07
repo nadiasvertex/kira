@@ -229,17 +229,16 @@ inline constexpr std::array<intrinsic_signature, 66> known_intrinsics = {{
     // The event loop behind `io` (`src/runtime/reactor.h`). Each waiter is a
     // task that finishes when a descriptor is ready or a deadline passes;
     // waiting on the operating system cannot be written in Cinder.
-    intrinsic("rt_fd_readable", wire::ptr,
-              {wire::i64}), // rt_fd_readable (fd),
-    intrinsic("rt_fd_writable", wire::ptr,
-              {wire::i64}), // rt_fd_writable (fd),
+    intrinsic("rt_fd_readable", wire::ptr, {wire::i64}), // rt_fd_readable (fd),
+    intrinsic("rt_fd_writable", wire::ptr, {wire::i64}), // rt_fd_writable (fd),
     intrinsic("rt_sleep_until", wire::ptr,
               {wire::i64}),                       // rt_sleep_until (deadline),
     intrinsic("rt_monotonic_now", wire::i64, {}), // rt_monotonic_now (),
     // Descriptor set-up for asynchronous I/O (`std.io`).
-    intrinsic("rt_pipe", wire::ptr, {}),                    // rt_pipe (),
+    intrinsic("rt_pipe", wire::ptr, {}),                     // rt_pipe (),
     intrinsic("rt_set_nonblocking", wire::ptr, {wire::ptr}), // (fd),
-    intrinsic("rt_errno_would_block", wire::i32, {}), // rt_errno_would_block (),
+    intrinsic("rt_errno_would_block", wire::i32,
+              {}), // rt_errno_would_block (),
 }};
 
 static_assert(std::ranges::none_of(known_intrinsics,

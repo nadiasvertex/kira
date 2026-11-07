@@ -1730,7 +1730,7 @@ auto intrinsic_rt_pipe(std::span<const slot_value> /*args*/) -> slot_value {
 auto intrinsic_rt_set_nonblocking(std::span<const slot_value> args)
     -> slot_value {
   const int fd = raw_fd_of(args[0]);
-  const int flags = ::fcntl(fd, F_GETFL); // NOLINT
+  const int flags = ::fcntl(fd, F_GETFL);                           // NOLINT
   if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0) { // NOLINT
     return make_result_err(errno);
   }
@@ -2550,7 +2550,9 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto generator_reg = ops.reg();
         f.pc = ops.pos();
         auto *gen_slots = slots_of(f.registers[generator_reg]);
-        if (gen_slots[runtime::coroutine::k_status_slot].u !=
+        // Atomic: a worker may be finishing a task the scheduler owns.
+        if (std::atomic_ref(gen_slots[runtime::coroutine::k_status_slot].u)
+                .load(std::memory_order_acquire) !=
             runtime::coroutine::raw(runtime::coroutine::status::suspended)) {
           f.registers[dst] = slot_value{};
           break;

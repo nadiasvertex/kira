@@ -885,12 +885,13 @@ auto test_compile_sources_typechecks_stdlib_io_and_console() -> void {
   expect(report->error_count == 0, "expected stdlib source to typecheck "
                                    "cleanly: " +
                                        report->diagnostics);
-  expect(report->modules.size() == 31,
+  expect(report->modules.size() == 32,
          "expected std.io, std.console, std.traits (across its 9 files), "
          "std.limits, std.iter, std.algo, std.fmt, std.string, "
          "std.unicode_tables, std.unicode, std.derive, std.fs.path, "
          "std.test, std.platform, std.panic, std.option, std.result, "
-         "std.mem, std.list, std.shared, std.sync, and prelude to all emit "
+         "std.mem, std.list, std.shared, std.sync, std.time, and prelude to "
+         "all emit "
          "metadata");
 }
 

@@ -7,7 +7,7 @@ The modules that ship with the compiler: collections, algorithms, string/formatt
 - [Collections](collections/README.md) — `list`, `deque`, `bitset`, ordered/unordered `map`/`set`, `small_list`
 - [Algorithms](algorithms/README.md) — iterator protocol, lazy adapters, aggregation, sorting/searching
 - [Strings and Formatting](strings-and-formatting/README.md) — `std.string`, `std.format`
-- [I/O and Platform](io-and-platform/README.md) — `std.io`, `std.console`, `std.platform`, `std.fs.path`
+- [I/O and Platform](io-and-platform/README.md) — `std.io`, `std.console`, `std.platform`, `std.fs.path`, `std.time`
 - [Type Traits](type-traits/README.md) — `std.traits`, `std.limits`, meta queries
 - [Testing](testing/README.md) — `std.test`
 

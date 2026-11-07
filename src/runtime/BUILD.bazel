@@ -107,3 +107,14 @@ cc_test(
         "//src/testing",
     ],
 )
+
+# One `io` worker, so a waiter that held its thread would hold up the rest.
+cc_test(
+    name = "reactor_test",
+    srcs = ["reactor_test.cpp"],
+    env = {"CINDER_IO_WORKERS": "1"},
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
+)
