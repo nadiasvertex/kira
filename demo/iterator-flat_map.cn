@@ -24,11 +24,11 @@ def main() -> int32:
     let nums = [1, 2, 3]
 
     var fm = nums.into_iter().flat_map(n => spread(n).into_iter())
-    println("flat={fm.next().unwrap()}")
-    println("flat={fm.next().unwrap()}")
-    println("flat={fm.next().unwrap()}")
-    println("flat={fm.next().unwrap()}")
-    println("flat={fm.next().unwrap()}")
-    println("flat={fm.next().unwrap()}")
+    println("flat={fm.next() or else panic("empty")}")
+    println("flat={fm.next() or else panic("empty")}")
+    println("flat={fm.next() or else panic("empty")}")
+    println("flat={fm.next() or else panic("empty")}")
+    println("flat={fm.next() or else panic("empty")}")
+    println("flat={fm.next() or else panic("empty")}")
     println("done={fm.next().is_none()}")
     return 0

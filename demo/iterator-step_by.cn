@@ -15,10 +15,10 @@ def main() -> int32:
 
     # Every 3rd element, starting with the first
     var by3 = nums.into_iter().step_by(3)
-    println("first={by3.next().unwrap()}")
-    println("second={by3.next().unwrap()}")
-    println("third={by3.next().unwrap()}")
-    println("fourth={by3.next().unwrap()}")
+    println("first={by3.next() or else panic("empty")}")
+    println("second={by3.next() or else panic("empty")}")
+    println("third={by3.next() or else panic("empty")}")
+    println("fourth={by3.next() or else panic("empty")}")
     println("done={by3.next().is_none()}")
 
     # Step of 1 yields every element

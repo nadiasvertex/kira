@@ -80,17 +80,42 @@ error: cannot propagate `{E1}` with `?` in a function that returns `result[_, {E
 
 `option`'s `?` never triggers a conversion — `@none` carries no error payload to convert.
 
+## `or else`
+
+`x or else y` unwraps an `option[T]` or `result[T, E]` and has type `T`. The operand is evaluated once and consumed. On `@some(v)` or `@ok(v)` the result is `v`. On `@none` or `@err(_)` the fallback is evaluated and becomes the result. The fallback is evaluated only in that case.
+
+```cinder
+let port = config.port or else 8080
+let f    = open(path, opts) or else panic("the config file is required")
+let user = cache.get(id) or else return @none
+let n    = parse(line) or else continue
+```
+
+The fallback is either a value of type `T` or an expression that does not return: `panic(...)`, `return [expr]`, `break` or `continue`. These jump forms are accepted only in this position. A literal fallback takes `T`'s width.
+
+With a `result`, the `@err` payload is dropped and the fallback cannot see it. A program that needs the error uses `?`, `match` or `let ... else:`.
+
+`or else` binds more loosely than `or` and more tightly than the pipe `|`, and groups to the right: `a or else b or else 0` is `a or else (b or else 0)`. In a task body the fallback may suspend, as in `o or else await fetch()`. Because `await` binds tighter than `or else`, write `(await f()) or else x` to unwrap an awaited value.
+
+The checker (`infer_or_else` in `src/semantic/check_expr.cpp`) reports these errors:
+
+1. The operand is not an `option` or `result`: `` `or else` needs an `option` or `result` on its left ``.
+2. The fallback has the wrong type: ``the fallback for an `option[str]` must be a `str`, found `int32` ``.
+3. `or` used with an `option` or `result` operand gets the added help ``did you mean `or else`?``.
+
+`or else` lowers to a two-arm `match`, as `?` does, so it needs no support in either backend or in compile-time evaluation.
+
 ## Limitations
 
 Method resolution for `from` selects the first `impl from[...] for E2` block found for `E2`, regardless of its trait argument — a type with two `impl from[...]` blocks for different source error types does not reliably disambiguate between them. 
 
 ## Panics vs. errors
 
-A panic means a bug — an out-of-bounds index, `.unwrap()` on a `@none` believed to be `@some`. Panics are not for expected failure; use `result` for those. `panic()` is a recognized prelude intrinsic (`src/semantic/check.cpp`); `.unwrap()` is defined on `option`/`result` in `src/std/option.cn` / `src/std/result.cn`.
+A panic means a bug — an out-of-bounds index, or a `@none` believed to be `@some`. Panics are not for expected failure; use `result` for those. `panic()` is a recognized prelude intrinsic (`src/semantic/check.cpp`). `option` and `result` have no `unwrap`; write `x or else panic("...")`.
 
 ```cinder
 let v = some_list[999]      # panics if index is out of bounds
-let x = opt.unwrap()        # panics if opt is none
+let x = opt or else panic("opt is none")   # panics if opt is none
 panic("should never reach here")
 ```
 

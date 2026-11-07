@@ -1,0 +1,4 @@
+module sample
+def port(v: result[int32, str]) -> int32:
+    let n = v or else 8080
+    return n

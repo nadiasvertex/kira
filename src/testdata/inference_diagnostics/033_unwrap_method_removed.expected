@@ -1,0 +1,6 @@
+error: no method `unwrap` on type `option[int32]`
+  --> 033_unwrap_method_removed.cn:5:12
+    5 |     return o.unwrap()
+      |            ^^^^^^^^ method not found
+  help: `option` has no `unwrap`. Write `x or else panic("...")` to stop when there is no value, or `x or else <fallback>` to use another value.
+

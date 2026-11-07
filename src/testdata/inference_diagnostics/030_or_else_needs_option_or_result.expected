@@ -1,0 +1,6 @@
+error: `or else` needs an `option` or `result` on its left, found `int32`
+  --> 030_or_else_needs_option_or_result.cn:6:12
+    6 |     return n or else 0
+      |            ^ this is not an `option` or `result`
+  help: `x or else y` gives the value inside an `option` or `result`, or evaluates `y` when there is none.
+

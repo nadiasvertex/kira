@@ -1,0 +1,6 @@
+# `or else` unwraps an `option` or `result`; anything else on its left is
+# rejected with a note on what the operator does.
+module infer_diag.or_else_operand
+
+def wrong(n: int32) -> int32:
+    return n or else 0

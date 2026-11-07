@@ -3437,7 +3437,7 @@ auto parser::parse_expr() -> ast::ptr<ast::expr> {
 }
 
 auto parser::parse_pipe_expr() -> ast::ptr<ast::expr> {
-  auto lhs = parse_or_expr();
+  auto lhs = parse_or_else_expr();
   if (!lhs) {
     return nullptr;
   }
@@ -3446,7 +3446,7 @@ auto parser::parse_pipe_expr() -> ast::ptr<ast::expr> {
   // In expression context, `|` after an expression is the pipe operator.
   while (at(token_kind::pipe)) {
     auto op_tok = advance();
-    auto rhs = parse_or_expr();
+    auto rhs = parse_or_else_expr();
     if (!rhs) {
       emit_unexpected("an expression after `|`");
       rhs = make_error_expr(op_tok.span);
@@ -3463,13 +3463,80 @@ auto parser::parse_pipe_expr() -> ast::ptr<ast::expr> {
   return lhs;
 }
 
+/// `operand or else fallback`. Binds more loosely than `or` and more tightly
+/// than `|`, and groups to the right: `a or else b or else 0` is
+/// `a or else (b or else 0)`.
+///
+/// Grammar:
+///   or_else_expr = or_expr [ "or" "else" or_else_fallback ]
+///   or_else_fallback = or_else_expr | "return" [ expr ] | "break"
+///                    | "continue"
+auto parser::parse_or_else_expr() -> ast::ptr<ast::expr> {
+  auto operand = parse_or_expr();
+  if (!operand) {
+    return nullptr;
+  }
+  if (!(at(token_kind::kw_or) && peek_at(1).is(token_kind::kw_else))) {
+    return operand;
+  }
+  advance(); // `or`
+  advance(); // `else`
+  auto fallback = parse_or_else_fallback();
+  if (!fallback) {
+    emit_unexpected("an expression after `or else`");
+    fallback = make_error_expr(previous_span());
+  }
+  auto node = ast::make<ast::or_else_expr>();
+  node->span = operand->span.merge(fallback->span);
+  node->operand = std::move(operand);
+  node->fallback = std::move(fallback);
+  return node;
+}
+
+auto parser::parse_or_else_fallback() -> ast::ptr<ast::expr> {
+  if (!at_any(token_kind::kw_return, token_kind::kw_break,
+              token_kind::kw_continue)) {
+    return parse_or_else_expr();
+  }
+  // The jump is a statement everywhere else in the language. Here it is
+  // wrapped in a block so the checker types it `never` like any block that
+  // ends by leaving.
+  const auto start = peek().span;
+  ast::ptr<ast::node> jump;
+  if (match(token_kind::kw_return)) {
+    auto stmt = ast::make<ast::return_stmt>();
+    if (!at_any(token_kind::newline, token_kind::dedent, token_kind::eof,
+                token_kind::rparen, token_kind::rbracket, token_kind::rbrace,
+                token_kind::comma, token_kind::colon, token_kind::kw_if,
+                token_kind::kw_where)) {
+      stmt->value = parse_or_else_expr();
+    }
+    stmt->span = start.merge(previous_span());
+    jump = std::move(stmt);
+  } else if (match(token_kind::kw_break)) {
+    auto stmt = ast::make<ast::break_stmt>();
+    stmt->span = start;
+    jump = std::move(stmt);
+  } else {
+    advance(); // `continue`
+    auto stmt = ast::make<ast::continue_stmt>();
+    stmt->span = start;
+    jump = std::move(stmt);
+  }
+  auto block = ast::make<ast::block_expr>();
+  block->span = jump->span;
+  block->stmts.push_back(std::move(jump));
+  return block;
+}
+
 auto parser::parse_or_expr() -> ast::ptr<ast::expr> {
   auto lhs = parse_and_expr();
   if (!lhs) {
     return nullptr;
   }
 
-  while (at(token_kind::kw_or)) {
+  // `or else` is its own operator, one level up.
+  while (at(token_kind::kw_or) && !peek_at(1).is(token_kind::kw_else)) {
     advance();
     auto rhs = parse_and_expr();
     if (!rhs) {

@@ -22,7 +22,7 @@ def main() -> int32:
     # Positional weights: a fold that visited the right elements in the wrong
     # order cannot reach the same total.
     println("fold={xs.iter().values().fold(0, (a, x) => a * 10 + x)}")
-    println("reduce={xs.iter().values().reduce((a, x) => a * 10 + x).unwrap()}")
+    println("reduce={xs.iter().values().reduce((a, x) => a * 10 + x) or else panic("empty")}")
 
     # The empty cases, where `fold` still answers and `reduce` cannot.
     let empty: list[int32] = []
@@ -49,35 +49,35 @@ def main() -> int32:
 
     # `find` returns the *first* match: 4 and 5 both pass, so a terminal
     # returning the last would answer 5.
-    println("find={xs.iter().values().find((x) => *x > 3).unwrap()}")
+    println("find={xs.iter().values().find((x) => *x > 3) or else panic("empty")}")
     println("find_miss={xs.iter().values().find((x) => *x > 9).is_none()}")
 
     # Likewise `find_map`, whose first `@some` is at the 4.
-    println("find_map={xs.iter().values().find_map((x) => if x > 3: @some(x * 100) else: @none).unwrap()}")
+    println("find_map={xs.iter().values().find_map((x) => if x > 3: @some(x * 100) else: @none) or else panic("empty")}")
 
     # 4 sits at index 2, which is neither its value nor the length -- an
     # off-by-one or a returned element rather than an index would show.
-    println("position={xs.iter().values().position((x) => *x > 3).unwrap()}")
+    println("position={xs.iter().values().position((x) => *x > 3) or else panic("empty")}")
     println("position_miss={xs.iter().values().position((x) => *x > 9).is_none()}")
 
     # `last` is 5 and `max` is also 5, so `last` is checked on a source whose
     # final element is *not* the largest.
     let ys = [2, 9, 6]
-    println("last={ys.iter().values().last().unwrap()}")
+    println("last={ys.iter().values().last() or else panic("empty")}")
     println("last_empty={empty.iter().values().last().is_none()}")
 
-    println("nth0={xs.iter().values().nth(0).unwrap()}")
-    println("nth2={xs.iter().values().nth(2).unwrap()}")
+    println("nth0={xs.iter().values().nth(0) or else panic("empty")}")
+    println("nth2={xs.iter().values().nth(2) or else panic("empty")}")
     println("nth_past={xs.iter().values().nth(5).is_none()}")
 
-    println("min={xs.iter().values().min().unwrap()}")
-    println("max={xs.iter().values().max().unwrap()}")
+    println("min={xs.iter().values().min() or else panic("empty")}")
+    println("max={xs.iter().values().max() or else panic("empty")}")
     println("min_empty={empty.iter().values().min().is_none()}")
 
     # A key that reverses the order, so `min_by_key` must disagree with `min`
     # and agree with `max`. Sharing a source with them makes that visible.
-    println("min_by_key={xs.iter().values().min_by_key((x) => 0 - *x).unwrap()}")
-    println("max_by_key={xs.iter().values().max_by_key((x) => 0 - *x).unwrap()}")
+    println("min_by_key={xs.iter().values().min_by_key((x) => 0 - *x) or else panic("empty")}")
+    println("max_by_key={xs.iter().values().max_by_key((x) => 0 - *x) or else panic("empty")}")
 
     # Both halves, and their order within each half. 3 and 4 and 5 pass; the
     # two 1s do not, and stay in the order they were yielded.
@@ -125,10 +125,10 @@ def comparators() -> unit:
     let xs = [3, 1, 4, 1, 5]
     let empty: list[int32] = []
 
-    println("min_by={xs.iter().values().min_by((a, b) => cmp_int(*a, *b)).unwrap()}")
-    println("max_by={xs.iter().values().max_by((a, b) => cmp_int(*a, *b)).unwrap()}")
-    println("min_by_rev={xs.iter().values().min_by((a, b) => rcmp_int(*a, *b)).unwrap()}")
-    println("max_by_rev={xs.iter().values().max_by((a, b) => rcmp_int(*a, *b)).unwrap()}")
+    println("min_by={xs.iter().values().min_by((a, b) => cmp_int(*a, *b)) or else panic("empty")}")
+    println("max_by={xs.iter().values().max_by((a, b) => cmp_int(*a, *b)) or else panic("empty")}")
+    println("min_by_rev={xs.iter().values().min_by((a, b) => rcmp_int(*a, *b)) or else panic("empty")}")
+    println("max_by_rev={xs.iter().values().max_by((a, b) => rcmp_int(*a, *b)) or else panic("empty")}")
     println("min_by_empty={empty.iter().values().min_by((a, b) => cmp_int(*a, *b)).is_none()}")
 
     # Lexicographic: equal, then a difference decided at the second element

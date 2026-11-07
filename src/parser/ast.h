@@ -109,6 +109,7 @@ struct index_expr;
 struct field_expr;
 struct cast_expr;
 struct try_expr;
+struct or_else_expr;
 struct tuple_expr;
 struct array_expr;
 struct struct_expr;
@@ -262,6 +263,7 @@ enum class node_kind : uint8_t {
   field_expr,       ///< Field access expression.
   cast_expr,        ///< Explicit cast expression.
   try_expr,         ///< Try-propagation expression.
+  or_else_expr,     ///< `option`/`result` unwrap with a fallback.
   tuple_expr,       ///< Tuple literal expression.
   array_expr,       ///< Array literal expression.
   struct_expr,      ///< Struct literal expression.
@@ -975,6 +977,23 @@ struct try_expr : expr {
   ptr<expr> operand; ///< Expression whose failure should propagate outward.
 
   try_expr() : expr(node_kind::try_expr) {}
+};
+
+/// Fallback unwrap: `operand or else fallback`.
+///
+/// `operand` is an `option[T]` or `result[T, E]`; the expression has type `T`.
+/// On `@some(v)`/`@ok(v)` it is `v`. On `@none`/`@err(_)` it is `fallback`,
+/// which is evaluated only then. The `@err` payload is dropped unseen.
+///
+/// A `fallback` that leaves (`return`, `break`, `continue`) is parsed as a
+/// `block_expr` holding the one jump statement, so those forms are accepted
+/// here and nowhere else as expressions.
+struct or_else_expr : expr {
+  ptr<expr> operand;  ///< `option`/`result` consumed by the operator.
+  ptr<expr> fallback; ///< Value of type `T`, or an expression that never
+                      ///< returns (`panic(...)`, or a jump `block_expr`).
+
+  or_else_expr() : expr(node_kind::or_else_expr) {}
 };
 
 /// Tuple literal: `(a, b, c)`

@@ -960,6 +960,8 @@ private:
       -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto lower_try(const ast::try_expr &try_expr)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  [[nodiscard]] auto lower_or_else(const ast::or_else_expr &or_else)
+      -> std::expected<ptr<hir_expr>, lowering_error>;
   [[nodiscard]] auto
   lower_interpolated_string(const ast::interpolated_string_expr &node)
       -> std::expected<ptr<hir_expr>, lowering_error>;
@@ -1841,6 +1843,26 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
     return lower_where(ast::cast<const ast::where_expr>(expr));
   case ast::node_kind::try_expr:
     return lower_try(ast::cast<const ast::try_expr>(expr));
+  case ast::node_kind::or_else_expr: {
+    const auto &or_else = ast::cast<const ast::or_else_expr>(expr);
+    auto type = checked_type_of(or_else);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    // A fallback that awaits, or that leaves a task, suspends inside a match
+    // that produces a value, like the arm of a `match`.
+    if (branch_value_can_suspend(or_else, *type)) {
+      return lower_suspending_branch_value(
+          or_else.span, *type,
+          [&]() -> std::expected<ptr<hir_expr>, lowering_error> {
+            return lower_or_else(or_else);
+          });
+    }
+    ++value_branch_depth_;
+    auto lowered = lower_or_else(or_else);
+    --value_branch_depth_;
+    return lowered;
+  }
   case ast::node_kind::for_expr:
     return lower_for_expr(ast::cast<const ast::for_expr>(expr));
   case ast::node_kind::module_path_expr:
@@ -5195,6 +5217,141 @@ auto lowerer::lower_try(const ast::try_expr &try_expr)
   arms.push_back(std::move(failure_arm));
 
   return ok_expr(make<hir_match>(try_expr.span, *type, std::move(*operand),
+                                 subject_symbol, std::move(arms)));
+}
+
+auto lowerer::lower_or_else(const ast::or_else_expr &or_else)
+    -> std::expected<ptr<hir_expr>, lowering_error> {
+  // `x or else y` is a two-arm match on the wrapper's runtime tag, like `?`:
+  //   match x: @ok(_)/@some(_) => <the payload>
+  //            @err(_)/@none   => <y>
+  // The failure arm first drops what nothing binds (`@err`'s payload), when
+  // the ownership pass scheduled it (`unmatched_drops`, keyed by the node).
+  // A `return`, `break` or `continue` fallback is a one-statement block and
+  // lowers as the statement it holds, which does its own jump drops.
+  auto type = checked_type_of(or_else);
+  if (!type.has_value()) {
+    return std::unexpected(type.error());
+  }
+  if (or_else.operand == nullptr || or_else.fallback == nullptr) {
+    return fail(lowering_error_kind::unsupported_construct, or_else.span,
+                "`or else` is missing its operand or its fallback");
+  }
+  auto operand_type = checked_type_of(*or_else.operand);
+  if (!operand_type.has_value()) {
+    return std::unexpected(operand_type.error());
+  }
+  auto wrapper_type = *operand_type;
+  while (checked_.types.entry(wrapper_type).kind == type_kind::ref_kind) {
+    wrapper_type = checked_.types.entry(wrapper_type).result;
+  }
+  const auto &entry = checked_.types.entry(wrapper_type);
+  const auto is_result =
+      entry.kind == type_kind::builtin_generic_kind && entry.name == "result";
+  const auto is_option =
+      entry.kind == type_kind::builtin_generic_kind && entry.name == "option";
+  if (!is_result && !is_option) {
+    return fail(
+        lowering_error_kind::unresolved_type, or_else.span,
+        "`or else` operand did not resolve to a concrete result/option type");
+  }
+
+  auto operand = lower_expr(*or_else.operand);
+  if (!operand.has_value()) {
+    return std::unexpected(operand.error());
+  }
+
+  const auto subject_symbol = mint_symbol();
+  const auto subject_type = *operand_type;
+  const auto subject_span = or_else.operand->span;
+  const std::function<ptr<hir_expr>()> make_place =
+      [subject_symbol, subject_type, subject_span]() -> ptr<hir_expr> {
+    return {make<hir_local_ref>(subject_span, subject_type, subject_symbol,
+                                std::string("<or else subject>"))};
+  };
+
+  const auto success_variant = std::string(is_result ? "ok" : "some");
+  const auto failure_variant = std::string(is_result ? "err" : "none");
+
+  auto success_args = ptr_vec<hir_pattern>{};
+  success_args.push_back(
+      ptr<hir_pattern>(make<hir_wildcard_pattern>(or_else.span)));
+  auto success_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      or_else.span, success_variant, std::move(success_args)));
+  auto success_stmts = ptr_vec<hir_node>{};
+  success_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+      or_else.span, ptr<hir_expr>(make<hir_variant_payload>(
+                        or_else.span, *type, make_place(), success_variant,
+                        size_t{0})))));
+  auto success_arm =
+      hir_match_arm{.pattern = std::move(success_pattern),
+                    .guard = nullptr,
+                    .body = make<hir_block>(or_else.span, k_unknown_type,
+                                            std::move(success_stmts))};
+
+  auto failure_args = ptr_vec<hir_pattern>{};
+  if (is_result) {
+    failure_args.push_back(
+        ptr<hir_pattern>(make<hir_wildcard_pattern>(or_else.span)));
+  }
+  auto failure_pattern = ptr<hir_pattern>(make<hir_constructor_pattern>(
+      or_else.span, failure_variant, std::move(failure_args)));
+  auto failure_stmts = ptr_vec<hir_node>{};
+  if (drop_schedule_.unmatched_drops.contains(&or_else)) {
+    if (auto dropped = build_drop_calls(make_place, subject_type, or_else.span,
+                                        failure_stmts);
+        !dropped.has_value()) {
+      return std::unexpected(dropped.error());
+    }
+  }
+
+  const auto *jump_block = ast::as<const ast::block_expr>(or_else.fallback.get());
+  const auto is_jump =
+      jump_block != nullptr && jump_block->stmts.size() == 1 &&
+      jump_block->stmts[0] != nullptr &&
+      (jump_block->stmts[0]->kind == ast::node_kind::return_stmt ||
+       jump_block->stmts[0]->kind == ast::node_kind::break_stmt ||
+       jump_block->stmts[0]->kind == ast::node_kind::continue_stmt);
+  if (is_jump) {
+    auto jump = lower_block(jump_block->stmts, jump_block->span, *type);
+    if (!jump.has_value()) {
+      return std::unexpected(jump.error());
+    }
+    for (auto &stmt : (*jump)->stmts) {
+      failure_stmts.push_back(std::move(stmt));
+    }
+  } else {
+    // An `await` in the fallback waits inside the arm, not ahead of the
+    // whole match, so the arm gets its own hoist list.
+    auto arm_hoisted = ptr_vec<hir_node>{};
+    auto value = [&] {
+      const auto enclosing_hoist =
+          std::exchange(await_hoist_, in_task_body_ ? &arm_hoisted : nullptr);
+      const auto enclosing_depth = std::exchange(conditional_depth_, 0);
+      auto result = lower_expr(*or_else.fallback);
+      await_hoist_ = enclosing_hoist;
+      conditional_depth_ = enclosing_depth;
+      return result;
+    }();
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    for (auto &hoisted : arm_hoisted) {
+      failure_stmts.push_back(std::move(hoisted));
+    }
+    failure_stmts.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(or_else.fallback->span, std::move(*value))));
+  }
+  auto failure_arm =
+      hir_match_arm{.pattern = std::move(failure_pattern),
+                    .guard = nullptr,
+                    .body = make<hir_block>(or_else.span, k_unknown_type,
+                                            std::move(failure_stmts))};
+
+  auto arms = std::vector<hir_match_arm>{};
+  arms.push_back(std::move(success_arm));
+  arms.push_back(std::move(failure_arm));
+  return ok_expr(make<hir_match>(or_else.span, *type, std::move(*operand),
                                  subject_symbol, std::move(arms)));
 }
 

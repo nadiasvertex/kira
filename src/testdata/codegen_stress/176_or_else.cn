@@ -1,0 +1,182 @@
+module codegen_stress.or_else
+
+# expect: 1996
+
+# `x or else y` gives the value inside an `option` or `result`, or evaluates
+# the fallback `y` when there is none. It lowers to a two-arm `match` on the
+# operand, like `?`, so neither backend learned about it. That is also why
+# this file checks a *value*: if the lowering picked the wrong arm or the wrong
+# payload, both tiers would agree on the same wrong number and the
+# differential check alone would not notice.
+#
+# Each case below contributes a distinct amount, and a wrong arm changes the
+# total. The comment above each function gives its share.
+#
+# Split across several `def`s: the bytecode compiler does not reuse registers
+# within a function, and its u8 register operands cap one function at 256.
+#
+# 312 + 13 + 19 + 20 + 5 + 48 + 1052 + 101 + 369 + 57 = 1996.
+
+intrinsic def rt_panic(msg: str) -> never
+
+def boom(msg: str) -> never:
+    return rt_panic(msg)
+
+def find(n: int32) -> option[int32]:
+    if n > 0:
+        return @some(n)
+    return @none
+
+def find64(n: int64) -> option[int64]:
+    if n > 0:
+        return @some(n)
+    return @none
+
+def parse(n: int32) -> result[int32, int32]:
+    if n > 0:
+        return @ok(n)
+    return @err(0 - n)
+
+# A value fallback, on `option` and on `result`: 5 + 100 + 7 + 200 = 312.
+def value_cases() -> int32:
+    let a = find(5) or else 100
+    let b = find(0) or else 100
+    let c = parse(7) or else 200
+    let d = parse(0 - 3) or else 200
+    return a + b + c + d
+
+# A `panic` fallback that is never taken: 9 + 4 = 13.
+def panic_cases() -> int32:
+    let a = find(9) or else boom("no value")
+    let b = parse(4) or else boom("failed")
+    return a + b
+
+# `return`: 8 + (-1) = 7.
+def with_return(n: int32) -> int32:
+    let v = find(n) or else return 0 - 1
+    return v * 2
+
+# `break`: finds 3, 2 and 1, then stops at 0: 6.
+def with_break(limit: int32) -> int32:
+    var total: int32 = 0
+    var i: int32 = 0
+    while true:
+        i = i + 1
+        let v = find(limit - i) or else break
+        total = total + v
+    return total
+
+# `continue`: skips the two misses and adds 1, 2 and 3: 6.
+def with_continue() -> int32:
+    var total: int32 = 0
+    var i: int32 = 0
+    while i < 5:
+        i = i + 1
+        let v = find(i - 2) or else continue
+        total = total + v
+    return total
+
+def jump_cases() -> int32:
+    return with_return(4) + with_return(0) + with_break(4) + with_continue()
+
+# It groups to the right: 11 + 6 + 3 = 20.
+def chained() -> int32:
+    let a = find(0) or else find(0) or else 11
+    let b = find(0) or else find(6) or else 11
+    let c = find(3) or else find(6) or else 11
+    return a + b + c
+
+# A literal fallback takes the payload's width, so it is not an `int32`
+# that overflows: 5000000000 / 1000000000 = 5.
+def literal_width() -> int32:
+    let w = find64(0) or else 5000000000
+    return (w / 1000000000) as int32
+
+def pick[T](o: option[T], d: T) -> T:
+    return o or else d
+
+# In a generic function: 8 + 40 = 48.
+def generic_cases() -> int32:
+    return pick(find(8), 1) + pick(find(0), 40)
+
+def count_call(calls: &mut int32) -> int32:
+    *calls = *calls + 1
+    return 50
+
+# The fallback runs only when there is no value: 2 + 50, and one call.
+def lazy_fallback() -> int32:
+    var calls: int32 = 0
+    let a = find(2) or else count_call(&mut calls)
+    let b = find(0) or else count_call(&mut calls)
+    return a + b + calls * 1000
+
+def next(counter: &mut int32) -> option[int32]:
+    *counter = *counter + 1
+    return @some(*counter)
+
+# The operand is evaluated once: 1 + 100.
+def operand_once() -> int32:
+    var n: int32 = 0
+    let v = next(&mut n) or else 0
+    return v + n * 100
+
+async def double(x: int32) -> int32:
+    return x * 2
+
+async def fetch(good: bool) -> option[int32]:
+    if good:
+        return @some(5)
+    return @none
+
+# The fallback awaits.
+async def fallback_awaits(o: option[int32]) -> int32:
+    return o or else await double(21)
+
+# The operand awaits, and its value is live across a second await.
+async def operand_awaits(good: bool) -> int32:
+    let v = (await fetch(good)) or else 100
+    return await double(v)
+
+# `return` as the fallback inside a task.
+async def returns_early(o: option[int32]) -> int32:
+    let v = o or else return 99
+    let w = await double(v)
+    return w + 1
+
+# Inside a branch that itself suspends.
+async def in_branch(n: int32, o: option[int32]) -> int32:
+    let v = if n > 0:
+        o or else await double(n)
+    else:
+        0
+    return v
+
+# 42 + 1 + 10 + 200 + 99 + 7 + 8 + 2 = 369.
+async def async_cases() -> int32:
+    let a = await fallback_awaits(@none)
+    let b = await fallback_awaits(@some(1))
+    let c = await operand_awaits(true)
+    let d = await operand_awaits(false)
+    let e = await returns_early(@none)
+    let f = await returns_early(@some(3))
+    let g = await in_branch(4, @none)
+    let h = await in_branch(4, @some(2))
+    return a + b + c + d + e + f + g + h
+
+static pure def lookup(n: int32) -> option[int32]:
+    if n > 2:
+        return @some(n * 10)
+    return @none
+
+static pure def at_compile_time(n: int32) -> int32:
+    return lookup(n) or else 7
+
+static let compiled_hit = at_compile_time(5)
+static let compiled_miss = at_compile_time(1)
+
+async def main() -> int32:
+    let async_total = await async_cases()
+    let sync_total = value_cases() + panic_cases() + jump_cases() + chained()
+    let more = literal_width() + generic_cases() + lazy_fallback()
+    let rest = operand_once() + compiled_hit + compiled_miss
+    return sync_total + more + rest + async_total

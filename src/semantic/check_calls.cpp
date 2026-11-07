@@ -546,7 +546,20 @@ auto checker::report_unknown_builtin_method(const ast::call_expr &call,
       std::format("no method `{}` on type `{}`", field.field_name, display),
       file_.file_id_);
   diag.with_label(field.span, "method not found");
-  if (const auto suggestion = best_suggestion(field.field_name, candidates)) {
+  const auto is_wrapper = entry.name == "option" || entry.name == "result";
+  if (is_wrapper && field.field_name == "unwrap") {
+    // The operator replaced the method (`x or else y`).
+    diag.with_help(std::format(
+        "`{}` has no `unwrap`. Write `x or else panic(\"...\")` to stop when "
+        "there is no value, or `x or else <fallback>` to use another value.",
+        entry.name));
+  } else if (is_wrapper && field.field_name == "unwrap_or") {
+    diag.with_help(std::format(
+        "`{}` has no `unwrap_or`. Write `x or else <fallback>` to use another "
+        "value when there is none.",
+        entry.name));
+  } else if (const auto suggestion =
+                 best_suggestion(field.field_name, candidates)) {
     diag.with_help(std::format("did you mean `{}`?", *suggestion));
   } else if (!candidates.empty()) {
     auto listed = std::string{};

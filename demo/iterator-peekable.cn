@@ -17,18 +17,18 @@ def main() -> int32:
     var p = nums.into_iter().peekable()
 
     # Peek without consuming
-    println("peek1={p.peek().unwrap()}")
+    println("peek1={p.peek() or else panic("empty")}")
 
     # Peek again, same element
-    println("peek2={p.peek().unwrap()}")
+    println("peek2={p.peek() or else panic("empty")}")
 
     # Now consume the peeked element
-    println("next1={p.next().unwrap()}")
+    println("next1={p.next() or else panic("empty")}")
 
     # Peek the next element after consuming
-    println("peek_after={p.peek().unwrap()}")
+    println("peek_after={p.peek() or else panic("empty")}")
 
     # Drain the rest
-    println("next2={p.next().unwrap()}")
+    println("next2={p.next() or else panic("empty")}")
     println("done={p.next().is_none()}")
     return 0

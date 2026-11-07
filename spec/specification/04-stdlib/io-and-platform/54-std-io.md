@@ -213,7 +213,7 @@ The consumer starts first and suspends on the empty pipe. It sees the end of the
 
 Everything in this chapter is implemented in `src/std/io.cn` over the `rt_*` intrinsics, on both backends.
 
-- `result.unwrap()` on a handle drops the handle it returns: `open(path, opts).unwrap()` and `async_pipe().unwrap()` give back a handle whose descriptor is already closed. Match on the result instead. This is item 16 of [todo.md](../../../todo.md). A handle is dropped where [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md) says values drop; the cases that still leak are listed in item 6 of [todo.md](../../../todo.md).
+- A handle is dropped where [Shared Ownership and Drop](../../02-intermediate/17-shared-ownership-and-drop.md) says values drop; the cases that still leak are listed in item 6 of [todo.md](../../../todo.md).
 
 ## See also
 

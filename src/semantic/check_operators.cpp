@@ -743,19 +743,28 @@ auto checker::wire_str_equality_dispatch(const ast::binary_expr &binary,
 
 /// Infers `expr` expecting `bool` and reports an error if it isn't —
 /// Cinder has no truthiness, so every condition must be an explicit `bool`.
-auto checker::require_bool(const ast::expr &expr, std::string_view context)
-    -> void {
+auto checker::require_bool(const ast::expr &expr, std::string_view context,
+                           bool suggest_or_else) -> void {
   const auto found =
       strip_refs(infer_expr(expr, session_.types_.builtin("bool")));
   if (!session_.types_.is_unknown(found) &&
       !session_.types_.is_boolean(found)) {
-    error_with_help(
-        expr.span,
-        std::format("{} must be `bool`, found `{}`", context,
-                    session_.types_.display(found)),
-        "expected `bool` here",
+    const auto &entry = session_.types_.entry(found);
+    const auto is_wrapper = entry.kind == type_kind::builtin_generic_kind &&
+                            (entry.name == "option" || entry.name == "result");
+    auto help = std::string{
         " Cinder has no truthiness; write an explicit comparison such as "
-        "`x != 0` or `!list.is_empty()`.");
+        "`x != 0` or `!list.is_empty()`."};
+    if (suggest_or_else && is_wrapper) {
+      help += std::format(
+          " Did you mean `or else`? `x or else y` gives the value inside "
+          "the `{}`, or `y` when there is none.",
+          entry.name);
+    }
+    error_with_help(expr.span,
+                    std::format("{} must be `bool`, found `{}`", context,
+                                session_.types_.display(found)),
+                    "expected `bool` here", help);
   }
 }
 
@@ -842,10 +851,12 @@ auto checker::infer_binary(const ast::binary_expr &binary, type_id expected)
   case ast::binary_op::logical_and:
   case ast::binary_op::logical_or:
     if (binary.lhs != nullptr) {
-      require_bool(*binary.lhs, "the left operand of a logical operator");
+      require_bool(*binary.lhs, "the left operand of a logical operator",
+                   /*suggest_or_else=*/true);
     }
     if (binary.rhs != nullptr) {
-      require_bool(*binary.rhs, "the right operand of a logical operator");
+      require_bool(*binary.rhs, "the right operand of a logical operator",
+                   /*suggest_or_else=*/true);
     }
     return session_.types_.builtin("bool");
 

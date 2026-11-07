@@ -1,0 +1,6 @@
+# The fallback takes the place of the unwrapped value, so it must have the
+# payload's type. A fallback that does not return is accepted instead.
+module infer_diag.or_else_fallback
+
+def wrong(o: option[str]) -> str:
+    return o or else 3

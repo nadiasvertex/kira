@@ -1,0 +1,33 @@
+temporary_success 1
+drop 1
+drop 102
+temporary_failure 9
+drop 9
+option_failure 8
+drop 8
+named 10
+drop 10
+drop 111
+named 50
+drop 50
+via_return 12 70
+drop 12
+drop 70
+12
+drop 113
+drop 70
+-1
+drop 101
+in_loop 2
+drop 2
+drop 103
+in_loop 4
+drop 4
+fallback_not_run 20
+drop 20
+drop 30
+30
+drop 131
+drop 60
+60
+end

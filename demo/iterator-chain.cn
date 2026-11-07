@@ -16,18 +16,18 @@ def main() -> int32:
 
     # Chain a then b: 1, 2, 3, 4
     var c = a.into_iter().chain(b.into_iter())
-    println("chained={c.next().unwrap()}")
-    println("chained={c.next().unwrap()}")
-    println("chained={c.next().unwrap()}")
-    println("chained={c.next().unwrap()}")
+    println("chained={c.next() or else panic("empty")}")
+    println("chained={c.next() or else panic("empty")}")
+    println("chained={c.next() or else panic("empty")}")
+    println("chained={c.next() or else panic("empty")}")
     println("done={c.next().is_none()}")
 
     # Chain same lists backwards
     let a2 = [1, 2]
     let b2 = [3, 4]
     var c2 = b2.into_iter().chain(a2.into_iter())
-    println("reversed={c2.next().unwrap()}")
-    println("reversed={c2.next().unwrap()}")
-    println("reversed={c2.next().unwrap()}")
-    println("reversed={c2.next().unwrap()}")
+    println("reversed={c2.next() or else panic("empty")}")
+    println("reversed={c2.next() or else panic("empty")}")
+    println("reversed={c2.next() or else panic("empty")}")
+    println("reversed={c2.next() or else panic("empty")}")
     return 0

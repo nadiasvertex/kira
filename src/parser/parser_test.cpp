@@ -2299,8 +2299,163 @@ auto test_parser_accepts_root_module_alias() -> void {
   expect(!use->selector.has_value(), "expected no selector for a root rename");
 }
 
+/// Parses `module m` with one function whose body is `body`, and returns
+/// the initializer of its first `let` (or the value of its first `return`).
+auto first_let_initializer(const parsed_source &parsed)
+    -> cinder::ast::expr * {
+  const auto *fn = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
+      "expected a function declaration");
+  const auto *let = expect_node<cinder::ast::let_stmt>(
+      fn->body_stmts[0].get(), cinder::ast::node_kind::let_stmt,
+      "expected a let statement");
+  return let->initializer.get();
+}
+
+/// `a or else b` binds more loosely than `or` and more tightly than `|`, and
+/// groups to the right. The jump forms are accepted as the fallback only.
+auto test_or_else_precedence_and_grouping() -> void {
+  // `or` binds tighter: the operand is the whole `a or b`.
+  auto parsed = parse_source("module m\n"
+                             "def f() -> int32:\n"
+                             "    let x = a or b or else 0\n"
+                             "    return x\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *or_else = expect_expr<cinder::ast::or_else_expr>(
+      first_let_initializer(parsed), cinder::ast::node_kind::or_else_expr,
+      "expected an `or else` expression");
+  auto *operand = expect_expr<cinder::ast::binary_expr>(
+      or_else->operand.get(), cinder::ast::node_kind::binary_expr,
+      "expected `a or b` as the operand");
+  expect(operand->op == cinder::ast::binary_op::logical_or,
+         "expected the operand to be the logical `or`");
+
+  // It groups to the right: `a or else (b or else 0)`.
+  parsed = parse_source("module m\n"
+                        "def f() -> int32:\n"
+                        "    let x = a or else b or else 0\n"
+                        "    return x\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  or_else = expect_expr<cinder::ast::or_else_expr>(
+      first_let_initializer(parsed), cinder::ast::node_kind::or_else_expr,
+      "expected an `or else` expression");
+  expect(or_else->operand->kind == cinder::ast::node_kind::ident_expr,
+         "expected the outer operand to be just `a`");
+  expect(or_else->fallback->kind == cinder::ast::node_kind::or_else_expr,
+         "expected the fallback to be the inner `or else`");
+
+  // It binds tighter than the pipe: `(a or else b) | f`.
+  parsed = parse_source("module m\n"
+                        "def f() -> int32:\n"
+                        "    let x = a or else b | g\n"
+                        "    return x\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *pipe = expect_expr<cinder::ast::binary_expr>(
+      first_let_initializer(parsed), cinder::ast::node_kind::binary_expr,
+      "expected a pipe at the top");
+  expect(pipe->op == cinder::ast::binary_op::pipe, "expected the pipe operator");
+  expect(pipe->lhs->kind == cinder::ast::node_kind::or_else_expr,
+         "expected the pipe's left side to be the `or else`");
+
+  // `a or else b if c else d` is `(a or else b) if c else d`.
+  parsed = parse_source("module m\n"
+                        "def f() -> int32:\n"
+                        "    let x = a or else b if c else d\n"
+                        "    return x\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  auto *conditional = expect_expr<cinder::ast::if_expr>(
+      first_let_initializer(parsed), cinder::ast::node_kind::if_expr,
+      "expected a trailing conditional at the top");
+  expect(conditional->branches.size() == 1, "expected one `if` branch");
+  const auto *then_stmt = expect_node<cinder::ast::expr_stmt>(
+      conditional->branches[0].body[0].get(), cinder::ast::node_kind::expr_stmt,
+      "expected the `then` value");
+  expect(then_stmt->expr->kind == cinder::ast::node_kind::or_else_expr,
+         "expected the `then` value to be the `or else`");
+
+  // A plain `or` is untouched.
+  parsed = parse_source("module m\n"
+                        "def f() -> bool:\n"
+                        "    let x = a or b\n"
+                        "    return x\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  expect(first_let_initializer(parsed)->kind ==
+             cinder::ast::node_kind::binary_expr,
+         "expected a plain `or` to stay a binary expression");
+}
+
+/// `return`, `break` and `continue` are accepted as the fallback, wrapped in
+/// a one-statement block; they stay statements everywhere else.
+auto test_or_else_jump_fallbacks() -> void {
+  const auto parsed = parse_source("module m\n"
+                                   "def f() -> option[int32]:\n"
+                                   "    let a = x or else return @none\n"
+                                   "    let b = y or else return\n"
+                                   "    while true:\n"
+                                   "        let c = z or else break\n"
+                                   "        let d = w or else continue\n"
+                                   "    return @some(a)\n");
+  expect(parsed.error_count == 0, parsed.diagnostics);
+  const auto *fn = expect_node<cinder::ast::func_decl>(
+      parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
+      "expected a function declaration");
+
+  const auto fallback_jump = [](const cinder::ast::node *stmt)
+      -> const cinder::ast::node * {
+    const auto *let = expect_node<const cinder::ast::let_stmt>(
+        const_cast<cinder::ast::node *>(stmt), cinder::ast::node_kind::let_stmt,
+        "expected a let statement");
+    const auto *or_else = expect_expr<cinder::ast::or_else_expr>(
+        let->initializer.get(), cinder::ast::node_kind::or_else_expr,
+        "expected an `or else` expression");
+    const auto *block = expect_expr<cinder::ast::block_expr>(
+        or_else->fallback.get(), cinder::ast::node_kind::block_expr,
+        "expected a jump fallback to be a block");
+    expect(block->stmts.size() == 1, "expected one statement in the block");
+    return block->stmts[0].get();
+  };
+
+  const auto *ret = fallback_jump(fn->body_stmts[0].get());
+  expect(ret->kind == cinder::ast::node_kind::return_stmt, "expected `return`");
+  expect(static_cast<const cinder::ast::return_stmt *>(ret)->value != nullptr,
+         "expected the returned value to be parsed");
+  const auto *bare = fallback_jump(fn->body_stmts[1].get());
+  expect(bare->kind == cinder::ast::node_kind::return_stmt,
+         "expected a bare `return`");
+  expect(static_cast<const cinder::ast::return_stmt *>(bare)->value == nullptr,
+         "expected a bare `return` to carry no value");
+
+  const auto *loop = expect_node<cinder::ast::while_stmt>(
+      fn->body_stmts[2].get(), cinder::ast::node_kind::while_stmt,
+      "expected a while loop");
+  expect(fallback_jump(loop->body[0].get())->kind ==
+             cinder::ast::node_kind::break_stmt,
+         "expected `break`");
+  expect(fallback_jump(loop->body[1].get())->kind ==
+             cinder::ast::node_kind::continue_stmt,
+         "expected `continue`");
+
+  // Inside parentheses `return` ends at the closing parenthesis.
+  const auto grouped = parse_source("module m\n"
+                                    "def f() -> int32:\n"
+                                    "    let a = (x or else return) + 1\n"
+                                    "    return a\n");
+  expect(grouped.error_count == 0, grouped.diagnostics);
+
+  // `or else` needs a fallback.
+  const auto missing = parse_source("module m\n"
+                                    "def f() -> int32:\n"
+                                    "    let a = x or else\n"
+                                    "    return 0\n");
+  expect(missing.error_count > 0, "expected `or else` without a fallback to be "
+                                  "an error");
+}
+
 auto main(int argc, char *argv[]) -> int {
-  const std::array<named_test, 53> tests = {{
+  const std::array<named_test, 55> tests = {{
+      {.name = "or_else_precedence_and_grouping",
+       .fn = test_or_else_precedence_and_grouping},
+      {.name = "or_else_jump_fallbacks", .fn = test_or_else_jump_fallbacks},
       {.name = "keyword_module_name",
        .fn = test_keyword_module_name_is_a_diagnosed_error},
       {.name = "static_for_inline_as_value",

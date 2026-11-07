@@ -65,7 +65,7 @@ def while_let_break() -> unit:
     println("after while let break")
 def main() -> int32:
     println("try {try_exit(0).is_none()}")
-    println("try {try_exit(5).unwrap()}")
+    println("try {try_exit(5) or else panic("empty")}")
     break_out()
     continue_out()
     println("return {return_out(0)}")

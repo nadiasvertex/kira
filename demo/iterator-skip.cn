@@ -15,9 +15,9 @@ def main() -> int32:
 
     # Skip first 2, get 3, 4, 5
     var remaining = nums.into_iter().skip(2)
-    println("skipped={remaining.next().unwrap()}")
-    println("skipped={remaining.next().unwrap()}")
-    println("skipped={remaining.next().unwrap()}")
+    println("skipped={remaining.next() or else panic("empty")}")
+    println("skipped={remaining.next() or else panic("empty")}")
+    println("skipped={remaining.next() or else panic("empty")}")
 
     # Skip all (5 elements, skip 5)
     let nums2 = [1, 2, 3, 4, 5]

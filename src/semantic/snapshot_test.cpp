@@ -129,6 +129,10 @@ constexpr auto k_inputs = std::array{
     // `at_ref`/`at_mut`/`set_at` must name the settled list's instances.
     snapshot_input{.corpus = "codegen_stress",
                    .filename = "112_index_borrow_and_write_wait.cn"},
+    // `x or else y`: the unwrapped payload's type, the fallback typed against
+    // it (a literal takes the payload's width), in a generic body and at
+    // compile time.
+    snapshot_input{.corpus = "codegen_stress", .filename = "176_or_else.cn"},
     snapshot_input{.corpus = "semantic_stress",
                    .filename = "003_collections_lambdas.cn"},
     snapshot_input{.corpus = "semantic_stress",

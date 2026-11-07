@@ -1689,6 +1689,70 @@ auto test_lowers_try_expr_on_option() -> void {
          "expected the `none` pattern to have no payload slots");
 }
 
+/// `x or else y` lowers to a two-arm `hir_match` like `?`: the success arm
+/// projects the payload, the failure arm holds the fallback.
+auto test_lowers_or_else_on_result() -> void {
+  auto fixture = check_fixture(read_program("lowers_or_else_on_result.cn"));
+  const auto &decl = find_func(*fixture.ast_file, "port");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected an `or else` on a result to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  expect(let.initializer->kind == hir::hir_node_kind::hir_match,
+         "expected `v or else 8080` to lower to a hir_match");
+  const auto &match = dynamic_cast<const hir::hir_match &>(*let.initializer);
+  expect(match.arms.size() == 2, "expected exactly two arms (ok and err)");
+
+  const auto &ok_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[0].pattern);
+  expect(ok_pattern.variant_name == "ok",
+         "expected the first arm's pattern to match `ok`");
+  const auto &success_stmt = dynamic_cast<const hir::hir_expr_stmt &>(
+      *match.arms[0].body->stmts.front());
+  expect(success_stmt.expr->kind == hir::hir_node_kind::hir_variant_payload,
+         "expected the success arm to yield a payload projection");
+
+  const auto &err_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
+  expect(err_pattern.variant_name == "err",
+         "expected the second arm's pattern to match `err`");
+  expect(err_pattern.args.size() == 1,
+         "expected the `err` pattern to ignore one payload slot");
+  expect(match.arms[1].body->stmts.size() == 1,
+         "expected the failure arm to hold only the fallback");
+  const auto &fallback = dynamic_cast<const hir::hir_expr_stmt &>(
+      *match.arms[1].body->stmts.front());
+  expect(fallback.expr->kind == hir::hir_node_kind::hir_literal,
+         "expected the failure arm to yield the literal fallback");
+}
+
+auto test_lowers_or_else_with_return_fallback_on_option() -> void {
+  auto fixture = check_fixture(read_program("lowers_or_else_on_option.cn"));
+  const auto &decl = find_func(*fixture.ast_file, "port");
+
+  auto result = hir::lower_function(decl, fixture.checked);
+  expect(result.has_value(), "expected `or else return` to lower");
+
+  const auto &function = **result;
+  const auto &let =
+      dynamic_cast<const hir::hir_let &>(*function.body->stmts.front());
+  const auto &match = dynamic_cast<const hir::hir_match &>(*let.initializer);
+  const auto &none_pattern = dynamic_cast<const hir::hir_constructor_pattern &>(
+      *match.arms[1].pattern);
+  expect(none_pattern.variant_name == "none",
+         "expected the second arm's pattern to match `none`");
+  expect(none_pattern.args.empty(),
+         "expected the `none` pattern to have no payload slots");
+  expect(match.arms[1].body->stmts.size() == 1,
+         "expected the failure arm to hold only the `return`");
+  expect(match.arms[1].body->stmts.front()->kind ==
+             hir::hir_node_kind::hir_return,
+         "expected the failure arm to hold a hir_return, not a value");
+}
+
 auto test_lowers_try_expr_with_from_conversion() -> void {
   auto fixture =
       check_fixture(read_program("lowers_try_expr_with_from_conversion.cn"));
@@ -2627,6 +2691,8 @@ auto main() -> int {
     test_lowers_bare_unit_variant();
     test_lowers_try_expr_on_result();
     test_lowers_try_expr_on_option();
+    test_lowers_or_else_on_result();
+    test_lowers_or_else_with_return_fallback_on_option();
     test_lowers_try_expr_with_from_conversion();
     test_lowers_plain_let_as_single_statement();
     test_lowers_tuple_pattern_let_destructuring();

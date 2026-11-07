@@ -1,0 +1,6 @@
+error: the left operand of a logical operator must be `bool`, found `option[int32]`
+  --> 032_or_with_option_operand.cn:6:12
+    6 |     return o or true
+      |            ^ expected `bool` here
+  help:  Cinder has no truthiness; write an explicit comparison such as `x != 0` or `!list.is_empty()`. Did you mean `or else`? `x or else y` gives the value inside the `option`, or `y` when there is none.
+

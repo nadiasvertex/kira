@@ -1,0 +1,6 @@
+# `or` is the logical operator. A user who meant to supply a default for an
+# `option` is pointed at `or else`.
+module infer_diag.or_with_option
+
+def wrong(o: option[int32]) -> bool:
+    return o or true

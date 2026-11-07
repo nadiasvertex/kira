@@ -1,0 +1,4 @@
+module sample
+def port(v: option[int32]) -> int32:
+    let n = v or else return 0
+    return n

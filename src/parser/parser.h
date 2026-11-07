@@ -778,6 +778,11 @@ private:
   [[nodiscard]] auto parse_expr() -> ast::ptr<ast::expr>;
   /// Parses pipe-precedence expressions.
   [[nodiscard]] auto parse_pipe_expr() -> ast::ptr<ast::expr>;
+  /// Parses `a or else b` (right-associative, between `|` and `or`).
+  [[nodiscard]] auto parse_or_else_expr() -> ast::ptr<ast::expr>;
+  /// Parses the fallback of `or else`: an expression, or a `return`,
+  /// `break` or `continue` wrapped in a one-statement `block_expr`.
+  [[nodiscard]] auto parse_or_else_fallback() -> ast::ptr<ast::expr>;
   /// Parses logical `or` expressions.
   [[nodiscard]] auto parse_or_expr() -> ast::ptr<ast::expr>;
   /// Parses logical `and` expressions.

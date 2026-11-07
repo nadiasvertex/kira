@@ -15,7 +15,7 @@ def main() -> int32:
 
     # Reversed: 3, 2, 1
     var r = nums.into_iter().rev()
-    println("reversed={r.next().unwrap()}")
-    println("reversed={r.next().unwrap()}")
-    println("reversed={r.next().unwrap()}")
+    println("reversed={r.next() or else panic("empty")}")
+    println("reversed={r.next() or else panic("empty")}")
+    println("reversed={r.next() or else panic("empty")}")
     return 0

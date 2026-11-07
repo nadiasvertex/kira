@@ -1247,7 +1247,7 @@ pub def eq_by[I, J, T, U](it: I, other: J, pred: fn(&T, &U) -> bool) -> bool whe
             return true
         if a.is_none() or b.is_none():
             return false
-        if not pred(&a.unwrap(), &b.unwrap()):
+        if not pred(&(a or else panic("unreachable")), &(b or else panic("unreachable"))):
             return false
     return false
 
@@ -1371,7 +1371,7 @@ pub def cmp_by[I, J, T, U](it: I, other: J, cmp: fn(&T, &U) -> ordering) -> orde
             return @less
         if b.is_none():
             return @greater
-        let step = cmp(&a.unwrap(), &b.unwrap())
+        let step = cmp(&(a or else panic("unreachable")), &(b or else panic("unreachable")))
         if not is_equal(&step):
             return step
     return @equal

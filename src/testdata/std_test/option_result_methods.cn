@@ -14,12 +14,12 @@ def main() -> int32:
     let s: option[int32] = @some(7)
     let n: option[int32] = @none
 
-    println("unwrap={s.unwrap()}")
+    println("or_else_some={s or else panic("none")}")
 
-    # Both sides of `unwrap_or`: the fallback must be ignored when a value is
+    # Both sides of `or else`: the fallback must be ignored when a value is
     # present, which a `@none`-only check could not tell from always taking it.
-    println("unwrap_or_some={s.unwrap_or(3)}")
-    println("unwrap_or_none={n.unwrap_or(3)}")
+    println("or_else_value_some={s or else 3}")
+    println("or_else_value_none={n or else 3}")
 
     # `is_some`/`is_none` are checked on both values for the same reason — a
     # method that ignored its receiver and returned a constant would pass a
@@ -32,7 +32,7 @@ def main() -> int32:
     let good: result[int32, str] = @ok(4)
     let bad: result[int32, str] = @err("nope")
 
-    println("ok_unwrap={good.unwrap()}")
+    println("ok_or_else={good or else panic("err")}")
     println("is_ok_ok={good.is_ok()}")
     println("is_ok_err={bad.is_ok()}")
     println("is_err_ok={good.is_err()}")
@@ -43,6 +43,6 @@ def main() -> int32:
     # A single-instantiation implementation would fail here rather than differ
     # in output.
     let t: option[str] = @some("hi")
-    println("str_unwrap={t.unwrap()}")
-    println("str_unwrap_or={n.unwrap_or(0)}")
+    println("str_or_else={t or else panic("none")}")
+    println("int_or_else_none={n or else 0}")
     return 0

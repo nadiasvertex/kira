@@ -1,0 +1,5 @@
+# `option` and `result` have no `unwrap`; the error points at `or else`.
+module infer_diag.unwrap_method_removed
+
+def wrong(o: option[int32]) -> int32:
+    return o.unwrap()

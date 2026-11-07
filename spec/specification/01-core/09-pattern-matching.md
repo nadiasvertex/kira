@@ -68,6 +68,19 @@ while let @some(line) = reader.next():
     process(line)
 ```
 
+## `let ... else`
+
+`let PATTERN = expr else:` binds the pattern's names for the rest of the enclosing block when the match holds. When it does not, the `else` block runs. The block must not fall through: it ends in `return`, `break`, `continue` or `panic(...)`.
+
+```cinder
+def first_even(xs: list[int32]) -> int32:
+    let @some(n) = xs.iter().values().find((x) => *x % 2 == 0) else:
+        return -1
+    return n
+```
+
+When the whole point is to unwrap one `option` or `result` and give a fallback, [`or else`](11-error-handling.md#or-else) is shorter. `let ... else:` stays the form for other patterns, and for failure handling that takes several statements.
+
 ## See also
 
 - [Type Declarations](10-type-declarations.md) — sum types and structs, `match`'s primary subjects.

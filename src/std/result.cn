@@ -4,22 +4,9 @@ module std.result
 #
 # Like that module these were `k_builtin_methods` entries the compiler typed
 # but no backend compiled; they are ordinary Cinder now. See `std.option`'s
-# header for why the block is parameterized.
-
-use std.panic.panic
+# header for why the block is parameterized, and for why there is no `unwrap`.
 
 extend[T, E] result[T, E]:
-    ## The success value, or a panic if this is an `@err`.
-    ##
-    ## The error is not reported in the panic message: doing so would require
-    ## `E` to be printable, which would constrain every `result` in the
-    ## language to satisfy a formatting trait. Use `match` when the error's
-    ## content matters.
-    def unwrap(self) -> T:
-        return match self:
-            @ok(v) => v
-            @err(_) => panic("called `unwrap` on an `@err` value")
-
     ## Whether this holds a success value.
     def is_ok(self) -> bool:
         return match self:

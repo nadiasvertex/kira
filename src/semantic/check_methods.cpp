@@ -199,8 +199,12 @@ auto checker::find_prelude_function(std::string_view name)
   // (`src/std/deriving.cn`), and that body is spliced into the user's own
   // module, where those names have to resolve without an import the user
   // never wrote.
-  static constexpr std::array<std::string_view, 4> k_prelude_function_modules =
-      {"std.console", "std.iter", "std.algo", "std.traits"};
+  // `std.panic` joins them because `panic(...)` is written unqualified
+  // everywhere (chapter 11): without it a bare `panic` reached the checker's
+  // built-in fallback, which types the call `never` but resolves no callee,
+  // so lowering failed with "no concrete checked type is available".
+  static constexpr std::array<std::string_view, 5> k_prelude_function_modules =
+      {"std.console", "std.iter", "std.algo", "std.traits", "std.panic"};
   for (const auto module_name : k_prelude_function_modules) {
     if (const auto *source = index_.find_module(module_name)) {
       if (const auto it = source->functions.find(std::string(name));

@@ -132,6 +132,8 @@ auto node_kind_name(ast::node_kind kind) -> std::string_view {
     return "cast";
   case ast::node_kind::try_expr:
     return "try";
+  case ast::node_kind::or_else_expr:
+    return "or_else";
   case ast::node_kind::tuple_expr:
     return "tuple";
   case ast::node_kind::array_expr:

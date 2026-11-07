@@ -11,18 +11,18 @@ def from_if(flag: bool) -> int64:
     let wide: int64 = r
     return wide - 3000000000
 def from_unwrap() -> int64:
-    let r = @some(3000000004).unwrap()
+    let r = @some(3000000004) or else panic("empty")
     let wide: int64 = r
     return wide - 3000000000
 def from_unwrap_or() -> int64:
     let o = @some(3000000008)
-    let r = o.unwrap_or(0)
+    let r = o or else 0
     let wide: int64 = r
     return wide - 3000000000
 def from_list_iterator() -> int64:
     let d = [3000000016, 1]
     var it = d.into_iter()
-    let r = it.next().unwrap()
+    let r = it.next() or else panic("empty")
     let wide: int64 = r
     return wide - 3000000000
 def main() -> int32:

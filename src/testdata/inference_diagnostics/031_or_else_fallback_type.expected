@@ -1,0 +1,6 @@
+error: the fallback for an `option[str]` must be a `str`, found `int32`
+  --> 031_or_else_fallback_type.cn:6:22
+    6 |     return o or else 3
+      |                      ^ this is `int32`
+  help: The fallback takes the place of the value the `or else` unwraps. It may also be something that does not return, such as `panic(...)` or `return`.
+

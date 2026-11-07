@@ -14,11 +14,11 @@ def main() -> int32:
     let nums = [1, 2, 3, 4, 5]
 
     # Last element is 5
-    println("last={nums.into_iter().last().unwrap()}")
+    println("last={nums.into_iter().last() or else panic("empty")}")
 
     # Single element
     let single = [42]
-    println("single_last={single.into_iter().last().unwrap()}")
+    println("single_last={single.into_iter().last() or else panic("empty")}")
 
     # Empty
     let empty: list[int32] = []

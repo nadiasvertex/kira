@@ -73,6 +73,7 @@ namespace cinder::ast {
   case node_kind::field_expr:
   case node_kind::cast_expr:
   case node_kind::try_expr:
+  case node_kind::or_else_expr:
   case node_kind::tuple_expr:
   case node_kind::array_expr:
   case node_kind::struct_expr:
@@ -559,6 +560,12 @@ auto for_each_child(N &n, F &&f) -> void
   case node_kind::try_expr:
     if (const auto *t = as<try_expr>(&n)) {
       one(t->operand);
+    }
+    return;
+  case node_kind::or_else_expr:
+    if (const auto *t = as<or_else_expr>(&n)) {
+      one(t->operand);
+      one(t->fallback);
     }
     return;
   case node_kind::tuple_expr:

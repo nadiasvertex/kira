@@ -36,7 +36,7 @@ The user-facing behavior is described in the specification: chapter 26 for the `
 
 ## Remaining work
 
-None from this plan. Follow-ups found during the work are in `spec/todo.md`: items 13 and 15 (an unawaited `on` wrapper leaks its captures; `await yield` is not lowered), 16 (`unwrap` on a handle drops it, which closes the descriptors of `open(...).unwrap()` and `async_pipe().unwrap()`), 17 (borrowed temporaries in coroutines are never freed), and 19 (the corpus cannot run under the `tsan` config past one unrelated file).
+None from this plan. Follow-ups found during the work are in `spec/todo.md`: items 13 and 15 (an unawaited `on` wrapper leaks its captures; `await yield` is not lowered), 16 (a method that moves out of `self` leaves two owners; `option`/`result` `unwrap` was the standard library's case and has been replaced by `or else`), 17 (borrowed temporaries in coroutines are never freed), and 19 (the corpus cannot run under the `tsan` config past one unrelated file).
 
 ## Risks
 

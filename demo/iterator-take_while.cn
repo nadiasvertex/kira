@@ -16,9 +16,9 @@ def main() -> int32:
 
     # Take while < 5: yields 1, 2, 3, then stops at 9
     var tw = nums.into_iter().take_while(x => *x < 5)
-    println("taken={tw.next().unwrap()}")
-    println("taken={tw.next().unwrap()}")
-    println("taken={tw.next().unwrap()}")
+    println("taken={tw.next() or else panic("empty")}")
+    println("taken={tw.next() or else panic("empty")}")
+    println("taken={tw.next() or else panic("empty")}")
 
     # After stopping, no more elements
     println("stopped={tw.next().is_none()}")

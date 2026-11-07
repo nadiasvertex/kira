@@ -1,7 +1,7 @@
 # inference snapshot
-# 2635 interned types
+# 2655 interned types
 
-## node_types (33114)
+## node_types (33586)
 003_collections_lambdas.cn:3:14 [named_type] unit
 003_collections_lambdas.cn:4:9 [binding_pat] list[int32]
 003_collections_lambdas.cn:4:19 [array] list[int32]
@@ -3230,6 +3230,499 @@
 112_index_borrow_and_write_wait.cn:29:36 [literal] usize
 112_index_borrow_and_write_wait.cn:29:41 [ident] int64
 112_index_borrow_and_write_wait.cn:29:45 [literal] int64
+176_or_else.cn:20:24 [binding_pat] str
+176_or_else.cn:20:37 [named_type] never
+176_or_else.cn:22:10 [binding_pat] str
+176_or_else.cn:22:23 [named_type] never
+176_or_else.cn:23:12 [ident] fn(str) -> never
+176_or_else.cn:23:12 [call] never
+176_or_else.cn:23:21 [ident] str
+176_or_else.cn:25:10 [binding_pat] int32
+176_or_else.cn:25:23 [named_type] option[int32]
+176_or_else.cn:26:8 [ident] int32
+176_or_else.cn:26:8 [binary] bool
+176_or_else.cn:26:12 [literal] int32
+176_or_else.cn:27:16 [call] option[int32]
+176_or_else.cn:27:22 [ident] int32
+176_or_else.cn:28:12 [ident] option[int32]
+176_or_else.cn:30:12 [binding_pat] int64
+176_or_else.cn:30:25 [named_type] option[int64]
+176_or_else.cn:31:8 [ident] int64
+176_or_else.cn:31:8 [binary] bool
+176_or_else.cn:31:12 [literal] int64
+176_or_else.cn:32:16 [call] option[int64]
+176_or_else.cn:32:22 [ident] int64
+176_or_else.cn:33:12 [ident] option[int64]
+176_or_else.cn:35:11 [binding_pat] int32
+176_or_else.cn:35:24 [named_type] result[int32, int32]
+176_or_else.cn:36:8 [ident] int32
+176_or_else.cn:36:8 [binary] bool
+176_or_else.cn:36:12 [literal] int32
+176_or_else.cn:37:16 [call] result[int32, int32]
+176_or_else.cn:37:20 [ident] int32
+176_or_else.cn:38:12 [call] result[int32, int32]
+176_or_else.cn:38:17 [literal] int32
+176_or_else.cn:38:17 [binary] int32
+176_or_else.cn:38:21 [ident] int32
+176_or_else.cn:41:22 [named_type] int32
+176_or_else.cn:42:9 [binding_pat] int32
+176_or_else.cn:42:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:42:13 [call] option[int32]
+176_or_else.cn:42:13 [or_else] int32
+176_or_else.cn:42:18 [literal] int32
+176_or_else.cn:42:29 [literal] int32
+176_or_else.cn:43:9 [binding_pat] int32
+176_or_else.cn:43:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:43:13 [call] option[int32]
+176_or_else.cn:43:13 [or_else] int32
+176_or_else.cn:43:18 [literal] int32
+176_or_else.cn:43:29 [literal] int32
+176_or_else.cn:44:9 [binding_pat] int32
+176_or_else.cn:44:13 [ident] fn(int32) -> result[int32, int32]
+176_or_else.cn:44:13 [call] result[int32, int32]
+176_or_else.cn:44:13 [or_else] int32
+176_or_else.cn:44:19 [literal] int32
+176_or_else.cn:44:30 [literal] int32
+176_or_else.cn:45:9 [binding_pat] int32
+176_or_else.cn:45:13 [ident] fn(int32) -> result[int32, int32]
+176_or_else.cn:45:13 [call] result[int32, int32]
+176_or_else.cn:45:13 [or_else] int32
+176_or_else.cn:45:19 [literal] int32
+176_or_else.cn:45:19 [binary] int32
+176_or_else.cn:45:23 [literal] int32
+176_or_else.cn:45:34 [literal] int32
+176_or_else.cn:46:12 [ident] int32
+176_or_else.cn:46:12 [binary] int32
+176_or_else.cn:46:12 [binary] int32
+176_or_else.cn:46:12 [binary] int32
+176_or_else.cn:46:16 [ident] int32
+176_or_else.cn:46:20 [ident] int32
+176_or_else.cn:46:24 [ident] int32
+176_or_else.cn:49:22 [named_type] int32
+176_or_else.cn:50:9 [binding_pat] int32
+176_or_else.cn:50:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:50:13 [call] option[int32]
+176_or_else.cn:50:13 [or_else] int32
+176_or_else.cn:50:18 [literal] int32
+176_or_else.cn:50:29 [ident] fn(str) -> never
+176_or_else.cn:50:29 [call] never
+176_or_else.cn:50:34 [literal] str
+176_or_else.cn:51:9 [binding_pat] int32
+176_or_else.cn:51:13 [ident] fn(int32) -> result[int32, int32]
+176_or_else.cn:51:13 [call] result[int32, int32]
+176_or_else.cn:51:13 [or_else] int32
+176_or_else.cn:51:19 [literal] int32
+176_or_else.cn:51:30 [ident] fn(str) -> never
+176_or_else.cn:51:30 [call] never
+176_or_else.cn:51:35 [literal] str
+176_or_else.cn:52:12 [ident] int32
+176_or_else.cn:52:12 [binary] int32
+176_or_else.cn:52:16 [ident] int32
+176_or_else.cn:55:17 [binding_pat] int32
+176_or_else.cn:55:30 [named_type] int32
+176_or_else.cn:56:9 [binding_pat] int32
+176_or_else.cn:56:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:56:13 [call] option[int32]
+176_or_else.cn:56:13 [or_else] int32
+176_or_else.cn:56:18 [ident] int32
+176_or_else.cn:56:29 [block] never
+176_or_else.cn:56:36 [literal] int32
+176_or_else.cn:56:36 [binary] int32
+176_or_else.cn:56:40 [literal] int32
+176_or_else.cn:57:12 [ident] int32
+176_or_else.cn:57:12 [binary] int32
+176_or_else.cn:57:16 [literal] int32
+176_or_else.cn:60:16 [binding_pat] int32
+176_or_else.cn:60:33 [named_type] int32
+176_or_else.cn:61:5 [var_stmt] int32
+176_or_else.cn:61:24 [literal] int32
+176_or_else.cn:62:5 [var_stmt] int32
+176_or_else.cn:62:20 [literal] int32
+176_or_else.cn:63:11 [literal] bool
+176_or_else.cn:64:9 [ident] int32
+176_or_else.cn:64:13 [ident] int32
+176_or_else.cn:64:13 [binary] int32
+176_or_else.cn:64:17 [literal] int32
+176_or_else.cn:65:13 [binding_pat] int32
+176_or_else.cn:65:17 [ident] fn(int32) -> option[int32]
+176_or_else.cn:65:17 [call] option[int32]
+176_or_else.cn:65:17 [or_else] int32
+176_or_else.cn:65:22 [ident] int32
+176_or_else.cn:65:22 [binary] int32
+176_or_else.cn:65:30 [ident] int32
+176_or_else.cn:65:41 [block] never
+176_or_else.cn:66:9 [ident] int32
+176_or_else.cn:66:17 [ident] int32
+176_or_else.cn:66:17 [binary] int32
+176_or_else.cn:66:25 [ident] int32
+176_or_else.cn:67:12 [ident] int32
+176_or_else.cn:70:24 [named_type] int32
+176_or_else.cn:71:5 [var_stmt] int32
+176_or_else.cn:71:24 [literal] int32
+176_or_else.cn:72:5 [var_stmt] int32
+176_or_else.cn:72:20 [literal] int32
+176_or_else.cn:73:11 [ident] int32
+176_or_else.cn:73:11 [binary] bool
+176_or_else.cn:73:15 [literal] int32
+176_or_else.cn:74:9 [ident] int32
+176_or_else.cn:74:13 [ident] int32
+176_or_else.cn:74:13 [binary] int32
+176_or_else.cn:74:17 [literal] int32
+176_or_else.cn:75:13 [binding_pat] int32
+176_or_else.cn:75:17 [ident] fn(int32) -> option[int32]
+176_or_else.cn:75:17 [call] option[int32]
+176_or_else.cn:75:17 [or_else] int32
+176_or_else.cn:75:22 [ident] int32
+176_or_else.cn:75:22 [binary] int32
+176_or_else.cn:75:26 [literal] int32
+176_or_else.cn:75:37 [block] never
+176_or_else.cn:76:9 [ident] int32
+176_or_else.cn:76:17 [ident] int32
+176_or_else.cn:76:17 [binary] int32
+176_or_else.cn:76:25 [ident] int32
+176_or_else.cn:77:12 [ident] int32
+176_or_else.cn:79:21 [named_type] int32
+176_or_else.cn:80:12 [ident] fn(int32) -> int32
+176_or_else.cn:80:12 [call] int32
+176_or_else.cn:80:12 [binary] int32
+176_or_else.cn:80:12 [binary] int32
+176_or_else.cn:80:12 [binary] int32
+176_or_else.cn:80:24 [literal] int32
+176_or_else.cn:80:29 [ident] fn(int32) -> int32
+176_or_else.cn:80:29 [call] int32
+176_or_else.cn:80:41 [literal] int32
+176_or_else.cn:80:46 [ident] fn(int32) -> int32
+176_or_else.cn:80:46 [call] int32
+176_or_else.cn:80:57 [literal] int32
+176_or_else.cn:80:62 [ident] fn() -> int32
+176_or_else.cn:80:62 [call] int32
+176_or_else.cn:83:18 [named_type] int32
+176_or_else.cn:84:9 [binding_pat] int32
+176_or_else.cn:84:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:84:13 [call] option[int32]
+176_or_else.cn:84:13 [or_else] int32
+176_or_else.cn:84:18 [literal] int32
+176_or_else.cn:84:29 [ident] fn(int32) -> option[int32]
+176_or_else.cn:84:29 [call] option[int32]
+176_or_else.cn:84:29 [or_else] int32
+176_or_else.cn:84:34 [literal] int32
+176_or_else.cn:84:45 [literal] int32
+176_or_else.cn:85:9 [binding_pat] int32
+176_or_else.cn:85:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:85:13 [call] option[int32]
+176_or_else.cn:85:13 [or_else] int32
+176_or_else.cn:85:18 [literal] int32
+176_or_else.cn:85:29 [ident] fn(int32) -> option[int32]
+176_or_else.cn:85:29 [call] option[int32]
+176_or_else.cn:85:29 [or_else] int32
+176_or_else.cn:85:34 [literal] int32
+176_or_else.cn:85:45 [literal] int32
+176_or_else.cn:86:9 [binding_pat] int32
+176_or_else.cn:86:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:86:13 [call] option[int32]
+176_or_else.cn:86:13 [or_else] int32
+176_or_else.cn:86:18 [literal] int32
+176_or_else.cn:86:29 [ident] fn(int32) -> option[int32]
+176_or_else.cn:86:29 [call] option[int32]
+176_or_else.cn:86:29 [or_else] int32
+176_or_else.cn:86:34 [literal] int32
+176_or_else.cn:86:45 [literal] int32
+176_or_else.cn:87:12 [ident] int32
+176_or_else.cn:87:12 [binary] int32
+176_or_else.cn:87:12 [binary] int32
+176_or_else.cn:87:16 [ident] int32
+176_or_else.cn:87:20 [ident] int32
+176_or_else.cn:91:24 [named_type] int32
+176_or_else.cn:92:9 [binding_pat] int64
+176_or_else.cn:92:13 [ident] fn(int64) -> option[int64]
+176_or_else.cn:92:13 [call] option[int64]
+176_or_else.cn:92:13 [or_else] int64
+176_or_else.cn:92:20 [literal] int64
+176_or_else.cn:92:31 [literal] int64
+176_or_else.cn:93:12 [group] int64
+176_or_else.cn:93:12 [cast] int32
+176_or_else.cn:93:13 [ident] int64
+176_or_else.cn:93:13 [binary] int64
+176_or_else.cn:93:17 [literal] int64
+176_or_else.cn:95:13 [binding_pat] option[T]
+176_or_else.cn:95:13 [binding_pat] option[int32]
+176_or_else.cn:95:27 [binding_pat] T
+176_or_else.cn:95:27 [binding_pat] int32
+176_or_else.cn:95:36 [named_type] T
+176_or_else.cn:95:36 [named_type] int32
+176_or_else.cn:96:12 [ident] option[T]
+176_or_else.cn:96:12 [ident] option[int32]
+176_or_else.cn:96:12 [or_else] T
+176_or_else.cn:96:12 [or_else] int32
+176_or_else.cn:96:22 [ident] T
+176_or_else.cn:96:22 [ident] int32
+176_or_else.cn:99:24 [named_type] int32
+176_or_else.cn:100:12 [ident] fn(option[int32], int32) -> int32
+176_or_else.cn:100:12 [call] int32
+176_or_else.cn:100:12 [binary] int32
+176_or_else.cn:100:17 [ident] fn(int32) -> option[int32]
+176_or_else.cn:100:17 [call] option[int32]
+176_or_else.cn:100:22 [literal] int32
+176_or_else.cn:100:26 [literal] int32
+176_or_else.cn:100:31 [ident] fn(option[int32], int32) -> int32
+176_or_else.cn:100:31 [call] int32
+176_or_else.cn:100:36 [ident] fn(int32) -> option[int32]
+176_or_else.cn:100:36 [call] option[int32]
+176_or_else.cn:100:41 [literal] int32
+176_or_else.cn:100:45 [literal] int32
+176_or_else.cn:102:16 [binding_pat] &mut int32
+176_or_else.cn:102:38 [named_type] int32
+176_or_else.cn:103:5 [unary] int32
+176_or_else.cn:103:6 [ident] &mut int32
+176_or_else.cn:103:14 [unary] int32
+176_or_else.cn:103:14 [binary] int32
+176_or_else.cn:103:15 [ident] &mut int32
+176_or_else.cn:103:23 [literal] int32
+176_or_else.cn:104:12 [literal] int32
+176_or_else.cn:107:24 [named_type] int32
+176_or_else.cn:108:5 [var_stmt] int32
+176_or_else.cn:108:24 [literal] int32
+176_or_else.cn:109:9 [binding_pat] int32
+176_or_else.cn:109:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:109:13 [call] option[int32]
+176_or_else.cn:109:13 [or_else] int32
+176_or_else.cn:109:18 [literal] int32
+176_or_else.cn:109:29 [ident] fn(&mut int32) -> int32
+176_or_else.cn:109:29 [call] int32
+176_or_else.cn:109:40 [unary] &mut int32
+176_or_else.cn:109:45 [ident] int32
+176_or_else.cn:110:9 [binding_pat] int32
+176_or_else.cn:110:13 [ident] fn(int32) -> option[int32]
+176_or_else.cn:110:13 [call] option[int32]
+176_or_else.cn:110:13 [or_else] int32
+176_or_else.cn:110:18 [literal] int32
+176_or_else.cn:110:29 [ident] fn(&mut int32) -> int32
+176_or_else.cn:110:29 [call] int32
+176_or_else.cn:110:40 [unary] &mut int32
+176_or_else.cn:110:45 [ident] int32
+176_or_else.cn:111:12 [ident] int32
+176_or_else.cn:111:12 [binary] int32
+176_or_else.cn:111:12 [binary] int32
+176_or_else.cn:111:16 [ident] int32
+176_or_else.cn:111:20 [ident] int32
+176_or_else.cn:111:20 [binary] int32
+176_or_else.cn:111:28 [literal] int32
+176_or_else.cn:113:10 [binding_pat] &mut int32
+176_or_else.cn:113:34 [named_type] option[int32]
+176_or_else.cn:114:5 [unary] int32
+176_or_else.cn:114:6 [ident] &mut int32
+176_or_else.cn:114:16 [unary] int32
+176_or_else.cn:114:16 [binary] int32
+176_or_else.cn:114:17 [ident] &mut int32
+176_or_else.cn:114:27 [literal] int32
+176_or_else.cn:115:12 [call] option[int32]
+176_or_else.cn:115:18 [unary] int32
+176_or_else.cn:115:19 [ident] &mut int32
+176_or_else.cn:118:23 [named_type] int32
+176_or_else.cn:119:5 [var_stmt] int32
+176_or_else.cn:119:20 [literal] int32
+176_or_else.cn:120:9 [binding_pat] int32
+176_or_else.cn:120:13 [ident] fn(&mut int32) -> option[int32]
+176_or_else.cn:120:13 [call] option[int32]
+176_or_else.cn:120:13 [or_else] int32
+176_or_else.cn:120:18 [unary] &mut int32
+176_or_else.cn:120:23 [ident] int32
+176_or_else.cn:120:34 [literal] int32
+176_or_else.cn:121:12 [ident] int32
+176_or_else.cn:121:12 [binary] int32
+176_or_else.cn:121:16 [ident] int32
+176_or_else.cn:121:16 [binary] int32
+176_or_else.cn:121:20 [literal] int32
+176_or_else.cn:123:18 [binding_pat] int32
+176_or_else.cn:123:31 [named_type] int32
+176_or_else.cn:124:12 [ident] int32
+176_or_else.cn:124:12 [binary] int32
+176_or_else.cn:124:16 [literal] int32
+176_or_else.cn:126:17 [binding_pat] bool
+176_or_else.cn:126:32 [named_type] option[int32]
+176_or_else.cn:127:8 [ident] bool
+176_or_else.cn:128:16 [call] option[int32]
+176_or_else.cn:128:22 [literal] int32
+176_or_else.cn:129:12 [ident] option[int32]
+176_or_else.cn:132:27 [binding_pat] option[int32]
+176_or_else.cn:132:48 [named_type] int32
+176_or_else.cn:133:12 [ident] option[int32]
+176_or_else.cn:133:12 [or_else] int32
+176_or_else.cn:133:22 [await] int32
+176_or_else.cn:133:28 [ident] fn(int32) -> task[int32, never, io]
+176_or_else.cn:133:28 [call] task[int32, never, io]
+176_or_else.cn:133:35 [literal] int32
+176_or_else.cn:136:26 [binding_pat] bool
+176_or_else.cn:136:41 [named_type] int32
+176_or_else.cn:137:9 [binding_pat] int32
+176_or_else.cn:137:13 [group] option[int32]
+176_or_else.cn:137:13 [or_else] int32
+176_or_else.cn:137:14 [await] option[int32]
+176_or_else.cn:137:20 [ident] fn(bool) -> task[option[int32], never, io]
+176_or_else.cn:137:20 [call] task[option[int32], never, io]
+176_or_else.cn:137:26 [ident] bool
+176_or_else.cn:137:41 [literal] int32
+176_or_else.cn:138:12 [await] int32
+176_or_else.cn:138:18 [ident] fn(int32) -> task[int32, never, io]
+176_or_else.cn:138:18 [call] task[int32, never, io]
+176_or_else.cn:138:25 [ident] int32
+176_or_else.cn:141:25 [binding_pat] option[int32]
+176_or_else.cn:141:46 [named_type] int32
+176_or_else.cn:142:9 [binding_pat] int32
+176_or_else.cn:142:13 [ident] option[int32]
+176_or_else.cn:142:13 [or_else] int32
+176_or_else.cn:142:23 [block] never
+176_or_else.cn:142:30 [literal] int32
+176_or_else.cn:143:9 [binding_pat] int32
+176_or_else.cn:143:13 [await] int32
+176_or_else.cn:143:19 [ident] fn(int32) -> task[int32, never, io]
+176_or_else.cn:143:19 [call] task[int32, never, io]
+176_or_else.cn:143:26 [ident] int32
+176_or_else.cn:144:12 [ident] int32
+176_or_else.cn:144:12 [binary] int32
+176_or_else.cn:144:16 [literal] int32
+176_or_else.cn:147:21 [binding_pat] int32
+176_or_else.cn:147:31 [binding_pat] option[int32]
+176_or_else.cn:147:52 [named_type] int32
+176_or_else.cn:148:9 [binding_pat] int32
+176_or_else.cn:148:13 [if] int32
+176_or_else.cn:148:16 [ident] int32
+176_or_else.cn:148:16 [binary] bool
+176_or_else.cn:148:20 [literal] int32
+176_or_else.cn:149:9 [ident] option[int32]
+176_or_else.cn:149:9 [or_else] int32
+176_or_else.cn:149:19 [await] int32
+176_or_else.cn:149:25 [ident] fn(int32) -> task[int32, never, io]
+176_or_else.cn:149:25 [call] task[int32, never, io]
+176_or_else.cn:149:32 [ident] int32
+176_or_else.cn:151:9 [literal] int32
+176_or_else.cn:152:12 [ident] int32
+176_or_else.cn:155:28 [named_type] int32
+176_or_else.cn:156:9 [binding_pat] int32
+176_or_else.cn:156:13 [await] int32
+176_or_else.cn:156:19 [ident] fn(option[int32]) -> task[int32, never, io]
+176_or_else.cn:156:19 [call] task[int32, never, io]
+176_or_else.cn:156:35 [ident] option[int32]
+176_or_else.cn:157:9 [binding_pat] int32
+176_or_else.cn:157:13 [await] int32
+176_or_else.cn:157:19 [ident] fn(option[int32]) -> task[int32, never, io]
+176_or_else.cn:157:19 [call] task[int32, never, io]
+176_or_else.cn:157:35 [call] option[int32]
+176_or_else.cn:157:41 [literal] int32
+176_or_else.cn:158:9 [binding_pat] int32
+176_or_else.cn:158:13 [await] int32
+176_or_else.cn:158:19 [ident] fn(bool) -> task[int32, never, io]
+176_or_else.cn:158:19 [call] task[int32, never, io]
+176_or_else.cn:158:34 [literal] bool
+176_or_else.cn:159:9 [binding_pat] int32
+176_or_else.cn:159:13 [await] int32
+176_or_else.cn:159:19 [ident] fn(bool) -> task[int32, never, io]
+176_or_else.cn:159:19 [call] task[int32, never, io]
+176_or_else.cn:159:34 [literal] bool
+176_or_else.cn:160:9 [binding_pat] int32
+176_or_else.cn:160:13 [await] int32
+176_or_else.cn:160:19 [ident] fn(option[int32]) -> task[int32, never, io]
+176_or_else.cn:160:19 [call] task[int32, never, io]
+176_or_else.cn:160:33 [ident] option[int32]
+176_or_else.cn:161:9 [binding_pat] int32
+176_or_else.cn:161:13 [await] int32
+176_or_else.cn:161:19 [ident] fn(option[int32]) -> task[int32, never, io]
+176_or_else.cn:161:19 [call] task[int32, never, io]
+176_or_else.cn:161:33 [call] option[int32]
+176_or_else.cn:161:39 [literal] int32
+176_or_else.cn:162:9 [binding_pat] int32
+176_or_else.cn:162:13 [await] int32
+176_or_else.cn:162:19 [ident] fn(int32, option[int32]) -> task[int32, never, io]
+176_or_else.cn:162:19 [call] task[int32, never, io]
+176_or_else.cn:162:29 [literal] int32
+176_or_else.cn:162:32 [ident] option[int32]
+176_or_else.cn:163:9 [binding_pat] int32
+176_or_else.cn:163:13 [await] int32
+176_or_else.cn:163:19 [ident] fn(int32, option[int32]) -> task[int32, never, io]
+176_or_else.cn:163:19 [call] task[int32, never, io]
+176_or_else.cn:163:29 [literal] int32
+176_or_else.cn:163:32 [call] option[int32]
+176_or_else.cn:163:38 [literal] int32
+176_or_else.cn:164:12 [ident] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:12 [binary] int32
+176_or_else.cn:164:16 [ident] int32
+176_or_else.cn:164:20 [ident] int32
+176_or_else.cn:164:24 [ident] int32
+176_or_else.cn:164:28 [ident] int32
+176_or_else.cn:164:32 [ident] int32
+176_or_else.cn:164:36 [ident] int32
+176_or_else.cn:164:40 [ident] int32
+176_or_else.cn:166:24 [binding_pat] int32
+176_or_else.cn:166:37 [named_type] option[int32]
+176_or_else.cn:167:8 [ident] int32
+176_or_else.cn:167:8 [binary] bool
+176_or_else.cn:167:12 [literal] int32
+176_or_else.cn:168:16 [call] option[int32]
+176_or_else.cn:168:22 [ident] int32
+176_or_else.cn:168:22 [binary] int32
+176_or_else.cn:168:26 [literal] int32
+176_or_else.cn:169:12 [ident] option[int32]
+176_or_else.cn:171:33 [binding_pat] int32
+176_or_else.cn:171:46 [named_type] int32
+176_or_else.cn:172:12 [ident] fn(int32) -> option[int32]
+176_or_else.cn:172:12 [call] option[int32]
+176_or_else.cn:172:12 [or_else] int32
+176_or_else.cn:172:19 [ident] int32
+176_or_else.cn:172:30 [literal] int32
+176_or_else.cn:174:27 [ident] fn(int32) -> int32
+176_or_else.cn:174:27 [call] int32
+176_or_else.cn:174:43 [literal] int32
+176_or_else.cn:175:28 [ident] fn(int32) -> int32
+176_or_else.cn:175:28 [call] int32
+176_or_else.cn:175:44 [literal] int32
+176_or_else.cn:177:21 [named_type] int32
+176_or_else.cn:178:9 [binding_pat] int32
+176_or_else.cn:178:23 [await] int32
+176_or_else.cn:178:29 [ident] fn() -> task[int32, never, io]
+176_or_else.cn:178:29 [call] task[int32, never, io]
+176_or_else.cn:179:9 [binding_pat] int32
+176_or_else.cn:179:22 [ident] fn() -> int32
+176_or_else.cn:179:22 [call] int32
+176_or_else.cn:179:22 [binary] int32
+176_or_else.cn:179:22 [binary] int32
+176_or_else.cn:179:22 [binary] int32
+176_or_else.cn:179:38 [ident] fn() -> int32
+176_or_else.cn:179:38 [call] int32
+176_or_else.cn:179:54 [ident] fn() -> int32
+176_or_else.cn:179:54 [call] int32
+176_or_else.cn:179:69 [ident] fn() -> int32
+176_or_else.cn:179:69 [call] int32
+176_or_else.cn:180:9 [binding_pat] int32
+176_or_else.cn:180:16 [ident] fn() -> int32
+176_or_else.cn:180:16 [call] int32
+176_or_else.cn:180:16 [binary] int32
+176_or_else.cn:180:16 [binary] int32
+176_or_else.cn:180:34 [ident] fn() -> int32
+176_or_else.cn:180:34 [call] int32
+176_or_else.cn:180:52 [ident] fn() -> int32
+176_or_else.cn:180:52 [call] int32
+176_or_else.cn:181:9 [binding_pat] int32
+176_or_else.cn:181:16 [ident] fn() -> int32
+176_or_else.cn:181:16 [call] int32
+176_or_else.cn:181:16 [binary] int32
+176_or_else.cn:181:16 [binary] int32
+176_or_else.cn:181:33 [ident] int32
+176_or_else.cn:181:33 [literal] int32
+176_or_else.cn:181:48 [ident] int32
+176_or_else.cn:181:48 [literal] int32
+176_or_else.cn:182:12 [ident] int32
+176_or_else.cn:182:12 [binary] int32
+176_or_else.cn:182:12 [binary] int32
+176_or_else.cn:182:12 [binary] int32
+176_or_else.cn:182:25 [ident] int32
+176_or_else.cn:182:32 [ident] int32
+176_or_else.cn:182:39 [ident] int32
 std/algo.cn:42:14 [binding_pat] &mut map_iter[I, T, U]
 std/algo.cn:42:27 [named_type] option[U]
 std/algo.cn:43:15 [module_path] I
@@ -4144,13 +4637,19 @@ std/algo.cn:1250:12 [unary] bool
 std/algo.cn:1250:16 [ident] fn(&T, &U) -> bool
 std/algo.cn:1250:16 [call] bool
 std/algo.cn:1250:21 [unary] &T
-std/algo.cn:1250:22 [ident] option[T]
-std/algo.cn:1250:22 [field] fn(_) -> _
-std/algo.cn:1250:22 [call] T
-std/algo.cn:1250:34 [unary] &U
-std/algo.cn:1250:35 [ident] option[U]
-std/algo.cn:1250:35 [field] fn(_) -> _
-std/algo.cn:1250:35 [call] U
+std/algo.cn:1250:22 [group] T
+std/algo.cn:1250:23 [ident] option[T]
+std/algo.cn:1250:23 [or_else] T
+std/algo.cn:1250:33 [ident] fn(str) -> never
+std/algo.cn:1250:33 [call] never
+std/algo.cn:1250:39 [literal] str
+std/algo.cn:1250:56 [unary] &U
+std/algo.cn:1250:57 [group] U
+std/algo.cn:1250:58 [ident] option[U]
+std/algo.cn:1250:58 [or_else] U
+std/algo.cn:1250:68 [ident] fn(str) -> never
+std/algo.cn:1250:68 [call] never
+std/algo.cn:1250:74 [literal] str
 std/algo.cn:1251:20 [literal] bool
 std/algo.cn:1252:12 [literal] bool
 std/algo.cn:1272:13 [binding_pat] &ordering
@@ -4288,13 +4787,19 @@ std/algo.cn:1374:13 [binding_pat] ordering
 std/algo.cn:1374:20 [ident] fn(&T, &U) -> ordering
 std/algo.cn:1374:20 [call] ordering
 std/algo.cn:1374:24 [unary] &T
-std/algo.cn:1374:25 [ident] option[T]
-std/algo.cn:1374:25 [field] fn(_) -> _
-std/algo.cn:1374:25 [call] T
-std/algo.cn:1374:37 [unary] &U
-std/algo.cn:1374:38 [ident] option[U]
-std/algo.cn:1374:38 [field] fn(_) -> _
-std/algo.cn:1374:38 [call] U
+std/algo.cn:1374:25 [group] T
+std/algo.cn:1374:26 [ident] option[T]
+std/algo.cn:1374:26 [or_else] T
+std/algo.cn:1374:36 [ident] fn(str) -> never
+std/algo.cn:1374:36 [call] never
+std/algo.cn:1374:42 [literal] str
+std/algo.cn:1374:59 [unary] &U
+std/algo.cn:1374:60 [group] U
+std/algo.cn:1374:61 [ident] option[U]
+std/algo.cn:1374:61 [or_else] U
+std/algo.cn:1374:71 [ident] fn(str) -> never
+std/algo.cn:1374:71 [call] never
+std/algo.cn:1374:77 [literal] str
 std/algo.cn:1375:12 [unary] bool
 std/algo.cn:1375:16 [ident] fn(&ordering) -> bool
 std/algo.cn:1375:16 [call] bool
@@ -11551,45 +12056,24 @@ std/mem.cn:110:12 [ident] fn(*mut usize, usize) -> usize
 std/mem.cn:110:12 [call] usize
 std/mem.cn:110:32 [ident] *mut usize
 std/mem.cn:110:35 [ident] usize
-std/option.cn:23:16 [binding_pat] &option[T]
-std/option.cn:23:25 [named_type] T
-std/option.cn:24:16 [match] T
-std/option.cn:24:22 [ident] &option[T]
-std/option.cn:25:13 [option_pat] option[T]
-std/option.cn:25:19 [binding_pat] T
-std/option.cn:25:25 [ident] T
-std/option.cn:26:13 [ctor_pat] option[T]
-std/option.cn:26:22 [ident] fn(str) -> never
-std/option.cn:26:22 [call] never
-std/option.cn:26:28 [literal] str
-std/option.cn:31:19 [binding_pat] &option[T]
-std/option.cn:31:25 [binding_pat] T
-std/option.cn:31:41 [named_type] T
-std/option.cn:32:16 [match] T
-std/option.cn:32:22 [ident] &option[T]
-std/option.cn:33:13 [option_pat] option[T]
-std/option.cn:33:19 [binding_pat] T
-std/option.cn:33:25 [ident] T
-std/option.cn:34:13 [ctor_pat] option[T]
-std/option.cn:34:22 [ident] T
-std/option.cn:37:17 [binding_pat] &option[T]
-std/option.cn:37:26 [named_type] bool
-std/option.cn:38:16 [match] bool
-std/option.cn:38:22 [ident] &option[T]
-std/option.cn:39:13 [option_pat] option[T]
-std/option.cn:39:19 [wildcard_pat] T
-std/option.cn:39:25 [literal] bool
-std/option.cn:40:13 [ctor_pat] option[T]
-std/option.cn:40:22 [literal] bool
-std/option.cn:43:17 [binding_pat] &option[T]
-std/option.cn:43:26 [named_type] bool
-std/option.cn:44:16 [match] bool
-std/option.cn:44:22 [ident] &option[T]
-std/option.cn:45:13 [option_pat] option[T]
-std/option.cn:45:19 [wildcard_pat] T
-std/option.cn:45:25 [literal] bool
-std/option.cn:46:13 [ctor_pat] option[T]
-std/option.cn:46:22 [literal] bool
+std/option.cn:22:17 [binding_pat] &option[T]
+std/option.cn:22:26 [named_type] bool
+std/option.cn:23:16 [match] bool
+std/option.cn:23:22 [ident] &option[T]
+std/option.cn:24:13 [option_pat] option[T]
+std/option.cn:24:19 [wildcard_pat] T
+std/option.cn:24:25 [literal] bool
+std/option.cn:25:13 [ctor_pat] option[T]
+std/option.cn:25:22 [literal] bool
+std/option.cn:28:17 [binding_pat] &option[T]
+std/option.cn:28:26 [named_type] bool
+std/option.cn:29:16 [match] bool
+std/option.cn:29:22 [ident] &option[T]
+std/option.cn:30:13 [option_pat] option[T]
+std/option.cn:30:19 [wildcard_pat] T
+std/option.cn:30:25 [literal] bool
+std/option.cn:31:13 [ctor_pat] option[T]
+std/option.cn:31:22 [literal] bool
 std/panic.cn:17:24 [binding_pat] str
 std/panic.cn:17:37 [named_type] never
 std/panic.cn:23:15 [binding_pat] str
@@ -11597,38 +12081,26 @@ std/panic.cn:23:32 [named_type] never
 std/panic.cn:24:12 [ident] fn(str) -> never
 std/panic.cn:24:12 [call] never
 std/panic.cn:24:21 [ident] str
-std/result.cn:18:16 [binding_pat] &result[T, E]
-std/result.cn:18:25 [named_type] T
-std/result.cn:19:16 [match] T
-std/result.cn:19:22 [ident] &result[T, E]
+std/result.cn:11:15 [binding_pat] &result[T, E]
+std/result.cn:11:24 [named_type] bool
+std/result.cn:12:16 [match] bool
+std/result.cn:12:22 [ident] &result[T, E]
+std/result.cn:13:13 [result_pat] result[T, E]
+std/result.cn:13:17 [wildcard_pat] T
+std/result.cn:13:23 [literal] bool
+std/result.cn:14:13 [result_pat] result[T, E]
+std/result.cn:14:18 [wildcard_pat] E
+std/result.cn:14:24 [literal] bool
+std/result.cn:17:16 [binding_pat] &result[T, E]
+std/result.cn:17:25 [named_type] bool
+std/result.cn:18:16 [match] bool
+std/result.cn:18:22 [ident] &result[T, E]
+std/result.cn:19:13 [result_pat] result[T, E]
+std/result.cn:19:17 [wildcard_pat] T
+std/result.cn:19:23 [literal] bool
 std/result.cn:20:13 [result_pat] result[T, E]
-std/result.cn:20:17 [binding_pat] T
-std/result.cn:20:23 [ident] T
-std/result.cn:21:13 [result_pat] result[T, E]
-std/result.cn:21:18 [wildcard_pat] E
-std/result.cn:21:24 [ident] fn(str) -> never
-std/result.cn:21:24 [call] never
-std/result.cn:21:30 [literal] str
-std/result.cn:24:15 [binding_pat] &result[T, E]
-std/result.cn:24:24 [named_type] bool
-std/result.cn:25:16 [match] bool
-std/result.cn:25:22 [ident] &result[T, E]
-std/result.cn:26:13 [result_pat] result[T, E]
-std/result.cn:26:17 [wildcard_pat] T
-std/result.cn:26:23 [literal] bool
-std/result.cn:27:13 [result_pat] result[T, E]
-std/result.cn:27:18 [wildcard_pat] E
-std/result.cn:27:24 [literal] bool
-std/result.cn:30:16 [binding_pat] &result[T, E]
-std/result.cn:30:25 [named_type] bool
-std/result.cn:31:16 [match] bool
-std/result.cn:31:22 [ident] &result[T, E]
-std/result.cn:32:13 [result_pat] result[T, E]
-std/result.cn:32:17 [wildcard_pat] T
-std/result.cn:32:23 [literal] bool
-std/result.cn:33:13 [result_pat] result[T, E]
-std/result.cn:33:18 [wildcard_pat] E
-std/result.cn:33:24 [literal] bool
+std/result.cn:20:18 [wildcard_pat] E
+std/result.cn:20:24 [literal] bool
 std/shared.cn:31:18 [binding_pat] T
 std/shared.cn:31:31 [named_type] shared[T]
 std/shared.cn:32:12 [field] fn(_) -> shared[_]
@@ -33380,10 +33852,10 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 ?:35694 outer I
 ?:35705 f fn(T) -> J
 ?:35711 cur option[_]
-?:56508 inner I
-?:56519 f fn(&T) -> T
+?:56596 inner I
+?:56607 f fn(&T) -> T
 
-## call_argument_mappings (986)
+## call_argument_mappings (1041)
 003_collections_lambdas.cn:18:5 [call] (s=arg)
 027_dependent_and_refinement_types.cn:22:5 [call] (a=arg, b=arg)
 027_dependent_and_refinement_types.cn:26:5 [call] (a=arg, b=arg)
@@ -33592,6 +34064,63 @@ std/unicode_tables.cn:135:3053 [literal] uint32
 110_instances_by_substitution.cn:133:16 [call] (x=arg)
 111_method_on_literal_waits.cn:20:13 [call] ()
 111_method_on_literal_waits.cn:25:13 [call] (other=arg)
+176_or_else.cn:23:12 [call] (msg=arg)
+176_or_else.cn:42:13 [call] (n=arg)
+176_or_else.cn:43:13 [call] (n=arg)
+176_or_else.cn:44:13 [call] (n=arg)
+176_or_else.cn:45:13 [call] (n=arg)
+176_or_else.cn:50:13 [call] (n=arg)
+176_or_else.cn:50:29 [call] (msg=arg)
+176_or_else.cn:51:13 [call] (n=arg)
+176_or_else.cn:51:30 [call] (msg=arg)
+176_or_else.cn:56:13 [call] (n=arg)
+176_or_else.cn:65:17 [call] (n=arg)
+176_or_else.cn:75:17 [call] (n=arg)
+176_or_else.cn:80:12 [call] (n=arg)
+176_or_else.cn:80:29 [call] (n=arg)
+176_or_else.cn:80:46 [call] (limit=arg)
+176_or_else.cn:80:62 [call] ()
+176_or_else.cn:84:13 [call] (n=arg)
+176_or_else.cn:84:29 [call] (n=arg)
+176_or_else.cn:85:13 [call] (n=arg)
+176_or_else.cn:85:29 [call] (n=arg)
+176_or_else.cn:86:13 [call] (n=arg)
+176_or_else.cn:86:29 [call] (n=arg)
+176_or_else.cn:92:13 [call] (n=arg)
+176_or_else.cn:100:12 [call] (o=arg, d=arg)
+176_or_else.cn:100:17 [call] (n=arg)
+176_or_else.cn:100:31 [call] (o=arg, d=arg)
+176_or_else.cn:100:36 [call] (n=arg)
+176_or_else.cn:109:13 [call] (n=arg)
+176_or_else.cn:109:29 [call] (calls=arg)
+176_or_else.cn:110:13 [call] (n=arg)
+176_or_else.cn:110:29 [call] (calls=arg)
+176_or_else.cn:120:13 [call] (counter=arg)
+176_or_else.cn:133:28 [call] (x=arg)
+176_or_else.cn:137:20 [call] (good=arg)
+176_or_else.cn:138:18 [call] (x=arg)
+176_or_else.cn:143:19 [call] (x=arg)
+176_or_else.cn:149:25 [call] (x=arg)
+176_or_else.cn:156:19 [call] (o=arg)
+176_or_else.cn:157:19 [call] (o=arg)
+176_or_else.cn:158:19 [call] (good=arg)
+176_or_else.cn:159:19 [call] (good=arg)
+176_or_else.cn:160:19 [call] (o=arg)
+176_or_else.cn:161:19 [call] (o=arg)
+176_or_else.cn:162:19 [call] (n=arg, o=arg)
+176_or_else.cn:163:19 [call] (n=arg, o=arg)
+176_or_else.cn:172:12 [call] (n=arg)
+176_or_else.cn:174:27 [call] (n=arg)
+176_or_else.cn:175:28 [call] (n=arg)
+176_or_else.cn:178:29 [call] ()
+176_or_else.cn:179:22 [call] ()
+176_or_else.cn:179:38 [call] ()
+176_or_else.cn:179:54 [call] ()
+176_or_else.cn:179:69 [call] ()
+176_or_else.cn:180:16 [call] ()
+176_or_else.cn:180:34 [call] ()
+176_or_else.cn:180:52 [call] ()
+176_or_else.cn:181:16 [call] ()
 std/algo.cn:43:15 [call] ()
 std/algo.cn:54:16 [call] ()
 std/algo.cn:75:30 [call] ()
@@ -33654,8 +34183,8 @@ std/algo.cn:1246:12 [call] ()
 std/algo.cn:1246:28 [call] ()
 std/algo.cn:1248:12 [call] ()
 std/algo.cn:1248:27 [call] ()
-std/algo.cn:1250:22 [call] ()
-std/algo.cn:1250:35 [call] ()
+std/algo.cn:1250:33 [call] (message=arg)
+std/algo.cn:1250:68 [call] (message=arg)
 std/algo.cn:1314:26 [call] ()
 std/algo.cn:1317:22 [call] (o=arg)
 std/algo.cn:1336:26 [call] ()
@@ -33666,8 +34195,8 @@ std/algo.cn:1368:12 [call] ()
 std/algo.cn:1368:28 [call] ()
 std/algo.cn:1370:12 [call] ()
 std/algo.cn:1372:12 [call] ()
-std/algo.cn:1374:25 [call] ()
-std/algo.cn:1374:38 [call] ()
+std/algo.cn:1374:36 [call] (message=arg)
+std/algo.cn:1374:71 [call] (message=arg)
 std/algo.cn:1375:16 [call] (o=arg)
 std/algo.cn:1392:17 [call] ()
 std/algo.cn:1393:26 [call] ()
@@ -34127,9 +34656,7 @@ std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:89:13 [call] (p=arg)
 std/mem.cn:102:12 [call] (p=arg, n=arg)
 std/mem.cn:110:12 [call] (p=arg, n=arg)
-std/option.cn:26:22 [call] (message=arg)
 std/panic.cn:24:12 [call] (msg=arg)
-std/result.cn:21:24 [call] (message=arg)
 std/shared.cn:32:12 [call] (value=arg)
 std/shared.cn:37:21 [call] (count=arg)
 std/shared.cn:48:9 [call] (p=arg, n=arg)
@@ -34513,6 +35040,8 @@ std/unicode.cn:288:29 [call] (cp=arg)
 110_instances_by_substitution.cn:133:16 [call] codegen_stress.instances_by_substitution::framed$int64
 111_method_on_literal_waits.cn:20:13 [call] codegen_stress.method_on_literal_waits::int64::twice recv
 111_method_on_literal_waits.cn:25:13 [call] std.traits::int64::cmp trait=ord recv
+176_or_else.cn:100:12 [call] codegen_stress.or_else::pick$int32
+176_or_else.cn:100:31 [call] codegen_stress.or_else::pick$int32
 std/algo.cn:475:20 [call] std.traits::replace
 std/algo.cn:1219:13 [call] std.list::list::push recv
 std/algo.cn:1221:13 [call] std.list::list::push recv
@@ -34520,14 +35049,14 @@ std/algo.cn:1246:12 [call] std.option::option::is_none recv
 std/algo.cn:1246:28 [call] std.option::option::is_none recv
 std/algo.cn:1248:12 [call] std.option::option::is_none recv
 std/algo.cn:1248:27 [call] std.option::option::is_none recv
-std/algo.cn:1250:22 [call] std.option::option::unwrap recv
-std/algo.cn:1250:35 [call] std.option::option::unwrap recv
+std/algo.cn:1250:33 [call] std.panic::panic
+std/algo.cn:1250:68 [call] std.panic::panic
 std/algo.cn:1368:12 [call] std.option::option::is_none recv
 std/algo.cn:1368:28 [call] std.option::option::is_none recv
 std/algo.cn:1370:12 [call] std.option::option::is_none recv
 std/algo.cn:1372:12 [call] std.option::option::is_none recv
-std/algo.cn:1374:25 [call] std.option::option::unwrap recv
-std/algo.cn:1374:38 [call] std.option::option::unwrap recv
+std/algo.cn:1374:36 [call] std.panic::panic
+std/algo.cn:1374:71 [call] std.panic::panic
 std/algo.cn:1741:9 [call] std.list::list::push recv
 std/algo.cn:1746:9 [call] std.list::list::push recv
 std/algo.cn:1849:9 [call] std.list::list::push recv
@@ -34863,8 +35392,6 @@ std/mem.cn:89:13 [call] std.mem::drop_in_place$usize
 std/mem.cn:89:13 [call] std.mem::drop_in_place$variant_info
 std/mem.cn:102:12 [call] std.intrinsics::rt_atomic_fetch_add
 std/mem.cn:110:12 [call] std.intrinsics::rt_atomic_fetch_sub
-std/option.cn:26:22 [call] std.panic::panic
-std/result.cn:21:24 [call] std.panic::panic
 std/shared.cn:32:12 [call] std.shared::shared[T]::new
 std/shared.cn:48:9 [call] std.mem::atomic_fetch_add
 std/shared.cn:59:22 [call] std.mem::atomic_fetch_sub
@@ -35569,7 +36096,7 @@ std/list.cn:238:16 [call]
 074_range_index_general_stride.cn:50:31 [index] 
 074_range_index_general_stride.cn:50:40 [index] 
 
-## static_const_values (68)
+## static_const_values (70)
 033_const_generic_monomorphization.cn:18:13 [ident] 5
 033_const_generic_monomorphization.cn:23:13 [ident] 3
 033_const_generic_monomorphization.cn:23:13 [ident] 5
@@ -35579,6 +36106,8 @@ std/list.cn:238:16 [call]
 078_impl_const_generic_value_param.cn:27:16 [ident] 8
 082_default_parameter_values.cn:19:38 [ident] 7
 110_instances_by_substitution.cn:104:13 [ident] 3
+176_or_else.cn:181:33 [ident] 50
+176_or_else.cn:181:48 [ident] 7
 std/list.cn:270:21 [ident] 0
 std/list.cn:270:21 [ident] 0
 std/list.cn:270:21 [ident] 0
@@ -35715,7 +36244,7 @@ std/unicode.cn:284:42 [ident] static$FOLD_CP3$25
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 033_const_generic_monomorphization.cn:13:41 [ident] ident
 
-## drop_plans (802)
+## drop_plans (815)
 async_file own=std.io::async_file::drop fields=[]
 async_pipe_ends own=- fields=[reader: async_file, writer: async_file]
 atomic[T] own=std.sync::atomic::drop fields=[]
@@ -35791,6 +36320,8 @@ fn(&list[int32]) -> int32 own=- fields=[] glue=fn() -> unit
 fn(&list[money]) -> money own=- fields=[] glue=fn() -> unit
 fn(&mut T, T) -> T own=- fields=[] glue=fn() -> unit
 fn(&mut acc, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&mut int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(&mut int32) -> option[int32] own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32]) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(&mut list[int32], usize) -> bool own=- fields=[] glue=fn() -> unit
@@ -35916,6 +36447,7 @@ fn() -> raw_fd own=- fields=[] glue=fn() -> unit
 fn() -> result[raw_pipe, io_errno] own=- fields=[] glue=fn() -> unit
 fn() -> result[unit, test_failure] own=- fields=[] glue=fn() -> unit
 fn() -> self own=- fields=[] glue=fn() -> unit
+fn() -> task[int32, never, io] own=- fields=[] glue=fn() -> unit
 fn() -> type_category own=- fields=[] glue=fn() -> unit
 fn() -> uint128 own=- fields=[] glue=fn() -> unit
 fn() -> uint16 own=- fields=[] glue=fn() -> unit
@@ -36233,6 +36765,8 @@ fn(array[int32, n], usize) -> int32 own=- fields=[] glue=fn() -> unit
 fn(bag[T]) -> usize own=- fields=[] glue=fn() -> unit
 fn(bag[int32]) -> usize own=- fields=[] glue=fn() -> unit
 fn(bool) -> str own=- fields=[] glue=fn() -> unit
+fn(bool) -> task[int32, never, io] own=- fields=[] glue=fn() -> unit
+fn(bool) -> task[option[int32], never, io] own=- fields=[] glue=fn() -> unit
 fn(bool, sign_mode) -> str own=- fields=[] glue=fn() -> unit
 fn(bool, str) -> str own=- fields=[] glue=fn() -> unit
 fn(bool, str, str, format_spec) -> str own=- fields=[] glue=fn() -> unit
@@ -36261,14 +36795,18 @@ fn(int32) -> int64 own=- fields=[] glue=fn() -> unit
 fn(int32) -> list[int32] own=- fields=[] glue=fn() -> unit
 fn(int32) -> option[int32] own=- fields=[] glue=fn() -> unit
 fn(int32) -> result[int32, app_error] own=- fields=[] glue=fn() -> unit
+fn(int32) -> result[int32, int32] own=- fields=[] glue=fn() -> unit
 fn(int32) -> result[int32, parse_error] own=- fields=[] glue=fn() -> unit
 fn(int32) -> str own=- fields=[] glue=fn() -> unit
+fn(int32) -> task[int32, never, io] own=- fields=[] glue=fn() -> unit
 fn(int32) -> unit own=- fields=[] glue=fn() -> unit
 fn(int32, fn(int32) -> option[int32]) -> option[int32] own=- fields=[] glue=fn() -> unit
 fn(int32, int32, int32) -> int32 own=- fields=[] glue=fn() -> unit
+fn(int32, option[int32]) -> task[int32, never, io] own=- fields=[] glue=fn() -> unit
 fn(int64) -> B own=- fields=[] glue=fn() -> unit
 fn(int64) -> int64 own=- fields=[] glue=fn() -> unit
 fn(int64) -> list[int64] own=- fields=[] glue=fn() -> unit
+fn(int64) -> option[int64] own=- fields=[] glue=fn() -> unit
 fn(int64) -> str own=- fields=[] glue=fn() -> unit
 fn(int64) -> task[unit] own=- fields=[] glue=fn() -> unit
 fn(int64) -> unit own=- fields=[] glue=fn() -> unit
@@ -36289,9 +36827,11 @@ fn(option[A], fn(A) -> B) -> option[B] own=- fields=[] glue=fn() -> unit
 fn(option[A], fn(A) -> B) -> option[B] own=- fields=[] glue=fn() -> unit
 fn(option[A], fn(A) -> option[B]) -> option[B] own=- fields=[] glue=fn() -> unit
 fn(option[T], T) -> T own=- fields=[] glue=fn() -> unit
+fn(option[T], T) -> T own=- fields=[] glue=fn() -> unit
 fn(option[T], fn(T) -> T) -> option[T] own=- fields=[] glue=fn() -> unit
 fn(option[align_mode]) -> bool own=- fields=[] glue=fn() -> unit
 fn(option[align_mode], align_mode) -> align_mode own=- fields=[] glue=fn() -> unit
+fn(option[int32]) -> task[int32, never, io] own=- fields=[] glue=fn() -> unit
 fn(option[int32], fn(int32) -> int32) -> option[int32] own=- fields=[] glue=fn() -> unit
 fn(option[int32], int32) -> int32 own=- fields=[] glue=fn() -> unit
 fn(option[int64], fn(int64) -> int64) -> option[int64] own=- fields=[] glue=fn() -> unit
@@ -36497,7 +37037,9 @@ skip_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter own=- fields=[pred: fn(&_) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
 take_while_iter[I, T] own=- fields=[pred: fn(&T) -> bool]
+task[int32, never, io] own=- fields=[]
 task[option[_], never, io] own=- fields=[]
+task[option[int32], never, io] own=- fields=[]
 task[unit, _, io] own=- fields=[]
 task[unit, io_error, io] own=- fields=[]
 task[unit, never, io] own=- fields=[]
@@ -36519,7 +37061,7 @@ write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[T] own=std.sync::write_guard::drop fields=[]
 write_guard[_] own=std.sync::write_guard::drop fields=[]
 
-## borrow_bearing_types (1998)
+## borrow_bearing_types (2014)
 &K
 &T
 &T
@@ -36676,6 +37218,7 @@ write_guard[_] own=std.sync::write_guard::drop fields=[]
 &mut flat_map_iter[I, T, J, U]
 &mut flatten_iter[I, J, T]
 &mut inspect_iter[I, T]
+&mut int32
 &mut list[(int64, int32)]
 &mut list[(usize, usize)]
 &mut list[T]
@@ -37387,6 +37930,7 @@ T
 T
 T
 T
+T
 To
 U
 U
@@ -37558,6 +38102,8 @@ fn(&list[int32]) -> int32
 fn(&list[money]) -> money
 fn(&mut T, T) -> T
 fn(&mut acc, int32) -> int32
+fn(&mut int32) -> int32
+fn(&mut int32) -> option[int32]
 fn(&mut list[int32]) -> unit
 fn(&mut list[int32], int32) -> unit
 fn(&mut list[int32], usize) -> bool
@@ -37683,6 +38229,7 @@ fn() -> raw_fd
 fn() -> result[raw_pipe, io_errno]
 fn() -> result[unit, test_failure]
 fn() -> self
+fn() -> task[int32, never, io]
 fn() -> type_category
 fn() -> uint128
 fn() -> uint16
@@ -38021,6 +38568,8 @@ fn(array[int32, n], usize) -> int32
 fn(bag[T]) -> usize
 fn(bag[int32]) -> usize
 fn(bool) -> str
+fn(bool) -> task[int32, never, io]
+fn(bool) -> task[option[int32], never, io]
 fn(bool, sign_mode) -> str
 fn(bool, str) -> str
 fn(bool, str, str, format_spec) -> str
@@ -38049,14 +38598,18 @@ fn(int32) -> int64
 fn(int32) -> list[int32]
 fn(int32) -> option[int32]
 fn(int32) -> result[int32, app_error]
+fn(int32) -> result[int32, int32]
 fn(int32) -> result[int32, parse_error]
 fn(int32) -> str
+fn(int32) -> task[int32, never, io]
 fn(int32) -> unit
 fn(int32, fn(int32) -> option[int32]) -> option[int32]
 fn(int32, int32, int32) -> int32
+fn(int32, option[int32]) -> task[int32, never, io]
 fn(int64) -> B
 fn(int64) -> int64
 fn(int64) -> list[int64]
+fn(int64) -> option[int64]
 fn(int64) -> str
 fn(int64) -> task[unit]
 fn(int64) -> unit
@@ -38077,9 +38630,11 @@ fn(option[A], fn(A) -> B) -> option[B]
 fn(option[A], fn(A) -> B) -> option[B]
 fn(option[A], fn(A) -> option[B]) -> option[B]
 fn(option[T], T) -> T
+fn(option[T], T) -> T
 fn(option[T], fn(T) -> T) -> option[T]
 fn(option[align_mode]) -> bool
 fn(option[align_mode], align_mode) -> align_mode
+fn(option[int32]) -> task[int32, never, io]
 fn(option[int32], fn(int32) -> int32) -> option[int32]
 fn(option[int32], int32) -> int32
 fn(option[int64], fn(int64) -> int64) -> option[int64]
@@ -38354,6 +38909,7 @@ option[T]
 option[T]
 option[T]
 option[T]
+option[T]
 option[U]
 option[U]
 option[U]
@@ -38476,7 +39032,9 @@ take_iter[I, _]
 take_while_iter
 take_while_iter[I, T]
 take_while_iter[I, T]
+task[int32, never, io]
 task[option[_], never, io]
+task[option[int32], never, io]
 task[unit, _, io]
 task[unit, io_error, io]
 task[unit, never, io]
@@ -38547,7 +39105,8 @@ static$UPPER_FULL_CP2$8 -> std.unicode_tables
 static$UPPER_FULL_CP3$9 -> std.unicode_tables
 static$UPPER_FULL_KEY$4 -> std.unicode_tables
 
-## comptime_only_functions (39)
+## comptime_only_functions (41)
+at_compile_time
 bits
 derive_debug
 derive_debug_sum
@@ -38584,6 +39143,7 @@ is_sum
 is_unit
 is_unsigned_integer
 is_view
+lookup
 max
 min
 type_category
@@ -38596,7 +39156,7 @@ std.io::file_handle::read_exact
 std.io::file_handle::read_to_end
 std.io::file_handle::write_all
 
-## const_generic_instances (258)
+## const_generic_instances (259)
 codegen_stress.bound_driven_inference::filter$counter$int32
 codegen_stress.bound_driven_inference::filter_iter::next$filter_iter_counter__int32_
 codegen_stress.bound_driven_inference::map$filter_iter_counter__int32_$int32$int32
@@ -38651,6 +39211,7 @@ codegen_stress.instances_by_substitution::sum_list$money
 codegen_stress.instances_by_substitution::width_of$int32
 codegen_stress.instances_by_substitution::width_of$int64
 codegen_stress.instances_by_substitution::width_of$int8
+codegen_stress.or_else::pick$int32
 codegen_stress.static_dispatch_on_generic_types::collect$upto$counter$int32
 codegen_stress.static_dispatch_on_generic_types::collect$upto$doubler$int32
 codegen_stress.static_dispatch_on_generic_types::collect$upto$list_int32_$int32
@@ -38862,7 +39423,7 @@ stress.dependent_types::safe_get$int32$8
 codegen_stress.instances_by_substitution impl@2089
 codegen_stress.instances_by_substitution impl@4283
 
-## synthesized_decls (264)
+## synthesized_decls (265)
 alloc$_int64__int32_
 alloc$_usize__usize_
 alloc$field_info
@@ -39099,6 +39660,7 @@ option::pure$int32
 pair_of$int32
 pair_of$int64
 partition_point$uint32
+pick$int32
 read_exact
 read_exact
 read_to_end
@@ -39132,7 +39694,7 @@ zeros$3
 synthesized_functor_nodes 0
 synthesized_types 148
 synthesized_fragments 26
-synthesized_const_literals 68
+synthesized_const_literals 70
 elided_contracts 0
 
 ## fmt_runtime_types

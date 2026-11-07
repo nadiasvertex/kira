@@ -2916,7 +2916,10 @@ private:
   auto wire_str_equality_dispatch(const ast::binary_expr &binary, type_id lhs)
       -> void;
 
-  auto require_bool(const ast::expr &expr, std::string_view context) -> void;
+  /// With `suggest_or_else`, an `option` or `result` operand also gets the
+  /// help "did you mean `or else`?" (the operand of `or`/`and`).
+  auto require_bool(const ast::expr &expr, std::string_view context,
+                    bool suggest_or_else = false) -> void;
 
   static auto quote_fragment_kind_name(comptime::value_kind kind)
       -> std::string_view;
@@ -3850,6 +3853,9 @@ private:
       -> void;
 
   auto infer_try(const ast::try_expr &expr) -> type_id;
+
+  /// Types `operand or else fallback` (see `ast::or_else_expr`).
+  auto infer_or_else(const ast::or_else_expr &expr) -> type_id;
 
   auto infer_await(const ast::await_expr &expr) -> type_id;
   auto awaited_type(type_id operand, source_span span) -> type_id;

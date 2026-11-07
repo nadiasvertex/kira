@@ -1,5 +1,5 @@
 module sample
 def main() -> int32:
     let words = ["apple", "banana", "cherry"]
-    let winner = words.into_iter().max().unwrap()
+    let winner = words.into_iter().max() or else panic("empty")
     return if winner == "cherry": 1 else: 0

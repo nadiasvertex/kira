@@ -1,0 +1,89 @@
+module main
+
+# `x or else y` consumes its operand. The payload moves out on success. On
+# failure nothing binds the `@err` payload, so it is dropped before the
+# fallback runs, and exactly once. Every `noisy` prints `drop <id>` once.
+
+type noisy = { id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        println("drop {self.id}")
+
+def mk(good: bool, id: int32) -> result[noisy, noisy]:
+    if good:
+        return @ok(noisy { id: id })
+    return @err(noisy { id: id + 100 })
+
+def mko(good: bool, id: int32) -> option[noisy]:
+    if good:
+        return @some(noisy { id: id })
+    return @none
+
+# A temporary operand that holds a payload: moved into `a`, not dropped
+# early (the repro of the old `unwrap` bug, which dropped it before use).
+def temporary_success() -> unit:
+    let a = mk(true, 1) or else noisy { id: 9 }
+    println("temporary_success {a.id}")
+
+# A temporary operand that holds an `@err`: its payload drops first.
+def temporary_failure() -> unit:
+    let b = mk(false, 2) or else noisy { id: 9 }
+    println("temporary_failure {b.id}")
+
+# An `option` has nothing to drop on failure.
+def option_failure() -> unit:
+    let c = mko(false, 3) or else noisy { id: 8 }
+    println("option_failure {c.id}")
+
+# A named operand is moved; it is not dropped again at the end of scope.
+def named(good: bool, id: int32) -> unit:
+    let r = mk(good, id)
+    let x = r or else noisy { id: 50 }
+    println("named {x.id}")
+
+# A `return` fallback drops the `@err` payload, then the enclosing locals.
+def via_return(good: bool, id: int32) -> int32:
+    let local = noisy { id: 70 }
+    let x = mk(good, id) or else return 0 - 1
+    println("via_return {x.id} {local.id}")
+    return x.id
+
+# `continue` drops the `@err` payload of each miss.
+def in_loop() -> unit:
+    var i: int32 = 0
+    while i < 4:
+        i = i + 1
+        let x = mk(i % 2 == 0, i) or else continue
+        println("in_loop {x.id}")
+
+# The fallback owns a droppable value of its own and is not run on success.
+def fallback_not_run() -> unit:
+    let x = mk(true, 20) or else noisy { id: 21 }
+    println("fallback_not_run {x.id}")
+
+async def wait(n: int32) -> int32:
+    return n
+
+# The operand is live across an `await` before it is consumed, and the
+# fallback awaits.
+async def across_await(good: bool, id: int32) -> int32:
+    let r = mk(good, id)
+    let _ = await wait(1)
+    let x = r or else noisy { id: 60 + await wait(0) }
+    return x.id
+
+async def main() -> int32:
+    temporary_success()
+    temporary_failure()
+    option_failure()
+    named(true, 10)
+    named(false, 11)
+    println("{via_return(true, 12)}")
+    println("{via_return(false, 13)}")
+    in_loop()
+    fallback_not_run()
+    println("{await across_await(true, 30)}")
+    println("{await across_await(false, 31)}")
+    println("end")
+    return 0

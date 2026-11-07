@@ -1,0 +1,25 @@
+module main
+
+# `panic(...)` is a prelude function: it is written without an import and
+# its `never` type lets it stand where a value is expected. In an ordinary
+# (non-generic) function it used to reach the checker's built-in fallback,
+# which typed the call but resolved no callee, so lowering failed with "no
+# concrete checked type is available for this node" (todo item 18). None of
+# the panics below run.
+
+def first(o: option[int32]) -> int32:
+    return match o:
+        @some(v) => v
+        @none => panic("empty")
+
+def second(n: int32) -> int32:
+    if n < 0:
+        panic("negative")
+    return n
+
+def third(o: option[int32]) -> int32:
+    return o or else panic("missing")
+
+def main() -> int32:
+    println("{first(@some(5))} {second(3)} {third(@some(7))}")
+    return 0

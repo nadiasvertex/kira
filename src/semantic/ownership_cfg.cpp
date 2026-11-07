@@ -1582,6 +1582,9 @@ private:
       return result;
     }
 
+    case ast::node_kind::or_else_expr:
+      return lower_or_else(ast::cast<ast::or_else_expr>(expr));
+
     case ast::node_kind::call_expr:
       return eval_call(ast::cast<ast::call_expr>(expr));
 
@@ -2493,6 +2496,35 @@ private:
     goto_block(end);
     current_ = end;
     return want_value ? value{.loans = {}, .sources = {join}} : value{};
+  }
+
+  /// `operand or else fallback`: a fork. The operand is consumed. One path
+  /// carries its payload on as the value; the other runs the fallback, which
+  /// is a full expression of its own since it runs only sometimes. Nothing
+  /// binds what the operand holds on the failure path (the `@err` payload),
+  /// so that path drops it before the fallback runs (`unmatched_drops`,
+  /// keyed by the node, as for a `let ... else` whose pattern missed).
+  auto lower_or_else(const ast::or_else_expr &or_else) -> value {
+    const auto operand = eval_opt(or_else.operand.get(), use_mode::move);
+    const auto join = new_temp(local_role::join_temp);
+    const auto present = new_block();
+    const auto absent = new_block();
+    const auto end = new_block();
+    fork(present, absent);
+    current_ = present;
+    flow(join, operand, /*replace=*/true);
+    goto_block(end);
+    current_ = absent;
+    if (or_else.operand != nullptr &&
+        checked_.drop.drop_plans.contains(type_of(or_else.operand.get()))) {
+      cfg_.unmatched_drops.insert(&or_else);
+    }
+    if (or_else.fallback != nullptr) {
+      flow(join, eval_full(*or_else.fallback), /*replace=*/true);
+    }
+    goto_block(end);
+    current_ = end;
+    return value{.loans = {}, .sources = {join}};
   }
 
   auto lower_match(const ast::expr *subject_expr,

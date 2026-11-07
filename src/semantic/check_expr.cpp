@@ -1195,6 +1195,78 @@ auto checker::infer_try(const ast::try_expr &expr) -> type_id {
   return is_wrapper && !entry.args.empty() ? entry.args[0] : k_unknown_type;
 }
 
+/// Types `operand or else fallback`. The operand must be an `option[T]` or
+/// a `result[T, E]`; the expression has type `T`. The fallback is checked
+/// against `T` (so a literal takes `T`'s width) and is joined with it the way
+/// `match` arms are: a fallback that does not return has type `never`, the
+/// bottom, and constrains nothing. The operand's head (`option` or `result`)
+/// is known even in a generic body, so nothing here waits for an instance.
+auto checker::infer_or_else(const ast::or_else_expr &expr) -> type_id {
+  if (expr.operand == nullptr) {
+    return k_unknown_type;
+  }
+  // Choosing the `option` or `result` route reads the operand's head, so
+  // this is a point of demand: a call whose result is still being settled
+  // (`it.next()` on a receiver the body settles later) answers here.
+  const auto operand = strip_refs(
+      demand_shape(infer_expr(*expr.operand, k_unknown_type)));
+  const auto &entry = session_.types_.entry(operand);
+  const auto is_wrapper = entry.kind == type_kind::builtin_generic_kind &&
+                          (entry.name == "result" || entry.name == "option");
+  const auto payload =
+      is_wrapper && !entry.args.empty() ? entry.args[0] : k_unknown_type;
+
+  if (!is_wrapper && !session_.types_.is_unknown(operand)) {
+    error_with_help(
+        expr.operand->span,
+        std::format("`or else` needs an `option` or `result` on its left, "
+                    "found `{}`",
+                    session_.types_.display(operand)),
+        "this is not an `option` or `result`",
+        "`x or else y` gives the value inside an `option` or `result`, or "
+        "evaluates `y` when there is none.");
+    if (expr.fallback != nullptr) {
+      infer_expr(*expr.fallback, k_unknown_type);
+    }
+    return k_error_type;
+  }
+  if (expr.fallback == nullptr) {
+    return payload;
+  }
+
+  const auto found = infer_expr(*expr.fallback, payload);
+  const auto &found_entry = session_.types_.entry(found);
+  if (found_entry.name != "never" && !session_.types_.is_unknown(found) &&
+      !session_.types_.is_unknown(payload) &&
+      !session_.types_.compatible(payload, found) &&
+      !session_.types_.compatible(found, payload)) {
+    const auto operand_name = session_.types_.display(operand);
+    const auto payload_name = session_.types_.display(payload);
+    const auto article = [](const std::string &name) -> std::string_view {
+      return !name.empty() && std::string_view{"aeio"}.contains(name.front())
+                 ? "an"
+                 : "a";
+    };
+    error_with_help(
+        expr.fallback->span,
+        std::format("the fallback for {} `{}` must be {} `{}`, found `{}`",
+                    article(operand_name), operand_name,
+                    article(payload_name), payload_name,
+                    session_.types_.display(found)),
+        std::format("this is `{}`", session_.types_.display(found)),
+        "The fallback takes the place of the value the "
+        "`or else` unwraps. It may also be something that does not return, "
+        "such as `panic(...)` or `return`.");
+    return payload;
+  }
+  // A fallback that does not return adds nothing, even when the payload type
+  // is still open: the value is the payload, not `never`.
+  if (found_entry.name == "never") {
+    return payload;
+  }
+  return join_branch_type(payload, found, expr.fallback->span, "`or else`");
+}
+
 /// The built-in context an `on(target)` block runs on: `pool` and `cpu` name
 /// the thread pool's `cpu` context, `io` names `io`. Any other target is a
 /// user-defined context, which this check does not model, so it is unknown.
@@ -2102,6 +2174,8 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
   }
   case ast::node_kind::try_expr:
     return infer_try(ast::cast<const ast::try_expr>(expr));
+  case ast::node_kind::or_else_expr:
+    return infer_or_else(ast::cast<const ast::or_else_expr>(expr));
   case ast::node_kind::tuple_expr: {
     const auto &tuple = ast::cast<const ast::tuple_expr>(expr);
     const auto &expected_entry = session_.types_.entry(strip_refs(expected));

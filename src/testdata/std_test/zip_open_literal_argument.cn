@@ -11,13 +11,13 @@ def main() -> int32:
     let a = [1, 2, 3]
     let b = [10, 20, 30, 40]
     var z = a.into_iter().zip(b.into_iter())
-    let (x0, y0) = z.next().unwrap()
-    let (x1, y1) = z.next().unwrap()
+    let (x0, y0) = z.next() or else panic("empty")
+    let (x1, y1) = z.next() or else panic("empty")
     println("pairs={x0},{y0} {x1},{y1}")
 
     let c = [7, 8]
     let d = [70, 80, 90]
     var w = d.into_iter().zip(c.into_iter())
-    let (l, r) = w.next().unwrap()
+    let (l, r) = w.next() or else panic("empty")
     println("swapped={l},{r} sum={l + r}")
     return 0

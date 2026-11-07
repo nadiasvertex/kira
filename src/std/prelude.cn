@@ -11,3 +11,4 @@ module prelude
 use std.traits
 use std.iter
 use std.console
+use std.panic

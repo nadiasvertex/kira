@@ -691,6 +691,22 @@ clone_format_count(const std::variant<std::monostate, size_t, ptr<expr>> &slot)
     cloned->operand = std::move(*operand);
     return ptr<expr>(std::move(cloned));
   }
+  case node_kind::or_else_expr: {
+    const auto &or_else = cast<or_else_expr>(e);
+    auto operand = clone_optional(or_else.operand);
+    if (!operand.has_value()) {
+      return std::unexpected(operand.error());
+    }
+    auto fallback = clone_optional(or_else.fallback);
+    if (!fallback.has_value()) {
+      return std::unexpected(fallback.error());
+    }
+    auto cloned = make<or_else_expr>();
+    cloned->span = or_else.span;
+    cloned->operand = std::move(*operand);
+    cloned->fallback = std::move(*fallback);
+    return ptr<expr>(std::move(cloned));
+  }
   case node_kind::array_expr: {
     const auto &array = cast<array_expr>(e);
     auto cloned = make<array_expr>();

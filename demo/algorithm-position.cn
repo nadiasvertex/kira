@@ -14,10 +14,10 @@ def main() -> int32:
     let nums = [10, 20, 30, 40]
 
     # 30 is at position 2
-    println("position_of_30={nums.iter().values().position(x => *x == 30).unwrap()}")
+    println("position_of_30={nums.iter().values().position(x => *x == 30) or else panic("empty")}")
 
     # First even position is 0 (10 is even)
-    println("first_even_pos={nums.iter().values().position(x => *x % 2 == 0).unwrap()}")
+    println("first_even_pos={nums.iter().values().position(x => *x % 2 == 0) or else panic("empty")}")
 
     # Not finding
     println("position_none={nums.iter().values().position(x => *x > 100).is_none()}")

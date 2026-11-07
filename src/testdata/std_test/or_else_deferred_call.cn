@@ -1,0 +1,14 @@
+module main
+
+# The operand of `or else` can be a call whose result type is still open when
+# the expression is checked (`it.next()` on an iterator over a list literal),
+# and it can sit inside a string interpolation. Both used to leave the
+# interpolated expression unresolved.
+
+def main() -> int32:
+    let xs = [10, 20]
+    var it = xs.into_iter()
+    println("first={it.next() or else panic("empty")}")
+    println("second={it.next() or else 0}")
+    println("third={it.next() or else -1}")
+    return 0

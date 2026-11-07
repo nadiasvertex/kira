@@ -16,13 +16,13 @@ def main() -> int32:
 
     # Convert even numbers to their double, drop odd numbers
     var fm = nums.into_iter().filter_map(x => if x % 2 == 0: @some(x * 10) else: @none)
-    println("mapped={fm.next().unwrap()}")
-    println("mapped={fm.next().unwrap()}")
+    println("mapped={fm.next() or else panic("empty")}")
+    println("mapped={fm.next() or else panic("empty")}")
     println("done={fm.next().is_none()}")
 
     # Parse strings that represent numbers
     let mixed = ["42", "hello", "99", "world"]
     var parsed = mixed.into_iter().filter_map(x => if x.len() == 2: @some(x.len()) else: @none)
-    println("parsed={parsed.next().unwrap()}")
-    println("parsed={parsed.next().unwrap()}")
+    println("parsed={parsed.next() or else panic("empty")}")
+    println("parsed={parsed.next() or else panic("empty")}")
     return 0

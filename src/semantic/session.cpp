@@ -1061,6 +1061,7 @@ auto walk_node(const ast::node &node, scope_id active_scope,
   case ast::node_kind::field_expr:
   case ast::node_kind::cast_expr:
   case ast::node_kind::try_expr:
+  case ast::node_kind::or_else_expr:
   case ast::node_kind::tuple_expr:
   case ast::node_kind::array_expr:
   case ast::node_kind::struct_expr:
