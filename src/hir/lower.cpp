@@ -5280,9 +5280,9 @@ auto lowerer::lower_or_else(const ast::or_else_expr &or_else)
       or_else.span, success_variant, std::move(success_args)));
   auto success_stmts = ptr_vec<hir_node>{};
   success_stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      or_else.span, ptr<hir_expr>(make<hir_variant_payload>(
-                        or_else.span, *type, make_place(), success_variant,
-                        size_t{0})))));
+      or_else.span,
+      ptr<hir_expr>(make<hir_variant_payload>(or_else.span, *type, make_place(),
+                                              success_variant, size_t{0})))));
   auto success_arm =
       hir_match_arm{.pattern = std::move(success_pattern),
                     .guard = nullptr,
@@ -5305,7 +5305,8 @@ auto lowerer::lower_or_else(const ast::or_else_expr &or_else)
     }
   }
 
-  const auto *jump_block = ast::as<const ast::block_expr>(or_else.fallback.get());
+  const auto *jump_block =
+      ast::as<const ast::block_expr>(or_else.fallback.get());
   const auto is_jump =
       jump_block != nullptr && jump_block->stmts.size() == 1 &&
       jump_block->stmts[0] != nullptr &&

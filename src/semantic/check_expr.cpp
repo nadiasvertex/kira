@@ -1208,8 +1208,8 @@ auto checker::infer_or_else(const ast::or_else_expr &expr) -> type_id {
   // Choosing the `option` or `result` route reads the operand's head, so
   // this is a point of demand: a call whose result is still being settled
   // (`it.next()` on a receiver the body settles later) answers here.
-  const auto operand = strip_refs(
-      demand_shape(infer_expr(*expr.operand, k_unknown_type)));
+  const auto operand =
+      strip_refs(demand_shape(infer_expr(*expr.operand, k_unknown_type)));
   const auto &entry = session_.types_.entry(operand);
   const auto is_wrapper = entry.kind == type_kind::builtin_generic_kind &&
                           (entry.name == "result" || entry.name == "option");
@@ -1250,9 +1250,8 @@ auto checker::infer_or_else(const ast::or_else_expr &expr) -> type_id {
     error_with_help(
         expr.fallback->span,
         std::format("the fallback for {} `{}` must be {} `{}`, found `{}`",
-                    article(operand_name), operand_name,
-                    article(payload_name), payload_name,
-                    session_.types_.display(found)),
+                    article(operand_name), operand_name, article(payload_name),
+                    payload_name, session_.types_.display(found)),
         std::format("this is `{}`", session_.types_.display(found)),
         "The fallback takes the place of the value the "
         "`or else` unwraps. It may also be something that does not return, "

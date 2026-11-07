@@ -2301,8 +2301,7 @@ auto test_parser_accepts_root_module_alias() -> void {
 
 /// Parses `module m` with one function whose body is `body`, and returns
 /// the initializer of its first `let` (or the value of its first `return`).
-auto first_let_initializer(const parsed_source &parsed)
-    -> cinder::ast::expr * {
+auto first_let_initializer(const parsed_source &parsed) -> cinder::ast::expr * {
   const auto *fn = expect_node<cinder::ast::func_decl>(
       parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected a function declaration");
@@ -2353,7 +2352,8 @@ auto test_or_else_precedence_and_grouping() -> void {
   auto *pipe = expect_expr<cinder::ast::binary_expr>(
       first_let_initializer(parsed), cinder::ast::node_kind::binary_expr,
       "expected a pipe at the top");
-  expect(pipe->op == cinder::ast::binary_op::pipe, "expected the pipe operator");
+  expect(pipe->op == cinder::ast::binary_op::pipe,
+         "expected the pipe operator");
   expect(pipe->lhs->kind == cinder::ast::node_kind::or_else_expr,
          "expected the pipe's left side to be the `or else`");
 
@@ -2400,8 +2400,8 @@ auto test_or_else_jump_fallbacks() -> void {
       parsed.file->items[0].get(), cinder::ast::node_kind::func_decl,
       "expected a function declaration");
 
-  const auto fallback_jump = [](const cinder::ast::node *stmt)
-      -> const cinder::ast::node * {
+  const auto fallback_jump =
+      [](const cinder::ast::node *stmt) -> const cinder::ast::node * {
     const auto *let = expect_node<const cinder::ast::let_stmt>(
         const_cast<cinder::ast::node *>(stmt), cinder::ast::node_kind::let_stmt,
         "expected a let statement");
