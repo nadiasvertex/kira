@@ -289,6 +289,21 @@ using cinder::decode_string_literal;
   return id;
 }
 
+/// A direct call to `callee` that carries the callee's return attributes
+/// (`signext`/`zeroext` on a sub-32-bit integer). LLVM requires the call
+/// site to agree with the callee for `musttail`.
+[[nodiscard]] auto call_function(llvm::IRBuilder<> &builder,
+                                 llvm::Function *callee,
+                                 llvm::ArrayRef<llvm::Value *> args)
+    -> llvm::CallInst * {
+  auto *call = builder.CreateCall(callee, args);
+  const auto ret_attrs = callee->getAttributes().getRetAttrs();
+  if (ret_attrs.hasAttributes()) {
+    call->addRetAttrs(llvm::AttrBuilder(callee->getContext(), ret_attrs));
+  }
+  return call;
+}
+
 /// Maps `id` to the LLVM type a value of that type is stored/passed as: the
 /// scalar `numeric_kind` mapping for scalars, an opaque `ptr` for anything
 /// `is_heap_type` recognizes, or `nullopt` for the (currently) genuinely
@@ -1213,7 +1228,7 @@ private:
          ++it) {
       forward_args.push_back(&*it);
     }
-    auto *call_result = thunk_builder.CreateCall(target, forward_args);
+    auto *call_result = call_function(thunk_builder, target, forward_args);
     if (target->getFunctionType()->getReturnType()->isVoidTy()) {
       thunk_builder.CreateRetVoid();
     } else {
@@ -2118,7 +2133,7 @@ private:
           }
           args.push_back(*value);
         }
-        return builder_.CreateCall(found->second, args);
+        return call_function(builder_, found->second, args);
       }
     }
 
@@ -2222,7 +2237,7 @@ private:
       args.push_back(*value);
     }
 
-    auto *call_inst = builder_.CreateCall(callee_fn, args);
+    auto *call_inst = call_function(builder_, callee_fn, args);
 
     // Beyond what spec/specification/03-advanced/39-tail-call-optimization.md
     // enumerates (matching return type, matching calling convention, no
@@ -2255,6 +2270,8 @@ private:
     const auto eligible_for_musttail =
         callee_fn->getReturnType() == current_fn_->getReturnType() &&
         callee_fn->getCallingConv() == current_fn_->getCallingConv() &&
+        callee_fn->getAttributes().getRetAttrs() ==
+            current_fn_->getAttributes().getRetAttrs() &&
         same_param_types;
     call_inst->setTailCallKind(eligible_for_musttail
                                    ? llvm::CallInst::TCK_MustTail
@@ -4925,6 +4942,20 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
                                               /*isVarArg=*/false);
       auto *llvm_fn = llvm::Function::Create(
           fn_type, llvm::Function::ExternalLinkage, key, llvm_module);
+      // A sub-32-bit integer return carries `signext`/`zeroext`, as clang
+      // emits for C. Apple arm64 makes the callee extend such a value, so a
+      // native caller (the JIT harness calling `main`, or C calling an
+      // exported function) may read the full register. Without it, an
+      // optimized caller sees garbage above bit 8 of an `int8` result.
+      // Parameters are left alone: an attribute there obliges every call
+      // site to extend too, and indirect call sites don't carry it.
+      if (return_ty->isIntegerTy() &&
+          return_ty->getIntegerBitWidth() < 32) {
+        const auto kind = numeric_kind_of(types, fn->return_type);
+        llvm_fn->addRetAttr(kind.has_value() && is_signed_integer(*kind)
+                                ? llvm::Attribute::SExt
+                                : llvm::Attribute::ZExt);
+      }
       functions.emplace(key, llvm_fn);
       ordered_functions.emplace_back(module, fn.get());
     }

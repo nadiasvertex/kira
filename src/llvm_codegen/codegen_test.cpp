@@ -1,11 +1,14 @@
 #include <cstdint>
 #include <exception>
+#include <format>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include <llvm/IR/Attributes.h>
+#include <llvm/IR/Function.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/Support/Casting.h>
 
@@ -267,6 +270,68 @@ auto test_self_recursive_tail_call_gets_musttail() -> void {
                              "overflow the native stack");
   expect(result->value.i == 1'000'000,
          "expected count_down(1000000, 0) == 1000000");
+}
+
+auto test_small_integer_returns_carry_extension_attributes() -> void {
+  // Apple arm64 makes the callee extend a sub-32-bit return, so a native
+  // caller (the JIT harness, or C) may read the whole register. Without
+  // `signext`/`zeroext`, an optimized caller saw garbage above bit 8 of an
+  // `int8` result (todo item 19). The musttail self-call checks that call
+  // sites carry the callee's return attributes, which LLVM requires.
+  auto fixture = check_fixture(R"(module sample
+
+def narrow(n: int32, acc: int8) -> int8:
+    if n == 0:
+        return acc
+    return narrow(n - 1, acc +% 1)
+
+def unsigned_narrow() -> uint8:
+    return 200
+
+def flag() -> bool:
+    return true
+
+def wide() -> int32:
+    return 1
+
+def main() -> int8:
+    if flag():
+        return narrow(200, 0) +% (unsigned_narrow() as int8) +% (wide() as int8)
+    return 0
+)");
+  auto module = hir::lower_module(*fixture.ast_file, "sample", fixture.checked);
+  expect(module.has_value(), "expected fixture to lower to HIR");
+  auto compiled = lc::compile_module(**module, fixture.checked.types);
+  expect(compiled.has_value(),
+         "expected fixture to compile to an llvm::Module");
+
+  const auto ret_has = [&](std::string_view name,
+                           llvm::Attribute::AttrKind kind) {
+    const auto *fn = compiled->module->getFunction(llvm::StringRef(name));
+    expect(fn != nullptr, std::format("expected function `{}`", name));
+    return fn->getAttributes().hasRetAttr(kind);
+  };
+  expect(ret_has("narrow", llvm::Attribute::SExt),
+         "expected an `int8` return to be `signext`");
+  expect(ret_has("main", llvm::Attribute::SExt),
+         "expected `main -> int8` to be `signext`");
+  expect(ret_has("unsigned_narrow", llvm::Attribute::ZExt),
+         "expected a `uint8` return to be `zeroext`");
+  expect(ret_has("flag", llvm::Attribute::ZExt),
+         "expected a `bool` return to be `zeroext`");
+  expect(!ret_has("wide", llvm::Attribute::SExt) &&
+             !ret_has("wide", llvm::Attribute::ZExt),
+         "expected an `int32` return to carry no extension attribute");
+  expect(count_musttail_calls_to(*compiled->module, "narrow") == 1,
+         "expected `narrow`'s self-call to stay `musttail`");
+
+  auto jit = lc::jit_module::create(std::move(*compiled));
+  expect(jit.has_value(), "expected the compiled module to JIT successfully");
+  auto result = jit->run("main", bc::numeric_kind::i8);
+  expect(result.has_value(), "expected `main` to run");
+  // 200 +% 200 +% 1 in int8: -56 + -56 + 1 = -111.
+  expect(result->value.i == -111,
+         std::format("expected main() == -111, got {}", result->value.i));
 }
 
 auto test_indirect_call_through_closure_never_gets_musttail() -> void {
@@ -1108,6 +1173,7 @@ auto main() -> int {
     test_while_loop_sums_one_to_n();
     test_recursive_call_computes_factorial();
     test_self_recursive_tail_call_gets_musttail();
+    test_small_integer_returns_carry_extension_attributes();
     test_indirect_call_through_closure_never_gets_musttail();
     test_intrinsic_call_never_gets_musttail();
     test_and_or_short_circuit_to_correct_value();
