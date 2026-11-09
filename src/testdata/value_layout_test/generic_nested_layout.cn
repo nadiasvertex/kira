@@ -1,0 +1,5 @@
+module sample
+type pair[T, U] = { first: T, second: U }
+type wrapper = { tag: int8, inner: pair[int8, int64], items: array[int16, 3], wide: int128 }
+def main(w: wrapper, p: pair[int8, int64], o: option[pair[int8, int64]]) -> int32:
+    return 0

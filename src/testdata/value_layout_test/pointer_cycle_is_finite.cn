@@ -1,0 +1,5 @@
+module sample
+type node = { value: int32, next: *mut node }
+type slot = { head: option[*mut node], count: int32 }
+def main(n: node, s: slot) -> int32:
+    return 0

@@ -12,8 +12,8 @@ preserving ownership, borrowing, evaluation order, and exactly-once drops on the
 bytecode VM and LLVM backends.
 
 This is an implementation plan. T-01 is complete (findings in
-[value-semantics-t01-findings.md](value-semantics-t01-findings.md)); T-02 through
-T-14 have not been implemented.
+[value-semantics-t01-findings.md](value-semantics-t01-findings.md)) and T-02 is
+complete (status under T-02 below); T-03 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -476,7 +476,7 @@ integration and documentation.
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
 | [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
-| [ ] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
+| [x] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
 | [ ] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [ ] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
 | [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04 | VM executes nested aggregate calls without shell allocations. |
@@ -526,6 +526,30 @@ integration and documentation.
 6. Retain old layout APIs only behind explicitly named migration adapters until
    their consumers migrate. Do not change live code to new sizes while it still
    stores old pointers under the same type identity.
+
+**Status: complete (2026-11-09).** The checker records concrete struct fields and
+sum payloads per type in `checked_types::shapes` (`src/semantic/aggregate_shape.h`).
+`runtime::value_layouts` (`src/runtime/value_layout.{h,cpp}`) computes cached byte
+layouts from them. Nothing in the compiler reads these layouts yet, so no live
+size changed. Three points differ from the steps above:
+
+- The new engine is a separate file rather than an extension of `layout.{h,cpp}`.
+  The old API is unchanged and is not renamed to adapter names; renaming it would
+  touch every backend call site. T-05 and T-06 remove it as each consumer moves.
+- `value_layouts::size_of`/`align_of` return the new answers, but the `size_of[T]()`
+  and `align_of[T]()` intrinsics still answer from the old `layout_of`. They switch
+  when the backends do, so that the intrinsic never disagrees with the stride the
+  code actually uses.
+- The infinite-size diagnostic is produced by the engine but not yet shown to
+  users. No pass asks for a layout until T-05, and the checker accepts a type that
+  contains itself (`type direct = { inner: direct }`) today. T-05 must report the
+  engine's error when it first lays out such a type.
+
+Aligned storage: `cinder_heap_alloc_aligned` and `cinder_heap_realloc_aligned`
+(both allocator modes), `bump_arena::allocate(bytes, align)`, and
+`runtime::aligned_buffer`, which now backs the VM's per-frame `uninit` storage at
+16-byte alignment. LLVM frame allocas and the plain heap entry points are
+unchanged.
 
 ### T-03 — Add shared storage form and aggregate ABI
 
@@ -815,5 +839,6 @@ automatically instrument generated code.
   defaults; no unresolved inventory is silently assumed to be complete.
 - [x] Complete T-01 inventories and record actual baseline results before coding
   (see [value-semantics-t01-findings.md](value-semantics-t01-findings.md)).
-- [ ] Implement T-02 through T-14 and record passing verification before closing
+- [x] Implement T-02 (concrete recursive byte layouts).
+- [ ] Implement T-03 through T-14 and record passing verification before closing
   the corresponding todo items.

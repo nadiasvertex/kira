@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "src/intrinsics.h"
+#include "src/runtime/aligned_buffer.h"
 #include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/coroutine.h"
@@ -1084,7 +1085,7 @@ struct frame {
   /// from `bytecode_function::stack_byte_size`, and never resized — every
   /// offset into it is fixed at compile time, and a pointer taken into it
   /// must stay valid for the life of the frame.
-  std::vector<std::byte> stack_bytes;
+  runtime::aligned_buffer stack_bytes;
   size_t pc = 0;
   uint16_t result_reg = 0;
   bool has_caller = false;
@@ -1103,7 +1104,7 @@ auto push_frame(std::vector<frame> &frames, const bytecode_function &fn,
   // `memset` of the same buffer, so a read of an unwritten slot is at least
   // deterministic across tiers rather than exposing whatever the previous
   // frame left behind.
-  f.stack_bytes.assign(fn.stack_byte_size, std::byte{});
+  f.stack_bytes = runtime::aligned_buffer(fn.stack_byte_size);
   for (size_t i = 0; i < args.size(); ++i) {
     f.registers[i] = args[i];
   }
@@ -2220,7 +2221,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         // `push_frame` would. Nothing can still point into the old range:
         // `hir::mark_tail_calls` never marks a call out of a function that
         // owns a buffer.
-        f.stack_bytes.assign(callee.stack_byte_size, std::byte{});
+        f.stack_bytes = runtime::aligned_buffer(callee.stack_byte_size);
         for (size_t i = 0; i < call_args.size(); ++i) {
           f.registers[i] = call_args[i];
         }

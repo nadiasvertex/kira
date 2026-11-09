@@ -700,6 +700,76 @@ auto checker::resolve_drop_plans_from(std::size_t first) -> void {
   }
 }
 
+/// Records the concrete members of every closed struct and sum instance.
+/// Resolving a member can intern a type the table has not seen (a field typed
+/// `list[pair[int32]]` names an instance nothing else used), so the walk
+/// re-reads the table size each step and covers those too.
+///
+/// Types that mention an inference variable or a generic parameter are
+/// skipped: they are not types of the program, and a layout query for one is
+/// reported as an unresolved type rather than answered from a template.
+auto checker::compute_aggregate_shapes() -> aggregate_shapes {
+  auto shapes = aggregate_shapes{};
+  for (std::size_t raw = 0; raw < session_.types_.count(); ++raw) {
+    const auto id = static_cast<type_id>(raw);
+    const auto entry = session_.types_.entry(id); // copy: resolving may intern
+    const auto is_prelude_sum =
+        entry.kind == type_kind::builtin_generic_kind &&
+        ((entry.name == "option" && entry.args.size() == 1) ||
+         (entry.name == "result" && entry.args.size() == 2));
+    if (entry.kind != type_kind::struct_kind &&
+        entry.kind != type_kind::sum_kind && !is_prelude_sum) {
+      continue;
+    }
+    if (mentions_type_var(id) || mentions_template_param(id)) {
+      continue;
+    }
+    auto shape = aggregate_shape{};
+    if (is_prelude_sum) {
+      const auto settled = [&](type_id arg) -> type_id {
+        return lowering_type(arg);
+      };
+      if (entry.name == "option") {
+        shape.variants.push_back(
+            variant_shape{.name = "some", .payload = {settled(entry.args[0])}});
+        shape.variants.push_back(variant_shape{.name = "none", .payload = {}});
+      } else {
+        shape.variants.push_back(
+            variant_shape{.name = "ok", .payload = {settled(entry.args[0])}});
+        shape.variants.push_back(
+            variant_shape{.name = "err", .payload = {settled(entry.args[1])}});
+      }
+    } else if (entry.kind == type_kind::struct_kind) {
+      const auto *fields = struct_fields_of(entry);
+      if (fields == nullptr) {
+        continue;
+      }
+      shape.packed = entry.decl != nullptr && entry.decl->modifiers.is_packed;
+      for (const auto &field : *fields) {
+        const auto type = struct_field_type(entry, field.name);
+        shape.fields.push_back(field_shape{
+            .name = field.name,
+            .type = lowering_type(type.value_or(k_unknown_type))});
+      }
+    } else {
+      const auto *variants = sum_variants_of(entry);
+      if (variants == nullptr) {
+        continue;
+      }
+      for (const auto &variant : *variants) {
+        auto payload = variant_payload_types(entry, variant);
+        for (auto &type : payload) {
+          type = lowering_type(type);
+        }
+        shape.variants.push_back(variant_shape{.name = variant.name,
+                                               .payload = std::move(payload)});
+      }
+    }
+    shapes.emplace(id, std::move(shape));
+  }
+  return shapes;
+}
+
 // ==========================================================================
 //  Function signatures
 // ==========================================================================

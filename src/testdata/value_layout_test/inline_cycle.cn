@@ -1,0 +1,7 @@
+module sample
+type ping = { pub next: pong }
+type pong = { pub back: ping }
+type direct = { pub inner: direct }
+type through_option = { pub rest: option[through_option] }
+def main(a: ping, b: direct, c: through_option) -> int32:
+    return 0

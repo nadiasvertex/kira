@@ -1942,6 +1942,11 @@ private:
 
   auto resolve_drop_plans_from(std::size_t first) -> void;
 
+  /// The concrete members of every closed struct and sum instance in the
+  /// type table, for `checked_types::shapes`. Run from `take_checked_types`,
+  /// after the table is settled and before it is moved out.
+  [[nodiscard]] auto compute_aggregate_shapes() -> aggregate_shapes;
+
   auto param_name_of(const ast::param &param) -> std::string;
 
   auto param_types_for(const ast::func_decl &decl, const module_members *owner)

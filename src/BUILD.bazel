@@ -138,6 +138,12 @@ filegroup(
 )
 
 filegroup(
+    name = "value_layout_test_files",
+    srcs = glob(["testdata/value_layout_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "runtime_layout_test_files",
     srcs = glob(["testdata/runtime_layout_test/*.cn"]),
     visibility = ["//visibility:public"],

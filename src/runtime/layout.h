@@ -11,6 +11,9 @@
 namespace cinder::runtime {
 
 // ==========================================================================
+//  This is the pointer-per-aggregate model the backends use today. The inline
+//  model they migrate to is `value_layout.h`; see `spec/value-semantics.md`.
+//
 //  Heap value layouts shared by `bytecode_compiler`/`bytecode::vm` and
 //  `llvm_codegen`. Every non-scalar Cinder value is a single pointer to a
 //  flat block of 8-byte slots (allocated through `allocator.h`), uniform
@@ -130,6 +133,13 @@ struct layout_info {
 /// unresolvable type.
 [[nodiscard]] auto layout_of(const semantic::type_table &types,
                              semantic::type_id id)
+    -> std::optional<layout_info>;
+
+/// The natural size and alignment of the builtin scalar named `name`, or
+/// `nullopt` when `name` is not a scalar with a byte layout (`float128`,
+/// `str`, and every non-builtin name). Shared with `value_layouts`
+/// (`value_layout.h`), which owns the same scalar table in the new model.
+[[nodiscard]] auto builtin_scalar_layout(std::string_view name)
     -> std::optional<layout_info>;
 
 /// Whether struct-kind `id`'s declaration carries the `packed` modifier

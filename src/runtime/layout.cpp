@@ -418,6 +418,10 @@ auto layout_of(const type_table &types, semantic::type_id id)
   return layout_of_entry(types.entry(types.strip_refinement(id)));
 }
 
+auto builtin_scalar_layout(std::string_view name) -> std::optional<layout_info> {
+  return scalar_layout(name);
+}
+
 auto uninit_slot_count(const type_table &types,
                        const semantic::type_entry &entry)
     -> std::optional<uint64_t> {

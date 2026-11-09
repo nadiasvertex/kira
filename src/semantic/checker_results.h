@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "src/parser/ast.h"
+#include "src/semantic/aggregate_shape.h"
 #include "src/semantic/type_table.h"
 
 namespace cinder::semantic {
@@ -1004,6 +1005,9 @@ struct checked_types {
   ownership_results ownership;
   /// Drop plans; see `drop_results`.
   drop_results drop;
+  /// Concrete struct fields and sum payloads of every settled instance, for
+  /// `runtime::value_layouts`; see `aggregate_shape.h`.
+  aggregate_shapes shapes;
 
   /// Whether a value of `id` copies rather than moves: `type_table::is_copy`,
   /// a type parameter bounded by `copy`, or a `copy` sum.

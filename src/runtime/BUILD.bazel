@@ -19,8 +19,10 @@ cc_library(
         "reactor.cpp",
         "scheduler.cpp",
         "string.cpp",
+        "value_layout.cpp",
     ],
     hdrs = [
+        "aligned_buffer.h",
         "allocator.h",
         "arena.h",
         "coroutine.h",
@@ -32,6 +34,7 @@ cc_library(
         "reactor.h",
         "scheduler.h",
         "string.h",
+        "value_layout.h",
     ],
     alwayslink = True,
     deps = [
@@ -89,6 +92,21 @@ cc_test(
     srcs = ["layout_test.cpp"],
     data = [
         "//src:runtime_layout_test_files",
+    ],
+    deps = [
+        "//src/comptime_vm",
+        ":runtime",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+    ],
+)
+
+cc_test(
+    name = "value_layout_test",
+    srcs = ["value_layout_test.cpp"],
+    data = [
+        "//src:value_layout_test_files",
     ],
     deps = [
         "//src/comptime_vm",

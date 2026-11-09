@@ -185,6 +185,7 @@ auto checker::take_checked_types() -> checked_types {
       copy_sum_types.insert(id);
     }
   }
+  auto shapes = compute_aggregate_shapes();
   auto result = checked_types{
       .types = std::move(session_.types_),
       .node_types = std::move(session_.node_types_),
@@ -275,6 +276,7 @@ auto checker::take_checked_types() -> checked_types {
       .copy_type_params = std::move(copy_type_params_),
       .copy_sum_types = std::move(copy_sum_types)};
   result.drop = drop_results{.drop_plans = std::move(session_.drop_plans_)};
+  result.shapes = std::move(shapes);
   return result;
 }
 

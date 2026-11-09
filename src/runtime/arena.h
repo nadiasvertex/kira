@@ -26,6 +26,10 @@ public:
   /// already thread-safe in the C library.
   [[nodiscard]] auto allocate(size_t bytes) -> void *;
 
+  /// As `allocate`, but the block starts on a multiple of `align`, which must
+  /// be a power of two. Padding before the block is wasted, not reused.
+  [[nodiscard]] auto allocate(size_t bytes, size_t align) -> void *;
+
 private:
   static constexpr size_t k_block_size = 1 << 20; // 1 MiB.
 

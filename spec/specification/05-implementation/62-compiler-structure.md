@@ -39,6 +39,8 @@ HIR lowering ──► HIR passes (references, tail calls, inlining, ...)
 8. **HIR passes** (`src/hir/`). Make every borrow and dereference explicit, mark tail calls, compute lambda captures and generator state, check per-frame stack budgets, find the modules a program reaches, and inline small functions. These run once, before either backend, so both backends see the same program.
 9. **Backends.** The bytecode compiler and VM ([HIR and the Bytecode VM](66-hir-and-bytecode-vm.md)) and LLVM code generation ([LLVM and Ahead-of-Time Compilation](67-llvm-and-aot.md)). Both read the same HIR and share heap layout rules from `src/runtime/layout.h`.
 
+The checker also records the concrete fields of every struct instance and the concrete payloads of every sum instance (`checked_types::shapes`, `src/semantic/aggregate_shape.h`), with generic arguments substituted. `src/runtime/value_layout.h` computes byte layouts from them: inline members with offsets and padding, array strides, sum tag and payload offsets, and a diagnostic naming the field path of any type that contains itself by value. The backends do not read these layouts yet. They still use the pointer-per-aggregate rules in `layout.h`, and `size_of`/`align_of` still answer from it. Both models exist together while the backends migrate.
+
 ## Cross-cutting rules
 
 - **Errors stop execution, not analysis.** A file with a parse error is skipped by later semantic stages so one mistake does not produce a cascade. A program with any error is never run or linked.
