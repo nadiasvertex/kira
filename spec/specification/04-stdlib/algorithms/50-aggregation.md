@@ -1,6 +1,6 @@
 # 50. Aggregation
 
-**Status:** Implemented
+**Status:** Partial
 
 Covers every terminal (draining) algorithm in `src/std/algo.cn`: functions that consume an `iterator[T]` and return a final answer rather than another lazy iterator. Each takes its iterator by value, which lets it call `next` (a `mut self` method) on the parameter directly.
 
@@ -40,11 +40,11 @@ These take a three-way comparator `fn(&T, &T) -> ordering` rather than a `less` 
 
 ## Known gap: `group_by`
 
-`spec/collections-algorithms-design.md` §6.1 lists `group_by` among the terminals. It is **not implemented** — there is no `group_by` in `src/std/algo.cn`. Treat it as planned.
+`group_by` is planned as a terminal. It is **not implemented** — there is no `group_by` in `src/std/algo.cn`. Treat it as planned.
 
 ## Notes
 
-- `min`/`max` and the `_by_key` pair compare with `<` rather than through `ord.cmp`, because `T: ord` bounds are currently advisory (unenforced at the call site) and `cmp`'s `ordering` return type had no runtime representation until recently. `min_by`/`max_by`/`cmp_by`, which need a genuine three-way comparator, arrived only once `ordering` became a real sum type (`@less`/`@equal`/`@greater`).
+- `min`/`max` and the `_by_key` pair compare with `<`, which `T: ord` provides. `min_by`/`max_by`/`cmp_by` take a three-way comparator returning `ordering` (`@less`/`@equal`/`@greater`).
 
 ## See also
 

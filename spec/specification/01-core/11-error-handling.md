@@ -44,7 +44,7 @@ def load_config(path: str) -> result[config, io_error]:
     return @ok(parsed)
 ```
 
-The checker (`infer_try` in `src/semantic/check.cpp`) requires:
+The checker (`infer_try` in `src/semantic/check_expr.cpp`) requires:
 
 1. The operand's type is `result[_, _]` or `option[_]` — otherwise: `` `?` requires a `result` or `option` value, found `{type}` ``.
 2. The enclosing function's return type (when known) is also `result`/`option` — otherwise: `` cannot use `?` in a function that returns `{type}` ``.
@@ -111,7 +111,7 @@ Method resolution for `from` selects the first `impl from[...] for E2` block fou
 
 ## Panics vs. errors
 
-A panic means a bug — an out-of-bounds index, or a `@none` believed to be `@some`. Panics are not for expected failure; use `result` for those. `panic()` is a recognized prelude intrinsic (`src/semantic/check.cpp`). `option` and `result` have no `unwrap`; write `x or else panic("...")`.
+A panic means a bug — an out-of-bounds index, or a `@none` believed to be `@some`. Panics are not for expected failure; use `result` for those. `panic()` is a recognized prelude intrinsic (`src/semantic/check_scopes.cpp`). `option` and `result` have no `unwrap`; write `x or else panic("...")`.
 
 ```cinder
 let v = some_list[999]      # panics if index is out of bounds

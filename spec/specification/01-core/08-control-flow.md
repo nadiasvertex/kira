@@ -141,7 +141,7 @@ process_next_step()
 ## Implementation status
 
 - `if`, `while` (including `while let`), both forms of `for`, and `break`/`continue` are implemented end-to-end.
-- The irrefutability rule for a `for` head (and for `let`/`var`) is not yet enforced: the checker records a for-loop pattern's bindings without checking that it can't fail, and lowering (`hir/lower.cpp`) assumes it never does — passing a refutable pattern (e.g. `for @some(x) in xs:`) currently compiles instead of being rejected, and its runtime behavior on a non-matching element is unspecified. Treat this as a checker gap against the rule stated above, not a supported way to filter a loop.
+- The irrefutability rule for a `for` head (and for `let`/`var`) is not yet enforced: the checker records a for-loop pattern's bindings without checking that it can't fail, and lowering (`hir/lower.cpp`) assumes it never does — passing a refutable pattern (e.g. `for @some(x) in xs:`) currently compiles instead of being rejected, and on a non-matching element the body runs with the binding set to zero; `let @some(x) = @none` likewise binds `x = 0` (`spec/todo.md` item 19). Treat this as a checker gap against the rule stated above, not a supported way to filter a loop.
 - `scope` is implemented end-to-end on both backends (`src/testdata/std_test/scope_block.cn`). It is a statement with no value, so a `scope` block cannot be used as an expression. Its bindings end at the `DEDENT` and drop in reverse order there, including on an early `return`.
 
 ## See also

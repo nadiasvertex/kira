@@ -1,6 +1,6 @@
 # 12. Modules and Imports
 
-**Status:** Implemented — see Implementation status
+**Status:** Partial — see Implementation status
 
 Covers `use`, visibility, and re-exporting with `pub use`. This is the basic module chapter; module-spanning-files and project structure are covered in the Intermediate module-system chapter.
 
@@ -58,7 +58,7 @@ pub use my_app.geometry.{ point, shape }
 pub use my_app.transform.rotate
 ```
 
-Importers of `my_app` now see `point`, `shape`, and `rotate` directly. The standard library prelude itself is built this way: several `std.*` modules are re-exported into every file implicitly (`k_prelude_reexport_modules` in `src/semantic/check.cpp`).
+Importers of `my_app` now see `point`, `shape`, and `rotate` directly. The standard library prelude itself is built this way: several `std.*` modules are re-exported into every file implicitly (`k_prelude_reexport_modules` in `src/semantic/check_methods.cpp`).
 
 ## Visible Modules
 
@@ -96,7 +96,7 @@ Because every rule is evaluated against a finite, locally-declared set — the e
 ## Implementation status
 
 - `use`, visibility, and re-exporting are implemented.
-- **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::classify_dotted_root`, `src/semantic/check.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. The compile-time evaluator asks the checker through `comptime::evaluator::set_path_resolver`, supplying only whether the root is one of its own frame locals. Rule 2 is `validate_module_name_conflicts`.
+- **Visible Modules** and **Dotted Names** are implemented. The checker alone decides what a dotted name means (`checker::classify_dotted_root`, `src/semantic/check_methods.cpp`) and records value-rooted paths for lowering (`checked_types::value_path_types`); module-rooted ones are validated through `validate_module_reference` (`src/semantic/resolution.cpp`), and both path validation and the checker's own lookups apply the one visibility rule, `root_visible_without_import`. The compile-time evaluator asks the checker through `comptime::evaluator::set_path_resolver`, supplying only whether the root is one of its own frame locals. Rule 2 is `validate_module_name_conflicts`.
 - A field read through a module-level `static` (rules 3 and 4) lowers when the value read is a scalar, which is embedded as a constant. A non-scalar part of a struct-valued `static` (`origin` itself, or `seg.a` where `a` is a struct) has no runtime storage yet; only arrays and lists of scalars are reified as globals.
 
 ## See also

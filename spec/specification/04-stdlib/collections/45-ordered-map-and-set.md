@@ -4,7 +4,7 @@
 
 Covers the designed-but-unimplemented `ordered_map[K, V]` (and its named companion `ordered_set[K]`), a key-ordered associative container.
 
-Neither type exists in `src/std` today. This chapter describes the two-phase design fixed in `spec/collections-algorithms-design.md` §6.4, normatively, as the target shape.
+Neither type exists in `src/std` today. This chapter describes the two-phase target design normatively.
 
 ## Design: sorted vector, then B-tree
 
@@ -35,7 +35,7 @@ Bound `K: ord` throughout.
 
 ## Implementation status
 
-Nothing in this chapter is implemented. Confirmed by absence: no file under `src/std` matches `*ordered*`. `for (k, v) in it:` — needed to consume this container's tuple-yielding iterators directly in a `for` loop — is itself an open gap (`for` binding and destructuring a whole tuple works; destructuring a tuple pattern directly in the `for` clause does not), tracked as R3a in `spec/collections-algorithms-implementation-plan.md`. Verify current status against the compiler before relying on it, since the plan's measurement predates later fixes.
+Nothing in this chapter is implemented. Confirmed by absence: no file under `src/std` matches `*ordered*`. `for (k, v) in it:`, needed to consume this container's tuple-yielding iterators directly, works: a `for` head may destructure a tuple pattern.
 
 ## See also
 

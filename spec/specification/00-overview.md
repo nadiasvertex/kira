@@ -37,15 +37,15 @@ Each chapter opens with a status line:
 9. [Pattern Matching](01-core/09-pattern-matching.md)
 10. [Type Declarations](01-core/10-type-declarations.md)
 11. [Error Handling](01-core/11-error-handling.md)
-12. [Modules and Imports](01-core/12-modules-and-imports.md)
+12. [Modules and Imports](01-core/12-modules-and-imports.md) — Partial
 13. [Programs and `main`](01-core/13-programs-and-main.md) — Partial
 
 ### Intermediate (`02-intermediate/`)
 
-14. [Ownership and Borrowing](02-intermediate/14-ownership-and-borrowing.md)
+14. [Ownership and Borrowing](02-intermediate/14-ownership-and-borrowing.md) — Partial
 15. [Views](02-intermediate/15-views.md) — Partial
 16. [Closures and Capture](02-intermediate/16-closures-and-capture.md) — Partial
-17. [Shared Ownership and Drop](02-intermediate/17-shared-ownership-and-drop.md) — Implemented
+17. [Shared Ownership and Drop](02-intermediate/17-shared-ownership-and-drop.md)
 18. [Traits](02-intermediate/18-traits.md)
 19. [Generics and Inference](02-intermediate/19-generics-and-inference.md)
 20. [Operator Overloading](02-intermediate/20-operator-overloading.md)
@@ -84,13 +84,13 @@ Each chapter opens with a status line:
 44. [`deque[T]` and `bitset`](04-stdlib/collections/44-deque-and-bitset.md) — Planned
 45. [`ordered_map[K, V]` and `ordered_set[K]`](04-stdlib/collections/45-ordered-map-and-set.md) — Planned
 46. [`unordered_map[K, V]` and `unordered_set[K]`](04-stdlib/collections/46-unordered-map-and-set.md) — Planned
-47. [`small_list[T, N]`](04-stdlib/collections/47-small-list.md) — Planned
+47. [`small_list[T, N]`](04-stdlib/collections/47-small-list.md) — Partial
 
 **Algorithms** (`04-stdlib/algorithms/`)
 
 48. [The Iterator Protocol](04-stdlib/algorithms/48-iterator-protocol.md)
-49. [Lazy Adapters](04-stdlib/algorithms/49-lazy-adapters.md)
-50. [Aggregation](04-stdlib/algorithms/50-aggregation.md)
+49. [Lazy Adapters](04-stdlib/algorithms/49-lazy-adapters.md) — Partial
+50. [Aggregation](04-stdlib/algorithms/50-aggregation.md) — Partial
 51. [Sorting and Searching](04-stdlib/algorithms/51-sorting-and-searching.md)
 
 **Strings and Formatting** (`04-stdlib/strings-and-formatting/`)
@@ -111,11 +111,11 @@ Each chapter opens with a status line:
 
 58. [`std.traits` — Type Predicates and Transformations](04-stdlib/type-traits/58-std-traits.md)
 59. [`std.limits` — Numeric Limits](04-stdlib/type-traits/59-std-limits.md)
-60. [Meta Queries](04-stdlib/type-traits/60-meta-queries.md)
+60. [Meta Queries](04-stdlib/type-traits/60-meta-queries.md) — Partial
 
 **Testing** (`04-stdlib/testing/`)
 
-61. [Unit Testing (`std.test`)](04-stdlib/testing/61-std-test.md) — Partial
+61. [Unit Testing (`std.test`)](04-stdlib/testing/61-std-test.md)
 
 ### Implementation (`05-implementation/`)
 

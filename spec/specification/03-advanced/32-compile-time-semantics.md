@@ -86,7 +86,7 @@ A query observes the complete, elaborated program and returns the same result re
 
 ## Implementation status
 
-The evaluation subsystem (`src/comptime/eval.*`), reflection (`src/comptime/reflect.cpp`), and the reasoning subsystem (`src/semantic/reason.{h,cpp}`, `src/semantic/linear_poly.{h,cpp}`) all exist and are exercised by `src/comptime/eval_test.cpp`, `src/semantic/reason_test.cpp`, and the `check_test.cpp`/semantic-stress corpora referenced throughout [Compile-Time Execution](31-compile-time-execution.md) and [Dependent and Refinement Types](33-dependent-and-refinement-types.md). This chapter describes the model those implementations follow; there is no separate "semantics-only" surface to check independently of the constructs in the other chapters.
+Compile-time execution (`src/comptime/eval.*` and `src/comptime_vm/`, which run compile-time code on the bytecode VM), reflection (`src/semantic/check_reflection.cpp`), and the reasoning subsystem (`src/semantic/reason.{h,cpp}`, `src/semantic/linear_poly.{h,cpp}`) all exist and are exercised by `src/semantic/reason_test.cpp`, and the `check_test.cpp`/semantic-stress corpora referenced throughout [Compile-Time Execution](31-compile-time-execution.md) and [Dependent and Refinement Types](33-dependent-and-refinement-types.md). This chapter describes the model those implementations follow; there is no separate "semantics-only" surface to check independently of the constructs in the other chapters.
 
 ## See also
 

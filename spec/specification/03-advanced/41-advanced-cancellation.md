@@ -37,7 +37,7 @@ await handle    # waits for clean shutdown
 
 ## Implementation status
 
-Not implemented. This depends on the concurrency runtime described in `spec/concurrency-implementation-plan.md`: today `crew` bodies type-check only against an unknown placeholder type, `async`/`await` surface syntax parses but `await` is typed as a pass-through with no scheduling semantics, and neither the bytecode VM nor the AOT runtime has a scheduler, threads, or task/handle machinery to cancel. There is no cancellation token type, no `cancel.is_requested()`, and no `handle.cancel()` anywhere in `src/`. Cancellation is planned as part of the concurrency plan's Phase 5 (`crew`, `par`, `race`, error handling, external cancellation), which itself depends on the earlier phases (task typing, `send`/`share`, crew borrow rules, the HIR/scheduler core) landing first.
+Not implemented. The task runtime exists and cancels tasks internally: `race` cancels its losers, a panicking `par` branch or crew task cancels its siblings, dropping an unfinished task cancels it, and cancelling the task that runs a `crew` block cancels the crew's tasks ([`crew`, `par`, `race`](../02-intermediate/28-crew-par-race.md#implementation-status)). None of this chapter's user-facing surface exists: there is no cancellation token type, `cancel.is_requested()` does not resolve (`cancel` is only a reserved prelude name), a `crew` block yields no handle with `cancel()`, and `await yield` parses and type-checks but is not lowered on either backend (`spec/todo.md` item 15).
 
 ## See also
 

@@ -33,7 +33,7 @@ def double(x: int32) -> int32:
 
 Two rules bound inference:
 
-1. **`pub` functions must annotate every parameter and the return type.** Diagnosed at the declaration (`public function \`{name}\` must annotate its parameters ...`, `src/semantic/check.cpp`). An exported function's signature is a contract for external callers, so it is written down rather than inferred.
+1. **`pub` functions must annotate every parameter and the return type.** Diagnosed at the declaration (`public function \`{name}\` must annotate its parameters ...`, `src/semantic/check_decls.cpp`). An exported function's signature is a contract for external callers, so it is written down rather than inferred.
 2. **Inference never crosses a call.** A function's types are determined by its own body alone. When the body underdetermines a type, the compiler reports it and asks for an annotation rather than inferring from callers.
 
 ### Limits of implicit generics

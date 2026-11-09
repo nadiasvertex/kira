@@ -45,7 +45,7 @@ type positive_int = { value: int32 }
 
 ### Purity requirement
 
-Only `pure` functions may appear in `pre`/`post`/`invariant` conditions (`check.cpp:4430`; see [Compile-Time Execution § `pure` functions](31-compile-time-execution.md#pure-functions)). This guarantees contract evaluation has no side effects, which is what lets reflection (also `pure`-only) and reasoning treat a contract condition as a pure fact rather than an arbitrary effectful call.
+Only `pure` functions may appear in `pre`/`post`/`invariant` conditions (`src/semantic/check_calls.cpp`; see [Compile-Time Execution § `pure` functions](31-compile-time-execution.md#pure-functions)). This guarantees contract evaluation has no side effects, which is what lets reflection (also `pure`-only) and reasoning treat a contract condition as a pure fact rather than an arbitrary effectful call.
 
 ## Example
 

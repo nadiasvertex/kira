@@ -128,7 +128,7 @@ An instance is made by substitution: its types are the template's with the type 
 
 ## Implementation status
 
-Implemented in `src/semantic/check.cpp`:
+Implemented in the checker (`src/semantic/check_*.cpp`, `src/semantic/infer/`):
 
 - Solving: `solve_call` is the one entry point for a generic call. Sources are added in the order above — arguments (`solve_from_argument_types`), bounds (`solve_from_bounds`), the expected type (`solve_from_expected_type`) — and all feed the one unifier (`match_params`, over `infer::match_pattern`). A solution is keyed by the parameter's identity (`param_subst`), never its spelling.
 - Bounded generics: facts (`record_declared_facts`), bound-checked methods and operators (`check_bound_method_call`, `check_bound_arithmetic`), category bounds (`check_literal_as_param`, `check_cast_with_param`), `static if` narrowing (`narrowing_of`), call-site bound checks (`check_call_bounds`), instances by substitution (`substitute_instance`).

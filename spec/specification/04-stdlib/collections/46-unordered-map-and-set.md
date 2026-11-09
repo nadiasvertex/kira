@@ -4,7 +4,7 @@
 
 Covers the designed-but-unimplemented `unordered_map[K, V]` (and its named companion `unordered_set[K]`), a hash-based associative container.
 
-Neither type exists in `src/std` today. This chapter describes the design fixed in `spec/collections-algorithms-design.md` §6.5, normatively, as the target shape.
+Neither type exists in `src/std` today. This chapter describes the target design normatively.
 
 ## Design
 
@@ -30,7 +30,7 @@ pub type unordered_map[K, V] = {
 
 ## Implementation status
 
-Nothing in this chapter is implemented. Confirmed by absence: no file under `src/std` matches `*unordered*`. This container is specified entirely over raw-pointer fields (`*mut uint8`, `*mut K`, `*mut V`), so — like [`deque[T]` and `bitset`](44-deque-and-bitset.md) — it is blocked on the `machine`-gated pointer substrate (`std.machine`) and, on the bytecode VM, a reference/pointer model that does not exist yet.
+Nothing in this chapter is implemented. Confirmed by absence: no file under `src/std` matches `*unordered*`. This container is specified over raw-pointer fields (`*mut uint8`, `*mut K`, `*mut V`); that substrate now exists on both backends (see [`deque[T]` and `bitset`](44-deque-and-bitset.md#implementation-status)). The `hash` and `eq` traits it needs exist in `std.traits`, and `deriving hash` works.
 
 ## See also
 

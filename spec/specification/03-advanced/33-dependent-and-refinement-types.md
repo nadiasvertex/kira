@@ -232,18 +232,18 @@ The stress corpus `src/testdata/semantic_stress/027_dependent_and_refinement_typ
 
 ## Implementation status
 
-Substantially implemented, ahead of `spec/dependent-types-implementation-plan.md`'s "Where the compiler stands today" section (dated 2026-07-12) — that document's "not done" list (refinements as no-ops, no symbolic value arithmetic, no reasoning subsystem, no typed proofs, contracts never lowered) no longer reflects the tree:
+Substantially implemented:
 
 - **Symbolic const generics** — canonical polynomials are implemented in `src/semantic/linear_poly.{h,cpp}`. `infer::solve_value_equation` (`src/semantic/infer/value_solver.cpp`) distinguishes flexible from rigid variables, solves a single flexible variable, and leaves multiple flexible variables underdetermined rather than guessing. `value_solver_test.cpp` exercises constant and symbolic solutions, divisibility failures, and rigid parameters. This is not a complete nonnegative-integer satisfiability procedure.
 - **Remaining conformance gaps.** `checker::resolve_value_arg` (`src/semantic/check_type_resolution.cpp`) still returns `k_unknown_type` when `value_poly` cannot represent an argument. That fallback must report an error under the unsupported-expression rule above. The value solver rejects a negative constant solution for an unsigned parameter but permits a symbolic solution such as `n := m - 1` without proving its domain, leaving it to instantiation; the normative rule requires the domain obligation to be established in the generic context. End-to-end rejection of every unresolved value obligation is not established by the solver's unit tests.
-- **Refinement types as real types** — `refinement_kind` type entries, `resolve_type`'s `ast::node_kind::refinement_type` case (`check.cpp:1847`), widening/narrowing, and predicate substitution (`refinement_subst`, `check.cpp:2862`) are implemented, not the erase-to-base no-op the implementation plan describes.
+- **Refinement types as real types** — `refinement_kind` type entries, `resolve_type`'s `ast::node_kind::refinement_type` case (`src/semantic/check_type_resolution.cpp`), widening/narrowing, and predicate substitution (`narrowing_engine::refinement_subst`, `src/semantic/narrowing.cpp`) are implemented; a refinement is a real type, not erased to its base.
 - **The reasoning solver** — `src/semantic/reason.{h,cpp}` implements the fragment described above (`relation`, `constraint`, `proof_result` in `reason.h`), exercised by `src/semantic/reason_test.cpp`.
-- **Typed runtime proofs** — `<refinement>.try_from(value)` is recognized and lowered (`check.cpp:9783`, `infer_refinement_try_from`, `build_try_from_fragment`, `~check.cpp:10288`–`10394`).
-- **Flow-sensitive narrowing** (design doc's Phase 5) and **contracts on the same solver plus runtime lowering** (Phase 6) — both are exercised by the stress corpus's `narrowed`/`narrowed_by_conjunction` cases and by `hir_contract_check` lowering in both backends (`src/hir/lower.cpp`, `src/bytecode_compiler/compile.cpp`, `src/llvm_codegen/codegen.cpp`).
+- **Typed runtime proofs** — `<refinement>.try_from(value)` is recognized and lowered (`infer_refinement_try_from` and `build_try_from_fragment`, `src/semantic/check_reasoning.cpp`).
+- **Flow-sensitive narrowing** and **contracts on the same solver plus runtime lowering** — both are exercised by the stress corpus's `narrowed`/`narrowed_by_conjunction` cases and by `hir_contract_check` lowering in both backends (`src/hir/lower.cpp`, `src/bytecode_compiler/compile.cpp`, `src/llvm_codegen/codegen.cpp`).
 
 Nonlinear arithmetic, quantified predicates, aggregate-content reasoning, float reasoning, and narrowing through calls/closures/`&mut` remain outside the reasoning fragment by design. Rejecting an unsupported type argument is required regardless of that limit; silently accepting it is a conformance gap.
 
-Not verified by this chapter's evidence gathering (design-doc Phase 7 "polish" territory — value-parameterized types through `some Trait` returns, concept value constraints routed through the solver, module-metadata survival of refined signatures across separate compilation): treat as unconfirmed rather than either implemented or missing.
+Not verified ( value-parameterized types through `some Trait` returns, concept value constraints routed through the solver, module-metadata survival of refined signatures across separate compilation): treat as unconfirmed rather than either implemented or missing.
 
 ## See also
 

@@ -8,9 +8,9 @@ The prelude is the set of names available in every module without a `use` declar
 
 **Types:** `bool`, `char`, `str`, `unit`, `byte`, all numeric types (`int8`..`int128`, `uint8`..`uint128`, `float32`/`float64`/`float128`, `isize`, `usize`), `array`, `slice`, `mut slice`, `option`, `result`, `list`, `unique`, `cell`, `cell_mut`.
 
-**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `clone`, `deref`, `index`, `index_mut`, `index_set`, `from_array`, and the remaining arithmetic operator traits. `clone` and `deref` are declared in `std.traits` and specified in [Traits](../02-intermediate/18-traits.md#deref).
+**Traits:** `eq`, `ord`, `hash`, `show`, `from`, `into`, `add`, `sub`, `mul`, `div`, `rem`, `neg`, `drop`, `clone`, `deref`, `index`, `index_mut`, `index_ref`, `index_set`, `from_array`, and the remaining arithmetic operator traits. `clone` and `deref` are declared in `std.traits` and specified in [Traits](../02-intermediate/18-traits.md#deref).
 
-`index`/`index_set` are what make `v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences. `index_mut` is declared but not yet wired (`../../todo.md` item 19).
+`index`/`index_set` are what make `v[i]` and `v[i] = x` work on a user type, and `from_array` is what makes `let v: my_type = [1, 2, 3]` work — the operators that used to be reserved for the built-in sequences. `index_mut` and `index_ref` make `&mut v[i]` and `&v[i]` work, returning a `cell_mut`/`slice_mut` or `cell` view ([Views](../02-intermediate/15-views.md)).
 
 **Concepts:** `copy`, `send`, `share`. `copy` is satisfied by the types listed in [Ownership and Borrowing](../02-intermediate/14-ownership-and-borrowing.md#copy-and-move). It is declared in `std.traits` and answered by the checker, not by its body.
 

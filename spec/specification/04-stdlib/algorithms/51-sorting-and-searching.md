@@ -17,7 +17,7 @@ These are **slice algorithms, not iterator adapters** — in-place (where applic
 - `dedup` — in-place removal of consecutive duplicate elements.
 - `partition_point`, `lower_bound`, `upper_bound` — binary-search-based boundary queries over a sorted slice.
 
-This is also where `sort` acquires a comparator and a connection to `ord` at all; today `sort` has neither (indeed, `sort` does not exist yet as anything callable).
+`sort` requires `T: ord`; `sort_by` takes a comparator returning `ordering`.
 
 `windows` and `chunks` live here too, as **slice** operations rather than iterator adapters: a general iterator cannot produce overlapping views without buffering, and the buffering version has a materially different cost profile. Putting them on slices keeps the complexity honest — `windows` and `chunks` yield views into existing storage rather than allocating a copy per window/chunk.
 
@@ -42,10 +42,10 @@ Selecting `ska_sort` for exactly the integer types requires knowing, from inside
 
 Implemented in `src/std/algo.cn`, both backends (bytecode VM and LLVM AOT), verified via `src/testdata/std_test/algo_sort.cn`. This chapter was blocked on two real compiler gaps, both found and fixed in the course of implementing it:
 
-- Range-indexing (`arr[a..b]`, which *forms* the `slice`/`slice_mut` view every algorithm here operates through) only scaled its resulting view's data pointer correctly for 1-byte-stride sources — silently wrong for `array[int32, N]`/`list[int32]`/etc. Fixed; see `general-stride-range-indexing-implemented` project memory.
+- Range-indexing (`arr[a..b]`, which *forms* the `slice`/`slice_mut` view every algorithm here operates through) only scaled its resulting view's data pointer correctly for 1-byte-stride sources — silently wrong for `array[int32, N]`/`list[int32]`/etc. Fixed.
 - `T.name()` reflection, needed for `sort`'s integer/non-integer dispatch, type-checked but never lowered outside `static` constructs. Fixed; see [Compile-Time Execution § Implementation status](../../03-advanced/31-compile-time-execution.md#implementation-status).
 
-`T: ord` bounds, needed for `sort`/`binary_search`/`lower_bound`/`upper_bound`, remain advisory only — unenforced at the call site (a pre-existing, unrelated gap) — so a misuse would surface as an error inside the standard library's own source rather than at the caller's line.
+`T: ord` bounds on `sort`/`binary_search`/`lower_bound`/`upper_bound` are enforced at the call site: sorting a type with no `ord` impl is reported at the caller's line, with a note pointing at the bound.
 
 ## See also
 

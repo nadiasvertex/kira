@@ -83,7 +83,7 @@ let s = "  Hello, Cinder  "
 s.trim()                        # "Hello, Cinder"
 s.trim().to_uppercase()         # "HELLO, CINDER"
 s.contains(" Cinder")              # true
-s.find(" Cinder")                  # @some(9), a byte offset into s
+s.find(" Cinder")                  # @some(8), a byte offset into s
 "a::b".split(":")                # ["a", "", "b"]
 "abc".replace("b", "XY")         # "aXYc"
 "straße".to_uppercase()           # "STRASSE"
@@ -92,7 +92,7 @@ s.find(" Cinder")                  # @some(9), a byte offset into s
 
 ## Limitations
 
-These are permanent v1 scope limits, not pending work (`spec/todo.md` tracks them explicitly):
+These are permanent v1 scope limits, not pending work (`spec/todo.md` item 1 tracks them):
 
 - **Locale-tailored casing is out of scope.** `to_uppercase`/`to_lowercase`/`fold_case` apply Unicode's *default* casing algorithm only. The Turkish/Azeri dotted/dotless-I rules and Lithuanian dot-retention (`SpecialCasing.txt`'s locale-conditioned rows) are excluded — they'd need a locale parameter threaded through every casing call, a materially bigger feature than the default algorithm implemented here. `eq`/search remain code-point exact (not case-insensitive) — use `eq_ignore_case` for caseless comparison.
 - **No normalization.** Canonically-equivalent but differently-composed strings (e.g. `é` as U+00E9 vs. `e` + U+0301) compare unequal and search independently.
@@ -102,14 +102,14 @@ These are permanent v1 scope limits, not pending work (`spec/todo.md` tracks the
 
 ## Implementation status
 
-Both compiler backends (bytecode VM and LLVM/AOT) share the `rt_str_*` intrinsics from a single dispatch table (`src/intrinsics.h`), confirmed present in `src/runtime/string.{h,cpp}` and `src/bytecode/vm.cpp`. `to_uppercase`/`to_lowercase`/`fold_case`/`eq_ignore_case` are *not* in that dispatch table — they compile as ordinary Cinder (`src/std/unicode.cn`/`unicode.cn`'s tables), so both backends get them automatically, with no C++ counterpart to keep in sync. `rt_str_to_upper`/`rt_str_to_lower`, the hand-rolled ASCII/Latin-1/Greek/Cyrillic-only C++ intrinsics this chapter previously ran on, have been removed entirely. The `extend str` layer (`src/std/string.cn`) matches the public API above exactly, plus the additional `impl add for str` operator overload noted above, which is not part of `std-reference.md`'s original API table.
+Both compiler backends (bytecode VM and LLVM/AOT) share the `rt_str_*` intrinsics from a single dispatch table (`src/intrinsics.h`), confirmed present in `src/runtime/string.{h,cpp}` and `src/bytecode/vm.cpp`. `to_uppercase`/`to_lowercase`/`fold_case`/`eq_ignore_case` are *not* in that dispatch table — they compile as ordinary Cinder (`src/std/unicode.cn`/`unicode.cn`'s tables), so both backends get them automatically, with no C++ counterpart to keep in sync. `rt_str_to_upper`/`rt_str_to_lower`, the hand-rolled ASCII/Latin-1/Greek/Cyrillic-only C++ intrinsics this chapter previously ran on, have been removed entirely. The `extend str` layer (`src/std/string.cn`) matches the public API above exactly, plus the additional `impl add for str` operator overload noted above.
 
 This chapter's case-mapping/folding rewrite needed one real compiler fix along the way: `std.unicode_tables`'s generated `static` lookup tables are reached only through `std.unicode`'s functions reading a global, never through a function call into `std.unicode_tables` itself (it declares no functions) — `hir::find_reachable_modules`'s dependency walker had no case for `hir_global_ref` at all, so a module reached *only* through a global reference silently never made it into the compiled program, and every reference to one of its globals failed at bytecode/AOT compile time despite type-checking cleanly. Fixed by giving `hir_global_ref` an `owner_module` field (mirroring `hir_local_ref`'s) and adding the missing walker case; regression test: `src/hir/link_test.cpp`'s `test_discovers_dependency_reached_only_through_a_global`.
 
-Two further gaps were found but deliberately *not* fixed here, as out of scope for this chapter:
+Two gaps found during that work have since been fixed:
 
-- **`for c in s` does not actually decode UTF-8.** Despite this chapter's own "Model" section (and `std.unicode`'s original design) assuming a `for`-loop over a `str` yields decoded Unicode scalars, `str` has no `next(mut self)` method for the general user-iterator desugaring to dispatch to, so it falls through to `hir::lowerer::lower_indexed_loop` — the same byte-indexed loop shape used for `array`/`list`/`slice` — which indexes raw bytes, not scalars. Confirmed by probing `for c in "straße": println(c as uint32)`, which prints `ß`'s two raw continuation bytes (195, 159) instead of its scalar value (223). `std.unicode` works around this by decoding UTF-8 by hand over `str.as_bytes()` instead of using `for`. Fixing the `for`-loop desugaring itself needs new HIR-lowering machinery and is tracked separately (`spec/todo.md`).
-- **`\u{XXXX}` string escapes mis-trigger the interpolation scanner.** `has_interpolation`/`scan_interpolated_content` (`src/parser/interp_string.cpp`) skip exactly one character past a backslash for every escape, which is correct for `\n`/`\"`/etc. but wrong for the variable-width `\u{...}` escape: the `{` right after `\u` gets mistaken for the start of a real interpolation hole. A string literal containing `\u{...}` therefore fails to parse at all (reported as an "invalid escape sequence", or an unterminated interpolation, depending on what follows). Worked around in this chapter's own tests by typing non-ASCII characters directly into the `.cn` source files as UTF-8 rather than via the escape. Tracked separately (`spec/todo.md`).
+- `for c in s` decodes UTF-8 and yields Unicode scalars: `for c in "aß"` yields 97 and 223.
+- A `\u{XXXX}` escape in a string literal is no longer mistaken for an interpolation hole: `"\u{41}x"` is `"Ax"`.
 
 ## See also
 

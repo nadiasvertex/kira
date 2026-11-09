@@ -6,7 +6,7 @@ Covers `match`, guard clauses, destructuring of tuples and structs, and `if let`
 
 ## `match`
 
-`match_expr`, `pattern` in `spec/cinder-grammar.ebnf`. `match` is an expression: it produces a value, and its type is the unified type of all arms. Exhaustiveness is checked for sum types — an unhandled variant is a compile error (`check.cpp`'s exhaustiveness pass over sum-type discriminants).
+`match_expr`, `pattern` in `spec/cinder-grammar.ebnf`. `match` is an expression: it produces a value, and its type is the unified type of all arms. Exhaustiveness is checked for sum types — an unhandled variant is a compile error (`src/semantic/check_patterns.cpp`'s exhaustiveness pass over sum-type discriminants).
 
 ```cinder
 let description = match score:

@@ -13,7 +13,7 @@ Values, functions, types, pattern matching, built-in collections, and error hand
 9. [Pattern Matching](09-pattern-matching.md)
 10. [Type Declarations](10-type-declarations.md)
 11. [Error Handling](11-error-handling.md)
-12. [Modules and Imports](12-modules-and-imports.md)
+12. [Modules and Imports](12-modules-and-imports.md) — Partial
 13. [Programs and `main`](13-programs-and-main.md) — Partial
 
 Next: [Intermediate](../02-intermediate/README.md)

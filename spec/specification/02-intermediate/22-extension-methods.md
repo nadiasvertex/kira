@@ -28,7 +28,7 @@ Use `impl` to say a type *is* something (coherent, orphan-restricted); use `exte
 
 ## Implementation status
 
-Implemented in `src/semantic/check.cpp`: an inherent/trait method table is consulted first, and `find_extend_method_for_builtin`-style lookup runs only when it answers nothing — `str`'s `contains`, `starts_with`, `split`, and similar are genuine `extend str` methods in `std.string` resolved this way.
+Implemented in the checker's method lookup (`src/semantic/check_methods.cpp`, `src/semantic/method_resolution.cpp`): an inherent/trait method table is consulted first, and `extend` methods are searched only when it answers nothing — `str`'s `contains`, `starts_with`, `split`, and similar are genuine `extend str` methods in `std.string` resolved this way.
 
 ## See also
 

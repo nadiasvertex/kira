@@ -4,7 +4,7 @@
 
 Covers the designed-but-unimplemented `deque[T]` (double-ended ring buffer) and `bitset` (word-packed bit set) containers.
 
-Neither type exists in `src/std` today; there is no `deque.cn`, `bitset.cn`, or equivalent. This chapter describes the design fixed in `spec/collections-algorithms-design.md` §6.3, normatively, as the target shape.
+Neither type exists in `src/std` today; there is no `deque.cn`, `bitset.cn`, or equivalent. This chapter describes the target design normatively.
 
 ## `deque[T]`
 
@@ -37,7 +37,7 @@ The set operations depend on bit-operator traits (`bit_and`, `bit_or`, `bit_xor`
 Nothing in this chapter is implemented. Confirmed by absence: no file under `src/std` matches `*deque*` or `*bitset*`. Blocking work:
 
 - The bit-operator traits (`bit_and`/`bit_or`/`bit_xor`/`shl`/`shr`) `bitset` needs do not exist in `std.traits`.
-- Both containers are specified over raw-pointer fields (`*mut T`), which in turn depend on the `machine`-gated pointer/intrinsic substrate (`std.machine`) and, on the bytecode VM specifically, a reference/pointer model that does not exist yet (R2 in `spec/collections-algorithms-design.md` §8) — reading through `&mut T`/`*T` fails on both backends today.
+- Both containers are specified over raw-pointer fields (`*mut T`). That substrate now exists on both backends ([The `machine` Layer](../../03-advanced/38-machine-layer.md), `std.mem`): a struct can hold a `*mut T` from `std.mem.alloc`, and `machine` code can read, write, and slice through it. It no longer blocks this chapter.
 
 ## See also
 

@@ -6,7 +6,7 @@ Covers the built-in scalar type set, numeric literal defaulting, integer overflo
 
 ## Type list
 
-All built-in type names are lowercase identifiers, interned by `type_table` (`src/semantic/types.cpp`):
+All built-in type names are lowercase identifiers, interned by `type_table` (`src/semantic/type_table.cpp`):
 
 ```
 bool                                            # true or false
@@ -44,7 +44,7 @@ let x: int32 = int32.max
 let y = x + 1        # panics: int32 overflow
 ```
 
-Every numeric type exposes `.min` and `.max` associated constants (`src/semantic/check.cpp`, handling of the `min`/`max` member names on numeric types).
+Every numeric type exposes `.min` and `.max` associated constants (`src/semantic/check_methods.cpp`, handling of the `min`/`max` member names on numeric types).
 
 Three explicit, always-available alternatives to the panicking operators exist as ordinary operator tokens (`plus_percent`, `minus_percent`, `plus_pipe`, ... in `src/parser/token.h`; lowered to `op_add_wrap`/`op_sub_wrap`/`op_mul_wrap` and the saturating opcodes in `src/bytecode/opcodes.h`), not gated behind `machine` code:
 
@@ -68,7 +68,7 @@ let x: float64 = float64(n)   # int32 -> float64
 let b: uint8   = uint8(n)     # narrowing — panics: 300 does not fit in uint8
 ```
 
-A conversion exists when the target type provides a `from` implementation for the source type; the built-in numeric types provide these for one another (`check_conversion_call` in `src/semantic/check.cpp`). Narrowing is checked the same way arithmetic is: a value that does not fit its destination panics rather than truncating silently. Attempting a conversion with no `from` available is diagnosed at the call site, naming both types:
+A conversion exists when the target type provides a `from` implementation for the source type; the built-in numeric types provide these for one another (`check_conversion_call` in `src/semantic/check_ufcs.cpp`). Narrowing is checked the same way arithmetic is: a value that does not fit its destination panics rather than truncating silently. Attempting a conversion with no `from` available is diagnosed at the call site, naming both types:
 
 ```
 no conversion from `str` to `float64`

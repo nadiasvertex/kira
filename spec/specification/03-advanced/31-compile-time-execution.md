@@ -20,7 +20,7 @@ static TABLE: array[int32, 256] = build_lookup_table()
 - `build_lookup_table` above is an ordinary function; nothing marks it `static` — the binding forces evaluation of whatever it calls.
 - The result is reified: frozen, immutable data baked into the binary. See [Compile-Time Semantics § Compile-Time Memory](32-compile-time-semantics.md#compile-time-memory).
 - Code cannot change a static. Assigning to it or to any part of it, borrowing it with `&mut`, calling a `mut self` method on it, and moving a non-`copy` part out of it are compile errors. Reading it, borrowing it with `&`, and copying it into a local `var` are allowed. Because of this rule, every function and task can share one copy of a static without locks.
-- A `static` item may also appear inside a `trait`/`impl` body as a required or provided constant (`check.cpp`'s trait-item handling for `static_decl`).
+- A `static` item may also appear inside a `trait`/`impl` body as a required or provided constant (the checker's trait-item handling for `static_decl`).
 
 ## `static if`
 
@@ -34,7 +34,7 @@ else:
 ```
 
 - The condition is evaluated at compile time; it must be closed.
-- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `check.cpp`'s `check_static_decl`). The exception is a condition that mentions a type parameter of an enclosing generic: both branches are then checked, each under the facts its condition establishes, and the branch is chosen per instance ([19, Bounded Generics](../02-intermediate/19-generics-and-inference.md#bounded-generics)).
+- The branch not taken is **not compiled or type-checked** — it is discarded before name resolution sees it (`static_decl_kind::conditional_compilation`, `checker::check_static_decl`, `src/semantic/check_comptime.cpp`). The exception is a condition that mentions a type parameter of an enclosing generic: both branches are then checked, each under the facts its condition establishes, and the branch is chosen per instance ([19, Bounded Generics](../02-intermediate/19-generics-and-inference.md#bounded-generics)).
 - `static if` is valid at module scope, selecting between top-level items, and inside a function body, where each branch's body may hold ordinary statements (`return`, `let`, an assignment, ...) as well as declarations — `parser::parse_static_branch_node` dispatches each line to whichever parses. Inside a generic `static def[T]`, a condition that depends on `T` (e.g. `T.name() == "int64"`) cannot be evaluated while the template itself is being checked (`T` is not yet bound to a concrete type); the checker falls back to type-checking both branches in that case, and real branch selection happens per call, once `T` is concretely bound, via the same evaluator that runs the rest of the `static def`'s body.
 - In a function body the condition may read an immutable `let` whose initializer is itself a compile-time value (`let n = T.name()` followed by `static if n == "int8"`). The initializer is evaluated when the condition reads it, against the bindings in scope where the `let` was written. A `let` whose initializer cannot be evaluated at compile time has no compile-time value.
 
@@ -45,7 +45,7 @@ static assert size_of[T]() <= 64, "T must fit in a cache line"
 ```
 
 - If the condition is closed and false, this is a compile error at the assertion's location, with the optional message attached.
-- If the condition depends on runtime input, it lowers to a runtime panic instead (`static_decl_kind::assertion`, `check.cpp:15100`).
+- If the condition depends on runtime input, it lowers to a runtime panic instead (`static_decl_kind::assertion`, `checker::check_static_decl`).
 - The optional `, "message"` form matches contract condition messages; see [Contracts](34-contracts.md).
 
 ## `static for`
@@ -69,7 +69,7 @@ static for field in T.fields():
 - The block form in a function body runs its body once per iteration, with the loop variable a constant in each copy; the loop variable must have a literal form. A block `static for` inside another is unrolled once per outer iteration, so its iterable may read the outer loop's variables (`static for i in 0..v.payload_count`).
 - In a `static def`, a `static for` whose iterable reads a value known only when the call runs, such as a parameter, is an ordinary loop (or, in the inline form, a comprehension) that runs with the call. The same holds for a `static if` whose condition reads such a value: it is an ordinary `if`, and both branches are type-checked. A `static for` or `static if` that reads only types and compile-time values is still unrolled or decided while checking.
 - At module level, the block form's body holds compile-time declarations. It is checked once, and its `static assert`, `static if` and nested `static for` run once per iteration with the loop variable bound.
-- `static_decl_kind::for_inline` and `static_decl_kind::for_block` are the two AST forms (`ast.h:1836`); both are handled in `check.cpp:15145`–`15211`.
+- `static_decl_kind::for_inline` and `static_decl_kind::for_block` are the two AST forms (`src/parser/ast.h`); both are handled by `checker::check_static_decl` (`src/semantic/check_comptime.cpp`).
 - This is the mechanism `deriving` is built from: reflect over a type's fields, unroll, and (typically combined with quoting) emit one code fragment per field.
 
 ## Compile-time reflection
@@ -82,7 +82,7 @@ T.name()            # name of the type as str
 
 Each call has an ordinary type: `T.fields()` is a `list[field_info]`, `T.variants()` a `list[variant_info]`, `M.functions()` and `M.types()` a `list[member_info]`, `T.kind()` a `type_kind`, `T.name()` a `str`, and the counts `int32`. The descriptor types are structs in `std.traits`. On a concrete type each call is a constant, so its result can be kept, indexed and iterated in run-time code too.
 
-- Reflection is implemented in `src/comptime/reflect.cpp` as a read-only traversal of the type's already-parsed declaration syntax — it does not consult the type checker's `type_table`.
+- Reflection is answered by the checker (`src/semantic/check_reflection.cpp`) from the type table: on a concrete type the result is computed once and recorded as a constant, which lowering emits in place of the call. Inside a generic body the call is deferred and answered per instance.
 - Because Cinder monomorphizes generics, the type `T` a reflective call queries is always concrete by the time it is evaluated, so the result is an ordinary compile-time constant.
 - Reflection may only invoke `pure` functions and is itself referentially transparent — see [Compile-Time Semantics § Reflection](32-compile-time-semantics.md#reflection) for why this matters for contracts.
 
@@ -98,7 +98,7 @@ pure def clamp(x: float64, lo: float64, hi: float64) -> float64:
 ```
 
 - `pure` and `static` are independent modifiers (two separate axes — see [Compile-Time Semantics](32-compile-time-semantics.md#two-axes-phase-and-effect)). A function may be `pure` only, `static` only, or `static pure`.
-- Only calls to `pure` functions are legal inside `pre`/`post`/`invariant` conditions (`check.cpp:4430` rejects a non-pure call `in_contract_`). See [Contracts](34-contracts.md).
+- Only calls to `pure` functions are legal inside `pre`/`post`/`invariant` conditions (`src/semantic/check_calls.cpp` rejects a non-pure call while `in_contract_` is set). See [Contracts](34-contracts.md).
 - A `pure` lambda uses `pure` before the arrow: `let square = pure x => x * x`.
 
 ```cinder
@@ -171,12 +171,12 @@ Quotes are hygienic by default: a plain (non-destructuring) `let`/`var` binding 
 
 Implemented end to end:
 
-- `static` bindings, `static if`, `static assert`, `static for` (both forms) — `static_decl` and its four `static_decl_kind` variants, handled in `check.cpp` (`check_static_decl`, `~15074`–`15230`) and by the evaluator (`src/comptime/eval.cpp`).
+- `static` bindings, `static if`, `static assert`, `static for` (both forms) — `static_decl` and its four `static_decl_kind` variants, handled by `checker::check_static_decl` (`src/semantic/check_comptime.cpp`) and run on the bytecode VM (`src/comptime_vm/`).
 - Loops in compile-time code: `while`, `while let`, and `for` over a range or list, with `break`, `continue`, and the arithmetic compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`). Each loop may run at most 1,000,000 iterations; a loop that exceeds this is reported as one that never ends. A `static` whose initializer fails is reported once, and no module that refers to it is lowered.
 - Method calls in compile-time code, on `str` values (`f.name.len() > 1`, `s.trim()`, `s.find(x)`, `s.split(",")`, ...) and on struct, sum-type, integer, and generic-instance values (`p.scaled(2).sum()`). The checker finds the method from the receiver expression's checked type, and the evaluator runs its real body; for `str` that is `std.string`'s body, implementing the `rt_str_*` intrinsics with the same `src/runtime/string_ops` code the backends use. `str` also supports `<`, `<=`, `>`, `>=`, `+`, and `s[a .. b]`. A compile-time list has `len()`, `push(x)` on a local `var`, and `xs[a .. b]`. A receiver typed with a type parameter (`x.size()` with `x: T`) is callable: a compile-time call to a generic `static def`, implicit (`measure(b)`) or explicit (`measure[box3](b)`), binds its type parameters to the types the checker solved, and the method is found for that exact type. An unannotated `static` read before its declaration is checked takes its initializer's type, so methods on it work. `std.unicode`'s casing (`to_uppercase`, `to_lowercase`, `fold_case`, `eq_ignore_case`) also runs. Shared references (`&x`) and dereferences (`*r`) read as the value itself, since compile-time values are immutable; `&mut` is rejected. Compile-time code can call prelude functions (`binary_search`, `partition_point`, ...) and write and call lambdas, which capture the enclosing locals by value, as both backends do; an explicit `&`/`&mut` capture is rejected. An error inside another file, such as the standard library, carries a note at the user's own call.
-- Compile-time reflection (`T.fields()`, `T.field_count()`, `T.name()`) — `src/comptime/reflect.cpp` for `static` contexts. `T.name()` called on a generic function's own type parameter from *ordinary* (non-`static`) code also lowers, via `semantic::type_param_reflection`/`hir::lower_call` (`checker::infer_call` records the concrete name once inside a monomorphized instance; `comptime::evaluator` itself has no notion of that binding, being a wholly separate subsystem used only for `static if`/`static for`/`static assert`/`static let`). `T.field_count()`/`T.fields()` on a type parameter remain `static`-only.
-- `pure` verification for functions and lambdas — enforced in `check.cpp` and required inside contract conditions.
-- Quoting/splicing with all four fragment kinds (`expr`, `stmt`, `def_expr`, `type_expr`), reification at splice sites, and hygienic renaming of internal bindings — `src/comptime/hygiene.{h,cpp}`, `src/comptime/eval.cpp`, and the `quote_expr`/`splice_expr`/`splice_stmt`/`splice_type` node kinds in `check.cpp`.
+- Compile-time reflection (`T.fields()`, `T.field_count()`, `T.variants()`, `T.variant_count()`, `T.kind()`, `T.name()`, and the module queries) — `src/semantic/check_reflection.cpp`. Each call is folded to a constant by the checker, so it works in `static` contexts and in ordinary run-time code alike, including on a generic function's own type parameter (answered per instance).
+- `pure` verification for functions and lambdas — enforced by the checker and required inside contract conditions.
+- Quoting/splicing with all four fragment kinds (`expr`, `stmt`, `def_expr`, `type_expr`), reification at splice sites, and hygienic renaming of internal bindings — `src/comptime/hygiene.{h,cpp}`, `src/comptime/eval.cpp`, and the `quote_expr`/`splice_expr`/`splice_stmt`/`splice_type` node kinds, checked in `src/semantic/check_comptime.cpp`.
 - The AST-builder intrinsics, as `expr.lit(value)`, `expr.ident(name)`, `expr.field(object, name)`, `expr.interp_concat(a, b)`, `expr.debug(value)`, `expr.binary(op, lhs, rhs)` (`==`, `!=`, `and`, `or`) and `expr.call(callee, args...)` — `evaluator::try_eval_expr_builder_call` (`src/comptime/eval.cpp`), with the same list mirrored in `checker::infer_method_call` so an unrecognized one is a type-check error rather than an evaluation-time surprise. `expr.call` is what lets a generated body be a *fold* rather than one flat expression, which is how `derive_ord` (`src/std/deriving.cn`) builds a lexicographic comparison. The builders construct only expressions: there is no statement or match-arm builder, so a generated body that needs branching calls a helper function instead.
 
 Documented gap: resolving a quote's free references against its own definition site (the other half of full hygiene, as opposed to the splice site) is explicitly not implemented — `hygiene.h`'s own comment notes this is "still-unimplemented."

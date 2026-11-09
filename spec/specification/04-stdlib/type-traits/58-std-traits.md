@@ -48,7 +48,7 @@ implements[T, Trait]() -> bool   # T has an impl of Trait (kind-* trait only)
 
 - `is_same[A, B]` is `type_table` id equality — the same notion of sameness [Higher-Kinded Traits](../../03-advanced/37-higher-kinded-traits.md) relies on for substitution normalization. It is reflexive, symmetric, and requires no bound on `A`/`B`.
 - `is_convertible[From, To]` is `is_same[From, To] or implements[From, into[To]]()`; it does not attempt an actual conversion.
-- `implements[T, Trait]` answers a coherence-table lookup at compile time — the same lookup `check.cpp`'s impl-coherence pass performs, exposed as a queryable boolean rather than only a pass/fail obligation on a bound list. It accepts only a kind-`*` trait name; a higher-kinded trait or a `concept` is diagnosed (concepts are structural by construction — see [Concepts](../../03-advanced/35-concepts.md) — so "does `T` implement concept `C`" is written as the bound `T: C` directly, never through `implements`).
+- `implements[T, Trait]` answers a coherence-table lookup at compile time — the same lookup the checker's impl-coherence pass performs, exposed as a queryable boolean rather than only a pass/fail obligation on a bound list. It accepts only a kind-`*` trait name; a higher-kinded trait or a `concept` is diagnosed (concepts are structural by construction — see [Concepts](../../03-advanced/35-concepts.md) — so "does `T` implement concept `C`" is written as the bound `T: C` directly, never through `implements`).
 
 ## Type transformations
 

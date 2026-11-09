@@ -1,6 +1,6 @@
 # 60. Meta Queries
 
-**Status:** Implemented
+**Status:** Partial
 
 A single `type_kind` classification primitive and a small set of member-enumeration queries over Cinder's existing reflection surface.
 
@@ -70,11 +70,9 @@ Trait.requires() -> list[str]     # names of traits a trait's own `requires` cla
 
 ## Implementation status
 
-Nothing in this chapter exists yet.
-
-- `T.kind()` requires one addition to `src/comptime/reflect.cpp`: given a resolved type declaration, return `@struct_kind`/`@sum_kind` for a user `type` (already distinguished internally by `decl.definition->kind`, the same check `T.fields()`/`T.variants()` use to gate themselves), `@scalar_kind` for a builtin name, and so on for the remaining variants — no new subsystem, just a new query alongside the four that already exist there.
-- `member.type_of()` requires extending `make_field_descriptor` to carry the field's `type_expr` node (not just its rendered `type_name` string) into the returned descriptor, and extending the `struct_instance` value representation to hold an AST-fragment field the way a `type_expr` quote value already does.
-- `T.traits()`/`Trait.requires()` require exposing `check.cpp`'s coherence table and trait-declaration `requires` list to the comptime evaluator, which today has no view into semantic-analysis-phase data structures at all — this is the same missing linkage [`std.traits`](58-std-traits.md)'s `implements[T, Trait]` needs, and should land once, shared by both.
+- **Implemented:** `type_kind` (`src/std/traits.category.cn`) and `T.kind()`, folded to a constant by the checker (`src/semantic/check_reflection.cpp`) and usable in `static` and run-time code. `T.kind()` returns `@struct_kind`, `@sum_kind`, `@array_kind`, `@fn_kind`, or `@scalar_kind`; a view reduces to its referent's kind, and `@view_kind`, `@trait_kind` and `@module_kind` are never produced. `member.is_data_member` is a field of `field_info` (always `true`); `member_info` has no such field.
+- **Not implemented:** `member.type_of()`. `field_info` carries only `type_name: str`, and `f.type_of` is rejected as an unknown field.
+- **Not implemented:** `T.traits()` and `Trait.requires()`. `T.traits()` type-checks with no type and then fails in lowering ("no concrete checked type is available for this node") instead of being reported as an unknown query (`spec/todo.md` item 20). `implements[T, Trait]` ([`std.traits`](58-std-traits.md)) answers the one-trait question.
 
 ## See also
 

@@ -41,7 +41,7 @@ A custom scheduler receives the graph as a value and may reorder stages, add ins
 
 ## Implementation status
 
-Not implemented. Execution graphs depend on the concurrency runtime — a scheduler, an execution-context abstraction (`pool`, `io`), and task/handle machinery — none of which exists yet: `src/hir/nodes.h` lists concurrency forms as unsupported for lowering, and neither the bytecode VM nor the AOT runtime has a scheduler, event loop, threads, channels, or synchronization primitives. `spec/concurrency-implementation-plan.md` explicitly defers execution graphs to its last phase (Phase 11, "not scheduled"), to be picked up once the ordinary `async`/`crew` runtime (Phases 1–10) is stable and a motivating use case exists. No grammar, AST, or semantic support for `just`/`then`/`on`/`with_timeout`/`retry`/`connect`/`start`/`count_stages`/`uses_context` exists in `src/`.
+Not implemented. The concurrency runtime this chapter builds on now exists — the task scheduler, the `io` and `cpu` contexts, `crew`/`par`/`race`, channels and sync primitives ([Concurrency Execution Model](../02-intermediate/26-concurrency-execution-model.md), [The Task Scheduler](../05-implementation/69-task-scheduler.md)) — but no grammar, AST, or semantic support for the graph combinators (`just`/`then`/`with_timeout`/`retry`/`connect`/`start`/`count_stages`/`uses_context`, or `|` between stages) exists in `src/`. Only the ordinary `on(ctx)` form is implemented. Execution graphs are deferred until the `async`/`crew` runtime is stable and a motivating use case exists.
 
 ## See also
 

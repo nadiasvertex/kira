@@ -24,7 +24,7 @@ def main() -> result[unit, app_error]:
 
 ## `args()` and `env()`
 
-Command-line arguments and environment variables come from prelude intrinsic functions rather than `main` parameters, so `main`'s signature stays uniform. Both are recognized prelude names in `src/semantic/check.cpp` (`name == "args"`, `name == "env"`).
+Command-line arguments and environment variables come from prelude intrinsic functions rather than `main` parameters, so `main`'s signature stays uniform. Both are recognized prelude names in `src/semantic/check_scopes.cpp`.
 
 ```cinder
 let arguments = args()        # list[str]
@@ -33,10 +33,10 @@ let home      = env("HOME")   # option[str]
 
 ## Scripts
 
-A file may skip the `main` declaration; top-level statements in that file are then treated as the body of an implicit `main`, run in order. A file may declare `main` explicitly or use top-level statements, but not both — mixing the two is a compile error (`` a file may declare `main` explicitly or use top-level statements, but not both ``, checked in `src/semantic/check.cpp`).
+A `module main` file may skip the `main` declaration; top-level statements in that file are then treated as the body of an implicit `main`, run in order. In any other module a top-level statement is a parse error. A file may declare `main` explicitly or use top-level statements, but not both — mixing the two is a compile error (`` a file may declare `main` explicitly or use top-level statements, but not both ``, checked in `src/semantic/check.cpp`).
 
 ```cinder
-module hello
+module main
 
 for name in args():
     println("Hi, {name}")
@@ -45,7 +45,7 @@ for name in args():
 ## Implementation status
 
 - The explicit/implicit-`main` mutual-exclusion check is implemented and diagnosed (`src/semantic/check.cpp`, the "top-level statement in a file that declares `main`" check).
-- No test corpus file under `src/testdata/` (parser_stress, semantic_stress, codegen_test, codegen_stress, driver_stress) exercises the *script* form end to end — every sample program in those corpora declares `main` explicitly. Whether top-level statements actually lower and run as an implicit `main` (as opposed to only being parsed and checked for the mutual-exclusion rule) is unverified against the compiled pipeline.
+- The *script* form runs end to end: a `module main` file of top-level statements lowers and runs as an implicit `main`. No test corpus file under `src/testdata/` exercises it yet; every sample program there declares `main` explicitly.
 - The old tutorial's claim that entry-module selection is driven by a `project.cn` file is not implemented: no `project.cn` file, parser, or reference to one exists anywhere in `src/`. The current CLI (`src/driver/cli.cpp`) instead takes a source file path directly as a positional argument (`bazelisk run //src:cinder -- path/to/module.cn`), with `--compile-function NAME` to select a non-`main` entry point for `--compile`. A library-vs-program distinction driven by project configuration is design-only at this point.
 
 ## See also
