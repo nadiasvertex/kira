@@ -1,0 +1,1053 @@
+#include "src/hir/storage_verify.h"
+
+#include <map>
+#include <string>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+namespace cinder::hir {
+
+namespace {
+
+using semantic::type_id;
+
+/// Largest array whose elements the replay tracks one by one. A bigger array
+/// must be initialized as a whole.
+constexpr uint64_t k_max_tracked_elements = 4096;
+
+/// Which parts of one slot hold a value. A node is either a whole value or a
+/// set of initialized children; an absent child is uninitialized.
+struct init_node {
+  bool whole = false;
+  std::map<std::string, init_node> children;
+
+  [[nodiscard]] auto empty() const -> bool {
+    return !whole && children.empty();
+  }
+};
+
+[[nodiscard]] auto member_key(size_t index) -> std::string {
+  return "m" + std::to_string(index);
+}
+[[nodiscard]] auto element_key(size_t index) -> std::string {
+  return "e" + std::to_string(index);
+}
+[[nodiscard]] auto payload_key(const std::string &variant, size_t index)
+    -> std::string {
+  return "p" + variant + ":" + std::to_string(index);
+}
+
+[[nodiscard]] auto step_key(const projection &step) -> std::string {
+  switch (step.kind) {
+  case projection_kind::member:
+    return member_key(step.index);
+  case projection_kind::element:
+    return element_key(step.index);
+  case projection_kind::payload:
+    return payload_key(step.name, step.index);
+  case projection_kind::deref:
+    return "*";
+  }
+  return "?";
+}
+
+/// Whether two places can name the same bytes: same slot, and one path is a
+/// prefix of the other.
+[[nodiscard]] auto overlaps(const place &a, const place &b) -> bool {
+  if (a.base != b.base) {
+    return false;
+  }
+  const auto shared = std::min(a.steps.size(), b.steps.size());
+  for (size_t i = 0; i < shared; ++i) {
+    if (!(a.steps[i] == b.steps[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// The place a place names, once resolved against layouts.
+struct resolved_place {
+  /// `types[i]` is the type of the value after `i` steps; `types[0]` is the
+  /// slot's type.
+  std::vector<type_id> types;
+  /// How many leading steps the replay tracks: all of them, or those before
+  /// the first `deref`. Bytes behind an address are borrowed and untracked.
+  size_t tracked = 0;
+  bool through_deref = false;
+};
+
+class replay {
+public:
+  replay(const storage_function &function, storage_env &env,
+         const storage_module *callees, const verify_options &options)
+      : fn_(function), env_(env), callees_(callees), options_(options),
+        state_(function.slots.size()), dead_(function.slots.size(), false) {}
+
+  [[nodiscard]] auto run() -> std::expected<void, verify_error> {
+    if (auto ok = check_slots(); !ok.has_value()) {
+      return ok;
+    }
+    for (op_index_ = 0; op_index_ < fn_.ops.size(); ++op_index_) {
+      const auto &op = fn_.ops[op_index_];
+      span_ = op.span;
+      if (returned_) {
+        return fail(verify_error_kind::code_after_return,
+                    "an operation follows the function's return");
+      }
+      if (auto ok = apply(op); !ok.has_value()) {
+        return ok;
+      }
+    }
+    op_index_ = static_cast<size_t>(-1);
+    if (!returned_) {
+      return fail(verify_error_kind::missing_return,
+                  "the function can end without returning");
+    }
+    return {};
+  }
+
+private:
+  using result = std::expected<void, verify_error>;
+
+  [[nodiscard]] auto types() const -> const semantic::type_table & {
+    return env_.types();
+  }
+
+  [[nodiscard]] auto fail(verify_error_kind kind, std::string message) const
+      -> std::unexpected<verify_error> {
+    return std::unexpected(verify_error{.kind = kind,
+                                        .function = fn_.name,
+                                        .op_index = op_index_,
+                                        .span = span_,
+                                        .message = std::move(message)});
+  }
+
+  [[nodiscard]] auto name_of(type_id id) const -> std::string {
+    return "`" + types().display(id) + "`";
+  }
+
+  [[nodiscard]] auto same_type(type_id a, type_id b) const -> bool {
+    return types().strip_refinement(a) == types().strip_refinement(b);
+  }
+
+  [[nodiscard]] auto layout_of(type_id id)
+      -> std::expected<const runtime::value_layout *, verify_error> {
+    const auto layout = env_.layouts.layout(id);
+    if (!layout.has_value()) {
+      return fail(verify_error_kind::layout_failed, layout.error().message);
+    }
+    return *layout;
+  }
+
+  // ------------------------------------------------------------------
+  //  Slots and signature
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto check_slots() -> result {
+    op_index_ = static_cast<size_t>(-1);
+    for (size_t i = 0; i < fn_.slots.size(); ++i) {
+      const auto &slot = fn_.slots[i];
+      if (slot.id != i) {
+        return fail(verify_error_kind::bad_slot,
+                    "slot s" + std::to_string(i) + " carries id s" +
+                        std::to_string(slot.id));
+      }
+      if (slot.owner >= fn_.slots.size()) {
+        return fail(verify_error_kind::bad_slot,
+                    "slot s" + std::to_string(i) + " has no valid owner");
+      }
+      span_ = slot.span;
+      if (auto layout = layout_of(slot.type); !layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      state_[i].whole = slot.initially_initialized;
+    }
+    if (fn_.param_slots.size() != fn_.signature.params.size()) {
+      return fail(verify_error_kind::bad_slot,
+                  "the signature has " +
+                      std::to_string(fn_.signature.params.size()) +
+                      " parameters but " +
+                      std::to_string(fn_.param_slots.size()) +
+                      " parameter slots");
+    }
+    for (size_t i = 0; i < fn_.param_slots.size(); ++i) {
+      const auto id = fn_.param_slots[i];
+      if (id >= fn_.slots.size() ||
+          fn_.slots[id].cls != storage_class::parameter ||
+          !fn_.slots[id].initially_initialized ||
+          !same_type(fn_.slots[id].type, fn_.signature.params[i].type)) {
+        return fail(verify_error_kind::bad_slot,
+                    "parameter " + std::to_string(i) +
+                        " is not an initialized parameter slot of its type");
+      }
+    }
+    const auto through_address = fn_.signature.returns_through_address();
+    if (through_address) {
+      if (fn_.result_slot >= fn_.slots.size() ||
+          fn_.slots[fn_.result_slot].cls != storage_class::caller_result ||
+          fn_.slots[fn_.result_slot].initially_initialized ||
+          !same_type(fn_.slots[fn_.result_slot].type,
+                     fn_.signature.result.type)) {
+        return fail(verify_error_kind::bad_slot,
+                    "the result needs an uninitialized caller_result slot of "
+                    "its type");
+      }
+    } else if (fn_.result_slot != k_invalid_storage) {
+      return fail(verify_error_kind::bad_slot,
+                  "a result returned directly has no result slot");
+    }
+    for (const auto &slot : fn_.slots) {
+      if (slot.cls == storage_class::caller_result &&
+          slot.id != fn_.result_slot) {
+        return fail(verify_error_kind::bad_slot,
+                    "slot s" + std::to_string(slot.id) +
+                        " is a second caller_result");
+      }
+    }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Places
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto resolve(const place &where)
+      -> std::expected<resolved_place, verify_error> {
+    if (where.base >= fn_.slots.size()) {
+      return fail(verify_error_kind::bad_place,
+                  "place names slot s" + std::to_string(where.base) +
+                      ", which does not exist");
+    }
+    if (dead_[where.base]) {
+      return fail(verify_error_kind::use_after_dead,
+                  "slot s" + std::to_string(where.base) +
+                      " is used after its storage ended");
+    }
+    auto out = resolved_place{};
+    out.tracked = where.steps.size();
+    auto current = fn_.slots[where.base].type;
+    out.types.push_back(current);
+    for (size_t i = 0; i < where.steps.size(); ++i) {
+      const auto &step = where.steps[i];
+      if (step.kind == projection_kind::deref) {
+        const auto &entry = types().entry(types().strip_refinement(current));
+        if (entry.kind != semantic::type_kind::ref_kind &&
+            entry.kind != semantic::type_kind::ptr_kind) {
+          return fail(verify_error_kind::bad_place,
+                      "cannot dereference " + name_of(current));
+        }
+        if (!out.through_deref) {
+          out.through_deref = true;
+          out.tracked = i;
+        }
+        current = entry.result;
+        out.types.push_back(current);
+        continue;
+      }
+      const auto layout = layout_of(current);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto &found = **layout;
+      switch (step.kind) {
+      case projection_kind::member: {
+        if (found.kind != runtime::value_layout_kind::structure &&
+            found.kind != runtime::value_layout_kind::tuple) {
+          return fail(verify_error_kind::bad_place,
+                      name_of(current) + " has no members");
+        }
+        if (step.index >= found.members.size()) {
+          return fail(verify_error_kind::bad_place,
+                      "member " + std::to_string(step.index) + " is past the " +
+                          std::to_string(found.members.size()) +
+                          " members of " + name_of(current));
+        }
+        const auto &member = found.members[step.index];
+        if (!step.name.empty() && step.name != member.name) {
+          return fail(verify_error_kind::bad_place,
+                      "member " + std::to_string(step.index) + " of " +
+                          name_of(current) + " is `" + member.name +
+                          "`, not `" + step.name + "`");
+        }
+        current = member.type;
+        break;
+      }
+      case projection_kind::element:
+        if (found.kind != runtime::value_layout_kind::array) {
+          return fail(verify_error_kind::bad_place,
+                      name_of(current) + " is not an array");
+        }
+        if (step.index >= found.count) {
+          return fail(verify_error_kind::bad_place,
+                      "element " + std::to_string(step.index) +
+                          " is past the end of " + name_of(current));
+        }
+        current = found.element;
+        break;
+      case projection_kind::payload: {
+        if (found.kind != runtime::value_layout_kind::sum) {
+          return fail(verify_error_kind::bad_place,
+                      name_of(current) + " is not a sum");
+        }
+        const auto *variant = found.find_variant(step.name);
+        if (variant == nullptr) {
+          return fail(verify_error_kind::bad_place,
+                      name_of(current) + " has no variant `" + step.name +
+                          "`");
+        }
+        if (step.index >= variant->payload.size()) {
+          return fail(verify_error_kind::bad_place,
+                      "payload slot " + std::to_string(step.index) +
+                          " is past the end of variant `" + step.name + "`");
+        }
+        current = variant->payload[step.index].type;
+        break;
+      }
+      case projection_kind::deref:
+        break;
+      }
+      out.types.push_back(current);
+    }
+    if (!same_type(current, where.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  "place is typed " + name_of(where.type) +
+                      " but its projections arrive at " + name_of(current));
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------
+  //  Initialization state
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto is_sum(type_id id) -> bool {
+    const auto layout = env_.layouts.layout(id);
+    return layout.has_value() &&
+           (*layout)->kind == runtime::value_layout_kind::sum;
+  }
+
+  /// Whether `node`, holding a `type`, is a complete value.
+  [[nodiscard]] auto covered(const init_node &node, type_id type) -> bool {
+    if (node.whole) {
+      return true;
+    }
+    const auto layout = env_.layouts.layout(type);
+    if (!layout.has_value()) {
+      return false;
+    }
+    const auto &found = **layout;
+    switch (found.kind) {
+    case runtime::value_layout_kind::structure:
+    case runtime::value_layout_kind::tuple:
+      if (found.members.empty()) {
+        return false;
+      }
+      for (size_t i = 0; i < found.members.size(); ++i) {
+        const auto child = node.children.find(member_key(i));
+        if (child == node.children.end() ||
+            !covered(child->second, found.members[i].type)) {
+          return false;
+        }
+      }
+      return true;
+    case runtime::value_layout_kind::array:
+      if (found.count == 0 || found.count > k_max_tracked_elements) {
+        return false;
+      }
+      for (size_t i = 0; i < found.count; ++i) {
+        const auto child = node.children.find(element_key(i));
+        if (child == node.children.end() ||
+            !covered(child->second, found.element)) {
+          return false;
+        }
+      }
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  /// Whether any byte of the first `count` steps of `where` holds a value.
+  [[nodiscard]] auto any_init(const place &where, size_t count) const -> bool {
+    const auto *node = &state_[where.base];
+    for (size_t i = 0; i < count; ++i) {
+      if (node->whole) {
+        return true;
+      }
+      const auto child = node->children.find(step_key(where.steps[i]));
+      if (child == node->children.end()) {
+        return false;
+      }
+      node = &child->second;
+    }
+    return !node->empty();
+  }
+
+  /// Whether the first `count` steps of `where` name a complete value.
+  [[nodiscard]] auto fully_init(const place &where, const resolved_place &at,
+                                size_t count) -> bool {
+    const auto *node = &state_[where.base];
+    for (size_t i = 0; i < count; ++i) {
+      if (node->whole) {
+        return true;
+      }
+      if (is_sum(at.types[i])) {
+        return false; // The variant is not published yet.
+      }
+      const auto child = node->children.find(step_key(where.steps[i]));
+      if (child == node->children.end()) {
+        return false;
+      }
+      node = &child->second;
+    }
+    return covered(*node, at.types[count]);
+  }
+
+  auto mark_init(const place &where, size_t count) -> void {
+    auto *node = &state_[where.base];
+    for (size_t i = 0; i < count; ++i) {
+      node = &node->children[step_key(where.steps[i])];
+    }
+    node->whole = true;
+    node->children.clear();
+  }
+
+  /// Splits a whole value into its members so one can leave.
+  [[nodiscard]] auto explode(init_node &node, type_id type) -> result {
+    const auto layout = layout_of(type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind == runtime::value_layout_kind::structure ||
+        found.kind == runtime::value_layout_kind::tuple) {
+      for (size_t i = 0; i < found.members.size(); ++i) {
+        node.children[member_key(i)].whole = true;
+      }
+      node.whole = false;
+      return {};
+    }
+    return fail(verify_error_kind::partial_move,
+                "cannot take part of " + name_of(type) +
+                    "; a sum or an array is moved or dropped whole");
+  }
+
+  /// Marks the first `count` steps of `where` as holding no value.
+  [[nodiscard]] auto invalidate(const place &where, const resolved_place &at,
+                                size_t count) -> result {
+    if (count == 0) {
+      state_[where.base] = init_node{};
+      return {};
+    }
+    auto trail = std::vector<std::pair<init_node *, std::string>>{};
+    auto *node = &state_[where.base];
+    for (size_t i = 0; i < count; ++i) {
+      if (node->whole) {
+        if (auto ok = explode(*node, at.types[i]); !ok.has_value()) {
+          return ok;
+        }
+      }
+      auto key = step_key(where.steps[i]);
+      const auto child = node->children.find(key);
+      if (child == node->children.end()) {
+        return {};
+      }
+      trail.emplace_back(node, std::move(key));
+      node = &child->second;
+    }
+    trail.back().first->children.erase(trail.back().second);
+    for (size_t j = trail.size() - 1; j-- > 0;) {
+      const auto child = trail[j].first->children.find(trail[j].second);
+      if (child != trail[j].first->children.end() && child->second.empty()) {
+        trail[j].first->children.erase(child);
+      }
+    }
+    return {};
+  }
+
+  /// A value the operation reads must be complete. Behind an address the
+  /// referent is borrowed, so only the address itself is checked.
+  [[nodiscard]] auto require_init(const place &where, const resolved_place &at)
+      -> result {
+    if (!fully_init(where, at, at.tracked)) {
+      return fail(verify_error_kind::uninitialized,
+                  "s" + std::to_string(where.base) + " is read before it is " +
+                      "completely initialized");
+    }
+    return {};
+  }
+
+  /// A destination must hold no value, or hold one that needs no drop.
+  [[nodiscard]] auto require_writable(const place &where,
+                                      const resolved_place &at) -> result {
+    if (at.through_deref) {
+      return require_init(where, at);
+    }
+    if (!any_init(where, at.tracked)) {
+      return {};
+    }
+    if (fully_init(where, at, at.tracked) &&
+        !env_.needs_drop(where.type)) {
+      return {};
+    }
+    return fail(verify_error_kind::already_initialized,
+                "s" + std::to_string(where.base) +
+                    " already holds a value; drop it before writing again");
+  }
+
+  auto commit_write(const place &where, const resolved_place &at) -> void {
+    if (!at.through_deref) {
+      mark_init(where, at.tracked);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  //  Operands
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto check_operand(const operand &value) -> result {
+    switch (value.kind) {
+    case operand_kind::constant:
+      return {};
+    case operand_kind::address_of: {
+      const auto at = resolve(value.where);
+      if (!at.has_value()) {
+        return std::unexpected(at.error());
+      }
+      if (auto ok = require_init(value.where, *at); !ok.has_value()) {
+        return ok;
+      }
+      const auto &entry =
+          types().entry(types().strip_refinement(value.type));
+      if ((entry.kind != semantic::type_kind::ref_kind &&
+           entry.kind != semantic::type_kind::ptr_kind) ||
+          !same_type(entry.result, value.where.type)) {
+        return fail(verify_error_kind::type_mismatch,
+                    "the address of " + name_of(value.where.type) +
+                        " is typed " + name_of(value.type));
+      }
+      return {};
+    }
+    case operand_kind::read: {
+      const auto at = resolve(value.where);
+      if (!at.has_value()) {
+        return std::unexpected(at.error());
+      }
+      if (!same_type(value.type, value.where.type)) {
+        return fail(verify_error_kind::type_mismatch,
+                    "operand is typed " + name_of(value.type) +
+                        " but reads " + name_of(value.where.type));
+      }
+      const auto cls = classify_value(env_.layouts, value.type);
+      if (!cls.has_value()) {
+        return fail(verify_error_kind::layout_failed, cls.error().message);
+      }
+      if (is_indirect(cls->cls)) {
+        return fail(verify_error_kind::bad_operation,
+                    name_of(value.type) +
+                        " travels by address and cannot be an operand");
+      }
+      if (auto ok = require_init(value.where, *at); !ok.has_value()) {
+        return ok;
+      }
+      if (value.consume) {
+        if (at->through_deref) {
+          return fail(verify_error_kind::move_from_reference,
+                      "cannot take ownership of a value behind a reference");
+        }
+        return invalidate(value.where, *at, at->tracked);
+      }
+      return {};
+    }
+    }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Operations
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto apply(const storage_op &op) -> result {
+    switch (op.kind) {
+    case op_kind::compute:
+      return do_compute(op);
+    case op_kind::init_empty:
+      return do_init_empty(op);
+    case op_kind::copy_into:
+    case op_kind::move_into:
+      return do_transfer(op);
+    case op_kind::publish_variant:
+      return do_publish(op);
+    case op_kind::drop_in_place:
+      return do_drop(op);
+    case op_kind::call_into:
+      return do_call(op);
+    case op_kind::storage_dead:
+      return do_dead(op);
+    case op_kind::return_value:
+      return do_return(op);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto do_compute(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto cls = classify_value(env_.layouts, op.dest.type);
+    if (!cls.has_value()) {
+      return fail(verify_error_kind::layout_failed, cls.error().message);
+    }
+    if (cls->cls != pass_class::scalar && cls->cls != pass_class::address) {
+      return fail(verify_error_kind::type_mismatch,
+                  "compute writes a scalar or an address, not " +
+                      name_of(op.dest.type));
+    }
+    const auto expected_operands =
+        op.computation == compute_kind::constant ? 0U
+        : op.computation == compute_kind::binary ? 2U
+                                                 : 1U;
+    if (op.operands.size() != expected_operands) {
+      return fail(verify_error_kind::bad_operation,
+                  "compute has " + std::to_string(op.operands.size()) +
+                      " operands, expected " +
+                      std::to_string(expected_operands));
+    }
+    for (const auto &value : op.operands) {
+      if (auto ok = check_operand(value); !ok.has_value()) {
+        return ok;
+      }
+    }
+    if (op.computation == compute_kind::copy &&
+        !same_type(op.operands[0].type, op.dest.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a copy joins " + name_of(op.operands[0].type) + " and " +
+                      name_of(op.dest.type));
+    }
+    if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *at);
+    return {};
+  }
+
+  [[nodiscard]] auto do_init_empty(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto layout = layout_of(op.dest.type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if (!(*layout)->is_zero_sized()) {
+      return fail(verify_error_kind::type_mismatch,
+                  "init_empty on " + name_of(op.dest.type) +
+                      ", which has bytes");
+    }
+    if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *at);
+    return {};
+  }
+
+  [[nodiscard]] auto do_transfer(const storage_op &op) -> result {
+    const auto moving = op.kind == op_kind::move_into;
+    const auto from = resolve(op.source);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    const auto to = resolve(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    if (!same_type(op.source.type, op.dest.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  std::string{moving ? "move" : "copy"} + " joins " +
+                      name_of(op.source.type) + " and " +
+                      name_of(op.dest.type));
+    }
+    if (overlaps(op.source, op.dest)) {
+      return fail(verify_error_kind::overlapping_transfer,
+                  "source and destination share bytes");
+    }
+    if (auto ok = require_init(op.source, *from); !ok.has_value()) {
+      return ok;
+    }
+    if (moving) {
+      if (from->through_deref) {
+        return fail(verify_error_kind::move_from_reference,
+                    "cannot move " + name_of(op.source.type) +
+                        " out of a reference");
+      }
+    } else if (!env_.is_copy(op.source.type)) {
+      return fail(verify_error_kind::not_copy,
+                  name_of(op.source.type) +
+                      " is moved, not copied; use a move or an explicit clone");
+    }
+    if (auto ok = require_writable(op.dest, *to); !ok.has_value()) {
+      return ok;
+    }
+    if (moving) {
+      if (auto ok = invalidate(op.source, *from, from->tracked); !ok.has_value()) {
+        return ok;
+      }
+    }
+    commit_write(op.dest, *to);
+    return {};
+  }
+
+  [[nodiscard]] auto do_publish(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    if (at->through_deref) {
+      return fail(verify_error_kind::bad_operation,
+                  "a sum is built in its own storage, not behind a reference");
+    }
+    const auto layout = layout_of(op.dest.type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind != runtime::value_layout_kind::sum) {
+      return fail(verify_error_kind::type_mismatch,
+                  name_of(op.dest.type) + " is not a sum");
+    }
+    const auto *variant = found.find_variant(op.variant);
+    if (variant == nullptr) {
+      return fail(verify_error_kind::bad_place,
+                  name_of(op.dest.type) + " has no variant `" + op.variant +
+                      "`");
+    }
+    auto *node = &state_[op.dest.base];
+    for (size_t i = 0; i < at->tracked; ++i) {
+      if (node->whole) {
+        break;
+      }
+      const auto child = node->children.find(step_key(op.dest.steps[i]));
+      if (child == node->children.end()) {
+        node = nullptr;
+        break;
+      }
+      node = &child->second;
+    }
+    if (node != nullptr && node->whole) {
+      return fail(verify_error_kind::already_initialized,
+                  "the sum's variant is already published");
+    }
+    for (size_t i = 0; i < variant->payload.size(); ++i) {
+      const auto child =
+          node == nullptr ? std::map<std::string, init_node>::const_iterator{}
+                          : node->children.find(payload_key(op.variant, i));
+      if (node == nullptr || child == node->children.end() ||
+          !covered(child->second, variant->payload[i].type)) {
+        return fail(verify_error_kind::incomplete_variant,
+                    "payload slot " + std::to_string(i) + " of `" + op.variant +
+                        "` is not initialized when the variant is published");
+      }
+    }
+    if (node != nullptr && node->children.size() != variant->payload.size()) {
+      return fail(verify_error_kind::incomplete_variant,
+                  "payload of another variant is still present");
+    }
+    mark_init(op.dest, at->tracked);
+    return {};
+  }
+
+  [[nodiscard]] auto do_drop(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    if (auto ok = require_init(op.dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    if (at->through_deref) {
+      return {}; // The referent's owner tracks what it holds.
+    }
+    return invalidate(op.dest, *at, at->tracked);
+  }
+
+  [[nodiscard]] auto do_call(const storage_op &op) -> result {
+    const auto &sig = op.signature;
+    if (sig.params.size() != op.args.size()) {
+      return fail(verify_error_kind::bad_argument,
+                  "call passes " + std::to_string(op.args.size()) +
+                      " arguments to a signature of " +
+                      std::to_string(sig.params.size()));
+    }
+    if (op.callee.is_direct()) {
+      // A function in another module may share this module's name for it.
+      if (callees_ != nullptr &&
+          (!op.callee.owner_module.has_value() ||
+           *op.callee.owner_module == callees_->name)) {
+        const auto *target = callees_->find(op.callee.name);
+        if (target != nullptr && !target->signature.agrees_with(sig)) {
+          return fail(verify_error_kind::signature_mismatch,
+                      "the call to `" + op.callee.name + "` is " +
+                          format_signature(sig) + " but the function is " +
+                          format_signature(target->signature));
+        }
+      }
+    } else {
+      const auto &callable = *op.callee.callable;
+      const auto at = resolve(callable);
+      if (!at.has_value()) {
+        return std::unexpected(at.error());
+      }
+      if (auto ok = require_init(callable, *at); !ok.has_value()) {
+        return ok;
+      }
+      const auto indirect = classify_fn_type(env_.layouts, types(), callable.type);
+      if (!indirect.has_value()) {
+        return fail(verify_error_kind::signature_mismatch,
+                    indirect.error().message);
+      }
+      if (!indirect->agrees_with(sig)) {
+        return fail(verify_error_kind::signature_mismatch,
+                    "the call is " + format_signature(sig) +
+                        " but the function value is " +
+                        format_signature(*indirect));
+      }
+    }
+    const auto dest = resolve(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (!same_type(op.dest.type, sig.result.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  "the call returns " + name_of(sig.result.type) +
+                      " but its destination is " + name_of(op.dest.type));
+    }
+    auto used = std::unordered_set<storage_id>{};
+    for (size_t i = 0; i < op.args.size(); ++i) {
+      const auto &arg = op.args[i];
+      if (arg.source_index != i || arg.cls != sig.params[i].cls) {
+        return fail(verify_error_kind::bad_argument,
+                    "argument " + std::to_string(i) +
+                        " does not match the signature");
+      }
+      if (arg.cls == pass_class::zero_sized) {
+        continue;
+      }
+      if (is_indirect(arg.cls)) {
+        const auto at = resolve(arg.slot);
+        if (!at.has_value()) {
+          return std::unexpected(at.error());
+        }
+        if (fn_.slots[arg.slot.base].cls != storage_class::outgoing_argument ||
+            !arg.slot.steps.empty() || !used.insert(arg.slot.base).second ||
+            !same_type(arg.slot.type, sig.params[i].type)) {
+          return fail(verify_error_kind::bad_argument,
+                      "argument " + std::to_string(i) +
+                          " must be its own outgoing slot of its type");
+        }
+        if (auto ok = require_init(arg.slot, *at); !ok.has_value()) {
+          return ok;
+        }
+        if (auto ok = invalidate(arg.slot, *at, at->tracked); !ok.has_value()) {
+          return ok;
+        }
+        continue;
+      }
+      if (auto ok = check_operand(arg.value); !ok.has_value()) {
+        return ok;
+      }
+      const auto cls = classify_value(env_.layouts, arg.value.type);
+      if (!cls.has_value() || cls->cls != arg.cls) {
+        return fail(verify_error_kind::bad_argument,
+                    "argument " + std::to_string(i) + " is not a " +
+                        pass_class_name(arg.cls));
+      }
+      // A callee that builds its result in caller storage writes it while it
+      // runs, so a borrow of that storage would see it half built. A result
+      // returned in a register is written after the call and cannot clash.
+      if (sig.returns_through_address() &&
+          arg.value.kind == operand_kind::address_of &&
+          overlaps(arg.value.where, op.dest)) {
+        return fail(verify_error_kind::result_aliases_argument,
+                    "the result is built in s" + std::to_string(op.dest.base) +
+                        ", which an argument borrows");
+      }
+    }
+    if (auto ok = require_writable(op.dest, *dest); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *dest);
+    return {};
+  }
+
+  [[nodiscard]] auto do_dead(const storage_op &op) -> result {
+    if (op.slot >= fn_.slots.size()) {
+      return fail(verify_error_kind::bad_slot,
+                  "storage_dead names slot s" + std::to_string(op.slot));
+    }
+    const auto &slot = fn_.slots[op.slot];
+    if (dead_[op.slot]) {
+      return fail(verify_error_kind::use_after_dead,
+                  "slot s" + std::to_string(op.slot) + " ends twice");
+    }
+    if (slot.cls != storage_class::frame_local &&
+        slot.cls != storage_class::outgoing_argument &&
+        slot.cls != storage_class::parameter) {
+      return fail(verify_error_kind::bad_lifetime_end,
+                  std::string{"a "} + storage_class_name(slot.cls) +
+                      " slot does not end inside the function");
+    }
+    const auto holds = !state_[op.slot].empty();
+    if (slot.cls == storage_class::outgoing_argument && holds) {
+      return fail(verify_error_kind::bad_lifetime_end,
+                  "outgoing slot s" + std::to_string(op.slot) +
+                      " still holds an argument no call consumed");
+    }
+    if (options_.check_leaks && holds && env_.needs_drop(slot.type)) {
+      return fail(verify_error_kind::leaked_value,
+                  "slot s" + std::to_string(op.slot) +
+                      " ends while still holding a value that needs a drop");
+    }
+    dead_[op.slot] = true;
+    state_[op.slot] = init_node{};
+    return {};
+  }
+
+  [[nodiscard]] auto do_return(const storage_op &op) -> result {
+    const auto &sig = fn_.signature;
+    if (sig.returns_through_address()) {
+      if (op.value.has_value()) {
+        return fail(verify_error_kind::bad_result,
+                    "a result built in caller storage returns no value");
+      }
+      if (dead_[fn_.result_slot] || !covered(state_[fn_.result_slot], sig.result.type)) {
+        return fail(verify_error_kind::bad_result,
+                    "the result is not completely initialized on return");
+      }
+    } else if (sig.result.cls == pass_class::zero_sized) {
+      if (op.value.has_value()) {
+        return fail(verify_error_kind::bad_result,
+                    "a zero-sized result returns no value");
+      }
+    } else {
+      if (!op.value.has_value()) {
+        return fail(verify_error_kind::bad_result,
+                    "return carries no value for a " +
+                        std::string{pass_class_name(sig.result.cls)} +
+                        " result");
+      }
+      if (auto ok = check_operand(*op.value); !ok.has_value()) {
+        return ok;
+      }
+      if (!same_type(op.value->type, sig.result.type)) {
+        return fail(verify_error_kind::bad_result,
+                    "return carries " + name_of(op.value->type) +
+                        " for a result of " + name_of(sig.result.type));
+      }
+    }
+    for (const auto &slot : fn_.slots) {
+      if (dead_[slot.id] || slot.id == fn_.result_slot) {
+        continue;
+      }
+      if (slot.cls == storage_class::outgoing_argument &&
+          !state_[slot.id].empty()) {
+        return fail(verify_error_kind::bad_lifetime_end,
+                    "outgoing slot s" + std::to_string(slot.id) +
+                        " still holds an argument no call consumed");
+      }
+      if (options_.check_leaks &&
+          (slot.cls == storage_class::frame_local ||
+           slot.cls == storage_class::parameter) &&
+          !state_[slot.id].empty() && env_.needs_drop(slot.type)) {
+        return fail(verify_error_kind::leaked_value,
+                    "slot s" + std::to_string(slot.id) +
+                        " is still initialized and needs a drop at return");
+      }
+    }
+    returned_ = true;
+    return {};
+  }
+
+  const storage_function &fn_;
+  storage_env &env_;
+  const storage_module *callees_;
+  verify_options options_;
+  std::vector<init_node> state_;
+  std::vector<bool> dead_;
+  size_t op_index_ = static_cast<size_t>(-1);
+  source_span span_;
+  bool returned_ = false;
+};
+
+} // namespace
+
+auto verify_error_kind_name(verify_error_kind kind) -> const char * {
+  switch (kind) {
+  case verify_error_kind::bad_slot:
+    return "bad_slot";
+  case verify_error_kind::bad_place:
+    return "bad_place";
+  case verify_error_kind::type_mismatch:
+    return "type_mismatch";
+  case verify_error_kind::bad_operation:
+    return "bad_operation";
+  case verify_error_kind::uninitialized:
+    return "uninitialized";
+  case verify_error_kind::already_initialized:
+    return "already_initialized";
+  case verify_error_kind::move_from_reference:
+    return "move_from_reference";
+  case verify_error_kind::partial_move:
+    return "partial_move";
+  case verify_error_kind::not_copy:
+    return "not_copy";
+  case verify_error_kind::incomplete_variant:
+    return "incomplete_variant";
+  case verify_error_kind::overlapping_transfer:
+    return "overlapping_transfer";
+  case verify_error_kind::signature_mismatch:
+    return "signature_mismatch";
+  case verify_error_kind::bad_argument:
+    return "bad_argument";
+  case verify_error_kind::result_aliases_argument:
+    return "result_aliases_argument";
+  case verify_error_kind::use_after_dead:
+    return "use_after_dead";
+  case verify_error_kind::bad_lifetime_end:
+    return "bad_lifetime_end";
+  case verify_error_kind::bad_result:
+    return "bad_result";
+  case verify_error_kind::leaked_value:
+    return "leaked_value";
+  case verify_error_kind::missing_return:
+    return "missing_return";
+  case verify_error_kind::code_after_return:
+    return "code_after_return";
+  case verify_error_kind::layout_failed:
+    return "layout_failed";
+  }
+  return "?";
+}
+
+auto verify(const storage_function &function, storage_env &env,
+            const storage_module *callees, const verify_options &options)
+    -> std::expected<void, verify_error> {
+  return replay(function, env, callees, options).run();
+}
+
+auto verify(const storage_module &module, storage_env &env,
+            const verify_options &options)
+    -> std::expected<void, verify_error> {
+  for (const auto &function : module.functions) {
+    if (auto ok = verify(function, env, &module, options); !ok.has_value()) {
+      return ok;
+    }
+  }
+  return {};
+}
+
+} // namespace cinder::hir
+

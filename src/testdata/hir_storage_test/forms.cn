@@ -1,0 +1,101 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+type line = { pub from: pair, pub to: pair }
+type shape = @circle(int32) | @rect(int32, int32) | @empty
+type framed = { pub kind: shape, pub id: int32 }
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def make_line(n: int32) -> line:
+    return line { from: make_pair(n), to: pair { a: 0, b: n } }
+
+def forward(n: int32) -> pair:
+    return make_pair(n)
+
+def bind(n: int32) -> int32:
+    let p = make_pair(n)
+    return p.b
+
+def make_tuple(n: int32) -> (int32, int32):
+    return (n, n + 1)
+
+def make_array(n: int32) -> array[int32, 3]:
+    return [n, n, 0]
+
+def make_rect(n: int32) -> shape:
+    return @rect(n, n + 1)
+
+def make_empty() -> shape:
+    return @empty
+
+def make_framed(n: int32) -> framed:
+    return framed { kind: @circle(n), id: n }
+
+def make_some(n: int32) -> option[int32]:
+    return @some(n)
+
+def take_pair(p: pair, k: int32) -> int32:
+    return p.a + k
+
+def pass_fresh(n: int32) -> int32:
+    return take_pair(make_pair(n), n)
+
+def pass_local(p: pair) -> int32:
+    return take_pair(p, 1)
+
+def discard(n: int32) -> int32:
+    make_pair(n)
+    return n
+
+def reassign(n: int32) -> pair:
+    var p = make_pair(n)
+    p = make_pair(p.b)
+    return p
+
+def return_local(n: int32) -> pair:
+    let p = make_pair(n)
+    return p
+
+def first(p: &pair) -> int32:
+    return p.a
+
+def borrow(n: int32) -> int32:
+    let p = make_pair(n)
+    return first(&p)
+
+def sum_scalars(a: int32, b: int32) -> int32:
+    let c = a + b
+    return c * 2
+
+def unit_result(n: int32) -> unit:
+    let p = make_pair(n)
+    return
+
+def use_shape(s: shape) -> int32:
+    return 0
+
+def pass_shape(s: shape) -> int32:
+    return use_shape(s)
+
+def apply(f: &fn(int32) -> pair, n: int32) -> pair:
+    return f(n)
+
+def bump(p: &pair) -> pair:
+    return pair { a: p.a + 1, b: p.b }
+
+def self_bump(n: int32) -> pair:
+    var p = make_pair(n)
+    p = bump(&p)
+    return p
+
+generator def counter() -> some iterator[int32]:
+    yield 1
+
+def branching(n: int32) -> int32:
+    if n > 0:
+        return 1
+    return 2
+
+def shout() -> str:
+    return "hello"

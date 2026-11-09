@@ -12,8 +12,9 @@ preserving ownership, borrowing, evaluation order, and exactly-once drops on the
 bytecode VM and LLVM backends.
 
 This is an implementation plan. T-01 is complete (findings in
-[value-semantics-t01-findings.md](value-semantics-t01-findings.md)) and T-02 is
-complete (status under T-02 below); T-03 through T-14 have not been implemented.
+[value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
+complete, and T-03 is complete (status under each task below); T-04 through T-14
+have not been implemented.
 
 ## Objectives & Scope
 
@@ -477,7 +478,7 @@ integration and documentation.
 |---|---|---|---|---|---|---|
 | [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
 | [x] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
-| [ ] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
+| [x] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [ ] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
 | [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04 | VM executes nested aggregate calls without shell allocations. |
 | [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04 | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
@@ -568,6 +569,31 @@ unchanged.
 6. Add stable dumps and tests. Route each compilation entry point through this
    preparation layer as its backend is migrated; keep representation versions
    explicit during the transition.
+
+**Status: complete for straight-line code (2026-11-09).** `src/hir/storage.{h,cpp}`
+defines the form (slots, places with member/element/payload/deref projections,
+operations, stable dumps). `src/hir/abi.{h,cpp}` classifies values as zero-sized,
+scalar, address, handle, descriptor, or aggregate and builds internal signatures
+`make(result_address?, args…)`. `src/hir/storage_lower.{h,cpp}` lowers HIR to the
+form and `src/hir/storage_verify.{h,cpp}` checks it. `storage_test` pins dumps,
+exercises the verifier's rules by corrupting lowered functions, and was
+mutation-checked against the lowering. No backend consumes the form yet. Points
+that differ from the steps above:
+
+- Straight-line only. `if`, `match`, loops, string literals, array fill, compound
+  assignment, closures, and coroutine/generator bodies are refused by name; the
+  refusal list is returned beside the module rather than the function being half
+  lowered. Control flow needs initialization-state edges and arrives with T-04.
+- HIR already schedules drops as explicit calls. Lowering does not emit
+  `drop_in_place` for them, and it refuses assignment over, and discarded results
+  of, a type that needs a drop, so nothing is dropped twice. T-04 translates the
+  calls to places and enables the verifier's leak check (`check_leaks`, off by
+  default).
+- Outgoing arguments use `outgoing_argument` slots consumed by the call. Scalar
+  arguments are snapshotted into temporaries only when a later sibling has
+  effects.
+- Aggregate assignment is built in a fresh temporary and moved in, so the old value
+  can be read while the new one is built. NRVO is not applied yet; it belongs to T-11.
 
 ### T-04 — Integrate ownership, references, and drops
 
@@ -840,5 +866,6 @@ automatically instrument generated code.
 - [x] Complete T-01 inventories and record actual baseline results before coding
   (see [value-semantics-t01-findings.md](value-semantics-t01-findings.md)).
 - [x] Implement T-02 (concrete recursive byte layouts).
-- [ ] Implement T-03 through T-14 and record passing verification before closing
+- [x] Implement T-03 (shared storage form and aggregate ABI).
+- [ ] Implement T-04 through T-14 and record passing verification before closing
   the corresponding todo items.

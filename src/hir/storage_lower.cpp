@@ -1,0 +1,1131 @@
+#include "src/hir/storage_lower.h"
+
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+namespace cinder::hir {
+
+namespace {
+
+using semantic::type_id;
+
+template <typename T> [[nodiscard]] auto as(const hir_node &node) -> const T & {
+  return static_cast<const T &>(node);
+}
+
+[[nodiscard]] auto describe(hir_node_kind kind) -> std::string {
+  switch (kind) {
+  case hir_node_kind::hir_if:
+    return "an `if` expression";
+  case hir_node_kind::hir_match:
+    return "a `match` expression";
+  case hir_node_kind::hir_lambda:
+    return "a closure";
+  case hir_node_kind::hir_block:
+    return "a block expression";
+  case hir_node_kind::hir_index:
+    return "an index expression";
+  case hir_node_kind::hir_while:
+  case hir_node_kind::hir_while_let:
+    return "a loop";
+  case hir_node_kind::hir_let_else:
+    return "`let ... else`";
+  case hir_node_kind::hir_break:
+  case hir_node_kind::hir_continue:
+    return "`break` or `continue`";
+  case hir_node_kind::hir_yield:
+    return "`yield` or `await`";
+  case hir_node_kind::hir_contract_check:
+    return "a contract check";
+  case hir_node_kind::hir_host_call:
+    return "a host call";
+  case hir_node_kind::hir_generator_next:
+    return "a generator step";
+  default:
+    return "this construct (HIR node kind " +
+           std::to_string(static_cast<int>(kind)) + ")";
+  }
+}
+
+using lower_failure = std::unexpected<storage_lower_error>;
+
+[[nodiscard]] auto refuse(const source_span &span, std::string message)
+    -> lower_failure {
+  return std::unexpected(storage_lower_error{
+      .kind = storage_lower_error_kind::unsupported_construct,
+      .span = span,
+      .message = std::move(message)});
+}
+
+[[nodiscard]] auto malformed(const source_span &span, std::string message)
+    -> lower_failure {
+  return std::unexpected(
+      storage_lower_error{.kind = storage_lower_error_kind::malformed,
+                          .span = span,
+                          .message = std::move(message)});
+}
+
+/// Whether evaluating `expr` can have an effect or observe one.
+[[nodiscard]] auto is_pure(const hir_expr &expr) -> bool {
+  switch (expr.kind) {
+  case hir_node_kind::hir_literal:
+  case hir_node_kind::hir_local_ref:
+  case hir_node_kind::hir_global_ref:
+    return true;
+  case hir_node_kind::hir_field:
+    return is_pure(*as<hir_field>(expr).object);
+  case hir_node_kind::hir_tuple_index:
+    return is_pure(*as<hir_tuple_index>(expr).object);
+  case hir_node_kind::hir_variant_payload:
+    return is_pure(*as<hir_variant_payload>(expr).object);
+  case hir_node_kind::hir_unary:
+    return is_pure(*as<hir_unary>(expr).operand);
+  case hir_node_kind::hir_cast:
+    return is_pure(*as<hir_cast>(expr).operand);
+  case hir_node_kind::hir_binary:
+    return is_pure(*as<hir_binary>(expr).lhs) &&
+           is_pure(*as<hir_binary>(expr).rhs);
+  default:
+    return false;
+  }
+}
+
+class function_lowerer {
+public:
+  function_lowerer(const hir_function &function, storage_env &env)
+      : fn_(function), env_(env) {}
+
+  [[nodiscard]] auto run() -> std::expected<storage_function, storage_lower_error> {
+    if (fn_.is_coroutine()) {
+      return refuse(fn_.span,
+                    "a generator or task body needs suspension-aware storage");
+    }
+    out_.name = fn_.name;
+    auto signature = classify_function(env_.layouts, fn_);
+    if (!signature.has_value()) {
+      return layout_failure(fn_.span, signature.error());
+    }
+    out_.signature = std::move(*signature);
+    if (out_.signature.returns_through_address()) {
+      out_.result_slot = new_slot(storage_class::caller_result,
+                                  fn_.return_type, "", k_invalid_symbol_id,
+                                  fn_.span, false);
+    }
+    for (const auto &param : fn_.params) {
+      const auto id = new_slot(storage_class::parameter, param.type, param.name,
+                               param.symbol, fn_.span, true);
+      out_.param_slots.push_back(id);
+      locals_[param.symbol] = id;
+    }
+    if (fn_.body != nullptr) {
+      for (const auto &stmt : fn_.body->stmts) {
+        if (auto ok = lower_stmt(*stmt); !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
+        if (terminated_) {
+          break;
+        }
+      }
+    }
+    if (!terminated_) {
+      if (out_.signature.result.cls != pass_class::zero_sized) {
+        return malformed(fn_.span, "the body can end without returning a value");
+      }
+      if (auto ended = flush_pending(fn_.span); !ended.has_value()) {
+        return std::unexpected(ended.error());
+      }
+      emit_return(std::nullopt, fn_.span);
+    }
+    return std::move(out_);
+  }
+
+private:
+  using result = std::expected<void, storage_lower_error>;
+
+  struct pending_temp {
+    storage_id slot = k_invalid_storage;
+    bool consumed = false;
+  };
+
+  // ------------------------------------------------------------------
+  //  Slots, places, emission
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto layout_failure(const source_span &span,
+                                    const runtime::layout_error &error) const
+      -> lower_failure {
+    return std::unexpected(storage_lower_error{
+        .kind = storage_lower_error_kind::layout_failed,
+        .span = span,
+        .message = error.message});
+  }
+
+  auto new_slot(storage_class cls, type_id type, std::string name,
+                symbol_id symbol, const source_span &span, bool initialized)
+      -> storage_id {
+    const auto id = static_cast<storage_id>(out_.slots.size());
+    out_.slots.push_back(storage_slot{.id = id,
+                                      .cls = cls,
+                                      .type = type,
+                                      .name = std::move(name),
+                                      .symbol = symbol,
+                                      .span = span,
+                                      .initially_initialized = initialized,
+                                      .owner = id});
+    return id;
+  }
+
+  [[nodiscard]] auto whole(storage_id id) const -> place {
+    return place{.base = id, .steps = {}, .type = out_.slots[id].type};
+  }
+
+  /// A temporary that lives to the end of the statement.
+  auto new_temp(type_id type, const source_span &span) -> storage_id {
+    const auto id = new_slot(storage_class::frame_local, type, "",
+                             k_invalid_symbol_id, span, false);
+    pending_.push_back(pending_temp{.slot = id});
+    return id;
+  }
+
+  auto consumed(storage_id id) -> void {
+    for (auto &temp : pending_) {
+      if (temp.slot == id) {
+        temp.consumed = true;
+      }
+    }
+  }
+
+  auto emit(storage_op op, const source_span &span) -> void {
+    op.span = span;
+    out_.ops.push_back(std::move(op));
+  }
+
+  /// Ends the statement's temporaries, newest first. A temporary that still
+  /// holds a value needing a drop is refused: HIR schedules the drops of the
+  /// values it knows about as explicit calls, and translating those to places
+  /// belongs to ownership integration, so lowering does not invent a second
+  /// drop for a value it cannot tie to the first.
+  auto flush_pending(const source_span &span) -> result {
+    for (auto it = pending_.rbegin(); it != pending_.rend(); ++it) {
+      const auto &slot = out_.slots[it->slot];
+      if (!it->consumed && env_.needs_drop(slot.type)) {
+        pending_.clear();
+        return refuse(span, "a temporary of type `" +
+                                types().display(slot.type) +
+                                "` that needs a drop");
+      }
+      auto dead = storage_op{.kind = op_kind::storage_dead};
+      dead.slot = it->slot;
+      emit(std::move(dead), span);
+    }
+    pending_.clear();
+    return {};
+  }
+
+  auto emit_return(std::optional<operand> value, const source_span &span)
+      -> void {
+    auto ret = storage_op{.kind = op_kind::return_value};
+    ret.value = std::move(value);
+    emit(std::move(ret), span);
+    terminated_ = true;
+  }
+
+  [[nodiscard]] auto types() const -> const semantic::type_table & {
+    return env_.types();
+  }
+
+  [[nodiscard]] auto class_of(type_id type, const source_span &span)
+      -> std::expected<pass_class, storage_lower_error> {
+    const auto value = classify_value(env_.layouts, type);
+    if (!value.has_value()) {
+      return layout_failure(span, value.error());
+    }
+    return value->cls;
+  }
+
+  [[nodiscard]] auto layout_of(type_id type, const source_span &span)
+      -> std::expected<const runtime::value_layout *, storage_lower_error> {
+    const auto layout = env_.layouts.layout(type);
+    if (!layout.has_value()) {
+      return layout_failure(span, layout.error());
+    }
+    return *layout;
+  }
+
+  [[nodiscard]] auto project(place base, projection step, type_id type) const
+      -> place {
+    base.steps.push_back(std::move(step));
+    base.type = type;
+    return base;
+  }
+
+  [[nodiscard]] auto member_step(size_t index, const std::string &name) const
+      -> projection {
+    return projection{
+        .kind = projection_kind::member, .index = index, .name = name};
+  }
+
+  /// Follows references until `where` names a value (`self.x` when `self` is
+  /// `&T`).
+  [[nodiscard]] auto auto_deref(place where) const -> place {
+    for (;;) {
+      const auto &entry = types().entry(types().strip_refinement(where.type));
+      if (entry.kind != semantic::type_kind::ref_kind) {
+        return where;
+      }
+      where = project(std::move(where),
+                      projection{.kind = projection_kind::deref}, entry.result);
+    }
+  }
+
+  // ------------------------------------------------------------------
+  //  Places read from expressions
+  // ------------------------------------------------------------------
+
+  /// The place `expr` names, or nullopt when it is a computed value.
+  [[nodiscard]] auto lower_place(const hir_expr &expr)
+      -> std::expected<std::optional<place>, storage_lower_error> {
+    switch (expr.kind) {
+    case hir_node_kind::hir_local_ref: {
+      const auto found = locals_.find(as<hir_local_ref>(expr).symbol);
+      if (found == locals_.end()) {
+        return std::optional<place>{};
+      }
+      return std::optional<place>{whole(found->second)};
+    }
+    case hir_node_kind::hir_global_ref: {
+      const auto &name = as<hir_global_ref>(expr).name;
+      auto found = globals_.find(name);
+      if (found == globals_.end()) {
+        const auto id = new_slot(storage_class::global, expr.type, name,
+                                 k_invalid_symbol_id, expr.span, true);
+        found = globals_.emplace(name, id).first;
+      }
+      return std::optional<place>{whole(found->second)};
+    }
+    case hir_node_kind::hir_field: {
+      const auto &field = as<hir_field>(expr);
+      auto base = lower_place(*field.object);
+      if (!base.has_value()) {
+        return std::unexpected(base.error());
+      }
+      if (!base->has_value()) {
+        return refuse(expr.span, "a field of a computed value");
+      }
+      auto object = auto_deref(std::move(**base));
+      const auto layout = layout_of(object.type, expr.span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto &members = (*layout)->members;
+      for (size_t i = 0; i < members.size(); ++i) {
+        if (members[i].name == field.field_name) {
+          return std::optional<place>{project(std::move(object),
+                                              member_step(i, field.field_name),
+                                              members[i].type)};
+        }
+      }
+      return malformed(expr.span, "`" + types().display(object.type) +
+                                      "` has no field `" + field.field_name +
+                                      "`");
+    }
+    case hir_node_kind::hir_tuple_index: {
+      const auto &index = as<hir_tuple_index>(expr);
+      auto base = lower_place(*index.object);
+      if (!base.has_value()) {
+        return std::unexpected(base.error());
+      }
+      if (!base->has_value()) {
+        return refuse(expr.span, "an element of a computed value");
+      }
+      auto object = auto_deref(std::move(**base));
+      const auto layout = layout_of(object.type, expr.span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto &found = **layout;
+      if (found.kind == runtime::value_layout_kind::tuple &&
+          index.index < found.members.size()) {
+        return std::optional<place>{project(std::move(object),
+                                            member_step(index.index, ""),
+                                            found.members[index.index].type)};
+      }
+      if (found.kind == runtime::value_layout_kind::array &&
+          index.index < found.count) {
+        return std::optional<place>{project(
+            std::move(object),
+            projection{.kind = projection_kind::element, .index = index.index},
+            found.element)};
+      }
+      return refuse(expr.span, "a positional element of `" +
+                                   types().display(object.type) + "`");
+    }
+    case hir_node_kind::hir_variant_payload: {
+      const auto &payload = as<hir_variant_payload>(expr);
+      auto base = lower_place(*payload.object);
+      if (!base.has_value()) {
+        return std::unexpected(base.error());
+      }
+      if (!base->has_value()) {
+        return refuse(expr.span, "the payload of a computed value");
+      }
+      auto object = auto_deref(std::move(**base));
+      const auto layout = layout_of(object.type, expr.span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto *variant = (*layout)->find_variant(payload.variant_name);
+      if (variant == nullptr || payload.index >= variant->payload.size()) {
+        return malformed(expr.span, "`" + types().display(object.type) +
+                                        "` has no payload slot " +
+                                        std::to_string(payload.index) +
+                                        " in variant `" +
+                                        payload.variant_name + "`");
+      }
+      return std::optional<place>{project(
+          std::move(object),
+          projection{.kind = projection_kind::payload,
+                     .index = payload.index,
+                     .name = payload.variant_name},
+          variant->payload[payload.index].type)};
+    }
+    case hir_node_kind::hir_unary: {
+      const auto &unary = as<hir_unary>(expr);
+      if (unary.op != ast::unary_op::deref) {
+        return std::optional<place>{};
+      }
+      auto base = lower_place(*unary.operand);
+      if (!base.has_value()) {
+        return std::unexpected(base.error());
+      }
+      auto pointer = place{};
+      if (base->has_value()) {
+        pointer = std::move(**base);
+      } else {
+        const auto temp = new_temp(unary.operand->type, unary.operand->span);
+        pointer = whole(temp);
+        if (auto ok = lower_into(*unary.operand, pointer); !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
+      }
+      const auto &entry =
+          types().entry(types().strip_refinement(pointer.type));
+      if (entry.kind != semantic::type_kind::ref_kind &&
+          entry.kind != semantic::type_kind::ptr_kind) {
+        return malformed(expr.span, "cannot dereference `" +
+                                        types().display(pointer.type) + "`");
+      }
+      return std::optional<place>{project(
+          std::move(pointer), projection{.kind = projection_kind::deref},
+          entry.result)};
+    }
+    default:
+      return std::optional<place>{};
+    }
+  }
+
+  // ------------------------------------------------------------------
+  //  Transfers and operands
+  // ------------------------------------------------------------------
+
+  /// Initializes `dest` from the value at `source`: a scalar is copied by
+  /// value, anything else is copied or moved by its `copy` classification.
+  [[nodiscard]] auto transfer(const place &source, const place &dest,
+                              const source_span &span) -> result {
+    const auto cls = class_of(dest.type, span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    auto op = storage_op{};
+    op.dest = dest;
+    switch (*cls) {
+    case pass_class::zero_sized:
+      op.kind = op_kind::init_empty;
+      break;
+    case pass_class::scalar:
+    case pass_class::address:
+      op.kind = op_kind::compute;
+      op.computation = compute_kind::copy;
+      op.operands.push_back(read_of(source, false));
+      break;
+    case pass_class::handle:
+    case pass_class::descriptor:
+    case pass_class::aggregate:
+      op.kind = env_.is_copy(dest.type) ? op_kind::copy_into
+                                        : op_kind::move_into;
+      op.source = source;
+      break;
+    }
+    emit(std::move(op), span);
+    return {};
+  }
+
+  [[nodiscard]] auto read_of(const place &where, bool consume) const -> operand {
+    return operand{.kind = operand_kind::read,
+                   .where = where,
+                   .consume = consume,
+                   .type = where.type};
+  }
+
+  /// Whether reading a value of this class takes it from its owner.
+  [[nodiscard]] auto consumes(pass_class cls, type_id type) const -> bool {
+    return cls == pass_class::handle && !env_.is_copy(type);
+  }
+
+  /// The scalar-class value of `expr` as an operand. When a later sibling
+  /// can have effects, a value read from a place is copied first so the read
+  /// happens in source order.
+  [[nodiscard]] auto lower_operand(const hir_expr &expr, bool later_effects)
+      -> std::expected<operand, storage_lower_error> {
+    const auto cls = class_of(expr.type, expr.span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    if (expr.kind == hir_node_kind::hir_literal &&
+        (*cls == pass_class::scalar || *cls == pass_class::address)) {
+      const auto &literal = as<hir_literal>(expr);
+      return operand{.kind = operand_kind::constant,
+                     .type = expr.type,
+                     .literal = literal.lit_kind,
+                     .text = literal.value};
+    }
+    if (expr.kind == hir_node_kind::hir_unary &&
+        (as<hir_unary>(expr).op == ast::unary_op::addr_of ||
+         as<hir_unary>(expr).op == ast::unary_op::addr_of_mut)) {
+      const auto &inner = *as<hir_unary>(expr).operand;
+      auto target = lower_place(inner);
+      if (!target.has_value()) {
+        return std::unexpected(target.error());
+      }
+      auto where = place{};
+      if (target->has_value()) {
+        where = std::move(**target);
+      } else {
+        const auto temp = new_temp(inner.type, inner.span);
+        where = whole(temp);
+        if (auto ok = lower_into(inner, where); !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
+      }
+      return operand{.kind = operand_kind::address_of,
+                     .where = std::move(where),
+                     .type = expr.type};
+    }
+    auto source = lower_place(expr);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    if (source->has_value()) {
+      const auto consume = consumes(*cls, expr.type);
+      if (!later_effects) {
+        return read_of(**source, consume);
+      }
+      const auto temp = new_temp(expr.type, expr.span);
+      if (auto ok = transfer(**source, whole(temp), expr.span); !ok.has_value()) {
+        return std::unexpected(ok.error());
+      }
+      if (consume) {
+        consumed(temp);
+      }
+      return read_of(whole(temp), consume);
+    }
+    const auto temp = new_temp(expr.type, expr.span);
+    if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
+      return std::unexpected(ok.error());
+    }
+    const auto consume = consumes(*cls, expr.type);
+    if (consume) {
+      consumed(temp);
+    }
+    return read_of(whole(temp), consume);
+  }
+
+  // ------------------------------------------------------------------
+  //  Expressions
+  // ------------------------------------------------------------------
+
+  /// Initializes the uninitialized `dest` with the value of `expr`.
+  [[nodiscard]] auto lower_into(const hir_expr &expr, const place &dest)
+      -> result {
+    switch (expr.kind) {
+    case hir_node_kind::hir_literal:
+      return lower_literal(as<hir_literal>(expr), dest);
+    case hir_node_kind::hir_local_ref:
+    case hir_node_kind::hir_global_ref:
+    case hir_node_kind::hir_field:
+    case hir_node_kind::hir_tuple_index:
+    case hir_node_kind::hir_variant_payload:
+      return transfer_from_place(expr, dest);
+    case hir_node_kind::hir_unary:
+      return lower_unary(as<hir_unary>(expr), dest);
+    case hir_node_kind::hir_binary:
+      return lower_binary(as<hir_binary>(expr), dest);
+    case hir_node_kind::hir_cast:
+      return lower_cast(as<hir_cast>(expr), dest);
+    case hir_node_kind::hir_call:
+      return lower_call(as<hir_call>(expr), dest);
+    case hir_node_kind::hir_tuple:
+      return lower_tuple(as<hir_tuple>(expr), dest);
+    case hir_node_kind::hir_struct_init:
+      return lower_struct(as<hir_struct_init>(expr), dest);
+    case hir_node_kind::hir_array_init:
+      return lower_array(as<hir_array_init>(expr), dest);
+    case hir_node_kind::hir_variant_init:
+      return lower_variant(as<hir_variant_init>(expr), dest);
+    default:
+      return refuse(expr.span, describe(expr.kind) +
+                                   " is not part of storage lowering yet");
+    }
+  }
+
+  [[nodiscard]] auto transfer_from_place(const hir_expr &expr, const place &dest)
+      -> result {
+    auto source = lower_place(expr);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    if (!source->has_value()) {
+      return refuse(expr.span, "a function name used as a value");
+    }
+    return transfer(**source, dest, expr.span);
+  }
+
+  [[nodiscard]] auto lower_literal(const hir_literal &literal, const place &dest)
+      -> result {
+    const auto cls = class_of(dest.type, literal.span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    auto op = storage_op{};
+    op.dest = dest;
+    if (*cls == pass_class::zero_sized) {
+      op.kind = op_kind::init_empty;
+    } else if (*cls == pass_class::scalar || *cls == pass_class::address) {
+      op.kind = op_kind::compute;
+      op.computation = compute_kind::constant;
+      op.literal = literal.lit_kind;
+      op.text = literal.value;
+    } else {
+      return refuse(literal.span,
+                    "a literal of type `" + types().display(dest.type) +
+                        "`, which needs static data");
+    }
+    emit(std::move(op), literal.span);
+    return {};
+  }
+
+  [[nodiscard]] auto require_scalar_dest(const place &dest,
+                                         const source_span &span) -> result {
+    const auto cls = class_of(dest.type, span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    if (*cls != pass_class::scalar && *cls != pass_class::address) {
+      return refuse(span, "a scalar operator producing `" +
+                              types().display(dest.type) + "`");
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_unary(const hir_unary &unary, const place &dest)
+      -> result {
+    if (unary.op == ast::unary_op::deref) {
+      return transfer_from_place(unary, dest);
+    }
+    if (auto ok = require_scalar_dest(dest, unary.span); !ok.has_value()) {
+      return ok;
+    }
+    auto value = lower_operand(*unary.operand, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = dest;
+    if (unary.op == ast::unary_op::addr_of ||
+        unary.op == ast::unary_op::addr_of_mut) {
+      op.computation = compute_kind::copy;
+    } else {
+      op.computation = compute_kind::unary;
+      op.unary = unary.op;
+    }
+    op.operands.push_back(std::move(*value));
+    emit(std::move(op), unary.span);
+    return {};
+  }
+
+  [[nodiscard]] auto lower_binary(const hir_binary &binary, const place &dest)
+      -> result {
+    if (auto ok = require_scalar_dest(dest, binary.span); !ok.has_value()) {
+      return ok;
+    }
+    auto lhs = lower_operand(*binary.lhs, !is_pure(*binary.rhs));
+    if (!lhs.has_value()) {
+      return std::unexpected(lhs.error());
+    }
+    auto rhs = lower_operand(*binary.rhs, false);
+    if (!rhs.has_value()) {
+      return std::unexpected(rhs.error());
+    }
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = dest;
+    op.computation = compute_kind::binary;
+    op.binary = binary.op;
+    op.operands.push_back(std::move(*lhs));
+    op.operands.push_back(std::move(*rhs));
+    emit(std::move(op), binary.span);
+    return {};
+  }
+
+  [[nodiscard]] auto lower_cast(const hir_cast &cast, const place &dest)
+      -> result {
+    if (auto ok = require_scalar_dest(dest, cast.span); !ok.has_value()) {
+      return ok;
+    }
+    auto value = lower_operand(*cast.operand, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = dest;
+    op.computation = compute_kind::cast;
+    op.operands.push_back(std::move(*value));
+    emit(std::move(op), cast.span);
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Constructors
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto empty_value(const place &dest, const source_span &span)
+      -> result {
+    auto op = storage_op{.kind = op_kind::init_empty};
+    op.dest = dest;
+    emit(std::move(op), span);
+    return {};
+  }
+
+  [[nodiscard]] auto lower_tuple(const hir_tuple &tuple, const place &dest)
+      -> result {
+    const auto layout = layout_of(dest.type, tuple.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.members.size() != tuple.elements.size() ||
+        (found.kind != runtime::value_layout_kind::tuple &&
+         !tuple.elements.empty())) {
+      return malformed(tuple.span, "a tuple literal does not match `" +
+                                       types().display(dest.type) + "`");
+    }
+    if (tuple.elements.empty()) {
+      return empty_value(dest, tuple.span);
+    }
+    for (size_t i = 0; i < tuple.elements.size(); ++i) {
+      const auto part =
+          project(dest, member_step(i, ""), found.members[i].type);
+      if (auto ok = lower_into(*tuple.elements[i], part); !ok.has_value()) {
+        return ok;
+      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_struct(const hir_struct_init &init, const place &dest)
+      -> result {
+    const auto layout = layout_of(dest.type, init.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind != runtime::value_layout_kind::structure) {
+      return malformed(init.span, "a struct literal builds `" +
+                                      types().display(dest.type) +
+                                      "`, which is not a struct");
+    }
+    if (init.fields.size() != found.members.size()) {
+      return refuse(init.span,
+                    "a struct literal that leaves fields of `" +
+                        types().display(dest.type) + "` unwritten");
+    }
+    if (found.members.empty()) {
+      return empty_value(dest, init.span);
+    }
+    for (const auto &field : init.fields) {
+      auto index = found.members.size();
+      for (size_t i = 0; i < found.members.size(); ++i) {
+        if (found.members[i].name == field.name) {
+          index = i;
+        }
+      }
+      if (index == found.members.size()) {
+        return malformed(init.span, "`" + types().display(dest.type) +
+                                        "` has no field `" + field.name + "`");
+      }
+      const auto part =
+          project(dest, member_step(index, field.name), found.members[index].type);
+      if (auto ok = lower_into(*field.value, part); !ok.has_value()) {
+        return ok;
+      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_array(const hir_array_init &init, const place &dest)
+      -> result {
+    if (init.fill_value != nullptr) {
+      return refuse(init.span, "an array fill `[value; count]`, which needs a "
+                               "loop");
+    }
+    const auto layout = layout_of(dest.type, init.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind != runtime::value_layout_kind::array ||
+        found.count != init.elements.size()) {
+      return refuse(init.span, "an array literal that does not build a fixed "
+                               "`array` of its own length");
+    }
+    if (init.elements.empty()) {
+      return empty_value(dest, init.span);
+    }
+    for (size_t i = 0; i < init.elements.size(); ++i) {
+      const auto part = project(
+          dest, projection{.kind = projection_kind::element, .index = i},
+          found.element);
+      if (auto ok = lower_into(*init.elements[i], part); !ok.has_value()) {
+        return ok;
+      }
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_variant(const hir_variant_init &init, const place &dest)
+      -> result {
+    const auto layout = layout_of(dest.type, init.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    const auto *variant = found.find_variant(init.variant_name);
+    if (found.kind != runtime::value_layout_kind::sum || variant == nullptr ||
+        variant->payload.size() != init.args.size()) {
+      return malformed(init.span, "`@" + init.variant_name +
+                                      "` does not construct `" +
+                                      types().display(dest.type) + "`");
+    }
+    for (size_t i = 0; i < init.args.size(); ++i) {
+      const auto part = project(
+          dest,
+          projection{.kind = projection_kind::payload,
+                     .index = i,
+                     .name = init.variant_name},
+          variant->payload[i].type);
+      if (auto ok = lower_into(*init.args[i], part); !ok.has_value()) {
+        return ok;
+      }
+    }
+    auto op = storage_op{.kind = op_kind::publish_variant};
+    op.dest = dest;
+    op.variant = init.variant_name;
+    emit(std::move(op), init.span);
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Calls
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
+      -> result {
+    auto params = std::vector<type_id>{};
+    for (const auto &arg : call.args) {
+      params.push_back(arg->type);
+    }
+    auto signature = classify_signature(env_.layouts, params, call.type);
+    if (!signature.has_value()) {
+      return layout_failure(call.span, signature.error());
+    }
+
+    auto target = call_target{};
+    if (call.callee->kind == hir_node_kind::hir_local_ref &&
+        !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
+      const auto &callee = as<hir_local_ref>(*call.callee);
+      target.name = callee.name;
+      target.owner_module = callee.owner_module;
+    } else {
+      auto callable = lower_place(*call.callee);
+      if (!callable.has_value()) {
+        return std::unexpected(callable.error());
+      }
+      if (callable->has_value()) {
+        target.callable = std::move(**callable);
+      } else {
+        const auto temp = new_temp(call.callee->type, call.callee->span);
+        if (auto ok = lower_into(*call.callee, whole(temp)); !ok.has_value()) {
+          return ok;
+        }
+        target.callable = whole(temp);
+      }
+    }
+
+    auto op = storage_op{.kind = op_kind::call_into};
+    auto outgoing = std::vector<storage_id>{};
+    for (size_t i = 0; i < call.args.size(); ++i) {
+      const auto &arg = *call.args[i];
+      const auto &param = signature->params[i];
+      auto lowered = call_argument{.source_index = i, .cls = param.cls};
+      if (param.cls == pass_class::zero_sized) {
+        const auto temp = new_temp(arg.type, arg.span);
+        if (auto ok = lower_into(arg, whole(temp)); !ok.has_value()) {
+          return ok;
+        }
+        consumed(temp);
+      } else if (is_indirect(param.cls)) {
+        const auto slot = new_slot(storage_class::outgoing_argument, arg.type,
+                                   "", k_invalid_symbol_id, arg.span, false);
+        outgoing.push_back(slot);
+        lowered.slot = whole(slot);
+        if (auto ok = lower_into(arg, lowered.slot); !ok.has_value()) {
+          return ok;
+        }
+      } else {
+        auto later_effects = false;
+        for (size_t j = i + 1; j < call.args.size(); ++j) {
+          later_effects = later_effects || !is_pure(*call.args[j]);
+        }
+        auto value = lower_operand(arg, later_effects);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        lowered.value = std::move(*value);
+      }
+      op.args.push_back(std::move(lowered));
+    }
+    op.callee = std::move(target);
+    op.signature = std::move(*signature);
+    op.dest = dest;
+    emit(std::move(op), call.span);
+    for (const auto slot : outgoing) {
+      auto dead = storage_op{.kind = op_kind::storage_dead};
+      dead.slot = slot;
+      emit(std::move(dead), call.span);
+    }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Statements
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto lower_stmt(const hir_node &node) -> result {
+    switch (node.kind) {
+    case hir_node_kind::hir_let:
+      return lower_let(as<hir_let>(node));
+    case hir_node_kind::hir_assign:
+      return lower_assign(as<hir_assign>(node));
+    case hir_node_kind::hir_expr_stmt:
+      return lower_discarded(*as<hir_expr_stmt>(node).expr);
+    case hir_node_kind::hir_return:
+      return lower_return(as<hir_return>(node));
+    default:
+      if (const auto *expr = dynamic_cast<const hir_expr *>(&node)) {
+        return lower_discarded(*expr);
+      }
+      return refuse(node.span, describe(node.kind) +
+                                   " is not part of storage lowering yet");
+    }
+  }
+
+  [[nodiscard]] auto lower_let(const hir_let &let) -> result {
+    const auto slot = new_slot(storage_class::frame_local, let.type(), let.name,
+                               let.symbol, let.span, false);
+    if (let.initializer != nullptr) {
+      if (auto ok = lower_into(*let.initializer, whole(slot)); !ok.has_value()) {
+        return ok;
+      }
+    }
+    locals_[let.symbol] = slot;
+    if (auto ended = flush_pending(let.span); !ended.has_value()) {
+      return ended;
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_discarded(const hir_expr &expr) -> result {
+    const auto temp = new_temp(expr.type, expr.span);
+    if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ended = flush_pending(expr.span); !ended.has_value()) {
+      return ended;
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_assign(const hir_assign &assign) -> result {
+    if (assign.op != ast::assign_op::assign) {
+      return refuse(assign.span, "a compound assignment");
+    }
+    auto target = lower_place(*assign.target);
+    if (!target.has_value()) {
+      return std::unexpected(target.error());
+    }
+    if (!target->has_value()) {
+      return malformed(assign.span, "the target of an assignment is not a place");
+    }
+    const auto &where = **target;
+    const auto cls = class_of(where.type, assign.span);
+    if (!cls.has_value()) {
+      return std::unexpected(cls.error());
+    }
+    if (*cls == pass_class::scalar || *cls == pass_class::address) {
+      // One operation reads its operands before it writes, so the target can
+      // be written directly.
+      if (auto ok = lower_into(*assign.value, where); !ok.has_value()) {
+        return ok;
+      }
+    } else {
+      // Replacing a value that needs a drop is ownership work: HIR has
+      // already scheduled the old value's drop as an explicit call, and the
+      // form cannot yet tell that the call ended the value.
+      if (env_.needs_drop(where.type)) {
+        return refuse(assign.span,
+                      "an assignment over a `" + types().display(where.type) +
+                          "`, which needs a drop");
+      }
+      // Build the replacement apart from the target, because building it may
+      // read the target. Then move it in.
+      const auto replacement = new_temp(where.type, assign.span);
+      if (auto ok = lower_into(*assign.value, whole(replacement));
+          !ok.has_value()) {
+        return ok;
+      }
+      if (*cls != pass_class::zero_sized) {
+        auto move = storage_op{.kind = op_kind::move_into};
+        move.dest = where;
+        move.source = whole(replacement);
+        emit(std::move(move), assign.span);
+      }
+      consumed(replacement);
+    }
+    if (auto ended = flush_pending(assign.span); !ended.has_value()) {
+      return ended;
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_return(const hir_return &ret) -> result {
+    const auto &signature = out_.signature;
+    if (ret.value == nullptr) {
+      if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+        return ended;
+      }
+      emit_return(std::nullopt, ret.span);
+      return {};
+    }
+    if (signature.returns_through_address()) {
+      if (auto ok = lower_into(*ret.value, whole(out_.result_slot));
+          !ok.has_value()) {
+        return ok;
+      }
+      if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+        return ended;
+      }
+      emit_return(std::nullopt, ret.span);
+      return {};
+    }
+    if (signature.result.cls == pass_class::zero_sized) {
+      const auto temp = new_temp(ret.value->type, ret.value->span);
+      if (auto ok = lower_into(*ret.value, whole(temp)); !ok.has_value()) {
+        return ok;
+      }
+      if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+        return ended;
+      }
+      emit_return(std::nullopt, ret.span);
+      return {};
+    }
+    auto value = lower_operand(*ret.value, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    // The value must outlive the statement's temporaries, which end first.
+    // A scalar temporary that is itself the value is simply kept; a value read
+    // from inside a temporary (through a reference it holds) is copied out.
+    auto reads_temporary = false;
+    if (value->kind != operand_kind::constant) {
+      for (auto it = pending_.begin(); it != pending_.end(); ++it) {
+        if (it->slot != value->where.base) {
+          continue;
+        }
+        reads_temporary = true;
+        if (value->where.steps.empty()) {
+          pending_.erase(it);
+          reads_temporary = false;
+        }
+        break;
+      }
+    }
+    if (reads_temporary) {
+      const auto held = new_slot(storage_class::frame_local, ret.value->type, "",
+                                 k_invalid_symbol_id, ret.span, false);
+      if (value->kind == operand_kind::read) {
+        if (auto ok = transfer(value->where, whole(held), ret.span);
+            !ok.has_value()) {
+          return ok;
+        }
+      } else {
+        auto op = storage_op{.kind = op_kind::compute};
+        op.dest = whole(held);
+        op.computation = compute_kind::copy;
+        op.operands.push_back(*value);
+        emit(std::move(op), ret.span);
+      }
+      value = read_of(whole(held), value->consume);
+    }
+    if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+      return ended;
+    }
+    emit_return(std::move(*value), ret.span);
+    return {};
+  }
+
+  const hir_function &fn_;
+  storage_env &env_;
+  storage_function out_;
+  std::unordered_map<symbol_id, storage_id> locals_;
+  std::unordered_map<std::string, storage_id> globals_;
+  std::vector<pending_temp> pending_;
+  bool terminated_ = false;
+};
+
+} // namespace
+
+auto lower_to_storage(const hir_function &function, storage_env &env)
+    -> std::expected<storage_function, storage_lower_error> {
+  return function_lowerer(function, env).run();
+}
+
+auto lower_to_storage(const hir_module &module, storage_env &env)
+    -> storage_lowering {
+  auto out = storage_lowering{};
+  out.module.name = module.module_name;
+  for (const auto &function : module.functions) {
+    auto lowered = lower_to_storage(*function, env);
+    if (lowered.has_value()) {
+      out.module.functions.push_back(std::move(*lowered));
+    } else {
+      out.refused.push_back(refused_function{.name = function->name,
+                                             .error = std::move(lowered.error())});
+    }
+  }
+  return out;
+}
+
+} // namespace cinder::hir
+

@@ -3,6 +3,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 cc_library(
     name = "hir",
     srcs = [
+        "abi.cpp",
         "captures.cpp",
         "drop_schedule.cpp",
         "frame_budget.cpp",
@@ -11,9 +12,13 @@ cc_library(
         "live_across_yield.cpp",
         "lower.cpp",
         "reference_check.cpp",
+        "storage.cpp",
+        "storage_lower.cpp",
+        "storage_verify.cpp",
         "tail_calls.cpp",
     ],
     hdrs = [
+        "abi.h",
         "captures.h",
         "drop_schedule.h",
         "frame_budget.h",
@@ -24,6 +29,9 @@ cc_library(
         "lower.h",
         "nodes.h",
         "reference_check.h",
+        "storage.h",
+        "storage_lower.h",
+        "storage_verify.h",
         "tail_calls.h",
         "traversal.h",
     ],
@@ -57,6 +65,23 @@ cc_test(
     srcs = ["lower_test.cpp"],
     data = [
         "//src:hir_lower_test_files",
+        "//src:std_sources",
+    ],
+    deps = [
+        "//src/comptime_vm",
+        ":hir",
+        "//src/parser:parser",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
+    ],
+)
+
+cc_test(
+    name = "storage_test",
+    srcs = ["storage_test.cpp"],
+    data = [
+        "//src:hir_storage_test_files",
         "//src:std_sources",
     ],
     deps = [
