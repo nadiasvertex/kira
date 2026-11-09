@@ -289,6 +289,7 @@ cc_test(
         "//src/parser:parser",
         "//src/llvm_codegen:codegen",
         "//src/llvm_codegen:jit_support",
+        "//src/runtime:runtime",
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",

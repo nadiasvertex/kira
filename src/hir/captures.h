@@ -73,4 +73,20 @@ namespace cinder::hir {
 [[nodiscard]] auto address_taken_symbols(const hir_block &body)
     -> std::unordered_set<symbol_id>;
 
+/// A `let`-bound local and its type.
+struct borrowed_local {
+  symbol_id symbol = k_invalid_symbol_id;
+  type_id type = k_unknown_type;
+};
+
+/// Every local a `let` in coroutine `fn`'s own body binds (not one inside a
+/// nested lambda) whose address is taken or that a lambda captures by
+/// reference, ordered by symbol. A borrow of one can be held across a
+/// suspension, after which the step function's frame is gone, so both
+/// backends keep these in the coroutine's state block: one entry per local,
+/// reused each time its `let` runs. A borrowed temporary is one of these too,
+/// since `make_references_explicit` stores it in a local first.
+[[nodiscard]] auto coroutine_borrowed_locals(const hir_function &fn)
+    -> std::vector<borrowed_local>;
+
 } // namespace cinder::hir

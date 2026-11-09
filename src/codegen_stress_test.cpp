@@ -41,6 +41,7 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/allocator.h"
 #include "src/runtime/layout.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
@@ -181,6 +182,8 @@ struct outcome {
   bc::panic_reason panic{};
   bool has_value = false;
   uint64_t bits = 0;
+  /// Heap blocks allocated while `main` ran (`runtime::heap_allocation_count`).
+  uint64_t allocations = 0;
 };
 
 // A heap-typed `outcome.bits` is a real pointer into memory owned by the
@@ -229,11 +232,14 @@ auto run_bytecode(const fs::path &path,
            std::format("`{}`: expected static initialization to succeed",
                        path.string()));
   }
+  const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       vm.run(static_cast<uint16_t>(index), std::array<bc::slot_value, 0>{});
   auto result = run.has_value()
                     ? outcome{.has_value = run->has_value, .bits = run->value.u}
                     : outcome{.panicked = true, .panic = run.error()};
+  result.allocations =
+      cinder::runtime::heap_allocation_count() - allocations_before;
   return bytecode_run{.module = std::move(*compiled), .result = result};
 }
 
@@ -264,11 +270,14 @@ auto run_llvm(const fs::path &path,
                      path.string(), jit.error()));
   }
 
+  const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       as_ptr ? jit->run_ptr_result("main") : jit->run("main", return_kind);
   auto result = run.has_value()
                     ? outcome{.has_value = run->has_value, .bits = run->value.u}
                     : outcome{.panicked = true, .panic = run.error()};
+  result.allocations =
+      cinder::runtime::heap_allocation_count() - allocations_before;
   return llvm_run{.jit = std::move(*jit), .result = result};
 }
 
@@ -462,24 +471,11 @@ auto run_llvm(const fs::path &path,
   }
 }
 
-/// The value a corpus file declares `main` should return, written as a
-/// `# expect: <integer>` comment anywhere in the file, or `nullopt` if it
-/// declares none.
-///
-/// Cross-tier *agreement* is this harness's main check, and it is a strong
-/// one — but it is blind to a bug both tiers share, which is exactly what
-/// they do when they share a wrong assumption about the layout they both
-/// read from `runtime::layout.h`. A real instance: `&mut xs[2]` on a `list`
-/// computed `header + 2 * stride` in both backends, addressing bytes inside
-/// the `{len, cap, data}` header instead of the third element — both tiers
-/// returned the same wrong answer and agreement alone was happy. Declaring
-/// the expected value turns that from a silent pass into a failure.
-///
-/// Opt-in: a file with no `# expect:` keeps agreement-only checking, so
-/// this costs nothing for the cases where the value isn't the point.
-[[nodiscard]] auto expected_result_of(std::string_view text)
+/// The integer a corpus file writes after `marker` in a comment anywhere in
+/// the file, or `nullopt` if it writes none.
+[[nodiscard]] auto directive_value(std::string_view text,
+                                   std::string_view marker)
     -> std::optional<int64_t> {
-  constexpr auto marker = std::string_view{"# expect:"};
   // Every occurrence is tried, not just the first, and one that doesn't parse
   // is skipped rather than treated as "this file declares nothing."
   //
@@ -507,6 +503,35 @@ auto run_llvm(const fs::path &path,
     }
   }
   return std::nullopt;
+}
+
+/// The value a corpus file declares `main` should return, written as a
+/// `# expect: <integer>` comment anywhere in the file, or `nullopt` if it
+/// declares none.
+///
+/// Cross-tier *agreement* is this harness's main check, and it is a strong
+/// one — but it is blind to a bug both tiers share, which is exactly what
+/// they do when they share a wrong assumption about the layout they both
+/// read from `runtime::layout.h`. A real instance: `&mut xs[2]` on a `list`
+/// computed `header + 2 * stride` in both backends, addressing bytes inside
+/// the `{len, cap, data}` header instead of the third element — both tiers
+/// returned the same wrong answer and agreement alone was happy. Declaring
+/// the expected value turns that from a silent pass into a failure.
+///
+/// Opt-in: a file with no `# expect:` keeps agreement-only checking, so
+/// this costs nothing for the cases where the value isn't the point.
+[[nodiscard]] auto expected_result_of(std::string_view text)
+    -> std::optional<int64_t> {
+  return directive_value(text, "# expect:");
+}
+
+/// The most heap blocks a corpus file allows `main` to allocate on either
+/// tier, written as `# max-allocations: <integer>`. For storage a program
+/// must reuse rather than allocate afresh each time round a loop: a value
+/// check cannot see a leak, and a leak is usually shared by both tiers.
+[[nodiscard]] auto max_allocations_of(std::string_view text)
+    -> std::optional<int64_t> {
+  return directive_value(text, "# max-allocations:");
 }
 
 /// Both tiers' compiled artifacts, kept alive for as long as a heap-typed
@@ -562,6 +587,16 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
       expect(vm_result.bits == static_cast<uint64_t>(*expected),
              std::format("`{}`: `main` returned {}, but `# expect:` says {}",
                          path.string(), vm_result.bits, *expected));
+    }
+  }
+  if (const auto limit = max_allocations_of(text); limit.has_value()) {
+    for (const auto &[tier, count] :
+         {std::pair{"bytecode VM", vm_result.allocations},
+          std::pair{"LLVM JIT", jit_result.allocations}}) {
+      expect(count <= static_cast<uint64_t>(*limit),
+             std::format("`{}`: `main` allocated {} heap blocks on the {}, "
+                         "but `# max-allocations:` allows {}",
+                         path.string(), count, tier, *limit));
     }
   }
   return runs;

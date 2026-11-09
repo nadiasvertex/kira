@@ -36,6 +36,12 @@ enum class allocator_mode : uint8_t {
 /// The mode in force for this process. Resolved once, on first call.
 [[nodiscard]] auto active_allocator_mode() -> allocator_mode;
 
+/// How many heap blocks `cinder_heap_alloc` has handed out on the calling
+/// thread so far. Tests read it before and after running a program to bound
+/// how much that program allocates. Per thread, so counting costs no
+/// synchronization; work a program hands to another thread is not counted.
+[[nodiscard]] auto heap_allocation_count() -> uint64_t;
+
 } // namespace cinder::runtime
 
 /// C-ABI heap entry points. Both backends bottom out here: the bytecode VM

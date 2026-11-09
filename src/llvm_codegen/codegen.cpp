@@ -422,7 +422,8 @@ auto count_yields(const hir::hir_block &block) -> size_t {
 /// functions — see `bytecode_compiler::compile.cpp`'s identically-shaped
 /// `generator_state_symbols`: every parameter, in declaration order,
 /// followed by every non-parameter local `hir::live_across_yield` found
-/// live, in the order it returns them.
+/// live, in the order it returns them, followed by every borrowed local
+/// (`hir::coroutine_borrowed_locals`) not already listed.
 [[nodiscard]] auto generator_state_symbols(const hir::hir_function &fn)
     -> std::vector<hir::symbol_id>;
 
@@ -536,20 +537,13 @@ auto generator_state_symbols(const hir::hir_function &fn)
       symbols.push_back(sym);
     }
   }
-  // Every heap-state local this body binds, whether or not it is read after
+  // Every borrowed local this body binds, whether or not it is read after
   // a suspension: what has to survive is the storage a borrow points at.
-  // Sorted, so the layout does not depend on hash order.
-  auto let_types = std::unordered_map<hir::symbol_id, type_id>{};
-  collect_let_types(*fn.body, let_types);
-  auto extra = std::vector<hir::symbol_id>{};
-  for (const auto sym : heap_state_symbols(fn)) {
-    if (let_types.contains(sym) &&
-        std::ranges::find(symbols, sym) == symbols.end()) {
-      extra.push_back(sym);
+  for (const auto &local : hir::coroutine_borrowed_locals(fn)) {
+    if (std::ranges::find(symbols, local.symbol) == symbols.end()) {
+      symbols.push_back(local.symbol);
     }
   }
-  std::ranges::sort(extra);
-  symbols.insert(symbols.end(), extra.begin(), extra.end());
   return symbols;
 }
 
@@ -761,6 +755,11 @@ public:
 
     auto let_types = std::unordered_map<hir::symbol_id, type_id>{};
     collect_let_types(*fn.body, let_types);
+    // A borrowed local may be bound inside an expression, which
+    // `collect_let_types` does not reach.
+    for (const auto &local : hir::coroutine_borrowed_locals(fn)) {
+      let_types.emplace(local.symbol, local.type);
+    }
     const auto heap_state = heap_state_symbols(fn);
 
     for (size_t i = 0; i < state_symbols.size(); ++i) {
@@ -2691,6 +2690,31 @@ private:
       return op == ast::binary_op::range ||
              op == ast::binary_op::range_inclusive;
     };
+    if (place.kind == hir_node_kind::hir_variant_payload) {
+      // A payload is a place inside its sum value's block, so the borrow
+      // points there rather than at a copy.
+      const auto &node = dynamic_cast<const hir::hir_variant_payload &>(place);
+      const auto slots = runtime::sum_variant_payload_slots(
+          types_, node.object->type, node.variant_name);
+      if (!slots.has_value() || node.index >= *slots) {
+        return std::unexpected(codegen_error{
+            .kind = codegen_error_kind::unsupported_construct,
+            .span = place.span,
+            .message = std::format(
+                "variant `{}` does not resolve to a declared sum-type "
+                "variant with a payload at index {} — this should have "
+                "been rejected by the type checker",
+                node.variant_name, node.index)});
+      }
+      auto object = compile_expr(*node.object);
+      if (!object.has_value()) {
+        return std::unexpected(object.error());
+      }
+      return slot_address(
+          *object, runtime::sum_payload_slot(types_, node.object->type,
+                                             node.variant_name, node.index)
+                       .value_or(1 + node.index));
+    }
     if (place.kind == hir_node_kind::hir_local_ref) {
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
       // Every local is already an `alloca`, so its address is the slot
@@ -2740,12 +2764,15 @@ private:
     }
     if (is_generator_step_) {
       // A coroutine's frame is gone once it suspends, and the borrow may be
-      // handed to a task that reads it later (`await f(&xs[a..b])`), so the
-      // temporary lives on the heap instead. The block is not freed, like the
-      // bytecode tier's cells for the same case.
-      auto *block = compile_private_block_alloc(1);
-      builder_.CreateStore(*value, block);
-      return block;
+      // handed to a task that reads it later (`await f(&xs[a..b])`).
+      // `hir::make_references_explicit` stores every borrowed temporary in a
+      // local, which lives in the state block, so none should reach here.
+      return std::unexpected(codegen_error{
+          .kind = codegen_error_kind::unsupported_construct,
+          .span = place.span,
+          .message = "internal error: a coroutine borrows a temporary value "
+                     "that was not stored in a local first; this is a gap in "
+                     "the compiler, not a mistake in your code"});
     }
     auto *slot = create_local_alloca((*value)->getType(), "borrowed");
     builder_.CreateStore(*value, slot);

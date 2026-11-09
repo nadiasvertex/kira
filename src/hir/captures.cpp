@@ -1,5 +1,7 @@
 #include "src/hir/captures.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <unordered_set>
 
@@ -26,6 +28,10 @@ struct walker {
   /// lambdas reuse this traversal instead of duplicating it.
   std::function<void(const hir_lambda &)> on_lambda;
   std::function<void(const hir_unary &)> on_unary;
+  /// Optional hook fired for every `hir_let` outside a nested lambda's body.
+  std::function<void(const hir_let &)> on_let;
+  /// How many lambda bodies the walk is inside.
+  std::size_t lambda_depth = 0;
 
   auto bind(symbol_id sym) -> void { bound.insert(sym); }
 
@@ -153,9 +159,11 @@ struct walker {
       for (const auto &param : node.params) {
         bind(param.symbol);
       }
+      ++lambda_depth;
       for (const auto &stmt : node.body->stmts) {
         walk_stmt(*stmt);
       }
+      --lambda_depth;
       bound = outer_bound;
       return;
     }
@@ -280,6 +288,9 @@ struct walker {
         walk_expr(*let.initializer);
       }
       bind(let.symbol);
+      if (on_let && lambda_depth == 0) {
+        on_let(let);
+      }
       return;
     }
     case hir_node_kind::hir_let_else: {
@@ -443,6 +454,25 @@ auto address_taken_symbols(const hir_block &body)
   for (const auto &stmt : body.stmts) {
     w.walk_stmt(*stmt);
   }
+  return found;
+}
+
+auto coroutine_borrowed_locals(const hir_function &fn)
+    -> std::vector<borrowed_local> {
+  auto borrowed = address_taken_symbols(*fn.body);
+  borrowed.merge(ref_captured_symbols(*fn.body));
+  auto found = std::vector<borrowed_local>{};
+  auto w = walker{};
+  w.on_let = [&](const hir_let &let) -> void {
+    if (borrowed.contains(let.symbol)) {
+      found.push_back(
+          borrowed_local{.symbol = let.symbol, .type = let.type()});
+    }
+  };
+  for (const auto &stmt : fn.body->stmts) {
+    w.walk_stmt(*stmt);
+  }
+  std::ranges::sort(found, {}, &borrowed_local::symbol);
   return found;
 }
 

@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -311,7 +312,9 @@ auto count_yields(const hir::hir_block &block) -> size_t {
 /// functions: every parameter (in declaration order, so the constructor's
 /// initial population loop can index by position), followed by every
 /// non-parameter local `hir::live_across_yield` found live, in the order it
-/// returns them.
+/// returns them, followed by every borrowed local
+/// (`hir::coroutine_borrowed_locals`) not already listed. Mirrors
+/// `llvm_codegen`'s function of the same name.
 [[nodiscard]] auto generator_state_symbols(const hir::hir_function &fn)
     -> std::vector<hir::symbol_id> {
   auto symbols = std::vector<hir::symbol_id>{};
@@ -322,6 +325,11 @@ auto count_yields(const hir::hir_block &block) -> size_t {
   for (const auto sym : hir::live_across_yield(fn)) {
     if (std::ranges::find(symbols, sym) == symbols.end()) {
       symbols.push_back(sym);
+    }
+  }
+  for (const auto &local : hir::coroutine_borrowed_locals(fn)) {
+    if (std::ranges::find(symbols, local.symbol) == symbols.end()) {
+      symbols.push_back(local.symbol);
     }
   }
   return symbols;
@@ -392,15 +400,17 @@ public:
       }
       locals_.emplace(param.symbol, *reg);
     }
+    if (fn.is_coroutine()) {
+      // A coroutine's borrowed parameters live in its state block
+      // (`compile_generator_step`), so the constructor stores them as is.
+      return compile_generator_constructor(fn);
+    }
     // Only after every parameter has its register: the calling convention
     // fixes parameters to the first registers of the frame, so a cell
     // allocated mid-loop would displace the ones after it.
     if (auto promoted = promote_captured_params(fn.params, fn.span);
         !promoted.has_value()) {
       return std::unexpected(promoted.error());
-    }
-    if (fn.is_coroutine()) {
-      return compile_generator_constructor(fn);
     }
     return compile_body_and_finish(*fn.body, fn.span, fn.name,
                                    static_cast<uint16_t>(fn.params.size()));
@@ -499,23 +509,33 @@ public:
     generator_state_layout_ = state_symbols;
     cell_promoted_ = promoted_symbols(fn);
 
+    auto borrowed = std::unordered_set<hir::symbol_id>{};
+    for (const auto &local : hir::coroutine_borrowed_locals(fn)) {
+      borrowed.insert(local.symbol);
+    }
     for (size_t i = 0; i < state_symbols.size(); ++i) {
       const auto reg = alloc_register(fn.span);
       if (!reg.has_value()) {
         return std::unexpected(reg.error());
       }
-      emit_load_register_image(*reg, *state_reg, static_cast<uint16_t>(i));
-      locals_.emplace(state_symbols[i], *reg);
-    }
-    // The constructor boxed every promoted parameter before storing it
-    // (`promote_captured_params`), so its state slot holds the cell pointer.
-    for (const auto &param : fn.params) {
-      if (cell_promoted_.contains(param.symbol)) {
-        cell_locals_.insert(param.symbol);
-        if (const auto reg = lookup_local(param.symbol)) {
-          address_taken_.push_back(*reg);
-        }
+      const auto symbol = state_symbols[i];
+      locals_.emplace(symbol, *reg);
+      const auto is_borrowed_param =
+          i < fn.params.size() && cell_promoted_.contains(symbol);
+      if (is_borrowed_param || borrowed.contains(symbol)) {
+        // Borrowed: the state entry itself is the local's cell, so a borrow
+        // taken before a suspension still points at it after, and a `let`
+        // run again (a loop) reuses it rather than allocating another.
+        emit_op(opcode::op_addr_slot);
+        emit_register(*reg);
+        emit_register(*state_reg);
+        writer_.emit_u16(static_cast<uint16_t>(i * sizeof(slot_value)));
+        cell_locals_.insert(symbol);
+        generator_in_block_.insert(symbol);
+        address_taken_.push_back(*reg);
+        continue;
       }
+      emit_load_register_image(*reg, *state_reg, static_cast<uint16_t>(i));
     }
 
     const auto yield_total = count_yields(*fn.body);
@@ -577,7 +597,8 @@ public:
       -> std::expected<void, compile_error> {
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
       const auto local_reg = lookup_local(generator_state_layout_[i]);
-      if (local_reg.has_value()) {
+      if (local_reg.has_value() &&
+          !generator_in_block_.contains(generator_state_layout_[i])) {
         emit_store_register_image(generator_state_reg_,
                                   static_cast<uint16_t>(i), *local_reg);
       }
@@ -2638,6 +2659,24 @@ private:
       writer_.emit_u16(static_cast<uint16_t>(*offset));
       return {};
     }
+    if (place.kind == hir_node_kind::hir_variant_payload) {
+      // A payload is a place inside its sum value's block, so the borrow
+      // points there rather than at a copy.
+      const auto &node = dynamic_cast<const hir::hir_variant_payload &>(place);
+      const auto slot = variant_payload_slot(node);
+      if (!slot.has_value()) {
+        return std::unexpected(slot.error());
+      }
+      auto object_reg = compile_expr(*node.object);
+      if (!object_reg.has_value()) {
+        return std::unexpected(object_reg.error());
+      }
+      emit_op(opcode::op_addr_slot);
+      emit_register(dst);
+      emit_register(*object_reg);
+      writer_.emit_u16(static_cast<uint16_t>(*slot * 8));
+      return {};
+    }
     if (place.kind == hir_node_kind::hir_local_ref) {
       const auto &local = dynamic_cast<const hir::hir_local_ref &>(place);
       if (is_cell_local(local.symbol)) {
@@ -2737,20 +2776,15 @@ private:
     }
     if (is_generator_step_) {
       // A coroutine's frame is gone once it suspends, and the borrow may be
-      // handed to a task that reads it later (`await f(&xs[a..b])`), so the
-      // temporary lives in a cell instead. The cell is not freed, like the
-      // cells of borrowed locals.
-      auto cell = alloc_register(place.span);
-      if (!cell.has_value()) {
-        return std::unexpected(cell.error());
-      }
-      emit_alloc_register_images(*cell, 1);
-      emit_store_register_image(*cell, 0, *temp);
-      address_taken_.push_back(*cell);
-      emit_op(opcode::op_move);
-      emit_register(dst);
-      emit_register(*cell);
-      return {};
+      // handed to a task that reads it later (`await f(&xs[a..b])`).
+      // `hir::make_references_explicit` stores every borrowed temporary in a
+      // local, which lives in the state block, so none should reach here.
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = place.span,
+          .message = "internal error: a coroutine borrows a temporary value "
+                     "that was not stored in a local first; this is a gap in "
+                     "the compiler, not a mistake in your code"});
     }
     address_taken_.push_back(*temp);
     emit_op(opcode::op_addr_local);
@@ -3233,6 +3267,27 @@ private:
   /// `hir_constructor_pattern` has already confirmed the runtime tag
   /// matches `variant_name` (see the node's own doc comment) — codegen
   /// just reads the corresponding payload slot without re-checking the tag.
+  /// The slot a sum payload lives in within its value's heap block.
+  [[nodiscard]] auto variant_payload_slot(const hir::hir_variant_payload &node)
+      -> std::expected<uint16_t, compile_error> {
+    const auto slot = runtime::sum_variant_payload_slots(
+        types_, node.object->type, node.variant_name);
+    if (!slot.has_value() || node.index >= *slot) {
+      return std::unexpected(compile_error{
+          .kind = compile_error_kind::unsupported_construct,
+          .span = node.span,
+          .message = std::format(
+              "variant `{}` does not resolve to a declared sum-type "
+              "variant with a payload at index {} — this should have "
+              "been rejected by the type checker",
+              node.variant_name, node.index)});
+    }
+    return static_cast<uint16_t>(
+        runtime::sum_payload_slot(types_, node.object->type, node.variant_name,
+                                  node.index)
+            .value_or(1 + node.index));
+  }
+
   [[nodiscard]] auto
   compile_variant_payload(const hir::hir_variant_payload &node, virtual_reg dst)
       -> std::expected<void, compile_error> {
@@ -3975,7 +4030,8 @@ private:
       // into the state block immediately before suspending.
       for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
         const auto local_reg = lookup_local(generator_state_layout_[i]);
-        if (local_reg.has_value()) {
+        if (local_reg.has_value() &&
+            !generator_in_block_.contains(generator_state_layout_[i])) {
           emit_store_register_image(generator_state_reg_,
                                     static_cast<uint16_t>(i), *local_reg);
         }
@@ -4066,7 +4122,8 @@ private:
     const auto finished_placeholder = writer_.emit_jump_placeholder();
     for (size_t i = 0; i < generator_state_layout_.size(); ++i) {
       const auto local_reg = lookup_local(generator_state_layout_[i]);
-      if (local_reg.has_value()) {
+      if (local_reg.has_value() &&
+          !generator_in_block_.contains(generator_state_layout_[i])) {
         emit_store_register_image(generator_state_reg_,
                                   static_cast<uint16_t>(i), *local_reg);
       }
@@ -4139,6 +4196,16 @@ private:
     // reference to the symbol keeps resolving to the untouched
     // (zero-initialized) preloaded one.
     const auto existing = lookup_local(let.symbol);
+    if (existing.has_value() && generator_in_block_.contains(let.symbol)) {
+      // A borrowed local of a coroutine: its register holds the address of
+      // its own state entry, which the value goes into.
+      auto value = compile_let_initializer(let);
+      if (!value.has_value()) {
+        return std::unexpected(value.error());
+      }
+      emit_store_register_image(*existing, 0, *value);
+      return {};
+    }
     if (existing.has_value() && cell_promoted_.contains(let.symbol)) {
       // A promoted local that is also suspended state: its preloaded
       // register holds the cell pointer, which the state block carries
@@ -4681,6 +4748,9 @@ private:
   virtual_reg generator_state_reg_;
   virtual_reg generator_self_reg_;
   std::vector<hir::symbol_id> generator_state_layout_;
+  /// The state symbols whose storage is their state entry itself, so their
+  /// `locals_` register holds that entry's address and is never synced.
+  std::unordered_set<hir::symbol_id> generator_in_block_;
   std::vector<size_t> generator_resume_placeholders_;
   uint8_t generator_next_yield_ordinal_ = 1;
 };

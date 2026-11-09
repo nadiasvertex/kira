@@ -265,14 +265,29 @@ auto is_bare_param(const semantic::type_table &types, type_id type) -> bool {
          kind == type_kind::param_app_kind;
 }
 
+/// Whether `expr` is `xs[a..b]`: a new view of `xs`, not a place inside it.
+[[nodiscard]] auto is_range_index(const hir_expr &expr) -> bool {
+  if (expr.kind != hir_node_kind::hir_index) {
+    return false;
+  }
+  const auto &index = dynamic_cast<const hir_index &>(expr);
+  if (index.index == nullptr ||
+      index.index->kind != hir_node_kind::hir_binary) {
+    return false;
+  }
+  const auto op = dynamic_cast<const hir_binary &>(*index.index).op;
+  return op == ast::binary_op::range || op == ast::binary_op::range_inclusive;
+}
+
 [[nodiscard]] auto is_place(const hir_expr &expr) -> bool {
   switch (expr.kind) {
+  case hir_node_kind::hir_index:
+    return !is_range_index(expr);
   case hir_node_kind::hir_local_ref:
   // A reified static: reading it must not move its value into a temporary
   // that is then dropped.
   case hir_node_kind::hir_global_ref:
   case hir_node_kind::hir_field:
-  case hir_node_kind::hir_index:
   case hir_node_kind::hir_tuple_index:
   case hir_node_kind::hir_variant_payload:
     return true;
@@ -890,6 +905,25 @@ private:
     slot = deref(borrow(std::move(slot), ref));
   }
 
+  /// Stores the operand of `&value` in a local when it is not a place, so
+  /// the borrow points at a local: `&*{let t = value; &t}`. Backends then
+  /// treat it like any other borrowed local. In a coroutine that matters: a
+  /// borrowed local lives in the state block, which a suspension does not
+  /// reach, and its entry is reused each time the `let` runs.
+  auto store_borrowed_value(hir_unary &unary) -> void {
+    auto &slot = unary.operand;
+    if (slot == nullptr || is_place(*slot) || types_.is_unknown(slot->type)) {
+      return;
+    }
+    const auto type = slot->type;
+    const auto span = slot->span;
+    const auto ref = const_cast<semantic::type_table &>(types_).ref_to(
+        type, unary.op == ast::unary_op::addr_of_mut);
+    // One deref, not `deref`'s loop: the value may itself be a reference.
+    slot = ptr<hir_expr>(hir::make<hir_unary>(
+        span, type, ast::unary_op::deref, borrow(std::move(slot), ref)));
+  }
+
   auto project(ptr<hir_expr> &object) -> void {
     if (object != nullptr && is_ref(object->type)) {
       object = deref(std::move(object));
@@ -1140,6 +1174,7 @@ private:
           temp->moved_paths.clear();
         }
         read_through_temporary(unary.operand);
+        store_borrowed_value(unary);
       }
       return;
     }

@@ -42,7 +42,12 @@ namespace {
   return allocator_mode::system;
 }
 
+/// See `heap_allocation_count`.
+thread_local uint64_t allocation_count = 0;
+
 } // namespace
+
+auto heap_allocation_count() -> uint64_t { return allocation_count; }
 
 auto active_allocator_mode() -> allocator_mode {
   static const allocator_mode mode = resolve_mode();
@@ -56,6 +61,7 @@ extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
   if (size == 0) {
     return nullptr;
   }
+  ++cinder::runtime::allocation_count;
   if (cinder::runtime::active_allocator_mode() ==
       cinder::runtime::allocator_mode::arena) {
     return cinder::runtime::global_arena().allocate(size);
