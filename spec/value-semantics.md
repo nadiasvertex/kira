@@ -1,0 +1,816 @@
+# Cinder Value Semantics: Implementation Plan (v1.0.0 – 2026-11-09)
+
+## Summary
+
+Make ordinary Cinder values live directly in their owner's storage. Represent
+structs, tuples, fixed arrays, sum types, and view descriptors inline, and construct
+aggregate results directly into caller-provided storage. Make return value
+optimization (RVO) part of ordinary lowering and named return value optimization
+(NRVO) a shared, enabled-by-default compiler pass. Remove the unowned slice-header,
+tuple, and sum allocations described in [todo items 17 and 18](todo.md), while
+preserving ownership, borrowing, evaluation order, and exactly-once drops on the
+bytecode VM and LLVM backends.
+
+This is an implementation plan. The tasks below have not been implemented.
+
+## Objectives & Scope
+
+In scope:
+
+- Store fixed-size values inline in locals, parameters, return destinations,
+  aggregate fields, collection elements, globals, closure environments, and
+  coroutine frames.
+- Separate a value's layout, its ownership rules, its storage lifetime, and its
+  calling convention. Passing an address internally must not imply heap allocation
+  or source-language borrowing.
+- Implement destination-directed construction, aggregate moves and copies,
+  mandatory RVO, conservative NRVO, and bounded frame storage on both backends.
+- Migrate runtime intrinsics, compile-time VM conversion, generated drop glue,
+  generators, tasks, `par`, and `race` to the same representation.
+- Prove correctness with ownership-checked execution, allocation counts, drop
+  counts, structural lowering checks, and backend parity.
+
+Out of scope:
+
+- Change which source types satisfy `copy`, add implicit `clone`, add user-defined
+  move constructors, or introduce a consuming-method-receiver syntax.
+- Eliminate the backing allocations required by growable collections, shared
+  ownership, escaping closure environments, or suspended tasks.
+- Implement garbage collection, tiered JIT promotion, general escape analysis,
+  pinning, sum niche optimization, or platform-specific aggregate register ABIs.
+- Add panic unwinding. Preserve current panic behavior; do not interpret this
+  migration as implementing the specification's unwinding aspiration.
+
+## Assumptions & Open Questions
+
+### Decisions for this plan
+
+1. **Preserve the language's ownership rules.** Chapter 14 makes structs, tuples,
+   fixed arrays, and resource handles move by default. Making their representation
+   inline does not make them `copy`. Preserve the existing structural `copy` rule
+   for sums, the exclusive nature of mutable views, and explicit `clone` behavior.
+2. **Use a uniform internal aggregate ABI first.** Return aggregates through a
+   hidden result destination. Pass by-value aggregates through storage that belongs
+   to the callee's parameter for the duration of the call. Preserve scalar and
+   reference passing where already appropriate. Optimize machine register passing
+   later without changing source semantics.
+3. **Require finite inline size.** Detect a cycle through inline fields, tuple
+   elements, fixed-array elements, or sum payloads and report an infinite-size type.
+   Pointers, references, and the backing pointers of `list`, `shared`, closures,
+   and tasks break such cycles. Do not silently box recursive fields. Inventory
+   existing recursive types before enabling this diagnostic and document any
+   necessary source migration through an existing owning indirection.
+4. **Retain declared receiver semantics.** Stop deriving receiver borrowing from
+   whether a type happens to be heap represented. Preserve the current receiver
+   contract while replacing that implementation test with explicit passing modes.
+   Continue rejecting moves through borrowed `self`, including generic instances;
+   a new consuming-receiver design is separate work from todo item 16.
+5. **Treat RVO as construction, NRVO as storage reuse.** Neither invokes `clone`,
+   introduces a new observable move operation, nor changes destructor ordering.
+   Ordinary moves remain a correct fallback when NRVO is ineligible.
+6. **Keep one representation at each boundary.** Version internal metadata when
+   necessary and rebuild generated artifacts. Do not retain an unversioned mixture
+   of old pointer-to-block values and new inline values.
+
+### Questions to resolve during T-01
+
+These are repository inventories, not requests for user approval. Record findings
+and implement the decisions above before representation changes begin.
+
+- Which recursive type declarations currently rely on implicit pointer-sized
+  aggregate fields? List affected standard-library types and fixtures, and identify
+  the owning indirection each needs, if any.
+- Which opaque builtins have a fixed concrete representation, and which are
+  genuine handles? Record a classification for every supported builtin; fail
+  closed for unsupported types rather than falling back to an eight-byte pointer.
+- Which string routines own generated bytes, and which return views of static or
+  shared bytes? Preserve their established backing-byte lifetime while moving
+  descriptors inline. Record any independent backing-byte leaks separately; do
+  not claim this plan solves them by moving the descriptor.
+- Which runtime/JIT/host entry points and test helpers accept or return an
+  aggregate pointer today? Include I/O and platform results, string routines,
+  scheduler adapters, static initialization, and compile-time host callbacks.
+- Which corpus programs bypass the ownership checker or intentionally use obsolete
+  aliasing behavior? Identify replacements using valid source ownership before
+  using them as evidence for the migration.
+
+The overview paths in the repository's agent instructions include older merged
+documents that are absent in this checkout. Use the existing chapter tree under
+`spec/specification/`, `spec/cinder-grammar.ebnf`, and `spec/CONVENTIONS.md`.
+
+## Requirements
+
+### Functional Requirements
+
+- **FR-1:** Give every supported concrete type one checked size, alignment, and
+  projection layout shared by both backends, runtime boundaries, and compile-time
+  execution. Resolve aliases, refinements, and generic substitutions before layout.
+- **FR-2:** Allocate no standalone heap block for a slice/view header, tuple, fixed
+  array, struct, or sum merely because it is constructed, passed, returned, copied,
+  or moved. A value nested inside a heap owner occupies bytes in that owner's
+  allocation.
+- **FR-3:** Preserve `copy`, move, borrow, implicit autoref, mutable access, partial
+  moves, assignment, and drop behavior. A moved-from place owns nothing transferred
+  from it; a copy owns no resource also owned by the source.
+- **FR-4:** Construct eligible temporary aggregate results directly in their final
+  destination, across calls and nested aggregate expressions, in debug and release
+  builds and with HIR inlining disabled.
+- **FR-5:** Enable NRVO by default for the eligibility rules below on both backends.
+  Make rejected candidates use correct inline moves without heap fallback.
+- **FR-6:** Never return an address of a dead activation, retain a pointer into a
+  destroyed VM frame, or store a live-across-suspension value in a transient poll
+  frame. Preserve rejection of views that outlive their referents.
+- **FR-7:** Keep aggregate arguments and results correct through direct, indirect,
+  generic, cross-module, closure, intrinsic, JIT, AOT, and compile-time calls.
+- **FR-8:** Evaluate each source operand once in source order. Compute a replacement
+  before dropping the old value. Preserve all early-exit and cancellation drops.
+- **FR-9:** Remove the tuple/sum leak allowances in affected stress fixtures only
+  after their replacement bounds pass on both backends.
+
+### Non-Functional Requirements
+
+- **NFR-1 (Performance):** Require zero aggregate-shell allocations for pure value
+  loops and returns. Require zero intermediate aggregate transfers for direct RVO
+  and eligible NRVO examples, using structural checks in addition to allocation
+  counters. Keep required backing allocations bounded by actual owners.
+- **NFR-2 (Safety):** Check layout arithmetic, array multiplication, projection
+  offsets, bytecode encoding widths, and total frame sizes. Respect alignment,
+  including packed accesses and 128-bit members. Preserve thread handoff ownership.
+- **NFR-3 (Maintainability):** Put layout, ABI classification, destination planning,
+  and NRVO decisions in shared code. Backends must implement the plan, not infer
+  ownership or independently choose which values escape.
+- **NFR-4 (Observability):** Extend internal dumps/test inspection to show storage
+  class, result destinations, aggregate transfers, NRVO decisions, and frame bytes.
+  Keep existing heap allocation/live-block counters meaningful.
+- **NFR-5 (Compatibility):** Update raw-memory operations and standard-library
+  layouts together. Do not promise binary compatibility with old generated code or
+  accidentally expose the internal aggregate ABI as the platform C ABI.
+- **NFR-6 (Privacy, accessibility, i18n):** No new user data collection or interface
+  is introduced. Preserve existing string contents, diagnostics conventions, and
+  Unicode behavior; no independent work is required in these areas.
+
+## Architecture & Design Overview
+
+### Current implementation and change points
+
+Use these inspected definitions as starting points. Line spans describe the
+checkout used to write this plan and will move during implementation.
+
+| Concern | Current implementation | Consequence |
+|---|---|---|
+| Slice construction | `src/bytecode_compiler/compile.cpp:2873–2999`; `src/llvm_codegen/codegen.cpp:2948–3024` (`compile_range_index`) | Allocate a two-word header and return its address. |
+| Sum construction | `src/bytecode_compiler/compile.cpp:3228–3270` (`compile_variant_init`) | Allocate tag plus uniform payload words. |
+| Value classification | `src/llvm_codegen/codegen.cpp:314–361` (`storage_llvm_type`); `src/bytecode_compiler/compile.cpp:1618–1637` (`is_heap_pointer_value`) | Treat aggregates and descriptors as pointers. |
+| Nested layout | `src/runtime/layout.cpp:249–354`, `397–419`, `479–532`, `541–610` | Nested aggregates normally cost one pointer; sums use word slots rather than recursive byte layouts. |
+| Source ownership and drops | `src/hir/drop_schedule.cpp:189–303`; `src/hir/lower.cpp:3294–3439`; `src/hir/reference_check.cpp` | Track logical ownership and synthesize drops; preserve these facts while changing storage. |
+| Existing frame storage | `src/bytecode_compiler/compile.cpp:2303–2323`; `src/llvm_codegen/codegen.cpp:3135–3148`; `src/hir/frame_budget.cpp:30–52` | Provide fixed frame bytes for `uninit`, but do not budget ordinary inline values yet. |
+| VM call frames | `src/bytecode/vm.cpp:1093–1114`; `src/bytecode/vm.h:21–24` | Copy register arguments; expose one `slot_value` result. |
+| Runtime results | `src/runtime/io.cpp:36–41`; `src/bytecode/vm.cpp:1235–1243`; `src/intrinsics.h:60–65` | Runtime code also constructs allocated result wrappers. |
+| Compile-time conversion | `src/comptime_vm/values.cpp:143–190`, `451–473`; `src/comptime_vm/backend.cpp` | Marshal aggregates through pointer-valued slots. |
+| Suspension state | `src/runtime/coroutine.h`; `src/hir/live_across_yield.cpp`; backend coroutine code | Save register images and use a fixed two-word yielded-value area. |
+| Tail calls and inlining | `src/hir/tail_calls.cpp:460–487`; `src/hir/inline.cpp:950–994` | Must be revisited when callees receive addresses into caller storage. |
+| Regression measurement | `src/codegen_stress_test.cpp`; `src/testdata/codegen_stress/177_coroutine_borrow_storage.cn`, `178_coroutine_objects_freed.cn`, `179_par_race_tasks_freed.cn` | Already support independent expected results and heap bounds. |
+
+Read the ownership, drop, views, machine-layer, HIR/VM, LLVM/AOT, and compile-time
+chapters before editing their corresponding implementation. Chapter 68 describes
+tiered execution as future work; do not add a nonexistent VM-to-native dispatch
+bridge to this migration.
+
+### One layout model
+
+Replace pointer-sized aggregate classification with a cached layout descriptor
+keyed by concrete type and target layout. Store resolved concrete member types in
+semantic results; remove layout's shortcut of interpreting only the outer AST
+type-expression shape.
+
+| Type family | Representation owned by a place |
+|---|---|
+| Scalar | Existing scalar bytes and alignment. |
+| `&T`, `&mut T`, raw pointer | One address of the actual referent storage. |
+| Struct / tuple | Inline member layouts with explicit offsets and padding. |
+| Fixed array | Contiguous inline elements; stride is the checked element layout size. |
+| Sum, `option`, `result` | Tag plus aligned storage large enough for the largest variant; only the active payload is initialized. |
+| `slice`, `slice_mut`, `str` | Inline `{len, data}` descriptor; data lifetime remains independently governed. |
+| `cell`, `cell_mut` | Inline address descriptor; preserve their current view semantics. |
+| Standard-library collection / `shared` handle | Inline concrete struct fields; the owned backing allocation remains separate. |
+| Function value / closure | Inline fixed descriptor containing entry/environment information; an escaping environment may own a backing block. |
+| Generator / task | Inline fixed handle to runtime-owned, address-stable suspension state. |
+| Opaque type / trait object | Its explicitly registered concrete layout or fixed handle ABI; never an implicit default pointer. |
+
+Initially retain a `uint64` sum tag with declaration-order tag values. Lay out each
+variant's payload like a tuple. Align the payload area to the maximum variant
+alignment, then round total size to the maximum of tag and payload alignment.
+Provide byte offsets for every payload projection. Defer compact tags and niches.
+
+Keep existing scalar sizes, including zero-sized `unit` and 16-byte alignment for
+128-bit integers. Specify zero-sized arrays/aggregates explicitly: they need no
+payload allocation, but taking a reference still requires a valid aligned address
+for the relevant lifetime. Avoid null-pointer arithmetic and zero-stride division.
+Do not use padding or inactive payload bytes for equality, hashing, or drop logic.
+Keep compiler-created padding deterministic where bytes cross runtime boundaries.
+
+Update allocators, frame arenas, closure/coroutine state, globals, and collection
+storage to honor the requested alignment. The current heap contract only promises
+eight-byte alignment, while `layout_of(int128)` reports sixteen; do not assert
+sixteen-byte LLVM alignment until the actual owner provides it. Packed projections
+require unaligned accesses or byte copies. Preserve borrowing of packed fields by
+using conservative alignment for indirect reference accesses, including across
+calls; strengthen alignment only when provenance proves it. Do not infer referent
+alignment solely from the referenced type.
+
+### Shared storage lowering
+
+Introduce a shared storage form under `src/hir/`, produced from typed HIR after
+source ownership validation and reference elaboration. Keep it small: typed places,
+explicit aggregate initialization/transfers, call destinations, control flow, and
+the existing logical drop/loan information. Do not build a second source type
+checker or duplicate backend-specific ownership analysis.
+
+The required concepts below are proposed interfaces, not existing APIs:
+
+```text
+place = base storage + concrete type + checked projections
+storage = local frame | parameter | caller result | global |
+          owner field | closure environment | coroutine frame
+
+initialize_into(destination, expression)
+copy_into(uninitialized_destination, copy_source)
+move_into(uninitialized_destination, owned_source)
+drop_in_place(initialized_place, existing_drop_plan)
+call_into(uninitialized_result, callable, prepared_arguments)
+```
+
+Track initialization and logical ownership separately from physical bytes. A byte
+copy used to implement a move transfers ownership and invalidates the source in
+the ownership state; it does not create a second owner. `copy_into` requires an
+existing `copy` classification. Neither operation invokes user `clone` implicitly.
+Use projection-level state for partial moves and partially constructed values.
+
+Make constructor fields, tuple elements, array elements, and sum payloads accept
+their own destination projection. A nested aggregate is initialized in its
+containing bytes instead of allocating a child block. Publish a sum's initialized
+state only when its active payload is ready. Preserve source evaluation order and
+clean up already initialized parts on supported early-exit/cancellation paths.
+
+Run shared storage lowering for normal compilation, compile-time execution, test
+helpers that compile HIR directly, and synthesized functions. Proposed ordering:
+
+1. Check source types, moves, loans, and drop obligations; lower to typed HIR with
+   explicit references and logical cleanup.
+2. Run existing HIR transformations, including optional inlining, then recompute
+   capture and suspension facts invalidated by those transformations.
+3. Build concrete layouts and shared storage form; propagate construction and call
+   destinations. Place suspension-live values in their stable owner.
+4. Apply NRVO and safe storage reuse; preserve logical initialization/drop facts.
+5. Assign aligned frame offsets and enforce final frame budgets. Revalidate tail
+   calls using storage provenance, then verify the resulting storage form.
+6. Emit bytecode or LLVM from the same verified decisions.
+
+### Calls and mandatory RVO
+
+For an aggregate `T`, use this conceptual internal signature:
+
+```text
+source:       make(arguments...) -> T
+internal:     make(result_address: uninitialized T*, arguments...) -> unit
+```
+
+The result destination belongs to the caller. Callee construction temporarily owns
+its initialized subobjects; successful return transfers that ownership to the
+caller. A discarded result still gets valid temporary storage and its normal
+statement-end drop. A top-level VM/JIT/compile-time caller supplies result storage
+that survives the callee and remains owned until decoding and cleanup finish.
+
+Pass aggregate arguments using private parameter storage with explicit copy/move
+semantics. Caller-allocated outgoing slots may physically back these parameters,
+but the callee owns their values during the call and performs the parameter drops.
+Materialize a `copy` argument separately if mutating the parameter could otherwise
+change the caller. Reuse a moved argument's storage only after proving source
+unobservability, lifetime, and alias safety. Do not mistake this transport for `&T`.
+
+Propagate result destinations through:
+
+- `return constructor`, tuple/array literals, and slice construction;
+- `return other_call(...)`, forwarding the same result address;
+- tail expressions and aggregate-producing blocks;
+- `if` and `match` branches and their join destination;
+- `?`, `or else`, generic instantiations, indirect calls, and nested aggregate
+  fields/elements where the result types and destination projections match.
+
+Do this in common lowering with optimization and inlining disabled. LLVM may then
+promote memory to registers or remove further copies; correctness and basic RVO
+must not depend on that cleanup.
+
+Use a fresh, uninitialized destination. For `x = make(&x)`, compute the new value
+in separate storage, then drop the old `x`, then move the replacement into `x`.
+Apply the same rule to fields, elements, `swap`, `replace`, and possible aliases.
+Forwarding into an enclosing partially initialized object also requires proof that
+no argument or later operand can observe that object's unfinished bytes. Attach
+LLVM `sret`, alignment, and alias attributes only when their exact contracts hold.
+
+### NRVO eligibility and fallback
+
+Recognize a named local whose storage can become the function's aggregate result
+storage from the local's initialization onward. For example:
+
+```cinder
+type pair = { a: int32, b: int32 }
+
+def make_pair(n: int32) -> pair:
+    var result = pair { a: n, b: 0 }
+    result.b = n + 1
+    return result
+```
+
+For the initial implementation, require all of the following:
+
+1. The candidate is one complete local with exactly the function's result layout;
+   it is not a borrowed value, parameter, global, subobject, or coroutine step local.
+2. Initialization dominates every use and every reachable normal return. Every
+   reachable normal return, including an implicit tail expression and a lowered
+   `?` exit, returns that same complete local.
+3. The local is not partly moved, captured, yielded, or moved into another owner.
+   Whole-value reassignment may use the ordinary replacement protocol.
+4. Its address cannot be observed or retained in a way that distinguishes separate
+   local/result storage. Initially reject explicit address-taking, stored borrows,
+   raw-pointer exposure, and self-referential constructions. Permit a temporary
+   receiver/autoref borrow only when existing analysis proves it nonescaping and
+   unable to observe storage identity; otherwise reject the optimization.
+5. No caller argument, live loan, or output projection aliases the chosen result
+   storage, and cleanup can retain the original logical ownership state.
+
+Bind eligible local projections directly to result projections. Keep the local's
+logical lifetime and drop obligations until successful ownership transfer. Returning
+it must not run a callee drop on the returned object. Any supported exit before
+transfer still destroys what the callee owns, exactly once.
+
+Do not merge several simultaneously live return candidates into one slot. Do not
+rewrite returned references to locals into valid borrows. Rejecting NRVO must be
+semantically invisible: move the completed local into result storage, clear its
+ownership flags, and drop the remaining locals in the specified order. Keep
+candidate rejection reasons inspectable and testable. More permissive path-sensitive
+NRVO can follow after these rules are stable.
+
+### Drops, views, and storage lifetime
+
+Retain `compute_drop_schedule` and the ownership CFG as the source of logical
+cleanup facts. Translate existing synthesized drops to the new places; make every
+copy/move/return destination agree with the existing flag transitions. Add a
+verifier for transformations that redirect storage instead of recomputing source
+ownership from pointer-valued expressions.
+
+Dropping an inline aggregate runs its own drop and then its live members in the
+specified order; it does not free the address of the aggregate. Dropping an owning
+handle may free its backing allocation. Reclaim frame bytes by frame lifetime,
+closure fields with their environment, and coroutine fields with their runtime
+owner. Keep raw `drop_in_place` distinct from allocation deallocation.
+
+A view's descriptor and referent have separate lifetimes. Returning a descriptor
+copies or moves its bytes into caller storage but still cannot extend the lifetime
+of local elements it references. Loan-bearing aggregates continue to carry loans
+when moved into fields, collections, closures, tasks, or results. Shared views may
+copy; mutable views retain exclusive ownership and must not gain live aliases.
+
+Preserve method receiver borrowing, including generic bodies and automatic deref,
+using declared/checked passing modes. Change `&aggregate` to address the aggregate's
+actual inline bytes, and remove any old double indirection through a slot holding
+an owning aggregate pointer.
+
+### Backends and runtime boundaries
+
+**VM:** Keep scalar registers as `slot_value`. Use registers holding addresses to
+typed aggregate places; those addresses are transport, not owners. Allocate static
+aligned frame byte ranges for local values and call slots. Extend call metadata and
+verification for result addresses and aggregate parameters. Keep addresses stable
+while the frame-vector grows, nested calls run, or another VM execution polls a
+task. Never copy an aggregate by copying its transport pointer. Do not dynamically
+allocate fresh frame bytes on each loop iteration.
+
+The VM stack is its explicit activation storage, not necessarily the host C++
+thread stack. Host allocations that back an activation are permitted; allocating
+a separate Cinder heap object for each tuple, option, or slice descriptor is not.
+
+**LLVM:** Use entry-block allocas or caller/owner projections for aggregate places,
+typed scalar loads/stores, and checked byte transfers for aggregate copies/moves.
+Use shared layout offsets even for packed and nested values. Generate internal
+aggregate signatures consistently for definitions, function descriptors, indirect
+calls, and wrappers. Let LLVM optimize the resulting storage; avoid a second NRVO
+implementation in this backend.
+
+**Runtime:** Extend the intrinsic wire contract to express aggregate destinations
+and descriptor arguments. Update `src/intrinsics.h`, VM intrinsic implementations,
+LLVM declarations, and runtime C functions together. Prefer a C ABI with explicit
+output pointers and explicit descriptor fields/addresses. Runtime I/O must write
+its result into supplied storage instead of allocating a wrapper per operation.
+Include string, formatting, platform, reactor, and scheduler adapters. Temporary
+adapters must have explicit ownership and cleanup; remove them before completion.
+
+**Compile time and entry points:** Marshal values into typed storage owned by a
+hosted-run context and decode before releasing it. Support nested aggregates of
+arbitrary checked size rather than copying at most one 16-byte `slot_value` image.
+Supply result destinations through `vm_result`/host APIs and JIT wrappers, preserving
+clear ownership. Update static reification, constant pools, metadata, AOT startup,
+and tests that cast JIT entry addresses to C++ function signatures.
+
+### Collections, closures, generators, and tasks
+
+Use the new element layout for `size_of`, `align_of`, raw pointer indexing,
+`uninit`, list allocation/growth, small-list inline capacity, and drop ranges.
+Audit hard-coded eight/sixteen-byte strides and narrow byte offsets. Move nested
+values into their container's bytes; never store an address of a transient value
+where a collection element is expected. Preserve raw-read/raw-write ownership
+rules from chapter 38, including `swap`, `replace`, and `drop_in_place`.
+
+Compute closure environments and coroutine frames as typed layouts. Capture owned
+aggregates inline; keep borrowed captures as references to their real owners. An
+escaping environment may still allocate once, but it must not allocate a separate
+block per captured tuple or sum. A plain function value needs no heap wrapper.
+
+Give each suspension-live aggregate an aligned, stable place in its coroutine
+frame, including awaited arguments, borrowed temporaries, match subjects, and
+branch-result locals. Preserve referent addresses across polls; do not save an
+aggregate by saving a pointer to a poll-frame alloca. Recompute borrowed-local and
+suspension liveness after any transformation that creates or redirects places.
+
+Replace the fixed two-word yielded/result image with typed result storage owned
+by the coroutine, preferably an aligned trailing area in its existing allocation.
+Record the result layout, initialization state, and any drop entry point required
+by the runtime. A yield transfers the item into that storage; `next()` constructs
+its `option[T]` in the caller's destination and transfers the item out. Specify
+whether completed task results copy, move once, or remain runtime-owned according
+to the existing task API; reject a second non-copy extraction and never duplicate
+ownership. Cancellation and final release drop initialized, unconsumed results.
+
+Keep scheduler-visible state addresses stable until all workers and waiters release
+them. Update coroutine/runtime headers, VM polling, native step functions, result
+extraction, and cancellation together. `par`/`race` task/result tuples use inline
+destinations. Give winners and losers explicit result ownership, including a loser
+that finishes during cancellation. Preserve crew-scoped loan and thread-safety rules.
+
+### Frame limits and tail calls
+
+Extend the existing per-frame budget to include ordinary aggregates, alignment
+padding, outgoing arguments, temporary result storage, and `uninit` buffers after
+RVO/NRVO and safe lifetime reuse. Keep the current 1 MiB default unless separately
+changed. Reject oversized frames with contributing source locations; do not
+silently heap allocate oversized values. Account for final inlining decisions.
+
+Reuse frame ranges only when their complete lifetimes, including loans and pending
+drops, do not overlap. Reusing one bounded range per loop site is required; an
+unbounded dynamic stack allocation per iteration is not acceptable.
+
+Forwarding an external result destination permits RVO but does not by itself make
+a call tail-call-safe. Disallow frame reuse or `musttail` while a callee can reach
+caller-frame arguments, locals, live borrows, or pending cleanup. Preserve safe
+scalar tail recursion; re-enable aggregate tail calls only when the shared plan
+proves lifetime safety and the backend ABI permits them.
+
+## Task Grid
+
+Owner `Compiler implementer` denotes the implementer of this plan, not an assigned
+person. All tasks are pending. H = required for correctness/completion; M = required
+integration and documentation.
+
+| Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
+|---|---|---|---|---|---|---|
+| [ ] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
+| [ ] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
+| [ ] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
+| [ ] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
+| [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04 | VM executes nested aggregate calls without shell allocations. |
+| [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04 | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
+| [ ] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
+| [ ] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
+| [ ] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
+| [ ] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
+| [ ] | T-11 | Implement shared NRVO | Compiler implementer | H | T-10 | Eligible locals use result storage; rejected cases use correct inline moves. |
+| [ ] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
+| [ ] | T-13 | Prove leak removal and backend parity | Compiler implementer | H | T-12 | Ownership-checked regressions and structural/allocation gates pass on both tiers. |
+| [ ] | T-14 | Remove legacy representation and update references | Compiler implementer | M | T-13 | Old aggregate boxing paths gone; todo/specs describe verified behavior. |
+
+## Task Details
+
+### T-01 — Inventory representations and capture baselines
+
+**Goal:** Establish the complete migration boundary before changing layouts.
+
+1. Use `graft ask`, `graft callers`, and exhaustive `graft grep` to inventory the
+   change points above and all users of heap-value classification, `layout_of`,
+   sum slot helpers, fixed register images, intrinsic signatures, and frame storage.
+2. Record the opaque-type, recursive-type, string-lifetime, and host-boundary
+   findings from Assumptions & Open Questions in this document.
+3. Run the current relevant tests and record existing failures separately. Record
+   allocation/live-block counts for slices, tuple/option loops, `read_exact`,
+   `read_to_end`, generator `next`, and corpus 177–179.
+4. Prepare valid ownership-checked fixtures and independent expected values. Add
+   fixtures with passing behavioral baselines first; tighten allocation bounds in
+   T-13 when the implementation supports them. Do not commit intentionally failing
+   allocation expectations as a permanent intermediate state.
+
+### T-02 — Implement concrete recursive byte layouts
+
+**Goal:** Make inline layout correct before either backend consumes it.
+
+1. Expose concrete substituted struct fields and sum payload types through semantic
+   results/type metadata; resolve qualified types, aliases, and const-generic arrays.
+2. Extend `src/runtime/layout.{h,cpp}` with cached descriptors, byte projections,
+   array strides, variant layouts, and checked size/alignment arithmetic.
+3. Implement cycle detection with a useful inline-field path diagnostic. Keep
+   cycles through fixed-size owning/reference handles finite.
+4. Implement packed and zero-sized layout rules, unsupported-type errors, and
+   matching `size_of`/`align_of` answers.
+5. Provide actual aligned allocation/frame storage for every supported layout;
+   update allocator and arena tests, including arrays of `int128` values.
+6. Retain old layout APIs only behind explicitly named migration adapters until
+   their consumers migrate. Do not change live code to new sizes while it still
+   stores old pointers under the same type identity.
+
+### T-03 — Add shared storage form and aggregate ABI
+
+**Goal:** Express final destinations and ownership transfers once.
+
+1. Add typed places, storage classes, projections, construction, copy/move, and
+   call-result operations under `src/hir/`, with source spans and logical owner IDs.
+2. Add ABI classification for scalars, references, handles, and inline aggregates,
+   including direct/indirect callable signatures and synthesized functions.
+3. Implement `initialize_into` and result forwarding for straight-line constructors
+   and calls from the start; do not introduce temporary boxing as the new default.
+4. Implement fresh outgoing parameter/result places and initialization-state edges.
+   Preserve source argument order and parameter cleanup responsibility.
+5. Add a shared verifier for projection bounds, initialization, valid transfers,
+   storage lifetime, signature agreement, and result ownership on normal return.
+6. Add stable dumps and tests. Route each compilation entry point through this
+   preparation layer as its backend is migrated; keep representation versions
+   explicit during the transition.
+
+### T-04 — Integrate ownership, references, and drops
+
+**Goal:** Preserve the language's existing resource and borrowing guarantees.
+
+1. Carry checked passing modes, copy classifications, drop plans, loan provenance,
+   and partial-move/initialization flags into storage lowering.
+2. Update reference elaboration and receiver handling to use actual places and
+   explicit semantic modes, independent of heap classification.
+3. Translate scope/temporary/early-exit drops to places; keep specified drop order.
+   Distinguish dropping an inline value from freeing an owning allocation.
+4. Implement replacement through temporary storage and ownership commit. Preserve
+   source state until the replacement is ready and avoid duplicate drops.
+5. Reject generic moves through borrowed `self` rather than relying on pointer
+   aliases to implement them. Keep the consuming-receiver question separate.
+6. Add meaningful checked tests for partial moves, copy sums, mutable views,
+   borrowed aggregate fields, and constructor operands that exit early.
+
+### T-05 — Implement VM frame values and result destinations
+
+**Goal:** Execute inline values on the reference tier.
+
+1. Extend bytecode function/call metadata with aggregate ABI and frame-place
+   information. Keep source parameters distinct from hidden transport operands.
+2. Add checked aggregate transfer/address operations as needed and update opcode
+   operand definitions, instruction sizes, disassembly, and verification together.
+3. Extend frame allocation with correctly aligned, address-stable byte storage.
+   Preserve scalar register allocation and live address constraints.
+4. Compile constructors, projections, index/range operations, assignment, patterns,
+   references, equality, calls, and returns through typed places. Remove per-value
+   `emit_alloc_slots` from migrated ordinary aggregate construction.
+5. Extend VM and hosted entry APIs to accept caller-owned result storage. Decode
+   returned aggregates before their owner releases that storage.
+6. Verify nested calls, deep recursion, frame-vector relocation, indirect calls,
+   and values larger than sixteen bytes without relying on LLVM behavior.
+
+### T-06 — Implement LLVM values and result destinations
+
+**Goal:** Match VM value behavior in native code.
+
+1. Replace heap-value storage classification with the shared layout and ABI plan.
+   Emit aggregate definitions/calls, function descriptors, and return destinations
+   consistently across modules.
+2. Implement place addresses and checked scalar/aggregate accesses, using actual
+   allocation alignment and packed projection alignment.
+3. Replace ordinary aggregate heap constructors with destination construction;
+   emit copy/move transfers only where the shared plan requires them.
+4. Update JIT invocation wrappers, AOT entry generation, external runtime wrappers,
+   and structural IR checks for hidden result parameters.
+5. Verify modules and run the same cases as T-05 at low optimization. Keep scalar
+   calling behavior and valid scalar tail recursion working.
+
+### T-07 — Migrate runtime intrinsic boundaries
+
+**Goal:** Remove runtime-created wrapper leaks as well as compiler-created ones.
+
+1. Extend intrinsic wire metadata for explicit output destinations and inline view
+   arguments; update signature validation and declarations.
+2. Migrate native runtime functions and VM intrinsic handlers together. Replace
+   allocated `make_result_ok`/`make_result_err` wrappers with writes to supplied
+   result storage; include platform and asynchronous I/O paths.
+3. Migrate descriptor readers/writers for strings, slices, formatting, and runtime
+   callbacks. Specify alignment and lifetime at every C boundary.
+4. Test success and error paths with repeated pipe/file operations, including
+   callers that immediately propagate, discard, or destructure the result.
+5. Remove old runtime wrapper-allocation adapters once all call sites migrate.
+
+### T-08 — Migrate containers, statics, and compile-time execution
+
+**Goal:** Make nested value storage and host conversion consistent.
+
+1. Audit `src/std/mem.cn`, list/collection/shared implementations, pointer indexing,
+   `uninit`, and all element stride/offset encoding limits against the new layout.
+2. Store nested aggregates inline in buffers and fields. Preserve move-only element
+   ownership during growth, removal, iteration, overwrite, and destruction.
+3. Implement raw aggregate reads/writes and `drop_in_place` with the machine-layer
+   contract; exercise `swap` and `replace` with resource-owning values.
+4. Update globals, static initialization/reification, constant emission, and layout
+   metadata. Keep frozen globals stable and preserve static-read ownership rules.
+5. Update `src/comptime_vm/values.cpp`, hosted-call APIs, host callbacks, and
+   `src/comptime_vm/backend.cpp` to use typed storage and explicit lifetime owners.
+6. Test nested generics, aggregates larger than a register, and compile-time/runtime
+   result agreement. Run `CINDER_COMPTIME_VERIFY=1` on the relevant driver tests.
+
+### T-09 — Migrate captures, generators, and task results
+
+**Goal:** Keep values valid across suspension and cross-thread ownership transfer.
+
+1. Replace uniform register-image environments/state entries with typed layouts
+   for aggregate captures, parameters, locals, and initialized result storage.
+2. Update capture and suspension analyses for projected places and borrowed
+   temporaries. Put suspension-live objects directly in stable frame storage.
+3. Replace the fixed yielded-value image and update `src/runtime/coroutine.h`,
+   scheduler/reactor integration, native steps, VM polling, and final release.
+4. Implement arbitrary-size generator/task result transfer, active-result flags,
+   and correct disposal of unconsumed results on cancellation or handle drop.
+5. Update `par`, `race`, `crew`, and `on` adapters to embed their tuples and
+   descriptors in the owning storage. Preserve winner/loser and capture cleanup.
+6. Run checked tests that suspend while borrowing an inline member or slice
+   descriptor, migrate between workers, and cancel before/after producing a result.
+   Include a non-copy result with an observable drop and a result over sixteen bytes.
+
+### T-10 — Complete mandatory RVO propagation
+
+**Goal:** Make direct result construction systematic across expression forms.
+
+1. Extend shared destination propagation through all forms listed under Calls and
+   mandatory RVO, including synthesized branches and error propagation.
+2. Construct nested payloads and returned call results in their final projections.
+   Preserve temporary storage when assignment or operand aliasing requires it.
+3. Verify completion/initialization joins and cleanup on branches that never commit
+   a result. Preserve handling of diverging expressions and zero-sized results.
+4. Assert no intermediate aggregate transfers for eligible direct constructions
+   and chained returns with HIR inlining disabled on both backends.
+
+### T-11 — Implement shared NRVO
+
+**Goal:** Reuse return storage for eligible named locals in ordinary builds.
+
+1. Implement candidate discovery, dominance/return checks, loan/address analysis,
+   and the conservative eligibility rules above in a shared HIR storage pass.
+2. Redirect candidate initialization and projections to result storage, preserving
+   logical local lifetime, drop flags, and cleanup before ownership transfer.
+3. Implement ordinary inline move fallback with no heap allocation. Record why a
+   candidate was rejected and never diagnose valid source merely for missing NRVO.
+4. Provide an internal test option to disable NRVO while retaining mandatory RVO.
+   Compare output, drop order, and ownership with NRVO enabled/disabled.
+5. Check both the shared plan and emitted code for the eligible single-local case:
+   no separate candidate buffer and no aggregate transfer at return.
+
+### T-12 — Enforce final frame budgets and tail-call safety
+
+**Goal:** Keep automatic storage bounded and callees' addresses valid.
+
+1. Compute aligned frame ranges from the final storage plan, including ordinary
+   locals, call slots, borrowed temporaries, `uninit`, and partial-construction state.
+2. Reuse nonoverlapping ranges only after considering loans and pending drops.
+   Exclude values stored in caller/global/closure/coroutine owners from local bytes.
+3. Enforce the frame limit after transformations and report contributing spans.
+   Test checked arithmetic and instruction-encoding overflow separately.
+4. Revalidate tail calls with result/argument storage provenance; reject unsafe
+   `musttail` or VM frame reuse and retain safe cases.
+5. Assert constant frame usage for repeated slicing and value construction loops.
+   Preserve native stack probes and VM call-depth checks.
+
+### T-13 — Prove leak removal and backend parity
+
+**Goal:** Demonstrate both semantic correctness and removal of unwanted allocation.
+
+1. Implement the test matrix below with independent expected values, meaningful
+   drop counts, and strict per-case allocation bounds.
+2. Run ownership-checked standard-library/CLI regressions as well as differential
+   stress tests. Repair invalid stress programs rather than treating checker bypass
+   as the contract for the new representation.
+3. Tighten corpus 177–179 bounds to remove slice/tuple/sum allowances. Separate
+   scheduler/backing allocations from shell allocations; require zero residual
+   shell blocks without hiding them behind process-exit arena cleanup.
+4. Run debug and release suites with inlining enabled/disabled, then supported
+   address/undefined-behavior checks and scheduler ThreadSanitizer checks. Add any
+   missing sanitizer configuration explicitly; do not assume one already exists.
+5. Record results and remaining unrelated failures. Do not close todo items 17/18
+   until ordinary functions, generators, runtime results, and `par`/`race` all pass.
+
+### T-14 — Remove legacy representation and update references
+
+**Goal:** Leave one documented value model with reproducible verification.
+
+1. Remove migrated `is_heap_pointer_value` decisions, pointer-sized nested layout
+   fallbacks, old sum slot APIs, obsolete wrapper constructors, and temporary ABI
+   adapters. Retain genuine heap-owner operations with explicit ownership names.
+2. Update chapters 6, 10, 14–17, 27–28, 38–39, 60, and 65–68 where their representation,
+   size queries, runtime results, or optimization descriptions changed. Preserve
+   source `copy` classification and accurately describe remaining heap owners.
+3. Mark todo items 17 and 18 resolved with links to tests and this design; keep
+   unrelated todo entries accurate. Update this plan's task status only from
+   completed work and recorded evidence.
+4. Update affected Bazel targets and metadata versions. Refresh the context graph
+   after the code migration with `graft build` and review the resulting diff.
+
+## New Code
+
+The following names describe the intended implementation boundaries. Add small
+files with one clear purpose; use `spec/CONVENTIONS.md` for C++ naming and style.
+
+| Proposed file / existing area | Purpose |
+|---|---|
+| `src/hir/value_storage.h` | Define typed places, storage classes, initialization/transfer operations, and the prepared storage program. |
+| `src/hir/value_lowering.{h,cpp}` | Lower typed HIR into explicit destinations and shared aggregate ABI decisions. |
+| `src/hir/value_verify.{h,cpp}` | Verify storage lifetimes, projections, initialization, and call/result contracts. |
+| `src/hir/return_storage.{h,cpp}` | Implement shared named-return analysis and result-storage reuse; retain rejection reasons. |
+| `src/hir/value_lowering_test.cpp`, `src/hir/return_storage_test.cpp` | Test destinations, ownership-preserving transformations, and NRVO eligibility independently of backend optimizer behavior. |
+| `src/runtime/layout.{h,cpp}` and tests | Own complete concrete layout descriptors, checked byte offsets/strides, cycle handling, and alignment. |
+| `src/semantic/` type metadata and checked results | Expose resolved member types and semantic passing/copy/drop modes. |
+| `src/hir/` existing lowering, reference, capture, suspension, frame, inline, tail-call passes | Integrate places without losing source ownership facts or invalidating analysis. |
+| `src/bytecode/`, `src/bytecode_compiler/` | Implement frame places, transfers, aggregate calls, output storage, and verifier metadata. |
+| `src/llvm_codegen/` | Implement place emission, internal aggregate ABI, native/JIT wrappers, and low-optimization structural tests. |
+| `src/intrinsics.h`, `src/runtime/`, corresponding `src/std/` declarations | Share the new explicit runtime wire contract and aligned storage ownership. |
+| `src/comptime_vm/`, `src/driver/` | Prepare the same storage program and marshal hosted/entry results safely. |
+| Existing `BUILD.bazel` files and `src/testdata/` suites | Register new source files and semantic, execution, allocation, and optimization regressions. |
+
+## Tests
+
+### Required cases and evidence
+
+| Area | Cases | Required evidence |
+|---|---|---|
+| Layout | Nested/qualified generic structs, tuples, arrays, sums, packed fields, `int128`, zero-sized members, recursive rejection | Exact sizes/offsets/alignment and expected diagnostics; agree with `size_of`/pointer stride. |
+| Basic values | Scalar-only tuple, struct, array, `option`, `result`, payload-free sum loops | Correct values; zero shell heap allocations and zero live shell blocks on both tiers. |
+| Slices | Local slicing loops, passing a view, returned view of a borrowed parameter, nested descriptor fields | No descriptor allocations; original referent seen; returned view of a local still rejected. |
+| RVO | Direct constructor return, call chains, tail expressions, branches, nested fields, `?`, `or else`, generic and indirect calls | No intermediate aggregate transfers for eligible cases at low optimization with `--no-inline`. |
+| NRVO | One mutated return local, repeated returns of that local, whole reassignment | Result destination is the local's only storage; no return transfer; identical drops with NRVO disabled. |
+| NRVO fallback | Different return locals, parameter return, partial move, captured local, address exposure, early `?`, return projection | Correct inline moves without shell allocation; inspectable rejection reasons. |
+| Aliasing/evaluation | `x = f(&x)`, replacement of a field, borrowed receiver, operand side effects, constructor exits | Exactly-once evaluation in source order; old value dropped only after replacement is ready. |
+| Ownership | Non-copy payload, `copy` sum independence, mutable view moves, partial moves, generic borrowed `self` | Checked diagnostics and exactly-once active-member drops; no implicit clone or duplicated owner. |
+| Containers/raw memory | `list[(T, U)]`, nested sums, growth/pop/iteration, small-list spill, `shared[T]`, `swap`/`replace` | Inline stride and alignment; expected backing allocations only; each resource drops once. |
+| Runtime results | Repeated reads/writes, success/error/propagation/discard, async I/O | No per-operation result wrapper allocation; correct result payload and ownership. |
+| Closures/calls | Owned aggregate captures, referenced field, direct/indirect/cross-module/generic calls | No separate captured-value boxes; safe environments and independent by-value parameters. |
+| Suspension | Large yielded/task result, borrowed temporary, borrowed member, resumed branch/match subject, worker handoff | Stable addresses, initialized result flags, valid values after intervening calls/polls. |
+| Cancellation/concurrency | Never-started task, suspended task, unconsumed finished result, `par`/`race` winners/losers | Exactly-once resource drops after workers finish; no leaked aggregate shells; race checks pass. |
+| Hosted/native entry | Compile-time nested results, static reification, JIT aggregate entry, AOT executable | Result storage survives decoding; final bytes/layout agree across all entry paths. |
+| Frame/tail calls | Long loops, nested calls/recursion, near/over limit, call with pointers to frame arguments | Bounded frame bytes, useful oversized-frame diagnostic, safe tail-call selection. |
+
+Allocation tests must isolate measured code from setup and existing runtime-owned
+backing allocations. Test loop lengths `N` and `10*N` to catch hidden per-iteration
+growth. Heap counters alone cannot prove RVO/NRVO: inspect the shared storage plan
+and emitted bytecode/LLVM for eliminated local buffers and transfers as well.
+
+Run these existing focused targets during implementation, adding the new HIR test
+targets once introduced:
+
+```sh
+bazelisk test --config=debug //src/runtime:layout_test //src/runtime:allocator_test //src/runtime:allocator_arena_test //src/runtime:arena_test
+bazelisk test --config=debug //src/hir:lower_test //src/hir:inline_test //src/hir:captures_test //src/hir:live_across_yield_test
+bazelisk test --config=debug //src/semantic:check_test //src/semantic:ownership_check_test
+bazelisk test --config=debug //src/bytecode:vm_test //src/bytecode_compiler:compile_test //src/bytecode_compiler:register_alloc_test
+bazelisk test --config=debug //src/llvm_codegen:codegen_test //src/llvm_codegen:aot_test
+bazelisk test --config=debug //src:codegen_stress_test //src:std_test //src:cli_test
+bazelisk test --config=debug --test_env=CINDER_COMPTIME_VERIFY=1 //src:cli_test
+bazelisk test --config=tsan //src/runtime:scheduler_test //src/runtime:reactor_test //src:codegen_stress_test
+```
+
+Before completing T-13, run the full suites:
+
+```sh
+bazelisk test --config=debug //...
+bazelisk test --config=release //...
+```
+
+Exercise inlining and NRVO combinations through test-harness preparation options;
+`--no-inline` is an existing Cinder option, not a Bazel test flag. Add sanitizer
+coverage for native generated code explicitly, including the JIT path where the
+chosen tooling supports it; instrumenting only the C++ compiler host does not
+automatically instrument generated code.
+
+## Review Checklist
+
+- [x] Scope covers todo items 17 and 18 on both backends and runtime boundaries.
+- [x] Value layout is separate from semantic `copy`, moves, borrows, and ABI transport.
+- [x] RVO is required in ordinary lowering; NRVO has explicit eligibility and fallback.
+- [x] Caller result lifetime, replacement aliasing, partial initialization, and drops
+  have concrete rules.
+- [x] Containers, compile-time execution, captures, arbitrary-size coroutine results,
+  cancellation, alignment, frame limits, and tail calls are included.
+- [x] Existing evidence and proposed APIs are distinguished; references use files
+  present in this checkout rather than absent overview documents.
+- [x] Task dependencies, acceptance criteria, files, tests, and completion gates are
+  specified without requesting further design approval.
+- [x] Remaining repository inventories are assigned to T-01 with fixed design
+  defaults; no unresolved inventory is silently assumed to be complete.
+- [ ] Complete T-01 inventories and record actual baseline results before coding.
+- [ ] Implement T-02 through T-14 and record passing verification before closing
+  the corresponding todo items.

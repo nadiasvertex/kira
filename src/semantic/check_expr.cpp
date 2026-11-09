@@ -1370,7 +1370,6 @@ auto checker::record_crew_spawn(const ast::expr &crew, type_id task,
 }
 
 auto checker::check_task_body(const ast::node &key, source_span span,
-                              bool crosses_threads,
                               const std::function<type_id()> &check)
     -> type_id {
   function_.task_boundaries_.push_back(
@@ -1414,9 +1413,6 @@ auto checker::check_task_body(const ast::node &key, source_span span,
   session_.carried_literals_[&key] =
       opaque ? nullptr
              : std::make_shared<const std::vector<carried_value>>(carried);
-  if (!crosses_threads) {
-    return result;
-  }
   for (const auto &capture : captured) {
     if (!seen.erase(capture.name)) {
       continue;
@@ -2217,7 +2213,7 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
     const auto saved_async = std::exchange(function_.in_async_, true);
     const auto saved_context =
         std::exchange(function_.async_context_, session_.types_.builtin("io"));
-    const auto body = check_task_body(expr, expr.span, true, [&] -> type_id {
+    const auto body = check_task_body(expr, expr.span, [&] -> type_id {
       return check_body_nodes(ast::cast<const ast::async_expr>(expr).body,
                               k_unknown_type);
     });
@@ -2271,19 +2267,17 @@ auto checker::infer_expr_impl(const ast::expr &expr, type_id expected)
         error(on.span, "`on(ctx, task)` takes no block",
               "the task is what runs");
       }
-      if (context_of_on_target(on) != session_.types_.builtin("io")) {
-        require_task_args_sendable(*on.sender);
-      }
+      // Every context, `io` included, may run the task on another thread.
+      require_task_args_sendable(*on.sender);
       return task;
     }
     const auto saved_context = function_.async_context_;
     function_.async_context_ = context_of_on_target(on);
-    // The body runs as a task on the context's pool. A single-threaded
-    // context moves nothing between threads.
-    const auto result = check_task_body(
-        expr, on.span,
-        function_.async_context_ != session_.types_.builtin("io"),
-        [&] -> type_id { return check_body_nodes(on.body, expected); });
+    // The body runs as a task on the context's pool. Every context, `io`
+    // included, may run it on another thread.
+    const auto result = check_task_body(expr, on.span, [&] -> type_id {
+      return check_body_nodes(on.body, expected);
+    });
     function_.async_context_ = saved_context;
     return result;
   }

@@ -25,7 +25,7 @@ async def handle_request(req: http_request) -> http_response:   # a task[..., io
     return http_response.ok(result)
 ```
 
-Because `pool` — like any multi-threaded executor — may run a task on a different thread, moving work onto it requires the data to satisfy `send`/`share` (see [Data-Race Freedom](30-data-race-freedom.md)). A single-threaded context imposes no such requirement. The context in a task's type and the concurrency-safety concepts are the same mechanism seen from two sides.
+Both built-in contexts, `io` and `cpu`, may run a task on a different thread from the one that started it, and may move it between threads while it is suspended. Values moved into their tasks must therefore satisfy `send`, and values the tasks borrow must satisfy `share` (see [Data-Race Freedom](30-data-race-freedom.md)), whatever number of worker threads the runtime is configured with. The context in a task's type and the concurrency-safety concepts are the same mechanism seen from two sides.
 
 ## Tasks
 

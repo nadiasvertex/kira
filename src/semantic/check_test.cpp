@@ -3993,6 +3993,34 @@ auto test_rejects_sync_values_that_need_share() -> void {
                     "expected the channel's `T` to need `send`");
 }
 
+auto test_rejects_on_io_non_sendable() -> void {
+  const auto analyzed =
+      analyze_test_data_file("reject_on_io_crosses_threads.cn");
+  expect(analyzed.error_count == 3,
+         "expected three non-sendable crossings into `on(io)` to be "
+         "rejected:\n" +
+             analyzed.diagnostics);
+  expect_diagnostic(analyzed, "`p` is captured by this task",
+                    "expected a raw pointer captured by `on(io):` to be "
+                    "rejected");
+  expect_diagnostic(analyzed, "`handle` cannot be sent to another task",
+                    "expected a raw-pointer argument to `on(io, task)` to be "
+                    "rejected");
+  expect_diagnostic(analyzed,
+                    "`f` is captured by this task, and it captures `h`",
+                    "expected a captured lambda to take its captures into "
+                    "`on(io)`");
+}
+
+auto test_accepts_on_io_sendable() -> void {
+  const auto analyzed = analyze_test_data_file("accept_on_io_sendable.cn");
+  expect_clean(analyzed,
+               std::string("expected owned values, shared borrows of "
+                           "immutable data and a mutex to cross into "
+                           "`on(io)`:\n") +
+                   analyzed.diagnostics);
+}
+
 auto test_rejects_non_task_spawned() -> void {
   const auto analyzed = analyze_test_data_file("reject_non_task_spawned.cn");
   expect(analyzed.error_count == 3,
@@ -4031,6 +4059,8 @@ auto main() -> int {
     test_accepts_task_function_values();
     test_accepts_sync_values_that_are_only_send();
     test_rejects_sync_values_that_need_share();
+    test_rejects_on_io_non_sendable();
+    test_accepts_on_io_sendable();
     test_reports_copy_bound_unsatisfied();
     test_reports_fn_value_reference_mismatch();
     test_accepts_try_from_conversion();

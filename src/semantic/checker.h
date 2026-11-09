@@ -1559,13 +1559,11 @@ private:
 
   /// Checks the body of an `async:` or `on(...)` block, which runs as a task
   /// of its own: runs `check` with the block marked as a task boundary, so
-  /// `return`, `?`, `break` and `continue` cannot leave it. When the task may
-  /// run on another thread (`crosses_threads`), what it captured must be
-  /// sendable.
+  /// `return`, `?`, `break` and `continue` cannot leave it. Every context
+  /// may run a task on another thread, so what it captured must be sendable.
   ///
   /// What the block carries is recorded under `key` (`carried_literals_`).
   auto check_task_body(const ast::node &key, source_span span,
-                       bool crosses_threads,
                        const std::function<type_id()> &check) -> type_id;
 
   /// True for a `fn` or `task` type, whose values carry data their type does

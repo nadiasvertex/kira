@@ -1,0 +1,31 @@
+module reject_on_io_crosses_threads
+
+# `io` may run a task on another thread, like any other context, so what
+# moves into an `on(io)` task must be sendable.
+
+type handle = { raw: *mut int32 }
+
+def peek(h: handle) -> int32:
+    return 1
+
+async def read(h: handle) -> int32:
+    return 1
+
+# A raw pointer captured by an `on(io):` body.
+async def captured(p: *mut int32) -> int32:
+    return await on(io):
+        let q = p
+        1
+
+# A raw pointer passed to a task run with `on(io, task)`.
+async def argument(h: handle) -> int32:
+    return await on(io, read(h))
+
+# A lambda captured by the body carries the raw pointer with it.
+async def hidden(h: handle) -> int32:
+    let f = () => peek(h)
+    return await on(io):
+        f()
+
+async def main() -> int32:
+    return 0
