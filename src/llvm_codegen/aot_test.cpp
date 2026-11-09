@@ -141,6 +141,11 @@ auto build_and_run(const fs::path &dir, const std::string &cinder_source)
                         "uint32_t cinder_rt_task_drop(uint64_t *task) {\n"
                         "  (void)task;\n"
                         "  return 0;\n"
+                        "}\n"
+                        // Then it hands the coroutine back to be freed.
+                        "uint64_t *cinder_rt_task_release(uint64_t *task) {\n"
+                        "  free(task);\n"
+                        "  return 0;\n"
                         "}\n");
 
   const auto link_command =

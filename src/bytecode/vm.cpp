@@ -1611,6 +1611,12 @@ auto intrinsic_rt_task_drop(std::span<const slot_value> args) -> slot_value {
       cinder::runtime::scheduler::cancel_on_drop(task_of(args[0])));
 }
 
+auto intrinsic_rt_task_release(std::span<const slot_value> args)
+    -> slot_value {
+  cinder::runtime::scheduler::release(task_of(args[0]));
+  return slot_value{}; // `unit`
+}
+
 auto intrinsic_rt_crew_new(std::span<const slot_value> /*args*/) -> slot_value {
   return slot_value{reinterpret_cast<uint64_t>( // NOLINT
       cinder::runtime::scheduler::crew_new())};
@@ -1943,6 +1949,7 @@ constexpr std::array<intrinsic_fn, cinder::known_intrinsics.size()>
         intrinsic_rt_task_await_all_poll,
         intrinsic_rt_task_block_on_all,
         intrinsic_rt_task_drop,
+        intrinsic_rt_task_release,
         intrinsic_rt_crew_new,
         intrinsic_rt_crew_spawn,
         intrinsic_rt_crew_join_poll,
@@ -2462,6 +2469,7 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto dst = ops.reg();
         const auto step_fn_idx = ops.imm16();
         const auto state_ptr_reg = ops.reg();
+        const auto state_bytes = ops.imm32();
         f.pc = ops.pos();
         auto *header = cinder_heap_alloc(runtime::coroutine::k_slot_count *
                                          sizeof(heap_word));
@@ -2473,6 +2481,8 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         slots[runtime::coroutine::k_resume_index_slot] = heap_word{uint64_t{0}};
         slots[runtime::coroutine::k_status_slot] = heap_word{
             runtime::coroutine::raw(runtime::coroutine::status::suspended)};
+        slots[runtime::coroutine::k_state_bytes_slot] =
+            heap_word{uint64_t{state_bytes}};
         f.registers[dst] = ptr_to_slot(header);
         break;
       }

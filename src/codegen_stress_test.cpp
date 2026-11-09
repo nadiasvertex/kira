@@ -43,6 +43,7 @@
 #include "src/parser/source_location.h"
 #include "src/runtime/allocator.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/scheduler.h"
 #include "src/semantic/analysis.h"
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
@@ -184,7 +185,18 @@ struct outcome {
   uint64_t bits = 0;
   /// Heap blocks allocated while `main` ran (`runtime::heap_allocation_count`).
   uint64_t allocations = 0;
+  /// Heap blocks `main` left allocated once it and every task it started had
+  /// finished (`runtime::heap_live_block_count`).
+  int64_t live_blocks = 0;
 };
+
+/// The heap blocks still allocated once the tasks a run started have
+/// finished: a task the program dropped may be freed by the worker that
+/// finishes it.
+[[nodiscard]] auto settled_live_blocks() -> int64_t {
+  cinder::runtime::scheduler::wait_idle();
+  return cinder::runtime::heap_live_block_count();
+}
 
 // A heap-typed `outcome.bits` is a real pointer into memory owned by the
 // tier's own compiled artifact (the bytecode module's `string_constants`
@@ -232,6 +244,7 @@ auto run_bytecode(const fs::path &path,
            std::format("`{}`: expected static initialization to succeed",
                        path.string()));
   }
+  const auto live_before = settled_live_blocks();
   const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       vm.run(static_cast<uint16_t>(index), std::array<bc::slot_value, 0>{});
@@ -240,6 +253,7 @@ auto run_bytecode(const fs::path &path,
                     : outcome{.panicked = true, .panic = run.error()};
   result.allocations =
       cinder::runtime::heap_allocation_count() - allocations_before;
+  result.live_blocks = settled_live_blocks() - live_before;
   return bytecode_run{.module = std::move(*compiled), .result = result};
 }
 
@@ -270,6 +284,7 @@ auto run_llvm(const fs::path &path,
                      path.string(), jit.error()));
   }
 
+  const auto live_before = settled_live_blocks();
   const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       as_ptr ? jit->run_ptr_result("main") : jit->run("main", return_kind);
@@ -278,6 +293,7 @@ auto run_llvm(const fs::path &path,
                     : outcome{.panicked = true, .panic = run.error()};
   result.allocations =
       cinder::runtime::heap_allocation_count() - allocations_before;
+  result.live_blocks = settled_live_blocks() - live_before;
   return llvm_run{.jit = std::move(*jit), .result = result};
 }
 
@@ -534,6 +550,15 @@ auto run_llvm(const fs::path &path,
   return directive_value(text, "# max-allocations:");
 }
 
+/// The most heap blocks a corpus file allows `main` to leave allocated on
+/// either tier, written as `# max-live-blocks: <integer>`. Counted once
+/// `main` and the tasks it started have finished, on every thread, so it
+/// finds what a program allocates and never frees.
+[[nodiscard]] auto max_live_blocks_of(std::string_view text)
+    -> std::optional<int64_t> {
+  return directive_value(text, "# max-live-blocks:");
+}
+
 /// Both tiers' compiled artifacts, kept alive for as long as a heap-typed
 /// result's `bits` may still be read — see `bytecode_run`/`llvm_run`.
 struct tier_runs {
@@ -596,6 +621,16 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
       expect(count <= static_cast<uint64_t>(*limit),
              std::format("`{}`: `main` allocated {} heap blocks on the {}, "
                          "but `# max-allocations:` allows {}",
+                         path.string(), count, tier, *limit));
+    }
+  }
+  if (const auto limit = max_live_blocks_of(text); limit.has_value()) {
+    for (const auto &[tier, count] :
+         {std::pair{"bytecode VM", vm_result.live_blocks},
+          std::pair{"LLVM JIT", jit_result.live_blocks}}) {
+      expect(count <= *limit,
+             std::format("`{}`: `main` left {} heap blocks allocated on the "
+                         "{}, but `# max-live-blocks:` allows {}",
                          path.string(), count, tier, *limit));
     }
   }
@@ -725,6 +760,17 @@ auto main(int argc, char *argv[]) -> int {
                "expected a broad codegen stress corpus, found only {} files",
                files.size()));
 
+    // `CINDER_CORPUS_FILTER` runs only the files whose name contains it, for
+    // working on one program; the corpus-wide checks are skipped then.
+    if (const auto *filter = std::getenv("CINDER_CORPUS_FILTER");
+        filter != nullptr && *filter != '\0') {
+      for (const auto &file : files) {
+        if (file.filename().string().contains(filter)) {
+          run_one(file);
+        }
+      }
+      return 0;
+    }
     for (const auto &file : files) {
       run_one(file);
     }

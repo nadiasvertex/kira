@@ -131,6 +131,18 @@ void block_on_any(uint64_t *const *tasks, size_t count, pool where, runner how);
 /// into a `crew` is left running: the block that owns it waits for it.
 [[nodiscard]] auto cancel_on_drop(uint64_t *task) -> bool;
 
+/// The program dropped its handle to `task`, having cancelled it first if
+/// it had not finished. The task is freed now if the scheduler never took it
+/// over. Otherwise it is freed once it has finished and nothing else names
+/// it: no crew it was spawned into is still open and no `hold` remains.
+void release(uint64_t *task);
+
+/// Keeps a task the scheduler owns from being freed while something outside
+/// the scheduler, such as a reactor wait list, still names it. Each `hold`
+/// is ended by one `unhold`.
+void hold(uint64_t *task);
+void unhold(uint64_t *task);
+
 /// Whether `task` has finished (its body returned or was cancelled).
 [[nodiscard]] auto is_finished(const uint64_t *task) -> bool;
 
@@ -208,6 +220,7 @@ auto cinder_rt_task_await_poll(uint64_t *self, uint64_t *awaited) -> uint32_t;
 auto cinder_rt_task_spawn(uint64_t *task, uint64_t pool) -> uint64_t *;
 auto cinder_rt_task_cancel(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_drop(uint64_t *task) -> uint32_t;
+auto cinder_rt_task_release(uint64_t *task) -> uint64_t *;
 auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t;
 auto cinder_rt_task_await_any_poll(uint64_t *self, uint64_t *const *tasks,
                                    uint64_t count) -> uint32_t;

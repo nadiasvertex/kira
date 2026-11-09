@@ -623,7 +623,9 @@ struct hir_generator_next : hir_expr {
 /// marked cancelled and resumed once: its body sees
 /// `hir_coroutine_cancelled` where it was suspended (or before it first
 /// runs) and returns, dropping what it still owns. A finished generator owns
-/// nothing. Evaluates to `unit`.
+/// nothing. Either way the backends then release the coroutine
+/// (`rt_task_release`), which frees it once the scheduler no longer refers to
+/// it. Evaluates to `unit`.
 struct hir_coroutine_cancel : hir_expr {
   ptr<hir_expr> object;
 

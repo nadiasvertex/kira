@@ -1,0 +1,35 @@
+module codegen_stress.par_race_tasks_freed
+
+# expect: 0
+# max-live-blocks: 2100
+
+# `await par:` and `await race:` drop their branch tasks once the result is
+# read, inside a task and in the entry function. Each pass of the loop makes
+# seven tasks of two heap blocks each. The bound allows the four blocks per
+# pass that are not tasks: the tuple that holds each group's tasks and the
+# tuple `par` returns are never freed (`spec/todo.md`).
+
+async def plus_one(x: int32) -> int32:
+    return x + 1
+
+async def in_task(i: int32) -> int32:
+    let (a, b) = await par:
+        plus_one(i)
+        plus_one(i)
+    let c = await race:
+        plus_one(i)
+        plus_one(i)
+    return a + b + c - 3 * i - 3
+
+async def main() -> int32:
+    var bad: int32 = 0
+    var i: int32 = 0
+    while i < 500:
+        let off = await in_task(i)
+        let c = await race:
+            plus_one(i)
+            plus_one(i)
+        if off != 0 or c != i + 1:
+            bad = bad + 1
+        i = i + 1
+    return bad

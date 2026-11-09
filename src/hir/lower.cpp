@@ -844,10 +844,20 @@ private:
                                     source_span span, bool all = false)
       -> std::expected<void, lowering_error>;
   /// Waits for `task` and reads its result: `await task` and `task.get()`.
+  /// `await` consumes the task, so `consumes` drops it once its result has
+  /// been read; `get()` only borrows it.
   [[nodiscard]] auto lower_task_read(const void *key, source_span span,
                                      source_span task_span, type_id type,
-                                     type_id task_type, ptr<hir_expr> task)
+                                     type_id task_type, ptr<hir_expr> task,
+                                     bool consumes)
       -> std::expected<ptr<hir_expr>, lowering_error>;
+  /// Reads the result of finished tasks with `read`, then drops `tasks`,
+  /// which an `await` consumed. Appends `let r = read` and the drops to
+  /// `stmts` and returns a read of `r`.
+  [[nodiscard]] auto read_then_drop_tasks(ptr_vec<hir_node> &stmts,
+                                          ptr<hir_expr> read,
+                                          ptr_vec<hir_expr> tasks, type_id type,
+                                          source_span span) -> ptr<hir_expr>;
   /// `c.errors()`: waits for the crew's tasks, then builds the list of the
   /// errors they finished with.
   [[nodiscard]] auto lower_crew_errors(const ast::call_expr &call,
@@ -1976,7 +1986,7 @@ auto lowerer::lower_expr_unflagged(const ast::expr &expr)
       return std::unexpected(task.error());
     }
     return lower_task_read(&expr, expr.span, await.operand->span, *type,
-                           *task_type, std::move(*task));
+                           *task_type, std::move(*task), /*consumes=*/true);
   }
   default:
     return fail(lowering_error_kind::unsupported_construct, expr.span,
@@ -2721,7 +2731,8 @@ auto lowerer::lower_call(const ast::call_expr &call)
             return std::unexpected(object.error());
           }
           return lower_task_read(&call, call.span, field.object->span, *type,
-                                 stripped, std::move(*object));
+                                 stripped, std::move(*object),
+                                 /*consumes=*/false);
         }
       }
     }
@@ -4229,16 +4240,53 @@ auto lowerer::lower_where(const ast::where_expr &where)
   return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
 }
 
+auto lowerer::read_then_drop_tasks(ptr_vec<hir_node> &stmts,
+                                   ptr<hir_expr> read, ptr_vec<hir_expr> tasks,
+                                   type_id type, source_span span)
+    -> ptr<hir_expr> {
+  const auto result = mint_symbol();
+  stmts.push_back(ptr<hir_node>(make<hir_let>(
+      span, result, std::string("<await result>"), std::move(read))));
+  for (auto &task : tasks) {
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(span, k_unknown_type,
+                                                       std::move(task))))));
+  }
+  return {make<hir_local_ref>(span, type, result,
+                              std::string("<await result>"))};
+}
+
 auto lowerer::lower_task_read(const void *key, source_span span,
                               source_span task_span, type_id type,
-                              type_id task_type, ptr<hir_expr> task)
+                              type_id task_type, ptr<hir_expr> task,
+                              bool consumes)
     -> std::expected<ptr<hir_expr>, lowering_error> {
   if (!in_task_body_) {
     // An ordinary function (the entry `async def main`) has no state
     // machine to suspend: it blocks the calling thread until the task is
     // done.
-    return ok_expr(make<hir_generator_next>(span, type, std::move(task),
-                                            /*await_task=*/true));
+    if (!consumes) {
+      return ok_expr(make<hir_generator_next>(span, type, std::move(task),
+                                              /*await_task=*/true));
+    }
+    const auto held = mint_symbol();
+    const auto held_ref = [&]() -> ptr<hir_expr> {
+      return {make<hir_local_ref>(task_span, task_type, held,
+                                  std::string("<await task>"))};
+    };
+    auto stmts = ptr_vec<hir_node>{};
+    stmts.push_back(ptr<hir_node>(make<hir_let>(
+        task_span, held, std::string("<await task>"), std::move(task))));
+    auto drops = ptr_vec<hir_expr>{};
+    drops.push_back(held_ref());
+    auto result = read_then_drop_tasks(
+        stmts,
+        ptr<hir_expr>(make<hir_generator_next>(span, type, held_ref(),
+                                               /*await_task=*/true)),
+        std::move(drops), type, span);
+    stmts.push_back(
+        ptr<hir_node>(make<hir_expr_stmt>(span, std::move(result))));
+    return ok_expr(make<hir_block>(span, type, std::move(stmts)));
   }
   if (await_cannot_hoist()) {
     return fail(lowering_error_kind::unsupported_construct, span,
@@ -4259,8 +4307,16 @@ auto lowerer::lower_task_read(const void *key, source_span span,
       !waited.has_value()) {
     return std::unexpected(waited.error());
   }
-  return ok_expr(make<hir_generator_next>(span, type, task_ref(),
-                                          /*await_task=*/true));
+  auto read =
+      ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
+                                             /*await_task=*/true));
+  if (!consumes) {
+    return ok_expr(std::move(read));
+  }
+  auto drops = ptr_vec<hir_expr>{};
+  drops.push_back(task_ref());
+  return ok_expr(read_then_drop_tasks(*await_hoist_, std::move(read),
+                                      std::move(drops), type, span));
 }
 
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
@@ -4648,12 +4704,19 @@ auto lowerer::lower_spawn_and_wait(ptr<hir_expr> made, type_id task_type,
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
-    return ok_expr(
-        make<hir_generator_next>(span, type, task_ref(), /*await_task=*/true));
   }
-  local_setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-      span, ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
-                                                   /*await_task=*/true)))));
+  auto drops = ptr_vec<hir_expr>{};
+  drops.push_back(task_ref());
+  auto result = read_then_drop_tasks(
+      setup,
+      ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
+                                             /*await_task=*/true)),
+      std::move(drops), type, span);
+  if (in_task) {
+    return ok_expr(std::move(result));
+  }
+  local_setup.push_back(
+      ptr<hir_node>(make<hir_expr_stmt>(span, std::move(result))));
   return ok_expr(make<hir_block>(span, type, std::move(local_setup)));
 }
 
@@ -4954,6 +5017,7 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
                                                unit_type, std::move(args)))));
   }
   auto elements = ptr_vec<hir_expr>{};
+  auto drops = ptr_vec<hir_expr>{};
   for (size_t i = 0; i < tasks.size(); ++i) {
     // Read through the tuple, so it is a local the state machine keeps across
     // the wait above.
@@ -4962,8 +5026,12 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
                                  ptr<hir_expr>(make<hir_tuple_index>(
                                      span, tasks.types[i], group_ref(), i)),
                                  /*await_task=*/true)));
+    drops.push_back(ptr<hir_expr>(
+        make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
   }
-  return ptr<hir_expr>(make<hir_tuple>(span, type, std::move(elements)));
+  return read_then_drop_tasks(
+      setup, ptr<hir_expr>(make<hir_tuple>(span, type, std::move(elements))),
+      std::move(drops), type, span);
 }
 
 /// `race`: wait until any task has finished, read the first finished one in
@@ -5036,15 +5104,15 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   setup.push_back(ptr<hir_node>(make<hir_let>(
       span, winner, std::string("<race winner>"), std::move(pick))));
 
-  // Cancel through the tuple, so the tasks are a local the state machine
-  // keeps across the wait above.
+  // Drop every task through the tuple, so the tasks are a local the state
+  // machine keeps across the wait above. Dropping a loser that has not
+  // finished cancels it.
   for (size_t i = 0; i < tasks.size(); ++i) {
-    auto args = ptr_vec<hir_expr>{};
-    args.push_back(ptr<hir_expr>(
-        make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
-    setup.push_back(ptr<hir_node>(
-        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_cancel",
-                                               bool_type, std::move(args)))));
+    setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(
+                  span, k_unknown_type,
+                  ptr<hir_expr>(make<hir_tuple_index>(span, tasks.types[i],
+                                                      group_ref(), i)))))));
   }
   return ptr<hir_expr>(
       make<hir_local_ref>(span, type, winner, std::string("<race winner>")));

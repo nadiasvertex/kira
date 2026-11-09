@@ -11,7 +11,8 @@ namespace cinder::runtime::coroutine {
 //  is a fixed block of `k_slot_count` 8-byte slots, allocated like any other
 //  heap value (see `layout.h`):
 //
-//    { step_function; state_ptr; resume_index; status; record; value[2] }
+//    { step_function; state_ptr; resume_index; status; record; value[2];
+//      state_bytes }
 //
 //  `step_function` is the function index (VM) or function pointer (LLVM) of
 //  the compiled state machine; `state_ptr` points at the flat block holding
@@ -26,14 +27,15 @@ namespace cinder::runtime::coroutine {
 //  object)` and returns the new `status` as a raw word; it never builds a
 //  result of its own. The resumer reads `value` when the returned status says a
 //  value was produced, and wraps it however the consumer needs (`option[T]` for
-//  a generator's `.next()`).
+//  a generator's `.next()`). `state_bytes` is the size of the state block,
+//  so the runtime can free it (`scheduler::release`).
 //
 //  `status` is the one word every consumer of a coroutine shares. A
 //  generator's `.next()`, a task's poll, and a drop all read and write it,
 //  so the values below are the protocol rather than a per-feature detail.
 // ==========================================================================
 
-inline constexpr size_t k_slot_count = 7;
+inline constexpr size_t k_slot_count = 8;
 
 /// Slot indices within a coroutine object.
 inline constexpr size_t k_step_function_slot = 0;
@@ -43,6 +45,7 @@ inline constexpr size_t k_status_slot = 3;
 inline constexpr size_t k_record_slot = 4;
 /// The first of the two slots `value` occupies.
 inline constexpr size_t k_value_slot = 5;
+inline constexpr size_t k_state_bytes_slot = 7;
 
 /// Number of arguments the step function takes.
 inline constexpr size_t k_step_arg_count = 3;

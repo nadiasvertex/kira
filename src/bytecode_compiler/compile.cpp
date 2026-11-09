@@ -468,6 +468,8 @@ public:
     emit_register(*obj_reg);
     writer_.emit_u16(step_fn_index);
     emit_register(*state_ptr_reg);
+    writer_.emit_u32(
+        static_cast<uint32_t>(state_symbols.size() * sizeof(slot_value)));
     emit_op(opcode::op_return_value);
     emit_register(*obj_reg);
 
@@ -1498,7 +1500,11 @@ private:
       emit_op(opcode::op_coroutine_cancel);
       emit_register(dst);
       emit_register(*object_reg);
-      return {};
+      // The cancel may resume the body, and that frame returns before this
+      // call runs. The program no longer holds the coroutine; the runtime
+      // frees it once nothing else does.
+      return emit_runtime_call("rt_task_release", dst, {*object_reg},
+                               expr.span);
     }
     case hir_node_kind::hir_closure_drop: {
       auto object_reg = compile_expr(

@@ -1,0 +1,49 @@
+module codegen_stress.coroutine_objects_freed
+
+# expect: 0
+# max-live-blocks: 100
+
+# A coroutine object and its state block are freed once the program has
+# dropped it and the scheduler no longer refers to it. `await` consumes the
+# task it waits for, so it drops the task once the result is read. The loop
+# makes fresh coroutines on every pass, so one that is never freed leaves
+# heap blocks behind on every iteration. Each pass awaits tasks inside a task
+# and in the entry function, spawns a task before awaiting it, reads a task
+# back from a `crew`, and drops a generator before it runs.
+
+async def plus_one(x: int32) -> int32:
+    return x + 1
+
+async def awaits_twice(x: int32) -> int32:
+    let a = await plus_one(x)
+    return await plus_one(a)
+
+generator def count_up(n: int32) -> some iterator[int32]:
+    var i: int32 = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+def make_and_drop(n: int32) -> int32:
+    let g = count_up(n)
+    return n
+
+async def one_pass(i: int32) -> int32:
+    let t = plus_one(i)
+    t.spawn()
+    let d = crew k:
+        let td = k.spawn(plus_one(i))
+        td
+    let b = await awaits_twice(i)
+    return (await t) + b + d.get() + make_and_drop(i) - 4 * i - 4
+
+async def main() -> int32:
+    var bad: int32 = 0
+    var i: int32 = 0
+    while i < 1000:
+        let off = await one_pass(i)
+        let b = await awaits_twice(i)
+        if off != 0 or b + make_and_drop(i) != 2 * i + 2:
+            bad = bad + 1
+        i = i + 1
+    return bad

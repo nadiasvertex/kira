@@ -42,6 +42,11 @@ enum class allocator_mode : uint8_t {
 /// synchronization; work a program hands to another thread is not counted.
 [[nodiscard]] auto heap_allocation_count() -> uint64_t;
 
+/// How many heap blocks are allocated and not yet freed, across every
+/// thread. Tests compare it before and after a program to find blocks the
+/// program never freed. Arena mode never frees, so there it only grows.
+[[nodiscard]] auto heap_live_block_count() -> int64_t;
+
 } // namespace cinder::runtime
 
 /// C-ABI heap entry points. Both backends bottom out here: the bytecode VM

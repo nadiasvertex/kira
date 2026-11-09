@@ -48,9 +48,8 @@ enum class task_state : uint8_t {
 };
 
 /// The scheduler's bookkeeping for one task, pointed to by the task's
-/// `record` slot. Records are never freed: the task objects they belong to
-/// are not freed either (see `drop_plan::cancels_generator`), and a waiter
-/// list may still name a finished task.
+/// `record` slot. It is freed with the task, once the task has finished, the
+/// program has dropped its handle (`release`), and nothing else names it.
 struct task_record {
   task_state state = task_state::queued;
   /// A wake arrived while the task was running. When the step function then
@@ -71,6 +70,16 @@ struct task_record {
   /// The crews this task's body has opened and not yet freed. A panic skips
   /// the end of the block, so the scheduler finishes them (`unwind_locked`).
   std::vector<crew *> open_crews;
+  /// The program has dropped its handle to the task.
+  bool released = false;
+  /// Runtime structures other than the scheduler's own lists that name the
+  /// task: a crew it was spawned into, or a reactor wait list (`hold`).
+  size_t holds = 0;
+  /// The tasks whose `waiters` name this one. A task that finishes leaves
+  /// those lists, so none of them names a freed task.
+  std::vector<uint64_t *> waiting_on;
+  /// The memory word whose waiter list names this task (`word_waiter`).
+  const uint64_t *word = nullptr;
 };
 
 struct pool_state {
@@ -183,6 +192,50 @@ auto is_cancelled(const uint64_t *task) -> bool {
 
 void push_locked(scheduler_state &s, uint64_t *task, task_record &rec);
 void dispatch_locked(pool_state &target, pool where);
+
+/// Frees a coroutine object, its state block, and its record.
+void free_coroutine(uint64_t *task) {
+  cinder_heap_free(reinterpret_cast<void *>(task[co::k_state_ptr_slot]),
+                   task[co::k_state_bytes_slot]);
+  const auto owned = std::unique_ptr<task_record>(record_of(task));
+  cinder_heap_free(task, co::k_slot_count * sizeof(uint64_t));
+}
+
+/// Frees `task` if it has finished and nothing names it any more. Lock held.
+void free_if_unused_locked(uint64_t *task, const task_record &rec) {
+  if (rec.state == task_state::finished && rec.released && rec.holds == 0) {
+    free_coroutine(task);
+  }
+}
+
+/// Lets go of a `hold` on `task`. Lock held.
+void unhold_locked(uint64_t *task) {
+  auto *rec = record_of(task);
+  --rec->holds;
+  free_if_unused_locked(task, *rec);
+}
+
+/// Makes `waiter` one of the tasks `awaited` wakes when it finishes. Lock
+/// held.
+void add_waiter_locked(uint64_t *awaited, task_record &rec, uint64_t *waiter) {
+  if (std::ranges::find(rec.waiters, waiter) != rec.waiters.end()) {
+    return;
+  }
+  rec.waiters.push_back(waiter);
+  if (auto *waiter_rec = record_of(waiter); waiter_rec != nullptr) {
+    waiter_rec->waiting_on.push_back(awaited);
+  }
+}
+
+/// Frees a crew and lets go of its tasks. Lock held.
+void free_crew_locked(crew *group) {
+  const auto owned = std::unique_ptr<crew>(group);
+  for (auto *member : group->tasks) {
+    if (record_of(member) != nullptr) {
+      unhold_locked(member);
+    }
+  }
+}
 void finish_unwinding_locked(scheduler_state &s, uint64_t *task,
                              task_record &rec);
 
@@ -209,16 +262,38 @@ void wake_locked(scheduler_state &s, uint64_t *task) {
   }
 }
 
+/// Marks `task` finished and wakes its waiters. It may free `task`, so the
+/// caller must not touch it afterwards.
 void finish_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
   rec.state = task_state::finished;
   set_status(task, co::status::done);
+  // Leave every list that still names this task: a cancelled task, or one
+  // that a `race` woke, can be a waiter of tasks that have not finished.
+  for (auto *awaited : rec.waiting_on) {
+    std::erase(record_of(awaited)->waiters, task);
+  }
+  rec.waiting_on.clear();
+  if (rec.word != nullptr) {
+    if (const auto found = s.word_waiters.find(rec.word);
+        found != s.word_waiters.end()) {
+      std::erase(found->second, task);
+      if (found->second.empty()) {
+        s.word_waiters.erase(found);
+      }
+    }
+    rec.word = nullptr;
+  }
   auto waiters = std::move(rec.waiters);
   rec.waiters.clear();
   for (auto *waiter : waiters) {
+    if (auto *waiter_rec = record_of(waiter); waiter_rec != nullptr) {
+      std::erase(waiter_rec->waiting_on, task);
+    }
     wake_locked(s, waiter);
   }
   s.unfinished.erase(task);
   s.finished.notify_all();
+  free_if_unused_locked(task, rec);
 }
 
 /// Asks a task to unwind, along with the tasks of every crew it has open:
@@ -261,7 +336,7 @@ void finish_unwinding_locked(scheduler_state &s, uint64_t *task,
   }
   for (auto *group : rec.open_crews) {
     // The crew's block will not reach `crew_free`.
-    const auto owned = std::unique_ptr<crew>(group);
+    free_crew_locked(group);
   }
   rec.open_crews.clear();
   finish_locked(s, task, rec);
@@ -278,7 +353,7 @@ void unwind_locked(scheduler_state &s, uint64_t *task, task_record &rec) {
       if (member_rec == nullptr || is_done(member)) {
         continue;
       }
-      member_rec->waiters.push_back(task);
+      add_waiter_locked(member, *member_rec, task);
     }
   }
   cancel_locked(s, task, rec);
@@ -470,7 +545,11 @@ auto word_waiter_step(void * /*state*/, uint64_t /*resume_index*/, void *object)
   if (is_cancelled(task) || load_word(word) != expected) {
     return co::raw(co::status::done);
   }
-  s.word_waiters[word].push_back(task);
+  auto &rec = *record_of(task);
+  if (rec.word == nullptr) {
+    s.word_waiters[word].push_back(task);
+    rec.word = word;
+  }
   return co::raw(co::status::pending);
 }
 
@@ -506,6 +585,7 @@ void wake_word(const uint64_t *word) {
     const auto waiters = std::move(found->second);
     s.word_waiters.erase(found);
     for (auto *waiter : waiters) {
+      record_of(waiter)->word = nullptr;
       wake_locked(s, waiter);
     }
   }
@@ -579,9 +659,7 @@ auto wait_on_locked(scheduler_state &s, uint64_t *self,
           s, awaited, self_rec != nullptr ? self_rec->where : pool::io,
           self_rec != nullptr ? self_rec->how : native_runner());
     }
-    if (std::ranges::find(rec->waiters, self) == rec->waiters.end()) {
-      rec->waiters.push_back(self);
-    }
+    add_waiter_locked(awaited, *rec, self);
     if (stopping) {
       cancel_locked(s, awaited, *rec);
     }
@@ -677,11 +755,13 @@ auto crew_new() -> crew * {
 void crew_spawn(crew *group, uint64_t *task, pool where, runner how) {
   auto &s = state();
   const auto lock = std::scoped_lock(s.mutex);
-  group->tasks.push_back(task);
   adopt_all_locked(s, std::span(&task, 1), where, how);
   if (auto *rec = record_of(task); rec != nullptr) {
     rec->crew_owned = true;
+    // The crew reads its tasks back after the block's handles are gone.
+    ++rec->holds;
   }
+  group->tasks.push_back(task);
 }
 
 auto crew_join_poll(uint64_t *self, crew *group) -> bool {
@@ -693,12 +773,12 @@ void crew_join(crew *group, pool where, runner how) {
 }
 
 void crew_free(crew *group) {
-  const auto owned = std::unique_ptr<crew>(group);
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
   if (group->owner != nullptr) {
-    auto &s = state();
-    const auto lock = std::scoped_lock(s.mutex);
     std::erase(record_of(group->owner)->open_crews, group);
   }
+  free_crew_locked(group);
 }
 
 auto crew_size(const crew *group) -> size_t { return group->tasks.size(); }
@@ -768,6 +848,33 @@ auto cancel_on_drop(uint64_t *task) -> bool {
     }
   }
   return cancel(task);
+}
+
+void release(uint64_t *task) {
+  if (std::atomic_ref(task[co::k_record_slot])
+          .load(std::memory_order_acquire) == 0) {
+    // Nothing but the program ever held it: a generator, or a task nobody
+    // started. Its dropper has already resumed it to the end.
+    free_coroutine(task);
+    return;
+  }
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  auto *rec = record_of(task);
+  rec->released = true;
+  free_if_unused_locked(task, *rec);
+}
+
+void hold(uint64_t *task) {
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  ++record_of(task)->holds;
+}
+
+void unhold(uint64_t *task) {
+  auto &s = state();
+  const auto lock = std::scoped_lock(s.mutex);
+  unhold_locked(task);
 }
 
 auto is_finished(const uint64_t *task) -> bool {
@@ -868,6 +975,11 @@ auto cinder_rt_task_cancel(uint64_t *task) -> uint32_t {
 
 auto cinder_rt_task_drop(uint64_t *task) -> uint32_t {
   return cinder::runtime::scheduler::cancel_on_drop(task) ? 1U : 0U;
+}
+
+auto cinder_rt_task_release(uint64_t *task) -> uint64_t * {
+  cinder::runtime::scheduler::release(task);
+  return nullptr;
 }
 
 auto cinder_rt_task_is_finished(uint64_t *task) -> uint32_t {

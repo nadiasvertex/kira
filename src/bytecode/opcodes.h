@@ -418,10 +418,11 @@ enum class opcode : uint8_t {
   // the step function's body from the top) and `k` after the `k`th
   // `op_yield` — an index into the step function's own leading
   // resume-dispatch chain, not a raw saved program counter.
-  op_make_generator, ///< u16 dst, u16 step_function_index, u16 state_ptr —
-                     ///< reg[dst] = a fresh 5-slot heap block
-  ///< `{ step_function_index; reg[state_ptr]; resume_index=0;
-  ///< finished=0; value }`. `state_ptr` is the sentinel `0`
+  op_make_generator, ///< u16 dst, u16 step_function_index, u16 state_ptr,
+                     ///< u32 state_bytes — reg[dst] = a fresh coroutine
+  ///< object (`runtime/coroutine.h`) `{ step_function_index;
+  ///< reg[state_ptr]; resume_index=0; status=0; record=0; value;
+  ///< state_bytes }`. `state_ptr` is the sentinel `0`
   ///< when the generator has no state to preserve
   ///< (mirrors `op_make_closure`'s null-env convention).
   ///< Emitted by a generator's constructor function, not
@@ -682,7 +683,7 @@ struct operand_signature {
     return sig({reg, reg, reg, imm8});
 
   case opcode::op_make_generator:
-    return sig({reg, imm16, reg});
+    return sig({reg, imm16, reg, imm32});
   case opcode::op_yield:
     return sig({reg, reg, imm8});
   case opcode::op_await_pending:

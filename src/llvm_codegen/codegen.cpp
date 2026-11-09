@@ -712,6 +712,10 @@ public:
             i64_ty,
             runtime::coroutine::raw(runtime::coroutine::status::suspended)),
         slot_address(handle, runtime::coroutine::k_status_slot));
+    builder_.CreateStore(
+        llvm::ConstantInt::get(i64_ty,
+                               state_symbols.size() * k_private_entry_bytes),
+        slot_address(handle, runtime::coroutine::k_state_bytes_slot));
     builder_.CreateRet(handle);
 
     alloca_marker_->eraseFromParent();
@@ -3423,7 +3427,8 @@ private:
 
   /// Drops a generator value — mirrors `op_coroutine_cancel`: one that has
   /// not finished is marked cancelled (`finished = 2`) and resumed once, so
-  /// its body returns and drops what it owns.
+  /// its body returns and drops what it owns. Then `rt_task_release` frees
+  /// it, or leaves that to the scheduler if it still refers to the task.
   [[nodiscard]] auto
   compile_coroutine_cancel(const hir::hir_coroutine_cancel &node)
       -> std::expected<llvm::Value *, codegen_error> {
@@ -3481,6 +3486,9 @@ private:
     builder_.CreateBr(done_bb);
 
     builder_.SetInsertPoint(done_bb);
+    // The program no longer holds the coroutine; the runtime frees it once
+    // nothing else does.
+    builder_.CreateCall(runtime_intrinsic("rt_task_release"), {gen});
     return llvm::ConstantInt::get(i64, 0);
   }
 

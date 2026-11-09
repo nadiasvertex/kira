@@ -89,7 +89,7 @@ inline constexpr auto f64 = intrinsic_wire_kind::f64;
 /// Every runtime-called intrinsic, in the order `op_call_intrinsic` encodes
 /// as its `intrinsic_id` and the VM's native table (`src/bytecode/vm.cpp`)
 /// follows. Adding one means adding a row here and a function there.
-inline constexpr std::array<intrinsic_signature, 66> known_intrinsics = {{
+inline constexpr std::array<intrinsic_signature, 67> known_intrinsics = {{
     intrinsic("rt_stdin", wire::ptr, {}),
     intrinsic("rt_stdout", wire::ptr, {}),
     intrinsic("rt_stderr", wire::ptr, {}),
@@ -200,6 +200,8 @@ inline constexpr std::array<intrinsic_signature, 66> known_intrinsics = {{
     intrinsic("rt_task_block_on_all", wire::ptr,
               {wire::ptr, wire::i64}), // rt_task_block_on_all (tasks, count),
     intrinsic("rt_task_drop", wire::i32, {wire::ptr}), // rt_task_drop (task),
+    intrinsic("rt_task_release", wire::ptr,
+              {wire::ptr}), // rt_task_release (task),
     intrinsic("rt_crew_new", wire::ptr, {}),           // rt_crew_new (),
     intrinsic("rt_crew_spawn", wire::ptr,
               {wire::ptr, wire::ptr}), // rt_crew_spawn (crew, task),

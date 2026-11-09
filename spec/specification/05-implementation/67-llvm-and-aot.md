@@ -33,7 +33,7 @@ The resulting executable has no dependency on LLVM.
 
 ## Relationship to the VM
 
-The VM and the LLVM backend are separate implementations of the same HIR semantics. The codegen stress test compiles each program in `src/testdata/codegen_stress/` with both and requires them to agree. Because the two backends share layout rules, they can share a mistake and still agree, so a corpus file may also state its expected result with `# expect:`, which is checked independently of agreement. A file may also bound how many heap blocks `main` allocates on each tier with `# max-allocations:`, which catches storage that should be reused but is allocated afresh, such as a borrow taken in a loop.
+The VM and the LLVM backend are separate implementations of the same HIR semantics. The codegen stress test compiles each program in `src/testdata/codegen_stress/` with both and requires them to agree. Because the two backends share layout rules, they can share a mistake and still agree, so a corpus file may also state its expected result with `# expect:`, which is checked independently of agreement. A file may also bound how many heap blocks `main` allocates on each tier with `# max-allocations:`, which catches storage that should be reused but is allocated afresh, such as a borrow taken in a loop. `# max-live-blocks:` bounds how many heap blocks `main` leaves allocated, counted on every thread once `main` and the tasks it started have finished, which catches storage that is never freed.
 
 ## See also
 

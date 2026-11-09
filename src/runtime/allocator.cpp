@@ -1,6 +1,7 @@
 #include "src/runtime/allocator.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -45,9 +46,16 @@ namespace {
 /// See `heap_allocation_count`.
 thread_local uint64_t allocation_count = 0;
 
+/// See `heap_live_block_count`.
+std::atomic<int64_t> live_blocks = 0;
+
 } // namespace
 
 auto heap_allocation_count() -> uint64_t { return allocation_count; }
+
+auto heap_live_block_count() -> int64_t {
+  return live_blocks.load(std::memory_order_relaxed);
+}
 
 auto active_allocator_mode() -> allocator_mode {
   static const allocator_mode mode = resolve_mode();
@@ -62,6 +70,7 @@ extern "C" auto cinder_heap_alloc(uint64_t bytes) -> void * {
     return nullptr;
   }
   ++cinder::runtime::allocation_count;
+  cinder::runtime::live_blocks.fetch_add(1, std::memory_order_relaxed);
   if (cinder::runtime::active_allocator_mode() ==
       cinder::runtime::allocator_mode::arena) {
     return cinder::runtime::global_arena().allocate(size);
@@ -128,6 +137,7 @@ extern "C" void cinder_heap_free(void *ptr, uint64_t bytes) {
       cinder::runtime::allocator_mode::arena) {
     return; // The arena never reclaims; see `allocator_mode`.
   }
+  cinder::runtime::live_blocks.fetch_sub(1, std::memory_order_relaxed);
   std::free(ptr);
 }
 

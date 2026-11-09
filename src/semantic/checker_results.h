@@ -193,7 +193,8 @@ struct drop_plan {
   std::vector<std::pair<std::string, type_id>> droppable_fields;
   std::vector<variant_drop> variant_drops; ///< Sum types only.
   /// A `generator[T]`: dropping one that has not finished resumes it once to
-  /// return, which drops what its body still owns.
+  /// return, which drops what its body still owns. The coroutine is then
+  /// freed (`scheduler::release`).
   bool cancels_generator = false;
   /// A `fn` value: what its closure environment owns depends on which lambda
   /// made it, so dropping one runs the drop glue the closure carries, if any.

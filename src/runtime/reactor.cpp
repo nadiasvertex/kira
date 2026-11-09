@@ -329,6 +329,7 @@ void run_loop(reactor_state &r) {
     // The scheduler takes its own lock; never hold the reactor's with it.
     for (auto *task : ready) {
       scheduler::wake(task);
+      scheduler::unhold(task);
     }
     ready.clear();
   }
@@ -356,18 +357,24 @@ auto watch_fd(uint64_t *task) -> bool {
   if (!can_watch(fd)) {
     return false;
   }
+  // The list names the task until the reactor wakes it, which may be after
+  // the program has dropped it.
+  scheduler::hold(task);
   auto &r = state();
-  const auto lock = std::scoped_lock(r.mutex);
-  auto &waiting = r.fds[fd];
-  auto &list = what == interest::read ? waiting.readers : waiting.writers;
-  list.push_back(task);
-  if (arm(r, fd, waiting, what)) {
-    return true;
+  {
+    const auto lock = std::scoped_lock(r.mutex);
+    auto &waiting = r.fds[fd];
+    auto &list = what == interest::read ? waiting.readers : waiting.writers;
+    list.push_back(task);
+    if (arm(r, fd, waiting, what)) {
+      return true;
+    }
+    list.pop_back();
+    if (waiting.readers.empty() && waiting.writers.empty()) {
+      r.fds.erase(fd);
+    }
   }
-  list.pop_back();
-  if (waiting.readers.empty() && waiting.writers.empty()) {
-    r.fds.erase(fd);
-  }
+  scheduler::unhold(task);
   return false;
 }
 
@@ -377,6 +384,7 @@ auto watch_timer(uint64_t *task) -> bool {
   if (monotonic_now() >= deadline) {
     return false;
   }
+  scheduler::hold(task);
   auto &r = state();
   const auto lock = std::scoped_lock(r.mutex);
   const bool earliest = r.timers.empty() || deadline < r.timers.top().deadline;
@@ -390,8 +398,8 @@ auto watch_timer(uint64_t *task) -> bool {
 /// The poll both waiters share; `watch` registers one.
 auto poll_waiter(uint64_t *task, auto (*watch)(uint64_t *)->bool) -> uint64_t {
   if (task[co::k_status_slot] == co::raw(co::status::cancel_requested)) {
-    // A cancelled waiter may still be in a list. The reactor's later wake of
-    // a finished task does nothing.
+    // A cancelled waiter may still be in a list. It holds the task, so the
+    // reactor's later wake finds a finished task and does nothing.
     return co::raw(co::status::done);
   }
   switch (stage_of(task)) {
