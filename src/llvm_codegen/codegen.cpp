@@ -4984,8 +4984,7 @@ auto compile_module(std::span<const hir::hir_module *const> modules,
       // optimized caller sees garbage above bit 8 of an `int8` result.
       // Parameters are left alone: an attribute there obliges every call
       // site to extend too, and indirect call sites don't carry it.
-      if (return_ty->isIntegerTy() &&
-          return_ty->getIntegerBitWidth() < 32) {
+      if (return_ty->isIntegerTy() && return_ty->getIntegerBitWidth() < 32) {
         const auto kind = numeric_kind_of(types, fn->return_type);
         llvm_fn->addRetAttr(kind.has_value() && is_signed_integer(*kind)
                                 ? llvm::Attribute::SExt

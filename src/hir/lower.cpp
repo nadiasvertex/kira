@@ -4240,10 +4240,9 @@ auto lowerer::lower_where(const ast::where_expr &where)
   return ok_expr(make<hir_block>(where.span, *type, std::move(stmts)));
 }
 
-auto lowerer::read_then_drop_tasks(ptr_vec<hir_node> &stmts,
-                                   ptr<hir_expr> read, ptr_vec<hir_expr> tasks,
-                                   type_id type, source_span span)
-    -> ptr<hir_expr> {
+auto lowerer::read_then_drop_tasks(ptr_vec<hir_node> &stmts, ptr<hir_expr> read,
+                                   ptr_vec<hir_expr> tasks, type_id type,
+                                   source_span span) -> ptr<hir_expr> {
   const auto result = mint_symbol();
   stmts.push_back(ptr<hir_node>(make<hir_let>(
       span, result, std::string("<await result>"), std::move(read))));
@@ -4252,8 +4251,8 @@ auto lowerer::read_then_drop_tasks(ptr_vec<hir_node> &stmts,
         span, ptr<hir_expr>(make<hir_coroutine_cancel>(span, k_unknown_type,
                                                        std::move(task))))));
   }
-  return {make<hir_local_ref>(span, type, result,
-                              std::string("<await result>"))};
+  return {
+      make<hir_local_ref>(span, type, result, std::string("<await result>"))};
 }
 
 auto lowerer::lower_task_read(const void *key, source_span span,
@@ -4307,9 +4306,8 @@ auto lowerer::lower_task_read(const void *key, source_span span,
       !waited.has_value()) {
     return std::unexpected(waited.error());
   }
-  auto read =
-      ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
-                                             /*await_task=*/true));
+  auto read = ptr<hir_expr>(make<hir_generator_next>(span, type, task_ref(),
+                                                     /*await_task=*/true));
   if (!consumes) {
     return ok_expr(std::move(read));
   }
@@ -5107,6 +5105,14 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   // Drop every task through the tuple, so the tasks are a local the state
   // machine keeps across the wait above. Dropping a loser that has not
   // finished cancels it.
+  for (size_t i = 0; i < tasks.size(); ++i) {
+    auto args = ptr_vec<hir_expr>{};
+    args.push_back(ptr<hir_expr>(
+        make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    setup.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, runtime_call(span, "rt_task_cancel",
+                                               bool_type, std::move(args)))));
+  }
   for (size_t i = 0; i < tasks.size(); ++i) {
     setup.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         span, ptr<hir_expr>(make<hir_coroutine_cancel>(

@@ -465,8 +465,7 @@ auto coroutine_borrowed_locals(const hir_function &fn)
   auto w = walker{};
   w.on_let = [&](const hir_let &let) -> void {
     if (borrowed.contains(let.symbol)) {
-      found.push_back(
-          borrowed_local{.symbol = let.symbol, .type = let.type()});
+      found.push_back(borrowed_local{.symbol = let.symbol, .type = let.type()});
     }
   };
   for (const auto &stmt : fn.body->stmts) {

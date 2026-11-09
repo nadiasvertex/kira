@@ -192,8 +192,12 @@ struct outcome {
 
 /// The heap blocks still allocated once the tasks a run started have
 /// finished: a task the program dropped may be freed by the worker that
-/// finishes it.
-[[nodiscard]] auto settled_live_blocks() -> int64_t {
+/// finishes it. Only for a file that asks (`# max-live-blocks:`), since a
+/// program may leave a task running that only process exit stops.
+[[nodiscard]] auto settled_live_blocks(bool count_live) -> int64_t {
+  if (!count_live) {
+    return 0;
+  }
   cinder::runtime::scheduler::wait_idle();
   return cinder::runtime::heap_live_block_count();
 }
@@ -215,7 +219,8 @@ struct bytecode_run {
 
 auto run_bytecode(const fs::path &path,
                   std::span<const hir::hir_module *const> modules,
-                  const cinder::semantic::type_table &types) -> bytecode_run {
+                  const cinder::semantic::type_table &types, bool count_live)
+    -> bytecode_run {
   auto compiled = bcc::compile_module(modules, types);
   if (!compiled.has_value()) {
     fail(std::format("`{}`: expected bytecode_compiler to accept this "
@@ -244,7 +249,7 @@ auto run_bytecode(const fs::path &path,
            std::format("`{}`: expected static initialization to succeed",
                        path.string()));
   }
-  const auto live_before = settled_live_blocks();
+  const auto live_before = settled_live_blocks(count_live);
   const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       vm.run(static_cast<uint16_t>(index), std::array<bc::slot_value, 0>{});
@@ -253,7 +258,7 @@ auto run_bytecode(const fs::path &path,
                     : outcome{.panicked = true, .panic = run.error()};
   result.allocations =
       cinder::runtime::heap_allocation_count() - allocations_before;
-  result.live_blocks = settled_live_blocks() - live_before;
+  result.live_blocks = settled_live_blocks(count_live) - live_before;
   return bytecode_run{.module = std::move(*compiled), .result = result};
 }
 
@@ -268,8 +273,8 @@ struct llvm_run {
 auto run_llvm(const fs::path &path,
               std::span<const hir::hir_module *const> modules,
               const cinder::semantic::type_table &types,
-              std::optional<bc::numeric_kind> return_kind, bool as_ptr)
-    -> llvm_run {
+              std::optional<bc::numeric_kind> return_kind, bool as_ptr,
+              bool count_live) -> llvm_run {
   auto compiled = lc::compile_module(modules, types);
   if (!compiled.has_value()) {
     fail(std::format(
@@ -284,7 +289,7 @@ auto run_llvm(const fs::path &path,
                      path.string(), jit.error()));
   }
 
-  const auto live_before = settled_live_blocks();
+  const auto live_before = settled_live_blocks(count_live);
   const auto allocations_before = cinder::runtime::heap_allocation_count();
   auto run =
       as_ptr ? jit->run_ptr_result("main") : jit->run("main", return_kind);
@@ -293,7 +298,7 @@ auto run_llvm(const fs::path &path,
                     : outcome{.panicked = true, .panic = run.error()};
   result.allocations =
       cinder::runtime::heap_allocation_count() - allocations_before;
-  result.live_blocks = settled_live_blocks() - live_before;
+  result.live_blocks = settled_live_blocks(count_live) - live_before;
   return llvm_run{.jit = std::move(*jit), .result = result};
 }
 
@@ -574,9 +579,10 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
                          cinder::semantic::type_id return_type,
                          std::optional<bc::numeric_kind> return_kind,
                          bool is_heap_result) -> tier_runs {
-  auto runs = tier_runs{
-      .vm = run_bytecode(path, module_set, types),
-      .jit = run_llvm(path, module_set, types, return_kind, is_heap_result)};
+  const auto count_live = max_live_blocks_of(text).has_value();
+  auto runs = tier_runs{.vm = run_bytecode(path, module_set, types, count_live),
+                        .jit = run_llvm(path, module_set, types, return_kind,
+                                        is_heap_result, count_live)};
   const auto &vm_result = runs.vm.result;
   const auto &jit_result = runs.jit.result;
 
@@ -601,9 +607,13 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
             ? values_equal(types, return_type, vm_result.bits, jit_result.bits)
             : vm_result.bits == jit_result.bits;
     expect(agree,
-           std::format("`{}`: bytecode VM and LLVM JIT disagree on `main`'s "
-                       "result",
-                       path.string()));
+           is_heap_result
+               ? std::format("`{}`: bytecode VM and LLVM JIT disagree on "
+                             "`main`'s result",
+                             path.string())
+               : std::format("`{}`: bytecode VM and LLVM JIT disagree on "
+                             "`main`'s result (VM bits {}, JIT bits {})",
+                             path.string(), vm_result.bits, jit_result.bits));
     if (const auto expected = expected_result_of(text); expected.has_value()) {
       expect(!is_heap_result,
              std::format("`{}`: `# expect:` only applies to a scalar `main` "

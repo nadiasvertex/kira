@@ -920,8 +920,8 @@ private:
     const auto ref = const_cast<semantic::type_table &>(types_).ref_to(
         type, unary.op == ast::unary_op::addr_of_mut);
     // One deref, not `deref`'s loop: the value may itself be a reference.
-    slot = ptr<hir_expr>(hir::make<hir_unary>(
-        span, type, ast::unary_op::deref, borrow(std::move(slot), ref)));
+    slot = ptr<hir_expr>(hir::make<hir_unary>(span, type, ast::unary_op::deref,
+                                              borrow(std::move(slot), ref)));
   }
 
   auto project(ptr<hir_expr> &object) -> void {

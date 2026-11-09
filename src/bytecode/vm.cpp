@@ -1611,8 +1611,7 @@ auto intrinsic_rt_task_drop(std::span<const slot_value> args) -> slot_value {
       cinder::runtime::scheduler::cancel_on_drop(task_of(args[0])));
 }
 
-auto intrinsic_rt_task_release(std::span<const slot_value> args)
-    -> slot_value {
+auto intrinsic_rt_task_release(std::span<const slot_value> args) -> slot_value {
   cinder::runtime::scheduler::release(task_of(args[0]));
   return slot_value{}; // `unit`
 }
