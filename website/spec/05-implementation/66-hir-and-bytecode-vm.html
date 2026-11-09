@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>66-hir-and-bytecode-vm</title>
   <style>
@@ -43,6 +43,7 @@ id="toc-hir-and-the-bytecode-vm">66. HIR and the Bytecode VM</a>
 <li><a href="#bytecode-compiler" id="toc-bytecode-compiler">Bytecode
 compiler</a></li>
 <li><a href="#the-vm" id="toc-the-vm">The VM</a></li>
+<li><a href="#threads" id="toc-threads">Threads</a></li>
 <li><a href="#hosted-runs" id="toc-hosted-runs">Hosted runs</a></li>
 <li><a href="#use-from-the-command-line"
 id="toc-use-from-the-command-line">Use from the command line</a></li>
@@ -76,6 +77,19 @@ have been expanded.</li>
 and never infers. It fails closed: an unsupported or not fully typed
 construct is a reported error, never a skipped function or
 placeholder.</p>
+<p>In a task body, a suspension point has to be a statement. Lowering
+hoists each <code>await</code> in a statement into statements ahead of
+it. A loop whose condition awaits becomes <code>while true:</code> with
+the hoisted statements and an <code>if not cond: break</code> at its
+top. An <code>if</code> or <code>match</code> whose value is used and
+whose branches can suspend (an <code>await</code>, <code>?</code>, a
+<code>crew</code> exit, <code>par</code>, <code>race</code>) becomes a
+statement that assigns each branch’s last expression to a hidden
+<code>&lt;branch value&gt;</code> local; that <code>hir_let</code> has
+no initializer and carries its type in <code>declared_type</code>. An
+<code>async:</code> block or <code>on(ctx):</code> body is lowered to a
+synthesized task function whose parameters are the outer locals it
+reads.</p>
 <h2 id="hir-passes">HIR passes</h2>
 <p>These run once, before either backend:</p>
 <ul>
@@ -91,7 +105,39 @@ Optimization</a>).</li>
 each lambda captures and how.</li>
 <li><strong>Generator state</strong>
 (<code>live_across_yield.cpp</code>). Finds the locals live across a
-<code>yield</code>; these form the generator’s state block.</li>
+<code>yield</code>; these form the generator’s state block.
+<code>op_yield</code> stores the item in the object’s value slot and
+returns <code>suspended</code>; <code>op_coroutine_resume</code> yields
+the step function’s status, or the stored status if the coroutine
+already finished. A task’s <code>await</code> is a
+<code>hir_yield</code> with <code>awaits</code> set: it polls the
+awaited task through the scheduler, and <code>op_await_pending</code>
+returns <code>pending</code> when that task is not finished. The
+state-block analysis treats it like any other suspension point. A local
+of a step function whose address is taken, or that a closure captures by
+reference (<code>captures.cpp</code>,
+<code>coroutine_borrowed_locals</code>), lives in its own state-block
+entry: its register holds that entry’s address, as a promoted cell’s
+register holds the cell’s, and is never synced. A <code>&amp;x</code>
+held across a suspension therefore does not point into a frame that has
+returned, and a <code>let</code> that runs again in a loop reuses the
+entry. A borrowed temporary, such as
+<code>await f(&amp;xs[a..b])</code>, is one of these locals, because
+<code>make_references_explicit</code> stores every borrowed value that
+is not a place in a local first. The subject of a <code>match</code>,
+<code>while let</code> or <code>let ... else</code> is a local that
+every arm’s bindings read, so it can be suspended state too; the step
+function writes the subject into the register a resumed poll
+reloads.</li>
+<li><strong><code>or else</code></strong> (<code>lower_or_else</code> in
+<code>lower.cpp</code>). <code>x or else y</code> lowers to a two-arm
+<code>hir_match</code> on the operand, as <code>?</code> does. The
+success arm yields the payload. The failure arm yields the fallback, or
+holds the <code>return</code>, <code>break</code> or
+<code>continue</code> statement of a jump fallback. The ownership check
+records the <code>@err</code> payload drop in
+<code>unmatched_drops</code>, keyed by the AST node. Neither backend nor
+compile-time evaluation knows the form exists.</li>
 <li><strong>Frame budget</strong> (<code>frame_budget.cpp</code>).
 Rejects a function whose stack-allocated buffers exceed the per-frame
 limit.</li>
@@ -123,13 +169,24 @@ do not depend on the host stack.</li>
 compiler knows every type statically. Scalars live in the slot. Every
 other value lives in heap memory laid out by
 <code>src/runtime/layout.h</code>, the same layout the LLVM backend
-uses.</li>
+uses. A register is 16 bytes (<code>slot_value</code>), so an
+<code>int128</code>/<code>uint128</code> fits in one. Heap blocks keep
+8-byte uniform slots (<code>heap_word</code>); in the uniform-slot
+shapes, such as sum payloads, a 128-bit value takes two consecutive
+slots (<code>runtime::slot_width</code>,
+<code>runtime::sum_payload_slot</code>).</li>
+<li><strong>Private blocks.</strong> Closure environments, generator
+state blocks and promoted cells belong to the VM alone. Each entry is
+one whole 16-byte register image, so these blocks need no per-type
+layout.</li>
 <li><strong>Instructions</strong> cover arithmetic in checked, wrapping
 and saturating forms; comparisons and casts; jumps; direct, indirect and
-tail calls; closures; generators (<code>op_make_generator</code>,
-<code>op_yield</code>, <code>op_generator_next</code>); stack and heap
-allocation; slot and indexed loads and stores; address-of; panics;
-atomics; calls into runtime intrinsics; and host calls.</li>
+tail calls; closures; generators and tasks
+(<code>op_make_generator</code>, <code>op_yield</code>,
+<code>op_await_pending</code>, <code>op_coroutine_resume</code>,
+<code>op_coroutine_cancel</code>); stack and heap allocation; slot and
+indexed loads and stores; address-of; panics; atomics; calls into
+runtime intrinsics; and host calls.</li>
 <li><strong>Runtime support</strong> comes from
 <code>src/runtime/</code>: the allocator, string operations, formatting,
 platform queries and I/O. The VM calls these directly; compiled code
@@ -138,6 +195,20 @@ links against the same library.</li>
 the LLVM backend, so both tiers fail the same way on overflow, division
 by zero, a failed contract, and similar conditions.</li>
 </ul>
+<h2 id="threads">Threads</h2>
+<p><code>vm</code> holds only the module and the globals. Everything a
+run mutates, the call frames and the step counter, is local to one
+<code>execute</code> call, so one <code>vm</code> can run any number of
+executions on different threads. The task scheduler polls a task by
+calling <code>vm::poll_task</code>, which runs the task’s step function
+in an execution of its own. A panic in it is thrown as
+<code>panic_error</code> and the scheduler records it as the task’s
+failure. The globals table is the one piece of shared mutable state, and
+it is not locked: sharing data between tasks is governed by the
+language’s rules for it (<a
+href="../02-intermediate/30-data-race-freedom.html">Data-Race
+Freedom</a>), not by the VM. Code run at compile time cannot reach the
+scheduler; the task intrinsics are refused in a hosted run.</p>
 <h2 id="hosted-runs">Hosted runs</h2>
 <p>A hosted run supplies limits to the VM: a step budget, whether
 effects are allowed, and a callback for <code>op_host_call</code>.

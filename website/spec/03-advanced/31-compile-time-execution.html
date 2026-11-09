@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>31-compile-time-execution</title>
   <style>
@@ -92,6 +92,13 @@ whatever it calls.</li>
 See <a
 href="32-compile-time-semantics.html#compile-time-memory">Compile-Time
 Semantics § Compile-Time Memory</a>.</li>
+<li>Code cannot change a static. Assigning to it or to any part of it,
+borrowing it with <code>&amp;mut</code>, calling a <code>mut self</code>
+method on it, and moving a non-<code>copy</code> part out of it are
+compile errors. Reading it, borrowing it with <code>&amp;</code>, and
+copying it into a local <code>var</code> are allowed. Because of this
+rule, every function and task can share one copy of a static without
+locks.</li>
 <li>A <code>static</code> item may also appear inside a
 <code>trait</code>/<code>impl</code> body as a required or provided
 constant (<code>check.cpp</code>’s trait-item handling for

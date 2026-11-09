@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>50-aggregation</title>
   <style>
@@ -53,9 +53,9 @@ terminals</a></li>
 <p>Covers every terminal (draining) algorithm in
 <code>src/std/algo.cn</code>: functions that consume an
 <code>iterator[T]</code> and return a final answer rather than another
-lazy iterator. Each takes its iterator by value and moves it into a
-local <code>var</code>, since <code>next</code> needs a mutable receiver
-and a parameter is not one.</p>
+lazy iterator. Each takes its iterator by value, which lets it call
+<code>next</code> (a <code>mut self</code> method) on the parameter
+directly.</p>
 <p>The short-circuiting terminals — <code>any</code>, <code>all</code>,
 <code>find</code>, <code>find_map</code>, <code>position</code> — return
 from inside their loop rather than setting a flag and draining to the

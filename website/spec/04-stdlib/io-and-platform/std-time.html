@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.13" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>std-time</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">std-time</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#std.time" id="toc-std.time"><code>std.time</code></a>
+<ul>
+<li><a href="#types" id="toc-types">Types</a></li>
+<li><a href="#durations" id="toc-durations">Durations</a></li>
+<li><a href="#instants" id="toc-instants">Instants</a></li>
+<li><a href="#sleeping" id="toc-sleeping">Sleeping</a></li>
+<li><a href="#implementation-status"
+id="toc-implementation-status">Implementation status</a></li>
+<li><a href="#see-also" id="toc-see-also">See also</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="std.time"><code>std.time</code></h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>Durations, the monotonic clock, and sleeping. A sleeping task gives
+up its thread until its deadline passes, so other tasks run in the
+meantime.</p>
+<p><code>std.time</code> (<code>src/std/time.cn</code>) is written in
+Cinder over two intrinsics: <code>rt_monotonic_now</code> reads the
+clock, and <code>rt_sleep_until</code> returns a task that the event
+loop behind the <code>io</code> context finishes at a deadline (<a
+href="../../05-implementation/69-task-scheduler.html#the-io-event-loop">The
+Task Scheduler</a>).</p>
+<h2 id="types">Types</h2>
+<pre class="cinder"><code>pub type duration = { nanos: uint64 }
+pub type instant = { nanos: uint64 }</code></pre>
+<ul>
+<li><code>duration</code> is a span of time in nanoseconds.</li>
+<li><code>instant</code> is a point on the monotonic clock. The clock
+never goes backwards, and its starting point is arbitrary, so instants
+are compared and subtracted within one run of a program and mean nothing
+on their own.</li>
+</ul>
+<h2 id="durations">Durations</h2>
+<pre class="cinder"><code>extend duration:
+    pub def from_nanos(n: uint64) -&gt; duration
+    pub def from_micros(n: uint64) -&gt; duration
+    pub def from_millis(n: uint64) -&gt; duration
+    pub def from_secs(n: uint64) -&gt; duration
+    pub def as_nanos(self) -&gt; uint64
+    pub def as_micros(self) -&gt; uint64
+    pub def as_millis(self) -&gt; uint64
+    pub def as_secs(self) -&gt; uint64</code></pre>
+<p>The <code>from_</code> functions build a duration from a count of the
+named unit. The <code>as_</code> methods return the whole duration in
+that unit, rounded down.</p>
+<h2 id="instants">Instants</h2>
+<pre class="cinder"><code>pub def now() -&gt; instant
+
+extend instant:
+    pub def duration_since(self, earlier: &amp;instant) -&gt; duration
+    pub def elapsed(self) -&gt; duration
+    pub def after(self, d: &amp;duration) -&gt; instant</code></pre>
+<ul>
+<li><code>now</code> reads the monotonic clock.</li>
+<li><code>duration_since</code> is the time from <code>earlier</code> to
+this instant, or zero if <code>earlier</code> is later.</li>
+<li><code>elapsed</code> is the time from this instant to now.</li>
+<li><code>after</code> is the instant <code>d</code> after this
+one.</li>
+</ul>
+<h2 id="sleeping">Sleeping</h2>
+<pre class="cinder"><code>pub async def sleep(d: duration) -&gt; unit
+pub async def sleep_until(t: instant) -&gt; unit</code></pre>
+<p><code>sleep</code> suspends the calling task for at least
+<code>d</code>. <code>sleep_until</code> suspends it until the clock
+reaches <code>t</code>, and returns at once if <code>t</code> has
+passed. A sleeping task holds no thread, so many tasks can sleep on one
+<code>io</code> worker at once. A sleep is cancelled like any other
+<code>await</code>: a <code>race</code> that a sleeper loses stops it
+without waiting for its deadline.</p>
+<pre class="cinder"><code>use std.time.{duration, sleep}
+
+async def nap(ms: uint64, tag: int32) -&gt; int32:
+    await sleep(duration.from_millis(ms))
+    return tag
+
+async def main() -&gt; int32:
+    # Both naps run at once, so this takes about 50 ms, not 100.
+    let (a, b) = await par:
+        nap(50, 1)
+        nap(50, 2)
+    # The 10 ms nap wins; the 5 s one is cancelled.
+    let first = await race:
+        nap(5000, 0)
+        nap(10, 40)
+    return a + b + first</code></pre>
+<h2 id="implementation-status">Implementation status</h2>
+<p>Everything in this chapter is implemented on both backends. A sleep
+that is cancelled stays in the event loop’s timer queue until its
+deadline, where it is discarded.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="54-std-io.html#asynchronous-io"><code>std.io</code></a> —
+asynchronous reads and writes, which wait in the same event loop.</li>
+<li><a
+href="../../02-intermediate/26-concurrency-execution-model.html">Concurrency:
+The Execution Model</a> — the <code>io</code> context.</li>
+</ul>
+</body>
+</html>

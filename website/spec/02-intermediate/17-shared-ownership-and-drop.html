@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>17-shared-ownership-and-drop</title>
   <style>
@@ -287,7 +287,7 @@ over a borrowed collection of non-<code>copy</code> elements is rejected
 (<code>src/testdata/semantic_ownership_check_test/reject_consuming_loop_over_borrow.cn</code>).</li>
 <li>Generators drop their locals as any function does, and a generator
 dropped before it finishes is cancelled
-(<code>hir_generator_cancel</code>): resumed with its
+(<code>hir_coroutine_cancel</code>): resumed with its
 <code>finished</code> slot set to <code>2</code>, its body returns from
 its start or the <code>yield</code> it is suspended at
 (<code>src/testdata/std_test/generator_drops.cn</code>).</li>

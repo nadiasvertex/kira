@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.13" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>69-task-scheduler</title>
+  <style>
+    /* Default styles provided by pandoc.
+    ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+    */
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: 1.5em;}
+    div.column{flex: auto;}
+    @media screen {
+    div.columns{gap: min(4vw, 1.5em);}
+    div.column{overflow-x: auto;}
+    }
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+  </style>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">69-task-scheduler</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#the-task-scheduler" id="toc-the-task-scheduler">69. The
+Task Scheduler</a>
+<ul>
+<li><a href="#pools-and-workers" id="toc-pools-and-workers">Pools and
+workers</a></li>
+<li><a href="#task-lifecycle" id="toc-task-lifecycle">Task
+lifecycle</a></li>
+<li><a href="#awaiting" id="toc-awaiting">Awaiting</a></li>
+<li><a href="#waiting-on-a-word" id="toc-waiting-on-a-word">Waiting on a
+word</a></li>
+<li><a href="#the-io-event-loop" id="toc-the-io-event-loop">The
+<code>io</code> event loop</a></li>
+<li><a href="#process-shutdown" id="toc-process-shutdown">Process
+shutdown</a></li>
+<li><a href="#cancellation" id="toc-cancellation">Cancellation</a></li>
+<li><a href="#allocator" id="toc-allocator">Allocator</a></li>
+<li><a href="#testing" id="toc-testing">Testing</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="the-task-scheduler">69. The Task Scheduler</h1>
+<p><strong>Status:</strong> Implemented</p>
+<p>The shared runtime that runs tasks on worker threads for both
+backends, with an event loop for tasks that wait on the operating
+system. It lives in <code>src/runtime/scheduler.{h,cpp}</code> and
+<code>src/runtime/reactor.{h,cpp}</code>, behind a C++ interface the VM
+uses and a C ABI that compiled code calls.</p>
+<h2 id="pools-and-workers">Pools and workers</h2>
+<p>A task runs in a pool, one per execution context (<a
+href="../02-intermediate/26-concurrency-execution-model.html">The
+Execution Model</a>). The <code>io</code> pool runs one poll at a time
+by default, so <code>io</code> tasks interleave but do not run in
+parallel. A task is not bound to a thread: its polls may run on
+different workers, and the checker does not assume otherwise. The
+<code>cpu</code> pool has one worker per hardware thread.
+<code>CINDER_IO_WORKERS</code> and <code>CINDER_CPU_WORKERS</code>
+override the counts; the test harness sets the first to run
+<code>io</code> tasks in parallel. Worker counts do not change what the
+compiler accepts. A pool starts its threads when it first has work and
+keeps them for the life of the process. A worker has an 8 MiB stack, the
+usual size of a main thread’s, so a task can recurse as deep in compiled
+code as the entry function can. If no thread can be started and no
+worker remains to reach the queue, the process prints a panic and exits
+with status 101. The count limits how many polls run at once, not how
+many threads exist: a plain function a task called cannot suspend, so a
+blocking wait there gives the worker’s place to another worker, started
+if none is idle. When the wait ends the worker waits for a place, ahead
+of the queue, so an <code>io</code> pool of one still runs one poll at a
+time. Each nested blocking wait holds a thread, and the threads stay for
+the life of the process. All scheduling state is behind one mutex, and a
+step function runs outside it.</p>
+<p>Every <code>async def</code> is an <code>io</code> task today.
+<code>await on(cpu): ...</code> starts a task in the <code>cpu</code>
+pool.</p>
+<h2 id="task-lifecycle">Task lifecycle</h2>
+<p>A task is a coroutine object (<a
+href="66-hir-and-bytecode-vm.html">HIR and the Bytecode VM</a>). It is
+inert until the scheduler takes it over, which happens when a program
+calls <code>spawn</code>, when another task awaits it, or when the entry
+function blocks on it. Taking a task over allocates a record for it and
+queues it.</p>
+<p>A coroutine object is freed with its state block and record once
+three things hold: the program has dropped its handle, the task has
+finished, and nothing in the runtime still names it. Dropping a handle
+cancels the task if it has not finished, then calls <code>release</code>
+(<code>rt_task_release</code>). A coroutine the scheduler never took
+over, such as a generator, is freed by <code>release</code> at once,
+since its dropper has already resumed it to the end. For one the
+scheduler owns, <code>release</code> marks the record, and whichever of
+<code>release</code> and the task’s finish comes last frees it. A
+finished task leaves every waiter list it is in, so no list names a
+freed task: each record keeps the tasks it waits on
+(<code>waiting_on</code>) and the memory word it waits for. A crew holds
+each task spawned into it until the crew is freed, since it reads them
+back after the block’s handles are gone, and the reactor holds a waiter
+while one of its lists names it (<code>hold</code>/<code>unhold</code>).
+<code>await</code> consumes the task it waits for: lowering drops the
+task once its result is read, and <code>par</code> and <code>race</code>
+drop every branch task the same way.</p>
+<p>A worker pops a task and calls its step function through the runner
+the task was spawned with: the VM’s runner polls the task on the VM, and
+the native runner calls the compiled function pointer. The status it
+returns decides what happens next:</p>
+<ul>
+<li><code>suspended</code> or <code>done</code>: the task produced its
+result or finished. The scheduler marks it done and moves its waiters to
+the run queue.</li>
+<li><code>pending</code>: the task awaited something unfinished and
+registered itself as a waiter. If a wake arrived while the step function
+was still running, the task is queued again at once; otherwise it
+waits.</li>
+<li>an exception: the scheduler stores it as the task’s failure and
+finishes the task.</li>
+</ul>
+<h2 id="awaiting">Awaiting</h2>
+<p><code>await_poll(self, awaited)</code> is called by a task’s step
+function at each <code>await</code>. It returns true if
+<code>awaited</code> is done (rethrowing its failure if it panicked).
+Otherwise it queues <code>awaited</code> if nothing had started it, adds
+<code>self</code> to its waiters, and returns false, and the step
+function returns <code>pending</code>. On wake the step function resumes
+at the same <code>await</code> and polls again, so a spurious wake is
+harmless. <code>await_any_poll</code> does the same for a set of tasks
+and is true when any one is done; it backs <code>race</code>.
+<code>await_all_poll</code> is true when every task is done; if one has
+panicked it cancels the others and rethrows once they have stopped. It
+backs <code>par</code>, with <code>block_on_all</code> for callers that
+are not tasks. A <code>crew</code> is a runtime object
+(<code>crew_new</code>, <code>crew_spawn</code>,
+<code>crew_join_poll</code>/<code>crew_join</code>,
+<code>crew_free</code>, and
+<code>crew_size</code>/<code>crew_task</code> for reading the tasks
+back) holding the tasks spawned into one block; joining it is
+<code>await_all</code>/<code>block_on_all</code> over them.
+<code>crew_spawn</code> marks each task crew-owned so that dropping the
+program’s handle (<code>cancel_on_drop</code>, used by drop glue) does
+not cancel it. <code>block_on</code> serves callers that are not tasks,
+such as the entry <code>async def main</code> or a plain function a task
+called: it queues the task and blocks the calling thread until it is
+done. A cancel does not reach a task a plain function is blocked on with
+<code>block_on</code>, so the worker waits for it to finish normally;
+only the tasks of a crew the task has open are cancelled.</p>
+<p>A panic inside a task does not end the process. Both tiers share one
+path. <code>report_panic</code> prints the message once where the panic
+happens, and on a worker the panic then unwinds to
+<code>worker_loop</code>: the VM throws <code>panic_error</code>, and
+compiled code throws <code>task_panic</code> through its frames, which
+carry unwind tables for this. No landing pads run, so the panicking
+task’s own drops are skipped on both tiers. The failure is rethrown in
+the task or function that awaits it, so it propagates up the chain of
+awaits to the entry function. A panic skips the end of any
+<code>crew</code> block the task’s body had open, so each task keeps a
+list of its open crews. A task that fails with crews open enters the
+<code>unwinding</code> state: the scheduler cancels their tasks,
+finishes the failed task once they have stopped, and frees the crews.
+Awaiters see the failure only then, so a crew’s tasks never outlive the
+frame they may borrow from.</p>
+<p>A panic on a thread that is not a worker has nowhere to propagate,
+and that covers one rethrown into the entry function.
+<code>exit_after_panic</code> runs <code>shutdown</code> and then
+<code>_Exit(101)</code>, so the entry function’s frame outlives its
+crews and no static destructor runs beside a worker.</p>
+<h2 id="waiting-on-a-word">Waiting on a word</h2>
+<p><code>std.sync</code> builds its locks and channels on three calls
+that wait on a 64-bit word. <code>wait_word(word, expected)</code>
+blocks the calling thread while the word holds <code>expected</code>; on
+a worker it gives up the worker’s place like any other blocking wait.
+<code>word_waiter(word, expected)</code> returns a task that finishes
+once the word no longer holds <code>expected</code>, which a task awaits
+to suspend instead of block. <code>wake_word(word)</code> wakes every
+wait on the word. A wait re-reads the word under the scheduler’s lock
+and a wake takes the same lock, so a change followed by a wake cannot be
+missed. The waiters are kept in a table keyed by the word’s address. The
+calls are reached from Cinder as <code>rt_word_wait</code>,
+<code>rt_word_waiter</code> and <code>rt_word_wake</code>, together with
+<code>rt_atomic_load</code>, <code>rt_atomic_store</code> and
+<code>rt_atomic_compare_exchange</code>, which are sequentially
+consistent.</p>
+<h2 id="the-io-event-loop">The <code>io</code> event loop</h2>
+<p>A task that waits for a file descriptor or a deadline waits in the
+reactor (<code>src/runtime/reactor.{h,cpp}</code>) and holds no thread.
+One reactor thread waits on the operating system’s readiness queue
+(kqueue on macOS and the BSDs, epoll on Linux) and on a heap of timers
+ordered by deadline. It starts on first use and lives for the rest of
+the process; its state is leaked on purpose, like the scheduler’s.</p>
+<p>A waiter is a small native coroutine object, built the same way as a
+word waiter and spawned into the <code>io</code> pool at once.
+<code>fd_waiter(fd, interest)</code> finishes when the descriptor is
+ready to read or write, and <code>timer_waiter(deadline)</code> when the
+monotonic clock (<code>monotonic_now</code>) reaches the deadline. Its
+first poll registers it with the reactor and returns
+<code>pending</code>. The reactor marks a ready waiter in a stage word
+in its second value slot, outside the scheduler’s lock, and then wakes
+it with <code>scheduler::wake</code>, so its next poll returns
+<code>done</code>. The reactor never holds its own lock while it calls
+the scheduler. A wake that arrives while the first poll is still running
+is remembered by the scheduler, as for any other task.</p>
+<ul>
+<li><strong>Descriptors.</strong> Each descriptor has a list of read
+waiters and a list of write waiters. A registration is one-shot: an
+event takes every waiter in the direction it reports, and the descriptor
+is armed again only when a new waiter arrives. kqueue keeps the read and
+write filters apart. epoll keeps one registration per descriptor, which
+a one-shot event disables entirely, so the reactor re-arms it for the
+direction that still has waiters. An error or hang-up wakes waiters in
+both directions. A regular file, a directory, or a descriptor that is
+not open is never registered, and its waiter finishes on its first poll:
+such a descriptor never blocks, epoll refuses it, and kqueue would
+report an empty regular file as never readable.</li>
+<li><strong>Timers.</strong> A timer whose deadline has passed finishes
+on its first poll. An earlier timer than the one the reactor is waiting
+for writes a byte to a wake-up pipe the readiness queue also watches, so
+the wait ends and is recomputed. A timeout is rounded up to whole
+milliseconds for epoll, so a sleep never ends early.</li>
+<li><strong>Cancellation.</strong> A cancelled waiter is polled again by
+the scheduler and finishes. It stays in the reactor’s list until its
+descriptor’s next event or its deadline, when waking a finished task
+does nothing. The reactor holds the waiter while it is listed, so the
+stale entry cannot point at freed memory, and the waiter is freed once
+the reactor lets go.</li>
+</ul>
+<p>The calls reach Cinder as <code>rt_fd_readable</code>,
+<code>rt_fd_writable</code>, <code>rt_sleep_until</code> and
+<code>rt_monotonic_now</code>, with <code>rt_pipe</code>,
+<code>rt_set_nonblocking</code> and <code>rt_errno_would_block</code>
+for setting up non-blocking descriptors. <code>std.io</code>’s
+<code>async_file</code> and <code>std.time</code>’s <code>sleep</code>
+are written in Cinder over them (<a
+href="../04-stdlib/io-and-platform/54-std-io.html#asynchronous-io"><code>std.io</code></a>,
+<a
+href="../04-stdlib/io-and-platform/std-time.html"><code>std.time</code></a>).</p>
+<h2 id="process-shutdown">Process shutdown</h2>
+<p><code>shutdown</code> cancels every unfinished task and waits up to
+one second for them to stop. It reports whether they all did, since a
+task that never reaches a cancellation check cannot be stopped. It runs
+at process exit through <code>atexit</code>, and <code>cinder run</code>
+calls it before freeing the VM and module; if a task is still running,
+the driver calls <code>_Exit</code> with the program’s status instead of
+freeing what the task reads. A task nobody awaited is therefore
+cancelled when the entry function returns.</p>
+<h2 id="cancellation">Cancellation</h2>
+<p><code>cancel(task)</code> marks a task the scheduler owns so that it
+unwinds. A queued task is flagged, a waiting task is flagged and queued,
+and a running task is flagged and handled when its step function
+returns. The flag is the same <code>cancel_requested</code> status a
+dropped generator sees, so the body runs its drops and returns at its
+next cancellation check. A cancelled task’s <code>await</code> cancels
+what it awaits and stays pending until that has stopped, so the check
+after it runs with nothing left borrowing from the frame. Cancelling a
+task also cancels the tasks of every crew it has open, at once,
+whichever <code>await</code> its body is at. A task the scheduler does
+not own is resumed by its dropper directly, as before.</p>
+<p>The losers of a <code>race</code> are the exception: they are
+cancelled but not waited for.</p>
+<h2 id="allocator">Allocator</h2>
+<p><code>cinder_heap_alloc</code> and its companions are safe to call
+from any thread. The system allocator inherits that from the C library;
+the arena allocator takes a lock around each bump.</p>
+<h2 id="testing">Testing</h2>
+<p><code>reactor_test</code> runs the event loop with one
+<code>io</code> worker: timers in deadline order, 100 timers waiting
+together, readers and writers on pipes and on one socket, hang-up, a
+full pipe, regular files and closed descriptors, and cancelled waiters.
+<code>scheduler_test</code> drives the scheduler with fake step
+functions, including 400 tasks on a four-worker pool, cancellation
+reaching awaited tasks and open crews, a panic in a crew body, and
+<code>shutdown</code>. <code>allocator_test</code> runs eight threads
+against the allocator, with the system and the arena allocator. Corpus
+files <code>150</code>–<code>153</code>,
+<code>155</code>–<code>159</code> and <code>169</code>–<code>175</code>
+(<code>on(cpu)</code>, <code>race</code> cancelling losers,
+<code>crew</code>, <code>crew</code> collecting errors, every exit from
+a <code>crew</code> body, <code>async:</code> blocks, borrows held
+across <code>await</code>, <code>std.sync</code>, suspending value
+branches, generic tasks, <code>match</code> subjects held across
+<code>await</code>, and sleeps and pipes in the event loop) run awaiting
+tasks, multiword results, <code>par</code>, <code>race</code> and a
+shared atomic counter on both backends, and the harness runs them with
+four <code>io</code> workers. Corpus files <code>178</code> and
+<code>179</code> loop over awaits, spawns, <code>crew</code>,
+<code>par</code>, <code>race</code> and dropped generators, and bound
+the heap blocks left behind with <code># max-live-blocks:</code>.
+<code>bazelisk test --config=tsan</code> builds under
+ThreadSanitizer.</p>
+</body>
+</html>

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>02-built-in-types</title>
   <style>
@@ -57,7 +57,8 @@ id="toc-constructor-call-conversion-checked">Constructor-call conversion
 </ul>
 </nav>
 <h1 id="built-in-types">2. Built-in Types</h1>
-<p><strong>Status:</strong> Implemented</p>
+<p><strong>Status:</strong> Implemented, except
+<code>float128</code></p>
 <p>Covers the built-in scalar type set, numeric literal defaulting,
 integer overflow behavior, and conversion between types via
 constructor-call syntax.</p>
@@ -77,6 +78,11 @@ never                                           # the uninhabited/bottom type</c
 <p><code>int32</code> is the default integer type and
 <code>float64</code> the default floating-point type when no other
 context is available.</p>
+<p><code>float128</code> is not implemented yet. Neither backend has a
+representation for it, and the standard library gives it no trait impls.
+<code>int128</code> and <code>uint128</code> are fully supported:
+literals up to their full range, checked arithmetic, casts, formatting,
+and the standard library’s scalar trait impls.</p>
 <h2 id="numeric-literal-defaulting">Numeric literal defaulting</h2>
 <p>A numeric literal’s type is resolved from context:
 <code>let b: int64 = 42</code> types <code>42</code> as

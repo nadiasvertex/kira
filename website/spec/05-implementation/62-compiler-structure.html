@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>62-compiler-structure</title>
   <style>
@@ -110,8 +110,21 @@ ownership events for each function and lambda body and enforces
 use-after-move, borrow exclusivity, and loan lifetimes without
 annotations (<a
 href="../02-intermediate/14-ownership-and-borrowing.html">Ownership and
-Borrowing</a>). Its maybe-moved facts also decide where drops and drop
-flags are needed.</li>
+Borrowing</a>). A <code>crew</code> body holds the borrows of every task
+spawned into it until the crew ends. It also rejects a write,
+<code>&amp;mut</code>, <code>mut self</code> call, or move through a
+<code>static</code>, which it finds through the checker’s
+<code>static_refs</code>, and a <code>&amp;mut</code> or
+<code>mut self</code> call on a <code>let</code> binding or on a name a
+<code>match</code>, <code>if let</code>, <code>while let</code> or
+<code>for</code> pattern binds to a value it owns (the checker’s
+<code>immutable_pattern_bindings</code>). The checker itself rejects
+assignments to them. Any write, <code>&amp;mut</code>, or
+<code>mut self</code> call that reaches its target through a
+<code>&amp;T</code>, a <code>*T</code>, or a shared view is rejected
+too; a <code>*mut</code> along the way makes what it points at writable
+again. Its maybe-moved facts also decide where drops and drop flags are
+needed.</li>
 <li><strong>HIR lowering</strong> (<code>src/hir/lower.cpp</code>).
 Turns each checked module into HIR: a tree in which every node carries a
 concrete type, every call names its target, and generics, operators,

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>54-std-io</title>
   <style>
@@ -59,6 +59,16 @@ id="toc-trait-implementations">Trait implementations</a></li>
 <li><a href="#extend-file_handle"
 id="toc-extend-file_handle"><code>extend file_handle</code></a></li>
 </ul></li>
+<li><a href="#pipes" id="toc-pipes">Pipes</a></li>
+<li><a href="#asynchronous-io" id="toc-asynchronous-io">Asynchronous
+I/O</a>
+<ul>
+<li><a href="#async_reader-and-async_writer"
+id="toc-async_reader-and-async_writer"><code>async_reader</code> and
+<code>async_writer</code></a></li>
+<li><a href="#async_file"
+id="toc-async_file"><code>async_file</code></a></li>
+</ul></li>
 <li><a href="#implementation-status"
 id="toc-implementation-status">Implementation status</a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
@@ -69,7 +79,8 @@ id="toc-implementation-status">Implementation status</a></li>
 <p><strong>Status:</strong> Partial</p>
 <p>Byte-level I/O: error types, the
 <code>reader</code>/<code>writer</code> traits,
-<code>open_options</code>, and the <code>file_handle</code> type.</p>
+<code>open_options</code>, the <code>file_handle</code> type, pipes, and
+asynchronous I/O for <code>io</code> tasks.</p>
 <p><code>std.io</code> (<code>src/std/io.cn</code>) is the foundation
 <code>std.console</code> and <code>std.fs.path</code> build on:
 <code>std.console</code> implements printing in terms of
@@ -98,13 +109,16 @@ operationally relevant POSIX errno cases, plus
 <code>@not_found</code>, <code>13</code> →
 <code>@permission_denied</code>, <code>17</code> →
 <code>@already_exists</code>, <code>4</code> →
-<code>@interrupted</code>, <code>11</code> → <code>@would_block</code>,
-<code>32</code> → <code>@broken_pipe</code>; every other code becomes
-<code>@other(e)</code>. Every intrinsic in this module returns
-<code>result[T, io_errno]</code>; every public wrapper function converts
-that to <code>result[T, io_error]</code> through this <code>from</code>
-impl at the boundary — the pattern used throughout the standard library
-for propagating raw OS errors (see <a
+<code>@interrupted</code>, the host’s <code>EAGAIN</code> →
+<code>@would_block</code>, <code>32</code> → <code>@broken_pipe</code>;
+every other code becomes <code>@other(e)</code>. <code>EAGAIN</code> is
+11 on Linux and 35 on macOS, so it is read from
+<code>rt_errno_would_block()</code> rather than written as a number.
+Every intrinsic in this module returns <code>result[T, io_errno]</code>;
+every public wrapper function converts that to
+<code>result[T, io_error]</code> through this <code>from</code> impl at
+the boundary — the pattern used throughout the standard library for
+propagating raw OS errors (see <a
 href="56-std-platform.html"><code>std.platform</code></a>).</p>
 <h3 id="open_options"><code>open_options</code></h3>
 <pre class="cinder"><code>pub type open_options = {
@@ -161,7 +175,26 @@ intrinsic def rt_open(path: str, opts: open_options) -&gt; result[raw_fd, io_err
 intrinsic def rt_close(fd: raw_fd) -&gt; result[unit, io_errno]
 intrinsic def rt_read(fd: raw_fd, buf: &amp;mut slice_mut[byte]) -&gt; result[usize, io_errno]
 intrinsic def rt_write(fd: raw_fd, buf: &amp;slice[byte]) -&gt; result[usize, io_errno]
-intrinsic def rt_flush(fd: raw_fd) -&gt; result[unit, io_errno]</code></pre>
+intrinsic def rt_flush(fd: raw_fd) -&gt; result[unit, io_errno]
+
+pub type raw_pipe = { read: int64, write: int64 }
+intrinsic def rt_pipe() -&gt; result[raw_pipe, io_errno]
+intrinsic def rt_set_nonblocking(fd: raw_fd) -&gt; result[unit, io_errno]
+intrinsic def rt_errno_would_block() -&gt; int32
+
+intrinsic def rt_fd_readable(fd: int64) -&gt; task[unit]
+intrinsic def rt_fd_writable(fd: int64) -&gt; task[unit]</code></pre>
+<p><code>rt_pipe</code> makes a pipe whose ends are closed when the
+program runs another one. <code>rt_set_nonblocking</code> sets
+<code>O_NONBLOCK</code> on a descriptor. <code>rt_fd_readable</code> and
+<code>rt_fd_writable</code> return a task that finishes when the
+descriptor is ready, from the event loop behind the <code>io</code>
+context (<a
+href="../../05-implementation/69-task-scheduler.html#the-io-event-loop">The
+Task Scheduler</a>). An error or hang-up on the descriptor also finishes
+it, so the read or write that follows reports the condition. A regular
+file, a directory, or a descriptor that is not open finishes it at
+once.</p>
 <p>Native entry points, implemented on both backends
 (<code>src/runtime/io.cpp</code>, <code>src/bytecode/vm.cpp</code>,
 <code>src/llvm_codegen/codegen.cpp</code>) via the shared
@@ -212,13 +245,106 @@ and <code>owns</code> to false, and returns the result (unlike
 <code>drop</code>, which discards it). Intended for callers that need to
 observe a close failure. A <code>file_handle</code> not explicitly
 closed is closed by <code>drop</code>.</p>
+<h2 id="pipes">Pipes</h2>
+<pre class="cinder"><code>pub type pipe_ends = { reader: file_handle, writer: file_handle }
+pub def pipe() -&gt; result[pipe_ends, io_error]</code></pre>
+<p><code>pipe</code> makes a pipe with blocking ends: bytes written to
+<code>writer</code> are read from <code>reader</code>. Each end owns its
+descriptor. A read returns zero once every copy of the write end is
+closed.</p>
+<h2 id="asynchronous-io">Asynchronous I/O</h2>
+<p>An <code>io</code> task that reads or writes a descriptor that is not
+ready suspends instead of blocking its worker thread. The descriptor is
+non-blocking, so a read or write that cannot proceed fails with
+<code>EAGAIN</code>; the task then awaits the descriptor’s readiness and
+tries again. Other tasks run on the thread in the meantime.</p>
+<pre class="cinder"><code>pub async def readable(fd: &amp;raw_fd) -&gt; unit
+pub async def writable(fd: &amp;raw_fd) -&gt; unit</code></pre>
+<p><code>readable</code> and <code>writable</code> suspend the calling
+task until the descriptor can be read or written without blocking, or
+has an error or hang-up. They return at once for a regular file, which
+never blocks.</p>
+<h3 id="async_reader-and-async_writer"><code>async_reader</code> and
+<code>async_writer</code></h3>
+<pre class="cinder"><code>pub trait async_reader:
+    async def read(mut self, buf: &amp;mut slice_mut[byte]) -&gt; result[usize, io_error]
+    async def read_to_end(mut self, out: &amp;mut list[byte]) -&gt; result[usize, io_error]
+    async def read_exact(mut self, buf: &amp;mut slice_mut[byte]) -&gt; result[unit, io_error]
+
+pub trait async_writer:
+    async def write(mut self, buf: &amp;slice[byte]) -&gt; result[usize, io_error]
+    async def flush(mut self) -&gt; result[unit, io_error]
+    async def write_all(mut self, buf: &amp;slice[byte]) -&gt; result[unit, io_error]</code></pre>
+<p>These mirror <code>reader</code> and <code>writer</code>.
+<code>read</code> and <code>write</code> are required; <code>read</code>
+suspends until at least one byte or the end of the input is available,
+and <code>write</code> until at least one byte can be written. The
+provided defaults loop as their blocking counterparts do:
+<code>read_to_end</code> until a zero-length read,
+<code>read_exact</code> until the buffer is full
+(<code>@unexpected_eof</code> if the input ends first), and
+<code>write_all</code> until every byte is written
+(<code>@broken_pipe</code> if a write accepts nothing).</p>
+<h3 id="async_file"><code>async_file</code></h3>
+<pre class="cinder"><code>pub type async_file = { fd: raw_fd, owns: bool }
+
+pub async def open_async(path: str, opts: open_options) -&gt; result[async_file, io_error]
+pub def into_async(f: file_handle) -&gt; result[async_file, io_error]
+pub type async_pipe_ends = { reader: async_file, writer: async_file }
+pub def async_pipe() -&gt; result[async_pipe_ends, io_error]</code></pre>
+<p><code>async_file</code> is a handle whose descriptor is non-blocking.
+It implements <code>async_reader</code> and <code>async_writer</code>,
+and <code>drop</code> closes the descriptor when <code>owns</code> is
+set. <code>close(mut self)</code> closes it explicitly and reports the
+result, as for <code>file_handle</code>. <code>read</code> and
+<code>write</code> retry after <code>@interrupted</code>.</p>
+<ul>
+<li><code>open_async</code> opens a file with a non-blocking descriptor.
+The open itself does not suspend. Opening a FIFO does not wait for its
+other end, and opening one for writing fails with <code>@other</code>
+when nothing has it open for reading.</li>
+<li><code>into_async</code> makes an existing handle’s descriptor
+non-blocking and moves it into an <code>async_file</code>. The
+descriptor’s file description is shared with every copy of it, so making
+a standard stream asynchronous also changes it for the process that
+started this one.</li>
+<li><code>async_pipe</code> makes a pipe whose ends are both
+non-blocking.</li>
+</ul>
+<pre class="cinder"><code>use std.io.{async_pipe, async_file, async_reader, async_writer}
+
+async def produce(w: async_file) -&gt; unit:
+    var out = w
+    let bytes: array[byte, 3] = [1, 2, 3]
+    let _ = await out.write_all(&amp;bytes[0..3])
+
+async def consume(r: async_file) -&gt; usize:
+    var inp = r
+    var got: list[byte] = []
+    return match await inp.read_to_end(&amp;mut got):
+        @ok(n) =&gt; n
+        @err(_) =&gt; 0
+
+async def main() -&gt; int32:
+    match async_pipe():
+        @ok(ends) =&gt;:
+            let (n, _) = await par:
+                consume(ends.reader)
+                produce(ends.writer)
+            return n as int32
+        @err(_) =&gt; return 1</code></pre>
+<p>The consumer starts first and suspends on the empty pipe. It sees the
+end of the input when the producer’s end is dropped.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <p>Everything in this chapter is implemented in
-<code>src/std/io.cn</code> over the <code>rt_*</code> intrinsics. A
-handle is dropped where <a
+<code>src/std/io.cn</code> over the <code>rt_*</code> intrinsics, on
+both backends.</p>
+<ul>
+<li>A handle is dropped where <a
 href="../../02-intermediate/17-shared-ownership-and-drop.html">Shared
 Ownership and Drop</a> says values drop; the cases that still leak are
-listed in item 6 of <a href="../../../todo.html">todo.md</a>.</p>
+listed in item 6 of <a href="../../../todo.html">todo.md</a>.</li>
+</ul>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="55-std-console.html"><code>std.console</code></a> —

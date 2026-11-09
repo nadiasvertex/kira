@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>26-concurrency-execution-model</title>
   <style>
@@ -51,7 +51,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </nav>
 <h1 id="concurrency-the-execution-model">26. Concurrency: The Execution
 Model</h1>
-<p><strong>Status:</strong> Planned</p>
+<p><strong>Status:</strong> Partial</p>
 <p>Executors and contexts (<code>io</code>,
 <code>cpu</code>/<code>pool</code>), tasks (<code>task[T, E, C]</code>),
 and cancellation scopes.</p>
@@ -86,11 +86,13 @@ production. <code>on</code> bridges contexts:</p>
         expensive_computation(req.body)
     # back on io here
     return http_response.ok(result)</code></pre>
-<p>Because <code>pool</code> — like any multi-threaded executor — may
-run a task on a different thread, moving work onto it requires the data
-to satisfy <code>send</code>/<code>share</code> (see <a
-href="30-data-race-freedom.html">Data-Race Freedom</a>). A
-single-threaded context imposes no such requirement. The context in a
+<p>Both built-in contexts, <code>io</code> and <code>cpu</code>, may run
+a task on a different thread from the one that started it, and may move
+it between threads while it is suspended. Values moved into their tasks
+must therefore satisfy <code>send</code>, and values the tasks borrow
+must satisfy <code>share</code> (see <a
+href="30-data-race-freedom.html">Data-Race Freedom</a>), whatever number
+of worker threads the runtime is configured with. The context in a
 task’s type and the concurrency-safety concepts are the same mechanism
 seen from two sides.</p>
 <h2 id="tasks">Tasks</h2>
@@ -125,44 +127,69 @@ confused with a real failure. Because tasks cannot outlive their
 <code>crew</code>, cancellation always completes before the scope
 returns.</p>
 <h2 id="implementation-status">Implementation status</h2>
-<p>Design only, beyond parsing. Concretely, as of this writing:</p>
+<p>Partial. Tasks run on a shared scheduler on both backends, with
+<code>crew</code>, <code>par</code>, <code>race</code>, <code>on</code>,
+the data-race checks, and an event loop behind <code>io</code>;
+<code>await yield</code> is not built.</p>
 <ul>
 <li>Surface syntax parses completely: <code>async</code>,
 <code>await</code> (including <code>await yield</code>),
 <code>crew</code>, <code>par</code>, <code>race</code>, <code>on</code>,
 and the <code>async</code> function modifier all lex and parse
-(<code>src/parser/ast.h</code>,
-<code>parser.cpp:3424</code>–<code>4512</code>).</li>
-<li>A bare <code>task[T, E, C]</code> type constructor is registered in
-<code>src/semantic/types.cpp</code> (1–3 type arguments) but has no
-checking semantics — no default <code>E = never</code>, no default
-<code>C = io</code>, no <code>io</code>/<code>cpu</code> builtin context
-types, no context-mismatch diagnostic.</li>
-<li><code>check.cpp</code> types <code>await expr</code> as a
-pass-through of its operand’s type (<code>infer_await</code>,
-<code>check.cpp:11321</code>, comment: “awaiting a non-task is validated
-once tasks are typed”) and types a <code>crew</code> body as
-<code>k_unknown_type</code>
-(<code>check.cpp:11612</code>–<code>11617</code>). There is no context
-(<code>C</code>) tracking, no <code>send</code>/<code>share</code>
-checking, no crew-scoped borrow rules.</li>
-<li><code>src/hir/nodes.h</code> lists concurrency forms as unsupported;
-lowering rejects them.</li>
-<li>Neither runtime backend (the bytecode VM in
-<code>src/bytecode/vm.cpp</code>, the AOT runtime in
-<code>src/llvm_codegen/aot_runtime.cpp</code> +
-<code>src/runtime/</code>) has a scheduler, event loop, threads, or
-synchronization primitives.</li>
-<li><code>src/std/</code> has no <code>task</code>,
-<code>channel</code>, <code>watch</code>, <code>shared</code>,
-<code>mutex</code>, <code>rwlock</code>, or <code>atomic</code>.</li>
+(<code>src/parser/ast.h</code>).</li>
+<li>The checker types an <code>async def</code> call as
+<code>task[T, E, io]</code> (<code>E</code> is <code>never</code> unless
+the body returns <code>result[T, E]</code>), and <code>await</code>
+unwraps it to <code>T</code>, or to <code>result[T, E]</code> for a
+fallible task. <code>await par:</code> unwraps each branch into a tuple.
+<code>await</code> outside an <code>async</code> function is an error.
+Awaiting a task whose context differs from the current one
+(<code>io</code> in an <code>async def</code>, switched by an enclosing
+<code>on(pool)</code> or <code>on(io)</code>) is an error. Only the
+built-in <code>io</code> and <code>cpu</code> contexts are checked;
+user-defined contexts and <code>task</code> annotations in other
+positions are not modeled (<code>infer_await</code>,
+<code>awaited_type</code>, <code>context_of_on_target</code> in
+<code>src/semantic/check_expr.cpp</code>).</li>
+<li>Tasks are scheduled by a runtime shared by the VM and the AOT/JIT
+tiers (<a href="../05-implementation/69-task-scheduler.html">The Task
+Scheduler</a>). The <code>io</code> pool has one worker unless
+<code>CINDER_IO_WORKERS</code> raises it; the <code>cpu</code> pool has
+one per hardware thread unless <code>CINDER_CPU_WORKERS</code> sets it.
+An <code>await</code> inside a task suspends it until the awaited task
+finishes, and a panic in a task is rethrown in whoever awaits it.
+Cancelling a task the scheduler owns is cooperative, as described
+above.</li>
+<li><code>await on(cpu|pool):</code> runs its body on the
+<code>cpu</code> pool, and <code>on(ctx, task)</code> runs an existing
+task there. <code>crew</code>, <code>par</code>, <code>race</code>,
+<code>spawn</code> and <code>async:</code> blocks run on the
+<code>io</code> pool (<a
+href="28-crew-par-race.html#implementation-status"><code>crew</code>,
+<code>par</code>, <code>race</code></a>).</li>
+<li><code>send</code>/<code>share</code> are checked structurally at
+spawn, <code>par</code>, <code>race</code>, <code>async:</code> and
+non-<code>io</code> <code>on</code> sites, and on function values and
+tasks crossing to another task (<a
+href="30-data-race-freedom.html#implementation-status">Data-Race
+Freedom</a>). Crew-scoped borrows are checked by the ownership
+checker.</li>
+<li>An event loop backs <code>io</code> (kqueue on macOS and the BSDs,
+epoll on Linux). A task that awaits a descriptor’s readiness or a
+deadline suspends there and holds no thread, so one <code>io</code>
+worker serves any number of waiting tasks. <code>std.io</code>’s
+<code>async_file</code> and <code>std.time</code>’s <code>sleep</code>
+wait this way (<a
+href="../04-stdlib/io-and-platform/54-std-io.html#asynchronous-io"><code>std.io</code></a>,
+<a
+href="../04-stdlib/io-and-platform/std-time.html"><code>std.time</code></a>).
+The blocking <code>file_handle</code> still blocks its worker, which
+then gives its place in the pool to another worker.</li>
+<li><code>std.sync</code> has <code>channel</code>, <code>watch</code>,
+<code>mutex</code>, <code>rwlock</code> and <code>atomic</code> (<a
+href="29-channels-and-sync-primitives.html#implementation-status">Channels
+and Sync Primitives</a>).</li>
 </ul>
-<p>The coroutine transform this chapter’s <code>task</code> semantics
-are meant to build on (state machine with a <code>resume_index</code>
-and heap state block) does already exist end-to-end for
-<code>generator def</code> — see <a
-href="27-async-await-and-generators.html#implementation-status"><code>async</code>/<code>await</code>
-and Generators</a>.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a

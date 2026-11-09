@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>33-dependent-and-refinement-types</title>
   <style>
@@ -48,6 +48,9 @@ values</a>
 <ul>
 <li><a href="#canonical-value-terms"
 id="toc-canonical-value-terms">Canonical value terms</a></li>
+<li><a href="#value-slot-compatibility-and-inference"
+id="toc-value-slot-compatibility-and-inference">Value-slot compatibility
+and inference</a></li>
 </ul></li>
 <li><a href="#refinement-types" id="toc-refinement-types">Refinement
 types</a>
@@ -97,11 +100,9 @@ Types</h1>
 (<code>type positive = int32 where self &gt; 0</code>), the reasoning
 solver’s exact fragment, typed runtime proofs, state machines in types,
 and interaction with contracts.</p>
-<p>This chapter is the normative reference for
-<code>spec/dependent-types-design.md</code>, folded in and re-voiced;
-that document’s precision on the reasoning fragment takes priority over
-the thinner tutorial account previously in
-<code>cinder-reference.md</code>. See <a
+<p>This chapter defines the normative rules for dependent and refinement
+types, including the reasoning fragment and the rejection of unresolved
+type obligations. See <a
 href="32-compile-time-semantics.html#two-subsystems-evaluation-and-reasoning">Compile-Time
 Semantics § Two subsystems</a> for how evaluation and reasoning divide
 the work in general.</p>
@@ -121,10 +122,11 @@ so it folds to the constant <code>5</code> and the type is
 and any question about it (is <code>m + n</code> the same length as
 <code>n + m</code>?) is a proof, not a computation.</li>
 </ul>
-<p>Governing rule: <strong>fold if closed, symbolize otherwise.</strong>
-A value expression in a type position is evaluated when every name in it
-is a compile-time constant, and otherwise becomes a canonical symbolic
-term.</p>
+<p>Governing rule: <strong>fold if closed; otherwise symbolize within
+the supported fragment or diagnose.</strong> A closed value expression
+in a type position is evaluated at compile time. An open expression must
+have a representation in the symbolic fragment below; an unsupported
+expression is a compile error, not an unconstrained value.</p>
 <h2 id="dependent-types-carrying-values">Dependent types carrying
 values</h2>
 <pre class="cinder"><code># vec[T, n] carries its length in the type
@@ -173,46 +175,119 @@ const generic argument, a refinement’s parameter — is one of:</p>
 <p><strong>The linear polynomial.</strong> A
 <code>symbolic_value_kind</code> entry carries a canonical linear
 polynomial <code>c0 + c1*v1 + ... + ck*vk</code>, with non-zero
-<code>int64_t</code> coefficients and distinct value-parameter names
-sorted lexicographically. Canonicalization folds constants, combines
-like terms, and drops zero coefficients; a polynomial with no terms
-degrades to <code>const_value_kind</code>, so every value has exactly
-one representation (<code>src/semantic/linear_poly.h</code>).</p>
+<code>int64_t</code> coefficients and distinct value-parameter
+identities in canonical order. Canonicalization folds constants,
+combines like terms, and drops zero coefficients; a polynomial with no
+terms degrades to <code>const_value_kind</code>, so every value has
+exactly one representation
+(<code>src/semantic/linear_poly.h</code>).</p>
 <p>This is what makes type identity work: <code>m + n</code> and
 <code>n + m</code> canonicalize to the same polynomial, intern to the
 same key, and are therefore the same <code>type_id</code> — id-equality
 remains the whole of type equality.</p>
 <p>Only <code>+</code>, <code>-</code>, unary <code>-</code>, and
-multiplication <strong>by a literal</strong> build a polynomial.
-<code>m * n</code>, <code>n / 2</code>, <code>n % 4</code>, and any
-function call in a type argument are <strong>outside the
-fragment</strong>: they resolve to <code>unknown</code>, which unifies
-with everything and diagnoses nothing — the compiler’s standing policy
-for “I don’t know” (<code>k_unknown_type</code>). These are not errors;
-they are simply not reasoned about.</p>
-<p><strong>Value-slot compatibility.</strong> Two value slots are
-compatible when the equation <code>P = Q</code> between their
-polynomials is satisfiable over the parameters’ domain
-(<code>usize</code> and the unsigned family: <code>v &gt;= 0</code>; the
-signed family: unconstrained). A single linear equation is decided
-exactly and cheaply:</p>
+multiplication <strong>by a literal</strong> build a polynomial. Open
+expressions such as <code>m * n</code>, <code>n / 2</code>,
+<code>n % 4</code>, and calls with unresolved value parameters are
+outside this fragment and are rejected at the type argument. Closed
+expressions, including function calls, are evaluated first and may
+supply a constant even when their syntax is outside the symbolic
+fragment. Evaluation failure is a compile error.</p>
+<p>An unsupported expression must never become a wildcard that unifies
+with an arbitrary length or state. An error-recovery type may suppress
+follow-on diagnostics only after an error has been reported; it cannot
+establish type compatibility or permit code generation. An inference
+variable is distinct from an error-recovery type and must be solved
+before an instance requiring its value is generated.</p>
+<h3 id="value-slot-compatibility-and-inference">Value-slot compatibility
+and inference</h3>
+<p>Compatibility requires equality of the value arguments after
+inference, not merely the existence of values that would make them
+equal. Parameters have declaration identity; two parameters with the
+same spelling are not thereby the same variable.</p>
 <ul>
-<li>No variables on either side: compatible iff the constants are equal
-(the plain-<code>const_value</code> case).</li>
-<li>Variables present: let <code>t</code> be the constant difference and
-<code>g</code> the gcd of the coefficients. Unsatisfiable when
-<code>g</code> does not divide <code>t</code>, or when every variable is
-non-negative-domained, every coefficient shares a sign, and
-<code>t</code> lies on the wrong side of zero.</li>
+<li><strong>Flexible variables</strong> are fresh inference variables
+for a callee’s omitted value arguments. Constraints may solve them to
+constants or symbolic expressions over the caller’s parameters. A
+solution is substituted into every occurrence of that parameter,
+including other arguments and the return type; every constraint must
+remain satisfied.</li>
+<li><strong>Rigid parameters</strong> are the enclosing generic
+declaration’s fixed but unknown parameters, and arguments already fixed
+explicitly. The checker must not choose values for them to make a call
+fit. Equality must hold for every value permitted by their declared
+domains and established facts. Canonically identical polynomials are
+equal without further proof.</li>
+<li><strong>Domains</strong> are those of the declared value-parameter
+types. In particular, unsigned parameters cannot be negative. A proposed
+solution must satisfy its domain as well as the equality; a solution
+whose domain obligation cannot be proved is not accepted.</li>
+<li><strong>Unresolved constraints</strong> may wait while other
+arguments, explicit value arguments, or expected types supply
+information. If inference finishes without determining a required
+argument or proving a required equality, the call is rejected with a
+diagnostic naming the unresolved parameter or equation. No arbitrary
+satisfying assignment is chosen.</li>
 </ul>
-<p>This is what makes <code>head[T, n: usize](v: vec[T, n + 1])</code>
-reject an empty <code>vec[T, 0]</code>: matching <code>n + 1</code>
-against <code>0</code> needs <code>n = -1</code>, and
-<code>n: usize</code> cannot be negative, so the call is rejected with
-the arithmetic explained. Anything satisfiable is accepted; the compiler
-does not <em>solve for</em> <code>n</code> and propagate it — an
-unresolved-but-satisfiable value slot behaves like any other unresolved
-generic parameter, exactly as <code>T</code> does.</p>
+<p>The bounded procedure is conservative. GCD divisibility can refute an
+integer equation, but passing that test and a sign check does not prove
+solvability over nonnegative integers. For example,
+<code>2*m + 3*n = 1</code> has no nonnegative integer solution even
+though <code>gcd(2, 3)</code> divides <code>1</code>. Such an equation
+must be rejected, either as refuted or as unresolved; it must not
+establish compatibility. There is no requirement to decide every
+equation in the fragment.</p>
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr>
+<th>Constraint</th>
+<th>Parameters</th>
+<th>Outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>n + 1 = 3</code></td>
+<td>flexible <code>n: usize</code></td>
+<td>solve <code>n := 2</code> and substitute it throughout the call</td>
+</tr>
+<tr>
+<td><code>n + 1 = 0</code></td>
+<td>flexible <code>n: usize</code></td>
+<td>reject: the required <code>n = -1</code> is outside its domain</td>
+</tr>
+<tr>
+<td><code>n + 1 = m + 1</code></td>
+<td>flexible <code>n: usize</code>, rigid <code>m: usize</code></td>
+<td>solve <code>n := m</code></td>
+</tr>
+<tr>
+<td><code>m = n</code></td>
+<td>distinct rigid parameters, no equality fact</td>
+<td>reject: equality is not established</td>
+</tr>
+<tr>
+<td><code>2*n = m</code></td>
+<td>flexible <code>n: usize</code>, unrestricted rigid
+<code>m: usize</code></td>
+<td>reject: a solution does not exist for every <code>m</code></td>
+</tr>
+<tr>
+<td><code>m + n = 5</code></td>
+<td>flexible <code>m, n: usize</code></td>
+<td>defer; reject if no other constraint determines the arguments</td>
+</tr>
+</tbody>
+</table>
+<p>Thus <code>head[T, n: usize](v: vec[T, n + 1])</code> called with a
+<code>vec[T, 3]</code> infers <code>n = 2</code>; called with a
+<code>vec[T, 0]</code>, it is rejected. A successful inference
+determines the same value wherever <code>n</code> occurs.</p>
 <p><strong>Variant values.</strong> A value parameter typed as a user
 sum type (<code>S: conn_state</code>) takes a bare variant as its
 argument (<code>connection[open]</code>), interning as
@@ -392,6 +467,11 @@ narrowing through a call.</p>
 </thead>
 <tbody>
 <tr>
+<td>Value arguments in matching types</td>
+<td>equality after substitution, with every inferred argument in its
+declared domain</td>
+</tr>
+<tr>
 <td>Base → refined coercion (assignment, argument, return, field
 init)</td>
 <td>the refinement’s predicate at the value</td>
@@ -418,11 +498,15 @@ elided</td>
 <p>A <em>refuted</em> obligation (the negation is provable) is always a
 compile error: the code is definitely wrong. An obligation that is
 merely <em>unproven</em> takes the graceful path.</p>
+<p>Value-slot equality and inference have no runtime fallback: they
+determine static types and layout. An unresolved value argument, domain
+obligation, or equality is a compile error. The runtime proof mechanisms
+below apply to refinement predicates and contracts, not to choosing a
+missing const-generic argument.</p>
 <h2 id="the-graceful-path-failure-ux">The graceful path — failure
 UX</h2>
-<p>An unprovable obligation is not a solver failure to apologize for; it
-is the normal, designed state of a conservative prover, and the
-diagnostic is the product. It always says three things:</p>
+<p>An unprovable refinement obligation is a normal outcome of a
+conservative prover. Its diagnostic states three things:</p>
 <ol type="1">
 <li><strong>The goal</strong> — the exact fact needed, in source terms
 (<code>i &lt; len(v)</code>), not solver terms.</li>
@@ -490,15 +574,12 @@ href="34-contracts.html">Contracts</a> for the full
 <h2 id="example">Example</h2>
 <p>The stress corpus
 <code>src/testdata/semantic_stress/027_dependent_and_refinement_types.cn</code>
-exercises this chapter end to end: symbolic const generics
-(<code>commutes</code>, <code>reassociates</code>), refinements proven
-from a literal and from an already-refined value, widening across an
-operator, provable and unprovable indexing, flow-sensitive narrowing
-(<code>if y &gt; 0: needs_positive(y)</code>), <code>try_from</code>
-runtime proofs, contract facts, struct invariants, and the
-explicitly-out-of-scope nonlinear case
-(<code>matrix[rows, cols]</code>), all in one file that is expected to
-check with <strong>no</strong> diagnostics.</p>
+covers symbolic const generics (<code>commutes</code>,
+<code>reassociates</code>), refinements, widening, indexing,
+flow-sensitive narrowing, <code>try_from</code>, contracts, and struct
+invariants. Acceptance of an open nonlinear value expression is not
+evidence of conformance: the unsupported-expression rule requires a
+diagnostic even if an existing fixture expects none.</p>
 <h2 id="implementation-status">Implementation status</h2>
 <p>Substantially implemented, ahead of
 <code>spec/dependent-types-implementation-plan.md</code>’s “Where the
@@ -507,12 +588,27 @@ done” list (refinements as no-ops, no symbolic value arithmetic, no
 reasoning subsystem, no typed proofs, contracts never lowered) no longer
 reflects the tree:</p>
 <ul>
-<li><strong>Symbolic const generics</strong> —
-<code>symbolic_value_kind</code>, the canonical linear polynomial, and
-value-slot compatibility are implemented in
-<code>src/semantic/linear_poly.{h,cpp}</code> and
-<code>src/semantic/types.{h,cpp}</code>, unification over value slots in
-<code>check.cpp</code>.</li>
+<li><strong>Symbolic const generics</strong> — canonical polynomials are
+implemented in <code>src/semantic/linear_poly.{h,cpp}</code>.
+<code>infer::solve_value_equation</code>
+(<code>src/semantic/infer/value_solver.cpp</code>) distinguishes
+flexible from rigid variables, solves a single flexible variable, and
+leaves multiple flexible variables underdetermined rather than guessing.
+<code>value_solver_test.cpp</code> exercises constant and symbolic
+solutions, divisibility failures, and rigid parameters. This is not a
+complete nonnegative-integer satisfiability procedure.</li>
+<li><strong>Remaining conformance gaps.</strong>
+<code>checker::resolve_value_arg</code>
+(<code>src/semantic/check_type_resolution.cpp</code>) still returns
+<code>k_unknown_type</code> when <code>value_poly</code> cannot
+represent an argument. That fallback must report an error under the
+unsupported-expression rule above. The value solver rejects a negative
+constant solution for an unsigned parameter but permits a symbolic
+solution such as <code>n := m - 1</code> without proving its domain,
+leaving it to instantiation; the normative rule requires the domain
+obligation to be established in the generic context. End-to-end
+rejection of every unresolved value obligation is not established by the
+solver’s unit tests.</li>
 <li><strong>Refinement types as real types</strong> —
 <code>refinement_kind</code> type entries, <code>resolve_type</code>’s
 <code>ast::node_kind::refinement_type</code> case
@@ -540,12 +636,12 @@ lowered (<code>check.cpp:9783</code>,
 <code>src/bytecode_compiler/compile.cpp</code>,
 <code>src/llvm_codegen/codegen.cpp</code>).</li>
 </ul>
-<p>Still matching the design doc’s stated scope exactly (i.e., not gaps,
-but the deliberate boundary of the fragment): nonlinear arithmetic,
-quantified predicates, aggregate-content reasoning, float reasoning, and
-narrowing through calls/closures/<code>&amp;mut</code> are all
-unimplemented <strong>by design</strong> — see “Explicitly out of scope”
-above, not a to-do list.</p>
+<p>Nonlinear arithmetic, quantified predicates, aggregate-content
+reasoning, float reasoning, and narrowing through
+calls/closures/<code>&amp;mut</code> remain outside the reasoning
+fragment by design. Rejecting an unsupported type argument is required
+regardless of that limit; silently accepting it is a conformance
+gap.</p>
 <p>Not verified by this chapter’s evidence gathering (design-doc Phase 7
 “polish” territory — value-parameterized types through
 <code>some Trait</code> returns, concept value constraints routed

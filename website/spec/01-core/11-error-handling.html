@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>11-error-handling</title>
   <style>
@@ -47,6 +47,7 @@ id="toc-option-and-result"><code>option</code> and
 id="toc-error-type-conversion-via-from">Error-type conversion via
 <code>from</code></a></li>
 </ul></li>
+<li><a href="#or-else" id="toc-or-else"><code>or else</code></a></li>
 <li><a href="#limitations" id="toc-limitations">Limitations</a></li>
 <li><a href="#panics-vs.-errors" id="toc-panics-vs.-errors">Panics
 vs. errors</a></li>
@@ -133,6 +134,46 @@ unannotated context). When they differ and no matching
   help: Add `impl from[{E1}] for {E2}` with a `from` method to convert between error types.</code></pre>
 <p><code>option</code>’s <code>?</code> never triggers a conversion —
 <code>@none</code> carries no error payload to convert.</p>
+<h2 id="or-else"><code>or else</code></h2>
+<p><code>x or else y</code> unwraps an <code>option[T]</code> or
+<code>result[T, E]</code> and has type <code>T</code>. The operand is
+evaluated once and consumed. On <code>@some(v)</code> or
+<code>@ok(v)</code> the result is <code>v</code>. On <code>@none</code>
+or <code>@err(_)</code> the fallback is evaluated and becomes the
+result. The fallback is evaluated only in that case.</p>
+<pre class="cinder"><code>let port = config.port or else 8080
+let f    = open(path, opts) or else panic(&quot;the config file is required&quot;)
+let user = cache.get(id) or else return @none
+let n    = parse(line) or else continue</code></pre>
+<p>The fallback is either a value of type <code>T</code> or an
+expression that does not return: <code>panic(...)</code>,
+<code>return [expr]</code>, <code>break</code> or <code>continue</code>.
+These jump forms are accepted only in this position. A literal fallback
+takes <code>T</code>’s width.</p>
+<p>With a <code>result</code>, the <code>@err</code> payload is dropped
+and the fallback cannot see it. A program that needs the error uses
+<code>?</code>, <code>match</code> or <code>let ... else:</code>.</p>
+<p><code>or else</code> binds more loosely than <code>or</code> and more
+tightly than the pipe <code>|</code>, and groups to the right:
+<code>a or else b or else 0</code> is
+<code>a or else (b or else 0)</code>. In a task body the fallback may
+suspend, as in <code>o or else await fetch()</code>. Because
+<code>await</code> binds tighter than <code>or else</code>, write
+<code>(await f()) or else x</code> to unwrap an awaited value.</p>
+<p>The checker (<code>infer_or_else</code> in
+<code>src/semantic/check_expr.cpp</code>) reports these errors:</p>
+<ol type="1">
+<li>The operand is not an <code>option</code> or <code>result</code>:
+<code>`or else` needs an `option` or `result` on its left</code>.</li>
+<li>The fallback has the wrong type:
+<code>the fallback for an `option[str]` must be a `str`, found `int32`</code>.</li>
+<li><code>or</code> used with an <code>option</code> or
+<code>result</code> operand gets the added help
+<code>did you mean `or else`?</code>.</li>
+</ol>
+<p><code>or else</code> lowers to a two-arm <code>match</code>, as
+<code>?</code> does, so it needs no support in either backend or in
+compile-time evaluation.</p>
 <h2 id="limitations">Limitations</h2>
 <p>Method resolution for <code>from</code> selects the first
 <code>impl from[...] for E2</code> block found for <code>E2</code>,
@@ -140,21 +181,26 @@ regardless of its trait argument — a type with two
 <code>impl from[...]</code> blocks for different source error types does
 not reliably disambiguate between them.</p>
 <h2 id="panics-vs.-errors">Panics vs. errors</h2>
-<p>A panic means a bug — an out-of-bounds index, <code>.unwrap()</code>
-on a <code>@none</code> believed to be <code>@some</code>. Panics are
-not for expected failure; use <code>result</code> for those.
-<code>panic()</code> is a recognized prelude intrinsic
-(<code>src/semantic/check.cpp</code>); <code>.unwrap()</code> is defined
-on <code>option</code>/<code>result</code> in
-<code>src/std/option.cn</code> / <code>src/std/result.cn</code>.</p>
+<p>A panic means a bug — an out-of-bounds index, or a <code>@none</code>
+believed to be <code>@some</code>. Panics are not for expected failure;
+use <code>result</code> for those. <code>panic()</code> is a recognized
+prelude intrinsic (<code>src/semantic/check.cpp</code>).
+<code>option</code> and <code>result</code> have no <code>unwrap</code>;
+write <code>x or else panic("...")</code>.</p>
 <pre class="cinder"><code>let v = some_list[999]      # panics if index is out of bounds
-let x = opt.unwrap()        # panics if opt is none
+let x = opt or else panic(&quot;opt is none&quot;)   # panics if opt is none
 panic(&quot;should never reach here&quot;)</code></pre>
 <p>A panic terminates the program. It prints
 <code>panic: &lt;message&gt;</code> on stderr and exits with status 101
 — the same message and the same status whichever backend ran the
 program, and whether the panic came from <code>panic()</code> in Cinder
-or from a check the compiler emitted.</p>
+or from a check the compiler emitted. A panic in a task prints at once
+and then propagates to whoever awaits the task, stopping the task’s
+siblings on the way (<a
+href="../02-intermediate/28-crew-par-race.html"><code>crew</code>,
+<code>par</code>, <code>race</code></a>); the program ends when it
+reaches the entry function. A panic in a task nothing awaits prints, and
+the program carries on.</p>
 <p>An out-of-range index is the same event on every container.
 <code>array[T, N]</code>, <code>slice[T]</code> and <code>str</code> are
 bounds-checked by the compiler; <code>list[T]</code> checks itself, in

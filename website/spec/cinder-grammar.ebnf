@@ -562,7 +562,24 @@ where_clause_expr
 where_binding = IDENT "=" expr NEWLINE ;
 
 pipe_expr
-    = or_expr { "|" or_expr }
+    = or_else_expr { "|" or_else_expr }
+    ;
+
+(* `x or else y` unwraps an option or result, evaluating `y` when there   *)
+(* is no value. It groups to the right: `a or else b or else 0` is        *)
+(* `a or else (b or else 0)`. `return`, `break` and `continue` are        *)
+(* statements elsewhere in the language and are accepted here as the      *)
+(* fallback. A `return` value runs to the end of the operand's line or    *)
+(* to the closing bracket, comma or colon.                                *)
+or_else_expr
+    = or_expr [ "or" "else" or_else_fallback ]
+    ;
+
+or_else_fallback
+    = or_else_expr
+    | "return" [ or_else_expr ]
+    | "break"
+    | "continue"
     ;
 
 or_expr
@@ -962,6 +979,7 @@ DOC_COMMENT = "#:" { (* any character except newline *) } NEWLINE ;
     8       not                                right
     7       and                                left
     6       or                                 left
+    5.5     or else                            right
     5       | (pipe)                           left
     4       => (lambda body)                   right
     3       = += -= etc (assignment stmts)     right  [statement only]

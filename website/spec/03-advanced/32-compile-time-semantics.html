@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>32-compile-time-semantics</title>
   <style>
@@ -133,9 +133,12 @@ evaluation — the expression is closed, so it folds to the constant
 <code>5</code>. <code>vec[T, m + n]</code> is reasoning — <code>m</code>
 and <code>n</code> are unknown, so the length is a symbolic term and any
 question about it is a proof, not a computation. The governing rule:
-<strong>fold if closed, symbolize otherwise.</strong> See <a
+<strong>fold if closed; otherwise symbolize within the supported
+fragment or diagnose.</strong> An unsupported open value argument is a
+compile error, never a wildcard. See <a
 href="33-dependent-and-refinement-types.html#the-two-subsystems-concretely">Dependent
-and Refinement Types § The two subsystems, concretely</a>.</p>
+and Refinement Types § The two subsystems, concretely</a> for the
+fragment and its implementation gaps.</p>
 <p>Contracts sit on the seam: a contract <em>condition</em> is produced
 by evaluation, but whether it <em>holds</em> is settled by reasoning
 when possible, and by a runtime check otherwise.</p>

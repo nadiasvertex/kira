@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>27-async-await-and-generators</title>
   <style>
@@ -134,26 +134,48 @@ is real, working compiler surface — write and run generator code
 today.</li>
 <li><strong>An abandoned generator drops what it holds</strong>, both
 backends. Dropping a generator that has not finished
-(<code>hir_generator_cancel</code>, VM <code>op_generator_cancel</code>)
+(<code>hir_coroutine_cancel</code>, VM <code>op_coroutine_cancel</code>)
 marks it cancelled and resumes it once; its body tests for that
-(<code>hir_generator_cancelled</code>) before it first runs and after
+(<code>hir_coroutine_cancelled</code>) before it first runs and after
 every <code>yield</code>, and returns, dropping its live locals and
 parameters through the ordinary early-exit drops
-(<code>src/testdata/std_test/generator_drops.cn</code>).</li>
-<li><strong><code>async</code>/<code>await</code> is not implemented
-beyond parsing.</strong> Surface syntax parses (<code>async_expr</code>,
-<code>await_expr</code>, the <code>async</code> function modifier
-composing with <code>generator</code>), but <code>task[T, E, C]</code>
-has no checking semantics, <code>check.cpp</code> types
-<code>await</code> as a pass-through of its operand rather than
-unwrapping a task’s result, and no lowering exists for
-<code>async</code> — <code>src/hir/nodes.h</code> lists it as
-unsupported. The plan is to extend the existing generator coroutine
-transform to cover <code>async</code> (a task object is designed as a
-generator object plus status/result slot/cancellation token/waker), but
-that extension has not been built. The <code>async generator</code>
-stream form and the <code>async</code>+<code>await</code> half of every
-example above are design only.</li>
+(<code>src/testdata/std_test/generator_drops.cn</code>). The coroutine
+object and its state block are then freed.</li>
+<li><strong><code>async</code>/<code>await</code> works on both
+backends, scheduled across threads.</strong> An <code>async def</code>
+with a declared return type compiles to a coroutine that yields its
+result once (<code>coroutine_kind::task</code>); the call returns a
+<code>task[T, E, io]</code> and nothing runs until the scheduler takes
+the task over. Inside a task, <code>await</code> is a suspension point
+(a <code>hir_yield</code> with <code>awaits</code> set): if the awaited
+task is unfinished the task returns <code>pending</code>, is woken when
+the awaited task finishes, and resumes at the same <code>await</code>.
+The entry <code>async def main()</code> is an ordinary function whose
+awaits block the calling thread. A task dropped before it finishes is
+cancelled like a generator. <code>await</code> consumes the task it
+waits for, and a task is freed once it has finished and been dropped (<a
+href="../05-implementation/69-task-scheduler.html">Task
+Scheduler</a>).</li>
+<li><strong>Evaluation order.</strong> An <code>await</code> is a
+suspension point, which has to be a statement, so the compiler hoists
+each <code>await</code> in a statement ahead of it. Operands still run
+in written order: in <code>read(&amp;x) + await set(&amp;mut x)</code>,
+<code>read</code> sees <code>x</code> before <code>set</code> changes
+it. A loop condition that awaits is evaluated on each pass. An
+<code>if</code> or <code>match</code> whose value is used, and whose
+branches can suspend, is lowered as a statement that assigns the value
+to a hidden local. An <code>await</code> that is evaluated conditionally
+inside an expression (the right side of
+<code>&amp;&amp;</code>/<code>||</code>, an <code>elif</code> condition)
+is rejected with a message asking for a <code>let</code> first.</li>
+<li><strong>Borrowed locals survive suspension.</strong> A local whose
+address is taken in a task or generator lives in storage that outlives
+the step function’s frame: a heap cell on the VM, the coroutine’s state
+block in compiled code. A <code>&amp;x</code> held across an
+<code>await</code> therefore stays valid.</li>
+<li>Not yet built: <code>await yield</code>,
+<code>async generator</code>, <code>async def</code> without a declared
+return type, a <code>post</code> on an <code>async def</code>.</li>
 </ul>
 <h2 id="see-also">See also</h2>
 <ul>

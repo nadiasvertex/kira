@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>30-data-race-freedom</title>
   <style>
@@ -49,7 +49,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </ul>
 </nav>
 <h1 id="data-race-freedom">30. Data-Race Freedom</h1>
-<p><strong>Status:</strong> Planned</p>
+<p><strong>Status:</strong> Partial</p>
 <p><code>send</code>/<code>share</code> concepts, and the two ways to
 share data across tasks: scoped sharing vs. <code>shared</code> +
 <code>mutex[T]</code>/<code>rwlock[T]</code>/<code>atomic[T]</code>.</p>
@@ -113,22 +113,69 @@ guarantees are one guarantee. Reach for <code>shared mutex[T]</code>
 only when data genuinely escapes structure; scoped sharing costs nothing
 and should be the default.</p>
 <h2 id="implementation-status">Implementation status</h2>
-<p>Design only. <code>send</code>/<code>share</code> are not implemented
-as concepts anywhere in the checker — no context (<code>C</code>)
-tracking exists to require them, and <code>crew</code> bodies type-check
-against <code>k_unknown_type</code> rather than enforcing borrow rules
-across spawned tasks (see <a
-href="26-concurrency-execution-model.html#implementation-status">The
-Execution Model</a>). <code>shared[T]</code> itself is implemented: an
-atomically reference-counted, read-only handle in
-<code>std.shared</code> (see <a
-href="17-shared-ownership-and-drop.html">Shared Ownership and Drop</a>).
-The cross-task guarantee described above is aspirational until a
-scheduler exists. <code>mutex[T]</code>, <code>rwlock[T]</code>, and
-<code>atomic[T]</code> do not exist anywhere in <code>src/std/</code>,
-and neither runtime backend has any synchronization primitive. None of
-the “many readers or one writer” enforcement described in this chapter —
-compile-time or runtime — is checked by the compiler today.</p>
+<p>Partial. Everything above works on both backends except writing
+through a guard with <code>*</code>.</p>
+<ul>
+<li><code>send</code> and <code>share</code> are marker traits in
+<code>std.traits</code>. The checker derives them structurally
+(<code>concurrency_offender</code>,
+<code>src/semantic/check_bounds.cpp</code>): a raw pointer is neither, a
+<code>&amp;T</code> needs <code>T: share</code>, a
+<code>shared[T]</code> needs <code>T: share</code>, and a struct, sum,
+tuple or array is the conjunction of its parts. Standard-library types
+vouch for their own fields. A user type built on a raw pointer says
+<code>impl send for the_type:</code> and
+<code>impl share for the_type:</code>; the type’s arguments are still
+checked. When a type fails, the error names the field that caused it and
+suggests the <code>impl</code>, or a <code>mutex</code> when the type is
+<code>send</code> but not <code>share</code>.</li>
+<li>The check runs on the arguments of a call handed to
+<code>c.spawn</code>, <code>par</code> or <code>race</code>, on the
+outer locals an <code>async:</code> block or an <code>on(...)</code>
+body reads, on the task given to <code>on(ctx, task)</code>, and on
+function values and tasks that cross to another task. The checker
+follows a function value or task back to where it was made and checks
+what it carries; one whose origin it cannot see is rejected. The check
+is the same for every context, <code>io</code> included, because any
+context may run a task on another thread.</li>
+<li>Crew-scoped borrows are checked by the ownership checker
+(<code>lower_crew_body</code>,
+<code>src/semantic/ownership_cfg.cpp</code>). Each <code>crew</code> has
+a holder local that keeps every borrow made by a task spawned into it
+live until the crew body ends, so the usual rules apply across tasks:
+any number of <code>&amp;x</code>, or one <code>&amp;mut x</code>, and
+no use or move of <code>x</code> while a task holds it. A
+<code>task</code> value keeps the borrows of its arguments until it is
+dropped or spawned. A non-copy local consumed by an <code>async:</code>
+or <code>on</code> body moves into the task.</li>
+<li><code>std.sync</code> (<code>src/std/sync.cn</code>) has
+<code>mutex[T]</code>, <code>rwlock[T]</code> and
+<code>atomic[T]</code>. They are <code>send</code> and
+<code>share</code> whenever <code>T: send</code>, because one task at a
+time reaches the value. <code>rwlock[T]</code> is <code>share</code>
+only when <code>T: share</code>, since its readers share the value.
+<ul>
+<li><code>mutex.lock()</code> blocks until the lock is free and returns
+a <code>mutex_guard[T]</code>; <code>try_lock()</code> returns
+<code>none</code> instead of waiting. The lock is released when the
+guard drops.</li>
+<li><code>rwlock.read()</code> returns a <code>read_guard[T]</code>, and
+<code>rwlock.write()</code> returns a <code>write_guard[T]</code> once
+no reader or writer holds the lock.</li>
+<li><code>atomic[T]</code> needs <code>T: integer</code> and has
+<code>load</code>, <code>store</code>, <code>swap</code>,
+<code>compare_exchange</code>, <code>fetch_add</code> and
+<code>fetch_sub</code>, all sequentially consistent.</li>
+</ul></li>
+<li>Deviation: the language has no mutable deref trait, so
+<code>*guard += 1</code> from the example above does not compile. A
+guard reads through <code>*guard</code> or <code>get()</code>, and
+writes through <code>get_mut()</code> or <code>set(value)</code>.</li>
+<li><code>shared[T]</code> is an atomically reference-counted, read-only
+handle in <code>std.shared</code> (see <a
+href="17-shared-ownership-and-drop.html">Shared Ownership and
+Drop</a>).</li>
+</ul>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="17-shared-ownership-and-drop.html">Shared Ownership and

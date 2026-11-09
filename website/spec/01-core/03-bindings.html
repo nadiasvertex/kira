@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>03-bindings</title>
   <style>
@@ -39,6 +39,9 @@
 <ul>
 <li><a href="#let-and-var" id="toc-let-and-var"><code>let</code> and
 <code>var</code></a></li>
+<li><a href="#pattern-bindings" id="toc-pattern-bindings">Pattern
+bindings</a></li>
+<li><a href="#parameters" id="toc-parameters">Parameters</a></li>
 <li><a href="#shadowing" id="toc-shadowing">Shadowing</a></li>
 <li><a href="#compound-assignment" id="toc-compound-assignment">Compound
 assignment</a></li>
@@ -67,6 +70,58 @@ var remaining: int32 = 10</code></pre>
 <p>Reassigning a <code>let</code> binding (<code>name = ...</code> after
 its declaration) is a compile error; only <code>var</code> may be the
 target of <code>assign_stmt</code>.</p>
+<p>A <code>let</code> binding also cannot be changed in place. Writing
+to one of its fields or elements (<code>xs[0] = 4</code>), borrowing it
+with <code>&amp;mut</code>, and calling a <code>mut self</code> method
+on it (<code>xs.push(4)</code>) are compile errors, in the function
+itself and in a lambda that captures it. The bindings a destructuring
+<code>let</code> makes (<code>let (a, b) = pair</code>) follow the same
+rule. A <code>let</code> that holds a reference changes what it points
+at, not itself, so <code>let r = &amp;mut xs</code> followed by
+<code>r.push(4)</code> is allowed, and so is destructuring through one
+(<code>let (a, b) = &amp;mut pair</code>).</p>
+<pre class="cinder"><code>let xs = [1, 2, 3]
+xs.push(4)          # error: `push` changes its receiver, and `xs` is bound with `let`
+var ys = [1, 2, 3]
+ys.push(4)          # fine</code></pre>
+<h2 id="pattern-bindings">Pattern bindings</h2>
+<p>A name bound by a <code>match</code> arm, <code>if let</code>,
+<code>while let</code>, or <code>for</code> pattern cannot change, the
+same as a <code>let</code>: it cannot be reassigned, written in place,
+borrowed with <code>&amp;mut</code>, or have a <code>mut self</code>
+method called on it. Writing <code>mut</code> before the name
+(<code>@some(mut xs)</code>, <code>for mut xs in v</code>) makes it
+changeable. A binding reached through a reference names part of what the
+reference points at, so through a <code>&amp;mut</code> subject
+(<code>match o</code> with <code>o: &amp;mut option[list[int64]]</code>)
+it can be written, and through a <code>&amp;</code> it cannot.</p>
+<pre class="cinder"><code>for xs in lists:
+    xs.push(0)          # error: `xs` is bound by a pattern
+for mut xs in lists:
+    xs.push(0)          # fine</code></pre>
+<h2 id="parameters">Parameters</h2>
+<p>A parameter taken by value belongs to the function, so it can change
+like a <code>var</code>: it can be reassigned, written in place,
+borrowed with <code>&amp;mut</code>, and have <code>mut self</code>
+methods called on it. The same holds for the bindings of a by-value
+parameter’s destructuring pattern. The caller is not affected, because
+the value was moved or copied in.</p>
+<p>A parameter taken by reference or pointer can change what it points
+at only when it is <code>&amp;mut T</code> or <code>*mut T</code>.
+Through a <code>&amp;T</code> or a <code>*T</code>, every write,
+<code>&amp;mut</code> borrow, and <code>mut self</code> call is a
+compile error. This applies to <code>self</code> too: a method declared
+with <code>self</code> cannot change its receiver, and one declared with
+<code>mut self</code> can.</p>
+<pre class="cinder"><code>def grow(xs: list[int64]) -&gt; list[int64]:
+    xs.push(4)                  # fine: `xs` is the function&#39;s own
+    return xs
+
+def peek(xs: &amp;list[int64]) -&gt; unit:
+    xs.push(4)                  # error: `xs` is behind a `&amp;list[int64]`
+
+def fill(xs: &amp;mut list[int64]) -&gt; unit:
+    xs.push(4)                  # fine</code></pre>
 <h2 id="shadowing">Shadowing</h2>
 <p>A second <code>let</code> with the same name in the same scope
 replaces the first: the name now refers to the new binding, and the old

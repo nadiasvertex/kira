@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>29-channels-and-sync-primitives</title>
   <style>
@@ -50,7 +50,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </nav>
 <h1 id="channels-and-sync-primitives">29. Channels and Sync
 Primitives</h1>
-<p><strong>Status:</strong> Planned</p>
+<p><strong>Status:</strong> Partial</p>
 <p><code>channel[T]</code> and <code>watch[T]</code>.</p>
 <h2 id="channelt"><code>channel[T]</code></h2>
 <p>Channels pass ownership of values between tasks:</p>
@@ -80,15 +80,42 @@ writer.set(new_config)
 await reader.changed()    # suspends until the value changes
 let current = reader.get()</code></pre>
 <h2 id="implementation-status">Implementation status</h2>
-<p>Design only; no implementation of any kind. No <code>channel</code>
-or <code>watch</code> type, function, or method exists anywhere in
-<code>src/std/</code>, and neither runtime backend has any channel or
-synchronization machinery. This chapter depends on <a
-href="28-crew-par-race.html"><code>crew</code>, <code>par</code>,
-<code>race</code></a> and <a
-href="26-concurrency-execution-model.html">The Execution Model</a>,
-neither of which is implemented beyond parsing, so nothing here can be
-written and compiled today.</p>
+<p>Partial. Channels and <code>watch</code> work on both backends, in
+<code>std.sync</code> (<code>src/std/sync.cn</code>);
+<code>reader.get()</code> differs from the text above for a value that
+is not <code>copy</code>.</p>
+<ul>
+<li><code>channel[T](capacity)</code> returns a
+<code>(sender[T], receiver[T])</code> pair. A capacity of 0 is treated
+as 1. <code>await sender.send(v)</code> suspends while the channel is
+full and returns <code>result[unit, T]</code>, giving the value back as
+<code>err</code> if the channel is closed.
+<code>await receiver.recv()</code> suspends while the channel is empty
+and returns <code>none</code> once it is empty and closed.
+<code>sender.clone()</code> makes another sender; the channel closes
+when <code>close()</code> is called, when the last sender is dropped, or
+when the receiver is dropped. Values still queued when the last handle
+goes are dropped.</li>
+<li><code>watch[T](initial)</code> returns a
+<code>(watch_writer[T], watch_reader[T])</code> pair.
+<code>writer.set(v)</code> replaces the value and drops the old one.
+<code>await reader.changed()</code> suspends until the value changes
+after the reader last saw it. Readers can be cloned, and each tracks
+what it has seen.</li>
+<li>Deviation: <code>reader.get()</code> needs <code>T: copy</code>. A
+value that is only <code>clone</code> is read with
+<code>reader.cloned()</code>. A single method covering both would need a
+bound of the form “copy or clone”, which the language does not
+have.</li>
+<li>Handles are <code>send</code> and <code>share</code> when
+<code>T: send</code> (<a
+href="30-data-race-freedom.html#implementation-status">Data-Race
+Freedom</a>).</li>
+<li>The waits are built on the scheduler’s word wait and wake (<a
+href="../05-implementation/69-task-scheduler.html#waiting-on-a-word">The
+Task Scheduler</a>). Corpus file <code>171</code> and
+<code>std_test/sync_drops.cn</code> exercise them.</li>
+</ul>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="26-concurrency-execution-model.html">The Execution
@@ -98,7 +125,7 @@ Model</a> — the task/context model channels move values between.</li>
 typically used within.</li>
 <li><a href="30-data-race-freedom.html">Data-Race Freedom</a> —
 <code>mutex</code>/<code>rwlock</code>/<code>atomic</code>, the other
-unimplemented synchronization primitives.</li>
+synchronization primitives in <code>std.sync</code>.</li>
 </ul>
 </body>
 </html>

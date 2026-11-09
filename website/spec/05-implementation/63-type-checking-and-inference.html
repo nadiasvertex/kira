@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>63-type-checking-and-inference</title>
   <style>
@@ -103,12 +103,17 @@ href="../03-advanced/37-higher-kinded-traits.html">Higher-Kinded
 Traits</a>). Value slots such as <code>vec[T, n + 1] ~ vec[T, 3]</code>
 go to the value solver. A constraint outside these rules is postponed,
 not failed, because its shape may still become known.</li>
-<li><strong>Value solver</strong> (<code>value_solver</code>). Decides
-and solves a single linear equation over integers. It distinguishes
-flexible variables (the callee’s <code>n</code>, which the call
-determines) from rigid ones (the caller’s own <code>m</code>, fixed but
-unknown). So <code>n + 1 = m + 1</code> solves to
-<code>n := m</code>.</li>
+<li><strong>Value solver</strong> (<code>value_solver</code>). Processes
+a linear equation, distinguishing flexible variables (the callee’s
+<code>n</code>, which the call determines) from rigid ones (the caller’s
+own <code>m</code>, fixed but unknown). So <code>n + 1 = m + 1</code>
+solves to <code>n := m</code>. The solver can determine one flexible
+variable; equations with several remain underdetermined unless refuted.
+GCD and sign checks supply refutations, not a complete decision
+procedure over nonnegative integers. See <a
+href="../03-advanced/33-dependent-and-refinement-types.html#value-slot-compatibility-and-inference">Value-slot
+compatibility and inference</a> for the required acceptance rules and
+remaining conformance gaps.</li>
 <li><strong>Obligation queue</strong> (<code>obligations</code>). Method
 resolution, trait selection and refinement narrowing are decisions that
 may need to wait until a type is known. They share one queue: each

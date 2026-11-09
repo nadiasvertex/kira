@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>67-llvm-and-aot</title>
   <style>
@@ -61,9 +61,14 @@ runtime support library into a standalone executable.</p>
 bytecode compiler reads into an <code>llvm::Module</code>. It reads
 types from the checker’s type table and never re-infers.</p>
 <ul>
-<li><strong>Values.</strong> Scalars are LLVM scalars. Every other value
-is allocated through one runtime entry point and laid out by
-<code>src/runtime/layout.h</code>, the same rules the VM uses.</li>
+<li><strong>Values.</strong> Scalars are LLVM scalars;
+<code>int128</code>/<code>uint128</code> are <code>i128</code>. Every
+other value is allocated through one runtime entry point and laid out by
+<code>src/runtime/layout.h</code>, the same rules the VM uses. Closure
+environments and generator state blocks use 16-byte entries, matching
+the VM’s register images. The heap allocator guarantees only 8-byte
+alignment, so every <code>i128</code> load and store is emitted with
+alignment 8 at most.</li>
 <li><strong>Calls.</strong> Direct calls name the instance’s symbol.
 Closures and function values use indirect calls. A call that the HIR
 pass marked as a tail call becomes <code>musttail</code> when LLVM’s
@@ -74,7 +79,37 @@ Optimization</a>).</li>
 to a small constructor that builds the generator’s state block, plus a
 step function that resumes from the last <code>yield</code>. The state
 block holds the locals that the HIR pass found live across a
-<code>yield</code>.</li>
+<code>yield</code>. Both backends share one coroutine object of seven
+slots: step function, state pointer, resume index, status, the
+scheduler’s record, and the last yielded value, which takes two slots so
+a 128-bit item fits (<code>src/runtime/coroutine.h</code>). The step
+function returns the new status (suspended, done or pending) and writes
+a yielded item to the value slot; <code>.next()</code> call sites read
+the status and build <code>some(value)</code> or <code>none</code>
+themselves.</li>
+<li><strong>Tasks.</strong> An <code>async def</code> compiles like a
+generator that yields its result once. Inside a task, <code>await</code>
+is a suspension point: the code calls
+<code>cinder_rt_task_await_poll</code>, and if the awaited task has not
+finished it stores the resume index and returns <code>pending</code>.
+The step function resumes at the same <code>await</code> once the
+scheduler wakes it. In an ordinary function (the entry
+<code>async def main</code>) <code>await</code> calls
+<code>cinder_rt_task_block_on</code> and blocks the calling thread.
+Dropping a task asks the scheduler to cancel it first
+(<code>cinder_rt_task_cancel</code>), because a task the scheduler owns
+may be running on another thread. Locals in a step function are normally
+copied between the state block and allocas at each suspension. A local
+whose address is taken, or that a closure captures by reference, lives
+in its state-block entry instead, so a pointer to it stays valid across
+a suspension (<code>hir::coroutine_borrowed_locals</code> lists them for
+both backends). A borrowed temporary
+(<code>await f(&amp;xs[a..b])</code>) is one of these locals, because
+<code>make_references_explicit</code> stores every borrowed value that
+is not a place in a local first. A <code>match</code>,
+<code>while let</code> or <code>let ... else</code> subject that is
+suspended state is stored into its state slot. See <a
+href="69-task-scheduler.html">The Task Scheduler</a>.</li>
 <li><strong>Panics.</strong> Checked arithmetic and other failing
 operations call a runtime panic function with a reason from the same
 closed set the VM uses, followed by <code>unreachable</code>.</li>
@@ -103,9 +138,10 @@ program’s entry function and turns its result into an exit code:
 to <code>int</code>.</li>
 <li>Optimize at the requested level and emit a native object file for
 the host target.</li>
-<li>Link the object with the system C++ driver against Cinder’s runtime
-support archives: panic handling, the heap allocator, string operations,
-and the libraries these depend on.</li>
+<li>Link the object with the system C++ driver (with
+<code>-pthread</code>, for the scheduler’s worker threads) against
+Cinder’s runtime support archives: panic handling, the heap allocator,
+string operations, and the libraries these depend on.</li>
 </ol>
 <p>The resulting executable has no dependency on LLVM.</p>
 <h2 id="relationship-to-the-vm">Relationship to the VM</h2>
@@ -115,7 +151,13 @@ HIR semantics. The codegen stress test compiles each program in
 agree. Because the two backends share layout rules, they can share a
 mistake and still agree, so a corpus file may also state its expected
 result with <code># expect:</code>, which is checked independently of
-agreement.</p>
+agreement. A file may also bound how many heap blocks <code>main</code>
+allocates on each tier with <code># max-allocations:</code>, which
+catches storage that should be reused but is allocated afresh, such as a
+borrow taken in a loop. <code># max-live-blocks:</code> bounds how many
+heap blocks <code>main</code> leaves allocated, counted on every thread
+once <code>main</code> and the tasks it started have finished, which
+catches storage that is never freed.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="68-jit-execution.html">JIT Execution</a> — running LLVM

@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>28-crew-par-race</title>
   <style>
@@ -59,7 +59,7 @@ id="toc-implementation-status">Implementation status</a></li>
 </nav>
 <h1 id="crew-par-race">28. <code>crew</code>, <code>par</code>,
 <code>race</code></h1>
-<p><strong>Status:</strong> Planned</p>
+<p><strong>Status:</strong> Partial</p>
 <p><code>crew</code> structured concurrency, <code>par</code>,
 <code>race</code>, <code>on(target)</code>, and error handling in
 concurrent code (<code>on_error: collect</code>).</p>
@@ -69,15 +69,22 @@ Concurrency</h2>
 <code>crew</code> block waits for all its tasks before continuing. If
 any task fails, the rest are cancelled and the error propagates.</p>
 <pre class="cinder"><code>async def fetch_dashboard(user_id: int32) -&gt; result[dashboard, app_error]:
-    crew c:
+    let (user_task, orders_task, prefs_task) = crew c:
         let user_task   = c.spawn(fetch_user(user_id))
         let orders_task = c.spawn(fetch_orders(user_id))
         let prefs_task  = c.spawn(fetch_preferences(user_id))
+        (user_task, orders_task, prefs_task)
 
     let user   = user_task.get()?
     let orders = orders_task.get()?
     let prefs  = prefs_task.get()?
     return @ok(build_dashboard(user, orders, prefs))</code></pre>
+<p>The body of a <code>crew</code> is its own scope, and its last
+expression is the value of the block. The block waits for every task
+spawned into it, so a task handed out as the block’s value has already
+finished when <code>get()</code> reads it. <code>c.spawn(t)</code>
+returns <code>t</code>; dropping that handle does not cancel the
+task.</p>
 <p>Tasks in a <code>crew</code> cannot outlive the <code>crew</code>
 block — enforced by the compiler, so there are no dangling background
 tasks. This is what lets a closure spawned into a <code>crew</code>
@@ -112,24 +119,81 @@ Code</h2>
 model as sequential code. A <code>crew</code> that uses
 <code>on_error: collect</code> gathers all errors rather than stopping
 on the first:</p>
-<pre class="cinder"><code>crew c(on_error: collect):
+<pre class="cinder"><code>let errors = crew c(on_error: collect):
     for item in items:
-        c.spawn(process(item))
+        let _ = c.spawn(process(item))
+    c.errors()
 
-for err in c.errors():
-    log(&quot;failed: {err.message()}&quot;)</code></pre>
+for err in errors:
+    log(&quot;failed: {err}&quot;)</code></pre>
+<p><code>on_error: collect</code> is the one crew option. It allows
+<code>c.errors()</code> inside the crew’s body. The call waits for every
+task spawned so far, then gives a <code>list[E]</code> of the errors
+they finished with, in spawn order. A task that finishes with
+<code>err</code> does not stop its siblings, and the <code>ok</code>
+results stay readable through <code>get()</code>. Every task spawned
+into a collecting crew must have the same type, <code>task[T, E]</code>,
+so <code>errors()</code> has one element type. A panic still cancels the
+other tasks and propagates, as in any crew.</p>
 <h2 id="implementation-status">Implementation status</h2>
-<p>Parse-only. <code>crew_stmt</code>/<code>crew_expr</code> (with
-<code>on_error:</code>-style options), <code>par_expr</code>,
-<code>race_expr</code>, and <code>on_expr</code> all lex and parse.
-<code>check.cpp</code> types a <code>crew</code> body’s contents against
-<code>k_unknown_type</code> with no borrow-scoping, no
-cancellation-scope construction, and no
-<code>spawn</code>/<code>get</code>/<code>errors</code> method
-semantics. No lowering exists — <code>src/hir/nodes.h</code> lists these
-forms as unsupported — and neither runtime backend has a scheduler
-capable of running tasks concurrently at all. None of the code in this
-chapter compiles past type-checking today.</p>
+<p>Partial. <code>par</code>, <code>race</code>, <code>spawn</code>,
+<code>await on(cpu|pool|io):</code> and <code>crew</code> work on both
+backends; <code>crew</code> options work too
+(<code>on_error: collect</code>). Only the built-in <code>io</code> and
+<code>cpu</code> contexts exist.</p>
+<ul>
+<li><code>await par: ...</code> starts every branch task, waits for each
+in order, and gives the tuple of results. <code>await race: ...</code>
+waits until any branch has finished, gives the first finished one in
+branch order, and cancels the others. Both work inside a task and in the
+entry <code>async def main</code>. If a <code>par</code> branch panics,
+the runtime cancels the other branches and the panic propagates to the
+awaiting task once they have stopped. <code>race</code> cancels its
+losers without waiting for them.</li>
+<li><code>task.spawn()</code> starts a task without waiting; a later
+<code>await</code> collects its result. A spawned task still unfinished
+when the entry function returns is cancelled.</li>
+<li>All of these run on the <code>io</code> pool. With the default
+single <code>io</code> worker they interleave; they run in parallel only
+when <code>CINDER_IO_WORKERS</code> is raised (the stress-test harness
+does this).</li>
+<li><code>await on(ctx): body</code> runs the body as a task on that
+context’s pool (<code>cpu</code>/<code>pool</code> → cpu pool). The body
+is lowered like an <code>async:</code> block, a task function whose
+parameters are the outer locals it reads, so it may <code>await</code>.
+<code>await on(ctx, t)</code> runs the existing task <code>t</code> on
+that pool; its second argument must be a task. A local the body only
+reads is lent to it, and a non-copy local it consumes moves in.</li>
+<li><code>crew c: body</code> binds <code>c</code> (a <code>crew</code>
+handle) for the body, runs it, then waits for every task passed to
+<code>c.spawn(t)</code> and frees the handle. It is a statement or an
+expression whose value is the body’s last expression. In a task the wait
+suspends the task; in an ordinary function it blocks the thread, and if
+a task called that function another worker takes the blocked one’s place
+in the pool. If a spawned task panics the others are cancelled, and the
+panic propagates once they have stopped. Every exit from the body waits
+the same way: <code>return</code>, <code>?</code>, and a
+<code>break</code> or <code>continue</code> out of the block join the
+crew and free it, and cancelling the task that runs the block cancels
+the crew’s tasks and waits for them. In a task, such an exit is a
+suspension; one inside an <code>if</code> or <code>match</code> that
+produces a value is lowered by turning the branch into a statement.
+<code>t.get()</code> is <code>await t</code>. Spawned tasks run on the
+<code>io</code> pool. With <code>on_error: collect</code>,
+<code>c.errors()</code> waits (it suspends the task, or blocks the
+thread outside one), then reads each spawned task through
+<code>rt_crew_len</code> and <code>rt_crew_task</code> and pushes the
+<code>err</code> payloads onto a list. <code>c.errors()</code> works
+inside a generic function; each instance records its own task type. A
+spawned task is an <code>async def</code> call or an <code>async:</code>
+block, and either may borrow the enclosing function’s locals.</li>
+<li><code>send</code>/<code>share</code> are checked on everything a
+task carries to another worker, and crew-scoped borrows are checked, so
+two tasks in one crew cannot both hold <code>&amp;mut</code> to the same
+value (<a
+href="30-data-race-freedom.html#implementation-status">Data-Race
+Freedom</a>).</li>
+</ul>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="26-concurrency-execution-model.html">The Execution

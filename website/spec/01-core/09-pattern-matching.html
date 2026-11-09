@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
   <meta charset="utf-8" />
-  <meta name="generator" content="pandoc 3.11" />
+  <meta name="generator" content="pandoc 3.13" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
   <title>09-pattern-matching</title>
   <style>
@@ -46,6 +46,8 @@ id="toc-destructuring">Destructuring</a></li>
 <li><a href="#if-let-and-while-let"
 id="toc-if-let-and-while-let"><code>if let</code> and
 <code>while let</code></a></li>
+<li><a href="#let-...-else"
+id="toc-let-...-else"><code>let ... else</code></a></li>
 <li><a href="#see-also" id="toc-see-also">See also</a></li>
 </ul></li>
 </ul>
@@ -105,6 +107,21 @@ running its block only when the match holds:</p>
 <code>@none</code>):</p>
 <pre class="cinder"><code>while let @some(line) = reader.next():
     process(line)</code></pre>
+<h2 id="let-...-else"><code>let ... else</code></h2>
+<p><code>let PATTERN = expr else:</code> binds the pattern’s names for
+the rest of the enclosing block when the match holds. When it does not,
+the <code>else</code> block runs. The block must not fall through: it
+ends in <code>return</code>, <code>break</code>, <code>continue</code>
+or <code>panic(...)</code>.</p>
+<pre class="cinder"><code>def first_even(xs: list[int32]) -&gt; int32:
+    let @some(n) = xs.iter().values().find((x) =&gt; *x % 2 == 0) else:
+        return -1
+    return n</code></pre>
+<p>When the whole point is to unwrap one <code>option</code> or
+<code>result</code> and give a fallback, <a
+href="11-error-handling.html#or-else"><code>or else</code></a> is
+shorter. <code>let ... else:</code> stays the form for other patterns,
+and for failure handling that takes several statements.</p>
 <h2 id="see-also">See also</h2>
 <ul>
 <li><a href="10-type-declarations.html">Type Declarations</a> — sum
