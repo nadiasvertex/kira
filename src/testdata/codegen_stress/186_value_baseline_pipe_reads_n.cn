@@ -1,0 +1,66 @@
+module codegen_stress.value_baseline_pipe_reads_n
+
+# expect: 505248
+
+# Baseline for the value-semantics migration (`spec/value-semantics.md`, T-01).
+# Repeated blocking pipe operations: each pass writes eight bytes with
+# `write_all`, then `read_exact`s them back; a final `read_to_end` drains a
+# tail. Every `result` these return is a heap block today (todo item 18), so
+# this is the baseline for the runtime-result work in T-07. Only the result is
+# checked; the bound is tightened in T-13. `187_..._10n.cn` is ten times as long.
+#
+# Pass i writes bytes (i + k) % 256 for k in 0..7. Their sum over 500 passes is
+# 505120 (computed by summing the windows directly). The tail is sixteen bytes
+# of value 7: `read_to_end` reports 16, and the bytes add 112.
+# 505120 + 16 + 112 = 505248.
+
+use std.io.{pipe, reader, writer}
+
+def round_trip(rounds: int32) -> int32:
+    match pipe():
+        @err(_) => return -1
+        @ok(ends) =>:
+            var r = ends.reader
+            var w = ends.writer
+            var total: int32 = 0
+            var i: int32 = 0
+            while i < rounds:
+                var out: array[byte, 8] = [0; 8]
+                var k: usize = 0
+                while k < 8:
+                    out[k] = ((i as usize + k) % 256) as byte
+                    k = k + 1
+                match w.write_all(&out[0..8]):
+                    @ok(_) =>:
+                        total = total
+                    @err(_) => return -2
+                var back: array[byte, 8] = [0; 8]
+                match r.read_exact(&mut back[0..8]):
+                    @ok(_) =>:
+                        total = total
+                    @err(_) => return -3
+                k = 0
+                while k < 8:
+                    total = total + (back[k] as int32)
+                    k = k + 1
+                i = i + 1
+            var tail: array[byte, 16] = [7; 16]
+            match w.write_all(&tail[0..16]):
+                @ok(_) =>:
+                    total = total
+                @err(_) => return -4
+            match w.close():
+                @ok(_) =>:
+                    total = total
+                @err(_) => return -5
+            var rest: list[byte] = []
+            match r.read_to_end(&mut rest):
+                @ok(n) =>:
+                    total = total + (n as int32)
+                @err(_) => return -6
+            for b in &rest:
+                total = total + ((*b) as int32)
+            return total
+
+def main() -> int32:
+    return round_trip(500)

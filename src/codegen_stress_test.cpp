@@ -579,12 +579,24 @@ auto run_and_check_tiers(const fs::path &path, std::string_view text,
                          cinder::semantic::type_id return_type,
                          std::optional<bc::numeric_kind> return_kind,
                          bool is_heap_result) -> tier_runs {
-  const auto count_live = max_live_blocks_of(text).has_value();
+  const auto report = std::getenv("CINDER_STRESS_REPORT") != nullptr;
+  const auto count_live = report || max_live_blocks_of(text).has_value();
   auto runs = tier_runs{.vm = run_bytecode(path, module_set, types, count_live),
                         .jit = run_llvm(path, module_set, types, return_kind,
                                         is_heap_result, count_live)};
   const auto &vm_result = runs.vm.result;
   const auto &jit_result = runs.jit.result;
+
+  // Opt-in measurement (`CINDER_STRESS_REPORT=1`): print each file's heap
+  // allocations and residual live blocks on both tiers, so a bound for
+  // `# max-allocations:` / `# max-live-blocks:` can be chosen from data.
+  if (report) {
+    std::cout << std::format(
+        "stress-report {} vm.allocations={} vm.live={} jit.allocations={} "
+        "jit.live={}\n",
+        path.filename().string(), vm_result.allocations, vm_result.live_blocks,
+        jit_result.allocations, jit_result.live_blocks);
+  }
 
   if (vm_result.panicked || jit_result.panicked) {
     expect(vm_result.panicked && jit_result.panicked,

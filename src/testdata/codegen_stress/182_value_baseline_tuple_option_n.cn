@@ -1,0 +1,35 @@
+module codegen_stress.value_baseline_tuple_option_n
+
+# expect: 1831167
+
+# Baseline for the value-semantics migration (`spec/value-semantics.md`, T-01).
+# A loop that builds and destructures a tuple and matches an `option` on every
+# pass. Only the result is checked; tuples and options are still heap blocks,
+# and the bound is tightened in T-13. `183_..._10n.cn` is ten times as long.
+#
+# Each pass adds a + b = i + 2 * i = 3 * i from the tuple: 3 * 499500 = 1498500.
+# It adds i from the option unless i is a multiple of three:
+# 499500 - 3 * (0 + 1 + ... + 333) = 499500 - 166833 = 332667.
+# 1498500 + 332667 = 1831167.
+
+def pair(i: int32) -> (int32, int32):
+    return (i, i * 2)
+
+def maybe(i: int32) -> option[int32]:
+    if i % 3 == 0:
+        return @none
+    return @some(i)
+
+def main() -> int32:
+    var total: int32 = 0
+    var i: int32 = 0
+    while i < 1000:
+        let (a, b) = pair(i)
+        total = total + a + b
+        match maybe(i):
+            @some(v) =>:
+                total = total + v
+            @none =>:
+                total = total
+        i = i + 1
+    return total

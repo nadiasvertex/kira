@@ -1,0 +1,28 @@
+module codegen_stress.value_baseline_generator_next_n
+
+# expect: 499500
+
+# Baseline for the value-semantics migration (`spec/value-semantics.md`, T-01).
+# Every `next()` on a generator returns an `option` that the caller matches.
+# Only the result is checked; the bound is tightened in T-13.
+# `185_..._10n.cn` is ten times as long.
+#
+# The generator yields 0..999, which sum to 999 * 1000 / 2 = 499500.
+
+generator def count(n: int32) -> some iterator[int32]:
+    var i: int32 = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+def main() -> int32:
+    var g = count(1000)
+    var total: int32 = 0
+    var running = true
+    while running:
+        match g.next():
+            @some(v) =>:
+                total = total + v
+            @none =>:
+                running = false
+    return total

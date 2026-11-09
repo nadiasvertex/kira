@@ -11,7 +11,9 @@ tuple, and sum allocations described in [todo items 17 and 18](todo.md), while
 preserving ownership, borrowing, evaluation order, and exactly-once drops on the
 bytecode VM and LLVM backends.
 
-This is an implementation plan. The tasks below have not been implemented.
+This is an implementation plan. T-01 is complete (findings in
+[value-semantics-t01-findings.md](value-semantics-t01-findings.md)); T-02 through
+T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -473,7 +475,7 @@ integration and documentation.
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
-| [ ] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
+| [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
 | [ ] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
 | [ ] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [ ] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
@@ -811,6 +813,7 @@ automatically instrument generated code.
   specified without requesting further design approval.
 - [x] Remaining repository inventories are assigned to T-01 with fixed design
   defaults; no unresolved inventory is silently assumed to be complete.
-- [ ] Complete T-01 inventories and record actual baseline results before coding.
+- [x] Complete T-01 inventories and record actual baseline results before coding
+  (see [value-semantics-t01-findings.md](value-semantics-t01-findings.md)).
 - [ ] Implement T-02 through T-14 and record passing verification before closing
   the corresponding todo items.
