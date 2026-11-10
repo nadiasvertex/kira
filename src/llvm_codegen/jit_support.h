@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -69,6 +71,17 @@ public:
   /// heap value.
   [[nodiscard]] auto run_ptr_result(std::string_view name) const
       -> std::expected<jit_result, bytecode::panic_reason>;
+
+  /// Calls a function compiled from the storage form through its entry thunk
+  /// (`storage_codegen.h`, `storage_codegen_options::entry_thunks`). `args`
+  /// holds one 8-byte slot per non-zero-sized source parameter; `result` is
+  /// the caller-owned storage a by-address result is built in, or where a
+  /// scalar result is written (it may be null for a zero-sized result). A
+  /// propagating `panic_error` becomes a `panic_reason`, as in `run`.
+  [[nodiscard]] auto run_storage(std::string_view name,
+                                 std::span<const uint64_t> args,
+                                 void *result) const
+      -> std::expected<void, bytecode::panic_reason>;
 
 private:
   explicit jit_module(std::unique_ptr<llvm::orc::LLJIT> jit)

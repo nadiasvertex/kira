@@ -1,0 +1,29 @@
+module sample
+packed type header = { pub magic: uint16, pub flags: byte, pub len: uint32 }
+packed type framed = { pub kind: byte, pub head: header }
+
+def make_header(n: uint32) -> header:
+    return header { magic: 0x1234, flags: 0xAB, len: n }
+
+def make_framed(n: uint32) -> framed:
+    return framed { kind: 7, head: make_header(n) }
+
+def total(n: uint32) -> int64:
+    let h = make_header(n)
+    return (h.magic as int64) + (h.flags as int64) + (h.len as int64)
+
+def read_len(h: header) -> int64:
+    return h.len as int64
+
+def set_len(h: &mut header, v: uint32) -> unit:
+    h.len = v
+    return
+
+def via_reference(n: uint32) -> int64:
+    var h = make_header(n)
+    set_len(&mut h, 99)
+    return (h.len as int64) * 1000 + (h.magic as int64)
+
+def framed_len(n: uint32) -> int64:
+    let f = make_framed(n)
+    return (f.head.len as int64) + (f.kind as int64)

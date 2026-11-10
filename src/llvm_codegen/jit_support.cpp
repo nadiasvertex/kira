@@ -17,6 +17,8 @@
 #include <llvm/Support/TargetSelect.h>
 #pragma clang diagnostic pop
 
+#include "src/llvm_codegen/storage_codegen.h"
+
 namespace cinder::llvm_codegen {
 
 namespace {
@@ -192,6 +194,26 @@ auto jit_module::run_ptr_result(std::string_view name) const
     return jit_result{.has_value = true,
                       .value = slot_value{static_cast<uint64_t>(
                           reinterpret_cast<uintptr_t>(result))}};
+  } catch (const panic_error &ex) {
+    return std::unexpected(ex.reason());
+  }
+}
+
+auto jit_module::run_storage(std::string_view name,
+                             std::span<const uint64_t> args, void *result) const
+    -> std::expected<void, bytecode::panic_reason> {
+  const auto thunk = std::string(k_storage_entry_prefix) + std::string(name);
+  auto symbol = jit_->lookup(thunk);
+  if (!symbol) {
+    throw std::runtime_error(
+        std::format("jit_module::run_storage: symbol `{}` not found: {}", thunk,
+                    llvm::toString(symbol.takeError())));
+  }
+  auto *addr = symbol->toPtr<void *>();
+  try {
+    reinterpret_cast<void (*)(const uint64_t *, void *)>(addr)(args.data(),
+                                                               result);
+    return {};
   } catch (const panic_error &ex) {
     return std::unexpected(ex.reason());
   }

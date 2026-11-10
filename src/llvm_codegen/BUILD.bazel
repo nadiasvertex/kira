@@ -17,8 +17,14 @@ cc_library(
 
 cc_library(
     name = "codegen",
-    srcs = ["codegen.cpp"],
-    hdrs = ["codegen.h"],
+    srcs = [
+        "codegen.cpp",
+        "scalar_ops.cpp",
+    ],
+    hdrs = [
+        "codegen.h",
+        "scalar_ops.h",
+    ],
     tags = ["no-sandbox"],
     deps = [
         "//src/bytecode:bytecode",
@@ -27,6 +33,23 @@ cc_library(
         "//src/runtime",
         "//src/semantic:semantic",
         "//src/util",
+        "@llvm//:llvm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# LLVM from the shared storage form (`spec/value-semantics.md`, T-06). Not
+# called by the driver yet; its test and the JIT harness are its only users.
+cc_library(
+    name = "storage_codegen",
+    srcs = ["storage_codegen.cpp"],
+    hdrs = ["storage_codegen.h"],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
+        "//src/bytecode:bytecode",
+        "//src/hir:hir",
+        "//src/runtime",
         "@llvm//:llvm",
     ],
     visibility = ["//visibility:public"],
@@ -71,6 +94,7 @@ cc_library(
     deps = [
         ":codegen",
         ":runtime",
+        ":storage_codegen",
         "//src/bytecode:bytecode",
         "//src/runtime",
         "@llvm//:llvm",
@@ -115,5 +139,30 @@ cc_test(
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+    ],
+)
+
+cc_test(
+    name = "storage_codegen_test",
+    srcs = ["storage_codegen_test.cpp"],
+    data = [
+        "//src:bytecode_storage_test_files",
+        "//src:hir_storage_test_files",
+        "//src:std_sources",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        ":codegen",
+        ":jit_support",
+        ":storage_codegen",
+        "//src/bytecode:bytecode",
+        "//src/comptime_vm",
+        "//src/hir:hir",
+        "//src/parser:parser",
+        "//src/runtime",
+        "//src/semantic:semantic",
+        "//src/testing",
+        "//src/testing:stdlib_fixtures",
+        "//src/testing:storage_fixtures",
     ],
 )

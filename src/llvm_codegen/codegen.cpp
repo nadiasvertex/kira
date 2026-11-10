@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <charconv>
 #include <cstdint>
 #include <format>
 #include <optional>
@@ -39,6 +38,7 @@
 #include "src/hir/ids.h"
 #include "src/hir/live_across_yield.h"
 #include "src/intrinsics.h"
+#include "src/llvm_codegen/scalar_ops.h"
 #include "src/parser/ast.h"
 #include "src/parser/operators.h"
 #include "src/parser/text_escape.h"
@@ -46,7 +46,6 @@
 #include "src/runtime/coroutine.h"
 #include "src/runtime/layout.h"
 #include "src/runtime/scheduler.h"
-#include "src/util/integer_literal.h"
 
 namespace cinder::llvm_codegen {
 
@@ -62,148 +61,6 @@ using hir::hir_node;
 using hir::hir_node_kind;
 using semantic::type_id;
 using semantic::type_table;
-
-// ==========================================================================
-//  Literal decoding — duplicated from src/bytecode_compiler/compile.cpp
-//  rather than shared: both are small, self-contained, and this mirrors
-//  that file's own precedent of not exporting check.cpp's literal parser
-//  across an unrelated module boundary for one caller (see its top comment).
-// ==========================================================================
-
-/// An integer literal's value as an `APInt` of `bits` bits — the only way
-/// to build an `i128` constant wider than 64 bits. `nullopt` when the
-/// spelling does not parse.
-[[nodiscard]] auto parse_wide_literal(std::string_view text, unsigned bits)
-    -> std::optional<llvm::APInt> {
-  const auto wide = util::parse_integer_literal_wide(text);
-  if (!wide.has_value()) {
-    return std::nullopt;
-  }
-  const std::array<uint64_t, 2> words = {static_cast<uint64_t>(*wide),
-                                         static_cast<uint64_t>(*wide >> 64)};
-  return llvm::APInt(128, words).zextOrTrunc(bits);
-}
-
-/// The literal's value when it fits in 64 bits — every integer kind but
-/// the two 128-bit ones, which use `util::parse_integer_literal_wide`
-/// directly.
-[[nodiscard]] auto parse_uint_literal(std::string_view text)
-    -> std::optional<uint64_t> {
-  const auto wide = util::parse_integer_literal_wide(text);
-  if (!wide.has_value() || *wide > ~uint64_t{0}) {
-    return std::nullopt;
-  }
-  return static_cast<uint64_t>(*wide);
-}
-
-[[nodiscard]] auto parse_float_literal(std::string_view text)
-    -> std::optional<double> {
-  auto cleaned = std::string{};
-  cleaned.reserve(text.size());
-  for (const auto ch : text) {
-    if (ch != '_') {
-      cleaned.push_back(ch);
-    }
-  }
-  auto value = double{0};
-  // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  const char *end = cleaned.data() + cleaned.size();
-  const auto result = std::from_chars(cleaned.data(), end, value);
-  if (result.ec != std::errc{} || result.ptr != end) {
-    return std::nullopt;
-  }
-  // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  return value;
-}
-
-[[nodiscard]] auto decode_utf8_scalar(std::string_view text, size_t &pos)
-    -> std::optional<uint32_t> {
-  if (pos >= text.size()) {
-    return std::nullopt;
-  }
-  const auto first = static_cast<unsigned char>(text[pos]);
-  if ((first & 0x80) == 0) {
-    ++pos;
-    return static_cast<uint32_t>(first);
-  }
-  auto extra_bytes = 0;
-  auto value = uint32_t{0};
-  if ((first & 0xE0) == 0xC0) {
-    extra_bytes = 1;
-    value = static_cast<uint32_t>(first & 0x1F);
-  } else if ((first & 0xF0) == 0xE0) {
-    extra_bytes = 2;
-    value = static_cast<uint32_t>(first & 0x0F);
-  } else if ((first & 0xF8) == 0xF0) {
-    extra_bytes = 3;
-    value = static_cast<uint32_t>(first & 0x07);
-  } else {
-    return std::nullopt;
-  }
-  ++pos;
-  for (auto i = 0; i < extra_bytes; ++i) {
-    if (pos >= text.size()) {
-      return std::nullopt;
-    }
-    const auto cont = static_cast<unsigned char>(text[pos]);
-    value = (value << 6) | static_cast<uint32_t>(cont & 0x3F);
-    ++pos;
-  }
-  return value;
-}
-
-[[nodiscard]] auto decode_char_literal(std::string_view text)
-    -> std::optional<uint32_t> {
-  if (text.size() < 2 || text.front() != '\'' || text.back() != '\'') {
-    return std::nullopt;
-  }
-  const auto inner = text.substr(1, text.size() - 2);
-  if (inner.empty()) {
-    return std::nullopt;
-  }
-  if (inner.front() != '\\') {
-    auto pos = size_t{0};
-    return decode_utf8_scalar(inner, pos);
-  }
-  if (inner.size() < 2) {
-    return std::nullopt;
-  }
-  switch (inner[1]) {
-  case 'n':
-    return static_cast<uint32_t>('\n');
-  case 't':
-    return static_cast<uint32_t>('\t');
-  case 'r':
-    return static_cast<uint32_t>('\r');
-  case '"':
-    return static_cast<uint32_t>('"');
-  case '\'':
-    return static_cast<uint32_t>('\'');
-  case '\\':
-    return static_cast<uint32_t>('\\');
-  case '{':
-    return static_cast<uint32_t>('{');
-  case '}':
-    return static_cast<uint32_t>('}');
-  case 'u': {
-    if (inner.size() < 5 || inner[2] != '{' || inner.back() != '}') {
-      return std::nullopt;
-    }
-    const auto hex = inner.substr(3, inner.size() - 4);
-    auto value = uint32_t{0};
-    // NOLINTBEGIN(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-    const char *hex_end = hex.data() + hex.size();
-    const auto result = std::from_chars(hex.data(), hex_end, value, 16);
-    // NOLINTEND(cppcoreguidelines-pro-bounds-pointer-arithmetic,bugprone-suspicious-stringview-data-usage)
-    if (result.ec != std::errc{} || result.ptr != hex_end) {
-      return std::nullopt;
-    }
-    return value;
-  }
-  default:
-    return std::nullopt;
-  }
-}
 
 // `decode_string_literal` used to be duplicated here (same reasoning as
 // `decode_char_literal`/`encode_utf8_scalar` above) — now reuses the shared
@@ -233,23 +90,8 @@ using cinder::decode_string_literal;
 //  numeric_kind <-> llvm::Type.
 // ==========================================================================
 
-[[nodiscard]] auto llvm_type_for(llvm::LLVMContext &ctx, numeric_kind kind)
-    -> llvm::Type * {
-  switch (kind) {
-  case numeric_kind::boolean:
-    return llvm::Type::getInt1Ty(ctx);
-  case numeric_kind::f32:
-    return llvm::Type::getFloatTy(ctx);
-  case numeric_kind::f64:
-    return llvm::Type::getDoubleTy(ctx);
-  default:
-    // Every remaining kind (i8/i16/i32/i64/u8/u16/u32/u64/character) is a
-    // plain integer at its own bit width — `bit_width` already special-
-    // cases `character` to 32 (widened Unicode scalar) the same way
-    // `bytecode::slot_value` does.
-    return llvm::Type::getIntNTy(ctx, static_cast<unsigned>(bit_width(kind)));
-  }
-}
+// The `numeric_kind` overload lives in `scalar_ops.h`; this one would hide it.
+using llvm_codegen::llvm_type_for;
 
 /// Maps an intrinsic's wire-level ABI kind (`src/intrinsics.h`'s
 /// `intrinsic_wire_kind`) to the LLVM type its `cinder_rt_*` C-ABI symbol
@@ -580,7 +422,7 @@ public:
         alloc_fn_(alloc_fn), intrinsic_fns_(intrinsic_fns),
         entry_module_name_(std::move(entry_module_name)),
         current_module_name_(std::move(current_module_name)), globals_(globals),
-        builder_(ctx) {}
+        builder_(ctx), scalars_(builder_, panic_fn) {}
 
   [[nodiscard]] auto compile(const hir::hir_function &fn,
                              llvm::Function *llvm_fn)
@@ -1137,15 +979,7 @@ private:
   }
 
   auto guard_panic(llvm::Value *panic_if_true, panic_reason reason) -> void {
-    auto *panic_bb = llvm::BasicBlock::Create(ctx_, "panic", current_fn_);
-    auto *ok_bb = llvm::BasicBlock::Create(ctx_, "ok", current_fn_);
-    builder_.CreateCondBr(panic_if_true, panic_bb, ok_bb);
-    builder_.SetInsertPoint(panic_bb);
-    builder_.CreateCall(panic_fn_,
-                        {llvm::ConstantInt::get(llvm::Type::getInt8Ty(ctx_),
-                                                static_cast<uint8_t>(reason))});
-    builder_.CreateUnreachable();
-    builder_.SetInsertPoint(ok_bb);
+    scalars_.guard_panic(panic_if_true, reason);
   }
 
   // ------------------------------------------------------------------
@@ -1507,66 +1341,7 @@ private:
                                            std::string_view value,
                                            source_span span, numeric_kind kind)
       -> std::expected<llvm::Value *, codegen_error> {
-    auto *ty = llvm_type_for(ctx_, kind);
-    switch (lit_kind) {
-    case token_kind::kw_true:
-      return llvm::ConstantInt::get(ty, 1);
-    case token_kind::kw_false:
-      return llvm::ConstantInt::get(ty, 0);
-    case token_kind::int_lit: {
-      if (bytecode::is_wide_integer(kind)) {
-        const auto wide = parse_wide_literal(value, 128);
-        if (!wide.has_value()) {
-          return std::unexpected(codegen_error{
-              .kind = codegen_error_kind::unsupported_construct,
-              .span = span,
-              .message =
-                  std::format("could not parse integer literal `{}`", value)});
-        }
-        return llvm::ConstantInt::get(ty, *wide);
-      }
-      const auto parsed = parse_uint_literal(value);
-      if (!parsed.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_construct,
-            .span = span,
-            .message =
-                std::format("could not parse integer literal `{}`", value)});
-      }
-      if (is_float(kind)) {
-        return llvm::ConstantFP::get(ty, static_cast<double>(*parsed));
-      }
-      return llvm::ConstantInt::get(ty, *parsed);
-    }
-    case token_kind::float_lit: {
-      const auto parsed = parse_float_literal(value);
-      if (!parsed.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_construct,
-            .span = span,
-            .message =
-                std::format("could not parse float literal `{}`", value)});
-      }
-      return llvm::ConstantFP::get(ty, *parsed);
-    }
-    case token_kind::char_lit: {
-      const auto parsed = decode_char_literal(value);
-      if (!parsed.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_construct,
-            .span = span,
-            .message =
-                std::format("could not decode character literal `{}`", value)});
-      }
-      return llvm::ConstantInt::get(ty, *parsed);
-    }
-    default:
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = span,
-          .message = "string literals and other non-scalar literal kinds are "
-                     "not supported yet (see spec/todo.md)"});
-    }
+    return scalars_.literal(lit_kind, value, span, kind);
   }
 
   [[nodiscard]] auto compile_literal(const hir::hir_literal &lit)
@@ -1645,192 +1420,7 @@ private:
                                        numeric_kind kind, llvm::Value *lhs,
                                        llvm::Value *rhs)
       -> std::expected<llvm::Value *, codegen_error> {
-    using ast::binary_op;
-    const auto bits = bit_width(kind);
-    const auto signed_kind = is_signed_integer(kind);
-
-    switch (bin.op) {
-    case binary_op::eq_eq:
-      return is_float(kind) ? builder_.CreateFCmpOEQ(lhs, rhs)
-                            : builder_.CreateICmpEQ(lhs, rhs);
-    case binary_op::bang_eq:
-      return is_float(kind) ? builder_.CreateFCmpONE(lhs, rhs)
-                            : builder_.CreateICmpNE(lhs, rhs);
-    case binary_op::lt:
-      if (is_float(kind)) {
-        return builder_.CreateFCmpOLT(lhs, rhs);
-      }
-      return signed_kind ? builder_.CreateICmpSLT(lhs, rhs)
-                         : builder_.CreateICmpULT(lhs, rhs);
-    case binary_op::lt_eq:
-      if (is_float(kind)) {
-        return builder_.CreateFCmpOLE(lhs, rhs);
-      }
-      return signed_kind ? builder_.CreateICmpSLE(lhs, rhs)
-                         : builder_.CreateICmpULE(lhs, rhs);
-    case binary_op::gt:
-      if (is_float(kind)) {
-        return builder_.CreateFCmpOGT(lhs, rhs);
-      }
-      return signed_kind ? builder_.CreateICmpSGT(lhs, rhs)
-                         : builder_.CreateICmpUGT(lhs, rhs);
-    case binary_op::gt_eq:
-      if (is_float(kind)) {
-        return builder_.CreateFCmpOGE(lhs, rhs);
-      }
-      return signed_kind ? builder_.CreateICmpSGE(lhs, rhs)
-                         : builder_.CreateICmpUGE(lhs, rhs);
-    case binary_op::add:
-      if (is_float(kind)) {
-        return builder_.CreateFAdd(lhs, rhs);
-      }
-      return checked_arith(signed_kind ? llvm::Intrinsic::sadd_with_overflow
-                                       : llvm::Intrinsic::uadd_with_overflow,
-                           lhs, rhs);
-    case binary_op::sub:
-      if (is_float(kind)) {
-        return builder_.CreateFSub(lhs, rhs);
-      }
-      return checked_arith(signed_kind ? llvm::Intrinsic::ssub_with_overflow
-                                       : llvm::Intrinsic::usub_with_overflow,
-                           lhs, rhs);
-    case binary_op::mul:
-      if (is_float(kind)) {
-        return builder_.CreateFMul(lhs, rhs);
-      }
-      return checked_arith(signed_kind ? llvm::Intrinsic::smul_with_overflow
-                                       : llvm::Intrinsic::umul_with_overflow,
-                           lhs, rhs);
-    case binary_op::div:
-      if (is_float(kind)) {
-        return builder_.CreateFDiv(lhs, rhs);
-      }
-      return checked_div(signed_kind, bits, lhs, rhs, /*is_mod=*/false);
-    case binary_op::mod:
-      if (is_float(kind)) {
-        return builder_.CreateFRem(lhs, rhs);
-      }
-      return checked_div(signed_kind, bits, lhs, rhs, /*is_mod=*/true);
-    case binary_op::add_wrap:
-      return builder_.CreateAdd(lhs, rhs);
-    case binary_op::sub_wrap:
-      return builder_.CreateSub(lhs, rhs);
-    case binary_op::mul_wrap:
-      return builder_.CreateMul(lhs, rhs);
-    case binary_op::add_sat:
-      return builder_.CreateBinaryIntrinsic(
-          signed_kind ? llvm::Intrinsic::sadd_sat : llvm::Intrinsic::uadd_sat,
-          lhs, rhs);
-    case binary_op::sub_sat:
-      return builder_.CreateBinaryIntrinsic(
-          signed_kind ? llvm::Intrinsic::ssub_sat : llvm::Intrinsic::usub_sat,
-          lhs, rhs);
-    case binary_op::mul_sat:
-      return checked_mul_sat(signed_kind, bits, lhs, rhs);
-    case binary_op::shl:
-    case binary_op::shr:
-      return checked_shift(bin.op == binary_op::shl, signed_kind, bits, lhs,
-                           rhs);
-    case binary_op::bit_and:
-      return builder_.CreateAnd(lhs, rhs);
-    case binary_op::bit_or:
-      return builder_.CreateOr(lhs, rhs);
-    case binary_op::bit_xor:
-      return builder_.CreateXor(lhs, rhs);
-    default:
-      return std::unexpected(codegen_error{
-          .kind = codegen_error_kind::unsupported_construct,
-          .span = bin.span,
-          .message = std::format("operator `{}` is not supported by "
-                                 "llvm_codegen yet",
-                                 ast::binary_op_name(bin.op))});
-    }
-  }
-
-  [[nodiscard]] auto checked_arith(llvm::Intrinsic::ID id, llvm::Value *lhs,
-                                   llvm::Value *rhs) -> llvm::Value * {
-    auto *pair = builder_.CreateBinaryIntrinsic(id, lhs, rhs);
-    // NOLINTNEXTLINE(clang-analyzer-security.ArrayBound) - false positive:
-    // the analyzer's path-sensitive trace bottoms out in LLVM's own
-    // OperandTraits/User operand-accessor macros (vendored code we don't
-    // control), not in anything this call site does.
-    auto *value = builder_.CreateExtractValue(pair, 0);
-    auto *overflowed = builder_.CreateExtractValue(pair, 1);
-    guard_panic(overflowed, panic_reason::integer_overflow);
-    return value;
-  }
-
-  [[nodiscard]] auto checked_div(bool is_signed, int bits, llvm::Value *lhs,
-                                 llvm::Value *rhs, bool is_mod)
-      -> llvm::Value * {
-    auto *ty = lhs->getType();
-    auto *zero = llvm::ConstantInt::get(ty, 0);
-    guard_panic(builder_.CreateICmpEQ(rhs, zero),
-                panic_reason::integer_divide_by_zero);
-    if (is_signed) {
-      auto *min_value = llvm::ConstantInt::get(
-          ty, llvm::APInt::getSignedMinValue(static_cast<unsigned>(bits)));
-      auto *neg_one = llvm::ConstantInt::get(ty, static_cast<uint64_t>(-1),
-                                             /*isSigned=*/true);
-      auto *is_min = builder_.CreateICmpEQ(lhs, min_value);
-      auto *is_neg_one = builder_.CreateICmpEQ(rhs, neg_one);
-      guard_panic(builder_.CreateAnd(is_min, is_neg_one),
-                  panic_reason::integer_overflow);
-      return is_mod ? builder_.CreateSRem(lhs, rhs)
-                    : builder_.CreateSDiv(lhs, rhs);
-    }
-    return is_mod ? builder_.CreateURem(lhs, rhs)
-                  : builder_.CreateUDiv(lhs, rhs);
-  }
-
-  /// LLVM has no `smul.sat`/`umul.sat` intrinsic (unlike add/sub, which get
-  /// `sadd.sat`/`ssub.sat` directly) — computes it manually from the
-  /// overflow-checking multiply, mirroring `sat_mul_signed`/
-  /// `sat_mul_unsigned` in `src/bytecode/vm.cpp`. On signed overflow the
-  /// result saturates to the type's max when the operands share a sign
-  /// (the true product overflowed positively) or to its min otherwise (it
-  /// overflowed negatively); unsigned overflow always saturates to max.
-  [[nodiscard]] auto checked_mul_sat(bool is_signed, int bits, llvm::Value *lhs,
-                                     llvm::Value *rhs) -> llvm::Value * {
-    auto *ty = lhs->getType();
-    const auto width = static_cast<unsigned>(bits);
-    if (!is_signed) {
-      auto *pair = builder_.CreateBinaryIntrinsic(
-          llvm::Intrinsic::umul_with_overflow, lhs, rhs);
-      auto *value = builder_.CreateExtractValue(pair, 0);
-      auto *overflowed = builder_.CreateExtractValue(pair, 1);
-      auto *max_value =
-          llvm::ConstantInt::get(ty, llvm::APInt::getMaxValue(width));
-      return builder_.CreateSelect(overflowed, max_value, value);
-    }
-    auto *pair = builder_.CreateBinaryIntrinsic(
-        llvm::Intrinsic::smul_with_overflow, lhs, rhs);
-    auto *value = builder_.CreateExtractValue(pair, 0);
-    auto *overflowed = builder_.CreateExtractValue(pair, 1);
-    auto *zero = llvm::ConstantInt::get(ty, 0);
-    auto *min_value =
-        llvm::ConstantInt::get(ty, llvm::APInt::getSignedMinValue(width));
-    auto *max_value =
-        llvm::ConstantInt::get(ty, llvm::APInt::getSignedMaxValue(width));
-    auto *lhs_neg = builder_.CreateICmpSLT(lhs, zero);
-    auto *rhs_neg = builder_.CreateICmpSLT(rhs, zero);
-    auto *same_sign = builder_.CreateICmpEQ(lhs_neg, rhs_neg);
-    auto *saturated = builder_.CreateSelect(same_sign, max_value, min_value);
-    return builder_.CreateSelect(overflowed, saturated, value);
-  }
-
-  [[nodiscard]] auto checked_shift(bool is_shl, bool is_signed, int bits,
-                                   llvm::Value *lhs, llvm::Value *rhs)
-      -> llvm::Value * {
-    auto *bits_const =
-        llvm::ConstantInt::get(rhs->getType(), static_cast<uint64_t>(bits));
-    guard_panic(builder_.CreateICmpUGE(rhs, bits_const),
-                panic_reason::integer_overflow);
-    if (is_shl) {
-      return builder_.CreateShl(lhs, rhs);
-    }
-    return is_signed ? builder_.CreateAShr(lhs, rhs)
-                     : builder_.CreateLShr(lhs, rhs);
+    return scalars_.binary(bin.op, kind, lhs, rhs, bin.span);
   }
 
   /// Whether `id`'s runtime representation is already a single pointer into
@@ -1930,27 +1520,7 @@ private:
       if (!kind.has_value()) {
         return std::unexpected(kind.error());
       }
-      if (bytecode::is_wide_integer(*kind)) {
-        const auto wide = parse_wide_literal(lit.value, 128);
-        if (!wide.has_value()) {
-          return std::unexpected(codegen_error{
-              .kind = codegen_error_kind::unsupported_construct,
-              .span = lit.span,
-              .message = std::format("could not parse integer literal `{}`",
-                                     lit.value)});
-        }
-        return llvm::ConstantInt::get(llvm_type_for(ctx_, *kind), -*wide);
-      }
-      const auto magnitude = parse_uint_literal(lit.value);
-      if (!magnitude.has_value()) {
-        return std::unexpected(codegen_error{
-            .kind = codegen_error_kind::unsupported_construct,
-            .span = lit.span,
-            .message = std::format("could not parse integer literal `{}`",
-                                   lit.value)});
-      }
-      auto *ty = llvm_type_for(ctx_, *kind);
-      return llvm::ConstantInt::get(ty, ~(*magnitude) + 1);
+      return scalars_.negated_literal(lit.value, lit.span, *kind);
     }
     auto kind = numeric_kind_for(un.operand->type, un.span);
     if (!kind.has_value()) {
@@ -1963,20 +1533,7 @@ private:
     if (un.op == ast::unary_op::bit_not) {
       return builder_.CreateNot(*src);
     }
-    // Neg: float negates plainly; signed integer negation panics exactly
-    // when negating the type's minimum value (mirrors `vm.cpp`'s
-    // `checked_neg_signed` — the checker guarantees `Neg` never reaches an
-    // unsigned operand, matching `exec_neg`'s own precondition comment).
-    if (is_float(*kind)) {
-      return builder_.CreateFNeg(*src);
-    }
-    const auto bits = bit_width(*kind);
-    auto *min_value = llvm::ConstantInt::get(
-        (*src)->getType(),
-        llvm::APInt::getSignedMinValue(static_cast<unsigned>(bits)));
-    guard_panic(builder_.CreateICmpEQ(*src, min_value),
-                panic_reason::integer_overflow);
-    return builder_.CreateNeg(*src);
+    return scalars_.negate(*kind, *src);
   }
 
   [[nodiscard]] auto compile_cast(const hir::hir_cast &cast)
@@ -1993,28 +1550,7 @@ private:
     if (!src.has_value()) {
       return std::unexpected(src.error());
     }
-    auto *to_ty = llvm_type_for(ctx_, *to_kind);
-    const auto from_float = is_float(*from_kind);
-    const auto to_float = is_float(*to_kind);
-
-    if (from_float && to_float) {
-      return *to_kind == numeric_kind::f32 ? builder_.CreateFPTrunc(*src, to_ty)
-                                           : builder_.CreateFPExt(*src, to_ty);
-    }
-    if (from_float) {
-      return is_signed_integer(*to_kind) ? builder_.CreateFPToSI(*src, to_ty)
-                                         : builder_.CreateFPToUI(*src, to_ty);
-    }
-    if (to_float) {
-      return is_signed_integer(*from_kind) ? builder_.CreateSIToFP(*src, to_ty)
-                                           : builder_.CreateUIToFP(*src, to_ty);
-    }
-    // Integer-to-integer: sign-extend if the *source* was signed, zero-
-    // extend otherwise, then truncate to the destination width — matches
-    // `bytecode::vm`'s `exec_cast` exactly.
-    return is_signed_integer(*from_kind)
-               ? builder_.CreateSExtOrTrunc(*src, to_ty)
-               : builder_.CreateZExtOrTrunc(*src, to_ty);
+    return scalars_.cast(*from_kind, *to_kind, *src);
   }
 
   /// Identical scheme to `bytecode_compiler::function_compiler`'s own
@@ -4848,6 +4384,7 @@ private:
   /// globals_` exactly.
   const std::unordered_map<std::string, llvm::GlobalVariable *> &globals_;
   llvm::IRBuilder<> builder_;
+  scalar_builder scalars_;
   llvm::Function *current_fn_ = nullptr;
   llvm::AllocaInst *alloca_marker_ = nullptr;
   std::unordered_map<hir::symbol_id, local_slot> locals_;

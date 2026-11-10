@@ -14,9 +14,9 @@ bytecode VM and LLVM backends.
 This is an implementation plan. T-01 is complete (findings in
 [value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
 complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
-`while` to the storage form, and T-05 is partly done (a storage-form bytecode
-path exists but is not wired into the driver); status is under each task below.
-T-06 through T-14 have not been implemented.
+`while` to the storage form, and T-05 and T-06 are partly done (storage-form
+bytecode and LLVM compilers exist but are not wired into the driver); status is
+under each task below. T-07 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -759,6 +759,38 @@ Not done:
 ### T-06 — Implement LLVM values and result destinations
 
 **Goal:** Match VM value behavior in native code.
+
+**Status: partly done (2026-11-10).** A second LLVM compiler,
+`llvm_codegen/storage_codegen.{h,cpp}`, builds IR from the storage form. Like the
+T-05 bytecode compiler it is not called by the driver (decision 6). Done:
+
+- Frame values: every slot is an entry-block byte `alloca` of its layout size and
+  alignment. Scalars are loaded and stored at their own width (`bool` is a byte
+  in memory and `i1` in registers); aggregate transfers are `memmove`.
+- Internal signature follows `abi_signature::operands()`: hidden result `ptr`
+  first with a `void` return, by-address parameters as `ptr`, scalar results
+  returned directly with `signext`/`zeroext` by type. No heap allocation symbol
+  is declared or called.
+- Alignment: accesses claim the smaller of the natural alignment and what the
+  slot base and offset guarantee; packed projections are accessed unaligned and
+  anything reached through a loaded address uses alignment 1.
+- Shared scalar emission: checked arithmetic, casts, literals, and panics moved
+  from `codegen.cpp` into `scalar_ops.{h,cpp}` (`scalar_builder`), used by both
+  LLVM compilers so the panic reasons match.
+- Entry thunks (`__cinder_entry_<name>(const uint64_t *args, void *result)`,
+  `storage_codegen_options::entry_thunks`) give the JIT one call shape;
+  `jit_module::run_storage` calls them and turns a panic into a
+  `panic_reason`.
+- Same cases as T-05: the value cases moved to `src/testing/storage_cases.h`
+  and run through both backends (LLVM at O0 and O2), plus structural IR checks
+  (hidden result parameter, parameter by address, no allocator, alignment 1 on
+  packed accesses through addresses). Mutation checks (alignment over-claim,
+  short `memmove`, payload offset, flipped result extension) each failed a test.
+
+Not done: index and range operations, patterns, aggregate equality, indirect
+calls, a call into another module, `drop_in_place`, 128-bit scalars; scalar tail
+calls are not specially handled; the AOT entry (`cinder build`) and external
+runtime wrappers still use the old compiler; the driver switch.
 
 1. Replace heap-value storage classification with the shared layout and ABI plan.
    Emit aggregate definitions/calls, function descriptors, and return destinations

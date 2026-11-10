@@ -78,5 +78,6 @@ cc_test(
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+        "//src/testing:storage_fixtures",
     ],
 )
