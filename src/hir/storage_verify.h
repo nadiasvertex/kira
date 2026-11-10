@@ -32,6 +32,9 @@ enum class verify_error_kind : uint8_t {
                      ///< an argument slot that still holds a value.
   bad_result,        ///< The result is not complete on a normal return.
   leaked_value,      ///< A value that needs a drop is left behind.
+  double_drop,       ///< A value's own drop runs twice.
+  use_after_drop,    ///< A value is used after its drop ran, and before it was
+                     ///< written again.
   missing_return,    ///< The function can fall off its end.
   code_after_return, ///< An operation follows `return_value`.
   layout_failed,     ///< A type in the form has no layout.
@@ -50,10 +53,10 @@ struct verify_error {
 };
 
 struct verify_options {
-  /// Report a value that needs a drop and is still initialized at `return`.
-  /// Off until ownership is integrated: lowering does not yet schedule drops
-  /// for named locals.
-  bool check_leaks = false;
+  /// Report a value that needs a drop and still owes one when its slot ends
+  /// or the function returns. A value owes its own drop, and one for each
+  /// droppable field it still holds, unless it was moved out.
+  bool check_leaks = true;
 };
 
 /// Replays the form and reports the first violation. Checks:
@@ -67,6 +70,11 @@ struct verify_options {
 /// - a call agrees with its callee's ABI, consumes each argument slot, and
 ///   builds its result in fresh storage that no borrowed argument overlaps;
 /// - no slot is used after `storage_dead`;
+/// - a value's own drop runs at most once, nothing touches the value after it
+///   until it is written again, and (with `check_leaks`) every value that
+///   needs a drop has had it before its slot ends;
+/// - a write over a value that needs a drop happens only after that value's
+///   drops have run;
 /// - on return the result is complete, and nothing follows the return.
 [[nodiscard]] auto verify(const storage_function &function, storage_env &env,
                           const storage_module *callees = nullptr,

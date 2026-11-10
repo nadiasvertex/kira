@@ -1,6 +1,8 @@
 #include "src/hir/storage_verify.h"
 
 #include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -83,7 +85,8 @@ public:
   replay(const storage_function &function, storage_env &env,
          const storage_module *callees, const verify_options &options)
       : fn_(function), env_(env), callees_(callees), options_(options),
-        state_(function.slots.size()), dead_(function.slots.size(), false) {}
+        state_(function.slots.size()), dropped_(function.slots.size()),
+        dead_(function.slots.size(), false) {}
 
   [[nodiscard]] auto run() -> std::expected<void, verify_error> {
     if (auto ok = check_slots(); !ok.has_value()) {
@@ -469,27 +472,43 @@ private:
 
   /// A value the operation reads must be complete. Behind an address the
   /// referent is borrowed, so only the address itself is checked.
-  [[nodiscard]] auto require_init(const place &where, const resolved_place &at)
-      -> result {
+  [[nodiscard]] auto require_init(const place &where, const resolved_place &at,
+                                  bool allow_dropped = false) -> result {
     if (!fully_init(where, at, at.tracked)) {
       return fail(verify_error_kind::uninitialized,
                   "s" + std::to_string(where.base) + " is read before it is " +
                       "completely initialized");
     }
+    if (!allow_dropped && touches_dropped(where, at.tracked)) {
+      return fail(verify_error_kind::use_after_drop,
+                  describe(where, at.tracked) +
+                      " is used after its drop ran");
+    }
     return {};
   }
 
-  /// A destination must hold no value, or hold one that needs no drop.
+  /// A destination must hold no value, hold one that needs no drop, or hold
+  /// one whose drops have all run.
   [[nodiscard]] auto require_writable(const place &where,
                                       const resolved_place &at) -> result {
     if (at.through_deref) {
       return require_init(where, at);
     }
+    // Writing a field of a value whose own drop ran would build on a value
+    // that is already finished.
+    if (above_dropped(where, at.tracked)) {
+      return fail(verify_error_kind::use_after_drop,
+                  describe(where, at.tracked) +
+                      " is written inside a value whose drop ran");
+    }
     if (!any_init(where, at.tracked)) {
       return {};
     }
-    if (fully_init(where, at, at.tracked) &&
-        !env_.needs_drop(where.type)) {
+    if (!env_.needs_drop(where.type)) {
+      if (fully_init(where, at, at.tracked)) {
+        return {};
+      }
+    } else if (!owed_drop(where, at.tracked).has_value()) {
       return {};
     }
     return fail(verify_error_kind::already_initialized,
@@ -500,7 +519,173 @@ private:
   auto commit_write(const place &where, const resolved_place &at) -> void {
     if (!at.through_deref) {
       mark_init(where, at.tracked);
+      forget_drops(where, at.tracked);
     }
+  }
+
+  // ------------------------------------------------------------------
+  //  Drops
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] static auto path_key(const place &where, size_t count)
+      -> std::string {
+    auto out = std::string{};
+    for (size_t i = 0; i < count; ++i) {
+      out += "/" + step_key(where.steps[i]);
+    }
+    return out;
+  }
+
+  [[nodiscard]] static auto is_prefix(const std::string &prefix,
+                                      const std::string &path) -> bool {
+    return path == prefix ||
+           (path.size() > prefix.size() && path.starts_with(prefix) &&
+            path[prefix.size()] == '/');
+  }
+
+  [[nodiscard]] auto describe(const place &where, size_t count) const
+      -> std::string {
+    return "s" + std::to_string(where.base) + path_key(where, count);
+  }
+
+  /// Whether the drop of `where`, of anything it contains, or of anything
+  /// that contains it has run.
+  [[nodiscard]] auto touches_dropped(const place &where, size_t count) const
+      -> bool {
+    const auto path = path_key(where, count);
+    for (const auto &done : dropped_[where.base]) {
+      if (is_prefix(done, path) || is_prefix(path, done)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether a value that contains `where` has had its own drop run.
+  [[nodiscard]] auto above_dropped(const place &where, size_t count) const
+      -> bool {
+    const auto path = path_key(where, count);
+    for (const auto &done : dropped_[where.base]) {
+      if (done != path && is_prefix(done, path)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// A fresh value at `where` owes its drops again.
+  auto forget_drops(const place &where, size_t count) -> void {
+    const auto path = path_key(where, count);
+    auto &done = dropped_[where.base];
+    for (auto it = done.begin(); it != done.end();) {
+      it = is_prefix(path, *it) ? done.erase(it) : std::next(it);
+    }
+  }
+
+  /// The first place under `node` whose drop is still owed, if any. `node` is
+  /// null for a part that was never initialized or was moved out.
+  [[nodiscard]] auto first_owed(const init_node *node, type_id type,
+                                storage_id slot, const std::string &path)
+      -> std::optional<std::string> {
+    static const auto whole_value = [] {
+      auto node = init_node{};
+      node.whole = true;
+      return node;
+    }();
+    if (node == nullptr || node->empty()) {
+      return std::nullopt;
+    }
+    const auto stripped = types().strip_refinement(type);
+    const auto here = "s" + std::to_string(slot) + path;
+    const auto child_of = [&](const std::string &key) -> const init_node * {
+      if (node->whole) {
+        return &whole_value;
+      }
+      const auto found = node->children.find(key);
+      return found == node->children.end() ? nullptr : &found->second;
+    };
+    const auto *plan = env_.drop_plan(stripped);
+    if (plan != nullptr) {
+      const auto has_own = plan->own_drop.has_value() ||
+                           plan->closure_glue.has_value() ||
+                           plan->cancels_generator;
+      if (has_own && !dropped_[slot].contains(path)) {
+        return here;
+      }
+      if (plan->closure_glue.has_value() || plan->cancels_generator) {
+        return std::nullopt;
+      }
+      if (!plan->variant_drops.empty()) {
+        return here; // Only `drop_in_place` ends a sum.
+      }
+      const auto layout = env_.layouts.layout(stripped);
+      if (!layout.has_value()) {
+        return here;
+      }
+      for (const auto &[name, field_type] : plan->droppable_fields) {
+        for (size_t i = 0; i < (*layout)->members.size(); ++i) {
+          if ((*layout)->members[i].name != name) {
+            continue;
+          }
+          if (auto owed = first_owed(child_of(member_key(i)), field_type, slot,
+                                     path + "/" + member_key(i));
+              owed.has_value()) {
+            return owed;
+          }
+        }
+      }
+      return std::nullopt;
+    }
+    if (types().entry(stripped).kind == semantic::type_kind::fn_kind) {
+      return dropped_[slot].contains(path) ? std::nullopt
+                                           : std::optional{here};
+    }
+    const auto layout = env_.layouts.layout(stripped);
+    if (!layout.has_value()) {
+      return std::nullopt;
+    }
+    const auto &found = **layout;
+    if (found.kind == runtime::value_layout_kind::tuple ||
+        found.kind == runtime::value_layout_kind::structure) {
+      for (size_t i = 0; i < found.members.size(); ++i) {
+        if (auto owed = first_owed(child_of(member_key(i)), found.members[i].type,
+                                   slot, path + "/" + member_key(i));
+            owed.has_value()) {
+          return owed;
+        }
+      }
+    } else if (found.kind == runtime::value_layout_kind::array &&
+               env_.needs_drop(found.element)) {
+      return here; // Only `drop_in_place` ends an array's elements.
+    }
+    return std::nullopt;
+  }
+
+  /// The first drop still owed by the value at `where`, if any.
+  [[nodiscard]] auto owed_drop(const place &where, size_t count)
+      -> std::optional<std::string> {
+    const auto *node = &state_[where.base];
+    for (size_t i = 0; i < count; ++i) {
+      if (node->whole) {
+        node = nullptr;
+        break;
+      }
+      const auto child = node->children.find(step_key(where.steps[i]));
+      if (child == node->children.end()) {
+        return std::nullopt;
+      }
+      node = &child->second;
+    }
+    if (node == nullptr) {
+      // A whole ancestor: the value here is initialized and untouched.
+      static const auto whole_value = [] {
+        auto node = init_node{};
+        node.whole = true;
+        return node;
+      }();
+      node = &whole_value;
+    }
+    return first_owed(node, where.type, where.base, path_key(where, count));
   }
 
   // ------------------------------------------------------------------
@@ -765,13 +950,49 @@ private:
     if (!at.has_value()) {
       return std::unexpected(at.error());
     }
-    if (auto ok = require_init(op.dest, *at); !ok.has_value()) {
+    if (auto ok = require_init(op.dest, *at, true); !ok.has_value()) {
       return ok;
     }
     if (at->through_deref) {
       return {}; // The referent's owner tracks what it holds.
     }
+    forget_drops(op.dest, at->tracked);
     return invalidate(op.dest, *at, at->tracked);
+  }
+
+  /// A synthesized `drop` call: its one argument borrows a value this
+  /// function owns, and the call runs that value's own drop once. The value
+  /// stays in place, because its droppable fields are dropped by later calls.
+  [[nodiscard]] auto check_drop_call(const storage_op &op) -> result {
+    if (!op.callee.is_direct() || op.args.size() != 1 ||
+        op.args[0].cls != pass_class::address ||
+        op.args[0].value.kind != operand_kind::address_of) {
+      return fail(verify_error_kind::bad_argument,
+                  "a drop call takes the address of one value");
+    }
+    const auto &target = op.args[0].value.where;
+    const auto at = resolve(target);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    if (at->through_deref) {
+      return fail(verify_error_kind::move_from_reference,
+                  "a drop of bytes behind a reference; their owner drops them");
+    }
+    if (auto ok = require_init(target, *at, true); !ok.has_value()) {
+      return ok;
+    }
+    const auto *plan = env_.drop_plan(target.type);
+    if (plan == nullptr || !plan->own_drop.has_value()) {
+      return fail(verify_error_kind::bad_operation,
+                  name_of(target.type) + " has no drop of its own to call");
+    }
+    const auto path = path_key(target, at->tracked);
+    if (!dropped_[target.base].insert(path).second) {
+      return fail(verify_error_kind::double_drop,
+                  describe(target, at->tracked) + " is dropped twice");
+    }
+    return {};
   }
 
   [[nodiscard]] auto do_call(const storage_op &op) -> result {
@@ -825,6 +1046,11 @@ private:
                   "the call returns " + name_of(sig.result.type) +
                       " but its destination is " + name_of(op.dest.type));
     }
+    if (op.is_drop) {
+      if (auto ok = check_drop_call(op); !ok.has_value()) {
+        return ok;
+      }
+    }
     auto used = std::unordered_set<storage_id>{};
     for (size_t i = 0; i < op.args.size(); ++i) {
       const auto &arg = op.args[i];
@@ -856,8 +1082,10 @@ private:
         }
         continue;
       }
-      if (auto ok = check_operand(arg.value); !ok.has_value()) {
-        return ok;
+      if (!op.is_drop) { // `check_drop_call` read the borrowed value.
+        if (auto ok = check_operand(arg.value); !ok.has_value()) {
+          return ok;
+        }
       }
       const auto cls = classify_value(env_.layouts, arg.value.type);
       if (!cls.has_value() || cls->cls != arg.cls) {
@@ -907,12 +1135,17 @@ private:
                       " still holds an argument no call consumed");
     }
     if (options_.check_leaks && holds && env_.needs_drop(slot.type)) {
-      return fail(verify_error_kind::leaked_value,
-                  "slot s" + std::to_string(op.slot) +
-                      " ends while still holding a value that needs a drop");
+      if (const auto owed =
+              first_owed(&state_[op.slot], slot.type, op.slot, "");
+          owed.has_value()) {
+        return fail(verify_error_kind::leaked_value,
+                    "slot s" + std::to_string(op.slot) +
+                        " ends while " + *owed + " still owes its drop");
+      }
     }
     dead_[op.slot] = true;
     state_[op.slot] = init_node{};
+    dropped_[op.slot].clear();
     return {};
   }
 
@@ -962,9 +1195,12 @@ private:
           (slot.cls == storage_class::frame_local ||
            slot.cls == storage_class::parameter) &&
           !state_[slot.id].empty() && env_.needs_drop(slot.type)) {
-        return fail(verify_error_kind::leaked_value,
-                    "slot s" + std::to_string(slot.id) +
-                        " is still initialized and needs a drop at return");
+        if (const auto owed =
+                first_owed(&state_[slot.id], slot.type, slot.id, "");
+            owed.has_value()) {
+          return fail(verify_error_kind::leaked_value,
+                      *owed + " still owes its drop at return");
+        }
       }
     }
     returned_ = true;
@@ -976,6 +1212,10 @@ private:
   const storage_module *callees_;
   verify_options options_;
   std::vector<init_node> state_;
+  /// Per slot, the places whose own drop has run. A drop call leaves the
+  /// bytes in place, because the fields still need their drops, so this is
+  /// kept apart from `state_`.
+  std::vector<std::set<std::string>> dropped_;
   std::vector<bool> dead_;
   size_t op_index_ = static_cast<size_t>(-1);
   source_span span_;
@@ -1022,6 +1262,10 @@ auto verify_error_kind_name(verify_error_kind kind) -> const char * {
     return "bad_result";
   case verify_error_kind::leaked_value:
     return "leaked_value";
+  case verify_error_kind::double_drop:
+    return "double_drop";
+  case verify_error_kind::use_after_drop:
+    return "use_after_drop";
   case verify_error_kind::missing_return:
     return "missing_return";
   case verify_error_kind::code_after_return:

@@ -482,29 +482,97 @@ auto test_dump_is_stable() -> void {
 //  Types that need a drop
 // ==========================================================================
 
-auto test_drop_translation_is_not_invented() -> void {
+auto test_droppable_values_lower_and_verify() -> void {
   auto f = build(read_program("drops.cn"));
-  expect(f->lowering.module.find("make_noisy") != nullptr,
-         "expected a constructor of a droppable type to lower");
-  const auto *replace = f->refusal("replace_noisy");
-  expect(replace != nullptr &&
-             replace->message.find("needs a drop") != std::string::npos,
-         "expected replacing a droppable value to be refused");
-  expect(f->refusal("discard_noisy") != nullptr,
-         "expected a discarded droppable result to be refused");
-  // A droppable argument is moved, never copied.
+  expect(f->lowering.refused.empty(),
+         "expected every function over droppable values to lower");
+  const auto verdict = hir::verify(f->lowering.module, *f->env);
+  if (!verdict.has_value()) {
+    std::cerr << verdict.error().function << ": " << verdict.error().message
+              << "\n";
+  }
+  expect(verdict.has_value(),
+         "expected the drops to account for every droppable value");
+}
+
+auto test_scope_exit_drop_is_a_marked_call() -> void {
+  auto f = build(read_program("drops.cn"));
+  expect_ops(*f, "forget_noisy",
+             {"call s1 = make_noisy(s0)", "compute s2 = copy s0",
+              "call.drop s3 = noisy::drop(&s1)", "dead s3", "return s2"});
+  // The value is dropped where it stands, after the value `return` carries
+  // has been computed.
+  expect_ops(*f, "read_through",
+             {"call s1 = make_noisy(s0)", "call s2 = read_id(&s1)",
+              "call.drop s3 = noisy::drop(&s1)", "dead s3", "return s2"});
+  // A parameter the function owns is dropped by the function.
+  expect_ops(*f, "take_noisy",
+             {"compute s1 = const 0", "call.drop s2 = noisy::drop(&s0)",
+              "dead s2", "return s1"});
+  // A parameter passed on is moved into the callee, which drops it.
   expect_ops(*f, "pass_noisy",
              {"move s2 <- s0", "call s1 = take_noisy(move s2)", "dead s2",
               "return s1"});
   expect(!f->env->is_copy(f->function("pass_noisy").slots[0].type) &&
              f->env->needs_drop(f->function("pass_noisy").slots[0].type),
          "expected a type with a drop to move and to need a drop");
-  // HIR's own scheduled drop stays an ordinary call to the user's `drop`.
-  const auto forget = f->function("forget_noisy");
-  const auto &drop = forget.ops[find_op(forget, hir::op_kind::call_into, 1)];
-  expect(drop.callee.name == "noisy::drop",
-         "expected the scheduled drop to remain an explicit call");
-  expect_verifies(*f, forget, "forget_noisy");
+  // Only synthesized drops carry the mark.
+  const auto lowered = f->function("read_through");
+  expect(!lowered.ops[find_op(lowered, hir::op_kind::call_into, 0)].is_drop &&
+             !lowered.ops[find_op(lowered, hir::op_kind::call_into, 1)].is_drop &&
+             lowered.ops[find_op(lowered, hir::op_kind::call_into, 2)].is_drop,
+         "expected exactly the scheduled drop to be marked");
+}
+
+auto test_discarded_temporary_is_dropped() -> void {
+  auto f = build(read_program("drops.cn"));
+  expect_ops(*f, "discard_noisy",
+             {"call s1 = make_noisy(s0)", "call.drop s2 = noisy::drop(&s1)",
+              "dead s2", "return s0"});
+}
+
+auto test_replacement_drops_the_old_value_first() -> void {
+  auto f = build(read_program("drops.cn"));
+  // The new value is built first, the old one dropped, then it is stored.
+  expect_ops(*f, "replace_noisy",
+             {"call s2 = make_noisy(s1)", "compute s4 = binary + s1, #1",
+              "call s3 = make_noisy(s4)", "dead s4",
+              "call.drop s5 = noisy::drop(&s2)", "dead s5", "move s2 <- s3",
+              "move s0 <- s2", "return"});
+  // Replacing one field drops only that field.
+  expect_ops(*f, "replace_second",
+             {"call s1 = make_holder(s0)", "compute s3 = binary + s0, #2",
+              "call s2 = make_noisy(s3)", "dead s3",
+              "call.drop s4 = noisy::drop(&s1.second)", "dead s4",
+              "move s1.second <- s2", "compute s5 = copy s0",
+              "call.drop s6 = noisy::drop(&s1.first)", "dead s6",
+              "call.drop s7 = noisy::drop(&s1.second)", "dead s7",
+              "return s5"});
+}
+
+auto test_fields_drop_in_order_and_moved_fields_are_skipped() -> void {
+  auto f = build(read_program("drops.cn"));
+  expect_ops(*f, "drop_holder",
+             {"call s1 = make_holder(s0)", "compute s2 = copy s0",
+              "call.drop s3 = noisy::drop(&s1.first)", "dead s3",
+              "call.drop s4 = noisy::drop(&s1.second)", "dead s4",
+              "return s2"});
+  // `h.first` leaves by move, so only `h.second` is dropped.
+  expect_ops(*f, "take_first",
+             {"call s2 = make_holder(s1)", "move s3 <- s2.first",
+              "call.drop s4 = noisy::drop(&s2.second)", "dead s4",
+              "move s0 <- s3", "return"});
+  // A parameter holds droppable fields it owns.
+  expect_ops(*f, "pass_holder",
+             {"compute s1 = const 0", "call.drop s2 = noisy::drop(&s0.first)",
+              "dead s2", "call.drop s3 = noisy::drop(&s0.second)", "dead s3",
+              "return s1"});
+  // Built in an outgoing slot and moved into the callee, which drops it.
+  expect_ops(*f, "forward_holder",
+             {"call s2 = make_holder(s0)", "call s1 = pass_holder(move s2)",
+              "dead s2", "return s1"});
+  // A borrow neither drops nor moves.
+  expect_ops(*f, "read_id", {"return s0.*.id"});
 }
 
 // ==========================================================================
@@ -730,31 +798,111 @@ auto test_verifier_rejects_double_construction_of_a_droppable() -> void {
                  "a value needing a drop built over a live one");
 }
 
-auto test_verifier_tracks_leaks_when_asked() -> void {
+auto erase_op(hir::storage_function &function, size_t index) -> void {
+  function.ops.erase(function.ops.begin() + static_cast<std::ptrdiff_t>(index));
+}
+
+auto test_verifier_reports_values_that_owe_a_drop() -> void {
   auto f = build(read_program("drops.cn"));
-  auto forget = f->function("forget_noisy");
-  const auto drop_call = find_op(forget, hir::op_kind::call_into, 1);
-  const auto noisy = forget.slots[1].type;
 
-  // The explicit call is not yet understood as the end of the value.
-  const auto leaks = hir::verify_options{.check_leaks = true};
-  expect_verifies(*f, forget, "default options ignore leaks");
-  expect_rejects(*f, forget, hir::verify_error_kind::leaked_value,
-                 "the drop call does not end the value yet", leaks);
-
-  // Replacing the call with a drop of the place ends it.
-  auto dropped = forget;
-  dropped.ops[drop_call] = hir::storage_op{.kind = hir::op_kind::drop_in_place};
-  dropped.ops[drop_call].dest = place_at(1, noisy);
-  expect_verifies(*f, dropped, "dropped in place", leaks);
-
-  // Removing it leaves the value behind.
-  auto forgotten = dropped;
-  forgotten.ops.erase(forgotten.ops.begin() +
-                      static_cast<std::ptrdiff_t>(drop_call));
+  // A local whose scope-exit drop is missing.
+  auto forgotten = f->function("forget_noisy");
+  erase_op(forgotten, find_op(forgotten, hir::op_kind::call_into, 1));
   expect_rejects(*f, forgotten, hir::verify_error_kind::leaked_value,
-                 "a droppable local left at return", leaks);
-  expect_verifies(*f, forgotten, "leaks are reported only on request");
+                 "a droppable local left at return");
+  expect_verifies(*f, forgotten, "leaks are reported only on request",
+                  hir::verify_options{.check_leaks = false});
+
+  // A parameter the function owns.
+  auto param = f->function("take_noisy");
+  erase_op(param, find_op(param, hir::op_kind::call_into));
+  expect_rejects(*f, param, hir::verify_error_kind::leaked_value,
+                 "an owned parameter left at return");
+
+  // Each droppable field owes its own drop.
+  auto first_field = f->function("drop_holder");
+  erase_op(first_field, find_op(first_field, hir::op_kind::call_into, 1));
+  expect_rejects(*f, first_field, hir::verify_error_kind::leaked_value,
+                 "the first field of a struct was not dropped");
+  auto second_field = f->function("drop_holder");
+  erase_op(second_field, find_op(second_field, hir::op_kind::call_into, 2));
+  expect_rejects(*f, second_field, hir::verify_error_kind::leaked_value,
+                 "the second field of a struct was not dropped");
+
+  // What is left after a partial move still owes its drop; what moved does not.
+  auto partial = f->function("take_first");
+  expect_verifies(*f, partial, "a field moved out is not owed");
+  erase_op(partial, find_op(partial, hir::op_kind::call_into, 1));
+  expect_rejects(*f, partial, hir::verify_error_kind::leaked_value,
+                 "the field that stayed behind was not dropped");
+
+  // A drop of the whole place ends the value as well.
+  auto in_place = f->function("forget_noisy");
+  const auto call = find_op(in_place, hir::op_kind::call_into, 1);
+  in_place.ops[call] = hir::storage_op{.kind = hir::op_kind::drop_in_place};
+  in_place.ops[call].dest = place_at(1, in_place.slots[1].type);
+  expect_verifies(*f, in_place, "dropped in place");
+}
+
+auto test_verifier_rejects_second_and_late_drops() -> void {
+  auto f = build(read_program("drops.cn"));
+  auto twice = f->function("forget_noisy");
+  const auto call = find_op(twice, hir::op_kind::call_into, 1);
+  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(call),
+                   twice.ops[call]);
+  expect_rejects(*f, twice, hir::verify_error_kind::double_drop,
+                 "the same value dropped twice");
+
+  // A borrow of the value after its drop ran.
+  auto late = f->function("read_through");
+  std::swap(late.ops[find_op(late, hir::op_kind::call_into, 1)],
+            late.ops[find_op(late, hir::op_kind::call_into, 2)]);
+  expect_rejects(*f, late, hir::verify_error_kind::use_after_drop,
+                 "a borrow after the drop");
+
+  // Replacement: skipping the old value's drop writes over a live value.
+  auto skipped = f->function("replace_noisy");
+  erase_op(skipped, find_op(skipped, hir::op_kind::call_into, 2));
+  expect_rejects(*f, skipped, hir::verify_error_kind::already_initialized,
+                 "a replacement written over a value that was not dropped");
+
+  // Replacement: the old value moved out first needs no drop.
+  auto field = f->function("replace_second");
+  erase_op(field, find_op(field, hir::op_kind::call_into, 2));
+  expect_rejects(*f, field, hir::verify_error_kind::already_initialized,
+                 "a field replaced without dropping the old one");
+}
+
+auto test_verifier_checks_the_shape_of_a_drop_call() -> void {
+  auto f = build(read_program("drops.cn"));
+  const auto unit = f->builtin("unit");
+
+  // A type with no drop of its own has nothing to call.
+  auto no_own = f->function("drop_holder");
+  const auto holder = f->function("drop_holder").slots[1].type;
+  auto &first = no_own.ops[find_op(no_own, hir::op_kind::call_into, 1)];
+  first.args[0].value.where = place_at(1, holder);
+  expect_rejects(*f, no_own, hir::verify_error_kind::bad_operation,
+                 "a drop call on a struct that has no drop of its own");
+
+  // Bytes behind a reference belong to their owner.
+  auto borrowed = f->function("read_id");
+  auto drop = f->function("forget_noisy").ops[2];
+  const auto noisy = f->function("forget_noisy").slots[1].type;
+  drop.dest = place_at(add_slot(borrowed, hir::storage_class::frame_local, unit),
+                       unit);
+  drop.args[0].value.where =
+      place_at(0, noisy, {hir::projection{.kind = hir::projection_kind::deref}});
+  borrowed.ops.insert(borrowed.ops.begin(), drop);
+  expect_rejects(*f, borrowed, hir::verify_error_kind::move_from_reference,
+                 "a drop of a value behind a reference");
+
+  // The call takes an address and nothing else.
+  auto bare = f->function("forget_noisy");
+  bare.ops[find_op(bare, hir::op_kind::call_into, 1)].args[0].value.kind =
+      hir::operand_kind::constant;
+  expect_rejects(*f, bare, hir::verify_error_kind::bad_argument,
+                 "a drop call that is not given an address");
 }
 
 auto test_verifier_checks_slots_and_signature() -> void {
@@ -809,7 +957,11 @@ auto main() -> int {
     test_unsupported_constructs_are_refused_by_name();
     test_every_lowered_function_verifies();
     test_dump_is_stable();
-    test_drop_translation_is_not_invented();
+    test_droppable_values_lower_and_verify();
+    test_scope_exit_drop_is_a_marked_call();
+    test_discarded_temporary_is_dropped();
+    test_replacement_drops_the_old_value_first();
+    test_fields_drop_in_order_and_moved_fields_are_skipped();
     test_verifier_rejects_incomplete_results();
     test_verifier_rejects_missing_or_extra_returns();
     test_verifier_rejects_reads_of_unfinished_values();
@@ -821,7 +973,9 @@ auto main() -> int {
     test_verifier_checks_argument_consumption();
     test_verifier_rejects_a_result_that_aliases_a_borrow();
     test_verifier_rejects_double_construction_of_a_droppable();
-    test_verifier_tracks_leaks_when_asked();
+    test_verifier_reports_values_that_owe_a_drop();
+    test_verifier_rejects_second_and_late_drops();
+    test_verifier_checks_the_shape_of_a_drop_call();
     test_verifier_checks_slots_and_signature();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());

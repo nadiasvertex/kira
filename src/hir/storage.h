@@ -50,6 +50,10 @@ struct storage_env {
   /// Whether dropping a value of `type` does anything. `fn` values count:
   /// a closure may carry drop glue for its environment.
   [[nodiscard]] auto needs_drop(semantic::type_id type) -> bool;
+  /// The checker's drop plan for `type`, or null when it has none of its own
+  /// (a type with no drop, or a tuple or array that only contains droppables).
+  [[nodiscard]] auto drop_plan(semantic::type_id type) const
+      -> const semantic::drop_plan *;
   [[nodiscard]] auto types() const -> const semantic::type_table & {
     return checked.types;
   }
@@ -197,6 +201,10 @@ struct storage_op {
   // publish_variant
   std::string variant{};
   // call_into
+  /// The call is a type's own `drop`, synthesized where a value ends. Its one
+  /// argument is the address of the value, which stays in place; the verifier
+  /// records that the value's own drop has run.
+  bool is_drop = false;
   call_target callee{};
   abi_signature signature{};
   std::vector<call_argument> args{};

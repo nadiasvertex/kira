@@ -3331,9 +3331,11 @@ auto lowerer::build_drop_calls(const place_fn &make_receiver, type_id type,
     auto args = ptr_vec<hir_expr>{};
     args.push_back(make_receiver());
     const auto result_type = drop_call_result_type(checked_, *resolved.decl);
-    out.push_back(ptr<hir_node>(make<hir_expr_stmt>(
-        span, ptr<hir_expr>(direct_call(span, result_type, std::move(callee),
-                                        std::move(args), resolved.decl)))));
+    auto own_drop = direct_call(span, result_type, std::move(callee),
+                                std::move(args), resolved.decl);
+    own_drop->is_drop = true;
+    out.push_back(ptr<hir_node>(
+        make<hir_expr_stmt>(span, ptr<hir_expr>(std::move(own_drop)))));
   }
   // Field-wise, in declaration order, regardless of whether this type had
   // its own `impl drop` above — the spec's implicit field-wise rule applies

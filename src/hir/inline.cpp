@@ -200,6 +200,7 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
     auto copy = hir::make<hir_call>(span, type, clone_as(*n.callee, rename),
                                     clone_all(n.args, rename));
     copy->is_tail_call = n.is_tail_call;
+    copy->is_drop = n.is_drop;
     return copy;
   }
   case hir_node_kind::hir_field: {

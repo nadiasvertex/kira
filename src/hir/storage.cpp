@@ -55,6 +55,12 @@ auto storage_env::is_copy(semantic::type_id type) const -> bool {
   return checked.is_copy(type);
 }
 
+auto storage_env::drop_plan(semantic::type_id type) const
+    -> const semantic::drop_plan * {
+  const auto found = checked.drop.drop_plans.find(checked.types.strip_refinement(type));
+  return found == checked.drop.drop_plans.end() ? nullptr : &found->second;
+}
+
 auto storage_env::needs_drop(semantic::type_id type) -> bool {
   const auto stripped = checked.types.strip_refinement(type);
   if (checked.drop.drop_plans.contains(stripped)) {
@@ -186,7 +192,7 @@ namespace {
   case op_kind::drop_in_place:
     return "drop " + render_place(op.dest);
   case op_kind::call_into:
-    return "call " + render_call(op);
+    return std::string{op.is_drop ? "call.drop " : "call "} + render_call(op);
   case op_kind::storage_dead:
     return "dead s" + std::to_string(op.slot);
   case op_kind::return_value:

@@ -13,8 +13,8 @@ bytecode VM and LLVM backends.
 
 This is an implementation plan. T-01 is complete (findings in
 [value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
-complete, and T-03 is complete (status under each task below); T-04 through T-14
-have not been implemented.
+complete, T-03 and T-04 are complete for straight-line code (status under each
+task below); T-05 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -479,7 +479,7 @@ integration and documentation.
 | [x] | T-01 | Inventory representations and capture baselines | Compiler implementer | H | — | Every boundary and opaque/recursive type classified; baseline evidence recorded. |
 | [x] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
 | [x] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
-| [ ] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
+| [x] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
 | [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04 | VM executes nested aggregate calls without shell allocations. |
 | [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04 | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
 | [ ] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
@@ -583,12 +583,9 @@ that differ from the steps above:
 - Straight-line only. `if`, `match`, loops, string literals, array fill, compound
   assignment, closures, and coroutine/generator bodies are refused by name; the
   refusal list is returned beside the module rather than the function being half
-  lowered. Control flow needs initialization-state edges and arrives with T-04.
-- HIR already schedules drops as explicit calls. Lowering does not emit
-  `drop_in_place` for them, and it refuses assignment over, and discarded results
-  of, a type that needs a drop, so nothing is dropped twice. T-04 translates the
-  calls to places and enables the verifier's leak check (`check_leaks`, off by
-  default).
+  lowered. Control flow needs initialization-state edges; see the T-04 status.
+- HIR already schedules drops as explicit calls. T-03 refused droppable
+  assignment and temporaries; T-04 translates the calls (see its status).
 - Outgoing arguments use `outgoing_argument` slots consumed by the call. Scalar
   arguments are snapshotted into temporaries only when a later sibling has
   effects.
@@ -611,6 +608,43 @@ that differ from the steps above:
    aliases to implement them. Keep the consuming-receiver question separate.
 6. Add meaningful checked tests for partial moves, copy sums, mutable views,
    borrowed aggregate fields, and constructor operands that exit early.
+
+**Status: complete for straight-line code (2026-11-09).** Lowering marks the drop
+calls HIR synthesizes (`hir_call::is_drop`, set in `build_drop_calls`) and the
+storage form keeps them as `call.drop` operations on the address of a place. The
+verifier now owns the ownership rules, with `check_leaks` on by default:
+
+- A value owes its own drop and one drop per droppable field, read from the
+  checker's drop plan. A move removes the moved part from what is owed, so a
+  partial move leaves exactly the remaining fields owing a drop.
+- A value's own drop runs at most once (`double_drop`). Nothing reads, borrows,
+  moves, or writes inside a value after its drop ran until a write replaces it
+  (`use_after_drop`). A drop of bytes behind a reference is rejected.
+- A write over a value that needs a drop is accepted only after its drops ran
+  (`already_initialized` otherwise). That is the replacement protocol: HIR
+  builds the new value in a local, drops the old one, then stores the local, and
+  lowering writes it straight in. A droppable slot cannot end or return while it
+  still owes a drop (`leaked_value`).
+- Lowering now handles the blocks HIR builds around discarded temporaries and
+  values computed before scope-exit drops, and no longer refuses assignment
+  over, or discarded results of, droppable types.
+
+Covered by `storage_test` over `drops.cn`: constructors, scope-exit drops of
+locals and owned parameters, field-wise drops, a partial move, a replaced field,
+a discarded temporary, a borrow, and an argument moved to a callee. Each rule
+was mutation-checked. Not done, and carried forward:
+
+- Control flow. `if`, `match`, loops, early exits, drop flags for values moved on
+  some paths, and the drop of a sum with droppable payloads (HIR expresses it
+  as a `match`) are still refused. Early exits in constructor operands are not
+  covered for the same reason. The form needs control-flow edges and
+  per-edge initialization state before T-05 can compile real functions; no
+  task in this plan owns that yet.
+- Steps 2 and 5. Reference elaboration already produces explicit `&`/`*` in HIR,
+  so the form reads places from it unchanged. Rejecting generic moves through a
+  borrowed `self` is a checker rule and was not touched.
+- Closure and generator drops (`hir_closure_drop`, `hir_coroutine_cancel`) are
+  not translated; the functions that need them are refused.
 
 ### T-05 — Implement VM frame values and result destinations
 
@@ -867,5 +901,6 @@ automatically instrument generated code.
   (see [value-semantics-t01-findings.md](value-semantics-t01-findings.md)).
 - [x] Implement T-02 (concrete recursive byte layouts).
 - [x] Implement T-03 (shared storage form and aggregate ABI).
-- [ ] Implement T-04 through T-14 and record passing verification before closing
+- [x] Implement T-04 (ownership, references, and drops) for straight-line code.
+- [ ] Implement T-05 through T-14 and record passing verification before closing
   the corresponding todo items.

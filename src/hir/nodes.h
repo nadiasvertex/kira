@@ -321,6 +321,11 @@ struct hir_call : hir_expr {
   /// receives it by reference like every `self`: a receiver stored in a
   /// temporary is not dropped after the call.
   bool consumes_receiver = false;
+  /// This call is a type's own `drop` that lowering synthesized where a value
+  /// goes out of scope or is overwritten (`build_drop_calls`), not one the
+  /// source wrote. The storage form reads it to tell a value's end from an
+  /// ordinary call on a borrow.
+  bool is_drop = false;
 
   hir_call(source_span s, type_id t, ptr<hir_expr> c, ptr_vec<hir_expr> a)
       : hir_expr(hir_node_kind::hir_call, s, t), callee(std::move(c)),

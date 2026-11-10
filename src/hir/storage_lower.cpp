@@ -575,6 +575,8 @@ private:
       return lower_array(as<hir_array_init>(expr), dest);
     case hir_node_kind::hir_variant_init:
       return lower_variant(as<hir_variant_init>(expr), dest);
+    case hir_node_kind::hir_block:
+      return lower_block(as<hir_block>(expr), dest);
     default:
       return refuse(expr.span, describe(expr.kind) +
                                    " is not part of storage lowering yet");
@@ -840,6 +842,31 @@ private:
   //  Calls
   // ------------------------------------------------------------------
 
+  /// A block runs its statements in order. When it ends in an expression,
+  /// that expression is the block's value and is built in `dest`. HIR makes a
+  /// discarded temporary, or a value computed before scope-exit drops, a
+  /// block of this shape.
+  [[nodiscard]] auto lower_block(const hir_block &block, const place &dest)
+      -> result {
+    for (size_t i = 0; i < block.stmts.size(); ++i) {
+      const auto &stmt = *block.stmts[i];
+      const auto last = i + 1 == block.stmts.size();
+      const auto *value = last && stmt.kind != hir_node_kind::hir_expr_stmt
+                              ? dynamic_cast<const hir_expr *>(&stmt)
+                              : nullptr;
+      if (value != nullptr) {
+        if (auto ok = lower_into(*value, dest); !ok.has_value()) {
+          return ok;
+        }
+        continue;
+      }
+      if (auto ok = lower_stmt(stmt); !ok.has_value()) {
+        return ok;
+      }
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     auto params = std::vector<type_id>{};
@@ -874,6 +901,7 @@ private:
     }
 
     auto op = storage_op{.kind = op_kind::call_into};
+    op.is_drop = call.is_drop;
     auto outgoing = std::vector<storage_id>{};
     for (size_t i = 0; i < call.args.size(); ++i) {
       const auto &arg = *call.args[i];
@@ -957,6 +985,23 @@ private:
   }
 
   [[nodiscard]] auto lower_discarded(const hir_expr &expr) -> result {
+    if (expr.kind == hir_node_kind::hir_block) {
+      // A block's own type may be unsettled when nothing reads its value, so
+      // its statements run in turn and only a trailing value gets a temporary.
+      const auto &block = as<hir_block>(expr);
+      for (size_t i = 0; i < block.stmts.size(); ++i) {
+        const auto &stmt = *block.stmts[i];
+        const auto *value = stmt.kind != hir_node_kind::hir_expr_stmt
+                                ? dynamic_cast<const hir_expr *>(&stmt)
+                                : nullptr;
+        if (auto ok = value != nullptr ? lower_discarded(*value)
+                                       : lower_stmt(stmt);
+            !ok.has_value()) {
+          return ok;
+        }
+      }
+      return {};
+    }
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
       return ok;
@@ -989,15 +1034,16 @@ private:
       if (auto ok = lower_into(*assign.value, where); !ok.has_value()) {
         return ok;
       }
-    } else {
-      // Replacing a value that needs a drop is ownership work: HIR has
-      // already scheduled the old value's drop as an explicit call, and the
-      // form cannot yet tell that the call ended the value.
-      if (env_.needs_drop(where.type)) {
-        return refuse(assign.span,
-                      "an assignment over a `" + types().display(where.type) +
-                          "`, which needs a drop");
+    } else if (env_.needs_drop(where.type)) {
+      // HIR has already staged the replacement: the new value is built in a
+      // local, then the old value's drop calls run, then this assignment
+      // stores the local. The target holds no live value here, so the
+      // replacement is written straight in; the verifier rejects a write
+      // over a value whose drops have not run.
+      if (auto ok = lower_into(*assign.value, where); !ok.has_value()) {
+        return ok;
       }
+    } else {
       // Build the replacement apart from the target, because building it may
       // read the target. Then move it in.
       const auto replacement = new_temp(where.type, assign.span);
