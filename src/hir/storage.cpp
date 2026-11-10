@@ -167,6 +167,9 @@ namespace {
            " " + render_operand(op.operands.at(0));
   case compute_kind::cast:
     return "cast " + render_operand(op.operands.at(0));
+  case compute_kind::pointer_offset:
+    return "offset " + render_operand(op.operands.at(0)) + ", " +
+           render_operand(op.operands.at(1)) + " * " + std::to_string(op.stride);
   }
   return "?";
 }

@@ -214,9 +214,20 @@ struct hir_param {
 /// Literal value with its checked type already resolved. The raw spelling
 /// is kept rather than pre-parsed into a machine value — same deferral as
 /// `ast::literal_expr` — so codegen picks the concrete representation once.
+/// The question a `size_of[T]()` or `align_of[T]()` literal answers. Its
+/// `value` is the answer under the legacy layouts (`runtime::layout_of`, where
+/// an aggregate is one boxed word); the storage form asks again, under the
+/// concrete layouts (`runtime::value_layouts`), where an aggregate is inline.
+struct layout_question {
+  bool wants_alignment = false; ///< `align_of` rather than `size_of`.
+  type_id type = k_unknown_type;
+};
+
 struct hir_literal : hir_expr {
   token_kind lit_kind;
   std::string value;
+  /// Set for the answer to a `size_of`/`align_of` query.
+  std::optional<layout_question> question{};
 
   hir_literal(source_span s, type_id t, token_kind lk, std::string v)
       : hir_expr(hir_node_kind::hir_literal, s, t), lit_kind(lk),

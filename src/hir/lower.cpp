@@ -2601,8 +2601,13 @@ auto lowerer::lower_call(const ast::call_expr &call)
         query->second.kind == semantic::layout_query_kind::size_of
             ? layout->size_bytes
             : layout->align_bytes;
-    return ok_expr(make<hir_literal>(call.span, *type, token_kind::int_lit,
-                                     std::to_string(answer)));
+    auto size = ptr<hir_literal>(make<hir_literal>(
+        call.span, *type, token_kind::int_lit, std::to_string(answer)));
+    size->question = layout_question{
+        .wants_alignment =
+            query->second.kind != semantic::layout_query_kind::size_of,
+        .type = query->second.operand};
+    return ok_expr(std::move(size));
   }
 
   // `x.len()`/`x.as_bytes()` on a builtin container/`str` — these have no

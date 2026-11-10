@@ -1,0 +1,210 @@
+module sample
+use std.intrinsics.{rt_alloc, rt_free}
+
+# Raw memory holding aggregates inline (chapter 38): a slot is `size_of[T]()`
+# bytes, a read gives the reader the value, a write never drops the slot's old
+# value, and `drop` of a value read out runs its own drop exactly once.
+
+type pair = { pub a: int32, pub b: int64 }
+type segment = { pub from: pair, pub to: pair }
+
+# 40 words: past the one-byte element size of the VM's indexed address.
+type wide = { pub head: int64, pub rest: array[int64, 39] }
+
+# Counts its drops in memory the test owns.
+type noisy = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for noisy:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter + 1
+        return
+
+machine def make_pairs(n: usize) -> *mut pair:
+    return ptr_cast[pair](rt_alloc(n * size_of[pair]()))
+
+machine def sum_pairs(n: usize) -> int64:
+    let p = make_pairs(n)
+    var i: usize = 0
+    while i < n:
+        p[i] = pair { a: 1, b: 10 }
+        i = i + 1
+    var total: int64 = 0
+    i = 0
+    while i < n:
+        let v = p[i]
+        total = total + int64(v.a) + v.b
+        i = i + 1
+    rt_free(ptr_cast[byte](p), n * size_of[pair]())
+    return total
+
+# Each slot is written with its own value and read back from the right bytes.
+machine def distinct_pairs() -> int64:
+    let p = make_pairs(4)
+    p[0] = pair { a: 1, b: 100 }
+    p[1] = pair { a: 2, b: 200 }
+    p[2] = pair { a: 3, b: 300 }
+    p[3] = pair { a: 4, b: 400 }
+    let x = p[2]
+    let y = p[0]
+    let z = p[3].b
+    rt_free(ptr_cast[byte](p), 4 * size_of[pair]())
+    return int64(x.a) * 1000000 + x.b * 1000 + int64(y.a) * 100 + z / 4
+
+# A nested aggregate is written and read as part of its slot.
+machine def nested() -> int64:
+    let s = ptr_cast[segment](rt_alloc(3 * size_of[segment]()))
+    s[0] = segment { from: pair { a: 1, b: 2 }, to: pair { a: 3, b: 4 } }
+    s[1] = segment { from: pair { a: 5, b: 6 }, to: pair { a: 7, b: 8 } }
+    s[2] = segment { from: pair { a: 9, b: 10 }, to: pair { a: 11, b: 12 } }
+    let middle = s[1].to
+    let total = middle.b + int64(s[2].from.a) + s[0].to.b
+    rt_free(ptr_cast[byte](s), 3 * size_of[segment]())
+    return total
+
+# Writes through the address of a slot reach that slot and no other.
+machine def through_reference() -> int64:
+    let p = make_pairs(3)
+    p[0] = pair { a: 1, b: 1 }
+    p[1] = pair { a: 2, b: 2 }
+    p[2] = pair { a: 3, b: 3 }
+    let r = &mut p[1]
+    *r = pair { a: 2, b: 50 }
+    let first = p[0].b
+    let second = p[1].b
+    let third = p[2].b
+    rt_free(ptr_cast[byte](p), 3 * size_of[pair]())
+    return first * 10000 + second * 100 + third
+
+# Slots are `size_of[T]()` bytes apart. Reading the same bytes through a
+# differently typed pointer checks the stride from outside: slot 1 of `pair`
+# starts at byte 16, so its `a` is the fifth `int32` and its `b` the fourth
+# `int64`.
+machine def pair_stride() -> int64:
+    let p = make_pairs(3)
+    p[1] = pair { a: 7, b: 77 }
+    let halves = ptr_cast[int32](p)
+    let words = ptr_cast[int64](p)
+    let a = halves[4]
+    let b = words[3]
+    rt_free(ptr_cast[byte](p), 3 * size_of[pair]())
+    return b * 100 + int64(a)
+
+machine def make_wide(n: usize) -> *mut wide:
+    let p = ptr_cast[wide](rt_alloc(n * size_of[wide]()))
+    var i: usize = 0
+    while i < n:
+        let cells: array[int64, 39] = [
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7
+        ]
+        p[i] = wide { head: int64(i) + 1, rest: cells }
+        i = i + 1
+    return p
+
+# 320-byte slots, past the VM's one-byte element size: each head is a word
+# 40 apart, and a nested array element is read from the right slot.
+machine def wide_slots() -> int64:
+    let p = make_wide(3)
+    let last = p[2]
+    let middle = p[1].rest[38]
+    rt_free(ptr_cast[byte](p), 3 * size_of[wide]())
+    return last.head * 100 + middle
+
+machine def wide_stride() -> int64:
+    let p = make_wide(3)
+    let words = ptr_cast[int64](p)
+    let second = words[40]
+    let third = words[80]
+    let last_cell = words[79]
+    rt_free(ptr_cast[byte](p), 3 * size_of[wide]())
+    return second * 1000 + third * 10 + last_cell
+
+def slot_size_of_pair() -> usize:
+    return size_of[pair]()
+
+# --- ownership of resource-owning elements ---
+
+machine def make_noisy_slots(n: usize) -> *mut noisy:
+    return ptr_cast[noisy](rt_alloc(n * size_of[noisy]()))
+
+machine def fill(p: *mut noisy, n: usize, counter: *mut int64) -> unit:
+    var i: usize = 0
+    while i < n:
+        p[i] = noisy { id: int64(i) + 1, counter: counter }
+        i = i + 1
+    return
+
+# Reads each slot: the reader owns the value and drops it at the end of the
+# iteration.
+machine def consume(p: *mut noisy, n: usize) -> unit:
+    var i: usize = 0
+    while i < n:
+        let v = p[i]
+        i = i + 1
+    return
+
+# One drop per value read out, none from the writes.
+machine def read_and_drop(n: usize) -> int64:
+    var drops: int64 = 0
+    let p = make_noisy_slots(n)
+    fill(p, n, ptr_cast[int64](&mut drops))
+    let written = drops
+    consume(p, n)
+    rt_free(ptr_cast[byte](p), n * size_of[noisy]())
+    return written * 1000 + drops
+
+# A raw write never drops the old value: the first value is never read out, so
+# it is never dropped, and only the second is.
+machine def overwrite_without_drop() -> int64:
+    var drops: int64 = 0
+    let p = make_noisy_slots(1)
+    p[0] = noisy { id: 1, counter: ptr_cast[int64](&mut drops) }
+    p[0] = noisy { id: 2, counter: ptr_cast[int64](&mut drops) }
+    let before = drops
+    consume(p, 1)
+    rt_free(ptr_cast[byte](p), size_of[noisy]())
+    return before * 10 + drops
+
+machine def swap(p: *mut noisy, i: usize, j: usize) -> unit:
+    let a = p[i]
+    let b = p[j]
+    p[i] = b
+    p[j] = a
+    return
+
+# Moving values between slots drops nothing; each is dropped once afterwards.
+machine def swap_slots() -> int64:
+    var drops: int64 = 0
+    let p = make_noisy_slots(2)
+    fill(p, 2, ptr_cast[int64](&mut drops))
+    swap(p, 0, 1)
+    let first = p[0].id
+    let second = p[1].id
+    let kept = drops
+    consume(p, 2)
+    rt_free(ptr_cast[byte](p), 2 * size_of[noisy]())
+    return kept * 1000 + first * 100 + second * 10 + drops
+
+# `replace`: the old value is read out and dropped, the new one written in.
+machine def replace(p: *mut noisy, counter: *mut int64) -> unit:
+    let old = p[0]
+    p[0] = noisy { id: 2, counter: counter }
+    return
+
+machine def replace_slot() -> int64:
+    var drops: int64 = 0
+    let p = make_noisy_slots(1)
+    p[0] = noisy { id: 1, counter: ptr_cast[int64](&mut drops) }
+    replace(p, ptr_cast[int64](&mut drops))
+    let after_replace = drops
+    let id = p[0].id
+    consume(p, 1)
+    rt_free(ptr_cast[byte](p), size_of[noisy]())
+    return after_replace * 100 + id * 10 + drops
+
+# `let r = &mut x` binds the address of `x`, not a copy of its value.
+def write_through_reference(n: int64) -> int64:
+    var x = n
+    let r = &mut x
+    *r = *r + 5
+    return x

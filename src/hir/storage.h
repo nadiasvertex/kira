@@ -149,6 +149,9 @@ enum class compute_kind : uint8_t {
   binary,
   unary,
   cast,
+  /// `operands[0]` (a raw pointer) advanced by `operands[1]` elements of
+  /// `stride` bytes each: the address of `p[i]`.
+  pointer_offset,
 };
 
 /// The target of a call.
@@ -212,6 +215,8 @@ struct storage_op {
   std::string text{};
   ast::binary_op binary = ast::binary_op::add;
   ast::unary_op unary = ast::unary_op::neg;
+  /// `pointer_offset`: the byte size of one element.
+  size_t stride = 0;
   // publish_variant
   std::string variant{};
   // call_into

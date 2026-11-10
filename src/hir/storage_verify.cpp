@@ -81,6 +81,10 @@ struct resolved_place {
   /// the first `deref`. Bytes behind an address are borrowed and untracked.
   size_t tracked = 0;
   bool through_deref = false;
+  /// Whether one of the dereferences is of a raw pointer. Raw memory has no
+  /// owner the compiler tracks (chapter 38): a read gives the reader the
+  /// value, and a write never drops what the slot held.
+  bool through_raw = false;
 };
 
 class replay {
@@ -251,6 +255,9 @@ private:
         if (!out.through_deref) {
           out.through_deref = true;
           out.tracked = i;
+        }
+        if (entry.kind == semantic::type_kind::ptr_kind) {
+          out.through_raw = true;
         }
         current = entry.result;
         out.types.push_back(current);
@@ -785,6 +792,9 @@ private:
       }
       if (value.consume) {
         if (at->through_deref) {
+          if (at->through_raw) {
+            return {}; // The reader owns the value; the slot is now empty.
+          }
           return fail(verify_error_kind::move_from_reference,
                       "cannot take ownership of a value behind a reference");
         }
@@ -1098,6 +1108,13 @@ private:
                     "` names a loop or block that is not open");
   }
 
+  /// A raw pointer is retyped freely (`ptr_cast`): every one has the same
+  /// representation, so a copy between two of them changes only the type.
+  [[nodiscard]] auto is_raw_pointer(type_id id) -> bool {
+    return types().entry(types().strip_refinement(id)).kind ==
+           semantic::type_kind::ptr_kind;
+  }
+
   [[nodiscard]] auto do_compute(const storage_op &op) -> result {
     const auto at = resolve(op.dest);
     if (!at.has_value()) {
@@ -1114,8 +1131,10 @@ private:
     }
     const auto expected_operands =
         op.computation == compute_kind::constant ? 0U
-        : op.computation == compute_kind::binary ? 2U
-                                                 : 1U;
+        : op.computation == compute_kind::binary ||
+                  op.computation == compute_kind::pointer_offset
+            ? 2U
+            : 1U;
     if (op.operands.size() != expected_operands) {
       return fail(verify_error_kind::bad_operation,
                   "compute has " + std::to_string(op.operands.size()) +
@@ -1128,10 +1147,20 @@ private:
       }
     }
     if (op.computation == compute_kind::copy &&
-        !same_type(op.operands[0].type, op.dest.type)) {
+        !same_type(op.operands[0].type, op.dest.type) &&
+        !(is_raw_pointer(op.operands[0].type) && is_raw_pointer(op.dest.type))) {
       return fail(verify_error_kind::type_mismatch,
                   "a copy joins " + name_of(op.operands[0].type) + " and " +
                       name_of(op.dest.type));
+    }
+    if (op.computation == compute_kind::pointer_offset) {
+      if (!is_raw_pointer(op.operands[0].type) ||
+          !is_raw_pointer(op.dest.type)) {
+        return fail(verify_error_kind::type_mismatch,
+                    "an offset advances a raw pointer and gives one, not " +
+                        name_of(op.operands[0].type) + " to " +
+                        name_of(op.dest.type));
+      }
     }
     if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
       return ok;
@@ -1185,7 +1214,7 @@ private:
       return ok;
     }
     if (moving) {
-      if (from->through_deref) {
+      if (from->through_deref && !from->through_raw) {
         return fail(verify_error_kind::move_from_reference,
                     "cannot move " + name_of(op.source.type) +
                         " out of a reference");

@@ -175,7 +175,9 @@ auto clone_node(const hir_node &node, symbol_renamer &rename) -> ptr<hir_node> {
   switch (node.kind) {
   case hir_node_kind::hir_literal: {
     const auto &n = dynamic_cast<const hir_literal &>(node);
-    return hir::make<hir_literal>(span, type, n.lit_kind, n.value);
+    auto copy = hir::make<hir_literal>(span, type, n.lit_kind, n.value);
+    copy->question = n.question;
+    return copy;
   }
   case hir_node_kind::hir_local_ref: {
     const auto &n = dynamic_cast<const hir_local_ref &>(node);

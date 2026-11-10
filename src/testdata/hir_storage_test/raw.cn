@@ -1,0 +1,33 @@
+module sample
+type pair = { pub a: int32, pub b: int64 }
+type noisy = { pub id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        let ratio = 10 / self.id
+        return
+
+# A raw read gives the reader the value, so a pair is moved out of its slot.
+machine def load(p: *mut pair, i: usize) -> pair:
+    return p[i]
+
+# A raw write takes the value and never drops what the slot held.
+machine def store(p: *mut pair, i: usize, v: pair) -> unit:
+    p[i] = v
+    return
+
+machine def second_field(p: *mut pair, i: usize) -> int64:
+    return p[i].b
+
+# A droppable value written over a slot: the old value is not dropped.
+machine def overwrite(p: *mut noisy, n: int32) -> unit:
+    p[0] = noisy { id: n }
+    return
+
+# Read out and dropped by its new owner at scope end.
+machine def take_and_drop(p: *mut noisy) -> unit:
+    let v = p[0]
+    return
+
+# Constant array indexing is an element of the array's own bytes.
+def third(a: array[int64, 4]) -> int64:
+    return a[2]

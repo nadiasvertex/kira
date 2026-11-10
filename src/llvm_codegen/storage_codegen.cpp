@@ -657,6 +657,9 @@ private:
     case hir::compute_kind::cast:
       computed = emit_cast(op);
       break;
+    case hir::compute_kind::pointer_offset:
+      computed = emit_pointer_offset(op);
+      break;
     }
     if (!computed.has_value()) {
       return std::unexpected(computed.error());
@@ -736,6 +739,30 @@ private:
       return std::unexpected(src.error());
     }
     return scalars_.cast(*from, *to, *src);
+  }
+
+  /// `p + i * stride` bytes. The index is widened to 64 bits by its own
+  /// type; the arithmetic wraps, because the machine layer owns the bounds.
+  [[nodiscard]] auto emit_pointer_offset(const hir::storage_op &op)
+      -> checked<llvm::Value *> {
+    const auto base = operand_value(op.operands[0]);
+    if (!base.has_value()) {
+      return std::unexpected(base.error());
+    }
+    const auto kind = kind_of(mc_, op.operands[1].type, op.span);
+    if (!kind.has_value()) {
+      return std::unexpected(kind.error());
+    }
+    auto count = operand_value(op.operands[1]);
+    if (!count.has_value()) {
+      return std::unexpected(count.error());
+    }
+    auto *index = *count;
+    if (*kind != numeric_kind::u64) {
+      index = scalars_.cast(*kind, numeric_kind::u64, index);
+    }
+    auto *bytes = builder_.CreateMul(index, constant(i64(), op.stride));
+    return builder_.CreateGEP(i8(), *base, {bytes});
   }
 
   [[nodiscard]] auto emit_transfer(const hir::storage_op &op) -> checked<void> {

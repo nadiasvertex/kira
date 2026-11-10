@@ -733,6 +733,12 @@ private:
       }
       break;
     }
+    case hir::compute_kind::pointer_offset: {
+      if (auto ok = emit_pointer_offset(op, target); !ok.has_value()) {
+        return ok;
+      }
+      break;
+    }
     case hir::compute_kind::cast: {
       const auto from = kind_of(op.operands[0].type, op.span);
       const auto to = kind_of(op.dest.type, op.span);
@@ -757,6 +763,40 @@ private:
     if (dest->where == location::kind::memory) {
       return write_location(*dest, op.dest.type, target);
     }
+    return {};
+  }
+
+  /// `p + i * stride` bytes. `op_addr_indexed` scales by a one-byte element
+  /// size, so a larger stride is multiplied out first; the arithmetic wraps,
+  /// because the machine layer owns the bounds.
+  [[nodiscard]] auto emit_pointer_offset(const hir::storage_op &op,
+                                         virtual_reg target) -> checked<void> {
+    const auto base = operand_value(op.operands[0]);
+    if (!base.has_value()) {
+      return std::unexpected(base.error());
+    }
+    const auto count = operand_value(op.operands[1]);
+    if (!count.has_value()) {
+      return std::unexpected(count.error());
+    }
+    auto index = *count;
+    auto scale = op.stride;
+    if (scale > UINT8_MAX) {
+      const auto factor = alloc_register();
+      emit_const(factor, slot_value{uint64_t{op.stride}});
+      index = alloc_register();
+      emit_op(opcode::op_mul);
+      emit_register(index);
+      emit_register(*count);
+      emit_register(factor);
+      writer_.emit_numeric_kind(numeric_kind::u64);
+      scale = 1;
+    }
+    emit_op(opcode::op_addr_indexed);
+    emit_register(target);
+    emit_register(*base);
+    emit_register(index);
+    writer_.emit_u8(static_cast<uint8_t>(scale));
     return {};
   }
 

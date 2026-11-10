@@ -16,8 +16,9 @@ This is an implementation plan. T-01 is complete (findings in
 complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
 `while` to the storage form, and T-05 and T-06 are partly done (storage-form
 bytecode and LLVM compilers exist but are not wired into the driver), and T-07
-is partly done (runtime intrinsics write results into caller storage); status is
-under each task below. T-08 through T-14 have not been implemented.
+is partly done (runtime intrinsics write results into caller storage), and T-08
+is partly done (raw memory holds aggregates inline in the storage form); status
+is under each task below. T-09 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -862,6 +863,44 @@ legacy wrapper-allocating symbols (T-14); the driver switch; the inline atomics.
 ### T-08 — Migrate containers, statics, and compile-time execution
 
 **Goal:** Make nested value storage and host conversion consistent.
+
+**Status: partly done (2026-11-10).** Raw memory behind `*T` and `*mut T` now
+holds aggregates inline in the storage form, on both storage-form backends.
+Done:
+
+- Places: `p[i]` on a raw pointer lowers to a `pointer_offset` computation
+  (`p + i * stride`, with the stride the element's size under the concrete
+  layouts) and a dereference of the result. An array at a constant index is an
+  `element` projection. Nested fields of a slot (`p[1].to.b`) project from there.
+- Ownership: the verifier follows chapter 38 behind a raw pointer. A read moves
+  or copies the value out and leaves the slot untracked; a write never drops the
+  old value; a value read out is dropped once by its new owner. The reference
+  rule (no move out of borrowed bytes) is unchanged.
+- Layout questions: a `size_of`/`align_of` literal carries its question
+  (`hir_literal::question`) and the storage lowerer answers it from
+  `value_layouts`, so `size_of[pair]()` is 16 where HIR's own answer is 8.
+- Encoding limits: the VM's `op_addr_indexed` has a one-byte element size, so
+  strides over 255 bytes are multiplied out first; LLVM uses a byte GEP.
+- Fix: `let r = &mut x` in the storage lowerer copied the value of `x`; it now
+  binds the address.
+- Tests: `bytecode_storage_test/raw_memory.cn` through
+  `storage_memory_cases.h` on both backends (strides checked from outside by
+  reading the same bytes through other pointer types, including 320-byte slots;
+  one allocation for 200 pairs; drop counts for read, overwrite, swap, and
+  replace of a resource-owning element); `storage_test` covers the lowered form
+  and the verifier rules. Mutation checks (stride +8, VM large-stride path off,
+  layout question ignored, drop counted twice, raw move forbidden, offset type
+  check off) each failed a test.
+
+Not done: `std.mem`, `vec[T]`, and `list[T]` themselves (they call across
+modules, which the storage compilers refuse); `uninit` stack
+buffers; `drop_in_place` as a storage operation (the machine-layer function
+`drop_in_place` is ordinary code and works once a call across modules does);
+indexing arrays at a run-time index; globals, static initialization, and
+constant emission; `src/comptime_vm` (`values.cpp`, hosted calls, `backend.cpp`)
+and `CINDER_COMPTIME_VERIFY`. A field assignment through a `&mut` binding
+(`r.b = 50`) does not lower to HIR yet ("no concrete checked type"); the
+fixture writes the whole value instead.
 
 1. Audit `src/std/mem.cn`, list/collection/shared implementations, pointer indexing,
    `uninit`, and all element stride/offset encoding limits against the new layout.

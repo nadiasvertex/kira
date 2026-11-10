@@ -1139,6 +1139,111 @@ auto test_verifier_checks_joins_and_loops() -> void {
 } // namespace
 
 
+// ==========================================================================
+//  Raw memory
+// ==========================================================================
+
+auto find_offset(const hir::storage_function &function) -> size_t {
+  for (size_t i = 0; i < function.ops.size(); ++i) {
+    if (function.ops[i].kind == hir::op_kind::compute &&
+        function.ops[i].computation == hir::compute_kind::pointer_offset) {
+      return i;
+    }
+  }
+  fail("expected the function to advance a raw pointer");
+}
+
+auto drop_calls(const hir::storage_function &function) -> size_t {
+  auto count = size_t{0};
+  for (const auto &op : function.ops) {
+    count += op.kind == hir::op_kind::call_into && op.is_drop ? 1U : 0U;
+  }
+  return count;
+}
+
+auto test_raw_index_is_a_pointer_offset_then_a_dereference() -> void {
+  auto f = build(read_program("raw.cn"));
+  const auto load = f->function("load");
+  const auto &offset = load.ops[find_offset(load)];
+  // `pair` is `{int32 @0, int64 @8}`: 16 bytes.
+  expect(offset.stride == 16, "expected the stride to be the element's size");
+  expect(offset.operands.size() == 2, "expected a pointer and an index");
+  // A struct moves unless it is declared otherwise: the read takes the value
+  // out of the slot into the result.
+  const auto &read = load.ops[find_op(load, hir::op_kind::move_into)];
+  expect(read.source.steps.size() == 1 &&
+             read.source.steps[0].kind == hir::projection_kind::deref,
+         "expected the slot to be read through the advanced pointer");
+  expect(read.source.base == offset.dest.base,
+         "expected the read to use the pointer the offset computed");
+  expect_verifies(*f, load, "load");
+  expect_verifies(*f, f->function("store"), "store");
+  expect_verifies(*f, f->function("second_field"), "second_field");
+
+  const auto text = hir::dump(f->lowering.module, f->checked.types);
+  expect(text.find("offset") != std::string::npos &&
+             text.find("* 16") != std::string::npos,
+         "expected the offset and its stride in the dump");
+}
+
+auto test_verifier_checks_the_operands_of_an_offset() -> void {
+  auto f = build(read_program("raw.cn"));
+  const auto int32 = f->builtin("int32");
+
+  // The result of an offset is a pointer.
+  auto narrowed = f->function("load");
+  const auto at = find_offset(narrowed);
+  narrowed.slots[narrowed.ops[at].dest.base].type = int32;
+  narrowed.ops[at].dest.type = int32;
+  expect_rejects(*f, narrowed, hir::verify_error_kind::type_mismatch,
+                 "an offset that does not give a pointer");
+
+  // So is its base.
+  auto numeric = f->function("load");
+  numeric.ops[find_offset(numeric)].operands[0].type = int32;
+  expect_rejects(*f, numeric, hir::verify_error_kind::type_mismatch,
+                 "an offset of a number");
+
+  // It takes exactly a pointer and an index.
+  auto bare = f->function("load");
+  bare.ops[find_offset(bare)].operands.pop_back();
+  expect_rejects(*f, bare, hir::verify_error_kind::bad_operation,
+                 "an offset without an index");
+}
+
+auto test_raw_reads_own_the_value_and_raw_writes_drop_nothing() -> void {
+  auto f = build(read_program("raw.cn"));
+  // The write over a slot runs no drop; the value read out is dropped once by
+  // its new owner.
+  expect(drop_calls(f->function("overwrite")) == 0,
+         "expected a raw write not to drop the slot's old value");
+  expect(drop_calls(f->function("take_and_drop")) == 1,
+         "expected the value read out of a slot to be dropped once");
+  expect_verifies(*f, f->function("overwrite"), "overwrite");
+  const auto taken = f->function("take_and_drop");
+  expect_verifies(*f, taken, "take_and_drop");
+  // `noisy` is not `copy`: the read moves the value out of the raw slot, which
+  // the verifier accepts only behind a raw pointer.
+  const auto &move = taken.ops[find_op(taken, hir::op_kind::move_into)];
+  expect(move.source.steps.size() == 1 &&
+             move.source.steps[0].kind == hir::projection_kind::deref,
+         "expected the value to be moved out through the pointer");
+
+  // The same read through an ordinary reference is still refused (see
+  // `test_verifier_rejects_moves_out_of_references_and_sums`).
+}
+
+auto test_constant_array_index_is_an_element_projection() -> void {
+  auto f = build(read_program("raw.cn"));
+  const auto third = f->function("third");
+  const auto &ret = third.ops[find_op(third, hir::op_kind::return_value)];
+  expect(ret.value.has_value() && ret.value->where.steps.size() == 1 &&
+             ret.value->where.steps[0].kind == hir::projection_kind::element &&
+             ret.value->where.steps[0].index == 2,
+         "expected element 2 of the array parameter");
+  expect_verifies(*f, third, "third");
+}
+
 auto main() -> int {
   try {
     test_abi_classes_follow_layout();
@@ -1187,6 +1292,10 @@ auto main() -> int {
     test_logical_operators_do_not_run_the_right_side_eagerly();
     test_drops_inside_branches_and_loops();
     test_verifier_checks_joins_and_loops();
+    test_raw_index_is_a_pointer_offset_then_a_dereference();
+    test_verifier_checks_the_operands_of_an_offset();
+    test_raw_reads_own_the_value_and_raw_writes_drop_nothing();
+    test_constant_array_index_is_an_element_projection();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

@@ -36,6 +36,7 @@ cc_library(
         "storage_cases.h",
         "storage_fixture.h",
         "storage_intrinsic_cases.h",
+        "storage_memory_cases.h",
     ],
     visibility = ["//visibility:public"],
     deps = [

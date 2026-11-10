@@ -81,6 +81,11 @@ inline auto build_storage_program(const std::string &text)
     fail("expected fixture to check cleanly");
   }
   auto lowered = hir::lower_module(*out->ast_file, "sample", out->checked);
+  if (!lowered.has_value()) {
+    const auto at = file->resolve(lowered.error().span.start);
+    std::cerr << "HIR lowering at " << at.line << ":" << at.column << ": "
+              << lowered.error().message << "\n";
+  }
   expect(lowered.has_value(), "expected the fixture to lower to HIR");
   out->module = std::move(*lowered);
   out->layouts = std::make_unique<runtime::value_layouts>(out->checked.types,

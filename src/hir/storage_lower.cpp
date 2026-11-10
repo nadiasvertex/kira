@@ -1,6 +1,7 @@
 #include "src/hir/storage_lower.h"
 
 #include <algorithm>
+#include <charconv>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -389,6 +390,8 @@ private:
                      .name = payload.variant_name},
           variant->payload[payload.index].type)};
     }
+    case hir_node_kind::hir_index:
+      return lower_index(as<hir_index>(expr));
     case hir_node_kind::hir_unary: {
       const auto &unary = as<hir_unary>(expr);
       if (unary.op != ast::unary_op::deref) {
@@ -422,6 +425,92 @@ private:
     default:
       return std::optional<place>{};
     }
+  }
+
+  /// `x[i]`: a slot of a raw pointer, or an element of an array at a constant
+  /// index. Any other indexing is not a place the form names yet.
+  [[nodiscard]] auto lower_index(const hir_index &index)
+      -> std::expected<std::optional<place>, storage_lower_error> {
+    if (indexes_raw_pointer(index)) {
+      return lower_raw_index(index);
+    }
+    if (index.index->kind != hir_node_kind::hir_literal) {
+      return std::optional<place>{};
+    }
+    const auto &literal = as<hir_literal>(*index.index);
+    auto at = size_t{0};
+    const auto *end = literal.value.data() + literal.value.size();
+    if (literal.lit_kind != token_kind::int_lit ||
+        std::from_chars(literal.value.data(), end, at).ptr != end) {
+      return std::optional<place>{};
+    }
+    auto base = lower_place(*index.object);
+    if (!base.has_value()) {
+      return std::unexpected(base.error());
+    }
+    if (!base->has_value()) {
+      return refuse(index.span, "an element of a computed value");
+    }
+    auto object = auto_deref(std::move(**base));
+    const auto layout = layout_of(object.type, index.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind != runtime::value_layout_kind::array) {
+      return std::optional<place>{};
+    }
+    if (at >= found.count) {
+      return malformed(index.span, "element " + std::to_string(at) +
+                                       " is past the end of `" +
+                                       types().display(object.type) + "`");
+    }
+    return std::optional<place>{project(
+        std::move(object),
+        projection{.kind = projection_kind::element, .index = at},
+        found.element)};
+  }
+
+  /// Whether `index` indexes a raw pointer.
+  [[nodiscard]] auto indexes_raw_pointer(const hir_index &index) const -> bool {
+    return types()
+               .entry(types().strip_refinement(index.object->type))
+               .kind == semantic::type_kind::ptr_kind;
+  }
+
+  /// `p[i]` on a raw pointer: the slot `i` elements past `p`, reached by
+  /// advancing a copy of the pointer and dereferencing it. The element is
+  /// stored inline at its stride, whatever its type. Any other `x[i]` is not
+  /// a place the form names yet.
+  [[nodiscard]] auto lower_raw_index(const hir_index &index)
+      -> std::expected<std::optional<place>, storage_lower_error> {
+    if (!indexes_raw_pointer(index)) {
+      return std::optional<place>{};
+    }
+    const auto &pointer_type = index.object->type;
+    const auto &entry = types().entry(types().strip_refinement(pointer_type));
+    const auto size = env_.layouts.size_of(entry.result);
+    if (!size.has_value()) {
+      return layout_failure(index.span, size.error());
+    }
+    auto base = lower_operand(*index.object, !is_pure(*index.index));
+    if (!base.has_value()) {
+      return std::unexpected(base.error());
+    }
+    auto count = lower_operand(*index.index, false);
+    if (!count.has_value()) {
+      return std::unexpected(count.error());
+    }
+    const auto moved = new_temp(pointer_type, index.span);
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = whole(moved);
+    op.computation = compute_kind::pointer_offset;
+    op.stride = *size;
+    op.operands.push_back(std::move(*base));
+    op.operands.push_back(std::move(*count));
+    emit(std::move(op), index.span);
+    return std::optional<place>{project(
+        whole(moved), projection{.kind = projection_kind::deref}, entry.result)};
   }
 
   // ------------------------------------------------------------------
@@ -484,10 +573,14 @@ private:
     if (expr.kind == hir_node_kind::hir_literal &&
         (*cls == pass_class::scalar || *cls == pass_class::address)) {
       const auto &literal = as<hir_literal>(expr);
+      auto text = literal_text(literal);
+      if (!text.has_value()) {
+        return std::unexpected(text.error());
+      }
       return operand{.kind = operand_kind::constant,
                      .type = expr.type,
                      .literal = literal.lit_kind,
-                     .text = literal.value};
+                     .text = std::move(*text)};
     }
     if (expr.kind == hir_node_kind::hir_unary &&
         (as<hir_unary>(expr).op == ast::unary_op::addr_of ||
@@ -556,6 +649,18 @@ private:
     case hir_node_kind::hir_tuple_index:
     case hir_node_kind::hir_variant_payload:
       return transfer_from_place(expr, dest);
+    case hir_node_kind::hir_index: {
+      auto where = lower_place(expr);
+      if (!where.has_value()) {
+        return std::unexpected(where.error());
+      }
+      if (!where->has_value()) {
+        return refuse(expr.span,
+                      "indexing other than a raw pointer or an array at a "
+                      "constant index");
+      }
+      return transfer(**where, dest, expr.span);
+    }
     case hir_node_kind::hir_unary:
       return lower_unary(as<hir_unary>(expr), dest);
     case hir_node_kind::hir_binary:
@@ -594,6 +699,24 @@ private:
     return transfer(**source, dest, expr.span);
   }
 
+  /// The spelling of a literal. A `size_of`/`align_of` answer is asked again
+  /// of the concrete layouts: HIR's own answer is for the legacy boxed
+  /// aggregates, and a slot here is as wide as its inline layout.
+  [[nodiscard]] auto literal_text(const hir_literal &literal)
+      -> std::expected<std::string, storage_lower_error> {
+    if (!literal.question.has_value()) {
+      return literal.value;
+    }
+    const auto &question = *literal.question;
+    const auto answer = question.wants_alignment
+                            ? env_.layouts.align_of(question.type)
+                            : env_.layouts.size_of(question.type);
+    if (!answer.has_value()) {
+      return layout_failure(literal.span, answer.error());
+    }
+    return std::to_string(*answer);
+  }
+
   [[nodiscard]] auto lower_literal(const hir_literal &literal, const place &dest)
       -> result {
     const auto cls = class_of(dest.type, literal.span);
@@ -608,7 +731,11 @@ private:
       op.kind = op_kind::compute;
       op.computation = compute_kind::constant;
       op.literal = literal.lit_kind;
-      op.text = literal.value;
+      auto text = literal_text(literal);
+      if (!text.has_value()) {
+        return std::unexpected(text.error());
+      }
+      op.text = std::move(*text);
     } else {
       return refuse(literal.span,
                     "a literal of type `" + types().display(dest.type) +
@@ -639,14 +766,19 @@ private:
     if (auto ok = require_scalar_dest(dest, unary.span); !ok.has_value()) {
       return ok;
     }
-    auto value = lower_operand(*unary.operand, false);
+    const auto takes_address = unary.op == ast::unary_op::addr_of ||
+                               unary.op == ast::unary_op::addr_of_mut;
+    // `&x` is the address of `x`, which `lower_operand` builds from the whole
+    // expression; any other operator reads its operand's value.
+    auto value = lower_operand(takes_address ? static_cast<const hir_expr &>(unary)
+                                                     : *unary.operand,
+                               false);
     if (!value.has_value()) {
       return std::unexpected(value.error());
     }
     auto op = storage_op{.kind = op_kind::compute};
     op.dest = dest;
-    if (unary.op == ast::unary_op::addr_of ||
-        unary.op == ast::unary_op::addr_of_mut) {
+    if (takes_address) {
       op.computation = compute_kind::copy;
     } else {
       op.computation = compute_kind::unary;
