@@ -36,6 +36,8 @@ These run once, before either backend:
 
 The bytecode compiler (`src/bytecode_compiler/`) turns each HIR function into a flat instruction stream with its own constant pool. Code is emitted into an unbounded virtual register space, then a linear-scan register allocator maps virtual registers onto a frame's physical registers, reusing one as soon as its value dies. Parameters occupy the first registers; there is no separate locals area.
 
+A second compiler, `storage_compile.{h,cpp}`, builds bytecode from the HIR storage form instead. In it a scalar, address, or handle that nothing takes the address of lives in a register. Every other value lives at a compile-time offset in the frame's byte storage (`bytecode_function::stack_byte_size`), which is 16-byte aligned, zeroed when the frame is created, and does not move when the frame vector grows. A parameter passed by address, and the hidden result, live in the caller's bytes, and the register holds the address. `bytecode_function::abi` records the sizes and classes so a host can call such a function with the right storage (`vm::run_into`, `vm::run_hosted_into`). Aggregates are moved with `op_copy_bytes`. The driver does not use this compiler yet; it is called only from its own test, because the two representations cannot meet in one program. It refuses by name an indirect call, a call into another module, `drop_in_place`, and 128-bit scalars.
+
 ## The VM
 
 The VM (`src/bytecode/vm.cpp`) is a register machine.

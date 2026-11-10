@@ -1047,6 +1047,19 @@ auto test_break_and_continue_name_their_loop_by_depth() -> void {
               "return s2"});
 }
 
+auto test_logical_operators_do_not_run_the_right_side_eagerly() -> void {
+  auto f = build(read_program("flow.cn"));
+  // The division runs only when the left side did not decide the result.
+  expect_ops(*f, "guarded",
+             {"compute s1 = binary != s0, #0", "if s1",
+              "compute s2 = binary / #10, s0", "compute s1 = binary > s2, #1",
+              "dead s2", "end_if", "return s1"});
+  // `or` runs its right side on the `else` path.
+  expect_ops(*f, "either",
+             {"compute s2 = copy s0", "if s2", "else", "compute s2 = copy s1",
+              "end_if", "return s2"});
+}
+
 auto test_drops_inside_branches_and_loops() -> void {
   auto f = build(read_program("flow.cn"));
   // The drop runs on the path that owns the value, before it returns.
@@ -1171,6 +1184,7 @@ auto main() -> int {
     test_if_branches_build_the_value_in_the_destination();
     test_loops_test_run_and_repeat();
     test_break_and_continue_name_their_loop_by_depth();
+    test_logical_operators_do_not_run_the_right_side_eagerly();
     test_drops_inside_branches_and_loops();
     test_verifier_checks_joins_and_loops();
   } catch (const std::exception &e) {

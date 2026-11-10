@@ -108,7 +108,35 @@ public:
                                 const run_limits &limits) const
       -> std::expected<vm_result, vm_failure>;
 
+  /// Runs a function that builds its result through an address
+  /// (`bytecode_function::abi`), in storage the caller owns. `result` must be
+  /// at least `abi->result.size` bytes and aligned to `abi->result.align`; it
+  /// is uninitialized on entry and holds the result when the call returns
+  /// successfully, and the caller reads it before releasing the storage. `args`
+  /// are the source parameters' registers, without the result address: a
+  /// scalar's value, or the address of caller-owned bytes for a parameter that
+  /// travels by address (the callee owns and drops those bytes). A
+  /// storage mismatch fails with `host_failed`; a panic fails with its reason.
+  [[nodiscard]] auto run_into(uint16_t function_index,
+                              std::span<std::byte> result,
+                              std::span<const slot_value> args) const
+      -> std::expected<vm_result, vm_failure>;
+
+  /// `run_into` for a host that must survive whatever the program does; see
+  /// `run_hosted`.
+  [[nodiscard]] auto run_hosted_into(uint16_t function_index,
+                                     std::span<std::byte> result,
+                                     std::span<const slot_value> args,
+                                     const run_limits &limits) const
+      -> std::expected<vm_result, vm_failure>;
+
 private:
+  /// The entry registers for `run_into`: the result address, then `args`.
+  [[nodiscard]] auto entry_with_result(uint16_t function_index,
+                                       std::span<std::byte> result,
+                                       std::span<const slot_value> args) const
+      -> std::expected<std::vector<slot_value>, vm_failure>;
+
   [[nodiscard]] auto execute(uint16_t function_index,
                              std::span<const slot_value> args,
                              const run_limits &limits) const

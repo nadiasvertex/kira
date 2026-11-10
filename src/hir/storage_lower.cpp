@@ -662,6 +662,10 @@ private:
     if (auto ok = require_scalar_dest(dest, binary.span); !ok.has_value()) {
       return ok;
     }
+    if (binary.op == ast::binary_op::logical_and ||
+        binary.op == ast::binary_op::logical_or) {
+      return lower_short_circuit(binary, dest);
+    }
     auto lhs = lower_operand(*binary.lhs, !is_pure(*binary.rhs));
     if (!lhs.has_value()) {
       return std::unexpected(lhs.error());
@@ -677,6 +681,33 @@ private:
     op.operands.push_back(std::move(*lhs));
     op.operands.push_back(std::move(*rhs));
     emit(std::move(op), binary.span);
+    return {};
+  }
+
+  /// `a && b` and `a || b`: the left side is built in `dest`, and the right
+  /// side runs, over it, only when the left side does not decide the result.
+  /// The right side may have an effect or panic, so it must not run eagerly.
+  [[nodiscard]] auto lower_short_circuit(const hir_binary &binary,
+                                         const place &dest) -> result {
+    const auto is_and = binary.op == ast::binary_op::logical_and;
+    auto left = in_region(binary.lhs->span,
+                          [&] { return lower_into(*binary.lhs, dest); });
+    if (!left.has_value()) {
+      return left;
+    }
+    auto head = storage_op{.kind = op_kind::if_begin};
+    head.condition = read_of(dest, false);
+    emit(std::move(head), binary.span);
+    if (!is_and) {
+      emit(storage_op{.kind = op_kind::else_begin}, binary.span);
+    }
+    auto right = in_region(binary.rhs->span,
+                           [&] { return lower_into(*binary.rhs, dest); });
+    if (!right.has_value()) {
+      return right;
+    }
+    emit(storage_op{.kind = op_kind::if_end}, binary.span);
+    terminated_ = false;
     return {};
   }
 

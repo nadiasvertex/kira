@@ -14,8 +14,9 @@ bytecode VM and LLVM backends.
 This is an implementation plan. T-01 is complete (findings in
 [value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
 complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
-`while` to the storage form (status under each task below); T-05 through T-14
-have not been implemented.
+`while` to the storage form, and T-05 is partly done (a storage-form bytecode
+path exists but is not wired into the driver); status is under each task below.
+T-06 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -699,6 +700,47 @@ failed the tests. Not done:
 ### T-05 — Implement VM frame values and result destinations
 
 **Goal:** Execute inline values on the reference tier.
+
+**Status: partly done (2026-11-10).** A second bytecode compiler,
+`bytecode_compiler/storage_compile.{h,cpp}`, builds bytecode from the storage
+form. It is not called by the driver, because decision 6 forbids mixing the two
+representations in one program and the storage form cannot yet express `match`,
+strings, closures, `fn` values, or globals. Done:
+
+- Metadata: `bytecode_function::abi` records whether the result goes through an
+  address and the size, alignment, and by-address flag of the result and each
+  source parameter. Registers `[0, param_count)` hold the hidden result address
+  (when present) and then each non-zero-sized parameter.
+- Opcode: `op_copy_bytes dst, src, imm32` (`memmove`).
+- Frames: a scalar, address, or handle with no address taken lives in a
+  register. Everything else lives at a compile-time offset in the frame's
+  aligned, address-stable byte storage. Signed integers narrower than 64 bits
+  are sign-extended after a load.
+- Compiled: constructors built in place, member/element/payload projections,
+  assignment (replacement built before the old value ends), borrows, calls with
+  results built in the caller's bytes, parameters by address, drops, `if`,
+  loops, `break`, `continue`, early `return`, scalar arithmetic.
+- Entry points: `vm::run_into` and `vm::run_hosted_into` take caller-owned
+  result storage and refuse storage that is too small, misaligned, or paired
+  with a function that has no result address.
+- Lowering fix found on the way: `and`/`or` evaluated their right side
+  eagerly; they now lower to a conditional.
+- Covered by `storage_compile_test` over `bytecode_storage_test/values.cn`,
+  `drops.cn`, and `hir_storage_test/flow.cn`, with expected values worked out by
+  hand (layout offsets, tags, narrow widths, a 3000-deep recursion that grows
+  the frame vector, a heap-allocation count of zero, no `op_alloc` in the
+  output). Mutation checks (short copy, payload offset, sign extension) each
+  failed a test; the first sign-extension test did not and was replaced.
+
+Not done:
+
+- Items 4 (index and range operations, patterns, aggregate equality) and 6
+  (indirect calls) in part: the compiler refuses by name an indirect call, a
+  call into another module, `drop_in_place`, 128-bit scalars, and offsets or
+  frames beyond operand limits. Anything the storage form refuses is out of
+  reach until it grows `match`, strings, closures, and globals.
+- Removing `emit_alloc_slots` from the old compiler, which waits on the driver
+  switch.
 
 1. Extend bytecode function/call metadata with aggregate ABI and frame-place
    information. Keep source parameters distinct from hidden transport operands.

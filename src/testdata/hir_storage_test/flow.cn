@@ -125,3 +125,9 @@ def drop_in_loop(n: int32) -> int32:
         let x = make_noisy(i)
         i = i + 1
     return i
+
+def guarded(n: int32) -> bool:
+    return n != 0 and 10 / n > 1
+
+def either(a: bool, b: bool) -> bool:
+    return a or b

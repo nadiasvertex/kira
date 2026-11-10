@@ -138,6 +138,12 @@ filegroup(
 )
 
 filegroup(
+    name = "bytecode_storage_test_files",
+    srcs = glob(["testdata/bytecode_storage_test/*.cn"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
     name = "hir_storage_test_files",
     srcs = glob(["testdata/hir_storage_test/*.cn"]),
     visibility = ["//visibility:public"],

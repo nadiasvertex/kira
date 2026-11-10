@@ -53,6 +53,32 @@ struct host_site {
   source_span span;
 };
 
+/// How one value crosses a call boundary in the inline-value representation.
+/// A value that travels by address is the address of caller-owned bytes of
+/// `size` bytes aligned to `align`; any other value is one register.
+struct value_transport {
+  uint32_t size = 0;
+  uint32_t align = 1;
+  bool by_address = false;
+
+  [[nodiscard]] auto operator==(const value_transport &) const -> bool = default;
+};
+
+/// A function's calling convention in the inline-value representation, kept
+/// beside the code so a host can call it without guessing. The hidden result
+/// address, when there is one, is register 0 and is not listed in `params`;
+/// `params` holds the source parameters in order, zero-sized ones included
+/// (they occupy no register). Absent from a function that still uses the
+/// pointer-per-aggregate representation.
+struct function_abi {
+  /// The callee builds its result in storage the caller supplies.
+  bool returns_through_address = false;
+  /// The result value: its size and alignment, and whether it is built through
+  /// `returns_through_address` storage.
+  value_transport result;
+  std::vector<value_transport> params;
+};
+
 struct bytecode_function {
   std::string name;
   uint16_t param_count = 0;
@@ -75,6 +101,9 @@ struct bytecode_function {
   /// any pointer already taken into it. Every `op_stack_alloc` therefore
   /// carries a *fixed offset* into this range, assigned at compile time.
   uint32_t stack_byte_size = 0;
+  /// The calling convention of an inline-value function; see `function_abi`.
+  /// `param_count` counts the hidden result address when there is one.
+  std::optional<function_abi> abi;
   /// Where the code came from, for reporting a failure at a source line: the
   /// module and top-level HIR function it was compiled from (a lambda's or a
   /// generator step's enclosing function, for one of those), and, in code

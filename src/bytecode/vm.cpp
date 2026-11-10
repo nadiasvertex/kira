@@ -2012,6 +2012,68 @@ auto vm::run_hosted(uint16_t function_index, std::span<const slot_value> args,
   return execute(function_index, args, limits);
 }
 
+auto vm::entry_with_result(uint16_t function_index, std::span<std::byte> result,
+                           std::span<const slot_value> args) const
+    -> std::expected<std::vector<slot_value>, vm_failure> {
+  const auto refuse = [](std::string message) {
+    return std::unexpected(vm_failure{.reason = panic_reason::host_failed,
+                                      .message = std::move(message)});
+  };
+  if (function_index >= module_.functions.size()) {
+    return refuse(std::format("there is no function {}", function_index));
+  }
+  const auto &function = module_.functions[function_index];
+  if (!function.abi.has_value() || !function.abi->returns_through_address) {
+    return refuse(std::format("`{}` does not build its result through an "
+                              "address",
+                              function.name));
+  }
+  const auto &abi = *function.abi;
+  if (result.size() < abi.result.size) {
+    return refuse(std::format("`{}` needs {} bytes of result storage but {} "
+                              "were given",
+                              function.name, abi.result.size, result.size()));
+  }
+  if (reinterpret_cast<uintptr_t>(result.data()) % abi.result.align != 0) {
+    return refuse(std::format("the result storage for `{}` must be aligned "
+                              "to {} bytes",
+                              function.name, abi.result.align));
+  }
+  if (args.size() + 1 != function.param_count) {
+    return refuse(std::format("`{}` takes {} argument registers besides its "
+                              "result address but {} were given",
+                              function.name, function.param_count - 1,
+                              args.size()));
+  }
+  auto entry = std::vector<slot_value>{};
+  entry.reserve(args.size() + 1);
+  entry.push_back(ptr_to_slot(result.data()));
+  entry.insert(entry.end(), args.begin(), args.end());
+  return entry;
+}
+
+auto vm::run_into(uint16_t function_index, std::span<std::byte> result,
+                  std::span<const slot_value> args) const
+    -> std::expected<vm_result, vm_failure> {
+  const auto entry = entry_with_result(function_index, result, args);
+  if (!entry.has_value()) {
+    return std::unexpected(entry.error());
+  }
+  return execute(function_index, *entry, run_limits{});
+}
+
+auto vm::run_hosted_into(uint16_t function_index, std::span<std::byte> result,
+                         std::span<const slot_value> args,
+                         const run_limits &limits) const
+    -> std::expected<vm_result, vm_failure> {
+  const auto entry = entry_with_result(function_index, result, args);
+  if (!entry.has_value()) {
+    return std::unexpected(entry.error());
+  }
+  const auto hosted = hosted_panic_scope{};
+  return execute(function_index, *entry, limits);
+}
+
 auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                  const run_limits &limits) const
     -> std::expected<vm_result, vm_failure> {
@@ -2638,6 +2700,18 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         const auto offset = static_cast<size_t>(f.registers[offset_reg].u);
         f.registers[dst] =
             slot_value{cinder::runtime::str_scalar_width(view, offset)};
+        break;
+      }
+      case opcode::op_copy_bytes: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst_reg = ops.reg();
+        const auto src_reg = ops.reg();
+        const auto byte_count = ops.imm32();
+        f.pc = ops.pos();
+        if (byte_count != 0) {
+          std::memmove(raw_bytes_of(f.registers[dst_reg]),
+                       raw_bytes_of(f.registers[src_reg]), byte_count);
+        }
         break;
       }
       case opcode::op_atomic_fetch_add:

@@ -508,6 +508,14 @@ enum class opcode : uint8_t {
                         ///< current frame with `pending` as its result. As
                         ///< with `op_yield`, live locals are synced into
                         ///< the state block by `op_store_slot`s just before.
+  op_copy_bytes,        ///< u16 dst_ptr, u16 src_ptr, u32 byte_count — copies
+                        ///< `byte_count` bytes from the address in reg[src_ptr]
+                        ///< to the address in reg[dst_ptr]. The transfer of an
+                        ///< inline aggregate or descriptor (representation
+                        ///< v2); both ranges are owned storage that the
+                        ///< compiler has shown do not overlap, but the copy is
+                        ///< a `memmove` so a mistake there cannot corrupt
+                        ///< bytes silently. Does nothing for a zero count.
 };
 
 // ==========================================================================
@@ -698,6 +706,8 @@ struct operand_signature {
   case opcode::op_atomic_fetch_add:
   case opcode::op_atomic_fetch_sub:
     return sig({reg, reg, reg});
+  case opcode::op_copy_bytes:
+    return sig({reg, reg, imm32});
   }
   return operand_signature{};
 }
