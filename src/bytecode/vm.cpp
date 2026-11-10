@@ -2680,6 +2680,37 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         continue; // `f` is invalidated by push_frame's push_back.
       }
 
+      case opcode::op_call_function: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto entry_reg = ops.reg();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
+        const auto entry = static_cast<size_t>(f.registers[entry_reg].u);
+        const std::vector<slot_value> call_args(
+            f.registers.begin() + first_arg,
+            f.registers.begin() + first_arg + argc);
+        push_frame(frames, module_.functions.at(entry), call_args, true, dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
+      case opcode::op_drop_function_value: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto value_reg = ops.reg();
+        f.pc = ops.pos();
+        const auto *bytes = raw_bytes_of(f.registers[value_reg]);
+        const auto glue = load_sized(bytes + 16, 8).u;
+        if (glue == 0) {
+          f.registers[dst] = slot_value{};
+          break;
+        }
+        const std::array<slot_value, 1> call_args = {load_sized(bytes + 8, 8)};
+        push_frame(frames, module_.functions.at(static_cast<size_t>(glue - 1)),
+                   call_args, true, dst);
+        continue; // `f` is invalidated by push_frame's push_back.
+      }
+
       case opcode::op_make_generator: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();

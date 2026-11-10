@@ -85,6 +85,10 @@ struct resolved_place {
   /// owner the compiler tracks (chapter 38): a read gives the reader the
   /// value, and a write never drops what the slot held.
   bool through_raw = false;
+  /// Whether the slot is a variable the closure captured. The closure owns an
+  /// environment value, or borrows the variable it points at, and either way a
+  /// call to the closure can happen again, so nothing moves out of it.
+  bool captured = false;
 };
 
 class replay {
@@ -176,6 +180,13 @@ private:
       if (auto layout = layout_of(slot.type); !layout.has_value()) {
         return std::unexpected(layout.error());
       }
+      if (slot.cls == storage_class::closure_environment &&
+          (!slot.initially_initialized || !fn_.signature.takes_environment)) {
+        return fail(verify_error_kind::bad_slot,
+                    "slot s" + std::to_string(i) +
+                        " is a captured value of a function with no "
+                        "environment, or one that starts empty");
+      }
       state_[i].whole = slot.initially_initialized;
     }
     if (fn_.param_slots.size() != fn_.signature.params.size()) {
@@ -241,6 +252,8 @@ private:
     }
     auto out = resolved_place{};
     out.tracked = where.steps.size();
+    out.captured =
+        fn_.slots[where.base].cls == storage_class::closure_environment;
     auto current = fn_.slots[where.base].type;
     out.types.push_back(current);
     for (size_t i = 0; i < where.steps.size(); ++i) {
@@ -798,6 +811,10 @@ private:
           return fail(verify_error_kind::move_from_reference,
                       "cannot take ownership of a value behind a reference");
         }
+        if (at->captured) {
+          return fail(verify_error_kind::move_from_reference,
+                      "cannot take ownership of a captured value");
+        }
         return invalidate(value.where, *at, at->tracked);
       }
       return {};
@@ -825,6 +842,15 @@ private:
       return do_drop(op);
     case op_kind::call_into:
       return do_call(op);
+    case op_kind::make_closure:
+      return do_make_closure(op);
+    case op_kind::release_environment:
+      if (!fn_.signature.takes_environment) {
+        return fail(verify_error_kind::bad_operation,
+                    "only a closure body or its drop glue releases an "
+                    "environment");
+      }
+      return {};
     case op_kind::storage_dead:
       return do_dead(op);
     case op_kind::return_value:
@@ -1219,6 +1245,11 @@ private:
                     "cannot move " + name_of(op.source.type) +
                         " out of a reference");
       }
+      if (from->captured && !from->through_deref) {
+        return fail(verify_error_kind::move_from_reference,
+                    "cannot move " + name_of(op.source.type) +
+                        " out of a closure's environment");
+      }
     } else if (!env_.is_copy(op.source.type)) {
       return fail(verify_error_kind::not_copy,
                   name_of(op.source.type) +
@@ -1452,6 +1483,105 @@ private:
         return fail(verify_error_kind::result_aliases_argument,
                     "the result is built in s" + std::to_string(op.dest.base) +
                         ", which an argument borrows");
+      }
+    }
+    if (auto ok = require_writable(op.dest, *dest); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *dest);
+    return {};
+  }
+
+  /// Builds a `fn` value in `dest`. The body and drop glue are functions of the
+  /// module that take the environment first; every captured variable is filled
+  /// into the environment block at an offset that suits its type.
+  [[nodiscard]] auto do_make_closure(const storage_op &op) -> result {
+    const auto dest = resolve(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (dest->through_deref ||
+        types().entry(types().strip_refinement(op.dest.type)).kind !=
+            semantic::type_kind::fn_kind) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a closure is built in a `fn` value of its own storage, not " +
+                      name_of(op.dest.type));
+    }
+    if (callees_ != nullptr) {
+      const auto indirect =
+          classify_fn_type(env_.layouts, types(), op.dest.type);
+      if (!indirect.has_value()) {
+        return fail(verify_error_kind::signature_mismatch,
+                    indirect.error().message);
+      }
+      const auto *entry = callees_->find(op.entry);
+      if (entry == nullptr || !entry->signature.takes_environment ||
+          !entry->signature.agrees_with(*indirect)) {
+        return fail(verify_error_kind::signature_mismatch,
+                    "`" + op.entry + "` is not a closure body of " +
+                        name_of(op.dest.type));
+      }
+      if (op.env_size != 0) {
+        const auto *glue = callees_->find(op.glue);
+        if (glue == nullptr || !glue->signature.takes_environment ||
+            !glue->signature.params.empty() ||
+            glue->signature.result.cls != pass_class::zero_sized) {
+          return fail(verify_error_kind::signature_mismatch,
+                      "`" + op.glue +
+                          "` is not drop glue taking only an environment");
+        }
+      }
+    }
+    if (op.env_size == 0 && (!op.glue.empty() || !op.captures.empty())) {
+      return fail(verify_error_kind::bad_operation,
+                  "a closure with an empty environment has no glue and no "
+                  "captures");
+    }
+    for (const auto &capture : op.captures) {
+      const auto at = resolve(capture.source);
+      if (!at.has_value()) {
+        return std::unexpected(at.error());
+      }
+      const auto layout = layout_of(capture.source.type);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto size = capture.kind == capture_kind::reference
+                            ? runtime::k_word_size
+                            : (*layout)->size;
+      const auto align = capture.kind == capture_kind::reference
+                             ? runtime::k_word_size
+                             : (*layout)->align;
+      if (capture.offset % align != 0 || capture.offset + size > op.env_size ||
+          align > op.env_align) {
+        return fail(verify_error_kind::bad_operation,
+                    "a capture of " + name_of(capture.source.type) + " at " +
+                        std::to_string(capture.offset) +
+                        " does not fit the environment of " +
+                        std::to_string(op.env_size) + " bytes");
+      }
+      if (capture.kind == capture_kind::reference) {
+        continue; // Only the variable's address is taken; the owner keeps it.
+      }
+      if (auto ok = require_init(capture.source, *at); !ok.has_value()) {
+        return ok;
+      }
+      if (capture.kind == capture_kind::move) {
+        if (at->through_deref && !at->through_raw) {
+          return fail(verify_error_kind::move_from_reference,
+                      "cannot move " + name_of(capture.source.type) +
+                          " out of a reference into a closure");
+        }
+        if (at->captured) {
+          return fail(verify_error_kind::move_from_reference,
+                      "cannot move a captured value into another closure");
+        }
+        if (!at->through_deref) {
+          if (auto ok = invalidate(capture.source, *at, at->tracked);
+              !ok.has_value()) {
+            return ok;
+          }
+        }
       }
     }
     if (auto ok = require_writable(op.dest, *dest); !ok.has_value()) {

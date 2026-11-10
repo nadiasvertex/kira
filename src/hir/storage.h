@@ -94,6 +94,12 @@ struct storage_slot {
   /// The slot whose lifetime bounds this one. A slot that owns its own bytes
   /// names itself; an `owner_field` names the owner it is part of.
   storage_id owner = k_invalid_storage;
+  /// `closure_environment` only: the slot's bytes are in the environment block
+  /// the function received, `env_offset` bytes in. When `env_indirect` is set
+  /// the environment holds the address of the variable instead, and the slot is
+  /// the variable it points at.
+  size_t env_offset = 0;
+  bool env_indirect = false;
 };
 
 /// One checked step from a value to a part of it.
@@ -175,6 +181,22 @@ struct call_argument {
   place slot{};          ///< Indirect classes: initialized before the call.
 };
 
+/// How a closure's environment holds one captured variable.
+enum class capture_kind : uint8_t {
+  move,      ///< The value moves in; the closure owns it and drops it.
+  copy,      ///< A bitwise copy. The source stays valid and owned by its scope.
+  reference, ///< The environment holds the address of the variable.
+};
+
+[[nodiscard]] auto capture_kind_name(capture_kind kind) -> const char *;
+
+/// One captured variable, as `make_closure` stores it.
+struct closure_capture {
+  place source{};      ///< The variable in the enclosing function.
+  capture_kind kind = capture_kind::copy;
+  size_t offset = 0;   ///< Bytes into the environment block.
+};
+
 enum class op_kind : uint8_t {
   compute,         ///< `dest` <- a scalar computed from operands.
   init_empty,      ///< `dest` <- a zero-sized value.
@@ -183,6 +205,9 @@ enum class op_kind : uint8_t {
   publish_variant, ///< `dest` (a sum) becomes initialized with `variant`.
   drop_in_place,   ///< Runs the drop of the value at `dest`; it is then dead.
   call_into,       ///< Calls `callee`; the result is built in `dest`.
+  make_closure,    ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
+  release_environment, ///< Frees the environment block this closure body or
+                       ///< drop glue received. Only the glue does this.
   storage_dead,    ///< Ends the lifetime of slot `slot`.
   return_value,    ///< Leaves the function; see `value`.
   // Structured control flow. The markers nest like brackets in the flat
@@ -231,6 +256,16 @@ struct storage_op {
   operand condition{};
   // exit
   size_t depth = 0;
+  // make_closure: `entry` and `glue` name functions of the module that take the
+  // environment as their first operand (`abi_signature::takes_environment`).
+  // The environment is one block of `env_size` bytes, allocated here when it is
+  // not empty and released by `glue`; `captures` fill it. `glue` is empty only
+  // when the environment is empty.
+  std::string entry{};
+  std::string glue{};
+  size_t env_size = 0;
+  size_t env_align = 1;
+  std::vector<closure_capture> captures{};
   // storage_dead
   storage_id slot = k_invalid_storage;
   // return_value: the direct result, absent when the result is built in the

@@ -527,6 +527,19 @@ enum class opcode : uint8_t {
                         ///< compiler's counterpart of `op_call_intrinsic`,
                         ///< which the older compiler keeps for the
                         ///< heap-block symbols.
+  op_call_function,     ///< u16 dst, u16 entry_reg, u16 first_arg, u8 argc —
+                        ///< calls function `reg[entry_reg]` with the `argc`
+                        ///< registers from `first_arg` as its arguments. The
+                        ///< storage compiler's call through a `fn` value
+                        ///< (`{entry, env, glue}`, 24 bytes of the caller's
+                        ///< storage): the caller loads `entry`, and the
+                        ///< environment address is the first argument.
+  op_drop_function_value, ///< u16 dst, u16 value_reg — runs the drop glue of
+                        ///< the `fn` value whose bytes are at the address in
+                        ///< reg[value_reg], when it has any: calls function
+                        ///< `glue - 1` with the environment address as its only
+                        ///< argument, its `unit` landing in dst. Does nothing
+                        ///< for a value with no glue (`glue == 0`).
 };
 
 // ==========================================================================
@@ -721,6 +734,10 @@ struct operand_signature {
     return sig({reg, reg, imm32});
   case opcode::op_call_intrinsic_into:
     return sig({imm8, reg, imm8});
+  case opcode::op_call_function:
+    return sig({reg, reg, reg, imm8});
+  case opcode::op_drop_function_value:
+    return sig({reg, reg});
   }
   return operand_signature{};
 }

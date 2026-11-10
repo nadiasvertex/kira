@@ -17,8 +17,9 @@ complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
 `while` to the storage form, and T-05 and T-06 are partly done (storage-form
 bytecode and LLVM compilers exist but are not wired into the driver), and T-07
 is partly done (runtime intrinsics write results into caller storage), and T-08
-is partly done (raw memory holds aggregates inline in the storage form); status
-is under each task below. T-09 through T-14 have not been implemented.
+is partly done (raw memory holds aggregates inline in the storage form), and T-09
+is partly done (closures); status is under each task below. T-10 through T-14
+have not been implemented.
 
 ## Objectives & Scope
 
@@ -918,6 +919,43 @@ fixture writes the whole value instead.
 ### T-09 — Migrate captures, generators, and task results
 
 **Goal:** Keep values valid across suspension and cross-thread ownership transfer.
+
+**Status: partly done (2026-11-10).** Closures now live in the storage form on
+both storage-form backends. Generators, tasks, and the adapters are not started.
+Done:
+
+- Representation: a `fn` value is a 24-byte aggregate `{entry, env, glue}` held
+  inline. The environment is one heap block per closure that captures anything,
+  with each captured value inline at its own alignment (a typed layout, not
+  register images). A closure with nothing to capture has a null environment and
+  no block. Closure bodies and drop glue take the environment as a hidden first
+  operand (`abi_signature::takes_environment`).
+- Captures: `make_closure` stores each capture as a copy (bitwise; the source keeps
+  ownership), a move (the closure owns it), or a reference (an address, reached in
+  the body through an `env_indirect` slot). The verifier refuses to move a value
+  out of an environment slot, checks capture offsets and alignment, and checks the
+  entry and glue signatures against the module.
+- Drops: the glue drops the owned captures in reverse capture order and frees the
+  block with `release_environment`. `drop_in_place` of a `fn` value loads the glue
+  and runs it when it is not null. Passing, returning, and dropping a closure
+  behave as for any other aggregate.
+- Calls: a call through a `fn` value loads the entry and environment from the
+  value's bytes. The VM has `op_call_function` and `op_drop_function_value`; LLVM
+  calls through the loaded pointer. The old heap closure opcodes remain for the
+  typed-HIR compilers.
+- Tests: `bytecode_storage_test/closures.cn` through `storage_closure_cases.h` on
+  both backends (captures at offsets 0, 8, and 16; by-reference writes; drop
+  counts and order for scope end, passing, several captures, and returning; one
+  heap block per closure and none left behind). `storage_test` covers the lowered
+  form and the verifier rules. Mutation checks (glue word zeroed, capture offset
+  shifted, glue call removed, bounds check off, captured-move check off) each
+  failed a test.
+
+Not done: generators and tasks (`src/runtime/coroutine.h`, scheduler, reactor,
+native steps, result transfer); `par`/`race`/`crew`/`on`; a plain function name
+used as a value; a closure capturing a zero-sized value; a closure that takes
+ownership of a value captured by an enclosing closure; `drop_in_place` of types
+other than `fn`; generic and inlined lambdas in the storage form.
 
 1. Replace uniform register-image environments/state entries with typed layouts
    for aggregate captures, parameters, locals, and initialized result storage.

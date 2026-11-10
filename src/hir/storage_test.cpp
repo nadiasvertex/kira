@@ -1244,8 +1244,168 @@ auto test_constant_array_index_is_an_element_projection() -> void {
   expect_verifies(*f, third, "third");
 }
 
+auto closure_op(const hir::storage_function &function) -> const hir::storage_op & {
+  return function.ops[find_op(function, hir::op_kind::make_closure)];
+}
+
+auto test_closure_is_built_with_its_captures_and_glue() -> void {
+  auto f = build(read_program("closures.cn"));
+  const auto add = f->function("add_captured");
+  const auto &made = closure_op(add);
+  expect(made.entry == "add_captured$closure0" &&
+             made.glue == "add_captured$closure0$drop",
+         "expected the closure to name its body and its drop glue");
+  expect(made.env_size == 8 && made.env_align == 8,
+         "expected an environment for one int64");
+  expect(made.captures.size() == 1 &&
+             made.captures[0].kind == hir::capture_kind::copy &&
+             made.captures[0].offset == 0,
+         "expected `n` captured by copy at offset 0");
+  expect_verifies(*f, add, "add_captured");
+
+  // The body takes the environment first and sees `n` at its offset.
+  const auto body = f->function("add_captured$closure0");
+  expect(body.signature.takes_environment,
+         "expected the closure body to take the environment");
+  auto captured = size_t{0};
+  for (const auto &slot : body.slots) {
+    if (slot.cls == hir::storage_class::closure_environment) {
+      ++captured;
+      expect(slot.env_offset == 0 && !slot.env_indirect,
+             "expected `n` inline at offset 0");
+    }
+  }
+  expect(captured == 1, "expected one environment slot in the body");
+  expect_verifies(*f, body, "add_captured$closure0");
+
+  // The glue frees the block it is given.
+  const auto glue = f->function("add_captured$closure0$drop");
+  const auto &release = glue.ops[find_op(glue, hir::op_kind::release_environment)];
+  expect(release.env_size == 8, "expected the glue to free the whole block");
+  expect_verifies(*f, glue, "add_captured$closure0$drop");
+}
+
+auto test_aggregate_captures_sit_at_their_own_alignment() -> void {
+  auto f = build(read_program("closures.cn"));
+  // `pair` is `{int32 @0, int64 @8}`: 16 bytes, aligned to 8.
+  const auto pair_fn = f->function("captured_pair");
+  const auto &made = closure_op(pair_fn);
+  expect(made.env_size == 16 && made.captures.size() == 1 &&
+             made.captures[0].offset == 0,
+         "expected the whole pair copied into the environment");
+  expect_verifies(*f, f->function("captured_pair"), "captured_pair");
+  expect_verifies(*f, f->function("captured_pair$closure0"),
+                  "captured_pair$closure0");
+}
+
+auto test_moved_captures_are_dropped_by_the_glue() -> void {
+  auto f = build(read_program("closures.cn"));
+  const auto owner = f->function("own");
+  const auto &made = closure_op(owner);
+  expect(made.captures.size() == 1 &&
+             made.captures[0].kind == hir::capture_kind::move,
+         "expected `n` moved into the closure");
+  // The enclosing function no longer owes a drop for `n`; the glue pays it.
+  expect(drop_calls(owner) == 0,
+         "expected the moved value not to be dropped by its old owner");
+  expect(drop_calls(f->function("own$closure0$drop")) == 1,
+         "expected the glue to drop the one owned capture");
+  expect_verifies(*f, owner, "own");
+  expect_verifies(*f, f->function("own$closure0$drop"), "own$closure0$drop");
+  // The closure is dropped by whoever ends it: the callee that was handed it.
+  const auto callee = f->function("call_it");
+  expect(callee.ops[find_op(callee, hir::op_kind::drop_in_place)].dest.base ==
+             callee.param_slots[0],
+         "expected `call_it` to drop the function value it owns");
+  const auto &call = callee.ops[find_op(callee, hir::op_kind::call_into)];
+  expect(!call.callee.is_direct(), "expected a call through the function value");
+}
+
+auto test_reference_captures_are_reached_through_an_address() -> void {
+  auto f = build(read_program("closures.cn"));
+  const auto outer = f->function("by_reference");
+  const auto &made = closure_op(outer);
+  expect(made.captures.size() == 1 &&
+             made.captures[0].kind == hir::capture_kind::reference &&
+             made.env_size == 8,
+         "expected the environment to hold one address");
+  expect_verifies(*f, outer, "by_reference");
+  const auto body = f->function("by_reference$closure0");
+  auto indirect = size_t{0};
+  for (const auto &slot : body.slots) {
+    indirect += slot.cls == hir::storage_class::closure_environment &&
+                        slot.env_indirect
+                    ? 1U
+                    : 0U;
+  }
+  expect(indirect == 1, "expected `total` reached through the stored address");
+  expect_verifies(*f, body, "by_reference$closure0");
+}
+
+auto test_verifier_checks_closures() -> void {
+  auto f = build(read_program("closures.cn"));
+
+  auto outside = f->function("add_captured");
+  outside.ops[find_op(outside, hir::op_kind::make_closure)].captures[0].offset = 16;
+  expect_rejects(*f, outside, hir::verify_error_kind::bad_operation,
+                 "a capture outside the environment");
+
+  auto misaligned = f->function("add_captured");
+  misaligned.ops[find_op(misaligned, hir::op_kind::make_closure)]
+      .captures[0]
+      .offset = 4;
+  expect_rejects(*f, misaligned, hir::verify_error_kind::bad_operation,
+                 "a capture that is not at its alignment");
+
+  auto wrong_body = f->function("add_captured");
+  wrong_body.ops[find_op(wrong_body, hir::op_kind::make_closure)].entry = "call_it";
+  expect_rejects(*f, wrong_body, hir::verify_error_kind::signature_mismatch,
+                 "an entry that is not a closure body");
+
+  auto wrong_glue = f->function("add_captured");
+  wrong_glue.ops[find_op(wrong_glue, hir::op_kind::make_closure)].glue =
+      "add_captured$closure0";
+  expect_rejects(*f, wrong_glue, hir::verify_error_kind::signature_mismatch,
+                 "drop glue that takes arguments");
+
+  auto empty = f->function("add_captured");
+  empty.ops[find_op(empty, hir::op_kind::make_closure)].env_size = 0;
+  expect_rejects(*f, empty, hir::verify_error_kind::bad_operation,
+                 "captures stored in an empty environment");
+
+  // A function that was not given an environment has none to release.
+  auto stray = f->function("call_it");
+  stray.ops.insert(stray.ops.begin(), hir::storage_op{
+                                          .kind = hir::op_kind::release_environment,
+                                          .env_size = 8});
+  expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
+                 "a release in a function with no environment");
+
+  // The closure keeps ownership of what it captured: the body cannot move it.
+  auto taken = f->function("own$closure0");
+  auto changed = false;
+  for (auto &op : taken.ops) {
+    for (auto &value : op.operands) {
+      if (value.kind == hir::operand_kind::read && value.where.base != 0 &&
+          taken.slots[value.where.base].cls ==
+              hir::storage_class::closure_environment) {
+        value.consume = true;
+        changed = true;
+      }
+    }
+  }
+  expect(changed, "expected the body to read a captured value");
+  expect_rejects(*f, taken, hir::verify_error_kind::move_from_reference,
+                 "a body that takes a captured value");
+}
+
 auto main() -> int {
   try {
+    test_closure_is_built_with_its_captures_and_glue();
+    test_aggregate_captures_sit_at_their_own_alignment();
+    test_moved_captures_are_dropped_by_the_glue();
+    test_reference_captures_are_reached_through_an_address();
+    test_verifier_checks_closures();
     test_abi_classes_follow_layout();
     test_signature_operands_hide_the_result_address();
     test_signature_agreement_ignores_type_ids_but_not_shape();

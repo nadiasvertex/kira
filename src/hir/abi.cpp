@@ -61,6 +61,14 @@ auto pass_class_name(pass_class cls) -> const char * {
 
 auto abi_signature::operands() const -> std::vector<abi_operand> {
   auto out = std::vector<abi_operand>{};
+  if (takes_environment) {
+    out.push_back(abi_operand{
+        .role = abi_operand_role::environment,
+        .value = abi_value{.cls = pass_class::address,
+                           .size = runtime::k_word_size,
+                           .align = runtime::k_word_size},
+        .by_address = false});
+  }
   if (returns_through_address()) {
     out.push_back(abi_operand{.role = abi_operand_role::result_address,
                               .value = result,
@@ -156,6 +164,9 @@ auto format_signature(const abi_signature &signature) -> std::string {
     first = false;
     out += text;
   };
+  if (signature.takes_environment) {
+    add("env@");
+  }
   if (signature.returns_through_address()) {
     add("result@");
   }

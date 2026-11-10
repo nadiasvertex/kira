@@ -27,6 +27,18 @@ auto storage_class_name(storage_class cls) -> const char * {
   return "?";
 }
 
+auto capture_kind_name(capture_kind kind) -> const char * {
+  switch (kind) {
+  case capture_kind::move:
+    return "move";
+  case capture_kind::copy:
+    return "copy";
+  case capture_kind::reference:
+    return "ref";
+  }
+  return "?";
+}
+
 auto op_kind_name(op_kind kind) -> const char * {
   switch (kind) {
   case op_kind::compute:
@@ -43,6 +55,10 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "drop";
   case op_kind::call_into:
     return "call";
+  case op_kind::make_closure:
+    return "closure";
+  case op_kind::release_environment:
+    return "release_env";
   case op_kind::storage_dead:
     return "dead";
   case op_kind::return_value:
@@ -212,6 +228,23 @@ namespace {
     return "drop " + render_place(op.dest);
   case op_kind::call_into:
     return std::string{op.is_drop ? "call.drop " : "call "} + render_call(op);
+  case op_kind::make_closure: {
+    auto out = "closure " + render_place(op.dest) + " = " + op.entry + " glue " +
+               (op.glue.empty() ? std::string{"-"} : op.glue) + " env " +
+               std::to_string(op.env_size) + "/" + std::to_string(op.env_align) +
+               " [";
+    auto first = true;
+    for (const auto &capture : op.captures) {
+      out += first ? "" : ", ";
+      first = false;
+      out += std::string{capture_kind_name(capture.kind)} + " " +
+             render_place(capture.source) + " @" +
+             std::to_string(capture.offset);
+    }
+    return out + "]";
+  }
+  case op_kind::release_environment:
+    return "release_env";
   case op_kind::storage_dead:
     return "dead s" + std::to_string(op.slot);
   case op_kind::return_value:
@@ -248,7 +281,12 @@ auto dump(const storage_function &function, const semantic::type_table &types)
            storage_class_name(slot.cls) + " " +
            (slot.name.empty() ? std::string{"_"} : slot.name) + ": " +
            types.display(slot.type) +
-           (slot.initially_initialized ? " (initialized)" : "") + "\n";
+           (slot.initially_initialized ? " (initialized)" : "") +
+           (slot.cls == storage_class::closure_environment
+                ? std::string{slot.env_indirect ? " env->@" : " env@"} +
+                      std::to_string(slot.env_offset)
+                : std::string{}) +
+           "\n";
   }
   for (size_t i = 0; i < function.ops.size(); ++i) {
     out += "  " + std::to_string(i) + ": " + render_op(function.ops[i]) + "\n";

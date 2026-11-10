@@ -1,10 +1,14 @@
 #include "src/hir/storage_lower.h"
 
+#include "src/hir/captures.h"
+#include "src/hir/traversal.h"
+
 #include <algorithm>
 #include <charconv>
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -89,32 +93,91 @@ using lower_failure = std::unexpected<storage_lower_error>;
   }
 }
 
+/// One captured variable as the closure's environment holds it.
+struct environment_entry {
+  symbol_id symbol = k_invalid_symbol_id;
+  type_id type = semantic::k_unknown_type; ///< The variable's own type.
+  std::string name;
+  capture_kind kind = capture_kind::copy;
+  size_t offset = 0;
+};
+
+/// The typed layout of one closure's environment block.
+struct environment_plan {
+  std::vector<environment_entry> entries;
+  size_t size = 0;
+  size_t align = 1;
+};
+
+/// What a lowerer needs of a function or closure body.
+struct body_shape {
+  std::string name;
+  const std::vector<hir_param> *params = nullptr;
+  type_id return_type = semantic::k_unknown_type;
+  const hir_block *body = nullptr;
+  source_span span{};
+  bool coroutine = false;
+  /// A closure body: the environment it reads its captures from.
+  const environment_plan *environment = nullptr;
+  /// A closure's drop glue: releases the environment block when it ends.
+  bool releases_environment = false;
+};
+
+/// The closure bodies and drop glue that lowering one function produced.
+struct closure_sink {
+  std::vector<storage_function> functions;
+};
+
+[[nodiscard]] auto shape_of(const hir_function &function) -> body_shape {
+  return body_shape{.name = function.name,
+                    .params = &function.params,
+                    .return_type = function.return_type,
+                    .body = function.body.get(),
+                    .span = function.span,
+                    .coroutine = function.is_coroutine()};
+}
+
 class function_lowerer {
 public:
-  function_lowerer(const hir_function &function, storage_env &env)
-      : fn_(function), env_(env) {}
+  function_lowerer(body_shape shape, storage_env &env, closure_sink &closures)
+      : fn_(std::move(shape)), env_(env), closures_(closures) {}
 
   [[nodiscard]] auto run() -> std::expected<storage_function, storage_lower_error> {
-    if (fn_.is_coroutine()) {
+    if (fn_.coroutine) {
       return refuse(fn_.span,
                     "a generator or task body needs suspension-aware storage");
     }
     out_.name = fn_.name;
-    auto signature = classify_function(env_.layouts, fn_);
+    auto param_types = std::vector<type_id>{};
+    for (const auto &param : *fn_.params) {
+      param_types.push_back(param.type);
+    }
+    auto signature =
+        classify_signature(env_.layouts, param_types, fn_.return_type);
     if (!signature.has_value()) {
       return layout_failure(fn_.span, signature.error());
     }
+    signature->takes_environment = fn_.environment != nullptr;
     out_.signature = std::move(*signature);
     if (out_.signature.returns_through_address()) {
       out_.result_slot = new_slot(storage_class::caller_result,
                                   fn_.return_type, "", k_invalid_symbol_id,
                                   fn_.span, false);
     }
-    for (const auto &param : fn_.params) {
+    for (const auto &param : *fn_.params) {
       const auto id = new_slot(storage_class::parameter, param.type, param.name,
                                param.symbol, fn_.span, true);
       out_.param_slots.push_back(id);
       locals_[param.symbol] = id;
+    }
+    if (fn_.environment != nullptr) {
+      for (const auto &entry : fn_.environment->entries) {
+        const auto id = new_slot(storage_class::closure_environment, entry.type,
+                                 entry.name, entry.symbol, fn_.span, true);
+        out_.slots[id].env_offset = entry.offset;
+        out_.slots[id].env_indirect = entry.kind == capture_kind::reference;
+        locals_[entry.symbol] = id;
+      }
     }
     if (fn_.body != nullptr) {
       for (const auto &stmt : fn_.body->stmts) {
@@ -132,6 +195,11 @@ public:
       }
       if (auto ended = flush_pending(fn_.span); !ended.has_value()) {
         return std::unexpected(ended.error());
+      }
+      if (fn_.releases_environment) {
+        emit(storage_op{.kind = op_kind::release_environment,
+                        .env_size = fn_.environment->size},
+             fn_.span);
       }
       emit_return(std::nullopt, fn_.span);
     }
@@ -681,6 +749,10 @@ private:
       return lower_block(as<hir_block>(expr), dest);
     case hir_node_kind::hir_if:
       return lower_if(as<hir_if>(expr), dest);
+    case hir_node_kind::hir_lambda:
+      return lower_lambda(as<hir_lambda>(expr), dest);
+    case hir_node_kind::hir_closure_drop:
+      return lower_closure_drop(as<hir_closure_drop>(expr), dest);
     default:
       return refuse(expr.span, describe(expr.kind) +
                                    " is not part of storage lowering yet");
@@ -1040,6 +1112,163 @@ private:
     return {};
   }
 
+  // ------------------------------------------------------------------
+  //  Closures
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] static auto round_up(size_t value, size_t align) -> size_t {
+    return (value + align - 1) / align * align;
+  }
+
+  /// A `unit` type id, for a function the lowering synthesizes.
+  [[nodiscard]] auto unit_type() const -> type_id {
+    for (size_t id = 0; id < types().count(); ++id) {
+      if (types().is_unit(static_cast<type_id>(id))) {
+        return static_cast<type_id>(id);
+      }
+    }
+    return semantic::k_unknown_type;
+  }
+
+  /// Lays out the environment of `lambda`: each captured local of the
+  /// enclosing function in capture order, an owned or copied value inline at
+  /// its own alignment, a by-reference capture as one address. A captured name
+  /// that is not a local (a module-level function) needs no slot.
+  [[nodiscard]] auto plan_environment(const hir_lambda &lambda)
+      -> std::expected<environment_plan, storage_lower_error> {
+    auto owned = std::unordered_set<symbol_id>{};
+    if (lambda.drop_glue != nullptr) {
+      for (const auto symbol : free_variables(*lambda.drop_glue)) {
+        owned.insert(symbol);
+      }
+    }
+    auto plan = environment_plan{};
+    auto running = size_t{0};
+    for (const auto &capture : capture_plan(lambda)) {
+      const auto found = locals_.find(capture.symbol);
+      if (found == locals_.end()) {
+        continue;
+      }
+      const auto &slot = out_.slots[found->second];
+      auto entry = environment_entry{
+          .symbol = capture.symbol, .type = slot.type, .name = slot.name};
+      auto size = runtime::k_word_size;
+      auto align = runtime::k_word_size;
+      if (ast::is_reference_capture(capture.mode)) {
+        entry.kind = capture_kind::reference;
+      } else {
+        const auto layout = layout_of(slot.type, lambda.span);
+        if (!layout.has_value()) {
+          return std::unexpected(layout.error());
+        }
+        size = (*layout)->size;
+        align = (*layout)->align;
+        if (size == 0) {
+          return refuse(lambda.span,
+                        "a closure that captures a zero-sized value");
+        }
+        entry.kind = owned.contains(capture.symbol) ? capture_kind::move
+                                                    : capture_kind::copy;
+      }
+      entry.offset = round_up(running, align);
+      running = entry.offset + size;
+      plan.align = std::max(plan.align, align);
+      plan.entries.push_back(std::move(entry));
+    }
+    plan.size = round_up(running, plan.align);
+    return plan;
+  }
+
+  /// Lowers the closure `lambda` into `dest`: its body and drop glue become
+  /// functions of the module taking the environment as a hidden operand, and
+  /// the value is built by `make_closure`.
+  [[nodiscard]] auto lower_lambda(const hir_lambda &lambda, const place &dest)
+      -> result {
+    auto plan = plan_environment(lambda);
+    if (!plan.has_value()) {
+      return std::unexpected(plan.error());
+    }
+    const auto name = out_.name + "$closure" + std::to_string(closure_count_++);
+    auto body = function_lowerer(
+                    body_shape{.name = name,
+                               .params = &lambda.params,
+                               .return_type = lambda.return_type,
+                               .body = lambda.body.get(),
+                               .span = lambda.span,
+                               .environment = &*plan},
+                    env_, closures_)
+                    .run();
+    if (!body.has_value()) {
+      return std::unexpected(body.error());
+    }
+    closures_.functions.push_back(std::move(*body));
+
+    auto glue_name = std::string{};
+    if (plan->size != 0) {
+      // Whatever the environment owns is dropped, and the block is freed. A
+      // closure whose environment is all copies still has the block to free.
+      static const auto no_params = std::vector<hir_param>{};
+      glue_name = name + "$drop";
+      auto glue = function_lowerer(
+                      body_shape{.name = glue_name,
+                                 .params = &no_params,
+                                 .return_type = unit_type(),
+                                 .body = lambda.drop_glue != nullptr
+                                             ? lambda.drop_glue->body.get()
+                                             : nullptr,
+                                 .span = lambda.span,
+                                 .environment = &*plan,
+                                 .releases_environment = true},
+                      env_, closures_)
+                      .run();
+      if (!glue.has_value()) {
+        return std::unexpected(glue.error());
+      }
+      closures_.functions.push_back(std::move(*glue));
+    }
+
+    auto op = storage_op{.kind = op_kind::make_closure};
+    op.dest = dest;
+    op.entry = name;
+    op.glue = glue_name;
+    op.env_size = plan->size;
+    op.env_align = plan->align;
+    for (const auto &entry : plan->entries) {
+      const auto source = locals_.at(entry.symbol);
+      if (entry.kind == capture_kind::move &&
+          out_.slots[source].cls == storage_class::closure_environment) {
+        return refuse(lambda.span,
+                      "a closure that takes ownership of a value captured by "
+                      "an enclosing closure");
+      }
+      op.captures.push_back(closure_capture{
+          .source = whole(source), .kind = entry.kind, .offset = entry.offset});
+    }
+    emit(std::move(op), lambda.span);
+    return {};
+  }
+
+  /// `hir_closure_drop`: runs the closure's drop glue, which drops what the
+  /// environment owns and frees the block. The value is then dead.
+  [[nodiscard]] auto lower_closure_drop(const hir_closure_drop &drop,
+                                        const std::optional<place> &dest)
+      -> result {
+    auto where = lower_place(*drop.object);
+    if (!where.has_value()) {
+      return std::unexpected(where.error());
+    }
+    if (!where->has_value()) {
+      return refuse(drop.span, "the drop of a closure that is not a variable");
+    }
+    auto op = storage_op{.kind = op_kind::drop_in_place};
+    op.dest = std::move(**where);
+    emit(std::move(op), drop.span);
+    if (dest.has_value()) {
+      emit(storage_op{.kind = op_kind::init_empty, .dest = *dest}, drop.span);
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     auto params = std::vector<type_id>{};
@@ -1186,6 +1415,10 @@ private:
     }
     if (expr.kind == hir_node_kind::hir_if) {
       return lower_if(as<hir_if>(expr), std::nullopt);
+    }
+    if (expr.kind == hir_node_kind::hir_closure_drop) {
+      // Its `unit` type is not settled in HIR, and nothing reads the value.
+      return lower_closure_drop(as<hir_closure_drop>(expr), std::nullopt);
     }
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
@@ -1627,8 +1860,10 @@ private:
     return {};
   }
 
-  const hir_function &fn_;
+  body_shape fn_;
   storage_env &env_;
+  closure_sink &closures_;
+  size_t closure_count_ = 0;
   storage_function out_;
   std::unordered_map<symbol_id, storage_id> locals_;
   std::unordered_map<std::string, storage_id> globals_;
@@ -1652,19 +1887,18 @@ private:
 
 } // namespace
 
-auto lower_to_storage(const hir_function &function, storage_env &env)
-    -> std::expected<storage_function, storage_lower_error> {
-  return function_lowerer(function, env).run();
-}
-
 auto lower_to_storage(const hir_module &module, storage_env &env)
     -> storage_lowering {
   auto out = storage_lowering{};
   out.module.name = module.module_name;
   for (const auto &function : module.functions) {
-    auto lowered = lower_to_storage(*function, env);
+    auto closures = closure_sink{};
+    auto lowered = function_lowerer(shape_of(*function), env, closures).run();
     if (lowered.has_value()) {
       out.module.functions.push_back(std::move(*lowered));
+      for (auto &closure : closures.functions) {
+        out.module.functions.push_back(std::move(closure));
+      }
     } else {
       out.refused.push_back(refused_function{.name = function->name,
                                              .error = std::move(lowered.error())});
@@ -1674,4 +1908,3 @@ auto lower_to_storage(const hir_module &module, storage_env &env)
 }
 
 } // namespace cinder::hir
-

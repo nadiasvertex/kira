@@ -27,7 +27,20 @@ struct storage_lower_error {
   std::string message;
 };
 
-/// Lowers one function to storage form.
+/// A function a module lowering refused, and why.
+struct refused_function {
+  std::string name;
+  storage_lower_error error;
+};
+
+/// The outcome of lowering a whole module: the functions that lowered, and
+/// the ones that were refused. Nothing is dropped silently.
+struct storage_lowering {
+  storage_module module;
+  std::vector<refused_function> refused;
+};
+
+/// Lowers a module's functions to storage form.
 ///
 /// Constructors (struct, tuple, array, and sum-variant literals) initialize
 /// their destination projection by projection, so a nested aggregate is built
@@ -43,23 +56,13 @@ struct storage_lower_error {
 /// operators, casts, calls, and constructors. Anything else returns
 /// `unsupported_construct` naming it. The result is not verified;
 /// call `verify`.
-[[nodiscard]] auto lower_to_storage(const hir_function &function,
-                                    storage_env &env)
-    -> std::expected<storage_function, storage_lower_error>;
-
-/// A function a module lowering refused, and why.
-struct refused_function {
-  std::string name;
-  storage_lower_error error;
-};
-
-/// The outcome of lowering a whole module: the functions that lowered, and
-/// the ones that were refused. Nothing is dropped silently.
-struct storage_lowering {
-  storage_module module;
-  std::vector<refused_function> refused;
-};
-
+///
+/// A lambda becomes a `make_closure` operation plus two functions of the
+/// module, named after the function that contains it: the body
+/// (`<name>$closure<N>`) and, when the environment is not empty, the drop glue
+/// (`<name>$closure<N>$drop`). Both take the environment block as a hidden
+/// first operand (`abi_signature::takes_environment`); each captured variable
+/// is a `closure_environment` slot of the body whose bytes are in that block.
 [[nodiscard]] auto lower_to_storage(const hir_module &module, storage_env &env)
     -> storage_lowering;
 

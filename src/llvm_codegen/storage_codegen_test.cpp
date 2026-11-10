@@ -34,6 +34,7 @@
 #include "src/llvm_codegen/storage_codegen.h"
 #include "src/testing/storage_cases.h"
 #include "src/testing/storage_intrinsic_cases.h"
+#include "src/testing/storage_closure_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
@@ -323,6 +324,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
     cases::run_all(backend);
     cases::intrinsic_cases(backend);
     cases::memory_cases(backend);
+    cases::closure_cases(backend);
   }
 }
 

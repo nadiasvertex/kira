@@ -52,6 +52,8 @@ struct home {
     reg,      ///< The value is in `reg`.
     frame,    ///< Bytes in this frame; `reg` holds their address.
     indirect, ///< Bytes in the caller's storage; `reg` holds their address.
+    env_block, ///< Bytes in the closure's environment: `reg` holds the block's
+               ///< address and `frame_offset` the distance into it.
   };
   kind where = kind::none;
   virtual_reg reg{};
@@ -301,6 +303,12 @@ private:
     }
 
     for (const auto &op : fn_.ops) {
+      for (const auto &capture : op.captures) {
+        if (capture.kind == hir::capture_kind::reference) {
+          note_address_taken(hir::operand{.kind = operand_kind::address_of,
+                                          .where = capture.source});
+        }
+      }
       for (const auto &value : op.operands) {
         note_address_taken(value);
       }
@@ -315,6 +323,7 @@ private:
 
     homes_.assign(fn_.slots.size(), home{});
     auto entry_stores = std::vector<hir::storage_id>{};
+    auto indirect_captures = std::vector<hir::storage_id>{};
     for (const auto &slot : fn_.slots) {
       const auto value = class_of(slot.type, slot.span);
       if (!value.has_value()) {
@@ -383,6 +392,16 @@ private:
           here = home{.where = home::kind::frame, .frame_offset = *offset};
         }
         break;
+      case hir::storage_class::closure_environment:
+        if (slot.env_indirect) {
+          here = home{.where = home::kind::indirect, .reg = alloc_register()};
+          indirect_captures.push_back(slot.id);
+        } else {
+          here = home{.where = home::kind::env_block,
+                      .reg = virtual_reg{0},
+                      .frame_offset = static_cast<uint32_t>(slot.env_offset)};
+        }
+        break;
       default:
         return fail(compile_error_kind::unsupported_construct, slot.span,
                     std::format("a `{}` slot is not placed by the bytecode "
@@ -401,6 +420,16 @@ private:
       emit_op(opcode::op_stack_alloc);
       emit_register(here.reg);
       writer_.emit_u32(here.frame_offset);
+    }
+    // A variable captured by reference is reached through the address the
+    // environment holds.
+    for (const auto id : indirect_captures) {
+      current_span_ = fn_.slots[id].span;
+      if (auto ok = emit_load(homes_[id].reg, virtual_reg{0},
+                              fn_.slots[id].env_offset, 8);
+          !ok.has_value()) {
+        return ok;
+      }
     }
     for (const auto id : entry_stores) {
       const auto &slot = fn_.slots[id];
@@ -473,6 +502,11 @@ private:
     case home::kind::frame:
     case home::kind::indirect:
       loc = location{.where = location::kind::memory, .reg = here.reg};
+      break;
+    case home::kind::env_block:
+      loc = location{.where = location::kind::memory,
+                     .reg = here.reg,
+                     .offset = here.frame_offset};
       break;
     }
     for (; step < where.steps.size(); ++step) {
@@ -665,8 +699,11 @@ private:
     case op_kind::publish_variant:
       return emit_publish(op);
     case op_kind::drop_in_place:
-      return fail(compile_error_kind::unsupported_construct, op.span,
-                  "`drop_in_place` has no bytecode form yet");
+      return emit_drop(op);
+    case op_kind::make_closure:
+      return emit_make_closure(op);
+    case op_kind::release_environment:
+      return emit_release_environment(op);
     case op_kind::call_into:
       return emit_call(op);
     case op_kind::return_value:
@@ -935,8 +972,7 @@ private:
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {
     if (!op.callee.is_direct()) {
-      return fail(compile_error_kind::unsupported_construct, op.span,
-                  "a call through a `fn` value has no bytecode form yet");
+      return emit_call_function(op);
     }
     if (!index_.contains(op.callee.name)) {
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
@@ -982,6 +1018,196 @@ private:
     if (direct_result && dest->where == location::kind::memory) {
       return write_location(*dest, op.dest.type, result);
     }
+    return {};
+  }
+
+  /// A call through a `fn` value: its entry and environment are read from the
+  /// value's bytes, and the environment is the callee's first operand.
+  [[nodiscard]] auto emit_call_function(const hir::storage_op &op)
+      -> checked<void> {
+    const auto closure = locate(*op.callee.callable);
+    if (!closure.has_value()) {
+      return std::unexpected(closure.error());
+    }
+    if (closure->where != location::kind::memory) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a `fn` value does not live in memory");
+    }
+    const auto entry = alloc_register();
+    if (auto ok = emit_load(entry, closure->reg, closure->offset, 8);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto environment = alloc_register();
+    if (auto ok = emit_load(environment, closure->reg, closure->offset + 8, 8);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto operand_count = op.signature.operands().size() + 1;
+    const auto block = fill_call_block(op, operand_count, environment);
+    if (!block.has_value()) {
+      return std::unexpected(block.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto direct_result =
+        !op.signature.returns_through_address() &&
+        op.signature.result.cls != pass_class::zero_sized;
+    const auto result =
+        direct_result && dest->where == location::kind::reg ? dest->reg
+                                                            : alloc_register();
+    emit_op(opcode::op_call_function);
+    emit_register(result);
+    emit_register(entry);
+    emit_register(*block);
+    writer_.emit_u8(static_cast<uint8_t>(operand_count));
+    if (direct_result && dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, result);
+    }
+    return {};
+  }
+
+  /// Builds a `fn` value `{entry, env, glue}` in its destination. A non-empty
+  /// environment is one heap block that every capture is stored into.
+  [[nodiscard]] auto emit_make_closure(const hir::storage_op &op)
+      -> checked<void> {
+    const auto entry = index_.find(op.entry);
+    if (entry == index_.end()) {
+      return fail(compile_error_kind::unknown_callee, op.span,
+                  std::format("`{}` is not a function of this module", op.entry));
+    }
+    auto glue_word = uint64_t{0};
+    if (!op.glue.empty()) {
+      const auto glue = index_.find(op.glue);
+      if (glue == index_.end()) {
+        return fail(compile_error_kind::unknown_callee, op.span,
+                    std::format("`{}` is not a function of this module", op.glue));
+      }
+      glue_word = uint64_t{glue->second} + 1;
+    }
+    const auto environment = alloc_register();
+    if (op.env_size != 0) {
+      emit_op(opcode::op_alloc);
+      emit_register(environment);
+      writer_.emit_u64(op.env_size);
+      for (const auto &capture : op.captures) {
+        if (auto ok = emit_capture(environment, capture); !ok.has_value()) {
+          return ok;
+        }
+      }
+    } else {
+      emit_const(environment, slot_value{uint64_t{0}});
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (dest->where != location::kind::memory) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a `fn` value does not live in memory");
+    }
+    const auto word = alloc_register();
+    emit_const(word, slot_value{static_cast<uint64_t>(entry->second)});
+    if (auto ok = emit_store(dest->reg, dest->offset, word, 8); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = emit_store(dest->reg, dest->offset + 8, environment, 8);
+        !ok.has_value()) {
+      return ok;
+    }
+    emit_const(word, slot_value{glue_word});
+    return emit_store(dest->reg, dest->offset + 16, word, 8);
+  }
+
+  /// Stores one captured variable into the environment block at `environment`.
+  [[nodiscard]] auto emit_capture(virtual_reg environment,
+                                  const hir::closure_capture &capture)
+      -> checked<void> {
+    const auto source = locate(capture.source);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    if (capture.kind == hir::capture_kind::reference) {
+      const auto address = address_of(*source);
+      if (!address.has_value()) {
+        return std::unexpected(address.error());
+      }
+      return emit_store(environment, capture.offset, *address, 8);
+    }
+    const auto value = class_of(capture.source.type, current_span_);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    if (!hir::is_indirect(value->cls)) {
+      const auto held = read_location(*source, capture.source.type, std::nullopt);
+      if (!held.has_value()) {
+        return std::unexpected(held.error());
+      }
+      return emit_store(environment, capture.offset, *held, value->size);
+    }
+    const auto from = address_of(*source);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    auto to = environment;
+    if (capture.offset != 0) {
+      if (auto ok = fits_offset(capture.offset); !ok.has_value()) {
+        return ok;
+      }
+      to = alloc_register();
+      emit_op(opcode::op_addr_slot);
+      emit_register(to);
+      emit_register(environment);
+      writer_.emit_u16(static_cast<uint16_t>(capture.offset));
+    }
+    emit_op(opcode::op_copy_bytes);
+    emit_register(to);
+    emit_register(*from);
+    writer_.emit_u32(static_cast<uint32_t>(value->size));
+    return {};
+  }
+
+  /// Ends a `fn` value: runs its drop glue, which drops what the environment
+  /// owns and frees the block. Any other drop is still ordinary code.
+  [[nodiscard]] auto emit_drop(const hir::storage_op &op) -> checked<void> {
+    if (types().entry(types().strip_refinement(op.dest.type)).kind !=
+        semantic::type_kind::fn_kind) {
+      return fail(compile_error_kind::unsupported_construct, op.span,
+                  std::format("`drop_in_place` of `{}` has no bytecode form yet",
+                              types().display(op.dest.type)));
+    }
+    const auto where = locate(op.dest);
+    if (!where.has_value()) {
+      return std::unexpected(where.error());
+    }
+    const auto address = address_of(*where);
+    if (!address.has_value()) {
+      return std::unexpected(address.error());
+    }
+    emit_op(opcode::op_drop_function_value);
+    emit_register(alloc_register());
+    emit_register(*address);
+    return {};
+  }
+
+  /// Frees the environment block this function received.
+  [[nodiscard]] auto emit_release_environment(const hir::storage_op &op)
+      -> checked<void> {
+    const auto id = hir::runtime_intrinsic_id("rt_free");
+    if (!id.has_value()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "the runtime has no `rt_free`");
+    }
+    const auto block = alloc_group(2);
+    emit_move(block, virtual_reg{0});
+    emit_const(nth(block, 1), slot_value{static_cast<uint64_t>(op.env_size)});
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(alloc_register());
+    writer_.emit_u8(static_cast<uint8_t>(*id));
+    emit_register(block);
+    writer_.emit_u8(2);
     return {};
   }
 
@@ -1033,7 +1259,9 @@ private:
   /// built in caller storage, then each argument (a scalar or address in its
   /// register, a descriptor or aggregate as the address of the slot holding
   /// it).
-  [[nodiscard]] auto fill_call_block(const hir::storage_op &op, size_t count)
+  [[nodiscard]] auto fill_call_block(
+      const hir::storage_op &op, size_t count,
+      std::optional<virtual_reg> environment = std::nullopt)
       -> checked<virtual_reg> {
     if (count > UINT8_MAX) {
       return fail(compile_error_kind::encoding_limit_exceeded, op.span,
@@ -1043,6 +1271,9 @@ private:
                            ? alloc_register()
                            : alloc_group(static_cast<uint32_t>(count));
     auto position = size_t{0};
+    if (environment.has_value()) {
+      emit_move(nth(block, position++), *environment);
+    }
     if (op.signature.returns_through_address()) {
       const auto dest = locate(op.dest);
       if (!dest.has_value()) {

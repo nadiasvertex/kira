@@ -63,6 +63,10 @@ template <typename T> using checked = std::expected<T, codegen_error>;
   return std::min(align, offset & (~offset + 1));
 }
 
+/// The alignment of a closure's environment block: the allocator hands back
+/// 8-byte-aligned blocks (`src/runtime/allocator.h`).
+constexpr size_t k_environment_align = 8;
+
 /// Where a slot's bytes are while the function runs.
 struct home {
   llvm::Value *ptr = nullptr;
@@ -179,6 +183,7 @@ struct module_context {
   auto params = std::vector<llvm::Type *>{};
   for (const auto &operand : signature.operands()) {
     if (operand.role == hir::abi_operand_role::result_address ||
+        operand.role == hir::abi_operand_role::environment ||
         operand.by_address) {
       params.push_back(llvm::PointerType::get(mc.ctx, 0));
       continue;
@@ -204,17 +209,25 @@ struct module_context {
 /// A sub-32-bit integer result carries `signext`/`zeroext`, as clang emits
 /// for C: Apple arm64 makes the callee extend such a value, so a native
 /// caller may read the whole register.
-auto add_result_extension(module_context &mc, llvm::Function &function,
-                          type_id result) -> void {
-  auto *ty = function.getReturnType();
+[[nodiscard]] auto result_extension(module_context &mc, llvm::Type *ty,
+                                    type_id result)
+    -> std::optional<llvm::Attribute::AttrKind> {
   if (!ty->isIntegerTy() || ty->getIntegerBitWidth() >= 32) {
-    return;
+    return std::nullopt;
   }
   const auto &types = mc.env.types();
   const auto kind = bytecode::numeric_kind_of(types, types.strip_refinement(result));
-  function.addRetAttr(kind.has_value() && bytecode::is_signed_integer(*kind)
-                          ? llvm::Attribute::SExt
-                          : llvm::Attribute::ZExt);
+  return kind.has_value() && bytecode::is_signed_integer(*kind)
+             ? llvm::Attribute::SExt
+             : llvm::Attribute::ZExt;
+}
+
+auto add_result_extension(module_context &mc, llvm::Function &function,
+                          type_id result) -> void {
+  if (const auto extension = result_extension(mc, function.getReturnType(), result);
+      extension.has_value()) {
+    function.addRetAttr(*extension);
+  }
 }
 
 /// A direct call that carries the callee's return attributes, so the call
@@ -373,7 +386,9 @@ private:
     auto operand_of_slot =
         std::vector<std::optional<size_t>>(fn_.slots.size(), std::nullopt);
     for (size_t i = 0; i < operands.size(); ++i) {
-      if (operands[i].role == hir::abi_operand_role::result_address) {
+      if (operands[i].role == hir::abi_operand_role::environment) {
+        environment_ = llvm_fn_->getArg(static_cast<unsigned>(i));
+      } else if (operands[i].role == hir::abi_operand_role::result_address) {
         if (fn_.result_slot != hir::k_invalid_storage) {
           operand_of_slot[fn_.result_slot] = i;
         }
@@ -430,6 +445,33 @@ private:
                     : home{.ptr = frame_bytes(value->size, value->align),
                            .align = value->align};
         break;
+      case hir::storage_class::closure_environment: {
+        if (environment_ == nullptr) {
+          return fail(codegen_error_kind::unsupported_construct, slot.span,
+                      "an environment slot in a function without an "
+                      "environment operand");
+        }
+        auto *at = slot.env_offset == 0
+                       ? environment_
+                       : builder_.CreateInBoundsGEP(
+                             i8(), environment_,
+                             {constant(i64(), slot.env_offset)});
+        if (slot.env_indirect) {
+          // Captured by reference: the environment holds the variable's
+          // address, and what is reached through it has unknown alignment.
+          here = home{.ptr = builder_.CreateAlignedLoad(
+                          ptr_type(), at,
+                          access_align(location{.base = environment_,
+                                                .offset = slot.env_offset,
+                                                .align = k_environment_align},
+                                       runtime::k_word_size)),
+                      .align = 1};
+        } else {
+          here = home{.ptr = at,
+                      .align = aligned_at(k_environment_align, slot.env_offset)};
+        }
+        break;
+      }
       default:
         return fail(codegen_error_kind::unsupported_construct, slot.span,
                     std::format("a `{}` slot is not placed by llvm_codegen yet",
@@ -600,8 +642,11 @@ private:
     case op_kind::publish_variant:
       return emit_publish(op);
     case op_kind::drop_in_place:
-      return fail(codegen_error_kind::unsupported_construct, op.span,
-                  "`drop_in_place` has no llvm_codegen form yet");
+      return emit_drop(op);
+    case op_kind::make_closure:
+      return emit_make_closure(op);
+    case op_kind::release_environment:
+      return emit_release_environment(op);
     case op_kind::call_into:
       return emit_call(op);
     case op_kind::return_value:
@@ -819,8 +864,7 @@ private:
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {
     if (!op.callee.is_direct()) {
-      return fail(codegen_error_kind::unsupported_construct, op.span,
-                  "a call through a `fn` value has no llvm_codegen form yet");
+      return emit_call_function(op);
     }
     if (!mc_.functions.contains(op.callee.name)) {
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
@@ -847,8 +891,32 @@ private:
       return std::unexpected(dest.error());
     }
     auto args = std::vector<llvm::Value *>{};
+    if (auto ok = call_arguments(op, *dest, args); !ok.has_value()) {
+      return ok;
+    }
+    if (args.size() != callee->arg_size()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  std::format("a call to `{}` passes {} operands but the "
+                              "function takes {}",
+                              op.callee.name, args.size(), callee->arg_size()));
+    }
+    auto *call = call_function(builder_, callee, args);
+    const auto direct_result = !op.signature.returns_through_address() &&
+                               op.signature.result.cls != pass_class::zero_sized;
+    if (direct_result) {
+      return store_scalar(*dest, op.dest.type, call);
+    }
+    return {};
+  }
+
+  /// The operands of a call, in the order its signature lists them, after
+  /// any hidden operand the caller has already placed in `args`.
+  [[nodiscard]] auto call_arguments(const hir::storage_op &op,
+                                    const location &dest,
+                                    std::vector<llvm::Value *> &args)
+      -> checked<void> {
     if (op.signature.returns_through_address()) {
-      args.push_back(pointer_at(*dest));
+      args.push_back(pointer_at(dest));
     }
     for (const auto &arg : op.args) {
       if (arg.cls == pass_class::zero_sized) {
@@ -868,18 +936,182 @@ private:
         args.push_back(*value);
       }
     }
-    if (args.size() != callee->arg_size()) {
-      return fail(codegen_error_kind::unsupported_construct, op.span,
-                  std::format("a call to `{}` passes {} operands but the "
-                              "function takes {}",
-                              op.callee.name, args.size(), callee->arg_size()));
+    return {};
+  }
+
+  /// A call through a `fn` value `{entry, env, glue}`: the entry address and
+  /// the environment are read from the value's bytes, and the environment is
+  /// the callee's first operand.
+  [[nodiscard]] auto emit_call_function(const hir::storage_op &op)
+      -> checked<void> {
+    auto closure = locate(*op.callee.callable);
+    if (!closure.has_value()) {
+      return std::unexpected(closure.error());
     }
-    auto *call = call_function(builder_, callee, args);
+    auto *entry = builder_.CreateAlignedLoad(
+        ptr_type(), pointer_at(*closure),
+        access_align(*closure, runtime::k_word_size));
+    closure->offset += runtime::k_word_size;
+    auto *environment = builder_.CreateAlignedLoad(
+        ptr_type(), pointer_at(*closure),
+        access_align(*closure, runtime::k_word_size));
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto signature = op.signature;
+    signature.takes_environment = true;
+    const auto type = function_type_for(mc_, signature, op.span);
+    if (!type.has_value()) {
+      return std::unexpected(type.error());
+    }
+    auto args = std::vector<llvm::Value *>{environment};
+    if (auto ok = call_arguments(op, *dest, args); !ok.has_value()) {
+      return ok;
+    }
+    auto *call = builder_.CreateCall(*type, entry, args);
     const auto direct_result = !op.signature.returns_through_address() &&
                                op.signature.result.cls != pass_class::zero_sized;
-    if (direct_result) {
-      return store_scalar(*dest, op.dest.type, call);
+    if (!direct_result) {
+      return {};
     }
+    if (const auto extension = result_extension(
+            mc_, (*type)->getReturnType(), op.signature.result.type);
+        extension.has_value()) {
+      call->addRetAttr(*extension);
+    }
+    return store_scalar(*dest, op.dest.type, call);
+  }
+
+  /// Builds a `fn` value `{entry, env, glue}` in its destination. A non-empty
+  /// environment is one heap block that every capture is stored into.
+  [[nodiscard]] auto emit_make_closure(const hir::storage_op &op)
+      -> checked<void> {
+    const auto entry = mc_.functions.find(op.entry);
+    if (entry == mc_.functions.end()) {
+      return fail(codegen_error_kind::unknown_callee, op.span,
+                  std::format("`{}` is not a function of this module", op.entry));
+    }
+    llvm::Value *glue = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(mc_.ctx, 0));
+    if (!op.glue.empty()) {
+      const auto found = mc_.functions.find(op.glue);
+      if (found == mc_.functions.end()) {
+        return fail(codegen_error_kind::unknown_callee, op.span,
+                    std::format("`{}` is not a function of this module", op.glue));
+      }
+      glue = found->second;
+    }
+    llvm::Value *environment = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(mc_.ctx, 0));
+    if (op.env_size != 0) {
+      const auto id = hir::runtime_intrinsic_id("rt_alloc");
+      if (!id.has_value()) {
+        return fail(codegen_error_kind::unsupported_construct, op.span,
+                    "the runtime has no `rt_alloc`");
+      }
+      environment = builder_.CreateCall(runtime_function(mc_, *id),
+                                        {constant(i64(), op.env_size)});
+      for (const auto &capture : op.captures) {
+        if (auto ok = emit_capture(environment, capture); !ok.has_value()) {
+          return ok;
+        }
+      }
+    }
+    auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    for (llvm::Value *word : {static_cast<llvm::Value *>(entry->second),
+                              environment, glue}) {
+      builder_.CreateAlignedStore(word, pointer_at(*dest),
+                                  access_align(*dest, runtime::k_word_size));
+      dest->offset += runtime::k_word_size;
+    }
+    return {};
+  }
+
+  /// Stores one captured variable into the environment block.
+  [[nodiscard]] auto emit_capture(llvm::Value *environment,
+                                  const hir::closure_capture &capture)
+      -> checked<void> {
+    const auto source = locate(capture.source);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    const auto into = location{.base = environment,
+                               .offset = capture.offset,
+                               .align = k_environment_align};
+    if (capture.kind == hir::capture_kind::reference) {
+      builder_.CreateAlignedStore(pointer_at(*source), pointer_at(into),
+                                  access_align(into, runtime::k_word_size));
+      return {};
+    }
+    const auto value = class_of(mc_, capture.source.type, current_span_);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    if (value->cls == pass_class::zero_sized) {
+      return {};
+    }
+    if (!hir::is_indirect(value->cls)) {
+      const auto held = load_scalar(*source, capture.source.type);
+      if (!held.has_value()) {
+        return std::unexpected(held.error());
+      }
+      return store_scalar(into, capture.source.type, *held);
+    }
+    builder_.CreateMemCpy(pointer_at(into), access_align(into, value->align),
+                          pointer_at(*source), access_align(*source, value->align),
+                          constant(i64(), value->size));
+    return {};
+  }
+
+  /// Ends a `fn` value: runs its drop glue, which drops what the environment
+  /// owns and frees the block. Any other drop is still ordinary code.
+  [[nodiscard]] auto emit_drop(const hir::storage_op &op) -> checked<void> {
+    if (types().entry(types().strip_refinement(op.dest.type)).kind !=
+        semantic::type_kind::fn_kind) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  std::format("`drop_in_place` of `{}` has no llvm_codegen "
+                              "form yet",
+                              types().display(op.dest.type)));
+    }
+    auto closure = locate(op.dest);
+    if (!closure.has_value()) {
+      return std::unexpected(closure.error());
+    }
+    closure->offset += runtime::k_word_size;
+    auto *environment = builder_.CreateAlignedLoad(
+        ptr_type(), pointer_at(*closure),
+        access_align(*closure, runtime::k_word_size));
+    closure->offset += runtime::k_word_size;
+    auto *glue = builder_.CreateAlignedLoad(
+        ptr_type(), pointer_at(*closure),
+        access_align(*closure, runtime::k_word_size));
+    auto *run = llvm::BasicBlock::Create(mc_.ctx, "glue", llvm_fn_);
+    auto *after = llvm::BasicBlock::Create(mc_.ctx, "glue.done", llvm_fn_);
+    builder_.CreateCondBr(builder_.CreateIsNotNull(glue), run, after);
+    builder_.SetInsertPoint(run);
+    auto *glue_type = llvm::FunctionType::get(llvm::Type::getVoidTy(mc_.ctx),
+                                              {ptr_type()}, /*isVarArg=*/false);
+    builder_.CreateCall(glue_type, glue, {environment});
+    builder_.CreateBr(after);
+    builder_.SetInsertPoint(after);
+    return {};
+  }
+
+  /// Frees the environment block this function received.
+  [[nodiscard]] auto emit_release_environment(const hir::storage_op &op)
+      -> checked<void> {
+    const auto id = hir::runtime_intrinsic_id("rt_free");
+    if (!id.has_value() || environment_ == nullptr) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "`release_env` needs the runtime's `rt_free` and an "
+                  "environment operand");
+    }
+    builder_.CreateCall(runtime_function(mc_, *id),
+                        {environment_, constant(i64(), op.env_size)});
     return {};
   }
 
@@ -1122,6 +1354,8 @@ private:
 
   std::vector<home> homes_;
   llvm::Value *anchor_ = nullptr;
+  /// The hidden environment argument of a closure body or drop glue.
+  llvm::Value *environment_ = nullptr;
   std::vector<open_region> regions_;
 };
 
@@ -1239,11 +1473,16 @@ auto compile_storage_module(const hir::storage_module &module,
     auto *declared = mc.functions.at(function.name);
     if (auto ok = function_emitter(mc, module, function, declared).compile();
         !ok.has_value()) {
-      return std::unexpected(ok.error());
+      auto error = ok.error();
+      error.message = std::format("in `{}`: {}", function.name, error.message);
+      return std::unexpected(std::move(error));
     }
   }
   if (options.entry_thunks) {
     for (const auto &function : module.functions) {
+      if (function.signature.takes_environment) {
+        continue; // reached only through a `fn` value
+      }
       if (auto ok = emit_entry_thunk(mc, function, mc.functions.at(function.name));
           !ok.has_value()) {
         return std::unexpected(ok.error());

@@ -72,6 +72,7 @@ struct abi_value {
 
 /// What an internal operand is.
 enum class abi_operand_role : uint8_t {
+  environment,    ///< Hidden: the address of a closure's environment block.
   result_address, ///< Hidden: where the callee builds an indirect result.
   argument,       ///< A source parameter.
 };
@@ -92,14 +93,19 @@ struct abi_signature {
   abi_value result;
   /// Every source parameter in source order, zero-sized ones included.
   std::vector<abi_value> params;
+  /// The callee is the body of a closure: its first operand is the address of
+  /// the environment block. A call through a `fn` value supplies it; the
+  /// signature a caller sees (`classify_fn_type`) does not mention it.
+  bool takes_environment = false;
 
   /// The callee builds its result in caller storage reached by a hidden first
   /// operand.
   [[nodiscard]] auto returns_through_address() const -> bool {
     return is_indirect(result.cls);
   }
-  /// The operands the callee actually receives: the hidden result address
-  /// when there is one, then each non-zero-sized parameter.
+  /// The operands the callee actually receives: the environment when it takes
+  /// one, the hidden result address when there is one, then each
+  /// non-zero-sized parameter.
   [[nodiscard]] auto operands() const -> std::vector<abi_operand>;
 
   [[nodiscard]] auto operator==(const abi_signature &) const -> bool = default;
