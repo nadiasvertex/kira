@@ -1,0 +1,127 @@
+module sample
+type noisy = { pub id: int32 }
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+type pair = { pub a: int32, pub b: int32 }
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def make_pair(a: int32, b: int32) -> pair:
+    return pair { a: a, b: b }
+
+def early(n: int32) -> int32:
+    if n > 0:
+        return 1
+    return 2
+
+def both_return(n: int32) -> int32:
+    if n > 0:
+        return 1
+    else:
+        return 2
+
+def pick(n: int32) -> int32:
+    let r = if n > 0:
+        n
+    else:
+        0 - n
+    return r
+
+def chain(n: int32) -> int32:
+    return if n > 10:
+        3
+    elif n > 5:
+        2
+    else:
+        1
+
+def pick_pair(n: int32) -> pair:
+    return if n > 0:
+        make_pair(n, 1)
+    else:
+        make_pair(0, n)
+
+def assign_in_branch(n: int32) -> int32:
+    var x = 0
+    if n > 0:
+        x = 1
+    else:
+        x = 2
+    return x
+
+def count(n: int32) -> int32:
+    var i = 0
+    while i < n:
+        i = i + 1
+    return i
+
+def count_with_locals(n: int32) -> int32:
+    var i = 0
+    var total = 0
+    while i < n:
+        let step = i + 1
+        total = total + step
+        i = i + 1
+    return total
+
+def stops(n: int32) -> int32:
+    var i = 0
+    while true:
+        if i >= n:
+            break
+        i = i + 1
+    return i
+
+def skips(n: int32) -> int32:
+    var i = 0
+    var total = 0
+    while i < n:
+        i = i + 1
+        if i == 3:
+            continue
+        total = total + i
+    return total
+
+def returns_from_loop(n: int32) -> int32:
+    var i = 0
+    while true:
+        if i == n:
+            return i
+        i = i + 1
+
+def nested(n: int32) -> int32:
+    var i = 0
+    var total = 0
+    while i < n:
+        var j = 0
+        while j < i:
+            if j == 2:
+                break
+            total = total + 1
+            j = j + 1
+        i = i + 1
+    return total
+
+def stepped(n: int32) -> int32:
+    var total = 0
+    for i in 0..n:
+        if i == 2:
+            continue
+        total = total + i
+    return total
+
+def drop_in_branch(n: int32) -> int32:
+    if n > 0:
+        let x = make_noisy(n)
+        return x.id
+    return 0
+
+def drop_in_loop(n: int32) -> int32:
+    var i = 0
+    while i < n:
+        let x = make_noisy(i)
+        i = i + 1
+    return i

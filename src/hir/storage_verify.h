@@ -32,6 +32,7 @@ enum class verify_error_kind : uint8_t {
                      ///< an argument slot that still holds a value.
   bad_result,        ///< The result is not complete on a normal return.
   leaked_value,      ///< A value that needs a drop is left behind.
+  join_mismatch,     ///< Paths that meet leave a value in different states.
   double_drop,       ///< A value's own drop runs twice.
   use_after_drop,    ///< A value is used after its drop ran, and before it was
                      ///< written again.
@@ -75,7 +76,10 @@ struct verify_options {
 ///   needs a drop has had it before its slot ends;
 /// - a write over a value that needs a drop happens only after that value's
 ///   drops have run;
-/// - on return the result is complete, and nothing follows the return.
+/// - on return the result is complete, and nothing follows the return;
+/// - where branches meet, no value that needs a drop is in different states on
+///   different paths (that takes a drop flag, which the form does not model),
+///   and a loop leaves the state it started with.
 [[nodiscard]] auto verify(const storage_function &function, storage_env &env,
                           const storage_module *callees = nullptr,
                           const verify_options &options = {})

@@ -27,10 +27,11 @@ namespace cinder::hir {
 //  Both backends read this form, so a decision such as "build this struct
 //  directly in the caller's result bytes" is made once.
 //
-//  A function lowers to a flat list of `storage_slot`s and a straight-line
-//  list of `storage_op`s. Control flow joins the form in a later step; until
-//  then a function whose body needs it is refused with a named reason rather
-//  than approximated.
+//  A function lowers to a flat list of `storage_slot`s and a list of
+//  `storage_op`s. `if`, `while`, `break`, `continue`, and early `return` are
+//  structured markers in that list; a construct the form does not express yet
+//  (`match`, `while let`) is refused with a named reason rather than
+//  approximated.
 //
 //  Initialization and ownership are tracked apart from the bytes. A move
 //  copies bytes and invalidates the source in the form's initialization
@@ -181,6 +182,19 @@ enum class op_kind : uint8_t {
   call_into,       ///< Calls `callee`; the result is built in `dest`.
   storage_dead,    ///< Ends the lifetime of slot `slot`.
   return_value,    ///< Leaves the function; see `value`.
+  // Structured control flow. The markers nest like brackets in the flat
+  // operation list; the verifier joins the initialization state where
+  // branches meet.
+  if_begin,   ///< Runs the operations up to `else_begin` or `if_end` when
+              ///< `condition` is true.
+  else_begin, ///< Starts the operations that run when it is false.
+  if_end,     ///< Ends the conditional; the two paths join here.
+  loop_begin, ///< Starts operations that repeat until an `exit` leaves them.
+  loop_end,   ///< Ends the loop body and returns to `loop_begin`.
+  block_begin, ///< Starts a region that an `exit` can leave early.
+  block_end,   ///< Ends the region; the paths that left it join here.
+  exit,        ///< Leaves the `depth`-th enclosing loop or block (0 is the
+               ///< innermost); `if` regions are not counted.
 };
 
 [[nodiscard]] auto op_kind_name(op_kind kind) -> const char *;
@@ -208,6 +222,10 @@ struct storage_op {
   call_target callee{};
   abi_signature signature{};
   std::vector<call_argument> args{};
+  // if_begin
+  operand condition{};
+  // exit
+  size_t depth = 0;
   // storage_dead
   storage_id slot = k_invalid_storage;
   // return_value: the direct result, absent when the result is built in the

@@ -437,12 +437,12 @@ auto test_scalar_and_unit_functions() -> void {
 
 auto test_unsupported_constructs_are_refused_by_name() -> void {
   auto f = build(read_program("forms.cn"));
-  const auto *branching = f->refusal("branching");
-  expect(branching != nullptr, "expected `if` to be refused");
-  expect(branching->kind ==
+  const auto *matching = f->refusal("matching");
+  expect(matching != nullptr, "expected `match` to be refused");
+  expect(matching->kind ==
              hir::storage_lower_error_kind::unsupported_construct,
          "expected an unsupported-construct refusal");
-  expect(branching->message.find("`if`") != std::string::npos,
+  expect(matching->message.find("`match`") != std::string::npos,
          "expected the refusal to name the construct");
   const auto *shout = f->refusal("shout");
   expect(shout != nullptr && shout->message.find("str") != std::string::npos,
@@ -451,7 +451,7 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   expect(counter != nullptr &&
              counter->message.find("suspension") != std::string::npos,
          "expected a generator to be refused");
-  expect(f->lowering.module.find("branching") == nullptr,
+  expect(f->lowering.module.find("matching") == nullptr,
          "expected a refused function to be absent, not half lowered");
 }
 
@@ -933,6 +933,196 @@ auto test_verifier_checks_slots_and_signature() -> void {
                  "a direct result with no value");
 }
 
+// ==========================================================================
+//  Control flow
+// ==========================================================================
+
+auto test_control_flow_lowers_and_verifies() -> void {
+  auto f = build(read_program("flow.cn"));
+  for (const auto &refused : f->lowering.refused) {
+    std::cerr << "refused " << refused.name << ": " << refused.error.message
+              << "\n";
+  }
+  expect(f->lowering.refused.empty(),
+         "expected every control-flow function to lower");
+  for (const auto &function : f->lowering.module.functions) {
+    const auto verdict = hir::verify(function, *f->env, &f->lowering.module);
+    if (!verdict.has_value()) {
+      std::cerr << hir::dump(function, f->checked.types);
+      std::cerr << function.name << " op " << verdict.error().op_index << " "
+                << hir::verify_error_kind_name(verdict.error().kind) << ": "
+                << verdict.error().message << "\n";
+      fail("expected the function to verify");
+    }
+  }
+}
+
+auto test_if_branches_build_the_value_in_the_destination() -> void {
+  auto f = build(read_program("flow.cn"));
+  // Both sides write the `let` slot; the condition slot ends on each side.
+  expect_ops(*f, "pick",
+             {"compute s2 = binary > s0, #0", "if s2", "dead s2",
+              "compute s1 = copy s0", "else", "dead s2",
+              "compute s1 = binary - #0, s0", "end_if", "return s1"});
+  // A constructor in each arm receives the caller's result bytes.
+  expect_ops(*f, "pick_pair",
+             {"compute s2 = binary > s1, #0", "if s2", "dead s2",
+              "call s0 = make_pair(s1, #1)", "else", "dead s2",
+              "call s0 = make_pair(#0, s1)", "end_if", "return"});
+  // `elif` nests inside the `else` side.
+  expect_ops(*f, "chain",
+             {"compute s2 = binary > s0, #10", "if s2", "dead s2",
+              "compute s1 = const 3", "else", "dead s2",
+              "compute s3 = binary > s0, #5", "if s3", "dead s3",
+              "compute s1 = const 2", "else", "dead s3",
+              "compute s1 = const 1", "end_if", "end_if", "return s1"});
+  // A path that returns leaves the join to the other path.
+  expect_ops(*f, "early",
+             {"compute s1 = binary > s0, #0", "if s1", "dead s1", "return #1",
+              "else", "dead s1", "end_if", "return #2"});
+  expect_ops(*f, "both_return",
+             {"compute s1 = binary > s0, #0", "if s1", "dead s1", "return #1",
+              "else", "dead s1", "return #2", "end_if"});
+}
+
+auto test_loops_test_run_and_repeat() -> void {
+  auto f = build(read_program("flow.cn"));
+  // The condition leaves the loop; the body is a block; the loop repeats.
+  expect_ops(*f, "count",
+             {"compute s1 = const 0", "loop", "compute s2 = binary < s1, s0",
+              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if", "block",
+              "compute s1 = binary + s1, #1", "end_block", "end_loop",
+              "return s1"});
+  // Storage the body declares ends before the loop repeats.
+  expect_ops(*f, "count_with_locals",
+             {"compute s1 = const 0", "compute s2 = const 0", "loop",
+              "compute s3 = binary < s1, s0", "if s3", "dead s3", "else",
+              "dead s3", "exit 0", "end_if", "block",
+              "compute s4 = binary + s1, #1", "compute s2 = binary + s2, s4",
+              "compute s1 = binary + s1, #1", "end_block", "dead s4",
+              "end_loop", "return s2"});
+  // `while true` has no condition to leave by; only `break` does.
+  expect_ops(*f, "stops",
+             {"compute s1 = const 0", "loop", "block",
+              "compute s2 = binary >= s1, s0", "if s2", "dead s2", "exit 1",
+              "else", "dead s2", "end_if", "compute s1 = binary + s1, #1",
+              "end_block", "end_loop", "return s1"});
+  // A loop with nothing that leaves it ends the function's path.
+  expect_ops(*f, "returns_from_loop",
+             {"compute s1 = const 0", "loop", "block",
+              "compute s2 = binary == s1, s0", "if s2", "dead s2", "return s1",
+              "else", "dead s2", "end_if", "compute s1 = binary + s1, #1",
+              "end_block", "end_loop"});
+}
+
+auto test_break_and_continue_name_their_loop_by_depth() -> void {
+  auto f = build(read_program("flow.cn"));
+  // `continue` leaves the body block, so the step still runs.
+  expect_ops(*f, "stepped",
+             {"compute s1 = const 0", "compute s2 = const 0",
+              "compute s3 = copy s0", "compute s4 = copy s2", "loop",
+              "compute s5 = binary < s4, s3", "if s5", "dead s5", "else",
+              "dead s5", "exit 0", "end_if", "block", "compute s6 = copy s4",
+              "compute s7 = binary == s6, #2", "if s7", "dead s7", "exit 0",
+              "else", "dead s7", "end_if", "compute s1 = binary + s1, s6",
+              "end_block", "compute s4 = binary + s4, #1", "dead s6",
+              "end_loop", "return s1"});
+  // In nested loops `break` counts the inner body block and the inner loop.
+  const auto inner = f->function("nested");
+  auto depths = std::vector<size_t>{};
+  for (const auto &op : inner.ops) {
+    if (op.kind == hir::op_kind::exit) {
+      depths.push_back(op.depth);
+    }
+  }
+  expect((depths == std::vector<size_t>{0, 0, 1}),
+         "expected exits for the outer test, the inner test, and the break");
+  expect_ops(*f, "skips",
+             {"compute s1 = const 0", "compute s2 = const 0", "loop",
+              "compute s3 = binary < s1, s0", "if s3", "dead s3", "else",
+              "dead s3", "exit 0", "end_if", "block",
+              "compute s1 = binary + s1, #1", "compute s4 = binary == s1, #3",
+              "if s4", "dead s4", "exit 0", "else", "dead s4", "end_if",
+              "compute s2 = binary + s2, s1", "end_block", "end_loop",
+              "return s2"});
+}
+
+auto test_drops_inside_branches_and_loops() -> void {
+  auto f = build(read_program("flow.cn"));
+  // The drop runs on the path that owns the value, before it returns.
+  expect_ops(*f, "drop_in_branch",
+             {"compute s1 = binary > s0, #0", "if s1", "dead s1",
+              "call s2 = make_noisy(s0)", "compute s3 = copy s2.id",
+              "call.drop s4 = noisy::drop(&s2)", "dead s4", "return s3", "else",
+              "dead s1", "end_if", "return #0"});
+  // The value dropped each iteration is built again on the next one.
+  expect_ops(*f, "drop_in_loop",
+             {"compute s1 = const 0", "loop", "compute s2 = binary < s1, s0",
+              "if s2", "dead s2", "else", "dead s2", "exit 0", "end_if", "block",
+              "call s3 = make_noisy(s1)", "compute s1 = binary + s1, #1",
+              "call.drop s4 = noisy::drop(&s3)", "dead s4", "end_block",
+              "dead s3", "end_loop", "return s1"});
+}
+
+auto test_verifier_checks_joins_and_loops() -> void {
+  auto f = build(read_program("flow.cn"));
+
+  // A value that owes a drop on one path and not the other needs a flag.
+  auto uneven = f->function("drop_in_branch");
+  erase_op(uneven, find_op(uneven, hir::op_kind::return_value, 0));
+  erase_op(uneven, find_op(uneven, hir::op_kind::storage_dead, 1));
+  erase_op(uneven, find_op(uneven, hir::op_kind::call_into, 1));
+  expect_rejects(*f, uneven, hir::verify_error_kind::join_mismatch,
+                 "a droppable value dropped on one path only");
+
+  // Storage that ends on one side while the other still holds a value.
+  auto one_sided = f->function("pick");
+  erase_op(one_sided, find_op(one_sided, hir::op_kind::storage_dead, 1));
+  expect_rejects(*f, one_sided, hir::verify_error_kind::join_mismatch,
+                 "a slot that ends on one side only");
+
+  // A loop body that leaves a slot different at its end than at its start.
+  auto carried = f->function("count_with_locals");
+  erase_op(carried, find_op(carried, hir::op_kind::storage_dead, 2));
+  expect_rejects(*f, carried, hir::verify_error_kind::join_mismatch,
+                 "storage declared in a loop body that is never ended");
+
+  // `exit` must name a loop or block that is open.
+  auto too_deep = f->function("stops");
+  too_deep.ops[find_op(too_deep, hir::op_kind::exit, 0)].depth = 5;
+  expect_rejects(*f, too_deep, hir::verify_error_kind::bad_operation,
+                 "an exit past the outermost loop");
+
+  // A region left open, and one closed that was never opened.
+  auto unclosed = f->function("early");
+  erase_op(unclosed, find_op(unclosed, hir::op_kind::if_end, 0));
+  expect_rejects(*f, unclosed, hir::verify_error_kind::bad_operation,
+                 "an `if` that is never closed");
+  auto stray = f->function("early");
+  stray.ops.insert(stray.ops.begin(),
+                   hir::storage_op{.kind = hir::op_kind::else_begin});
+  expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
+                 "an `else` outside any `if`");
+  auto crossed = f->function("count");
+  crossed.ops[find_op(crossed, hir::op_kind::block_end, 0)].kind =
+      hir::op_kind::loop_end;
+  expect_rejects(*f, crossed, hir::verify_error_kind::bad_operation,
+                 "regions that close out of order");
+
+  // After a return, only the markers that close a region may follow.
+  auto after = f->function("both_return");
+  after.ops.insert(after.ops.begin() + 4,
+                   hir::storage_op{.kind = hir::op_kind::return_value});
+  expect_rejects(*f, after, hir::verify_error_kind::code_after_return,
+                 "an operation after a return inside a branch");
+
+  // A path that can reach the end of the function must return.
+  auto falls_off = f->function("early");
+  erase_op(falls_off, find_op(falls_off, hir::op_kind::return_value, 1));
+  expect_rejects(*f, falls_off, hir::verify_error_kind::missing_return,
+                 "a function that can fall off its end after an `if`");
+}
+
 } // namespace
 
 
@@ -977,6 +1167,12 @@ auto main() -> int {
     test_verifier_rejects_second_and_late_drops();
     test_verifier_checks_the_shape_of_a_drop_call();
     test_verifier_checks_slots_and_signature();
+    test_control_flow_lowers_and_verifies();
+    test_if_branches_build_the_value_in_the_destination();
+    test_loops_test_run_and_repeat();
+    test_break_and_continue_name_their_loop_by_depth();
+    test_drops_inside_branches_and_loops();
+    test_verifier_checks_joins_and_loops();
   } catch (const std::exception &e) {
     cinder::testing::fail(e.what());
   }

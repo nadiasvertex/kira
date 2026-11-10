@@ -1,5 +1,6 @@
 #include "src/hir/storage_lower.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -18,8 +19,6 @@ template <typename T> [[nodiscard]] auto as(const hir_node &node) -> const T & {
 
 [[nodiscard]] auto describe(hir_node_kind kind) -> std::string {
   switch (kind) {
-  case hir_node_kind::hir_if:
-    return "an `if` expression";
   case hir_node_kind::hir_match:
     return "a `match` expression";
   case hir_node_kind::hir_lambda:
@@ -28,14 +27,10 @@ template <typename T> [[nodiscard]] auto as(const hir_node &node) -> const T & {
     return "a block expression";
   case hir_node_kind::hir_index:
     return "an index expression";
-  case hir_node_kind::hir_while:
   case hir_node_kind::hir_while_let:
-    return "a loop";
+    return "a `while let` loop";
   case hir_node_kind::hir_let_else:
     return "`let ... else`";
-  case hir_node_kind::hir_break:
-  case hir_node_kind::hir_continue:
-    return "`break` or `continue`";
   case hir_node_kind::hir_yield:
     return "`yield` or `await`";
   case hir_node_kind::hir_contract_check:
@@ -144,6 +139,8 @@ public:
 
 private:
   using result = std::expected<void, storage_lower_error>;
+
+  enum class loop_frame_kind : uint8_t { loop, body };
 
   struct pending_temp {
     storage_id slot = k_invalid_storage;
@@ -577,6 +574,8 @@ private:
       return lower_variant(as<hir_variant_init>(expr), dest);
     case hir_node_kind::hir_block:
       return lower_block(as<hir_block>(expr), dest);
+    case hir_node_kind::hir_if:
+      return lower_if(as<hir_if>(expr), dest);
     default:
       return refuse(expr.span, describe(expr.kind) +
                                    " is not part of storage lowering yet");
@@ -842,18 +841,29 @@ private:
   //  Calls
   // ------------------------------------------------------------------
 
+  /// The expression that is `block`'s value when `stmt` is its last
+  /// statement. A block HIR builds ends in the bare expression; a block of
+  /// source code with a value ends in an expression statement.
+  [[nodiscard]] auto tail_value(const hir_block &block, const hir_node &stmt) const
+      -> const hir_expr * {
+    if (stmt.kind != hir_node_kind::hir_expr_stmt) {
+      return dynamic_cast<const hir_expr *>(&stmt);
+    }
+    const auto yields = block.type != semantic::k_unknown_type &&
+                        !types().is_unit(block.type);
+    return yields ? as<hir_expr_stmt>(stmt).expr.get() : nullptr;
+  }
+
   /// A block runs its statements in order. When it ends in an expression,
   /// that expression is the block's value and is built in `dest`. HIR makes a
   /// discarded temporary, or a value computed before scope-exit drops, a
   /// block of this shape.
   [[nodiscard]] auto lower_block(const hir_block &block, const place &dest)
       -> result {
-    for (size_t i = 0; i < block.stmts.size(); ++i) {
+    for (size_t i = 0; i < block.stmts.size() && !terminated_; ++i) {
       const auto &stmt = *block.stmts[i];
       const auto last = i + 1 == block.stmts.size();
-      const auto *value = last && stmt.kind != hir_node_kind::hir_expr_stmt
-                              ? dynamic_cast<const hir_expr *>(&stmt)
-                              : nullptr;
+      const auto *value = last ? tail_value(block, stmt) : nullptr;
       if (value != nullptr) {
         if (auto ok = lower_into(*value, dest); !ok.has_value()) {
           return ok;
@@ -960,6 +970,12 @@ private:
       return lower_discarded(*as<hir_expr_stmt>(node).expr);
     case hir_node_kind::hir_return:
       return lower_return(as<hir_return>(node));
+    case hir_node_kind::hir_while:
+      return lower_while(as<hir_while>(node));
+    case hir_node_kind::hir_break:
+      return lower_exit(node.span, loop_frame_kind::loop);
+    case hir_node_kind::hir_continue:
+      return lower_exit(node.span, loop_frame_kind::body);
     default:
       if (const auto *expr = dynamic_cast<const hir_expr *>(&node)) {
         return lower_discarded(*expr);
@@ -978,6 +994,9 @@ private:
       }
     }
     locals_[let.symbol] = slot;
+    if (!scopes_.empty()) {
+      scopes_.back().push_back(slot);
+    }
     if (auto ended = flush_pending(let.span); !ended.has_value()) {
       return ended;
     }
@@ -989,7 +1008,7 @@ private:
       // A block's own type may be unsettled when nothing reads its value, so
       // its statements run in turn and only a trailing value gets a temporary.
       const auto &block = as<hir_block>(expr);
-      for (size_t i = 0; i < block.stmts.size(); ++i) {
+      for (size_t i = 0; i < block.stmts.size() && !terminated_; ++i) {
         const auto &stmt = *block.stmts[i];
         const auto *value = stmt.kind != hir_node_kind::hir_expr_stmt
                                 ? dynamic_cast<const hir_expr *>(&stmt)
@@ -1002,6 +1021,9 @@ private:
       }
       return {};
     }
+    if (expr.kind == hir_node_kind::hir_if) {
+      return lower_if(as<hir_if>(expr), std::nullopt);
+    }
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
       return ok;
@@ -1012,9 +1034,234 @@ private:
     return {};
   }
 
+  // ------------------------------------------------------------------
+  //  Control flow
+  // ------------------------------------------------------------------
+
+  /// Runs `body` with its own temporaries. Those of the enclosing expression
+  /// stay alive across it and are set aside until it ends; its own end before
+  /// the region does, unless the region has already left.
+  template <typename F>
+  [[nodiscard]] auto in_region(const source_span &span, F &&body) -> result {
+    auto saved = std::move(pending_);
+    pending_.clear();
+    outer_pending_ += saved.size();
+    auto ok = body();
+    if (ok.has_value() && !terminated_) {
+      ok = flush_pending(span);
+    }
+    pending_.clear();
+    outer_pending_ -= saved.size();
+    pending_ = std::move(saved);
+    return ok;
+  }
+
+  auto kill(storage_id id, const source_span &span) -> void {
+    auto dead = storage_op{.kind = op_kind::storage_dead};
+    dead.slot = id;
+    emit(std::move(dead), span);
+  }
+
+  /// A condition ready for `if_begin`: the operand it tests, and the slot
+  /// holding it when that slot must end on each side of the branch. The
+  /// statement's other temporaries have ended by the time it returns.
+  struct condition {
+    operand value;
+    storage_id hold = k_invalid_storage;
+  };
+
+  [[nodiscard]] auto lower_condition(const hir_expr &expr)
+      -> std::expected<condition, storage_lower_error> {
+    auto value = lower_operand(expr, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto out = condition{.value = std::move(*value)};
+    auto found = pending_.end();
+    if (out.value.kind != operand_kind::constant) {
+      found = std::ranges::find(pending_, out.value.where.base,
+                                &pending_temp::slot);
+    }
+    if (found != pending_.end()) {
+      if (out.value.kind == operand_kind::read && out.value.where.steps.empty()) {
+        out.hold = found->slot;
+        pending_.erase(found);
+      } else {
+        out.hold = new_slot(storage_class::frame_local, expr.type, "",
+                            k_invalid_symbol_id, expr.span, false);
+        auto copy = storage_op{.kind = op_kind::compute};
+        copy.dest = whole(out.hold);
+        copy.computation = compute_kind::copy;
+        copy.operands.push_back(out.value);
+        emit(std::move(copy), expr.span);
+        out.value = read_of(whole(out.hold), false);
+      }
+    }
+    if (auto ended = flush_pending(expr.span); !ended.has_value()) {
+      return std::unexpected(ended.error());
+    }
+    return out;
+  }
+
+  /// `if`, with `elif` branches, as a statement (no `dest`) or as a value
+  /// built in `dest`.
+  [[nodiscard]] auto lower_if(const hir_if &node, const std::optional<place> &dest)
+      -> result {
+    if (dest.has_value() && node.else_body == nullptr) {
+      return malformed(node.span, "an `if` that yields a value has no `else`");
+    }
+    return in_region(node.span,
+                     [&] { return lower_branches(node, 0, dest); });
+  }
+
+  [[nodiscard]] auto lower_arm(const hir_block &body, const std::optional<place> &dest)
+      -> result {
+    return in_region(body.span, [&]() -> result {
+      if (dest.has_value()) {
+        return lower_block(body, *dest);
+      }
+      return lower_discarded(body);
+    });
+  }
+
+  [[nodiscard]] auto lower_branches(const hir_if &node, size_t index,
+                                    const std::optional<place> &dest) -> result {
+    const auto &branch = node.branches[index];
+    auto test = lower_condition(*branch.condition);
+    if (!test.has_value()) {
+      return std::unexpected(test.error());
+    }
+    const auto has_else =
+        index + 1 < node.branches.size() || node.else_body != nullptr;
+    auto head = storage_op{.kind = op_kind::if_begin};
+    head.condition = test->value;
+    emit(std::move(head), branch.condition->span);
+
+    if (test->hold != k_invalid_storage) {
+      kill(test->hold, branch.condition->span);
+    }
+    if (auto ok = lower_arm(*branch.body, dest); !ok.has_value()) {
+      return ok;
+    }
+    const auto then_terminated = terminated_;
+    terminated_ = false;
+    if (has_else || test->hold != k_invalid_storage) {
+      emit(storage_op{.kind = op_kind::else_begin}, node.span);
+      if (test->hold != k_invalid_storage) {
+        kill(test->hold, branch.condition->span);
+      }
+      if (index + 1 < node.branches.size()) {
+        auto ok = in_region(node.span,
+                            [&] { return lower_branches(node, index + 1, dest); });
+        if (!ok.has_value()) {
+          return ok;
+        }
+      } else if (node.else_body != nullptr) {
+        if (auto ok = lower_arm(*node.else_body, dest); !ok.has_value()) {
+          return ok;
+        }
+      }
+    }
+    emit(storage_op{.kind = op_kind::if_end}, node.span);
+    terminated_ = then_terminated && terminated_;
+    return {};
+  }
+
+  /// `while`: a loop that tests its condition and leaves when it fails, runs
+  /// the body in a block that `continue` leaves, then the step, then repeats.
+  [[nodiscard]] auto lower_while(const hir_while &loop) -> result {
+    const auto always =
+        loop.condition->kind == hir_node_kind::hir_literal &&
+        as<hir_literal>(*loop.condition).lit_kind == token_kind::kw_true;
+    emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop});
+    scopes_.emplace_back();
+    if (!always) {
+      auto ok = in_region(loop.condition->span, [&]() -> result {
+        auto test = lower_condition(*loop.condition);
+        if (!test.has_value()) {
+          return std::unexpected(test.error());
+        }
+        auto head = storage_op{.kind = op_kind::if_begin};
+        head.condition = test->value;
+        emit(std::move(head), loop.condition->span);
+        if (test->hold != k_invalid_storage) {
+          kill(test->hold, loop.condition->span);
+        }
+        emit(storage_op{.kind = op_kind::else_begin}, loop.span);
+        if (test->hold != k_invalid_storage) {
+          kill(test->hold, loop.condition->span);
+        }
+        auto leave = storage_op{.kind = op_kind::exit};
+        leave.depth = 0;
+        emit(std::move(leave), loop.span);
+        emit(storage_op{.kind = op_kind::if_end}, loop.span);
+        return {};
+      });
+      if (!ok.has_value()) {
+        return ok;
+      }
+      frames_.back().reached = true;
+    }
+
+    emit(storage_op{.kind = op_kind::block_begin}, loop.body->span);
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::body});
+    auto ok = in_region(loop.body->span,
+                        [&] { return lower_discarded(*loop.body); });
+    if (!ok.has_value()) {
+      return ok;
+    }
+    const auto continued = frames_.back().reached;
+    frames_.pop_back();
+    emit(storage_op{.kind = op_kind::block_end}, loop.body->span);
+    terminated_ = terminated_ && !continued;
+
+    if (!terminated_ && loop.step != nullptr) {
+      auto stepped = in_region(loop.step->span,
+                               [&] { return lower_discarded(*loop.step); });
+      if (!stepped.has_value()) {
+        return stepped;
+      }
+    }
+    if (!terminated_) {
+      // Storage declared in the body starts over on the next iteration.
+      for (auto it = scopes_.back().rbegin(); it != scopes_.back().rend(); ++it) {
+        kill(*it, loop.span);
+      }
+    }
+    emit(storage_op{.kind = op_kind::loop_end}, loop.span);
+    const auto left = frames_.back().reached;
+    frames_.pop_back();
+    scopes_.pop_back();
+    terminated_ = !left;
+    return {};
+  }
+
+  /// `break` leaves the innermost loop; `continue` leaves its body block.
+  [[nodiscard]] auto lower_exit(const source_span &span, loop_frame_kind target)
+      -> result {
+    if (outer_pending_ != 0) {
+      return refuse(span, "`break` or `continue` inside an expression that has "
+                          "live temporaries");
+    }
+    for (size_t depth = 0; depth < frames_.size(); ++depth) {
+      auto &frame = frames_[frames_.size() - 1 - depth];
+      if (frame.kind != target) {
+        continue;
+      }
+      frame.reached = true;
+      auto leave = storage_op{.kind = op_kind::exit};
+      leave.depth = depth;
+      emit(std::move(leave), span);
+      terminated_ = true;
+      return {};
+    }
+    return malformed(span, "`break` or `continue` outside a loop");
+  }
+
   [[nodiscard]] auto lower_assign(const hir_assign &assign) -> result {
     if (assign.op != ast::assign_op::assign) {
-      return refuse(assign.span, "a compound assignment");
+      return lower_compound_assign(assign);
     }
     auto target = lower_place(*assign.target);
     if (!target.has_value()) {
@@ -1059,6 +1306,82 @@ private:
       }
       consumed(replacement);
     }
+    if (auto ended = flush_pending(assign.span); !ended.has_value()) {
+      return ended;
+    }
+    return {};
+  }
+
+  /// The operator a compound assignment applies, for the plain arithmetic and
+  /// bitwise ones. Wrapping and saturating forms are not lowered yet.
+  [[nodiscard]] static auto compound_operator(ast::assign_op op)
+      -> std::optional<ast::binary_op> {
+    switch (op) {
+    case ast::assign_op::add_assign:
+      return ast::binary_op::add;
+    case ast::assign_op::sub_assign:
+      return ast::binary_op::sub;
+    case ast::assign_op::mul_assign:
+      return ast::binary_op::mul;
+    case ast::assign_op::div_assign:
+      return ast::binary_op::div;
+    case ast::assign_op::mod_assign:
+      return ast::binary_op::mod;
+    case ast::assign_op::and_assign:
+      return ast::binary_op::bit_and;
+    case ast::assign_op::or_assign:
+      return ast::binary_op::bit_or;
+    case ast::assign_op::xor_assign:
+      return ast::binary_op::bit_xor;
+    case ast::assign_op::shl_assign:
+      return ast::binary_op::shl;
+    case ast::assign_op::shr_assign:
+      return ast::binary_op::shr;
+    default:
+      return std::nullopt;
+    }
+  }
+
+  /// `target op= value` on a scalar: one computation that reads the target
+  /// and writes it back.
+  [[nodiscard]] auto lower_compound_assign(const hir_assign &assign) -> result {
+    const auto op = compound_operator(assign.op);
+    if (!op.has_value()) {
+      return refuse(assign.span, "a wrapping or saturating compound assignment");
+    }
+    auto target = lower_place(*assign.target);
+    if (!target.has_value()) {
+      return std::unexpected(target.error());
+    }
+    if (!target->has_value()) {
+      return malformed(assign.span, "the target of an assignment is not a place");
+    }
+    const auto &where = **target;
+    if (auto ok = require_scalar_dest(where, assign.span); !ok.has_value()) {
+      return ok;
+    }
+    // The target is read before the value runs, as in `target = target op value`.
+    auto current = read_of(where, false);
+    if (!is_pure(*assign.value)) {
+      const auto held = new_temp(where.type, assign.span);
+      auto copy = storage_op{.kind = op_kind::compute};
+      copy.dest = whole(held);
+      copy.computation = compute_kind::copy;
+      copy.operands.push_back(current);
+      emit(std::move(copy), assign.span);
+      current = read_of(whole(held), false);
+    }
+    auto value = lower_operand(*assign.value, false);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    auto compute = storage_op{.kind = op_kind::compute};
+    compute.dest = where;
+    compute.computation = compute_kind::binary;
+    compute.binary = *op;
+    compute.operands.push_back(std::move(current));
+    compute.operands.push_back(std::move(*value));
+    emit(std::move(compute), assign.span);
     if (auto ended = flush_pending(assign.span); !ended.has_value()) {
       return ended;
     }
@@ -1147,7 +1470,21 @@ private:
   std::unordered_map<symbol_id, storage_id> locals_;
   std::unordered_map<std::string, storage_id> globals_;
   std::vector<pending_temp> pending_;
+  /// Temporaries of enclosing expressions, set aside while a nested region
+  /// (a branch or a loop) lowers.
+  size_t outer_pending_ = 0;
+  /// Whether the path being lowered has left the function or the loop body.
   bool terminated_ = false;
+
+  /// An open region that an `exit` can leave: a loop, or the block that holds
+  /// its body. `reached` records that some `exit` targets it.
+  struct loop_frame {
+    loop_frame_kind kind = loop_frame_kind::loop;
+    bool reached = false;
+  };
+  std::vector<loop_frame> frames_;
+  /// Per open loop, the slots its body declares.
+  std::vector<std::vector<storage_id>> scopes_;
 };
 
 } // namespace

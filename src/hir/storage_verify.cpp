@@ -4,6 +4,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -27,6 +28,8 @@ struct init_node {
   [[nodiscard]] auto empty() const -> bool {
     return !whole && children.empty();
   }
+
+  [[nodiscard]] auto operator==(const init_node &) const -> bool = default;
 };
 
 [[nodiscard]] auto member_key(size_t index) -> std::string {
@@ -95,16 +98,20 @@ public:
     for (op_index_ = 0; op_index_ < fn_.ops.size(); ++op_index_) {
       const auto &op = fn_.ops[op_index_];
       span_ = op.span;
-      if (returned_) {
+      if (!reachable_ && !continues_dead_path(op.kind)) {
         return fail(verify_error_kind::code_after_return,
-                    "an operation follows the function's return");
+                    "an operation follows a return or an exit");
       }
       if (auto ok = apply(op); !ok.has_value()) {
         return ok;
       }
     }
     op_index_ = static_cast<size_t>(-1);
-    if (!returned_) {
+    if (!regions_.empty()) {
+      return fail(verify_error_kind::bad_operation,
+                  "a conditional, loop, or block is never closed");
+    }
+    if (reachable_) {
       return fail(verify_error_kind::missing_return,
                   "the function can end without returning");
     }
@@ -372,6 +379,43 @@ private:
     }
   }
 
+  /// The same state with every complete part folded into a whole value, so
+  /// two ways of building one value compare equal.
+  [[nodiscard]] auto normalize(init_node node, type_id type) -> init_node {
+    if (node.whole) {
+      return node;
+    }
+    if (covered(node, type)) {
+      auto out = init_node{};
+      out.whole = true;
+      return out;
+    }
+    const auto layout = env_.layouts.layout(type);
+    if (!layout.has_value()) {
+      return node;
+    }
+    const auto &found = **layout;
+    const auto is_aggregate = found.kind == runtime::value_layout_kind::structure ||
+                              found.kind == runtime::value_layout_kind::tuple;
+    if (is_aggregate) {
+      for (size_t i = 0; i < found.members.size(); ++i) {
+        const auto child = node.children.find(member_key(i));
+        if (child != node.children.end()) {
+          child->second = normalize(child->second, found.members[i].type);
+        }
+      }
+    } else if (found.kind == runtime::value_layout_kind::array &&
+               found.count <= k_max_tracked_elements) {
+      for (size_t i = 0; i < found.count; ++i) {
+        const auto child = node.children.find(element_key(i));
+        if (child != node.children.end()) {
+          child->second = normalize(child->second, found.element);
+        }
+      }
+    }
+    return node;
+  }
+
   /// Whether any byte of the first `count` steps of `where` holds a value.
   [[nodiscard]] auto any_init(const place &where, size_t count) const -> bool {
     const auto *node = &state_[where.base];
@@ -585,7 +629,8 @@ private:
   /// The first place under `node` whose drop is still owed, if any. `node` is
   /// null for a part that was never initialized or was moved out.
   [[nodiscard]] auto first_owed(const init_node *node, type_id type,
-                                storage_id slot, const std::string &path)
+                                storage_id slot, const std::string &path,
+                                const std::set<std::string> &dropped)
       -> std::optional<std::string> {
     static const auto whole_value = [] {
       auto node = init_node{};
@@ -609,7 +654,7 @@ private:
       const auto has_own = plan->own_drop.has_value() ||
                            plan->closure_glue.has_value() ||
                            plan->cancels_generator;
-      if (has_own && !dropped_[slot].contains(path)) {
+      if (has_own && !dropped.contains(path)) {
         return here;
       }
       if (plan->closure_glue.has_value() || plan->cancels_generator) {
@@ -628,7 +673,7 @@ private:
             continue;
           }
           if (auto owed = first_owed(child_of(member_key(i)), field_type, slot,
-                                     path + "/" + member_key(i));
+                                     path + "/" + member_key(i), dropped);
               owed.has_value()) {
             return owed;
           }
@@ -637,7 +682,7 @@ private:
       return std::nullopt;
     }
     if (types().entry(stripped).kind == semantic::type_kind::fn_kind) {
-      return dropped_[slot].contains(path) ? std::nullopt
+      return dropped.contains(path) ? std::nullopt
                                            : std::optional{here};
     }
     const auto layout = env_.layouts.layout(stripped);
@@ -649,7 +694,7 @@ private:
         found.kind == runtime::value_layout_kind::structure) {
       for (size_t i = 0; i < found.members.size(); ++i) {
         if (auto owed = first_owed(child_of(member_key(i)), found.members[i].type,
-                                   slot, path + "/" + member_key(i));
+                                   slot, path + "/" + member_key(i), dropped);
             owed.has_value()) {
           return owed;
         }
@@ -685,7 +730,8 @@ private:
       }();
       node = &whole_value;
     }
-    return first_owed(node, where.type, where.base, path_key(where, count));
+    return first_owed(node, where.type, where.base, path_key(where, count),
+                      dropped_[where.base]);
   }
 
   // ------------------------------------------------------------------
@@ -773,8 +819,283 @@ private:
       return do_dead(op);
     case op_kind::return_value:
       return do_return(op);
+    case op_kind::if_begin:
+      return do_if_begin(op);
+    case op_kind::else_begin:
+      return do_else();
+    case op_kind::if_end:
+      return do_if_end();
+    case op_kind::loop_begin:
+      return open_region(region_kind::loop);
+    case op_kind::loop_end:
+      return do_loop_end();
+    case op_kind::block_begin:
+      return open_region(region_kind::block);
+    case op_kind::block_end:
+      return do_block_end();
+    case op_kind::exit:
+      return do_exit(op);
     }
     return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Control flow
+  // ------------------------------------------------------------------
+
+  /// Everything the replay knows at one point of the function.
+  struct flow_state {
+    std::vector<init_node> state;
+    std::vector<std::set<std::string>> dropped;
+    std::vector<bool> dead;
+  };
+  using maybe_flow = std::optional<flow_state>;
+
+  enum class region_kind : uint8_t { branch, loop, block };
+
+  struct region {
+    region_kind kind = region_kind::branch;
+    flow_state entry;
+    /// A branch: the state at the end of the `then` side, once `else` began.
+    maybe_flow then_end;
+    bool has_else = false;
+    /// A loop or block: the join of the states at each `exit` that reaches it.
+    maybe_flow exits;
+  };
+
+  [[nodiscard]] static auto continues_dead_path(op_kind kind) -> bool {
+    return kind == op_kind::else_begin || kind == op_kind::if_end ||
+           kind == op_kind::loop_end || kind == op_kind::block_end;
+  }
+
+  [[nodiscard]] auto snapshot() const -> flow_state {
+    return flow_state{state_, dropped_, dead_};
+  }
+
+  auto restore(flow_state from) -> void {
+    state_ = std::move(from.state);
+    dropped_ = std::move(from.dropped);
+    dead_ = std::move(from.dead);
+  }
+
+  [[nodiscard]] static auto intersect(const init_node &a, const init_node &b)
+      -> init_node {
+    if (a.whole && b.whole) {
+      auto out = init_node{};
+      out.whole = true;
+      return out;
+    }
+    if (a.whole) {
+      return b;
+    }
+    if (b.whole) {
+      return a;
+    }
+    auto out = init_node{};
+    for (const auto &[key, child] : a.children) {
+      const auto other = b.children.find(key);
+      if (other == b.children.end()) {
+        continue;
+      }
+      auto both = intersect(child, other->second);
+      if (!both.empty()) {
+        out.children.emplace(key, std::move(both));
+      }
+    }
+    return out;
+  }
+
+  /// The state where two paths meet. A value that owes a drop must be in the
+  /// same state on both; anything else is reduced to what both paths know.
+  [[nodiscard]] auto join(const flow_state &a, const flow_state &b)
+      -> std::expected<flow_state, verify_error> {
+    auto out = a;
+    for (size_t i = 0; i < fn_.slots.size(); ++i) {
+      const auto &slot = fn_.slots[i];
+      const auto id = static_cast<storage_id>(i);
+      const auto state_a = normalize(a.state[i], slot.type);
+      const auto state_b = normalize(b.state[i], slot.type);
+      const auto same = state_a == state_b && a.dropped[i] == b.dropped[i];
+      if (same && a.dead[i] == b.dead[i]) {
+        continue;
+      }
+      if (a.dead[i] != b.dead[i]) {
+        const auto &live = a.dead[i] ? state_b : state_a;
+        if (!live.empty()) {
+          return fail(verify_error_kind::join_mismatch,
+                      "s" + std::to_string(i) +
+                          " ends on one path while still holding a value on "
+                          "the other");
+        }
+        out.dead[i] = true;
+        out.state[i] = init_node{};
+        out.dropped[i].clear();
+        continue;
+      }
+      if (env_.needs_drop(slot.type)) {
+        const auto owes_a =
+            first_owed(&state_a, slot.type, id, "", a.dropped[i]);
+        const auto owes_b =
+            first_owed(&state_b, slot.type, id, "", b.dropped[i]);
+        if (owes_a.has_value() || owes_b.has_value()) {
+          return fail(verify_error_kind::join_mismatch,
+                      "s" + std::to_string(i) + " owes a drop on one path " +
+                          "and not on the other; that needs a drop flag");
+        }
+        out.state[i] = init_node{}; // Neither path owes anything.
+      } else {
+        out.state[i] = intersect(state_a, state_b);
+      }
+      out.dropped[i].clear();
+    }
+    return out;
+  }
+
+  [[nodiscard]] auto join(const maybe_flow &a, const maybe_flow &b)
+      -> std::expected<maybe_flow, verify_error> {
+    if (!a.has_value()) {
+      return b;
+    }
+    if (!b.has_value()) {
+      return a;
+    }
+    auto joined = join(*a, *b);
+    if (!joined.has_value()) {
+      return std::unexpected(joined.error());
+    }
+    return maybe_flow{std::move(*joined)};
+  }
+
+  /// Continues from `where`, or marks the path unreachable.
+  auto resume(maybe_flow where) -> void {
+    reachable_ = where.has_value();
+    if (where.has_value()) {
+      restore(std::move(*where));
+    }
+  }
+
+  [[nodiscard]] auto current() const -> maybe_flow {
+    return reachable_ ? maybe_flow{snapshot()} : std::nullopt;
+  }
+
+  [[nodiscard]] auto open_region(region_kind kind) -> result {
+    regions_.push_back(region{.kind = kind, .entry = snapshot()});
+    return {};
+  }
+
+  [[nodiscard]] auto innermost(region_kind kind, std::string_view what)
+      -> std::expected<region *, verify_error> {
+    if (regions_.empty() || regions_.back().kind != kind) {
+      return fail(verify_error_kind::bad_operation,
+                  std::string{what} + " does not close the innermost region");
+    }
+    return &regions_.back();
+  }
+
+  [[nodiscard]] auto do_if_begin(const storage_op &op) -> result {
+    if (auto ok = check_operand(op.condition); !ok.has_value()) {
+      return ok;
+    }
+    return open_region(region_kind::branch);
+  }
+
+  [[nodiscard]] auto do_else() -> result {
+    const auto top = innermost(region_kind::branch, "`else`");
+    if (!top.has_value()) {
+      return std::unexpected(top.error());
+    }
+    auto &reg = **top;
+    if (reg.has_else) {
+      return fail(verify_error_kind::bad_operation, "a second `else`");
+    }
+    reg.has_else = true;
+    reg.then_end = current();
+    resume(reg.entry);
+    return {};
+  }
+
+  [[nodiscard]] auto do_if_end() -> result {
+    const auto top = innermost(region_kind::branch, "`end_if`");
+    if (!top.has_value()) {
+      return std::unexpected(top.error());
+    }
+    auto reg = std::move(**top);
+    regions_.pop_back();
+    const auto joined = reg.has_else
+                            ? join(reg.then_end, current())
+                            : join(current(), maybe_flow{reg.entry});
+    if (!joined.has_value()) {
+      return std::unexpected(joined.error());
+    }
+    resume(*joined);
+    return {};
+  }
+
+  /// A loop runs its body again from the top, so the state at the end of an
+  /// iteration must be the state the loop was entered with. Storage that
+  /// ended inside the body starts over on the next iteration.
+  [[nodiscard]] auto do_loop_end() -> result {
+    const auto top = innermost(region_kind::loop, "`end_loop`");
+    if (!top.has_value()) {
+      return std::unexpected(top.error());
+    }
+    auto reg = std::move(**top);
+    regions_.pop_back();
+    if (reachable_) {
+      for (size_t i = 0; i < fn_.slots.size(); ++i) {
+        if (dead_[i] && !reg.entry.dead[i]) {
+          continue;
+        }
+        const auto type = fn_.slots[i].type;
+        if (dead_[i] != reg.entry.dead[i] ||
+            normalize(state_[i], type) != normalize(reg.entry.state[i], type) ||
+            dropped_[i] != reg.entry.dropped[i]) {
+          return fail(verify_error_kind::join_mismatch,
+                      "s" + std::to_string(i) +
+                          " is in a different state at the end of the loop "
+                          "body than at its start");
+        }
+      }
+    }
+    resume(reg.exits);
+    return {};
+  }
+
+  [[nodiscard]] auto do_block_end() -> result {
+    const auto top = innermost(region_kind::block, "`end_block`");
+    if (!top.has_value()) {
+      return std::unexpected(top.error());
+    }
+    auto reg = std::move(**top);
+    regions_.pop_back();
+    const auto joined = join(current(), reg.exits);
+    if (!joined.has_value()) {
+      return std::unexpected(joined.error());
+    }
+    resume(*joined);
+    return {};
+  }
+
+  [[nodiscard]] auto do_exit(const storage_op &op) -> result {
+    auto seen = size_t{0};
+    for (auto it = regions_.rbegin(); it != regions_.rend(); ++it) {
+      if (it->kind == region_kind::branch) {
+        continue;
+      }
+      if (seen++ != op.depth) {
+        continue;
+      }
+      const auto joined = join(it->exits, current());
+      if (!joined.has_value()) {
+        return std::unexpected(joined.error());
+      }
+      it->exits = *joined;
+      reachable_ = false;
+      return {};
+    }
+    return fail(verify_error_kind::bad_operation,
+                "`exit " + std::to_string(op.depth) +
+                    "` names a loop or block that is not open");
   }
 
   [[nodiscard]] auto do_compute(const storage_op &op) -> result {
@@ -1136,7 +1457,8 @@ private:
     }
     if (options_.check_leaks && holds && env_.needs_drop(slot.type)) {
       if (const auto owed =
-              first_owed(&state_[op.slot], slot.type, op.slot, "");
+              first_owed(&state_[op.slot], slot.type, op.slot, "",
+                         dropped_[op.slot]);
           owed.has_value()) {
         return fail(verify_error_kind::leaked_value,
                     "slot s" + std::to_string(op.slot) +
@@ -1196,14 +1518,15 @@ private:
            slot.cls == storage_class::parameter) &&
           !state_[slot.id].empty() && env_.needs_drop(slot.type)) {
         if (const auto owed =
-                first_owed(&state_[slot.id], slot.type, slot.id, "");
+                first_owed(&state_[slot.id], slot.type, slot.id, "",
+                           dropped_[slot.id]);
             owed.has_value()) {
           return fail(verify_error_kind::leaked_value,
                       *owed + " still owes its drop at return");
         }
       }
     }
-    returned_ = true;
+    reachable_ = false;
     return {};
   }
 
@@ -1219,7 +1542,8 @@ private:
   std::vector<bool> dead_;
   size_t op_index_ = static_cast<size_t>(-1);
   source_span span_;
-  bool returned_ = false;
+  bool reachable_ = true;
+  std::vector<region> regions_;
 };
 
 } // namespace
@@ -1262,6 +1586,8 @@ auto verify_error_kind_name(verify_error_kind kind) -> const char * {
     return "bad_result";
   case verify_error_kind::leaked_value:
     return "leaked_value";
+  case verify_error_kind::join_mismatch:
+    return "join_mismatch";
   case verify_error_kind::double_drop:
     return "double_drop";
   case verify_error_kind::use_after_drop:

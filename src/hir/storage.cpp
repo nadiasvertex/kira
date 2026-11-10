@@ -47,6 +47,22 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "dead";
   case op_kind::return_value:
     return "return";
+  case op_kind::if_begin:
+    return "if";
+  case op_kind::else_begin:
+    return "else";
+  case op_kind::if_end:
+    return "end_if";
+  case op_kind::loop_begin:
+    return "loop";
+  case op_kind::loop_end:
+    return "end_loop";
+  case op_kind::block_begin:
+    return "block";
+  case op_kind::block_end:
+    return "end_block";
+  case op_kind::exit:
+    return "exit";
   }
   return "?";
 }
@@ -198,6 +214,22 @@ namespace {
   case op_kind::return_value:
     return op.value.has_value() ? "return " + render_operand(*op.value)
                                 : std::string{"return"};
+  case op_kind::if_begin:
+    return "if " + render_operand(op.condition);
+  case op_kind::else_begin:
+    return "else";
+  case op_kind::if_end:
+    return "end_if";
+  case op_kind::loop_begin:
+    return "loop";
+  case op_kind::loop_end:
+    return "end_loop";
+  case op_kind::block_begin:
+    return "block";
+  case op_kind::block_end:
+    return "end_block";
+  case op_kind::exit:
+    return "exit " + std::to_string(op.depth);
   }
   return "?";
 }

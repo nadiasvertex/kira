@@ -13,8 +13,9 @@ bytecode VM and LLVM backends.
 
 This is an implementation plan. T-01 is complete (findings in
 [value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
-complete, T-03 and T-04 are complete for straight-line code (status under each
-task below); T-05 through T-14 have not been implemented.
+complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
+`while` to the storage form (status under each task below); T-05 through T-14
+have not been implemented.
 
 ## Objectives & Scope
 
@@ -480,8 +481,9 @@ integration and documentation.
 | [x] | T-02 | Implement concrete recursive byte layouts | Compiler implementer | H | T-01 | Nested layouts, sum offsets, cycle diagnostics, and alignment tests pass. |
 | [x] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [x] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
-| [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04 | VM executes nested aggregate calls without shell allocations. |
-| [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04 | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
+| [x] | T-04a | Add structured control flow to the storage form | Compiler implementer | H | T-04 | `if`, `while`, `break`, `continue`, and early `return` lower and verify with joined initialization and drop state. |
+| [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04a | VM executes nested aggregate calls without shell allocations. |
+| [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04a | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
 | [ ] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
 | [ ] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
 | [ ] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
@@ -580,10 +582,10 @@ exercises the verifier's rules by corrupting lowered functions, and was
 mutation-checked against the lowering. No backend consumes the form yet. Points
 that differ from the steps above:
 
-- Straight-line only. `if`, `match`, loops, string literals, array fill, compound
-  assignment, closures, and coroutine/generator bodies are refused by name; the
-  refusal list is returned beside the module rather than the function being half
-  lowered. Control flow needs initialization-state edges; see the T-04 status.
+- Straight-line only at T-03. String literals, array fill, closures, and
+  coroutine/generator bodies are still refused by name; the refusal list is
+  returned beside the module rather than the function being half lowered.
+  T-04a adds `if` and loops, and scalar compound assignment.
 - HIR already schedules drops as explicit calls. T-03 refused droppable
   assignment and temporaries; T-04 translates the calls (see its status).
 - Outgoing arguments use `outgoing_argument` slots consumed by the call. Scalar
@@ -634,17 +636,65 @@ locals and owned parameters, field-wise drops, a partial move, a replaced field,
 a discarded temporary, a borrow, and an argument moved to a callee. Each rule
 was mutation-checked. Not done, and carried forward:
 
-- Control flow. `if`, `match`, loops, early exits, drop flags for values moved on
-  some paths, and the drop of a sum with droppable payloads (HIR expresses it
-  as a `match`) are still refused. Early exits in constructor operands are not
-  covered for the same reason. The form needs control-flow edges and
-  per-edge initialization state before T-05 can compile real functions; no
-  task in this plan owns that yet.
+- Control flow. T-04a adds `if`, `while`, `break`, `continue`, and early `return`.
+  `match`, `while let`, `let else`, drop flags for values moved on some paths,
+  and the drop of a sum with droppable payloads (HIR expresses it as a `match`)
+  are still refused.
 - Steps 2 and 5. Reference elaboration already produces explicit `&`/`*` in HIR,
   so the form reads places from it unchanged. Rejecting generic moves through a
   borrowed `self` is a checker rule and was not touched.
 - Closure and generator drops (`hir_closure_drop`, `hir_coroutine_cancel`) are
   not translated; the functions that need them are refused.
+
+### T-04a — Add structured control flow to the storage form
+
+**Goal:** Let the storage form describe functions with branches and loops, so a
+backend can compile real function bodies from it. T-04 left this open, and no
+other task owned it.
+
+**Status: complete (2026-11-09).** The form gains structured markers in the flat
+operation list: `if`/`else`/`end_if` (the condition is a scalar operand),
+`loop`/`end_loop`, `block`/`end_block`, and `exit N`, which leaves the N-th
+enclosing loop or block (0 is the innermost; `if` regions are not counted).
+`exit` is the only way out of a loop. The verifier replays the form once and
+joins state where paths meet:
+
+- Where branches meet, each slot's initialization is reduced to what both paths
+  know. A value that owes a drop on one path and not on the other is
+  `join_mismatch`, because that needs a drop flag, which the form does not model.
+  A slot that ended on one path and still holds a value on the other is also a
+  `join_mismatch`. A path that returned or exited does not take part in the join.
+- A loop body must end in the state the loop was entered with, so the second
+  iteration sees what the first did. Storage declared inside the body ends before
+  the loop repeats, which lowering emits. Complete parts are compared as whole
+  values, so a struct built field by field equals one assigned whole.
+- Only the markers that close a region may follow a `return` or `exit` in the
+  same region. A function must end on a path that has returned, and every region
+  must be closed (`missing_return`, `code_after_return`, `bad_operation`).
+
+Lowering handles `if` with `elif` and `else` as a statement or a value built in
+its destination, `while` with its `step` (which a `for` loop uses), `break`,
+`continue`, `while true`, and `return` from inside either. A `while` becomes a
+loop that tests its condition and exits when it fails, then a block holding the
+body, then the step, so `continue` leaves the block and the step still runs.
+Compound assignment on a scalar is lowered because the `for` desugaring needs it.
+Each condition is held in its own slot, which ends on both sides of the branch.
+A block of source code that yields a value now ends in an expression statement,
+and lowering reads that as the block's value.
+
+Covered by `storage_test` over `flow.cn`: exact dumps for value-producing and
+statement `if`, `elif` chains, a result built in the caller's bytes from each arm,
+`while` with locals, `while true` with `break`, `continue` with a step, nested
+loops (exit depths), `return` from a loop, and drops inside a branch and inside a
+loop body. Verifier tests corrupt lowered functions for each new rule. Mutation
+checks (join drop check, loop-carried check, exit depth, branch termination) each
+failed the tests. Not done:
+
+- `match`, `while let`, `let else`, and drop flags remain refused or rejected.
+- `break` and `continue` inside an expression that has live temporaries are
+  refused by name. Early exits inside constructor operands are not covered.
+- Wrapping and saturating compound assignment, and compound assignment on a
+  non-scalar target, are refused.
 
 ### T-05 — Implement VM frame values and result destinations
 
@@ -902,5 +952,6 @@ automatically instrument generated code.
 - [x] Implement T-02 (concrete recursive byte layouts).
 - [x] Implement T-03 (shared storage form and aggregate ABI).
 - [x] Implement T-04 (ownership, references, and drops) for straight-line code.
+- [x] Implement T-04a (structured control flow in the storage form).
 - [ ] Implement T-05 through T-14 and record passing verification before closing
   the corresponding todo items.

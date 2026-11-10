@@ -92,10 +92,10 @@ def self_bump(n: int32) -> pair:
 generator def counter() -> some iterator[int32]:
     yield 1
 
-def branching(n: int32) -> int32:
-    if n > 0:
-        return 1
-    return 2
+def matching(n: int32) -> int32:
+    match n:
+        0 => return 1
+        _ => return 2
 
 def shout() -> str:
     return "hello"

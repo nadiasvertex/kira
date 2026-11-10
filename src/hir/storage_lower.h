@@ -12,8 +12,8 @@
 namespace cinder::hir {
 
 enum class storage_lower_error_kind : uint8_t {
-  /// A construct the storage form does not express yet, such as control flow
-  /// or a string literal. The function is refused, never approximated.
+  /// A construct the storage form does not express yet, such as `match` or a
+  /// string literal. The function is refused, never approximated.
   unsupported_construct,
   /// A type used by the function has no layout.
   layout_failed,
@@ -37,10 +37,11 @@ struct storage_lower_error {
 /// or the enclosing field for a constructor operand. Aggregate arguments are
 /// built in fresh outgoing slots that the call consumes.
 ///
-/// Supports straight-line bodies: `let`, assignment, expression statements,
-/// and `return`, over literals, locals, field and payload projections, unary
-/// and binary scalar operators, casts, calls, and constructors. Anything else
-/// returns `unsupported_construct` naming it. The result is not verified;
+/// Supports `let`, assignment (compound on scalars), expression statements,
+/// `return`, `if`/`elif`/`else`, `while`, `break`, and `continue`, over
+/// literals, locals, field and payload projections, unary and binary scalar
+/// operators, casts, calls, and constructors. Anything else returns
+/// `unsupported_construct` naming it. The result is not verified;
 /// call `verify`.
 [[nodiscard]] auto lower_to_storage(const hir_function &function,
                                     storage_env &env)
