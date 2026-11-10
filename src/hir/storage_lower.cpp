@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -717,6 +718,8 @@ private:
     case hir_node_kind::hir_tuple_index:
     case hir_node_kind::hir_variant_payload:
       return transfer_from_place(expr, dest);
+    case hir_node_kind::hir_match:
+      return lower_match(as<hir_match>(expr), dest);
     case hir_node_kind::hir_index: {
       auto where = lower_place(expr);
       if (!where.has_value()) {
@@ -1079,13 +1082,15 @@ private:
   /// The expression that is `block`'s value when `stmt` is its last
   /// statement. A block HIR builds ends in the bare expression; a block of
   /// source code with a value ends in an expression statement.
-  [[nodiscard]] auto tail_value(const hir_block &block, const hir_node &stmt) const
-      -> const hir_expr * {
+  [[nodiscard]] auto tail_value(const hir_block &block, const hir_node &stmt,
+                                bool wanted) const -> const hir_expr * {
     if (stmt.kind != hir_node_kind::hir_expr_stmt) {
       return dynamic_cast<const hir_expr *>(&stmt);
     }
-    const auto yields = block.type != semantic::k_unknown_type &&
-                        !types().is_unit(block.type);
+    // An arm of a `match` has no type of its own; its destination says whether
+    // the arm's last expression is the value.
+    const auto yields = wanted || (block.type != semantic::k_unknown_type &&
+                                   !types().is_unit(block.type));
     return yields ? as<hir_expr_stmt>(stmt).expr.get() : nullptr;
   }
 
@@ -1093,12 +1098,12 @@ private:
   /// that expression is the block's value and is built in `dest`. HIR makes a
   /// discarded temporary, or a value computed before scope-exit drops, a
   /// block of this shape.
-  [[nodiscard]] auto lower_block(const hir_block &block, const place &dest)
-      -> result {
+  [[nodiscard]] auto lower_block(const hir_block &block, const place &dest,
+                                 bool wanted = false) -> result {
     for (size_t i = 0; i < block.stmts.size() && !terminated_; ++i) {
       const auto &stmt = *block.stmts[i];
       const auto last = i + 1 == block.stmts.size();
-      const auto *value = last ? tail_value(block, stmt) : nullptr;
+      const auto *value = last ? tail_value(block, stmt, wanted) : nullptr;
       if (value != nullptr) {
         if (auto ok = lower_into(*value, dest); !ok.has_value()) {
           return ok;
@@ -1364,6 +1369,10 @@ private:
       return lower_return(as<hir_return>(node));
     case hir_node_kind::hir_while:
       return lower_while(as<hir_while>(node));
+    case hir_node_kind::hir_while_let:
+      return lower_while_let(as<hir_while_let>(node));
+    case hir_node_kind::hir_let_else:
+      return lower_let_else(as<hir_let_else>(node));
     case hir_node_kind::hir_break:
       return lower_exit(node.span, loop_frame_kind::loop);
     case hir_node_kind::hir_continue:
@@ -1415,6 +1424,9 @@ private:
     }
     if (expr.kind == hir_node_kind::hir_if) {
       return lower_if(as<hir_if>(expr), std::nullopt);
+    }
+    if (expr.kind == hir_node_kind::hir_match) {
+      return lower_match(as<hir_match>(expr), std::nullopt);
     }
     if (expr.kind == hir_node_kind::hir_closure_drop) {
       // Its `unit` type is not settled in HIR, and nothing reads the value.
@@ -1514,7 +1526,7 @@ private:
       -> result {
     return in_region(body.span, [&]() -> result {
       if (dest.has_value()) {
-        return lower_block(body, *dest);
+        return lower_block(body, *dest, true);
       }
       return lower_discarded(body);
     });
@@ -1600,21 +1612,28 @@ private:
       frames_.back().reached = true;
     }
 
-    emit(storage_op{.kind = op_kind::block_begin}, loop.body->span);
+    return finish_loop(*loop.body, loop.step.get(), loop.span);
+  }
+
+  /// The body of a loop whose head has been emitted: the block that
+  /// `continue` leaves, the step, the end of the body's storage, and the
+  /// back edge.
+  [[nodiscard]] auto finish_loop(const hir_block &body, const hir_block *step,
+                                 const source_span &span) -> result {
+    emit(storage_op{.kind = op_kind::block_begin}, body.span);
     frames_.push_back(loop_frame{.kind = loop_frame_kind::body});
-    auto ok = in_region(loop.body->span,
-                        [&] { return lower_discarded(*loop.body); });
+    auto ok = in_region(body.span, [&] { return lower_discarded(body); });
     if (!ok.has_value()) {
       return ok;
     }
     const auto continued = frames_.back().reached;
     frames_.pop_back();
-    emit(storage_op{.kind = op_kind::block_end}, loop.body->span);
+    emit(storage_op{.kind = op_kind::block_end}, body.span);
     terminated_ = terminated_ && !continued;
 
-    if (!terminated_ && loop.step != nullptr) {
-      auto stepped = in_region(loop.step->span,
-                               [&] { return lower_discarded(*loop.step); });
+    if (!terminated_ && step != nullptr) {
+      auto stepped =
+          in_region(step->span, [&] { return lower_discarded(*step); });
       if (!stepped.has_value()) {
         return stepped;
       }
@@ -1622,14 +1641,432 @@ private:
     if (!terminated_) {
       // Storage declared in the body starts over on the next iteration.
       for (auto it = scopes_.back().rbegin(); it != scopes_.back().rend(); ++it) {
-        kill(*it, loop.span);
+        kill(*it, span);
       }
     }
-    emit(storage_op{.kind = op_kind::loop_end}, loop.span);
+    emit(storage_op{.kind = op_kind::loop_end}, span);
     const auto left = frames_.back().reached;
     frames_.pop_back();
     scopes_.pop_back();
     terminated_ = !left;
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Patterns: match, while let, let else
+  // ------------------------------------------------------------------
+
+  /// A part of the subject and the pattern it must satisfy.
+  struct obligation {
+    const hir_pattern *pattern = nullptr;
+    place where;
+  };
+  using continuation = std::function<result()>;
+
+  /// The subject of a pattern test. A subject that is a local is used where
+  /// it stands, and a computed one is built in `held`, which the caller ends.
+  struct subject_place {
+    place where;
+    storage_id held = k_invalid_storage;
+  };
+
+  /// A sum with droppable payloads is dropped through its variants, which the
+  /// form does not model yet, and a binding that moves a payload out of such a
+  /// value leaves the rest owing a drop.
+  [[nodiscard]] auto bind_subject(const hir_expr &subject, symbol_id symbol,
+                                  const source_span &span)
+      -> std::expected<subject_place, storage_lower_error> {
+    if (env_.needs_drop(subject.type)) {
+      return refuse(span, "a pattern test on `" + types().display(subject.type) +
+                              "`, which needs a drop");
+    }
+    auto named = lower_place(subject);
+    if (!named.has_value()) {
+      return std::unexpected(named.error());
+    }
+    if (named->has_value()) {
+      if (!(*named)->steps.empty()) {
+        return refuse(span, "a pattern test on part of a value");
+      }
+      locals_[symbol] = (*named)->base;
+      return subject_place{.where = std::move(**named)};
+    }
+    const auto slot = new_slot(storage_class::frame_local, subject.type, "",
+                               k_invalid_symbol_id, span, false);
+    auto built = in_region(span, [&] { return lower_into(subject, whole(slot)); });
+    if (!built.has_value()) {
+      return std::unexpected(built.error());
+    }
+    locals_[symbol] = slot;
+    return subject_place{.where = whole(slot), .held = slot};
+  }
+
+  auto set_bool(const place &dest, bool value, const source_span &span) -> void {
+    auto op = storage_op{.kind = op_kind::compute};
+    op.dest = dest;
+    op.computation = compute_kind::constant;
+    op.literal = value ? token_kind::kw_true : token_kind::kw_false;
+    op.text = value ? "true" : "false";
+    emit(std::move(op), span);
+  }
+
+  /// Emits `test` into a flag, then `then_side` where it holds and `else_side`
+  /// where it does not. The flag ends on both sides.
+  template <typename Test>
+  [[nodiscard]] auto branch_on(const source_span &span, Test &&test,
+                               const continuation &then_side,
+                               const continuation &else_side) -> result {
+    const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
+                               "", k_invalid_symbol_id, span, false);
+    test(whole(flag));
+    auto head = storage_op{.kind = op_kind::if_begin};
+    head.condition = read_of(whole(flag), false);
+    emit(std::move(head), span);
+    kill(flag, span);
+    if (auto ok = then_side(); !ok.has_value()) {
+      return ok;
+    }
+    emit(storage_op{.kind = op_kind::else_begin}, span);
+    kill(flag, span);
+    if (auto ok = else_side(); !ok.has_value()) {
+      return ok;
+    }
+    emit(storage_op{.kind = op_kind::if_end}, span);
+    return {};
+  }
+
+  /// Emits the tests of `todo` in order, each nested in the one before so a
+  /// payload is read only where its variant was confirmed. `success` runs where
+  /// all of them hold and `failure` where one does not.
+  [[nodiscard]] auto emit_tests(std::vector<obligation> todo,
+                                const continuation &success,
+                                const continuation &failure) -> result {
+    if (todo.empty()) {
+      return success();
+    }
+    const auto next = todo.front();
+    todo.erase(todo.begin());
+    const auto &pattern = *next.pattern;
+    const auto span = pattern.span;
+    switch (pattern.kind) {
+    case hir_node_kind::hir_wildcard_pattern:
+      return emit_tests(std::move(todo), success, failure);
+    case hir_node_kind::hir_constructor_pattern: {
+      const auto &ctor = as<hir_constructor_pattern>(pattern);
+      auto object = auto_deref(next.where);
+      const auto layout = layout_of(object.type, span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto *variant = (*layout)->find_variant(ctor.variant_name);
+      if (variant == nullptr ||
+          (*layout)->kind != runtime::value_layout_kind::sum ||
+          variant->payload.size() != ctor.args.size()) {
+        return malformed(span, "`@" + ctor.variant_name +
+                                   "` is not a variant of `" +
+                                   types().display(object.type) + "`");
+      }
+      auto inner = std::vector<obligation>{};
+      for (size_t i = 0; i < ctor.args.size(); ++i) {
+        inner.push_back(obligation{
+            .pattern = ctor.args[i].get(),
+            .where = project(object,
+                             projection{.kind = projection_kind::payload,
+                                        .index = i,
+                                        .name = ctor.variant_name},
+                             variant->payload[i].type)});
+      }
+      inner.insert(inner.end(), todo.begin(), todo.end());
+      return branch_on(
+          span,
+          [&](const place &flag) {
+            auto op = storage_op{.kind = op_kind::test_variant};
+            op.dest = flag;
+            op.source = object;
+            op.variant = ctor.variant_name;
+            emit(std::move(op), span);
+          },
+          [&] { return emit_tests(inner, success, failure); }, failure);
+    }
+    case hir_node_kind::hir_literal_pattern: {
+      const auto &literal = as<hir_literal_pattern>(pattern);
+      const auto cls = class_of(next.where.type, span);
+      if (!cls.has_value()) {
+        return std::unexpected(cls.error());
+      }
+      if (*cls != pass_class::scalar ||
+          literal.lit_kind == token_kind::string_lit) {
+        return refuse(span, "a literal pattern on `" +
+                                types().display(next.where.type) + "`");
+      }
+      return branch_on(
+          span,
+          [&](const place &flag) {
+            auto op = storage_op{.kind = op_kind::compute};
+            op.dest = flag;
+            op.computation = compute_kind::binary;
+            op.binary = ast::binary_op::eq_eq;
+            op.operands.push_back(read_of(next.where, false));
+            op.operands.push_back(operand{.kind = operand_kind::constant,
+                                          .type = next.where.type,
+                                          .literal = literal.lit_kind,
+                                          .text = literal.value});
+            emit(std::move(op), span);
+          },
+          [&] { return emit_tests(todo, success, failure); }, failure);
+    }
+    case hir_node_kind::hir_tuple_pattern: {
+      const auto &tuple = as<hir_tuple_pattern>(pattern);
+      auto object = auto_deref(next.where);
+      const auto layout = layout_of(object.type, span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto &members = (*layout)->members;
+      if (members.size() != tuple.elements.size()) {
+        return malformed(span, "a tuple pattern does not match `" +
+                                   types().display(object.type) + "`");
+      }
+      auto inner = std::vector<obligation>{};
+      for (size_t i = 0; i < members.size(); ++i) {
+        inner.push_back(obligation{
+            .pattern = tuple.elements[i].get(),
+            .where = project(object, member_step(i, ""), members[i].type)});
+      }
+      inner.insert(inner.end(), todo.begin(), todo.end());
+      return emit_tests(std::move(inner), success, failure);
+    }
+    case hir_node_kind::hir_struct_pattern: {
+      const auto &record = as<hir_struct_pattern>(pattern);
+      auto object = auto_deref(next.where);
+      const auto layout = layout_of(object.type, span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      const auto &members = (*layout)->members;
+      auto inner = std::vector<obligation>{};
+      for (const auto &field : record.fields) {
+        auto found = false;
+        for (size_t i = 0; i < members.size() && !found; ++i) {
+          if (members[i].name != field.name) {
+            continue;
+          }
+          found = true;
+          inner.push_back(obligation{
+              .pattern = field.pattern.get(),
+              .where = project(object, member_step(i, field.name),
+                               members[i].type)});
+        }
+        if (!found) {
+          return malformed(span, "`" + types().display(object.type) +
+                                     "` has no field `" + field.name + "`");
+        }
+      }
+      inner.insert(inner.end(), todo.begin(), todo.end());
+      return emit_tests(std::move(inner), success, failure);
+    }
+    case hir_node_kind::hir_or_pattern:
+      return emit_alternatives(as<hir_or_pattern>(pattern), 0, next.where, todo,
+                               success, failure);
+    default:
+      return refuse(span, "this kind of pattern is not part of storage "
+                          "lowering yet");
+    }
+  }
+
+  /// `a | b | c`: each alternative is tried in turn against the same part of
+  /// the subject, and the first that holds continues with the rest.
+  [[nodiscard]] auto emit_alternatives(const hir_or_pattern &any, size_t index,
+                                       const place &where,
+                                       const std::vector<obligation> &rest,
+                                       const continuation &success,
+                                       const continuation &failure) -> result {
+    if (index == any.alternatives.size()) {
+      return failure();
+    }
+    auto todo = std::vector<obligation>{
+        obligation{.pattern = any.alternatives[index].get(), .where = where}};
+    todo.insert(todo.end(), rest.begin(), rest.end());
+    return emit_tests(
+        std::move(todo), success, [&, index] {
+          return emit_alternatives(any, index + 1, where, rest, success,
+                                   failure);
+        });
+  }
+
+  /// Whether the pattern holds for every value of its type.
+  [[nodiscard]] auto always_matches(const hir_pattern &pattern) const -> bool {
+    switch (pattern.kind) {
+    case hir_node_kind::hir_wildcard_pattern:
+      return true;
+    case hir_node_kind::hir_tuple_pattern:
+      return std::ranges::all_of(
+          as<hir_tuple_pattern>(pattern).elements,
+          [&](const auto &element) { return always_matches(*element); });
+    case hir_node_kind::hir_struct_pattern:
+      return std::ranges::all_of(
+          as<hir_struct_pattern>(pattern).fields,
+          [&](const auto &field) { return always_matches(*field.pattern); });
+    default:
+      return false;
+    }
+  }
+
+  /// Sets `flag` to whether `pattern` holds for `where`.
+  [[nodiscard]] auto test_pattern(const hir_pattern &pattern,
+                                  const place &where, const place &flag)
+      -> result {
+    const auto span = pattern.span;
+    return emit_tests(
+        {obligation{.pattern = &pattern, .where = where}},
+        [&] {
+          set_bool(flag, true, span);
+          return result{};
+        },
+        [&] {
+          set_bool(flag, false, span);
+          return result{};
+        });
+  }
+
+  /// `match`: the arms are tried in order, and the first whose pattern holds
+  /// runs. An arm that holds for every value, and the last arm, need no test.
+  [[nodiscard]] auto lower_match(const hir_match &node,
+                                 const std::optional<place> &dest) -> result {
+    for (const auto &arm : node.arms) {
+      if (arm.guard != nullptr) {
+        return refuse(arm.guard->span, "a `match` arm guard");
+      }
+    }
+    auto subject = bind_subject(*node.subject, node.subject_symbol, node.span);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    auto ok = in_region(node.span, [&] {
+      return lower_arms(node, 0, subject->where, dest);
+    });
+    if (!ok.has_value()) {
+      return ok;
+    }
+    if (subject->held != k_invalid_storage && !terminated_) {
+      kill(subject->held, node.span);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto lower_arms(const hir_match &node, size_t index,
+                                const place &subject,
+                                const std::optional<place> &dest) -> result {
+    if (index == node.arms.size()) {
+      return {};
+    }
+    const auto &arm = node.arms[index];
+    const auto last = index + 1 == node.arms.size();
+    // The checker requires a `match` to cover every value, so the last arm
+    // holds wherever the earlier ones did not.
+    if (always_matches(*arm.pattern) || last) {
+      return lower_arm(*arm.body, dest);
+    }
+    const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
+                               "", k_invalid_symbol_id, arm.pattern->span, false);
+    if (auto ok = test_pattern(*arm.pattern, subject, whole(flag));
+        !ok.has_value()) {
+      return ok;
+    }
+    auto head = storage_op{.kind = op_kind::if_begin};
+    head.condition = read_of(whole(flag), false);
+    emit(std::move(head), arm.pattern->span);
+    kill(flag, arm.pattern->span);
+    if (auto ok = lower_arm(*arm.body, dest); !ok.has_value()) {
+      return ok;
+    }
+    const auto arm_terminated = terminated_;
+    terminated_ = false;
+    emit(storage_op{.kind = op_kind::else_begin}, node.span);
+    kill(flag, arm.pattern->span);
+    if (!last) {
+      auto ok = in_region(node.span, [&] {
+        return lower_arms(node, index + 1, subject, dest);
+      });
+      if (!ok.has_value()) {
+        return ok;
+      }
+    }
+    emit(storage_op{.kind = op_kind::if_end}, node.span);
+    terminated_ = arm_terminated && terminated_;
+    return {};
+  }
+
+  /// `while let`: a loop that evaluates the subject, leaves when the pattern
+  /// does not hold, and otherwise runs the body.
+  [[nodiscard]] auto lower_while_let(const hir_while_let &loop) -> result {
+    emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop});
+    scopes_.emplace_back();
+    auto head = in_region(loop.span, [&]() -> result {
+      auto subject = bind_subject(*loop.subject, loop.subject_symbol, loop.span);
+      if (!subject.has_value()) {
+        return std::unexpected(subject.error());
+      }
+      if (subject->held != k_invalid_storage) {
+        scopes_.back().push_back(subject->held);
+      }
+      const auto flag = new_slot(storage_class::frame_local,
+                                 types().bool_type(), "", k_invalid_symbol_id,
+                                 loop.span, false);
+      if (auto ok = test_pattern(*loop.pattern, subject->where, whole(flag));
+          !ok.has_value()) {
+        return ok;
+      }
+      auto test = storage_op{.kind = op_kind::if_begin};
+      test.condition = read_of(whole(flag), false);
+      emit(std::move(test), loop.span);
+      kill(flag, loop.span);
+      emit(storage_op{.kind = op_kind::else_begin}, loop.span);
+      kill(flag, loop.span);
+      // The subject stays as it is, like any other storage the body declares:
+      // a `break` leaves it live, and the paths that leave the loop must agree.
+      auto leave = storage_op{.kind = op_kind::exit};
+      leave.depth = 0;
+      emit(std::move(leave), loop.span);
+      emit(storage_op{.kind = op_kind::if_end}, loop.span);
+      return {};
+    });
+    if (!head.has_value()) {
+      return head;
+    }
+    frames_.back().reached = true;
+    return finish_loop(*loop.body, nullptr, loop.span);
+  }
+
+  /// `let pattern = value else { ... }`: the else block leaves, so the code
+  /// after this statement runs only where the pattern held.
+  [[nodiscard]] auto lower_let_else(const hir_let_else &node) -> result {
+    auto subject =
+        bind_subject(*node.initializer, node.subject_symbol, node.span);
+    if (!subject.has_value()) {
+      return std::unexpected(subject.error());
+    }
+    if (subject->held != k_invalid_storage && !scopes_.empty()) {
+      scopes_.back().push_back(subject->held);
+    }
+    const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
+                               "", k_invalid_symbol_id, node.span, false);
+    if (auto ok = test_pattern(*node.pattern, subject->where, whole(flag));
+        !ok.has_value()) {
+      return ok;
+    }
+    auto head = storage_op{.kind = op_kind::if_begin};
+    head.condition = read_of(whole(flag), false);
+    emit(std::move(head), node.span);
+    kill(flag, node.span);
+    emit(storage_op{.kind = op_kind::else_begin}, node.span);
+    kill(flag, node.span);
+    if (auto ok = lower_arm(*node.else_body, std::nullopt); !ok.has_value()) {
+      return ok;
+    }
+    emit(storage_op{.kind = op_kind::if_end}, node.span);
+    terminated_ = false;
     return {};
   }
 

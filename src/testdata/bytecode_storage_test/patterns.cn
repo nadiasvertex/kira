@@ -1,0 +1,125 @@
+module sample
+
+# Pattern tests in the storage form: `match`, `while let`, and `let ... else`
+# read a sum's tag in place and bind payloads from the sum's own bytes.
+
+type shape = @circle(int64) | @rect(int64, int64) | @empty
+
+type pair = { pub a: int64, pub b: int64 }
+
+# A payload larger than a word, so the binding reads aggregate bytes.
+type boxed = @one(pair) | @none_here
+
+def make_shape(kind: int64, a: int64, b: int64) -> shape:
+    if kind == 0:
+        return @circle(a)
+    if kind == 1:
+        return @rect(a, b)
+    return @empty
+
+def make_option(present: bool, v: int64) -> option[int64]:
+    if present:
+        return @some(v)
+    return @none
+
+# One arm per variant; each binds its payload slots.
+def area(kind: int64, a: int64, b: int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @circle(r) => r * r * 3
+        @rect(w, h) => w * h
+        @empty => 7
+
+# A wildcard arm catches the variants not named before it.
+def is_circle(kind: int64) -> int64:
+    let s = make_shape(kind, 1, 2)
+    return match s:
+        @circle(_) => 1
+        _ => 0
+
+# A statement `match` with no arm for some variants leaves the result alone.
+def partial(kind: int64, a: int64, b: int64) -> int64:
+    var total: int64 = 100
+    let s = make_shape(kind, a, b)
+    match s:
+        @rect(w, h) =>:
+            total = total + w + h
+        @circle(r) =>:
+            total = total + r
+        @empty =>:
+            total = total + 1
+    return total
+
+# Literal patterns on a payload, and a nested constructor.
+def classify(present: int64, v: int64) -> int64:
+    let o = make_option(present != 0, v)
+    return match o:
+        @some(0) => 10
+        @some(1) => 20
+        @some(n) => 30 + n
+        @none => 40
+
+# Tuple and struct patterns.
+def tuple_pick(a: int64, b: int64) -> int64:
+    let t = (a, b)
+    return match t:
+        (0, y) => y
+        (x, 0) => x * 100
+        (x, y) => x + y
+
+def struct_pick(a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    return match p:
+        { a: 1, b: y } => y
+        { a: x, b: _ } => x * 10
+
+# An or-pattern shares one arm between variants.
+def either(kind: int64) -> int64:
+    let s = make_shape(kind, 1, 2)
+    return match s:
+        @circle(_) | @empty => 5
+        @rect(_, _) => 6
+
+# A payload that is an aggregate is moved out of the sum.
+def unbox(present: int64, a: int64, b: int64) -> int64:
+    var holder: boxed = @none_here
+    if present != 0:
+        holder = @one(pair { a: a, b: b })
+    return match holder:
+        @one(p) => p.a * 1000 + p.b
+        @none_here => -1
+
+# The subject is a call, evaluated once.
+def subject_call(kind: int64) -> int64:
+    return match make_shape(kind, 4, 5):
+        @circle(r) => r
+        @rect(w, h) => w + h
+        @empty => 0
+
+# `while let` runs until the pattern fails and re-evaluates its subject.
+def drain(count: int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(n) = make_option(left > 0, left):
+        total = total + n
+        left = left - 1
+    return total
+
+# `break` and `continue` inside the body.
+def drain_some(count: int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(n) = make_option(left > 0, left):
+        left = left - 1
+        if n == 2:
+            continue
+        if n == 1:
+            break
+        total = total + n
+    return total * 10 + left
+
+# `let ... else` binds on success and leaves on failure.
+def first_or(present: int64, v: int64) -> int64:
+    let @some(n) = make_option(present != 0, v) else:
+        return -5
+    return n + 1000

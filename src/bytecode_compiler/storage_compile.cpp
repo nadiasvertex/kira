@@ -698,6 +698,8 @@ private:
       return emit_transfer(op);
     case op_kind::publish_variant:
       return emit_publish(op);
+    case op_kind::test_variant:
+      return emit_test_variant(op);
     case op_kind::drop_in_place:
       return emit_drop(op);
     case op_kind::make_closure:
@@ -968,6 +970,53 @@ private:
     emit_const(tag, slot_value{static_cast<uint64_t>(variant->tag)});
     return emit_store(dest->reg, dest->offset + (*layout)->tag_offset, tag,
                       runtime::k_sum_tag_size);
+  }
+
+  /// Compares the tag of the sum at `source` with the tag of `variant`.
+  [[nodiscard]] auto emit_test_variant(const hir::storage_op &op)
+      -> checked<void> {
+    const auto layout = layout_of(op.source.type, op.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto *variant = (*layout)->find_variant(op.variant);
+    if (variant == nullptr) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  std::format("`{}` has no variant `{}`",
+                              types().display(op.source.type), op.variant));
+    }
+    const auto source = locate(op.source);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (source->where != location::kind::memory) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a sum was not in addressable storage");
+    }
+    const auto tag = alloc_register();
+    if (auto ok = emit_load(tag, source->reg,
+                            source->offset + (*layout)->tag_offset,
+                            runtime::k_sum_tag_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto expected = alloc_register();
+    emit_const(expected, slot_value{static_cast<uint64_t>(variant->tag)});
+    const auto target = dest->where == location::kind::reg ? dest->reg
+                                                          : alloc_register();
+    emit_op(opcode::op_eq);
+    emit_register(target);
+    emit_register(tag);
+    emit_register(expected);
+    writer_.emit_numeric_kind(bytecode::numeric_kind::u64);
+    if (dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, target);
+    }
+    return {};
   }
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {

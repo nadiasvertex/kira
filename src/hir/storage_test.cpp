@@ -715,8 +715,8 @@ auto test_verifier_rejects_moves_out_of_references_and_sums() -> void {
   expect_rejects(*f, through, hir::verify_error_kind::move_from_reference,
                  "a move out of borrowed bytes");
 
-  // Take one payload out of a sum that was passed whole.
-  auto partial = f->function("use_shape");
+  // Take one payload out of a sum, then pass the sum on whole.
+  auto partial = f->function("pass_shape");
   const auto taken = add_slot(partial, hir::storage_class::frame_local,
                               f->builtin("int32"));
   auto take = hir::storage_op{.kind = hir::op_kind::move_into};
@@ -727,8 +727,8 @@ auto test_verifier_rejects_moves_out_of_references_and_sums() -> void {
                        .index = 0,
                        .name = "rect"}});
   partial.ops.insert(partial.ops.begin(), take);
-  expect_rejects(*f, partial, hir::verify_error_kind::partial_move,
-                 "a payload moved out of a published sum");
+  expect_rejects(*f, partial, hir::verify_error_kind::uninitialized,
+                 "a sum read whole after one payload moved out");
 }
 
 auto test_verifier_checks_call_signatures() -> void {
@@ -1399,6 +1399,156 @@ auto test_verifier_checks_closures() -> void {
                  "a body that takes a captured value");
 }
 
+// ==========================================================================
+//  Patterns: match, while let, let else
+// ==========================================================================
+
+auto test_match_tests_the_tag_and_binds_payloads() -> void {
+  auto f = build(read_program("patterns.cn"));
+  // Each arm tests its variant into a flag, branches on it, and binds its
+  // payload from the sum's own bytes. The last arm needs no test.
+  expect_ops(*f, "area",
+             {"test s3 = s0 is @circle", "if s3", "dead s3",
+              "compute s2 = const true", "else", "dead s3",
+              "compute s2 = const false", "end_if", "if s2", "dead s2",
+              "compute s4 = copy s0.@circle.0", "compute s1 = copy s4", "else",
+              "dead s2", "test s6 = s0 is @rect", "if s6", "dead s6",
+              "compute s5 = const true", "else", "dead s6",
+              "compute s5 = const false", "end_if", "if s5", "dead s5",
+              "compute s7 = copy s0.@rect.0", "compute s8 = copy s0.@rect.1",
+              "compute s1 = binary + s7, s8", "else", "dead s5",
+              "compute s1 = const 7", "end_if", "end_if", "return s1"});
+  expect_verifies(*f, f->function("area"), "area");
+  const auto tests = [&](std::string_view name) {
+    auto count = size_t{0};
+    for (const auto &op : f->function(name).ops) {
+      count += op.kind == hir::op_kind::test_variant ? 1U : 0U;
+    }
+    return count;
+  };
+  expect(tests("area") == 2, "expected the last arm to need no variant test");
+  expect(tests("either") == 2,
+         "expected each alternative of an or-pattern to be tested");
+}
+
+auto test_statement_match_writes_through_its_arms() -> void {
+  auto f = build(read_program("patterns.cn"));
+  expect_ops(*f, "partial",
+             {"compute s1 = const 100", "test s3 = s0 is @circle", "if s3",
+              "dead s3", "compute s2 = const true", "else", "dead s3",
+              "compute s2 = const false", "end_if", "if s2", "dead s2",
+              "compute s4 = copy s0.@circle.0",
+              "compute s1 = binary + s1, s4", "else", "dead s2",
+              "test s6 = s0 is @empty", "if s6", "dead s6",
+              "compute s5 = const true", "else", "dead s6",
+              "compute s5 = const false", "end_if", "if s5", "dead s5",
+              "compute s1 = binary + s1, #1", "else", "dead s5",
+              "compute s1 = binary + s1, #2", "end_if", "end_if", "return s1"});
+  expect_verifies(*f, f->function("partial"), "partial");
+}
+
+auto test_literal_patterns_compare_after_the_tag() -> void {
+  auto f = build(read_program("patterns.cn"));
+  // `@some(0)` reads the payload only inside the branch that saw `@some`.
+  const auto lines = op_lines(*f, f->function("literal"));
+  const auto head = std::vector<std::string>(lines.begin(), lines.begin() + 5);
+  expect(head == std::vector<std::string>{"test s3 = s0 is @some", "if s3",
+                                          "dead s3",
+                                          "compute s4 = binary == s0.@some.0, #0",
+                                          "if s4"},
+         "expected the comparison to sit inside the branch on the tag");
+  expect_verifies(*f, f->function("literal"), "literal");
+}
+
+auto test_aggregate_payload_moves_out_of_the_sum() -> void {
+  auto f = build(read_program("patterns.cn"));
+  expect_ops(*f, "unbox",
+             {"test s3 = s0 is @one", "if s3", "dead s3",
+              "compute s2 = const true", "else", "dead s3",
+              "compute s2 = const false", "end_if", "if s2", "dead s2",
+              "move s4 <- s0.@one.0", "compute s1 = copy s4.a", "else",
+              "dead s2", "compute s1 = unary - #1", "end_if", "return s1"});
+  expect_verifies(*f, f->function("unbox"), "unbox");
+}
+
+auto test_while_let_and_let_else_lower() -> void {
+  auto f = build(read_program("patterns.cn"));
+  // The subject is rebuilt on every iteration, the loop leaves when the
+  // pattern fails, and the subject's storage ends before the loop repeats.
+  expect_ops(*f, "drain",
+             {"compute s1 = copy s0", "compute s2 = const 0", "loop",
+              "compute s4 = binary > s1, #0", "call s3 = make_option(s4, s1)",
+              "dead s4", "test s6 = s3 is @some", "if s6", "dead s6",
+              "compute s5 = const true", "else", "dead s6",
+              "compute s5 = const false", "end_if", "if s5", "dead s5", "else",
+              "dead s5", "exit 0", "end_if", "block",
+              "compute s7 = copy s3.@some.0", "compute s2 = binary + s2, s7",
+              "compute s1 = binary - s1, #1", "end_block", "dead s7", "dead s3",
+              "end_loop", "return s2"});
+  // The else block leaves, so the code after the statement runs only when the
+  // pattern held and reads the payload unconditionally.
+  expect_ops(*f, "first_or",
+             {"call s2 = make_option(s0, s1)", "test s4 = s2 is @some", "if s4",
+              "dead s4", "compute s3 = const true", "else", "dead s4",
+              "compute s3 = const false", "end_if", "if s3", "dead s3", "else",
+              "dead s3", "compute s5 = unary - #5", "return s5", "end_if",
+              "compute s6 = copy s2.@some.0", "return s6"});
+  expect_verifies(*f, f->function("drain"), "drain");
+  expect_verifies(*f, f->function("first_or"), "first_or");
+}
+
+auto test_patterns_not_lowered_yet_are_refused_by_name() -> void {
+  auto f = build(read_program("patterns.cn"));
+  const auto *guarded = f->refusal("guarded");
+  expect(guarded != nullptr &&
+             guarded->message.find("guard") != std::string::npos,
+         "expected a `match` arm guard to be refused by name");
+  const auto *owned = f->refusal("owned_subject");
+  expect(owned != nullptr && owned->message.find("drop") != std::string::npos,
+         "expected a pattern test on a value that needs a drop to be refused");
+}
+
+auto test_verifier_checks_variant_tests() -> void {
+  auto f = build(read_program("patterns.cn"));
+  const auto shape = f->function("area").slots[0].type;
+  const auto flag = f->function("area").slots[3].type;
+
+  auto unknown = f->function("area");
+  unknown.ops[find_op(unknown, hir::op_kind::test_variant)].variant = "oval";
+  expect_rejects(*f, unknown, hir::verify_error_kind::bad_place,
+                 "a test for a variant the sum does not have");
+
+  auto scalar = f->function("area");
+  scalar.ops[find_op(scalar, hir::op_kind::test_variant)].source =
+      place_at(3, flag);
+  expect_rejects(*f, scalar, hir::verify_error_kind::type_mismatch,
+                 "a variant test on a value that is not a sum");
+
+  auto wide = f->function("area");
+  wide.ops[find_op(wide, hir::op_kind::test_variant)].dest = place_at(0, shape);
+  expect_rejects(*f, wide, hir::verify_error_kind::type_mismatch,
+                 "a variant test written to an aggregate");
+
+  // A sum that nothing has built has no tag to read.
+  auto unbuilt = f->function("area");
+  const auto fresh = add_slot(unbuilt, hir::storage_class::frame_local, shape);
+  unbuilt.ops[find_op(unbuilt, hir::op_kind::test_variant)].source =
+      place_at(fresh, shape);
+  expect_rejects(*f, unbuilt, hir::verify_error_kind::uninitialized,
+                 "a variant test on an unbuilt sum");
+
+  // The binding reads a payload the sum no longer has once it is moved out.
+  auto taken = f->function("unbox");
+  const auto &move = taken.ops[find_op(taken, hir::op_kind::move_into)];
+  auto again = move;
+  taken.ops.insert(taken.ops.begin() +
+                       static_cast<std::ptrdiff_t>(
+                           find_op(taken, hir::op_kind::move_into)) + 1,
+                   again);
+  expect_rejects(*f, taken, hir::verify_error_kind::uninitialized,
+                 "a payload moved out twice");
+}
+
 auto main() -> int {
   try {
     test_closure_is_built_with_its_captures_and_glue();
@@ -1406,6 +1556,13 @@ auto main() -> int {
     test_moved_captures_are_dropped_by_the_glue();
     test_reference_captures_are_reached_through_an_address();
     test_verifier_checks_closures();
+    test_match_tests_the_tag_and_binds_payloads();
+    test_statement_match_writes_through_its_arms();
+    test_literal_patterns_compare_after_the_tag();
+    test_aggregate_payload_moves_out_of_the_sum();
+    test_while_let_and_let_else_lower();
+    test_patterns_not_lowered_yet_are_refused_by_name();
+    test_verifier_checks_variant_tests();
     test_abi_classes_follow_layout();
     test_signature_operands_hide_the_result_address();
     test_signature_agreement_ignores_type_ids_but_not_shape();

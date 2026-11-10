@@ -641,6 +641,8 @@ private:
       return emit_transfer(op);
     case op_kind::publish_variant:
       return emit_publish(op);
+    case op_kind::test_variant:
+      return emit_test_variant(op);
     case op_kind::drop_in_place:
       return emit_drop(op);
     case op_kind::make_closure:
@@ -860,6 +862,36 @@ private:
         constant(i64(), static_cast<uint64_t>(variant->tag)), pointer_at(*dest),
         access_align(*dest, runtime::k_sum_tag_size));
     return {};
+  }
+
+  /// Compares the tag of the sum at `source` with the tag of `variant`.
+  [[nodiscard]] auto emit_test_variant(const hir::storage_op &op)
+      -> checked<void> {
+    const auto layout = layout_of(mc_, op.source.type, op.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto *variant = (*layout)->find_variant(op.variant);
+    if (variant == nullptr) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  std::format("`{}` has no variant `{}`",
+                              types().display(op.source.type), op.variant));
+    }
+    auto source = locate(op.source);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    source->offset += (*layout)->tag_offset;
+    auto *tag = builder_.CreateAlignedLoad(
+        i64(), pointer_at(*source),
+        access_align(*source, runtime::k_sum_tag_size));
+    auto *same = builder_.CreateICmpEQ(
+        tag, constant(i64(), static_cast<uint64_t>(variant->tag)));
+    return store_scalar(*dest, op.dest.type, same);
   }
 
   [[nodiscard]] auto emit_call(const hir::storage_op &op) -> checked<void> {

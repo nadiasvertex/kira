@@ -1,0 +1,89 @@
+module sample
+
+type shape = @circle(int64) | @rect(int64, int64) | @empty
+
+type pair = { pub a: int64, pub b: int64 }
+
+type boxed = @one(pair) | @none_here
+
+def make_shape(kind: int64) -> shape:
+    return @empty
+
+def make_option(present: bool, v: int64) -> option[int64]:
+    if present:
+        return @some(v)
+    return @none
+
+# One arm per variant; the last arm needs no test because the value is built.
+def area(s: shape) -> int64:
+    return match s:
+        @circle(r) => r
+        @rect(w, h) => w + h
+        @empty => 7
+
+# A statement `match` assigns in its arms.
+def partial(s: shape) -> int64:
+    var total: int64 = 100
+    match s:
+        @circle(r) =>:
+            total = total + r
+        @empty =>:
+            total = total + 1
+        _ =>:
+            total = total + 2
+    return total
+
+def literal(o: option[int64]) -> int64:
+    return match o:
+        @some(0) => 10
+        @some(n) => n
+        @none => 40
+
+def either(s: shape) -> int64:
+    return match s:
+        @circle(_) | @empty => 5
+        @rect(_, _) => 6
+
+def pair_pick(p: pair) -> int64:
+    return match p:
+        { a: 1, b: y } => y
+        { a: x, b: _ } => x
+
+def unbox(holder: boxed) -> int64:
+    return match holder:
+        @one(p) => p.a
+        @none_here => -1
+
+def call_subject(kind: int64) -> int64:
+    return match make_shape(kind):
+        @circle(r) => r
+        _ => 0
+
+def drain(count: int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(n) = make_option(left > 0, left):
+        total = total + n
+        left = left - 1
+    return total
+
+def first_or(present: bool, v: int64) -> int64:
+    let @some(n) = make_option(present, v) else:
+        return -5
+    return n
+
+def guarded(s: shape) -> int64:
+    return match s:
+        @circle(r) if r > 0 => r
+        _ => 0
+
+type noisy = { pub id: int64 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+def owned_subject(o: option[noisy]) -> int64:
+    return match o:
+        @some(_) => 1
+        @none => 0

@@ -641,9 +641,9 @@ a discarded temporary, a borrow, and an argument moved to a callee. Each rule
 was mutation-checked. Not done, and carried forward:
 
 - Control flow. T-04a adds `if`, `while`, `break`, `continue`, and early `return`.
-  `match`, `while let`, `let else`, drop flags for values moved on some paths,
-  and the drop of a sum with droppable payloads (HIR expresses it as a `match`)
-  are still refused.
+  Drop flags for values moved on some paths and the drop of a sum with
+  droppable payloads (HIR expresses it as a `match`) are still refused;
+  `match`, `while let`, and `let else` are done (see T-09).
 - Steps 2 and 5. Reference elaboration already produces explicit `&`/`*` in HIR,
   so the form reads places from it unchanged. Rejecting generic moves through a
   borrowed `self` is a checker rule and was not touched.
@@ -694,7 +694,8 @@ loop body. Verifier tests corrupt lowered functions for each new rule. Mutation
 checks (join drop check, loop-carried check, exit depth, branch termination) each
 failed the tests. Not done:
 
-- `match`, `while let`, `let else`, and drop flags remain refused or rejected.
+- `match`, `while let`, and `let else` were added afterwards; see "Patterns in
+  the storage form" under T-09 below. Drop flags remain rejected.
 - `break` and `continue` inside an expression that has live temporaries are
   refused by name. Early exits inside constructor operands are not covered.
 - Wrapping and saturating compound assignment, and compound assignment on a
@@ -707,8 +708,8 @@ failed the tests. Not done:
 **Status: partly done (2026-11-10).** A second bytecode compiler,
 `bytecode_compiler/storage_compile.{h,cpp}`, builds bytecode from the storage
 form. It is not called by the driver, because decision 6 forbids mixing the two
-representations in one program and the storage form cannot yet express `match`,
-strings, closures, `fn` values, or globals. Done:
+representations in one program and the storage form cannot yet express
+strings, generators, or globals. Done:
 
 - Metadata: `bytecode_function::abi` records whether the result goes through an
   address and the size, alignment, and by-address flag of the result and each
@@ -920,8 +921,33 @@ fixture writes the whole value instead.
 
 **Goal:** Keep values valid across suspension and cross-thread ownership transfer.
 
-**Status: partly done (2026-11-10).** Closures now live in the storage form on
-both storage-form backends. Generators, tasks, and the adapters are not started.
+**Status: partly done (2026-11-10).** Patterns and closures now live in the
+storage form on both storage-form backends. Patterns were added first because a
+generator's `.next()` returns an `option[T]` that only `match` or `while let` can
+read, so no storage-form program could observe a generator without them.
+
+Patterns in the storage form. `test_variant` (`dest <- source is @variant`) reads
+a sum's tag into a `bool`; both backends load the tag word at the layout's
+`tag_offset` and compare it with the variant's tag. Lowering handles `match` (as a
+statement or a value built in its destination), `while let`, and `let ... else`
+over constructor, literal, tuple, struct, wildcard, and or-patterns. Tests nest so
+a payload or literal is read only after its variant is confirmed; each arm is a
+flag set by its tests and an `if` on it; the last arm has no test, since the
+checker requires every value to be covered. A local subject is used in place and
+a computed one is built in its own slot, which a `while let` rebuilds on every
+iteration. The verifier now lets a payload move out of a sum that needs no drop
+(the sum then cannot be read whole), and lets a payload slot be read once it
+exists. Tests: `storage_test` over `hir_storage_test/patterns.cn` (exact dumps for
+a value `match`, a statement `match`, literal patterns, an aggregate payload moved
+out, `while let`, and `let else`; verifier corruptions for an unknown variant, a
+non-sum, an aggregate destination, an unbuilt sum, and a payload moved twice) and
+`storage_pattern_cases.h` over `bytecode_storage_test/patterns.cn` on both
+backends. Mutation checks (tag constant, tag comparison, the source-initialized
+check, the sum split, the last-arm shortcut, the arm value destination, and the
+`while let` exit) each failed a test. Refused by name: a subject that needs a drop
+(the drop of a sum with droppable payloads is still not modeled), an arm guard, a
+subject that is part of a larger value (`match self.field`), and range, array, and
+string patterns. A `for` loop over a droppable item still needs drop flags. Generators, tasks, and the adapters are not started.
 Done:
 
 - Representation: a `fn` value is a 24-byte aggregate `{entry, env, glue}` held

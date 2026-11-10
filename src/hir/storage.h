@@ -203,6 +203,8 @@ enum class op_kind : uint8_t {
   copy_into,       ///< `dest` <- bytes of `source`; both stay initialized.
   move_into,       ///< `dest` <- bytes of `source`; `source` is invalidated.
   publish_variant, ///< `dest` (a sum) becomes initialized with `variant`.
+  test_variant,    ///< `dest` (a `bool`) <- whether the sum at `source` holds
+                   ///< `variant`. `source` stays initialized.
   drop_in_place,   ///< Runs the drop of the value at `dest`; it is then dead.
   call_into,       ///< Calls `callee`; the result is built in `dest`.
   make_closure,    ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
@@ -242,7 +244,7 @@ struct storage_op {
   ast::unary_op unary = ast::unary_op::neg;
   /// `pointer_offset`: the byte size of one element.
   size_t stride = 0;
-  // publish_variant
+  // publish_variant, test_variant
   std::string variant{};
   // call_into
   /// The call is a type's own `drop`, synthesized where a value ends. Its one

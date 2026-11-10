@@ -460,7 +460,8 @@ private:
       if (node->whole) {
         return true;
       }
-      if (is_sum(at.types[i])) {
+      if (is_sum(at.types[i]) &&
+          where.steps[i].kind != projection_kind::payload) {
         return false; // The variant is not published yet.
       }
       const auto child = node->children.find(step_key(where.steps[i]));
@@ -482,12 +483,26 @@ private:
   }
 
   /// Splits a whole value into its members so one can leave.
-  [[nodiscard]] auto explode(init_node &node, type_id type) -> result {
+  /// A sum splits into the payload slots of the variant the step names, which
+  /// is the variant the code that reaches the step has already tested.
+  [[nodiscard]] auto explode(init_node &node, type_id type,
+                             const projection &step) -> result {
     const auto layout = layout_of(type);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
     }
     const auto &found = **layout;
+    if (found.kind == runtime::value_layout_kind::sum &&
+        step.kind == projection_kind::payload && !env_.needs_drop(type)) {
+      const auto *variant = found.find_variant(step.name);
+      if (variant != nullptr) {
+        for (size_t i = 0; i < variant->payload.size(); ++i) {
+          node.children[payload_key(step.name, i)].whole = true;
+        }
+        node.whole = false;
+        return {};
+      }
+    }
     if (found.kind == runtime::value_layout_kind::structure ||
         found.kind == runtime::value_layout_kind::tuple) {
       for (size_t i = 0; i < found.members.size(); ++i) {
@@ -512,7 +527,8 @@ private:
     auto *node = &state_[where.base];
     for (size_t i = 0; i < count; ++i) {
       if (node->whole) {
-        if (auto ok = explode(*node, at.types[i]); !ok.has_value()) {
+        if (auto ok = explode(*node, at.types[i], where.steps[i]);
+            !ok.has_value()) {
           return ok;
         }
       }
@@ -838,6 +854,8 @@ private:
       return do_transfer(op);
     case op_kind::publish_variant:
       return do_publish(op);
+    case op_kind::test_variant:
+      return do_test_variant(op);
     case op_kind::drop_in_place:
       return do_drop(op);
     case op_kind::call_into:
@@ -1262,6 +1280,48 @@ private:
       if (auto ok = invalidate(op.source, *from, from->tracked); !ok.has_value()) {
         return ok;
       }
+    }
+    commit_write(op.dest, *to);
+    return {};
+  }
+
+  /// Reads the tag of an initialized sum into a scalar. The sum stays as it is.
+  [[nodiscard]] auto do_test_variant(const storage_op &op) -> result {
+    const auto from = resolve(op.source);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    const auto to = resolve(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    const auto layout = layout_of(op.source.type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if ((*layout)->kind != runtime::value_layout_kind::sum) {
+      return fail(verify_error_kind::type_mismatch,
+                  name_of(op.source.type) + " is not a sum");
+    }
+    if ((*layout)->find_variant(op.variant) == nullptr) {
+      return fail(verify_error_kind::bad_place,
+                  name_of(op.source.type) + " has no variant `" + op.variant +
+                      "`");
+    }
+    const auto cls = classify_value(env_.layouts, op.dest.type);
+    if (!cls.has_value()) {
+      return fail(verify_error_kind::layout_failed, cls.error().message);
+    }
+    if (cls->cls != pass_class::scalar) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a variant test gives a scalar, not " +
+                      name_of(op.dest.type));
+    }
+    if (auto ok = require_init(op.source, *from); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = require_writable(op.dest, *to); !ok.has_value()) {
+      return ok;
     }
     commit_write(op.dest, *to);
     return {};

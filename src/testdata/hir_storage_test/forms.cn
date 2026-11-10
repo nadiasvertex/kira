@@ -94,7 +94,7 @@ generator def counter() -> some iterator[int32]:
 
 def matching(n: int32) -> int32:
     match n:
-        0 => return 1
+        k if k > 0 => return 1
         _ => return 2
 
 def shout() -> str:

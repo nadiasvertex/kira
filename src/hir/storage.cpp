@@ -51,6 +51,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "move";
   case op_kind::publish_variant:
     return "publish";
+  case op_kind::test_variant:
+    return "test";
   case op_kind::drop_in_place:
     return "drop";
   case op_kind::call_into:
@@ -224,6 +226,9 @@ namespace {
     return "move " + render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::publish_variant:
     return "publish " + render_place(op.dest) + " @" + op.variant;
+  case op_kind::test_variant:
+    return "test " + render_place(op.dest) + " = " + render_place(op.source) +
+           " is @" + op.variant;
   case op_kind::drop_in_place:
     return "drop " + render_place(op.dest);
   case op_kind::call_into:
