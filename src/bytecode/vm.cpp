@@ -23,10 +23,14 @@
 #include "src/runtime/allocator.h"
 #include "src/runtime/arena.h"
 #include "src/runtime/coroutine.h"
+#include "src/runtime/fmt.h"
+#include "src/runtime/io.h"
 #include "src/runtime/layout.h"
+#include "src/runtime/platform.h"
 #include "src/runtime/platform_query.h"
 #include "src/runtime/reactor.h"
 #include "src/runtime/scheduler.h"
+#include "src/runtime/string.h"
 #include "src/runtime/string_ops.h"
 #include "src/utf8/utf8.h"
 
@@ -1976,6 +1980,129 @@ static_assert(k_intrinsics.size() == cinder::known_intrinsic_names.size(),
               "every known intrinsic needs exactly one native implementation, "
               "in the same order");
 
+// ---------------------------------------------------------------------------
+// Intrinsics that build their result in caller storage (`into`, see
+// `src/intrinsics.h`). The storage compiler (`bytecode_compiler/
+// storage_compile.cpp`) calls every intrinsic with `op_call_intrinsic`, and
+// for these the first argument register holds the address of the destination
+// and the rest follow the declared parameters: a scalar in its register, a
+// descriptor or aggregate as the address of the caller's bytes. They are the
+// runtime's own `cinder_rt_*_into` functions, so the two tiers cannot write a
+// result differently; no heap block is made for the result.
+// ---------------------------------------------------------------------------
+
+using into_fn = void (*)(std::span<const slot_value>);
+
+[[nodiscard]] auto address_arg(const slot_value &value) -> void * {
+  return reinterpret_cast<void *>(static_cast<uintptr_t>(value.u)); // NOLINT
+}
+
+[[nodiscard]] auto word_arg(const slot_value &value) -> uint32_t {
+  return static_cast<uint32_t>(value.u);
+}
+
+/// Handler `id`, or null when the intrinsic returns its result directly.
+[[nodiscard]] auto into_handler(uint8_t id) -> into_fn {
+  static const auto table = [] {
+    auto handlers = std::array<into_fn, cinder::known_intrinsics.size()>{};
+    const auto set = [&handlers](std::string_view name, into_fn handler) {
+      handlers.at(cinder::intrinsic_index_of(name).value()) = handler;
+    };
+    set("rt_stdin", [](auto a) { cinder_rt_stdin_into(address_arg(a[0])); });
+    set("rt_stdout", [](auto a) { cinder_rt_stdout_into(address_arg(a[0])); });
+    set("rt_stderr", [](auto a) { cinder_rt_stderr_into(address_arg(a[0])); });
+    set("rt_open", [](auto a) {
+      cinder_rt_open_into(address_arg(a[0]), address_arg(a[1]),
+                          address_arg(a[2]));
+    });
+    set("rt_close", [](auto a) {
+      cinder_rt_close_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_read", [](auto a) {
+      cinder_rt_read_into(address_arg(a[0]), address_arg(a[1]),
+                          address_arg(a[2]));
+    });
+    set("rt_write", [](auto a) {
+      cinder_rt_write_into(address_arg(a[0]), address_arg(a[1]),
+                           address_arg(a[2]));
+    });
+    set("rt_flush", [](auto a) {
+      cinder_rt_flush_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_pipe", [](auto a) { cinder_rt_pipe_into(address_arg(a[0])); });
+    set("rt_set_nonblocking", [](auto a) {
+      cinder_rt_set_nonblocking_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_str_concat", [](auto a) {
+      cinder_rt_str_concat_into(address_arg(a[0]), address_arg(a[1]),
+                                address_arg(a[2]));
+    });
+    set("rt_str_repeat_char", [](auto a) {
+      cinder_rt_str_repeat_char_into(address_arg(a[0]), word_arg(a[1]), a[2].u);
+    });
+    set("rt_str_truncate_scalars", [](auto a) {
+      cinder_rt_str_truncate_scalars_into(address_arg(a[0]), address_arg(a[1]),
+                                          a[2].u);
+    });
+    set("rt_fmt_radix_digits", [](auto a) {
+      cinder_rt_fmt_radix_digits_into(address_arg(a[0]), a[1].u, word_arg(a[2]),
+                                      word_arg(a[3]));
+    });
+    set("rt_fmt_f64_fixed", [](auto a) {
+      cinder_rt_fmt_f64_fixed_into(address_arg(a[0]), a[1].f, a[2].u);
+    });
+    set("rt_fmt_f64_sci", [](auto a) {
+      cinder_rt_fmt_f64_sci_into(address_arg(a[0]), a[1].f, a[2].u,
+                                 word_arg(a[3]));
+    });
+    set("rt_fmt_f64_general", [](auto a) {
+      cinder_rt_fmt_f64_general_into(address_arg(a[0]), a[1].f, a[2].u);
+    });
+    set("rt_fmt_char_from_codepoint", [](auto a) {
+      cinder_rt_fmt_char_from_codepoint_into(address_arg(a[0]), word_arg(a[1]));
+    });
+    set("rt_str_find", [](auto a) {
+      cinder_rt_str_find_into(address_arg(a[0]), address_arg(a[1]),
+                              address_arg(a[2]), a[3].u);
+    });
+    set("rt_str_rfind", [](auto a) {
+      cinder_rt_str_rfind_into(address_arg(a[0]), address_arg(a[1]),
+                               address_arg(a[2]));
+    });
+    set("rt_str_reverse", [](auto a) {
+      cinder_rt_str_reverse_into(address_arg(a[0]), address_arg(a[1]));
+    });
+    set("rt_str_trim", [](auto a) {
+      cinder_rt_str_trim_into(address_arg(a[0]), address_arg(a[1]),
+                              word_arg(a[2]));
+    });
+    set("rt_str_replace", [](auto a) {
+      cinder_rt_str_replace_into(address_arg(a[0]), address_arg(a[1]),
+                                 address_arg(a[2]), address_arg(a[3]));
+    });
+    set("rt_uname", [](auto a) { cinder_rt_uname_into(address_arg(a[0])); });
+    set("rt_gethostname",
+        [](auto a) { cinder_rt_gethostname_into(address_arg(a[0])); });
+    set("rt_processor_name",
+        [](auto a) { cinder_rt_processor_name_into(address_arg(a[0])); });
+    set("rt_libc_version",
+        [](auto a) { cinder_rt_libc_version_into(address_arg(a[0])); });
+    set("rt_windows_version",
+        [](auto a) { cinder_rt_windows_version_into(address_arg(a[0])); });
+    set("rt_macos_version",
+        [](auto a) { cinder_rt_macos_version_into(address_arg(a[0])); });
+    // A row marked `into` without a handler here would run the older entry
+    // point and treat its heap block as the destination. Refuse to start.
+    for (size_t id = 0; id < handlers.size(); ++id) {
+      if (cinder::intrinsic_builds_into(id) != (handlers.at(id) != nullptr)) {
+        std::abort();
+      }
+    }
+    return handlers;
+  }();
+  return table.at(id);
+}
+
 } // namespace
 
 auto vm::run(uint16_t function_index, std::span<const slot_value> args) const
@@ -2308,6 +2435,33 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
                           cinder::known_intrinsic_names.at(intrinsic_id)));
         }
         f.registers[dst] = k_intrinsics.at(intrinsic_id)(call_args);
+        break;
+      }
+
+      case opcode::op_call_intrinsic_into: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto intrinsic_id = ops.imm8();
+        const auto first_arg = ops.reg();
+        const auto argc = ops.imm8();
+        f.pc = ops.pos();
+        const std::span<const slot_value> call_args(
+            f.registers.data() + first_arg, argc);
+        if (!limits.allow_effects && intrinsic_has_effects(intrinsic_id)) {
+          throw panic_error(
+              panic_reason::effect_refused,
+              std::format("`{}` reaches outside the program, which code run "
+                          "while compiling may not do",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
+        const auto into = into_handler(intrinsic_id);
+        if (into == nullptr) {
+          throw panic_error(
+              panic_reason::host_failed,
+              std::format("`{}` does not build its result in caller storage",
+                          cinder::known_intrinsic_names.at(intrinsic_id)));
+        }
+        // The destination is `call_args[0]`; nothing comes back.
+        into(call_args);
         break;
       }
 

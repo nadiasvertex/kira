@@ -35,6 +35,7 @@ cc_library(
     hdrs = [
         "storage_cases.h",
         "storage_fixture.h",
+        "storage_intrinsic_cases.h",
     ],
     visibility = ["//visibility:public"],
     deps = [

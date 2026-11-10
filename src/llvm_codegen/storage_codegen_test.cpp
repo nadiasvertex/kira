@@ -33,6 +33,7 @@
 #include "src/llvm_codegen/jit_support.h"
 #include "src/llvm_codegen/storage_codegen.h"
 #include "src/testing/storage_cases.h"
+#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
 
@@ -319,6 +320,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
                            llvm_codegen::optimization_level::o2}) {
     auto backend = llvm_backend{level};
     cases::run_all(backend);
+    cases::intrinsic_cases(backend);
   }
 }
 

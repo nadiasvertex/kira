@@ -29,6 +29,8 @@
 #include "src/bytecode/panic.h"
 #include "src/bytecode/value.h"
 #include "src/hir/abi.h"
+#include "src/hir/intrinsic_abi.h"
+#include "src/intrinsics.h"
 #include "src/llvm_codegen/scalar_ops.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/value_layout.h"
@@ -227,6 +229,52 @@ auto add_result_extension(module_context &mc, llvm::Function &function,
     call->addRetAttrs(llvm::AttrBuilder(callee->getContext(), ret_attrs));
   }
   return call;
+}
+
+/// The LLVM type a runtime symbol declares for a parameter or result of
+/// `kind` (`src/intrinsics.h`).
+[[nodiscard]] auto wire_type(llvm::LLVMContext &ctx, cinder::intrinsic_wire_kind kind)
+    -> llvm::Type * {
+  switch (kind) {
+  case cinder::intrinsic_wire_kind::i32:
+    return llvm::Type::getInt32Ty(ctx);
+  case cinder::intrinsic_wire_kind::i64:
+    return llvm::Type::getInt64Ty(ctx);
+  case cinder::intrinsic_wire_kind::f32:
+    return llvm::Type::getFloatTy(ctx);
+  case cinder::intrinsic_wire_kind::f64:
+    return llvm::Type::getDoubleTy(ctx);
+  case cinder::intrinsic_wire_kind::ptr:
+    break;
+  }
+  return llvm::PointerType::get(ctx, 0);
+}
+
+/// The declaration of the runtime symbol for intrinsic `id`, added to the
+/// module the first time a call needs it. An intrinsic that builds its result
+/// in caller storage is called through its `_into` symbol, which takes the
+/// destination first and returns nothing; every other one returns its result
+/// at its wire kind.
+[[nodiscard]] auto runtime_function(module_context &mc, size_t id)
+    -> llvm::Function * {
+  const auto name = cinder::known_intrinsic_names.at(id);
+  const auto into = cinder::intrinsic_builds_into(id);
+  const auto symbol =
+      into ? cinder::intrinsic_into_symbol(name) : "cinder_" + std::string(name);
+  if (auto *existing = mc.module.getFunction(symbol); existing != nullptr) {
+    return existing;
+  }
+  auto params = std::vector<llvm::Type *>{};
+  if (into) {
+    params.push_back(llvm::PointerType::get(mc.ctx, 0));
+  }
+  for (size_t p = 0; p < cinder::known_intrinsic_arities.at(id); ++p) {
+    params.push_back(wire_type(mc.ctx, cinder::known_intrinsic_param_kinds.at(id).at(p)));
+  }
+  auto *result = into ? llvm::Type::getVoidTy(mc.ctx)
+                      : wire_type(mc.ctx, cinder::known_intrinsic_return_kinds.at(id));
+  return llvm::Function::Create(llvm::FunctionType::get(result, params, false),
+                                llvm::Function::ExternalLinkage, symbol, mc.module);
 }
 
 class function_emitter {
@@ -747,6 +795,12 @@ private:
       return fail(codegen_error_kind::unsupported_construct, op.span,
                   "a call through a `fn` value has no llvm_codegen form yet");
     }
+    if (!mc_.functions.contains(op.callee.name)) {
+      if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
+          id.has_value()) {
+        return emit_intrinsic_call(op, *id);
+      }
+    }
     if (op.callee.owner_module.has_value() &&
         *op.callee.owner_module != module_.name) {
       return fail(codegen_error_kind::unsupported_construct, op.span,
@@ -800,6 +854,111 @@ private:
       return store_scalar(*dest, op.dest.type, call);
     }
     return {};
+  }
+
+  /// Calls the runtime's native implementation of intrinsic `id`, after
+  /// checking the call's signature against the symbol (`hir::
+  /// check_intrinsic_signature`). A descriptor or aggregate argument is the
+  /// address of the slot holding it; a scalar crosses at its wire kind; a
+  /// result built in caller storage is written through the destination.
+  [[nodiscard]] auto emit_intrinsic_call(const hir::storage_op &op, size_t id)
+      -> checked<void> {
+    if (const auto problem = hir::check_intrinsic_signature(op.signature, id);
+        problem.has_value()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span, *problem);
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto args = std::vector<llvm::Value *>{};
+    if (op.signature.returns_through_address()) {
+      args.push_back(pointer_at(*dest));
+    }
+    auto position = size_t{0};
+    for (const auto &arg : op.args) {
+      if (arg.cls == pass_class::zero_sized) {
+        continue;
+      }
+      if (hir::is_indirect(arg.cls)) {
+        const auto where = locate(arg.slot);
+        if (!where.has_value()) {
+          return std::unexpected(where.error());
+        }
+        args.push_back(pointer_at(*where));
+      } else {
+        const auto value = operand_value(arg.value);
+        if (!value.has_value()) {
+          return std::unexpected(value.error());
+        }
+        const auto wire = cinder::known_intrinsic_param_kinds.at(id).at(position);
+        const auto converted = to_wire(
+            *value, op.signature.params.at(arg.source_index).type, wire, op.span);
+        if (!converted.has_value()) {
+          return std::unexpected(converted.error());
+        }
+        args.push_back(*converted);
+      }
+      ++position;
+    }
+    auto *call = builder_.CreateCall(runtime_function(mc_, id), args);
+    if (cinder::intrinsic_builds_into(id) ||
+        op.signature.result.cls == pass_class::zero_sized) {
+      return {};
+    }
+    const auto result = from_wire(call, op.dest.type,
+                                  cinder::known_intrinsic_return_kinds.at(id), op.span);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+    return store_scalar(*dest, op.dest.type, *result);
+  }
+
+  /// A scalar argument at the wire kind the runtime symbol declares:
+  /// integers extend from their own signedness, floats pass as they are, and
+  /// an address or handle is already a pointer.
+  [[nodiscard]] auto to_wire(llvm::Value *value, type_id type,
+                             cinder::intrinsic_wire_kind wire,
+                             const source_span &span) -> checked<llvm::Value *> {
+    using wire_kind = cinder::intrinsic_wire_kind;
+    if (wire == wire_kind::ptr || wire == wire_kind::f32 ||
+        wire == wire_kind::f64) {
+      return value;
+    }
+    const auto kind = kind_of(mc_, type, span);
+    if (!kind.has_value()) {
+      return std::unexpected(kind.error());
+    }
+    const auto is_signed = bytecode::is_signed_integer(*kind);
+    const auto target = wire == wire_kind::i32
+                            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
+                            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
+    return scalars_.cast(*kind, target, value);
+  }
+
+  /// A scalar result from the wire kind the runtime symbol returns, as the
+  /// declared Cinder type: a `bool` is the number compared with zero, other
+  /// integers convert from the wire width, and a pointer stays a pointer.
+  [[nodiscard]] auto from_wire(llvm::Value *value, type_id type,
+                               cinder::intrinsic_wire_kind wire,
+                               const source_span &span) -> checked<llvm::Value *> {
+    using wire_kind = cinder::intrinsic_wire_kind;
+    if (wire == wire_kind::ptr || wire == wire_kind::f32 ||
+        wire == wire_kind::f64) {
+      return value;
+    }
+    const auto kind = kind_of(mc_, type, span);
+    if (!kind.has_value()) {
+      return std::unexpected(kind.error());
+    }
+    if (*kind == numeric_kind::boolean) {
+      return builder_.CreateICmpNE(value, llvm::ConstantInt::get(value->getType(), 0));
+    }
+    const auto is_signed = bytecode::is_signed_integer(*kind);
+    const auto source = wire == wire_kind::i32
+                            ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
+                            : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
+    return scalars_.cast(source, *kind, value);
   }
 
   [[nodiscard]] auto emit_return(const hir::storage_op &op) -> checked<void> {

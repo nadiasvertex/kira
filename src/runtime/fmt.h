@@ -31,4 +31,22 @@ auto cinder_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t *;
 auto cinder_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t *;
 auto cinder_rt_bitcast_f64_to_u64(double value) -> uint64_t;
 auto cinder_rt_bitcast_f32_to_u32(float value) -> uint32_t;
+
+// The `_into` entry points: the `str` result is a `{len, data}` descriptor
+// written into the caller's storage (`src/runtime/result_out.h`), and each
+// `str` argument is the address of the caller's own descriptor.
+void cinder_rt_str_concat_into(void *result, const void *a, const void *b);
+void cinder_rt_str_repeat_char_into(void *result, uint32_t codepoint,
+                                    uint64_t count);
+void cinder_rt_str_truncate_scalars_into(void *result, const void *s,
+                                         uint64_t count);
+void cinder_rt_fmt_radix_digits_into(void *result, uint64_t value,
+                                     uint32_t radix, uint32_t uppercase);
+void cinder_rt_fmt_f64_fixed_into(void *result, double value,
+                                  uint64_t precision);
+void cinder_rt_fmt_f64_sci_into(void *result, double value, uint64_t precision,
+                                uint32_t uppercase);
+void cinder_rt_fmt_f64_general_into(void *result, double value,
+                                    uint64_t precision);
+void cinder_rt_fmt_char_from_codepoint_into(void *result, uint32_t codepoint);
 }

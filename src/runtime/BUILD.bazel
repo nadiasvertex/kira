@@ -32,6 +32,7 @@ cc_library(
         "platform.h",
         "platform_query.h",
         "reactor.h",
+        "result_out.h",
         "scheduler.h",
         "string.h",
         "value_layout.h",
@@ -55,6 +56,16 @@ cc_library(
     hdrs = ["string_ops.h"],
     deps = ["//src/utf8"],
     visibility = ["//visibility:public"],
+)
+
+# The `_into` entry points called directly, checked against the host.
+cc_test(
+    name = "result_out_test",
+    srcs = ["result_out_test.cpp"],
+    deps = [
+        ":runtime",
+        "//src/testing",
+    ],
 )
 
 cc_test(

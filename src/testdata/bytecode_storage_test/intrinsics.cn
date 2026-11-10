@@ -1,0 +1,92 @@
+module sample
+use std.intrinsics.{raw_fd, io_errno, raw_pipe, find_result}
+use std.intrinsics.{rt_stdout, rt_close, rt_flush, rt_pipe, rt_set_nonblocking, rt_write, rt_read}
+use std.intrinsics.{rt_str_concat, rt_str_reverse, rt_str_find, rt_str_rfind, rt_str_len_scalars}
+use std.intrinsics.{rt_str_trim, rt_str_replace, rt_str_repeat_char, rt_str_truncate_scalars}
+use std.intrinsics.{rt_str_eq, rt_str_cmp}
+use std.intrinsics.{rt_fmt_radix_digits, rt_fmt_f64_fixed, rt_fmt_f64_sci, rt_fmt_f64_general}
+use std.intrinsics.{rt_fmt_char_from_codepoint, rt_errno_would_block}
+
+# A result that is returned as it arrives: the runtime writes it where the
+# caller's caller asked for it.
+def stdout_value() -> raw_fd:
+    return rt_stdout()
+
+# A field of an aggregate result, read from the local it was built in.
+def stdout_number() -> int64:
+    let fd = rt_stdout()
+    return fd.value
+
+def close_fd(fd: int64) -> result[unit, io_errno]:
+    return rt_close(raw_fd { value: fd })
+
+def flush_fd(fd: int64) -> result[unit, io_errno]:
+    return rt_flush(raw_fd { value: fd })
+
+# The result is never looked at, only the effect.
+def discard_close(fd: int64) -> int64:
+    rt_close(raw_fd { value: fd })
+    return 7
+
+def make_pipe() -> result[raw_pipe, io_errno]:
+    return rt_pipe()
+
+def nonblocking(fd: int64) -> result[unit, io_errno]:
+    return rt_set_nonblocking(raw_fd { value: fd })
+
+def write_bytes(fd: int64, buf: slice[byte]) -> result[usize, io_errno]:
+    return rt_write(raw_fd { value: fd }, buf)
+
+def read_bytes(fd: int64, buf: slice_mut[byte]) -> result[usize, io_errno]:
+    return rt_read(raw_fd { value: fd }, buf)
+
+def would_block() -> int32:
+    return rt_errno_would_block()
+
+def reverse(s: str) -> str:
+    return rt_str_reverse(s)
+
+def concat(a: str, b: str) -> str:
+    return rt_str_concat(a, b)
+
+def find(haystack: str, needle: str, from: usize) -> find_result:
+    return rt_str_find(haystack, needle, from)
+
+def rfind(haystack: str, needle: str) -> find_result:
+    return rt_str_rfind(haystack, needle)
+
+def length(s: str) -> usize:
+    return rt_str_len_scalars(s)
+
+def same(a: str, b: str) -> bool:
+    return rt_str_eq(a, b)
+
+def compare(a: str, b: str) -> int32:
+    return rt_str_cmp(a, b)
+
+def trim(s: str, mode: uint8) -> str:
+    return rt_str_trim(s, mode)
+
+def replace(s: str, from: str, to: str) -> str:
+    return rt_str_replace(s, from, to)
+
+def repeat(c: uint32, n: usize) -> str:
+    return rt_str_repeat_char(c, n)
+
+def truncate(s: str, n: usize) -> str:
+    return rt_str_truncate_scalars(s, n)
+
+def radix(value: uint64, base: uint8, upper: bool) -> str:
+    return rt_fmt_radix_digits(value, base, upper)
+
+def fixed(value: float64, precision: usize) -> str:
+    return rt_fmt_f64_fixed(value, precision)
+
+def scientific(value: float64, precision: usize, upper: bool) -> str:
+    return rt_fmt_f64_sci(value, precision, upper)
+
+def general(value: float64, precision: usize) -> str:
+    return rt_fmt_f64_general(value, precision)
+
+def codepoint(c: uint32) -> str:
+    return rt_fmt_char_from_codepoint(c)

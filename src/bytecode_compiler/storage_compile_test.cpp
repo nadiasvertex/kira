@@ -21,6 +21,7 @@
 #include "src/bytecode/vm.h"
 #include "src/bytecode_compiler/storage_compile.h"
 #include "src/testing/storage_cases.h"
+#include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
 
@@ -221,6 +222,7 @@ auto test_entry_points_check_the_result_storage() -> void {
 auto main() -> int {
   auto backend = bytecode_backend{};
   cases::run_all(backend);
+  cases::intrinsic_cases(backend);
   test_compiled_code_has_no_allocation_instruction();
   test_function_metadata_describes_the_calling_convention();
   test_entry_points_check_the_result_storage();

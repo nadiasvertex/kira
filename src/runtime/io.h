@@ -41,6 +41,25 @@ auto cinder_rt_pipe() -> uint64_t *;
 auto cinder_rt_set_nonblocking(uint64_t *fd) -> uint64_t *;
 /// The host's `EAGAIN` code, which differs between Linux and macOS.
 auto cinder_rt_errno_would_block() -> int32_t;
+
+// The `_into` entry points (`src/intrinsics.h`, `intrinsic_signature::into`):
+// `result` is the address of storage the caller owns, sized and aligned for the
+// declared result type, which the function fills completely (every byte, so
+// padding is zero) instead of returning a heap block. Descriptor and
+// aggregate arguments are addresses of the caller's own bytes in the layout
+// of `src/runtime/value_layout.h`, borrowed for the call. `result[T,
+// io_errno]` is `{tag: u64, payload}` with the payload at offset 8; see
+// `src/runtime/result_out.h` for every shape.
+void cinder_rt_stdin_into(void *result);
+void cinder_rt_stdout_into(void *result);
+void cinder_rt_stderr_into(void *result);
+void cinder_rt_open_into(void *result, const void *path, const void *opts);
+void cinder_rt_close_into(void *result, const void *fd);
+void cinder_rt_read_into(void *result, const void *fd, const void *buf);
+void cinder_rt_write_into(void *result, const void *fd, const void *buf);
+void cinder_rt_flush_into(void *result, const void *fd);
+void cinder_rt_pipe_into(void *result);
+void cinder_rt_set_nonblocking_into(void *result, const void *fd);
 /// Writes `msg` (a `str` header) to stderr and terminates the process. The
 /// only intrinsic that does not return; its `uint64_t *` result exists solely
 /// so it shares the uniform intrinsic ABI the two backends emit calls under.

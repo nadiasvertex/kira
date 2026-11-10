@@ -8,6 +8,7 @@ cc_library(
         "drop_schedule.cpp",
         "frame_budget.cpp",
         "inline.cpp",
+        "intrinsic_abi.cpp",
         "link.cpp",
         "live_across_yield.cpp",
         "lower.cpp",
@@ -24,6 +25,7 @@ cc_library(
         "frame_budget.h",
         "ids.h",
         "inline.h",
+        "intrinsic_abi.h",
         "link.h",
         "live_across_yield.h",
         "lower.h",
@@ -47,6 +49,15 @@ cc_library(
         "//src/util",
     ],
     visibility = ["//visibility:public"],
+)
+
+cc_test(
+    name = "intrinsic_abi_test",
+    srcs = ["intrinsic_abi_test.cpp"],
+    deps = [
+        ":hir",
+        "//src/testing",
+    ],
 )
 
 cc_test(

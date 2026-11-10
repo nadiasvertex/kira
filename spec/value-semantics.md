@@ -15,8 +15,9 @@ This is an implementation plan. T-01 is complete (findings in
 [value-semantics-t01-findings.md](value-semantics-t01-findings.md)), T-02 is
 complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
 `while` to the storage form, and T-05 and T-06 are partly done (storage-form
-bytecode and LLVM compilers exist but are not wired into the driver); status is
-under each task below. T-07 through T-14 have not been implemented.
+bytecode and LLVM compilers exist but are not wired into the driver), and T-07
+is partly done (runtime intrinsics write results into caller storage); status is
+under each task below. T-08 through T-14 have not been implemented.
 
 ## Objectives & Scope
 
@@ -807,6 +808,45 @@ runtime wrappers still use the old compiler; the driver switch.
 ### T-07 — Migrate runtime intrinsic boundaries
 
 **Goal:** Remove runtime-created wrapper leaks as well as compiler-created ones.
+
+**Status: partly done (2026-11-10).** Intrinsics whose result is a `result`,
+`str`, or other aggregate now have a second runtime entry point that writes into
+caller storage, and both storage-form compilers call it. The old entry points
+stay until T-14 because the typed-HIR compilers still call them. Done:
+
+- Metadata: `intrinsic_signature::into` marks 29 rows in `src/intrinsics.h`
+  (stdio handles, open/close/read/write/flush, pipe, set_nonblocking, the string
+  and formatting functions that return a `str` or `find_result`, and the six
+  platform queries). `rt_str_len_scalars`, `rt_str_eq`, and `rt_str_cmp` return
+  scalars and are unchanged. `intrinsic_into_symbol` names the symbol
+  `cinder_<name>_into`.
+- Runtime: each `_into` function takes the destination first, returns `void`,
+  and writes every byte of the result, padding zero. A `str` allocates only its
+  data bytes, and an empty one allocates nothing. Layout constants live in
+  `src/runtime/result_out.h`; `value_layout_test` checks them against the
+  compiler's layouts. The legacy and `_into` functions share their cores
+  (`io.cpp`, `fmt.cpp`).
+- VM: `op_call_intrinsic_into` passes the destination address as the first
+  argument register; its handler table is built by name and aborts if a row's
+  `into` flag and its handler disagree. `op_call_intrinsic` is unchanged.
+- LLVM: the `_into` symbol is declared on first use with a `ptr` first
+  parameter and a `void` return.
+- Validation: `hir::check_intrinsic_signature` compares a call's `abi_signature`
+  with the symbol (result in a register or in storage, parameter count, scalar
+  width, pointer parameters). Both storage compilers run it and refuse a
+  mismatch.
+- Tests: `src/testing/storage_intrinsic_cases.h` runs on both backends (success
+  and `EBADF`/`EAGAIN` paths, a pipe round trip, 500 repeated pipe and string
+  calls with zero net heap blocks, one allocation per non-empty `str`, none for an
+  empty one); `result_out_test` calls the entry points directly against the host;
+  `intrinsic_abi_test` covers the signature check. Mutation checks (error code
+  off by one, extra allocation, swapped `uname` fields, disabled signature check)
+  each failed a test.
+
+Not done: asynchronous reactor, scheduler, and coroutine adapters; `match` and
+string literals in the storage lowerer (so the fixtures call the intrinsics
+directly); reading a field of a call result without a local; removing the
+legacy wrapper-allocating symbols (T-14); the driver switch; the inline atomics.
 
 1. Extend intrinsic wire metadata for explicit output destinations and inline view
    arguments; update signature validation and declarations.

@@ -10,6 +10,7 @@
 #include "src/parser/lexer.h"
 #include "src/parser/parser.h"
 #include "src/parser/source_location.h"
+#include "src/runtime/result_out.h"
 #include "src/runtime/value_layout.h"
 #include "src/semantic/aggregate_shape.h"
 #include "src/semantic/check.h"
@@ -535,6 +536,87 @@ auto test_checked_sum_layouts() -> void {
                     "result[int32, str]");
 }
 
+/// The shapes the runtime writes through `src/runtime/result_out.h` must be the
+/// layouts the compiler computes for the matching declarations
+/// (`runtime_results.cn` mirrors `src/std/intrinsics.cn`). The runtime cannot
+/// ask the compiler at run time, so this test is what ties them together.
+auto test_runtime_result_shapes_match_the_compiler() -> void {
+  namespace out = runtime::out;
+  auto fixture = check_fixture(read_program("runtime_results.cn"));
+  auto layouts =
+      runtime::value_layouts{fixture.checked.types, fixture.checked.shapes};
+
+  expect(out::k_result_tag_size == runtime::k_sum_tag_size,
+         "expected the runtime to use the compiler's tag size");
+  expect(out::k_descriptor_size == runtime::k_descriptor_size &&
+             out::k_descriptor_data_offset == runtime::k_descriptor_data_offset,
+         "expected the runtime to use the compiler's descriptor layout");
+
+  expect_size_align(layouts, find_type(fixture, "raw_fd"), out::k_raw_fd_size,
+                    8, "raw_fd");
+  expect_size_align(layouts, find_type(fixture, "io_errno"),
+                    out::k_io_errno_size, 4, "io_errno");
+  const auto find = *layouts.layout(find_type(fixture, "find_result"));
+  expect(find->size == out::k_find_result_size &&
+             find->find_field("found")->offset == 0 &&
+             find->find_field("found")->size == 1 &&
+             find->find_field("pos")->offset == out::k_find_pos_offset,
+         "expected find_result to be a flag byte then a word at 8");
+
+  // Each `result[T, io_errno]`: the payload size the runtime assumes, and
+  // that both variants place their payload at the same offset.
+  const auto expect_result = [&](std::string_view spelling,
+                                 size_t payload_size) {
+    const auto name = std::string(spelling);
+    const auto layout = *layouts.layout(find_type(fixture, spelling));
+    expect(layout->size == out::result_size(payload_size) && layout->align == 8,
+           name + " has size " + std::to_string(layout->size) + ", expected " +
+               std::to_string(out::result_size(payload_size)));
+    expect(layout->tag_offset == 0 &&
+               layout->payload_offset == out::k_result_payload_offset,
+           name + " places its payload at the end of the tag");
+    const auto *ok = layout->find_variant("ok");
+    const auto *err = layout->find_variant("err");
+    expect(ok != nullptr && err != nullptr, name + " has ok and err");
+    expect(ok->tag == static_cast<int64_t>(out::k_result_ok_tag) &&
+               err->tag == static_cast<int64_t>(out::k_result_err_tag),
+           name + " numbers ok 0 and err 1");
+    expect(ok->payload.size() == 1 && ok->payload[0].size == payload_size &&
+               ok->payload[0].offset == out::k_result_payload_offset,
+           name + " ok payload");
+    expect(err->payload.size() == 1 &&
+               err->payload[0].size == out::k_io_errno_size &&
+               err->payload[0].offset == out::k_result_payload_offset,
+           name + " err payload");
+  };
+  expect_result("result[raw_fd, io_errno]", out::k_raw_fd_size);
+  expect_result("result[usize, io_errno]", 8);
+  expect_result("result[raw_pipe, io_errno]", 16);
+  expect_result("result[str, io_errno]", out::k_descriptor_size);
+  expect_result("result[uname_raw, io_errno]", 5 * out::k_descriptor_size);
+  expect_result("result[libc_version, io_errno]", 2 * out::k_descriptor_size);
+  expect_result("result[winver_raw, io_errno]", 32);
+  // `unit` takes no bytes, but the error payload still sets the size.
+  expect_result("result[unit, io_errno]", 0);
+  expect(out::k_result_unit_size == out::result_size(0) &&
+             out::k_result_word_size == out::result_size(8) &&
+             out::k_result_str_size == out::result_size(16),
+         "expected the named result sizes to follow result_size");
+
+  // `winver_raw`: four words of 4 bytes, then the string at 16.
+  const auto winver = *layouts.layout(find_type(fixture, "winver_raw"));
+  expect(winver->find_field("major")->offset == 0 &&
+             winver->find_field("minor")->offset == 4 &&
+             winver->find_field("build")->offset == 8 &&
+             winver->find_field("platform_id")->offset == 12 &&
+             winver->find_field("csd_version")->offset == 16,
+         "expected winver_raw fields at 0, 4, 8, 12 and 16");
+  const auto pipe = *layouts.layout(find_type(fixture, "raw_pipe"));
+  expect(pipe->find_field("read")->offset == 0 &&
+             pipe->find_field("write")->offset == 8,
+         "expected raw_pipe ends at 0 and 8");
+}
+
 auto test_checked_packed_and_zero_sized() -> void {
   auto fixture = check_fixture(read_program("packed_and_zero_sized.cn"));
   auto layouts =
@@ -600,6 +682,7 @@ auto main() -> int {
   test_oversized_layouts_are_rejected();
   test_checked_generic_nesting();
   test_checked_sum_layouts();
+  test_runtime_result_shapes_match_the_compiler();
   test_checked_packed_and_zero_sized();
   test_checked_pointer_cycle_is_finite();
   test_checked_inline_cycles();

@@ -25,4 +25,17 @@ auto cinder_rt_str_reverse(uint64_t *s) -> uint64_t *;
 auto cinder_rt_str_trim(uint64_t *s, uint32_t mode) -> uint64_t *;
 auto cinder_rt_str_replace(uint64_t *s, uint64_t *from, uint64_t *to)
     -> uint64_t *;
+
+// The `_into` entry points: the result is built in the caller's storage
+// (`src/runtime/result_out.h`), and each `str` argument is the address of the
+// caller's own `{len, data}` descriptor. `find_result` is
+// `{found: bool @0, pos: usize @8}`.
+void cinder_rt_str_find_into(void *result, const void *haystack,
+                             const void *needle, uint64_t from);
+void cinder_rt_str_rfind_into(void *result, const void *haystack,
+                              const void *needle);
+void cinder_rt_str_reverse_into(void *result, const void *s);
+void cinder_rt_str_trim_into(void *result, const void *s, uint32_t mode);
+void cinder_rt_str_replace_into(void *result, const void *s, const void *from,
+                                const void *to);
 }

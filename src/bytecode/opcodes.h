@@ -516,6 +516,17 @@ enum class opcode : uint8_t {
                         ///< compiler has shown do not overlap, but the copy is
                         ///< a `memmove` so a mistake there cannot corrupt
                         ///< bytes silently. Does nothing for a zero count.
+  op_call_intrinsic_into, ///< u8 intrinsic_id, u16 first_arg_reg, u8 argc —
+                        ///< calls an intrinsic marked `into` in
+                        ///< `src/intrinsics.h`, whose result is built in
+                        ///< caller storage. reg[first_arg_reg] holds the
+                        ///< destination address and the following registers
+                        ///< the parameters: a scalar in its register, a
+                        ///< descriptor or aggregate as the address of the
+                        ///< caller's bytes. Nothing comes back. The storage
+                        ///< compiler's counterpart of `op_call_intrinsic`,
+                        ///< which the older compiler keeps for the
+                        ///< heap-block symbols.
 };
 
 // ==========================================================================
@@ -708,6 +719,8 @@ struct operand_signature {
     return sig({reg, reg, reg});
   case opcode::op_copy_bytes:
     return sig({reg, reg, imm32});
+  case opcode::op_call_intrinsic_into:
+    return sig({imm8, reg, imm8});
   }
   return operand_signature{};
 }

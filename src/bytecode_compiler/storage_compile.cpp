@@ -15,6 +15,8 @@
 #include "src/bytecode_compiler/register_alloc.h"
 #include "src/bytecode_compiler/scalar_encoding.h"
 #include "src/hir/abi.h"
+#include "src/hir/intrinsic_abi.h"
+#include "src/intrinsics.h"
 #include "src/runtime/aligned_buffer.h"
 #include "src/runtime/value_layout.h"
 
@@ -896,6 +898,12 @@ private:
       return fail(compile_error_kind::unsupported_construct, op.span,
                   "a call through a `fn` value has no bytecode form yet");
     }
+    if (!index_.contains(op.callee.name)) {
+      if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
+          id.has_value()) {
+        return emit_intrinsic_call(op, *id);
+      }
+    }
     if (op.callee.owner_module.has_value() &&
         *op.callee.owner_module != module_.name) {
       return fail(compile_error_kind::unsupported_construct, op.span,
@@ -910,19 +918,96 @@ private:
                               op.callee.name));
     }
     const auto operands = op.signature.operands();
-    if (operands.size() > UINT8_MAX) {
-      return fail(compile_error_kind::encoding_limit_exceeded, op.span,
-                  std::format("a call passes more than {} operands", UINT8_MAX));
+    const auto block = fill_call_block(op, operands.size());
+    if (!block.has_value()) {
+      return std::unexpected(block.error());
     }
-    const auto block = operands.empty()
-                           ? alloc_register()
-                           : alloc_group(static_cast<uint32_t>(operands.size()));
-    auto position = size_t{0};
     const auto dest = locate(op.dest);
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
+    // A direct result comes back in a register: straight into the destination
+    // when that is one, otherwise through a temporary stored afterwards.
+    const auto direct_result =
+        !op.signature.returns_through_address() &&
+        op.signature.result.cls != pass_class::zero_sized;
+    const auto result =
+        direct_result && dest->where == location::kind::reg ? dest->reg
+                                                            : alloc_register();
+    emit_op(opcode::op_call);
+    emit_register(result);
+    writer_.emit_u16(found->second);
+    emit_register(*block);
+    writer_.emit_u8(static_cast<uint8_t>(operands.size()));
+    if (direct_result && dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, result);
+    }
+    return {};
+  }
+
+  /// Calls the runtime's native implementation of intrinsic `id`. The call's
+  /// signature is checked against the symbol first (`hir::
+  /// check_intrinsic_signature`). A result built in caller storage uses
+  /// `op_call_intrinsic_into`, whose first argument register is the
+  /// destination address; any other result comes back in a register.
+  [[nodiscard]] auto emit_intrinsic_call(const hir::storage_op &op, size_t id)
+      -> checked<void> {
+    if (const auto problem = hir::check_intrinsic_signature(op.signature, id);
+        problem.has_value()) {
+      return fail(compile_error_kind::internal_error, op.span, *problem);
+    }
+    const auto operand_count = op.signature.operands().size();
+    const auto block = fill_call_block(op, operand_count);
+    if (!block.has_value()) {
+      return std::unexpected(block.error());
+    }
+    if (cinder::intrinsic_builds_into(id)) {
+      emit_op(opcode::op_call_intrinsic_into);
+      writer_.emit_u8(static_cast<uint8_t>(id));
+      emit_register(*block);
+      writer_.emit_u8(static_cast<uint8_t>(operand_count));
+      return {};
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto direct_result =
+        op.signature.result.cls != pass_class::zero_sized;
+    const auto result =
+        direct_result && dest->where == location::kind::reg ? dest->reg
+                                                            : alloc_register();
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(result);
+    writer_.emit_u8(static_cast<uint8_t>(id));
+    emit_register(*block);
+    writer_.emit_u8(static_cast<uint8_t>(operand_count));
+    if (direct_result && dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, result);
+    }
+    return {};
+  }
+
+  /// Reserves `count` consecutive registers and fills them with the call's
+  /// operands in signature order: the destination address when the result is
+  /// built in caller storage, then each argument (a scalar or address in its
+  /// register, a descriptor or aggregate as the address of the slot holding
+  /// it).
+  [[nodiscard]] auto fill_call_block(const hir::storage_op &op, size_t count)
+      -> checked<virtual_reg> {
+    if (count > UINT8_MAX) {
+      return fail(compile_error_kind::encoding_limit_exceeded, op.span,
+                  std::format("a call passes more than {} operands", UINT8_MAX));
+    }
+    const auto block = count == 0
+                           ? alloc_register()
+                           : alloc_group(static_cast<uint32_t>(count));
+    auto position = size_t{0};
     if (op.signature.returns_through_address()) {
+      const auto dest = locate(op.dest);
+      if (!dest.has_value()) {
+        return std::unexpected(dest.error());
+      }
       const auto address = address_of(*dest);
       if (!address.has_value()) {
         return std::unexpected(address.error());
@@ -952,23 +1037,7 @@ private:
         emit_move(slot, *value);
       }
     }
-    // A direct result comes back in a register: straight into the destination
-    // when that is one, otherwise through a temporary stored afterwards.
-    const auto direct_result =
-        !op.signature.returns_through_address() &&
-        op.signature.result.cls != pass_class::zero_sized;
-    const auto result =
-        direct_result && dest->where == location::kind::reg ? dest->reg
-                                                            : alloc_register();
-    emit_op(opcode::op_call);
-    emit_register(result);
-    writer_.emit_u16(found->second);
-    emit_register(block);
-    writer_.emit_u8(static_cast<uint8_t>(operands.size()));
-    if (direct_result && dest->where == location::kind::memory) {
-      return write_location(*dest, op.dest.type, result);
-    }
-    return {};
+    return block;
   }
 
   [[nodiscard]] auto emit_return(const hir::storage_op &op) -> checked<void> {

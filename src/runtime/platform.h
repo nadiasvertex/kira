@@ -25,4 +25,14 @@ auto cinder_rt_processor_name() -> uint64_t *;
 auto cinder_rt_libc_version() -> uint64_t *;
 auto cinder_rt_windows_version() -> uint64_t *;
 auto cinder_rt_macos_version() -> uint64_t *;
+
+// The `_into` entry points: the `result[T, io_errno]` is built in the caller's
+// storage (`src/runtime/result_out.h`), each `str` member an inline
+// descriptor. `winver_raw` is four `uint32` at 0, 4, 8, 12 and a `str` at 16.
+void cinder_rt_uname_into(void *result);
+void cinder_rt_gethostname_into(void *result);
+void cinder_rt_processor_name_into(void *result);
+void cinder_rt_libc_version_into(void *result);
+void cinder_rt_windows_version_into(void *result);
+void cinder_rt_macos_version_into(void *result);
 }

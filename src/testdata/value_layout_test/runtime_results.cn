@@ -1,0 +1,34 @@
+module sample
+type raw_fd = { value: int64 }
+type io_errno = { code: int32 }
+type raw_pipe = { read: int64, write: int64 }
+type find_result = { found: bool, pos: usize }
+type uname_raw = {
+    sysname: str,
+    nodename: str,
+    release: str,
+    version: str,
+    machine_arch: str,
+}
+type winver_raw = {
+    major: uint32,
+    minor: uint32,
+    build: uint32,
+    platform_id: uint32,
+    csd_version: str,
+}
+type libc_version = { name: str, version: str }
+def main(
+    a: raw_fd,
+    b: result[raw_fd, io_errno],
+    c: result[unit, io_errno],
+    d: result[usize, io_errno],
+    e: result[raw_pipe, io_errno],
+    f: result[str, io_errno],
+    g: result[uname_raw, io_errno],
+    h: result[libc_version, io_errno],
+    i: result[winver_raw, io_errno],
+    j: find_result,
+    k: io_errno,
+) -> int32:
+    return 0

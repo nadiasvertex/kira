@@ -10,6 +10,7 @@
 #include <string_view>
 
 #include "src/runtime/allocator.h"
+#include "src/runtime/result_out.h"
 #include "src/utf8/utf8.h"
 
 namespace {
@@ -57,14 +58,115 @@ namespace {
   return out;
 }
 
+// The text each formatting intrinsic produces. The heap-block entry points and
+// the `_into` ones below both call these.
+
+[[nodiscard]] auto concat_text(std::string_view a, std::string_view b)
+    -> std::string {
+  auto text = std::string(a);
+  text += b;
+  return text;
+}
+
+[[nodiscard]] auto repeat_text(uint32_t codepoint, uint64_t count)
+    -> std::string {
+  std::string one;
+  cinder::encode_utf8_scalar(codepoint, one);
+  std::string text;
+  text.reserve(one.size() * static_cast<size_t>(count));
+  for (uint64_t i = 0; i < count; ++i) {
+    text += one;
+  }
+  return text;
+}
+
+[[nodiscard]] auto truncate_text(std::string_view view, uint64_t count)
+    -> std::string_view {
+  size_t pos = 0;
+  uint64_t seen = 0;
+  while (seen < count && pos < view.size()) {
+    if (!cinder::decode_utf8_scalar(view, pos).has_value()) {
+      break;
+    }
+    ++seen;
+  }
+  return view.substr(0, pos);
+}
+
+[[nodiscard]] auto radix_text(uint64_t value, uint32_t radix, bool upper)
+    -> std::string {
+  if (value == 0) {
+    return "0";
+  }
+  static constexpr std::string_view lower_digits = "0123456789abcdef";
+  static constexpr std::string_view upper_digits = "0123456789ABCDEF";
+  const auto &digits = upper ? upper_digits : lower_digits;
+  std::string text;
+  uint64_t rest = value;
+  while (rest > 0) {
+    text.push_back(digits[rest % radix]);
+    rest /= radix;
+  }
+  std::ranges::reverse(text);
+  return text;
+}
+
+[[nodiscard]] auto fixed_text(double value, uint64_t precision) -> std::string {
+  std::array<char, 512> buf{};
+  const auto result =
+      std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                    std::chars_format::fixed, static_cast<int>(precision));
+  if (result.ec != std::errc{}) {
+    return "0";
+  }
+  return std::string(buf.data(), result.ptr);
+}
+
+[[nodiscard]] auto scientific_text(double value, uint64_t precision, bool upper)
+    -> std::string {
+  std::array<char, 512> buf{};
+  const auto result =
+      std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                    std::chars_format::scientific, static_cast<int>(precision));
+  if (result.ec != std::errc{}) {
+    return "0";
+  }
+  auto tidy =
+      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr));
+  if (upper) {
+    for (auto &c : tidy) {
+      if (c == 'e') {
+        c = 'E';
+      }
+    }
+  }
+  return tidy;
+}
+
+[[nodiscard]] auto general_text(double value, uint64_t precision)
+    -> std::string {
+  std::array<char, 512> buf{};
+  const auto result =
+      std::to_chars(buf.data(), buf.data() + buf.size(), value,
+                    std::chars_format::general, static_cast<int>(precision));
+  if (result.ec != std::errc{}) {
+    return "0";
+  }
+  return tidy_scientific_exponent(std::string_view(buf.data(), result.ptr));
+}
+
+[[nodiscard]] auto codepoint_text(uint32_t codepoint) -> std::string {
+  std::string text;
+  cinder::encode_utf8_scalar(codepoint, text);
+  return text;
+}
+
 } // namespace
 
 extern "C" {
 
 auto cinder_rt_str_concat(uint64_t *a, uint64_t *b) -> uint64_t * {
-  auto out = std::string(view_of(a));
-  out += view_of(b);
-  return make_str(out);
+  return make_str(concat_text(view_of(a), view_of(b)));
 }
 
 auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
@@ -82,97 +184,79 @@ auto cinder_rt_str_len_scalars(uint64_t *s) -> uint64_t {
 
 auto cinder_rt_str_repeat_char(uint32_t codepoint, uint64_t count)
     -> uint64_t * {
-  std::string one;
-  cinder::encode_utf8_scalar(codepoint, one);
-  std::string out;
-  out.reserve(one.size() * static_cast<size_t>(count));
-  for (uint64_t i = 0; i < count; ++i) {
-    out += one;
-  }
-  return make_str(out);
+  return make_str(repeat_text(codepoint, count));
 }
 
 auto cinder_rt_str_truncate_scalars(uint64_t *s, uint64_t count) -> uint64_t * {
-  const auto view = view_of(s);
-  size_t pos = 0;
-  uint64_t seen = 0;
-  while (seen < count && pos < view.size()) {
-    if (!cinder::decode_utf8_scalar(view, pos).has_value()) {
-      break;
-    }
-    ++seen;
-  }
-  return make_str(view.substr(0, pos));
+  return make_str(truncate_text(view_of(s), count));
 }
 
 auto cinder_rt_fmt_radix_digits(uint64_t value, uint32_t radix,
                                 uint32_t uppercase) -> uint64_t * {
-  const bool upper = uppercase != 0;
-  if (value == 0) {
-    return make_str("0");
-  }
-  static constexpr std::string_view lower_digits = "0123456789abcdef";
-  static constexpr std::string_view upper_digits = "0123456789ABCDEF";
-  const auto &digits = upper ? upper_digits : lower_digits;
-  std::string out;
-  uint64_t rest = value;
-  while (rest > 0) {
-    out.push_back(digits[rest % radix]);
-    rest /= radix;
-  }
-  std::ranges::reverse(out);
-  return make_str(out);
+  return make_str(radix_text(value, radix, uppercase != 0));
 }
 
 auto cinder_rt_fmt_f64_fixed(double value, uint64_t precision) -> uint64_t * {
-  const auto prec = static_cast<int>(precision);
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::fixed, prec);
-  if (result.ec != std::errc{}) {
-    return make_str("0");
-  }
-  return make_str(std::string_view(buf.data(), result.ptr));
+  return make_str(fixed_text(value, precision));
 }
 
 auto cinder_rt_fmt_f64_sci(double value, uint64_t precision, uint32_t uppercase)
     -> uint64_t * {
-  const auto prec = static_cast<int>(precision);
-  const bool upper = uppercase != 0;
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::scientific, prec);
-  if (result.ec != std::errc{}) {
-    return make_str("0");
-  }
-  auto tidy =
-      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr));
-  if (upper) {
-    for (auto &c : tidy) {
-      if (c == 'e') {
-        c = 'E';
-      }
-    }
-  }
-  return make_str(tidy);
+  return make_str(scientific_text(value, precision, uppercase != 0));
 }
 
 auto cinder_rt_fmt_f64_general(double value, uint64_t precision) -> uint64_t * {
-  const auto prec = static_cast<int>(precision);
-  std::array<char, 512> buf{};
-  const auto result = std::to_chars(buf.data(), buf.data() + buf.size(), value,
-                                    std::chars_format::general, prec);
-  if (result.ec != std::errc{}) {
-    return make_str("0");
-  }
-  return make_str(
-      tidy_scientific_exponent(std::string_view(buf.data(), result.ptr)));
+  return make_str(general_text(value, precision));
 }
 
 auto cinder_rt_fmt_char_from_codepoint(uint32_t codepoint) -> uint64_t * {
-  std::string out;
-  cinder::encode_utf8_scalar(codepoint, out);
-  return make_str(out);
+  return make_str(codepoint_text(codepoint));
+}
+
+// The `_into` entry points (see `src/runtime/result_out.h`): the `str` result
+// is a descriptor written into the caller's storage; its bytes are the only
+// allocation. A `str` argument is the address of the caller's descriptor.
+
+void cinder_rt_str_concat_into(void *result, const void *a, const void *b) {
+  namespace out = cinder::runtime::out;
+  out::store_str(result, 0, concat_text(out::view_of(a), out::view_of(b)));
+}
+
+void cinder_rt_str_repeat_char_into(void *result, uint32_t codepoint,
+                                    uint64_t count) {
+  cinder::runtime::out::store_str(result, 0, repeat_text(codepoint, count));
+}
+
+void cinder_rt_str_truncate_scalars_into(void *result, const void *s,
+                                         uint64_t count) {
+  namespace out = cinder::runtime::out;
+  out::store_str(result, 0, truncate_text(out::view_of(s), count));
+}
+
+void cinder_rt_fmt_radix_digits_into(void *result, uint64_t value,
+                                     uint32_t radix, uint32_t uppercase) {
+  cinder::runtime::out::store_str(result, 0,
+                                  radix_text(value, radix, uppercase != 0));
+}
+
+void cinder_rt_fmt_f64_fixed_into(void *result, double value,
+                                  uint64_t precision) {
+  cinder::runtime::out::store_str(result, 0, fixed_text(value, precision));
+}
+
+void cinder_rt_fmt_f64_sci_into(void *result, double value, uint64_t precision,
+                                uint32_t uppercase) {
+  cinder::runtime::out::store_str(
+      result, 0, scientific_text(value, precision, uppercase != 0));
+}
+
+void cinder_rt_fmt_f64_general_into(void *result, double value,
+                                    uint64_t precision) {
+  cinder::runtime::out::store_str(result, 0, general_text(value, precision));
+}
+
+void cinder_rt_fmt_char_from_codepoint_into(void *result, uint32_t codepoint) {
+  cinder::runtime::out::store_str(result, 0, codepoint_text(codepoint));
 }
 
 // Reinterprets a float's bit pattern as an equal-width unsigned integer
