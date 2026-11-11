@@ -674,6 +674,8 @@ private:
       return emit_generator_resume(op);
     case op_kind::generator_take:
       return emit_generator_take(op);
+    case op_kind::coroutine_has_item:
+      return emit_coroutine_has_item(op);
     case op_kind::coroutine_dispatch:
       return emit_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
@@ -1314,6 +1316,8 @@ private:
       return std::unexpected(object.error());
     }
     auto *item = load_word(ptr_type(), *object, co::k_value_slot);
+    // The item is now the taker's: the coroutine no longer holds one.
+    store_word(*object, co::k_value_slot, constant(i64(), 0));
     auto dest = locate(op.dest);
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
@@ -1471,6 +1475,23 @@ private:
     }
     builder_.CreateCall(runtime_function(mc_, *id), *arguments);
     return {};
+  }
+
+  /// `has_item dest = source`: whether the value word holds an item address.
+  [[nodiscard]] auto emit_coroutine_has_item(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto *item = load_word(i64(), *object, co::k_value_slot);
+    auto *held = builder_.CreateICmpNE(item, constant(i64(), 0));
+    return store_scalar(*dest, op.dest.type, held);
   }
 
   [[nodiscard]] auto emit_coroutine_cancelled(const hir::storage_op &op)

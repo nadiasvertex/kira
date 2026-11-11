@@ -79,6 +79,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "resume";
   case op_kind::generator_take:
     return "take";
+  case op_kind::coroutine_has_item:
+    return "has_item";
   case op_kind::coroutine_dispatch:
     return "dispatch";
   case op_kind::coroutine_suspend:
@@ -289,6 +291,9 @@ namespace {
     return "resume " + render_place(op.dest) + " = " + render_place(op.source);
   case op_kind::generator_take:
     return "take " + render_place(op.dest) + " <- " + render_place(op.source);
+  case op_kind::coroutine_has_item:
+    return "has_item " + render_place(op.dest) + " = " +
+           render_place(op.source);
   case op_kind::coroutine_dispatch:
     return "dispatch " + render_place(op.source) + " of " +
            std::to_string(op.depth);

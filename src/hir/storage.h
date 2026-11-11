@@ -43,7 +43,7 @@ namespace cinder::hir {
 /// concrete layouts, and the two ownership facts that decide how a value is
 /// transferred. Holds references; both must outlive it.
 struct storage_env {
-  const semantic::checked_types &checked;
+  semantic::checked_types &checked;
   runtime::value_layouts &layouts;
 
   /// Whether a value of `type` is copied rather than moved.
@@ -221,7 +221,11 @@ enum class op_kind : uint8_t {
   generator_resume, ///< `dest` (a `uint64`) <- the status after resuming the
                     ///< generator at `source` once.
   generator_take,   ///< `dest` <- the item the generator at `source` last
-                    ///< yielded, moved out of the producer's state block.
+                    ///< yielded, moved out of the producer's state block. The
+                    ///< coroutine then holds no item.
+  coroutine_has_item,  ///< `dest` (a `bool`) <- whether the coroutine at
+                       ///< `source` holds an item that was handed over and not
+                       ///< yet taken.
   coroutine_dispatch,  ///< Step only, first: jumps to the resume point of
                        ///< `source` (a `uint64`); `depth` points exist.
   coroutine_suspend,   ///< Step only: hands the item at `source` (consumed) to

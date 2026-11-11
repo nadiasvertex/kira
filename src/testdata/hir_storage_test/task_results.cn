@@ -1,0 +1,50 @@
+module sample
+
+# A result that needs a drop is dropped by whoever reads it. A handle dropped
+# before anyone read the result drops it too.
+type noisy = { pub id: int64 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+async def make_noisy(n: int64) -> noisy:
+    return noisy { id: n }
+
+def unread_noisy(n: int64) -> int64:
+    let t = make_noisy(n)
+    return n
+
+async def read_noisy(n: int64) -> int64:
+    let x = await make_noisy(n)
+    return x.id
+
+def get_noisy(n: int64) -> int64:
+    let t = make_noisy(n)
+    let x = t.get()
+    return x.id
+
+# Fields drop in declaration order, and so do tuple members.
+type holder = { pub first: noisy, pub second: noisy }
+
+async def make_holder(n: int64) -> holder:
+    return holder { first: noisy { id: n }, second: noisy { id: n + 1 } }
+
+async def make_both(n: int64) -> (noisy, noisy):
+    return (noisy { id: n }, noisy { id: n + 1 })
+
+def unread_holder(n: int64) -> int64:
+    let t = make_holder(n)
+    return n
+
+def unread_both(n: int64) -> int64:
+    let t = make_both(n)
+    return n
+
+# A fallible task hands over a `result`, whose drop is not modeled yet.
+async def fallible_noisy(n: int64) -> result[noisy, int64]:
+    return @ok(noisy { id: n })
+
+def unread_fallible(n: int64) -> int64:
+    let t = fallible_noisy(n)
+    return n

@@ -875,6 +875,8 @@ private:
       return do_generator_resume(op);
     case op_kind::generator_take:
       return do_generator_take(op);
+    case op_kind::coroutine_has_item:
+      return do_coroutine_has_item(op);
     case op_kind::coroutine_dispatch:
       return do_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
@@ -1965,6 +1967,14 @@ private:
                       " out of a reference");
     }
     return invalidate(op.source, *from, from->tracked);
+  }
+
+  [[nodiscard]] auto do_coroutine_has_item(const storage_op &op) -> result {
+    if (auto handle = require_handle(op.source, "an item test", true, true);
+        !handle.has_value()) {
+      return std::unexpected(handle.error());
+    }
+    return write_scalar(op.dest, "an item test", 1);
   }
 
   [[nodiscard]] auto do_coroutine_cancelled(const storage_op &op) -> result {

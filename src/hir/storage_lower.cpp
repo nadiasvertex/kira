@@ -1599,11 +1599,171 @@ private:
     if (!where->has_value()) {
       return refuse(cancel.span, "the drop of a generator that is not a variable");
     }
+    if (auto ok = lower_unread_result_drop(**where, cancel.span); !ok.has_value()) {
+      return ok;
+    }
     auto op = storage_op{.kind = op_kind::drop_in_place};
     op.dest = std::move(**where);
     emit(std::move(op), cancel.span);
     if (dest.has_value()) {
       emit(storage_op{.kind = op_kind::init_empty, .dest = *dest}, cancel.span);
+    }
+    return {};
+  }
+
+  /// A task that finished and was never read still owns its result, so
+  /// dropping the handle drops the result first. The handle says whether the
+  /// task has finished (it may still be running on a worker, which owns the
+  /// result until it stops) and whether an unread item is held. A result that
+  /// is read leaves no item, so the common drop after a read does nothing.
+  [[nodiscard]] auto lower_unread_result_drop(const place &task,
+                                              const source_span &span)
+      -> result {
+    const auto &entry = types().entry(types().strip_refinement(task.type));
+    if (entry.kind != semantic::type_kind::builtin_generic_kind ||
+        entry.name != "task" || entry.args.size() < 2) {
+      return {};
+    }
+    const auto value = entry.args[0];
+    const auto fallible = types().entry(entry.args[1]).name != "never";
+    if (!env_.needs_drop(value) &&
+        !(fallible && env_.needs_drop(entry.args[1]))) {
+      return {};
+    }
+    if (fallible) {
+      return refuse(span, "the drop of a fallible task whose result needs a drop");
+    }
+    auto finished = classify_signature(env_.layouts,
+                                       std::vector<type_id>{task.type},
+                                       types().bool_type());
+    if (!finished.has_value()) {
+      return layout_failure(span, finished.error());
+    }
+    return branch_on(
+        span,
+        [&](const place &flag) {
+          auto call = storage_op{.kind = op_kind::call_into};
+          call.callee.name = "rt_task_is_finished";
+          call.args.push_back(call_argument{.source_index = 0,
+                                            .cls = finished->params[0].cls,
+                                            .value = read_of(task, false)});
+          call.signature = *finished;
+          call.dest = flag;
+          emit(std::move(call), span);
+        },
+        [&]() -> result {
+          return branch_on(
+              span,
+              [&](const place &flag) {
+                emit(storage_op{.kind = op_kind::coroutine_has_item,
+                                .dest = flag,
+                                .source = task},
+                     span);
+              },
+              [&]() -> result {
+                const auto item = new_slot(storage_class::frame_local, value, "",
+                                           k_invalid_symbol_id, span, false);
+                emit(storage_op{.kind = op_kind::generator_take,
+                                .dest = whole(item),
+                                .source = task},
+                     span);
+                if (auto ok = lower_value_drop(whole(item), span);
+                    !ok.has_value()) {
+                  return ok;
+                }
+                kill(item, span);
+                return {};
+              },
+              [&]() -> result { return {}; });
+        },
+        [&]() -> result { return {}; });
+  }
+
+  /// The drops a value owes, in the order scheduled drops run them: its own
+  /// `drop`, then each droppable field in declaration order.
+  [[nodiscard]] auto lower_value_drop(const place &where,
+                                      const source_span &span) -> result {
+    const auto *plan = env_.drop_plan(where.type);
+    if (plan == nullptr) {
+      const auto layout = layout_of(where.type, span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      if ((*layout)->kind != runtime::value_layout_kind::tuple) {
+        return refuse(span, "the drop of a `" + types().display(where.type) +
+                                "` held by a task");
+      }
+      const auto &members = (*layout)->members;
+      for (size_t i = 0; i < members.size(); ++i) {
+        if (!env_.needs_drop(members[i].type)) {
+          continue;
+        }
+        if (auto ok = lower_value_drop(
+                project(where, member_step(i, ""), members[i].type), span);
+            !ok.has_value()) {
+          return ok;
+        }
+      }
+      return {};
+    }
+    if (plan->cancels_generator || plan->closure_glue.has_value() ||
+        !plan->variant_drops.empty()) {
+      return refuse(span, "the drop of a `" + types().display(where.type) +
+                              "` held by a task");
+    }
+    if (plan->own_drop.has_value()) {
+      const auto &resolved = *plan->own_drop;
+      const auto receiver = env_.checked.types.ref_to(where.type, true);
+      auto signature = classify_signature(env_.layouts,
+                                          std::vector<type_id>{receiver},
+                                          unit_type());
+      if (!signature.has_value()) {
+        return layout_failure(span, signature.error());
+      }
+      auto call = storage_op{.kind = op_kind::call_into};
+      call.is_drop = true;
+      call.callee.name = resolved.impl_target_type.empty()
+                             ? resolved.decl->name
+                             : resolved.impl_target_type +
+                                   "::" + resolved.decl->name;
+      call.callee.owner_module = resolved.owner_module;
+      call.args.push_back(call_argument{
+          .source_index = 0,
+          .cls = signature->params[0].cls,
+          .value = operand{.kind = operand_kind::address_of,
+                           .where = where,
+                           .type = receiver}});
+      call.signature = std::move(*signature);
+      const auto result_slot = new_slot(storage_class::frame_local, unit_type(),
+                                        "", k_invalid_symbol_id, span, false);
+      call.dest = whole(result_slot);
+      emit(std::move(call), span);
+      kill(result_slot, span);
+    }
+    if (!plan->droppable_fields.empty()) {
+      const auto layout = layout_of(where.type, span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      for (const auto &[name, type] : plan->droppable_fields) {
+        const auto &members = (*layout)->members;
+        auto found = false;
+        for (size_t i = 0; i < members.size() && !found; ++i) {
+          if (members[i].name != name) {
+            continue;
+          }
+          found = true;
+          if (auto ok = lower_value_drop(
+                  project(where, member_step(i, name), members[i].type), span);
+              !ok.has_value()) {
+            return ok;
+          }
+        }
+        if (!found) {
+          return malformed(span, "`" + types().display(where.type) +
+                                     "` has no field `" + name + "`");
+        }
+      }
     }
     return {};
   }

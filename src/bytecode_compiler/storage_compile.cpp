@@ -727,6 +727,8 @@ private:
       return emit_generator_resume(op);
     case op_kind::generator_take:
       return emit_generator_take(op);
+    case op_kind::coroutine_has_item:
+      return emit_coroutine_has_item(op);
     case op_kind::coroutine_dispatch:
       return emit_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
@@ -1404,6 +1406,14 @@ private:
         !ok.has_value()) {
       return ok;
     }
+    // The item is now the taker's: the coroutine no longer holds one.
+    const auto none = alloc_register();
+    emit_const(none, slot_value{uint64_t{0}});
+    if (auto ok = emit_store(*object, word_at(co::k_value_slot), none,
+                             runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
     const auto dest = locate(op.dest);
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
@@ -1600,6 +1610,39 @@ private:
     writer_.emit_u8(static_cast<uint8_t>(*id));
     emit_register(block);
     writer_.emit_u8(2);
+    return {};
+  }
+
+  /// `has_item dest = source`: whether the value word holds an item address.
+  [[nodiscard]] auto emit_coroutine_has_item(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto item = alloc_register();
+    if (auto ok = emit_load(item, *object, word_at(co::k_value_slot),
+                            runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto none = alloc_register();
+    emit_const(none, slot_value{uint64_t{0}});
+    const auto target = dest->where == location::kind::reg ? dest->reg
+                                                          : alloc_register();
+    emit_op(opcode::op_ne);
+    emit_register(target);
+    emit_register(item);
+    emit_register(none);
+    writer_.emit_numeric_kind(bytecode::numeric_kind::u64);
+    if (dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, target);
+    }
     return {};
   }
 

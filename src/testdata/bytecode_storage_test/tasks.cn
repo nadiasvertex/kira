@@ -150,6 +150,110 @@ def run_unstarted() -> int64:
     let t = sum_doubles(1000)
     return 7
 
+# A result that needs a drop belongs to whoever reads it. Each drop appends
+# its id to the counter, so the counter records how many ran and in what order.
+type noisy = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for noisy:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+async def make_noisy(id: int64, counter: *mut int64) -> noisy:
+    return noisy { id: id, counter: counter }
+
+async def await_noisy(id: int64, counter: *mut int64) -> int64:
+    let x = await make_noisy(id, counter)
+    return x.id * 10
+
+def get_noisy(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    let x = t.get()
+    return x.id
+
+# Read by a plain function: dropped once, when the reader's scope ends.
+machine def noisy_read_by_get() -> int64:
+    var drops: int64 = 0
+    let seen = get_noisy(4, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Read by a task's `await`.
+machine def noisy_read_by_await() -> int64:
+    var drops: int64 = 0
+    let t = await_noisy(5, ptr_cast[int64](&mut drops))
+    let seen = t.get()
+    return drops * 100 + seen
+
+# The `io` pool has one worker and runs tasks in the order they were spawned, so
+# waiting for the second task means the first has finished. Its result is never
+# read, and dropping the handle drops that result.
+def finish_unread(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+type holder = { pub first: noisy, pub second: noisy }
+
+async def make_holder(a: int64, b: int64, counter: *mut int64) -> holder:
+    return holder { first: noisy { id: a, counter: counter },
+                    second: noisy { id: b, counter: counter } }
+
+async def make_both(a: int64, b: int64, counter: *mut int64) -> (noisy, noisy):
+    return (noisy { id: a, counter: counter }, noisy { id: b, counter: counter })
+
+# Fields drop in declaration order.
+def finish_unread_holder(counter: *mut int64) -> int64:
+    let t = make_holder(3, 4, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+def finish_unread_both(counter: *mut int64) -> int64:
+    let t = make_both(5, 6, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_holder_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_holder(ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+machine def noisy_tuple_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_both(ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Read once, then the handle is dropped: the read result is not dropped again.
+def read_then_drop(counter: *mut int64) -> int64:
+    let t = make_holder(7, 8, counter)
+    let h = t.get()
+    return h.first.id + h.second.id
+
+machine def noisy_read_then_drop() -> int64:
+    var drops: int64 = 0
+    let seen = read_then_drop(ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+machine def noisy_finished_unread() -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread(6, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# Never run, so there is no result to drop.
+def never_started(id: int64, counter: *mut int64) -> int64:
+    let t = make_noisy(id, counter)
+    return 1
+
+machine def noisy_unstarted() -> int64:
+    var drops: int64 = 0
+    let seen = never_started(7, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
 # The entry point is an ordinary function that blocks on each task it awaits,
 # and on each group: 12 from `sum_doubles`, 42 from `chain(1)`, 10 and 12 from
 # the `par`, and 14 from the `race`.

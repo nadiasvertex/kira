@@ -83,8 +83,30 @@ inline auto tasks_wait_for_groups(case_backend &backend) -> void {
   expect_equal(run("run_on_a_pool", {7}), 36, "run_on_a_pool(7)");
 }
 
+inline auto tasks_drop_results_once(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "tasks.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  // One drop of id 4 after the read: drops = 4, seen = 4.
+  expect_equal(run("noisy_read_by_get", {}), 44, "noisy_read_by_get()");
+  // One drop of id 5: 5 * 100 + 50.
+  expect_equal(run("noisy_read_by_await", {}), 550, "noisy_read_by_await()");
+  // A task that finished and was never read drops its result with the handle:
+  // one drop of id 6, and the marker's 2.
+  expect_equal(run("noisy_finished_unread", {}), 62, "noisy_finished_unread()");
+  // Fields drop in declaration order (3, then 4); so do tuple members.
+  expect_equal(run("noisy_holder_unread", {}), 342, "noisy_holder_unread()");
+  expect_equal(run("noisy_tuple_unread", {}), 562, "noisy_tuple_unread()");
+  // The read result is dropped once, by the reader: 78 and 15.
+  expect_equal(run("noisy_read_then_drop", {}), 7815, "noisy_read_then_drop()");
+  // A task that never ran has no result.
+  expect_equal(run("noisy_unstarted", {}), 1, "noisy_unstarted()");
+}
+
 /// Runs the task cases.
 inline auto task_cases(case_backend &backend) -> void {
+  tasks_drop_results_once(backend);
   tasks_hand_back_their_result(backend);
   tasks_resume_after_each_await(backend);
   tasks_move_results_of_any_size(backend);

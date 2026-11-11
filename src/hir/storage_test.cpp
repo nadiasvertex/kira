@@ -1873,6 +1873,74 @@ auto test_plain_functions_block_on_the_task() -> void {
   expect_verifies(*f, f->function("run_pair"), "run_pair");
 }
 
+auto test_dropping_a_task_drops_its_unread_result() -> void {
+  auto f = build(read_program("task_results.cn"));
+  expect(f->lowering.refused.size() == 1,
+         "expected only the fallible task's handle to be refused");
+  // The handle is dropped without a read. If it has finished and still holds
+  // its result, the result is taken out and dropped before the handle goes.
+  expect_ops(*f, "unread_noisy",
+             {"call s1 = make_noisy(s0)", "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
+              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5)", "dead s6", "dead s5", "else",
+              "dead s4", "end_if", "else", "dead s3", "end_if", "drop s1",
+              "return s2"});
+  expect_verifies(*f, f->function("unread_noisy"), "unread_noisy");
+  // A reader moves the result out and drops it itself; the drop of the handle
+  // that follows still carries the check, which finds no item at run time.
+  expect_verifies(*f, f->function("get_noisy"), "get_noisy");
+  expect_verifies(*f, f->function("read_noisy$step"), "read_noisy$step");
+  expect_verifies(*f, f->function("make_noisy$step"), "make_noisy$step");
+
+  // Each droppable field and tuple member is dropped, in order.
+  expect_ops(*f, "unread_holder",
+             {"call s1 = make_holder(s0)", "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
+              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5.first)", "dead s6",
+              "call.drop s7 = noisy::drop(&s5.second)", "dead s7", "dead s5",
+              "else", "dead s4", "end_if", "else", "dead s3", "end_if",
+              "drop s1", "return s2"});
+  expect_ops(*f, "unread_both",
+             {"call s1 = make_both(s0)", "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
+              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
+              "call.drop s6 = noisy::drop(&s5.0)", "dead s6",
+              "call.drop s7 = noisy::drop(&s5.1)", "dead s7", "dead s5",
+              "else", "dead s4", "end_if", "else", "dead s3", "end_if",
+              "drop s1", "return s2"});
+  expect_verifies(*f, f->function("unread_holder"), "unread_holder");
+  expect_verifies(*f, f->function("unread_both"), "unread_both");
+
+  // A result whose drop is not modeled is refused by name, never leaked.
+  const auto *fallible = f->refusal("unread_fallible");
+  expect(fallible != nullptr &&
+             fallible->message.find("needs a drop") != std::string::npos,
+         "expected the drop of a fallible task result to be refused");
+
+  // The result is taken out of the task, so it owes its own drop.
+  auto leaked = f->function("unread_noisy");
+  const auto dropped = find_op(leaked, hir::op_kind::call_into, 2);
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(dropped));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "an unread result that is taken and never dropped");
+
+  // The item test reads a coroutine and writes a flag.
+  auto not_a_handle = f->function("unread_noisy");
+  auto &test = not_a_handle.ops[find_op(not_a_handle,
+                                        hir::op_kind::coroutine_has_item)];
+  test.source = place_at(0, not_a_handle.slots[0].type);
+  expect_rejects(*f, not_a_handle, hir::verify_error_kind::type_mismatch,
+                 "an item test of something that is not a coroutine");
+  auto not_a_flag = f->function("unread_noisy");
+  auto &flagged = not_a_flag.ops[find_op(not_a_flag,
+                                         hir::op_kind::coroutine_has_item)];
+  flagged.dest = place_at(0, not_a_flag.slots[0].type);
+  expect_rejects(*f, not_a_flag, hir::verify_error_kind::type_mismatch,
+                 "an item test written to something that is not a flag");
+}
+
 auto test_verifier_checks_tasks() -> void {
   auto f = build(read_program("tasks.cn"));
 
@@ -1957,6 +2025,7 @@ auto main() -> int {
     test_task_constructor_and_step_hand_over_the_result();
     test_await_is_a_resume_point_that_may_return_pending();
     test_plain_functions_block_on_the_task();
+    test_dropping_a_task_drops_its_unread_result();
     test_verifier_checks_tasks();
     test_generator_constructor_builds_the_handle();
     test_generator_step_keeps_every_local_in_the_state_block();
