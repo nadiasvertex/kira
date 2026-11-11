@@ -1429,20 +1429,37 @@ private:
            entry.name == "task";
   }
 
+  /// Whether `type` is a tuple of tasks, the group `await par` and `await
+  /// race` wait on.
+  [[nodiscard]] auto is_task_group_type(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    if (entry.kind != semantic::type_kind::tuple_kind || entry.args.empty()) {
+      return false;
+    }
+    for (const auto member : entry.args) {
+      if (!is_task_type(member)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /// A task's `await` point: the step polls the awaited task and, if it has
   /// not finished, returns `pending`. Woken, it resumes here and polls again.
   /// Past it the awaited task has finished and `lower_task_result` reads it.
   [[nodiscard]] auto lower_await_point(const hir_yield &yield) -> result {
-    if (yield.awaits_all || !is_task_type(yield.value->type)) {
-      return refuse(yield.span, yield.awaits_all
-                                    ? "`await par`"
-                                    : "an `await` of anything but one task");
+    const auto group = is_task_group_type(yield.value->type);
+    if (!group && (yield.awaits_all || !is_task_type(yield.value->type))) {
+      return refuse(yield.span, "an `await` of anything but one task or a "
+                                "group of tasks");
     }
     auto awaited = lower_coroutine_place(*yield.value);
     if (!awaited.has_value()) {
       return std::unexpected(awaited.error());
     }
     auto wait = storage_op{.kind = op_kind::coroutine_await};
+    wait.waits = !group ? wait_mode::one
+                        : yield.awaits_all ? wait_mode::all : wait_mode::any;
     wait.source = std::move(*awaited);
     wait.dest = whole(object_slot_);
     wait.depth = ++suspensions_;
@@ -1591,8 +1608,39 @@ private:
     return {};
   }
 
+  /// `rt_task_block_on_all(group, n)` / `rt_task_block_on_any(group, n)`:
+  /// outside a task, `await par` and `await race` wait with the thread. The
+  /// group is a tuple of task handles, which the runtime reads in place.
+  [[nodiscard]] auto lower_group_block(const hir_call &call, wait_mode mode,
+                                       const place &dest) -> result {
+    if (call.args.size() != 2 || !is_task_group_type(call.args[0]->type)) {
+      return malformed(call.span, "a wait on a group of tasks needs a tuple of tasks");
+    }
+    auto group = lower_coroutine_place(*call.args[0]);
+    if (!group.has_value()) {
+      return std::unexpected(group.error());
+    }
+    auto block = storage_op{.kind = op_kind::task_block_on_group};
+    block.waits = mode;
+    block.source = std::move(*group);
+    emit(std::move(block), call.span);
+    if (dest.base != k_invalid_storage) {
+      emit(storage_op{.kind = op_kind::init_empty, .dest = dest}, call.span);
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
+    if (call.callee->kind == hir_node_kind::hir_local_ref &&
+        !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
+      const auto &name = as<hir_local_ref>(*call.callee).name;
+      if (name == "rt_task_block_on_all" || name == "rt_task_block_on_any") {
+        return lower_group_block(
+            call, name == "rt_task_block_on_all" ? wait_mode::all : wait_mode::any,
+            dest);
+      }
+    }
     auto params = std::vector<type_id>{};
     for (const auto &arg : call.args) {
       params.push_back(arg->type);

@@ -680,6 +680,8 @@ private:
       return emit_coroutine_suspend(op);
     case op_kind::coroutine_await:
       return emit_coroutine_await(op);
+    case op_kind::task_block_on_group:
+      return emit_task_block_on_group(op);
     case op_kind::coroutine_cancelled:
       return emit_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1395,10 +1397,15 @@ private:
       return fail(codegen_error_kind::unsupported_construct, op.span,
                   "a suspension point the dispatch does not name");
     }
-    const auto poll = hir::runtime_intrinsic_id("rt_task_await_poll");
+    const auto name = op.waits == hir::wait_mode::one
+                          ? "rt_task_await_poll"
+                          : op.waits == hir::wait_mode::all
+                                ? "rt_task_await_all_poll"
+                                : "rt_task_await_any_poll";
+    const auto poll = hir::runtime_intrinsic_id(name);
     if (!poll.has_value()) {
       return fail(codegen_error_kind::unsupported_construct, op.span,
-                  "the runtime has no `rt_task_await_poll`");
+                  std::string{"the runtime has no `"} + name + "`");
     }
     auto *landing = resume_blocks_[op.depth - 1];
     builder_.CreateBr(landing);
@@ -1407,13 +1414,14 @@ private:
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    const auto awaited = read_place(op.source);
-    if (!awaited.has_value()) {
-      return std::unexpected(awaited.error());
+    auto arguments = group_arguments(op);
+    if (!arguments.has_value()) {
+      return std::unexpected(arguments.error());
     }
+    arguments->insert(arguments->begin(), *object);
     store_word(*object, co::k_resume_index_slot, constant(i64(), op.depth));
-    auto *finished = builder_.CreateCall(runtime_function(mc_, *poll),
-                                         {*object, *awaited});
+    auto *finished =
+        builder_.CreateCall(runtime_function(mc_, *poll), *arguments);
     auto *waiting = llvm::BasicBlock::Create(mc_.ctx, "await.pending", llvm_fn_);
     auto *ready = llvm::BasicBlock::Create(mc_.ctx, "await.ready", llvm_fn_);
     builder_.CreateCondBr(
@@ -1422,6 +1430,46 @@ private:
     builder_.SetInsertPoint(waiting);
     builder_.CreateRet(constant(i64(), co::raw(co::status::pending)));
     builder_.SetInsertPoint(ready);
+    return {};
+  }
+
+  /// What the runtime is given for the awaited thing in `op.source`: the
+  /// task's handle, or a group's address and member count (the runtime reads
+  /// a group's handles in place).
+  [[nodiscard]] auto group_arguments(const hir::storage_op &op)
+      -> checked<std::vector<llvm::Value *>> {
+    if (op.waits == hir::wait_mode::one) {
+      const auto awaited = read_place(op.source);
+      if (!awaited.has_value()) {
+        return std::unexpected(awaited.error());
+      }
+      return std::vector<llvm::Value *>{*awaited};
+    }
+    const auto where = locate(op.source);
+    if (!where.has_value()) {
+      return std::unexpected(where.error());
+    }
+    const auto &group =
+        types().entry(types().strip_refinement(op.source.type));
+    return std::vector<llvm::Value *>{pointer_at(*where),
+                                      constant(i64(), group.args.size())};
+  }
+
+  /// `await par` / `await race` outside a task: the thread blocks.
+  [[nodiscard]] auto emit_task_block_on_group(const hir::storage_op &op)
+      -> checked<void> {
+    const auto name = op.waits == hir::wait_mode::all ? "rt_task_block_on_all"
+                                                      : "rt_task_block_on_any";
+    const auto id = hir::runtime_intrinsic_id(name);
+    if (!id.has_value()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  std::string{"the runtime has no `"} + name + "`");
+    }
+    const auto arguments = group_arguments(op);
+    if (!arguments.has_value()) {
+      return std::unexpected(arguments.error());
+    }
+    builder_.CreateCall(runtime_function(mc_, *id), *arguments);
     return {};
   }
 

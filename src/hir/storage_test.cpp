@@ -454,10 +454,9 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   const auto *shout = f->refusal("shout");
   expect(shout != nullptr && shout->message.find("str") != std::string::npos,
          "expected a string literal to be refused");
-  const auto *racing = f->refusal("racing");
-  expect(racing != nullptr &&
-             racing->message.find("`await`") != std::string::npos,
-         "expected waiting on a set of tasks to be refused");
+  expect(f->refusal("crewed") != nullptr, "expected a crew to be refused");
+  expect(f->refusal("racing") == nullptr,
+         "expected waiting on a set of tasks to lower");
   expect(f->refusal("triple") == nullptr,
          "expected a task that waits on nothing to lower");
   expect(f->lowering.module.find("matching") == nullptr,
@@ -1562,6 +1561,59 @@ auto test_verifier_checks_variant_tests() -> void {
 //  Generators
 // ==========================================================================
 
+auto test_verifier_checks_task_groups() -> void {
+  auto f = build(read_program("tasks.cn"));
+
+  // A group wait names a tuple of tasks, not one task.
+  auto one_as_group = f->function("sum_doubles$step");
+  one_as_group.ops[find_op(one_as_group, hir::op_kind::coroutine_await)].waits =
+      hir::wait_mode::all;
+  expect_rejects(*f, one_as_group, hir::verify_error_kind::type_mismatch,
+                 "a group wait on one task", {}, "needs a tuple of tasks");
+
+  // A wait on one task does not name a tuple.
+  auto group_as_one = f->function("together$step");
+  group_as_one.ops[find_op(group_as_one, hir::op_kind::coroutine_await)].waits =
+      hir::wait_mode::one;
+  expect_rejects(*f, group_as_one, hir::verify_error_kind::type_mismatch,
+                 "a one-task wait on a group", {}, "an await needs a task");
+
+  // A step suspends instead of blocking the thread.
+  auto blocks_in_step = f->function("together$step");
+  const auto group = blocks_in_step.ops[find_op(blocks_in_step, hir::op_kind::coroutine_await)]
+                         .source;
+  blocks_in_step.ops.insert(
+      blocks_in_step.ops.begin() +
+          static_cast<std::ptrdiff_t>(find_op(blocks_in_step, hir::op_kind::coroutine_await)),
+      hir::storage_op{.kind = hir::op_kind::task_block_on_group,
+                      .source = group,
+                      .waits = hir::wait_mode::all});
+  expect_rejects(*f, blocks_in_step, hir::verify_error_kind::bad_operation,
+                 "a step that blocks the thread");
+
+  // Blocking waits for all of a group or for any of it.
+  auto block_one = f->function("main");
+  block_one.ops[find_op(block_one, hir::op_kind::task_block_on_group)].waits =
+      hir::wait_mode::one;
+  expect_rejects(*f, block_one, hir::verify_error_kind::bad_operation,
+                 "a block on a group of one");
+
+  auto block_int = f->function("main");
+  block_int.ops[find_op(block_int, hir::op_kind::task_block_on_group)].source =
+      place_at(0, block_int.slots[0].type);
+  expect_rejects(*f, block_int, hir::verify_error_kind::type_mismatch,
+                 "a block on something that is not a group", {},
+                 "needs a tuple of tasks");
+
+  // The cancel exit must drop every member of the group.
+  auto leaked = f->function("together$step");
+  leaked.ops.erase(leaked.ops.begin() +
+                   static_cast<std::ptrdiff_t>(
+                       find_op(leaked, hir::op_kind::drop_in_place)));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "a cancelled wait that leaves a member of the group behind");
+}
+
 auto test_generator_constructor_builds_the_handle() -> void {
   auto f = build(read_program("generators.cn"));
   // The constructor is an ordinary function: it copies `n` into the state
@@ -1697,6 +1749,44 @@ auto test_verifier_checks_generators() -> void {
                  "a take from a value that is not a generator");
 }
 
+auto test_groups_wait_for_every_task_or_the_first() -> void {
+  auto f = build(read_program("tasks.cn"));
+  expect(f->lowering.refused.empty(), "expected every task function to lower");
+  // The branch tasks are started, then moved into one tuple that the runtime
+  // reads in place. The step waits on the tuple as a whole; the cancel exit
+  // drops its members, and so does the read after the wait.
+  expect_ops(*f, "together$step",
+             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "call s4 = double(s2)", "compute s6 = binary + s2, #1",
+              "call s5 = double(s6)", "dead s6", "call s7 = rt_task_spawn(s4, #0)",
+              "dead s7", "call s8 = rt_task_spawn(s5, #0)", "dead s8",
+              "move s9.0 <- s4", "move s9.1 <- s5", "await all #1 s1 <- s9",
+              "cancelled s10 = s1", "if s10", "dead s10", "drop s9.0",
+              "drop s9.1", "finish s1", "return #1", "else", "dead s10",
+              "end_if", "take s11.0 <- s9.0", "take s11.1 <- s9.1",
+              "drop s9.0", "drop s9.1", "move s12 <- s11",
+              "compute s13 = copy s12.0", "compute s14 = copy s12.1",
+              "compute s15 = binary + s13, s14", "suspend #2 s1 <- s15",
+              "dead s15", "finish s1", "return #1"});
+  expect_verifies(*f, f->function("together$step"), "together$step");
+
+  const auto &race = f->function("first_wins$step");
+  const auto &any = race.ops[find_op(race, hir::op_kind::coroutine_await)];
+  expect(any.waits == hir::wait_mode::any && any.depth == 1,
+         "expected a race to wait for any one task");
+  expect_verifies(*f, race, "first_wins$step");
+
+  // The entry `async def main` is not a task, so its waits block the thread.
+  const auto &entry = f->function("main");
+  expect(entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 0)].waits ==
+                 hir::wait_mode::all &&
+             entry.ops[find_op(entry, hir::op_kind::task_block_on_group, 1)]
+                     .waits == hir::wait_mode::any,
+         "expected `par` to wait for all and `race` for any");
+  expect_verifies(*f, entry, "main");
+}
+
 auto test_task_constructor_and_step_hand_over_the_result() -> void {
   auto f = build(read_program("tasks.cn"));
   expect(f->lowering.refused.empty(), "expected every task function to lower");
@@ -1757,10 +1847,28 @@ auto test_plain_functions_block_on_the_task() -> void {
               "dead s4", "drop s1", "return s3"});
   expect_verifies(*f, f->function("run_spawned"), "run_spawned");
   // The entry `async def main` is an ordinary function that awaits this way.
-  expect_ops(*f, "main",
-             {"call s1 = double(#4)", "call s3 = rt_task_block_on(s1, #0)",
-              "take s2 <- s1", "dead s3", "drop s1", "compute s0 = copy s2",
-              "return s0"});
+  expect_ops(
+      *f, "main",
+      {"call s1 = double(#4)", "call s2 = double(#5)",
+       "call s3 = rt_task_spawn(s1, #0)", "dead s3",
+       "call s4 = rt_task_spawn(s2, #0)", "dead s4", "move s5.0 <- s1",
+       "move s5.1 <- s2", "block_on_group all s5", "init_empty s6", "dead s6",
+       "call s8 = rt_task_block_on(s5.0, #0)", "take s7.0 <- s5.0",
+       "call s9 = rt_task_block_on(s5.1, #0)", "take s7.1 <- s5.1", "dead s9",
+       "dead s8", "drop s5.0", "drop s5.1", "move s0 <- s7",
+       "compute s10 = copy s0.0", "compute s11 = copy s0.1",
+       "call s13 = double(#6)", "call s14 = double(#7)",
+       "call s15 = rt_task_spawn(s13, #0)", "dead s15",
+       "call s16 = rt_task_spawn(s14, #0)", "dead s16", "move s17.0 <- s13",
+       "move s17.1 <- s14", "block_on_group any s17", "init_empty s18",
+       "dead s18", "call s20 = rt_task_is_finished(s17.0)", "if s20", "dead s20",
+       "call s21 = rt_task_block_on(s17.0, #0)", "take s19 <- s17.0", "dead s21",
+       "else", "dead s20", "call s22 = rt_task_block_on(s17.1, #0)",
+       "take s19 <- s17.1", "dead s22", "end_if", "call s23 = rt_task_cancel(s17.0)",
+       "dead s23", "call s24 = rt_task_cancel(s17.1)", "dead s24",
+       "drop s17.0", "drop s17.1", "compute s12 = copy s19",
+       "compute s26 = binary + s10, s11", "compute s25 = binary + s26, s12",
+       "dead s26", "return s25"});
   expect_verifies(*f, f->function("main"), "main");
   expect_verifies(*f, f->function("run_pair"), "run_pair");
 }
@@ -1844,6 +1952,8 @@ auto test_verifier_checks_tasks() -> void {
 
 auto main() -> int {
   try {
+    test_groups_wait_for_every_task_or_the_first();
+    test_verifier_checks_task_groups();
     test_task_constructor_and_step_hand_over_the_result();
     test_await_is_a_resume_point_that_may_return_pending();
     test_plain_functions_block_on_the_task();

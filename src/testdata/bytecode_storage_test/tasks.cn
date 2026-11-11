@@ -53,6 +53,50 @@ async def waits_for_nothing(x: int64) -> int64:
     await nothing()
     return x + 1
 
+# `await par` runs the branches together and gives the tuple of their results.
+async def together(x: int64) -> int64:
+    let (a, b) = await par:
+        double(x)
+        chain(x)
+    return a + b * 1000
+
+# Three branches, one of them with a result wider than a register.
+async def wide_group(n: int64) -> int64:
+    let (t, a, c) = await par:
+        make_triple(n)
+        double(n)
+        chain(n)
+    return t.a + t.b * 10 + t.c * 100 + a * 1000 + c * 10000
+
+# `await race` gives the first result and cancels the others. The first branch
+# would take far too long to finish, so the second always wins.
+async def first_wins(x: int64) -> int64:
+    return await race:
+        sum_doubles(1000000)
+        double(x)
+
+# The group is waited on again in a loop, so each pass builds a new one.
+async def groups_in_a_loop(n: int64) -> int64:
+    var total: int64 = 0
+    var i: int64 = 0
+    while i < n:
+        let (a, b) = await par:
+            double(i)
+            double(i + 1)
+        total = total + a + b
+        i = i + 1
+    return total
+
+# A block that runs on a pool is a task of its own, with `x` passed in.
+async def on_a_pool(x: int64) -> int64:
+    let inner = await on(cpu):
+        x * 5
+    return inner + 1
+
+def run_on_a_pool(x: int64) -> int64:
+    let t = on_a_pool(x)
+    return t.get()
+
 def run_double(x: int64) -> int64:
     let t = double(x)
     return t.get()
@@ -63,6 +107,22 @@ def run_sum(n: int64) -> int64:
 
 def run_chain(x: int64) -> int64:
     let t = chain(x)
+    return t.get()
+
+def run_together(x: int64) -> int64:
+    let t = together(x)
+    return t.get()
+
+def run_wide_group(n: int64) -> int64:
+    let t = wide_group(n)
+    return t.get()
+
+def run_first_wins(x: int64) -> int64:
+    let t = first_wins(x)
+    return t.get()
+
+def run_groups_in_a_loop(n: int64) -> int64:
+    let t = groups_in_a_loop(n)
     return t.get()
 
 def run_borrows(x: int64) -> int64:
@@ -90,8 +150,16 @@ def run_unstarted() -> int64:
     let t = sum_doubles(1000)
     return 7
 
-# The entry point is an ordinary function that blocks on each task it awaits:
-# 4 * 3 from `sum_doubles`, then `chain(1)` is 42.
+# The entry point is an ordinary function that blocks on each task it awaits,
+# and on each group: 12 from `sum_doubles`, 42 from `chain(1)`, 10 and 12 from
+# the `par`, and 14 from the `race`.
 async def main() -> int64:
     let a = await sum_doubles(4)
-    return a + await chain(1)
+    let (p, q) = await par:
+        double(5)
+        double(6)
+    let w = await race:
+        sum_doubles(1000000)
+        double(7)
+    let c = await chain(1)
+    return a + c + p + q * 100 + w * 10000

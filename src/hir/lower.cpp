@@ -811,10 +811,10 @@ private:
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
   /// The check a task makes after each suspension: when it was cancelled,
-  /// drop what it owns and return. `awaited`, if given, is the task it was
-  /// waiting for, which has stopped by then and is dropped first.
+  /// drop what it owns and return. `awaited`, if given, are the tasks it was
+  /// waiting for, which have stopped by then and are dropped first.
   [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span,
-                                            ptr<hir_expr> awaited = nullptr)
+                                            ptr_vec<hir_expr> awaited = {})
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The type table, for the few types lowering interns that checking never
   /// had occasion to (`unit` results of runtime calls, `option[T]`, the tuple
@@ -846,7 +846,7 @@ private:
   [[nodiscard]] auto emit_task_wait(ptr_vec<hir_node> &stmts,
                                     ptr<hir_expr> task, const void *key,
                                     source_span span, bool all = false,
-                                    ptr<hir_expr> awaited = nullptr)
+                                    ptr_vec<hir_expr> awaited = {})
       -> std::expected<void, lowering_error>;
   /// Waits for `task` and reads its result: `await task` and `task.get()`.
   /// `await` consumes the task, so `consumes` drops it once its result has
@@ -925,11 +925,6 @@ private:
     [[nodiscard]] auto ref(size_t i) const -> ptr<hir_expr> {
       return {make<hir_local_ref>(spans[i], types[i], symbols[i],
                                   std::string("<group task>"))};
-    }
-    [[nodiscard]] auto result_of(size_t i, source_span span,
-                                 type_id result) const -> ptr<hir_expr> {
-      return {make<hir_generator_next>(span, result, ref(i),
-                                       /*await_task=*/true)};
     }
   };
   /// `await par: ...` / `await race: ...` — see their definitions.
@@ -3630,13 +3625,13 @@ auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
 }
 
 auto lowerer::coroutine_cancel_check(const void *key, source_span span,
-                                     ptr<hir_expr> awaited)
+                                     ptr_vec<hir_expr> awaited)
     -> std::expected<ptr<hir_node>, lowering_error> {
   auto exit = ptr_vec<hir_node>{};
-  if (awaited != nullptr) {
+  for (auto &task : awaited) {
     exit.push_back(ptr<hir_node>(make<hir_expr_stmt>(
         span, ptr<hir_expr>(make<hir_coroutine_cancel>(
-                  span, k_unknown_type, std::move(awaited))))));
+                  span, k_unknown_type, std::move(task))))));
   }
   if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
       !dropped.has_value()) {
@@ -4320,9 +4315,12 @@ auto lowerer::lower_task_read(const void *key, source_span span,
   };
   await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
       task_span, task_symbol, std::string("<await task>"), std::move(task))));
+  auto held = ptr_vec<hir_expr>{};
+  if (consumes) {
+    held.push_back(task_ref());
+  }
   if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span,
-                                   /*all=*/false,
-                                   consumes ? task_ref() : nullptr);
+                                   /*all=*/false, std::move(held));
       !waited.has_value()) {
     return std::unexpected(waited.error());
   }
@@ -4339,7 +4337,7 @@ auto lowerer::lower_task_read(const void *key, source_span span,
 
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
                              const void *key, source_span span, bool all,
-                             ptr<hir_expr> awaited)
+                             ptr_vec<hir_expr> awaited)
     -> std::expected<void, lowering_error> {
   stmts.push_back(ptr<hir_node>(make<hir_yield>(
       span, std::move(task), /*awaiting_task=*/true, /*awaiting_all=*/all)));
@@ -4719,7 +4717,10 @@ auto lowerer::lower_spawn_and_wait(ptr<hir_expr> made, type_id task_type,
       make<hir_expr_stmt>(span, runtime_call(span, "rt_task_spawn", unit_type,
                                              std::move(spawn_args)))));
   if (in_task) {
-    if (auto waited = emit_task_wait(setup, task_ref(), wait_key, span);
+    auto held = ptr_vec<hir_expr>{};
+    held.push_back(task_ref());
+    if (auto waited = emit_task_wait(setup, task_ref(), wait_key, span,
+                                     /*all=*/false, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5020,8 +5021,13 @@ auto lowerer::lower_par_results(ptr_vec<hir_node> &setup,
                                 std::string("<par tasks>"))};
   };
   if (in_task) {
+    auto held = ptr_vec<hir_expr>{};
+    for (size_t i = 0; i < tasks.size(); ++i) {
+      held.push_back(ptr<hir_expr>(
+          make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    }
     if (auto waited = emit_task_wait(setup, group_ref(), &await, span,
-                                     /*all=*/true);
+                                     /*all=*/true, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5081,7 +5087,13 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   };
 
   if (in_task) {
-    if (auto waited = emit_task_wait(setup, group_ref(), &await, span);
+    auto held = ptr_vec<hir_expr>{};
+    for (size_t i = 0; i < tasks.size(); ++i) {
+      held.push_back(ptr<hir_expr>(
+          make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)));
+    }
+    if (auto waited = emit_task_wait(setup, group_ref(), &await, span,
+                                     /*all=*/false, std::move(held));
         !waited.has_value()) {
       return std::unexpected(waited.error());
     }
@@ -5097,16 +5109,21 @@ auto lowerer::lower_race_result(ptr_vec<hir_node> &setup,
   }
 
   // The first finished branch in source order wins.
+  // The tasks were moved into the tuple, so every read goes through it.
+  const auto member = [&](size_t i) -> ptr<hir_expr> {
+    return {make<hir_tuple_index>(span, tasks.types[i], group_ref(), i)};
+  };
   const auto read_branch = [&](size_t i) -> ptr<hir_block> {
     auto stmts = ptr_vec<hir_node>{};
-    stmts.push_back(ptr<hir_node>(
-        make<hir_expr_stmt>(span, tasks.result_of(i, span, type))));
+    stmts.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_generator_next>(
+                  span, type, member(i), /*await_task=*/true)))));
     return make<hir_block>(span, type, std::move(stmts));
   };
   auto picks = std::vector<hir_if_branch>{};
   for (size_t i = 0; i + 1 < tasks.size(); ++i) {
     auto args = ptr_vec<hir_expr>{};
-    args.push_back(tasks.ref(i));
+    args.push_back(member(i));
     picks.push_back(
         hir_if_branch{.condition = runtime_call(span, "rt_task_is_finished",
                                                 bool_type, std::move(args)),

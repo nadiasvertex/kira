@@ -39,6 +39,18 @@ auto capture_kind_name(capture_kind kind) -> const char * {
   return "?";
 }
 
+auto wait_mode_name(wait_mode mode) -> const char * {
+  switch (mode) {
+  case wait_mode::one:
+    return "one";
+  case wait_mode::all:
+    return "all";
+  case wait_mode::any:
+    return "any";
+  }
+  return "?";
+}
+
 auto op_kind_name(op_kind kind) -> const char * {
   switch (kind) {
   case op_kind::compute:
@@ -73,6 +85,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "suspend";
   case op_kind::coroutine_await:
     return "await";
+  case op_kind::task_block_on_group:
+    return "block_on_group";
   case op_kind::coroutine_cancelled:
     return "cancelled";
   case op_kind::coroutine_finish:
@@ -282,8 +296,15 @@ namespace {
     return "suspend #" + std::to_string(op.depth) + " " +
            render_place(op.dest) + " <- " + render_place(op.source);
   case op_kind::coroutine_await:
-    return "await #" + std::to_string(op.depth) + " " + render_place(op.dest) +
+    return std::string{"await"} +
+           (op.waits == wait_mode::one
+                ? std::string{}
+                : std::string{" "} + wait_mode_name(op.waits)) +
+           " #" + std::to_string(op.depth) + " " + render_place(op.dest) +
            " <- " + render_place(op.source);
+  case op_kind::task_block_on_group:
+    return std::string{"block_on_group "} + wait_mode_name(op.waits) + " " +
+           render_place(op.source);
   case op_kind::coroutine_cancelled:
     return "cancelled " + render_place(op.dest) + " = " +
            render_place(op.source);

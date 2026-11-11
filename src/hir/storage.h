@@ -228,11 +228,16 @@ enum class op_kind : uint8_t {
                        ///< the resumer of `dest` (the coroutine) and returns;
                        ///< resumption continues here. `depth` numbers the point
                        ///< from 1.
-  coroutine_await,     ///< Step only, in a task: waits for the task at `source`.
-                       ///< `dest` is the coroutine. If the awaited task has not
-                       ///< finished the step returns `pending` and, once woken,
+  coroutine_await,     ///< Step only, in a task: waits for the task at `source`,
+                       ///< or, when `waits` is `all` or `any`, for a tuple of
+                       ///< tasks to all finish or for one of them to.
+                       ///< `dest` is the coroutine. If the wait is not over
+                       ///< the step returns `pending` and, once woken,
                        ///< resumes here and polls again. `depth` numbers the
                        ///< point from 1, as for a suspension.
+  task_block_on_group, ///< Not in a step: blocks the thread until all (or, for
+                       ///< `waits == any`, one) of the tuple of tasks at
+                       ///< `source` have finished.
   coroutine_cancelled, ///< Step only: `dest` (a `bool`) <- whether the
                        ///< coroutine at `source` was resumed to unwind.
   coroutine_finish,    ///< Step only: marks the coroutine at `source` done.
@@ -254,6 +259,15 @@ enum class op_kind : uint8_t {
 };
 
 [[nodiscard]] auto op_kind_name(op_kind kind) -> const char *;
+
+/// What an await waits for.
+enum class wait_mode : uint8_t {
+  one, ///< A single task.
+  all, ///< Every task of a tuple (`await par`).
+  any, ///< The first task of a tuple to finish (`await race`).
+};
+
+[[nodiscard]] auto wait_mode_name(wait_mode mode) -> const char *;
 
 /// One step of the function. Only the fields its `kind` names are used.
 struct storage_op {
@@ -284,6 +298,8 @@ struct storage_op {
   operand condition{};
   // exit
   size_t depth = 0;
+  // coroutine_await, task_block_on_group
+  wait_mode waits = wait_mode::one;
   // make_closure, make_generator: `entry` and `glue` name functions of the module that take the
   // environment as their first operand (`abi_signature::takes_environment`).
   // The environment is one block of `env_size` bytes, allocated here when it is

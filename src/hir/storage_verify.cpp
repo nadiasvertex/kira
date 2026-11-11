@@ -881,6 +881,8 @@ private:
       return do_coroutine_suspend(op);
     case op_kind::coroutine_await:
       return do_coroutine_await(op);
+    case op_kind::task_block_on_group:
+      return do_task_block_on_group(op);
     case op_kind::coroutine_cancelled:
       return do_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1890,11 +1892,48 @@ private:
         !self.has_value()) {
       return std::unexpected(self.error());
     }
+    if (op.waits != wait_mode::one) {
+      return require_task_group(op.source, "an await");
+    }
     if (auto awaited = require_handle(op.source, "an await", false, true);
         !awaited.has_value()) {
       return std::unexpected(awaited.error());
     }
     return {};
+  }
+
+  /// `await par` / `await race` outside a task: the thread waits.
+  [[nodiscard]] auto do_task_block_on_group(const storage_op &op) -> result {
+    if (fn_.coroutine_step) {
+      return fail(verify_error_kind::bad_operation,
+                  "a step waits for a group with an await, not by blocking");
+    }
+    if (op.waits == wait_mode::one) {
+      return fail(verify_error_kind::bad_operation,
+                  "blocking on a group needs `all` or `any`");
+    }
+    return require_task_group(op.source, "blocking on a group");
+  }
+
+  /// A tuple of tasks, initialized and read in place.
+  [[nodiscard]] auto require_task_group(const place &where, const char *what)
+      -> result {
+    const auto at = resolve(where);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto &entry = types().entry(types().strip_refinement(where.type));
+    auto all_tasks = entry.kind == semantic::type_kind::tuple_kind &&
+                     !entry.args.empty();
+    for (const auto member : entry.args) {
+      all_tasks = all_tasks && handle_kind_of(member) == handle_kind::task;
+    }
+    if (!all_tasks) {
+      return fail(verify_error_kind::type_mismatch,
+                  std::string{what} + " needs a tuple of tasks, not " +
+                      name_of(where.type));
+    }
+    return require_init(where, *at);
   }
 
   [[nodiscard]] auto do_coroutine_suspend(const storage_op &op) -> result {

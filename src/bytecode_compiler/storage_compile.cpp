@@ -733,6 +733,8 @@ private:
       return emit_coroutine_suspend(op);
     case op_kind::coroutine_await:
       return emit_coroutine_await(op);
+    case op_kind::task_block_on_group:
+      return emit_task_block_on_group(op);
     case op_kind::coroutine_cancelled:
       return emit_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1510,28 +1512,35 @@ private:
     if (!object.has_value()) {
       return std::unexpected(object.error());
     }
-    const auto awaited = read_place(op.source);
-    if (!awaited.has_value()) {
-      return std::unexpected(awaited.error());
-    }
     if (auto ok = store_word(*object, co::k_resume_index_slot, op.depth);
         !ok.has_value()) {
       return ok;
     }
-    const auto id = hir::runtime_intrinsic_id("rt_task_await_poll");
+    // One task is polled by its handle. A group is a tuple of handles that
+    // the runtime reads in place, so it gets the tuple's address and the
+    // number of members.
+    const auto name = op.waits == hir::wait_mode::one
+                          ? "rt_task_await_poll"
+                          : op.waits == hir::wait_mode::all
+                                ? "rt_task_await_all_poll"
+                                : "rt_task_await_any_poll";
+    const auto id = hir::runtime_intrinsic_id(name);
     if (!id.has_value()) {
       return fail(compile_error_kind::internal_error, op.span,
-                  "the runtime has no `rt_task_await_poll`");
+                  std::string{"the runtime has no `"} + name + "`");
     }
-    const auto block = alloc_group(2);
+    const auto arity = op.waits == hir::wait_mode::one ? uint8_t{2} : uint8_t{3};
+    const auto block = alloc_group(arity);
     emit_move(block, *object);
-    emit_move(nth(block, 1), *awaited);
+    if (auto ok = emit_group_operand(op, block, 1); !ok.has_value()) {
+      return ok;
+    }
     const auto finished = alloc_register();
     emit_op(opcode::op_call_intrinsic);
     emit_register(finished);
     writer_.emit_u8(static_cast<uint8_t>(*id));
     emit_register(block);
-    writer_.emit_u8(2);
+    writer_.emit_u8(arity);
     emit_op(opcode::op_jump_if_true);
     emit_register(finished);
     const auto ready = writer_.emit_jump_placeholder();
@@ -1540,6 +1549,57 @@ private:
     emit_op(opcode::op_return_value);
     emit_register(status);
     writer_.patch_jump_to_here(ready);
+    return {};
+  }
+
+  /// Fills the argument registers after `first` for the awaited thing in
+  /// `op.source`: the task's handle, or a group's address and member count.
+  [[nodiscard]] auto emit_group_operand(const hir::storage_op &op,
+                                        virtual_reg block, size_t first)
+      -> checked<void> {
+    if (op.waits == hir::wait_mode::one) {
+      const auto awaited = read_place(op.source);
+      if (!awaited.has_value()) {
+        return std::unexpected(awaited.error());
+      }
+      emit_move(nth(block, first), *awaited);
+      return {};
+    }
+    const auto where = locate(op.source);
+    if (!where.has_value()) {
+      return std::unexpected(where.error());
+    }
+    const auto address = address_of(*where);
+    if (!address.has_value()) {
+      return std::unexpected(address.error());
+    }
+    emit_move(nth(block, first), *address);
+    const auto &group =
+        env_.types().entry(env_.types().strip_refinement(op.source.type));
+    emit_const(nth(block, first + 1),
+               slot_value{static_cast<uint64_t>(group.args.size())});
+    return {};
+  }
+
+  /// `await par` / `await race` outside a task: the thread blocks.
+  [[nodiscard]] auto emit_task_block_on_group(const hir::storage_op &op)
+      -> checked<void> {
+    const auto name = op.waits == hir::wait_mode::all ? "rt_task_block_on_all"
+                                                      : "rt_task_block_on_any";
+    const auto id = hir::runtime_intrinsic_id(name);
+    if (!id.has_value()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  std::string{"the runtime has no `"} + name + "`");
+    }
+    const auto block = alloc_group(2);
+    if (auto ok = emit_group_operand(op, block, 0); !ok.has_value()) {
+      return ok;
+    }
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(alloc_register());
+    writer_.emit_u8(static_cast<uint8_t>(*id));
+    emit_register(block);
+    writer_.emit_u8(2);
     return {};
   }
 

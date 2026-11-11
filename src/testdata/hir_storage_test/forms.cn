@@ -92,7 +92,14 @@ def self_bump(n: int32) -> pair:
 async def triple(x: int32) -> int32:
     return x * 3
 
-# Waiting on a set of tasks is not in the storage form yet.
+# A crew is not in the storage form yet: spawning into it leaves a task
+# temporary that the lowering cannot drop.
+async def crewed() -> int32:
+    crew k:
+        let _ = k.spawn(triple(1))
+    return 1
+
+# Waiting on a set of tasks is.
 async def racing() -> int32:
     return await race:
         triple(1)

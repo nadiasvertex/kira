@@ -59,8 +59,28 @@ inline auto tasks_run_when_spawned_or_dropped(case_backend &backend) -> void {
   // A task nobody started is dropped without running; its body would not
   // finish in any reasonable time.
   expect_equal(run("run_unstarted", {}), 7, "run_unstarted()");
-  // The entry point awaits without being a task: 12 + 42.
-  expect_equal(run("main", {}), 54, "main()");
+  // The entry point awaits without being a task, on single tasks and on
+  // groups: 12 + 42 + 10 + 12 * 100 + 14 * 10000.
+  expect_equal(run("main", {}), 141264, "main()");
+}
+
+inline auto tasks_wait_for_groups(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "tasks.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  // double(3) = 6 and chain(3) = 126: 6 + 126 * 1000.
+  expect_equal(run("run_together", {3}), 126006, "run_together(3)");
+  // (2, 4, 6) as 2 + 40 + 600, double(2) = 4, chain(2) = 84.
+  expect_equal(run("run_wide_group", {2}), 844642, "run_wide_group(2)");
+  // The slow branch is cancelled while it waits on one of its own tasks.
+  expect_equal(run("run_first_wins", {21}), 42, "run_first_wins(21)");
+  expect_equal(run("run_first_wins", {0}), 0, "run_first_wins(0)");
+  // Sum of 2i + 2(i + 1) for i in 0..4: 2 + 6 + 10 + 14.
+  expect_equal(run("run_groups_in_a_loop", {4}), 32, "run_groups_in_a_loop(4)");
+  expect_equal(run("run_groups_in_a_loop", {0}), 0, "run_groups_in_a_loop(0)");
+  // An `on(cpu)` block is a task of its own: 7 * 5 + 1.
+  expect_equal(run("run_on_a_pool", {7}), 36, "run_on_a_pool(7)");
 }
 
 /// Runs the task cases.
@@ -69,6 +89,7 @@ inline auto task_cases(case_backend &backend) -> void {
   tasks_resume_after_each_await(backend);
   tasks_move_results_of_any_size(backend);
   tasks_run_when_spawned_or_dropped(backend);
+  tasks_wait_for_groups(backend);
 }
 
 } // namespace cinder::testing::storage_cases
