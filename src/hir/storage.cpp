@@ -71,6 +71,8 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "dispatch";
   case op_kind::coroutine_suspend:
     return "suspend";
+  case op_kind::coroutine_await:
+    return "await";
   case op_kind::coroutine_cancelled:
     return "cancelled";
   case op_kind::coroutine_finish:
@@ -279,6 +281,9 @@ namespace {
   case op_kind::coroutine_suspend:
     return "suspend #" + std::to_string(op.depth) + " " +
            render_place(op.dest) + " <- " + render_place(op.source);
+  case op_kind::coroutine_await:
+    return "await #" + std::to_string(op.depth) + " " + render_place(op.dest) +
+           " <- " + render_place(op.source);
   case op_kind::coroutine_cancelled:
     return "cancelled " + render_place(op.dest) + " = " +
            render_place(op.source);

@@ -731,6 +731,8 @@ private:
       return emit_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
       return emit_coroutine_suspend(op);
+    case op_kind::coroutine_await:
+      return emit_coroutine_await(op);
     case op_kind::coroutine_cancelled:
       return emit_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1282,10 +1284,11 @@ private:
   //  in that block, so an item of any size needs no extra room in the object.
   // ------------------------------------------------------------------
 
+  /// Whether `type` is a coroutine handle: a generator or a task.
   [[nodiscard]] auto is_generator(type_id type) const -> bool {
     const auto &entry = types().entry(types().strip_refinement(type));
     return entry.kind == semantic::type_kind::builtin_generic_kind &&
-           entry.name == "generator";
+           (entry.name == "generator" || entry.name == "task");
   }
 
   /// The register holding the pointer of the coroutine (or the scalar) at
@@ -1488,6 +1491,55 @@ private:
                   "a suspension point the dispatch does not name");
     }
     writer_.patch_jump_to_here(resume_jumps_[op.depth - 1]);
+    return {};
+  }
+
+  /// A task waits for another. This is its own resume point: the dispatch
+  /// lands here, the step polls the awaited task, and while it has not
+  /// finished the step returns `pending` so the scheduler runs something else
+  /// and wakes it later.
+  [[nodiscard]] auto emit_coroutine_await(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    if (op.depth == 0 || op.depth > resume_jumps_.size()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a suspension point the dispatch does not name");
+    }
+    writer_.patch_jump_to_here(resume_jumps_[op.depth - 1]);
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto awaited = read_place(op.source);
+    if (!awaited.has_value()) {
+      return std::unexpected(awaited.error());
+    }
+    if (auto ok = store_word(*object, co::k_resume_index_slot, op.depth);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto id = hir::runtime_intrinsic_id("rt_task_await_poll");
+    if (!id.has_value()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "the runtime has no `rt_task_await_poll`");
+    }
+    const auto block = alloc_group(2);
+    emit_move(block, *object);
+    emit_move(nth(block, 1), *awaited);
+    const auto finished = alloc_register();
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(finished);
+    writer_.emit_u8(static_cast<uint8_t>(*id));
+    emit_register(block);
+    writer_.emit_u8(2);
+    emit_op(opcode::op_jump_if_true);
+    emit_register(finished);
+    const auto ready = writer_.emit_jump_placeholder();
+    const auto status = alloc_register();
+    emit_const(status, slot_value{co::raw(co::status::pending)});
+    emit_op(opcode::op_return_value);
+    emit_register(status);
+    writer_.patch_jump_to_here(ready);
     return {};
   }
 

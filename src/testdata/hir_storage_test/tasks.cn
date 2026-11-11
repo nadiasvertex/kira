@@ -1,0 +1,50 @@
+module sample
+
+type pair = { pub a: int64, pub b: int64 }
+
+# A task hands its result over once, by address, like a generator's item.
+async def double(x: int64) -> int64:
+    return x * 2
+
+# Awaits inside a loop: the loop state and the awaited task sit in the state
+# block across each suspension.
+async def sum_doubles(n: int64) -> int64:
+    var total: int64 = 0
+    var i: int64 = 0
+    while i < n:
+        total = total + await double(i)
+        i = i + 1
+    return total
+
+async def make_pair(n: int64) -> pair:
+    return pair { a: n, b: n + 1 }
+
+# A generator held by a task, so a test can point an await at it.
+generator def count(n: int64) -> some iterator[int64]:
+    var i: int64 = 0
+    while i < n:
+        yield i
+        i = i + 1
+
+async def with_generator(n: int64) -> int64:
+    let g = count(n)
+    return await double(n)
+
+# A plain function reads a task's result with `get`, blocking the thread.
+def run_double(x: int64) -> int64:
+    let t = double(x)
+    return t.get()
+
+def run_pair(n: int64) -> int64:
+    let t = make_pair(n)
+    let p = t.get()
+    return p.a + p.b
+
+# Spawning hands a task to the scheduler.
+def run_spawned(x: int64) -> int64:
+    let t = double(x)
+    t.spawn()
+    return t.get()
+
+async def main() -> int64:
+    return await double(4)

@@ -24,6 +24,7 @@
 #include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_closure_cases.h"
 #include "src/testing/storage_generator_cases.h"
+#include "src/testing/storage_task_cases.h"
 #include "src/testing/storage_pattern_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_fixture.h"
@@ -231,6 +232,7 @@ auto main() -> int {
   cases::closure_cases(backend);
   cases::pattern_cases(backend);
   cases::generator_cases(backend);
+  cases::task_cases(backend);
   test_compiled_code_has_no_allocation_instruction();
   test_function_metadata_describes_the_calling_convention();
   test_entry_points_check_the_result_storage();

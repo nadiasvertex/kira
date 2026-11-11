@@ -810,7 +810,11 @@ private:
   [[nodiscard]] auto emit_crew_exits(jump_exit kind, source_span span,
                                      ptr_vec<hir_node> &stmts)
       -> std::expected<void, lowering_error>;
-  [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span)
+  /// The check a task makes after each suspension: when it was cancelled,
+  /// drop what it owns and return. `awaited`, if given, is the task it was
+  /// waiting for, which has stopped by then and is dropped first.
+  [[nodiscard]] auto coroutine_cancel_check(const void *key, source_span span,
+                                            ptr<hir_expr> awaited = nullptr)
       -> std::expected<ptr<hir_node>, lowering_error>;
   /// The type table, for the few types lowering interns that checking never
   /// had occasion to (`unit` results of runtime calls, `option[T]`, the tuple
@@ -841,7 +845,8 @@ private:
   /// suspension point, then the check for a cancel that arrived meanwhile.
   [[nodiscard]] auto emit_task_wait(ptr_vec<hir_node> &stmts,
                                     ptr<hir_expr> task, const void *key,
-                                    source_span span, bool all = false)
+                                    source_span span, bool all = false,
+                                    ptr<hir_expr> awaited = nullptr)
       -> std::expected<void, lowering_error>;
   /// Waits for `task` and reads its result: `await task` and `task.get()`.
   /// `await` consumes the task, so `consumes` drops it once its result has
@@ -3624,9 +3629,15 @@ auto lowerer::emit_crew_exits(jump_exit kind, source_span span,
   return {};
 }
 
-auto lowerer::coroutine_cancel_check(const void *key, source_span span)
+auto lowerer::coroutine_cancel_check(const void *key, source_span span,
+                                     ptr<hir_expr> awaited)
     -> std::expected<ptr<hir_node>, lowering_error> {
   auto exit = ptr_vec<hir_node>{};
+  if (awaited != nullptr) {
+    exit.push_back(ptr<hir_node>(make<hir_expr_stmt>(
+        span, ptr<hir_expr>(make<hir_coroutine_cancel>(
+                  span, k_unknown_type, std::move(awaited))))));
+  }
   if (auto dropped = emit_exit_drops(key, jump_exit::function, span, exit);
       !dropped.has_value()) {
     return std::unexpected(dropped.error());
@@ -4309,7 +4320,9 @@ auto lowerer::lower_task_read(const void *key, source_span span,
   };
   await_hoist_->push_back(ptr<hir_node>(make<hir_let>(
       task_span, task_symbol, std::string("<await task>"), std::move(task))));
-  if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span);
+  if (auto waited = emit_task_wait(*await_hoist_, task_ref(), key, span,
+                                   /*all=*/false,
+                                   consumes ? task_ref() : nullptr);
       !waited.has_value()) {
     return std::unexpected(waited.error());
   }
@@ -4325,11 +4338,12 @@ auto lowerer::lower_task_read(const void *key, source_span span,
 }
 
 auto lowerer::emit_task_wait(ptr_vec<hir_node> &stmts, ptr<hir_expr> task,
-                             const void *key, source_span span, bool all)
+                             const void *key, source_span span, bool all,
+                             ptr<hir_expr> awaited)
     -> std::expected<void, lowering_error> {
   stmts.push_back(ptr<hir_node>(make<hir_yield>(
       span, std::move(task), /*awaiting_task=*/true, /*awaiting_all=*/all)));
-  auto cancel = coroutine_cancel_check(key, span);
+  auto cancel = coroutine_cancel_check(key, span, std::move(awaited));
   if (!cancel.has_value()) {
     return std::unexpected(cancel.error());
   }

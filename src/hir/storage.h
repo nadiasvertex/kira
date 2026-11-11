@@ -228,6 +228,11 @@ enum class op_kind : uint8_t {
                        ///< the resumer of `dest` (the coroutine) and returns;
                        ///< resumption continues here. `depth` numbers the point
                        ///< from 1.
+  coroutine_await,     ///< Step only, in a task: waits for the task at `source`.
+                       ///< `dest` is the coroutine. If the awaited task has not
+                       ///< finished the step returns `pending` and, once woken,
+                       ///< resumes here and polls again. `depth` numbers the
+                       ///< point from 1, as for a suspension.
   coroutine_cancelled, ///< Step only: `dest` (a `bool`) <- whether the
                        ///< coroutine at `source` was resumed to unwind.
   coroutine_finish,    ///< Step only: marks the coroutine at `source` done.

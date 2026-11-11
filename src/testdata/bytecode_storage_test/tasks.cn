@@ -1,0 +1,97 @@
+module sample
+
+# Tasks in the storage form (chapter 18): an `async def` is a constructor plus a
+# step function whose frame is the state block, like a generator's. The body
+# hands its result over once, by address; an `await` polls the awaited task and
+# the step returns `pending` until the scheduler has run it. A plain function
+# reads a task's result with `get`, which blocks the calling thread.
+
+# Wider than a register, so the result is moved out of the state block.
+type triple = { pub a: int64, pub b: int64, pub c: int64 }
+
+type pair = { pub a: int64, pub b: int64 }
+
+async def double(x: int64) -> int64:
+    return x * 2
+
+# Awaits inside a loop: the loop counter and total live in the state block
+# across each suspension.
+async def sum_doubles(n: int64) -> int64:
+    var total: int64 = 0
+    var i: int64 = 0
+    while i < n:
+        total = total + await double(i)
+        i = i + 1
+    return total
+
+# Awaits one task after another, using the first result for the second.
+async def chain(x: int64) -> int64:
+    let a = await double(x)
+    let b = await double(a)
+    return a + b * 10
+
+# A borrow of a local in the state block is held across a suspension.
+async def borrows(x: int64) -> int64:
+    let p = pair { a: x, b: x * 3 }
+    let r = &p
+    let d = await double(x)
+    return r.a + r.b * 100 + d * 10000
+
+async def make_triple(n: int64) -> triple:
+    return triple { a: n, b: n * 2, c: n * 3 }
+
+# A result wider than a register, passed through another task.
+async def triple_total(n: int64) -> int64:
+    let t = await make_triple(n)
+    return t.a + t.b * 100 + t.c * 10000
+
+async def nothing() -> unit:
+    return
+
+# A task whose result is `unit` still finishes.
+async def waits_for_nothing(x: int64) -> int64:
+    await nothing()
+    return x + 1
+
+def run_double(x: int64) -> int64:
+    let t = double(x)
+    return t.get()
+
+def run_sum(n: int64) -> int64:
+    let t = sum_doubles(n)
+    return t.get()
+
+def run_chain(x: int64) -> int64:
+    let t = chain(x)
+    return t.get()
+
+def run_borrows(x: int64) -> int64:
+    let t = borrows(x)
+    return t.get()
+
+def run_triple(n: int64) -> int64:
+    let t = triple_total(n)
+    return t.get()
+
+def run_unit(x: int64) -> int64:
+    let t = waits_for_nothing(x)
+    return t.get()
+
+# A task the scheduler already owns can be read once it has finished.
+def run_spawned(x: int64) -> int64:
+    let a = double(x)
+    let b = double(x + 1)
+    a.spawn()
+    b.spawn()
+    return a.get() * 100 + b.get()
+
+# A task that never ran is dropped without running its body.
+def run_unstarted() -> int64:
+    let t = sum_doubles(1000)
+    return 7
+
+# The entry point is an ordinary function that blocks on each task it awaits:
+# 4 * 3 from `sum_doubles`, then `chain(1)` is 42.
+async def main() -> int64:
+    let a = await sum_doubles(4)
+    return a + await chain(1)

@@ -181,11 +181,18 @@ auto expect_verifies(const fixture &f, const hir::storage_function &function,
 
 auto expect_rejects(const fixture &f, const hir::storage_function &function,
                     hir::verify_error_kind kind, std::string_view label,
-                    const hir::verify_options &options = {}) -> void {
+                    const hir::verify_options &options = {},
+                    std::string_view message_has = {}) -> void {
   const auto verdict = hir::verify(function, *f.env, &f.lowering.module, options);
   if (verdict.has_value()) {
     std::cerr << label << ": the verifier accepted a corrupted form\n";
     fail("expected the verifier to reject the corrupted form");
+  }
+  if (!message_has.empty() &&
+      verdict.error().message.find(message_has) == std::string::npos) {
+    std::cerr << label << ": expected the message to contain `" << message_has
+              << "` but got: " << verdict.error().message << "\n";
+    fail("expected a different verifier message");
   }
   if (verdict.error().kind != kind) {
     std::cerr << label << ": expected " << hir::verify_error_kind_name(kind)
@@ -312,7 +319,7 @@ auto test_function_value_and_function_share_a_signature() -> void {
 auto test_synthesized_functions_classify_with_handle_results() -> void {
   auto f = build(read_program("forms.cn"));
   const auto signature =
-      hir::classify_function(*f->layouts, f->hir_function("counter"));
+      hir::classify_function(*f->layouts, f->hir_function("triple"));
   expect(signature.has_value(), "expected the generator to classify");
   expect(signature->result.cls == hir::pass_class::handle,
          "expected a generator to return a handle, not an aggregate");
@@ -447,10 +454,12 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   const auto *shout = f->refusal("shout");
   expect(shout != nullptr && shout->message.find("str") != std::string::npos,
          "expected a string literal to be refused");
-  const auto *counter = f->refusal("counter");
-  expect(counter != nullptr &&
-             counter->message.find("suspension") != std::string::npos,
-         "expected a task to be refused");
+  const auto *racing = f->refusal("racing");
+  expect(racing != nullptr &&
+             racing->message.find("`await`") != std::string::npos,
+         "expected waiting on a set of tasks to be refused");
+  expect(f->refusal("triple") == nullptr,
+         "expected a task that waits on nothing to lower");
   expect(f->lowering.module.find("matching") == nullptr,
          "expected a refused function to be absent, not half lowered");
 }
@@ -1688,8 +1697,157 @@ auto test_verifier_checks_generators() -> void {
                  "a take from a value that is not a generator");
 }
 
+auto test_task_constructor_and_step_hand_over_the_result() -> void {
+  auto f = build(read_program("tasks.cn"));
+  expect(f->lowering.refused.empty(), "expected every task function to lower");
+  // The constructor is the generator's: it copies `x` into the state block
+  // and returns the handle, which is a `task`.
+  expect_ops(*f, "double",
+             {"generator s1 = double$step state 24/8 [copy s0 @0]",
+              "return move s1"});
+  expect_verifies(*f, f->function("double"), "double");
+  // The body hands its result over once and finishes.
+  expect_ops(*f, "double$step",
+             {"dispatch s0 of 1", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "compute s4 = binary * s2, #2", "suspend #1 s1 <- s4", "dead s4",
+              "finish s1", "return #1"});
+  expect_verifies(*f, f->function("double$step"), "double$step");
+  expect_verifies(*f, f->function("make_pair$step"), "make_pair$step");
+}
+
+auto test_await_is_a_resume_point_that_may_return_pending() -> void {
+  auto f = build(read_program("tasks.cn"));
+  // The awaited task is a local of the state block. After the wait the step
+  // checks for a cancel, which drops the awaited task first; past it the
+  // result is moved out and the task dropped.
+  expect_ops(*f, "sum_doubles$step",
+             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "compute s4 = const 0", "compute s5 = const 0", "loop",
+              "compute s6 = binary < s5, s2", "if s6", "dead s6", "else",
+              "dead s6", "exit 0", "end_if", "block", "call s7 = double(s5)",
+              "await #1 s1 <- s7", "cancelled s8 = s1", "if s8", "dead s8",
+              "drop s7", "finish s1", "return #1", "else", "dead s8", "end_if",
+              "take s9 <- s7", "drop s7", "compute s4 = binary + s4, s9",
+              "compute s5 = binary + s5, #1", "end_block", "dead s9", "dead s7",
+              "end_loop", "compute s10 = copy s4", "suspend #2 s1 <- s10",
+              "dead s10", "finish s1", "return #1"});
+  expect_verifies(*f, f->function("sum_doubles$step"), "sum_doubles$step");
+  const auto &step = f->function("sum_doubles$step");
+  const auto &wait = step.ops[find_op(step, hir::op_kind::coroutine_await)];
+  expect(wait.depth == 1 && wait.dest.base == 1,
+         "expected the await to be the first resume point, in the task itself");
+  // The awaited task lives in the state block, so it is there after a resume.
+  expect(step.slots[wait.source.base].cls == hir::storage_class::coroutine_frame,
+         "expected the awaited task to be held in the state block");
+}
+
+auto test_plain_functions_block_on_the_task() -> void {
+  auto f = build(read_program("tasks.cn"));
+  // No suspension to make: the thread waits, then the result is moved out.
+  expect_ops(*f, "run_double",
+             {"call s1 = double(s0)", "call s3 = rt_task_block_on(s1, #0)",
+              "take s2 <- s1", "dead s3", "drop s1", "return s2"});
+  expect_verifies(*f, f->function("run_double"), "run_double");
+  // Spawning looks at the handle without taking it, so it can be read after.
+  expect_ops(*f, "run_spawned",
+             {"call s1 = double(s0)", "call s2 = rt_task_spawn(s1, #0)",
+              "dead s2", "call s4 = rt_task_block_on(s1, #0)", "take s3 <- s1",
+              "dead s4", "drop s1", "return s3"});
+  expect_verifies(*f, f->function("run_spawned"), "run_spawned");
+  // The entry `async def main` is an ordinary function that awaits this way.
+  expect_ops(*f, "main",
+             {"call s1 = double(#4)", "call s3 = rt_task_block_on(s1, #0)",
+              "take s2 <- s1", "dead s3", "drop s1", "compute s0 = copy s2",
+              "return s0"});
+  expect_verifies(*f, f->function("main"), "main");
+  expect_verifies(*f, f->function("run_pair"), "run_pair");
+}
+
+auto test_verifier_checks_tasks() -> void {
+  auto f = build(read_program("tasks.cn"));
+
+  // An await belongs in a step.
+  auto stray = f->function("run_double");
+  stray.ops.insert(stray.ops.begin(),
+                   hir::storage_op{.kind = hir::op_kind::coroutine_await,
+                                   .dest = place_at(1, stray.slots[1].type),
+                                   .source = place_at(1, stray.slots[1].type),
+                                   .depth = 1});
+  expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
+                 "an await in an ordinary function");
+
+  // A resume point is placed once, and the dispatch must name it.
+  auto twice = f->function("sum_doubles$step");
+  const auto at = find_op(twice, hir::op_kind::coroutine_await);
+  auto again = twice.ops[at];
+  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1, again);
+  expect_rejects(*f, twice, hir::verify_error_kind::bad_operation,
+                 "an await point placed twice");
+
+  auto unnamed = f->function("sum_doubles$step");
+  unnamed.ops[find_op(unnamed, hir::op_kind::coroutine_await)].depth = 3;
+  expect_rejects(*f, unnamed, hir::verify_error_kind::bad_operation,
+                 "an await point the dispatch does not name");
+
+  // What is awaited, and what awaits, are tasks.
+  auto not_a_task = f->function("sum_doubles$step");
+  not_a_task.ops[find_op(not_a_task, hir::op_kind::coroutine_await)].source =
+      place_at(2, not_a_task.slots[2].type);
+  expect_rejects(*f, not_a_task, hir::verify_error_kind::type_mismatch,
+                 "an await of a value that is not a task");
+
+  auto no_self = f->function("sum_doubles$step");
+  no_self.ops[find_op(no_self, hir::op_kind::coroutine_await)].dest =
+      place_at(2, no_self.slots[2].type);
+  expect_rejects(*f, no_self, hir::verify_error_kind::type_mismatch,
+                 "an await by something that is not a task");
+
+  // A task is not resumed by hand: only the scheduler runs its step.
+  auto resumed = f->function("run_double");
+  auto &take = resumed.ops[find_op(resumed, hir::op_kind::generator_take)];
+  take.kind = hir::op_kind::generator_resume;
+  take.dest = place_at(3, resumed.slots[3].type);
+  expect_rejects(*f, resumed, hir::verify_error_kind::type_mismatch,
+                 "a task resumed like a generator", {}, "resume needs a generator");
+
+  // A generator is not awaited: only tasks are, and only the scheduler wakes
+  // the waiter.
+  auto awaits_generator = f->function("with_generator$step");
+  auto &wait = awaits_generator.ops[find_op(awaits_generator, hir::op_kind::coroutine_await)];
+  wait.source = awaits_generator.ops[find_op(awaits_generator, hir::op_kind::call_into)].dest;
+  expect_rejects(*f, awaits_generator, hir::verify_error_kind::type_mismatch,
+                 "an await of a generator", {}, "an await needs a task");
+
+  // The result read is the type the task returns.
+  auto mistyped = f->function("run_pair");
+  mistyped.ops[find_op(mistyped, hir::op_kind::generator_take)].dest =
+      place_at(0, mistyped.slots[0].type);
+  expect_rejects(*f, mistyped, hir::verify_error_kind::type_mismatch,
+                 "a task result read as another type");
+
+  // A task that yields the wrong type of result.
+  auto wrong_result = f->function("make_pair$step");
+  wrong_result.ops[find_op(wrong_result, hir::op_kind::coroutine_suspend)].source =
+      place_at(2, wrong_result.slots[2].type);
+  expect_rejects(*f, wrong_result, hir::verify_error_kind::type_mismatch,
+                 "a task that yields a value of another type");
+
+  // The awaited task must not be left behind when the wait is cancelled.
+  auto leaked = f->function("sum_doubles$step");
+  const auto cancel_drop = find_op(leaked, hir::op_kind::drop_in_place);
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(cancel_drop));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "a cancelled wait that leaves the awaited task behind");
+}
+
 auto main() -> int {
   try {
+    test_task_constructor_and_step_hand_over_the_result();
+    test_await_is_a_resume_point_that_may_return_pending();
+    test_plain_functions_block_on_the_task();
+    test_verifier_checks_tasks();
     test_generator_constructor_builds_the_handle();
     test_generator_step_keeps_every_local_in_the_state_block();
     test_next_resumes_then_takes_or_publishes_none();

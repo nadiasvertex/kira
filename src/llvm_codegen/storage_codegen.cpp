@@ -678,6 +678,8 @@ private:
       return emit_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
       return emit_coroutine_suspend(op);
+    case op_kind::coroutine_await:
+      return emit_coroutine_await(op);
     case op_kind::coroutine_cancelled:
       return emit_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1178,10 +1180,11 @@ private:
   //  in that block.
   // ------------------------------------------------------------------
 
+  /// Whether `type` is a coroutine handle: a generator or a task.
   [[nodiscard]] auto is_generator(type_id type) const -> bool {
     const auto &entry = types().entry(types().strip_refinement(type));
     return entry.kind == semantic::type_kind::builtin_generic_kind &&
-           entry.name == "generator";
+           (entry.name == "generator" || entry.name == "task");
   }
 
   [[nodiscard]] auto read_place(const hir::place &where) -> checked<llvm::Value *> {
@@ -1378,6 +1381,47 @@ private:
     store_word(*object, co::k_resume_index_slot, constant(i64(), op.depth));
     builder_.CreateRet(constant(i64(), co::raw(co::status::suspended)));
     builder_.SetInsertPoint(resume_blocks_[op.depth - 1]);
+    return {};
+  }
+
+  /// A task waits for another. This is its own resume point: the dispatch
+  /// lands here, the step polls the awaited task, and while it has not
+  /// finished the step returns `pending` so the scheduler runs something else
+  /// and wakes it later.
+  [[nodiscard]] auto emit_coroutine_await(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    if (op.depth == 0 || op.depth > resume_blocks_.size()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "a suspension point the dispatch does not name");
+    }
+    const auto poll = hir::runtime_intrinsic_id("rt_task_await_poll");
+    if (!poll.has_value()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "the runtime has no `rt_task_await_poll`");
+    }
+    auto *landing = resume_blocks_[op.depth - 1];
+    builder_.CreateBr(landing);
+    builder_.SetInsertPoint(landing);
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto awaited = read_place(op.source);
+    if (!awaited.has_value()) {
+      return std::unexpected(awaited.error());
+    }
+    store_word(*object, co::k_resume_index_slot, constant(i64(), op.depth));
+    auto *finished = builder_.CreateCall(runtime_function(mc_, *poll),
+                                         {*object, *awaited});
+    auto *waiting = llvm::BasicBlock::Create(mc_.ctx, "await.pending", llvm_fn_);
+    auto *ready = llvm::BasicBlock::Create(mc_.ctx, "await.ready", llvm_fn_);
+    builder_.CreateCondBr(
+        builder_.CreateICmpNE(finished, constant(finished->getType(), 0)),
+        ready, waiting);
+    builder_.SetInsertPoint(waiting);
+    builder_.CreateRet(constant(i64(), co::raw(co::status::pending)));
+    builder_.SetInsertPoint(ready);
     return {};
   }
 

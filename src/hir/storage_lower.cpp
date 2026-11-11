@@ -3,6 +3,7 @@
 #include "src/hir/captures.h"
 #include "src/hir/traversal.h"
 #include "src/runtime/coroutine.h"
+#include "src/runtime/scheduler.h"
 
 #include <algorithm>
 #include <charconv>
@@ -664,7 +665,10 @@ private:
   /// The scalar-class value of `expr` as an operand. When a later sibling
   /// can have effects, a value read from a place is copied first so the read
   /// happens in source order.
-  [[nodiscard]] auto lower_operand(const hir_expr &expr, bool later_effects)
+  /// With `borrowed` the callee only looks at a handle, so reading it takes
+  /// nothing from its owner.
+  [[nodiscard]] auto lower_operand(const hir_expr &expr, bool later_effects,
+                                   bool borrowed = false)
       -> std::expected<operand, storage_lower_error> {
     const auto cls = class_of(expr.type, expr.span);
     if (!cls.has_value()) {
@@ -709,7 +713,7 @@ private:
       return std::unexpected(source.error());
     }
     if (source->has_value()) {
-      const auto consume = consumes(*cls, expr.type);
+      const auto consume = !borrowed && consumes(*cls, expr.type);
       if (!later_effects) {
         return read_of(**source, consume);
       }
@@ -726,7 +730,7 @@ private:
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
       return std::unexpected(ok.error());
     }
-    const auto consume = consumes(*cls, expr.type);
+    const auto consume = !borrowed && consumes(*cls, expr.type);
     if (consume) {
       consumed(temp);
     }
@@ -780,7 +784,9 @@ private:
     case hir_node_kind::hir_variant_init:
       return lower_variant(as<hir_variant_init>(expr), dest);
     case hir_node_kind::hir_block:
-      return lower_block(as<hir_block>(expr), dest);
+      // The statements inside end their own temporaries; those of the
+      // enclosing expression, `dest` among them, outlive the block.
+      return in_region(expr.span, [&] { return lower_block(as<hir_block>(expr), dest); });
     case hir_node_kind::hir_if:
       return lower_if(as<hir_if>(expr), dest);
     case hir_node_kind::hir_lambda:
@@ -1383,7 +1389,7 @@ private:
       return refuse(yield.span, "`yield` outside the body of a generator");
     }
     if (yield.awaits) {
-      return refuse(yield.span, "`await`");
+      return lower_await_point(yield);
     }
     const auto item = new_temp(yield.value->type, yield.value->span);
     if (auto ok = lower_into(*yield.value, whole(item)); !ok.has_value()) {
@@ -1398,28 +1404,107 @@ private:
     return flush_pending(yield.span);
   }
 
+  /// The coroutine `object` names, in place when it is a variable and in a
+  /// temporary otherwise.
+  [[nodiscard]] auto lower_coroutine_place(const hir_expr &object)
+      -> std::expected<place, storage_lower_error> {
+    auto found = lower_place(object);
+    if (!found.has_value()) {
+      return std::unexpected(found.error());
+    }
+    if (found->has_value()) {
+      return auto_deref(std::move(**found));
+    }
+    const auto temp = new_temp(object.type, object.span);
+    if (auto ok = lower_into(object, whole(temp)); !ok.has_value()) {
+      return std::unexpected(ok.error());
+    }
+    return whole(temp);
+  }
+
+  /// Whether `type` is a `task`.
+  [[nodiscard]] auto is_task_type(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "task";
+  }
+
+  /// A task's `await` point: the step polls the awaited task and, if it has
+  /// not finished, returns `pending`. Woken, it resumes here and polls again.
+  /// Past it the awaited task has finished and `lower_task_result` reads it.
+  [[nodiscard]] auto lower_await_point(const hir_yield &yield) -> result {
+    if (yield.awaits_all || !is_task_type(yield.value->type)) {
+      return refuse(yield.span, yield.awaits_all
+                                    ? "`await par`"
+                                    : "an `await` of anything but one task");
+    }
+    auto awaited = lower_coroutine_place(*yield.value);
+    if (!awaited.has_value()) {
+      return std::unexpected(awaited.error());
+    }
+    auto wait = storage_op{.kind = op_kind::coroutine_await};
+    wait.source = std::move(*awaited);
+    wait.dest = whole(object_slot_);
+    wait.depth = ++suspensions_;
+    emit(std::move(wait), yield.span);
+    return flush_pending(yield.span);
+  }
+
+  /// `await task`'s read of a finished task's result. A task body has waited
+  /// for it already; the entry `async def main` is an ordinary function with
+  /// nothing to suspend, so it blocks until the task is done.
+  [[nodiscard]] auto lower_task_result(const hir_generator_next &next,
+                                       const place &dest) -> result {
+    if (!is_task_type(next.object->type)) {
+      return malformed(next.span, "an `await` of " +
+                                      types().display(next.object->type) +
+                                      ", which is not a task");
+    }
+    auto task = lower_coroutine_place(*next.object);
+    if (!task.has_value()) {
+      return std::unexpected(task.error());
+    }
+    if (!fn_.step) {
+      const auto word = types().usize_type();
+      auto signature = classify_signature(
+          env_.layouts, std::vector<type_id>{task->type, word}, unit_type());
+      if (!signature.has_value()) {
+        return layout_failure(next.span, signature.error());
+      }
+      auto block = storage_op{.kind = op_kind::call_into};
+      block.callee.name = "rt_task_block_on";
+      block.args.push_back(call_argument{.source_index = 0,
+                                         .cls = signature->params[0].cls,
+                                         .value = read_of(*task, false)});
+      block.args.push_back(call_argument{
+          .source_index = 1,
+          .cls = signature->params[1].cls,
+          .value = word_constant(
+              static_cast<uint64_t>(runtime::scheduler::pool::io))});
+      block.signature = std::move(*signature);
+      block.dest = whole(new_temp(unit_type(), next.span));
+      emit(std::move(block), next.span);
+    }
+    emit(storage_op{.kind = op_kind::generator_take,
+                    .dest = dest,
+                    .source = std::move(*task)},
+         next.span);
+    return {};
+  }
+
   /// `g.next()`: resumes the generator once. While it is suspended the item it
   /// yielded is moved into an `@some`; once it has finished the result is
   /// `@none`.
   [[nodiscard]] auto lower_generator_next(const hir_generator_next &next,
                                           const place &dest) -> result {
     if (next.awaiting) {
-      return refuse(next.span, "`await`");
+      return lower_task_result(next, dest);
     }
-    auto found = lower_place(*next.object);
+    auto found = lower_coroutine_place(*next.object);
     if (!found.has_value()) {
       return std::unexpected(found.error());
     }
-    auto generator = place{};
-    if (found->has_value()) {
-      generator = auto_deref(std::move(**found));
-    } else {
-      const auto temp = new_temp(next.object->type, next.object->span);
-      generator = whole(temp);
-      if (auto ok = lower_into(*next.object, generator); !ok.has_value()) {
-        return ok;
-      }
-    }
+    const auto generator = std::move(*found);
     const auto layout = layout_of(dest.type, next.span);
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
@@ -1518,11 +1603,16 @@ private:
     }
 
     auto target = call_target{};
+    // The runtime's task and crew calls look at a handle without taking it:
+    // `t.spawn()` leaves `t` there to be awaited.
+    auto borrows_handles = false;
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
         !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
       const auto &callee = as<hir_local_ref>(*call.callee);
       target.name = callee.name;
       target.owner_module = callee.owner_module;
+      borrows_handles = target.name.starts_with("rt_task_") ||
+                        target.name.starts_with("rt_crew_");
     } else {
       auto callable = lower_place(*call.callee);
       if (!callable.has_value()) {
@@ -1565,7 +1655,7 @@ private:
         for (size_t j = i + 1; j < call.args.size(); ++j) {
           later_effects = later_effects || !is_pure(*call.args[j]);
         }
-        auto value = lower_operand(arg, later_effects);
+        auto value = lower_operand(arg, later_effects, borrows_handles);
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }
@@ -2671,7 +2761,7 @@ auto lower_to_storage(const hir_module &module, storage_env &env)
   out.module.name = module.module_name;
   for (const auto &function : module.functions) {
     auto closures = closure_sink{};
-    if (function->is_generator()) {
+    if (function->is_generator() || function->is_task()) {
       auto lowered = lower_generator(*function, env, closures);
       if (lowered.has_value()) {
         out.module.functions.push_back(std::move(*lowered));

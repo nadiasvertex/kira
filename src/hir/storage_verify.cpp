@@ -879,6 +879,8 @@ private:
       return do_coroutine_dispatch(op);
     case op_kind::coroutine_suspend:
       return do_coroutine_suspend(op);
+    case op_kind::coroutine_await:
+      return do_coroutine_await(op);
     case op_kind::coroutine_cancelled:
       return do_coroutine_cancelled(op);
     case op_kind::coroutine_finish:
@@ -1685,34 +1687,67 @@ private:
   //  Generators
   // ------------------------------------------------------------------
 
-  /// The item type of `type` when it is a generator.
-  [[nodiscard]] auto generator_item(type_id type) const
-      -> std::optional<type_id> {
+  /// Which kind of coroutine handle `type` is. A task is a coroutine that
+  /// yields its result once.
+  enum class handle_kind : uint8_t { generator, task };
+
+  [[nodiscard]] auto handle_kind_of(type_id type) const
+      -> std::optional<handle_kind> {
     const auto &entry = types().entry(types().strip_refinement(type));
     if (entry.kind != semantic::type_kind::builtin_generic_kind ||
-        entry.name != "generator" || entry.args.empty()) {
+        entry.args.empty()) {
       return std::nullopt;
     }
-    return entry.args[0];
+    if (entry.name == "generator") {
+      return handle_kind::generator;
+    }
+    if (entry.name == "task" && entry.args.size() >= 2) {
+      return handle_kind::task;
+    }
+    return std::nullopt;
   }
 
-  /// A generator that is initialized and read in place.
-  [[nodiscard]] auto require_generator(const place &where, const char *what)
+  /// Whether `item` is what the coroutine `handle` hands over: a generator's
+  /// element, or a task's value (`result[value, error]` for a fallible one).
+  [[nodiscard]] auto item_matches(type_id handle, type_id item) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(handle));
+    if (entry.name == "generator") {
+      return same_type(entry.args[0], item);
+    }
+    if (types().entry(entry.args[1]).name == "never") {
+      return same_type(entry.args[0], item);
+    }
+    const auto &given = types().entry(types().strip_refinement(item));
+    return given.kind == semantic::type_kind::builtin_generic_kind &&
+           given.name == "result" && given.args.size() == 2 &&
+           same_type(given.args[0], entry.args[0]) &&
+           same_type(given.args[1], entry.args[1]);
+  }
+
+  /// A coroutine handle that is initialized and read in place. `generators`
+  /// and `tasks` say which sorts of handle the operation accepts; the
+  /// handle's type comes back.
+  [[nodiscard]] auto require_handle(const place &where, const char *what,
+                                    bool generators, bool tasks)
       -> std::expected<type_id, verify_error> {
     const auto at = resolve(where);
     if (!at.has_value()) {
       return std::unexpected(at.error());
     }
-    const auto item = generator_item(where.type);
-    if (!item.has_value()) {
+    const auto kind = handle_kind_of(where.type);
+    if (!kind.has_value() ||
+        (*kind == handle_kind::generator ? !generators : !tasks)) {
       return fail(verify_error_kind::type_mismatch,
-                  std::string{what} + " needs a generator, not " +
-                      name_of(where.type));
+                  std::string{what} + " needs " +
+                      (generators && tasks ? "a generator or a task"
+                       : generators        ? "a generator"
+                                           : "a task") +
+                      ", not " + name_of(where.type));
     }
     if (auto ok = require_init(where, *at); !ok.has_value()) {
       return std::unexpected(ok.error());
     }
-    return *item;
+    return where.type;
   }
 
   /// A scalar `dest` of `expected` that the operation then writes.
@@ -1751,9 +1786,10 @@ private:
     if (!dest.has_value()) {
       return std::unexpected(dest.error());
     }
-    if (dest->through_deref || !generator_item(op.dest.type).has_value()) {
+    if (dest->through_deref || !handle_kind_of(op.dest.type).has_value()) {
       return fail(verify_error_kind::type_mismatch,
-                  "a generator is built in a generator of its own storage, not " +
+                  "a coroutine is built in a generator or task of its own "
+                  "storage, not " +
                       name_of(op.dest.type));
     }
     if (callees_ != nullptr) {
@@ -1778,21 +1814,21 @@ private:
   }
 
   [[nodiscard]] auto do_generator_resume(const storage_op &op) -> result {
-    if (auto item = require_generator(op.source, "resume"); !item.has_value()) {
-      return std::unexpected(item.error());
+    if (auto handle = require_handle(op.source, "resume", true, false);
+        !handle.has_value()) {
+      return std::unexpected(handle.error());
     }
     return write_scalar(op.dest, "resume", runtime::k_word_size);
   }
 
   [[nodiscard]] auto do_generator_take(const storage_op &op) -> result {
-    const auto item = require_generator(op.source, "take");
-    if (!item.has_value()) {
-      return std::unexpected(item.error());
+    const auto handle = require_handle(op.source, "take", true, true);
+    if (!handle.has_value()) {
+      return std::unexpected(handle.error());
     }
-    if (!same_type(*item, op.dest.type)) {
+    if (!item_matches(*handle, op.dest.type)) {
       return fail(verify_error_kind::type_mismatch,
-                  "a generator of " + name_of(*item) + " yields no " +
-                      name_of(op.dest.type));
+                  name_of(*handle) + " yields no " + name_of(op.dest.type));
     }
     const auto to = resolve(op.dest);
     if (!to.has_value()) {
@@ -1824,10 +1860,8 @@ private:
     return {};
   }
 
-  [[nodiscard]] auto do_coroutine_suspend(const storage_op &op) -> result {
-    if (auto ok = require_step("a suspension"); !ok.has_value()) {
-      return ok;
-    }
+  /// A resume point of a step: one of the dispatch's, placed once.
+  [[nodiscard]] auto place_suspension_point(const storage_op &op) -> result {
     if (!dispatch_points_.has_value() || op.depth == 0 ||
         op.depth > *dispatch_points_) {
       return fail(verify_error_kind::bad_operation,
@@ -1841,17 +1875,46 @@ private:
                   "suspension point " + std::to_string(op.depth) +
                       " is placed twice");
     }
-    const auto item = require_generator(op.dest, "a suspension");
-    if (!item.has_value()) {
-      return std::unexpected(item.error());
+    return {};
+  }
+
+  /// `await`: the step's own coroutine is a task, and it waits for another.
+  [[nodiscard]] auto do_coroutine_await(const storage_op &op) -> result {
+    if (auto ok = require_step("an await"); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = place_suspension_point(op); !ok.has_value()) {
+      return ok;
+    }
+    if (auto self = require_handle(op.dest, "an await", false, true);
+        !self.has_value()) {
+      return std::unexpected(self.error());
+    }
+    if (auto awaited = require_handle(op.source, "an await", false, true);
+        !awaited.has_value()) {
+      return std::unexpected(awaited.error());
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto do_coroutine_suspend(const storage_op &op) -> result {
+    if (auto ok = require_step("a suspension"); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = place_suspension_point(op); !ok.has_value()) {
+      return ok;
+    }
+    const auto handle = require_handle(op.dest, "a suspension", true, true);
+    if (!handle.has_value()) {
+      return std::unexpected(handle.error());
     }
     const auto from = resolve(op.source);
     if (!from.has_value()) {
       return std::unexpected(from.error());
     }
-    if (!same_type(*item, op.source.type)) {
+    if (!item_matches(*handle, op.source.type)) {
       return fail(verify_error_kind::type_mismatch,
-                  "a generator of " + name_of(*item) + " cannot yield " +
+                  name_of(*handle) + " cannot yield " +
                       name_of(op.source.type));
     }
     if (auto ok = require_init(op.source, *from); !ok.has_value()) {
@@ -1869,9 +1932,10 @@ private:
     if (auto ok = require_step("a cancellation test"); !ok.has_value()) {
       return ok;
     }
-    if (auto item = require_generator(op.source, "a cancellation test");
-        !item.has_value()) {
-      return std::unexpected(item.error());
+    if (auto handle =
+            require_handle(op.source, "a cancellation test", true, true);
+        !handle.has_value()) {
+      return std::unexpected(handle.error());
     }
     return write_scalar(op.dest, "a cancellation test", 1);
   }
@@ -1880,9 +1944,9 @@ private:
     if (auto ok = require_step("finishing"); !ok.has_value()) {
       return ok;
     }
-    if (auto item = require_generator(op.source, "finishing");
-        !item.has_value()) {
-      return std::unexpected(item.error());
+    if (auto handle = require_handle(op.source, "finishing", true, true);
+        !handle.has_value()) {
+      return std::unexpected(handle.error());
     }
     return {};
   }

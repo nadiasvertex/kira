@@ -89,8 +89,14 @@ def self_bump(n: int32) -> pair:
     p = bump(&p)
     return p
 
-async def counter() -> int32:
-    return 1
+async def triple(x: int32) -> int32:
+    return x * 3
+
+# Waiting on a set of tasks is not in the storage form yet.
+async def racing() -> int32:
+    return await race:
+        triple(1)
+        triple(2)
 
 def matching(n: int32) -> int32:
     match n:
