@@ -73,7 +73,9 @@ enum class storage_class : uint8_t {
   global,              ///< A program-wide `static`.
   owner_field,         ///< A field of a longer-lived owner.
   closure_environment, ///< A captured value in a closure's environment.
-  coroutine_frame,     ///< A value that lives across a suspension.
+  coroutine_frame,     ///< A value that lives across a suspension: the bytes
+                       ///< are in the state block the step function received,
+                       ///< `env_offset` bytes in.
 };
 
 [[nodiscard]] auto storage_class_name(storage_class cls) -> const char *;
@@ -94,8 +96,8 @@ struct storage_slot {
   /// The slot whose lifetime bounds this one. A slot that owns its own bytes
   /// names itself; an `owner_field` names the owner it is part of.
   storage_id owner = k_invalid_storage;
-  /// `closure_environment` only: the slot's bytes are in the environment block
-  /// the function received, `env_offset` bytes in. When `env_indirect` is set
+  /// `closure_environment` and `coroutine_frame`: the slot's bytes are in the
+  /// environment (state) block the function received, `env_offset` bytes in. When `env_indirect` is set
   /// the environment holds the address of the variable instead, and the slot is
   /// the variable it points at.
   size_t env_offset = 0;
@@ -210,6 +212,25 @@ enum class op_kind : uint8_t {
   make_closure,    ///< `dest` (a `fn` value) <- `{entry, env, glue}`; see below.
   release_environment, ///< Frees the environment block this closure body or
                        ///< drop glue received. Only the glue does this.
+  // Generators. A `generator def` lowers to a constructor and a step function.
+  // The step's frame is its state block: every local is a `coroutine_frame`
+  // slot at a fixed offset in it, so nothing needs saving at a suspension.
+  make_generator,   ///< `dest` (a generator) <- a new coroutine whose step is
+                    ///< `entry`; `env_size`/`env_align` size its state block
+                    ///< and `captures` fill it, as for `make_closure`.
+  generator_resume, ///< `dest` (a `uint64`) <- the status after resuming the
+                    ///< generator at `source` once.
+  generator_take,   ///< `dest` <- the item the generator at `source` last
+                    ///< yielded, moved out of the producer's state block.
+  coroutine_dispatch,  ///< Step only, first: jumps to the resume point of
+                       ///< `source` (a `uint64`); `depth` points exist.
+  coroutine_suspend,   ///< Step only: hands the item at `source` (consumed) to
+                       ///< the resumer of `dest` (the coroutine) and returns;
+                       ///< resumption continues here. `depth` numbers the point
+                       ///< from 1.
+  coroutine_cancelled, ///< Step only: `dest` (a `bool`) <- whether the
+                       ///< coroutine at `source` was resumed to unwind.
+  coroutine_finish,    ///< Step only: marks the coroutine at `source` done.
   storage_dead,    ///< Ends the lifetime of slot `slot`.
   return_value,    ///< Leaves the function; see `value`.
   // Structured control flow. The markers nest like brackets in the flat
@@ -258,7 +279,7 @@ struct storage_op {
   operand condition{};
   // exit
   size_t depth = 0;
-  // make_closure: `entry` and `glue` name functions of the module that take the
+  // make_closure, make_generator: `entry` and `glue` name functions of the module that take the
   // environment as their first operand (`abi_signature::takes_environment`).
   // The environment is one block of `env_size` bytes, allocated here when it is
   // not empty and released by `glue`; `captures` fill it. `glue` is empty only
@@ -285,6 +306,10 @@ struct storage_function {
   storage_id result_slot = k_invalid_storage;
   /// The slot of each source parameter, in order.
   std::vector<storage_id> param_slots;
+  /// The function is a generator's step: it takes the state block as its
+  /// environment, then the resume index and the coroutine, and returns the
+  /// status word. Its locals are `coroutine_frame` slots.
+  bool coroutine_step = false;
   std::vector<storage_op> ops;
 
   [[nodiscard]] auto slot(storage_id id) const -> const storage_slot & {

@@ -35,6 +35,7 @@
 #include "src/testing/storage_cases.h"
 #include "src/testing/storage_intrinsic_cases.h"
 #include "src/testing/storage_closure_cases.h"
+#include "src/testing/storage_generator_cases.h"
 #include "src/testing/storage_pattern_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_fixture.h"
@@ -327,6 +328,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
     cases::memory_cases(backend);
     cases::closure_cases(backend);
     cases::pattern_cases(backend);
+    cases::generator_cases(backend);
   }
 }
 

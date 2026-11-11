@@ -2,6 +2,7 @@
 
 #include "src/hir/captures.h"
 #include "src/hir/traversal.h"
+#include "src/runtime/coroutine.h"
 
 #include <algorithm>
 #include <charconv>
@@ -118,6 +119,10 @@ struct body_shape {
   const hir_block *body = nullptr;
   source_span span{};
   bool coroutine = false;
+  /// A generator's step function: `generator` is the generator type it steps.
+  /// Its locals live in the state block its caller supplies.
+  bool step = false;
+  type_id generator = semantic::k_unknown_type;
   /// A closure body: the environment it reads its captures from.
   const environment_plan *environment = nullptr;
   /// A closure's drop glue: releases the environment block when it ends.
@@ -143,10 +148,17 @@ public:
   function_lowerer(body_shape shape, storage_env &env, closure_sink &closures)
       : fn_(std::move(shape)), env_(env), closures_(closures) {}
 
+  /// The size and alignment of the state block a step function lowered to.
+  [[nodiscard]] auto state_size() const -> size_t { return state_size_; }
+  [[nodiscard]] auto state_align() const -> size_t { return state_align_; }
+
   [[nodiscard]] auto run() -> std::expected<storage_function, storage_lower_error> {
+    if (fn_.step) {
+      return run_step();
+    }
     if (fn_.coroutine) {
       return refuse(fn_.span,
-                    "a generator or task body needs suspension-aware storage");
+                    "a task body needs suspension-aware storage");
     }
     out_.name = fn_.name;
     auto param_types = std::vector<type_id>{};
@@ -233,6 +245,10 @@ private:
   auto new_slot(storage_class cls, type_id type, std::string name,
                 symbol_id symbol, const source_span &span, bool initialized)
       -> storage_id {
+    if (fn_.step && cls == storage_class::frame_local) {
+      // A generator's frame is its state block, which outlives a suspension.
+      cls = storage_class::coroutine_frame;
+    }
     const auto id = static_cast<storage_id>(out_.slots.size());
     out_.slots.push_back(storage_slot{.id = id,
                                       .cls = cls,
@@ -294,6 +310,13 @@ private:
 
   auto emit_return(std::optional<operand> value, const source_span &span)
       -> void {
+    if (fn_.step) {
+      // The body is over: the coroutine is marked done and the step reports it.
+      emit(storage_op{.kind = op_kind::coroutine_finish,
+                      .source = whole(object_slot_)},
+           span);
+      value = word_constant(runtime::coroutine::raw(runtime::coroutine::status::done));
+    }
     auto ret = storage_op{.kind = op_kind::return_value};
     ret.value = std::move(value);
     emit(std::move(ret), span);
@@ -302,6 +325,14 @@ private:
 
   [[nodiscard]] auto types() const -> const semantic::type_table & {
     return env_.types();
+  }
+
+  /// A constant of the word type that generators use for statuses and indexes.
+  [[nodiscard]] auto word_constant(uint64_t value) const -> operand {
+    return operand{.kind = operand_kind::constant,
+                   .type = types().usize_type(),
+                   .literal = token_kind::int_lit,
+                   .text = std::to_string(value)};
   }
 
   [[nodiscard]] auto class_of(type_id type, const source_span &span)
@@ -756,6 +787,12 @@ private:
       return lower_lambda(as<hir_lambda>(expr), dest);
     case hir_node_kind::hir_closure_drop:
       return lower_closure_drop(as<hir_closure_drop>(expr), dest);
+    case hir_node_kind::hir_generator_next:
+      return lower_generator_next(as<hir_generator_next>(expr), dest);
+    case hir_node_kind::hir_coroutine_cancelled:
+      return lower_coroutine_cancelled(expr, dest);
+    case hir_node_kind::hir_coroutine_cancel:
+      return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), dest);
     default:
       return refuse(expr.span, describe(expr.kind) +
                                    " is not part of storage lowering yet");
@@ -1274,6 +1311,201 @@ private:
     return {};
   }
 
+  // ------------------------------------------------------------------
+  //  Generators
+  // ------------------------------------------------------------------
+
+  /// A generator's step. Its parameters and every local are slots of the state
+  /// block the constructor filled, so a suspension saves nothing: the function
+  /// returns, and the next call resumes at the point the dispatch names.
+  [[nodiscard]] auto run_step() -> std::expected<storage_function, storage_lower_error> {
+    out_.name = fn_.name;
+    out_.coroutine_step = true;
+    const auto word = types().usize_type();
+    auto signature = classify_signature(
+        env_.layouts, std::vector<type_id>{word, fn_.generator}, word);
+    if (!signature.has_value()) {
+      return layout_failure(fn_.span, signature.error());
+    }
+    signature->takes_environment = true;
+    out_.signature = std::move(*signature);
+    const auto resume = new_slot(storage_class::parameter, word, "resume",
+                                 k_invalid_symbol_id, fn_.span, true);
+    object_slot_ = new_slot(storage_class::parameter, fn_.generator, "coroutine",
+                            k_invalid_symbol_id, fn_.span, true);
+    out_.param_slots = {resume, object_slot_};
+    for (const auto &param : *fn_.params) {
+      const auto id = new_slot(storage_class::coroutine_frame, param.type,
+                               param.name, param.symbol, fn_.span, true);
+      locals_[param.symbol] = id;
+    }
+    emit(storage_op{.kind = op_kind::coroutine_dispatch, .source = whole(resume)},
+         fn_.span);
+    if (fn_.body != nullptr) {
+      for (const auto &stmt : fn_.body->stmts) {
+        if (auto ok = lower_stmt(*stmt); !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
+        if (terminated_) {
+          break;
+        }
+      }
+    }
+    if (!terminated_) {
+      if (auto ended = flush_pending(fn_.span); !ended.has_value()) {
+        return std::unexpected(ended.error());
+      }
+      emit_return(std::nullopt, fn_.span);
+    }
+    out_.ops.front().depth = suspensions_;
+    // Lay the state block out: parameters first, in order, then the rest.
+    auto running = size_t{0};
+    for (auto &slot : out_.slots) {
+      if (slot.cls != storage_class::coroutine_frame) {
+        continue;
+      }
+      const auto layout = layout_of(slot.type, slot.span);
+      if (!layout.has_value()) {
+        return std::unexpected(layout.error());
+      }
+      slot.env_offset = round_up(running, (*layout)->align);
+      running = slot.env_offset + (*layout)->size;
+      state_align_ = std::max(state_align_, (*layout)->align);
+    }
+    state_size_ = round_up(running, state_align_);
+    return std::move(out_);
+  }
+
+  /// `yield value`: the value is built in a slot of the state block, then
+  /// handed to the resumer, which moves it out when it reads the item.
+  [[nodiscard]] auto lower_yield(const hir_yield &yield) -> result {
+    if (!fn_.step) {
+      return refuse(yield.span, "`yield` outside the body of a generator");
+    }
+    if (yield.awaits) {
+      return refuse(yield.span, "`await`");
+    }
+    const auto item = new_temp(yield.value->type, yield.value->span);
+    if (auto ok = lower_into(*yield.value, whole(item)); !ok.has_value()) {
+      return ok;
+    }
+    auto suspend = storage_op{.kind = op_kind::coroutine_suspend};
+    suspend.source = whole(item);
+    suspend.dest = whole(object_slot_);
+    suspend.depth = ++suspensions_;
+    emit(std::move(suspend), yield.span);
+    consumed(item);
+    return flush_pending(yield.span);
+  }
+
+  /// `g.next()`: resumes the generator once. While it is suspended the item it
+  /// yielded is moved into an `@some`; once it has finished the result is
+  /// `@none`.
+  [[nodiscard]] auto lower_generator_next(const hir_generator_next &next,
+                                          const place &dest) -> result {
+    if (next.awaiting) {
+      return refuse(next.span, "`await`");
+    }
+    auto found = lower_place(*next.object);
+    if (!found.has_value()) {
+      return std::unexpected(found.error());
+    }
+    auto generator = place{};
+    if (found->has_value()) {
+      generator = auto_deref(std::move(**found));
+    } else {
+      const auto temp = new_temp(next.object->type, next.object->span);
+      generator = whole(temp);
+      if (auto ok = lower_into(*next.object, generator); !ok.has_value()) {
+        return ok;
+      }
+    }
+    const auto layout = layout_of(dest.type, next.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto *some = (*layout)->find_variant("some");
+    if (some == nullptr || some->payload.size() != 1 ||
+        (*layout)->find_variant("none") == nullptr) {
+      return malformed(next.span, "a generator step gives `" +
+                                      types().display(dest.type) +
+                                      "`, not an option");
+    }
+    const auto status = new_temp(types().usize_type(), next.span);
+    emit(storage_op{.kind = op_kind::generator_resume,
+                    .dest = whole(status),
+                    .source = generator},
+         next.span);
+    return branch_on(
+        next.span,
+        [&](const place &flag) {
+          auto op = storage_op{.kind = op_kind::compute};
+          op.dest = flag;
+          op.computation = compute_kind::binary;
+          op.binary = ast::binary_op::eq_eq;
+          op.operands.push_back(read_of(whole(status), false));
+          op.operands.push_back(word_constant(
+              runtime::coroutine::raw(runtime::coroutine::status::suspended)));
+          emit(std::move(op), next.span);
+        },
+        [&]() -> result {
+          emit(storage_op{.kind = op_kind::generator_take,
+                          .dest = project(dest,
+                                          projection{.kind = projection_kind::payload,
+                                                     .index = 0,
+                                                     .name = "some"},
+                                          some->payload[0].type),
+                          .source = generator},
+               next.span);
+          auto op = storage_op{.kind = op_kind::publish_variant};
+          op.dest = dest;
+          op.variant = "some";
+          emit(std::move(op), next.span);
+          return {};
+        },
+        [&]() -> result {
+          auto op = storage_op{.kind = op_kind::publish_variant};
+          op.dest = dest;
+          op.variant = "none";
+          emit(std::move(op), next.span);
+          return {};
+        });
+  }
+
+  /// The test the cancellation check HIR places after each `yield`.
+  [[nodiscard]] auto lower_coroutine_cancelled(const hir_expr &expr,
+                                               const place &dest) -> result {
+    if (!fn_.step) {
+      return refuse(expr.span, "a cancellation test outside a generator body");
+    }
+    emit(storage_op{.kind = op_kind::coroutine_cancelled,
+                    .dest = dest,
+                    .source = whole(object_slot_)},
+         expr.span);
+    return {};
+  }
+
+  /// Dropping a generator: one that has not finished is resumed once to
+  /// unwind, and the coroutine is released. The value is then dead.
+  [[nodiscard]] auto lower_coroutine_cancel(const hir_coroutine_cancel &cancel,
+                                            const std::optional<place> &dest)
+      -> result {
+    auto where = lower_place(*cancel.object);
+    if (!where.has_value()) {
+      return std::unexpected(where.error());
+    }
+    if (!where->has_value()) {
+      return refuse(cancel.span, "the drop of a generator that is not a variable");
+    }
+    auto op = storage_op{.kind = op_kind::drop_in_place};
+    op.dest = std::move(**where);
+    emit(std::move(op), cancel.span);
+    if (dest.has_value()) {
+      emit(storage_op{.kind = op_kind::init_empty, .dest = *dest}, cancel.span);
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_call(const hir_call &call, const place &dest)
       -> result {
     auto params = std::vector<type_id>{};
@@ -1367,6 +1599,8 @@ private:
       return lower_discarded(*as<hir_expr_stmt>(node).expr);
     case hir_node_kind::hir_return:
       return lower_return(as<hir_return>(node));
+    case hir_node_kind::hir_yield:
+      return lower_yield(as<hir_yield>(node));
     case hir_node_kind::hir_while:
       return lower_while(as<hir_while>(node));
     case hir_node_kind::hir_while_let:
@@ -1431,6 +1665,9 @@ private:
     if (expr.kind == hir_node_kind::hir_closure_drop) {
       // Its `unit` type is not settled in HIR, and nothing reads the value.
       return lower_closure_drop(as<hir_closure_drop>(expr), std::nullopt);
+    }
+    if (expr.kind == hir_node_kind::hir_coroutine_cancel) {
+      return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), std::nullopt);
     }
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
@@ -2301,6 +2538,12 @@ private:
   storage_env &env_;
   closure_sink &closures_;
   size_t closure_count_ = 0;
+  /// A step only: the coroutine it was handed, the suspension points placed so
+  /// far, and the size and alignment of the state block its slots lay out.
+  storage_id object_slot_ = k_invalid_storage;
+  size_t suspensions_ = 0;
+  size_t state_size_ = 0;
+  size_t state_align_ = 1;
   storage_function out_;
   std::unordered_map<symbol_id, storage_id> locals_;
   std::unordered_map<std::string, storage_id> globals_;
@@ -2324,12 +2567,123 @@ private:
 
 } // namespace
 
+namespace {
+
+/// A `generator def` becomes two functions: the step, whose frame is the state
+/// block, and the constructor, which allocates the block, moves the parameters
+/// into it, and returns the coroutine.
+[[nodiscard]] auto lower_generator(const hir_function &function, storage_env &env,
+                                   closure_sink &closures)
+    -> std::expected<storage_function, storage_lower_error> {
+  const auto step_name = function.name + "$step";
+  auto stepper = function_lowerer(
+      body_shape{.name = step_name,
+                 .params = &function.params,
+                 .return_type = function.return_type,
+                 .body = function.body.get(),
+                 .span = function.span,
+                 .step = true,
+                 .generator = function.return_type},
+      env, closures);
+  auto step = stepper.run();
+  if (!step.has_value()) {
+    return std::unexpected(step.error());
+  }
+
+  auto ctor = storage_function{};
+  ctor.name = function.name;
+  auto param_types = std::vector<type_id>{};
+  for (const auto &param : function.params) {
+    param_types.push_back(param.type);
+  }
+  auto signature = classify_signature(env.layouts, param_types, function.return_type);
+  if (!signature.has_value()) {
+    return std::unexpected(storage_lower_error{
+        .kind = storage_lower_error_kind::layout_failed,
+        .span = function.span,
+        .message = signature.error().message});
+  }
+  ctor.signature = std::move(*signature);
+  auto make = storage_op{.kind = op_kind::make_generator};
+  make.span = function.span;
+  make.entry = step_name;
+  make.env_size = stepper.state_size();
+  make.env_align = stepper.state_align();
+  // The step's parameter slots come first among its state-block slots.
+  auto state_slot = size_t{0};
+  const auto next_state_slot = [&]() -> const storage_slot & {
+    while (step->slots[state_slot].cls != storage_class::coroutine_frame) {
+      ++state_slot;
+    }
+    return step->slots[state_slot++];
+  };
+  for (const auto &param : function.params) {
+    const auto id = static_cast<storage_id>(ctor.slots.size());
+    ctor.slots.push_back(storage_slot{.id = id,
+                                      .cls = storage_class::parameter,
+                                      .type = param.type,
+                                      .name = param.name,
+                                      .symbol = param.symbol,
+                                      .span = function.span,
+                                      .initially_initialized = true,
+                                      .owner = id});
+    ctor.param_slots.push_back(id);
+    const auto &held = next_state_slot();
+    const auto layout = env.layouts.layout(param.type);
+    if (!layout.has_value()) {
+      return std::unexpected(storage_lower_error{
+          .kind = storage_lower_error_kind::layout_failed,
+          .span = function.span,
+          .message = layout.error().message});
+    }
+    if ((*layout)->size == 0) {
+      continue; // Nothing to store; the step's slot has no bytes either.
+    }
+    make.captures.push_back(closure_capture{
+        .source = place{.base = id, .steps = {}, .type = param.type},
+        .kind = env.is_copy(param.type) ? capture_kind::copy : capture_kind::move,
+        .offset = held.env_offset});
+  }
+  const auto handle = static_cast<storage_id>(ctor.slots.size());
+  ctor.slots.push_back(storage_slot{.id = handle,
+                                    .cls = storage_class::frame_local,
+                                    .type = function.return_type,
+                                    .span = function.span,
+                                    .owner = handle});
+  make.dest = place{.base = handle, .steps = {}, .type = function.return_type};
+  ctor.ops.push_back(std::move(make));
+  auto ret = storage_op{.kind = op_kind::return_value};
+  ret.span = function.span;
+  ret.value = operand{.kind = operand_kind::read,
+                      .where = place{.base = handle, .steps = {}, .type = function.return_type},
+                      .consume = true,
+                      .type = function.return_type};
+  ctor.ops.push_back(std::move(ret));
+  closures.functions.insert(closures.functions.begin(), std::move(*step));
+  return ctor;
+}
+
+} // namespace
+
 auto lower_to_storage(const hir_module &module, storage_env &env)
     -> storage_lowering {
   auto out = storage_lowering{};
   out.module.name = module.module_name;
   for (const auto &function : module.functions) {
     auto closures = closure_sink{};
+    if (function->is_generator()) {
+      auto lowered = lower_generator(*function, env, closures);
+      if (lowered.has_value()) {
+        out.module.functions.push_back(std::move(*lowered));
+        for (auto &part : closures.functions) {
+          out.module.functions.push_back(std::move(part));
+        }
+      } else {
+        out.refused.push_back(refused_function{
+            .name = function->name, .error = std::move(lowered.error())});
+      }
+      continue;
+    }
     auto lowered = function_lowerer(shape_of(*function), env, closures).run();
     if (lowered.has_value()) {
       out.module.functions.push_back(std::move(*lowered));

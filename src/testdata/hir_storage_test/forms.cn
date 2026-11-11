@@ -89,8 +89,8 @@ def self_bump(n: int32) -> pair:
     p = bump(&p)
     return p
 
-generator def counter() -> some iterator[int32]:
-    yield 1
+async def counter() -> int32:
+    return 1
 
 def matching(n: int32) -> int32:
     match n:

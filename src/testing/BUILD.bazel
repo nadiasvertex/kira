@@ -37,6 +37,7 @@ cc_library(
         "storage_fixture.h",
         "storage_intrinsic_cases.h",
         "storage_closure_cases.h",
+        "storage_generator_cases.h",
         "storage_pattern_cases.h",
         "storage_memory_cases.h",
     ],

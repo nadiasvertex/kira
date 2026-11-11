@@ -18,6 +18,7 @@
 #include "src/hir/intrinsic_abi.h"
 #include "src/intrinsics.h"
 #include "src/runtime/aligned_buffer.h"
+#include "src/runtime/coroutine.h"
 #include "src/runtime/value_layout.h"
 
 namespace cinder::bytecode_compiler {
@@ -392,6 +393,20 @@ private:
           here = home{.where = home::kind::frame, .frame_offset = *offset};
         }
         break;
+      case hir::storage_class::coroutine_frame:
+        // A generator's locals are bytes of the state block it was handed,
+        // which is its first operand and outlives every suspension.
+        if (zero) {
+          if (auto placed = place_anchor(); !placed.has_value()) {
+            return std::unexpected(placed.error());
+          }
+          here = home{.where = home::kind::frame, .frame_offset = *anchor_};
+        } else {
+          here = home{.where = home::kind::env_block,
+                      .reg = virtual_reg{0},
+                      .frame_offset = static_cast<uint32_t>(slot.env_offset)};
+        }
+        break;
       case hir::storage_class::closure_environment:
         if (slot.env_indirect) {
           here = home{.where = home::kind::indirect, .reg = alloc_register()};
@@ -706,6 +721,20 @@ private:
       return emit_make_closure(op);
     case op_kind::release_environment:
       return emit_release_environment(op);
+    case op_kind::make_generator:
+      return emit_make_generator(op);
+    case op_kind::generator_resume:
+      return emit_generator_resume(op);
+    case op_kind::generator_take:
+      return emit_generator_take(op);
+    case op_kind::coroutine_dispatch:
+      return emit_coroutine_dispatch(op);
+    case op_kind::coroutine_suspend:
+      return emit_coroutine_suspend(op);
+    case op_kind::coroutine_cancelled:
+      return emit_coroutine_cancelled(op);
+    case op_kind::coroutine_finish:
+      return emit_coroutine_finish(op);
     case op_kind::call_into:
       return emit_call(op);
     case op_kind::return_value:
@@ -1221,6 +1250,9 @@ private:
   /// Ends a `fn` value: runs its drop glue, which drops what the environment
   /// owns and frees the block. Any other drop is still ordinary code.
   [[nodiscard]] auto emit_drop(const hir::storage_op &op) -> checked<void> {
+    if (is_generator(op.dest.type)) {
+      return emit_generator_drop(op);
+    }
     if (types().entry(types().strip_refinement(op.dest.type)).kind !=
         semantic::type_kind::fn_kind) {
       return fail(compile_error_kind::unsupported_construct, op.span,
@@ -1238,6 +1270,292 @@ private:
     emit_op(opcode::op_drop_function_value);
     emit_register(alloc_register());
     emit_register(*address);
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Generators
+  //
+  //  A coroutine is the runtime's eight-word object (`coroutine.h`). A step
+  //  function runs against the state block the object points at; the value
+  //  word holds the address of the item the producer last yielded, which lies
+  //  in that block, so an item of any size needs no extra room in the object.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto is_generator(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "generator";
+  }
+
+  /// The register holding the pointer of the coroutine (or the scalar) at
+  /// `where`.
+  [[nodiscard]] auto read_place(const hir::place &where) -> checked<virtual_reg> {
+    return operand_value(hir::operand{
+        .kind = operand_kind::read, .where = where, .type = where.type});
+  }
+
+  [[nodiscard]] static constexpr auto word_at(size_t slot) -> size_t {
+    return slot * runtime::k_word_size;
+  }
+
+  /// Stores the constant `value` into word `slot` of the coroutine in `object`.
+  [[nodiscard]] auto store_word(virtual_reg object, size_t slot, uint64_t value)
+      -> checked<void> {
+    const auto word = alloc_register();
+    emit_const(word, slot_value{value});
+    return emit_store(object, word_at(slot), word, runtime::k_word_size);
+  }
+
+  [[nodiscard]] auto emit_make_generator(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto entry = index_.find(op.entry);
+    if (entry == index_.end()) {
+      return fail(compile_error_kind::unknown_callee, op.span,
+                  std::format("`{}` is not a function of this module", op.entry));
+    }
+    const auto state = alloc_register();
+    if (op.env_size != 0) {
+      emit_op(opcode::op_alloc);
+      emit_register(state);
+      writer_.emit_u64(op.env_size);
+      for (const auto &capture : op.captures) {
+        if (auto ok = emit_capture(state, capture); !ok.has_value()) {
+          return ok;
+        }
+      }
+    } else {
+      emit_const(state, slot_value{uint64_t{0}});
+    }
+    const auto object = alloc_register();
+    emit_op(opcode::op_alloc);
+    emit_register(object);
+    writer_.emit_u64(co::k_slot_count * runtime::k_word_size);
+    for (const auto &[slot, value] :
+         {std::pair{co::k_step_function_slot, uint64_t{entry->second}},
+          std::pair{co::k_resume_index_slot, uint64_t{0}},
+          std::pair{co::k_status_slot, co::raw(co::status::suspended)},
+          std::pair{co::k_record_slot, uint64_t{0}},
+          std::pair{co::k_value_slot, uint64_t{0}},
+          std::pair{co::k_value_slot + 1, uint64_t{0}},
+          std::pair{co::k_state_bytes_slot, uint64_t{op.env_size}}}) {
+      if (auto ok = store_word(object, slot, value); !ok.has_value()) {
+        return ok;
+      }
+    }
+    if (auto ok = emit_store(object, word_at(co::k_state_ptr_slot), state,
+                             runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    return write_location(*dest, op.dest.type, object);
+  }
+
+  /// Runs the producer until it suspends or ends; the status is the result.
+  [[nodiscard]] auto emit_generator_resume(const hir::storage_op &op)
+      -> checked<void> {
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto target = dest->where == location::kind::reg ? dest->reg
+                                                          : alloc_register();
+    emit_op(opcode::op_coroutine_resume);
+    emit_register(target);
+    emit_register(*object);
+    if (dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, target);
+    }
+    return {};
+  }
+
+  /// Moves the item the producer yielded out of its state block.
+  [[nodiscard]] auto emit_generator_take(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto value = class_of(op.dest.type, op.span);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    if (value->cls == pass_class::zero_sized) {
+      return {};
+    }
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto item = alloc_register();
+    if (auto ok = emit_load(item, *object, word_at(co::k_value_slot),
+                            runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (!hir::is_indirect(value->cls)) {
+      const auto held = read_location(
+          location{.where = location::kind::memory, .reg = item},
+          op.dest.type, std::nullopt);
+      if (!held.has_value()) {
+        return std::unexpected(held.error());
+      }
+      return write_location(*dest, op.dest.type, *held);
+    }
+    const auto to = address_of(*dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    emit_op(opcode::op_copy_bytes);
+    emit_register(*to);
+    emit_register(item);
+    writer_.emit_u32(static_cast<uint32_t>(value->size));
+    return {};
+  }
+
+  /// First in a step: jumps to the point after the suspension `resume` names.
+  /// Zero starts the body.
+  [[nodiscard]] auto emit_coroutine_dispatch(const hir::storage_op &op)
+      -> checked<void> {
+    const auto resume = read_place(op.source);
+    if (!resume.has_value()) {
+      return std::unexpected(resume.error());
+    }
+    for (size_t point = 1; point <= op.depth; ++point) {
+      const auto wanted = alloc_register();
+      emit_const(wanted, slot_value{static_cast<uint64_t>(point)});
+      const auto same = alloc_register();
+      emit_op(opcode::op_eq);
+      emit_register(same);
+      emit_register(*resume);
+      emit_register(wanted);
+      writer_.emit_numeric_kind(bytecode::numeric_kind::u64);
+      emit_op(opcode::op_jump_if_true);
+      emit_register(same);
+      resume_jumps_.push_back(writer_.emit_jump_placeholder());
+    }
+    return {};
+  }
+
+  /// Hands the item to the resumer and returns; the code after this operation
+  /// is where the dispatch resumes.
+  [[nodiscard]] auto emit_coroutine_suspend(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto item = locate(op.source);
+    if (!item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    auto address = alloc_register();
+    if (item->where == location::kind::memory) {
+      const auto found = address_of(*item);
+      if (!found.has_value()) {
+        return std::unexpected(found.error());
+      }
+      address = *found;
+    } else {
+      emit_const(address, slot_value{uint64_t{0}}); // A zero-sized item.
+    }
+    if (auto ok = emit_store(*object, word_at(co::k_value_slot), address,
+                             runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = store_word(*object, co::k_resume_index_slot, op.depth);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto status = alloc_register();
+    emit_const(status, slot_value{co::raw(co::status::suspended)});
+    emit_op(opcode::op_return_value);
+    emit_register(status);
+    if (op.depth == 0 || op.depth > resume_jumps_.size()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a suspension point the dispatch does not name");
+    }
+    writer_.patch_jump_to_here(resume_jumps_[op.depth - 1]);
+    return {};
+  }
+
+  [[nodiscard]] auto emit_coroutine_cancelled(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto status = alloc_register();
+    if (auto ok = emit_load(status, *object, word_at(co::k_status_slot),
+                            runtime::k_word_size);
+        !ok.has_value()) {
+      return ok;
+    }
+    const auto wanted = alloc_register();
+    emit_const(wanted, slot_value{co::raw(co::status::cancel_requested)});
+    const auto target = dest->where == location::kind::reg ? dest->reg
+                                                          : alloc_register();
+    emit_op(opcode::op_eq);
+    emit_register(target);
+    emit_register(status);
+    emit_register(wanted);
+    writer_.emit_numeric_kind(bytecode::numeric_kind::u64);
+    if (dest->where == location::kind::memory) {
+      return write_location(*dest, op.dest.type, target);
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto emit_coroutine_finish(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    return store_word(*object, co::k_status_slot, co::raw(co::status::done));
+  }
+
+  /// Dropping a generator: one still suspended is resumed once to unwind its
+  /// state, then the coroutine is released.
+  [[nodiscard]] auto emit_generator_drop(const hir::storage_op &op)
+      -> checked<void> {
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    emit_op(opcode::op_coroutine_cancel);
+    emit_register(alloc_register());
+    emit_register(*object);
+    const auto id = hir::runtime_intrinsic_id("rt_task_release");
+    if (!id.has_value()) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "the runtime has no `rt_task_release`");
+    }
+    const auto block = alloc_group(1);
+    emit_move(block, *object);
+    emit_op(opcode::op_call_intrinsic);
+    emit_register(alloc_register());
+    writer_.emit_u8(static_cast<uint8_t>(*id));
+    emit_register(block);
+    writer_.emit_u8(1);
     return {};
   }
 
@@ -1548,6 +1866,9 @@ private:
   std::vector<home> homes_;
   std::unordered_set<hir::storage_id> taken_;
   size_t frame_bytes_ = 0;
+  /// A step only: the jump to each resume point, in order, patched where the
+  /// suspension that follows it is emitted.
+  std::vector<size_t> resume_jumps_;
   std::optional<uint32_t> anchor_;
   std::vector<open_region> regions_;
 };

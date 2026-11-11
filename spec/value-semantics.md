@@ -18,7 +18,7 @@ complete, T-03 and T-04 are complete for straight-line code, T-04a adds `if` and
 bytecode and LLVM compilers exist but are not wired into the driver), and T-07
 is partly done (runtime intrinsics write results into caller storage), and T-08
 is partly done (raw memory holds aggregates inline in the storage form), and T-09
-is partly done (closures); status is under each task below. T-10 through T-14
+is partly done (closures, patterns, generators); status is under each task below. T-10 through T-14
 have not been implemented.
 
 ## Objectives & Scope
@@ -648,7 +648,7 @@ was mutation-checked. Not done, and carried forward:
   so the form reads places from it unchanged. Rejecting generic moves through a
   borrowed `self` is a checker rule and was not touched.
 - Closure and generator drops (`hir_closure_drop`, `hir_coroutine_cancel`) are
-  not translated; the functions that need them are refused.
+  translated since T-09; see below.
 
 ### T-04a — Add structured control flow to the storage form
 
@@ -921,7 +921,7 @@ fixture writes the whole value instead.
 
 **Goal:** Keep values valid across suspension and cross-thread ownership transfer.
 
-**Status: partly done (2026-11-10).** Patterns and closures now live in the
+**Status: partly done (2026-11-11).** Patterns, closures, and generators now live in the
 storage form on both storage-form backends. Patterns were added first because a
 generator's `.next()` returns an `option[T]` that only `match` or `while let` can
 read, so no storage-form program could observe a generator without them.
@@ -947,8 +947,10 @@ check, the sum split, the last-arm shortcut, the arm value destination, and the
 `while let` exit) each failed a test. Refused by name: a subject that needs a drop
 (the drop of a sum with droppable payloads is still not modeled), an arm guard, a
 subject that is part of a larger value (`match self.field`), and range, array, and
-string patterns. A `for` loop over a droppable item still needs drop flags. Generators, tasks, and the adapters are not started.
-Done:
+string patterns. A `for` loop over a droppable item still needs drop flags.
+
+Generators in the storage form (done 2026-11-11). A `generator def` is a constructor plus a step function whose frame is the state block (see chapter 62). Items are handed over by address, so the fixed yielded-value image is not used and an item of any size works (a 24-byte struct is tested). Both backends implement `make_generator`, `resume`, `take`, `dispatch`, `suspend`, `cancelled`, `finish`, and `drop_in_place` of a generator. Tests: `storage_test` over `hir_storage_test/generators.cn` (exact dumps for the constructor, the step, and `.next()`; verifier corruptions for the entry, capture offsets, step-only operations, a suspension placed twice, an item read after hand-over, and the `take` types) and `storage_generator_cases.h` over `bytecode_storage_test/generators.cn` on both backends (order and sums, yields inside branches and loops, parameters of mixed size, a borrow held across suspensions, 24-byte items, passing and returning a generator, staying finished, and drop counts for a generator that ran to the end, was dropped while suspended, and never started). Mutation checks (resume index, finish status, item word, cancel status, status comparison, and the drop on each backend; the lowering's comparison, depth, and finish status; the verifier's placed-once and item-consumed rules) each failed a test; the first fixture let the finish-status mutation survive, so `stays_finished` was added. Not done: reading an item that needs a drop through `.next()` (refused by name; the producer side lowers), tasks and `await`, liveness-based sizing of the state block (every slot has its own offset), and the adapters.
+Done (closures):
 
 - Representation: a `fn` value is a 24-byte aggregate `{entry, env, glue}` held
   inline. The environment is one heap block per closure that captures anything,
@@ -977,11 +979,10 @@ Done:
   shifted, glue call removed, bounds check off, captured-move check off) each
   failed a test.
 
-Not done: generators and tasks (`src/runtime/coroutine.h`, scheduler, reactor,
-native steps, result transfer); `par`/`race`/`crew`/`on`; a plain function name
+Not done: tasks (scheduler, reactor, native steps, result transfer); `par`/`race`/`crew`/`on`; a plain function name
 used as a value; a closure capturing a zero-sized value; a closure that takes
 ownership of a value captured by an enclosing closure; `drop_in_place` of types
-other than `fn`; generic and inlined lambdas in the storage form.
+other than `fn` and generators; generic and inlined lambdas in the storage form.
 
 1. Replace uniform register-image environments/state entries with typed layouts
    for aggregate captures, parameters, locals, and initialized result storage.

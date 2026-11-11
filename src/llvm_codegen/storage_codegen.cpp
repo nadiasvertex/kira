@@ -33,6 +33,7 @@
 #include "src/intrinsics.h"
 #include "src/llvm_codegen/scalar_ops.h"
 #include "src/runtime/aligned_buffer.h"
+#include "src/runtime/coroutine.h"
 #include "src/runtime/value_layout.h"
 
 namespace cinder::llvm_codegen {
@@ -445,6 +446,24 @@ private:
                     : home{.ptr = frame_bytes(value->size, value->align),
                            .align = value->align};
         break;
+      case hir::storage_class::coroutine_frame: {
+        // A generator's locals are bytes of the state block the step receives.
+        if (zero) {
+          here = anchor();
+          break;
+        }
+        if (environment_ == nullptr) {
+          return fail(codegen_error_kind::unsupported_construct, slot.span,
+                      "a coroutine slot in a function without a state block");
+        }
+        here = home{.ptr = slot.env_offset == 0
+                               ? environment_
+                               : builder_.CreateInBoundsGEP(
+                                     i8(), environment_,
+                                     {constant(i64(), slot.env_offset)}),
+                    .align = aligned_at(k_environment_align, slot.env_offset)};
+        break;
+      }
       case hir::storage_class::closure_environment: {
         if (environment_ == nullptr) {
           return fail(codegen_error_kind::unsupported_construct, slot.span,
@@ -649,6 +668,20 @@ private:
       return emit_make_closure(op);
     case op_kind::release_environment:
       return emit_release_environment(op);
+    case op_kind::make_generator:
+      return emit_make_generator(op);
+    case op_kind::generator_resume:
+      return emit_generator_resume(op);
+    case op_kind::generator_take:
+      return emit_generator_take(op);
+    case op_kind::coroutine_dispatch:
+      return emit_coroutine_dispatch(op);
+    case op_kind::coroutine_suspend:
+      return emit_coroutine_suspend(op);
+    case op_kind::coroutine_cancelled:
+      return emit_coroutine_cancelled(op);
+    case op_kind::coroutine_finish:
+      return emit_coroutine_finish(op);
     case op_kind::call_into:
       return emit_call(op);
     case op_kind::return_value:
@@ -1102,6 +1135,9 @@ private:
   /// Ends a `fn` value: runs its drop glue, which drops what the environment
   /// owns and frees the block. Any other drop is still ordinary code.
   [[nodiscard]] auto emit_drop(const hir::storage_op &op) -> checked<void> {
+    if (is_generator(op.dest.type)) {
+      return emit_generator_drop(op);
+    }
     if (types().entry(types().strip_refinement(op.dest.type)).kind !=
         semantic::type_kind::fn_kind) {
       return fail(codegen_error_kind::unsupported_construct, op.span,
@@ -1130,6 +1166,287 @@ private:
     builder_.CreateCall(glue_type, glue, {environment});
     builder_.CreateBr(after);
     builder_.SetInsertPoint(after);
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Generators
+  //
+  //  A coroutine is the runtime's eight-word object (`coroutine.h`). A step
+  //  function runs against the state block the object points at; the value
+  //  word holds the address of the item the producer last yielded, which lies
+  //  in that block.
+  // ------------------------------------------------------------------
+
+  [[nodiscard]] auto is_generator(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "generator";
+  }
+
+  [[nodiscard]] auto read_place(const hir::place &where) -> checked<llvm::Value *> {
+    return operand_value(hir::operand{
+        .kind = operand_kind::read, .where = where, .type = where.type});
+  }
+
+  [[nodiscard]] auto word_address(llvm::Value *object, size_t slot)
+      -> llvm::Value * {
+    return builder_.CreateInBoundsGEP(
+        i8(), object, {constant(i64(), slot * runtime::k_word_size)});
+  }
+
+  [[nodiscard]] auto load_word(llvm::Type *type, llvm::Value *object, size_t slot)
+      -> llvm::Value * {
+    return builder_.CreateAlignedLoad(type, word_address(object, slot),
+                                      llvm::Align(runtime::k_word_size));
+  }
+
+  auto store_word(llvm::Value *object, size_t slot, llvm::Value *value) -> void {
+    builder_.CreateAlignedStore(value, word_address(object, slot),
+                                llvm::Align(runtime::k_word_size));
+  }
+
+  [[nodiscard]] auto emit_make_generator(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto entry = mc_.functions.find(op.entry);
+    if (entry == mc_.functions.end()) {
+      return fail(codegen_error_kind::unknown_callee, op.span,
+                  std::format("`{}` is not a function of this module", op.entry));
+    }
+    const auto alloc = hir::runtime_intrinsic_id("rt_alloc");
+    if (!alloc.has_value()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "the runtime has no `rt_alloc`");
+    }
+    llvm::Value *state = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(mc_.ctx, 0));
+    if (op.env_size != 0) {
+      state = builder_.CreateCall(runtime_function(mc_, *alloc),
+                                  {constant(i64(), op.env_size)});
+      for (const auto &capture : op.captures) {
+        if (auto ok = emit_capture(state, capture); !ok.has_value()) {
+          return ok;
+        }
+      }
+    }
+    auto *object = builder_.CreateCall(
+        runtime_function(mc_, *alloc),
+        {constant(i64(), co::k_slot_count * runtime::k_word_size)});
+    store_word(object, co::k_step_function_slot, entry->second);
+    store_word(object, co::k_state_ptr_slot, state);
+    store_word(object, co::k_resume_index_slot, constant(i64(), 0));
+    store_word(object, co::k_status_slot,
+               constant(i64(), co::raw(co::status::suspended)));
+    store_word(object, co::k_record_slot, constant(i64(), 0));
+    store_word(object, co::k_value_slot, constant(i64(), 0));
+    store_word(object, co::k_value_slot + 1, constant(i64(), 0));
+    store_word(object, co::k_state_bytes_slot, constant(i64(), op.env_size));
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    builder_.CreateAlignedStore(object, pointer_at(*dest),
+                                access_align(*dest, runtime::k_word_size));
+    return {};
+  }
+
+  /// Calls the step function of the coroutine at `object` with the state
+  /// block and resume index it holds.
+  [[nodiscard]] auto call_step(llvm::Value *object) -> llvm::Value * {
+    namespace co = runtime::coroutine;
+    auto *step = load_word(ptr_type(), object, co::k_step_function_slot);
+    auto *state = load_word(ptr_type(), object, co::k_state_ptr_slot);
+    auto *resume = load_word(i64(), object, co::k_resume_index_slot);
+    auto *type = llvm::FunctionType::get(i64(), {ptr_type(), i64(), ptr_type()},
+                                         /*isVarArg=*/false);
+    return builder_.CreateCall(type, step, {state, resume, object});
+  }
+
+  /// Runs the producer until it suspends or ends; the status is the result.
+  /// A finished one is not run again: its status is read back.
+  [[nodiscard]] auto emit_generator_resume(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto *current = load_word(i64(), *object, co::k_status_slot);
+    auto *runnable = builder_.CreateICmpEQ(
+        current, constant(i64(), co::raw(co::status::suspended)));
+    auto *from = builder_.GetInsertBlock();
+    auto *call_block = llvm::BasicBlock::Create(mc_.ctx, "gen.call", llvm_fn_);
+    auto *join = llvm::BasicBlock::Create(mc_.ctx, "gen.resumed", llvm_fn_);
+    builder_.CreateCondBr(runnable, call_block, join);
+    builder_.SetInsertPoint(call_block);
+    auto *stepped = call_step(*object);
+    builder_.CreateBr(join);
+    builder_.SetInsertPoint(join);
+    auto *status = builder_.CreatePHI(i64(), 2);
+    status->addIncoming(current, from);
+    status->addIncoming(stepped, call_block);
+    return store_scalar(*dest, op.dest.type, status);
+  }
+
+  /// Moves the item the producer yielded out of its state block.
+  [[nodiscard]] auto emit_generator_take(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto value = class_of(mc_, op.dest.type, op.span);
+    if (!value.has_value()) {
+      return std::unexpected(value.error());
+    }
+    if (value->cls == pass_class::zero_sized) {
+      return {};
+    }
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto *item = load_word(ptr_type(), *object, co::k_value_slot);
+    auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    const auto from = location{.base = item, .offset = 0, .align = 1};
+    if (!hir::is_indirect(value->cls)) {
+      const auto held = load_scalar(from, op.dest.type);
+      if (!held.has_value()) {
+        return std::unexpected(held.error());
+      }
+      return store_scalar(*dest, op.dest.type, *held);
+    }
+    builder_.CreateMemCpy(pointer_at(*dest), access_align(*dest, value->align),
+                          item, llvm::Align(1), constant(i64(), value->size));
+    return {};
+  }
+
+  /// First in a step: jumps to the point after the suspension `resume` names.
+  /// Zero starts the body.
+  [[nodiscard]] auto emit_coroutine_dispatch(const hir::storage_op &op)
+      -> checked<void> {
+    const auto resume = read_place(op.source);
+    if (!resume.has_value()) {
+      return std::unexpected(resume.error());
+    }
+    auto *start = llvm::BasicBlock::Create(mc_.ctx, "start", llvm_fn_);
+    auto *table = builder_.CreateSwitch(*resume, start, op.depth);
+    for (size_t point = 1; point <= op.depth; ++point) {
+      auto *block = llvm::BasicBlock::Create(
+          mc_.ctx, std::format("resume.{}", point), llvm_fn_);
+      resume_blocks_.push_back(block);
+      table->addCase(llvm::ConstantInt::get(llvm::cast<llvm::IntegerType>(i64()),
+                                            point),
+                     block);
+    }
+    builder_.SetInsertPoint(start);
+    return {};
+  }
+
+  /// Hands the item to the resumer and returns; the code after this operation
+  /// is where the dispatch resumes.
+  [[nodiscard]] auto emit_coroutine_suspend(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    if (op.depth == 0 || op.depth > resume_blocks_.size()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "a suspension point the dispatch does not name");
+    }
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto item = class_of(mc_, op.source.type, op.span);
+    if (!item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    llvm::Value *address = llvm::ConstantPointerNull::get(
+        llvm::PointerType::get(mc_.ctx, 0));
+    if (item->cls != pass_class::zero_sized) {
+      const auto where = locate(op.source);
+      if (!where.has_value()) {
+        return std::unexpected(where.error());
+      }
+      address = pointer_at(*where);
+    }
+    store_word(*object, co::k_value_slot, address);
+    store_word(*object, co::k_resume_index_slot, constant(i64(), op.depth));
+    builder_.CreateRet(constant(i64(), co::raw(co::status::suspended)));
+    builder_.SetInsertPoint(resume_blocks_[op.depth - 1]);
+    return {};
+  }
+
+  [[nodiscard]] auto emit_coroutine_cancelled(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto *status = load_word(i64(), *object, co::k_status_slot);
+    auto *asked = builder_.CreateICmpEQ(
+        status, constant(i64(), co::raw(co::status::cancel_requested)));
+    return store_scalar(*dest, op.dest.type, asked);
+  }
+
+  [[nodiscard]] auto emit_coroutine_finish(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto object = read_place(op.source);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    store_word(*object, co::k_status_slot,
+               constant(i64(), co::raw(co::status::done)));
+    return {};
+  }
+
+  /// Dropping a generator: one still suspended is unwound once (by the
+  /// scheduler if it owns the task, otherwise by resuming it here with a
+  /// cancel request), then the coroutine is released.
+  [[nodiscard]] auto emit_generator_drop(const hir::storage_op &op)
+      -> checked<void> {
+    namespace co = runtime::coroutine;
+    const auto drop = hir::runtime_intrinsic_id("rt_task_drop");
+    const auto release = hir::runtime_intrinsic_id("rt_task_release");
+    if (!drop.has_value() || !release.has_value()) {
+      return fail(codegen_error_kind::unsupported_construct, op.span,
+                  "the runtime has no `rt_task_drop` or `rt_task_release`");
+    }
+    const auto object = read_place(op.dest);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    auto *running = builder_.CreateICmpEQ(
+        load_word(i64(), *object, co::k_status_slot),
+        constant(i64(), co::raw(co::status::suspended)));
+    auto *cancel = llvm::BasicBlock::Create(mc_.ctx, "gen.cancel", llvm_fn_);
+    auto *inline_block =
+        llvm::BasicBlock::Create(mc_.ctx, "gen.cancel.inline", llvm_fn_);
+    auto *done = llvm::BasicBlock::Create(mc_.ctx, "gen.cancel.done", llvm_fn_);
+    builder_.CreateCondBr(running, cancel, done);
+    builder_.SetInsertPoint(cancel);
+    auto *handed_over =
+        builder_.CreateCall(runtime_function(mc_, *drop), {*object});
+    builder_.CreateCondBr(
+        builder_.CreateICmpNE(handed_over, constant(handed_over->getType(), 0)),
+        done, inline_block);
+    builder_.SetInsertPoint(inline_block);
+    store_word(*object, co::k_status_slot,
+               constant(i64(), co::raw(co::status::cancel_requested)));
+    static_cast<void>(call_step(*object));
+    builder_.CreateBr(done);
+    builder_.SetInsertPoint(done);
+    builder_.CreateCall(runtime_function(mc_, *release), {*object});
     return {};
   }
 
@@ -1389,6 +1706,8 @@ private:
   /// The hidden environment argument of a closure body or drop glue.
   llvm::Value *environment_ = nullptr;
   std::vector<open_region> regions_;
+  /// The blocks a step's dispatch jumps to, one per suspension point.
+  std::vector<llvm::BasicBlock *> resume_blocks_;
 };
 
 /// Emits `void <prefix><name>(const uint64_t *args, void *result)` for one

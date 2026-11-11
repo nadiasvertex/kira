@@ -450,7 +450,7 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   const auto *counter = f->refusal("counter");
   expect(counter != nullptr &&
              counter->message.find("suspension") != std::string::npos,
-         "expected a generator to be refused");
+         "expected a task to be refused");
   expect(f->lowering.module.find("matching") == nullptr,
          "expected a refused function to be absent, not half lowered");
 }
@@ -1549,8 +1549,152 @@ auto test_verifier_checks_variant_tests() -> void {
                  "a payload moved out twice");
 }
 
+// ==========================================================================
+//  Generators
+// ==========================================================================
+
+auto test_generator_constructor_builds_the_handle() -> void {
+  auto f = build(read_program("generators.cn"));
+  // The constructor is an ordinary function: it copies `n` into the state
+  // block and returns the handle.
+  expect_ops(*f, "count",
+             {"generator s1 = count$step state 48/8 [copy s0 @0]",
+              "return move s1"});
+  expect_verifies(*f, f->function("count"), "count");
+  const auto &made =
+      f->function("count").ops[find_op(f->function("count"), hir::op_kind::make_generator)];
+  expect(made.entry == "count$step" && made.env_size == 48 && made.env_align == 8,
+         "expected the generator to name its step and size its state block");
+}
+
+auto test_generator_step_keeps_every_local_in_the_state_block() -> void {
+  auto f = build(read_program("generators.cn"));
+  const auto step = f->function("count$step");
+  expect(step.coroutine_step && step.signature.takes_environment,
+         "expected the step to take the state block");
+  expect(step.slots[0].cls == hir::storage_class::parameter &&
+             step.slots[1].cls == hir::storage_class::parameter,
+         "expected the resume index and the coroutine to be parameters");
+  auto offsets = std::vector<size_t>{};
+  for (const auto &slot : step.slots) {
+    if (slot.cls == hir::storage_class::coroutine_frame) {
+      offsets.push_back(slot.env_offset);
+    }
+  }
+  expect(offsets.size() == 6, "expected the parameter and every local in the block");
+  expect(offsets.front() == 0, "expected `n` first, where the constructor copies it");
+  expect_ops(*f, "count$step",
+             {"dispatch s0 of 1", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "compute s4 = const 0", "loop", "compute s5 = binary < s4, s2",
+              "if s5", "dead s5", "else", "dead s5", "exit 0", "end_if",
+              "block", "compute s6 = copy s4", "suspend #1 s1 <- s6", "dead s6",
+              "cancelled s7 = s1", "if s7", "dead s7", "finish s1", "return #1",
+              "else", "dead s7", "end_if", "compute s4 = binary + s4, #1",
+              "end_block", "end_loop", "finish s1", "return #1"});
+  expect_verifies(*f, step, "count$step");
+}
+
+auto test_next_resumes_then_takes_or_publishes_none() -> void {
+  auto f = build(read_program("generators.cn"));
+  expect_ops(*f, "sum_to",
+             {"call s1 = count(s0)", "compute s2 = const 0", "loop",
+              "resume s4 = s1", "compute s5 = binary == s4, #0", "if s5",
+              "dead s5", "take s3.@some.0 <- s1", "publish s3 @some", "else",
+              "dead s5", "publish s3 @none", "end_if", "dead s4",
+              "test s7 = s3 is @some", "if s7", "dead s7",
+              "compute s6 = const true", "else", "dead s7",
+              "compute s6 = const false", "end_if", "if s6", "dead s6", "else",
+              "dead s6", "exit 0", "end_if", "block",
+              "compute s8 = copy s3.@some.0", "compute s2 = binary + s2, s8",
+              "end_block", "dead s8", "dead s3", "end_loop",
+              "compute s9 = copy s2", "drop s1", "return s9"});
+  expect_verifies(*f, f->function("sum_to"), "sum_to");
+  // Two generators in one function each get their own drop.
+  auto drops = size_t{0};
+  for (const auto &op : f->function("both").ops) {
+    drops += op.kind == hir::op_kind::drop_in_place ? 1U : 0U;
+  }
+  expect(drops == 2, "expected each generator to be dropped once");
+  expect_verifies(*f, f->function("both"), "both");
+}
+
+auto test_generators_not_lowered_yet_are_refused_by_name() -> void {
+  auto f = build(read_program("generators.cn"));
+  // Yielding such an item is fine: the suspension hands it over. Reading it
+  // out needs the `option` that holds it to be dropped, which is not modeled.
+  const auto *taken = f->refusal("take_owned");
+  expect(taken != nullptr && taken->message.find("drop") != std::string::npos,
+         "expected reading a droppable item to be refused");
+  expect_verifies(*f, f->function("owned$step"), "owned$step");
+}
+
+auto test_verifier_checks_generators() -> void {
+  auto f = build(read_program("generators.cn"));
+  const auto step_index = [&](const hir::storage_function &fn, hir::op_kind kind,
+                              size_t nth = 0) { return find_op(fn, kind, nth); };
+
+  auto wrong_entry = f->function("count");
+  wrong_entry.ops[step_index(wrong_entry, hir::op_kind::make_generator)].entry = "sum_to";
+  expect_rejects(*f, wrong_entry, hir::verify_error_kind::signature_mismatch,
+                 "an entry that is not a step function");
+
+  auto outside = f->function("count");
+  outside.ops[step_index(outside, hir::op_kind::make_generator)].captures[0].offset = 48;
+  expect_rejects(*f, outside, hir::verify_error_kind::bad_operation,
+                 "a capture outside the state block");
+
+  // Step-only operations belong in a step.
+  auto stray = f->function("sum_to");
+  stray.ops.insert(stray.ops.begin(),
+                   hir::storage_op{.kind = hir::op_kind::coroutine_finish,
+                                   .source = place_at(1, stray.slots[1].type)});
+  expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
+                 "a step-only operation in an ordinary function");
+
+  // A suspension point is placed once.
+  auto twice = f->function("count$step");
+  const auto at = step_index(twice, hir::op_kind::coroutine_suspend);
+  auto again = twice.ops[at];
+  twice.ops.insert(twice.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1, again);
+  expect_rejects(*f, twice, hir::verify_error_kind::bad_operation,
+                 "a suspension point placed twice");
+
+  // The item is consumed by the suspension.
+  auto reread = f->function("count$step");
+  const auto suspend = step_index(reread, hir::op_kind::coroutine_suspend);
+  auto copy = hir::storage_op{.kind = hir::op_kind::compute,
+                              .computation = hir::compute_kind::copy,
+                              .dest = reread.ops[suspend].source};
+  copy.operands.push_back(hir::operand{.kind = hir::operand_kind::read,
+                                       .where = reread.ops[suspend].source,
+                                       .type = reread.ops[suspend].source.type});
+  reread.ops.insert(reread.ops.begin() + static_cast<std::ptrdiff_t>(suspend) + 1,
+                    copy);
+  expect_rejects(*f, reread, hir::verify_error_kind::uninitialized,
+                 "an item read after it was handed over");
+
+  // `take` must produce the type the generator yields, from a generator.
+  auto mistyped = f->function("sum_to");
+  mistyped.ops[step_index(mistyped, hir::op_kind::generator_take)].dest =
+      place_at(5, mistyped.slots[5].type);
+  expect_rejects(*f, mistyped, hir::verify_error_kind::type_mismatch,
+                 "a take into a place of another type");
+
+  auto not_a_generator = f->function("sum_to");
+  not_a_generator.ops[step_index(not_a_generator, hir::op_kind::generator_take)]
+      .source = place_at(2, not_a_generator.slots[2].type);
+  expect_rejects(*f, not_a_generator, hir::verify_error_kind::type_mismatch,
+                 "a take from a value that is not a generator");
+}
+
 auto main() -> int {
   try {
+    test_generator_constructor_builds_the_handle();
+    test_generator_step_keeps_every_local_in_the_state_block();
+    test_next_resumes_then_takes_or_publishes_none();
+    test_generators_not_lowered_yet_are_refused_by_name();
+    test_verifier_checks_generators();
     test_closure_is_built_with_its_captures_and_glue();
     test_aggregate_captures_sit_at_their_own_alignment();
     test_moved_captures_are_dropped_by_the_glue();

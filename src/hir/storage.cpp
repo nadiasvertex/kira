@@ -61,6 +61,20 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "closure";
   case op_kind::release_environment:
     return "release_env";
+  case op_kind::make_generator:
+    return "generator";
+  case op_kind::generator_resume:
+    return "resume";
+  case op_kind::generator_take:
+    return "take";
+  case op_kind::coroutine_dispatch:
+    return "dispatch";
+  case op_kind::coroutine_suspend:
+    return "suspend";
+  case op_kind::coroutine_cancelled:
+    return "cancelled";
+  case op_kind::coroutine_finish:
+    return "finish";
   case op_kind::storage_dead:
     return "dead";
   case op_kind::return_value:
@@ -214,6 +228,21 @@ namespace {
   return out + ")";
 }
 
+/// `<size>/<align> [<kind> <source> @<offset>, ...]`, the state or environment
+/// block a closure or generator fills.
+[[nodiscard]] auto render_captures(const storage_op &op) -> std::string {
+  auto out = std::to_string(op.env_size) + "/" + std::to_string(op.env_align) +
+             " [";
+  auto first = true;
+  for (const auto &capture : op.captures) {
+    out += first ? "" : ", ";
+    first = false;
+    out += std::string{capture_kind_name(capture.kind)} + " " +
+           render_place(capture.source) + " @" + std::to_string(capture.offset);
+  }
+  return out + "]";
+}
+
 [[nodiscard]] auto render_op(const storage_op &op) -> std::string {
   switch (op.kind) {
   case op_kind::compute:
@@ -233,21 +262,28 @@ namespace {
     return "drop " + render_place(op.dest);
   case op_kind::call_into:
     return std::string{op.is_drop ? "call.drop " : "call "} + render_call(op);
-  case op_kind::make_closure: {
-    auto out = "closure " + render_place(op.dest) + " = " + op.entry + " glue " +
-               (op.glue.empty() ? std::string{"-"} : op.glue) + " env " +
-               std::to_string(op.env_size) + "/" + std::to_string(op.env_align) +
-               " [";
-    auto first = true;
-    for (const auto &capture : op.captures) {
-      out += first ? "" : ", ";
-      first = false;
-      out += std::string{capture_kind_name(capture.kind)} + " " +
-             render_place(capture.source) + " @" +
-             std::to_string(capture.offset);
-    }
-    return out + "]";
-  }
+  case op_kind::make_closure:
+    return "closure " + render_place(op.dest) + " = " + op.entry + " glue " +
+           (op.glue.empty() ? std::string{"-"} : op.glue) + " env " +
+           render_captures(op);
+  case op_kind::make_generator:
+    return "generator " + render_place(op.dest) + " = " + op.entry + " state " +
+           render_captures(op);
+  case op_kind::generator_resume:
+    return "resume " + render_place(op.dest) + " = " + render_place(op.source);
+  case op_kind::generator_take:
+    return "take " + render_place(op.dest) + " <- " + render_place(op.source);
+  case op_kind::coroutine_dispatch:
+    return "dispatch " + render_place(op.source) + " of " +
+           std::to_string(op.depth);
+  case op_kind::coroutine_suspend:
+    return "suspend #" + std::to_string(op.depth) + " " +
+           render_place(op.dest) + " <- " + render_place(op.source);
+  case op_kind::coroutine_cancelled:
+    return "cancelled " + render_place(op.dest) + " = " +
+           render_place(op.source);
+  case op_kind::coroutine_finish:
+    return "finish " + render_place(op.source);
   case op_kind::release_environment:
     return "release_env";
   case op_kind::storage_dead:
@@ -290,7 +326,9 @@ auto dump(const storage_function &function, const semantic::type_table &types)
            (slot.cls == storage_class::closure_environment
                 ? std::string{slot.env_indirect ? " env->@" : " env@"} +
                       std::to_string(slot.env_offset)
-                : std::string{}) +
+                : slot.cls == storage_class::coroutine_frame
+                      ? " state@" + std::to_string(slot.env_offset)
+                      : std::string{}) +
            "\n";
   }
   for (size_t i = 0; i < function.ops.size(); ++i) {

@@ -187,6 +187,13 @@ private:
                         " is a captured value of a function with no "
                         "environment, or one that starts empty");
       }
+      if (slot.cls == storage_class::coroutine_frame &&
+          !fn_.coroutine_step) {
+        return fail(verify_error_kind::bad_slot,
+                    "slot s" + std::to_string(i) +
+                        " lives in a state block, but the function is not a "
+                        "generator step");
+      }
       state_[i].whole = slot.initially_initialized;
     }
     if (fn_.param_slots.size() != fn_.signature.params.size()) {
@@ -862,6 +869,20 @@ private:
       return do_call(op);
     case op_kind::make_closure:
       return do_make_closure(op);
+    case op_kind::make_generator:
+      return do_make_generator(op);
+    case op_kind::generator_resume:
+      return do_generator_resume(op);
+    case op_kind::generator_take:
+      return do_generator_take(op);
+    case op_kind::coroutine_dispatch:
+      return do_coroutine_dispatch(op);
+    case op_kind::coroutine_suspend:
+      return do_coroutine_suspend(op);
+    case op_kind::coroutine_cancelled:
+      return do_coroutine_cancelled(op);
+    case op_kind::coroutine_finish:
+      return do_coroutine_finish(op);
     case op_kind::release_environment:
       if (!fn_.signature.takes_environment) {
         return fail(verify_error_kind::bad_operation,
@@ -1597,6 +1618,19 @@ private:
                   "a closure with an empty environment has no glue and no "
                   "captures");
     }
+    if (auto ok = check_captures(op); !ok.has_value()) {
+      return ok;
+    }
+    if (auto ok = require_writable(op.dest, *dest); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *dest);
+    return {};
+  }
+
+  /// Checks that each capture fits the block `op` fills, and that moving one in
+  /// is allowed, then applies the moves.
+  [[nodiscard]] auto check_captures(const storage_op &op) -> result {
     for (const auto &capture : op.captures) {
       const auto at = resolve(capture.source);
       if (!at.has_value()) {
@@ -1644,10 +1678,212 @@ private:
         }
       }
     }
+    return {};
+  }
+
+  // ------------------------------------------------------------------
+  //  Generators
+  // ------------------------------------------------------------------
+
+  /// The item type of `type` when it is a generator.
+  [[nodiscard]] auto generator_item(type_id type) const
+      -> std::optional<type_id> {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    if (entry.kind != semantic::type_kind::builtin_generic_kind ||
+        entry.name != "generator" || entry.args.empty()) {
+      return std::nullopt;
+    }
+    return entry.args[0];
+  }
+
+  /// A generator that is initialized and read in place.
+  [[nodiscard]] auto require_generator(const place &where, const char *what)
+      -> std::expected<type_id, verify_error> {
+    const auto at = resolve(where);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto item = generator_item(where.type);
+    if (!item.has_value()) {
+      return fail(verify_error_kind::type_mismatch,
+                  std::string{what} + " needs a generator, not " +
+                      name_of(where.type));
+    }
+    if (auto ok = require_init(where, *at); !ok.has_value()) {
+      return std::unexpected(ok.error());
+    }
+    return *item;
+  }
+
+  /// A scalar `dest` of `expected` that the operation then writes.
+  [[nodiscard]] auto write_scalar(const place &dest, const char *what,
+                                  size_t size) -> result {
+    const auto at = resolve(dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto cls = classify_value(env_.layouts, dest.type);
+    if (!cls.has_value()) {
+      return fail(verify_error_kind::layout_failed, cls.error().message);
+    }
+    if (cls->cls != pass_class::scalar || cls->size != size) {
+      return fail(verify_error_kind::type_mismatch,
+                  std::string{what} + " gives a " + std::to_string(size) +
+                      "-byte scalar, not " + name_of(dest.type));
+    }
+    if (auto ok = require_writable(dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(dest, *at);
+    return {};
+  }
+
+  [[nodiscard]] auto require_step(const char *what) -> result {
+    if (!fn_.coroutine_step) {
+      return fail(verify_error_kind::bad_operation,
+                  std::string{what} + " belongs to a generator's step function");
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto do_make_generator(const storage_op &op) -> result {
+    const auto dest = resolve(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (dest->through_deref || !generator_item(op.dest.type).has_value()) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a generator is built in a generator of its own storage, not " +
+                      name_of(op.dest.type));
+    }
+    if (callees_ != nullptr) {
+      const auto *entry = callees_->find(op.entry);
+      if (entry == nullptr || !entry->coroutine_step) {
+        return fail(verify_error_kind::signature_mismatch,
+                    "`" + op.entry + "` is not a generator step");
+      }
+    }
+    if (op.env_size == 0 && !op.captures.empty()) {
+      return fail(verify_error_kind::bad_operation,
+                  "a generator with an empty state block captures nothing");
+    }
+    if (auto ok = check_captures(op); !ok.has_value()) {
+      return ok;
+    }
     if (auto ok = require_writable(op.dest, *dest); !ok.has_value()) {
       return ok;
     }
     commit_write(op.dest, *dest);
+    return {};
+  }
+
+  [[nodiscard]] auto do_generator_resume(const storage_op &op) -> result {
+    if (auto item = require_generator(op.source, "resume"); !item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    return write_scalar(op.dest, "resume", runtime::k_word_size);
+  }
+
+  [[nodiscard]] auto do_generator_take(const storage_op &op) -> result {
+    const auto item = require_generator(op.source, "take");
+    if (!item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    if (!same_type(*item, op.dest.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a generator of " + name_of(*item) + " yields no " +
+                      name_of(op.dest.type));
+    }
+    const auto to = resolve(op.dest);
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    if (auto ok = require_writable(op.dest, *to); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *to);
+    return {};
+  }
+
+  [[nodiscard]] auto do_coroutine_dispatch(const storage_op &op) -> result {
+    if (auto ok = require_step("a dispatch"); !ok.has_value()) {
+      return ok;
+    }
+    if (op_index_ != 0) {
+      return fail(verify_error_kind::bad_operation,
+                  "the dispatch is the first operation of a step");
+    }
+    const auto at = resolve(op.source);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    if (auto ok = require_init(op.source, *at); !ok.has_value()) {
+      return ok;
+    }
+    dispatch_points_ = op.depth;
+    return {};
+  }
+
+  [[nodiscard]] auto do_coroutine_suspend(const storage_op &op) -> result {
+    if (auto ok = require_step("a suspension"); !ok.has_value()) {
+      return ok;
+    }
+    if (!dispatch_points_.has_value() || op.depth == 0 ||
+        op.depth > *dispatch_points_) {
+      return fail(verify_error_kind::bad_operation,
+                  "suspension point " + std::to_string(op.depth) +
+                      " is not one of the dispatch's " +
+                      std::to_string(dispatch_points_.value_or(0)));
+    }
+    const auto [seen, fresh] = suspensions_.emplace(op.depth, op_index_);
+    if (!fresh && seen->second != op_index_) {
+      return fail(verify_error_kind::bad_operation,
+                  "suspension point " + std::to_string(op.depth) +
+                      " is placed twice");
+    }
+    const auto item = require_generator(op.dest, "a suspension");
+    if (!item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    const auto from = resolve(op.source);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    if (!same_type(*item, op.source.type)) {
+      return fail(verify_error_kind::type_mismatch,
+                  "a generator of " + name_of(*item) + " cannot yield " +
+                      name_of(op.source.type));
+    }
+    if (auto ok = require_init(op.source, *from); !ok.has_value()) {
+      return ok;
+    }
+    if (from->through_deref && !from->through_raw) {
+      return fail(verify_error_kind::move_from_reference,
+                  "cannot yield " + name_of(op.source.type) +
+                      " out of a reference");
+    }
+    return invalidate(op.source, *from, from->tracked);
+  }
+
+  [[nodiscard]] auto do_coroutine_cancelled(const storage_op &op) -> result {
+    if (auto ok = require_step("a cancellation test"); !ok.has_value()) {
+      return ok;
+    }
+    if (auto item = require_generator(op.source, "a cancellation test");
+        !item.has_value()) {
+      return std::unexpected(item.error());
+    }
+    return write_scalar(op.dest, "a cancellation test", 1);
+  }
+
+  [[nodiscard]] auto do_coroutine_finish(const storage_op &op) -> result {
+    if (auto ok = require_step("finishing"); !ok.has_value()) {
+      return ok;
+    }
+    if (auto item = require_generator(op.source, "finishing");
+        !item.has_value()) {
+      return std::unexpected(item.error());
+    }
     return {};
   }
 
@@ -1662,6 +1898,7 @@ private:
                   "slot s" + std::to_string(op.slot) + " ends twice");
     }
     if (slot.cls != storage_class::frame_local &&
+        slot.cls != storage_class::coroutine_frame &&
         slot.cls != storage_class::outgoing_argument &&
         slot.cls != storage_class::parameter) {
       return fail(verify_error_kind::bad_lifetime_end,
@@ -1732,9 +1969,12 @@ private:
                     "outgoing slot s" + std::to_string(slot.id) +
                         " still holds an argument no call consumed");
       }
+      // A step's own parameters are the resumer's: the coroutine it was handed
+      // is dropped by whoever holds the handle, not by the step.
       if (options_.check_leaks &&
           (slot.cls == storage_class::frame_local ||
-           slot.cls == storage_class::parameter) &&
+           slot.cls == storage_class::coroutine_frame ||
+           (slot.cls == storage_class::parameter && !fn_.coroutine_step)) &&
           !state_[slot.id].empty() && env_.needs_drop(slot.type)) {
         if (const auto owed =
                 first_owed(&state_[slot.id], slot.type, slot.id, "",
@@ -1759,6 +1999,10 @@ private:
   /// kept apart from `state_`.
   std::vector<std::set<std::string>> dropped_;
   std::vector<bool> dead_;
+  /// A step only: how many suspension points the dispatch names, and the
+  /// operation that holds each.
+  std::optional<size_t> dispatch_points_;
+  std::map<size_t, size_t> suspensions_;
   size_t op_index_ = static_cast<size_t>(-1);
   source_span span_;
   bool reachable_ = true;
