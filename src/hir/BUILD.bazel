@@ -96,6 +96,7 @@ cc_test(
     name = "storage_test",
     srcs = ["storage_test.cpp"],
     data = [
+        "//src:bytecode_storage_test_files",
         "//src:hir_storage_test_files",
         "//src:std_sources",
     ],
@@ -106,6 +107,7 @@ cc_test(
         "//src/semantic:semantic",
         "//src/testing",
         "//src/testing:stdlib_fixtures",
+        "//src/testing:storage_fixtures",
     ],
 )
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <span>
 #include <string>
 
 #include "src/hir/storage.h"
@@ -63,14 +64,24 @@ struct storage_codegen_options {
   bool entry_thunks = false;
 };
 
-/// Compiles every function of `module` into one verified `llvm::Module` named
-/// after `module.name`.
+/// Compiles a program of several modules into one verified `llvm::Module`
+/// named after the first, the entry module. The entry module's functions keep
+/// their names as symbols; a function of any other module is `module::name`
+/// (`hir::program_function_name`), so modules may share function names and a
+/// call into another module is an ordinary direct call. Entry thunks are
+/// named after the symbol they wrap.
 ///
 /// Each function should already satisfy `hir::verify`: this compiler relies on
 /// it for initialization, ownership and place validity. It fails closed with a
-/// named reason on anything it cannot place: a call through a `fn` value, a
-/// call into another module, `drop_in_place`, a slot that does not live in the
-/// frame or the caller, and a 128-bit scalar.
+/// named reason on anything it cannot place: `drop_in_place`, a slot that does
+/// not live in the frame or the caller, and a 128-bit scalar.
+[[nodiscard]] auto
+compile_storage_module(std::span<const hir::storage_module *const> modules,
+                       hir::storage_env &env,
+                       const storage_codegen_options &options = {})
+    -> std::expected<compiled_module, codegen_error>;
+
+/// Compiles one module as a program of its own.
 [[nodiscard]] auto compile_storage_module(const hir::storage_module &module,
                                           hir::storage_env &env,
                                           const storage_codegen_options &options = {})

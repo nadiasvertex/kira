@@ -29,6 +29,7 @@
 #include "src/testing/storage_pattern_cases.h"
 #include "src/testing/storage_rvo_cases.h"
 #include "src/testing/storage_memory_cases.h"
+#include "src/testing/storage_module_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
 
@@ -46,8 +47,10 @@ class bytecode_program final : public cases::case_runner {
 public:
   explicit bytecode_program(std::unique_ptr<cinder::testing::storage_program> p)
       : program_(std::move(p)) {
+    const auto modules = program_->modules();
     auto compiled = cinder::bytecode_compiler::compile_storage_module(
-        program_->lowering.module, *program_->env);
+        std::span<const cinder::hir::storage_module *const>(modules),
+        *program_->env);
     if (!compiled.has_value()) {
       std::cerr << compiled.error().message << "\n";
       fail("expected the storage form to compile to bytecode");
@@ -146,8 +149,7 @@ public:
   [[nodiscard]] static auto build(std::string_view dir, std::string_view name)
       -> std::unique_ptr<bytecode_program> {
     return std::make_unique<bytecode_program>(
-        cinder::testing::build_storage_program(
-            cinder::testing::read_program(dir, name)));
+        cinder::testing::open_storage_program(dir, name));
   }
 };
 
@@ -186,6 +188,23 @@ auto test_function_metadata_describes_the_calling_convention() -> void {
   const auto &wide = p->function("make_wide");
   expect(wide.abi->result.size == 32 && wide.abi->result.align == 8,
          "expected the wide result to be 32 bytes aligned to 8");
+}
+
+/// A program of several modules has one function table: the entry module's
+/// functions under their names, every other module's as `module::name`.
+auto test_program_table_names_other_modules_functions() -> void {
+  auto p = bytecode_backend::build("bytecode_storage_test", "modules.cn");
+  const auto &local = p->function("make");
+  expect(!local.abi->returns_through_address && local.abi->params.size() == 1,
+         "expected the entry module's `make` to return a scalar");
+  expect(local.source_module == "sample", "expected `make` to be sample's");
+  const auto &other = p->function("tools::make");
+  expect(other.abi->returns_through_address && other.abi->result.size == 8,
+         "expected `tools::make` to return a pair through an address");
+  expect(other.source_module == "tools" && other.source_function == "make",
+         "expected `tools::make` to record its own module and name");
+  expect(p->code.module_name == "sample",
+         "expected the program to be named after the entry module");
 }
 
 auto test_entry_points_check_the_result_storage() -> void {
@@ -280,10 +299,12 @@ auto main() -> int {
     cases::rvo_cases(backend);
     cases::generator_cases(backend);
     cases::task_cases(backend);
+    cases::module_cases(backend);
   }
   cinder::testing::storage_nrvo_enabled() = true;
   test_compiled_code_has_no_allocation_instruction();
   test_function_metadata_describes_the_calling_convention();
+  test_program_table_names_other_modules_functions();
   test_entry_points_check_the_result_storage();
   test_frame_offsets_that_do_not_fit_are_refused();
   test_calls_in_tail_position_keep_their_frame();

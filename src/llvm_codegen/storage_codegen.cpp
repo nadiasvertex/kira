@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -102,6 +104,10 @@ struct module_context {
   llvm::Module &module;
   hir::storage_env &env;
   llvm::Function *panic_fn;
+  /// The program's entry module: its functions are named plainly, any other
+  /// module's `module::name` (`hir::program_function_name`).
+  std::string entry;
+  /// Every function of the program by its program-wide name.
   std::unordered_map<std::string, llvm::Function *> functions;
 };
 
@@ -298,6 +304,16 @@ public:
                    llvm::Function *llvm_function)
       : mc_(mc), module_(module), fn_(function), llvm_fn_(llvm_function),
         builder_(mc.ctx), scalars_(builder_, mc.panic_fn) {}
+
+  /// The program-wide name of a function of this module.
+  [[nodiscard]] auto key(std::string_view name) const -> std::string {
+    return hir::program_function_name(mc_.entry, module_.name, name);
+  }
+
+  /// The program-wide name a direct call names.
+  [[nodiscard]] auto key(const hir::call_target &callee) const -> std::string {
+    return hir::program_callee_name(mc_.entry, module_.name, callee);
+  }
 
   [[nodiscard]] auto compile() -> checked<void> {
     entry_ = llvm::BasicBlock::Create(mc_.ctx, "entry", llvm_fn_);
@@ -937,24 +953,17 @@ private:
     if (!op.callee.is_direct()) {
       return emit_call_function(op);
     }
-    if (!mc_.functions.contains(op.callee.name)) {
+    const auto target = key(op.callee);
+    if (!mc_.functions.contains(target)) {
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
           id.has_value()) {
         return emit_intrinsic_call(op, *id);
       }
     }
-    if (op.callee.owner_module.has_value() &&
-        *op.callee.owner_module != module_.name) {
-      return fail(codegen_error_kind::unsupported_construct, op.span,
-                  std::format("a call into module `{}` is not compiled from "
-                              "the storage form yet",
-                              *op.callee.owner_module));
-    }
-    const auto found = mc_.functions.find(op.callee.name);
+    const auto found = mc_.functions.find(target);
     if (found == mc_.functions.end()) {
       return fail(codegen_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module",
-                              op.callee.name));
+                  std::format("`{}` is not a function of this program", target));
     }
     auto *callee = found->second;
     const auto dest = locate(op.dest);
@@ -1058,7 +1067,7 @@ private:
   /// environment is one heap block that every capture is stored into.
   [[nodiscard]] auto emit_make_closure(const hir::storage_op &op)
       -> checked<void> {
-    const auto entry = mc_.functions.find(op.entry);
+    const auto entry = mc_.functions.find(key(op.entry));
     if (entry == mc_.functions.end()) {
       return fail(codegen_error_kind::unknown_callee, op.span,
                   std::format("`{}` is not a function of this module", op.entry));
@@ -1066,7 +1075,7 @@ private:
     llvm::Value *glue = llvm::ConstantPointerNull::get(
         llvm::PointerType::get(mc_.ctx, 0));
     if (!op.glue.empty()) {
-      const auto found = mc_.functions.find(op.glue);
+      const auto found = mc_.functions.find(key(op.glue));
       if (found == mc_.functions.end()) {
         return fail(codegen_error_kind::unknown_callee, op.span,
                     std::format("`{}` is not a function of this module", op.glue));
@@ -1216,7 +1225,7 @@ private:
   [[nodiscard]] auto emit_make_generator(const hir::storage_op &op)
       -> checked<void> {
     namespace co = runtime::coroutine;
-    const auto entry = mc_.functions.find(op.entry);
+    const auto entry = mc_.functions.find(key(op.entry));
     if (entry == mc_.functions.end()) {
       return fail(codegen_error_kind::unknown_callee, op.span,
                   std::format("`{}` is not a function of this module", op.entry));
@@ -1829,6 +1838,7 @@ private:
 /// function; see `k_storage_entry_prefix`.
 [[nodiscard]] auto emit_entry_thunk(module_context &mc,
                                     const hir::storage_function &function,
+                                    std::string_view program_name,
                                     llvm::Function *target) -> checked<void> {
   auto &ctx = mc.ctx;
   auto *ptr_ty = llvm::PointerType::get(ctx, 0);
@@ -1836,7 +1846,8 @@ private:
       llvm::FunctionType::get(llvm::Type::getVoidTy(ctx), {ptr_ty, ptr_ty},
                               /*isVarArg=*/false),
       llvm::Function::ExternalLinkage,
-      std::string(k_storage_entry_prefix) + function.name, mc.module);
+      std::string(k_storage_entry_prefix) + std::string(program_name),
+      mc.module);
   auto builder = llvm::IRBuilder<>(ctx);
   builder.SetInsertPoint(llvm::BasicBlock::Create(ctx, "entry", thunk));
   auto *args = thunk->getArg(0);
@@ -1893,15 +1904,20 @@ private:
 
 } // namespace
 
-auto compile_storage_module(const hir::storage_module &module,
+auto compile_storage_module(std::span<const hir::storage_module *const> modules,
                             hir::storage_env &env,
                             const storage_codegen_options &options)
     -> std::expected<compiled_module, codegen_error> {
+  if (modules.empty()) {
+    return fail(codegen_error_kind::unsupported_construct, source_span{},
+                "a program needs an entry module");
+  }
+  const auto &entry = modules.front()->name;
   auto result = compiled_module{
       .context = std::make_unique<llvm::LLVMContext>(),
       .module = nullptr,
   };
-  result.module = std::make_unique<llvm::Module>(module.name, *result.context);
+  result.module = std::make_unique<llvm::Module>(entry, *result.context);
   auto &ctx = *result.context;
   auto &llvm_module = *result.module;
 
@@ -1916,42 +1932,57 @@ auto compile_storage_module(const hir::storage_module &module,
                            .module = llvm_module,
                            .env = env,
                            .panic_fn = panic_fn,
+                           .entry = entry,
                            .functions = {}};
+  const auto name_of = [&](const hir::storage_module &module,
+                           const hir::storage_function &function) {
+    return hir::program_function_name(entry, module.name, function.name);
+  };
 
-  // Every signature is declared before any body, so a call finds a real
-  // function whether it is forward, recursive, or mutual.
-  for (const auto &function : module.functions) {
-    const auto span = function.slots.empty() ? source_span{}
-                                             : function.slots.front().span;
-    const auto type = function_type_for(mc, function.signature, span);
-    if (!type.has_value()) {
-      return std::unexpected(type.error());
+  // Every signature of every module is declared before any body, so a call
+  // finds a real function whether it is forward, recursive, mutual, or into
+  // another module.
+  for (const auto *module : modules) {
+    for (const auto &function : module->functions) {
+      const auto span = function.slots.empty() ? source_span{}
+                                               : function.slots.front().span;
+      const auto type = function_type_for(mc, function.signature, span);
+      if (!type.has_value()) {
+        return std::unexpected(type.error());
+      }
+      auto *declared =
+          llvm::Function::Create(*type, llvm::Function::ExternalLinkage,
+                                 name_of(*module, function), llvm_module);
+      if (!function.signature.returns_through_address()) {
+        add_result_extension(mc, *declared, function.signature.result.type);
+      }
+      mc.functions.emplace(name_of(*module, function), declared);
     }
-    auto *declared = llvm::Function::Create(
-        *type, llvm::Function::ExternalLinkage, function.name, llvm_module);
-    if (!function.signature.returns_through_address()) {
-      add_result_extension(mc, *declared, function.signature.result.type);
-    }
-    mc.functions.emplace(function.name, declared);
   }
 
-  for (const auto &function : module.functions) {
-    auto *declared = mc.functions.at(function.name);
-    if (auto ok = function_emitter(mc, module, function, declared).compile();
-        !ok.has_value()) {
-      auto error = ok.error();
-      error.message = std::format("in `{}`: {}", function.name, error.message);
-      return std::unexpected(std::move(error));
+  for (const auto *module : modules) {
+    for (const auto &function : module->functions) {
+      auto *declared = mc.functions.at(name_of(*module, function));
+      if (auto ok = function_emitter(mc, *module, function, declared).compile();
+          !ok.has_value()) {
+        auto error = ok.error();
+        error.message = std::format("in `{}`: {}", name_of(*module, function),
+                                    error.message);
+        return std::unexpected(std::move(error));
+      }
     }
   }
   if (options.entry_thunks) {
-    for (const auto &function : module.functions) {
-      if (function.signature.takes_environment) {
-        continue; // reached only through a `fn` value
-      }
-      if (auto ok = emit_entry_thunk(mc, function, mc.functions.at(function.name));
-          !ok.has_value()) {
-        return std::unexpected(ok.error());
+    for (const auto *module : modules) {
+      for (const auto &function : module->functions) {
+        if (function.signature.takes_environment) {
+          continue; // reached only through a `fn` value
+        }
+        const auto name = name_of(*module, function);
+        if (auto ok = emit_entry_thunk(mc, function, name, mc.functions.at(name));
+            !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
       }
     }
   }
@@ -1974,6 +2005,15 @@ auto compile_storage_module(const hir::storage_module &module,
                             verify_message));
   }
   return result;
+}
+
+auto compile_storage_module(const hir::storage_module &module,
+                            hir::storage_env &env,
+                            const storage_codegen_options &options)
+    -> std::expected<compiled_module, codegen_error> {
+  const auto *module_ptr = &module;
+  return compile_storage_module(
+      std::span<const hir::storage_module *const>(&module_ptr, 1), env, options);
 }
 
 } // namespace cinder::llvm_codegen

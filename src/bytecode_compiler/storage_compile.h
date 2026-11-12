@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <span>
 
 #include "src/bytecode/chunk.h"
 #include "src/bytecode_compiler/compile.h"
@@ -40,15 +41,23 @@ namespace cinder::bytecode_compiler {
 //  this compiler yet.
 // ==========================================================================
 
-/// Compiles every function of `module` (in order, so a call resolves against
-/// the module's own function table) from its storage form.
+/// Compiles a program of several modules into one bytecode module. The first
+/// module is the entry module; its functions keep their names in the function
+/// table, and a function of any other module is named `module::name`
+/// (`hir::program_function_name`), so modules may share function names and a
+/// call into another module resolves to a fixed index like any other.
 ///
 /// Each function should already satisfy `hir::verify`: this compiler relies on
 /// it for initialization, ownership and place validity and does not re-check
-/// them. It fails closed with a named reason on anything it cannot place:
-/// an indirect call through a `fn` value, a call into another module, a
+/// them. It fails closed with a named reason on anything it cannot place: a
 /// `drop_in_place`, a slot that does not live in the frame or the caller, a
 /// 128-bit scalar, or an offset or frame size beyond what an operand encodes.
+[[nodiscard]] auto
+compile_storage_module(std::span<const hir::storage_module *const> modules,
+                       hir::storage_env &env)
+    -> std::expected<bytecode::bytecode_module, compile_error>;
+
+/// Compiles one module as a program of its own.
 [[nodiscard]] auto compile_storage_module(const hir::storage_module &module,
                                           hir::storage_env &env)
     -> std::expected<bytecode::bytecode_module, compile_error>;

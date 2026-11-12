@@ -3,6 +3,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -25,6 +26,7 @@
 #include "src/semantic/check.h"
 #include "src/semantic/checker_results.h"
 #include "src/testing/stdlib_fixtures.h"
+#include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
 #include "src/testing/test_data.h"
 
@@ -878,6 +880,75 @@ auto test_indirect_call_goes_through_the_function_value() -> void {
   expect(!call.callee.is_direct(), "expected an indirect call");
   expect(call.signature.returns_through_address(),
          "expected the aggregate result to go through the result address");
+}
+
+/// A call into another module names the module that owns the callee, so the
+/// backends resolve it there even when this module has a function of the same
+/// name; the verifier checks it against that function when it has the program.
+auto test_calls_between_modules_name_the_owner() -> void {
+  auto program = cinder::testing::open_storage_program("bytecode_storage_test",
+                                                       "modules.cn");
+  expect(program->companion_lowerings.size() == 1 &&
+             program->companion_lowerings.front().module.name == "tools",
+         "expected the companion module to lower");
+  const auto *total = program->lowering.module.find("pair_total");
+  expect(total != nullptr, "expected pair_total to lower");
+  auto owners = std::vector<std::string>{};
+  for (const auto &op : total->ops) {
+    if (op.kind == hir::op_kind::call_into) {
+      owners.push_back(op.callee.owner_module.value_or("") + "/" +
+                       op.callee.name);
+    }
+  }
+  expect(owners == std::vector<std::string>{"tools/make", "tools/total",
+                                             "/make"},
+         "expected the calls into tools to name it and the local one not to");
+
+  // The drop of a value whose type lives in the other module is a call into
+  // that module too.
+  const auto *here = program->lowering.module.find("dropped_here");
+  expect(here != nullptr, "expected dropped_here to lower");
+  auto drops = size_t{0};
+  for (const auto &op : here->ops) {
+    if (op.kind == hir::op_kind::call_into && op.is_drop) {
+      expect(op.callee.owner_module == "tools" &&
+                 op.callee.name == "tracked::drop",
+             "expected the drop to call the other module's drop");
+      ++drops;
+    }
+  }
+  expect(drops == 2, "expected both locals to be dropped");
+
+  // With the program at hand the verifier compares the call with the callee
+  // in the owning module; without it the call is taken on trust.
+  const auto modules = program->modules();
+  const auto options = hir::verify_options{
+      .program = std::span<const hir::storage_module *const>(modules)};
+  auto skewed = *total;
+  skewed.ops[find_op(skewed, hir::op_kind::call_into)].signature.params[0] =
+      hir::classify_value(*program->layouts,
+                          program->checked.types.builtin("int64"))
+          .value();
+  const auto checked =
+      hir::verify(skewed, *program->env, &program->lowering.module, options);
+  expect(!checked.has_value() &&
+             checked.error().kind == hir::verify_error_kind::signature_mismatch,
+         "expected the cross-module call to be checked against its callee");
+  const auto trusted =
+      hir::verify(skewed, *program->env, &program->lowering.module);
+  expect(trusted.has_value(),
+         "expected a call into a module not given to be taken on trust");
+  // The same-named local function is not what the call is compared with.
+  auto local = *total;
+  local.ops[find_op(local, hir::op_kind::call_into, 2)].signature.params[0] =
+      hir::classify_value(*program->layouts,
+                          program->checked.types.builtin("int64"))
+          .value();
+  const auto mismatch =
+      hir::verify(local, *program->env, &program->lowering.module, options);
+  expect(!mismatch.has_value() &&
+             mismatch.error().message.find("make") != std::string::npos,
+         "expected the local call to be checked against the local function");
 }
 
 auto test_scalar_and_unit_functions() -> void {
@@ -2974,6 +3045,7 @@ auto main() -> int {
     test_replacement_is_built_apart_from_the_target();
     test_projection_through_a_reference_dereferences();
     test_indirect_call_goes_through_the_function_value();
+    test_calls_between_modules_name_the_owner();
     test_scalar_and_unit_functions();
     test_unsupported_constructs_are_refused_by_name();
     test_every_lowered_function_verifies();

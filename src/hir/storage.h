@@ -352,6 +352,21 @@ struct storage_module {
       -> const storage_function *;
 };
 
+/// The program-wide name of function `name` of module `module` in a program
+/// whose entry module is `entry`: the name itself for the entry module's
+/// functions, `module::name` for any other module's. Both backends key their
+/// function tables by it, so two modules may use one function name, and a
+/// host finds the entry module's functions under their own names.
+[[nodiscard]] auto program_function_name(std::string_view entry,
+                                         std::string_view module,
+                                         std::string_view name) -> std::string;
+
+/// The program-wide name of the function a direct call names, from the
+/// module the call is in. A callee with no owner module is in that module.
+[[nodiscard]] auto program_callee_name(std::string_view entry,
+                                       std::string_view module,
+                                       const call_target &callee) -> std::string;
+
 /// A stable, line-per-operation text rendering. Slots are named `s<id>` and
 /// listed first; the rendering depends only on the form, so tests can compare
 /// it exactly.

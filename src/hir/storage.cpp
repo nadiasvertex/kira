@@ -168,6 +168,21 @@ auto storage_module::find(std::string_view function_name) const
   return nullptr;
 }
 
+auto program_function_name(std::string_view entry, std::string_view module,
+                           std::string_view name) -> std::string {
+  if (module == entry) {
+    return std::string(name);
+  }
+  return std::string(module) + "::" + std::string(name);
+}
+
+auto program_callee_name(std::string_view entry, std::string_view module,
+                         const call_target &callee) -> std::string {
+  return program_function_name(
+      entry, callee.owner_module.has_value() ? *callee.owner_module : module,
+      callee.name);
+}
+
 namespace {
 
 [[nodiscard]] auto render_place(const place &where) -> std::string {

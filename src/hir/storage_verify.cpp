@@ -1782,6 +1782,27 @@ private:
     return {};
   }
 
+  /// The function a direct call names, when its module is known here: this
+  /// module when the call names no other, else the named module of the
+  /// program. Null when it cannot be found (an intrinsic, or a module not
+  /// given).
+  [[nodiscard]] auto find_callee(const call_target &callee) const
+      -> const storage_function * {
+    if (callees_ == nullptr) {
+      return nullptr;
+    }
+    if (!callee.owner_module.has_value() ||
+        *callee.owner_module == callees_->name) {
+      return callees_->find(callee.name);
+    }
+    for (const auto *module : options_.program) {
+      if (module->name == *callee.owner_module) {
+        return module->find(callee.name);
+      }
+    }
+    return nullptr;
+  }
+
   [[nodiscard]] auto do_call(const storage_op &op) -> result {
     const auto &sig = op.signature;
     if (sig.params.size() != op.args.size()) {
@@ -1791,17 +1812,14 @@ private:
                       std::to_string(sig.params.size()));
     }
     if (op.callee.is_direct()) {
-      // A function in another module may share this module's name for it.
-      if (callees_ != nullptr &&
-          (!op.callee.owner_module.has_value() ||
-           *op.callee.owner_module == callees_->name)) {
-        const auto *target = callees_->find(op.callee.name);
-        if (target != nullptr && !target->signature.agrees_with(sig)) {
-          return fail(verify_error_kind::signature_mismatch,
-                      "the call to `" + op.callee.name + "` is " +
-                          format_signature(sig) + " but the function is " +
-                          format_signature(target->signature));
-        }
+      // The callee is looked up in the module that owns it: this one when
+      // the call names no other, since modules may share a function's name.
+      const auto *target = find_callee(op.callee);
+      if (target != nullptr && !target->signature.agrees_with(sig)) {
+        return fail(verify_error_kind::signature_mismatch,
+                    "the call to `" + op.callee.name + "` is " +
+                        format_signature(sig) + " but the function is " +
+                        format_signature(target->signature));
       }
     } else {
       const auto &callable = *op.callee.callable;

@@ -4,7 +4,9 @@
 #include <cstdint>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -90,11 +92,22 @@ struct open_region {
 
 class function_emitter {
 public:
-  function_emitter(const hir::storage_module &module,
+  function_emitter(std::string_view entry, const hir::storage_module &module,
                    const hir::storage_function &function,
                    hir::storage_env &env,
                    const std::unordered_map<std::string, uint16_t> &index)
-      : module_(module), fn_(function), env_(env), index_(index) {}
+      : entry_(entry), module_(module), fn_(function), env_(env),
+        index_(index) {}
+
+  /// The function-table key of a function of this module.
+  [[nodiscard]] auto key(std::string_view name) const -> std::string {
+    return hir::program_function_name(entry_, module_.name, name);
+  }
+
+  /// The function-table key a direct call names.
+  [[nodiscard]] auto key(const hir::call_target &callee) const -> std::string {
+    return hir::program_callee_name(entry_, module_.name, callee);
+  }
 
   [[nodiscard]] auto compile() -> checked<bytecode::bytecode_function> {
     if (auto ok = prepare(); !ok.has_value()) {
@@ -1058,24 +1071,17 @@ private:
     if (!op.callee.is_direct()) {
       return emit_call_function(op);
     }
-    if (!index_.contains(op.callee.name)) {
+    const auto target = key(op.callee);
+    if (!index_.contains(target)) {
       if (const auto id = hir::runtime_intrinsic_id(op.callee.name);
           id.has_value()) {
         return emit_intrinsic_call(op, *id);
       }
     }
-    if (op.callee.owner_module.has_value() &&
-        *op.callee.owner_module != module_.name) {
-      return fail(compile_error_kind::unsupported_construct, op.span,
-                  std::format("a call into module `{}` is not compiled from "
-                              "the storage form yet",
-                              *op.callee.owner_module));
-    }
-    const auto found = index_.find(op.callee.name);
+    const auto found = index_.find(target);
     if (found == index_.end()) {
       return fail(compile_error_kind::unknown_callee, op.span,
-                  std::format("`{}` is not a function of this module",
-                              op.callee.name));
+                  std::format("`{}` is not a function of this program", target));
     }
     const auto operands = op.signature.operands();
     const auto block = fill_call_block(op, operands.size());
@@ -1157,14 +1163,14 @@ private:
   /// environment is one heap block that every capture is stored into.
   [[nodiscard]] auto emit_make_closure(const hir::storage_op &op)
       -> checked<void> {
-    const auto entry = index_.find(op.entry);
+    const auto entry = index_.find(key(op.entry));
     if (entry == index_.end()) {
       return fail(compile_error_kind::unknown_callee, op.span,
                   std::format("`{}` is not a function of this module", op.entry));
     }
     auto glue_word = uint64_t{0};
     if (!op.glue.empty()) {
-      const auto glue = index_.find(op.glue);
+      const auto glue = index_.find(key(op.glue));
       if (glue == index_.end()) {
         return fail(compile_error_kind::unknown_callee, op.span,
                     std::format("`{}` is not a function of this module", op.glue));
@@ -1317,7 +1323,7 @@ private:
   [[nodiscard]] auto emit_make_generator(const hir::storage_op &op)
       -> checked<void> {
     namespace co = runtime::coroutine;
-    const auto entry = index_.find(op.entry);
+    const auto entry = index_.find(key(op.entry));
     if (entry == index_.end()) {
       return fail(compile_error_kind::unknown_callee, op.span,
                   std::format("`{}` is not a function of this module", op.entry));
@@ -1948,7 +1954,7 @@ private:
                               "hold; split it into smaller functions",
                               fn_.name, k_physical_register_count));
     }
-    auto function = std::move(writer_).finish(fn_.name, param_count_,
+    auto function = std::move(writer_).finish(key(fn_.name), param_count_,
                                               allocated->register_count);
     for (const auto &site : input.sites) {
       const auto physical = allocated->assignment[site.reg.id];
@@ -2010,6 +2016,7 @@ private:
     return {};
   }
 
+  std::string_view entry_;
   const hir::storage_module &module_;
   const hir::storage_function &fn_;
   hir::storage_env &env_;
@@ -2037,29 +2044,57 @@ private:
 
 } // namespace
 
-auto compile_storage_module(const hir::storage_module &module,
+auto compile_storage_module(std::span<const hir::storage_module *const> modules,
                             hir::storage_env &env)
     -> std::expected<bytecode::bytecode_module, compile_error> {
-  if (module.functions.size() > UINT16_MAX) {
+  if (modules.empty()) {
+    return std::unexpected(compile_error{
+        .kind = compile_error_kind::internal_error,
+        .span = {},
+        .message = "a program needs an entry module"});
+  }
+  const auto &entry = modules.front()->name;
+  auto total = size_t{0};
+  for (const auto *module : modules) {
+    total += module->functions.size();
+  }
+  if (total > UINT16_MAX) {
     return std::unexpected(compile_error{
         .kind = compile_error_kind::encoding_limit_exceeded,
         .span = {},
-        .message = "a module has more functions than a call can name"});
+        .message = "a program has more functions than a call can name"});
   }
+  // One flat table over every module, keyed as `program_function_name` says,
+  // so a call anywhere resolves to a fixed index.
   auto index = std::unordered_map<std::string, uint16_t>{};
-  for (size_t i = 0; i < module.functions.size(); ++i) {
-    index.emplace(module.functions[i].name, static_cast<uint16_t>(i));
-  }
-  auto out = bytecode::bytecode_module{.module_name = module.name};
-  out.functions.reserve(module.functions.size());
-  for (const auto &function : module.functions) {
-    auto compiled = function_emitter(module, function, env, index).compile();
-    if (!compiled.has_value()) {
-      return std::unexpected(compiled.error());
+  auto next = uint16_t{0};
+  for (const auto *module : modules) {
+    for (const auto &function : module->functions) {
+      index.emplace(hir::program_function_name(entry, module->name, function.name),
+                    next++);
     }
-    out.functions.push_back(std::move(*compiled));
+  }
+  auto out = bytecode::bytecode_module{.module_name = entry};
+  out.functions.reserve(total);
+  for (const auto *module : modules) {
+    for (const auto &function : module->functions) {
+      auto compiled =
+          function_emitter(entry, *module, function, env, index).compile();
+      if (!compiled.has_value()) {
+        return std::unexpected(compiled.error());
+      }
+      out.functions.push_back(std::move(*compiled));
+    }
   }
   return out;
+}
+
+auto compile_storage_module(const hir::storage_module &module,
+                            hir::storage_env &env)
+    -> std::expected<bytecode::bytecode_module, compile_error> {
+  const auto *module_ptr = &module;
+  return compile_storage_module(
+      std::span<const hir::storage_module *const>(&module_ptr, 1), env);
 }
 
 } // namespace cinder::bytecode_compiler

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <span>
 #include <string>
 
 #include "src/hir/storage.h"
@@ -58,6 +59,10 @@ struct verify_options {
   /// or the function returns. A value owes its own drop, and one for each
   /// droppable field it still holds, unless it was moved out.
   bool check_leaks = true;
+  /// The other modules of the program, so a call into one of them is checked
+  /// against the function it names. A call into a module not listed here is
+  /// taken on trust.
+  std::span<const storage_module *const> program{};
 };
 
 /// Replays the form and reports the first violation. Checks:

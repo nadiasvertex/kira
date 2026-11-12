@@ -480,8 +480,9 @@ person. Status: `[x]` complete, `[~]` partly done (the task's details section li
 is done and what is not), `[ ]` not started. H = required for correctness/completion;
 M = required integration and documentation.
 
-Progress as of 2026-11-11: T-01 to T-04a are complete. T-05 to T-09 are partly done on
-both storage-form backends (bytecode VM and LLVM). T-09 now covers closures, patterns,
+Progress as of 2026-11-12: T-01 to T-04a are complete. T-05 to T-09 are partly done on
+both storage-form backends (bytecode VM and LLVM), which now compile a program of
+several modules with calls between them. T-09 covers closures, patterns (with guards),
 generators, tasks and `await`, `par`/`race`/`on`, droppable task results, `crew`
 blocks, and sums that own drops (pattern tests and drops over such sums, which also
 lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) is done and T-12 (frame budgets) is partly done (see below). T-13 and T-14 are not started.
@@ -743,13 +744,15 @@ strings, generators, or globals. Done:
   output). Mutation checks (short copy, payload offset, sign extension) each
   failed a test; the first sign-extension test did not and was replaced.
 
+Calls between modules (done 2026-11-12, both storage backends). `compile_storage_module` takes a program of storage modules, the entry module first, and compiles them as one unit with one function table. An entry-module function keeps its name; any other module's is `module::name` (`hir::program_function_name`, shared by both backends and the mangling the legacy compilers use), so modules may share a function's name. A call resolves through `program_callee_name`: the callee's `owner_module` when the call names one, else the calling module. The synthesized drop calls carry the owner of the type's `impl drop`, so a value whose type lives in another module is dropped by a call into it. The verifier gained `verify_options::program`, the other modules, and checks a call into one of them against the function it names (a call into a module not given is taken on trust, as before). Tests: `storage_fixture.h` builds a program from a fixture and the companions it names with `# with: <file>` lines, lowers each module, and verifies them against each other; `bytecode_storage_test/modules.cn` with `modules_tools.cn` through `storage_module_cases.h` on both backends (an aggregate result built in the caller's frame by the other module and borrowed back to it, a result of the other module's type forwarded, an aggregate argument handed over, a 24-byte value both ways, a chain inside the other module, and a droppable value consumed there and dropped here, with drop counts; the entry module has a `make` with another signature than `tools.make`); `storage_compile_test` checks the table holds `make` and `tools::make` with their own conventions and modules; `storage_test` pins the owners the lowering records for the calls and the drops, and checks the verifier catches a skewed cross-module call only with the program and compares the local call with the local function. Mutation checks (callee key ignoring the owner, every function keyed bare, verifier never reading the program, verifier resolving every callee locally) each failed a test.
+
 Not done:
 
 - Items 4 (index and range operations, patterns, aggregate equality) and 6
-  (indirect calls) in part: the compiler refuses by name an indirect call, a
-  call into another module, `drop_in_place`, 128-bit scalars, and offsets or
+  (indirect calls) in part: the compiler refuses by name `drop_in_place` of
+  types other than `fn`, generators, and tasks, 128-bit scalars, and offsets or
   frames beyond operand limits. Anything the storage form refuses is out of
-  reach until it grows `match`, strings, closures, and globals.
+  reach until it grows strings and globals.
 - Removing `emit_alloc_slots` from the old compiler, which waits on the driver
   switch.
 
@@ -798,8 +801,13 @@ T-05 bytecode compiler it is not called by the driver (decision 6). Done:
   packed accesses through addresses). Mutation checks (alignment over-claim,
   short `memmove`, payload offset, flipped result extension) each failed a test.
 
-Not done: index and range operations, patterns, aggregate equality, indirect
-calls, a call into another module, `drop_in_place`, 128-bit scalars; scalar tail
+Calls between modules are done as for T-05 (2026-11-12): every function of
+every module is declared in one `llvm::Module` before any body, named by
+`hir::program_function_name`, and a call into another module is a direct call;
+entry thunks are named after the symbol they wrap.
+
+Not done: index and range operations, aggregate equality, `drop_in_place` of
+types other than `fn`, generators, and tasks, 128-bit scalars; scalar tail
 calls are not specially handled; the AOT entry (`cinder build`) and external
 runtime wrappers still use the old compiler; the driver switch.
 
@@ -901,10 +909,11 @@ Done:
   layout question ignored, drop counted twice, raw move forbidden, offset type
   check off) each failed a test.
 
-Not done: `std.mem`, `vec[T]`, and `list[T]` themselves (they call across
-modules, which the storage compilers refuse); `uninit` stack
-buffers; `drop_in_place` as a storage operation (the machine-layer function
-`drop_in_place` is ordinary code and works once a call across modules does);
+Not done: `std.mem`, `vec[T]`, and `list[T]` themselves (calls across modules
+compile since 2026-11-12, but their bodies use `uninit`, generics, and strings
+the storage form does not express); `uninit` stack buffers; `drop_in_place` as
+a storage operation (the machine-layer function `drop_in_place` is ordinary
+code);
 indexing arrays at a run-time index; globals, static initialization, and
 constant emission; `src/comptime_vm` (`values.cpp`, hosted calls, `backend.cpp`)
 and `CINDER_COMPTIME_VERIFY`. A field assignment through a `&mut` binding

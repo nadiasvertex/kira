@@ -40,6 +40,7 @@
 #include "src/testing/storage_pattern_cases.h"
 #include "src/testing/storage_rvo_cases.h"
 #include "src/testing/storage_memory_cases.h"
+#include "src/testing/storage_module_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
 
@@ -55,8 +56,9 @@ using cases::expect_equal;
 /// The fixture's storage form compiled to LLVM, with entry thunks.
 [[nodiscard]] auto compile(cinder::testing::storage_program &program)
     -> llvm_codegen::compiled_module {
+  const auto modules = program.modules();
   auto compiled = llvm_codegen::compile_storage_module(
-      program.lowering.module, *program.env,
+      std::span<const cinder::hir::storage_module *const>(modules), *program.env,
       llvm_codegen::storage_codegen_options{.entry_thunks = true});
   if (!compiled.has_value()) {
     std::cerr << compiled.error().message << "\n";
@@ -175,9 +177,7 @@ public:
   [[nodiscard]] auto open(std::string_view dir, std::string_view name)
       -> std::unique_ptr<cases::case_runner> override {
     return std::make_unique<llvm_program>(
-        cinder::testing::build_storage_program(
-            cinder::testing::read_program(dir, name)),
-        level_);
+        cinder::testing::open_storage_program(dir, name), level_);
   }
 
 private:
@@ -358,6 +358,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
       cases::rvo_cases(backend);
       cases::generator_cases(backend);
       cases::task_cases(backend);
+      cases::module_cases(backend);
     }
   }
   cinder::testing::storage_nrvo_enabled() = true;
