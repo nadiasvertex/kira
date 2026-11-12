@@ -476,8 +476,14 @@ proves lifetime safety and the backend ABI permits them.
 ## Task Grid
 
 Owner `Compiler implementer` denotes the implementer of this plan, not an assigned
-person. All tasks are pending. H = required for correctness/completion; M = required
-integration and documentation.
+person. Status: `[x]` complete, `[~]` partly done (the task's details section lists what
+is done and what is not), `[ ]` not started. H = required for correctness/completion;
+M = required integration and documentation.
+
+Progress as of 2026-11-11: T-01 to T-04a are complete. T-05 to T-09 are partly done on
+both storage-form backends (bytecode VM and LLVM). T-09 now covers closures, patterns,
+generators, tasks and `await`, `par`/`race`/`on`, droppable task results, and `crew`
+blocks (commit `170ad78`). T-10 to T-14 are not started.
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -486,11 +492,11 @@ integration and documentation.
 | [x] | T-03 | Add shared storage form and aggregate ABI | Compiler implementer | H | T-02 | Verified destination/transfer plans cover calls and constructions. |
 | [x] | T-04 | Integrate ownership, references, and drops | Compiler implementer | H | T-03 | Moves, borrows, partial initialization, and drops agree with places. |
 | [x] | T-04a | Add structured control flow to the storage form | Compiler implementer | H | T-04 | `if`, `while`, `break`, `continue`, and early `return` lower and verify with joined initialization and drop state. |
-| [ ] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04a | VM executes nested aggregate calls without shell allocations. |
-| [ ] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04a | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
-| [ ] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
-| [ ] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
-| [ ] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
+| [~] | T-05 | Implement VM frame values and result destinations | Compiler implementer | H | T-04a | VM executes nested aggregate calls without shell allocations. |
+| [~] | T-06 | Implement LLVM values and result destinations | Compiler implementer | H | T-04a | LLVM/JIT/AOT use the shared ABI and pass the same value cases. |
+| [~] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
+| [~] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
+| [~] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
 | [ ] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
 | [ ] | T-11 | Implement shared NRVO | Compiler implementer | H | T-10 | Eligible locals use result storage; rejected cases use correct inline moves. |
 | [ ] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
