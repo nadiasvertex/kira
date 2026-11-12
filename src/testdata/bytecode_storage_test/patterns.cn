@@ -360,3 +360,81 @@ machine def nested_else(kind: int64, id: int64) -> int64:
     var drops: int64 = 0
     let seen = nested_else_inner(kind, id, ptr_cast[int64](&mut drops))
     return drops * 100 + seen
+
+# Guards read the names the pattern binds. A pattern that fails and a guard that
+# fails both go on to the next arm.
+def guard_pick(kind: int64, a: int64, b: int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @rect(w, h) if w < h => h - w
+        @circle(r) if r > 100 => r
+        @circle(r) => r + 1000
+        @rect(w, h) if w == h => 7000
+        _ => 0
+
+# A guard on an arm that always matches, in a statement `match`.
+def guard_stmt(kind: int64, a: int64, b: int64) -> int64:
+    var total: int64 = 100
+    let s = make_shape(kind, a, b)
+    match s:
+        @circle(r) if r > 10 =>:
+            total = total + r
+        @circle(_) =>:
+            total = total + 1
+        _ =>:
+            total = total + 2
+    return total
+
+def guard_pair(a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    return match p:
+        { a: x, b: y } if x < y => y - x
+        { a: x, b: y } => x + y
+
+# Each guard runs once, in order, and only when its pattern holds. The counter
+# records the guards that ran.
+machine def note(counter: *mut int64, v: int64, holds: bool) -> bool:
+    *counter = *counter * 10 + v
+    return holds
+
+def guard_order_inner(kind: int64, a: int64, b: int64,
+                      counter: *mut int64) -> int64:
+    let s = make_shape(kind, a, b)
+    return match s:
+        @circle(r) if note(counter, 1, r > 10) => r
+        @circle(r) if note(counter, 2, r > 5) => r + 100
+        @rect(w, h) if note(counter, 3, w > h) => w - h
+        _ => 0
+
+machine def guard_order(kind: int64, a: int64, b: int64) -> int64:
+    var trail: int64 = 0
+    let seen = guard_order_inner(kind, a, b, ptr_cast[int64](&mut trail))
+    return trail * 1000 + seen
+
+# A guard on a sum that owns a drop reads a scalar of the payload. Whether it
+# holds or fails, the sum keeps its payload until the scope end drops it.
+def guard_owned_inner(present: int64, id: int64, stamp: int64,
+                      counter: *mut int64) -> int64:
+    let s = make_stamped(present, id, stamp, counter)
+    return match s:
+        @item(_, k) if k > 5 => k
+        @item(_, _) => 1
+        @empty => 5
+
+machine def guard_owned(present: int64, id: int64, stamp: int64) -> int64:
+    var drops: int64 = 0
+    let seen = guard_owned_inner(present, id, stamp, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# Two tests can fail before the guard (two literals), and every arm leaves, so
+# the second place the remaining arms are built must start as live code.
+def guard_leave(n: int64, a: int64, b: int64) -> int64:
+    let p = pair { a: a, b: b }
+    match p:
+        { a: 1, b: 2 } if n > 0 =>:
+            return 10
+        { a: 1, b: _ } =>:
+            return 20
+        _ =>:
+            return 30
+    return 0

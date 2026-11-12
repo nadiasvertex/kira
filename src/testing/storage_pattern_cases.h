@@ -134,6 +134,42 @@ inline auto tests_beyond_the_variant_on_sums_that_own_drops(case_backend &backen
   expect_equal(run("nested_else", {0, 7}), -7, "nested_else(none)");
 }
 
+/// Arms with guards: the guard reads the pattern's bindings, runs once and only
+/// when the pattern holds, and a failure of either goes on to the next arm.
+inline auto match_arms_with_guards(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "patterns.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  expect_equal(run("guard_pick", {1, 2, 9}), 7, "guard_pick(rect 2 9)");
+  expect_equal(run("guard_pick", {1, 5, 5}), 7000, "guard_pick(rect 5 5)");
+  expect_equal(run("guard_pick", {1, 9, 5}), 0, "guard_pick(rect 9 5)");
+  expect_equal(run("guard_pick", {0, 200, 0}), 200, "guard_pick(circle 200)");
+  expect_equal(run("guard_pick", {0, 5, 0}), 1005, "guard_pick(circle 5)");
+  expect_equal(run("guard_pick", {2, 0, 0}), 0, "guard_pick(empty)");
+  expect_equal(run("guard_stmt", {0, 20, 0}), 120, "guard_stmt(circle 20)");
+  expect_equal(run("guard_stmt", {0, 4, 0}), 101, "guard_stmt(circle 4)");
+  expect_equal(run("guard_stmt", {2, 0, 0}), 102, "guard_stmt(empty)");
+  expect_equal(run("guard_pair", {3, 10}), 7, "guard_pair(3 10)");
+  expect_equal(run("guard_pair", {10, 3}), 13, "guard_pair(10 3)");
+  expect_equal(run("guard_leave", {1, 1, 2}), 10, "guard_leave(held)");
+  expect_equal(run("guard_leave", {0, 1, 2}), 20, "guard_leave(guard fails)");
+  expect_equal(run("guard_leave", {1, 1, 3}), 20, "guard_leave(second literal)");
+  expect_equal(run("guard_leave", {1, 2, 2}), 30, "guard_leave(first literal)");
+  // The trail names the guards that ran: 1, 12, 12 (neither held), 3.
+  expect_equal(run("guard_order", {0, 20, 0}), 1020, "guard_order(circle 20)");
+  expect_equal(run("guard_order", {0, 8, 0}), 12108, "guard_order(circle 8)");
+  expect_equal(run("guard_order", {0, 3, 0}), 12000, "guard_order(circle 3)");
+  expect_equal(run("guard_order", {1, 5, 2}), 3003, "guard_order(rect 5 2)");
+  expect_equal(run("guard_order", {1, 2, 5}), 3000, "guard_order(rect 2 5)");
+  expect_equal(run("guard_order", {2, 0, 0}), 0, "guard_order(empty)");
+  // On a sum that owns a drop, the payload is dropped once whether the guard
+  // holds or fails.
+  expect_equal(run("guard_owned", {1, 7, 9}), 7009, "guard_owned(held)");
+  expect_equal(run("guard_owned", {1, 7, 3}), 7001, "guard_owned(failed)");
+  expect_equal(run("guard_owned", {0, 7, 3}), 5, "guard_owned(empty)");
+}
+
 /// Runs the pattern cases.
 inline auto pattern_cases(case_backend &backend) -> void {
   match_selects_by_variant(backend);
@@ -142,6 +178,7 @@ inline auto pattern_cases(case_backend &backend) -> void {
   loops_and_else_use_patterns(backend);
   sums_that_own_drops_are_dropped_once(backend);
   tests_beyond_the_variant_on_sums_that_own_drops(backend);
+  match_arms_with_guards(backend);
 }
 
 } // namespace cinder::testing::storage_cases

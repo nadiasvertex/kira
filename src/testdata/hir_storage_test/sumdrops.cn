@@ -177,3 +177,28 @@ def has_some(n: int32) -> int32:
     let @some(_) = make_option(n) else:
         return 0
     return 1
+
+# A guard reads a scalar the pattern binds; the sum that owes a drop stays
+# whole when the guard fails.
+def guard_scalar(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(_, k) if k > 5 => k
+        @item(_, _) => 1
+        @empty => 0
+
+# A guard on a pattern that takes a droppable payload out is refused.
+def guard_takes(n: int32) -> int32:
+    let s = make_slot(n)
+    return match s:
+        @full(x) if x.id > 5 => x.id
+        @full(x) => 1
+        @vacant => 0
+
+# A failed guard hands the sum to a later arm that takes the payload.
+def guard_then_take(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(_, k) if k > 5 => k
+        @item(x, _) => x.id
+        @empty => 0

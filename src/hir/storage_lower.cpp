@@ -2642,11 +2642,6 @@ private:
   [[nodiscard]] auto lower_match(const hir_match &node,
                                  const std::optional<place> &dest) -> result {
     for (const auto &arm : node.arms) {
-      if (arm.guard != nullptr) {
-        return refuse(arm.guard->span, "a `match` arm guard");
-      }
-    }
-    for (const auto &arm : node.arms) {
       if (auto ok = check_droppable_subject(*node.subject, *arm.pattern,
                                             arm.pattern->span);
           !ok.has_value()) {
@@ -2677,6 +2672,9 @@ private:
     }
     const auto &arm = node.arms[index];
     const auto last = index + 1 == node.arms.size();
+    if (arm.guard != nullptr) {
+      return lower_guarded_arm(node, index, subject, dest);
+    }
     // The checker requires a `match` to cover every value, so the last arm
     // holds wherever the earlier ones did not.
     if (always_matches(*arm.pattern) || last) {
@@ -2732,6 +2730,121 @@ private:
       }
     }
     emit(storage_op{.kind = op_kind::if_end}, node.span);
+    terminated_ = arm_terminated && terminated_;
+    return {};
+  }
+
+  /// An arm with a guard. The pattern is tested, then the bindings HIR placed
+  /// ahead of the guard run and the guard is evaluated; the body runs when it
+  /// holds. A pattern that does not hold, and a guard that does not, both go on
+  /// to the remaining arms, so those are built at each of the two places.
+  ///
+  /// A failed guard leaves the subject as it was, so the bindings must not take
+  /// anything from it that needs a drop.
+  [[nodiscard]] auto lower_guarded_arm(const hir_match &node, size_t index,
+                                       const place &subject,
+                                       const std::optional<place> &dest)
+      -> result {
+    const auto &arm = node.arms[index];
+    const auto last = index + 1 == node.arms.size();
+    const auto *condition_expr = arm.guard.get();
+    const hir_block *bindings = nullptr;
+    if (arm.guard->kind == hir_node_kind::hir_block) {
+      bindings = &as<hir_block>(*arm.guard);
+      const auto &stmts = bindings->stmts;
+      const auto *tail = stmts.empty() ? nullptr : stmts.back().get();
+      if (tail == nullptr || tail->kind != hir_node_kind::hir_expr_stmt) {
+        return malformed(arm.guard->span, "a `match` arm guard with no value");
+      }
+      condition_expr = as<hir_expr_stmt>(*tail).expr.get();
+      for (size_t i = 0; i + 1 < stmts.size(); ++i) {
+        if (stmts[i]->kind != hir_node_kind::hir_let) {
+          // Something HIR runs before the guard, such as the drop of a payload
+          // the pattern does not name; a failed guard would find it done.
+          return refuse(stmts[i]->span,
+                        "a `match` arm guard on a pattern that drops part of "
+                        "the value before the guard is tested");
+        }
+        if (env_.needs_drop(as<hir_let>(*stmts[i]).type())) {
+          return refuse(stmts[i]->span,
+                        "a `match` arm guard on a pattern that binds `" +
+                            as<hir_let>(*stmts[i]).name +
+                            "`, a value that needs a drop");
+        }
+      }
+    }
+    auto arm_terminated = false;
+    auto succeed = [&]() -> result {
+      return in_region(arm.guard->span, [&]() -> result {
+        if (bindings != nullptr) {
+          for (size_t i = 0; i + 1 < bindings->stmts.size() && !terminated_;
+               ++i) {
+            if (auto ok = lower_stmt(*bindings->stmts[i]); !ok.has_value()) {
+              return ok;
+            }
+          }
+        }
+        if (last) {
+          // Nothing follows the last arm: the checker has shown the earlier
+          // ones leave no value for it to refuse.
+          if (auto ok = lower_discarded(*condition_expr); !ok.has_value()) {
+            return ok;
+          }
+          auto ran = lower_arm(*arm.body, dest);
+          arm_terminated = terminated_;
+          return ran;
+        }
+        auto test = lower_condition(*condition_expr);
+        if (!test.has_value()) {
+          return std::unexpected(test.error());
+        }
+        auto head = storage_op{.kind = op_kind::if_begin};
+        head.condition = test->value;
+        emit(std::move(head), arm.guard->span);
+        if (test->hold != k_invalid_storage) {
+          kill(test->hold, arm.guard->span);
+        }
+        if (auto ok = lower_arm(*arm.body, dest); !ok.has_value()) {
+          return ok;
+        }
+        const auto body_terminated = terminated_;
+        terminated_ = false;
+        emit(storage_op{.kind = op_kind::else_begin}, arm.guard->span);
+        if (test->hold != k_invalid_storage) {
+          kill(test->hold, arm.guard->span);
+        }
+        auto rest = in_region(node.span, [&] {
+          return lower_arms(node, index + 1, subject, dest);
+        });
+        if (!rest.has_value()) {
+          return rest;
+        }
+        emit(storage_op{.kind = op_kind::if_end}, arm.guard->span);
+        arm_terminated = body_terminated && terminated_;
+        return result{};
+      });
+    };
+    if (always_matches(*arm.pattern) || last) {
+      auto ok = succeed();
+      terminated_ = arm_terminated;
+      return ok;
+    }
+    auto ok = emit_tests(
+        {obligation{.pattern = arm.pattern.get(), .where = subject}},
+        [&]() -> result {
+          auto ran = succeed();
+          terminated_ = false;
+          return ran;
+        },
+        [&]() -> result {
+          terminated_ = false;
+          return in_region(node.span, [&] {
+            return lower_arms(node, index + 1, subject, dest);
+          });
+        });
+    if (!ok.has_value()) {
+      return ok;
+    }
     terminated_ = arm_terminated && terminated_;
     return {};
   }

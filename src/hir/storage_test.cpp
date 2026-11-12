@@ -895,7 +895,7 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   expect(matching->kind ==
              hir::storage_lower_error_kind::unsupported_construct,
          "expected an unsupported-construct refusal");
-  expect(matching->message.find("`match`") != std::string::npos,
+  expect(matching->message.find("kind of pattern") != std::string::npos,
          "expected the refusal to name the construct");
   const auto *shout = f->refusal("shout");
   expect(shout != nullptr && shout->message.find("str") != std::string::npos,
@@ -1041,7 +1041,8 @@ auto test_fields_drop_in_order_and_moved_fields_are_skipped() -> void {
 auto test_sums_that_own_drops_lower_and_verify() -> void {
   auto f = build(read_program("sumdrops.cn"));
   for (const auto &refused : f->lowering.refused) {
-    if (refused.name != "tuple_subject" && refused.name != "either") {
+    if (refused.name != "tuple_subject" && refused.name != "either" &&
+        refused.name != "guard_takes" && refused.name != "guard_then_take") {
       std::cerr << "refused " << refused.name << ": " << refused.error.message
                 << "\n";
       fail("expected every function over a droppable sum to lower");
@@ -1184,6 +1185,52 @@ auto test_literal_and_nested_tests_on_droppable_sums() -> void {
        "compute s2 = unary - #1", "else", "dead s11", "compute s2 = const 0",
        "end_if", "else", "dead s10", "compute s2 = const 0", "end_if",
        "end_if", "return s2"});
+}
+
+auto test_match_arm_guards() -> void {
+  auto f = build(read_program("patterns.cn"));
+  // The pattern's test and the guard each lead to the remaining arm.
+  expect_ops(*f, "guarded",
+             {"test s2 = s0 is @circle", "if s2", "dead s2",
+              "compute s3 = copy s0.@circle.0", "compute s4 = binary > s3, #0",
+              "if s4", "dead s4", "compute s1 = copy s3", "else", "dead s4",
+              "compute s1 = const 0", "end_if", "else", "dead s2",
+              "compute s1 = const 0", "end_if", "return s1"});
+  expect_verifies(*f, f->function("guard_binds"), "guard_binds");
+  // An arm that always matches still tests its guard.
+  expect_ops(*f, "guard_total",
+             {"compute s2 = copy s0.a", "compute s3 = copy s0.b",
+              "compute s4 = binary < s2, s3", "if s4", "dead s4",
+              "compute s1 = binary - s3, s2", "else", "dead s4",
+              "compute s5 = copy s0.a", "compute s6 = copy s0.b",
+              "compute s1 = binary + s5, s6", "end_if", "return s1"});
+  auto g = build(read_program("sumdrops.cn"));
+  // The guard copies a scalar out of the payload, so the sum stays whole
+  // through the failed guard and the scope-end drop still finds its variant.
+  expect_ops(*g, "guard_scalar",
+             {"call s1 = make_tagged(s0)", "test s3 = s1 is @item", "if s3",
+              "dead s3", "compute s4 = copy s1.@item.1",
+              "compute s5 = binary > s4, #5", "if s5", "dead s5",
+              "compute s2 = copy s4", "else", "dead s5",
+              "test s6 = s1 is @item", "if s6", "dead s6",
+              "compute s2 = const 1", "else", "dead s6",
+              "compute s2 = const 0", "end_if", "end_if", "else", "dead s3",
+              "test s7 = s1 is @item", "if s7", "dead s7",
+              "compute s2 = const 1", "else", "dead s7",
+              "compute s2 = const 0", "end_if", "end_if",
+              "test s8 = s1 is @item", "if s8", "dead s8",
+              "call.drop s9 = noisy::drop(&s1.@item.0)", "dead s9", "else",
+              "dead s8", "end_if", "return s2"});
+  expect_verifies(*g, g->function("guard_scalar"), "guard_scalar");
+  const auto *drops_first = g->refusal("guard_then_take");
+  expect(drops_first != nullptr &&
+             drops_first->message.find("drops part of the value") !=
+                 std::string::npos,
+         "expected a guard run after a drop of the pattern's part to be refused");
+  const auto *takes = g->refusal("guard_takes");
+  expect(takes != nullptr &&
+             takes->message.find("needs a drop") != std::string::npos,
+         "expected a guard over a droppable binding to be refused by name");
 }
 
 auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
@@ -2248,10 +2295,9 @@ auto test_while_let_and_let_else_lower() -> void {
 
 auto test_patterns_not_lowered_yet_are_refused_by_name() -> void {
   auto f = build(read_program("patterns.cn"));
-  const auto *guarded = f->refusal("guarded");
-  expect(guarded != nullptr &&
-             guarded->message.find("guard") != std::string::npos,
-         "expected a `match` arm guard to be refused by name");
+  expect(f->refusal("guarded") == nullptr,
+         "expected a `match` arm guard to lower");
+  expect_verifies(*f, f->function("guarded"), "guarded");
   // A sum that needs a drop is tested by its variants (`sumdrops.cn`).
   expect(f->refusal("owned_subject") == nullptr,
          "expected a variant test on a sum that needs a drop to lower");
@@ -2937,6 +2983,7 @@ auto main() -> int {
     test_sums_that_own_drops_lower_and_verify();
     test_a_sum_is_dropped_through_the_variant_it_holds();
     test_literal_and_nested_tests_on_droppable_sums();
+    test_match_arm_guards();
     test_patterns_on_droppable_sums_test_only_the_variant();
     test_verifier_follows_the_variant_a_droppable_sum_holds();
     test_discarded_temporary_is_dropped();

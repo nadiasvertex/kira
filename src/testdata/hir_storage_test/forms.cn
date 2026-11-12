@@ -120,7 +120,7 @@ async def racing() -> int32:
 
 def matching(n: int32) -> int32:
     match n:
-        k if k > 0 => return 1
+        1..5 => return 1
         _ => return 2
 
 def shout() -> str:

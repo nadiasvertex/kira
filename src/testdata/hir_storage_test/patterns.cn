@@ -87,3 +87,18 @@ def owned_subject(o: option[noisy]) -> int64:
     return match o:
         @some(_) => 1
         @none => 0
+
+# A guard reads the names the pattern binds; a failed guard goes on to the
+# remaining arms, as does a failed pattern.
+def guard_binds(s: shape) -> int64:
+    return match s:
+        @rect(w, h) if w < h => h - w
+        @circle(r) if r > 100 => r
+        @circle(r) => r + 1000
+        _ => 0
+
+# A guard on an arm that always matches.
+def guard_total(p: pair) -> int64:
+    return match p:
+        { a: x, b: y } if x < y => y - x
+        { a: x, b: y } => x + y
