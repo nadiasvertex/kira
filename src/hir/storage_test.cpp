@@ -454,7 +454,12 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
   const auto *shout = f->refusal("shout");
   expect(shout != nullptr && shout->message.find("str") != std::string::npos,
          "expected a string literal to be refused");
-  expect(f->refusal("crewed") != nullptr, "expected a crew to be refused");
+  expect(f->refusal("crewed") == nullptr, "expected a crew to lower");
+  const auto *collecting = f->refusal("collecting");
+  expect(collecting != nullptr &&
+             collecting->message.find("`errors()` on a crew") !=
+                 std::string::npos,
+         "expected a crew's error list to be refused by name");
   expect(f->refusal("racing") == nullptr,
          "expected waiting on a set of tasks to lower");
   expect(f->refusal("triple") == nullptr,
@@ -1873,6 +1878,94 @@ auto test_plain_functions_block_on_the_task() -> void {
   expect_verifies(*f, f->function("run_pair"), "run_pair");
 }
 
+auto test_a_crew_waits_for_its_tasks() -> void {
+  auto f = build(read_program("crews.cn"));
+  expect(f->lowering.refused.empty(), "expected every crew function to lower");
+  // In a task the wait is a suspension point. Spawning hands the task to the
+  // crew (`move`) and gives the same handle back; the crew itself is only
+  // looked at. A cancellation after the wait releases the tasks the block
+  // is about to hand back, which no name owns yet.
+  expect_ops(*f, "in_task$step",
+             {"dispatch s0 of 4", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "call s4 = rt_crew_new()", "call s6 = square(s2)",
+              "call s5 = rt_crew_spawn(s4, move s6)", "dead s6",
+              "compute s9 = binary + s2, #1", "call s8 = square(s9)",
+              "call s7 = rt_crew_spawn(s4, move s8)", "dead s9", "dead s8",
+              "move s10.0 <- s5", "move s10.1 <- s7", "await crew #1 s1 <- s4",
+              "call s11 = rt_crew_free(s4)", "dead s11", "cancelled s12 = s1",
+              "if s12", "dead s12", "drop s10.0", "drop s10.1", "finish s1",
+              "return #1", "else", "dead s12", "end_if", "move s13 <- s10",
+              "move s14 <- s13.0", "move s15 <- s13.1", "move s16 <- s14",
+              "await #2 s1 <- s16", "cancelled s17 = s1", "if s17", "dead s17",
+              "drop s16", "drop s15", "finish s1", "return #1", "else",
+              "dead s17", "end_if", "take s18 <- s16", "drop s16",
+              "move s19 <- s15", "await #3 s1 <- s19", "cancelled s20 = s1",
+              "if s20", "dead s20", "drop s19", "finish s1", "return #1",
+              "else", "dead s20", "end_if", "take s21 <- s19", "drop s19",
+              "compute s22 = binary + s18, s21", "suspend #4 s1 <- s22",
+              "dead s22", "finish s1", "return #1"});
+  expect_verifies(*f, f->function("in_task$step"), "in_task$step");
+  // A handle that is dropped while the crew still runs leaves the task to the
+  // crew; the join comes after.
+  expect_ops(*f, "discarded$step",
+             {"dispatch s0 of 2", "cancelled s3 = s1", "if s3", "dead s3",
+              "finish s1", "return #1", "else", "dead s3", "end_if",
+              "call s4 = rt_crew_new()", "call s6 = square(s2)",
+              "call s5 = rt_crew_spawn(s4, move s6)", "dead s6", "drop s5",
+              "await crew #1 s1 <- s4", "call s7 = rt_crew_free(s4)", "dead s7",
+              "cancelled s8 = s1", "if s8", "dead s8", "finish s1",
+              "return #1", "else", "dead s8", "end_if",
+              "compute s9 = copy s2", "suspend #2 s1 <- s9", "dead s9",
+              "finish s1", "return #1"});
+  expect_verifies(*f, f->function("discarded$step"), "discarded$step");
+  // Outside a task the thread waits for the crew.
+  expect_ops(*f, "in_function",
+             {"call s2 = rt_crew_new()", "call s5 = square(s0)",
+              "call s4 = rt_crew_spawn(s2, move s5)", "dead s5",
+              "compute s8 = binary + s0, #1", "call s7 = square(s8)",
+              "call s6 = rt_crew_spawn(s2, move s7)", "dead s8", "dead s7",
+              "move s3.0 <- s4", "move s3.1 <- s6", "call s9 = rt_crew_join(s2)",
+              "dead s9", "call s10 = rt_crew_free(s2)", "dead s10",
+              "move s1 <- s3", "move s11 <- s1.0", "move s12 <- s1.1",
+              "call s15 = rt_task_block_on(s11, #0)", "take s14 <- s11",
+              "call s17 = rt_task_block_on(s12, #0)", "take s16 <- s12",
+              "compute s13 = binary + s14, s16", "dead s17", "dead s16",
+              "dead s15", "dead s14", "drop s12", "drop s11", "return s13"});
+  expect_verifies(*f, f->function("in_function"), "in_function");
+
+  // The wait names a crew.
+  auto not_a_crew = f->function("in_task$step");
+  not_a_crew.ops[find_op(not_a_crew, hir::op_kind::coroutine_await)].source =
+      place_at(5, not_a_crew.slots[5].type);
+  expect_rejects(*f, not_a_crew, hir::verify_error_kind::type_mismatch,
+                 "a crew wait on a task");
+  // A crew that has not been made cannot be waited for.
+  auto unmade = f->function("in_task$step");
+  unmade.ops.erase(unmade.ops.begin() +
+                   static_cast<std::ptrdiff_t>(
+                       find_op(unmade, hir::op_kind::call_into, 0)));
+  expect_rejects(*f, unmade, hir::verify_error_kind::uninitialized,
+                 "a crew that was never made");
+  // The wait reads a crew that has a value.
+  auto unset = f->function("in_task$step");
+  unset.slots.push_back(unset.slots[4]);
+  unset.slots.back().id = unset.slots.size() - 1;
+  unset.slots.back().owner = unset.slots.back().id;
+  unset.slots.back().env_offset = 1000;
+  unset.ops[find_op(unset, hir::op_kind::coroutine_await)].source =
+      place_at(unset.slots.size() - 1, unset.slots[4].type);
+  expect_rejects(*f, unset, hir::verify_error_kind::uninitialized,
+                 "a wait on a crew slot nothing wrote");
+  // The tasks the block hands back are released if it is cancelled first.
+  auto leaked = f->function("in_task$step");
+  leaked.ops.erase(leaked.ops.begin() +
+                   static_cast<std::ptrdiff_t>(
+                       find_op(leaked, hir::op_kind::drop_in_place, 0)));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "a cancelled crew block that leaks the tasks it holds");
+}
+
 auto test_dropping_a_task_drops_its_unread_result() -> void {
   auto f = build(read_program("task_results.cn"));
   expect(f->lowering.refused.size() == 1,
@@ -2025,6 +2118,7 @@ auto main() -> int {
     test_task_constructor_and_step_hand_over_the_result();
     test_await_is_a_resume_point_that_may_return_pending();
     test_plain_functions_block_on_the_task();
+    test_a_crew_waits_for_its_tasks();
     test_dropping_a_task_drops_its_unread_result();
     test_verifier_checks_tasks();
     test_generator_constructor_builds_the_handle();

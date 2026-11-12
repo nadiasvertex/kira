@@ -92,12 +92,25 @@ def self_bump(n: int32) -> pair:
 async def triple(x: int32) -> int32:
     return x * 3
 
-# A crew is not in the storage form yet: spawning into it leaves a task
-# temporary that the lowering cannot drop.
+# A crew starts what is spawned into it and waits for it at the end of the
+# block.
 async def crewed() -> int32:
     crew k:
         let _ = k.spawn(triple(1))
     return 1
+
+# Collecting a crew's errors builds a list, which is not in the storage form.
+async def fails(n: int32) -> result[int32, int32]:
+    return @err(n)
+
+async def collecting() -> int32:
+    let errs = crew c(on_error: collect):
+        let _ = c.spawn(fails(1))
+        c.errors()
+    var total: int32 = 0
+    for e in errs:
+        total = total + e
+    return total
 
 # Waiting on a set of tasks is.
 async def racing() -> int32:

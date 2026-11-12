@@ -4810,7 +4810,32 @@ auto lowerer::lower_crew(std::string_view name,
 
   emit_crew_end(crew_symbol, span, nodes);
   if (in_task_body_) {
-    auto cancel = coroutine_cancel_check(key, span);
+    // The block's value is not bound to a name yet, so a cancellation here
+    // has to release the tasks it hands back.
+    auto held = ptr_vec<hir_expr>{};
+    if (result != nullptr) {
+      const auto &local = static_cast<const hir_local_ref &>(*result);
+      const auto result_ref = [&]() -> ptr<hir_expr> {
+        return {make<hir_local_ref>(span, result_type, local.symbol,
+                                    std::string("<crew result>"))};
+      };
+      const auto &entry = checked_.types.entry(result_type);
+      const auto is_task = [&](type_id member) {
+        const auto &m = checked_.types.entry(member);
+        return m.kind == type_kind::builtin_generic_kind && m.name == "task";
+      };
+      if (is_task(result_type)) {
+        held.push_back(result_ref());
+      } else if (entry.kind == type_kind::tuple_kind) {
+        for (size_t i = 0; i < entry.args.size(); ++i) {
+          if (is_task(entry.args[i])) {
+            held.push_back(ptr<hir_expr>(make<hir_tuple_index>(
+                span, entry.args[i], result_ref(), i)));
+          }
+        }
+      }
+    }
+    auto cancel = coroutine_cancel_check(key, span, std::move(held));
     if (!cancel.has_value()) {
       return std::unexpected(cancel.error());
     }

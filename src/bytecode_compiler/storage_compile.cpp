@@ -1531,6 +1531,8 @@ private:
     // number of members.
     const auto name = op.waits == hir::wait_mode::one
                           ? "rt_task_await_poll"
+                          : op.waits == hir::wait_mode::crew
+                                ? "rt_crew_join_poll"
                           : op.waits == hir::wait_mode::all
                                 ? "rt_task_await_all_poll"
                                 : "rt_task_await_any_poll";
@@ -1539,7 +1541,7 @@ private:
       return fail(compile_error_kind::internal_error, op.span,
                   std::string{"the runtime has no `"} + name + "`");
     }
-    const auto arity = op.waits == hir::wait_mode::one ? uint8_t{2} : uint8_t{3};
+    const auto arity = is_handle_wait(op.waits) ? uint8_t{2} : uint8_t{3};
     const auto block = alloc_group(arity);
     emit_move(block, *object);
     if (auto ok = emit_group_operand(op, block, 1); !ok.has_value()) {
@@ -1562,12 +1564,17 @@ private:
     return {};
   }
 
+  /// A wait on one handle (a task or a crew) rather than on a tuple of tasks.
+  [[nodiscard]] static auto is_handle_wait(hir::wait_mode mode) -> bool {
+    return mode == hir::wait_mode::one || mode == hir::wait_mode::crew;
+  }
+
   /// Fills the argument registers after `first` for the awaited thing in
   /// `op.source`: the task's handle, or a group's address and member count.
   [[nodiscard]] auto emit_group_operand(const hir::storage_op &op,
                                         virtual_reg block, size_t first)
       -> checked<void> {
-    if (op.waits == hir::wait_mode::one) {
+    if (is_handle_wait(op.waits)) {
       const auto awaited = read_place(op.source);
       if (!awaited.has_value()) {
         return std::unexpected(awaited.error());

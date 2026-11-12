@@ -254,6 +254,91 @@ machine def noisy_unstarted() -> int64:
     let seen = never_started(7, ptr_cast[int64](&mut drops))
     return drops * 10 + seen
 
+# A crew starts the tasks spawned into it and waits for all of them before the
+# block ends. In a task that wait is a suspension point; in a plain function it
+# blocks the thread. The tasks come back out of the block as ordinary handles.
+async def crew_in_task(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(double(n))
+        let tb = k.spawn(chain(n))
+        (ta, tb)
+    return (await a) + (await b) * 100
+
+def run_crew_in_task(n: int64) -> int64:
+    let t = crew_in_task(n)
+    return t.get()
+
+def crew_in_function(n: int64) -> int64:
+    let (a, b) = crew k:
+        let ta = k.spawn(double(n))
+        let tb = k.spawn(chain(n))
+        (ta, tb)
+    return a.get() + b.get() * 100
+
+# A crew that spawns in a loop, discarding each handle.
+async def crew_in_loop(n: int64) -> int64:
+    var i: int64 = 0
+    crew k:
+        while i < n:
+            let _ = k.spawn(double(i))
+            i = i + 1
+    return i
+
+def run_crew_in_loop(n: int64) -> int64:
+    let t = crew_in_loop(n)
+    return t.get()
+
+# The block waits for a child that is still running when the body is over. The
+# child stores its value after a pause, so a block that did not wait would
+# leave the cell unset.
+type sink = { pub slot: *mut int64 }
+
+# Only the child writes through the pointer, so the sink may move into a task.
+impl send for sink:
+
+machine def store(out: sink, value: int64) -> unit:
+    *out.slot = value
+    return
+
+async def slow_store(out: sink, value: int64) -> int64:
+    let spun = await on(cpu):
+        var i: int64 = 0
+        while i < 300000:
+            i = i + 1
+        i
+    store(out, value)
+    return spun
+
+async def join_waits(out: sink) -> int64:
+    crew k:
+        let _ = k.spawn(slow_store(out, 7))
+    return 1
+
+# Leaving the block by `return` waits too.
+async def leaves_by_return(out: sink) -> int64:
+    crew k:
+        let _ = k.spawn(slow_store(out, 5))
+        return 9
+    return 8
+
+machine def crew_waits_in_task() -> int64:
+    var cell: int64 = 0
+    let t = join_waits(sink { slot: ptr_cast[int64](&mut cell) })
+    let r = t.get()
+    return cell * 10 + r
+
+machine def crew_waits_on_return() -> int64:
+    var cell: int64 = 0
+    let t = leaves_by_return(sink { slot: ptr_cast[int64](&mut cell) })
+    let r = t.get()
+    return cell * 10 + r
+
+machine def crew_waits_in_function() -> int64:
+    var cell: int64 = 0
+    crew k:
+        let _ = k.spawn(slow_store(sink { slot: ptr_cast[int64](&mut cell) }, 3))
+    return cell
+
 # The entry point is an ordinary function that blocks on each task it awaits,
 # and on each group: 12 from `sum_doubles`, 42 from `chain(1)`, 10 and 12 from
 # the `par`, and 14 from the `race`.

@@ -269,6 +269,7 @@ enum class wait_mode : uint8_t {
   one, ///< A single task.
   all, ///< Every task of a tuple (`await par`).
   any, ///< The first task of a tuple to finish (`await race`).
+  crew, ///< Every task spawned into one `crew` (the end of a crew block).
 };
 
 [[nodiscard]] auto wait_mode_name(wait_mode mode) -> const char *;

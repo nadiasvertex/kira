@@ -104,8 +104,24 @@ inline auto tasks_drop_results_once(case_backend &backend) -> void {
   expect_equal(run("noisy_unstarted", {}), 1, "noisy_unstarted()");
 }
 
+inline auto tasks_join_a_crew(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "tasks.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  // double(3) = 6 and chain(3) = 6 + 12 * 10 = 126, read after the block.
+  expect_equal(run("run_crew_in_task", {3}), 12606, "run_crew_in_task(3)");
+  expect_equal(run("crew_in_function", {3}), 12606, "crew_in_function(3)");
+  expect_equal(run("run_crew_in_loop", {5}), 5, "run_crew_in_loop(5)");
+  // The block waits for a child that is still running at the end of the body.
+  expect_equal(run("crew_waits_in_task", {}), 71, "crew_waits_in_task()");
+  expect_equal(run("crew_waits_on_return", {}), 59, "crew_waits_on_return()");
+  expect_equal(run("crew_waits_in_function", {}), 3, "crew_waits_in_function()");
+}
+
 /// Runs the task cases.
 inline auto task_cases(case_backend &backend) -> void {
+  tasks_join_a_crew(backend);
   tasks_drop_results_once(backend);
   tasks_hand_back_their_result(backend);
   tasks_resume_after_each_await(backend);

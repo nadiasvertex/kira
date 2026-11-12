@@ -47,6 +47,8 @@ auto wait_mode_name(wait_mode mode) -> const char * {
     return "all";
   case wait_mode::any:
     return "any";
+  case wait_mode::crew:
+    return "crew";
   }
   return "?";
 }

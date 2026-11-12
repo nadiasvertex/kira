@@ -714,7 +714,10 @@ private:
     }
     if (source->has_value()) {
       const auto consume = !borrowed && consumes(*cls, expr.type);
-      if (!later_effects) {
+      // A handle that is only looked at keeps its place: a later argument
+      // cannot change which task or crew a variable names, and a copy would
+      // have to take the handle from its owner.
+      if (!later_effects || borrowed) {
         return read_of(**source, consume);
       }
       const auto temp = new_temp(expr.type, expr.span);
@@ -1429,6 +1432,13 @@ private:
            entry.name == "task";
   }
 
+  /// Whether `type` is a `crew`.
+  [[nodiscard]] auto is_crew_type(type_id type) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(type));
+    return entry.kind == semantic::type_kind::builtin_generic_kind &&
+           entry.name == "crew";
+  }
+
   /// Whether `type` is a tuple of tasks, the group `await par` and `await
   /// race` wait on.
   [[nodiscard]] auto is_task_group_type(type_id type) const -> bool {
@@ -1449,7 +1459,9 @@ private:
   /// Past it the awaited task has finished and `lower_task_result` reads it.
   [[nodiscard]] auto lower_await_point(const hir_yield &yield) -> result {
     const auto group = is_task_group_type(yield.value->type);
-    if (!group && (yield.awaits_all || !is_task_type(yield.value->type))) {
+    const auto crew = is_crew_type(yield.value->type);
+    if (!group && !crew &&
+        (yield.awaits_all || !is_task_type(yield.value->type))) {
       return refuse(yield.span, "an `await` of anything but one task or a "
                                 "group of tasks");
     }
@@ -1458,8 +1470,10 @@ private:
       return std::unexpected(awaited.error());
     }
     auto wait = storage_op{.kind = op_kind::coroutine_await};
-    wait.waits = !group ? wait_mode::one
-                        : yield.awaits_all ? wait_mode::all : wait_mode::any;
+    wait.waits = crew     ? wait_mode::crew
+                 : !group ? wait_mode::one
+                 : yield.awaits_all ? wait_mode::all
+                                    : wait_mode::any;
     wait.source = std::move(*awaited);
     wait.dest = whole(object_slot_);
     wait.depth = ++suspensions_;
@@ -1795,6 +1809,11 @@ private:
     if (call.callee->kind == hir_node_kind::hir_local_ref &&
         !locals_.contains(as<hir_local_ref>(*call.callee).symbol)) {
       const auto &name = as<hir_local_ref>(*call.callee).name;
+      if (name == "rt_crew_task") {
+        return refuse(call.span,
+                      "`errors()` on a crew, which reads tasks the crew still "
+                      "owns");
+      }
       if (name == "rt_task_block_on_all" || name == "rt_task_block_on_any") {
         return lower_group_block(
             call, name == "rt_task_block_on_all" ? wait_mode::all : wait_mode::any,
@@ -1863,7 +1882,11 @@ private:
         for (size_t j = i + 1; j < call.args.size(); ++j) {
           later_effects = later_effects || !is_pure(*call.args[j]);
         }
-        auto value = lower_operand(arg, later_effects, borrows_handles);
+        // A crew takes the task it is handed and gives it back as the
+        // result, so only the crew itself is looked at.
+        const auto hands_over = target.name == "rt_crew_spawn" && i == 1;
+        auto value = lower_operand(arg, later_effects,
+                                   borrows_handles && !hands_over);
         if (!value.has_value()) {
           return std::unexpected(value.error());
         }

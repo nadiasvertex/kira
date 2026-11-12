@@ -1894,6 +1894,9 @@ private:
         !self.has_value()) {
       return std::unexpected(self.error());
     }
+    if (op.waits == wait_mode::crew) {
+      return require_crew(op.source, "an await");
+    }
     if (op.waits != wait_mode::one) {
       return require_task_group(op.source, "an await");
     }
@@ -1915,6 +1918,23 @@ private:
                   "blocking on a group needs `all` or `any`");
     }
     return require_task_group(op.source, "blocking on a group");
+  }
+
+  /// A `crew` handle, initialized.
+  [[nodiscard]] auto require_crew(const place &where, const char *what)
+      -> result {
+    const auto at = resolve(where);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto &entry = types().entry(types().strip_refinement(where.type));
+    if (entry.kind != semantic::type_kind::builtin_generic_kind ||
+        entry.name != "crew") {
+      return fail(verify_error_kind::type_mismatch,
+                  std::string{what} + " of a crew needs a crew, not " +
+                      name_of(where.type));
+    }
+    return require_init(where, *at);
   }
 
   /// A tuple of tasks, initialized and read in place.
