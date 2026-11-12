@@ -261,6 +261,29 @@ auto test_no_allocation_symbol_is_declared_or_called() -> void {
   }
 }
 
+/// A `musttail` call hands the caller's frame back before the callee runs, and
+/// is undefined behavior when the callee can reach it. The storage form's calls
+/// are ordinary calls until a shared plan proves one safe.
+auto test_no_call_is_marked_musttail() -> void {
+  auto program = cinder::testing::build_storage_program(
+      cinder::testing::read_program("bytecode_storage_test", "frames_tail.cn"));
+  auto compiled = compile(*program);
+  auto calls = size_t{0};
+  for (const auto &function : *compiled.module) {
+    for (const auto &block : function) {
+      for (const auto &instruction : block) {
+        const auto *call = llvm::dyn_cast<llvm::CallInst>(&instruction);
+        if (call == nullptr) {
+          continue;
+        }
+        ++calls;
+        expect(!call->isMustTailCall(), "expected no musttail call");
+      }
+    }
+  }
+  expect(calls > 0, "expected the fixture to contain calls");
+}
+
 auto test_entry_thunks_are_optional() -> void {
   auto program = cinder::testing::build_storage_program(
       cinder::testing::read_program("bytecode_storage_test", "values.cn"));
@@ -345,6 +368,7 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
 auto main() -> int {
   test_signatures_follow_the_internal_abi();
   test_no_allocation_symbol_is_declared_or_called();
+  test_no_call_is_marked_musttail();
   test_entry_thunks_are_optional();
   test_accesses_through_addresses_claim_only_the_alignment_they_have();
   test_every_case_passes_at_each_optimization_level();

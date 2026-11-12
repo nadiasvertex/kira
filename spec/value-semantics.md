@@ -484,7 +484,7 @@ Progress as of 2026-11-11: T-01 to T-04a are complete. T-05 to T-09 are partly d
 both storage-form backends (bytecode VM and LLVM). T-09 now covers closures, patterns,
 generators, tasks and `await`, `par`/`race`/`on`, droppable task results, `crew`
 blocks, and sums that own drops (pattern tests and drops over such sums, which also
-lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) is done (see below). T-12 to T-14 are not started.
+lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) is done and T-12 (frame budgets) is partly done (see below). T-13 and T-14 are not started.
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -500,7 +500,7 @@ lets a generator hand out droppable items). T-10 is partly done and T-11 (NRVO) 
 | [~] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
 | [~] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
 | [x] | T-11 | Implement shared NRVO | Compiler implementer | H | T-10 | Eligible locals use result storage; rejected cases use correct inline moves. |
-| [ ] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
+| [~] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
 | [ ] | T-13 | Prove leak removal and backend parity | Compiler implementer | H | T-12 | Ownership-checked regressions and structural/allocation gates pass on both tiers. |
 | [ ] | T-14 | Remove legacy representation and update references | Compiler implementer | M | T-13 | Old aggregate boxing paths gone; todo/specs describe verified behavior. |
 
@@ -1061,6 +1061,8 @@ other than `fn` and generators; generic and inlined lambdas in the storage form.
    `musttail` or VM frame reuse and retain safe cases.
 5. Assert constant frame usage for repeated slicing and value construction loops.
    Preserve native stack probes and VM call-depth checks.
+
+**Status: partly done (2026-11-11).** `hir/storage_frame.{h,cpp}` computes each function's frame from the final storage form (after NRVO): the `frame_local` and `outgoing_argument` slots of nonzero size, each at its layout alignment, with checked arithmetic. Other owners' storage (parameters, caller result, globals, closure and coroutine blocks) is excluded. A function over `storage_lower_options::max_frame_bytes` (1 MiB by default, the existing language limit) is refused with `frame_too_large`, naming the total, the limit, and the three largest contributors, with the largest one's span; `storage_lowering::frames` records every plan. The bytecode compiler's 32-bit offset check is tested separately by lifting the language limit. Neither storage backend emits a tail call or `musttail`, which is now asserted on both, so frame reuse cannot reach a caller's outgoing arguments or locals. Tests: `storage_test` over `hir_storage_test/frames.cn` (padding, zero-sized slots, sum/size/padding overflow, array and outgoing-argument contributions, equal frames for one and two loop bodies, NRVO saving the local's bytes, refusal at a lowered limit and at the real limit for a 4.8 GB local, a limit that is exact to the byte, message order), `storage_compile_test` (encoding limit; no `op_tail_call`; results of tail-position calls) and `storage_codegen_test` (no `musttail`). Ten mutations (padding, each slot class, zero-size skip, both overflow checks, message order, the check itself, the comparison, the VM encoding check) each failed a test; two survived until the outgoing-argument and ordering tests were added. Not done: lifetime-based reuse of frame ranges (every slot keeps its own bytes, which is safe and constant in loops but larger than needed); tail calls in the storage form, and with them the provenance analysis that would admit safe ones (none are emitted, so none are unsafe); `uninit[T, N]()` and the partial-construction state are not part of the storage form yet, so the plan sees only their slots; no instruction-level check of the emitted frames.
 
 ### T-13 — Prove leak removal and backend parity
 

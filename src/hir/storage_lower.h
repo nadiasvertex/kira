@@ -7,6 +7,7 @@
 
 #include "src/hir/nodes.h"
 #include "src/hir/storage.h"
+#include "src/hir/storage_frame.h"
 #include "src/hir/storage_nrvo.h"
 #include "src/parser/source_location.h"
 
@@ -20,6 +21,9 @@ enum class storage_lower_error_kind : uint8_t {
   layout_failed,
   /// The HIR does not have the shape lowering relies on.
   malformed,
+  /// The function's frame storage is over the limit (see `plan_frame`). The
+  /// message names the largest contributors, and `span` is the largest one's.
+  frame_too_large,
 };
 
 struct storage_lower_error {
@@ -42,6 +46,8 @@ struct storage_lowering {
   /// The returned local each function considered for NRVO, and what became
   /// of it.
   std::vector<nrvo_decision> nrvo;
+  /// The frame bytes of each function that lowered, after NRVO.
+  std::vector<frame_plan> frames;
 };
 
 /// Switches for the lowering that tests use to compare forms.
@@ -49,6 +55,9 @@ struct storage_lower_options {
   /// Build a returned local in the result storage when it qualifies (see
   /// `apply_nrvo`). Mandatory RVO is not optional.
   bool nrvo = true;
+  /// The most frame storage one function may use, in bytes. A function over
+  /// it is refused with `frame_too_large`. Tests lower it to reach the check.
+  uint64_t max_frame_bytes = k_max_frame_stack_bytes;
 };
 
 /// Lowers a module's functions to storage form.

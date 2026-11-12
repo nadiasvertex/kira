@@ -60,7 +60,11 @@ struct storage_program {
   hir::storage_lowering lowering;
 };
 
-inline auto build_storage_program(const std::string &text)
+/// `max_frame_bytes` is the lowering's frame limit; a test that wants to reach
+/// a backend's own limit raises it.
+inline auto build_storage_program(
+    const std::string &text,
+    uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
     -> std::unique_ptr<storage_program> {
   auto out = std::make_unique<storage_program>();
   out->stdlib = parse_stdlib(out->sources, out->diag);
@@ -102,7 +106,8 @@ inline auto build_storage_program(const std::string &text)
       hir::storage_env{out->checked, *out->layouts});
   out->lowering = hir::lower_to_storage(
       *out->module, *out->env,
-      hir::storage_lower_options{.nrvo = storage_nrvo_enabled()});
+      hir::storage_lower_options{.nrvo = storage_nrvo_enabled(),
+                                 .max_frame_bytes = max_frame_bytes});
   for (const auto &refused : out->lowering.refused) {
     std::cerr << "refused " << refused.name << ": " << refused.error.message
               << "\n";

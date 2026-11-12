@@ -3276,6 +3276,35 @@ auto lower_to_storage(const hir_module &module, storage_env &env,
       }
     }
   }
+  // The frame check comes last, so that it counts what the backends get.
+  auto kept = std::vector<storage_function>{};
+  kept.reserve(out.module.functions.size());
+  for (auto &function : out.module.functions) {
+    auto plan = plan_frame(function, env);
+    if (!plan.has_value()) {
+      out.refused.push_back(refused_function{
+          .name = function.name,
+          .error = storage_lower_error{.kind = storage_lower_error_kind::layout_failed,
+                                       .span = {},
+                                       .message = plan.error()}});
+      continue;
+    }
+    if (!plan->within(options.max_frame_bytes)) {
+      const auto largest = std::ranges::max_element(
+          plan->contributors, {}, &frame_contributor::bytes);
+      out.refused.push_back(refused_function{
+          .name = function.name,
+          .error = storage_lower_error{
+              .kind = storage_lower_error_kind::frame_too_large,
+              .span = largest == plan->contributors.end() ? source_span{}
+                                                          : largest->span,
+              .message = describe_frame_overflow(*plan, options.max_frame_bytes)}});
+      continue;
+    }
+    out.frames.push_back(std::move(*plan));
+    kept.push_back(std::move(function));
+  }
+  out.module.functions = std::move(kept);
   return out;
 }
 

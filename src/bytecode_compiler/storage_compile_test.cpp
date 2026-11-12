@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -225,6 +226,46 @@ auto test_entry_points_check_the_result_storage() -> void {
 
 } // namespace
 
+/// The storage form's calls are ordinary calls. A tail call reuses the caller's
+/// frame, which holds outgoing arguments and locals a callee may be handed the
+/// address of, so none is emitted until a shared plan proves one safe.
+auto test_calls_in_tail_position_keep_their_frame() -> void {
+  auto p = bytecode_backend::build("bytecode_storage_test", "frames_tail.cn");
+  auto calls = size_t{0};
+  for (const auto &function : p->code.functions) {
+    auto offset = size_t{0};
+    while (offset < function.code.size()) {
+      const auto op = static_cast<bytecode::opcode>(function.code[offset]);
+      expect(op != bytecode::opcode::op_tail_call,
+             "expected no frame-reusing tail call");
+      calls += op == bytecode::opcode::op_call;
+      offset += bytecode::instruction_size(op);
+    }
+  }
+  expect(calls >= 3, "expected the fixture's calls to be scanned");
+  const auto ten = std::array<int64_t, 1>{10};
+  const auto three = std::array<int64_t, 1>{3};
+  expect_equal(p->scalar("count_down", ten), 0, "count_down");
+  expect_equal(p->scalar("tail_with_pair", three), 3 + 4, "tail_with_pair");
+}
+
+/// The language's frame limit comes first; the compiler's own encoding limit is
+/// a separate line of defense, reached only when the first is lifted.
+auto test_frame_offsets_that_do_not_fit_are_refused() -> void {
+  const auto text =
+      cinder::testing::read_program("bytecode_storage_test", "huge_frame.cn");
+  auto lifted = cinder::testing::build_storage_program(
+      text, std::numeric_limits<uint64_t>::max() - 1);
+  auto compiled = cinder::bytecode_compiler::compile_storage_module(
+      lifted->lowering.module, *lifted->env);
+  expect(!compiled.has_value(), "expected a 4.8 GB frame not to compile");
+  expect(compiled.error().kind ==
+             cinder::bytecode_compiler::compile_error_kind::encoding_limit_exceeded,
+         "expected the encoding limit to be named");
+  expect(compiled.error().message.find("holds_huge") != std::string::npos,
+         "expected the function to be named");
+}
+
 auto main() -> int {
   auto backend = bytecode_backend{};
   // Every case runs with a returned local built in the result storage and
@@ -244,6 +285,8 @@ auto main() -> int {
   test_compiled_code_has_no_allocation_instruction();
   test_function_metadata_describes_the_calling_convention();
   test_entry_points_check_the_result_storage();
+  test_frame_offsets_that_do_not_fit_are_refused();
+  test_calls_in_tail_position_keep_their_frame();
   std::cout << "storage_compile_test: ok\n";
   return 0;
 }

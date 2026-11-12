@@ -1,0 +1,11 @@
+module sample
+
+# A local of 4.8 GB: past the language's frame limit, and past what the
+# bytecode's 32-bit frame offsets can address. The lowering refuses it at the
+# language's limit; a test raises that limit to reach the compiler's own.
+def huge() -> array[int64, 600000000]:
+    return huge()
+
+def holds_huge() -> int64:
+    let h = huge()
+    return 0

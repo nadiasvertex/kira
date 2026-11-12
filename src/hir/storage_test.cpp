@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -90,7 +91,8 @@ struct fixture {
 
 /// `nrvo` is off unless a test asks for it, so that exact forms of functions
 /// that return a local stay the plain ones.
-auto build(const std::string &text, bool nrvo = false)
+auto build(const std::string &text, bool nrvo = false,
+           uint64_t max_frame_bytes = hir::k_max_frame_stack_bytes)
     -> std::unique_ptr<fixture> {
   auto out = std::make_unique<fixture>();
   out->stdlib = cinder::testing::parse_stdlib(out->sources, out->diag);
@@ -124,7 +126,9 @@ auto build(const std::string &text, bool nrvo = false)
   out->env = std::make_unique<hir::storage_env>(
       hir::storage_env{out->checked, *out->layouts});
   out->lowering = hir::lower_to_storage(*out->module, *out->env,
-                                        hir::storage_lower_options{.nrvo = nrvo});
+                                        hir::storage_lower_options{
+                                            .nrvo = nrvo,
+                                            .max_frame_bytes = max_frame_bytes});
   return out;
 }
 
@@ -501,6 +505,184 @@ auto test_nrvo_looks_at_everything_the_local_does() -> void {
   why = decide(early);
   expect(!why.applied && why.reason == "it is read before it is written",
          "expected a local read before it is written to be declined");
+}
+
+auto frame_of(const fixture &f, std::string_view function)
+    -> const hir::frame_plan & {
+  for (const auto &plan : f.lowering.frames) {
+    if (plan.function == function) {
+      return plan;
+    }
+  }
+  std::cerr << "no frame plan for " << function << "\n";
+  for (const auto &refused : f.lowering.refused) {
+    std::cerr << "  refused " << refused.name << ": " << refused.error.message
+              << "\n";
+  }
+  fail("expected a frame plan");
+}
+
+auto contributor_bytes(const hir::frame_plan &plan, std::string_view name)
+    -> uint64_t {
+  for (const auto &part : plan.contributors) {
+    if (part.name == name) {
+      return part.bytes;
+    }
+  }
+  std::cerr << plan.function << " has no contributor " << name << "\n";
+  fail("expected a frame contributor");
+}
+
+auto test_frame_layout_pads_to_alignment_and_checks_overflow() -> void {
+  using hir::frame_request;
+  constexpr auto max = std::numeric_limits<uint64_t>::max();
+  // Padding goes before a slot that needs it, so order matters.
+  const auto small_first = std::vector<frame_request>{{1, 1}, {8, 8}};
+  const auto big_first = std::vector<frame_request>{{8, 8}, {1, 1}};
+  expect(hir::lay_out_frame(small_first) == 16, "expected 7 bytes of padding");
+  expect(hir::lay_out_frame(big_first) == 9, "expected no padding");
+  // A zero-sized slot adds nothing, not even its alignment.
+  const auto with_zero = std::vector<frame_request>{{1, 1}, {0, 8}, {1, 1}};
+  expect(hir::lay_out_frame(with_zero) == 2, "expected a zero-sized slot to add nothing");
+  // Sums that do not fit report overflow instead of wrapping.
+  const auto huge_sum = std::vector<frame_request>{{max - 1, 1}, {4, 1}};
+  expect(hir::lay_out_frame(huge_sum) == max, "expected a sum overflow");
+  const auto huge_slot = std::vector<frame_request>{{max, 1}};
+  expect(hir::lay_out_frame(huge_slot) == max, "expected a size overflow");
+  const auto huge_pad = std::vector<frame_request>{
+      {1, uint64_t{1} << 63}, {1, uint64_t{1} << 63}, {1, uint64_t{1} << 63}};
+  expect(hir::lay_out_frame(huge_pad) == max, "expected a padding overflow");
+  const auto fits = std::vector<frame_request>{{1, uint64_t{1} << 63}};
+  expect(hir::lay_out_frame(fits) == 1, "expected a lone slot to need no padding");
+}
+
+auto test_frame_plan_counts_the_slots_a_function_owns() -> void {
+  auto f = build(read_program("frames.cn"));
+  const auto &small = frame_of(*f, "buf4");
+  const auto &big = frame_of(*f, "buf8");
+  expect(contributor_bytes(small, "buf") == 32, "expected 4 int64 elements");
+  expect(contributor_bytes(big, "buf") == 64, "expected 8 int64 elements");
+  expect(big.bytes - small.bytes == 32, "expected the larger buffer to cost its difference");
+  const auto &two = frame_of(*f, "two_bufs");
+  expect(contributor_bytes(two, "a") == 32 && contributor_bytes(two, "b") == 32,
+         "expected each buffer to count");
+  // Parameters and the caller's result are somebody else's bytes.
+  for (const auto &part : frame_of(*f, "make_pair").contributors) {
+    expect(part.slot != f->function("make_pair").result_slot &&
+               f->function("make_pair").slots[part.slot].cls !=
+                   hir::storage_class::parameter,
+           "expected only the function's own slots to count");
+  }
+  expect(frame_of(*f, "make_pair").bytes == 0 ||
+             frame_of(*f, "make_pair").bytes < 16,
+         "expected a constructor to need almost no frame");
+}
+
+auto test_an_outgoing_argument_is_part_of_the_callers_frame() -> void {
+  auto f = build(read_program("frames.cn"));
+  const auto &function = f->function("passes_pair");
+  auto outgoing = size_t{0};
+  for (const auto &slot : function.slots) {
+    outgoing += slot.cls == hir::storage_class::outgoing_argument;
+  }
+  expect(outgoing == 1, "expected the pair to be built in an outgoing slot");
+  auto counted = uint64_t{0};
+  for (const auto &part : frame_of(*f, "passes_pair").contributors) {
+    if (function.slots[part.slot].cls == hir::storage_class::outgoing_argument) {
+      counted = part.bytes;
+    }
+  }
+  expect(counted == 8, "expected the outgoing pair to count its 8 bytes");
+}
+
+auto test_an_overflow_message_lists_the_largest_first() -> void {
+  const auto part = [](hir::storage_id slot, std::string name, uint64_t bytes) {
+    return hir::frame_contributor{.slot = slot, .name = std::move(name), .bytes = bytes};
+  };
+  const auto plan = hir::frame_plan{
+      .function = "f",
+      .bytes = 100,
+      .contributors = {part(0, "a", 4), part(1, "b", 64), part(2, "", 16),
+                       part(3, "d", 8)}};
+  expect(hir::describe_frame_overflow(plan, 100).empty(),
+         "expected nothing to say about a frame at the limit");
+  expect(hir::describe_frame_overflow(plan, 99) ==
+             "`f` needs 100 bytes of frame storage; the limit is 99 bytes; the "
+             "largest are `b` (64 bytes), a temporary (16 bytes), `d` (8 bytes)",
+         "expected the three largest, largest first");
+  expect(hir::describe_frame_overflow(plan, 99, 1).ends_with("the largest are `b` (64 bytes)"),
+         "expected only the number asked for");
+  auto overflowed = plan;
+  overflowed.bytes = std::numeric_limits<uint64_t>::max();
+  expect(hir::describe_frame_overflow(overflowed, 99).find("more frame storage than can be counted") !=
+             std::string::npos,
+         "expected an overflowed total not to be printed as a number");
+}
+
+auto test_a_loop_does_not_grow_its_frame() -> void {
+  auto f = build(read_program("frames.cn"));
+  expect(frame_of(*f, "loop_once").bytes == frame_of(*f, "loop_twice").bytes,
+         "expected a longer loop body to use the same frame");
+  expect(frame_of(*f, "loop_once").bytes >= 32, "expected the buffer to count");
+}
+
+auto test_nrvo_shrinks_the_frame_by_the_local() -> void {
+  auto off = build(read_program("frames.cn"), false);
+  auto on = build(read_program("frames.cn"), true);
+  expect(frame_of(*off, "locals_only").bytes - frame_of(*on, "locals_only").bytes == 8,
+         "expected the returned local to leave the frame");
+  expect(on->lowering.nrvo.size() >= 1, "expected the pass to run");
+}
+
+auto test_a_frame_over_the_limit_is_refused_with_its_contributors() -> void {
+  auto probe = build(read_program("frames.cn"));
+  const auto small = frame_of(*probe, "buf4").bytes;
+  const auto big = frame_of(*probe, "buf8").bytes;
+  const auto limit = small + 16;
+  expect(big > limit, "expected the larger buffer to be over the limit");
+  auto f = build(read_program("frames.cn"), false, limit);
+  const auto *refused = f->refusal("buf8");
+  expect(refused != nullptr, "expected the oversized function to be refused");
+  expect(refused->kind == hir::storage_lower_error_kind::frame_too_large,
+         "expected the frame_too_large kind");
+  expect(refused->message.find(std::to_string(big)) != std::string::npos &&
+             refused->message.find("the largest are `buf` (64 bytes)") !=
+                 std::string::npos &&
+             refused->message.find(std::to_string(limit)) != std::string::npos,
+         "expected the total, the limit, and the buffer in the message");
+  // The span is the buffer's, so the diagnostic can point at it.
+  expect(!refused->span.empty(), "expected a source location");
+  for (const auto &plan : f->lowering.frames) {
+    expect(plan.function != "buf8", "expected no plan for a refused function");
+  }
+  // The functions that fit are untouched.
+  expect(f->refusal("buf4") == nullptr, "expected the smaller function to lower");
+  // At the language's own limit, a 4.8 GB local is refused and says so.
+  const auto *huge = probe->refusal("holds_huge");
+  expect(huge != nullptr &&
+             huge->kind == hir::storage_lower_error_kind::frame_too_large &&
+             huge->message.find("4800000000") != std::string::npos &&
+             huge->message.find("1048576") != std::string::npos &&
+             huge->message.find("`h`") != std::string::npos,
+         "expected the oversized local to be named at the default limit");
+  expect(probe->refusal("huge") == nullptr,
+         "expected a result in the caller's storage not to count");
+  // The default limit is the language's.
+  expect(hir::storage_lower_options{}.max_frame_bytes ==
+             hir::k_max_frame_stack_bytes,
+         "expected the default limit to be the language's frame limit");
+}
+
+auto test_the_frame_limit_is_exact() -> void {
+  auto probe = build(read_program("frames.cn"));
+  const auto bytes = frame_of(*probe, "buf4").bytes;
+  auto at = build(read_program("frames.cn"), false, bytes);
+  expect(at->refusal("buf4") == nullptr, "expected a frame at the limit to fit");
+  auto under = build(read_program("frames.cn"), false, bytes - 1);
+  const auto *refused = under->refusal("buf4");
+  expect(refused != nullptr &&
+             refused->kind == hir::storage_lower_error_kind::frame_too_large,
+         "expected a frame one byte over to be refused");
 }
 
 auto test_direct_constructions_make_no_intermediate_transfers() -> void {
@@ -2579,6 +2761,14 @@ auto main() -> int {
     test_nrvo_reports_why_a_local_is_not_built_in_the_result();
     test_nrvo_can_be_switched_off();
     test_nrvo_looks_at_everything_the_local_does();
+    test_frame_layout_pads_to_alignment_and_checks_overflow();
+    test_frame_plan_counts_the_slots_a_function_owns();
+    test_an_outgoing_argument_is_part_of_the_callers_frame();
+    test_an_overflow_message_lists_the_largest_first();
+    test_a_loop_does_not_grow_its_frame();
+    test_nrvo_shrinks_the_frame_by_the_local();
+    test_a_frame_over_the_limit_is_refused_with_its_contributors();
+    test_the_frame_limit_is_exact();
     test_direct_constructions_make_no_intermediate_transfers();
     test_try_rebuilds_the_failure_when_the_success_types_differ();
     test_failure_inside_a_construction_drops_the_built_parts();
