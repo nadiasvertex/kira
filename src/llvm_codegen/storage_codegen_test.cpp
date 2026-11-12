@@ -325,15 +325,19 @@ auto test_every_case_passes_at_each_optimization_level() -> void {
   for (const auto level : {llvm_codegen::optimization_level::o0,
                            llvm_codegen::optimization_level::o2}) {
     auto backend = llvm_backend{level};
-    cases::run_all(backend);
-    cases::intrinsic_cases(backend);
-    cases::memory_cases(backend);
-    cases::closure_cases(backend);
-    cases::pattern_cases(backend);
-    cases::rvo_cases(backend);
-    cases::generator_cases(backend);
-    cases::task_cases(backend);
+    for (const auto nrvo : {true, false}) {
+      cinder::testing::storage_nrvo_enabled() = nrvo;
+      cases::run_all(backend);
+      cases::intrinsic_cases(backend);
+      cases::memory_cases(backend);
+      cases::closure_cases(backend);
+      cases::pattern_cases(backend);
+      cases::rvo_cases(backend);
+      cases::generator_cases(backend);
+      cases::task_cases(backend);
+    }
   }
+  cinder::testing::storage_nrvo_enabled() = true;
 }
 
 } // namespace

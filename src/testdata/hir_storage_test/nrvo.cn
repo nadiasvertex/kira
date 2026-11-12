@@ -1,0 +1,94 @@
+module sample
+type pair = { pub a: int32, pub b: int32 }
+type shape = @circle(pair) | @rect(int32, int32) | @empty
+
+def make_pair(n: int32) -> pair:
+    return pair { a: n, b: n + 1 }
+
+def first(p: &pair) -> int32:
+    return p.a
+
+# Eligible: every return moves the one local.
+def named(n: int32) -> pair:
+    var result = pair { a: n, b: 0 }
+    result.b = n + 1
+    return result
+
+def called(n: int32) -> pair:
+    let p = make_pair(n)
+    return p
+
+def reassigned(n: int32) -> pair:
+    var p = make_pair(n)
+    p = make_pair(p.b)
+    return p
+
+def two_returns(c: bool, n: int32) -> pair:
+    var p = make_pair(n)
+    if c:
+        p.b = 9
+        return p
+    p.a = 0
+    return p
+
+def looped(n: int32) -> pair:
+    var p = make_pair(0)
+    var i = 0
+    while i < n:
+        p.a = p.a + i
+        i = i + 1
+    return p
+
+def sum_local(n: int32) -> shape:
+    var s = @circle(make_pair(n))
+    s = @rect(n, n)
+    return s
+
+# Ineligible, each for its own reason.
+def two_locals(c: bool, n: int32) -> pair:
+    let a = make_pair(n)
+    let b = make_pair(n + 1)
+    if c:
+        return a
+    return b
+
+def mixed(c: bool, n: int32) -> pair:
+    let p = make_pair(n)
+    if c:
+        return p
+    return make_pair(0)
+
+def borrowed(n: int32) -> pair:
+    let p = make_pair(n)
+    let k = first(&p)
+    return p
+
+def parameter(p: pair) -> pair:
+    return p
+
+def branch_init(c: bool, n: int32) -> pair:
+    let p = if c:
+        make_pair(n)
+    else:
+        make_pair(n + 1)
+    return p
+
+type noisy = { pub id: int32 }
+
+impl drop for noisy:
+    def drop(mut self) -> unit:
+        return
+
+def make_noisy(n: int32) -> noisy:
+    return noisy { id: n }
+
+def named_noisy(n: int32) -> noisy:
+    var x = make_noisy(n)
+    x.id = x.id + 1
+    return x
+
+def sometimes_noisy(c: bool, n: int32) -> noisy:
+    let x = make_noisy(n)
+    if c:
+        return x
+    return make_noisy(0)

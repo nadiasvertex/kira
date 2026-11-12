@@ -7,6 +7,7 @@
 
 #include "src/hir/nodes.h"
 #include "src/hir/storage.h"
+#include "src/hir/storage_nrvo.h"
 #include "src/parser/source_location.h"
 
 namespace cinder::hir {
@@ -38,6 +39,16 @@ struct refused_function {
 struct storage_lowering {
   storage_module module;
   std::vector<refused_function> refused;
+  /// The returned local each function considered for NRVO, and what became
+  /// of it.
+  std::vector<nrvo_decision> nrvo;
+};
+
+/// Switches for the lowering that tests use to compare forms.
+struct storage_lower_options {
+  /// Build a returned local in the result storage when it qualifies (see
+  /// `apply_nrvo`). Mandatory RVO is not optional.
+  bool nrvo = true;
 };
 
 /// Lowers a module's functions to storage form.
@@ -63,7 +74,8 @@ struct storage_lowering {
 /// (`<name>$closure<N>$drop`). Both take the environment block as a hidden
 /// first operand (`abi_signature::takes_environment`); each captured variable
 /// is a `closure_environment` slot of the body whose bytes are in that block.
-[[nodiscard]] auto lower_to_storage(const hir_module &module, storage_env &env)
+[[nodiscard]] auto lower_to_storage(const hir_module &module, storage_env &env,
+                                    const storage_lower_options &options = {})
     -> storage_lowering;
 
 } // namespace cinder::hir

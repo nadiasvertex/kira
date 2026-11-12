@@ -70,11 +70,38 @@ inline auto a_failed_construction_drops_what_it_built(case_backend &backend)
   expect_equal(run("trio_all_try", {1}), 1010, "trio_all_try(second fails)");
 }
 
+/// A returned local is built in the result storage when every return moves it
+/// (the test binaries run every case with that on and off, so these values are
+/// the same either way). Drops happen once, in the caller, for the returned
+/// value, and in the callee for a local no return moved.
+inline auto returned_locals_keep_their_meaning(case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "rvo.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  expect_equal(run("named_value", {3}), 34, "named_value(3)");
+  expect_equal(run("named_value", {0}), 1, "named_value(0)");
+  expect_equal(run("early_value", {1, 3}), 39, "early_value(early)");
+  expect_equal(run("early_value", {0, 3}), 1, "early_value(late)");
+  expect_equal(run("loop_value", {4}), 64, "loop_value(4)");
+  expect_equal(run("loop_value", {0}), 0, "loop_value(0)");
+  expect_equal(run("reassigned_value", {2}), 32, "reassigned_value(2)");
+  expect_equal(run("named_tracked_drops", {4}), 5001, "named_tracked_drops(4)");
+  expect_equal(run("named_tracked_drops", {0}), 1001, "named_tracked_drops(0)");
+  // The local is the result: dropped by the caller alone.
+  expect_equal(run("sometimes_tracked_drops", {1, 5}), 5001,
+               "sometimes_tracked_drops(returned)");
+  // The local is dropped by the callee, and the other value by the caller.
+  expect_equal(run("sometimes_tracked_drops", {0, 5}), 56001,
+               "sometimes_tracked_drops(not returned)");
+}
+
 /// Runs the result-storage cases.
 inline auto rvo_cases(case_backend &backend) -> void {
   results_are_built_where_they_end_up(backend);
   failures_are_rebuilt_in_the_result(backend);
   a_failed_construction_drops_what_it_built(backend);
+  returned_locals_keep_their_meaning(backend);
 }
 
 } // namespace cinder::testing::storage_cases

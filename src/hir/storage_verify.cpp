@@ -414,6 +414,9 @@ private:
   /// two ways of building one value compare equal.
   [[nodiscard]] auto normalize(init_node node, type_id type) -> init_node {
     if (node.whole) {
+      // A write to a part of a value that is already complete leaves the part
+      // recorded; the whole says all there is to say.
+      node.children.clear();
       return node;
     }
     if (covered(node, type)) {

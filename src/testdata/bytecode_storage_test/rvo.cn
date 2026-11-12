@@ -153,3 +153,78 @@ machine def trio_all_try(n: int64) -> int64:
     var drops: int64 = 0
     let seen = trio_all_inner(n, ptr_cast[int64](&mut drops))
     return drops * 1000 + seen
+
+# A returned local is built in the result storage when every return moves it.
+# Each entry point below must give the same answer with and without that.
+def named_pair(n: int64) -> pair:
+    var result = pair { a: n, b: 0 }
+    result.b = n + 1
+    return result
+
+def named_value(n: int64) -> int64:
+    let p = named_pair(n)
+    return p.a * 10 + p.b
+
+def early_named(c: bool, n: int64) -> pair:
+    var p = make_pair(n, 1)
+    if c:
+        p.b = 9
+        return p
+    p.a = 0
+    return p
+
+def early_value(c: int64, n: int64) -> int64:
+    let p = early_named(c > 0, n)
+    return p.a * 10 + p.b
+
+def loop_named(n: int64) -> pair:
+    var p = make_pair(0, 0)
+    var i: int64 = 0
+    while i < n:
+        p.a = p.a + i
+        p.b = p.b + 1
+        i = i + 1
+    return p
+
+def loop_value(n: int64) -> int64:
+    let p = loop_named(n)
+    return p.a * 10 + p.b
+
+def reassigned_named(n: int64) -> pair:
+    var p = make_pair(n, n + 1)
+    p = make_pair(p.b, p.a)
+    return p
+
+def reassigned_value(n: int64) -> int64:
+    let p = reassigned_named(n)
+    return p.a * 10 + p.b
+
+def named_tracked(n: int64, counter: *mut int64) -> tracked:
+    var t = tracked { id: n, counter: counter }
+    t.id = t.id + 1
+    return t
+
+def named_tracked_inner(n: int64, counter: *mut int64) -> int64:
+    let t = named_tracked(n, counter)
+    return 1
+
+machine def named_tracked_drops(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = named_tracked_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# One path does not return the local, so it is moved at the return that does.
+def sometimes_tracked(c: bool, n: int64, counter: *mut int64) -> tracked:
+    let t = tracked { id: n, counter: counter }
+    if c:
+        return t
+    return tracked { id: 6, counter: counter }
+
+def sometimes_tracked_inner(c: int64, n: int64, counter: *mut int64) -> int64:
+    let t = sometimes_tracked(c > 0, n, counter)
+    return 1
+
+machine def sometimes_tracked_drops(c: int64, n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = sometimes_tracked_inner(c, n, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen

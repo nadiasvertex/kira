@@ -88,7 +88,10 @@ struct fixture {
   }
 };
 
-auto build(const std::string &text) -> std::unique_ptr<fixture> {
+/// `nrvo` is off unless a test asks for it, so that exact forms of functions
+/// that return a local stay the plain ones.
+auto build(const std::string &text, bool nrvo = false)
+    -> std::unique_ptr<fixture> {
   auto out = std::make_unique<fixture>();
   out->stdlib = cinder::testing::parse_stdlib(out->sources, out->diag);
   const auto file_id = out->sources.add_file("sample.cn", text);
@@ -120,7 +123,8 @@ auto build(const std::string &text) -> std::unique_ptr<fixture> {
                                                           out->checked.shapes);
   out->env = std::make_unique<hir::storage_env>(
       hir::storage_env{out->checked, *out->layouts});
-  out->lowering = hir::lower_to_storage(*out->module, *out->env);
+  out->lowering = hir::lower_to_storage(*out->module, *out->env,
+                                        hir::storage_lower_options{.nrvo = nrvo});
   return out;
 }
 
@@ -353,6 +357,150 @@ auto count_transfers(const hir::storage_function &function) -> size_t {
              op.kind == hir::op_kind::move_into;
   }
   return count;
+}
+
+/// The decision the pass made for the local `function` returns.
+auto nrvo_decision_for(const fixture &f, std::string_view function)
+    -> const hir::nrvo_decision * {
+  for (const auto &decision : f.lowering.nrvo) {
+    if (decision.function == function) {
+      return &decision;
+    }
+  }
+  return nullptr;
+}
+
+auto test_nrvo_builds_a_returned_local_in_the_result_storage() -> void {
+  auto f = build(read_program("nrvo.cn"), true);
+  // The local's places are the result's, and the move at the return is gone.
+  expect_ops(*f, "named",
+             {"compute s0.a = copy s1", "compute s0.b = const 0",
+              "compute s0.b = binary + s1, #1", "return"});
+  expect_ops(*f, "called", {"call s0 = make_pair(s1)", "return"});
+  expect_ops(*f, "two_returns",
+             {"call s0 = make_pair(s2)", "if s1", "compute s0.b = const 9",
+              "return", "end_if", "compute s0.a = const 0", "return"});
+  // A replacement is still built apart and moved in.
+  expect_ops(*f, "reassigned",
+             {"call s0 = make_pair(s1)", "call s2 = make_pair(s0.b)",
+              "move s0 <- s2", "dead s2", "return"});
+  expect_ops(*f, "named_noisy",
+             {"call s0 = make_noisy(s1)", "compute s0.id = binary + s0.id, #1",
+              "return"});
+  expect(f->function("called").slots.size() == 2,
+         "expected the local's slot to be deleted");
+  for (const auto *name : {"named", "called", "two_returns", "looped",
+                           "sum_local", "named_noisy", "reassigned"}) {
+    const auto *decision = nrvo_decision_for(*f, name);
+    expect(decision != nullptr && decision->applied && decision->reason.empty(),
+           "expected the returned local to be built in the result");
+    expect_verifies(*f, f->function(name), name);
+  }
+  for (const auto *name : {"named", "called", "two_returns", "looped"}) {
+    expect(count_transfers(f->function(name)) == 0,
+           "expected no aggregate transfer at the return");
+  }
+}
+
+auto test_nrvo_reports_why_a_local_is_not_built_in_the_result() -> void {
+  auto f = build(read_program("nrvo.cn"), true);
+  const auto reasons =
+      std::vector<std::pair<std::string_view, std::string_view>>{
+          {"two_locals", "the returns move different locals"},
+          {"mixed", "a return builds its value without this local"},
+          {"borrowed", "its address is taken"},
+          {"parameter", "it is a param slot"},
+          {"branch_init", "it is first written inside a conditional or a loop"},
+          {"sometimes_noisy", "the returns move different locals"}};
+  for (const auto &[name, reason] : reasons) {
+    const auto *decision = nrvo_decision_for(*f, name);
+    if (decision == nullptr || decision->applied || decision->reason != reason) {
+      std::cerr << name << ": expected `" << reason << "`, got "
+                << (decision == nullptr  ? "no decision"
+                    : decision->applied ? "applied"
+                                        : decision->reason)
+                << "\n";
+      fail("expected a different NRVO decision");
+    }
+    // Declining costs nothing in meaning: the return still moves the local.
+    expect(count_transfers(f->function(name)) >= 1,
+           "expected the return to keep its move");
+    expect_verifies(*f, f->function(name), name);
+  }
+}
+
+auto test_nrvo_can_be_switched_off() -> void {
+  auto f = build(read_program("nrvo.cn"), false);
+  expect(f->lowering.nrvo.empty(), "expected no NRVO decisions");
+  expect_ops(*f, "called",
+             {"call s2 = make_pair(s1)", "move s0 <- s2", "return"});
+  expect_verifies(*f, f->function("looped"), "looped");
+}
+
+auto test_nrvo_looks_at_everything_the_local_does() -> void {
+  auto f = build(read_program("nrvo.cn"), false);
+  const auto base = f->function("called");
+  const auto local = base.ops[0].dest.base;
+  const auto move = find_op(base, hir::op_kind::move_into);
+  const auto whole = [&](hir::storage_id id) {
+    auto where = base.ops[0].dest;
+    where.base = id;
+    where.steps.clear();
+    return where;
+  };
+  const auto decide = [&](hir::storage_function copy) {
+    const auto decisions = hir::apply_nrvo(copy);
+    expect(decisions.size() == 1, "expected one decision");
+    return decisions[0];
+  };
+  const auto insert_at = [&](hir::storage_function &copy, size_t at,
+                             const hir::storage_op &op) {
+    copy.ops.insert(copy.ops.begin() + static_cast<std::ptrdiff_t>(at), op);
+  };
+  // The unchanged function qualifies.
+  expect(decide(base).applied, "expected the plain function to qualify");
+
+  // A closure that captures the local.
+  auto captured = base;
+  auto closure = hir::storage_op{.kind = hir::op_kind::make_closure};
+  closure.dest = whole(1);
+  closure.captures.push_back(hir::closure_capture{.source = whole(local)});
+  insert_at(captured, move, closure);
+  auto why = decide(captured);
+  expect(!why.applied && why.reason.find("uses it") != std::string::npos,
+         "expected a captured local to be declined");
+
+  // The local moved somewhere else before the return.
+  auto moved = base;
+  auto elsewhere = hir::storage_op{.kind = hir::op_kind::move_into};
+  elsewhere.dest = whole(1);
+  elsewhere.source = whole(local);
+  insert_at(moved, move, elsewhere);
+  why = decide(moved);
+  expect(!why.applied && why.reason == "it is moved out before the return",
+         "expected a local moved out early to be declined");
+
+  // A local that holds a value on entry, or has another type.
+  auto entered = base;
+  entered.slots[local].initially_initialized = true;
+  why = decide(entered);
+  expect(!why.applied && why.reason == "it holds a value on entry",
+         "expected an initialized local to be declined");
+  auto retyped = base;
+  retyped.slots[local].type = base.slots[1].type;
+  why = decide(retyped);
+  expect(!why.applied && why.reason == "its type is not the result's",
+         "expected a local of another type to be declined");
+
+  // A local read before anything writes it.
+  auto early = base;
+  auto read = hir::storage_op{.kind = hir::op_kind::copy_into};
+  read.dest = whole(1);
+  read.source = whole(local);
+  insert_at(early, 0, read);
+  why = decide(early);
+  expect(!why.applied && why.reason == "it is read before it is written",
+         "expected a local read before it is written to be declined");
 }
 
 auto test_direct_constructions_make_no_intermediate_transfers() -> void {
@@ -2427,6 +2575,10 @@ auto main() -> int {
     test_function_value_and_function_share_a_signature();
     test_synthesized_functions_classify_with_handle_results();
     test_constructor_is_built_in_the_result_bytes();
+    test_nrvo_builds_a_returned_local_in_the_result_storage();
+    test_nrvo_reports_why_a_local_is_not_built_in_the_result();
+    test_nrvo_can_be_switched_off();
+    test_nrvo_looks_at_everything_the_local_does();
     test_direct_constructions_make_no_intermediate_transfers();
     test_try_rebuilds_the_failure_when_the_success_types_differ();
     test_failure_inside_a_construction_drops_the_built_parts();

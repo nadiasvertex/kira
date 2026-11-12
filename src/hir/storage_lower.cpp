@@ -3239,8 +3239,8 @@ namespace {
 
 } // namespace
 
-auto lower_to_storage(const hir_module &module, storage_env &env)
-    -> storage_lowering {
+auto lower_to_storage(const hir_module &module, storage_env &env,
+                      const storage_lower_options &options) -> storage_lowering {
   auto out = storage_lowering{};
   out.module.name = module.module_name;
   for (const auto &function : module.functions) {
@@ -3267,6 +3267,13 @@ auto lower_to_storage(const hir_module &module, storage_env &env)
     } else {
       out.refused.push_back(refused_function{.name = function->name,
                                              .error = std::move(lowered.error())});
+    }
+  }
+  if (options.nrvo) {
+    for (auto &function : out.module.functions) {
+      for (auto &decision : apply_nrvo(function)) {
+        out.nrvo.push_back(std::move(decision));
+      }
     }
   }
   return out;

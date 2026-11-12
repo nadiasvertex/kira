@@ -37,6 +37,14 @@ inline auto read_program(std::string_view dir, std::string_view name)
   return load_test_data_file(path.string(), name);
 }
 
+/// Whether programs built from here on build a returned local in the result
+/// storage. The backend tests run their cases with it on and again with it off,
+/// and the outcomes must agree.
+inline auto storage_nrvo_enabled() -> bool & {
+  static auto enabled = true;
+  return enabled;
+}
+
 /// A program parsed, checked, lowered to storage form, and verified. The
 /// object owns everything the storage form and its environment refer to, so
 /// it is built on the heap and never moved.
@@ -92,7 +100,9 @@ inline auto build_storage_program(const std::string &text)
                                                           out->checked.shapes);
   out->env = std::make_unique<hir::storage_env>(
       hir::storage_env{out->checked, *out->layouts});
-  out->lowering = hir::lower_to_storage(*out->module, *out->env);
+  out->lowering = hir::lower_to_storage(
+      *out->module, *out->env,
+      hir::storage_lower_options{.nrvo = storage_nrvo_enabled()});
   for (const auto &refused : out->lowering.refused) {
     std::cerr << "refused " << refused.name << ": " << refused.error.message
               << "\n";
