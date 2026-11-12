@@ -182,7 +182,9 @@ auto expect_verifies(const fixture &f, const hir::storage_function &function,
   if (!verdict.has_value()) {
     std::cerr << label << ": unexpected "
               << hir::verify_error_kind_name(verdict.error().kind) << ": "
-              << verdict.error().message << "\n";
+              << verdict.error().message << " (at operation "
+              << verdict.error().op_index << ")\n"
+              << hir::dump(function, f.checked.types);
     fail("expected the storage form to verify");
   }
 }
@@ -1108,6 +1110,82 @@ auto test_a_sum_is_dropped_through_the_variant_it_holds() -> void {
               "return #1"});
 }
 
+auto test_literal_and_nested_tests_on_droppable_sums() -> void {
+  auto f = build(read_program("sumdrops.cn"));
+  // The literal is compared inside the arm for its variant; a payload bound
+  // by the first arm leaves the sum, and the second arm's drop covers the rest.
+  expect_ops(*f, "literal_payload",
+             {"call s1 = make_tagged(s0)", "test s3 = s1 is @item", "if s3",
+              "dead s3", "compute s4 = binary == s1.@item.1, #0", "if s4",
+              "dead s4", "move s5 <- s1.@item.0", "compute s6 = copy s5.id",
+              "call.drop s7 = noisy::drop(&s5)", "dead s7",
+              "compute s2 = copy s6", "else", "dead s4",
+              "test s8 = s1 is @item", "if s8", "dead s8",
+              "call.drop s9 = noisy::drop(&s1.@item.0)", "dead s9",
+              "compute s10 = copy s1.@item.1",
+              "compute s2 = binary + #100, s10", "else", "dead s8",
+              "compute s2 = unary - #1", "end_if", "end_if", "else", "dead s3",
+              "test s11 = s1 is @item", "if s11", "dead s11",
+              "call.drop s12 = noisy::drop(&s1.@item.0)", "dead s12",
+              "compute s13 = copy s1.@item.1",
+              "compute s2 = binary + #100, s13", "else", "dead s11",
+              "compute s2 = unary - #1", "end_if", "end_if", "return s2"});
+  // A nested variant is tested on the payload of an outer variant that was
+  // already confirmed; the verifier follows both.
+  // The `else` block leaves, so it appears at both places a test can fail,
+  // each time after the drops of what the sum holds there.
+  expect_ops(
+      *f, "nested_else",
+      {"call s1 = make_nested(s0)", "test s2 = s1 is @some", "if s2", "dead s2",
+       "test s3 = s1.@some.0 is @full", "if s3", "dead s3", "else", "dead s3",
+       "test s4 = s1 is @some", "if s4", "dead s4",
+       "test s5 = s1.@some.0 is @full", "if s5", "dead s5",
+       "call.drop s6 = noisy::drop(&s1.@some.0.@full.0)", "dead s6", "else",
+       "dead s5", "end_if", "else", "dead s4", "end_if",
+       "compute s7 = unary - #7", "return s7", "end_if", "else", "dead s2",
+       "test s8 = s1 is @some", "if s8", "dead s8",
+       "test s9 = s1.@some.0 is @full", "if s9", "dead s9",
+       "call.drop s10 = noisy::drop(&s1.@some.0.@full.0)", "dead s10", "else",
+       "dead s9", "end_if", "else", "dead s8", "end_if",
+       "compute s11 = unary - #7", "return s11", "end_if",
+       "move s12 <- s1.@some.0.@full.0", "compute s13 = copy s12.id",
+       "call.drop s14 = noisy::drop(&s12)", "dead s14", "return s13"});
+  // Nothing is bound, so the payload stays with the sum, and the drop at the
+  // end of the scope tests the outer variant and then the inner one.
+  expect_ops(
+      *f, "nested_peek",
+      {"call s1 = make_nested(s0)", "test s3 = s1 is @some", "if s3", "dead s3",
+       "test s4 = s1.@some.0 is @full", "if s4", "dead s4",
+       "compute s2 = const 3", "else", "dead s4", "test s5 = s1 is @some",
+       "if s5", "dead s5", "test s6 = s1.@some.0 is @vacant", "if s6",
+       "dead s6", "compute s2 = const 1", "else", "dead s6",
+       "compute s2 = const 2", "end_if", "else", "dead s5",
+       "compute s2 = const 2", "end_if", "end_if", "else", "dead s3",
+       "test s7 = s1 is @some", "if s7", "dead s7",
+       "test s8 = s1.@some.0 is @vacant", "if s8", "dead s8",
+       "compute s2 = const 1", "else", "dead s8", "compute s2 = const 2",
+       "end_if", "else", "dead s7", "compute s2 = const 2", "end_if", "end_if",
+       "test s9 = s1 is @some", "if s9", "dead s9",
+       "test s10 = s1.@some.0 is @full", "if s10", "dead s10",
+       "call.drop s11 = noisy::drop(&s1.@some.0.@full.0)", "dead s11", "else",
+       "dead s10", "end_if", "else", "dead s9", "end_if", "return s2"});
+  expect_ops(
+      *f, "nested",
+      {"call s1 = make_nested(s0)", "test s3 = s1 is @some", "if s3", "dead s3",
+       "test s4 = s1.@some.0 is @full", "if s4", "dead s4",
+       "move s5 <- s1.@some.0.@full.0", "compute s6 = copy s5.id",
+       "call.drop s7 = noisy::drop(&s5)", "dead s7", "compute s2 = copy s6",
+       "else", "dead s4", "test s8 = s1 is @some", "if s8", "dead s8",
+       "test s9 = s1.@some.0 is @vacant", "if s9", "dead s9",
+       "compute s2 = unary - #1", "else", "dead s9", "compute s2 = const 0",
+       "end_if", "else", "dead s8", "compute s2 = const 0", "end_if", "end_if",
+       "else", "dead s3", "test s10 = s1 is @some", "if s10", "dead s10",
+       "test s11 = s1.@some.0 is @vacant", "if s11", "dead s11",
+       "compute s2 = unary - #1", "else", "dead s11", "compute s2 = const 0",
+       "end_if", "else", "dead s10", "compute s2 = const 0", "end_if",
+       "end_if", "return s2"});
+}
+
 auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
   auto f = build(read_program("sumdrops.cn"));
   const auto *tuple = f->refusal("tuple_subject");
@@ -1116,7 +1194,7 @@ auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
          "expected a pattern on a tuple that needs a drop to be refused");
   const auto *either = f->refusal("either");
   expect(either != nullptr &&
-             either->message.find("tests more than its variant") !=
+             either->message.find("or-pattern or a range") !=
                  std::string::npos,
          "expected an or-pattern on a droppable sum to be refused by name");
 }
@@ -1176,6 +1254,74 @@ auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
                    other);
   expect_rejects(*f, stale, hir::verify_error_kind::join_mismatch,
                  "a variant test that something overwrote before the `if`");
+
+  // A test of a nested sum learns the inner variant only inside the outer
+  // variant that holds it.
+  auto inner_early = f->function("nested");
+  const auto inner_move = find_op(inner_early, hir::op_kind::move_into);
+  const auto inner_op = inner_early.ops[inner_move];
+  inner_early.ops.erase(inner_early.ops.begin() +
+                        static_cast<std::ptrdiff_t>(inner_move));
+  inner_early.ops.insert(inner_early.ops.begin() + 4, inner_op);
+  expect_rejects(*f, inner_early, hir::verify_error_kind::partial_move,
+                 "a nested payload taken before the inner variant is known");
+
+  auto inner_wrong = f->function("nested");
+  inner_wrong.ops[find_op(inner_wrong, hir::op_kind::test_variant, 1)].variant =
+      "vacant";
+  expect_rejects(*f, inner_wrong, hir::verify_error_kind::partial_move,
+                 "a nested payload taken under a test for the other variant");
+
+  // After the arms join, the sum may hold any variant again.
+  auto joined = f->function("nested_peek");
+  const auto payload =
+      joined.ops[find_op(joined, hir::op_kind::call_into, 1)].args[0].value.where;
+  const auto sink = add_slot(joined, hir::storage_class::frame_local, payload.type);
+  auto take = hir::storage_op{.kind = hir::op_kind::move_into};
+  take.dest = place_at(sink, payload.type);
+  take.source = payload;
+  joined.ops.insert(joined.ops.begin() +
+                        static_cast<std::ptrdiff_t>(
+                            find_op(joined, hir::op_kind::test_variant, 6)),
+                    take);
+  expect_rejects(*f, joined, hir::verify_error_kind::partial_move,
+                 "a nested payload taken after the arms joined");
+
+  // The same at the top: arms for both variants leave a sum of either.
+  auto either_after = f->function("peek");
+  const auto kept =
+      either_after.ops[find_op(either_after, hir::op_kind::call_into, 1)]
+          .args[0].value.where;
+  const auto kept_sink =
+      add_slot(either_after, hir::storage_class::frame_local, kept.type);
+  auto take_kept = hir::storage_op{.kind = hir::op_kind::move_into};
+  take_kept.dest = place_at(kept_sink, kept.type);
+  take_kept.source = kept;
+  either_after.ops.insert(
+      either_after.ops.begin() +
+          static_cast<std::ptrdiff_t>(
+              find_op(either_after, hir::op_kind::test_variant, 1)),
+      take_kept);
+  expect_rejects(*f, either_after, hir::verify_error_kind::partial_move,
+                 "a payload taken after arms for both variants joined");
+
+  // A tag that is known is still not readable once the payload was dropped.
+  auto retest = f->function("nested_peek");
+  const auto retest_flag = add_slot(retest, hir::storage_class::frame_local,
+                                    retest.slots[3].type);
+  auto again = retest.ops[find_op(retest, hir::op_kind::test_variant, 1)];
+  again.dest = place_at(retest_flag, retest.slots[3].type);
+  const auto after_drop = find_op(retest, hir::op_kind::call_into, 1) + 1;
+  retest.ops.insert(retest.ops.begin() + static_cast<std::ptrdiff_t>(after_drop),
+                    again);
+  expect_rejects(*f, retest, hir::verify_error_kind::use_after_drop,
+                 "a variant test of a payload after its drop ran");
+
+  auto outer_wrong = f->function("nested");
+  outer_wrong.ops[find_op(outer_wrong, hir::op_kind::test_variant)].variant =
+      "none";
+  expect_rejects(*f, outer_wrong, hir::verify_error_kind::partial_move,
+                 "a nested test under the wrong outer variant");
 }
 
 // ==========================================================================
@@ -2790,6 +2936,7 @@ auto main() -> int {
     test_scope_exit_drop_is_a_marked_call();
     test_sums_that_own_drops_lower_and_verify();
     test_a_sum_is_dropped_through_the_variant_it_holds();
+    test_literal_and_nested_tests_on_droppable_sums();
     test_patterns_on_droppable_sums_test_only_the_variant();
     test_verifier_follows_the_variant_a_droppable_sum_holds();
     test_discarded_temporary_is_dropped();

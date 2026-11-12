@@ -108,7 +108,50 @@ def early(n: int32) -> int32:
         @full(_) => 2
         @vacant => 3
 
-# Still refused: a test of more than the variant.
+# Literal and nested tests.
+type tagged = @item(noisy, int32) | @empty
+
+def make_tagged(n: int32) -> tagged:
+    if n > 0:
+        return @item(make_noisy(n), n - 1)
+    return @empty
+
+def literal_payload(n: int32) -> int32:
+    let t = make_tagged(n)
+    return match t:
+        @item(x, 0) => x.id
+        @item(_, k) => 100 + k
+        @empty => -1
+
+def make_nested(n: int32) -> option[slot]:
+    if n > 1:
+        return @some(make_slot(n))
+    if n > 0:
+        return @some(make_slot(0))
+    return @none
+
+def nested(n: int32) -> int32:
+    let o = make_nested(n)
+    return match o:
+        @some(@full(x)) => x.id
+        @some(@vacant) => -1
+        @none => 0
+
+def nested_else(n: int32) -> int32:
+    let @some(@full(x)) = make_nested(n) else:
+        return -7
+    return x.id
+
+# Nothing is bound, so the payload stays with the sum and the sums nested in it
+# are dropped through the variants they hold.
+def nested_peek(n: int32) -> int32:
+    let o = make_nested(n)
+    return match o:
+        @some(@full(_)) => 3
+        @some(@vacant) => 1
+        @none => 2
+
+# Still refused: a pattern outside the supported tests.
 def tuple_subject(n: int32) -> int32:
     let t = (make_noisy(n), n)
     return match t:

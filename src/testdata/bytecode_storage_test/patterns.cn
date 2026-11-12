@@ -277,3 +277,86 @@ machine def cell_pass(present: int64, id: int64) -> int64:
     var drops: int64 = 0
     let seen = cell_pass_inner(present, id, ptr_cast[int64](&mut drops))
     return drops * 100 + seen
+
+# A literal tested on a scalar payload of a sum that owns a drop. When the
+# literal does not match, the next arm runs and the payload stays with the sum.
+type stamped = @item(tracked, int64) | @empty
+
+def make_stamped(present: int64, id: int64, stamp: int64,
+                 counter: *mut int64) -> stamped:
+    if present != 0:
+        return @item(tracked { id: id, counter: counter }, stamp)
+    return @empty
+
+def stamped_inner(present: int64, id: int64, stamp: int64,
+                  counter: *mut int64) -> int64:
+    let s = make_stamped(present, id, stamp, counter)
+    return match s:
+        @item(t, 0) => t.id
+        @item(_, k) => 100 + k
+        @empty => 5
+
+machine def stamped_pick(present: int64, id: int64, stamp: int64) -> int64:
+    var drops: int64 = 0
+    let seen = stamped_inner(present, id, stamp, ptr_cast[int64](&mut drops))
+    return drops * 1000 + seen
+
+# A variant tested inside a variant: `option[cell]`.
+def make_nested(kind: int64, id: int64, counter: *mut int64) -> option[cell]:
+    if kind == 2:
+        return @some(make_cell(1, id, counter))
+    if kind == 1:
+        return @some(make_cell(0, id, counter))
+    return @none
+
+def nested_take_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    return match o:
+        @some(@full(t)) => t.id
+        @some(@vacant) => 1
+        @none => 2
+
+machine def nested_take(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_take_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def nested_peek_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    return match o:
+        @some(@full(_)) => 3
+        @some(@vacant) => 1
+        @none => 2
+
+machine def nested_peek(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_peek_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Every arm leaves, so each place that tests a variant must hold its own copy
+# of the arms that follow.
+def nested_leave_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let o = make_nested(kind, id, counter)
+    match o:
+        @some(@full(t)) =>:
+            return t.id
+        @some(@vacant) =>:
+            return 1
+        @none =>:
+            return 2
+    return 99
+
+machine def nested_leave(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_leave_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def nested_else_inner(kind: int64, id: int64, counter: *mut int64) -> int64:
+    let @some(@full(t)) = make_nested(kind, id, counter) else:
+        return -7
+    return t.id
+
+machine def nested_else(kind: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = nested_else_inner(kind, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen

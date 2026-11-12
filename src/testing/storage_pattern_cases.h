@@ -106,6 +106,34 @@ inline auto sums_that_own_drops_are_dropped_once(case_backend &backend) -> void 
   expect_equal(run("cell_pass", {0, 7}), 9, "cell_pass(vacant)");
 }
 
+/// Literal and nested tests on sums that own drops. The payload a failed test
+/// leaves with the sum is dropped once, where the sum ends.
+inline auto tests_beyond_the_variant_on_sums_that_own_drops(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "patterns.cn");
+  const auto run = [&](const char *name, std::vector<int64_t> args) {
+    return p->scalar(name, args);
+  };
+  // The literal holds: the first arm binds the payload and drops it.
+  expect_equal(run("stamped_pick", {1, 7, 0}), 7007, "stamped_pick(0)");
+  // The literal fails: the second arm leaves the payload with the sum.
+  expect_equal(run("stamped_pick", {1, 7, 3}), 7103, "stamped_pick(3)");
+  expect_equal(run("stamped_pick", {0, 7, 0}), 5, "stamped_pick(empty)");
+  expect_equal(run("nested_take", {2, 7}), 707, "nested_take(full)");
+  expect_equal(run("nested_take", {1, 7}), 1, "nested_take(vacant)");
+  expect_equal(run("nested_take", {0, 7}), 2, "nested_take(none)");
+  expect_equal(run("nested_peek", {2, 7}), 703, "nested_peek(full)");
+  expect_equal(run("nested_peek", {1, 7}), 1, "nested_peek(vacant)");
+  expect_equal(run("nested_peek", {0, 7}), 2, "nested_peek(none)");
+  // Arms that all leave, and a `let else` that leaves.
+  expect_equal(run("nested_leave", {2, 7}), 707, "nested_leave(full)");
+  expect_equal(run("nested_leave", {1, 7}), 1, "nested_leave(vacant)");
+  expect_equal(run("nested_leave", {0, 7}), 2, "nested_leave(none)");
+  expect_equal(run("nested_else", {2, 7}), 707, "nested_else(full)");
+  expect_equal(run("nested_else", {1, 7}), -7, "nested_else(vacant)");
+  expect_equal(run("nested_else", {0, 7}), -7, "nested_else(none)");
+}
+
 /// Runs the pattern cases.
 inline auto pattern_cases(case_backend &backend) -> void {
   match_selects_by_variant(backend);
@@ -113,6 +141,7 @@ inline auto pattern_cases(case_backend &backend) -> void {
   match_tests_literals_and_parts(backend);
   loops_and_else_use_patterns(backend);
   sums_that_own_drops_are_dropped_once(backend);
+  tests_beyond_the_variant_on_sums_that_own_drops(backend);
 }
 
 } // namespace cinder::testing::storage_cases

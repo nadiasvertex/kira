@@ -110,7 +110,7 @@ inline auto build_storage_program(
                                  .max_frame_bytes = max_frame_bytes});
   for (const auto &refused : out->lowering.refused) {
     std::cerr << "refused " << refused.name << ": " << refused.error.message
-              << "\n";
+              << " (at byte " << refused.error.span.start << ")\n";
   }
   expect(out->lowering.refused.empty(),
          "expected every fixture function to lower to storage form");

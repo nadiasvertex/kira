@@ -996,8 +996,9 @@ private:
     bool has_else = false;
     /// A loop or block: the join of the states at each `exit` that reaches it.
     maybe_flow exits;
-    /// A branch on a variant test of a whole slot: what each side learns.
-    std::optional<storage_id> tested_slot;
+    /// A branch on a variant test of a sum that needs a drop, held in a slot
+    /// or in a payload or member of one: what each side learns.
+    std::optional<place> tested_place;
     std::string tested_variant;
   };
 
@@ -1059,6 +1060,102 @@ private:
     return both;
   }
 
+  /// The type of the part of `type` that `key` names, for the keys of a split
+  /// structure, tuple, or sum.
+  [[nodiscard]] auto part_type(type_id type, const std::string &key)
+      -> std::optional<type_id> {
+    const auto layout = env_.layouts.layout(types().strip_refinement(type));
+    if (!layout.has_value() || key.empty()) {
+      return std::nullopt;
+    }
+    const auto &found = **layout;
+    if (key[0] == 'm') {
+      const auto index = std::stoull(key.substr(1));
+      if (index < found.members.size()) {
+        return found.members[index].type;
+      }
+    } else if (key[0] == 'p') {
+      const auto colon = key.rfind(':');
+      const auto *variant = found.find_variant(key.substr(1, colon - 1));
+      const auto index = std::stoull(key.substr(colon + 1));
+      if (variant != nullptr && index < variant->payload.size()) {
+        return variant->payload[index].type;
+      }
+    }
+    return std::nullopt;
+  }
+
+  /// A sum that a nested test split, and in which every payload of its one
+  /// possible variant is still there, as the whole sum. What the test learned
+  /// about the payloads is forgotten; tests after the join learn it again.
+  [[nodiscard]] auto rejoined(type_id type, const init_node &node)
+      -> std::optional<init_node> {
+    if (node.whole) {
+      return node;
+    }
+    if (!node.variants.has_value() || node.variants->size() != 1) {
+      return std::nullopt;
+    }
+    const auto layout = env_.layouts.layout(types().strip_refinement(type));
+    if (!layout.has_value()) {
+      return std::nullopt;
+    }
+    const auto &name = *node.variants->begin();
+    const auto *variant = (*layout)->find_variant(name);
+    if (variant == nullptr || node.children.size() != variant->payload.size()) {
+      return std::nullopt;
+    }
+    for (size_t i = 0; i < variant->payload.size(); ++i) {
+      const auto child = node.children.find(payload_key(name, i));
+      if (child == node.children.end() || !child->second.whole) {
+        return std::nullopt;
+      }
+    }
+    auto out = init_node{};
+    out.whole = true;
+    out.variants = node.variants;
+    return out;
+  }
+
+  /// One state for two that differ only in the variants a sum can still hold,
+  /// at the top or inside parts both paths have split the same way. A sum
+  /// that one path split and the other did not is merged as a whole sum when
+  /// the split one has all its payloads.
+  [[nodiscard]] auto merge_nodes(type_id type, const init_node &a,
+                                 const init_node &b)
+      -> std::optional<init_node> {
+    if (a.whole != b.whole) {
+      const auto whole_a = rejoined(type, a);
+      const auto whole_b = rejoined(type, b);
+      if (!whole_a.has_value() || !whole_b.has_value()) {
+        return std::nullopt;
+      }
+      return merge_nodes(type, *whole_a, *whole_b);
+    }
+    auto out = a;
+    if (a.whole) {
+      out.variants = merge_variants(type, a, b);
+      return out;
+    }
+    if (a.children.size() != b.children.size()) {
+      return std::nullopt;
+    }
+    for (auto &[key, child] : out.children) {
+      const auto other = b.children.find(key);
+      const auto child_type = part_type(type, key);
+      if (other == b.children.end() || !child_type.has_value()) {
+        return std::nullopt;
+      }
+      auto merged = merge_nodes(*child_type, child, other->second);
+      if (!merged.has_value()) {
+        return std::nullopt;
+      }
+      child = std::move(*merged);
+    }
+    out.variants = merge_variants(type, a, b);
+    return out;
+  }
+
   /// The state where two paths meet. A value that owes a drop must be in the
   /// same state on both; anything else is reduced to what both paths know.
   [[nodiscard]] auto join(const flow_state &a, const flow_state &b)
@@ -1089,14 +1186,13 @@ private:
       if (env_.needs_drop(slot.type)) {
         // Two whole sums that differ only in which variants they can still be
         // are one sum that can be either.
-        if (state_a.whole && state_b.whole && a.dropped[i] == b.dropped[i]) {
-          out.state[i] = state_a;
-          out.state[i].variants = merge_variants(slot.type, state_a, state_b);
-          if (auto ok = out.state[i].variants; ok.has_value() && ok->empty()) {
-            out.state[i].variants.reset();
+        if (a.dropped[i] == b.dropped[i]) {
+          if (auto merged = merge_nodes(slot.type, state_a, state_b);
+              merged.has_value()) {
+            out.state[i] = std::move(*merged);
+            out.dropped[i] = a.dropped[i];
+            continue;
           }
-          out.dropped[i] = a.dropped[i];
-          continue;
         }
         const auto owes_a =
             first_owed(&state_a, slot.type, id, "", a.dropped[i]);
@@ -1164,21 +1260,25 @@ private:
     if (auto ok = open_region(region_kind::branch); !ok.has_value()) {
       return ok;
     }
-    // `test_variant` on a whole slot, read at once by this `if`, tells each
-    // side which variant the slot holds.
+    // `test_variant` on a sum, read at once by this `if`, tells each side
+    // which variant the sum holds. The sum may be a payload or member of a
+    // value whose own variant is already known (a nested pattern).
     if (op_index_ > 0 && op.condition.kind == operand_kind::read &&
         op.condition.where.steps.empty()) {
       const auto &test = fn_.ops[op_index_ - 1];
       if (test.kind == op_kind::test_variant && test.dest.steps.empty() &&
           test.dest.base == op.condition.where.base &&
-          test.source.steps.empty() && test.source.base < fn_.slots.size() &&
-          env_.needs_drop(test.source.type) &&
-          !dead_[test.source.base]) {
+          test.source.base < fn_.slots.size() &&
+          std::ranges::all_of(test.source.steps,
+                              [](const projection &step) {
+                                return step.kind == projection_kind::member ||
+                                       step.kind == projection_kind::payload;
+                              }) &&
+          env_.needs_drop(test.source.type) && !dead_[test.source.base]) {
         auto &reg = regions_.back();
-        reg.tested_slot = test.source.base;
+        reg.tested_place = test.source;
         reg.tested_variant = test.variant;
-        if (auto ok = narrow(test.source.base, test.variant, true);
-            !ok.has_value()) {
+        if (auto ok = narrow(test.source, test.variant, true); !ok.has_value()) {
           return ok;
         }
       }
@@ -1186,20 +1286,43 @@ private:
     return {};
   }
 
-  /// Records that a whole slot holds `variant`, or anything but it.
-  [[nodiscard]] auto narrow(storage_id slot, const std::string &variant,
+  /// Records that the sum at `where` holds `variant`, or anything but it. A
+  /// whole value on the way is split into its parts so the sum has a node of
+  /// its own to narrow; the split needs the variant of an enclosing sum, which
+  /// the enclosing `if` has already shown.
+  [[nodiscard]] auto narrow(const place &where, const std::string &variant,
                             bool is_it) -> result {
-    auto &node = state_[slot];
-    if (!node.whole) {
+    const auto at = resolve(where);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    auto *node = &state_[where.base];
+    for (size_t i = 0; i < where.steps.size(); ++i) {
+      if (node->variants.has_value() && node->variants->empty()) {
+        return {}; // No variant is possible here, so no code runs.
+      }
+      if (node->whole) {
+        if (auto ok = explode(*node, at->types[i], where.steps[i]);
+            !ok.has_value()) {
+          return ok;
+        }
+      }
+      const auto child = node->children.find(step_key(where.steps[i]));
+      if (child == node->children.end()) {
+        return {};
+      }
+      node = &child->second;
+    }
+    if (!node->whole) {
       return {};
     }
-    const auto layout = layout_of(fn_.slots[slot].type);
+    const auto layout = layout_of(at->types.back());
     if (!layout.has_value()) {
       return std::unexpected(layout.error());
     }
     auto possible = std::set<std::string>{};
-    if (node.variants.has_value()) {
-      possible = *node.variants;
+    if (node->variants.has_value()) {
+      possible = *node->variants;
     } else {
       for (const auto &each : (*layout)->variants) {
         possible.insert(each.name);
@@ -1211,7 +1334,7 @@ private:
     } else {
       possible.erase(variant);
     }
-    node.variants = std::move(possible);
+    node->variants = std::move(possible);
     return {};
   }
 
@@ -1227,8 +1350,8 @@ private:
     reg.has_else = true;
     reg.then_end = current();
     resume(reg.entry);
-    if (reg.tested_slot.has_value()) {
-      return narrow(*reg.tested_slot, reg.tested_variant, false);
+    if (reg.tested_place.has_value()) {
+      return narrow(*reg.tested_place, reg.tested_variant, false);
     }
     return {};
   }
@@ -1482,7 +1605,13 @@ private:
                   "a variant test gives a scalar, not " +
                       name_of(op.dest.type));
     }
-    if (auto ok = require_init(op.source, *from); !ok.has_value()) {
+    if (tag_known(op.source, *from)) {
+      if (touches_dropped(op.source, from->tracked)) {
+        return fail(verify_error_kind::use_after_drop,
+                    describe(op.source, from->tracked) +
+                        " is used after its drop ran");
+      }
+    } else if (auto ok = require_init(op.source, *from); !ok.has_value()) {
       return ok;
     }
     if (auto ok = require_writable(op.dest, *to); !ok.has_value()) {
@@ -1490,6 +1619,26 @@ private:
     }
     commit_write(op.dest, *to);
     return {};
+  }
+
+  /// Whether the sum at `where` has a tag that can be read. A whole sum does,
+  /// and so does one that a nested test split or a payload move left, as long
+  /// as an `if` showed which variant it holds: the tag stays in place when
+  /// parts of the payload leave.
+  [[nodiscard]] auto tag_known(const place &where, const resolved_place &at)
+      const -> bool {
+    const auto *node = &state_[where.base];
+    for (size_t i = 0; i < at.tracked; ++i) {
+      if (node->whole) {
+        return true;
+      }
+      const auto child = node->children.find(step_key(where.steps[i]));
+      if (child == node->children.end()) {
+        return false;
+      }
+      node = &child->second;
+    }
+    return node->whole || node->variants.has_value();
   }
 
   [[nodiscard]] auto do_publish(const storage_op &op) -> result {

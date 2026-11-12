@@ -389,6 +389,10 @@ private:
       -> std::expected<std::optional<place>, storage_lower_error> {
     switch (expr.kind) {
     case hir_node_kind::hir_local_ref: {
+      if (const auto alias = subjects_.find(as<hir_local_ref>(expr).symbol);
+          alias != subjects_.end()) {
+        return std::optional<place>{alias->second};
+      }
       const auto found = locals_.find(as<hir_local_ref>(expr).symbol);
       if (found == locals_.end()) {
         return std::optional<place>{};
@@ -2324,22 +2328,33 @@ private:
     storage_id held = k_invalid_storage;
   };
 
-  /// Whether `pattern` asks only which variant a sum holds: a wildcard, or a
-  /// constructor whose arguments are all wildcards. A sum that owes drops is
-  /// tested no other way, because the verifier learns which variant it holds
-  /// only from an `if` directly on the tag test.
-  [[nodiscard]] auto asks_only_the_variant(const hir_pattern &pattern) const
-      -> bool {
-    if (pattern.kind == hir_node_kind::hir_wildcard_pattern) {
+  /// Whether a sum that owes drops can be tested with `pattern`: variant tests
+  /// (nested ones too), literals on scalars, and the structure around them. The
+  /// verifier learns which variant a sum holds only from an `if` directly on
+  /// the tag test, so every alternative of an or-pattern would have to agree on
+  /// it; those are refused.
+  [[nodiscard]] auto tests_supported_on_droppable(
+      const hir_pattern &pattern) const -> bool {
+    switch (pattern.kind) {
+    case hir_node_kind::hir_wildcard_pattern:
+    case hir_node_kind::hir_literal_pattern:
       return true;
-    }
-    if (pattern.kind != hir_node_kind::hir_constructor_pattern) {
+    case hir_node_kind::hir_constructor_pattern:
+      return std::ranges::all_of(
+          as<hir_constructor_pattern>(pattern).args,
+          [&](const auto &arg) { return tests_supported_on_droppable(*arg); });
+    case hir_node_kind::hir_tuple_pattern:
+      return std::ranges::all_of(
+          as<hir_tuple_pattern>(pattern).elements,
+          [&](const auto &arg) { return tests_supported_on_droppable(*arg); });
+    case hir_node_kind::hir_struct_pattern:
+      return std::ranges::all_of(
+          as<hir_struct_pattern>(pattern).fields, [&](const auto &field) {
+            return tests_supported_on_droppable(*field.pattern);
+          });
+    default:
       return false;
     }
-    return std::ranges::all_of(
-        as<hir_constructor_pattern>(pattern).args, [](const auto &arg) {
-          return arg->kind == hir_node_kind::hir_wildcard_pattern;
-        });
   }
 
   /// A sum that needs a drop can be tested by its variants. Its payloads are
@@ -2359,10 +2374,10 @@ private:
       return refuse(span, "a pattern test on `" + types().display(subject.type) +
                               "`, which needs a drop");
     }
-    if (!asks_only_the_variant(pattern)) {
+    if (!tests_supported_on_droppable(pattern)) {
       return refuse(span, "a pattern on `" + types().display(subject.type) +
-                              "`, which needs a drop, that tests more than "
-                              "its variant");
+                              "`, which needs a drop, that uses an "
+                              "or-pattern or a range");
     }
     return {};
   }
@@ -2376,7 +2391,10 @@ private:
     }
     if (named->has_value()) {
       if (!(*named)->steps.empty()) {
-        return refuse(span, "a pattern test on part of a value");
+        // The subject is a part of a value, as in the match HIR writes to drop
+        // a sum nested in another: the symbol names that part.
+        subjects_[symbol] = **named;
+        return subject_place{.where = std::move(**named)};
       }
       locals_[symbol] = (*named)->base;
       return subject_place{.where = std::move(**named)};
@@ -2676,6 +2694,8 @@ private:
             return ran;
           },
           [&]() -> result {
+            // Each failure site holds a copy of the remaining arms.
+            terminated_ = false;
             return in_region(node.span, [&] {
               return lower_arms(node, index + 1, subject, dest);
             });
@@ -2785,6 +2805,9 @@ private:
       auto ok = emit_tests(
           {obligation{.pattern = node.pattern.get(), .where = subject->where}},
           []() -> result { return {}; }, [&]() -> result {
+            // A nested pattern has several failure sites, each a copy of the
+            // `else` block; one that leaves must not hide the next.
+            terminated_ = false;
             return lower_arm(*node.else_body, std::nullopt);
           });
       terminated_ = false;
@@ -3114,6 +3137,8 @@ private:
   size_t state_align_ = 1;
   storage_function out_;
   std::unordered_map<symbol_id, storage_id> locals_;
+  /// A pattern subject that is a part of a value: the place it names.
+  std::unordered_map<symbol_id, place> subjects_;
   std::unordered_map<std::string, storage_id> globals_;
   std::vector<pending_temp> pending_;
   /// Temporaries of enclosing expressions, set aside while a nested region
