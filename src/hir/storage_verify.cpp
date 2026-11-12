@@ -57,6 +57,10 @@ struct init_node {
     return payload_key(step.name, step.index);
   case projection_kind::deref:
     return "*";
+  case projection_kind::length:
+    return "len";
+  case projection_kind::data:
+    return "data";
   }
   return "?";
 }
@@ -150,8 +154,48 @@ private:
     return "`" + types().display(id) + "`";
   }
 
+  [[nodiscard]] auto is_never(type_id id) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(id));
+    return entry.kind == semantic::type_kind::builtin_kind &&
+           entry.name == "never";
+  }
+
   [[nodiscard]] auto same_type(type_id a, type_id b) const -> bool {
     return types().strip_refinement(a) == types().strip_refinement(b);
+  }
+
+  [[nodiscard]] auto is_builtin(type_id id, std::string_view name) const
+      -> bool {
+    const auto &entry = types().entry(types().strip_refinement(id));
+    return entry.kind == semantic::type_kind::builtin_kind && entry.name == name;
+  }
+
+  /// A descriptor's `length` is a `usize`; its `data` is a raw pointer to
+  /// the element type (`byte` for a `str`).
+  [[nodiscard]] auto check_descriptor_part(type_id descriptor,
+                                           const projection &step) -> result {
+    if (step.kind == projection_kind::length) {
+      if (!is_builtin(step.type, "usize")) {
+        return fail(verify_error_kind::type_mismatch,
+                    "the length of " + name_of(descriptor) +
+                        " is a `usize`, not " + name_of(step.type));
+      }
+      return {};
+    }
+    const auto &part = types().entry(types().strip_refinement(step.type));
+    const auto &whole = types().entry(types().strip_refinement(descriptor));
+    const auto matches =
+        part.kind == semantic::type_kind::ptr_kind &&
+        (whole.name == "str" ? is_builtin(part.result, "byte")
+                             : !whole.args.empty() &&
+                                   same_type(part.result, whole.args[0]));
+    if (!matches) {
+      return fail(verify_error_kind::type_mismatch,
+                  "the data of " + name_of(descriptor) +
+                      " is a pointer to its elements, not " +
+                      name_of(step.type));
+    }
+    return {};
   }
 
   [[nodiscard]] auto layout_of(type_id id)
@@ -346,6 +390,18 @@ private:
         current = variant->payload[step.index].type;
         break;
       }
+      case projection_kind::length:
+      case projection_kind::data: {
+        if (found.kind != runtime::value_layout_kind::descriptor) {
+          return fail(verify_error_kind::bad_place,
+                      name_of(current) + " is not a `str` or `slice`");
+        }
+        if (auto ok = check_descriptor_part(current, step); !ok.has_value()) {
+          return std::unexpected(ok.error());
+        }
+        current = step.type;
+        break;
+      }
       case projection_kind::deref:
         break;
       }
@@ -405,6 +461,9 @@ private:
         }
       }
       return true;
+    case runtime::value_layout_kind::descriptor:
+      // Both words are scalars, so each part is whole once written.
+      return node.children.contains("len") && node.children.contains("data");
     default:
       return false;
     }
@@ -849,9 +908,16 @@ private:
       }
       const auto &entry =
           types().entry(types().strip_refinement(value.type));
+      // An array's address is also the address of its first element, which
+      // is what `as_ptr()` hands back even when there are no elements.
+      const auto layout = env_.layouts.layout(value.where.type);
+      const auto element_pointer =
+          entry.kind == semantic::type_kind::ptr_kind && layout.has_value() &&
+          (*layout)->kind == runtime::value_layout_kind::array &&
+          same_type(entry.result, (*layout)->element);
       if ((entry.kind != semantic::type_kind::ref_kind &&
            entry.kind != semantic::type_kind::ptr_kind) ||
-          !same_type(entry.result, value.where.type)) {
+          (!same_type(entry.result, value.where.type) && !element_pointer)) {
         return fail(verify_error_kind::type_mismatch,
                     "the address of " + name_of(value.where.type) +
                         " is typed " + name_of(value.type));
@@ -954,6 +1020,25 @@ private:
       return do_dead(op);
     case op_kind::return_value:
       return do_return(op);
+    case op_kind::string_literal:
+      return do_string_literal(op);
+    case op_kind::unreachable:
+      // Only a call that does not return may precede it (the ends of the
+      // call's outgoing slots aside), so nothing on this path is checked
+      // further.
+      {
+        auto before = op_index_;
+        while (before > 0 && fn_.ops[before - 1].kind == op_kind::storage_dead) {
+          --before;
+        }
+        if (before == 0 || fn_.ops[before - 1].kind != op_kind::call_into ||
+            !is_never(fn_.ops[before - 1].dest.type)) {
+          return fail(verify_error_kind::bad_operation,
+                      "`unreachable` must follow a call that returns `never`");
+        }
+      }
+      reachable_ = false;
+      return {};
     case op_kind::if_begin:
       return do_if_begin(op);
     case op_kind::else_begin:
@@ -1493,6 +1578,25 @@ private:
                         name_of(op.operands[0].type) + " to " +
                         name_of(op.dest.type));
       }
+    }
+    if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
+      return ok;
+    }
+    commit_write(op.dest, *at);
+    return {};
+  }
+
+  /// A string literal initializes a `str` descriptor whole.
+  [[nodiscard]] auto do_string_literal(const storage_op &op) -> result {
+    const auto at = resolve(op.dest);
+    if (!at.has_value()) {
+      return std::unexpected(at.error());
+    }
+    const auto &entry = types().entry(types().strip_refinement(op.dest.type));
+    if (entry.kind != semantic::type_kind::builtin_kind || entry.name != "str") {
+      return fail(verify_error_kind::type_mismatch,
+                  "a string literal writes a `str`, not " +
+                      name_of(op.dest.type));
     }
     if (auto ok = require_writable(op.dest, *at); !ok.has_value()) {
       return ok;

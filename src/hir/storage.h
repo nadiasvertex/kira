@@ -110,6 +110,8 @@ enum class projection_kind : uint8_t {
   element, ///< An array element at a constant index.
   payload, ///< One payload slot of a named sum variant.
   deref,   ///< The referent of an address held in the value.
+  length,  ///< The length word of a `str`/`slice` descriptor (`usize`).
+  data,    ///< The data address of a `str`/`slice` descriptor (`*T`).
 };
 
 struct projection {
@@ -118,6 +120,9 @@ struct projection {
   size_t index = 0;
   /// The field name for a struct member, the variant name for a payload.
   std::string name{};
+  /// `length` and `data` only: the type the part is read as, since the
+  /// descriptor's layout has no members to name it.
+  semantic::type_id type = semantic::k_unknown_type;
 
   [[nodiscard]] auto operator==(const projection &) const -> bool = default;
 };
@@ -202,6 +207,8 @@ struct closure_capture {
 enum class op_kind : uint8_t {
   compute,         ///< `dest` <- a scalar computed from operands.
   init_empty,      ///< `dest` <- a zero-sized value.
+  string_literal,  ///< `dest` (a `str`) <- a descriptor of the bytes `text`,
+                   ///< which live in static data for the program's lifetime.
   copy_into,       ///< `dest` <- bytes of `source`; both stay initialized.
   move_into,       ///< `dest` <- bytes of `source`; `source` is invalidated.
   publish_variant, ///< `dest` (a sum) becomes initialized with `variant`.
@@ -247,6 +254,8 @@ enum class op_kind : uint8_t {
   coroutine_finish,    ///< Step only: marks the coroutine at `source` done.
   storage_dead,    ///< Ends the lifetime of slot `slot`.
   return_value,    ///< Leaves the function; see `value`.
+  unreachable,     ///< Never runs: the operation before it (a call that
+                   ///< returns `never`) does not return. Ends the path.
   // Structured control flow. The markers nest like brackets in the flat
   // operation list; the verifier joins the initialization state where
   // branches meet.

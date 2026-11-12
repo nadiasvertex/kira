@@ -1,0 +1,40 @@
+module sample
+use std.intrinsics.{rt_str_len_scalars, rt_str_eq}
+
+# String literals are `{len, data}` descriptors over static bytes. The
+# intrinsics read the descriptor, so the host can check what was built.
+
+def hello_len() -> usize:
+    let s = "héllo"
+    return rt_str_len_scalars(s)
+
+def picked_len(k: int32) -> usize:
+    let s = if k > 0:
+        "ab"
+    else:
+        "abcd"
+    return rt_str_len_scalars(s)
+
+def returned() -> str:
+    return "static"
+
+def escaped() -> str:
+    return "a\nb"
+
+def empty() -> str:
+    return ""
+
+def is_hi(s: str) -> bool:
+    return rt_str_eq(s, "hi")
+
+def same_text() -> bool:
+    return rt_str_eq("twice", "twice")
+
+type labelled = { pub id: int32, pub name: str }
+
+def label(n: int32) -> labelled:
+    return labelled { id: n, name: "item" }
+
+def label_len(n: int32) -> usize:
+    let l = label(n)
+    return rt_str_len_scalars(l.name)

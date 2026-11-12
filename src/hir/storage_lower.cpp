@@ -2,6 +2,7 @@
 
 #include "src/hir/captures.h"
 #include "src/hir/traversal.h"
+#include "src/parser/text_escape.h"
 #include "src/runtime/coroutine.h"
 #include "src/runtime/scheduler.h"
 
@@ -194,8 +195,21 @@ public:
       }
     }
     if (fn_.body != nullptr) {
-      for (const auto &stmt : fn_.body->stmts) {
-        if (auto ok = lower_stmt(*stmt); !ok.has_value()) {
+      const auto &stmts = fn_.body->stmts;
+      for (size_t i = 0; i < stmts.size(); ++i) {
+        const auto &stmt = *stmts[i];
+        // The body's last expression statement is the value it returns (a
+        // trailing `match` or `if`, which HIR types as the result), unless
+        // the result is zero-sized or the expression does not return.
+        const auto *tail =
+            i + 1 == stmts.size() && stmt.kind == hir_node_kind::hir_expr_stmt &&
+                    out_.signature.result.cls != pass_class::zero_sized &&
+                    !always_leaves(stmt)
+                ? as<hir_expr_stmt>(stmt).expr.get()
+                : nullptr;
+        if (auto ok = tail != nullptr ? lower_return_value(*tail, stmt.span)
+                                      : lower_stmt(stmt);
+            !ok.has_value()) {
           return std::unexpected(ok.error());
         }
         if (terminated_) {
@@ -751,6 +765,11 @@ private:
   /// Initializes the uninitialized `dest` with the value of `expr`.
   [[nodiscard]] auto lower_into(const hir_expr &expr, const place &dest)
       -> result {
+    if (is_never(expr.type) && !is_never(dest.type)) {
+      // A branch that ends in a call that does not return (`panic`) never
+      // writes the value the other branches do.
+      return lower_discarded(expr);
+    }
     switch (expr.kind) {
     case hir_node_kind::hir_literal:
       return lower_literal(as<hir_literal>(expr), dest);
@@ -806,6 +825,13 @@ private:
       return lower_coroutine_cancelled(expr, dest);
     case hir_node_kind::hir_coroutine_cancel:
       return lower_coroutine_cancel(as<hir_coroutine_cancel>(expr), dest);
+    case hir_node_kind::hir_container_len:
+      return lower_container_len(as<hir_container_len>(expr), dest);
+    case hir_node_kind::hir_container_data:
+      return lower_container_data(as<hir_container_data>(expr), dest);
+    case hir_node_kind::hir_slice_from_raw_parts:
+      return lower_slice_from_raw_parts(as<hir_slice_from_raw_parts>(expr),
+                                        dest);
     default:
       return refuse(expr.span, describe(expr.kind) +
                                    " is not part of storage lowering yet");
@@ -822,6 +848,122 @@ private:
       return refuse(expr.span, "a function name used as a value");
     }
     return transfer(**source, dest, expr.span);
+  }
+
+  /// The container `expr` names, behind any references. A computed one is
+  /// built in a temporary first.
+  [[nodiscard]] auto container_place(const hir_expr &expr)
+      -> std::expected<place, storage_lower_error> {
+    auto found = lower_place(expr);
+    if (!found.has_value()) {
+      return std::unexpected(found.error());
+    }
+    if (found->has_value()) {
+      return auto_deref(std::move(**found));
+    }
+    const auto temp = new_temp(expr.type, expr.span);
+    if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
+      return std::unexpected(ok.error());
+    }
+    return auto_deref(whole(temp));
+  }
+
+  [[nodiscard]] static auto descriptor_part(place descriptor,
+                                            projection_kind kind,
+                                            type_id type) -> place {
+    descriptor.steps.push_back(projection{.kind = kind, .type = type});
+    descriptor.type = type;
+    return descriptor;
+  }
+
+  /// `xs.len()` as `for`-loop lowering asks for it: the length word of a
+  /// `str` or `slice`, or the count of an array.
+  [[nodiscard]] auto lower_container_len(const hir_container_len &node,
+                                         const place &dest) -> result {
+    auto object = container_place(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto layout = layout_of(object->type, node.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if ((*layout)->kind == runtime::value_layout_kind::descriptor) {
+      return transfer(descriptor_part(std::move(*object), projection_kind::length,
+                                      node.type),
+                      dest, node.span);
+    }
+    if ((*layout)->kind == runtime::value_layout_kind::array) {
+      auto op = storage_op{.kind = op_kind::compute};
+      op.dest = dest;
+      op.computation = compute_kind::constant;
+      op.literal = token_kind::int_lit;
+      op.text = std::to_string((*layout)->count);
+      emit(std::move(op), node.span);
+      return {};
+    }
+    return refuse(node.span,
+                  "the length of `" + types().display(object->type) + "`");
+  }
+
+  /// `xs.as_ptr()`: the data word of a `str` or `slice`, or the address of
+  /// an array, which is that of its first element. An empty container's
+  /// data word is returned as it is, without a bounds check; an empty
+  /// array's address is its zero-sized slot's.
+  [[nodiscard]] auto lower_container_data(const hir_container_data &node,
+                                          const place &dest) -> result {
+    auto object = container_place(*node.object);
+    if (!object.has_value()) {
+      return std::unexpected(object.error());
+    }
+    const auto layout = layout_of(object->type, node.span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto &found = **layout;
+    if (found.kind == runtime::value_layout_kind::descriptor) {
+      return transfer(descriptor_part(std::move(*object), projection_kind::data,
+                                      node.type),
+                      dest, node.span);
+    }
+    const auto &entry = types().entry(types().strip_refinement(object->type));
+    if (found.kind == runtime::value_layout_kind::array &&
+        entry.name != "uninit") {
+      auto op = storage_op{.kind = op_kind::compute};
+      op.dest = dest;
+      op.computation = compute_kind::copy;
+      op.operands.push_back(operand{.kind = operand_kind::address_of,
+                                    .where = std::move(*object),
+                                    .type = node.type});
+      emit(std::move(op), node.span);
+      return {};
+    }
+    return refuse(node.span, "the data address of `" +
+                                 types().display(object->type) + "`");
+  }
+
+  /// `slice_from_raw_parts(p, n)`: a descriptor whose words are `n` and `p`,
+  /// evaluated in that source order (`p` first).
+  [[nodiscard]] auto lower_slice_from_raw_parts(
+      const hir_slice_from_raw_parts &node, const place &dest) -> result {
+    auto pointer = lower_operand(*node.pointer, !is_pure(*node.len));
+    if (!pointer.has_value()) {
+      return std::unexpected(pointer.error());
+    }
+    auto count = lower_operand(*node.len, false);
+    if (!count.has_value()) {
+      return std::unexpected(count.error());
+    }
+    auto write = [&](projection_kind kind, operand value, type_id type) {
+      auto op = storage_op{.kind = op_kind::compute};
+      op.dest = descriptor_part(dest, kind, type);
+      op.computation = compute_kind::copy;
+      op.operands.push_back(std::move(value));
+      emit(std::move(op), node.span);
+    };
+    write(projection_kind::length, std::move(*count), node.len->type);
+    write(projection_kind::data, std::move(*pointer), node.pointer->type);
+    return {};
   }
 
   /// The spelling of a literal. A `size_of`/`align_of` answer is asked again
@@ -860,6 +1002,15 @@ private:
       if (!text.has_value()) {
         return std::unexpected(text.error());
       }
+      op.text = std::move(*text);
+    } else if (literal.lit_kind == token_kind::string_lit &&
+               types().entry(types().strip_refinement(dest.type)).name == "str") {
+      // The bytes are static data; the descriptor built here points at them.
+      auto text = decode_string_literal(literal.value);
+      if (!text.has_value()) {
+        return malformed(literal.span, "a string literal that does not decode");
+      }
+      op.kind = op_kind::string_literal;
       op.text = std::move(*text);
     } else {
       return refuse(literal.span,
@@ -1209,6 +1360,58 @@ private:
 
   [[nodiscard]] static auto round_up(size_t value, size_t align) -> size_t {
     return (value + align - 1) / align * align;
+  }
+
+  /// Whether every path through `node` leaves the function or the loop, or
+  /// does not return, so a value it is typed with is never produced. Such a
+  /// trailing `if` or `match` is lowered as the statement it is, with no
+  /// temporary for the value.
+  [[nodiscard]] auto always_leaves(const hir_node &node) const -> bool {
+    switch (node.kind) {
+    case hir_node_kind::hir_return:
+    case hir_node_kind::hir_break:
+    case hir_node_kind::hir_continue:
+      return true;
+    case hir_node_kind::hir_expr_stmt:
+      return always_leaves(*as<hir_expr_stmt>(node).expr);
+    case hir_node_kind::hir_block: {
+      const auto &block = as<hir_block>(node);
+      return !block.stmts.empty() && always_leaves(*block.stmts.back());
+    }
+    case hir_node_kind::hir_if: {
+      const auto &branches = as<hir_if>(node);
+      if (branches.else_body == nullptr ||
+          !always_leaves(*branches.else_body)) {
+        return false;
+      }
+      for (const auto &branch : branches.branches) {
+        if (!always_leaves(*branch.body)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    case hir_node_kind::hir_match: {
+      for (const auto &arm : as<hir_match>(node).arms) {
+        if (!always_leaves(*arm.body)) {
+          return false;
+        }
+      }
+      return true;
+    }
+    default: {
+      const auto *expr = dynamic_cast<const hir_expr *>(&node);
+      return expr != nullptr && is_never(expr->type);
+    }
+    }
+  }
+
+  /// Whether `id` is `never`: an expression of that type does not produce a
+  /// value, because evaluating it does not return.
+  [[nodiscard]] auto is_never(type_id id) const -> bool {
+    const auto &entry = types().entry(types().strip_refinement(id));
+    return entry.kind == semantic::type_kind::builtin_kind &&
+           entry.name == "never";
   }
 
   /// A `unit` type id, for a function the lowering synthesizes.
@@ -2093,6 +2296,13 @@ private:
     const auto temp = new_temp(expr.type, expr.span);
     if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
       return ok;
+    }
+    if (is_never(expr.type)) {
+      // The call did not return, so nothing after it runs: not the end of
+      // the statement's temporaries, and not the rest of the path.
+      emit(storage_op{.kind = op_kind::unreachable}, expr.span);
+      terminated_ = true;
+      return {};
     }
     if (auto ended = flush_pending(expr.span); !ended.has_value()) {
       return ended;
@@ -3171,31 +3381,52 @@ private:
       emit_return(std::nullopt, ret.span);
       return {};
     }
+    return lower_return_value(*ret.value, ret.span);
+  }
+
+  /// Returns the value of `expr` from the function: builds it in the result
+  /// storage, or reads it as the returned operand. The body's trailing
+  /// expression statement takes this path too.
+  [[nodiscard]] auto lower_return_value(const hir_expr &expr,
+                                        const source_span &span) -> result {
+    const auto &signature = out_.signature;
     if (signature.returns_through_address()) {
-      if (auto ok = lower_returned(*ret.value, whole(out_.result_slot));
+      if (auto ok = lower_returned(expr, whole(out_.result_slot));
           !ok.has_value()) {
         return ok;
       }
-      if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+      if (terminated_) {
+        return {}; // the value does not return
+      }
+      if (auto ended = flush_pending(span); !ended.has_value()) {
         return ended;
       }
-      emit_return(std::nullopt, ret.span);
+      emit_return(std::nullopt, span);
       return {};
     }
     if (signature.result.cls == pass_class::zero_sized) {
-      const auto temp = new_temp(ret.value->type, ret.value->span);
-      if (auto ok = lower_into(*ret.value, whole(temp)); !ok.has_value()) {
+      const auto temp = new_temp(expr.type, expr.span);
+      if (auto ok = lower_into(expr, whole(temp)); !ok.has_value()) {
         return ok;
       }
-      if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+      if (terminated_) {
+        return {};
+      }
+      if (auto ended = flush_pending(span); !ended.has_value()) {
         return ended;
       }
-      emit_return(std::nullopt, ret.span);
+      emit_return(std::nullopt, span);
       return {};
     }
-    auto value = lower_operand(*ret.value, false);
+    if (is_never(expr.type)) {
+      return lower_discarded(expr);
+    }
+    auto value = lower_operand(expr, false);
     if (!value.has_value()) {
       return std::unexpected(value.error());
+    }
+    if (terminated_) {
+      return {};
     }
     // The value must outlive the statement's temporaries, which end first.
     // A scalar temporary that is itself the value is simply kept; a value read
@@ -3215,10 +3446,10 @@ private:
       }
     }
     if (reads_temporary) {
-      const auto held = new_slot(storage_class::frame_local, ret.value->type, "",
-                                 k_invalid_symbol_id, ret.span, false);
+      const auto held = new_slot(storage_class::frame_local, expr.type, "",
+                                 k_invalid_symbol_id, span, false);
       if (value->kind == operand_kind::read) {
-        if (auto ok = transfer(value->where, whole(held), ret.span);
+        if (auto ok = transfer(value->where, whole(held), span);
             !ok.has_value()) {
           return ok;
         }
@@ -3227,14 +3458,14 @@ private:
         op.dest = whole(held);
         op.computation = compute_kind::copy;
         op.operands.push_back(*value);
-        emit(std::move(op), ret.span);
+        emit(std::move(op), span);
       }
       value = read_of(whole(held), value->consume);
     }
-    if (auto ended = flush_pending(ret.span); !ended.has_value()) {
+    if (auto ended = flush_pending(span); !ended.has_value()) {
       return ended;
     }
-    emit_return(std::move(*value), ret.span);
+    emit_return(std::move(*value), span);
     return {};
   }
 

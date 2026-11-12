@@ -572,6 +572,14 @@ private:
         current = variant->payload[step.index].type;
         break;
       }
+      case projection_kind::length:
+        loc.offset += runtime::k_descriptor_len_offset;
+        current = step.type;
+        break;
+      case projection_kind::data:
+        loc.offset += runtime::k_descriptor_data_offset;
+        current = step.type;
+        break;
       case projection_kind::deref:
         break;
       }
@@ -708,6 +716,12 @@ private:
       return emit_call(op);
     case op_kind::return_value:
       return emit_return(op);
+    case op_kind::unreachable:
+      builder_.CreateUnreachable();
+      start_dead_block();
+      return {};
+    case op_kind::string_literal:
+      return emit_string_literal(op);
     case op_kind::if_begin:
       return emit_if_begin(op);
     case op_kind::else_begin:
@@ -1691,6 +1705,23 @@ private:
                             ? (is_signed ? numeric_kind::i32 : numeric_kind::u32)
                             : (is_signed ? numeric_kind::i64 : numeric_kind::u64);
     return scalars_.cast(source, *kind, value);
+  }
+
+  /// A `str` descriptor `{len, data}` with `data` a private global holding
+  /// the literal's bytes.
+  [[nodiscard]] auto emit_string_literal(const hir::storage_op &op)
+      -> checked<void> {
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    auto *bytes = builder_.CreateGlobalString(op.text, "str.lit");
+    builder_.CreateAlignedStore(constant(i64(), op.text.size()),
+                                pointer_at(*dest), access_align(*dest, 8));
+    auto data = *dest;
+    data.offset += 8;
+    builder_.CreateAlignedStore(bytes, pointer_at(data), access_align(data, 8));
+    return {};
   }
 
   [[nodiscard]] auto emit_return(const hir::storage_op &op) -> checked<void> {

@@ -311,11 +311,78 @@ inline auto string_results_allocate_only_their_bytes(case_backend &backend)
                "string blocks left behind");
 }
 
+/// The text a `str` result refers to, read without releasing it: a literal's
+/// bytes are static.
+[[nodiscard]] inline auto peek_text(const result_bytes &result,
+                                    size_t offset = 0) -> std::string {
+  const auto length = result.at<uint64_t>(offset);
+  const auto *data = reinterpret_cast<const char *>( // NOLINT
+      result.at<uint64_t>(offset + 8));
+  return std::string(data == nullptr ? "" : data, length);
+}
+
+/// A string literal is a `{len, data}` descriptor over static bytes: built
+/// where it is used, read by the string intrinsics, returned and stored in a
+/// field, and never allocated.
+inline auto string_literals_are_static_descriptors(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "strings.cn");
+  const auto before = runtime::heap_allocation_count();
+  expect_equal(p->scalar("hello_len", {}), 5, "hello_len");
+  expect_equal(p->scalar("picked_len", std::vector<int64_t>{1}), 2,
+               "picked_len(1)");
+  expect_equal(p->scalar("picked_len", std::vector<int64_t>{0}), 4,
+               "picked_len(0)");
+  expect(peek_text(p->into("returned", {})) == "static",
+         "expected the returned literal's bytes");
+  expect(peek_text(p->into("escaped", {})) == "a\nb",
+         "expected the escape to be decoded");
+  expect_equal(static_cast<int64_t>(p->into("empty", {}).at<uint64_t>(0)), 0,
+               "empty literal length");
+  const auto hi = text_view("hi");
+  const auto ho = text_view("ho");
+  expect_equal(p->scalar("is_hi", std::vector<int64_t>{as_argument(hi)}), 1,
+               "is_hi(hi)");
+  expect_equal(p->scalar("is_hi", std::vector<int64_t>{as_argument(ho)}), 0,
+               "is_hi(ho)");
+  expect_equal(p->scalar("same_text", {}), 1, "same_text");
+  // `labelled` is `{id: int32 @0, name: str @8}`.
+  const auto labelled = p->into("label", std::vector<int64_t>{3});
+  expect_equal(labelled.at<int32_t>(0), 3, "label(3).id");
+  expect(peek_text(labelled, 8) == "item", "expected the field's bytes");
+  expect_equal(p->scalar("label_len", std::vector<int64_t>{3}), 4, "label_len");
+  expect_equal(static_cast<int64_t>(runtime::heap_allocation_count() - before),
+               0, "allocations for string literals");
+}
+
+/// `len()` and `as_ptr()` read a descriptor's words, and
+/// `slice_from_raw_parts` writes them.
+inline auto descriptor_words_are_read_and_written(case_backend &backend)
+    -> void {
+  auto p = backend.open("bytecode_storage_test", "views.cn");
+  const auto accented = text_view("héllo");
+  expect_equal(p->scalar("text_len", std::vector<int64_t>{as_argument(accented)}),
+               6, "text_len(héllo) counts bytes");
+  expect_equal(p->scalar("literal_len", {}), 6, "literal_len");
+  const auto hi = text_view("hi");
+  expect_equal(p->scalar("first_byte", std::vector<int64_t>{as_argument(hi)}),
+               'h', "first_byte(hi)");
+  expect_equal(p->scalar("second_of_array", {}), 8, "second_of_array");
+  expect_equal(p->scalar("empty_array_sum", {}), 5, "empty_array_sum");
+  // 0 + 10 + 20 + 30, plus the view's length.
+  expect_equal(p->scalar("view_sum", std::vector<int64_t>{4}), 64,
+               "view_sum(4)");
+  expect_equal(p->scalar("view_sum", std::vector<int64_t>{1}), 1,
+               "view_sum(1)");
+}
+
 inline auto intrinsic_cases(case_backend &backend) -> void {
   io_results_are_written_in_place(backend);
   repeated_io_allocates_nothing(backend);
   string_results_are_written_in_place(backend);
   string_results_allocate_only_their_bytes(backend);
+  string_literals_are_static_descriptors(backend);
+  descriptor_words_are_read_and_written(backend);
 }
 
 } // namespace cinder::testing::storage_cases

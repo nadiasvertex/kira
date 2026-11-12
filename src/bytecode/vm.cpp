@@ -2567,6 +2567,15 @@ auto vm::execute(uint16_t function_index, std::span<const slot_value> args,
         break;
       }
 
+      case opcode::op_str_const_data: {
+        auto ops = operand_cursor{.code = code, .at = ip};
+        const auto dst = ops.reg();
+        const auto idx = ops.imm32();
+        const auto &text = f.function->string_constants[idx];
+        f.registers[dst] = ptr_to_slot(const_cast<char *>(text.data()));
+        f.pc = ops.pos();
+        break;
+      }
       case opcode::op_load_str_const: {
         auto ops = operand_cursor{.code = code, .at = ip};
         const auto dst = ops.reg();

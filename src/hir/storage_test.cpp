@@ -968,9 +968,9 @@ auto test_unsupported_constructs_are_refused_by_name() -> void {
          "expected an unsupported-construct refusal");
   expect(matching->message.find("kind of pattern") != std::string::npos,
          "expected the refusal to name the construct");
-  const auto *shout = f->refusal("shout");
-  expect(shout != nullptr && shout->message.find("str") != std::string::npos,
-         "expected a string literal to be refused");
+  // A string literal is a descriptor over static bytes, built in place.
+  expect(f->refusal("shout") == nullptr, "expected a string literal to lower");
+  expect_ops(*f, "shout", {"string s0 = \"hello\"", "return"});
   expect(f->refusal("crewed") == nullptr, "expected a crew to lower");
   const auto *collecting = f->refusal("collecting");
   expect(collecting != nullptr &&
@@ -1598,6 +1598,68 @@ auto test_verifier_rejects_moves_out_of_references_and_sums() -> void {
                  "a sum read whole after one payload moved out");
 }
 
+/// A string literal writes a `str` descriptor and nothing else; `str` is
+/// copied, so a local holding one is copied into the result.
+auto test_string_literals_are_descriptors_over_static_bytes() -> void {
+  auto f = build(read_program("forms.cn"));
+  expect_ops(*f, "quoted",
+             {"string s1 = \"tab\\there\"", "copy s0 <- s1", "return"});
+  auto misplaced = f->function("named");
+  for (auto &op : misplaced.ops) {
+    if (op.kind == hir::op_kind::compute && op.dest.steps.size() == 1 &&
+        op.dest.steps.front().name == "id") {
+      op.kind = hir::op_kind::string_literal;
+      op.text = "x";
+      op.operands.clear();
+    }
+  }
+  expect_rejects(*f, misplaced, hir::verify_error_kind::type_mismatch,
+                 "a string literal written into an int32 field", {},
+                 "writes a `str`");
+}
+
+auto test_descriptor_words_are_parts() -> void {
+  auto f = build(read_program("forms.cn"));
+  expect_ops(*f, "text_len", {"compute s1 = copy s0.len", "return s1"});
+  expect_ops(*f, "text_data", {"compute s1 = copy s0.data", "return s1"});
+  expect_ops(*f, "view_of",
+             {"compute s0.len = copy s2", "compute s0.data = copy s1", "return"});
+
+  // A length read as a signed word.
+  auto signed_len = f->function("text_len");
+  signed_len.ops.front().operands.front().where.steps.front().type =
+      f->builtin("int64");
+  signed_len.ops.front().operands.front().where.type = f->builtin("int64");
+  signed_len.ops.front().operands.front().type = f->builtin("int64");
+  expect_rejects(*f, signed_len, hir::verify_error_kind::type_mismatch,
+                 "a descriptor length read as an int64", {}, "is a `usize`");
+
+  // A data word read as a length.
+  auto skewed = f->function("text_data");
+  skewed.ops.front().operands.front().where.steps.front().kind =
+      hir::projection_kind::length;
+  expect_rejects(*f, skewed, hir::verify_error_kind::type_mismatch,
+                 "a descriptor's data read through its length", {},
+                 "is a `usize`");
+
+  // A view with only its length written is not a value.
+  auto half = f->function("view_of");
+  half.ops.erase(half.ops.begin() + static_cast<std::ptrdiff_t>(find_op(
+                                        half, hir::op_kind::compute)) +
+                 1);
+  expect_rejects(*f, half, hir::verify_error_kind::bad_result,
+                 "a view returned with its data word unwritten");
+
+  // An array's address is a pointer to its elements, and to nothing else.
+  expect_ops(*f, "array_data", {"compute s1 = copy &s0", "return s1"});
+  auto wrong_element = f->function("array_data");
+  wrong_element.ops.front().operands.front().type =
+      f->function("text_data").slots[1].type;
+  expect_rejects(*f, wrong_element, hir::verify_error_kind::type_mismatch,
+                 "an int64 array's address typed as a byte pointer", {},
+                 "the address of");
+}
+
 auto test_verifier_checks_call_signatures() -> void {
   auto f = build(read_program("forms.cn"));
   // The caller's view of `make_pair` disagrees with the callee's.
@@ -1925,6 +1987,62 @@ auto test_logical_operators_do_not_run_the_right_side_eagerly() -> void {
   expect_ops(*f, "either",
              {"compute s2 = copy s0", "if s2", "else", "compute s2 = copy s1",
               "end_if", "return s2"});
+}
+
+/// A call that returns `never` is followed by `unreachable`, which ends the
+/// path; a branch that ends in one writes no value. The body's trailing
+/// `match` or `if` is returned.
+auto test_never_calls_end_the_path_and_tail_values_return() -> void {
+  auto f = build(read_program("flow.cn"));
+  expect_ops(*f, "guard",
+             {"compute s2 = binary < s0, #0", "if s2", "dead s2",
+              "copy s4 <- s1", "call s3 = panic(move s4)", "dead s4",
+              "unreachable", "else", "dead s2", "end_if",
+              "compute s5 = binary * s0, #2", "return s5"});
+  expect_ops(*f, "arm_dies",
+             {"compute s3 = binary > s0, #0", "if s3", "dead s3",
+              "compute s2 = copy s0", "else", "dead s3", "copy s5 <- s1",
+              "call s4 = panic(move s5)", "dead s5", "unreachable", "end_if",
+              "return s2"});
+  expect_ops(*f, "tail_dies",
+             {"compute s2 = binary > s0, #0", "if s2", "dead s2", "return s0",
+              "else", "dead s2", "end_if", "copy s4 <- s1",
+              "call s3 = panic(move s4)", "dead s4", "unreachable"});
+  // The trailing `match` is an ordinary value match whose temporary is
+  // returned at the end.
+  const auto tail_match = op_lines(*f, f->function("tail_match"));
+  expect(tail_match.back() == "return s1",
+         "expected the match's value to be returned");
+  for (const auto *constant : {"compute s1 = const 10", "compute s1 = const 20",
+                               "compute s1 = const 30"}) {
+    expect(std::ranges::find(tail_match, constant) != tail_match.end(),
+           "expected each arm to write the match's temporary");
+  }
+  const auto tail_if = f->function("tail_if");
+  auto calls = size_t{0};
+  for (const auto &op : tail_if.ops) {
+    if (op.kind == hir::op_kind::call_into) {
+      expect(op.dest == hir::place{.base = tail_if.result_slot,
+                                   .steps = {},
+                                   .type = op.dest.type},
+             "expected each branch to build the pair in the result");
+      ++calls;
+    }
+  }
+  expect(calls == 2, "expected both branches to call make_pair");
+
+  // `unreachable` only follows a call that returns `never`, and without it
+  // the path would be checked on to the function's end.
+  auto stray = f->function("guard");
+  stray.ops.insert(stray.ops.begin() + 1,
+                   hir::storage_op{.kind = hir::op_kind::unreachable});
+  expect_rejects(*f, stray, hir::verify_error_kind::bad_operation,
+                 "an unreachable after an ordinary operation", {},
+                 "returns `never`");
+  auto open = f->function("tail_dies");
+  open.ops.pop_back();
+  expect_rejects(*f, open, hir::verify_error_kind::missing_return,
+                 "a never call that the form does not end the path after");
 }
 
 auto test_drops_inside_branches_and_loops() -> void {
@@ -3048,6 +3166,8 @@ auto main() -> int {
     test_calls_between_modules_name_the_owner();
     test_scalar_and_unit_functions();
     test_unsupported_constructs_are_refused_by_name();
+    test_string_literals_are_descriptors_over_static_bytes();
+    test_descriptor_words_are_parts();
     test_every_lowered_function_verifies();
     test_dump_is_stable();
     test_droppable_values_lower_and_verify();
@@ -3081,6 +3201,7 @@ auto main() -> int {
     test_loops_test_run_and_repeat();
     test_break_and_continue_name_their_loop_by_depth();
     test_logical_operators_do_not_run_the_right_side_eagerly();
+    test_never_calls_end_the_path_and_tail_values_return();
     test_drops_inside_branches_and_loops();
     test_verifier_checks_joins_and_loops();
     test_raw_index_is_a_pointer_offset_then_a_dereference();

@@ -131,3 +131,35 @@ def guarded(n: int32) -> bool:
 
 def either(a: bool, b: bool) -> bool:
     return a or b
+
+# A call that returns `never` ends the path: nothing after it runs, and a
+# branch that ends in one writes no value.
+def guard(n: int32, message: str) -> int32:
+    if n < 0:
+        panic(message)
+    return n * 2
+
+def arm_dies(n: int32, message: str) -> int32:
+    let v = if n > 0:
+        n
+    else:
+        panic(message)
+    return v
+
+def tail_dies(n: int32, message: str) -> int32:
+    if n > 0:
+        return n
+    panic(message)
+
+# A trailing `match` or `if` is the function's value.
+def tail_match(n: int32) -> int32:
+    match n:
+        0 => 10
+        1 => 20
+        _ => 30
+
+def tail_if(n: int32) -> pair:
+    if n > 0:
+        make_pair(n, 1)
+    else:
+        make_pair(0, n)

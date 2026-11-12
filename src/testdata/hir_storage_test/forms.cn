@@ -125,3 +125,24 @@ def matching(n: int32) -> int32:
 
 def shout() -> str:
     return "hello"
+
+# A string literal into a field, and one the verifier can check the type of.
+def named(n: int32) -> framed:
+    return framed { kind: @circle(n), id: n }
+
+def quoted() -> str:
+    let s = "tab\there"
+    return s
+
+# The words of a descriptor, read and written as parts.
+def text_len(s: str) -> usize:
+    return s.len()
+
+machine def text_data(s: str) -> *byte:
+    return s.as_ptr()
+
+machine def array_data(a: array[int64, 2]) -> *int64:
+    return a.as_ptr()
+
+machine def view_of(p: *int64, n: usize) -> slice[int64]:
+    return slice_from_raw_parts(p, n)

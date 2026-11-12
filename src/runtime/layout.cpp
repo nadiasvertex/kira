@@ -234,7 +234,9 @@ namespace {
   if (name == "int128" || name == "uint128") {
     return layout_info{.size_bytes = 16, .align_bytes = 16};
   }
-  if (name == "unit") {
+  if (name == "unit" || name == "never") {
+    // `never` has no values, so no bytes; a call that returns it does not
+    // return, and the storage form marks what follows unreachable.
     return layout_info{.size_bytes = 0, .align_bytes = 1};
   }
   // float128 and every non-scalar builtin (str is handled by the

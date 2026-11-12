@@ -3,6 +3,8 @@
 #include <string>
 #include <string_view>
 
+#include "src/parser/text_escape.h"
+
 namespace cinder::hir {
 
 auto storage_class_name(storage_class cls) -> const char * {
@@ -99,6 +101,10 @@ auto op_kind_name(op_kind kind) -> const char * {
     return "dead";
   case op_kind::return_value:
     return "return";
+  case op_kind::unreachable:
+    return "unreachable";
+  case op_kind::string_literal:
+    return "string";
   case op_kind::if_begin:
     return "if";
   case op_kind::else_begin:
@@ -201,6 +207,12 @@ namespace {
       break;
     case projection_kind::deref:
       out += ".*";
+      break;
+    case projection_kind::length:
+      out += ".len";
+      break;
+    case projection_kind::data:
+      out += ".data";
       break;
     }
   }
@@ -339,6 +351,11 @@ namespace {
   case op_kind::return_value:
     return op.value.has_value() ? "return " + render_operand(*op.value)
                                 : std::string{"return"};
+  case op_kind::unreachable:
+    return "unreachable";
+  case op_kind::string_literal:
+    return "string " + render_place(op.dest) + " = " +
+           encode_string_literal(op.text);
   case op_kind::if_begin:
     return "if " + render_operand(op.condition);
   case op_kind::else_begin:

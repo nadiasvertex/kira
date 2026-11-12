@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "src/comptime_vm/backend.h"
+#include "src/hir/link.h"
 #include "src/hir/lower.h"
 #include "src/hir/storage.h"
 #include "src/hir/storage_lower.h"
@@ -71,6 +72,9 @@ struct storage_program {
   hir::storage_lowering lowering;
   std::vector<ast::ptr<ast::file>> companion_asts;
   std::vector<hir::ptr<hir::hir_module>> companion_modules;
+  /// The whole stdlib in HIR; the modules the program reaches (through
+  /// `panic`, say) are lowered to storage form after the companions.
+  hir::ptr_vec<hir::hir_module> stdlib_modules;
   std::vector<hir::storage_lowering> companion_lowerings;
 
   /// The storage modules a backend compiles together, the entry first.
@@ -204,6 +208,44 @@ inline auto build_storage_program(
     auto [module, lowering] =
         lower_storage_module(*out, ast_file, name_of(ast_file), max_frame_bytes);
     out->companion_modules.push_back(std::move(module));
+    out->companion_lowerings.push_back(std::move(lowering));
+  }
+  // The stdlib modules the program reaches are part of it. Every function of
+  // a reached module must lower, as for the fixture's own modules.
+  lower_stdlib_modules(out->stdlib, out->checked, out->stdlib_modules);
+  auto all = hir::ptr_vec<hir::hir_module>{};
+  all.push_back(std::move(out->module));
+  for (auto &module : out->companion_modules) {
+    all.push_back(std::move(module));
+  }
+  for (auto &module : out->stdlib_modules) {
+    all.push_back(std::move(module));
+  }
+  auto reached = std::vector<std::string>{};
+  for (const auto *module : hir::find_reachable_modules(*all.front(), all)) {
+    reached.push_back(module->module_name);
+  }
+  out->module = std::move(all[0]);
+  for (size_t i = 0; i < out->companion_modules.size(); ++i) {
+    out->companion_modules[i] = std::move(all[i + 1]);
+  }
+  for (size_t i = 0; i < out->stdlib_modules.size(); ++i) {
+    out->stdlib_modules[i] = std::move(all[i + 1 + out->companion_modules.size()]);
+  }
+  for (const auto &module : out->stdlib_modules) {
+    if (std::ranges::find(reached, module->module_name) == reached.end()) {
+      continue;
+    }
+    auto lowering = hir::lower_to_storage(
+        *module, *out->env,
+        hir::storage_lower_options{.nrvo = storage_nrvo_enabled(),
+                                   .max_frame_bytes = max_frame_bytes});
+    for (const auto &refused : lowering.refused) {
+      std::cerr << "refused " << module->module_name << "." << refused.name
+                << ": " << refused.error.message << "\n";
+    }
+    expect(lowering.refused.empty(),
+           "expected every function of a reached stdlib module to lower");
     out->companion_lowerings.push_back(std::move(lowering));
   }
   verify_storage_program(*out);

@@ -125,6 +125,10 @@ public:
     return decode(name, raw);
   }
 
+  [[nodiscard]] auto reports_explicit_panic() const -> bool override {
+    return false; // `cinder_rt_panic` ends the process
+  }
+
 private:
   [[nodiscard]] static auto slots(std::span<const int64_t> args)
       -> std::vector<uint64_t> {

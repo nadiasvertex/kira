@@ -122,6 +122,10 @@ public:
     return result->value.i;
   }
 
+  [[nodiscard]] auto reports_explicit_panic() const -> bool override {
+    return true;
+  }
+
   bytecode::bytecode_module code;
   std::unique_ptr<bytecode::vm> machine;
   std::unordered_map<std::string, uint16_t> index;

@@ -1,0 +1,52 @@
+module sample
+use std.intrinsics.{rt_alloc, rt_free}
+
+# A `str` or `slice` is a `{len, data}` descriptor. `len()` reads the length
+# word, `as_ptr()` the data word, and `slice_from_raw_parts` writes both.
+
+def text_len(s: str) -> usize:
+    return s.len()
+
+def literal_len() -> usize:
+    return "héllo".len()
+
+machine def first_byte(s: str) -> byte:
+    let p = s.as_ptr()
+    return p[0]
+
+machine def second_of_array() -> int64:
+    let a: array[int64, 3] = [7, 8, 9]
+    let p = a.as_ptr()
+    return p[1]
+
+# An empty array still has an address to hand back.
+machine def empty_array_sum() -> int64:
+    let a: array[int64, 0] = []
+    let p = a.as_ptr()
+    var total: int64 = 5
+    var i: usize = 0
+    while i < a.len():
+        total = total + p[i]
+        i = i + 1
+    return total
+
+machine def view_of(p: *int64, n: usize) -> slice[int64]:
+    return slice_from_raw_parts(p, n)
+
+# Fills `n` words with 0, 10, 20, ..., views them as a slice, and adds the
+# view's length to the sum of what it reads through the view's data word.
+machine def view_sum(n: usize) -> int64:
+    let p = ptr_cast[int64](rt_alloc(n * size_of[int64]()))
+    var i: usize = 0
+    while i < n:
+        p[i] = int64(i) * 10
+        i = i + 1
+    let v = view_of(p, n)
+    let q = v.as_ptr()
+    var total = int64(v.len())
+    i = 0
+    while i < v.len():
+        total = total + q[i]
+        i = i + 1
+    rt_free(ptr_cast[byte](p), n * size_of[int64]())
+    return total

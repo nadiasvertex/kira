@@ -568,6 +568,14 @@ private:
         current = variant->payload[projection.index].type;
         break;
       }
+      case projection_kind::length:
+        loc.offset += runtime::k_descriptor_len_offset;
+        current = projection.type;
+        break;
+      case projection_kind::data:
+        loc.offset += runtime::k_descriptor_data_offset;
+        current = projection.type;
+        break;
       case projection_kind::deref:
         break;
       }
@@ -758,6 +766,12 @@ private:
       return emit_call(op);
     case op_kind::return_value:
       return emit_return(op);
+    case op_kind::unreachable:
+      // The call before it does not return; a panic here is the backstop.
+      emit_op(opcode::op_panic);
+      return {};
+    case op_kind::string_literal:
+      return emit_string_literal(op);
     case op_kind::if_begin:
       return emit_if_begin(op);
     case op_kind::else_begin:
@@ -1844,6 +1858,30 @@ private:
       }
     }
     return block;
+  }
+
+  /// A `str` descriptor `{len, data}` in the frame, with `data` the address
+  /// of the literal's bytes in the function's constant table.
+  [[nodiscard]] auto emit_string_literal(const hir::storage_op &op)
+      -> checked<void> {
+    const auto dest = locate(op.dest);
+    if (!dest.has_value()) {
+      return std::unexpected(dest.error());
+    }
+    if (dest->where != location::kind::memory) {
+      return fail(compile_error_kind::internal_error, op.span,
+                  "a `str` descriptor does not live in memory");
+    }
+    const auto len = alloc_register();
+    emit_const(len, slot_value{static_cast<uint64_t>(op.text.size())});
+    if (auto ok = emit_store(dest->reg, dest->offset, len, 8); !ok.has_value()) {
+      return ok;
+    }
+    const auto data = alloc_register();
+    emit_op(opcode::op_str_const_data);
+    emit_register(data);
+    writer_.emit_u32(writer_.add_string_constant(op.text));
+    return emit_store(dest->reg, dest->offset + 8, data, 8);
   }
 
   [[nodiscard]] auto emit_return(const hir::storage_op &op) -> checked<void> {

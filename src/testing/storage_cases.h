@@ -58,6 +58,10 @@ public:
   /// the address of storage the host owns.
   [[nodiscard]] virtual auto scalar_at(std::string_view name, void *argument)
       -> int64_t = 0;
+  /// Whether `panics` can report an explicit `panic(...)`. The native runtime
+  /// ends the process on one (`scheduler::raise_native_panic`), so only the
+  /// VM hands it back to the host.
+  [[nodiscard]] virtual auto reports_explicit_panic() const -> bool = 0;
 };
 
 /// Compiles fixtures: the file `name` under `src/testdata/<dir>/`.
@@ -343,6 +347,40 @@ inline auto drops_run_with_the_value_they_end(case_backend &backend) -> void {
          "expected a drop in each iteration of the loop");
 }
 
+/// A call that returns `never` ends its path, and a trailing `match` or `if`
+/// is the function's value. The message is an empty `str` the host owns.
+inline auto never_calls_and_tail_values(case_backend &backend) -> void {
+  auto p = backend.open("hir_storage_test", "flow.cn");
+  alignas(8) auto empty = std::array<uint64_t, 2>{0, 0};
+  const auto message = static_cast<int64_t>(reinterpret_cast<uintptr_t>(&empty));
+  expect_equal(p->scalar("guard", std::vector<int64_t>{4, message}), 8,
+               "guard(4)");
+  expect_equal(p->scalar("arm_dies", std::vector<int64_t>{3, message}), 3,
+               "arm_dies(3)");
+  expect_equal(p->scalar("tail_dies", std::vector<int64_t>{5, message}), 5,
+               "tail_dies(5)");
+  if (p->reports_explicit_panic()) {
+    expect(p->panics("guard", std::vector<int64_t>{-1, message}).has_value(),
+           "expected the never call to panic");
+    expect(p->panics("arm_dies", std::vector<int64_t>{0, message}).has_value(),
+           "expected the diverging arm to panic");
+    expect(p->panics("tail_dies", std::vector<int64_t>{0, message}).has_value(),
+           "expected the trailing never call to panic");
+  }
+  expect_equal(p->scalar("tail_match", std::vector<int64_t>{0}), 10,
+               "tail_match(0)");
+  expect_equal(p->scalar("tail_match", std::vector<int64_t>{1}), 20,
+               "tail_match(1)");
+  expect_equal(p->scalar("tail_match", std::vector<int64_t>{7}), 30,
+               "tail_match(7)");
+  const auto positive = p->into("tail_if", std::vector<int64_t>{6});
+  expect_equal(positive.at<int32_t>(0), 6, "tail_if(6).a");
+  expect_equal(positive.at<int32_t>(4), 1, "tail_if(6).b");
+  const auto negative = p->into("tail_if", std::vector<int64_t>{-2});
+  expect_equal(negative.at<int32_t>(0), 0, "tail_if(-2).a");
+  expect_equal(negative.at<int32_t>(4), -2, "tail_if(-2).b");
+}
+
 /// Runs every case.
 inline auto run_all(case_backend &backend) -> void {
   scalars_and_control_flow(backend);
@@ -354,6 +392,7 @@ inline auto run_all(case_backend &backend) -> void {
   narrow_signed_values_are_extended_when_read(backend);
   packed_values_are_accessed_without_alignment(backend);
   drops_run_with_the_value_they_end(backend);
+  never_calls_and_tail_values(backend);
 }
 
 } // namespace cinder::testing::storage_cases
