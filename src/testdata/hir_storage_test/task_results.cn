@@ -48,3 +48,33 @@ async def fallible_noisy(n: int64) -> result[noisy, int64]:
 def unread_fallible(n: int64) -> int64:
     let t = fallible_noisy(n)
     return n
+
+# A result that is a sum is dropped through the variant it holds.
+async def make_maybe(n: int64) -> option[noisy]:
+    if n > 0:
+        return @some(noisy { id: n })
+    return @none
+
+def unread_maybe(n: int64) -> int64:
+    let t = make_maybe(n)
+    return n
+
+# A sum inside another value would need its variant tracked through a field.
+async def make_nested(n: int64) -> (option[noisy], int64):
+    return (@none, n)
+
+def unread_nested(n: int64) -> int64:
+    let t = make_nested(n)
+    return n
+
+# Two variants own drops, and each is dropped only when it is the one held.
+type pick = @left(noisy) | @right(noisy)
+
+async def make_pick(n: int64) -> pick:
+    if n > 0:
+        return @left(noisy { id: n })
+    return @right(noisy { id: 9 })
+
+def unread_pick(n: int64) -> int64:
+    let t = make_pick(n)
+    return n

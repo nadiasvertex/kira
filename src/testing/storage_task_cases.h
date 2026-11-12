@@ -102,6 +102,13 @@ inline auto tasks_drop_results_once(case_backend &backend) -> void {
   expect_equal(run("noisy_read_then_drop", {}), 7815, "noisy_read_then_drop()");
   // A task that never ran has no result.
   expect_equal(run("noisy_unstarted", {}), 1, "noisy_unstarted()");
+  // A result that is a sum drops the payload it holds, and `none` owes nothing.
+  expect_equal(run("noisy_maybe_unread", {5}), 52, "noisy_maybe_unread(some)");
+  expect_equal(run("noisy_maybe_unread", {0}), 2, "noisy_maybe_unread(none)");
+  expect_equal(run("noisy_maybe_read", {6}), 606, "noisy_maybe_read(some)");
+  expect_equal(run("noisy_maybe_read", {0}), 0, "noisy_maybe_read(none)");
+  expect_equal(run("noisy_pick_unread", {5}), 52, "noisy_pick_unread(left)");
+  expect_equal(run("noisy_pick_unread", {0}), 92, "noisy_pick_unread(right)");
 }
 
 inline auto tasks_join_a_crew(case_backend &backend) -> void {

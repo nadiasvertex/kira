@@ -1720,10 +1720,15 @@ private:
       }
       return {};
     }
-    if (plan->cancels_generator || plan->closure_glue.has_value() ||
-        !plan->variant_drops.empty()) {
+    if (plan->cancels_generator || plan->closure_glue.has_value()) {
       return refuse(span, "the drop of a `" + types().display(where.type) +
                               "` held by a task");
+    }
+    // The verifier learns a sum's variant from an `if` on a tag test of a whole
+    // slot, so a sum that is part of a larger value is not dropped here.
+    if (!plan->variant_drops.empty() && !where.steps.empty()) {
+      return refuse(span, "the drop of a `" + types().display(where.type) +
+                              "` inside another value");
     }
     if (plan->own_drop.has_value()) {
       const auto &resolved = *plan->own_drop;
@@ -1779,7 +1784,62 @@ private:
         }
       }
     }
+    if (!plan->variant_drops.empty()) {
+      return lower_variant_drops(where, *plan, 0, span);
+    }
     return {};
+  }
+
+  /// Drops the payloads of the variant a sum holds: one tag test per variant
+  /// that has droppable payloads, each directly in its `if`.
+  [[nodiscard]] auto lower_variant_drops(const place &where,
+                                         const semantic::drop_plan &plan,
+                                         size_t index, const source_span &span)
+      -> result {
+    if (index == plan.variant_drops.size()) {
+      return {};
+    }
+    const auto &vd = plan.variant_drops[index];
+    const auto layout = layout_of(where.type, span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    const auto *variant = (*layout)->find_variant(vd.variant);
+    if (variant == nullptr) {
+      return malformed(span, "`" + vd.variant + "` is not a variant of `" +
+                                 types().display(where.type) + "`");
+    }
+    return branch_on(
+        span,
+        [&](const place &flag) {
+          auto op = storage_op{.kind = op_kind::test_variant};
+          op.dest = flag;
+          op.source = where;
+          op.variant = vd.variant;
+          emit(std::move(op), span);
+        },
+        [&]() -> result {
+          for (const auto &[slot, type] : vd.droppable_payloads) {
+            if (slot >= variant->payload.size()) {
+              return malformed(span, "`" + vd.variant + "` has no payload " +
+                                         std::to_string(slot));
+            }
+            if (auto ok = lower_value_drop(
+                    project(where,
+                            projection{.kind = projection_kind::payload,
+                                       .index = slot,
+                                       .name = vd.variant},
+                            variant->payload[slot].type),
+                    span);
+                !ok.has_value()) {
+              return ok;
+            }
+          }
+          return {};
+        },
+        [&]() -> result {
+          return lower_variant_drops(where, plan, index + 1, span);
+        });
   }
 
   /// `rt_task_block_on_all(group, n)` / `rt_task_block_on_any(group, n)`:

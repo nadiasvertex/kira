@@ -2115,8 +2115,12 @@ auto test_a_crew_waits_for_its_tasks() -> void {
 
 auto test_dropping_a_task_drops_its_unread_result() -> void {
   auto f = build(read_program("task_results.cn"));
-  expect(f->lowering.refused.size() == 1,
-         "expected only the fallible task's handle to be refused");
+  expect(f->lowering.refused.size() == 2,
+         "expected only the fallible and nested-sum handles to be refused");
+  const auto *nested = f->refusal("unread_nested");
+  expect(nested != nullptr &&
+             nested->message.find("inside another value") != std::string::npos,
+         "expected a sum inside another result to be refused by name");
   // The handle is dropped without a read. If it has finished and still holds
   // its result, the result is taken out and dropped before the handle goes.
   expect_ops(*f, "unread_noisy",
@@ -2152,6 +2156,24 @@ auto test_dropping_a_task_drops_its_unread_result() -> void {
               "drop s1", "return s2"});
   expect_verifies(*f, f->function("unread_holder"), "unread_holder");
   expect_verifies(*f, f->function("unread_both"), "unread_both");
+
+  // A sum result is dropped through the variant it holds.
+  expect_ops(*f, "unread_maybe",
+             {"call s1 = make_maybe(s0)", "compute s2 = copy s0",
+              "call s3 = rt_task_is_finished(s1)", "if s3", "dead s3",
+              "has_item s4 = s1", "if s4", "dead s4", "take s5 <- s1",
+              "test s6 = s5 is @some", "if s6", "dead s6",
+              "call.drop s7 = noisy::drop(&s5.@some.0)", "dead s7", "else",
+              "dead s6", "end_if", "dead s5", "else", "dead s4", "end_if",
+              "else", "dead s3", "end_if", "drop s1", "return s2"});
+  expect_verifies(*f, f->function("unread_maybe"), "unread_maybe");
+  expect_verifies(*f, f->function("unread_pick"), "unread_pick");
+  const auto pick = f->function("unread_pick");
+  auto tests = size_t{0};
+  for (const auto &op : pick.ops) {
+    tests += op.kind == hir::op_kind::test_variant ? 1U : 0U;
+  }
+  expect(tests == 2, "expected one tag test per variant that owns drops");
 
   // A result whose drop is not modeled is refused by name, never leaked.
   const auto *fallible = f->refusal("unread_fallible");

@@ -244,6 +244,55 @@ machine def noisy_finished_unread() -> int64:
     let seen = finish_unread(6, ptr_cast[int64](&mut drops))
     return drops * 10 + seen
 
+# A result that is a sum drops the payload of the variant it holds.
+async def make_maybe(id: int64, counter: *mut int64) -> option[noisy]:
+    if id > 0:
+        return @some(noisy { id: id, counter: counter })
+    return @none
+
+def finish_unread_maybe(id: int64, counter: *mut int64) -> int64:
+    let t = make_maybe(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_maybe_unread(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_maybe(id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+def read_maybe(id: int64, counter: *mut int64) -> int64:
+    let t = make_maybe(id, counter)
+    return match t.get():
+        @some(v) => v.id
+        @none => 0
+
+machine def noisy_maybe_read(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_maybe(id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Two variants own drops; only the one that is held drops.
+type pick = @left(noisy) | @right(noisy)
+
+async def make_pick(id: int64, counter: *mut int64) -> pick:
+    if id > 0:
+        return @left(noisy { id: id, counter: counter })
+    return @right(noisy { id: 9, counter: counter })
+
+def finish_unread_pick(id: int64, counter: *mut int64) -> int64:
+    let t = make_pick(id, counter)
+    let marker = double(1)
+    t.spawn()
+    marker.spawn()
+    return marker.get()
+
+machine def noisy_pick_unread(id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = finish_unread_pick(id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
 # Never run, so there is no result to drop.
 def never_started(id: int64, counter: *mut int64) -> int64:
     let t = make_noisy(id, counter)
