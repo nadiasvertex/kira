@@ -24,6 +24,10 @@ constexpr uint64_t k_max_tracked_elements = 4096;
 struct init_node {
   bool whole = false;
   std::map<std::string, init_node> children;
+  /// A sum that needs a drop only: the variants it can still hold, where an
+  /// `if` on a variant test has narrowed them. Unset means any variant. A write
+  /// builds a fresh node, so it starts over.
+  std::optional<std::set<std::string>> variants;
 
   [[nodiscard]] auto empty() const -> bool {
     return !whole && children.empty();
@@ -487,6 +491,7 @@ private:
     }
     node->whole = true;
     node->children.clear();
+    node->variants.reset();
   }
 
   /// Splits a whole value into its members so one can leave.
@@ -500,7 +505,17 @@ private:
     }
     const auto &found = **layout;
     if (found.kind == runtime::value_layout_kind::sum &&
-        step.kind == projection_kind::payload && !env_.needs_drop(type)) {
+        step.kind == projection_kind::payload) {
+      // A sum that owes drops is split only where the variant is known, so the
+      // payloads left behind are the ones that variant owns.
+      if (env_.needs_drop(type) &&
+          !(node.variants.has_value() && node.variants->size() == 1 &&
+            node.variants->contains(step.name))) {
+        return fail(verify_error_kind::partial_move,
+                    "cannot take the payload of " + name_of(type) +
+                        " before an `if` on a variant test shows which "
+                        "variant it holds");
+      }
       const auto *variant = found.find_variant(step.name);
       if (variant != nullptr) {
         for (size_t i = 0; i < variant->payload.size(); ++i) {
@@ -704,7 +719,43 @@ private:
         return std::nullopt;
       }
       if (!plan->variant_drops.empty()) {
-        return here; // Only `drop_in_place` ends a sum.
+        if (!node->whole) {
+          // A sum split by a payload move owes what is left of that variant.
+          for (const auto &vd : plan->variant_drops) {
+            for (const auto &[index, payload] : vd.droppable_payloads) {
+              const auto key = payload_key(vd.variant, index);
+              const auto found = node->children.find(key);
+              if (found == node->children.end()) {
+                continue;
+              }
+              if (auto owed = first_owed(&found->second, payload, slot,
+                                         path + "/" + key, dropped);
+                  owed.has_value()) {
+                return owed;
+              }
+            }
+          }
+          return std::nullopt;
+        }
+        if (!node->variants.has_value()) {
+          return here; // Only `drop_in_place` ends a sum of unknown variant.
+        }
+        // A whole sum whose variant is narrowed owes the payload drops of the
+        // variants it can still be.
+        for (const auto &vd : plan->variant_drops) {
+          if (!node->variants->contains(vd.variant)) {
+            continue;
+          }
+          for (const auto &[index, payload] : vd.droppable_payloads) {
+            const auto key = payload_key(vd.variant, index);
+            if (auto owed = first_owed(&whole_value, payload, slot,
+                                       path + "/" + key, dropped);
+                owed.has_value()) {
+              return owed;
+            }
+          }
+        }
+        return std::nullopt;
       }
       const auto layout = env_.layouts.layout(stripped);
       if (!layout.has_value()) {
@@ -942,6 +993,9 @@ private:
     bool has_else = false;
     /// A loop or block: the join of the states at each `exit` that reaches it.
     maybe_flow exits;
+    /// A branch on a variant test of a whole slot: what each side learns.
+    std::optional<storage_id> tested_slot;
+    std::string tested_variant;
   };
 
   [[nodiscard]] static auto continues_dead_path(op_kind kind) -> bool {
@@ -986,6 +1040,22 @@ private:
     return out;
   }
 
+  /// The variants a sum can hold where two paths meet; unset when any.
+  [[nodiscard]] auto merge_variants(type_id type, const init_node &a,
+                                    const init_node &b)
+      -> std::optional<std::set<std::string>> {
+    if (!a.variants.has_value() || !b.variants.has_value()) {
+      return std::nullopt;
+    }
+    auto both = *a.variants;
+    both.insert(b.variants->begin(), b.variants->end());
+    const auto layout = env_.layouts.layout(type);
+    if (layout.has_value() && both.size() == (*layout)->variants.size()) {
+      return std::nullopt;
+    }
+    return both;
+  }
+
   /// The state where two paths meet. A value that owes a drop must be in the
   /// same state on both; anything else is reduced to what both paths know.
   [[nodiscard]] auto join(const flow_state &a, const flow_state &b)
@@ -1014,6 +1084,17 @@ private:
         continue;
       }
       if (env_.needs_drop(slot.type)) {
+        // Two whole sums that differ only in which variants they can still be
+        // are one sum that can be either.
+        if (state_a.whole && state_b.whole && a.dropped[i] == b.dropped[i]) {
+          out.state[i] = state_a;
+          out.state[i].variants = merge_variants(slot.type, state_a, state_b);
+          if (auto ok = out.state[i].variants; ok.has_value() && ok->empty()) {
+            out.state[i].variants.reset();
+          }
+          out.dropped[i] = a.dropped[i];
+          continue;
+        }
         const auto owes_a =
             first_owed(&state_a, slot.type, id, "", a.dropped[i]);
         const auto owes_b =
@@ -1077,7 +1158,58 @@ private:
     if (auto ok = check_operand(op.condition); !ok.has_value()) {
       return ok;
     }
-    return open_region(region_kind::branch);
+    if (auto ok = open_region(region_kind::branch); !ok.has_value()) {
+      return ok;
+    }
+    // `test_variant` on a whole slot, read at once by this `if`, tells each
+    // side which variant the slot holds.
+    if (op_index_ > 0 && op.condition.kind == operand_kind::read &&
+        op.condition.where.steps.empty()) {
+      const auto &test = fn_.ops[op_index_ - 1];
+      if (test.kind == op_kind::test_variant && test.dest.steps.empty() &&
+          test.dest.base == op.condition.where.base &&
+          test.source.steps.empty() && test.source.base < fn_.slots.size() &&
+          env_.needs_drop(test.source.type) &&
+          !dead_[test.source.base]) {
+        auto &reg = regions_.back();
+        reg.tested_slot = test.source.base;
+        reg.tested_variant = test.variant;
+        if (auto ok = narrow(test.source.base, test.variant, true);
+            !ok.has_value()) {
+          return ok;
+        }
+      }
+    }
+    return {};
+  }
+
+  /// Records that a whole slot holds `variant`, or anything but it.
+  [[nodiscard]] auto narrow(storage_id slot, const std::string &variant,
+                            bool is_it) -> result {
+    auto &node = state_[slot];
+    if (!node.whole) {
+      return {};
+    }
+    const auto layout = layout_of(fn_.slots[slot].type);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    auto possible = std::set<std::string>{};
+    if (node.variants.has_value()) {
+      possible = *node.variants;
+    } else {
+      for (const auto &each : (*layout)->variants) {
+        possible.insert(each.name);
+      }
+    }
+    if (is_it) {
+      possible = possible.contains(variant) ? std::set<std::string>{variant}
+                                            : std::set<std::string>{};
+    } else {
+      possible.erase(variant);
+    }
+    node.variants = std::move(possible);
+    return {};
   }
 
   [[nodiscard]] auto do_else() -> result {
@@ -1092,6 +1224,9 @@ private:
     reg.has_else = true;
     reg.then_end = current();
     resume(reg.entry);
+    if (reg.tested_slot.has_value()) {
+      return narrow(*reg.tested_slot, reg.tested_variant, false);
+    }
     return {};
   }
 

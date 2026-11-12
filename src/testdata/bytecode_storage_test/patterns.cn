@@ -123,3 +123,157 @@ def first_or(present: int64, v: int64) -> int64:
     let @some(n) = make_option(present != 0, v) else:
         return -5
     return n + 1000
+
+# Sums that own droppable payloads. Each drop appends its id to a counter, so
+# the counter records which drops ran and in what order.
+type tracked = { pub id: int64, pub counter: *mut int64 }
+
+impl drop for tracked:
+    machine def drop(mut self) -> unit:
+        *self.counter = *self.counter * 10 + self.id
+        return
+
+type cell = @full(tracked) | @vacant
+
+type duo = @both(tracked, tracked) | @left(tracked) | @nothing
+
+def make_cell(present: int64, id: int64, counter: *mut int64) -> cell:
+    if present != 0:
+        return @full(tracked { id: id, counter: counter })
+    return @vacant
+
+def make_duo(kind: int64, a: int64, b: int64, counter: *mut int64) -> duo:
+    if kind == 2:
+        return @both(tracked { id: a, counter: counter },
+                     tracked { id: b, counter: counter })
+    if kind == 1:
+        return @left(tracked { id: a, counter: counter })
+    return @nothing
+
+def make_tracked(left: int64, counter: *mut int64) -> option[tracked]:
+    if left > 0:
+        return @some(tracked { id: left, counter: counter })
+    return @none
+
+# The sum is dropped where it goes out of scope, through the variant it holds.
+def cell_scope_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return 1
+
+machine def cell_scope(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_scope_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 10 + seen
+
+# An arm that binds the payload owns it, and drops it when the arm ends.
+def cell_take_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return match c:
+        @full(t) => t.id
+        @vacant => 0
+
+machine def cell_take(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_take_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# An arm that binds nothing leaves the payload with the sum.
+def cell_peek_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return match c:
+        @full(_) => 1
+        @vacant => 0
+
+machine def cell_peek(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_peek_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# A payload that is not bound is dropped first, then the bound one at the end.
+def duo_first_inner(kind: int64, a: int64, b: int64, counter: *mut int64) -> int64:
+    let d = make_duo(kind, a, b, counter)
+    return match d:
+        @both(x, _) => x.id
+        @left(x) => x.id
+        @nothing => 0
+
+machine def duo_first(kind: int64, a: int64, b: int64) -> int64:
+    var drops: int64 = 0
+    let seen = duo_first_inner(kind, a, b, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Two bound payloads drop in reverse order of binding.
+def duo_both_inner(kind: int64, a: int64, b: int64, counter: *mut int64) -> int64:
+    let d = make_duo(kind, a, b, counter)
+    return match d:
+        @both(x, y) => x.id + y.id
+        _ => 0
+
+machine def duo_both(kind: int64, a: int64, b: int64) -> int64:
+    var drops: int64 = 0
+    let seen = duo_both_inner(kind, a, b, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Each pass of `while let` owns one item, and the final `none` owes nothing.
+def drain_tracked_inner(count: int64, counter: *mut int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(t) = make_tracked(left, counter):
+        total = total + t.id
+        left = left - 1
+    return total
+
+machine def drain_tracked(count: int64) -> int64:
+    var drops: int64 = 0
+    let seen = drain_tracked_inner(count, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# A body that leaves early still drops the item it holds.
+def drain_until_inner(count: int64, stop: int64, counter: *mut int64) -> int64:
+    var left = count
+    var total: int64 = 0
+    while let @some(t) = make_tracked(left, counter):
+        if t.id == stop:
+            break
+        total = total + t.id
+        left = left - 1
+    return total
+
+machine def drain_until(count: int64, stop: int64) -> int64:
+    var drops: int64 = 0
+    let seen = drain_until_inner(count, stop, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def first_tracked_inner(left: int64, counter: *mut int64) -> int64:
+    let @some(t) = make_tracked(left, counter) else:
+        return -5
+    return t.id
+
+machine def first_tracked(left: int64) -> int64:
+    var drops: int64 = 0
+    let seen = first_tracked_inner(left, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+# Assigning over a sum drops the old one first.
+def cell_replace_inner(counter: *mut int64) -> int64:
+    var c = make_cell(1, 1, counter)
+    c = make_cell(1, 2, counter)
+    return 0
+
+machine def cell_replace() -> int64:
+    var drops: int64 = 0
+    let seen = cell_replace_inner(ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def eat(c: cell) -> int64:
+    return 9
+
+# A sum passed on is dropped by the callee.
+def cell_pass_inner(present: int64, id: int64, counter: *mut int64) -> int64:
+    let c = make_cell(present, id, counter)
+    return eat(c)
+
+machine def cell_pass(present: int64, id: int64) -> int64:
+    var drops: int64 = 0
+    let seen = cell_pass_inner(present, id, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen

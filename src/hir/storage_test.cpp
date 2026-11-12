@@ -589,6 +589,152 @@ auto test_fields_drop_in_order_and_moved_fields_are_skipped() -> void {
 }
 
 // ==========================================================================
+//  Sums that own drops
+// ==========================================================================
+
+auto test_sums_that_own_drops_lower_and_verify() -> void {
+  auto f = build(read_program("sumdrops.cn"));
+  for (const auto &refused : f->lowering.refused) {
+    if (refused.name != "tuple_subject" && refused.name != "either") {
+      std::cerr << "refused " << refused.name << ": " << refused.error.message
+                << "\n";
+      fail("expected every function over a droppable sum to lower");
+    }
+  }
+  for (const auto &function : f->lowering.module.functions) {
+    expect_verifies(*f, function, function.name);
+  }
+}
+
+auto test_a_sum_is_dropped_through_the_variant_it_holds() -> void {
+  auto f = build(read_program("sumdrops.cn"));
+  // The tag is tested directly by the `if`, and only the variant that holds
+  // droppable payloads drops them.
+  expect_ops(*f, "drop_slot",
+             {"call s1 = make_slot(s0)", "compute s2 = copy s0",
+              "test s3 = s1 is @full", "if s3", "dead s3",
+              "call.drop s4 = noisy::drop(&s1.@full.0)", "dead s4", "else",
+              "dead s3", "end_if", "return s2"});
+  // A payload that is bound leaves the sum and is dropped by the arm.
+  expect_ops(*f, "take_payload",
+             {"call s1 = make_slot(s0)", "test s3 = s1 is @full", "if s3",
+              "dead s3", "move s4 <- s1.@full.0", "compute s5 = copy s4.id",
+              "call.drop s6 = noisy::drop(&s4)", "dead s6",
+              "compute s2 = copy s5", "else", "dead s3", "compute s2 = const 0",
+              "end_if", "return s2"});
+  // A payload that is not bound stays in the sum, and the arm drops it.
+  expect_ops(*f, "first_of",
+             {"call s1 = make_duo(s0)", "test s3 = s1 is @both", "if s3",
+              "dead s3", "move s4 <- s1.@both.0",
+              "call.drop s5 = noisy::drop(&s1.@both.1)", "dead s5",
+              "compute s6 = copy s4.id", "call.drop s7 = noisy::drop(&s4)",
+              "dead s7", "compute s2 = copy s6", "else", "dead s3",
+              "test s8 = s1 is @left", "if s8", "dead s8",
+              "move s9 <- s1.@left.0", "compute s10 = copy s9.id",
+              "call.drop s11 = noisy::drop(&s9)", "dead s11",
+              "compute s2 = copy s10", "else", "dead s8",
+              "compute s2 = const 0", "end_if", "end_if", "return s2"});
+  // The loop leaves when the item is `none`, which owes nothing.
+  expect_ops(*f, "first_or",
+             {"call s1 = make_option(s0)", "test s2 = s1 is @some", "if s2",
+              "dead s2", "else", "dead s2", "test s3 = s1 is @some", "if s3",
+              "dead s3", "call.drop s4 = noisy::drop(&s1.@some.0)", "dead s4",
+              "else", "dead s3", "end_if", "compute s5 = unary - #5",
+              "return s5", "end_if", "move s6 <- s1.@some.0",
+              "compute s7 = copy s6.id", "call.drop s8 = noisy::drop(&s6)",
+              "dead s8", "return s7"});
+  // A pattern that binds nothing leaves the item in the sum, and the pass
+  // drops it; the loop ends on `none`, which owes nothing.
+  expect_ops(*f, "count_some",
+             {"compute s1 = copy s0", "compute s2 = const 0", "loop", "block",
+              "call s3 = make_option(s1)", "test s4 = s3 is @some", "if s4",
+              "dead s4", "call.drop s5 = noisy::drop(&s3.@some.0)", "dead s5",
+              "compute s2 = binary + s2, #1", "compute s1 = binary - s1, #1",
+              "else", "dead s4", "test s6 = s3 is @some", "if s6", "dead s6",
+              "call.drop s7 = noisy::drop(&s3.@some.0)", "dead s7", "else",
+              "dead s6", "end_if", "exit 1", "end_if", "dead s3", "end_block",
+              "end_loop", "return s2"});
+  // `let else` leaves in the `else` arm, so the item is dropped there.
+  expect_ops(*f, "has_some",
+             {"call s1 = make_option(s0)", "test s2 = s1 is @some", "if s2",
+              "dead s2", "else", "dead s2", "test s3 = s1 is @some", "if s3",
+              "dead s3", "call.drop s4 = noisy::drop(&s1.@some.0)", "dead s4",
+              "else", "dead s3", "end_if", "return #0", "end_if",
+              "call.drop s5 = noisy::drop(&s1.@some.0)", "dead s5",
+              "return #1"});
+}
+
+auto test_patterns_on_droppable_sums_test_only_the_variant() -> void {
+  auto f = build(read_program("sumdrops.cn"));
+  const auto *tuple = f->refusal("tuple_subject");
+  expect(tuple != nullptr &&
+             tuple->message.find("which needs a drop") != std::string::npos,
+         "expected a pattern on a tuple that needs a drop to be refused");
+  const auto *either = f->refusal("either");
+  expect(either != nullptr &&
+             either->message.find("tests more than its variant") !=
+                 std::string::npos,
+         "expected an or-pattern on a droppable sum to be refused by name");
+}
+
+auto test_verifier_follows_the_variant_a_droppable_sum_holds() -> void {
+  auto f = build(read_program("sumdrops.cn"));
+
+  // A payload can leave only where an `if` showed the variant.
+  auto early = f->function("take_payload");
+  const auto moved_at = find_op(early, hir::op_kind::move_into);
+  const auto moved = early.ops[moved_at];
+  early.ops.erase(early.ops.begin() + static_cast<std::ptrdiff_t>(moved_at));
+  early.ops.insert(early.ops.begin() + 1, moved);
+  expect_rejects(*f, early, hir::verify_error_kind::partial_move,
+                 "a payload taken before the variant is known");
+
+  // The branch that holds the payload must drop it.
+  auto leaked = f->function("drop_slot");
+  const auto at = find_op(leaked, hir::op_kind::call_into, 1);
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1,
+                   leaked.ops.begin() + static_cast<std::ptrdiff_t>(at) + 2);
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(at));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "a payload that is not dropped where the variant holds one");
+
+  // Testing for the other variant leaves the payload owed on the other side.
+  auto wrong = f->function("drop_slot");
+  wrong.ops[find_op(wrong, hir::op_kind::test_variant)].variant = "vacant";
+  expect_rejects(*f, wrong, hir::verify_error_kind::join_mismatch,
+                 "a drop under a test for the wrong variant");
+
+  // Nothing is learned when the `if` reads some other flag.
+  auto other_flag = f->function("drop_slot");
+  const auto flag_type = other_flag.slots[3].type;
+  const auto other_slot =
+      add_slot(other_flag, hir::storage_class::frame_local, flag_type);
+  auto make_true = hir::storage_op{.kind = hir::op_kind::compute};
+  make_true.dest = place_at(other_slot, flag_type);
+  make_true.computation = hir::compute_kind::constant;
+  make_true.literal = cinder::token_kind::kw_true;
+  make_true.text = "true";
+  other_flag.ops.insert(other_flag.ops.begin() + 2, make_true);
+  other_flag.ops[find_op(other_flag, hir::op_kind::if_begin)]
+      .condition.where = place_at(other_slot, flag_type);
+  expect_rejects(*f, other_flag, hir::verify_error_kind::join_mismatch,
+                 "an `if` that reads a flag the variant test did not write");
+
+  // Nothing is learned from a test the `if` does not read at once.
+  auto stale = f->function("drop_slot");
+  const auto test_at = find_op(stale, hir::op_kind::test_variant);
+  auto other = hir::storage_op{.kind = hir::op_kind::compute};
+  other.dest = stale.ops[test_at].dest;
+  other.computation = hir::compute_kind::constant;
+  other.literal = cinder::token_kind::kw_true;
+  other.text = "true";
+  stale.ops.insert(stale.ops.begin() + static_cast<std::ptrdiff_t>(test_at) + 1,
+                   other);
+  expect_rejects(*f, stale, hir::verify_error_kind::join_mismatch,
+                 "a variant test that something overwrote before the `if`");
+}
+
+// ==========================================================================
 //  Verifier: every rule must be able to fail
 // ==========================================================================
 
@@ -1516,9 +1662,10 @@ auto test_patterns_not_lowered_yet_are_refused_by_name() -> void {
   expect(guarded != nullptr &&
              guarded->message.find("guard") != std::string::npos,
          "expected a `match` arm guard to be refused by name");
-  const auto *owned = f->refusal("owned_subject");
-  expect(owned != nullptr && owned->message.find("drop") != std::string::npos,
-         "expected a pattern test on a value that needs a drop to be refused");
+  // A sum that needs a drop is tested by its variants (`sumdrops.cn`).
+  expect(f->refusal("owned_subject") == nullptr,
+         "expected a variant test on a sum that needs a drop to lower");
+  expect_verifies(*f, f->function("owned_subject"), "owned_subject");
 }
 
 auto test_verifier_checks_variant_tests() -> void {
@@ -1688,10 +1835,10 @@ auto test_next_resumes_then_takes_or_publishes_none() -> void {
 auto test_generators_not_lowered_yet_are_refused_by_name() -> void {
   auto f = build(read_program("generators.cn"));
   // Yielding such an item is fine: the suspension hands it over. Reading it
-  // out needs the `option` that holds it to be dropped, which is not modeled.
-  const auto *taken = f->refusal("take_owned");
-  expect(taken != nullptr && taken->message.find("drop") != std::string::npos,
-         "expected reading a droppable item to be refused");
+  // out gives an `option` that owns the item, which the match drops.
+  expect(f->refusal("take_owned") == nullptr,
+         "expected reading a droppable item to lower");
+  expect_verifies(*f, f->function("take_owned"), "take_owned");
   expect_verifies(*f, f->function("owned$step"), "owned$step");
 }
 
@@ -2159,6 +2306,10 @@ auto main() -> int {
     test_dump_is_stable();
     test_droppable_values_lower_and_verify();
     test_scope_exit_drop_is_a_marked_call();
+    test_sums_that_own_drops_lower_and_verify();
+    test_a_sum_is_dropped_through_the_variant_it_holds();
+    test_patterns_on_droppable_sums_test_only_the_variant();
+    test_verifier_follows_the_variant_a_droppable_sum_holds();
     test_discarded_temporary_is_dropped();
     test_replacement_drops_the_old_value_first();
     test_fields_drop_in_order_and_moved_fields_are_skipped();

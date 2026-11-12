@@ -2228,16 +2228,52 @@ private:
     storage_id held = k_invalid_storage;
   };
 
-  /// A sum with droppable payloads is dropped through its variants, which the
-  /// form does not model yet, and a binding that moves a payload out of such a
-  /// value leaves the rest owing a drop.
-  [[nodiscard]] auto bind_subject(const hir_expr &subject, symbol_id symbol,
-                                  const source_span &span)
-      -> std::expected<subject_place, storage_lower_error> {
-    if (env_.needs_drop(subject.type)) {
+  /// Whether `pattern` asks only which variant a sum holds: a wildcard, or a
+  /// constructor whose arguments are all wildcards. A sum that owes drops is
+  /// tested no other way, because the verifier learns which variant it holds
+  /// only from an `if` directly on the tag test.
+  [[nodiscard]] auto asks_only_the_variant(const hir_pattern &pattern) const
+      -> bool {
+    if (pattern.kind == hir_node_kind::hir_wildcard_pattern) {
+      return true;
+    }
+    if (pattern.kind != hir_node_kind::hir_constructor_pattern) {
+      return false;
+    }
+    return std::ranges::all_of(
+        as<hir_constructor_pattern>(pattern).args, [](const auto &arg) {
+          return arg->kind == hir_node_kind::hir_wildcard_pattern;
+        });
+  }
+
+  /// A sum that needs a drop can be tested by its variants. Its payloads are
+  /// moved or dropped inside the arm that tested for them.
+  [[nodiscard]] auto check_droppable_subject(const hir_expr &subject,
+                                             const hir_pattern &pattern,
+                                             const source_span &span)
+      -> result {
+    if (!env_.needs_drop(subject.type)) {
+      return {};
+    }
+    const auto layout = layout_of(subject.type, span);
+    if (!layout.has_value()) {
+      return std::unexpected(layout.error());
+    }
+    if ((*layout)->kind != runtime::value_layout_kind::sum) {
       return refuse(span, "a pattern test on `" + types().display(subject.type) +
                               "`, which needs a drop");
     }
+    if (!asks_only_the_variant(pattern)) {
+      return refuse(span, "a pattern on `" + types().display(subject.type) +
+                              "`, which needs a drop, that tests more than "
+                              "its variant");
+    }
+    return {};
+  }
+
+  [[nodiscard]] auto bind_subject(const hir_expr &subject, symbol_id symbol,
+                                  const source_span &span)
+      -> std::expected<subject_place, storage_lower_error> {
     auto named = lower_place(subject);
     if (!named.has_value()) {
       return std::unexpected(named.error());
@@ -2496,6 +2532,13 @@ private:
         return refuse(arm.guard->span, "a `match` arm guard");
       }
     }
+    for (const auto &arm : node.arms) {
+      if (auto ok = check_droppable_subject(*node.subject, *arm.pattern,
+                                            arm.pattern->span);
+          !ok.has_value()) {
+        return ok;
+      }
+    }
     auto subject = bind_subject(*node.subject, node.subject_symbol, node.span);
     if (!subject.has_value()) {
       return std::unexpected(subject.error());
@@ -2524,6 +2567,28 @@ private:
     // holds wherever the earlier ones did not.
     if (always_matches(*arm.pattern) || last) {
       return lower_arm(*arm.body, dest);
+    }
+    if (env_.needs_drop(subject.type)) {
+      // Test the tag directly in the `if`, so each side knows the variant.
+      auto arm_terminated = false;
+      auto ok = emit_tests(
+          {obligation{.pattern = arm.pattern.get(), .where = subject}},
+          [&]() -> result {
+            auto ran = lower_arm(*arm.body, dest);
+            arm_terminated = terminated_;
+            terminated_ = false;
+            return ran;
+          },
+          [&]() -> result {
+            return in_region(node.span, [&] {
+              return lower_arms(node, index + 1, subject, dest);
+            });
+          });
+      if (!ok.has_value()) {
+        return ok;
+      }
+      terminated_ = arm_terminated && terminated_;
+      return {};
     }
     const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
                                "", k_invalid_symbol_id, arm.pattern->span, false);
@@ -2562,6 +2627,13 @@ private:
     frames_.push_back(loop_frame{.kind = loop_frame_kind::loop});
     scopes_.emplace_back();
     auto head = in_region(loop.span, [&]() -> result {
+      // HIR turns a `while let` over a value that owns drops into a `loop`
+      // around a `match`, so this form never sees one.
+      if (env_.needs_drop(loop.subject->type)) {
+        return malformed(loop.span, "a `while let` over `" +
+                                        types().display(loop.subject->type) +
+                                        "`, which needs a drop");
+      }
       auto subject = bind_subject(*loop.subject, loop.subject_symbol, loop.span);
       if (!subject.has_value()) {
         return std::unexpected(subject.error());
@@ -2600,6 +2672,11 @@ private:
   /// `let pattern = value else { ... }`: the else block leaves, so the code
   /// after this statement runs only where the pattern held.
   [[nodiscard]] auto lower_let_else(const hir_let_else &node) -> result {
+    if (auto ok = check_droppable_subject(*node.initializer, *node.pattern,
+                                          node.span);
+        !ok.has_value()) {
+      return ok;
+    }
     auto subject =
         bind_subject(*node.initializer, node.subject_symbol, node.span);
     if (!subject.has_value()) {
@@ -2607,6 +2684,15 @@ private:
     }
     if (subject->held != k_invalid_storage && !scopes_.empty()) {
       scopes_.back().push_back(subject->held);
+    }
+    if (env_.needs_drop(subject->where.type)) {
+      auto ok = emit_tests(
+          {obligation{.pattern = node.pattern.get(), .where = subject->where}},
+          []() -> result { return {}; }, [&]() -> result {
+            return lower_arm(*node.else_body, std::nullopt);
+          });
+      terminated_ = false;
+      return ok;
     }
     const auto flag = new_slot(storage_class::frame_local, types().bool_type(),
                                "", k_invalid_symbol_id, node.span, false);

@@ -83,6 +83,23 @@ inline auto generators_drop_what_they_own_once(case_backend &backend) -> void {
   expect_equal(run("guarded_unstarted_drops"), 0, "guarded_unstarted_drops()");
 }
 
+inline auto generators_hand_droppable_items_to_the_reader(
+    case_backend &backend) -> void {
+  auto p = backend.open("bytecode_storage_test", "generators.cn");
+  const auto run = [&](const char *name, int64_t n) {
+    return p->scalar(name, std::vector<int64_t>{n});
+  };
+  // Items 1, 2, 3 drop in turn as their passes end; the sum is 6.
+  expect_equal(run("read_items", 3), 12306, "read_items(3)");
+  expect_equal(run("read_items", 0), 0, "read_items(0)");
+  // The first item drops when the arm ends and nothing else was built.
+  expect_equal(run("read_one", 3), 101, "read_one(3)");
+  expect_equal(run("read_one", 0), 0, "read_one(0)");
+  // An unread item drops once, with the discarded `option`.
+  expect_equal(run("discard_one", 2), 100, "discard_one(2)");
+  expect_equal(run("discard_one", 0), 0, "discard_one(0)");
+}
+
 /// Runs the generator cases.
 inline auto generator_cases(case_backend &backend) -> void {
   generators_yield_in_order(backend);
@@ -91,6 +108,7 @@ inline auto generator_cases(case_backend &backend) -> void {
   generators_yield_items_of_any_size(backend);
   generators_cross_calls_by_value(backend);
   generators_drop_what_they_own_once(backend);
+  generators_hand_droppable_items_to_the_reader(backend);
 }
 
 } // namespace cinder::testing::storage_cases

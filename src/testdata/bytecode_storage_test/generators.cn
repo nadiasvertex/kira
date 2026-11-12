@@ -188,3 +188,46 @@ machine def guarded_unstarted_drops() -> int64:
 machine def unstarted(counter: *mut int64) -> unit:
     let g = guarded(counter)
     return
+
+# An item that needs a drop belongs to whoever reads it from `next()`.
+generator def noisy_items(n: int64, counter: *mut int64) -> some iterator[noisy]:
+    var i: int64 = 1
+    while i <= n:
+        yield noisy { id: i, counter: counter }
+        i = i + 1
+
+def read_items_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    var total: int64 = 0
+    while let @some(item) = g.next():
+        total = total + item.id
+    return total
+
+# Every item is dropped when its pass ends, and the final `none` owes nothing.
+machine def read_items(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_items_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def read_one_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    return match g.next():
+        @some(v) => v.id
+        @none => 0
+
+# One read leaves the generator suspended, and dropping it drops nothing more.
+machine def read_one(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = read_one_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
+
+def discard_one_inner(n: int64, counter: *mut int64) -> int64:
+    var g = noisy_items(n, counter)
+    g.next()
+    return 0
+
+# An item nobody reads is dropped with the `option` that holds it.
+machine def discard_one(n: int64) -> int64:
+    var drops: int64 = 0
+    let seen = discard_one_inner(n, ptr_cast[int64](&mut drops))
+    return drops * 100 + seen
