@@ -1540,6 +1540,38 @@ private:
                         "` is not initialized when the variant is published");
       }
     }
+    if (node != nullptr) {
+      // What a failed construction left of another variant (the failure arm
+      // of `?` inside a value being built) is scratch once nothing in it owes
+      // a drop.
+      const auto prefix = path_key(op.dest, at->tracked);
+      for (const auto &other : found.variants) {
+        if (other.name == op.variant) {
+          continue;
+        }
+        for (size_t i = 0; i < other.payload.size(); ++i) {
+          const auto key = payload_key(other.name, i);
+          const auto stale = node->children.find(key);
+          if (stale == node->children.end()) {
+            continue;
+          }
+          const auto path = prefix + "/" + key;
+          if (const auto owed =
+                  first_owed(&stale->second, other.payload[i].type,
+                             op.dest.base, path, dropped_[op.dest.base]);
+              owed.has_value()) {
+            return fail(verify_error_kind::leaked_value,
+                        *owed + " still owes its drop when `" + op.variant +
+                            "` is published");
+          }
+          auto &done = dropped_[op.dest.base];
+          for (auto it = done.begin(); it != done.end();) {
+            it = is_prefix(path, *it) ? done.erase(it) : std::next(it);
+          }
+          node->children.erase(stale);
+        }
+      }
+    }
     if (node != nullptr && node->children.size() != variant->payload.size()) {
       return fail(verify_error_kind::incomplete_variant,
                   "payload of another variant is still present");

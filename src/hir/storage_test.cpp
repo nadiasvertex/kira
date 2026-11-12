@@ -344,6 +344,120 @@ auto test_constructor_is_built_in_the_result_bytes() -> void {
               "compute s0[2] = const 0", "return"});
 }
 
+/// Aggregate transfers in `function`: a value copied or moved between places
+/// instead of built where it ends up.
+auto count_transfers(const hir::storage_function &function) -> size_t {
+  auto count = size_t{0};
+  for (const auto &op : function.ops) {
+    count += op.kind == hir::op_kind::copy_into ||
+             op.kind == hir::op_kind::move_into;
+  }
+  return count;
+}
+
+auto test_direct_constructions_make_no_intermediate_transfers() -> void {
+  auto f = build(read_program("rvo.cn"));
+  // Each of these builds its result in the caller's storage, with nothing
+  // copied or moved between places, and nothing depends on inlining.
+  for (const auto *name :
+       {"ret_if", "tuple_calls", "array_calls", "sum_payload", "option_payload",
+        "nested", "may_fail", "duo_ret", "ret_noisy_if", "tail_if", "wrap",
+        "maybe_pair", "make_pair"}) {
+    const auto function = f->function(name);
+    if (count_transfers(function) != 0) {
+      std::cerr << name << ":\n";
+      for (const auto &line : op_lines(*f, function)) {
+        std::cerr << "  " << line << "\n";
+      }
+      fail("expected no aggregate transfer in a direct construction");
+    }
+  }
+  expect_ops(*f, "ret_if",
+             {"if s1", "call s0 = make_pair(s2)", "else",
+              "compute s0.a = const 0", "compute s0.b = copy s2", "end_if",
+              "return"});
+  expect_ops(*f, "sum_payload",
+             {"call s0.@circle.0 = make_pair(s1)", "publish s0 @circle",
+              "return"});
+  expect_ops(*f, "tuple_calls",
+             {"call s0.0 = make_pair(s1)", "compute s2 = binary + s1, #1",
+              "call s0.1 = make_pair(s2)", "dead s2", "return"});
+  // A call whose result is passed on forwards the same address.
+  expect_ops(*f, "ret_noisy_if",
+             {"if s1", "call s0 = make_noisy(s2)", "else",
+              "call s0 = make_noisy(#0)", "end_if", "return"});
+}
+
+auto test_try_rebuilds_the_failure_when_the_success_types_differ() -> void {
+  auto f = build(read_program("rvo.cn"));
+  // `parse(n)?` returns the operand's failure as the function's own result:
+  // the err payload moves across and the variant is published.
+  expect_ops(*f, "wrap",
+             {"call s3 = parse(s1)", "test s5 = s3 is @ok", "if s5", "dead s5",
+              "compute s4 = const true", "else", "dead s5",
+              "compute s4 = const false", "end_if", "if s4", "dead s4",
+              "compute s2 = copy s3.@ok.0", "else", "dead s4",
+              "compute s0.@err.0 = copy s3.@err.0", "publish s0 @err",
+              "return", "end_if", "dead s3", "compute s0.@ok.0.a = copy s2",
+              "compute s0.@ok.0.b = binary + s2, #1", "publish s0 @ok",
+              "return"});
+  // For an `option` the failure has no payload.
+  auto none = size_t{0};
+  for (const auto &line : op_lines(*f, f->function("maybe_pair"))) {
+    none += line == "publish s0 @none";
+  }
+  expect(none == 1, "expected `none` to be published once in the failure arm");
+  expect_verifies(*f, f->function("wrap"), "wrap");
+  expect_verifies(*f, f->function("maybe_pair"), "maybe_pair");
+}
+
+auto test_failure_inside_a_construction_drops_the_built_parts() -> void {
+  auto f = build(read_program("rvo.cn"));
+  // `x` is built when `y`'s `?` fails: it is dropped before the failure is
+  // returned, and the success path leaves it to the value being built.
+  expect_ops(*f, "duo_try",
+             {"call s2.x = make_noisy(s1)", "compute s4 = binary - s1, #1",
+              "call s3 = may_noisy(s4)", "dead s4", "test s5 = s3 is @ok",
+              "if s5", "dead s5", "move s2.y <- s3.@ok.0", "else", "dead s5",
+              "call.drop s6 = noisy::drop(&s2.x)", "dead s6",
+              "compute s0.@err.0 = copy s3.@err.0", "publish s0 @err",
+              "return", "end_if", "dead s3", "move s0.@ok.0 <- s2",
+              "publish s0 @ok", "return"});
+  // The same inside a tuple built in the result's own payload: the member
+  // that was built is dropped, and then `err` is published over the `ok`
+  // payload it left.
+  const auto tuple = f->function("tuple_try");
+  expect_verifies(*f, tuple, "tuple_try");
+  auto drops = size_t{0};
+  for (const auto &line : op_lines(*f, tuple)) {
+    drops += line == "call.drop s5 = noisy::drop(&s0.@ok.0.0)";
+  }
+  expect(drops == 1, "expected the built tuple member to be dropped once");
+  // A value that is finished is not a part of anything under construction: a
+  // failure after it leaves its drop to the scope that owns it.
+  expect_verifies(*f, f->function("two_builds"), "two_builds");
+  auto drop_calls = size_t{0};
+  for (const auto &line : op_lines(*f, f->function("two_builds"))) {
+    drop_calls += line.starts_with("call.drop");
+  }
+  expect(drop_calls == 4, "expected one drop per field on each path");
+}
+
+auto test_verifier_checks_the_payload_a_failed_construction_leaves() -> void {
+  auto f = build(read_program("rvo.cn"));
+  const auto tuple = f->function("tuple_try");
+  // Without the drop, the member built before the failure leaks when the
+  // other variant is published over it.
+  auto leaked = tuple;
+  const auto at = find_op(leaked, hir::op_kind::call_into, 2);
+  expect(leaked.ops[at].is_drop, "expected the third call to be the drop");
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(at) + 1);
+  leaked.ops.erase(leaked.ops.begin() + static_cast<std::ptrdiff_t>(at));
+  expect_rejects(*f, leaked, hir::verify_error_kind::leaked_value,
+                 "failure published over a built member", {},
+                 "still owes its drop when `err` is published");
+}
+
 auto test_nested_call_result_is_forwarded_into_the_field() -> void {
   auto f = build(read_program("forms.cn"));
   expect_ops(*f, "make_line",
@@ -2313,6 +2427,10 @@ auto main() -> int {
     test_function_value_and_function_share_a_signature();
     test_synthesized_functions_classify_with_handle_results();
     test_constructor_is_built_in_the_result_bytes();
+    test_direct_constructions_make_no_intermediate_transfers();
+    test_try_rebuilds_the_failure_when_the_success_types_differ();
+    test_failure_inside_a_construction_drops_the_built_parts();
+    test_verifier_checks_the_payload_a_failed_construction_leaves();
     test_nested_call_result_is_forwarded_into_the_field();
     test_returned_call_receives_the_result_address();
     test_sum_is_published_after_its_payload();

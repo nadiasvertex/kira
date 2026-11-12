@@ -993,6 +993,30 @@ private:
     return {};
   }
 
+  /// A finished part of a value still under construction: if the construction
+  /// is left early, the part is dropped, since nothing else owns it yet.
+  auto note_built(const place &part) -> void {
+    if (env_.needs_drop(part.type)) {
+      partials_.push_back(part);
+    }
+  }
+
+  auto forget_built(size_t mark) -> void {
+    partials_.erase(partials_.begin() + static_cast<std::ptrdiff_t>(mark),
+                    partials_.end());
+  }
+
+  /// Drops the finished parts of every value under construction, newest
+  /// first, before the function is left.
+  [[nodiscard]] auto drop_partials(const source_span &span) -> result {
+    for (auto it = partials_.rbegin(); it != partials_.rend(); ++it) {
+      if (auto ok = lower_value_drop(*it, span); !ok.has_value()) {
+        return ok;
+      }
+    }
+    return {};
+  }
+
   [[nodiscard]] auto lower_tuple(const hir_tuple &tuple, const place &dest)
       -> result {
     const auto layout = layout_of(dest.type, tuple.span);
@@ -1009,13 +1033,16 @@ private:
     if (tuple.elements.empty()) {
       return empty_value(dest, tuple.span);
     }
+    const auto mark = partials_.size();
     for (size_t i = 0; i < tuple.elements.size(); ++i) {
       const auto part =
           project(dest, member_step(i, ""), found.members[i].type);
       if (auto ok = lower_into(*tuple.elements[i], part); !ok.has_value()) {
         return ok;
       }
+      note_built(part);
     }
+    forget_built(mark);
     return {};
   }
 
@@ -1039,6 +1066,7 @@ private:
     if (found.members.empty()) {
       return empty_value(dest, init.span);
     }
+    const auto mark = partials_.size();
     for (const auto &field : init.fields) {
       auto index = found.members.size();
       for (size_t i = 0; i < found.members.size(); ++i) {
@@ -1055,7 +1083,9 @@ private:
       if (auto ok = lower_into(*field.value, part); !ok.has_value()) {
         return ok;
       }
+      note_built(part);
     }
+    forget_built(mark);
     return {};
   }
 
@@ -1078,6 +1108,7 @@ private:
     if (init.elements.empty()) {
       return empty_value(dest, init.span);
     }
+    const auto mark = partials_.size();
     for (size_t i = 0; i < init.elements.size(); ++i) {
       const auto part = project(
           dest, projection{.kind = projection_kind::element, .index = i},
@@ -1085,7 +1116,9 @@ private:
       if (auto ok = lower_into(*init.elements[i], part); !ok.has_value()) {
         return ok;
       }
+      note_built(part);
     }
+    forget_built(mark);
     return {};
   }
 
@@ -1103,6 +1136,7 @@ private:
                                       "` does not construct `" +
                                       types().display(dest.type) + "`");
     }
+    const auto mark = partials_.size();
     for (size_t i = 0; i < init.args.size(); ++i) {
       const auto part = project(
           dest,
@@ -1113,7 +1147,9 @@ private:
       if (auto ok = lower_into(*init.args[i], part); !ok.has_value()) {
         return ok;
       }
+      note_built(part);
     }
+    forget_built(mark);
     auto op = storage_op{.kind = op_kind::publish_variant};
     op.dest = dest;
     op.variant = init.variant_name;
@@ -2200,7 +2236,7 @@ private:
         loop.condition->kind == hir_node_kind::hir_literal &&
         as<hir_literal>(*loop.condition).lit_kind == token_kind::kw_true;
     emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop, .partials = partials_.size()});
     scopes_.emplace_back();
     if (!always) {
       auto ok = in_region(loop.condition->span, [&]() -> result {
@@ -2239,7 +2275,7 @@ private:
   [[nodiscard]] auto finish_loop(const hir_block &body, const hir_block *step,
                                  const source_span &span) -> result {
     emit(storage_op{.kind = op_kind::block_begin}, body.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::body});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::body, .partials = partials_.size()});
     auto ok = in_region(body.span, [&] { return lower_discarded(body); });
     if (!ok.has_value()) {
       return ok;
@@ -2684,7 +2720,7 @@ private:
   /// does not hold, and otherwise runs the body.
   [[nodiscard]] auto lower_while_let(const hir_while_let &loop) -> result {
     emit(storage_op{.kind = op_kind::loop_begin}, loop.span);
-    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop});
+    frames_.push_back(loop_frame{.kind = loop_frame_kind::loop, .partials = partials_.size()});
     scopes_.emplace_back();
     auto head = in_region(loop.span, [&]() -> result {
       // HIR turns a `while let` over a value that owns drops into a `loop`
@@ -2785,6 +2821,10 @@ private:
       auto &frame = frames_[frames_.size() - 1 - depth];
       if (frame.kind != target) {
         continue;
+      }
+      if (partials_.size() > frame.partials) {
+        return refuse(span, "`break` or `continue` inside a value under "
+                            "construction that holds values needing a drop");
       }
       frame.reached = true;
       auto leave = storage_op{.kind = op_kind::exit};
@@ -2925,8 +2965,69 @@ private:
     return {};
   }
 
+  /// Builds a returned value in `dest`. HIR lowers the failure arm of `x?` to
+  /// a return of the operand itself, which is the function's own result type
+  /// only when the success types agree; otherwise the failing variant is
+  /// rebuilt in `dest` from the operand's payloads.
+  [[nodiscard]] auto lower_returned(const hir_expr &value, const place &dest)
+      -> result {
+    if (value.kind != hir_node_kind::hir_local_ref ||
+        as<hir_local_ref>(value).name != "<try subject>" ||
+        value.type == dest.type) {
+      return lower_into(value, dest);
+    }
+    const auto &entry = types().entry(value.type);
+    const auto failure = entry.name == "result" ? "err" : "none";
+    const auto from = layout_of(value.type, value.span);
+    const auto to = layout_of(dest.type, value.span);
+    if (!from.has_value()) {
+      return std::unexpected(from.error());
+    }
+    if (!to.has_value()) {
+      return std::unexpected(to.error());
+    }
+    const auto *source_variant = (*from)->find_variant(failure);
+    const auto *dest_variant = (*to)->find_variant(failure);
+    if (source_variant == nullptr || dest_variant == nullptr ||
+        source_variant->payload.size() != dest_variant->payload.size()) {
+      return malformed(value.span, "`?` returns `" + types().display(dest.type) +
+                                       "` from `" + types().display(value.type) +
+                                       "`, which have no common failure");
+    }
+    auto source = lower_place(value);
+    if (!source.has_value()) {
+      return std::unexpected(source.error());
+    }
+    for (size_t i = 0; i < source_variant->payload.size(); ++i) {
+      const auto step = [&](const std::string &name) {
+        return projection{
+            .kind = projection_kind::payload, .index = i, .name = name};
+      };
+      if (auto ok = transfer(project(**source, step(failure),
+                                     source_variant->payload[i].type),
+                             project(dest, step(failure),
+                                     dest_variant->payload[i].type),
+                             value.span);
+          !ok.has_value()) {
+        return ok;
+      }
+    }
+    auto op = storage_op{.kind = op_kind::publish_variant};
+    op.dest = dest;
+    op.variant = failure;
+    emit(std::move(op), value.span);
+    return {};
+  }
+
   [[nodiscard]] auto lower_return(const hir_return &ret) -> result {
     const auto &signature = out_.signature;
+    // A return inside a value under construction (the failure arm of `?`)
+    // drops what that value has built so far.
+    if (!partials_.empty()) {
+      if (auto ok = drop_partials(ret.span); !ok.has_value()) {
+        return ok;
+      }
+    }
     if (ret.value == nullptr) {
       if (auto ended = flush_pending(ret.span); !ended.has_value()) {
         return ended;
@@ -2935,7 +3036,7 @@ private:
       return {};
     }
     if (signature.returns_through_address()) {
-      if (auto ok = lower_into(*ret.value, whole(out_.result_slot));
+      if (auto ok = lower_returned(*ret.value, whole(out_.result_slot));
           !ok.has_value()) {
         return ok;
       }
@@ -3018,6 +3119,10 @@ private:
   /// Temporaries of enclosing expressions, set aside while a nested region
   /// (a branch or a loop) lowers.
   size_t outer_pending_ = 0;
+  /// The finished parts of aggregates still under construction whose type
+  /// needs a drop, oldest first. An exit from inside the construction drops
+  /// them, since nothing else owns them yet.
+  std::vector<place> partials_;
   /// Whether the path being lowered has left the function or the loop body.
   bool terminated_ = false;
 
@@ -3026,6 +3131,8 @@ private:
   struct loop_frame {
     loop_frame_kind kind = loop_frame_kind::loop;
     bool reached = false;
+    /// How many parts of values under construction were live at the loop.
+    size_t partials = 0;
   };
   std::vector<loop_frame> frames_;
   /// Per open loop, the slots its body declares.

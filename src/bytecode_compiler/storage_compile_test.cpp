@@ -26,6 +26,7 @@
 #include "src/testing/storage_generator_cases.h"
 #include "src/testing/storage_task_cases.h"
 #include "src/testing/storage_pattern_cases.h"
+#include "src/testing/storage_rvo_cases.h"
 #include "src/testing/storage_memory_cases.h"
 #include "src/testing/storage_fixture.h"
 #include "src/testing/test_assert.h"
@@ -231,6 +232,7 @@ auto main() -> int {
   cases::memory_cases(backend);
   cases::closure_cases(backend);
   cases::pattern_cases(backend);
+  cases::rvo_cases(backend);
   cases::generator_cases(backend);
   cases::task_cases(backend);
   test_compiled_code_has_no_allocation_instruction();

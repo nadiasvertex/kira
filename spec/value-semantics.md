@@ -484,7 +484,7 @@ Progress as of 2026-11-11: T-01 to T-04a are complete. T-05 to T-09 are partly d
 both storage-form backends (bytecode VM and LLVM). T-09 now covers closures, patterns,
 generators, tasks and `await`, `par`/`race`/`on`, droppable task results, `crew`
 blocks, and sums that own drops (pattern tests and drops over such sums, which also
-lets a generator hand out droppable items). T-10 to T-14 are not started.
+lets a generator hand out droppable items). T-10 is partly done (see below). T-11 to T-14 are not started.
 
 | Status | ID | Task | Owner | Priority | Depends On | Acceptance Criteria |
 |---|---|---|---|---|---|---|
@@ -498,7 +498,7 @@ lets a generator hand out droppable items). T-10 to T-14 are not started.
 | [~] | T-07 | Migrate runtime intrinsic boundaries | Compiler implementer | H | T-05, T-06 | Runtime operations write aggregate results into owned destinations. |
 | [~] | T-08 | Migrate containers, statics, and compile-time execution | Compiler implementer | H | T-07 | Nested elements, raw memory, globals, and hosted calls use identical layouts. |
 | [~] | T-09 | Migrate captures, generators, and task results | Compiler implementer | H | T-08 | Suspension/cancellation and large results preserve ownership and stable addresses. |
-| [ ] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
+| [~] | T-10 | Complete mandatory RVO propagation | Compiler implementer | H | T-09 | All listed expression forms construct directly with inlining disabled. |
 | [ ] | T-11 | Implement shared NRVO | Compiler implementer | H | T-10 | Eligible locals use result storage; rejected cases use correct inline moves. |
 | [ ] | T-12 | Enforce final frame budgets and tail-call safety | Compiler implementer | H | T-11 | Final storage plans are bounded, aligned, and lifetime-safe. |
 | [ ] | T-13 | Prove leak removal and backend parity | Compiler implementer | H | T-12 | Ownership-checked regressions and structural/allocation gates pass on both tiers. |
@@ -1018,6 +1018,8 @@ other than `fn` and generators; generic and inlined lambdas in the storage form.
 ### T-10 — Complete mandatory RVO propagation
 
 **Goal:** Make direct result construction systematic across expression forms.
+
+**Status: partly done (2026-11-11).** The lowering was already destination-driven, so the work was to measure it and fix what the measurement found. `hir_storage_test/rvo.cn` holds one function per form: a returned constructor, call, `if`, and `match`; tuple and array literals of calls; sum and `option` payloads; nested fields; `?`; `or else`; indirect and generic calls; chained returns; and a discarded or zero-sized result. `storage_test` asserts that the eligible ones contain no `copy_into` or `move_into` (the lowering runs on HIR with no inlining) and pins the exact form of four. Two defects came out of it. First, `x?` in a function whose result has a different success type returned the operand as it was, which the verifier rejected (`move joins result[A, E] and result[B, E]`); the failure is now rebuilt in the result. Second, a `?` in a later part of a struct, tuple, array, or sum literal left the earlier parts built in the destination and leaked them; the lowering now notes each finished part that needs a drop and a `return` inside the construction drops them newest first. The verifier lets a variant be published over leftovers of another variant when they owe nothing (they are scratch), and reports `leaked_value` when they do. Tests: `storage_test` over `rvo.cn` (zero transfers, exact forms of `ret_if`, `sum_payload`, `tuple_calls`, `ret_noisy_if`, the rebuilt failure for `result` and `option`, `duo_try` with its drop, `tuple_try`, `two_builds`; a corruption that removes the drop before the failure is published) and `storage_rvo_cases.h` over `bytecode_storage_test/rvo.cn` on both backends (fields weighted by powers of ten so a misplaced field changes the sum; `?` in every position with a different success type; drop counters for a failure after one, after two, and before any part is built, and for a whole value). Mutation checks (the partial drops, their registration, their release when the value is finished, their order, the rebuild, the failing variant, the verifier's release of leftovers and its leak check) each failed a test; the order mutation first survived until the three-part fixture was added. Not done: slice construction (`xs[a..b]` is refused as range indexing, under T-07); a tuple whose members need a drop has no drop plan, so a tuple of droppables cannot be consumed by a pattern (the checker schedules no drop for it, an older gap); `break` and `continue` inside a value under construction are refused (no surface syntax reaches them yet); an assignment still builds its replacement apart, as the plan requires when the target can be observed, and does not build in place even when it cannot; a returned named local still moves into the result slot, which is T-11; no instruction-level check of the emitted code, since both backends read the same form and the form is what is asserted.
 
 1. Extend shared destination propagation through all forms listed under Calls and
    mandatory RVO, including synthesized branches and error propagation.

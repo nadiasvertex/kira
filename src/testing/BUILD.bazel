@@ -40,6 +40,7 @@ cc_library(
         "storage_generator_cases.h",
         "storage_task_cases.h",
         "storage_pattern_cases.h",
+        "storage_rvo_cases.h",
         "storage_memory_cases.h",
     ],
     visibility = ["//visibility:public"],
